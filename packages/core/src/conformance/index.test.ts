@@ -33,16 +33,16 @@ const ctx: RunContext = {
   appId: "app_conformance",
 };
 
-const criticalDescriptor: ToolDescriptor = {
+const confirmEachDescriptor: ToolDescriptor = {
   name: "host_delete_conformance",
   description: "Delete a conformance fixture",
   inputSchema: { type: "object" },
   risk: "destructive",
-  critical: true,
+  confirmEach: true,
 };
-const criticalCall: ToolCall = {
-  id: "call_critical",
-  tool: criticalDescriptor.name,
+const confirmEachCall: ToolCall = {
+  id: "call_confirm_each",
+  tool: confirmEachDescriptor.name,
   args: { id: "fixture_1" },
 };
 const readDescriptor: ToolDescriptor = {
@@ -67,12 +67,12 @@ const sampleAuditEvent: AuditEvent = {
   outcome: "ok",
 };
 
-const minimalGuard = (criticalRuns = false): Guard => ({
+const minimalGuard = (confirmEachRuns = false): Guard => ({
   async check(call, descriptor, context) {
-    if (descriptor.critical && !criticalRuns) {
+    if (descriptor.confirmEach && !confirmEachRuns) {
       return {
         action: "ask",
-        decidedBy: "critical",
+        decidedBy: "confirmEach",
         approval: {
           id: "apr_conformance",
           call,
@@ -103,8 +103,8 @@ const minimalGuard = (criticalRuns = false): Guard => ({
 const guardSuite = (makeGuard: () => Promise<Guard>) => guardConformance({
   makeGuard,
   ctx,
-  criticalDescriptor,
-  criticalCall,
+  confirmEachDescriptor,
+  confirmEachCall,
   readDescriptor,
   readCall,
   sampleAuditEvent,
@@ -250,11 +250,11 @@ describe("Guard conformance", () => {
     expect(report, JSON.stringify(report.failures)).toMatchObject({ ok: true, failures: [] });
   });
 
-  it("rejects a guard that runs critical calls", async () => {
+  it("rejects a guard that runs confirmEach calls", async () => {
     const report = await runConformance(guardSuite(async () => minimalGuard(true)));
     expect(report.ok).toBe(false);
     expect(report.failures.map((failure) => failure.name)).toContain(
-      "01-core §4; 05-guard §2 step 1 — critical always asks with frozen descriptor and input preview",
+      "01-core §4; 05-guard §2 step 1 — confirmEach always asks with frozen descriptor and input preview",
     );
   });
 });

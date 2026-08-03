@@ -86,10 +86,10 @@ export const guardFixture = (options: GuardFixtureOptions = {}): GuardFixture =>
     approvals,
     audit,
     async check(call, descriptor, ctx): Promise<GuardDecision> {
-      if (descriptor.critical === true) {
+      if (descriptor.confirmEach === true) {
         const approval = approvalFor(call, descriptor, ctx);
         approvals.push(approval);
-        return { action: "ask", approval, decidedBy: "critical" };
+        return { action: "ask", approval, decidedBy: "confirmEach" };
       }
 
       const grant = grants.find((candidate) => grantMatches(candidate, descriptor, ctx, now()));

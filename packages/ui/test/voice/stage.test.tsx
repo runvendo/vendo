@@ -357,7 +357,7 @@ const actApproval: ApprovalRequest = {
 const criticalApproval: ApprovalRequest = {
   ...actApproval,
   id: "apr_critical",
-  call: { id: "call_critical", tool: "host_invoice_delete", args: { invoiceId: "inv_42" } },
+  call: { id: "call_confirm_each", tool: "host_invoice_delete", args: { invoiceId: "inv_42" } },
   descriptor: { name: "host_invoice_delete", description: "Delete invoice", inputSchema: {}, risk: "destructive" },
   inputPreview: "invoice inv_42",
 };

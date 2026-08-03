@@ -164,7 +164,7 @@ describe("§4 — TOOL_NAME_PATTERN is the provider-safe charset with a 1..64 le
     expect(TOOL_NAME_PATTERN.test("a")).toBe(true);
     expect(TOOL_NAME_PATTERN.test("a".repeat(64))).toBe(true);
     expect(TOOL_NAME_PATTERN.test("host_invoices_list-2")).toBe(true);
-    expect(riskLabelSchema.options).toEqual(["read", "write", "destructive"]);
+    expect(riskLabelSchema.options).toEqual(["read", "write", "destructive", "ungraded"]);
   });
 
   it("rejects empty, over-length, dotted, and whitespace names", () => {
@@ -193,16 +193,16 @@ describe("§4 — TOOL_NAME_PATTERN is the provider-safe charset with a 1..64 le
 
 describe("§4 — descriptorHash agrees with an independent JCS + SHA-256 oracle", () => {
   // Hand-written RFC 8785 canonical form: top-level keys sorted
-  // (critical, description, inputSchema, name, risk); inputSchema keys sorted (a, b).
+  // (confirmEach, description, inputSchema, name, risk); inputSchema keys sorted (a, b).
   const descriptor: ToolDescriptor = {
     name: "gmail_send",
     description: "Send ✉", // an envelope, exercising multi-byte UTF-8
     inputSchema: { b: 1, a: 2 },
     risk: "write",
-    critical: true,
+    confirmEach: true,
   };
   const handCanonical =
-    '{"critical":true,"description":"Send ✉","inputSchema":{"a":2,"b":1},"name":"gmail_send","risk":"write"}';
+    '{"confirmEach":true,"description":"Send ✉","inputSchema":{"a":2,"b":1},"name":"gmail_send","risk":"write"}';
 
   it("canonicalizes the preimage byte-for-byte to the hand-written JCS string", () => {
     // canonicalJson of the exact preimage descriptorHash builds.
@@ -211,7 +211,7 @@ describe("§4 — descriptorHash agrees with an independent JCS + SHA-256 oracle
       description: descriptor.description,
       inputSchema: descriptor.inputSchema,
       risk: descriptor.risk,
-      critical: descriptor.critical,
+      confirmEach: descriptor.confirmEach,
     })).toBe(handCanonical);
   });
 
@@ -220,13 +220,13 @@ describe("§4 — descriptorHash agrees with an independent JCS + SHA-256 oracle
     expect(descriptorHash(descriptor).startsWith("sha256:")).toBe(true);
   });
 
-  it("omits absent optional fields from the preimage (critical absent != critical:false)", () => {
+  it("omits absent optional fields from the preimage (confirmEach absent != confirmEach:false)", () => {
     const base: ToolDescriptor = { name: "host_x", description: "d", inputSchema: {}, risk: "read" };
     const absentCanonical = '{"description":"d","inputSchema":{},"name":"host_x","risk":"read"}';
-    const falseCanonical = '{"critical":false,"description":"d","inputSchema":{},"name":"host_x","risk":"read"}';
+    const falseCanonical = '{"confirmEach":false,"description":"d","inputSchema":{},"name":"host_x","risk":"read"}';
     expect(descriptorHash(base)).toBe(oracleHash(absentCanonical));
-    expect(descriptorHash({ ...base, critical: false })).toBe(oracleHash(falseCanonical));
-    expect(descriptorHash(base)).not.toBe(descriptorHash({ ...base, critical: false }));
+    expect(descriptorHash({ ...base, confirmEach: false })).toBe(oracleHash(falseCanonical));
+    expect(descriptorHash(base)).not.toBe(descriptorHash({ ...base, confirmEach: false }));
   });
 
   it("is stable across key insertion order (the whole point of canonicalization)", () => {
@@ -279,7 +279,7 @@ describe("§5 — grant scopes, durations, and mint sources", () => {
 
   it("approvalRequest freezes descriptor and preview; approvalDecision can mint a grant", () => {
     const at = "2026-07-11T16:00:00.000Z";
-    const descriptor: ToolDescriptor = { name: "gmail_send", description: "Send", inputSchema: {}, risk: "write", critical: true };
+    const descriptor: ToolDescriptor = { name: "gmail_send", description: "Send", inputSchema: {}, risk: "write", confirmEach: true };
     expect(approvalRequestSchema.safeParse({
       id: "apr_1",
       call: { id: "c1", tool: "gmail_send", args: { to: "a@b.c" } },
@@ -309,7 +309,7 @@ describe("§6/§7 — guard decisions and audit events", () => {
   });
 
   it("guard 'run' decision cannot borrow an 'ask'/'block' decidedBy value", () => {
-    expect(guardDecisionSchema.safeParse({ action: "run", decidedBy: "critical" }).success).toBe(false);
+    expect(guardDecisionSchema.safeParse({ action: "run", decidedBy: "confirmEach" }).success).toBe(false);
     expect(guardDecisionSchema.safeParse({ action: "ask", decidedBy: "grant", approval: undefined }).success).toBe(false);
   });
 });

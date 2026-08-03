@@ -7,9 +7,33 @@ import {
   toolDescriptorSchema,
   type FieldSemantic,
   type JsonSchema,
+  type RiskLabel,
   type Step,
   type ToolDescriptor,
 } from "@vendoai/core";
+
+/**
+ * `confirmEach` was called `critical` before the risk-grading redesign (D5).
+ * Every WRITER emits the new name; every host-authored file keeps reading the
+ * old one, indefinitely — the same read-old/write-new shape persisted data
+ * always gets. Applied at the file schemas rather than inside `ToolDescriptor`
+ * so the strict authored schemas (a typo must still fail loudly) accept the
+ * one legacy spelling and nothing else. An explicit `confirmEach` wins.
+ */
+function readCriticalAlias(value: unknown): unknown {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
+  const record = value as Record<string, unknown>;
+  if (!("critical" in record)) return value;
+  const { critical, ...rest } = record;
+  return { confirmEach: critical, ...rest };
+}
+
+/** The same alias for `PendingLoosening.field`, whose value NAMES the field. */
+function readCriticalFieldAlias(value: unknown): unknown {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
+  const record = value as Record<string, unknown>;
+  return record.field === "critical" ? { ...record, field: "confirmEach" } : value;
+}
 
 export const VENDO_CATALOG_FORMAT = "vendo/catalog@1" as const;
 
@@ -261,7 +285,7 @@ export type ExtractedTool = ToolDescriptor & {
   srcHash?: string;
 };
 
-export const extractedToolSchema = toolDescriptorSchema.extend({
+export const extractedToolSchema = z.preprocess(readCriticalAlias, toolDescriptorSchema.extend({
   binding: extractedBindingSchema,
   disabled: z.boolean().optional(),
   note: z.string().optional(),
@@ -277,7 +301,7 @@ export const extractedToolSchema = toolDescriptorSchema.extend({
       message: "compound bindings live in .vendo/overrides.json compounds — .vendo/tools.json stays deterministic (04-actions §6)",
     });
   }
-}) satisfies z.ZodType<ExtractedTool>;
+})) satisfies z.ZodType<ExtractedTool, z.ZodTypeDef, unknown>;
 
 /** `.vendo/tools.json` — generated, regenerated wholesale by `vendo sync`,
  *  never hand-edited. Passthrough like every generated artifact. */
@@ -289,7 +313,7 @@ export interface ToolsFile {
 export const toolsFileSchema = z.object({
   format: z.literal(VENDO_TOOLS_FORMAT),
   tools: z.array(extractedToolSchema),
-}).passthrough() satisfies z.ZodType<ToolsFile>;
+}).passthrough() satisfies z.ZodType<ToolsFile, z.ZodTypeDef, unknown>;
 
 /**
  * `.vendo/overrides.json` — human-written, respected forever (04 §1).
@@ -298,7 +322,7 @@ export const toolsFileSchema = z.object({
  */
 export interface ToolOverride {
   risk?: ToolDescriptor["risk"];
-  critical?: boolean;
+  confirmEach?: boolean;
   disabled?: boolean;
   description?: string;
   /** The short human label people see for this tool (MCP client menus,
@@ -315,15 +339,15 @@ export interface ToolOverride {
   semantics?: Record<string, FieldSemantic>;
 }
 
-export const toolOverrideSchema = z.object({
+export const toolOverrideSchema = z.preprocess(readCriticalAlias, z.object({
   risk: riskLabelSchema.optional(),
-  critical: z.boolean().optional(),
+  confirmEach: z.boolean().optional(),
   disabled: z.boolean().optional(),
   description: z.string().optional(),
   title: z.string().min(1).optional(),
   audience: z.enum(["end-user", "operator", "internal"]).optional(),
   semantics: z.record(fieldSemanticSchema).optional(),
-}).strict() satisfies z.ZodType<ToolOverride>;
+}).strict()) satisfies z.ZodType<ToolOverride, z.ZodTypeDef, unknown>;
 
 /**
  * 04-actions §1: a capability brief — reviewed prose the agent layer may attach
@@ -348,11 +372,11 @@ export type CompoundTool = ToolDescriptor & {
   note?: string;
 };
 
-export const compoundToolSchema = toolDescriptorSchema.extend({
+export const compoundToolSchema = z.preprocess(readCriticalAlias, toolDescriptorSchema.extend({
   binding: compoundBindingSchema,
   disabled: z.boolean().optional(),
   note: z.string().optional(),
-}) satisfies z.ZodType<CompoundTool>;
+})) satisfies z.ZodType<CompoundTool, z.ZodTypeDef, unknown>;
 
 /**
  * `.vendo/overrides.json` (vendo/overrides@3) — the AUTHORED layer, the only
@@ -403,7 +427,7 @@ export const overridesFileSchema = z.object({
   remix: z.object({
     ignoreSlots: z.array(z.string().min(1)),
   }).strict().optional(),
-}).strict() satisfies z.ZodType<OverridesFile>;
+}).strict() satisfies z.ZodType<OverridesFile, z.ZodTypeDef, unknown>;
 
 /**
  * `.vendo/judgments.json` — the AI layer, the third file of `.vendo/`, split
@@ -418,8 +442,8 @@ export const VENDO_JUDGMENTS_FORMAT = "vendo/judgments@1" as const;
 export interface JudgmentFields {
   description?: string;
   title?: string;
-  risk?: "read" | "write" | "destructive";
-  critical?: boolean;
+  risk?: RiskLabel;
+  confirmEach?: boolean;
   /** true = harden; false = approved wake-up (only ever arrives here after a
    *  human accepted the queued loosening — the model cannot write it itself). */
   disabled?: boolean;
@@ -427,11 +451,11 @@ export interface JudgmentFields {
   semantics?: Record<string, FieldSemantic>;
 }
 
-export const judgmentFieldsSchema = z.object({
+export const judgmentFieldsSchema = z.preprocess(readCriticalAlias, z.object({
   description: z.string().max(500).optional(),
   title: z.string().min(1).max(60).optional(),
   risk: riskLabelSchema.optional(),
-  critical: z.boolean().optional(),
+  confirmEach: z.boolean().optional(),
   disabled: z.boolean().optional(),
   audience: z.enum(["end-user", "operator", "internal"]).optional(),
   semantics: z.record(fieldSemanticSchema).optional(),
@@ -439,24 +463,24 @@ export const judgmentFieldsSchema = z.object({
   // surface, and `applyJudgment` spreads it onto the tool. A passthrough here
   // would let a model smuggle `binding` or `inputSchema` into a judgment and
   // rewrite the deterministic skeleton. Identity is not expressible.
-}).strict() satisfies z.ZodType<JudgmentFields>;
+}).strict()) satisfies z.ZodType<JudgmentFields, z.ZodTypeDef, unknown>;
 
 /** One queued loosening awaiting human review. NEVER merged at runtime: the
  *  only fields a loosening can touch are the four capability grades, and each
  *  one costs a quoted piece of evidence. */
 export interface PendingLoosening {
-  field: "risk" | "critical" | "disabled" | "audience";
+  field: "risk" | "confirmEach" | "disabled" | "audience";
   value: string | boolean;
   evidence: string;
   reason?: string;
 }
 
-export const pendingLooseningSchema = z.object({
-  field: z.enum(["risk", "critical", "disabled", "audience"]),
+export const pendingLooseningSchema = z.preprocess(readCriticalFieldAlias, z.object({
+  field: z.enum(["risk", "confirmEach", "disabled", "audience"]),
   value: z.union([z.string(), z.boolean()]),
   evidence: z.string().min(1).max(500),
   reason: z.string().max(300).optional(),
-}).passthrough() satisfies z.ZodType<PendingLoosening>;
+}).passthrough()) satisfies z.ZodType<PendingLoosening, z.ZodTypeDef, unknown>;
 
 export interface ToolJudgment {
   /** bindingIdentity(tool.binding) at judgment time — a mismatch makes the
@@ -476,7 +500,7 @@ export const toolJudgmentSchema = z.object({
   fields: judgmentFieldsSchema,
   evidence: z.string().min(1).max(500),
   pending: z.array(pendingLooseningSchema).optional(),
-}).passthrough() satisfies z.ZodType<ToolJudgment>;
+}).passthrough() satisfies z.ZodType<ToolJudgment, z.ZodTypeDef, unknown>;
 
 export interface JudgmentsFile {
   format: typeof VENDO_JUDGMENTS_FORMAT;
@@ -489,7 +513,7 @@ export interface JudgmentsFile {
 export const judgmentsFileSchema = z.object({
   format: z.literal(VENDO_JUDGMENTS_FORMAT),
   tools: z.record(toolJudgmentSchema),
-}).passthrough() satisfies z.ZodType<JudgmentsFile>;
+}).passthrough() satisfies z.ZodType<JudgmentsFile, z.ZodTypeDef, unknown>;
 
 /**
  * Remixable component baseline captured by sync (06 §8, written to

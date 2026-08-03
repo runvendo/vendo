@@ -12,6 +12,7 @@ const RISK_LABEL: Record<string, string> = {
   read: "Read-only",
   write: "Makes changes",
   destructive: "Irreversible",
+  ungraded: "Not reviewed",
 };
 
 /** Flat, primitive-valued args render as aligned field rows — humanized label,
@@ -73,7 +74,7 @@ export function ApprovalCard({ approval, onDecide, allowRemember = true, showCon
   const [duration, setDuration] = useState<"session" | "standing">("session");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-  const critical = approval.descriptor.risk === "destructive" || approval.descriptor.critical === true;
+  const ceremony = approval.descriptor.risk === "destructive" || approval.descriptor.confirmEach === true;
   // ENG-216 humanization (host ToolMeta wins, else the prettified id — never
   // the raw slug) layered with the consent presentation: toolkit mark,
   // automation eyebrow, and a plain-language description synthesized from the
@@ -91,9 +92,9 @@ export function ApprovalCard({ approval, onDecide, allowRemember = true, showCon
   // Lane pick 1-A — consequence-first: when the presentation can truthfully
   // say what approving does in one sentence, that sentence leads and the raw
   // fields fold behind a "Details" disclosure (still the same real inputs,
-  // one tap away). Critical/destructive asks are exempt: maximum scrutiny
+  // one tap away). confirmEach/destructive asks are exempt: maximum scrutiny
   // keeps every input in plain sight.
-  const consequence = !critical ? presentation.consequence : undefined;
+  const consequence = !ceremony ? presentation.consequence : undefined;
   const showDescription = !consequence && description.length > 0 && description !== title;
 
   const decide = async (approve: boolean) => {
@@ -123,7 +124,7 @@ export function ApprovalCard({ approval, onDecide, allowRemember = true, showCon
 
   return (
     <ChromeRoot>
-      <article className={`fl-approval fl-item-in${critical ? " fl-approval--ceremony" : ""}`} aria-label={`Approval for ${title}`}>
+      <article className={`fl-approval fl-item-in${ceremony ? " fl-approval--ceremony" : ""}`} aria-label={`Approval for ${title}`}>
         <div className="fl-approval-head">
           <span className="fl-approval-ic" aria-hidden="true">
             {presentation.logoUrl ? (
@@ -251,7 +252,7 @@ export function ApprovalCard({ approval, onDecide, allowRemember = true, showCon
         ) : null}
         {error ? <div role="alert" className="fl-error">{error}</div> : null}
         <div className="fl-approval-actions">
-          <button className={`fl-btn ${critical ? "fl-btn-ceremony" : "fl-btn-primary"}`} type="button" disabled={busy} onClick={() => void decide(true)}>Approve</button>
+          <button className={`fl-btn ${ceremony ? "fl-btn-ceremony" : "fl-btn-primary"}`} type="button" disabled={busy} onClick={() => void decide(true)}>Approve</button>
           <button className="fl-btn" type="button" disabled={busy} onClick={() => void decide(false)}>Deny</button>
         </div>
       </article>

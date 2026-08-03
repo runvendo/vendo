@@ -73,7 +73,7 @@ const destructiveApproval: ApprovalRequest = {
     description: "Permanently delete an invoice",
     inputSchema: { type: "object" },
     risk: "destructive",
-    critical: true,
+    confirmEach: true,
   },
   inputPreview: "invoiceId=inv_42\npermanent=true",
   ctx: {

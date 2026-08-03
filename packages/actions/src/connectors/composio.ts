@@ -350,9 +350,8 @@ export function composioConnector(config: {
             item.input_parameters && typeof item.input_parameters === "object" && !Array.isArray(item.input_parameters)
               ? (item.input_parameters as Record<string, unknown>)
               : {},
-          // 04-actions §3: curated risk (metadata hints + slug patterns,
-          // conservative write default) replaces the old hardcoded "write".
-          risk: composioToolRisk(raw, toolkit, tags),
+          // 04-actions §3: upstream hints only — an untagged tool is ungraded.
+          risk: composioToolRisk(tags),
         });
       }
 

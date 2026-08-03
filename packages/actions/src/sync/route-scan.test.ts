@@ -76,13 +76,13 @@ describe("app route verb evidence", () => {
     // inference PR — harvested from today's scanRoutes output).
     expect(await scannedTools(root)).toEqual({
       tools: [
-        { name: "host_fn_list", description: "GET /api/fn", inputSchema: blankInput(), risk: "write",
+        { name: "host_fn_list", description: "GET /api/fn", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "GET", path: "/api/fn", argsIn: "query" } },
-        { name: "host_list_create", description: "POST /api/list", inputSchema: blankInput(), risk: "write",
+        { name: "host_list_create", description: "POST /api/list", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "POST", path: "/api/list", argsIn: "body" } },
-        { name: "host_pair_list", description: "GET /api/pair", inputSchema: blankInput(), risk: "write",
+        { name: "host_pair_list", description: "GET /api/pair", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "GET", path: "/api/pair", argsIn: "query" } },
-        { name: "host_pair_update", description: "PUT /api/pair", inputSchema: blankInput(), risk: "write",
+        { name: "host_pair_update", description: "PUT /api/pair", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "PUT", path: "/api/pair", argsIn: "body" } },
       ],
       warnings: [],
@@ -100,7 +100,7 @@ describe("app route verb evidence", () => {
 
     expect(await scannedTools(root)).toEqual({
       tools: [
-        { name: "host_aliased_update", description: "PATCH /api/aliased", inputSchema: blankInput(), risk: "write",
+        { name: "host_aliased_update", description: "PATCH /api/aliased", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "PATCH", path: "/api/aliased", argsIn: "body" } },
       ],
       warnings: [],
@@ -121,11 +121,11 @@ describe("app route verb evidence", () => {
 
     expect(await scannedTools(root)).toEqual({
       tools: [
-        { name: "host_named_list", description: "GET /api/named", inputSchema: blankInput(), risk: "write",
+        { name: "host_named_list", description: "GET /api/named", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "GET", path: "/api/named", argsIn: "query" } },
         { name: "host_named_delete", description: "DELETE /api/named", inputSchema: blankInput(), risk: "destructive",
           binding: { kind: "route", method: "DELETE", path: "/api/named", argsIn: "query" } },
-        { name: "host_star_list", description: "GET /api/star", inputSchema: blankInput(), risk: "write",
+        { name: "host_star_list", description: "GET /api/star", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "GET", path: "/api/star", argsIn: "query" } },
         { name: "host_star_delete", description: "DELETE /api/star", inputSchema: blankInput(), risk: "destructive",
           binding: { kind: "route", method: "DELETE", path: "/api/star", argsIn: "query" } },
@@ -146,9 +146,9 @@ describe("app route verb evidence", () => {
 
     expect(await scannedTools(root)).toEqual({
       tools: [
-        { name: "host_mixed_list", description: "GET /api/mixed", inputSchema: blankInput(), risk: "write",
+        { name: "host_mixed_list", description: "GET /api/mixed", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "GET", path: "/api/mixed", argsIn: "query" } },
-        { name: "host_mixed_create", description: "POST /api/mixed", inputSchema: blankInput(), risk: "write",
+        { name: "host_mixed_create", description: "POST /api/mixed", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "POST", path: "/api/mixed", argsIn: "body" } },
       ],
       warnings: [],
@@ -166,7 +166,7 @@ describe("app route verb evidence", () => {
 
     expect(await scannedTools(root)).toEqual({
       tools: [
-        { name: "host_noise_update", description: "PUT /api/noise", inputSchema: blankInput(), risk: "write",
+        { name: "host_noise_update", description: "PUT /api/noise", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "PUT", path: "/api/noise", argsIn: "body" } },
       ],
       warnings: [],
@@ -184,9 +184,9 @@ describe("app route verb evidence", () => {
 
     expect(await scannedTools(root)).toEqual({
       tools: [
-        { name: "host_keyed_list", description: "GET /api/keyed", inputSchema: blankInput(), risk: "write",
+        { name: "host_keyed_list", description: "GET /api/keyed", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "GET", path: "/api/keyed", argsIn: "query" } },
-        { name: "host_keyed_create", description: "POST /api/keyed", inputSchema: blankInput(), risk: "write",
+        { name: "host_keyed_create", description: "POST /api/keyed", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "POST", path: "/api/keyed", argsIn: "body" } },
       ],
       warnings: [],
@@ -213,17 +213,17 @@ describe("app route verb evidence", () => {
 
     expect(await scannedTools(root)).toEqual({
       tools: [
-        { name: "host_blob_get", description: "GET /api/blob/{rest}", inputSchema: blankInput({ rest: { type: "string" } }), risk: "write",
+        { name: "host_blob_get", description: "GET /api/blob/{rest}", inputSchema: blankInput({ rest: { type: "string" } }), risk: "ungraded",
           binding: { kind: "route", method: "GET", path: "/api/blob/{rest}", argsIn: "query" } },
-        { name: "host_blob_create", description: "POST /api/blob/{rest}", inputSchema: blankInput({ rest: { type: "string" } }), risk: "write",
+        { name: "host_blob_create", description: "POST /api/blob/{rest}", inputSchema: blankInput({ rest: { type: "string" } }), risk: "ungraded",
           binding: { kind: "route", method: "POST", path: "/api/blob/{rest}", argsIn: "body" } },
-        { name: "host_blob_update", description: "PUT /api/blob/{rest}", inputSchema: blankInput({ rest: { type: "string" } }), risk: "write",
+        { name: "host_blob_update", description: "PUT /api/blob/{rest}", inputSchema: blankInput({ rest: { type: "string" } }), risk: "ungraded",
           binding: { kind: "route", method: "PUT", path: "/api/blob/{rest}", argsIn: "body" } },
-        { name: "host_things_list", description: "GET /api/things", inputSchema: blankInput(), risk: "write",
+        { name: "host_things_list", description: "GET /api/things", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "GET", path: "/api/things", argsIn: "query" } },
-        { name: "host_things_create", description: "POST /api/things", inputSchema: blankInput(), risk: "write",
+        { name: "host_things_create", description: "POST /api/things", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "POST", path: "/api/things", argsIn: "body" } },
-        { name: "host_things_update", description: "PUT /api/things/{id}", inputSchema: blankInput({ id: { type: "string" } }), risk: "write",
+        { name: "host_things_update", description: "PUT /api/things/{id}", inputSchema: blankInput({ id: { type: "string" } }), risk: "ungraded",
           binding: { kind: "route", method: "PUT", path: "/api/things/{id}", argsIn: "body" } },
       ],
       warnings: [],
@@ -262,17 +262,17 @@ describe("pages route verb evidence", () => {
 
     expect(await scannedTools(root)).toEqual({
       tools: [
-        { name: "host_allow_array_list", description: "GET /api/allow-array", inputSchema: blankInput(), risk: "write",
+        { name: "host_allow_array_list", description: "GET /api/allow-array", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "GET", path: "/api/allow-array", argsIn: "query" } },
-        { name: "host_allow_array_create", description: "POST /api/allow-array", inputSchema: blankInput(), risk: "write",
+        { name: "host_allow_array_create", description: "POST /api/allow-array", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "POST", path: "/api/allow-array", argsIn: "body" } },
-        { name: "host_allow_string_list", description: "GET /api/allow-string", inputSchema: blankInput(), risk: "write",
+        { name: "host_allow_string_list", description: "GET /api/allow-string", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "GET", path: "/api/allow-string", argsIn: "query" } },
-        { name: "host_allow_string_update", description: "PATCH /api/allow-string", inputSchema: blankInput(), risk: "write",
+        { name: "host_allow_string_update", description: "PATCH /api/allow-string", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "PATCH", path: "/api/allow-string", argsIn: "body" } },
-        { name: "host_compare_update", description: "PUT /api/compare", inputSchema: blankInput(), risk: "write",
+        { name: "host_compare_update", description: "PUT /api/compare", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "PUT", path: "/api/compare", argsIn: "body" } },
-        { name: "host_switch_list", description: "GET /api/switch", inputSchema: blankInput(), risk: "write",
+        { name: "host_switch_list", description: "GET /api/switch", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "GET", path: "/api/switch", argsIn: "query" } },
         { name: "host_switch_delete", description: "DELETE /api/switch", inputSchema: blankInput(), risk: "destructive",
           binding: { kind: "route", method: "DELETE", path: "/api/switch", argsIn: "query" } },
@@ -401,9 +401,9 @@ describe("pages route verb evidence", () => {
 
     expect(await scannedTools(root)).toEqual({
       tools: [
-        { name: "host_auth_get", description: "GET /api/auth/{nextauth}", inputSchema: blankInput({ nextauth: { type: "string" } }), risk: "write",
+        { name: "host_auth_get", description: "GET /api/auth/{nextauth}", inputSchema: blankInput({ nextauth: { type: "string" } }), risk: "ungraded",
           binding: { kind: "route", method: "GET", path: "/api/auth/{nextauth}", argsIn: "query" } },
-        { name: "host_auth_create", description: "POST /api/auth/{nextauth}", inputSchema: blankInput({ nextauth: { type: "string" } }), risk: "write",
+        { name: "host_auth_create", description: "POST /api/auth/{nextauth}", inputSchema: blankInput({ nextauth: { type: "string" } }), risk: "ungraded",
           binding: { kind: "route", method: "POST", path: "/api/auth/{nextauth}", argsIn: "body" } },
       ],
       warnings: [],
@@ -426,7 +426,7 @@ describe("pages route verb evidence", () => {
 
     expect(await scannedTools(root)).toEqual({
       tools: [
-        { name: "host_delegate_create", description: "POST /api/delegate", inputSchema: blankInput(), risk: "write",
+        { name: "host_delegate_create", description: "POST /api/delegate", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "POST", path: "/api/delegate", argsIn: "body" } },
       ],
       warnings: [],
@@ -482,15 +482,15 @@ describe("pages route verb evidence", () => {
 
     expect(await scannedTools(root)).toEqual({
       tools: [
-        { name: "host_raw_create", description: "POST /api/raw", inputSchema: blankInput(), risk: "write",
+        { name: "host_raw_create", description: "POST /api/raw", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "POST", path: "/api/raw", argsIn: "body" } },
-        { name: "host_stripe_webhook_create", description: "POST /api/stripe/webhook", inputSchema: blankInput(), risk: "write",
+        { name: "host_stripe_webhook_create", description: "POST /api/stripe/webhook", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "POST", path: "/api/stripe/webhook", argsIn: "body" } },
-        { name: "host_trpc_page_list", description: "GET /api/trpc-page", inputSchema: blankInput(), risk: "write",
+        { name: "host_trpc_page_list", description: "GET /api/trpc-page", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "GET", path: "/api/trpc-page", argsIn: "query" } },
-        { name: "host_trpc_page_create", description: "POST /api/trpc-page", inputSchema: blankInput(), risk: "write",
+        { name: "host_trpc_page_create", description: "POST /api/trpc-page", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "POST", path: "/api/trpc-page", argsIn: "body" } },
-        { name: "host_upload_create", description: "POST /api/upload", inputSchema: blankInput(), risk: "write",
+        { name: "host_upload_create", description: "POST /api/upload", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "POST", path: "/api/upload", argsIn: "body" } },
       ],
       warnings: [],
@@ -540,10 +540,10 @@ describe("pages route verb evidence", () => {
 
     expect(await scannedTools(root)).toEqual({
       tools: [
-        { name: "host_health_list", description: "GET /api/health", inputSchema: blankInput(), risk: "write",
+        { name: "host_health_list", description: "GET /api/health", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "GET", path: "/api/health", argsIn: "query" } },
         { name: "host_teams_documents_status_list", description: "GET /api/teams/{teamId}/documents/status",
-          inputSchema: blankInput({ teamId: { type: "string" } }), risk: "write",
+          inputSchema: blankInput({ teamId: { type: "string" } }), risk: "ungraded",
           binding: { kind: "route", method: "GET", path: "/api/teams/{teamId}/documents/status", argsIn: "query" } },
       ],
       warnings: [],

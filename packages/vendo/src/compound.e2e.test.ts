@@ -268,18 +268,18 @@ describe("breakers and critical steps see individual step calls", () => {
   });
 
   it("a critical step asks EVERY run even with a standing grant", async () => {
-    const tools = [writeTool("host_critical", { critical: true })];
+    const tools = [writeTool("host_confirm_each", { confirmEach: true })];
     const { guard, bound } = await compose({
       tools,
       overrides: authored([
-        compound("host_flow", [{ id: "crit", tool: "host_critical" }], { risk: "write" }),
+        compound("host_flow", [{ id: "crit", tool: "host_confirm_each" }], { risk: "write" }),
       ]),
     });
 
     const first = await bound.execute(call("host_flow", {}, "call_run1"), ctx);
     expect(first.status).toBe("pending-approval");
     const approval = (await guard.approvals.pending(principal))[0]!;
-    expect(approval.call.tool).toBe("host_critical");
+    expect(approval.call.tool).toBe("host_confirm_each");
     await guard.approvals.decide(approval.id, {
       approve: true,
       remember: { scope: { kind: "tool" }, duration: "standing" },

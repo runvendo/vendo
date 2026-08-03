@@ -27,7 +27,7 @@ export function VoiceConsent({ request, receipt, listening, busy, error, intent,
   }
   if (!request) return null;
 
-  const critical = request.descriptor.risk === "destructive" || request.descriptor.critical === true;
+  const ceremony = request.descriptor.risk === "destructive" || request.descriptor.confirmEach === true;
   const automation = isAutomation(request);
   const title = approvalTitle(request);
   const fact = approvalFact(request);
@@ -35,7 +35,7 @@ export function VoiceConsent({ request, receipt, listening, busy, error, intent,
   if (automation) {
     return (
       <div className="fl-voice-consent is-automation" role="status" aria-live="polite">
-        <article className={`fl-approval${critical ? " fl-approval-critical" : ""}`} aria-label={`Approval for ${title}`}>
+        <article className={`fl-approval${ceremony ? " fl-approval-critical" : ""}`} aria-label={`Approval for ${title}`}>
           <div className="fl-approval-head">
             <span className="fl-approval-ic" aria-hidden="true"><ShieldIcon /></span>
             <div>
@@ -50,11 +50,11 @@ export function VoiceConsent({ request, receipt, listening, busy, error, intent,
             <button type="button" className="fl-btn" disabled={busy} onClick={() => onDecide(request, false)}>Decline</button>
             <button
               type="button"
-              className={`fl-btn ${critical ? "fl-btn-critical" : "fl-btn-primary"}`}
+              className={`fl-btn ${ceremony ? "fl-btn-critical" : "fl-btn-primary"}`}
               disabled={busy}
               onClick={() => onDecide(request, true)}
             >
-              {critical ? `Confirm — ${title}` : "Approve"}
+              {ceremony ? `Confirm — ${title}` : "Approve"}
             </button>
           </div>
         </article>
@@ -64,7 +64,7 @@ export function VoiceConsent({ request, receipt, listening, busy, error, intent,
 
   return (
     <div
-      className={`fl-voice-consent${critical ? " is-critical" : listening ? " is-listening" : ""}`}
+      className={`fl-voice-consent${ceremony ? " is-critical" : listening ? " is-listening" : ""}`}
       role="status"
       aria-live="polite"
     >
@@ -72,8 +72,8 @@ export function VoiceConsent({ request, receipt, listening, busy, error, intent,
       <div className="fl-voice-consent-copy">
         <span className="fl-voice-consent-title">{title}</span>
         {fact ? <span className="fl-voice-consent-fact">{fact}</span> : null}
-        {critical ? <span className="fl-voice-consent-warn">Confirm this action by hand</span> : null}
-        {!critical && listening ? (
+        {ceremony ? <span className="fl-voice-consent-warn">Confirm this action by hand</span> : null}
+        {!ceremony && listening ? (
           intent === "approve" ? (
             <span className="fl-voice-consent-hint is-heard" role="status">&ldquo;Approve&rdquo; heard ✓</span>
           ) : intent === "decline" ? (
@@ -91,11 +91,11 @@ export function VoiceConsent({ request, receipt, listening, busy, error, intent,
         <button type="button" className="fl-btn" disabled={busy} onClick={() => onDecide(request, false)}>Decline</button>
         <button
           type="button"
-          className={`fl-btn ${critical ? "fl-btn-critical" : "fl-btn-primary"}`}
+          className={`fl-btn ${ceremony ? "fl-btn-critical" : "fl-btn-primary"}`}
           disabled={busy}
           onClick={() => onDecide(request, true)}
         >
-          {critical ? `Confirm — ${title}` : "Approve"}
+          {ceremony ? `Confirm — ${title}` : "Approve"}
         </button>
       </div>
     </div>

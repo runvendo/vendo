@@ -1,4 +1,4 @@
-import type { ApprovalRequest, RiskLabel, VendoCitationsPart, VendoKnowledgeCitation } from "@vendoai/core";
+import { riskLabelSchema, type ApprovalRequest, type RiskLabel, type VendoCitationsPart, type VendoKnowledgeCitation } from "@vendoai/core";
 import { isToolUIPart, type UIMessage } from "ai";
 import { previewArgs } from "../humanize.js";
 import { LONG_TEXT_CAP, truncateHead } from "../truncate.js";
@@ -20,7 +20,7 @@ export function riskByCall(messages: UIMessage[]): Map<string, RiskLabel> {
     for (const part of message.parts) {
       if (part.type !== "data-vendo-approval") continue;
       const data = partData(part) as { toolCallId?: unknown; risk?: unknown };
-      if (typeof data.toolCallId === "string" && ["read", "write", "destructive"].includes(String(data.risk))) {
+      if (typeof data.toolCallId === "string" && riskLabelSchema.safeParse(data.risk).success) {
         risks.set(data.toolCallId, data.risk as RiskLabel);
       }
     }

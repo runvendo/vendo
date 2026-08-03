@@ -10,6 +10,6 @@ export function descriptorHash(descriptor: ToolDescriptor): string {
     inputSchema: descriptor.inputSchema,
     risk: descriptor.risk,
   };
-  if (descriptor.critical !== undefined) preimage.critical = descriptor.critical;
+  if (descriptor.confirmEach !== undefined) preimage.confirmEach = descriptor.confirmEach;
   return `sha256:${sha256Hex(canonicalJson(preimage))}`;
 }

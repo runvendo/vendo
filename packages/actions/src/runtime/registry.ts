@@ -195,7 +195,7 @@ function descriptorOf(tool: ToolDescriptor): ToolDescriptor {
     description: tool.description,
     inputSchema: tool.inputSchema,
     risk: tool.risk,
-    ...(tool.critical !== undefined ? { critical: tool.critical } : {}),
+    ...(tool.confirmEach !== undefined ? { confirmEach: tool.confirmEach } : {}),
     ...(tool.title !== undefined ? { title: tool.title } : {}),
   };
 }
@@ -208,7 +208,7 @@ function mergeOverride<T extends ToolDescriptor & Pick<ExtractedTool, "audience"
   return {
     ...descriptor,
     ...(override.risk !== undefined ? { risk: override.risk } : {}),
-    ...(override.critical !== undefined ? { critical: override.critical } : {}),
+    ...(override.confirmEach !== undefined ? { confirmEach: override.confirmEach } : {}),
     ...(override.description !== undefined ? { description: override.description } : {}),
     ...(override.title !== undefined ? { title: override.title } : {}),
     ...(override.disabled !== undefined ? { disabled: override.disabled } : {}),

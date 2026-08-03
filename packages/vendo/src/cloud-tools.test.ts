@@ -39,9 +39,10 @@ describe("cloudTools", () => {
 
     const descriptors = await connector.descriptors();
     expect(descriptors).toHaveLength(1);
-    // Same normalization + curated risk the BYO composioConnector applies.
+    // Same normalization + upstream-hint risk the BYO composioConnector applies:
+    // this fixture carries no destructiveHint/readOnlyHint, so it is ungraded.
     expect(descriptors[0]!.name).toBe("gmail_GMAIL_SEND_EMAIL");
-    expect(descriptors[0]!.risk).toBe("write");
+    expect(descriptors[0]!.risk).toBe("ungraded");
     expect(stub.requests[0]!.url).toBe("https://cloud.test/api/v1/tools?toolkits=gmail");
   });
 

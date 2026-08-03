@@ -170,11 +170,11 @@ describe("compound loading and merge", () => {
     await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({ format: VENDO_TOOLS_FORMAT, tools: hostTools }));
     await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify(authored(
       [compound("host_flow", [{ id: "a", tool: "host_read" }])],
-      { tools: { host_flow: { description: "reviewed copy", critical: true } } },
+      { tools: { host_flow: { description: "reviewed copy", confirmEach: true } } },
     )));
     const actions = createActions({ dir: root });
     const flow = (await actions.descriptors()).find((descriptor) => descriptor.name === "host_flow");
-    expect(flow).toMatchObject({ description: "reviewed copy", critical: true });
+    expect(flow).toMatchObject({ description: "reviewed copy", confirmEach: true });
   });
 });
 

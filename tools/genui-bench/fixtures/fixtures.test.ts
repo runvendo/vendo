@@ -84,9 +84,13 @@ describe("host fixtures", () => {
       }
 
       it("is deterministic: same call, same data", async () => {
-        const readTool = tools.find((tool) => tool.risk === "read") as HostToolInfo;
-        const first = await fixture.execute(readTool.name, {});
-        const second = await fixture.execute(readTool.name, {});
+        // Keyed by name, not by risk: these catalogs are extracted, and
+        // extraction grades from protocol facts only — a plain GET list
+        // endpoint is `ungraded` until something authorized grades it.
+        const listTool = tools.find((tool) => tool.name.startsWith("host_list")) as HostToolInfo;
+        expect(listTool).toBeDefined();
+        const first = await fixture.execute(listTool.name, {});
+        const second = await fixture.execute(listTool.name, {});
         expect(second).toEqual(first);
       });
 

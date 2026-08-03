@@ -1427,8 +1427,8 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       const descriptor = byName.get(tool);
       if (descriptor === undefined) throw new VendoError("validation", `unknown tool in automation: ${tool}`);
       const granted = await liveGrant(found.row.subject, appId, descriptor);
-      plan.steps.push({ id: stepId, tool, wouldAsk: descriptor.critical === true || !granted });
-      if (!descriptor.critical && !granted && !plan.grantsMissing.includes(tool)) plan.grantsMissing.push(tool);
+      plan.steps.push({ id: stepId, tool, wouldAsk: descriptor.confirmEach === true || !granted });
+      if (!descriptor.confirmEach && !granted && !plan.grantsMissing.includes(tool)) plan.grantsMissing.push(tool);
     };
     if (trigger.run.kind === "agentic") {
       for (const descriptor of byName.values()) await add(descriptor.name, descriptor.name);

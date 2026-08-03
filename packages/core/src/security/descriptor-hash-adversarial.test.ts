@@ -57,13 +57,13 @@ describe("descriptorHash distinctness", () => {
     expect(new Set([read, write, destructive]).size).toBe(3);
   });
 
-  it("changes when critical is toggled true vs false", () => {
-    expect(descriptorHash({ ...base(), critical: true }))
-      .not.toBe(descriptorHash({ ...base(), critical: false }));
+  it("changes when confirmEach is toggled true vs false", () => {
+    expect(descriptorHash({ ...base(), confirmEach: true }))
+      .not.toBe(descriptorHash({ ...base(), confirmEach: false }));
   });
 });
 
-describe("descriptorHash preimage is exactly {name,description,inputSchema,risk,critical?}", () => {
+describe("descriptorHash preimage is exactly {name,description,inputSchema,risk,confirmEach?}", () => {
   it("ignores extra descriptor fields so junk cannot forge a distinct-looking descriptor", () => {
     // ToolDescriptor's zod schema is passthrough, so a hostile producer can hang
     // arbitrary extra keys off a descriptor. Those keys MUST NOT enter the
@@ -73,14 +73,14 @@ describe("descriptorHash preimage is exactly {name,description,inputSchema,risk,
     expect(descriptorHash(withJunk)).toBe(descriptorHash(base()));
   });
 
-  it("does not fold undefined critical into the preimage (absent stays absent)", () => {
-    const explicitUndefined = { ...base(), critical: undefined };
+  it("does not fold undefined confirmEach into the preimage (absent stays absent)", () => {
+    const explicitUndefined = { ...base(), confirmEach: undefined };
     expect(descriptorHash(explicitUndefined as ToolDescriptor)).toBe(descriptorHash(base()));
   });
 
-  it("distinguishes explicit critical:false from an omitted critical — fails CLOSED", () => {
-    // A descriptor that newly pins critical:false hashes DIFFERENTLY from one that
-    // omits critical. That is deliberately fail-closed: the mismatch spuriously
+  it("distinguishes explicit confirmEach:false from an omitted confirmEach — fails CLOSED", () => {
+    // A descriptor that newly pins confirmEach:false hashes DIFFERENTLY from one that
+    // omits confirmEach. That is deliberately fail-closed: the mismatch spuriously
     // lapses any grant tied to the old hash (forcing re-approval) rather than
     // silently treating the two as equivalent and over-authorizing.
     const omitted: ToolDescriptor = {
@@ -89,6 +89,6 @@ describe("descriptorHash preimage is exactly {name,description,inputSchema,risk,
       inputSchema: {},
       risk: "write",
     };
-    expect(descriptorHash(omitted)).not.toBe(descriptorHash({ ...omitted, critical: false }));
+    expect(descriptorHash(omitted)).not.toBe(descriptorHash({ ...omitted, confirmEach: false }));
   });
 });

@@ -24,12 +24,12 @@ const ctx: RunContext = {
   sessionId: "sess_conformance",
 };
 
-const criticalDescriptor: ToolDescriptor = {
+const confirmEachDescriptor: ToolDescriptor = {
   name: "host_payments_send",
   description: "conformance: critical tool",
   inputSchema: { type: "object" },
   risk: "destructive",
-  critical: true,
+  confirmEach: true,
 };
 const readDescriptor: ToolDescriptor = {
   name: "host_invoices_list",
@@ -37,7 +37,7 @@ const readDescriptor: ToolDescriptor = {
   inputSchema: { type: "object" },
   risk: "read",
 };
-const criticalCall: ToolCall = { id: "call_conf_1", tool: criticalDescriptor.name, args: {} };
+const confirmEachCall: ToolCall = { id: "call_conf_1", tool: confirmEachDescriptor.name, args: {} };
 const readCall: ToolCall = { id: "call_conf_2", tool: readDescriptor.name, args: {} };
 
 // The e2e suite's fixtures must themselves be conformant, or the suite proves nothing.
@@ -48,8 +48,8 @@ mount(storeAdapterConformance({
 mount(guardConformance({
   makeGuard: async () => guardFixture(),
   ctx,
-  criticalDescriptor,
-  criticalCall,
+  confirmEachDescriptor,
+  confirmEachCall,
   readDescriptor,
   readCall,
   sampleAuditEvent: {

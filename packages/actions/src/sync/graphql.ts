@@ -228,7 +228,7 @@ function assembleTools(
       name,
       description: `GraphQL ${def.type} ${def.operation}`,
       inputSchema: schema,
-      risk: graphqlRisk(def.type, def.operation),
+      risk: graphqlRisk(def.type),
       ...(disabled ? { disabled: true } : {}),
       ...(notes.length > 0 ? { note: notes.join("; ") } : {}),
       binding: bindingFor(def.operation, def.type, endpoints.endpoint, document),

@@ -87,7 +87,7 @@ export function VendoStage({ onSessionEnd, suggestions }: VendoStageProps) {
   // C-A spoken-yes: a recognized "approve"/"decline" decides the act-tier bar —
   // but ONLY the request that was already on screen when the words were spoken.
   // The refs pin that request: an intent with no matching request is discarded
-  // (never carried forward to a later approval), criticals stay hand-only, and
+  // (never carried forward to a later approval), confirmEach asks stay hand-only, and
   // automation requests (rich card, no spoken affordance) are never voice-decided.
   const decide = approvals.decide;
   const { clearIntent } = voice;
@@ -100,8 +100,8 @@ export function VendoStage({ onSessionEnd, suggestions }: VendoStageProps) {
     if (!intent) return;
     const request = pendingApprovalRef.current;
     if (request && voiceStateRef.current === "listening") {
-      const critical = request.descriptor.risk === "destructive" || request.descriptor.critical === true;
-      if (!critical && !isAutomation(request)) void decide(request, intent === "approve");
+      const ceremony = request.descriptor.risk === "destructive" || request.descriptor.confirmEach === true;
+      if (!ceremony && !isAutomation(request)) void decide(request, intent === "approve");
     }
     clearIntent();
   }, [voice.intent, decide, clearIntent]);

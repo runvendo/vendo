@@ -72,7 +72,7 @@ describe("sync public helpers", () => {
       format: "vendo/overrides@3",
       tools: {
         host_items_list: { risk: "destructive", disabled: true, description: "new" },
-        host_typo_target: { critical: true },
+        host_typo_target: { confirmEach: true },
       },
     });
     expect(merged[0]).toMatchObject({ risk: "destructive", disabled: true, description: "new" });

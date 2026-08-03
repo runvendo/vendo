@@ -192,9 +192,9 @@ export function cloudTools(options: CloudToolsOptions): Connector {
             item.inputParameters && typeof item.inputParameters === "object" && !Array.isArray(item.inputParameters)
               ? (item.inputParameters as Record<string, unknown>)
               : {},
-          // The same curated risk labels BYO Composio tools get — the guard
-          // and approval cards behave identically across postures.
-          risk: composioToolRisk(item.slug, item.toolkit, tags),
+          // The same upstream-hint risk labels BYO Composio tools get — the
+          // guard and approval cards behave identically across postures.
+          risk: composioToolRisk(tags),
         });
       }
       // Swapped atomically so a concurrent execute() never sees a half map.

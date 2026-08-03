@@ -890,7 +890,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   });
 
   // ENG-345 — turning a secret ON is a HIGH-RISK approval reusing the guard's
-  // existing critical-approval flow: check() with a critical descriptor parks an
+  // existing confirmEach-approval flow: check() with a confirmEach descriptor parks an
   // approval, and this subscription commits the parked exposure grant only when
   // that approval is decided approved. Denial (or any non-approval) reverts it.
   // This is the SAME onApprovalDecision seam automations use to resume a parked
@@ -905,7 +905,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       required: ["appId", "secretName"],
     },
     risk: "destructive",
-    critical: true,
+    confirmEach: true,
   });
   // Stable across the park/approve phases so the real guard's approved-replay
   // match (subject + call id + args + descriptor + venue/presence/app) lines up.
@@ -954,7 +954,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   };
 
   // Lane E — approving an app's declared egress reuses the SAME high-risk
-  // critical-approval flow (approval card in-client, no new ceremony types):
+  // confirmEach-approval flow (approval card in-client, no new ceremony types):
   // check() with this descriptor parks an approval, and the shared
   // onApprovalDecision subscription below commits the parked domains onto the
   // app document's egressApproved field only when the owner approves.
@@ -971,7 +971,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       required: ["appId", "domains"],
     },
     risk: "destructive",
-    critical: true,
+    confirmEach: true,
   });
   // Stable across the park/approve phases so the real guard's approved-replay
   // match (subject + call id + args + descriptor + venue/presence/app) lines up.
@@ -2758,7 +2758,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           return { status: "handles" };
         }
 
-        // Turning ON is HIGH-RISK: route through the guard's existing critical
+        // Turning ON is HIGH-RISK: route through the guard's existing confirmEach
         // approval flow. appId is pinned in the guard ctx so the parked approval
         // is app-scoped (and, for the real guard, so an approved replay matches).
         const guardCtx: RunContext = { ...ctx, appId: input.appId };

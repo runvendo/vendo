@@ -235,19 +235,19 @@ describe("runJudgmentPass — evidence and the skeptic", () => {
       reply({ tools: [{
         name: "host_a",
         risk: "destructive",
-        critical: true,
+        confirmEach: true,
         evidence: "await db.delete(a)",
       }], narrative: "" }),
       reply({ verdicts: [
         { name: "host_a", field: "risk", verdict: "reject", reason: "the handler only selects" },
-        { name: "host_a", field: "critical", verdict: "uphold" },
+        { name: "host_a", field: "confirmEach", verdict: "uphold" },
       ] }),
     ]);
     const result = await runJudgmentPass(options(fixture, bus, { harness }));
     expect(result).toMatchObject({ status: "judged", rejectedBySkeptic: 1 });
     const file = await readJudgments(fixture);
     expect(file.tools.host_a!.fields.risk).toBeUndefined();
-    expect(file.tools.host_a!.fields.critical).toBe(true);
+    expect(file.tools.host_a!.fields.confirmEach).toBe(true);
   });
 
   it("a fully rejected proposal writes NO entry, so the tool stays a candidate", async () => {
@@ -271,12 +271,12 @@ describe("runJudgmentPass — evidence and the skeptic", () => {
       reply({ tools: [{
         name: "host_a",
         risk: "destructive",
-        critical: true,
+        confirmEach: true,
         evidence: "await db.delete(a)",
       }], narrative: "" }),
       // First skeptic look: only `risk` gets a verdict.
       reply({ verdicts: [{ name: "host_a", field: "risk", verdict: "uphold" }] }),
-      // The single re-ask still ignores `critical`.
+      // The single re-ask still ignores `confirmEach`.
       reply({ verdicts: [] }),
     ]);
     const result = await runJudgmentPass(options(fixture, bus, { harness }));
@@ -285,7 +285,7 @@ describe("runJudgmentPass — evidence and the skeptic", () => {
     expect(result).toMatchObject({ status: "judged", unexaminedRejected: 1 });
     const file = await readJudgments(fixture);
     expect(file.tools.host_a!.fields.risk).toBe("destructive");
-    expect(file.tools.host_a!.fields.critical).toBeUndefined();
+    expect(file.tools.host_a!.fields.confirmEach).toBeUndefined();
     expect(bus.logs.join("\n")).toMatch(/unexamined/i);
   });
 
@@ -293,14 +293,14 @@ describe("runJudgmentPass — evidence and the skeptic", () => {
     const fixture = await host([tool("host_a")]);
     const bus = channel();
     const harness = scripted([
-      reply({ tools: [{ name: "host_a", risk: "destructive", critical: true, evidence: "await db.delete(a)" }], narrative: "" }),
+      reply({ tools: [{ name: "host_a", risk: "destructive", confirmEach: true, evidence: "await db.delete(a)" }], narrative: "" }),
       reply({ verdicts: [{ name: "host_a", field: "risk", verdict: "uphold" }] }),
-      reply({ verdicts: [{ name: "host_a", field: "critical", verdict: "uphold" }] }),
+      reply({ verdicts: [{ name: "host_a", field: "confirmEach", verdict: "uphold" }] }),
     ]);
     const result = await runJudgmentPass(options(fixture, bus, { harness }));
     expect(result).toMatchObject({ unexaminedRejected: 0 });
     const file = await readJudgments(fixture);
-    expect(file.tools.host_a!.fields.critical).toBe(true);
+    expect(file.tools.host_a!.fields.confirmEach).toBe(true);
   });
 });
 
@@ -312,7 +312,7 @@ describe("runJudgmentPass — routing", () => {
   it("hardenings and prose land in `fields`; loosenings land in `pending`", async () => {
     const fixture = await host([
       tool("host_harden", { risk: "read" }),
-      tool("host_loosen", { risk: "destructive", critical: true, disabled: true, audience: "internal" }),
+      tool("host_loosen", { risk: "destructive", confirmEach: true, disabled: true, audience: "internal" }),
     ]);
     const bus = channel();
     const harness = scripted([
@@ -322,7 +322,7 @@ describe("runJudgmentPass — routing", () => {
           description: "Deletes everything.",
           title: "Delete everything",
           risk: "destructive",
-          critical: true,
+          confirmEach: true,
           disabled: true,
           audience: "internal",
           evidence: "await db.delete(all)",
@@ -330,7 +330,7 @@ describe("runJudgmentPass — routing", () => {
         {
           name: "host_loosen",
           risk: "read",
-          critical: false,
+          confirmEach: false,
           disabled: false,
           audience: "end-user",
           evidence: "requireUser(session); return db.select()",
@@ -340,11 +340,11 @@ describe("runJudgmentPass — routing", () => {
         { name: "host_harden", field: "description", verdict: "uphold" },
         { name: "host_harden", field: "title", verdict: "uphold" },
         { name: "host_harden", field: "risk", verdict: "uphold" },
-        { name: "host_harden", field: "critical", verdict: "uphold" },
+        { name: "host_harden", field: "confirmEach", verdict: "uphold" },
         { name: "host_harden", field: "disabled", verdict: "uphold" },
         { name: "host_harden", field: "audience", verdict: "uphold" },
         { name: "host_loosen", field: "risk", verdict: "uphold" },
-        { name: "host_loosen", field: "critical", verdict: "uphold" },
+        { name: "host_loosen", field: "confirmEach", verdict: "uphold" },
         { name: "host_loosen", field: "disabled", verdict: "uphold" },
         { name: "host_loosen", field: "audience", verdict: "uphold" },
       ] }),
@@ -357,7 +357,7 @@ describe("runJudgmentPass — routing", () => {
       description: "Deletes everything.",
       title: "Delete everything",
       risk: "destructive",
-      critical: true,
+      confirmEach: true,
       disabled: true,
       audience: "internal",
     });
@@ -369,11 +369,11 @@ describe("runJudgmentPass — routing", () => {
     const loosened = file.tools.host_loosen!;
     // NOTHING loosening reached `fields`.
     expect(loosened.fields.risk).toBeUndefined();
-    expect(loosened.fields.critical).toBeUndefined();
+    expect(loosened.fields.confirmEach).toBeUndefined();
     expect(loosened.fields.disabled).toBeUndefined();
     expect(loosened.fields.audience).toBeUndefined();
     expect((loosened.pending ?? []).map((entry) => entry.field).sort())
-      .toEqual(["audience", "critical", "disabled", "risk"]);
+      .toEqual(["audience", "confirmEach", "disabled", "risk"]);
     for (const entry of loosened.pending ?? []) {
       expect(entry.evidence).toBe("requireUser(session); return db.select()");
     }
@@ -630,12 +630,12 @@ describe("runJudgmentPass — advisories can never discard proposals", () => {
   /** Two tools, both with real evidence — the judgments that must survive. */
   const twoGoodProposals = [
     { name: "host_transferMoney", risk: "destructive" as const, evidence: "await ledger.transfer(from, to, amountCents)" },
-    { name: "host_createOrder", critical: true as const, evidence: "await db.insert(orders).values(row)" },
+    { name: "host_createOrder", confirmEach: true as const, evidence: "await db.insert(orders).values(row)" },
   ];
   const upholdBoth = {
     verdicts: [
       { name: "host_transferMoney", field: "risk", verdict: "uphold" },
-      { name: "host_createOrder", field: "critical", verdict: "uphold" },
+      { name: "host_createOrder", field: "confirmEach", verdict: "uphold" },
     ],
   };
 
@@ -660,7 +660,7 @@ describe("runJudgmentPass — advisories can never discard proposals", () => {
     expect(result.status).toBe("judged");
     const file = await readJudgments(fixture);
     expect(file.tools.host_transferMoney!.fields.risk).toBe("destructive");
-    expect(file.tools.host_createOrder!.fields.critical).toBe(true);
+    expect(file.tools.host_createOrder!.fields.confirmEach).toBe(true);
     // Counted honestly, not swallowed.
     expect(result).toMatchObject({ advisoriesClamped: 2 });
     const printed = [...bus.logs, ...bus.errors].join("\n");
@@ -700,7 +700,7 @@ describe("runJudgmentPass — advisories can never discard proposals", () => {
     expect(result.status).toBe("judged");
     const file = await readJudgments(fixture);
     expect(file.tools.host_transferMoney!.fields.risk).toBe("destructive");
-    expect(file.tools.host_createOrder!.fields.critical).toBe(true);
+    expect(file.tools.host_createOrder!.fields.confirmEach).toBe(true);
     expect(result.status === "judged" && result.advisoriesClamped > 0).toBe(true);
   });
 

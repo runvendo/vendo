@@ -19,6 +19,7 @@ import { SLOT_PIN_ENV } from "../dev-creds/model.js";
 import { doctorFixRef, type DoctorErrorCode } from "./doctor-codes.js";
 import { EJECT_MANIFEST_FILE, type EjectedManifest } from "./eject.js";
 import { applyJudgment, judgmentsFileSchema, overridesFileSchema, toolsFileSchema, type ToolJudgment } from "@vendoai/actions";
+import type { RiskLabel } from "@vendoai/core";
 import { detectFramework, detectVendoWiring } from "./framework.js";
 import { CONFIG_SURFACES, OVERRIDES_ENABLEMENT_NOTE } from "../config-surface.js";
 import { walk } from "./theme/walk.js";
@@ -311,7 +312,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     try {
       const toolsParsed: unknown = JSON.parse(toolsRaw);
       const toolsFile = toolsFileSchema.parse(toolsParsed);
-      let overridesTools: Record<string, { disabled?: boolean }> = {};
+      let overridesTools: Record<string, { disabled?: boolean; risk?: RiskLabel }> = {};
       if (overridesRaw !== null) {
         try {
           const overridesParsed: unknown = JSON.parse(overridesRaw);
@@ -345,6 +346,20 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
         fail("tools/live-surface", "E-TOOLS-001", `zero live host tools — all ${toolsFile.tools.length} extracted tools are disabled or excluded; review the audience exclusions in .vendo/overrides.json and re-enable the end-user surface (disabled: false)`);
       } else {
         pass("tools/live-surface", `${live.length} live host tool${live.length === 1 ? "" : "s"}`);
+      }
+      // Risk-grading redesign D4 — not-knowing must be FELT. Extraction only
+      // asserts protocol facts, so a catalog nobody has judged is mostly
+      // `ungraded`, and every ungraded tool asks on each call. Counted over the
+      // same three-layer effective stack, so a judged or overridden grade is
+      // reflected here exactly as the guard will see it.
+      const ungraded = toolsFile.tools.filter((tool) => {
+        const effective = applyJudgment(tool, judgments[tool.name]);
+        return (overridesTools[tool.name]?.risk ?? effective.risk) === "ungraded";
+      });
+      if (ungraded.length > 0) {
+        warn("tools/graded", "E-TOOLS-003", `catalog: ${ungraded.length}/${toolsFile.tools.length} tools ungraded — each one asks on every call; run \`vendo sync\` with a model key to grade`);
+      } else {
+        pass("tools/graded", `catalog: all ${toolsFile.tools.length} tools graded`);
       }
     } catch {
       // Not a vendo/tools@3 shape (e.g. a placeholder {}) — the config

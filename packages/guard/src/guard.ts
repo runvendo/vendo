@@ -1,6 +1,7 @@
 import {
   canonicalJson,
   descriptorHash,
+  riskLabelSchema,
   sha256Hex,
   VendoError,
 } from "@vendoai/core";
@@ -192,7 +193,7 @@ function presenceMatches(grant: PermissionGrant, ctx: RunContext): boolean {
  *  permanently empty region plus a dead approval card, so the HEURISTIC
  *  deciders (judge, call-rate breaker) may run or block such a read but never
  *  park it. Deliberate postures are exempt and keep their ask: policy rules
- *  and host policy code are host-authored, critical descriptors always ask
+ *  and host policy code are host-authored, confirmEach descriptors always ask
  *  (05 §2), and away runs still park (the 05 §6 downgrade needs a captured
  *  grant regardless of what decided the run — hence the present-only scope). */
 function neverParkAppRead(descriptor: ToolDescriptor, ctx: RunContext): boolean {
@@ -629,9 +630,9 @@ class GuardImplementation implements VendoGuard {
     const resolveRisk = this.#config.resolveRisk;
     if (resolveRisk === undefined) return descriptor;
     try {
-      const risk = await resolveRisk(call, descriptor, ctx);
-      if (risk !== "read" && risk !== "write" && risk !== "destructive") return descriptor;
-      return risk === descriptor.risk ? descriptor : { ...descriptor, risk };
+      const resolved = riskLabelSchema.safeParse(await resolveRisk(call, descriptor, ctx));
+      if (!resolved.success) return descriptor;
+      return resolved.data === descriptor.risk ? descriptor : { ...descriptor, risk: resolved.data };
     } catch {
       // The static descriptor is the conservative fallback. Vendo's dynamic
       // edit descriptor is write-class, so lookup/classifier failures still ask.
@@ -691,13 +692,13 @@ class GuardImplementation implements VendoGuard {
     descriptor: ToolDescriptor,
     ctx: RunContext,
   ): Promise<DecisionMetadata> {
-    // An exact approved replay answers a critical ask (05 §2 stays otherwise:
-    // grants/rules/judge never suppress critical).
+    // An exact approved replay answers a confirmEach ask (05 §2 stays otherwise:
+    // grants/rules/judge never suppress confirmEach).
     let consumedReplay = false;
-    if (descriptor.critical === true) {
+    if (descriptor.confirmEach === true) {
       consumedReplay = await this.#consumeApprovedCall(call, descriptor, ctx);
       if (!consumedReplay) {
-        return { decision: { action: "ask", decidedBy: "critical" } };
+        return { decision: { action: "ask", decidedBy: "confirmEach" } };
       }
     }
 
@@ -778,6 +779,15 @@ class GuardImplementation implements VendoGuard {
       }
     }
 
+    // Nothing spoke. An `ungraded` tool is one nobody has graded — no human,
+    // no judge, no protocol fact — so not-knowing is felt here rather than
+    // hidden behind a run: it asks, exactly as `destructive` does under the
+    // default policy. Guard-level on purpose, so a hand-wired server with no
+    // policy config at all gets it too. A host that consciously wants these to
+    // run says so in writing, with a `risk: "ungraded"` rule.
+    if (descriptor.risk === "ungraded") {
+      return withInvalidated({ decision: { action: "ask", decidedBy: "default" } });
+    }
     return withInvalidated({ decision: { action: "run", decidedBy: "default" } });
   }
 

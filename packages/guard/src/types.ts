@@ -1,4 +1,4 @@
-import { VENDO_POLICY_FORMAT } from "@vendoai/core";
+import { riskLabelSchema, VENDO_POLICY_FORMAT } from "@vendoai/core";
 import type {
   AppId,
   ApprovalDecision,
@@ -74,7 +74,7 @@ export const policyRuleSchema = z
     match: z
       .object({
         tool: z.string().optional(),
-        risk: z.enum(["read", "write", "destructive"]).optional(),
+        risk: riskLabelSchema.optional(),
         venue: z.enum(["chat", "app", "automation", "mcp"]).optional(),
         presence: z.enum(["present", "away"]).optional(),
       })

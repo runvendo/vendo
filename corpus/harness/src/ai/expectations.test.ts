@@ -29,7 +29,7 @@ describe("ai-expected.json format", () => {
       version: 1,
       tools: [
         { name: "listInvoices", method: "GET", path: "/api/invoices", risk: "read" },
-        { name: "deleteInvoice", method: "DELETE", path: "/api/invoices/{id}", risk: "destructive", critical: true },
+        { name: "deleteInvoice", method: "DELETE", path: "/api/invoices/{id}", risk: "destructive", confirmEach: true },
         { name: "wipeAll", method: "POST", path: "/api/admin/wipe", risk: "destructive", wake: false },
         { name: "invoices.list", kind: "trpc", procedure: "invoices.list", risk: "read" },
         { name: "createUser", kind: "graphql", operation: "createUser", risk: "write" },
@@ -38,7 +38,7 @@ describe("ai-expected.json format", () => {
     });
 
     expect(parsed.tools).toHaveLength(6);
-    expect(parsed.tools[1]).toMatchObject({ risk: "destructive", critical: true });
+    expect(parsed.tools[1]).toMatchObject({ risk: "destructive", confirmEach: true });
     expect(parsed.tools[2]).toMatchObject({ wake: false });
   });
 

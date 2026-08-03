@@ -15,7 +15,9 @@ export const VENDO_TOOLS_SEARCH_TOOL_NAME = "vendo_tools_search";
  * stay reachable through {@link VENDO_TOOLS_SEARCH_TOOL_NAME}. */
 export const DEFAULT_MAX_INITIAL_TOOLS = 128;
 
-const RISK_ORDER: Record<RiskLabel, number> = { read: 0, write: 1, destructive: 2 };
+/** Seed order for the capped loadout: safest first, ungraded last — an
+ *  uncapped tool nobody has graded is the weakest claim on the budget. */
+const RISK_ORDER: Record<RiskLabel, number> = { read: 0, write: 1, destructive: 2, ungraded: 3 };
 
 /** A hit from the injected search seam — the structural twin of actions'
  * `ToolSearchMatch` (the agent block depends on core only, so it cannot import

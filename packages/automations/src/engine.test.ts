@@ -40,7 +40,7 @@ const criticalTool: ToolDescriptor = {
   description: "Do a critical action",
   inputSchema: { type: "object" },
   risk: "destructive",
-  critical: true,
+  confirmEach: true,
 };
 
 const ctx = (subject = "user_a"): RunContext => ({

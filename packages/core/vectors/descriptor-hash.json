@@ -13,23 +13,30 @@
       "hash": "sha256:1e9972d811efcb412923563783b220fcfa38c9cbb6d32a7952b63fc531846f44"
     },
     {
-      "name": "critical-write",
+      "name": "confirm-each-write",
       "descriptor": {
         "name": "gmail_send",
         "description": "Send an email",
         "inputSchema": {
           "type": "object",
-          "required": ["to", "subject"],
+          "required": [
+            "to",
+            "subject"
+          ],
           "properties": {
-            "to": { "type": "string" },
-            "subject": { "type": "string" }
+            "to": {
+              "type": "string"
+            },
+            "subject": {
+              "type": "string"
+            }
           }
         },
         "risk": "write",
-        "critical": true
+        "confirmEach": true
       },
-      "canonical": "{\"critical\":true,\"description\":\"Send an email\",\"inputSchema\":{\"properties\":{\"subject\":{\"type\":\"string\"},\"to\":{\"type\":\"string\"}},\"required\":[\"to\",\"subject\"],\"type\":\"object\"},\"name\":\"gmail_send\",\"risk\":\"write\"}",
-      "hash": "sha256:6b2f91e9413bc01b84cce7a498b29cdf551ae03471e8a8f39ae51387d254bf1a"
+      "canonical": "{\"confirmEach\":true,\"description\":\"Send an email\",\"inputSchema\":{\"properties\":{\"subject\":{\"type\":\"string\"},\"to\":{\"type\":\"string\"}},\"required\":[\"to\",\"subject\"],\"type\":\"object\"},\"name\":\"gmail_send\",\"risk\":\"write\"}",
+      "hash": "sha256:76d3541e52bd2a6746ef783452715ab94bfe1dabb3daa044fa1a6c37ad198293"
     },
     {
       "name": "unicode",
@@ -39,7 +46,10 @@
         "inputSchema": {
           "type": "object",
           "properties": {
-            "q": { "type": "string", "description": "Mot-clé" }
+            "q": {
+              "type": "string",
+              "description": "Mot-clé"
+            }
           }
         },
         "risk": "read"
@@ -55,12 +65,25 @@
         "inputSchema": {
           "type": "object",
           "examples": [
-            { "tiny": 1e-7, "boundary": 0.000001, "huge": 1e+30, "integer": 10, "negativeZero": 0 }
+            {
+              "tiny": 1e-7,
+              "boundary": 0.000001,
+              "huge": 1e+30,
+              "integer": 10,
+              "negativeZero": 0
+            }
           ],
           "properties": {
             "rows": {
               "type": "array",
-              "items": { "type": "number", "enum": [0, 1.5, 1e-7] }
+              "items": {
+                "type": "number",
+                "enum": [
+                  0,
+                  1.5,
+                  1e-7
+                ]
+              }
             }
           }
         },
@@ -70,16 +93,34 @@
       "hash": "sha256:89c44973d68c5714f4d1f7b4d0192e4df4588650024beeda23676f81d14e4a6f"
     },
     {
-      "name": "minimal-read-critical-false",
+      "name": "minimal-read-confirm-each-false",
       "descriptor": {
         "name": "host_invoices_list",
         "description": "List invoices",
         "inputSchema": {},
         "risk": "read",
-        "critical": false
+        "confirmEach": false
       },
-      "canonical": "{\"critical\":false,\"description\":\"List invoices\",\"inputSchema\":{},\"name\":\"host_invoices_list\",\"risk\":\"read\"}",
-      "hash": "sha256:fe4dc28d460ef4fb2b43ce76e8a37fc3adbeb56c46473f3812a10bf6f246c518"
+      "canonical": "{\"confirmEach\":false,\"description\":\"List invoices\",\"inputSchema\":{},\"name\":\"host_invoices_list\",\"risk\":\"read\"}",
+      "hash": "sha256:6d59d0f0a511cc674bf368a3176c2be684b8ae4c85ecd529c882555536f4515b"
+    },
+    {
+      "name": "ungraded",
+      "descriptor": {
+        "name": "host_invoices_pay",
+        "description": "Pay an invoice",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          }
+        },
+        "risk": "ungraded"
+      },
+      "canonical": "{\"description\":\"Pay an invoice\",\"inputSchema\":{\"properties\":{\"id\":{\"type\":\"string\"}},\"type\":\"object\"},\"name\":\"host_invoices_pay\",\"risk\":\"ungraded\"}",
+      "hash": "sha256:167ff069bf5724d0b1aea8553bab25c5c954be333439ade5058a3099bdb4e4c0"
     }
   ]
 }

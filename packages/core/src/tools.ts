@@ -29,11 +29,20 @@ export const VENDO_APPS_CREATE_TOOL = "vendo_apps_create";
  *  refusal) stays the model's to handle. */
 export const VENDO_APP_BUILD_FAILED_PREFIX = "app build failed";
 
-/** 01-core §4 */
-export type RiskLabel = "read" | "write" | "destructive";
+/** 01-core §4 — a grade someone actually assigned. `ungraded` is the absence
+ *  of one, so it is not a rung here: nothing may author "I don't know". */
+export type GradedRiskLabel = "read" | "write" | "destructive";
 
 /** 01-core §4 */
-export const riskLabelSchema = z.enum(["read", "write", "destructive"]) satisfies z.ZodType<RiskLabel>;
+export const gradedRiskLabelSchema = z.enum(["read", "write", "destructive"]) satisfies z.ZodType<GradedRiskLabel>;
+
+/** 01-core §4 — `ungraded` is explicit, not absence: a tool nobody (human,
+ *  judge, or protocol fact) has graded says so on the wire, and the guard's
+ *  default treats it like `destructive` and asks. */
+export type RiskLabel = GradedRiskLabel | "ungraded";
+
+/** 01-core §4 */
+export const riskLabelSchema = z.enum(["read", "write", "destructive", "ungraded"]) satisfies z.ZodType<RiskLabel>;
 
 /** 01-core §4 */
 export interface ToolDescriptor {
@@ -41,7 +50,12 @@ export interface ToolDescriptor {
   description: string;
   inputSchema: JsonSchema;
   risk: RiskLabel;
-  critical?: boolean;
+  /** Governance, not severity: this call needs a PERSON, every time. Checked
+   *  before rules, grants, and the judge, and none of them can suppress it —
+   *  each call earns its own input-bound, single-use approval. Orthogonal to
+   *  `risk`, which is a fact about what the action does. Host-authored files
+   *  may still spell it `critical` (its pre-rename name). */
+  confirmEach?: boolean;
   /** A short human label for the surfaces that show this tool to a PERSON —
    *  MCP clients' tool menus, approval cards. Presentation only: it never
    *  changes what the tool can do, and absent it those surfaces fall back to
@@ -64,7 +78,7 @@ export const toolDescriptorSchema = z.object({
   description: z.string(),
   inputSchema: jsonSchemaSchema,
   risk: riskLabelSchema,
-  critical: z.boolean().optional(),
+  confirmEach: z.boolean().optional(),
   title: z.string().optional(),
   toolkit: z.string().optional(),
 }).passthrough() satisfies z.ZodType<ToolDescriptor>;

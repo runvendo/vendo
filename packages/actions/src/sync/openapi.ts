@@ -158,7 +158,7 @@ export async function extractOpenApi(specPath: string): Promise<ExtractedTool[]>
         description: descriptionFor(operation, method, route),
         inputSchema: inputSchema(document, pathItem, operation),
         ...(output === undefined ? {} : { outputSchema: output }),
-        risk: extractedRisk(method, name, "openapi"),
+        risk: extractedRisk(method),
         binding: {
           kind: "openapi",
           operationId,

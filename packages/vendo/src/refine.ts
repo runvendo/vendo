@@ -49,7 +49,10 @@ import { defaultFetch } from "@vendoai/core";
  * so the identical engine can execute in a hosted sandbox later.
  */
 
-const RISK_ORDER: Record<RiskLabel, number> = { read: 0, write: 1, destructive: 2 };
+/** `ungraded` sits above the real grades: it dominates a compound step max
+ *  (a compound with an ungraded step does not know its own risk), and grading
+ *  one is never a downgrade — see the riskCorrections guard below. */
+const RISK_ORDER: Record<RiskLabel, number> = { read: 0, write: 1, destructive: 2, ungraded: 3 };
 
 const DEFAULT_SOURCE_BUDGET = 48_000;
 const MAX_FILE_CHARS = 4_000;
@@ -332,7 +335,7 @@ const SYSTEM_PROMPT = [
   "   expression that must produce an array (max 1000 items); `if` is a JSONata condition that skips the",
   "   step when false. Give each compound a JSON Schema `inputSchema` for its own arguments.",
   "2. briefs — short prose playbooks that teach the agent how to combine existing tools.",
-  "3. riskCorrections — primitive tools whose extracted risk label (read/write/destructive) is wrong.",
+  "3. riskCorrections — primitive tools whose extracted risk label (read/write/destructive) is wrong or, for an ungraded tool, missing.",
   "4. curation — primitive tools to disable (internal/debug/dangerous surfaces) or re-enable.",
   "5. descriptions — clearer one-line descriptions for badly described primitive tools.",
   "6. briefUpdate — an improved full replacement for the product brief, only when clearly better.",
@@ -478,7 +481,7 @@ function normalize(proposals: RefineProposals, inputs: RefineInputs): Normalized
       dropped.push({ kind: "override", target: correction.tool, reason: `risk is already ${correction.risk}` });
       continue;
     }
-    if (RISK_ORDER[correction.risk] < RISK_ORDER[current.risk]) {
+    if (current.risk !== "ungraded" && RISK_ORDER[correction.risk] < RISK_ORDER[current.risk]) {
       overrideWarnings.push(
         `risk DOWNGRADE proposed: ${correction.tool} ${current.risk} → ${correction.risk}`
           + `${correction.reason === undefined ? "" : ` (${correction.reason})`} — approve only if certain`,

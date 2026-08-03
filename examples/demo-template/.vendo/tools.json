@@ -16,7 +16,7 @@
           "id"
         ]
       },
-      "risk": "destructive",
+      "risk": "ungraded",
       "binding": {
         "kind": "openapi",
         "operationId": "archiveItem",
@@ -32,7 +32,7 @@
         "type": "object",
         "properties": {}
       },
-      "risk": "read",
+      "risk": "ungraded",
       "binding": {
         "kind": "openapi",
         "operationId": "listItems",

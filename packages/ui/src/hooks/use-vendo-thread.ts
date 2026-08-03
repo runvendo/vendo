@@ -1,5 +1,5 @@
 /** ai-SDK v6-compatible conversation transport (08-ui §3, 03-agent §4). */
-import { withTurnHeartbeat, type VendoApprovalPart } from "@vendoai/core";
+import { riskLabelSchema, withTurnHeartbeat, type VendoApprovalPart } from "@vendoai/core";
 import { useChat } from "@ai-sdk/react";
 import {
   DefaultChatTransport,
@@ -62,7 +62,7 @@ function vendoApproval(part: UIMessage["parts"][number]): VendoApprovalPart | un
   const value = "data" in part ? part.data : part;
   if (typeof value !== "object" || value === null) return undefined;
   const candidate = value as Partial<VendoApprovalPart>;
-  if (typeof candidate.toolCallId !== "string" || !["read", "write", "destructive"].includes(candidate.risk ?? "")) {
+  if (typeof candidate.toolCallId !== "string" || !riskLabelSchema.safeParse(candidate.risk).success) {
     return undefined;
   }
   return {

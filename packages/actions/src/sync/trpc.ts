@@ -381,7 +381,7 @@ export async function extractTrpc(root: string): Promise<TrpcExtractResult> {
         name,
         description: `tRPC ${def.type} ${procedure}`,
         inputSchema,
-        risk: trpcRisk(def.type, procedure),
+        risk: trpcRisk(def.type),
         ...(note ? { note } : {}),
         binding: bindingFor(procedure, def.type, mount.mount, transformer),
       });

@@ -50,7 +50,6 @@ interface WeightedResult {
 }
 
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
-const DESTRUCTIVE_NAME = /(^|_)(delete|remove|destroy|cancel|close|reset|revoke|purge|wipe)(_|$)/;
 const EPSILON = 0.000001;
 
 function errorMessage(error: unknown): string {
@@ -104,13 +103,13 @@ function scoreTheme(expected: RepoExpectations, actual: VendoTheme): WeightedRes
 
 // A tool's IDENTITY for scoring is binding-kind-aware — the endpoint
 // (method + path) for HTTP-shaped bindings, the procedure dot-path for tRPC,
-// the operation name for GraphQL — plus its read/write classification, and
-// NOT its name. Tool names are a deterministic, contract-defined value
-// (01-core §15: provider-safe `host_<path>` slugs), while the checked-in
-// expectations carry the pre-freeze OpenAPI-operationId names
-// (`getAdminTeams`). Keying on the identity is the "adapted names" the v0
-// corpus requires, and still catches every real extraction defect: a missed
-// surface drops recall, a mis-classified read/write breaks the key.
+// the operation name for GraphQL — and NOT its name. Tool names are a
+// deterministic, contract-defined value (01-core §15: provider-safe
+// `host_<path>` slugs), while the checked-in expectations carry the pre-freeze
+// OpenAPI-operationId names (`getAdminTeams`). Keying on the identity is the
+// "adapted names" the v0 corpus requires, and catches the extraction defect
+// that matters here: a missed surface drops recall, an invented one drops
+// precision.
 export function actualToolIdentity(tool: ExtractedTool): string {
   if (tool.binding.kind === "trpc") return `trpc\t${tool.binding.procedure}`;
   if (tool.binding.kind === "graphql") return `graphql\t${tool.binding.operation}`;
@@ -118,12 +117,17 @@ export function actualToolIdentity(tool: ExtractedTool): string {
   return `${tool.binding.method}\t${tool.binding.path}`;
 }
 
+// Risk-grading redesign D2 — extraction no longer classifies read vs write
+// (only protocol facts grade a tool), so the inventory key is the surface
+// alone. The curator's `readOrWrite` stays ground truth for the AI lane, which
+// scores the judge's grades in `ai.risk.accuracy`; asserting it here would be
+// asserting a claim extraction deliberately stopped making.
 function actualInventoryKey(tool: ExtractedTool): string {
-  return `${actualToolIdentity(tool)}\t${tool.risk === "read" ? "read" : "write"}`;
+  return actualToolIdentity(tool);
 }
 
 function expectedInventoryKey(item: RepoExpectations["tools"][number]): string {
-  return `${expectedToolIdentity(item)}\t${item.readOrWrite}`;
+  return expectedToolIdentity(item);
 }
 
 function scoreTools(expected: RepoExpectations, actualTools: readonly ExtractedTool[]): WeightedResult {
@@ -153,10 +157,19 @@ function scoreTools(expected: RepoExpectations, actualTools: readonly ExtractedT
   };
 }
 
+/** Risk-grading redesign D2 — extraction asserts protocol facts and nothing
+ * else, so the check is now: does the grade it landed agree with the curator's
+ * annotation as far as a protocol fact can reach? A DELETE the curator calls
+ * dangerous must be `destructive`; a declared mutation must be `write`; every
+ * other tool must be `ungraded` — never a guess in either direction. */
 function expectedAnnotationMatches(expected: ExpectedToolAnnotation, actual: ExtractedTool | undefined): boolean {
   if (!actual) return false;
-  const expectedRisk = expected.dangerous ? "destructive" : expected.mutating ? "write" : "read";
-  return actual.risk === expectedRisk;
+  const method = effectiveWriteMethod(actual);
+  if (method === "DELETE") return actual.risk === "destructive" && expected.dangerous;
+  const declaredMutation = (actual.binding.kind === "trpc" || actual.binding.kind === "graphql")
+    && actual.binding.type === "mutation";
+  if (declaredMutation) return actual.risk === "write" && expected.mutating;
+  return actual.risk === "ungraded";
 }
 
 /** A tRPC or GraphQL mutation is write-shaped exactly like a POST; a query
@@ -169,10 +182,14 @@ function effectiveWriteMethod(tool: ExtractedTool): string {
   return tool.binding.method;
 }
 
+/** Fail-closed against PROTOCOL FACTS only (risk-grading redesign D1: a tool
+ * NAME grades nothing). `ungraded` is never auto-allowed — the guard asks on
+ * it — so two defects remain: a write-capable method that landed `read`, and
+ * a DELETE that is not `destructive`. */
 function isUnsafeAutoAllowed(tool: ExtractedTool): boolean {
   const method = effectiveWriteMethod(tool);
   if (WRITE_METHODS.has(method) && tool.risk === "read") return true;
-  if ((method === "DELETE" || DESTRUCTIVE_NAME.test(tool.name)) && tool.risk !== "destructive") return true;
+  if (method === "DELETE" && tool.risk !== "destructive") return true;
   return false;
 }
 
