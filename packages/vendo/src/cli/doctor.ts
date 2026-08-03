@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { join, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { stdin, stdout } from "node:process";
 import type { Telemetry } from "@vendoai/telemetry";
 import {
@@ -223,8 +223,26 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
         if (source.includes("<VendoRoot") || source.includes("<VendoProvider")) rootWired = true;
       }
     }
-    if (rootWired) pass("wiring/next-root", "<VendoRoot> wraps the app");
-    else fail("wiring/next-root", "E-WIRE-004", "no app layout mounts <VendoRoot> — wrap the app in the generated vendo/vendo-root.tsx wrapper (its export is also named VendoRoot), in the root layout or any layout that covers your pages");
+    if (rootWired) {
+      pass("wiring/next-root", "<VendoRoot> wraps the app");
+    } else {
+      // The exact paste, not a description of it: init never edits user source,
+      // so this is the one step a by-the-book install still owes, and doctor is
+      // where a missed paste surfaces. Name the file that exists.
+      const layoutPath = (await Promise.all(
+        [join(root, "app", "layout.tsx"), join(root, "src", "app", "layout.tsx")].map(
+          async (candidate) => (await exists(candidate)) ? candidate : null,
+        ),
+      )).find((candidate) => candidate !== null) ?? join(root, "app", "layout.tsx");
+      const file = relative(root, layoutPath);
+      const specifier = relative(dirname(layoutPath), join(dirname(dirname(layoutPath)), "vendo", "vendo-root"))
+        .split(sep).join("/");
+      fail("wiring/next-root", "E-WIRE-004",
+        `no app layout mounts <VendoRoot> — Vendo is wired but invisible. In ${file}, paste: `
+        + `import { VendoRoot } from "${specifier}";  … then wrap: <VendoRoot>{children}</VendoRoot>. `
+        + "(The generated vendo/vendo-root.tsx wrapper's export is also named VendoRoot and mounts <VendoOverlay />; "
+        + "any layout that covers your pages works. `vendo init` never edits your source, so this paste is always yours.)");
+    }
   }
 
   // Visible surface (0.4.1 E2E cert B3): <VendoRoot> is a context provider

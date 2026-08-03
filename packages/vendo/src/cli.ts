@@ -40,7 +40,7 @@ Options:
   --cloud-key <key>          Init only: write this Vendo Cloud key to .env.local instead of the login offer
   --wait <seconds>           Login only: bound this call's polling to N seconds (agents loop re-runs; each resumes the same request), then exit resumably
   --byo                      Init only: decline the Vendo Cloud offer (bring your own model key)
-  --ai-polish                Init only: consent to the judgment pass without a prompt (works non-interactively)
+  --ai                       Init/sync: run the AI judgment pass without asking (works non-interactively)
   --engine <name>            Init/try/sync: pin the AI engine (claude, codex, npx) instead of first-available
   --theme <slot=value>       Init only: override a theme slot value directly (repeatable)
   --list                     Eject only: show the ejectable surfaces
@@ -48,9 +48,10 @@ Options:
   --strict                   Sync only: exit 2 on breaking changes, 3 when saved references are impacted
   --review                   Sync only: show the queued + new loosenings and confirm before writing
   --full                     Sync only: judge the whole catalog instead of only what moved
+  --theme-refresh            Sync only: take the theme scan's values even for slots you hand-edited
   --port <port>              Try only: listen on a fixed port (default: any free port)
   --no-open                  Try only: print the URL without opening the browser
-  --no-ai                    Sync: skip the judgment pass (workspace-internal syncs); try: skip the background AI deepening
+  --no-ai                    Init/sync: force the AI judgment pass off; try: skip the background AI deepening
   --json                     Sync/doctor: print one machine-readable report object
   --report                   Sync only: push the report to Vendo Cloud
   --key <key>                Sync/cloud: override VENDO_API_KEY
@@ -73,7 +74,10 @@ function options(args: string[], name: string): string[] {
   return values;
 }
 
-const INIT_FLAGS = new Set(["--agent", "--yes", "--force", "--byo", "--ai-polish"]);
+/** `--ai`/`--no-ai` is the canonical pair on BOTH init and sync (decision 2).
+    `--ai-polish` (init) and `--no-watermark` (sync) are the documented older
+    spellings and stay accepted so pinned scripts and hooks keep working. */
+const INIT_FLAGS = new Set(["--agent", "--yes", "--force", "--byo", "--ai", "--ai-polish", "--no-ai"]);
 const INIT_VALUE_OPTIONS = ["--auth", "--framework", "--cloud-key", "--theme", "--engine"];
 /** Agent-install-dx: every init wizard question has a value-flag answer; a
     bad value fails as loudly as an unknown flag, with the valid choices. */
@@ -84,10 +88,10 @@ const INIT_FRAMEWORK_VALUES = ["next", "express", "custom"];
 const ENGINE_VALUES = ["claude", "codex", "npx"];
 const DOCTOR_FLAGS = new Set(["--json", "--yes"]);
 const DOCTOR_VALUE_OPTIONS = ["--url"];
-/** `--no-watermark` is the pre-judgment-layer name for `--no-ai`; it stays
-    accepted (and undocumented) so the demo hooks and any pinned script that
-    still passes it keep working. */
-const SYNC_FLAGS = new Set(["--strict", "--json", "--report", "--review", "--full", "--no-ai", "--no-watermark"]);
+const SYNC_FLAGS = new Set([
+  "--strict", "--json", "--report", "--review", "--full", "--yes",
+  "--theme-refresh", "--ai", "--no-ai", "--no-watermark",
+]);
 const SYNC_VALUE_OPTIONS = ["--url", "--key", "--api-url", "--engine"];
 const LOGIN_VALUE_OPTIONS = ["--api-url", "--wait"];
 
@@ -214,6 +218,10 @@ export async function main(argv: string[]): Promise<number> {
     if (cloudKey !== undefined && args.includes("--byo")) {
       problems.push("--cloud-key and --byo answer the same question — pass one or the other");
     }
+    const initAi = args.includes("--ai") || args.includes("--ai-polish");
+    if (initAi && args.includes("--no-ai")) {
+      problems.push("--ai and --no-ai answer the same question — pass one or the other");
+    }
     const themePairs = options(args, "--theme");
     const badTheme = themePairs.find((pair) => !/^[A-Za-z]+=./.test(pair));
     if (badTheme !== undefined) {
@@ -232,7 +240,7 @@ export async function main(argv: string[]): Promise<number> {
       ...(framework === undefined ? {} : { framework: framework as InitOptions["framework"] }),
       ...(cloudKey === undefined ? {} : { cloudKey }),
       ...(args.includes("--byo") ? { byo: true } : {}),
-      ...(args.includes("--ai-polish") ? { aiPolish: true } : {}),
+      ...(initAi ? { ai: true } : args.includes("--no-ai") ? { ai: false } : {}),
       ...(engine === undefined ? {} : { engine }),
       ...(themePairs.length === 0 ? {} : {
         themeAnswers: Object.fromEntries(themePairs.map((pair) => {
@@ -303,6 +311,10 @@ export async function main(argv: string[]): Promise<number> {
     if (args.includes("--review") && args.includes("--json")) {
       problems.push("--review is interactive and cannot combine with --json");
     }
+    const syncNoAi = args.includes("--no-ai") || args.includes("--no-watermark");
+    if (args.includes("--ai") && syncNoAi) {
+      problems.push("--ai and --no-ai answer the same question — pass one or the other");
+    }
     if (problems.length > 0) {
       console.error(`vendo sync: ${problems.join("; ")}\n\n${HELP}`);
       return 1;
@@ -317,7 +329,9 @@ export async function main(argv: string[]): Promise<number> {
       apiUrl: option(args, "--api-url"),
       review: args.includes("--review"),
       full: args.includes("--full"),
-      noAi: args.includes("--no-ai") || args.includes("--no-watermark"),
+      yes: args.includes("--yes"),
+      themeRefresh: args.includes("--theme-refresh"),
+      ...(args.includes("--ai") ? { ai: true } : syncNoAi ? { ai: false } : {}),
       ...(engine === undefined ? {} : { engine }),
     });
   }

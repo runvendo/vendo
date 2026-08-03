@@ -309,7 +309,9 @@ describe("vendo sync", () => {
       exitCode: 0,
       report: report([{ tool: "host_x", change: "removed" }], ["host_x"]),
       impact: [{ tool: "host_x", apps: [], automations: [{ id: "app_a", title: "A" }], grants: 0 }],
-      notes: [],
+      notes: ["judgment: skipped — this run cannot ask (pass `--ai` to judge non-interactively, `--no-ai` to say so explicitly)"],
+      theme: null,
+      baselines: null,
     });
   });
 
@@ -330,7 +332,6 @@ describe("vendo sync", () => {
       ok: false,
       exitCode: 2,
       report: { remixableErrors: [expect.stringContaining("src/app/page.tsx:4")] },
-      notes: [],
     });
   });
 
@@ -355,7 +356,7 @@ describe("vendo sync", () => {
       ok: false,
       exitCode: 2,
       impact: null,
-      notes: ["impact unknown — dev server not reachable at http://offline.test/api/vendo"],
+      notes: ["judgment: skipped — this run cannot ask (pass `--ai` to judge non-interactively, `--no-ai` to say so explicitly)", "impact unknown — dev server not reachable at http://offline.test/api/vendo"],
     });
   });
 
@@ -380,7 +381,7 @@ describe("vendo sync", () => {
       ok: true,
       exitCode: 0,
       impact: [],
-      notes: ["--report requires VENDO_API_KEY or --key"],
+      notes: ["judgment: skipped — this run cannot ask (pass `--ai` to judge non-interactively, `--no-ai` to say so explicitly)", "--report requires VENDO_API_KEY or --key"],
     });
   });
 
@@ -564,6 +565,7 @@ describe("sync judgment-pass integration", () => {
       output: messages.output,
       fetchImpl: offline,
       sync: async () => report(),
+      ai: true,
       judge: {
         resolveCredential: async () => ({ rung: "none" }),
         // proof, not inference: ANY engine touchpoint (even the availability
@@ -592,6 +594,7 @@ describe("sync judgment-pass integration", () => {
       output: messages.output,
       fetchImpl: offline,
       sync: async () => report(),
+      ai: true,
       judge: { harness: scripted([...HARDENING]) },
     });
     expect(exit).toBe(0);
@@ -617,7 +620,7 @@ describe("sync judgment-pass integration", () => {
       output: messages.output,
       fetchImpl: offline,
       sync: syncSeam as never,
-      noAi: true,
+      ai: false,
       judge: {
         harness: {
           id: "never",
@@ -656,6 +659,7 @@ describe("sync judgment-pass integration", () => {
       fetchImpl: offline,
       sync: async () => report(),
       review: true,
+      ai: true,
       judge: {
         harness: scripted([
           reply({
@@ -700,6 +704,7 @@ describe("sync judgment-pass integration", () => {
       output: messages.output,
       fetchImpl: offline,
       sync: async () => report(),
+      ai: true,
       judge: {
         harnesses: [{
           id: "npx-engine",
@@ -737,6 +742,7 @@ describe("sync judgment-pass integration", () => {
       output: messages.output,
       fetchImpl: offline,
       sync: async () => report(),
+      ai: true,
       judge: {
         harnesses: [{
           id: "npx-engine",
@@ -764,6 +770,7 @@ describe("sync judgment-pass integration", () => {
       fetchImpl: offline,
       json: true,
       sync: async () => report(),
+      ai: true,
       judge: { resolveCredential: async () => ({ rung: "none" }) },
     });
     expect(exit).toBe(0);

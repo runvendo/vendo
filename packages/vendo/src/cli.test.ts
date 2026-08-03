@@ -28,7 +28,8 @@ describe("vendo CLI commands", () => {
     expect(help).toContain("--framework <name>");
     expect(help).toContain("--cloud-key <key>");
     expect(help).toContain("--byo");
-    expect(help).toContain("--ai-polish");
+    expect(help).toContain("--ai");
+    expect(help).toContain("--no-ai");
     expect(help).toContain("--theme <slot=value>");
     // The interview flags are gone with the interview.
     expect(help).not.toContain("--brief <text>");
@@ -90,7 +91,7 @@ describe("vendo CLI commands", () => {
     const root = await mkdtemp(join(tmpdir(), "vendo-cli-init-known-"));
     cleanup.push(root);
 
-    expect(await main(["init", root, "--agent", "--yes", "--force", "--byo", "--ai-polish",
+    expect(await main(["init", root, "--agent", "--yes", "--force", "--byo", "--ai",
       "--auth", "clerk", "--framework", "next", "--theme", "accent=#7c3bed"])).toBe(0);
 
     expect(await readdir(root)).toEqual([]); // --agent stayed read-only
@@ -206,6 +207,34 @@ describe("vendo CLI commands", () => {
 
     expect(await readdir(root)).toEqual([]); // nothing ever ran
     error.mockRestore();
+  });
+
+  // Decision 2: --ai/--no-ai is the canonical pair on BOTH commands; the older
+  // documented spellings stay accepted so pinned scripts and the hooks older
+  // inits wrote keep working, and the two answers can never both be given.
+  it("accepts --ai/--no-ai on init and sync, keeps the legacy spellings, and rejects both at once", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const root = await mkdtemp(join(tmpdir(), "vendo-cli-ai-flags-"));
+    cleanup.push(root);
+
+    // Parsed, not rejected (--agent keeps init read-only).
+    for (const flag of ["--ai", "--no-ai", "--ai-polish"]) {
+      expect(await main(["init", root, "--agent", flag])).toBe(0);
+    }
+    expect(await readdir(root)).toEqual([]);
+
+    for (const flag of ["--ai", "--no-ai", "--no-watermark", "--yes", "--theme-refresh"]) {
+      expect(await main(["sync", root, flag, "--json"])).toBe(0);
+    }
+
+    expect(await main(["init", root, "--ai", "--no-ai"])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("--ai and --no-ai answer the same question");
+    expect(await main(["sync", root, "--ai", "--no-watermark"])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("--ai and --no-ai answer the same question");
+
+    error.mockRestore();
+    log.mockRestore();
   });
 
   it("wires eject: --list routes, surface + dir + --force parse, help documents it", async () => {

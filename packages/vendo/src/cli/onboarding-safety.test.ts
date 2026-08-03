@@ -239,8 +239,8 @@ describe("a pages-only host is told to wire the file it actually has", () => {
     const sink = output();
     expect(await run(await pagesHost(), sink)).toBe(0);
     const logs = sink.logs.join("\n");
-    expect(logs).toContain("Last steps are yours:");
-    expect(logs).toContain(`In ${join("pages", "_app.tsx")}:`);
+    expect(logs).toContain("ONE STEP LEFT");
+    expect(logs).toContain(`File: ${join("pages", "_app.tsx")}`);
     // The wrapped child is the pages-router one, not app-router's {children}.
     expect(logs).toContain("<VendoRoot><Component {...pageProps} /></VendoRoot>");
     expect(logs).not.toContain(join("app", "layout.tsx"));
