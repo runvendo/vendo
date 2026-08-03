@@ -16,7 +16,9 @@ import { describeDevCredential, resolveDevCredential } from "../dev-creds/resolv
 // Relative (not the #dev-creds condition): the CLI is Node-only and the edge
 // build deliberately does not export the pin map.
 import { SLOT_PIN_ENV } from "../dev-creds/model.js";
-import { doctorFixRef, type DoctorErrorCode } from "./doctor-codes.js";
+import { DOCTOR_INFO_CODES, doctorFixRef, type DoctorErrorCode } from "./doctor-codes.js";
+import { cloudMcpTenant, type EnsureTenantResult } from "../cloud-mcp.js";
+import { publicBaseUrl } from "../mcp-broker-select.js";
 import { EJECT_MANIFEST_FILE, type EjectedManifest } from "./eject.js";
 import { applyJudgment, judgmentsFileSchema, overridesFileSchema, toolsFileSchema, type ToolJudgment } from "@vendoai/actions";
 import { detectFramework, detectVendoWiring } from "./framework.js";
@@ -54,6 +56,10 @@ export interface DoctorOptions {
   /** The npm `latest` lookup behind the version-skew line — its own seam, not
       fetchImpl, so a scripted wire probe never doubles as a registry answer. */
   npmLatest?: () => Promise<string | null>;
+  /** The broker ensure-tenant call behind the hosted-MCP line — its own seam
+      for the same reason as npmLatest: it rides the Cloud console, not the
+      probed wire. */
+  ensureTenant?: (input: { baseUrl: string; mount: string }) => Promise<EnsureTenantResult>;
 }
 
 type CheckStatus = "ok" | "broken" | "warning";
@@ -513,8 +519,10 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
       } else {
         fail("deps/version-skew", "E-DEP-002", `the running wire serves @vendoai/vendo ${body.version} but this CLI is ${CLI_VERSION} — likely a split-brain install (a direct @vendoai/vendo dependency pinned to an older range wins over the vendoai umbrella's). Fix: npm install @vendoai/vendo@${CLI_VERSION} (or remove the direct @vendoai/vendo dependency and reinstall), then restart the dev server and re-run doctor.`);
       }
-      // 10-mcp §1 — the door flag lives under blocks.mcp.
-      mcpEnabled = body.blocks.mcp === true;
+      // 10-mcp §1 — the door flag lives under blocks.mcp. Since the broker
+      // seam it is a posture ("local" | "broker" | false); older wires still
+      // send a boolean (version skew), and both mean the door is open.
+      mcpEnabled = body.blocks.mcp === true || body.blocks.mcp === "local" || body.blocks.mcp === "broker";
       sandboxVenue = body.blocks.sandbox;
       if (sandboxVenue === "e2b") {
         // 0.4.4 defect C — "ok: execution venue: e2b" on a host that cannot
@@ -766,6 +774,38 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     warn("cloud/key", "E-CLOUD-001", `VENDO_API_KEY is set but not usable: ${cloud.error ?? "malformed"}`);
   } else {
     note(`Vendo Cloud (optional): no VENDO_API_KEY. A key unlocks ${cloud.unlocks.join("; ")}. Run \`vendo login\` to start.`);
+  }
+
+  // MCP broker seam (provisioning plan 2026-08-03): with a usable key and an
+  // open door, doctor explains what the broker default does — the seam skips
+  // the broker SILENTLY on a private base URL (the broker cannot forward
+  // visitors to a laptop), so doctor is where that decision gets said. With a
+  // public URL it resolves and prints the tenant the composition WOULD/did
+  // front the door with; the ensure is idempotent — the very call boot makes.
+  if (cloud.present && cloud.ok && mcpEnabled) {
+    const brokerBase = publicBaseUrl(env["VENDO_BASE_URL"]);
+    if (brokerBase === undefined) {
+      // Informational, not a failure: nothing is broken — deploying to a
+      // public URL is simply what arms the broker.
+      note(`I-CLOUD-002: ${DOCTOR_INFO_CODES["I-CLOUD-002"]} — VENDO_BASE_URL is unset or private, so the door serves its own local OAuth surface for now`);
+    } else {
+      const ensure = options.ensureTenant ?? ((input: { baseUrl: string; mount: string }) =>
+        cloudMcpTenant({
+          apiKey: env["VENDO_API_KEY"] ?? "",
+          ...(env["VENDO_CLOUD_URL"] === undefined ? {} : { baseUrl: env["VENDO_CLOUD_URL"] }),
+        }).ensure(input));
+      try {
+        const { tenant } = await ensure({
+          baseUrl: brokerBase,
+          mount: `${new URL(statusUrl).pathname.replace(/\/$/, "")}/mcp`,
+        });
+        pass("cloud/mcp-broker", `hosted MCP broker tenant: ${tenant.issuer}${tenant.status === "disabled" ? " (disabled in the console — the broker refuses traffic)" : ""} — the door composes against it when deployed at ${brokerBase}`);
+      } catch (error) {
+        // Informational like the arm above: the composition itself degrades
+        // to the local door on the same failure, loudly, at boot.
+        note(`hosted MCP broker: the tenant could not be resolved (${error instanceof Error ? error.message : String(error)}) — the door falls back to its own local OAuth surface until the console answers`);
+      }
+    }
   }
 
   if (devServerStop !== null) devServerStop();
