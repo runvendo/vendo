@@ -1,13 +1,13 @@
 ---
 title: "Embeds and envelopes"
-description: "The versioned JSON envelope vendo_* tools return, and the three @vendoai/ui components (VendoToolResult, VendoAppEmbed, VendoApprovalEmbed) that render it inside your own chat."
+description: "The versioned JSON envelope vendo_* tools return, and the three embed components (VendoToolResult, VendoAppEmbed, VendoApprovalEmbed) that render it inside your own chat."
 ---
 
 When your own agent calls a guarded tool, the result has to reach your chat
 without your loop ever needing to know what an "app" or an "approval" is.
 Vendo answers that with one small envelope format: a `vendo_*` tool returns
-either plain data or a versioned ref, and one of three `@vendoai/ui`
-components turns that ref into the right rendered surface. This page is the
+either plain data or a versioned ref, and one of three embed components
+turns that ref into the right rendered surface. This page is the
 canonical reference for both.
 
 ## The envelope contract
@@ -24,12 +24,15 @@ envelope discriminated by `kind`:
 You rarely dispatch on `kind` yourself: `<VendoToolResult output={...}>`
 takes any `vendo_*` tool output and renders the right embed, or nothing for
 plain data. If you need the dispatcher server-side,
-`parseVendoToolEnvelope(output)` from `@vendoai/core` returns the envelope
-or `null`.
+`parseVendoToolEnvelope(output)` returns the envelope or `null`. It is a
+runtime value, so it ships from `@vendoai/core` rather than the type-only
+umbrella root — add `@vendoai/core` to your dependencies to import it.
 
 ## The three embeds
 
-Import all three from `@vendoai/ui`. Each reads the wire through the
+Import all three from `@vendoai/vendo/react`, which re-exports them so you
+need no second package. (Their prop types are named in the table below; those
+live on `@vendoai/ui`.) Each reads the wire through the
 surrounding `VendoProvider` and polls on its own until it reaches a terminal
 state; none takes config props beyond the one shown, since theming and
 behavior come entirely from `VendoProvider`.
@@ -58,7 +61,7 @@ render on-brand. Failure states use the existing failed/expired vocabulary,
 never a silent blank.
 
 ```tsx
-import { VendoProvider, VendoToolResult } from "@vendoai/ui";
+import { VendoProvider, VendoToolResult } from "@vendoai/vendo/react";
 
 <VendoProvider>
   {/* your chat; for each finished tool part: */}

@@ -1,4 +1,4 @@
-import { eraseStore } from "@vendoai/store";
+import { eraseStore, storeFiles } from "@vendoai/store";
 import type { HostedStore } from "@vendoai/vendo/server";
 import { seedDemoScript } from "@/demo-script/seed";
 import { pregenerateChips } from "@/vendo/chips-seed";
@@ -17,7 +17,13 @@ export const dynamic = "force-dynamic";
  *  eraseStore parity); a local store goes through eraseStore's SQL cascade. */
 function eraseDoor(): Pick<HostedStore["erase"], "bySubject"> {
   const hosted = vendo.store as Partial<HostedStore>;
-  return typeof hosted.erase?.bySubject === "function" ? hosted.erase : eraseStore(vendo.store);
+  // The workspace's own content lives behind a files adapter, so erase needs it
+  // (build contract §3.4). This demo wires no `files:`, so it is the store-backed
+  // one — named explicitly, because a silent default is how rows get erased while
+  // a real bucket keeps the bytes.
+  return typeof hosted.erase?.bySubject === "function"
+    ? hosted.erase
+    : eraseStore(vendo.store, { files: storeFiles(vendo.store) });
 }
 
 export async function POST(req: Request) {

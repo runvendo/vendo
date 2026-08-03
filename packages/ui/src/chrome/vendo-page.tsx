@@ -3,6 +3,7 @@ import { useVendoContext } from "../context.js";
 import { useApp } from "../hooks/use-app.js";
 import { useApps } from "../hooks/use-apps.js";
 import { useMobileTakeover } from "../hooks/use-mobile-takeover.js";
+import { useVendoStatus } from "../hooks/use-vendo-status.js";
 import { useThreads } from "../hooks/use-threads.js";
 import { AppFrame } from "../tree/frames.js";
 import { ActivityPanel } from "./activity-panel.js";
@@ -10,6 +11,7 @@ import { AutomationsPanel } from "./automations-panel.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { ACTIVITY_ANCHOR_ATTRIBUTE, ACTIVITY_BUMP_EVENT } from "./morph-toast.js";
 import { ConnectedAccountsPanel } from "./connected-accounts-panel.js";
+import { ForkOffer, ShareDialog } from "./share-dialog.js";
 import { TakeoverPortal } from "./takeover-portal.js";
 import { VendoThread, type VendoThreadProps } from "./thread/index.js";
 import { WaitingQueue } from "./waiting-queue.js";
@@ -156,17 +158,61 @@ function OpenApp({ appId }: { appId: string }) {
   return <AppFrame key={appId} surface={surface} components={components} keepalive={keepalive} onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})} />;
 }
 
+/**
+ * The consumer's half of a refusal, for the verbs THIS page has (design §3 — the
+ * consumer-voice law). The Share dialog got this treatment and the page never
+ * did: it rendered `reason.message` verbatim, so every developer-voice sentence
+ * the wire raises — "app not found: app_1", one naming VENDO_API_KEY — was shown
+ * to whoever was using the app. The developer sentence keeps its home (the
+ * server's own error, the browser console); the person is told what it means for
+ * them. The dialog keeps its own phase-aware twin (`refusalCopy` in
+ * share-dialog.tsx): "the move was refused" and "the change was refused" are
+ * different sentences, and a shared generic one would be worse copy than both.
+ */
+function refusalSentence(reason: unknown): string {
+  const code = (reason as { code?: unknown } | null)?.code;
+  // `forbidden` normally becomes the fork offer; this is the leg for the calls
+  // that pass no app id to offer a fork OF — Create, and a fork that itself
+  // came back refused.
+  if (code === "forbidden") return "You can look at this app, but not change it.";
+  if (code === "not-found") return "This app isn’t available any more.";
+  if (code === "cloud-required") return "That isn’t turned on for this workspace yet.";
+  return "That didn’t go through — nothing changed. Try again in a moment.";
+}
+
 function AppsWorkspace() {
-  const { apps, create, fork, remove } = useApps();
+  const { client } = useVendoContext();
+  const { apps, create, fork, remove, refresh } = useApps();
+  // §9.1 — the orgs the host asserted for this caller; the Share dialog offers
+  // them by name. Empty on a single-player deployment, which is the point.
+  // `namesPeople` is §9.1's companion: the host wired `resolvePerson`, so the
+  // dialog may offer to share with one person. Unset, it must not — Vendo holds
+  // no directory of its own.
+  const { memberships, namesPeople } = useVendoStatus();
   const [selected, setSelected] = useState<string>();
+  const [sharing, setSharing] = useState<string>();
+  /** §9.4 — the app whose CHANGE was refused, and what was asked for, so the
+      fork offer can name it back ("…to make it dark — but I can make you your
+      own"). */
+  const [denied, setDenied] = useState<{ appId: string; instruction?: string }>();
+  const [changing, setChanging] = useState<string>();
+  const [instruction, setInstruction] = useState("");
   const [prompt, setPrompt] = useState("");
   const [error, setError] = useState<string>();
-  const during = async (action: () => Promise<void>) => {
+  const during = async (action: () => Promise<void>, appId?: string, asked?: string) => {
     setError(undefined);
+    setDenied(undefined);
     try {
       await action();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      // §9.4 — `forbidden` means they can see it but not do this to it, which
+      // is answerable: offer the fork instead of showing them a wall. The code
+      // is thrown ONLY to a proven viewer, which is what makes the offer safe.
+      if (appId !== undefined && (reason as { code?: string })?.code === "forbidden") {
+        setDenied({ appId, ...(asked === undefined ? {} : { instruction: asked }) });
+        return;
+      }
+      setError(refusalSentence(reason));
     }
   };
   const submit = async (event: FormEvent) => {
@@ -212,16 +258,84 @@ function AppsWorkspace() {
             </div>
             <div className="fl-auto-flow" style={{ gap: 8 }}>
               <button className="fl-btn fl-btn-primary" type="button" onClick={() => setSelected(app.id)}>Open</button>
+              {/* §9.4 — the EDIT path is the one `forbidden` was invented for: a
+                  viewer who asks for a change gets the consumer-voice fork offer
+                  instead of a refusal. The offer mounted only off Remove, so the
+                  case the code exists for never reached it. */}
+              <button className="fl-btn" type="button" onClick={() => { setChanging(changing === app.id ? undefined : app.id); setInstruction(""); }}>
+                {changing === app.id ? "Cancel change" : "Change"}
+              </button>
               <button className="fl-btn" type="button" onClick={() => void during(async () => { await fork(app.id); })}>Fork</button>
+              {/* Build contract §9.2-§9.6 — the Share dialog is the ONE surface
+                  that writes grants. It opens for anyone; the dialog itself
+                  reads the caller's level and says plainly when they may not
+                  change who reaches the app. */}
+              <button className="fl-btn" type="button" onClick={() => setSharing(sharing === app.id ? undefined : app.id)}>
+                {sharing === app.id ? "Close sharing" : "Share"}
+              </button>
               <button className="fl-btn fl-btn-ceremony" type="button" onClick={() => {
                 if (globalThis.confirm?.(`Remove ${app.name}?`)) {
                   void during(async () => {
                     await remove(app.id);
                     if (selected === app.id) setSelected(undefined);
-                  });
+                  }, app.id);
                 }
               }}>Remove</button>
             </div>
+            {/* The answer belongs beside the question: the offer is about THIS
+                app, so it renders in this card rather than at the top of the
+                pane, where it read as a page-level announcement. */}
+            {denied?.appId === app.id ? (
+              <div style={{ padding: "0 12px 12px" }}>
+                <ForkOffer
+                  {...(denied.instruction === undefined ? {} : { instruction: denied.instruction })}
+                  onFork={() => during(async () => {
+                    const copy = await fork(app.id);
+                    setDenied(undefined);
+                    setSelected(copy.id);
+                  })}
+                  onDismiss={() => setDenied(undefined)}
+                />
+              </div>
+            ) : null}
+            {changing === app.id ? (
+              <form
+                className="fl-picker-toprow"
+                style={{ padding: "0 12px 12px" }}
+                aria-label={`Change ${app.name}`}
+                onSubmit={event => {
+                  event.preventDefault();
+                  const asked = instruction.trim();
+                  if (!asked) return;
+                  void during(async () => {
+                    await client.apps.edit(app.id, asked);
+                    setInstruction("");
+                    setChanging(undefined);
+                    await refresh();
+                  }, app.id, asked);
+                }}
+              >
+                <label style={{ flex: 1 }}>
+                  <span className="fl-picker-group" style={{ display: "block", margin: "0 2px 7px" }}>What should change?</span>
+                  <input className="fl-picker-search" value={instruction} onChange={event => setInstruction(event.currentTarget.value)} />
+                </label>
+                <button className="fl-btn fl-btn-primary" type="submit" disabled={!instruction.trim()}>Save</button>
+              </form>
+            ) : null}
+            {sharing === app.id ? (
+              <div style={{ padding: 12 }}>
+                <ShareDialog
+                  appId={app.id}
+                  appName={app.name}
+                  memberships={memberships}
+                  namesPeople={namesPeople}
+                  // §9.5 — an app that declares a trigger loses it in the move;
+                  // the dialog says so before and after.
+                  automation={app.trigger !== undefined}
+                  onClose={() => setSharing(undefined)}
+                />
+              </div>
+            ) : null}
           </article>
         ))}
       </div>

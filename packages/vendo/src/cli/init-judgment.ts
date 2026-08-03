@@ -18,7 +18,7 @@ import {
 import { selectJudgmentEngines, type ResolveEngineOptions } from "./judge/engine.js";
 import { runJudgmentPass } from "./judge/pass.js";
 import { plainSelect, type SelectOption } from "./pretty.js";
-import { askYesNo, readOptional, type Output } from "./shared.js";
+import { askYesNo, invokedByPackageScript, readOptional, type Output } from "./shared.js";
 import type { modelThemeSchema } from "./theme/extract-theme.js";
 
 /**
@@ -33,10 +33,11 @@ import type { modelThemeSchema } from "./theme/extract-theme.js";
  * and loosenings held for a human. `overrides.json` goes back to meaning only
  * "what a person decided".
  *
- * The consent posture is unchanged and deliberately singular: one question,
- * asked once, naming the provider the source goes to. `--ai-polish` IS that
- * consent as a flag (so non-interactive runs can opt in); otherwise a
- * non-interactive run skips, because consent cannot be assumed.
+ * The consent posture is deliberately singular: one question, asked once,
+ * naming the provider the source goes to — and asked EVERY interactive run.
+ * No answer is ever persisted (init and sync share this law): `--ai` is the
+ * consent as a flag, `--no-ai` is the refusal as a flag, and a run with no
+ * flag and no TTY skips, because consent cannot be assumed.
  */
 
 /** The telemetry `engine` enum value for each ladder rung (both Claude rungs
@@ -57,9 +58,10 @@ export interface InitJudgmentOptions {
   env: Record<string, string | undefined>;
   /** Non-interactive (--yes / no TTY): no consent possible — skip silently. */
   yes: boolean;
-  /** --ai-polish: consent granted as a flag — skip the prompt and run even
-      when non-interactive (the flag IS the answer). */
-  consent?: boolean;
+  /** --ai / --no-ai: `true` runs without asking (even non-interactively),
+      `false` skips, `undefined` asks in an interactive run and skips
+      otherwise. Never persisted anywhere. */
+  ai?: boolean;
   force?: boolean;
   /** --engine: pin the rung family (claude | codex | npx) instead of
       first-available. An unavailable pin skips loudly — never a fallback. */
@@ -126,9 +128,14 @@ export async function runInitJudgment(options: InitJudgmentOptions): Promise<Ini
   const toolsAvailable = await readOptional(join(vendoDir, "tools.json")) !== null;
   if (!toolsAvailable && options.theme === undefined) return { ran: false };
 
-  const interactive = options.interactive ?? (Boolean(stdin.isTTY) && Boolean(stdout.isTTY));
-  if (options.consent !== true && (options.yes || !interactive)) {
-    output.log("AI polish (descriptions, risk review, brief, theme): skipped — needs an interactive run (`vendo init` in a terminal).");
+  const interactive = options.interactive
+    ?? (!invokedByPackageScript() && Boolean(stdin.isTTY) && Boolean(stdout.isTTY));
+  if (options.ai === false) {
+    output.log("AI polish (descriptions, risk review, brief, theme): off (--no-ai) — extractor defaults stand.");
+    return { ran: false };
+  }
+  if (options.ai !== true && (options.yes || !interactive)) {
+    output.log("AI polish (descriptions, risk review, brief, theme): skipped — this run cannot ask (pass `--ai` to run it non-interactively, or run `vendo init` in a terminal).");
     return { ran: false };
   }
 
@@ -158,7 +165,7 @@ export async function runInitJudgment(options: InitJudgmentOptions): Promise<Ini
     chosen = pinned;
   }
 
-  if (options.consent !== true) {
+  if (options.ai !== true) {
     if (options.engine === undefined && available.length > 1) {
       // Several engines: the SAME single consent question, as a pick-with-
       // default instead of yes/no — never a second question.

@@ -110,6 +110,16 @@ export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
 
     apps: {
       list: async () => [...state.apps],
+      // Build contract §9.2-§9.6 — the playground is single-player, so the
+      // caller owns everything they can see and nothing is shared with anyone.
+      grants: async () => ({ level: "owner" as const, grants: [], personal: true }),
+      share: async () => ({ grants: [] }),
+      unshare: async () => ({ grants: [] }),
+      promote: async (id: string) => app(id),
+      // §9.1 companion — the playground has no host directory behind it, so it
+      // knows nobody. The dialog does not offer the person option here anyway
+      // (/status carries no `namesPeople`).
+      resolvePerson: async () => ({ person: null }),
       create: async ({ prompt }) => {
         const created: AppDocument = {
           format: "vendo/app@1",
@@ -207,6 +217,9 @@ export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
         ],
         grantsMissing: [],
       }),
+      // The playground has no sponsorship state to lapse, so nothing is ever
+      // waiting to be taken on.
+      adopt: async () => ({ adopted: false, missing: [], reason: "already-adopted" as const }),
     },
 
     runs: {

@@ -2,7 +2,7 @@
 
 import type { LaneResult } from "../runner/types";
 import type { PaneProps } from "./pane-props";
-import { formatDuration, repairCount } from "./lane-meta";
+import { formatDuration } from "./lane-meta";
 
 /** Built-in pane: renders any LaneResult as status/timings plus collapsible
  *  raw/document JSON. Every lane maps here until its real pane (VendoPane,
@@ -27,7 +27,6 @@ function ResultView({ result }: { result: LaneResult }) {
   if (result.status === "no-key") {
     return <div className="pane-empty">no key for this lane — set its key in the root .env</div>;
   }
-  const repairs = repairCount(result);
   return (
     <div>
       {result.status === "failed" && <div className="gp-error">{result.error}</div>}
@@ -45,13 +44,10 @@ function ResultView({ result }: { result: LaneResult }) {
           <b>${result.costUsd.toFixed(2)}</b>
         </div>
       )}
-      {result.events && (
+      {result.status === "ok" && result.findings && (
         <div className="gp-stat">
-          <span>pipeline events</span>
-          <b>
-            {result.events.length}
-            {repairs > 0 ? ` · ${repairs} repair${repairs === 1 ? "" : "s"}` : ""}
-          </b>
+          <span>findings</span>
+          <b>{result.findings.length}</b>
         </div>
       )}
       {"document" in result && result.document !== undefined && (

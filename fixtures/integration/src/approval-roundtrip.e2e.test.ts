@@ -24,11 +24,10 @@ import {
   hostFetch,
   partsOfType,
   readSse,
+  readSseMidStream,
   resetFixture,
-  resumeApproval,
   textTurn,
   toolCallTurn,
-  vendoApprovalId,
   type Stack,
 } from "./harness.js";
 
@@ -58,7 +57,11 @@ describe("J2: destructive approval round-trip through the composed wire", () => 
     });
 
     // --- Turn 1: the destructive call parks --------------------------------
-    const paused = await readSse(
+    // Build contract §1.4: the guarded call BLOCKS inside the tool call
+    // awaiting the tap, holding this same request open — it does not park the
+    // whole turn for a later, separately-posted resume. Everything below runs
+    // against the SAME still-open stream, synchronized on the approval card.
+    const paused = readSseMidStream(
       await stack.wireFetch("/threads", {
         method: "POST",
         body: JSON.stringify({
@@ -68,8 +71,14 @@ describe("J2: destructive approval round-trip through the composed wire", () => 
       }, ADA),
     );
 
-    expect(partsOfType(paused, "tool-approval-request")[0]).toMatchObject({ toolCallId: "call_1" });
-    const approvalId = vendoApprovalId(paused);
+    // Build contract §1.5: tool calls are mirrored by the RUNTIME on its own
+    // freshly-minted id — never the scripted model's own toolCallId ("call_1"
+    // only ever reached the wire under `createAgent`'s direct ai-SDK
+    // pass-through). Capture the runtime's id instead of asserting the literal.
+    const approvalCard = await paused.approval;
+    const toolCallId = approvalCard.toolCallId;
+    const approvalId = approvalCard.approvalId;
+    if (approvalId === undefined) throw new Error("approval card carried no approvalId");
 
     // Nothing executed: one pending approval on disk, host invoice untouched.
     const pendingRows = await stack.sql<{ status: string; subject: string }>(
@@ -114,11 +123,16 @@ describe("J2: destructive approval round-trip through the composed wire", () => 
     ]);
     const grantId = grants[0]!.id;
 
-    // --- Resume the paused turn: the real DELETE runs against the host -----
-    const resumed = await readSse(await resumeApproval(stack, "thr_j2", "call_1", true, ADA));
+    // --- The decision above unblocks the still-open call: the real DELETE
+    // runs against the host, and the SAME stream carries the reply. --------
+    // Build contract §1.1: the wire's `output` is the tool's OWN return value
+    // (`outcome.output`) — the harness narrows to ok/error/denied at the
+    // result-status level rather than nesting a `status` field inside it, the
+    // way `createAgent`'s raw-outcome pass-through used to.
+    const resumed = await paused.done;
     expect(partsOfType(resumed, "tool-output-available")[0]).toMatchObject({
-      toolCallId: "call_1",
-      output: { status: "ok" },
+      toolCallId,
+      output: { ok: true },
     });
     expect(resumed.raw.includes("Deleted the invoice.")).toBe(true);
 
@@ -144,7 +158,9 @@ describe("J2: destructive approval round-trip through the composed wire", () => 
         }),
       }, ADA),
     );
-    expect(partsOfType(second, "tool-approval-request")).toHaveLength(0);
+    // No fresh ask: the standing grant answered the call, so no approval card
+    // rides this turn's wire (the wire's only "asking" affordance now).
+    expect(partsOfType(second, "data-vendo-approval")).toHaveLength(0);
     expect(await invoiceExists(SECOND)).toBe(false);
     // No new approval row: the grant answered the second call.
     expect(await stack.sql("SELECT id FROM vendo_approvals")).toHaveLength(1);

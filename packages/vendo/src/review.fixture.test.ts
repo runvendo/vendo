@@ -16,28 +16,44 @@ interface ModelCall {
   }>;
 }
 
-const scriptedModel = (responses: string[]): LanguageModel => {
+/**
+ * Renames, in the brain's edit dialect. The conductor replaced the `<SetName>`
+ * op compiler this fixture was written against, so an edit is now: quote the
+ * app's opening <App> line exactly as the prompt printed it, and hand back the
+ * renamed one. The LAST match is the printed app — the prompt's own
+ * instructions carry a literal `<App name="...">` placeholder before it.
+ */
+const scriptedModel = (renames: string[]): LanguageModel => {
   let call = 0;
-  const next = (): string => {
-    const response = responses[Math.min(call, responses.length - 1)];
+  const flatten = (prompt: ModelCall["prompt"]): string => prompt
+    .map((message) => typeof message.content === "string"
+      ? message.content
+      : message.content.map((part) => part.text ?? "").join(""))
+    .join("\n");
+  const next = (prompt: string): string => {
+    const rename = renames[Math.min(call, renames.length - 1)];
     call += 1;
-    if (response === undefined) throw new Error("scripted model exhausted");
-    return response;
+    if (rename === undefined) throw new Error("scripted model exhausted");
+    const opening = [...prompt.matchAll(/<App name="[^"]*">/g)]
+      .map((match) => match[0])
+      .filter((candidate) => candidate !== '<App name="...">')
+      .at(-1) ?? '<App name="Untitled">';
+    return `<Edit><Old>${opening}</Old><New><App name="${rename}"></New></Edit>`;
   };
   return {
     specificationVersion: "v2",
     provider: "vendo-review-fixture",
     modelId: "vendo-review-fixture-v1",
     supportedUrls: {},
-    async doGenerate(_call: ModelCall) {
+    async doGenerate(modelCall: ModelCall) {
       return {
-        content: [{ type: "text" as const, text: next() }],
+        content: [{ type: "text" as const, text: next(flatten(modelCall.prompt)) }],
         finishReason: "stop" as const,
         usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
       };
     },
-    async doStream(_call: ModelCall) {
-      const text = next();
+    async doStream(modelCall: ModelCall) {
+      const text = next(flatten(modelCall.prompt));
       return {
         stream: new ReadableStream({
           start(controller) {
@@ -109,10 +125,7 @@ export default function Page() {
     const user = "user_ada";
     const reviewer = "host_reviewer";
     const vendo = createVendo({
-      model: scriptedModel([
-        '<Edit><SetName name="Transfer remix v2"/></Edit>',
-        '<Edit><SetName name="Transfer remix v3"/></Edit>',
-      ]),
+      model: scriptedModel(["Transfer remix v2", "Transfer remix v3"]),
       // Host-resolved principal from the fixture header; absent = anonymous
       // (the wire mints an ephemeral session — the "non-admin" caller).
       principal: async (req): Promise<Principal | null> => {

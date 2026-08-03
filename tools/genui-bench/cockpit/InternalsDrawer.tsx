@@ -1,9 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import type { PipelineEvent } from "@vendoai/apps";
+import type { Finding } from "@vendoai/apps";
 import type { LaneName, LaneResult, RunRecord } from "../runner/types";
-import { formatDuration } from "./lane-meta";
 
 type TabKey = "internals" | "wire" | "document" | `raw:${LaneName}`;
 
@@ -13,8 +12,8 @@ const COMPETITOR_TAB_LABELS: Partial<Record<LaneName, string>> = {
   tambo: "Tambo raw",
 };
 
-/** Internals drawer: the Vendo lane's PipelineEvent timeline humanized
- *  (tag colored by outcome), plus tabs for the raw wire text, the final
+/** Internals drawer: what the checking layer still found on the Vendo lane's
+ *  app (tag colored by severity), plus tabs for the raw wire text, the final
  *  AppDocument JSON, and each competitor's raw payload. In split-compare the
  *  drawer stacks both runs' content. */
 export function InternalsDrawer({
@@ -97,30 +96,27 @@ function TabContent({ record, tab }: { record: RunRecord; tab: TabKey }) {
       </pre>
     );
   }
-  return <Timeline events={vendo.events ?? []} error={vendo.status === "failed" ? vendo.error : undefined} />;
+  return (
+    <Findings
+      findings={vendo.status === "ok" ? (vendo.findings ?? []) : []}
+      error={vendo.status === "failed" ? vendo.error : undefined}
+    />
+  );
 }
 
-function Timeline({ events, error }: { events: PipelineEvent[]; error?: string }) {
-  if (events.length === 0 && !error) {
-    return <div className="drawer-empty">(no pipeline events captured)</div>;
+function Findings({ findings, error }: { findings: Finding[]; error?: string }) {
+  if (findings.length === 0 && !error) {
+    return <div className="drawer-empty">(nothing found on this app)</div>;
   }
   return (
     <div>
-      {events.map((event, index) => {
-        const { tag, tone, message } = humanize(event);
-        return (
-          <div key={index}>
-            <div className="ev">
-              <span className="t">{"ms" in event && typeof event.ms === "number" ? formatDuration(event.ms) : "·"}</span>
-              <span className={`tag ${tone}`}>{tag}</span>
-              <span className="msg">{message}</span>
-            </div>
-            {issuesOf(event).map((issue, i) => (
-              <div className="ev-issue" key={i}>{issue}</div>
-            ))}
-          </div>
-        );
-      })}
+      {findings.map((finding, index) => (
+        <div className="ev" key={index}>
+          <span className="t">·</span>
+          <span className={`tag ${finding.severity === "block" ? "err" : "warn"}`}>{finding.severity}</span>
+          <span className="msg">{finding.where} — {finding.message}</span>
+        </div>
+      ))}
       {error && (
         <div className="ev">
           <span className="t">·</span>
@@ -130,71 +126,4 @@ function Timeline({ events, error }: { events: PipelineEvent[]; error?: string }
       )}
     </div>
   );
-}
-
-/** The validation issues a stage carries when it ended without a valid
- *  document. Read structurally so stages that gain the field later (and older
- *  records that never had it) both work. */
-function issuesOf(event: PipelineEvent): string[] {
-  const { issues } = event as { issues?: unknown };
-  return Array.isArray(issues) ? issues.filter((issue): issue is string => typeof issue === "string") : [];
-}
-
-type Tone = "ok" | "warn" | "err" | "info";
-
-/** One humanized line per PipelineEvent stage; unknown stages (future engine
- *  instrumentation) fall back to their raw payload so nothing is hidden. */
-function humanize(event: PipelineEvent): { tag: string; tone: Tone; message: string } {
-  switch (event.stage) {
-    case "full": {
-      const count = issuesOf(event).length;
-      return {
-        tag: "full",
-        tone: event.valid ? "ok" : "warn",
-        message: `full-lane attempt ${event.attempt} · ${event.valid ? "valid" : "invalid"}${
-          count === 0 ? "" : ` · ${count} issue${count === 1 ? "" : "s"}`
-        }`,
-      };
-    }
-    case "region-parallel":
-      return event.fallback
-        ? { tag: "regions", tone: "warn", message: `fell back to single lane: ${event.fallback}` }
-        : {
-            tag: "regions",
-            tone: "info",
-            message: `${event.sectionsLanded ?? "?"}/${event.sectionsPlanned ?? "?"} sections landed (parallel writers)`,
-          };
-    case "repair":
-      return {
-        tag: "repair",
-        tone: event.repaired ? "ok" : "err",
-        message: `${event.rounds} round${event.rounds === 1 ? "" : "s"} · ${
-          event.repaired ? "repaired" : "not repaired"
-        }${event.noValidFix > 0 ? ` · ${event.noValidFix} no-valid-fix` : ""}`,
-      };
-    case "island-repair":
-      return {
-        tag: "island-repair",
-        tone: event.repaired ? "ok" : "err",
-        message: `${event.islands} island${event.islands === 1 ? "" : "s"} rewritten · ${
-          event.repaired ? "repaired" : "not repaired"
-        }`,
-      };
-    case "end-pass":
-      return { tag: "end-pass", tone: "info", message: event.applied ? "applied" : "skipped" };
-    case "data-verify":
-      return {
-        tag: "data-verify",
-        tone: event.applied ? "ok" : "info",
-        message: `${event.relabels} relabel${event.relabels === 1 ? "" : "s"} · ${event.rebinds} rebind${
-          event.rebinds === 1 ? "" : "s"
-        }`,
-      };
-    default: {
-      // Future stages (guardrail verdicts, smoke render, …) still show up.
-      const { stage, ...payload } = event as { stage: string } & Record<string, unknown>;
-      delete payload.issues; // rendered as its own rows below, not inline JSON
-      return { tag: stage, tone: "info", message: JSON.stringify(payload) };
-    }
-  }
 }

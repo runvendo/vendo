@@ -137,12 +137,10 @@ export default function Page() {
     expect(baseline.styles).toEqual([{ path: "src/app/globals.css", css: rootCss }]);
     await writeFile(join(root, ".vendo", "remixable", "invalid.json"), "{not json\n");
     const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    let prompt = "";
-    const model = scriptedModel((call) => {
-      prompt = call.prompt.map((message) => typeof message.content === "string"
-        ? message.content
-        : message.content.map((part) => part.text ?? "").join("")).join("\n");
-      return '<Edit><ForkPin slot="MapleNetWorthCard" into="root"/></Edit>';
+    let modelCalls = 0;
+    const model = scriptedModel(() => {
+      modelCalls += 1;
+      return "";
     });
     const dataDir = join(root, ".data");
     const store = createStore({ dataDir });
@@ -167,15 +165,13 @@ export default function Page() {
     };
     const imported = await vendo.apps.importApp(seed, ctx);
 
-    const edited = await vendo.apps.edit(imported.id, "Remix the net worth card", ctx);
+    // Gesture-owned forking: the user's Remix gesture, executed deterministically
+    // by the engine — the captured source is copied and the pin recorded with NO
+    // model call at all.
+    const edited = await vendo.apps.pins.fork({ appId: imported.id, slot: "MapleNetWorthCard" }, ctx);
 
-    expect(prompt).toContain("MapleNetWorthCard");
-    expect(prompt).toContain("PinnedMapleNetWorthCard");
-    // Gesture-owned forking (2026-07-21): the edit prompt teaches only the
-    // slot -> pinned-component mapping — the captured source and the <ForkPin>
-    // grammar no longer ride it (the op still compiles, as this model shows).
-    expect(prompt).not.toContain("$1.2M");
-    expect(prompt).not.toContain("<ForkPin");
+    // Gesture-owned forking: the fork never reaches the model at all.
+    expect(modelCalls).toBe(0);
     expect(edited.app.pins).toEqual([{
       slot: "MapleNetWorthCard",
       base: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
@@ -231,7 +227,8 @@ export default function Page() {
     const baselineFile = join(root, ".vendo", "remixable", "MapleNetWorthCard.json");
     const captured = JSON.parse(await readFile(baselineFile, "utf8"));
     await writeFile(baselineFile, JSON.stringify({ ...captured, exportable: true }, null, 2));
-    const model = scriptedModel(() => '<Edit><ForkPin slot="MapleNetWorthCard" into="root"/></Edit>');
+    // The fork gesture never reaches the model; the composition still wants one.
+    const model = scriptedModel(() => "");
     const store = createStore({ dataDir: join(root, ".data") });
     cleanups.push(async () => store.close());
     await store.ensureSchema();
@@ -253,7 +250,7 @@ export default function Page() {
       },
     }, ctx);
 
-    const edited = await vendo.apps.edit(imported.id, "Remix the net worth card", ctx);
+    const edited = await vendo.apps.pins.fork({ appId: imported.id, slot: "MapleNetWorthCard" }, ctx);
     const archive = await vendo.apps.exportApp(edited.app.id, ctx);
     const exported = await vendo.apps.importApp(archive, ctx);
 

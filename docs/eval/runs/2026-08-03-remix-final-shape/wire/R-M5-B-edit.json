@@ -1,0 +1,5 @@
+{
+  "instruction": "add a table of my accounts with their balances below the card",
+  "ms": 57817,
+  "surfacedError": "wire did not parse to a complete <Edit> document; wire missing-edit: expected a single <Edit>...</Edit> document; wire invalid-patch-op: <Insert> at={1} leaves a gap in \"pinnednetworthview965099a8-1\" children; the op was skipped; wire invalid-reshape: unexpected character \".\" in reshape args at index 28"
+}

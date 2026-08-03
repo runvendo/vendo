@@ -151,7 +151,7 @@
         "path": "/maple/api/demo/reset",
         "argsIn": "body"
       },
-      "srcHash": "sha256:3f7f5ad1b2866abc1333c37150ad0798424ca4708b223c4e700ef0f9cf05cf0e"
+      "srcHash": "sha256:02d9438f66a05b4f5776fb8b727bc8aefdf7fac787f96d4a41afe60682a4dc1c"
     },
     {
       "name": "host_getAccount",
@@ -522,6 +522,23 @@
         "path": "/maple/api/transactions"
       },
       "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
+    },
+    {
+      "name": "host_proof_list",
+      "description": "GET /api/proof",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      },
+      "risk": "ungraded",
+      "binding": {
+        "kind": "route",
+        "method": "GET",
+        "path": "/maple/api/proof",
+        "argsIn": "query"
+      },
+      "srcHash": "sha256:6685933bdad55139448519a474dd485b40e3d5aa1c4571a7343a020b9ed4ab85"
     },
     {
       "name": "host_transferMoney",

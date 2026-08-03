@@ -2,7 +2,7 @@
 
 import type { HostName, LaneName, LaneResult, RunRecord } from "../runner/types";
 import type { PaneComponent } from "./pane-props";
-import { LANE_FOOTNOTES, LANE_LABELS, formatDuration, repairCount } from "./lane-meta";
+import { LANE_FOOTNOTES, LANE_LABELS, findingCount, formatDuration } from "./lane-meta";
 
 /** The four-pane grid. Deliberately generic: page.tsx passes the
  *  LaneName → PaneComponent mapping, so real panes (VendoPane, competitor
@@ -71,13 +71,13 @@ function statusClass(result: LaneResult | undefined, running: boolean): string {
   if (!result) return running ? "run" : "idle";
   if (result.status === "no-key") return "idle";
   if (result.status === "failed") return "err";
-  return repairCount(result) > 0 ? "warn" : "ok";
+  return findingCount(result) > 0 ? "warn" : "ok";
 }
 
 function headerTime(result: LaneResult | undefined, running: boolean): string {
   if (!result) return running ? "…" : "";
   if (result.status === "no-key") return "no key";
-  const repairs = repairCount(result);
+  const findings = findingCount(result);
   const time = formatDuration(result.durationMs);
-  return repairs > 0 ? `${time} · ${repairs} repair${repairs === 1 ? "" : "s"}` : time;
+  return findings > 0 ? `${time} · ${findings} finding${findings === 1 ? "" : "s"}` : time;
 }

@@ -299,18 +299,27 @@ export function composioConnector(config: {
 
     discoveryIndex: () => (indexPromise ??= buildIndex()),
 
-    async expandToolkits(toolkits: string[]): Promise<boolean> {
-      if (!lazy) return false;
-      connectableSlugsPromise ??= (async () => new Set((await listConnectable()).map((entry) => entry.toolkit)))();
-      const connectable = await connectableSlugsPromise;
-      let changed = false;
-      for (const toolkit of toolkits) {
-        if (!connectable.has(toolkit) || expandedToolkits.has(toolkit)) continue;
-        expandedToolkits.add(toolkit);
-        changed = true;
-      }
-      return changed;
-    },
+    // Present ONLY in lazy mode (connector.ts's own contract: "present only on
+    // connectors that defer full schema loading"). An eager (`apps: [...]`)
+    // connector's tools are already fully loaded regardless of connection
+    // status, so `registry.loadoutSeed`'s isLazyConnectorTool check — which
+    // keys off this field's mere presence — must not see it here; an eager
+    // connector's tools have to seed for EVERY principal (connected or not),
+    // or a not-yet-connected principal could never reach the tool at all to
+    // trigger the connect-required card in the first place.
+    ...(lazy ? {
+      async expandToolkits(toolkits: string[]): Promise<boolean> {
+        connectableSlugsPromise ??= (async () => new Set((await listConnectable()).map((entry) => entry.toolkit)))();
+        const connectable = await connectableSlugsPromise;
+        let changed = false;
+        for (const toolkit of toolkits) {
+          if (!connectable.has(toolkit) || expandedToolkits.has(toolkit)) continue;
+          expandedToolkits.add(toolkit);
+          changed = true;
+        }
+        return changed;
+      },
+    } : {}),
 
     async descriptors(): Promise<ToolDescriptor[]> {
       // Built fresh and swapped in atomically so a concurrent execute() never sees a half-empty map.

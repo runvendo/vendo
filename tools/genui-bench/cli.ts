@@ -84,13 +84,10 @@ async function main(): Promise<void> {
         entry[lane] = { status: "no-key" };
         continue;
       }
-      const repairs = (result.events ?? []).filter(
-        (event) => event.stage === "repair" || event.stage === "island-repair",
-      ).length;
       entry[lane] = {
         status: result.status,
         durationMs: result.durationMs,
-        repairs,
+        ...(result.status === "ok" && result.findings ? { findings: result.findings.length } : {}),
         ...(result.status === "failed" ? { error: result.error } : {}),
       };
     }
@@ -166,7 +163,7 @@ async function resolveLanes(lanes: LaneName[]): Promise<{
       (name): LaneAdapter => ({
         name,
         async generate() {
-          return { status: "ok", startedAt: Date.now(), durationMs: 0, events: [] };
+          return { status: "ok", startedAt: Date.now(), durationMs: 0, findings: [] };
         },
       }),
     );

@@ -46,6 +46,12 @@ required in production, as is `AUTH_SECRET`). Sign in at `/login`; sign out at
 cookie). Pages redirect to `/login` and the bank API answers 401
 without a session (`src/proxy.ts`).
 
+The account menu's **Switch account** list is the seeded roster, and it is
+empty exactly when password login is unconfigured — production with no
+`MAPLE_DEMO_PASSWORD`. The menu then says so ("Account switching is off") and
+names the env var, because switching signs in through the credentials flow.
+Locally the password defaults to `maple-demo`, so both users are always there.
+
 The Auth.js session is the identity for everything, wired with one config key
 — `auth: authJs({ secret: authSecret, user })` in `src/vendo/server.ts`: the
 Vendo principal is the session's user id, the MCP OAuth adapter resolves the

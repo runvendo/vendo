@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { executeRun, type GitState } from "./run";
 import { listRuns, loadRun, saveRun, setPin } from "./store";
 import type { AppDocument } from "@vendoai/core";
-import type { PipelineEvent } from "@vendoai/apps";
+import type { Finding } from "@vendoai/apps";
 import type { HostFixture, HostName, LaneAdapter, RunRecord, RunRequest } from "./types";
 import { stubHostFixture } from "../fixtures/stub";
 
@@ -15,9 +15,8 @@ const DOCUMENT: AppDocument = {
   tree: { component: "Stack", props: {} },
 } as unknown as AppDocument;
 
-const EVENTS: PipelineEvent[] = [
-  { stage: "full", attempt: 1, valid: false, ms: 100 },
-  { stage: "repair", rounds: 1, repaired: true, noValidFix: 0, ms: 50 },
+const FINDINGS: Finding[] = [
+  { severity: "warn", where: 'node "n2" prop "rows"', message: "balances may be empty" },
 ];
 
 const fixture: HostFixture = stubHostFixture("maple");
@@ -38,7 +37,7 @@ function okAdapter(overrides: Partial<LaneAdapter> = {}): LaneAdapter {
         durationMs: 5,
         document: DOCUMENT,
         wire: "wire text",
-        events: EVENTS,
+        findings: FINDINGS,
       };
     },
     ...overrides,
@@ -139,11 +138,11 @@ describe("executeRun", () => {
     // Bulky fields live in sibling artifact files, not run.json.
     expect(slim.lanes.vendo.document).toBeUndefined();
     expect(slim.lanes.vendo.wire).toBeUndefined();
-    expect(slim.lanes.vendo.events).toBeUndefined();
+    expect(slim.lanes.vendo.findings).toBeUndefined();
 
     expect(readFileSync(join(runDir, "vendo.wire.txt"), "utf8")).toBe("wire text");
     expect(JSON.parse(readFileSync(join(runDir, "vendo.document.json"), "utf8"))).toEqual(DOCUMENT);
-    expect(JSON.parse(readFileSync(join(runDir, "vendo.events.json"), "utf8"))).toEqual(EVENTS);
+    expect(JSON.parse(readFileSync(join(runDir, "vendo.findings.json"), "utf8"))).toEqual(FINDINGS);
   });
 
   it("writes <lane>.raw.json for competitor payloads", async () => {
@@ -191,46 +190,6 @@ describe("executeRun", () => {
     const lane = record.lanes.vendo;
     expect(lane?.status).toBe("failed");
     if (lane?.status === "failed") expect(lane.error).toContain("cadence");
-  });
-
-  /** The gap this closes: a failed run's `vendo.events.json` held only
-   *  {stage,attempt,valid,ms} and run.json only "model could not produce a
-   *  valid app". The reason existed in the engine and was thrown away, so
-   *  format/guardrail iteration had no signal off the console. */
-  it("a failed run records WHY: per-attempt issues in the artifact, the reason on the error", async () => {
-    const issues = [
-      'tree root "root" renders an empty layout; keep at least one attached, visible node',
-      "the app has a title and no content",
-    ];
-    const failingEvents: PipelineEvent[] = [
-      { stage: "full", attempt: 0, valid: false, ms: 6984, issues },
-      { stage: "full", attempt: 1, valid: false, ms: 10036, issues },
-    ];
-    const runsDir = tempRunsDir();
-    const record = await executeRun(
-      request({ lanes: ["vendo"] }),
-      fixtures,
-      [okAdapter({
-        generate: async () => ({
-          status: "failed" as const,
-          startedAt: 0,
-          durationMs: 24691,
-          error: `model could not produce a valid app: ${issues.join(" | ")}`,
-          events: failingEvents,
-        }),
-      })],
-      runsDir,
-      { readGitState: () => cleanGit },
-    );
-
-    const artifact = JSON.parse(readFileSync(join(runsDir, record.id, "vendo.events.json"), "utf8"));
-    expect(artifact).toEqual(failingEvents);
-
-    const loaded = loadRun(runsDir, record.id);
-    const vendo = loaded.lanes.vendo;
-    if (vendo?.status !== "failed") throw new Error(`expected failed, got ${vendo?.status}`);
-    expect(vendo.events).toEqual(failingEvents);
-    for (const issue of issues) expect(vendo.error).toContain(issue);
   });
 });
 
@@ -281,7 +240,7 @@ describe("store", () => {
           durationMs: 5,
           document: DOCUMENT,
           wire: "wire text",
-          events: EVENTS,
+          findings: FINDINGS,
         },
         "thesys-c1": { status: "ok", startedAt: 0, durationMs: 7, raw: { answer: 42 } },
       },
@@ -295,7 +254,7 @@ describe("store", () => {
     if (vendo?.status === "ok") {
       expect(vendo.document).toEqual(DOCUMENT);
       expect(vendo.wire).toBe("wire text");
-      expect(vendo.events).toEqual(EVENTS);
+      expect(vendo.findings).toEqual(FINDINGS);
     }
     const competitor = loaded.lanes["thesys-c1"];
     if (competitor?.status === "ok") expect(competitor.raw).toEqual({ answer: 42 });

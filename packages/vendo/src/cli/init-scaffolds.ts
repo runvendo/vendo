@@ -1,10 +1,12 @@
 import { join, relative, sep } from "node:path";
+import { applyJudgment, judgmentsFileSchema, overridesFileSchema } from "@vendoai/actions";
 import {
   extractServerActions,
   serverActionRegistrations,
   type ServerActionRegistration,
 } from "@vendoai/actions/sync";
 import { AUTH_FAMILY_INFO, AUTH_PRESET_SPECIFIER, type AuthMatch } from "./init-auth.js";
+import { readOptional } from "./shared.js";
 
 /** The wired preset line plus its escape-hatch comment. The lead-in stays
     honest about how the preset got here: detection cites the found
@@ -62,12 +64,16 @@ export function registrySource(variant: "tsx" | "mjs"): string {
     the embeds, which call this route directly (0.4.1 E2E cert blocker B4:
     a `() => null` wire against a demo-user chat route rendered an infinite
     skeleton). Replaced wholesale when an auth preset is wired. */
-export function anonymousPrincipalLines(): string {
+export function anonymousPrincipalLines(typescript: boolean): string {
+  // `as const` narrows kind to the Principal literal in TypeScript and is a
+  // SyntaxError in a .mjs file (self-serve audit B2: every plain-JS host died on
+  // its first `node server.js`), so the annotation rides the host's language.
+  const kind = typescript ? `"user" as const` : `"user"`;
   return `  // Who the wire's callers act as. This must resolve the SAME subject your\n` +
     `  // agent loop uses (the docs' chat routes set this demo principal), or apps\n` +
     `  // and approvals created in chat are invisible to the embeds, which call\n` +
     `  // this route directly. Replace both sides with your real session lookup.\n` +
-    `  principal: async () => ({ kind: "user" as const, subject: "demo-user" }),\n`;
+    `  principal: async () => ({ kind: ${kind}, subject: "demo-user" }),\n`;
 }
 
 /**
@@ -125,7 +131,8 @@ export function routeSource(options: { serverActions: boolean; auth: AuthMatch |
     (options.serverActions ? `import { serverActions } from "./vendo-actions";\n` : "") +
     `import { registry } from ${JSON.stringify(options.registrySpecifier)};\n` +
     `\nconst vendo = createVendo({\n` +
-    (options.auth === null ? anonymousPrincipalLines() : authConfigLines(options.auth)) +
+    // The Next route is always TypeScript (app/api/vendo/[...vendo]/route.ts).
+    (options.auth === null ? anonymousPrincipalLines(true) : authConfigLines(options.auth)) +
     `  catalog: registry,\n` +
     (options.serverActions ? `  serverActions,\n` : "") +
     `  policy: {}, // .vendo/policy.json: destructive asks, reads run\n` +
@@ -133,16 +140,115 @@ export function routeSource(options: { serverActions: boolean; auth: AuthMatch |
     `export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);\n`;
 }
 
-/** Best-effort detection of the host's registrable server actions for the
- * wiring map. Failure degrades to no map — sync reports extraction problems
- * loudly, and runtime execution fails closed on the missing registration. */
-export async function wiringServerActions(root: string): Promise<ServerActionRegistration[]> {
+/**
+ * The server actions the runtime will actually dispatch: the host's current
+ * `"use server"` surface, minus whatever a judgment or a human override
+ * disabled. `vendo init` and `vendo doctor` MUST resolve the same set — a split
+ * here is a nag on one side (register a tool nothing will ever call) or a false
+ * green on the other. Failure degrades to none: sync reports extraction
+ * problems loudly, and execution fails closed on a missing registration anyway.
+ */
+export async function requiredServerActions(root: string): Promise<ServerActionRegistration[]> {
   try {
     const { tools } = await extractServerActions(root);
-    return serverActionRegistrations(tools);
+    const vendoDir = join(root, ".vendo");
+    const overrides = await readVendoFile(join(vendoDir, "overrides.json"), (value) => overridesFileSchema.parse(value).tools);
+    const judgments = await readVendoFile(join(vendoDir, "judgments.json"), (value) => judgmentsFileSchema.parse(value).tools);
+    // The same three-layer stack the runtime resolves — skeleton ⊕ judgments ⊕
+    // overrides — so a tool this demands registration for is one the agent can
+    // actually reach. A human override wins last, including a deliberate wake.
+    return serverActionRegistrations(tools.filter((tool) => {
+      const effective = applyJudgment(tool, judgments?.[tool.name]);
+      return (overrides?.[tool.name]?.disabled ?? effective.disabled ?? false) !== true;
+    }));
   } catch {
     return [];
   }
+}
+
+/** A `.vendo/` file, or null when absent or malformed — both mean "no recorded
+    decision", never a reason to fail the caller. */
+async function readVendoFile<T>(path: string, parse: (value: unknown) => T): Promise<T | null> {
+  const raw = await readOptional(path);
+  if (raw === null) return null;
+  try {
+    return parse(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * How a route composes its server-action map. Init raises the wiring paste and
+ * doctor raises E-WIRE-009 on exactly ONE of these — `"unwired"` — so the two
+ * share the answer instead of each pattern-matching their own way. The scope is
+ * load-bearing: an `import { serverActions } …` line with nothing inside
+ * `createVendo({ … })` is NOT wiring (the tools still fail closed), and it is
+ * the likeliest real state, because it is where a half-applied paste lands.
+ */
+export type ServerActionsWiring = "wired" | "unwired" | "unknown";
+
+export function serverActionsWiring(source: string): ServerActionsWiring {
+  const call = source.match(/createVendo\(\s*\{/);
+  // Unrecognized composition: no honest paste to name, nothing honest to grade.
+  if (call === null) return "unknown";
+  return /(^|[\s{,])serverActions\b/.test(source.slice(source.indexOf(call[0]))) ? "wired" : "unwired";
+}
+
+/** Does this route source the GENERATED map? A route that composes its own
+    (a local object, an aliased import) is a shape init leaves alone, so
+    neither init nor doctor may create or grade `vendo-actions.ts` for it. */
+export function importsGeneratedMap(source: string): boolean {
+  return /from\s+["']\.\/vendo-actions["']/.test(source);
+}
+
+/** A registration in the map's own key form. */
+export function registrationKey(registration: ServerActionRegistration): string {
+  return `${registration.module}#${registration.exportName}`;
+}
+
+/** Registrations an existing map does not carry. A map is compared by the keys
+    it registers, never byte-for-byte: it is the developer's file from creation
+    on, so their formatting, their comments, and their own extra entries are all
+    legitimate — only an ABSENT key means a tool that fails closed. */
+export function missingRegistrations(
+  map: string,
+  registrations: readonly ServerActionRegistration[],
+): ServerActionRegistration[] {
+  return registrations.filter((registration) => !map.includes(JSON.stringify(registrationKey(registration))));
+}
+
+/** The import specifier the map uses to reach an action module. */
+function registrationSpecifier(root: string, wiringDir: string, registration: ServerActionRegistration): string {
+  const target = relative(wiringDir, join(root, registration.module))
+    .split(sep).join("/")
+    .replace(/\.(?:tsx|ts|jsx|js)$/, "");
+  return target.startsWith(".") ? target : `./${target}`;
+}
+
+/** The paste that adds missing registrations to an existing map — only the
+    missing ones, never the whole file. Aliases continue the file's own
+    `actionN` convention above the highest one already in it, so a paste can
+    never shadow a binding the developer already has. */
+export function missingRegistrationLines(
+  root: string,
+  wiringDir: string,
+  map: string,
+  missing: readonly ServerActionRegistration[],
+): string[] {
+  const used = [...map.matchAll(/\baction(\d+)\b/g)].map((match) => Number(match[1]));
+  let next = used.length === 0 ? 0 : Math.max(...used) + 1;
+  const imports: string[] = [];
+  const entries: string[] = [];
+  for (const registration of missing) {
+    const alias = `action${next++}`;
+    const specifier = registrationSpecifier(root, wiringDir, registration);
+    imports.push(registration.exportName === "default"
+      ? `import ${alias} from ${JSON.stringify(specifier)};`
+      : `import { ${registration.exportName} as ${alias} } from ${JSON.stringify(specifier)};`);
+    entries.push(`  ${JSON.stringify(registrationKey(registration))}: ${alias},`);
+  }
+  return [...imports, "… then add inside the serverActions map:", ...entries];
 }
 
 /**
@@ -153,24 +259,23 @@ export async function wiringServerActions(root: string): Promise<ServerActionReg
  */
 export function serverActionsModuleSource(root: string, wiringDir: string, registrations: ServerActionRegistration[]): string {
   const header = `/**\n` +
-    ` * Server-action registration map — generated by \`vendo init\`; re-run init\n` +
-    ` * when the "use server" surface changes. createVendo dispatches\n` +
-    ` * server-action tools in-process through this map; an action missing here\n` +
-    ` * fails closed at execution time (no work performed).\n` +
+    ` * Server-action registration map — created by \`vendo init\`, yours from here.\n` +
+    ` * Init never rewrites a file you already have and compares this one only by\n` +
+    ` * the keys it registers, so your edits are safe; when an action is missing,\n` +
+    ` * init prints just the entries to add. createVendo dispatches server-action\n` +
+    ` * tools in-process through this map; an action missing here fails closed at\n` +
+    ` * execution time (no work performed).\n` +
     ` */\n`;
   if (registrations.length === 0) return `${header}export const serverActions = {};\n`;
   const imports: string[] = [];
   const entries: string[] = [];
   registrations.forEach((registration, index) => {
     const alias = `action${index}`;
-    const target = relative(wiringDir, join(root, registration.module))
-      .split(sep).join("/")
-      .replace(/\.(?:tsx|ts|jsx|js)$/, "");
-    const specifier = target.startsWith(".") ? target : `./${target}`;
+    const specifier = registrationSpecifier(root, wiringDir, registration);
     imports.push(registration.exportName === "default"
       ? `import ${alias} from ${JSON.stringify(specifier)};`
       : `import { ${registration.exportName} as ${alias} } from ${JSON.stringify(specifier)};`);
-    entries.push(`  ${JSON.stringify(`${registration.module}#${registration.exportName}`)}: ${alias},`);
+    entries.push(`  ${JSON.stringify(registrationKey(registration))}: ${alias},`);
   });
   return `${header}${imports.join("\n")}\n\n` +
     `export const serverActions = {\n${entries.join("\n")}\n};\n`;
@@ -245,7 +350,7 @@ export function customServerSource(typescript: boolean, auth: AuthMatch | null =
     `    const baseUrl = (env.VENDO_CLOUD_URL ?? processEnv.VENDO_CLOUD_URL ?? "https://console.vendo.run").replace(/\\/+$/, "");\n` +
     `    const cloud = apiKey === undefined || apiKey === "" ? undefined : { apiKey, baseUrl };\n` +
     `    vendo = createVendo({\n` +
-    (auth === null ? anonymousPrincipalLines() : authConfigLines(auth))
+    (auth === null ? anonymousPrincipalLines(typescript) : authConfigLines(auth))
       .split("\n").map((line) => (line === "" ? line : `    ${line}`)).join("\n") +
     `      catalog: registry,\n` +
     `      policy: {}, // .vendo/policy.json: destructive asks, reads run\n` +
@@ -289,6 +394,13 @@ export function expressServerSource(typescript: boolean, auth: AuthMatch | null 
         mountReturn: `: (request: ExpressRequest, response: ServerResponse, next: ExpressNext) => void`,
       }
     : { requestHeaders: "(headers)", absoluteUrl: "(request)", sendResponse: "(source, target)", handle: "(request, response)", mountReturn: "" };
+  // getSetCookie is the only correct way to read multiple Set-Cookie headers,
+  // but it is missing from older lib.dom Headers types — the TS variant casts,
+  // and the JS variant must not (a cast is a SyntaxError in .mjs; self-serve
+  // audit B2).
+  const getSetCookieExpression = typescript
+    ? `(source.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie`
+    : `source.headers.getSetCookie`;
   const requestInit = typescript
     ? `  const init: RequestInit & { duplex?: "half" } = { method, headers: requestHeaders(request.headers) };\n`
     : `  const init = { method, headers: requestHeaders(request.headers) };\n`;
@@ -326,7 +438,7 @@ export function expressServerSource(typescript: boolean, auth: AuthMatch | null 
     `import { registry } from ${JSON.stringify(registrySpecifier)};\n` +
     types +
     `\nconst vendo = createVendo({\n` +
-    (auth === null ? anonymousPrincipalLines() : authConfigLines(auth)) +
+    (auth === null ? anonymousPrincipalLines(typescript) : authConfigLines(auth)) +
     `  catalog: registry,\n` +
     `  policy: {}, // .vendo/policy.json: destructive asks, reads run\n` +
     `});\n\n` +
@@ -350,7 +462,7 @@ export function expressServerSource(typescript: boolean, auth: AuthMatch | null 
     `  source.headers.forEach((value, name) => {\n` +
     `    if (name.toLowerCase() !== "set-cookie") target.setHeader(name, value);\n` +
     `  });\n` +
-    `  const getSetCookie = (source.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie;\n` +
+    `  const getSetCookie = ${getSetCookieExpression};\n` +
     `  const fallbackCookie = source.headers.get("set-cookie");\n` +
     `  const cookies = typeof getSetCookie === "function"\n` +
     `    ? getSetCookie.call(source.headers)\n` +

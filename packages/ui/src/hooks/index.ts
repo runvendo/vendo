@@ -2,6 +2,7 @@
 export { useActivity } from "./use-activity.js";
 export { useApp } from "./use-app.js";
 export { useApps } from "./use-apps.js";
+export { useAppGrants } from "./use-app-grants.js";
 export { useApprovals } from "./use-approvals.js";
 export { useAutomations } from "./use-automations.js";
 export { useConnections } from "./use-connections.js";

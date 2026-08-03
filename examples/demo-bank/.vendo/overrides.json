@@ -9,6 +9,10 @@
       "disabled": true,
       "description": "Auth.js endpoint - never agent-callable"
     },
+    "host_proof_list": {
+      "disabled": true,
+      "description": "Wave-1 live-proof endpoint - never agent-callable"
+    },
     "host_listAccounts": { "title": "List your accounts" },
     "host_getAccount": { "title": "Show one account" },
     "host_listTransactions": { "title": "Search transactions" },
@@ -19,8 +23,18 @@
     "host_listPayees": { "title": "List saved payees" },
     "host_listScheduledPayments": { "title": "List scheduled payments" },
     "host_getSpendingInsights": { "title": "Show spending by category" },
+    "host_getProfile": { "risk": "read", "title": "Show your profile" },
     "host_listGoals": { "title": "List savings goals" },
-    "host_transferMoney": { "title": "Send money" }
+    "host_transferMoney": {
+      "title": "Send money",
+      "risk": "destructive",
+      "description": "Send money from the user's checking account. This IRREVERSIBLY MOVES MONEY: it debits checking and appends a posted transfer. There is no undo."
+    },
+    "host_createOrder": {
+      "title": "Place an order",
+      "risk": "destructive",
+      "description": "Place a delivery order on the user's account. This MOVES MONEY: it charges the user's card and appends a transaction."
+    }
   },
   "surfaces": {
     "mcp": {

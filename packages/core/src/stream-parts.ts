@@ -142,6 +142,27 @@ export const vendoStepLimitPartSchema = z.object({
   message: z.string(),
 }).passthrough() satisfies z.ZodType<VendoStepLimitPart>;
 
+/** self-serve P (additive — 01 §16 amendment parked, same footing as the
+ *  step-limit part): streamed when a turn's stream errors, so the failure is
+ *  part of the ASSISTANT MESSAGE rather than only ephemeral client state. The
+ *  ai-SDK `error` chunk sets `useChat`'s transient `error` and is gone on the
+ *  next mount, so a reloaded (or refetched) thread showed the user's question
+ *  answered by a blank reply — the keyless install's whole first experience.
+ *  `message` is the gated wire string (agent wireErrorMessage): Vendo's own
+ *  crafted text or the fixed generic line, never provider internals.
+ *  Consumers that don't recognize it ignore it (§15 forward-compat). */
+export interface VendoTurnErrorPart {
+  type: "data-vendo-turn-error";
+  /** A renderable, provider-safe explanation of why the turn ended. */
+  message: string;
+}
+
+/** self-serve P */
+export const vendoTurnErrorPartSchema = z.object({
+  type: z.literal("data-vendo-turn-error"),
+  message: z.string().min(1),
+}).passthrough() satisfies z.ZodType<VendoTurnErrorPart>;
+
 /** 0.4.4 cert defect B (additive — 01 §16 amendment parked, same footing as
  *  the step-limit part): streamed beside the native tool part when an app
  *  BUILD terminally fails in a chat turn, so the thread shows the classified

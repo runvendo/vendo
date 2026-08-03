@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TOOL_NAME_PATTERN, VENDO_APPS_CREATE_TOOL, VENDO_APPS_TOOL_PREFIX } from "./index.js";
+import { modelToolDescription, TOOL_NAME_PATTERN, VENDO_APPS_CREATE_TOOL, VENDO_APPS_TOOL_PREFIX } from "./index.js";
 
 describe("§4 — the app runtime's reserved agent-tool namespace (AGENT-4)", () => {
   it("pins the vendo_apps_ prefix every view-capable tool name lives under", () => {
@@ -13,5 +13,26 @@ describe("§4 — the app runtime's reserved agent-tool namespace (AGENT-4)", ()
 
   it("prefixed names remain provider-safe tool names", () => {
     expect(TOOL_NAME_PATTERN.test(`${VENDO_APPS_TOOL_PREFIX}open`)).toBe(true);
+  });
+});
+
+describe("modelToolDescription — the model can only speak a title it was told", () => {
+  // Wave-1 live proof E1-5: the refusal that leaked `host_transferMoney` was
+  // model-written, and the identifier was the only proper noun the model had —
+  // the toolset it thinks with carried `description` and nothing else.
+  it("leads with the human title", () => {
+    expect(modelToolDescription({
+      name: "host_transferMoney",
+      title: "Send money",
+      description: "Send money to a person from the user's checking account.",
+    })).toBe("Send money — Send money to a person from the user's checking account.");
+  });
+
+  it("leaves the description alone when there is no title to add", () => {
+    expect(modelToolDescription({ name: "host_x", description: "Does a thing." })).toBe("Does a thing.");
+    expect(modelToolDescription({ name: "host_x", title: "  ", description: "Does a thing." })).toBe("Does a thing.");
+    // `ToolListing.title` falls back to the NAME; repeating the identifier as a
+    // label would teach the model exactly the wrong vocabulary.
+    expect(modelToolDescription({ name: "host_x", title: "host_x", description: "Does a thing." })).toBe("Does a thing.");
   });
 });

@@ -15,7 +15,14 @@ export interface McpStateSession {
   /** Opaque approval-replay namespace. The 2025-11-25 adapter uses its MCP
    * session id; a stateless adapter supplies an authenticated durable scope. */
   replayScope: string;
-  context: McpRunContext;
+  /**
+   * An OAuth session carries {@link McpRunContext} — the consent projection is
+   * what makes host execution attributable. A TURN-credential session carries
+   * the live turn's OWN `RunContext` verbatim instead: it has no MCP consent
+   * because it is not an MCP client's call, it is the host's own turn reaching
+   * its own tools through the door.
+   */
+  context: RunContext;
   handleRequest(req: Request): Promise<Response>;
   close(): Promise<void>;
 }

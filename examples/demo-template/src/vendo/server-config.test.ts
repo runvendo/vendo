@@ -100,8 +100,13 @@ const spendMiddlewareSpy = vi.hoisted(() =>
 )
 const capsGuardSpy = vi.hoisted(() => vi.fn(() => ({ __mock: "capsGuard" })))
 
+type CapturedModel = { middleware?: { __mock?: string; modelId?: string }; model?: { name?: string } }
+
 interface CapturedConfig {
-  model?: { middleware?: { __mock?: string; modelId?: string }; model?: { name?: string } }
+  /** The §10 seat block. The deprecated top-level `model:` is gone from this
+   *  composition — the metering invariant below is asserted on the seat now,
+   *  which is the slot that actually reaches inference. */
+  models?: { default?: CapturedModel }
   store?: unknown
   connections?: unknown
   connectors?: unknown
@@ -143,10 +148,11 @@ describe("demo-template model wiring (caps guard + spend middleware)", () => {
 
     expect(capsGuardSpy).toHaveBeenCalled()
     expect(wrapLanguageModelSpy).toHaveBeenCalledTimes(1)
-    expect(config.model?.middleware).toMatchObject({ __mock: "spendMiddleware" })
+    expect(config.models?.default?.middleware).toMatchObject({ __mock: "spendMiddleware" })
     // The metered model IS the one handed to createVendo — a second unwrapped
-    // model, or an unwrapped slot, would un-meter the demo.
-    expect(config.model?.model).toMatchObject({ __mock: "vendoModel" })
+    // model, or an unwrapped slot, would un-meter the demo. Unchanged by the
+    // move from `model:` to the `default` seat: same value, same one wrapping.
+    expect(config.models?.default?.model).toMatchObject({ __mock: "vendoModel" })
   })
 
   it("scopes the connect dock and leaves the key-composed slots unset", async () => {
@@ -161,11 +167,11 @@ describe("demo-template model wiring (caps guard + spend middleware)", () => {
   it("rides the credential ladder by default and passes VENDO_DEMO_MODEL through verbatim", async () => {
     const unpinned = await composeMocked()
     expect(vendoModelSpy).toHaveBeenLastCalledWith()
-    expect(unpinned.model?.middleware?.modelId).toBe("vendo")
+    expect(unpinned.models?.default?.middleware?.modelId).toBe("vendo")
 
     vi.stubEnv("VENDO_DEMO_MODEL", "claude-sonnet-4-6")
     const pinned = await composeMocked()
     expect(vendoModelSpy).toHaveBeenLastCalledWith("claude-sonnet-4-6")
-    expect(pinned.model?.middleware?.modelId).toBe("claude-sonnet-4-6")
+    expect(pinned.models?.default?.middleware?.modelId).toBe("claude-sonnet-4-6")
   })
 })

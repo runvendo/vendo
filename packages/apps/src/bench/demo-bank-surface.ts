@@ -31,12 +31,19 @@ export const loadDemoBankTools = (): HostToolInfo[] => {
   const raw = JSON.parse(readFileSync(resolve(repoRoot, "examples/demo-bank/.vendo/tools.json"), "utf8")) as {
     tools: Array<{ name: string; description: string; risk: string; inputSchema?: Record<string, unknown> }>;
   };
+  // tools.json is what `vendo sync` writes; the live registry merges
+  // overrides.json on top (disabled, risk, description). Mirror that here or
+  // the bench sees tools the deployment disabled and labels it corrected.
+  const { tools: overrides = {} } = JSON.parse(
+    readFileSync(resolve(repoRoot, "examples/demo-bank/.vendo/overrides.json"), "utf8"),
+  ) as { tools?: Record<string, { disabled?: boolean; risk?: string; description?: string }> };
   return raw.tools
+    .filter(({ name }) => overrides[name]?.disabled !== true)
     .filter(({ name }) => !name.startsWith("host_auth") && !name.startsWith("host_demo") && !name.startsWith("host_voice"))
     .map(({ name, description, risk, inputSchema }) => ({
       name,
-      description,
-      risk,
+      description: overrides[name]?.description ?? description,
+      risk: overrides[name]?.risk ?? risk,
       ...(inputSchema === undefined ? {} : { inputSchema }),
     }));
 };

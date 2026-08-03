@@ -77,7 +77,7 @@ lane `{"status":"no-key"}` and the run proceeds):
 
 | Lane       | Key                 | Notes                                                        |
 | ---------- | ------------------- | ------------------------------------------------------------ |
-| vendo      | `ANTHROPIC_API_KEY` | production engine + PipelineEvent tap                        |
+| vendo      | `ANTHROPIC_API_KEY` | production conductor + checking-layer findings                |
 | copilotkit | `ANTHROPIC_API_KEY` | self-hosted runtime (keyless — no CopilotKit account needed) |
 | thesys-c1  | `THESYS_API_KEY`    | their API + their React renderer (model below)               |
 | tambo      | `TAMBO_API_KEY`     | their orchestration + harness component registry             |
@@ -138,19 +138,19 @@ Each run is a directory `runs/<id>/` (id = `yyyymmdd-hhmmss-hex4`):
 
 - `run.json` — the slim RunRecord: prompt, host, git SHA + dirty-diff hash,
   per-lane `{status, duration, cost}`, pin label.
-- `vendo.wire.txt`, `vendo.document.json`, `vendo.events.json` — Vendo wire
-  text, final AppDocument, and the tapped PipelineEvent log.
+- `vendo.wire.txt`, `vendo.document.json`, `vendo.findings.json` — Vendo wire
+  text, final AppDocument, and what the checking layer still found on it.
 - `<lane>.raw.json` — a competitor lane's raw request/response payload.
 
 Pinning writes a label into `run.json`; pinned runs sort first in the rail.
-Failed runs persist too (partial event logs included) — they are first-class
-study objects.
+Failed runs persist too — a refusal and a generation failure both carry their
+sentences on the lane error, and they are first-class study objects.
 
 ## How agents use it
 
 Edit engine/prompt/guardrail code → `pnpm --filter genui-bench bench run
 --host maple --pack smoke --lanes vendo` → read the summary line
-(per prompt: status, `durationMs`, `repairs`) → repeat. RunRecord paths are
+(per prompt: status, `durationMs`, `findings`) → repeat. RunRecord paths are
 PR evidence, and agent runs appear in the cockpit history rail automatically
 (same `runs/` dir). For deeper study, read the per-lane artifacts inside the
 printed run directory instead of re-running.

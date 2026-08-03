@@ -234,7 +234,11 @@ const attachPinFurnishings = (
  */
 export interface ServedSurface {
   enabled: boolean;
-  urlFor(app: AppDocument): Promise<string>;
+  /** Build contract §9.8 — takes the ctx because an ORG-owned served app is
+      answered with an authenticated PROXY url (checked per request) while a
+      personal one keeps the provider's own ingress url. The runtime decides;
+      this seam only hands it what it needs to. */
+  urlFor(app: AppDocument, ctx: RunContext): Promise<string>;
 }
 
 /** Wave 4 — the one refusal for every layer-3 path while the flag is off. */
@@ -256,12 +260,37 @@ export const machinesDisabledError = (): VendoError => new VendoError(
   { experiment: "machines", flag: "experimentalMachines" },
 );
 
+/** The additive venue states for this open, or none when the seam fails.
+ *  Reported once per failure so a broken seam is visible to an operator without
+ *  costing the person their app. */
+const additionalVenueState = async (
+  venueState: ((app: AppDocument, ctx: RunContext) => Promise<Record<string, unknown> | undefined>) | undefined,
+  app: AppDocument,
+  ctx: RunContext,
+): Promise<Record<string, unknown>> => {
+  try {
+    return await venueState?.(app, ctx) ?? {};
+  } catch (error) {
+    console.warn(`[vendo] venue state for app ${app.id} could not be resolved: ${safeErrorMessage(error)}; the app opens without it`);
+    return {};
+  }
+};
+
 /** 06-apps §§1–2 — construct the open surface. */
 export const createAppOpener = (
   caller: AppCaller,
   pinBaselines: readonly PinBaseline[] = [],
   inClientVenue?: (app: AppDocument) => Promise<InClientVenueState | undefined>,
   served?: ServedSurface,
+  /**
+   * Build contract §9.9 — the ADDITIVE venue-state slot, ctx-aware because the
+   * states that ride it are per-caller (lane H's adoption card is served only
+   * to `can(editor)`). Its keys spread onto the payload beside `inClient`; the
+   * server-authoritative strip has already run, so nothing here can be forged
+   * by a document. Composable by construction: a second additive state is
+   * another key, not another parameter.
+   */
+  venueState?: (app: AppDocument, ctx: RunContext) => Promise<Record<string, unknown> | undefined>,
 ): ((app: AppDocument, ctx: RunContext) => Promise<OpenSurface>) => async (app, ctx) => {
   // A terminally failed build never becomes servable: resolve the poll now
   // with the persisted reason (approvals resolve to denied/expired the same
@@ -295,7 +324,7 @@ export const createAppOpener = (
     // Wake-on-open: a sleeping machine resumes here (the accepted wake
     // latency; the host shows its ordinary loading state — no v1 cover or
     // screenshot machinery).
-    return { kind: "http", url: await served.urlFor(app) };
+    return { kind: "http", url: await served.urlFor(app, ctx) };
   }
 
   if (app.tree === undefined) {
@@ -311,6 +340,18 @@ export const createAppOpener = (
     const inClient = await inClientVenue?.(app);
     if (inClient !== undefined) {
       (tree as Tree & { inClient: InClientVenueState }).inClient = inClient;
+    }
+    // §9.9 — additive, and deliberately AFTER inClient: an additive state may
+    // add keys, never overwrite the trust-axis verdict the client renders from.
+    //
+    // Guarded like the runtime's `onDocumentEdit` hook, and for the same reason:
+    // this state is an ENRICHMENT of the app, resolved through host-composed
+    // seams that touch the store. A hiccup in the adoption lookup must cost the
+    // caller the card, never the app — an app that will not open is a far worse
+    // failure than one that opens without an ask on it.
+    for (const [key, value] of Object.entries(await additionalVenueState(venueState, app, ctx))) {
+      if (key === "inClient" || key === "data" || key === "pinDrift") continue;
+      (tree as Tree & Record<string, unknown>)[key] = value;
     }
     const pinDrift = detectPinDrift(app, pinBaselines);
     if (pinDrift.length > 0) {

@@ -31,30 +31,34 @@ type Assert<T extends true> = T;
 // --- BEGIN docs/quickstart.md config surface ---
 import type {
   ActAs, ActionsRegistry, AppsRuntime, AutomationsEngine, CatalogFile,
-  ComponentCatalog, ComponentRegistry, Connector, ExtractedTool,
-  HostOAuthAdapter, Json, Judge, KnowledgeAdapter, OverridesFile, PolicyConfig,
-  PolicyFile, Principal, RunContext, RunId, SandboxAdapter, SecretsProvider,
-  ToolRegistry,
+  ComponentCatalog, ComponentRegistry, Connector, ExtractedTool, FilesAdapter,
+  Harness, HostOAuthAdapter, Json, Judge, KnowledgeAdapter, OverridesFile,
+  PackProvider, PolicyConfig, PolicyFile, Principal, RunContext, RunId,
+  SandboxAdapter, SecretsProvider, ToolRegistry,
   VendoAgent, VendoGuard, VendoStore, VendoTheme,
 } from "../index.js";
 import type {
-  ConnectionsService, HostAuthPreset, ModelsConfig, ServerActionHandler, TourEntry,
+  AppsConfig, ConnectionsService, HarnessTurns, HostAuthPreset, ModelsConfig,
+  PackContext, ServerActionHandler, TourEntry,
 } from "../server.js";
 import type { LanguageModel } from "ai";
 
 export interface CreateVendoConfig {
-  /** @deprecated superseded by `models.agent`. */
+  /** @deprecated superseded by `models.default`. */
   model?: LanguageModel;
-  /** @deprecated the model half is superseded by `models.paint`; `disabled` stays. */
+  /** @deprecated the model half is superseded by `models.fill`; `disabled` stays. */
   paint?: { model?: LanguageModel; disabled?: boolean };
-  models?: ModelsConfig;      // { agent, paint, judge, knowledgeVerifier } — name or model object
+  models?: ModelsConfig;      // seats: default, reviewer, judge, fill, verifier
   auth?: HostAuthPreset;      // one preset fills principal + actAs + oauth
   principal?: (req: Request) => Promise<Principal | null>; // escape hatch
+  tools?: ExtractedTool[];    // `vendo init`/`vendo sync` declarations, in memory
   catalog?: ComponentCatalog | ComponentRegistry;          // registry.tsx, or the array form
   theme?: VendoTheme;         // programmatic override for .vendo/theme.json
   brief?: string;             // programmatic override for .vendo/brief.md
   store?: VendoStore;
+  files?: FilesAdapter;       // workspace file content; unset → blobs in the store, 5 MiB cap
   sandbox?: SandboxAdapter;
+  harness?: Harness<never>;   // WHO THINKS. unset → vendo(). also: instant(), claudeCode()
   knowledge?: KnowledgeAdapter; // unset → no vendo_knowledge_search tool
   connectors?: Connector[];
   connectorApps?: string[];   // toolkit scope for the auto-composed Cloud connector
@@ -98,19 +102,15 @@ export interface CreateVendoConfig {
   apps?: {
     experimentalServedApps?: boolean;
     experimentalMachines?: boolean;
-    pipeline?: {              // generation-pipeline knobs, measured before default-on
-      structuredRepair?: boolean;
-      regionParallel?: boolean;
-      endPass?: boolean;
-      exemplarContract?: boolean;
-      smokeRender?: boolean;
-      rebind?: boolean;
-    };
-    designRules?: string;
     review?: {                // review-kind remixes: who may review (queue/reject/approve)
       reviewer?(ctx: RunContext): boolean | Promise<boolean>;
     };
+    pipeline?: AppsConfig["pipeline"];                 // { smokeRender } — the island render gate
+    fillConcurrency?: AppsConfig["fillConcurrency"];   // groups filled at once (default 2)
+    checks?: AppsConfig["checks"];                     // the host's own checks, appended to the built-ins
+    designRules?: string;
   };
+  packs?: readonly PackProvider<PackContext>[]; // where capability comes from. unset → [apps()]
   tours?: readonly TourEntry[];
 }
 
@@ -125,6 +125,7 @@ export interface Vendo {
   actions: ActionsRegistry;
   connections: ConnectionsService;
   store: VendoStore;
+  harness: HarnessTurns;      // turns served through the composed Harness
 }
 // --- END docs/quickstart.md config surface ---
 

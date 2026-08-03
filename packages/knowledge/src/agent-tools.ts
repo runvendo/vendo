@@ -1,5 +1,6 @@
 import {
   VENDO_KNOWLEDGE_RESULT_KIND,
+  VENDO_TOOL_TITLES,
   VendoError,
   type Json,
   type KnowledgeAdapter,
@@ -71,6 +72,9 @@ export interface KnowledgeResultEnvelope {
 
 const descriptor: ToolDescriptor = {
   name: VENDO_KNOWLEDGE_SEARCH_TOOL,
+  // §3 — what a person reads. Without it `ToolListing.title` falls back to the
+  // identifier and the model speaks the slug (wave-1 proof E1-5).
+  title: VENDO_TOOL_TITLES[VENDO_KNOWLEDGE_SEARCH_TOOL],
   description: "Search the host's product knowledge base (documentation, glossary, API reference) and cite what you find. Use it whenever the user asks how the product works or what a term means. Set lookup:true for an exact glossary/API term lookup. Pass readMore:{docId} to read the full document behind an earlier hit when its snippet is not enough. An insufficient-evidence outcome means the knowledge base does not cover the question — say you don't know instead of guessing.",
   inputSchema: {
     $schema: DRAFT_2020_12,
@@ -260,7 +264,7 @@ function isWeak(hits: KnowledgeHit[], threshold: number): boolean {
     the chat search reuses its verdict instead of paying a second model call
     to re-read the same text. */
 const hitSetKey = (hits: KnowledgeHit[]): string =>
-  hits.map((hit) => `${hit.ref.docId} ${hit.ref.chunkId ?? ""}`).join("");
+  hits.map((hit) => `${hit.ref.docId}\0${hit.ref.chunkId ?? ""}`).join("\x01");
 
 /** What one verification attempt produced (see adjudicate). */
 interface Adjudication {

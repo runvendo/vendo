@@ -24,7 +24,7 @@ const document_: AppDocument = {
   },
 };
 
-const okResult: LaneResult = { status: "ok", startedAt: 1, durationMs: 2, document: document_, events: [] };
+const okResult: LaneResult = { status: "ok", startedAt: 1, durationMs: 2, document: document_, findings: [] };
 
 const frames = (container: HTMLElement) =>
   Array.from(container.querySelectorAll("iframe")).map((frame) => frame.getAttribute("src"));

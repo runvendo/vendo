@@ -11,6 +11,10 @@ export { resolvePolicyConfig } from "./policy.js";
 // (hosts validating a policy file before handing it to the guard); 0.4.x
 // dropped them from the barrel by accident, so restore them here.
 export { policyFileSchema, policyRuleSchema } from "./types.js";
+// Build contract §9.10 — the org-admin policy document's parser, exported for
+// the composition seam that reads `/orgs/<orgId>/policy.json` out of the
+// workspace and unions the rules into the guard's `orgPolicy` resolver.
+export { parseOrgPolicyFile, VENDO_ORG_POLICY_FORMAT } from "./org-policy.js";
 export type {
   Judge,
   PolicyConfig,

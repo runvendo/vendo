@@ -4,6 +4,8 @@ import {
   TREE_MAX_GENERATED_COMPONENTS,
   TREE_MAX_TOTAL_COMPONENT_CHARS,
   applyReshape,
+  evaluateExpr,
+  isExprBinding,
   isPathBinding,
   isStateBinding,
   VENDO_TREE_FORMAT,
@@ -24,11 +26,12 @@ import {
 } from "react";
 import { useVendoThemeOrDefault } from "../context.js";
 import { themeCssVariables } from "../theme.js";
-import type { InClientVenue, PinDrift } from "../wire-types.js";
+import { ADOPTION_VENUE_KEY, AdoptionVenueCard } from "../chrome/adoption-card.js";
+import type { AdoptionVenue, InClientVenue, PinDrift } from "../wire-types.js";
 import { resolvePointer } from "./bindings.js";
 import { NodeErrorBoundary } from "./error-boundary.js";
 import { FluidReveal } from "./fluid-reveal.js";
-import { deriveFormShape, FormingSkeleton } from "./forming-skeleton.js";
+import { deriveFormShape, FormingSkeleton, PendingLeaf } from "./forming-skeleton.js";
 import { InClientMount } from "./host-mount.js";
 import { JailedComponent, type JailFurnishing } from "./jail/JailedComponent.js";
 import { ContainedNotice } from "./notice.js";
@@ -222,6 +225,17 @@ function bindValue(
 ): unknown {
   if (isPathBinding(value)) return resolveReshaped(resolvePointer(data, value.$path), value.$reshape, onMismatch);
   if (isStateBinding(value)) return resolveReshaped(state[value.$state] as Json | undefined, value.$reshape, onMismatch);
+  // A computed value is evaluated HERE, on every bind resolution, against the
+  // data this render holds — so it re-computes the moment the query data
+  // changes. Nothing about it is ever cached across renders.
+  if (isExprBinding(value)) {
+    const computed = evaluateExpr(value.$expr, data);
+    if (!computed.ok) {
+      onMismatch?.(computed.issue);
+      return undefined;
+    }
+    return computed.value;
+  }
   if (isActionBinding(value)) {
     const payload = bindValue(value.payload, mode, data, state, action, onMismatch) as Json;
     if (mode === "jail") {
@@ -374,6 +388,20 @@ function NodeRenderer(props: NodeRendererProps) {
   }
   if (props.ancestry.has(node.id)) {
     return <ContainedNotice label="Cyclic tree node">{`Node "${node.id}" forms a cycle.`}</ContainedNotice>;
+  }
+  // The plan's skeleton (packages/apps generation/skeleton.ts) prewires one
+  // `pending` placeholder per plan leaf and a fill worker later replaces it
+  // with the real component. Until then the node holds the same shape-derived
+  // shimmer a streaming node holds — the app's real geometry arriving in
+  // pieces, never a spinner over the whole surface. This runs BEFORE component
+  // resolution on purpose: a placeholder for a name that resolves later (an
+  // island the plan declared) shimmers instead of reading as unknown.
+  if (node.props?.pending === true) {
+    return (
+      <div data-vendo-node-id={node.id} data-vendo-pending="" aria-busy="true">
+        <PendingLeaf name={node.component} />
+      </div>
+    );
   }
 
   const ancestry = new Set(props.ancestry);
@@ -542,6 +570,17 @@ function StatefulTreeView({
   // component sources (a payload extra, like furnishings).
   const componentTools = (tree as WalkTree & { componentTools?: Record<string, string[]> }).componentTools;
   const inClient = (tree as WalkTree & { inClient?: InClientVenue }).inClient;
+  // §9.9 — the adoption ask, when the server attached one for THIS caller (it
+  // only does so for an editor+). Read through the shared key constant, so the
+  // provider side and this side cannot drift into a card nobody ever sees.
+  // Tolerated like every other payload extra: a malformed field is no card,
+  // never a broken surface.
+  const adoptionRaw = (tree as WalkTree & Record<string, unknown>)[ADOPTION_VENUE_KEY];
+  const adoption = typeof adoptionRaw === "object" && adoptionRaw !== null
+    && typeof (adoptionRaw as AdoptionVenue).automation === "string"
+    && Array.isArray((adoptionRaw as AdoptionVenue).needs)
+    ? adoptionRaw as AdoptionVenue
+    : undefined;
   // Tolerate a malformed field (like every other payload extra): only an
   // array of well-formed entries renders the notice.
   const pinDriftRaw = (tree as WalkTree & { pinDrift?: unknown }).pinDrift;
@@ -672,6 +711,10 @@ function StatefulTreeView({
     <NodeErrorBoundary nodeId={validation.tree.root} retryKey={data ?? validation.tree.data} streaming={streaming}>
       {dropBackNotice}
       {driftNotice}
+      {/* §9.9 — a stopped automation asks IN the app, above its own surface:
+          nothing is pushed to anybody, and the next editor to open it may
+          take it on. */}
+      {adoption === undefined ? null : <AdoptionVenueCard card={adoption} />}
       <NodeRenderer
         nodeId={validation.tree.root}
         ancestry={new Set()}

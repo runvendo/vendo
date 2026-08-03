@@ -1,8 +1,6 @@
 import {
-  compileWirePatch,
   compileWire,
   deriveShapeCard,
-  printWire,
   type ApprovalDecision,
   type ApprovalRequest,
   type Json,
@@ -1362,66 +1360,6 @@ function TreeWireShapeScenario() {
   );
 }
 
-/** WAVE 4 GATE (v2 spec §§5,8): the ONE edit dialect live — the app prints
- *  with id anchors, an <Edit> wire patch applies deterministically, and the
- *  surface re-renders in place. */
-const EDIT_BASE_WIRE = `<App name="Cash overview">
-  <Stack gap={14}>
-    <Text text="Cash overview" variant="heading"/>
-    <Grid columns={2}>
-      <Stat label="Revenue" value="$42k"/>
-      <Card title="Notes">
-        Send the March reminders.
-      </Card>
-    </Grid>
-    <Button label="Remind" onClick="fn:send_reminder"/>
-  </Stack>
-</App>`;
-
-const EDIT_PATCH = `<Edit>
-  <Set id="stat-1" label="Revenue (Q1)" value="$61k" tone="accent"/>
-  <Insert into="grid-1" at={1}><Stat label="Overdue" value="3"/></Insert>
-  <Remove id="button-1"/>
-  <SetName name="Cash overview (edited)"/>
-</Edit>`;
-
-function TreeWireEditScenario() {
-  const noop = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
-  const base = useMemo(() => compileWire(EDIT_BASE_WIRE), []);
-  const [patched, setPatched] = useState<ReturnType<typeof compileWirePatch>>();
-  const shown = patched ?? base;
-  const payload = useMemo(
-    () => ({ ...shown.tree, components: shown.components }) as unknown as UIPayload,
-    [shown],
-  );
-  return (
-    <TreeThemeBoundary>
-      <div className="format-drill-grid">
-        <section aria-label="Edited surface">
-          <h2>{patched === undefined ? "Base app (compiled from the wire)" : `After the <Edit> patch — ${patched.name}`}</h2>
-          <PayloadView payload={payload} components={components} onAction={noop} />
-          <button
-            type="button"
-            data-testid="apply-edit"
-            onClick={() => setPatched(compileWirePatch(EDIT_PATCH, base))}
-          >
-            Apply the &lt;Edit&gt; patch
-          </button>
-          <output className="recorder" data-testid="edit-recorder">
-            {patched === undefined
-              ? "No patch applied"
-              : `patch: complete=${patched.complete} issues=${patched.issues.length} appliedOps=${patched.appliedOps}`}
-          </output>
-        </section>
-        <section aria-label="Model edit context">
-          <h2>The model's edit context (printWire, id anchors)</h2>
-          <pre className="recorder" data-testid="edit-context">{printWire(base, { includeIds: true })}</pre>
-        </section>
-      </div>
-    </TreeThemeBoundary>
-  );
-}
-
 /** A second long conversation for the thread-SWITCH scenario (ENG-213): both
  *  ids ride the wire list() via the client override below. */
 const boundedThreadB: Thread = {
@@ -1943,7 +1881,6 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/tree-stream": return { title: "Streaming completion", content: <StreamCompletionScenario /> };
     case "/tree-wire": return { title: "vendo-genui/v2 — wire compile + stored render", content: <TreeWireScenario /> };
     case "/tree-wire-shape": return { title: "vendo-genui/v2 — shape-aware binding (wave 3)", content: <TreeWireShapeScenario /> };
-    case "/tree-wire-edit": return { title: "vendo-genui/v2 — one-dialect edit (wave 4)", content: <TreeWireEditScenario /> };
     case "/unknown-format": return { title: "Unknown UI format", content: <UnknownFormatScenario />, ownProvider: true };
     case "/build-failed": return { title: "Failed app build — turn ends with the reason", content: <BuildFailedScenario />, ownProvider: true };
     case "/slot": return { title: "Inline app slot", content: <VendoSlot id="hero" appId="app_1"><section aria-label="Original host component"><h2>Original host hero</h2></section></VendoSlot> };

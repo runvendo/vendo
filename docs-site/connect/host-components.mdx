@@ -12,11 +12,6 @@ component drifts and rebases as your host code changes; the exact
 registration shapes and capture rules live in the reference section at the
 end.
 
-<Note>Remix — forking a captured component — is **experimental**. Baseline
-formats may evolve between versions. A `<Remixable>` wrapper `vendo sync`
-cannot capture fails the run loudly (exit 2) with the file, line, and
-fix.</Note>
-
 ## Register your components
 
 The shared registry is the current form: one object, keyed by component
@@ -41,7 +36,7 @@ object keys, so there is no second client-side map to keep in sync:
 
 ```ts
 import { createVendo } from "@vendoai/vendo/server";
-import type { ComponentRegistry } from "@vendoai/core";
+import type { ComponentRegistry } from "@vendoai/vendo";
 import { z } from "zod";
 import {
   SpendingDonut

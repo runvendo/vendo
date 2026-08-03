@@ -73,7 +73,24 @@ const setup = (review: { reviewer?(ctx: RunContext): boolean } = { reviewer: (ct
     tools,
     catalog: [],
     pinBaselines: [reviewedBaseline, instantBaseline],
-    model: scriptedLanguageModel('<Edit><SetName name="Edited name"/></Edit>'),
+    // A rename, in the brain's edit dialect (the conductor replaced the
+    // `<SetName>` op compiler this file was written against): the app's name is
+    // printed on its opening <App> line, so quoting that line back is the whole
+    // edit. Read from the prompt so it holds for every `doc(slot)` name here.
+    model: scriptedLanguageModel((call) => {
+      const prompt = call.prompt
+        .map((message) => typeof message.content === "string"
+          ? message.content
+          : message.content.map((part) => part.text ?? "").join(""))
+        .join("\n");
+      // The LAST match: the prompt's own instructions carry a literal
+      // `<App name="...">` placeholder before the printed app.
+      const openings = [...prompt.matchAll(/<App name="[^"]*">/g)]
+        .map((match) => match[0])
+        .filter((opening) => opening !== '<App name="...">');
+      const opening = openings.at(-1) ?? '<App name="Untitled">';
+      return `<Edit><Old>${opening}</Old><New><App name="Edited name"></New></Edit>`;
+    }),
     review,
   });
   return { store, guard, runtime };

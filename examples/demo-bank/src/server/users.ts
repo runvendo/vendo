@@ -68,6 +68,29 @@ export function mapleDemoEmail(): string {
   return seededUsers()[0]?.email ?? (process.env.MAPLE_DEMO_EMAIL ?? "yousef@maple.com");
 }
 
+/**
+ * Build contract §9.1 companion — Maple's own directory lookup: what someone
+ * typed into the Share dialog ("Mia", "mia@maple.com") → one of Maple's own
+ * subjects, or null. This is the whole reason the dialog may offer to share with
+ * one person; Vendo has no directory to guess from.
+ *
+ * Answers from the seeded IDENTITIES, not seededUsers: who exists must not
+ * depend on whether password login is configured (a deployed demo signs people
+ * in through DEMO_AUTOLOGIN with no password env at all).
+ */
+export function resolveMaplePerson(query: string): MapleDemoUser | null {
+  const wanted = query.trim().toLowerCase();
+  if (wanted === "") return null;
+  return seededIdentities().find((user) => {
+    const display = user.display.toLowerCase();
+    // Email, subject, full name — or a first name, which is what people type.
+    return user.email === wanted
+      || user.subject.toLowerCase() === wanted
+      || display === wanted
+      || display.startsWith(`${wanted} `);
+  }) ?? null;
+}
+
 /** Auth.js subject → seeded user, or null for anything Maple never issued. */
 export function resolveMapleSubject(subject: string): MapleDemoUser | null {
   const user = seededUsers().find((candidate) => candidate.subject === subject);

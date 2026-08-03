@@ -13,6 +13,8 @@ import type {
   ApprovalRequest,
   AuditEvent,
   IsoDateTime,
+  Membership,
+  RiskLabel,
   RunId,
   ThreadId,
   TriggerSource,
@@ -69,6 +71,43 @@ export type InClientVenue =
   | { granted: true; versionHash: string; approvedBy: string; at: IsoDateTime; review?: ReviewStanding }
   | { granted: false; versionHash: string; reason: "version-changed" }
   | { granted: false; versionHash: string; reason: "pending-review"; review: ReviewStanding };
+
+/**
+ * Build contract §9.9 — the adoption ask riding a tree payload
+ * (`payload.adoption`): an automation whose sponsorship lapsed has stopped, and
+ * the card WAITS in the app for whoever can edit it to take it on. Nothing is
+ * pushed to anybody. SERVER-AUTHORITATIVE: the runtime only attaches it for a
+ * caller with `can(editor)`, so its presence is itself the permission check.
+ */
+export interface AdoptionVenue {
+  appId: AppId;
+  /** The automation's user-visible name. */
+  automation: string;
+  /** Who it used to run as, named as they asserted themselves. ABSENT once that
+   *  person's data is erased — the name went with the erase, and the card says
+   *  "someone else" rather than resurrecting an identifier. */
+  sponsor?: string;
+  reason: "edit" | "departure" | "grants";
+  stoppedAt?: IsoDateTime;
+  /** One entry per read and write — never one summary line for a compound. */
+  needs: Array<{
+    tool: string;
+    title: string;
+    description?: string;
+    risk: RiskLabel;
+    args?: Record<string, string>;
+  }>;
+}
+
+/** Build contract §9.9 — what `POST /automations/:id/adopt` returns. `adopted:
+ *  false` with `reason: "already-adopted"` is the honest answer for the editor
+ *  who lost the race; `missing` carries the adopter's own grant-set asks. */
+export interface AdoptResult {
+  adopted: boolean;
+  missing: ApprovalRequest[];
+  grantSetId?: string;
+  reason?: "already-adopted";
+}
 
 /**
  * 06-apps §8 — one drifted pin riding a tree payload (`payload.pinDrift`):
@@ -212,6 +251,19 @@ export interface AutomationEntry {
   enabled: boolean;
   pendingGrants?: number;
   grantSetId?: string;
+  /** §13 — whose access it runs with. `display` only when the caller IS the
+   *  sponsor: Vendo holds no directory, so a name for anyone else would be
+   *  invented; the subject is the honest fallback. */
+  sponsor?: { subject: string; display?: string };
+  /** Build contract §9.9 — set exactly while the automation is STOPPED and
+   *  waiting to be adopted. `summary` is the same consumer sentence the adoption
+   *  card and the stopped run row carry, so the list is a route back to a paused
+   *  automation instead of the one place it vanished from. It never names the
+   *  sponsor: anyone who can edit the app reads it. */
+  stopped?: { reason: "edit" | "departure" | "grants"; summary: string };
+  /** How many principals hold a grant on the app, when the deployment has an
+   *  access seam at all — the wider editor set the label names. */
+  editors?: number;
 }
 
 /** 07-automations §1 — what `POST /automations/:id/enable` returns.
@@ -258,4 +310,12 @@ export interface VendoStatus {
   posture: GuardPosture;
   version: string;
   blocks: Record<string, unknown>;
+  /** Build contract §9.1 — the orgs the host asserted for this caller this
+      request. Absent on a single-player deployment; never stored anywhere. */
+  memberships?: Membership[];
+  /** Build contract §9.1 companion — the host wired `resolvePerson`, so it can
+      turn a typed name into one of its own subjects. Absent ⇒ the Share dialog
+      does not offer to share with one person (Vendo has no directory of its
+      own, and encoding what was typed wrote a grant that matched nobody). */
+  namesPeople?: boolean;
 }

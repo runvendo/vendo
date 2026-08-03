@@ -440,7 +440,13 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
     light-dark(color-mix(in srgb, var(--vendo-accent) 10%, transparent), color-mix(in srgb, var(--vendo-accent) 16%, transparent)) 30%,
     light-dark(color-mix(in srgb, var(--vendo-accent) 22%, transparent), color-mix(in srgb, var(--vendo-accent) 32%, transparent)) 50%,
     light-dark(color-mix(in srgb, var(--vendo-accent) 10%, transparent), color-mix(in srgb, var(--vendo-accent) 16%, transparent)) 70%);
-  background-size: 200% 100%; animation: fl-glass-shimmer 1.8s linear infinite; }
+  background-size: 200% 100%; }
+/* The sweep is decoration over the tint, and a skeleton can sit on screen for
+   seconds while a plan fills in — reduced motion keeps the placeholder and
+   drops the movement. */
+@media (prefers-reduced-motion: no-preference) {
+  .fl-glass-shimmer { animation: fl-glass-shimmer 1.8s linear infinite; }
+}
 @keyframes fl-glass-shimmer { from { background-position: 120% 0; } to { background-position: -80% 0; } }
 /* The approved grid: a view forming — 3 stat tiles, a wide chart, two rows. */
 .fl-glass-grid { display: grid; gap: 8px; margin-top: 12px; grid-template-columns: repeat(3, 1fr); }
@@ -1026,6 +1032,11 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 /* Grant-set wait state (mockup §2): enabled but permissions outstanding. */
 .fl-auto-wait { background: var(--vendo-warn);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--vendo-warn) 18%, transparent); }
+/* §9.9 — why a stopped automation stopped. An accent border rather than another
+   badge: it is one sentence of explanation, and the row above already carries
+   the state word. Warn, not danger — nothing is broken, it is waiting. */
+.fl-auto-stopped { border-left: 2px solid var(--vendo-warn); padding-left: 8px; margin-top: 6px;
+  color: var(--vendo-fg); }
 .fl-auto-toggle { margin-left: auto; width: 40px; height: 23px; border-radius: 999px; background: var(--vendo-accent);
   position: relative; flex-shrink: 0; border: 0; cursor: pointer; }
 .fl-auto-toggle::after { content: ""; position: absolute; top: 2.5px; right: 2.5px; width: 18px; height: 18px;
@@ -1892,6 +1903,40 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-acct-connect-chip:hover { background: var(--vendo-accent-soft); border-style: solid; }
 .fl-acct-connect-chip:disabled { opacity: .6; cursor: default; }
 .fl-acct-connect-chip .fl-acct-logo { width: 24px; height: 24px; border-radius: 999px; }
+
+/* ---- wave-3 share dialog + fork offer (build contract §9.2-§9.6) ---- */
+.fl-share { display: flex; flex-direction: column; gap: 12px; padding: 16px;
+  border: 1px solid var(--vendo-border); border-radius: var(--vendo-radius);
+  background: var(--vendo-surface); font: 400 13px/1.5 var(--vendo-font); color: var(--vendo-fg); }
+.fl-share-head { display: flex; align-items: center; gap: 10px; }
+.fl-share-title { font-weight: 600; font-size: 14px; }
+.fl-share-head .fl-btn { margin-left: auto; }
+.fl-share-note { margin: 0; color: var(--vendo-fg-muted); font-size: 12.5px; }
+.fl-share-add { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.fl-share-input { flex: 1 1 180px; min-width: 0; padding: 7px 11px; font: inherit;
+  border: 1px solid var(--vendo-border); border-radius: 9px; background: var(--vendo-bg); color: inherit; }
+.fl-share-level { padding: 7px 9px; font: inherit; border: 1px solid var(--vendo-border);
+  border-radius: 9px; background: var(--vendo-bg); color: inherit; }
+/* One labelled control that appears mid-task (who exactly, which team). Tighter
+   than the dialog's own 12px gap, so the label belongs to ITS field rather than
+   floating between two. The basis reset is load-bearing: .fl-share-input carries
+   flex-basis 180px for the horizontal row, which in a column would be a height. */
+.fl-share-field { display: flex; flex-direction: column; gap: 6px; }
+.fl-share-field .fl-share-input { flex: 0 0 auto; }
+.fl-share-error { margin: 0; color: var(--vendo-danger); font-size: 12.5px; }
+.fl-share-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.fl-share-empty { color: var(--vendo-fg-muted); font-size: 12.5px; padding: 6px 0; }
+.fl-share-row { display: flex; align-items: center; gap: 10px; padding: 8px 0;
+  border-top: 1px solid var(--vendo-border); }
+.fl-share-who { font-weight: 500; }
+.fl-share-lvl { color: var(--vendo-fg-muted); font-size: 12px; }
+.fl-share-revoke { margin-left: auto; }
+.fl-share-fork { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px;
+  border: 1px solid var(--vendo-border); border-radius: var(--vendo-radius);
+  background: var(--vendo-accent-soft); font: 400 13px/1.55 var(--vendo-font); color: var(--vendo-fg); }
+.fl-share-fork-copy { margin: 0; }
+.fl-share-fork-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
 /* ================== end ui-lane-panels lane block ================== */
 
 /* ================================================================

@@ -146,7 +146,10 @@ describe("composio lazy mode (no apps)", () => {
     await expect(connector.discoveryIndex!()).resolves.toEqual([
       { toolkit: "gmail", label: "Gmail", description: "Gmail is Google's email service for sending and reading email" },
     ]);
-    // apps mode never lazily expands
-    await expect(connector.expandToolkits!(["slack"])).resolves.toBe(false);
+    // apps mode never lazily expands — the field itself is absent, per
+    // connector.ts's contract ("present only on connectors that defer full
+    // schema loading"), so registry.loadoutSeed's lazy-vs-eager check never
+    // mistakes an eager connector's tools for connection-gated ones.
+    expect(connector.expandToolkits).toBeUndefined();
   });
 });

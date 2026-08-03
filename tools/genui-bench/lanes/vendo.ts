@@ -1,11 +1,14 @@
 /**
- * The Vendo lane: modelEngine.create driven directly against the HostFixture
- * surface — the exact composition the live pipeline harness
- * (packages/apps/src/engine.pipeline.live.test.ts) uses: catalog + tools +
- * shape cards + theme as GenerationDependencies, the production wire dialect
- * and PipelineConfig defaults (no knobs overridden), and an onPipeline tap
- * accumulating every stage event. NEVER throws: an engine crash resolves to
- * status:"failed" carrying the partial events captured up to the throw.
+ * The Vendo lane: conductCreate driven directly against the HostFixture
+ * surface — catalog + tools + shape cards + theme as GenerationDependencies,
+ * the production defaults (no knobs overridden). NEVER throws, and neither
+ * does the conductor: a refusal ("cannot") and an unreadable answer
+ * ("failure") come back as VALUES, so the lane maps all three outcomes to a
+ * LaneResult and only a genuine crash reaches the catch.
+ *
+ * The study signal on a successful app is the checking layer's `findings`
+ * (severity · where · message) — what is still wrong with the app that
+ * shipped.
  *
  * The model key comes from the repo-root .env (source-only: values are read
  * into process.env and never printed). The Anthropic provider resolves through
@@ -32,11 +35,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import {
-  modelEngine,
+  conductCreate,
+  type ConductedResult,
+  type ConductorOptions,
   type GenerationDependencies,
-  type GenerationEngine,
   type HostToolInfo,
-  type PipelineEvent,
 } from "@vendoai/apps";
 import {
   printWire,
@@ -57,8 +60,12 @@ import {
 import type { HostFixture, LaneAdapter, LaneResult, LaneRunOptions } from "../runner/types";
 
 export interface VendoAdapterOverrides {
-  /** Test seam: a GenerationEngine-shaped fake (default: the real modelEngine). */
-  engine?: Pick<GenerationEngine, "create">;
+  /** Test seam: a conductor-shaped fake (default: the real conductCreate). */
+  conduct?: (
+    input: { prompt: string },
+    deps: GenerationDependencies,
+    options?: ConductorOptions,
+  ) => Promise<ConductedResult>;
   /** Test seam: an injected model instance (default: Anthropic from root .env). */
   model?: GenerationDependencies["model"];
   /** Test seam: build a provider model for an id (default: Anthropic from root .env). */
@@ -182,8 +189,8 @@ function modelFor(
   return withRunSettings(overrides.model ?? create(spec.id), choice, spec);
 }
 
-/** The canonical printed wire of the final document (the engine exposes no
- *  raw-stream tap; this is the same print the repair/verify stages read). */
+/** The canonical printed wire of the final document (the conductor exposes no
+ *  raw-stream tap; this is the same print the checking layer reads). */
 function renderWire(document: AppDocument): string | undefined {
   if (document.tree?.formatVersion !== VENDO_TREE_FORMAT) return undefined;
   try {
@@ -214,9 +221,14 @@ export function createVendoAdapter(overrides: VendoAdapterOverrides = {}): LaneA
     name: "vendo",
     async generate(prompt: string, host: HostFixture, options: LaneRunOptions = {}): Promise<LaneResult> {
       const startedAt = Date.now();
-      const events: PipelineEvent[] = [];
+      const failed = (error: string): LaneResult => ({
+        status: "failed",
+        startedAt,
+        durationMs: Date.now() - startedAt,
+        error,
+      });
       try {
-        const engine = overrides.engine ?? modelEngine;
+        const conduct = overrides.conduct ?? conductCreate;
         const model = modelFor(options.model, overrides);
         const deps: GenerationDependencies = {
           model,
@@ -224,11 +236,18 @@ export function createVendoAdapter(overrides: VendoAdapterOverrides = {}): LaneA
           tools: host.tools as HostToolInfo[],
           toolShapes: host.shapes as Readonly<Record<string, ShapeType>>,
           theme: host.theme,
-          // production PipelineConfig defaults — deliberately no `pipeline` key
-          onPipeline: (event) => events.push(event),
+          // production defaults — deliberately no `pipeline` key
         };
-        const generated = await engine.create({ prompt }, deps);
-        const document: AppDocument = { ...generated, id: `app_bench_${startedAt.toString(36)}` };
+        const conducted = await conduct({ prompt }, deps);
+        // A refusal is an ANSWER, not a crash: the host cannot do the ask, and
+        // the reasons are the sentences a person would read.
+        if (conducted.kind === "cannot") {
+          return failed(`the host refused this ask: ${conducted.reasons.join(" | ")}`);
+        }
+        if (conducted.kind === "failure") {
+          return failed(`generation failed: ${conducted.issues.join(" | ")}`);
+        }
+        const document: AppDocument = { ...conducted.document, id: `app_bench_${startedAt.toString(36)}` };
         const wire = renderWire(document);
         return {
           status: "ok",
@@ -236,16 +255,10 @@ export function createVendoAdapter(overrides: VendoAdapterOverrides = {}): LaneA
           durationMs: Date.now() - startedAt,
           document,
           ...(wire === undefined ? {} : { wire }),
-          events,
+          findings: conducted.findings,
         };
       } catch (error) {
-        return {
-          status: "failed",
-          startedAt,
-          durationMs: Date.now() - startedAt,
-          error: failureReason(error),
-          events,
-        };
+        return failed(failureReason(error));
       }
     },
   };

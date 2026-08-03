@@ -144,15 +144,9 @@ button { font-family: var(--sans); }
 .ev { display: flex; gap: 12px; }
 .ev .t { color: var(--text-faint); width: 58px; flex-shrink: 0; }
 .ev .tag { width: 118px; flex-shrink: 0; }
-.tag.ok { color: var(--green); }
 .tag.warn { color: var(--amber); }
 .tag.err { color: var(--red); }
-.tag.info { color: var(--violet); }
 .ev .msg { color: var(--text-dim); word-break: break-word; }
-/* Why a stage failed: the validation issues, indented under their attempt. */
-.ev-issue { margin-left: 70px; padding-left: 10px; border-left: 2px solid rgba(248, 113, 113, 0.35); color: var(--red); font-size: 10px; line-height: 1.6; word-break: break-word; }
-.ev-issue + .ev-issue { margin-top: 2px; }
-.ev-issue:last-of-type { margin-bottom: 4px; }
 
 @media (prefers-reduced-motion: reduce) {
   .status.run { animation: none; opacity: 0.7; }

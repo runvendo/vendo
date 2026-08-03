@@ -13,6 +13,7 @@ import type {
   Guard,
   IsoDateTime,
   Json,
+  Membership,
   Principal,
   RunContext,
   RunId,
@@ -23,6 +24,26 @@ import type {
 } from "@vendoai/core";
 import type { AppsRuntime } from "@vendoai/apps";
 import { createAutomationsEngine } from "./engine.js";
+
+import type { AdoptionCard } from "./adoption.js";
+
+export type { AdoptionCard, AdoptionNeed } from "./adoption.js";
+export { appIntentOf, SPONSORSHIPS, type Sponsorship } from "./sponsorship.js";
+
+/** Build contract §9.3's `can()`, as much of it as the engine needs — taken as
+ *  config so this package never reaches sideways into the store. Lane G's
+ *  `appAccess(store)` satisfies it as-is; absent, `can(editor)` degenerates to
+ *  ownership, which is exactly the rule before app-access grants existed. */
+export interface AppAccessSeam {
+  can(
+    ctx: RunContext,
+    level: "viewer" | "editor" | "owner",
+    thing: { app: AppId },
+  ): Promise<boolean>;
+  /** The app's grant rows. Only their COUNT is read here (the window label's
+   *  wider editor set), so the row shape stays lane G's to define. */
+  list?(ctx: RunContext, appId: AppId): Promise<readonly unknown[]>;
+}
 
 /** 07 §1 — createAutomations config. */
 export interface AutomationsConfig {
@@ -39,10 +60,11 @@ export interface AutomationsConfig {
   /** Max automations a single tick executes concurrently (default 4). A small pool keeps
    *  one tenant's fired runs from serializing behind another's while bounding fan-out. */
   tickConcurrency?: number;
-  /** Per-run wall-clock budget (ms) the tick waits before moving on. The run is NOT
-   *  cancelled (there is no abort seam) — it finishes and persists its terminal state in
-   *  the background; the tick just stops blocking on it so a hung run (sandbox wake, LLM
-   *  stall) cannot overrun the tick interval or starve other tenants. Absent → wait fully. */
+  /** Per-run wall-clock budget (ms) the tick waits before moving on. This timeout does NOT
+   *  cancel the run (only `runs.stop` aborts one) — it finishes and persists its terminal
+   *  state in the background; the tick just stops blocking on it so a hung run (sandbox
+   *  wake, LLM stall) cannot overrun the tick interval or starve other tenants.
+   *  Absent → wait fully. */
   runTimeoutMs?: number;
   /** Which of {schedule, external} this engine instance fires itself. Absent (default) →
    *  both fire locally, today's behavior. host-event is never listed here: `emit` is called
@@ -51,6 +73,15 @@ export interface AutomationsConfig {
    *  kinds for the same data (Vendo Cloud's scheduler + Composio delivery, under the hosted
    *  store — see packages/vendo/src/server.ts) so the two never double-run one automation. */
   localTriggerKinds?: ReadonlySet<"schedule" | "external">;
+  /** Build contract §9.3 — the access seam the fire-time sponsorship check and
+   *  the adoption card ask `can(editor)` through. Absent → ownership only. */
+  appAccess?: AppAccessSeam;
+  /** Build contract §9.1 — the SAME host org query the wire resolves per
+   *  request, resolved here per fire. Keyed on Principal (never on a Request)
+   *  precisely so an UNATTENDED run can call it with no session. Ridden onto
+   *  the RunContext for `can()`, never persisted; unset → no orgs asserted →
+   *  `can()` degenerates to ownership, which is today's behavior exactly. */
+  memberships?: (principal: Principal) => Promise<Membership[]>;
 }
 
 /** 07 §5 */
@@ -89,7 +120,26 @@ export interface AutomationsEngine {
    *  07 §1 amendment parked) project the app's still-undecided standing-grant
    *  asks, so surfaces can show "waiting on N permissions" after a reload
    *  instead of trusting an enable() result held in memory. */
-  list(ctx: RunContext): Promise<Array<{ app: AppDocument; enabled: boolean; pendingGrants?: number; grantSetId?: string }>>;
+  list(ctx: RunContext): Promise<Array<{
+    app: AppDocument;
+    enabled: boolean;
+    pendingGrants?: number;
+    grantSetId?: string;
+    /** §13 — who the automation runs as, for its window label ("runs with
+     *  Dana's access"). `display` rides the sponsorship row, captured from the
+     *  sponsor's own Principal when they took the automation on, so it reads the
+     *  same for everyone: Vendo still holds no directory and invents no name. */
+    sponsor?: { subject: string; display?: string };
+    /** §9.9 — set exactly while the automation is STOPPED and waiting to be
+     *  adopted. `summary` is the same consumer sentence the adoption card and
+     *  the stopped run row carry, so the list is a route back to a paused
+     *  automation instead of the one place it vanished from (E8-F2). It never
+     *  names the sponsor: this string is read by anyone who can edit the app. */
+    stopped?: { reason: "edit" | "departure" | "grants"; summary: string };
+    /** How many principals hold a grant on the app, when an access seam is
+     *  configured — the "wider editor set" the label names when one exists. */
+    editors?: number;
+  }>>;
 
   // trigger ingestion — three kinds
   /** Schedules: call on a timer or from a serverless cron. */
@@ -112,6 +162,41 @@ export interface AutomationsEngine {
   };
   /** Preview: what would run, nothing executes. */
   dryRun(appId: AppId, ctx: RunContext, event?: Json): Promise<RunPlan>;
+
+  /** Build contract §9.9 — the apps runtime's `onDocumentEdit` hook, from this
+   *  side: an edit by anyone other than the sponsor invalidates sponsorship;
+   *  the sponsor's own edit re-binds the intent instead. */
+  onDocumentEdit(previous: AppDocument, next: AppDocument, editor: string): Promise<void>;
+
+  /** Build contract §9.9 — the adoption card as additive venue state on the
+   *  app's open payload. `undefined` when nothing is waiting or the caller
+   *  cannot edit the app: nothing is pushed, the card waits IN the app.
+   *
+   *  THE COMPOSITION CONTRACT, stated here because two packages have to agree on
+   *  it: the card rides the open payload under the key **`adoption`** —
+   *  `payload.adoption` — which is exactly what `@vendoai/ui`'s tree renderer
+   *  reads (`ADOPTION_VENUE_KEY` in `chrome/adoption-card.tsx`, asserted by its
+   *  own test). The venue-state provider the apps runtime calls is therefore:
+   *
+   *  ```ts
+   *  async (app, ctx) => {
+   *    const card = await automations.adoption(app.id, ctx);
+   *    return card === undefined ? undefined : { adoption: card };
+   *  }
+   *  ```
+   *
+   *  Any other key attaches a card nobody ever sees. */
+  adoption(appId: AppId, ctx: RunContext): Promise<AdoptionCard | undefined>;
+
+  /** Take a stopped automation on: approve its reads and writes as YOURSELF
+   *  (approvals stay strictly self-subject) and become its sponsor. The first
+   *  editor+ to complete wins; the loser hears `already-adopted`. */
+  adopt(appId: AppId, ctx: RunContext): Promise<{
+    adopted: boolean;
+    missing: ApprovalRequest[];
+    grantSetId?: string;
+    reason?: "already-adopted";
+  }>;
 }
 
 /** 07 §1 — the engine. */

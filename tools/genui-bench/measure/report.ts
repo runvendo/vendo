@@ -35,7 +35,6 @@ const distribution = ({ summary }: Arm): string => {
     `| ↳ island reads tools but no query (escape) | ${pct(summary.islandReadsWithoutQueries, ok)} |`,
     `| ↳ island uses no tools at all (data-free utility) | ${pct(summary.dataFreeUtility, ok)} |`,
     `| island reaches a MUTATING tool | ${pct(summary.mutatingIslandTools, ok)} |`,
-    `| repair rounds (total) | ${summary.repairRoundsTotal} |`,
     "",
     "island-ratio histogram (OK apps):",
     "",
@@ -86,7 +85,6 @@ const comparison = (after: Arm, before: Arm): string => {
     line("↳ escape (island reads tools)", pct(b.islandReadsWithoutQueries, b.ok), pct(a.islandReadsWithoutQueries, a.ok)),
     line("↳ data-free utility (no tools)", pct(b.dataFreeUtility, b.ok), pct(a.dataFreeUtility, a.ok)),
     line("island reaches mutating tool", pct(b.mutatingIslandTools, b.ok), pct(a.mutatingIslandTools, a.ok)),
-    line("repair rounds (total)", String(b.repairRoundsTotal), String(a.repairRoundsTotal)),
   ].join("\n");
 };
 

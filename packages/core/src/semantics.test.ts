@@ -3,6 +3,7 @@ import {
   describeShapeWithSemantics,
   inferFieldSemantic,
   semanticAtPointer,
+  declaredMoneyUnit,
   semanticFormatToken,
   type ToolSemantics,
 } from "./semantics.js";
@@ -115,5 +116,41 @@ describe("semanticFormatToken", () => {
     expect(semanticFormatToken({ kind: "date", format: "iso" })).toBe("date");
     expect(semanticFormatToken({ kind: "percent", scale: "ratio" })).toBe("percent");
     expect(semanticFormatToken({ kind: "id" })).toBeUndefined();
+  });
+});
+
+describe("declaredMoneyUnit — what the HOST declared about an input field", () => {
+  // Wave-1 live proof E2c: a $47.50 payment's consent card rendered
+  // `amount 4750`, which reads as $4,750 — a 100× misread on the one surface
+  // that gates irreversible money movement. The unit is not guessable from the
+  // value; it is DECLARED, in the host's own input schema, and this is the
+  // reader for that declaration. Never an inference from magnitude.
+  it("reads the unit out of the host's property description", () => {
+    expect(declaredMoneyUnit("amount", { type: "number", description: "Amount in integer cents" })).toBe("cents");
+    expect(declaredMoneyUnit("amount", { type: "number", description: "Amount in minor units" })).toBe("cents");
+    expect(declaredMoneyUnit("amount", { type: "number", description: "Amount in dollars" })).toBe("dollars");
+  });
+
+  it("reads a field whose NAME states the unit", () => {
+    expect(declaredMoneyUnit("amountCents", { type: "integer" })).toBe("cents");
+    expect(declaredMoneyUnit("total_cents", {})).toBe("cents");
+    // No schema at all — the in-thread card synthesizes an empty descriptor.
+    expect(declaredMoneyUnit("amountCents", undefined)).toBe("cents");
+  });
+
+  it("says UNKNOWN for a money-named field whose unit nobody declared", () => {
+    // The honest answer, and the one the card must not render as dollars.
+    expect(declaredMoneyUnit("amount", { type: "number" })).toBe("unknown");
+    expect(declaredMoneyUnit("price", undefined)).toBe("unknown");
+    // Contradictory metadata declares nothing (the `unitAnnotation` rule).
+    expect(declaredMoneyUnit("amount", { description: "cents or dollars" })).toBe("unknown");
+  });
+
+  it("stays silent on fields that are not money — no currency guessing", () => {
+    for (const name of ["invoiceId", "count", "quantity", "recipient_name", "memo", "itemCount", "rate", "percent"]) {
+      expect(declaredMoneyUnit(name, { type: "number" }), name).toBeUndefined();
+    }
+    // "cents" inside a sentence about something else is not a declaration.
+    expect(declaredMoneyUnit("note", { description: "mentions cents" })).toBeUndefined();
   });
 });

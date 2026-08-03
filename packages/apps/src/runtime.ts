@@ -3,13 +3,21 @@ import {
   VENDO_TREE_FORMAT,
   VendoError,
   checkBindingShapes,
+  compileWire,
   deriveShapeCard,
   effectiveBuildWatchdogMs,
+  encodeGrantPrincipal,
   safeErrorMessage,
   validateAppDocument,
+  type AccessLevel,
+  type AppAccess,
   type AppDocument,
+  type AppGrantRecord,
   type AppId,
+  type AppPlan,
   type Guard,
+  type Membership,
+  type Principal,
   type IsoDateTime,
   type Json,
   type NormalizedCatalog,
@@ -38,6 +46,7 @@ import { createAppData } from "./app-data.js";
 import { appLifecycleEvent } from "./audit.js";
 import { createAppCaller } from "./call.js";
 import { createParkedActions } from "./parked-action.js";
+import type { Check } from "./checking/types.js";
 import type {
   CloudAppsClient,
   PublishRecord,
@@ -45,18 +54,31 @@ import type {
 } from "./cloud.js";
 import {
   applyPinFork,
-  distinctIssues,
-  instructionRequiresServedApp,
-  modelEngine,
   prewarmModels,
-  serverWorkRung,
-  verifyDocumentAgainstData,
+  snapshotDesignRules,
   type GenerationDependencies,
-  type GenerationEngine,
-  type GenerationTimingEvent,
 } from "./engine.js";
-import type { PipelineEvent } from "./pipeline.js";
-import { planAutomation } from "./automation-plan.js";
+import {
+  conductCreate,
+  conductEdit,
+  fillAfterServer,
+  type ConductedResult,
+  type ConductorOptions,
+} from "./generation/conductor.js";
+import {
+  laneGates,
+  runServerLane,
+  type BoxSeam,
+  type ServerFunction,
+} from "./generation/lanes.js";
+import type { Finding } from "./checking/types.js";
+// The `validate` verb IS the shipped floor plus the shipped create validation,
+// called rather than re-derived — so the verb and generation can never disagree
+// about whether a document is sound.
+import { createCheckingLayer } from "./checking/layer.js";
+import { validateCompiledCreate } from "./generation/validation/validate.js";
+import { wireCompileOptionsFor } from "./generation/wire-options.js";
+import type { BrainTurn } from "./generation/brain.js";
 import { createAppHistory } from "./history.js";
 import { createInClientApprovals, type InClientVerdict } from "./inclient.js";
 import { createAppInterchange } from "./interchange.js";
@@ -74,9 +96,8 @@ import {
   type BoxEditResult,
 } from "./box-agent.js";
 import { parseVendoManifest } from "./manifest.js";
-import { isDisclaimerOnlyTree } from "./pipeline.js";
 import { createAppOpener, createProgressiveQueryResolver, machinesDisabledError, servedAppsDisabledError, stripServerAuthoritativeFields } from "./open.js";
-import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, listAllRecords, nextEnvStaleAt, rowFromRecord, updateAppRow } from "./persistence.js";
+import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, listAllRecords, nextEnvStaleAt, rowFromRecord, sessionOf, updateAppRow, withoutSession } from "./persistence.js";
 import { classifyLegacyPlacements, detectPinDrift, hasDefaultExport, pinComponentName, pinForkSource, type InClientApproval, type PinBaseline, type PinDrift } from "./pins.js";
 import { createReviewLifecycle, type RemixRejection, type ReviewQueueEntry } from "./review.js";
 import { collectSecretValues, redactSecretJson, redactSecretText } from "./redaction.js";
@@ -143,6 +164,55 @@ export interface AppsConfig {
    */
   experimentalServedApps?: boolean;
   /**
+   * Build contract §9.2–§9.6 — the multi-party half. `appAccess` is `can()`
+   * over whatever store the host wired (the umbrella composes it at the
+   * composition seam); `multiParty` is the Cloud gate, filled from
+   * `cloudKeyOptions() !== undefined` — sharing is multi-party coordination,
+   * so grant/revoke/promote refuse with `cloud-required` without it.
+   * `can()` itself is OSS and NEVER key-conditional: with no key no grant row
+   * can exist, so it degenerates to ownership.
+   *
+   * `appAccess` unset ⇒ ownership only, exactly today's behavior.
+   */
+  appAccess?: AppAccess;
+  multiParty?: boolean;
+  /** Build contract §9.1 — the host's org query, forwarded to the schedule
+   *  engine so an unattended fire asserts the same orgs a request does. */
+  memberships?: (principal: Principal) => Promise<Membership[]>;
+  /**
+   * Build contract §9.5 — promote's ROW half. A promote crosses subjects, which
+   * 02-store §2 otherwise forbids, and it moves the app's workspace documents
+   * with it; both are raw-row work the store owns, so the umbrella fills this
+   * seam (`appStore().promote` + `workspaceStore().promoteApp`). Unset, promote
+   * refuses rather than half-moving an app.
+   */
+  promoteApp?: (appId: AppId, fromSubject: string, orgId: string) => Promise<void>;
+  /**
+   * Build contract §9.8 — where this deployment serves the authenticated proxy
+   * for an ORG-owned served app (`<wire base>/apps/<id>/serve/`). The wire owns
+   * its base path, so the umbrella fills this; unset, an org served app has no
+   * proxy to point at and `open()` refuses rather than handing out the
+   * provider's URL, which would bypass the per-request `can(viewer)`.
+   */
+  servedProxyPath?: (appId: AppId) => string;
+  /**
+   * Build contract §9.9 (lane H's other half) — called after a successful
+   * document persist, with the previous document, the next one, and the
+   * editing subject. The automations side implements it (a sponsorship is
+   * invalidated when `editor !== sponsor`); the runtime just rings the bell.
+   * A throw here must never fail the edit that already landed.
+   */
+  onDocumentEdit?: (previous: AppDocument, next: AppDocument, editor: string) => Promise<void>;
+  /**
+   * Build contract §9.9 (lane H's other half) — an ADDITIVE, ctx-aware venue
+   * state merged into the open payload beside the in-client verdict. Lane H's
+   * adoption card rides it, which is why it takes the RunContext: the card is
+   * served only to callers with `can(editor)`, so the decision is per-caller,
+   * not per-document. Returned keys spread onto the payload; `inClient`,
+   * `data` and `pinDrift` are reserved and never overwritten.
+   */
+  venueState?: (app: AppDocument, ctx: RunContext) => Promise<Record<string, unknown> | undefined>;
+  /**
    * execution-v2 Wave 9 — the layer-2 (machine-backed execution) experimental
    * opt-in, gating ALL of the box machinery for NEW graduation: machine
    * provisioning, box-agent delegation, and fn: generation targeting a new
@@ -168,13 +238,20 @@ export interface AppsConfig {
    */
   armAutomation?: (appId: AppId, ctx: RunContext) => Promise<{ enabled: boolean; missing: ApprovalRequest[] }>;
   model?: LanguageModel;
-  /** v2 spec §4 — tier-0 paint lane knob, passed to the generation engine.
-   *  `model` is the no-think switch (a thinking-disabled model instance);
-   *  `disabled` forces single-lane generation. */
-  paint?: GenerationDependencies["paint"];
-  /** W4 pipeline knobs, passed to the generation engine: structured repair
-   *  (default on), outline+region-parallel tier-2 and the end pass (opt-in). */
+  /** The fast fill tier: `model` is the no-think switch (a thinking-disabled
+   *  model instance) the group workers run on while the brain keeps `model`. */
+  fill?: GenerationDependencies["fill"];
+  /** Groups filled at the same time. Two by default — the point is parallelism,
+   *  but every worker is a model call against the same key and a burst of them
+   *  is what trips a provider's rate limit mid-build. */
+  fillConcurrency?: number;
+  /** The island smoke-render gate (on unless explicitly `false`): every
+   *  generated island renders once headless before it can reach a screen. */
   pipeline?: GenerationDependencies["pipeline"];
+  /** The host's own checks over a generated app (checking/types.ts). APPENDED
+   *  to the built-in fact checks and the reviewer — a host can add findings,
+   *  never remove or replace a built-in one. */
+  checks?: readonly Check[];
   /** The composition-normalized catalog (01 §14): derived schemas included.
    *  The provider (function) form of theme/semantics below mirrors
    *  designRules: it is resolved lazily per create/edit (in
@@ -318,20 +395,52 @@ const fallbackAppName = (prompt: string): string => {
   return collapsed.length > 60 ? collapsed.slice(0, 60) : collapsed;
 };
 
-/** 0.4.5 E2E cert (defect D) — the honest reason for a build whose every
- *  region was disclaimed away (see isDisclaimerOnlyTree): persisted verbatim
- *  on the failed record and carried on the thrown error, like the dev-model's
- *  unavailable-credential lines. Non-retryable — the same prompt hits the
- *  same tool gap. */
-export const HOST_CAPABILITY_MISS_REASON =
-  "nothing in this request could be built with this host's tools — every part needed data or "
-  + "actions no registered tool provides, so the app would only show \"not available\" notices. "
-  + "Ask for something the host's tools can serve, or register a tool that covers this request.";
-
 /** 0.4.5 E2E cert (defect D) — the terminal record the build watchdog writes
  *  when a create neither persisted an app nor a failure inside its window:
  *  the one class the in-band catch cannot cover (a build task that hangs or
  *  dies without ever settling). */
+/** One finding as an operator log line. `where` is optional — a check judging the
+ *  whole app may have no locus to name — so it is only printed when there is one,
+ *  never as the string "undefined". */
+const findingLine = (finding: Finding): string =>
+  `[vendo] gen ${finding.severity}${finding.where === undefined ? "" : ` ${finding.where}`}: ${finding.message}`;
+
+/**
+ * The floor's verdict at the commit path (design §7): what the checks marked
+ * `block`. `warn` never blocks — it rides along on an app that ships.
+ *
+ * The severities are the ones the checks already emit: `validate`'s
+ * code-shaped issues, the host's own pack checks, and the reviewer's `block`
+ * findings. Nothing here widens what counts as one.
+ */
+const blockedBy = (findings: readonly Finding[]): Finding[] =>
+  findings.filter(({ severity }) => severity === "block");
+
+/**
+ * Why it did not ship, as the person reads it.
+ *
+ * A finding's `where` is a MACHINE locus (a node id, a query name, a check's
+ * own name) and its `severity` is our vocabulary, not theirs — §3's consumer
+ * voice law keeps both off the screen. The message stays: it is the one
+ * sentence that says what is actually wrong, and "friendly is not vague" means
+ * the person hears that rather than "a check failed".
+ *
+ * ONE string, not one per finding: this is read as a paragraph in an error
+ * surface (demo-bank joins `issues` with "; "). Both leads end in a colon
+ * because a teaching sentence is written for a model and starts lower-case.
+ */
+const notShipped = (lead: string, blocking: readonly Finding[]): string =>
+  [lead, ...blocking.map(({ message }) => message)].join(" ");
+
+const CREATE_BLOCKED =
+  "This app wasn't created, because it didn't pass the checks that keep an app honest:";
+
+/** No version model is needed to say this and none exists: an edit that is
+ *  never written leaves the previous app in its row, still serving. */
+const EDIT_BLOCKED =
+  "This change wasn't made, so nothing changed and your app is exactly as it was — "
+  + "it didn't pass the checks that keep an app honest:";
+
 const BUILD_WATCHDOG_REASON =
   "the build never finished — the server-side build task stalled or died without reporting a "
   + "failure. Retry the request; if this repeats, check the host server log.";
@@ -390,11 +499,6 @@ export const buildFailureReason = (
     .map((candidate) => candidate.replace(/^model generation failed: /, ""))
     .find((candidate) => MODEL_UNAVAILABLE_SIGNAL.test(candidate));
   if (unavailable !== undefined) return { reason: unavailable, retryable: false };
-  // The disclaimer-only degenerate build (defect D): Vendo-written like the
-  // dev-model lines above, so the full actionable reason surfaces verbatim.
-  if (candidates.some((candidate) => candidate.startsWith(HOST_CAPABILITY_MISS_REASON.slice(0, 40)))) {
-    return { reason: HOST_CAPABILITY_MISS_REASON, retryable: false };
-  }
   const text = candidates.join(" ");
   if (QUOTA_SIGNAL.test(text)) return { reason: "quota exhausted", retryable: false };
   if (TIMEOUT_SIGNAL.test(text)) return { reason: "timed out", retryable: true };
@@ -517,8 +621,43 @@ export interface AppsRuntime {
   list(ctx: RunContext): Promise<AppDocument[]>;
   delete(appId: AppId, ctx: RunContext): Promise<void>;
   fork(appId: AppId, ctx: RunContext): Promise<AppDocument>;
+  /**
+   * Build contract §9.5 — the second of sharing's two verbs. Moves the
+   * canonical app into an org the caller is asserted a member of: the row
+   * subject becomes the org id verbatim, the app's workspace documents move to
+   * `/orgs/<orgId>/apps/<id>/**`, and the promoter keeps an `owner` grant.
+   * Requires ownership + an asserted membership + the Cloud key (§9.6);
+   * `promote` and `fork` are the only two ways an app crosses a workspace.
+   */
+  promote(appId: AppId, orgId: string, ctx: RunContext): Promise<AppDocument>;
+  /**
+   * Build contract §9.2–§9.3 — the Share dialog's door. `list` is viewer-gated
+   * and OSS; `grant`/`revoke` are owner-gated AND Cloud-gated (sharing is
+   * multi-party coordination). `can()` behind them is never key-conditional.
+   */
+  access: {
+    list(appId: AppId, ctx: RunContext): Promise<AppGrantRecord[]>;
+    grant(appId: AppId, principal: string, level: AccessLevel, ctx: RunContext): Promise<void>;
+    revoke(appId: AppId, principal: string, ctx: RunContext): Promise<void>;
+    /** The caller's own level, or null when they cannot see the app at all —
+     *  what the surface reads to decide between "Edit" and the fork offer. */
+    levelFor(appId: AppId, ctx: RunContext): Promise<AccessLevel | null>;
+    /** Who HOLDS the app: a person's subject, or an org id for a promoted one
+     *  (§9.5 — the row subject is the org verbatim). Null when the caller
+     *  cannot see the app. The Share dialog reads it to know whether sharing
+     *  has to promote first, and into which org. */
+    holder(appId: AppId, ctx: RunContext): Promise<string | null>;
+  };
   edit(appId: AppId, instruction: string, ctx: RunContext): Promise<EditResult>;
-  history(appId: AppId): { list(): Promise<VersionEntry[]>; undo(): Promise<AppDocument> };
+  /**
+   * The capped version log, and the one-step rollback over it.
+   *
+   * Build contract §9.3 — this takes the ctx (06 §1's `history(appId)` widened
+   * by the wave-3 ruling): `list` needs `viewer`, `undo` needs `EDITOR`,
+   * because rolling back the team's app is an edit. Without the ctx here the
+   * only boundary would be the wire route — and one door is not a boundary.
+   */
+  history(appId: AppId, ctx: RunContext): { list(): Promise<VersionEntry[]>; undo(): Promise<AppDocument> };
   open(appId: AppId, ctx: RunContext): Promise<OpenSurface>;
   call(appId: AppId, ref: string, args: Json, ctx: RunContext): Promise<ToolOutcome>;
   exportApp(appId: AppId, ctx: RunContext): Promise<Uint8Array>;
@@ -530,14 +669,60 @@ export interface AppsRuntime {
    * the static descriptor remains authoritative. */
   agentToolRisk(call: ToolCall, ctx: RunContext): Promise<RiskLabel | undefined>;
   /**
-   * execution-v2 skin contract (Lane C) — the box door the wire's fn proxy
-   * route rides: wake the app's machine on demand and proxy ONE HTTP request
-   * to its $PORT (the box serves `POST /fn/<name>` per the contract; the
-   * caller shapes the path). Owner-scoped like every app surface. Additive
-   * like `proxy`/`inClient` — not part of the frozen §1 method table. Lane B's
-   * machine lifecycle owns the wake internals behind this door.
+   * Design §4's `validate` verb, as a door rather than a generation internal.
+   *
+   * The checking floor already exists and already runs inside create/edit; the
+   * verb is the same floor, callable. That matters because the building-apps
+   * skill teaches the model to `validate` after every edit — "it is faster and
+   * surer than re-reading your own work" — so the loop is validate → fix, and
+   * without this door the tool had nothing behind it.
+   *
+   * Findings, never a throw: an error reads to a model as "the tool is broken"
+   * and findings read as "your document is wrong". Only the second one gets
+   * fixed. Give `appId` to check what is stored, or `document` to check wire
+   * text before committing it.
    */
+  validate(
+    input: { appId?: AppId; document?: string },
+    ctx: RunContext,
+  ): Promise<{ ok: boolean; findings: Finding[] }>;
+  /**
+   * Design §4's `schedule` verb: set or change WHEN an app's automation runs.
+   *
+   * Only a cron change, and only on an app that already declares a schedule
+   * trigger — authoring a trigger from nothing is `edit`'s job, because it needs
+   * a run model. Re-arms through the composed automations engine afterwards, so
+   * the 07 §3 grant-capture flow runs and any missing standing grants come back
+   * on `missing` rather than failing silently at the first firing.
+   *
+   * `write`, not `read`: arming future unattended behaviour is a write (build
+   * contract §8's lane-D ratification).
+   */
+  schedule(
+    appId: AppId,
+    cron: string,
+    ctx: RunContext,
+  ): Promise<{ appId: AppId; cron: string; enabled: boolean; missing: number }>;
+  /**
+   * Build contract §9.8 — the served-app door. One request forwarded into the
+   * app's machine after `can(viewer)` is re-checked against LIVE rows, so a
+   * mid-session revoke bites the next request even though what the session
+   * already rendered stands. Viewer-level by design: `viewer` is see + use.
+   *
+   * Separate from {@link AppsRuntime.box}.request, which is the editor-level fn
+   * door — the two have different callers and deliberately different levels.
+   */
+  serve(appId: AppId, request: BoxRequest, ctx: RunContext): Promise<BoxResponse>;
   box: {
+    /**
+     * execution-v2 skin contract (Lane C) — the box door the wire's fn proxy
+     * route rides: wake the app's machine on demand and proxy ONE HTTP request
+     * to its $PORT (the box serves `POST /fn/<name>` per the contract; the
+     * caller shapes the path). Editor-scoped: writing through someone else's
+     * app is an edit. Additive like `proxy`/`inClient` — not part of the frozen
+     * §1 method table. Lane B's machine lifecycle owns the wake internals
+     * behind this door.
+     */
     request(appId: AppId, request: BoxRequest, ctx: RunContext): Promise<BoxResponse>;
     /**
      * Lane E — scrub the app's known secret values out of a JSON-ish value
@@ -642,7 +827,8 @@ export interface AppsRuntime {
      * app counts as machine activity (re-arms the idle timer and rides any
      * provider TTL extension). A sleeping machine wakes and reports "woke" —
      * the embed's signal that its URL is stale and it should re-open once
-     * awake. Owner-scoped like every machine surface.
+     * awake. Viewer-scoped, like `serve`: a keepalive for an embed someone was
+     * shared is theirs to send, and it grants no more than seeing the app does.
      */
     ping(appId: AppId, ctx: RunContext): Promise<{ state: "awake" | "woke" }>;
   };
@@ -652,8 +838,9 @@ export interface AppsRuntime {
    * authenticated scheduler endpoint calls on every external-cron hit: it
    * fires due `vendo.json` schedules exactly once per cron window (see
    * schedules.ts for the store-claimed idempotency rule). `sync` is the
-   * owner-scoped manifest re-read (the Wave-3 in-box agent's edit-complete
-   * hook); `report` feeds the doctor's machine/schedule reporting.
+   * editor-scoped manifest re-read (the Wave-3 in-box agent's edit-complete
+   * hook — re-reading a shared app's manifest is part of editing it);
+   * `report` feeds the doctor's machine/schedule reporting.
    */
   schedules: {
     tick(at?: Date): Promise<ScheduleTickReport>;
@@ -709,24 +896,6 @@ const rungFor = (
 const resolveProvider = <T>(slot: T | (() => T | undefined) | undefined): T | undefined =>
   typeof slot === "function" ? (slot as () => T | undefined)() : slot;
 
-/** Latency instrumentation (demo-latency lane): every generation stage
- *  narrates its wall-clock on the operator's terminal — the engine's opt-in
- *  onTiming/onPipeline seams were previously wired only in bench code, so a
- *  5-minute live create was unattributable. One short line per stage event;
- *  no payloads, no prompts. */
-const logTiming = (event: GenerationTimingEvent): void => {
-  const usage = event.usage === undefined
-    ? ""
-    : ` tokens=${event.usage.inputTokens ?? "?"}→${event.usage.outputTokens ?? "?"}`;
-  console.info(`[vendo] gen ${event.lane} ${event.phase} at=${(event.atMs / 1000).toFixed(1)}s${usage}`);
-};
-
-const logPipeline = (event: PipelineEvent): void => {
-  const { stage, ms, ...rest } = event;
-  const detail = Object.entries(rest).map(([key, value]) => ` ${key}=${String(value)}`).join("");
-  console.info(`[vendo] gen pipeline ${stage}${detail} ms=${ms}`);
-};
-
 const generationDependencies = (
   config: AppsConfig,
   model: LanguageModel,
@@ -735,7 +904,11 @@ const generationDependencies = (
 ): GenerationDependencies => {
   const theme = resolveProvider(config.theme);
   const semantics = resolveProvider(config.semantics);
-  return {
+  // The lanes this host does NOT have, stated to the brain as fact before it
+  // plans: a box ask on a machineless host becomes an honest <Cannot> the person
+  // reads in seconds, never a build that escalates into a disabled flag.
+  const { cannot } = laneGates(config);
+  return snapshotDesignRules({
     model,
     catalog: config.catalog,
     ...(theme === undefined ? {} : { theme }),
@@ -743,17 +916,28 @@ const generationDependencies = (
     pinBaselines: config.pinBaselines,
     ...(semantics === undefined ? {} : { semantics }),
     ...toolContext,
-    ...(config.paint === undefined ? {} : { paint: config.paint }),
+    ...(config.fill === undefined ? {} : { fill: config.fill }),
     ...(config.pipeline === undefined ? {} : { pipeline: config.pipeline }),
     ...(onPartial === undefined ? {} : { onPartial }),
-    onTiming: logTiming,
-    onPipeline: logPipeline,
-  };
+    ...(cannot.length === 0 ? {} : { hostCannot: cannot }),
+  });
 };
 
+/** The knobs the conductor reads off the host's composition. */
+const conductorOptions = (
+  config: AppsConfig,
+  runQuery: ConductorOptions["runQuery"],
+): ConductorOptions => ({
+  ...(config.fillConcurrency === undefined ? {} : { fillConcurrency: config.fillConcurrency }),
+  ...(config.checks === undefined ? {} : { checks: config.checks }),
+  ...(runQuery === undefined ? {} : { runQuery }),
+});
+
 /** v2 spec §1 — assemble the emitted payload: the tree plus document islands
- *  at payload level (the renderer lifts them into the shared walk). */
-const assembleTree = (source: {
+ *  at payload level (the renderer lifts them into the shared walk). Exported for
+ *  the harness runtime's hot-path render seam, which must produce the IDENTICAL
+ *  payload shape this emitter does. */
+export const assembleTree = (source: {
   tree: UIPayload | Tree;
   components?: Record<string, string>;
   /** W4b — the stamped per-island tool manifests ride beside the sources. */
@@ -806,7 +990,6 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       "experimentalServedApps requires experimentalMachines: a served (layer-3) app surface is served BY a machine, so enable both — createVendo({ apps: { experimentalServedApps: true, experimentalMachines: true } })",
     );
   }
-  const engine: GenerationEngine = modelEngine;
   const apps = config.store.records("vendo_apps");
   const data = createAppData(config.store);
   const history = createAppHistory(config.store);
@@ -866,20 +1049,148 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     allowedDomains: (doc) => boxAllowlist(doc, implicitEgress),
   });
 
+  /**
+   * Build contract §9.3 — the ONE permission check, widened rather than
+   * duplicated: the wire and the MCP door reach it through this runtime.
+   *
+   * Level rules: reads need `viewer`, edits `editor`, delete/share `owner`.
+   * With no `appAccess` wired (the OSS single-player default) it degenerates to
+   * exactly what it always was — row ownership, at every level.
+   */
+  const holds = async (
+    appId: AppId,
+    ctx: RunContext,
+    level: AccessLevel,
+    /** The row, when the caller already read it — `open()` and `get()` are on
+        every render, so the single-player path must stay ONE read. */
+    known?: VendoRecord | null,
+  ): Promise<boolean> => {
+    const record = known === undefined ? await apps.get(appId) : known;
+    // The owner fast path. Ownership is the TOP level, so the row the caller
+    // already read answers every level for its own subject — no grants query,
+    // no second read. This is what keeps get()/open() at ONE store read on the
+    // single-player path even with `can()` wired (which is always, under the
+    // umbrella).
+    if (record?.refs?.subject === ctx.principal.subject) return true;
+    if (config.appAccess === undefined) return false;
+    return await config.appAccess.can(ctx, level, { app: appId });
+  };
+
   // Pins/placements split (2026-08-02) — every runtime read classifies legacy
   // rows (classifyLegacyPlacements), so drift, ship-diff, export, and the wire
   // all see fork provenance in `pins` and slot placement in `placements`; the
   // next persistEdit writes the classified document, normalizing the row.
-  const owned = async (appId: AppId, subject: string): Promise<AppDocument | null> => {
+  const owned = async (
+    appId: AppId,
+    ctx: RunContext,
+    level: AccessLevel = "editor",
+  ): Promise<AppDocument | null> => {
     const record = await apps.get(appId);
-    if (record === null || record.refs?.subject !== subject) return null;
+    if (record === null || !(await holds(appId, ctx, level, record))) return null;
     return classifyLegacyPlacements(documentFromRecord(record), config.pinBaselines);
   };
 
-  const requireOwned = async (appId: AppId, subject: string): Promise<AppDocument> => {
-    const app = await owned(appId, subject);
-    if (app === null) throw new VendoError("not-found", `app not found: ${appId}`);
-    return app;
+  /** Build contract §9.5/§9.8 — must this app be served through the proxy
+      rather than handed the provider's URL? The question is the one `can()`
+      answers, not a second opinion: the caller reaches the app, and the app is
+      not their own (§9.5 — a promoted app's row subject IS the org id).
+      Matching the subject against ASSERTED MEMBERSHIPS instead missed the
+      caller `can()` admits on a bare `user:` grant with no membership, which is
+      precisely what "share with one person" writes: that viewer passed `open()`
+      and received the provider's raw ingress URL — a bearer-by-obscurity
+      capability with no per-request check, which is what this proxy exists to
+      prevent. Their own app is the ONLY thing that keeps the provider URL. */
+  const servedThroughProxy = async (appId: AppId, ctx: RunContext): Promise<boolean> => {
+    const record = await apps.get(appId);
+    const subject = record?.refs?.subject;
+    return subject !== undefined
+      && subject !== ctx.principal.subject
+      && await holds(appId, ctx, "viewer", record);
+  };
+
+  /** Build contract §9.6 — the ONE Cloud gate on this block. Sharing is
+      multi-party coordination, so the writes that create it need a key; the
+      enforcement half (`can()`) is OSS and never key-conditional, which is why
+      only these three verbs consult this. */
+  const requireMultiParty = (what: string): void => {
+    if (config.multiParty !== true) {
+      throw new VendoError(
+        "cloud-required",
+        `${what} needs Vendo Cloud: set VENDO_API_KEY (or pass a hosted store) — apps you own alone keep working without it`,
+      );
+    }
+  };
+
+  /** Only the WRITE verbs reach this: an unwired seam is an absence, and the
+      reads (`levelFor`, `list`) report it as ownership + an empty list rather
+      than as something to go buy. */
+  const requireAccess = (): AppAccess => {
+    if (config.appAccess === undefined) {
+      throw new VendoError("cloud-required", "this deployment has no app-access store wired");
+    }
+    return config.appAccess;
+  };
+
+  /** Build contract §9.2 — the grant-principal encodings THIS ctx satisfies.
+      Derived from the asserted memberships alone, so a team the host did not
+      assert this request simply is not in the list. Through core's ONE encoder,
+      so a query here can never miss a shape a surface wrote. */
+  const grantPrincipalsOf = (ctx: RunContext): string[] => {
+    const encodings = [encodeGrantPrincipal({ kind: "user", subject: ctx.principal.subject })];
+    for (const membership of ctx.memberships ?? []) {
+      encodings.push(encodeGrantPrincipal({ kind: "org", org: membership.org }));
+      for (const team of membership.teams ?? []) {
+        encodings.push(encodeGrantPrincipal({ kind: "team", org: membership.org, team }));
+      }
+    }
+    return encodings;
+  };
+
+  /** The app rows this caller reaches WITHOUT owning them: their grant rows,
+      plus every app held by an org they administer (implicit owner, §9.3).
+      `can()` re-decides each one — this only narrows what to ask about. */
+  const grantedRecords = async (ctx: RunContext, already: Set<string>): Promise<VendoRecord[]> => {
+    if (config.appAccess === undefined) return [];
+    const ids = new Set<string>();
+    const found: VendoRecord[] = [];
+    for (const principal of grantPrincipalsOf(ctx)) {
+      for (const row of await listAllRecords(config.store.records("vendo_app_grants"), { refs: { principal } })) {
+        const appId = (row.data as { appId?: string }).appId;
+        if (appId !== undefined && !already.has(appId)) ids.add(appId);
+      }
+    }
+    for (const membership of ctx.memberships ?? []) {
+      if (membership.admin !== true) continue;
+      for (const row of await allRecords(config.store, { subject: membership.org })) {
+        if (!already.has(row.id)) found.push(row);
+      }
+    }
+    for (const record of await listAllRecords(apps, { ids: [...ids] })) {
+      if (!found.some((row) => row.id === record.id)) found.push(record);
+    }
+    // The grant/admin sets can overlap the caller's own rows only through a
+    // doctored row; `can()` below is still the authority on every one of them.
+    const visible: VendoRecord[] = [];
+    for (const record of found) {
+      if (await holds(record.id, ctx, "viewer")) visible.push(record);
+    }
+    return visible;
+  };
+
+  /** §9.4's posture in one place: what the caller cannot even VIEW stays
+      `not-found` (existence-masking, as ever); a proven viewer denied a
+      stronger action gets `forbidden`, which is what the fork offer renders. */
+  const requireOwned = async (
+    appId: AppId,
+    ctx: RunContext,
+    level: AccessLevel = "editor",
+  ): Promise<AppDocument> => {
+    const app = await owned(appId, ctx, level);
+    if (app !== null) return app;
+    if (level !== "viewer" && await holds(appId, ctx, "viewer")) {
+      throw new VendoError("forbidden", `${level} access is required for ${appId}`);
+    }
+    throw new VendoError("not-found", `app not found: ${appId}`);
   };
 
   const interchange = createAppInterchange({
@@ -1054,6 +1365,23 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
    * {@link requestEgressApproval} directly.
    */
   const ensureEgressApproved = async (app: AppDocument, ctx: RunContext): Promise<void> => {
+    // An egress approval is self-subject like every approval, but its EFFECT is
+    // not: the decision writes `egressApproved` onto the SHARED app document and
+    // binds everyone who uses the app from then on. So the ask belongs to a
+    // caller who can CHANGE the app — which is what this module has always said
+    // it records (`EgressApprovalRequest.owner`: "the only principal who may
+    // approve"). Two doors reach here at viewer level (§9.8's `serve` and
+    // `machine.ping`), and they parked a card in the viewer's name. They now
+    // refuse in the same words a ctx-less wake does, and wait for an editor.
+    const undecided = unapprovedEgress(app);
+    if (undecided.length > 0 && !(await holds(app.id, ctx, "editor"))) {
+      throw new VendoError(
+        "blocked",
+        `machine egress is not approved for: ${undecided.join(", ")}`
+        + " — only someone who can change this app can approve it",
+        { unapprovedDomains: undecided },
+      );
+    }
     const outcome = await requestEgressApproval(app, ctx);
     if (outcome.status === "pending") {
       throw new VendoError(
@@ -1150,6 +1478,10 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     lifecycle,
     callFn: fnCaller.callFn,
     audit: (event) => config.guard.report(event),
+    // Build contract §9.1 — an unattended fire asserts the SAME orgs a request
+    // does, or `can()` would answer differently attended and unattended (a
+    // promoted app would be invisible to its own schedule).
+    ...(config.memberships === undefined ? {} : { memberships: config.memberships }),
   });
   const caller = fnCaller.wrap(createAppCaller(config.tools, {
     // W0 — remember every mutating in-app action the guard parks, so the
@@ -1168,7 +1500,32 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     // handoff (host theme tokens as a query param the served app MAY consume).
     {
       enabled: config.experimentalServedApps === true,
-      urlFor: async (app) => {
+      urlFor: async (app, ctx) => {
+        // Build contract §9.8 — an ORG-owned served app is a WIRE DOOR, not a
+        // snapshot handed to viewers: the registered URL is this deployment's
+        // proxy, which re-checks `can(viewer)` against live rows on every
+        // request. Personal served apps keep the provider URL exactly as before.
+        if (await servedThroughProxy(app.id, ctx)) {
+          const proxy = config.servedProxyPath;
+          if (proxy === undefined) {
+            throw new VendoError(
+              "not-implemented",
+              "this org app is served by a machine, and serving it needs the wire's authenticated proxy — mount the Vendo wire (createVendo().handler) so /apps/:appId/serve/** is reachable",
+            );
+          }
+          // No wake here: the proxy wakes the machine on the first forwarded
+          // request, AFTER it has re-checked access. Waking first would spend a
+          // machine on a caller the very next check might refuse.
+          //
+          // Theme parity with the personal branch below: the served app MAY
+          // consume the host's tokens, and the proxy forwards the query string
+          // into the box, so a shared app renders in the host's brand exactly
+          // as the owner's own copy does.
+          const orgTheme = resolveProvider(config.theme);
+          return orgTheme === undefined
+            ? proxy(app.id)
+            : `${proxy(app.id)}?vendoTheme=${encodeURIComponent(JSON.stringify(orgTheme))}`;
+        }
         const machine = await lifecycle.wake(app);
         // Absorb the fresh-boot 502 race server-side so the iframe's first
         // paint is the app, not a provider error (the wake latency is the
@@ -1184,6 +1541,9 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         return url.toString();
       },
     },
+    // §9.9 — the additive, ctx-aware venue-state slot lane H's adoption card
+    // rides. Forwarded straight through; the runtime never interprets it.
+    config.venueState,
   );
 
   // 06-apps §8 — every edit result over a drifted app carries the drift report,
@@ -1215,6 +1575,27 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     },
   });
 
+  /**
+   * Build contract §9.9 — the ONE announcement every change to what an app IS
+   * passes through, so lane H's sponsorship invalidation hears about a
+   * third-party change without a second write path to police. Called by
+   * `persistEdit` and by `undo` (which writes the row itself, in the history
+   * module, and so cannot go through persistEdit). The change has ALREADY
+   * landed: a listener that throws must never unwind it.
+   */
+  const reportDocumentEdit = async (
+    previous: AppDocument,
+    next: AppDocument,
+    subject: string,
+  ): Promise<void> => {
+    if (config.onDocumentEdit === undefined) return;
+    try {
+      await config.onDocumentEdit(previous, next, subject);
+    } catch (error) {
+      console.warn(`[vendo] onDocumentEdit hook failed for ${next.id}: ${safeErrorMessage(error)}`);
+    }
+  };
+
   const persistEdit = async (
     previous: AppDocument,
     app: AppDocument,
@@ -1222,12 +1603,25 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     subject: string,
     pinSlots?: readonly string[],
     options: {
-      /** Wave 9 — an edit that AUTHORED the trigger arms it in the same write
-       *  (the ladder's automation path); every other edit keeps the disarm-on-
-       *  trigger-change rule below. */
+      /** An edit that AUTHORED the trigger arms it in the same write (the
+       *  server lane's automation path); every other edit keeps the
+       *  disarm-on-trigger-change rule below. */
       armTrigger?: boolean;
     } = {},
+    /**
+     * The brain's conversation to persist beside the document. Omitting it
+     * CLEARS the conversation — which is exactly how a forged one is stripped,
+     * and exactly what must never happen on an ordinary edit. Every edit path
+     * threads the brain's own next session through here; `sessionOf(previous)`
+     * is what a write that did not talk to the brain passes.
+     */
+    session?: readonly BrainTurn[],
   ): Promise<AppDocument> => {
+    // Build contract §9.5 — the ROW's subject, which for a promoted app is the
+    // org id, not the editor. The routing door pins `WHERE id AND subject`, so
+    // writing the editor here would silently lose every org edit; `can(editor)`
+    // upstream is what authorized this write, and the row keeps its owner.
+    const rowSubject = (await apps.get(previous.id))?.refs?.subject ?? subject;
     // Best-effort optimistic concurrency. The core StoreAdapter seam (01-core §12) has
     // no compare-and-swap or transactions, so a narrow TOCTOU window between the final
     // check and the put remains — closing it fully needs a store-level revision column
@@ -1239,7 +1633,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // classifies the same way before comparing — otherwise every edit of a
       // not-yet-normalized legacy row would read as a concurrent change.
       if (row === null
-        || row.subject !== subject
+        || row.subject !== rowSubject
         || JSON.stringify(classifyLegacyPlacements(row.doc, config.pinBaselines)) !== JSON.stringify(previous)) {
         throw new VendoError("conflict", `app changed during edit: ${previous.id}`);
       }
@@ -1261,18 +1655,67 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     const enabled = options.armTrigger === true && app.trigger !== undefined
       ? true
       : enabledAfterDocumentEdit(previous, app, wasEnabled);
-    const appRow = appRecordInput(app, subject, enabled);
+    const appRow = appRecordInput(app, rowSubject, enabled, session ?? sessionOf(previous));
     await apps.put(appRow);
-    return structuredClone(appRow.data.doc);
+    await reportDocumentEdit(previous, appRow.data.doc, subject);
+    // The stored row keeps the conversation; the document handed BACK never
+    // carries it. One rule, every path out of the runtime (get/list/fork/undo
+    // strip it too), so what an edit returns is exactly what a list returns.
+    return withoutSession(structuredClone(appRow.data.doc));
+  };
+
+  /** A document without its id, the shape every generation module speaks. */
+  const withoutId = (app: AppDocument): Omit<AppDocument, "id"> => {
+    const { id: _id, ...document } = structuredClone(app);
+    return document;
+  };
+
+  /**
+   * Executes one of a plan's queries against the host registry, with the calling
+   * user's own authority — the same read the app's own query makes when it
+   * opens. READ-risk only: the conductor never hands a mutating tool here,
+   * because a plan is a proposal and a proposal must not have side effects.
+   */
+  const queryRunnerFor = (
+    app: AppDocument,
+    ctx: RunContext,
+  ): ConductorOptions["runQuery"] => async (query) => {
+    const outcome = await caller.call(app, query.tool, (query.input ?? {}) as Json, ctx);
+    if (outcome.status !== "ok") {
+      throw new Error(`${query.tool} answered ${outcome.status}`);
+    }
+    return outcome.output;
   };
 
   const reportLifecycle = async (
-    operation: "create" | "delete" | "fork" | "in-client-approve" | "pin-fork" | "pin-rebase" | "machine-provision" | "machine-destroy",
+    operation: "create" | "delete" | "fork" | "promote" | "in-client-approve" | "pin-fork" | "pin-rebase" | "machine-provision" | "machine-destroy",
     appId: AppId,
     ctx: RunContext,
     extra: Record<string, Json> = {},
   ): Promise<void> => {
     await config.guard.report(appLifecycleEvent(ctx.principal, ctx, appId, { operation, ...extra }));
+  };
+
+  /** The one mint for the `share` kind. It has existed in core since 01 §7 and
+   *  had ZERO producers until sharing shipped; the activity feed's semantics
+   *  already render it. Separate from `appLifecycleEvent` because that mint
+   *  stamps `kind: "app-lifecycle"` and an `outcome`, and a share event carries
+   *  neither. */
+  const reportShare = async (
+    appId: AppId,
+    ctx: RunContext,
+    detail: Record<string, Json>,
+  ): Promise<void> => {
+    await config.guard.report({
+      id: `aud_${globalThis.crypto.randomUUID()}`,
+      at: new Date().toISOString(),
+      kind: "share",
+      principal: ctx.principal,
+      venue: ctx.venue,
+      presence: ctx.presence,
+      appId,
+      detail,
+    });
   };
 
   // verify-v2 fixes / v2 spec §3 — shape cards from live samples: each read
@@ -1306,7 +1749,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   const generationToolContext = async (
     ctx: RunContext,
   ): Promise<Pick<GenerationDependencies, "tools" | "toolShapes">> => {
-    const descriptors = await config.tools.descriptors().catch(() => []);
+    const descriptors = await config.tools.descriptors(ctx).catch(() => []);
     const candidates = descriptors.filter((descriptor) =>
       descriptor.risk === "read" && !requiresInput(descriptor) && !settledSamples.has(descriptor.name)
       && !connectSettled(ctx.principal.subject, descriptor.name));
@@ -1476,338 +1919,250 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   };
 
   /**
-   * Graduation 1→2 (invisible, additive): provision a machine if the app has
-   * none, delegate the server work to the in-box agent, then land the tree's
-   * fn: bindings through the NORMAL tree-edit dialect. The tree keeps
-   * working throughout; the user never picks a tier. A graduating edit whose
-   * server declares unapproved egress SURFACES the parked approval (the code is
-   * written and snapshotted; the fn does real egress only once approved).
+   * The box, as the server lane needs it. `available()` is checked BEFORE
+   * anything is provisioned; `instruct()` wakes the machine, hands the in-box
+   * agent the plan's reason, and — on failure — discards the live machine
+   * WITHOUT snapshotting, so a failed box leaves nothing to inherit.
+   *
+   * Every function the box reports is SAMPLED here by actually calling it: the
+   * sample is the only real shape in existence for it, because nothing declared
+   * these functions up front. That is the same call the graduation path made,
+   * and the same call a query-bound fn makes the moment the app opens.
    */
-  const graduate = async (
-    previous: AppDocument,
-    instruction: string,
-    ctx: RunContext,
-    options: { served?: boolean } = {},
-  ): Promise<EditResult> => {
-    if (config.model === undefined) {
-      throw new VendoError("not-implemented", "generation requires a model");
-    }
-    if (!lifecycle.available()) {
-      return failedEdit(previous, instruction, [
-        "this instruction needs server capability (schedule / egress / heavy logic / app state), but no sandbox adapter is configured — set machine.sandbox to graduate",
-      ], false);
-    }
-    // Provision on first graduation. A fresh app declares no egress, so this
-    // does not park anything; a re-graduation of an app with pending egress
-    // surfaces that card here (ensureEgressApproved throws).
-    let provisioned = previous;
-    if (previous.machine === undefined) {
-      await ensureEgressApproved(previous, ctx);
-      provisioned = await lifecycle.provision(previous);
-      await reportLifecycle("machine-provision", previous.id, ctx);
-    }
-    const box = await editServerViaBox(provisioned, instruction, ctx, { served: options.served === true });
-    if (!box.ok) {
-      return failedEdit(provisioned, instruction, [
-        `the in-box agent could not complete the server work: ${box.result.summary}`,
-      ], true);
-    }
-    // Park the approval card for the domains the server code declared. On the
-    // pre-approved-replay path this COMMITS the grant (writing egressApproved
-    // and sleeping the box), which mutates the stored row — so re-read the
-    // current document AFTER it as the base the fn-binding persist builds on,
-    // rather than the now-possibly-stale box.doc.
-    const pending = await requestEgressApproval(box.doc, ctx);
-    const base = await requireOwned(previous.id, ctx.principal.subject);
-    const pendingEgress = pending.status === "pending"
-      ? { pendingEgress: { approvalId: pending.approvalId, domains: pending.domains } }
-      : {};
-    const boxReport = {
-      box: {
-        ok: box.result.ok,
+  const boxSeamFor = (appId: AppId, ctx: RunContext, wantsServed: boolean): BoxSeam => ({
+    available: () => lifecycle.available() && config.experimentalMachines === true,
+    provision: async () => {
+      const app = await requireOwned(appId, ctx);
+      if (app.machine !== undefined) return;
+      await ensureEgressApproved(app, ctx);
+      await lifecycle.provision(app);
+      await reportLifecycle("machine-provision", appId, ctx);
+    },
+    instruct: async (instruction) => {
+      const app = await requireOwned(appId, ctx);
+      const box = await editServerViaBox(app, instruction, ctx, { served: wantsServed });
+      if (!box.ok) return { ok: false, summary: box.result.summary };
+      const current = await requireOwned(appId, ctx);
+      const functions: ServerFunction[] = [];
+      // A served app's PAGES are its interface: there is no tree left to bind a
+      // function into, and sampling would wake the box straight back up after
+      // the snapshot. Graduation ends asleep.
+      for (const name of wantsServed ? [] : box.result.fns ?? []) {
+        const outcome = await fnCaller.callFn(current, name, {}, ctx).catch(() => undefined);
+        functions.push({
+          name,
+          ...(outcome !== undefined && outcome.status === "ok"
+            ? { sampleOutput: outcome.output as Json }
+            : {}),
+        });
+      }
+      return {
+        ok: true,
         summary: box.result.summary,
-        ...(box.result.fns === undefined ? {} : { fns: box.result.fns }),
-        filesChanged: box.result.filesChanged,
+        functions,
+        ...(box.result.servesUi === undefined ? {} : { servesUi: box.result.servesUi }),
+        servedOk: box.servedOk,
+      };
+    },
+  });
+
+  /**
+   * Run the server work a plan declared, on an app that is already STORED — the
+   * lane lands through the ordinary edit persist, and arming a trigger whose row
+   * does not exist yet would enable an automation nobody has. steps/agentic
+   * author an automation on the existing engine in seconds; box provisions a
+   * machine, lets the in-box agent write real code, and reports the interface it
+   * actually serves so the groups that waited can bind to truth.
+   */
+  const runServerWork = async (
+    input: {
+      plan: AppPlan;
+      document: AppDocument;
+      skeleton: { tree: Tree; slots: Record<string, string> };
+      request: string;
+      session: readonly BrainTurn[];
+    },
+    ctx: RunContext,
+    deps: GenerationDependencies,
+  ): Promise<{
+    document: AppDocument;
+    findings: Finding[];
+    automation?: EditResult["automation"];
+    /** The box wrote real server code for this app (layer 2 or 3). */
+    graduated?: boolean;
+    /** Sentences for the caller's `issues` — a refused flip is never silent. */
+    issues?: string[];
+    /** The server work the plan REQUIRED could not be built, so the edit did not
+     *  happen at all: a served app that never got its surface has nothing to
+     *  stand on, unlike a layer-2 box whose tree still works. */
+    failed?: string[];
+  }> => {
+    const appId = input.document.id;
+    const wantsServed = input.plan.server?.served === true;
+    const landVersion = (document: AppDocument): VersionEntry => ({
+      at: new Date().toISOString(),
+      intent: input.request,
+      rung: rungFor(document),
+    });
+    const lane = await runServerLane(input.plan, withoutId(input.document), {
+      ...deps,
+      appId,
+      ctx,
+      box: boxSeamFor(appId, ctx, wantsServed),
+      ...(config.armAutomation === undefined ? {} : { armAutomation: config.armAutomation }),
+      land: async (document, options) => {
+        const previous = await requireOwned(appId, ctx);
+        const next: AppDocument = { ...document, id: appId };
+        if (next.tree !== undefined) stripServerAuthoritativeFields(next.tree);
+        await persistEdit(previous, next, landVersion(next), ctx.principal.subject, undefined, options, input.session);
       },
-    };
-    // ── Wave 4 (layer 3): the 2→3 surface flip ─────────────────────────────
-    // The tree kept serving through the whole box build; only NOW — box ok,
-    // servesUi declared, and the host's own served-root check green — does the
-    // document flip to the served surface (ui: http, the tree is gone). The
-    // experimental flag guards the FLIP itself, not just generation: a box
-    // that self-declares a served app while the flag is off is refused here,
-    // loudly (de-graduation guard).
-    const extraIssues: string[] = [];
-    if (options.served === true || box.result.servesUi === true) {
-      if (config.experimentalServedApps !== true) {
-        extraIssues.push(
-          "the box declared a served web app, but experimentalServedApps is disabled — the surface flip was refused and the tree keeps serving (enable createVendo({ apps: { experimentalServedApps: true } }))",
+      rebind: async (instruction, document) => {
+        const app: AppDocument = { ...document, id: appId };
+        const conducted = await conductEdit(
+          { app, instruction, session: input.session },
+          deps,
+          conductorOptions(config, queryRunnerFor(app, ctx)),
         );
-      } else if (options.served === true && box.result.servesUi === true && box.servedOk) {
-        // The flip needs BOTH the escalation decision and the verified served
-        // surface: a box that spontaneously serves UI on a layer-2 instruction
-        // must never replace a tree the user did not ask to lose.
+        return conducted.kind === "app"
+          ? { document: conducted.document, issues: [] }
+          : { issues: conducted.kind === "cannot" ? conducted.reasons : conducted.issues };
+      },
+    });
+    let document: AppDocument = { ...lane.document, id: appId };
+    const findings = [...lane.findings];
+    // The groups that waited on the box fill NOW, against the samples it
+    // reported — never against a signature nobody has implemented.
+    if (!wantsServed && lane.server !== undefined && lane.server.functions.length > 0) {
+      const filled = await fillAfterServer({
+        plan: input.plan,
+        skeleton: input.skeleton,
+        document: withoutId(document),
+        functions: lane.server.functions,
+        request: input.request,
+      }, deps, conductorOptions(config, undefined));
+      findings.push(...filled.findings);
+      // Only the TREE comes from the fill. Everything else must come from the
+      // row as it stands NOW, because provisioning the box wrote `machine` to it
+      // — building this persist on the pre-box copy would silently un-provision
+      // the machine that was just created.
+      const previous = await requireOwned(appId, ctx);
+      const next: AppDocument = { ...previous, ...(filled.document.tree === undefined ? {} : { tree: filled.document.tree }) };
+      if (next.tree !== undefined) stripServerAuthoritativeFields(next.tree);
+      document = await persistEdit(previous, next, landVersion(next), ctx.principal.subject, undefined, {}, input.session);
+    } else if (lane.automation !== undefined) {
+      // The automation lane landed its own write; re-read so the caller holds
+      // the stored row rather than the pre-persist copy.
+      document = await requireOwned(appId, ctx);
+    }
+    // ── The 2→3 surface flip ────────────────────────────────────────────────
+    // The tree kept serving through the whole box build. Only NOW, with the box
+    // green, does the surface change — and only on TWO independent signals: the
+    // PLAN asked to be served, and the host itself fetched `GET /` and got a real
+    // page. A box that self-declares a served surface on a layer-2 plan is
+    // refused loudly: it must never replace a tree the person did not ask to lose.
+    const issues: string[] = [];
+    if (wantsServed && lane.server === undefined) {
+      return { document, findings, failed: findings.map(({ message }) => message) };
+    }
+    if (lane.server !== undefined && (wantsServed || lane.server.servesUi === true)) {
+      if (config.experimentalServedApps !== true) {
+        issues.push("the box declared a served web app, but experimentalServedApps is disabled — the surface flip was refused and the tree keeps serving (enable createVendo({ apps: { experimentalServedApps: true } }))");
+      } else if (!wantsServed) {
+        issues.push("the box declared a served web app, but this app's plan never asked for one — the surface flip was refused and the tree keeps serving");
+      } else if (lane.server.servesUi === true && lane.server.servedOk === true) {
+        const base = await requireOwned(appId, ctx);
         const flipped = structuredClone(base);
         delete flipped.tree;
         delete flipped.components;
         delete flipped.componentTools;
         delete flipped.pins;
         flipped.ui = "http";
-        const flipVersion: VersionEntry = {
-          at: new Date().toISOString(),
-          intent: instruction,
-          rung: rungFor(flipped),
-        };
-        const persisted = await persistEdit(base, flipped, flipVersion, ctx.principal.subject);
-        return withPinDrift({
-          app: persisted,
-          version: { ...flipVersion },
-          graduated: true,
-          ...boxReport,
-          ...pendingEgress,
-        });
-      } else if (options.served === true) {
-        // The box work landed (machine + code snapshotted), but no verified
-        // served surface exists — the current surface stays live; retry edits.
-        return withPinDrift({
-          app: structuredClone(base),
-          version: { at: new Date().toISOString(), intent: instruction, rung: rungFor(base) },
-          issues: [
-            "the box did not produce a verified served web app (GET / must answer 200 text/html) — the surface was not flipped; retry the edit",
-          ],
-          graduated: true,
-          ...boxReport,
-          ...pendingEgress,
-        });
-      }
-    }
-    // Land fn: bindings via the normal tree-edit dialect. The app now carries a
-    // machine, so fn: refs validate (core machine-presence rule).
-    const fns = box.result.fns ?? [];
-    // A FOCUSED rebind directive — not the full server spec (which is noise to
-    // the tree-edit model). The only job here is repointing the tree's data
-    // queries and actions at the new fn: functions.
-    const treeInstruction = `The app just graduated to a machine that serves these functions: ${fns.map((fn) => `fn:${fn}`).join(", ") || "(none reported)"}. Rewire the tree to use them:\n- Repoint the query that feeds the main board/list/digest so its tool is the matching data function (e.g. change its tool to "fn:getDigest"); if no such query exists, add one with <Query id="data" tool="fn:..."/> and bind a node to it. Do not leave a stale placeholder or host-tool query where the server now provides the data.\n- Wire any submit/refresh/run control's action to the matching fn:.\n- An fn response unwraps its {"result": ...} envelope: bind paths directly against the function's result value, and NEVER carry a host tool's response envelope (e.g. a "data" segment) into an fn: binding — when you repoint a query, rewrite every binding path that read the old tool's shape.\nChange ONLY the data source and actions; keep the layout. Emit no id attributes on nodes (ids are compiler-owned); a <Query> id is its name.`;
-    let treeIssues: string[] = [];
-    let bound: AppDocument | undefined;
-    // Wave 7 H2 (the em-dash class, PR #418) — fn-result shape cards, sampled
-    // lazily for the fn: queries the rebind actually lands (never for unbound
-    // action fns), keyed like tool shapes ("fn:<name>") so the edit compiler
-    // and the TOOL RESPONSE SHAPES prompt pick them up on retries.
-    const fnShapes: Record<string, ShapeType> = {};
-    const sampledFns = new Set<string>();
-    for (let attempt = 0; attempt < 3 && bound === undefined; attempt += 1) {
-      const toolContext = await generationToolContext(ctx);
-      const generated = await engine.edit(
-        {
-          app: structuredClone(base),
-          instruction: treeInstruction,
-          ...(treeIssues.length === 0 ? {} : { repairIssues: treeIssues }),
-        },
-        generationDependencies(config, config.model, {
-          ...toolContext,
-          ...(Object.keys(fnShapes).length === 0 && toolContext.toolShapes === undefined
-            ? {}
-            : { toolShapes: { ...toolContext.toolShapes, ...fnShapes } }),
-        }),
-      );
-      if (generated.kind !== "document") {
-        treeIssues = distinctIssues(treeIssues, generated.issues);
-        continue;
-      }
-      const candidate: AppDocument = { ...generated.document, id: base.id };
-      // Post-pass: check the landed fn: bindings against SAMPLED result
-      // shapes. The sample is the exact call the bound query makes at open()
-      // (fn.ts unwraps the {result} envelope), so it does nothing a rendered
-      // board would not do itself; a failed sample leaves that fn's shape
-      // unknown — defensive, like an unsampled host tool.
-      const tree = candidate.tree as unknown as Tree | undefined;
-      const queries = tree?.queries ?? [];
-      // Sampling adds no new authority and (at most) one extra invocation:
-      // a query-bound fn fires WITHOUT user action the moment the graduated
-      // tree is opened or emitted (the progressive resolver calls it with
-      // exactly this input), so an fn too dangerous to sample was already
-      // too dangerous for the model to wire as a query — that is a box-side
-      // design concern, not a host gate this pass could add.
-      for (const query of queries) {
-        if (!query.tool.startsWith("fn:") || sampledFns.has(query.tool)) continue;
-        sampledFns.add(query.tool);
-        const outcome = await fnCaller.callFn(base, query.tool.slice(3), query.input ?? {}, ctx).catch(() => undefined);
-        if (outcome !== undefined && outcome.status === "ok") {
-          fnShapes[query.tool] = deriveShapeCard(query.tool, [outcome.output]).output;
-        }
-      }
-      const bindingErrors = tree === undefined ? [] : checkBindingShapes(tree.nodes, queries, fnShapes);
-      if (bindingErrors.length === 0) {
-        bound = candidate;
+        document = await persistEdit(base, flipped, landVersion(flipped), ctx.principal.subject, undefined, {}, input.session);
       } else {
-        treeIssues = distinctIssues(treeIssues, bindingErrors.map((error) =>
-          `binding ${error.path} on node "${error.nodeId}" prop "${error.prop}": ${error.message}${error.available === undefined ? "" : ` (available: ${error.available.join(", ")})`}`));
+        issues.push("the box did not produce a verified served web app (GET / must answer 200 text/html) — the surface was not flipped; retry the edit");
       }
     }
-    const version: VersionEntry = { at: new Date().toISOString(), intent: instruction, rung: rungFor(base) };
-    if (bound === undefined) {
-      // Server graduated + snapshotted, but the model couldn't validate the
-      // fn: bindings. The machine sticks (already persisted by editServerViaBox);
-      // report the miss instead of silently dropping the graduation.
-      return withPinDrift({
-        app: structuredClone(base),
-        version,
-        issues: ["graduated: machine provisioned and server code written, but the tree fn: bindings did not validate — retry the edit to wire them", ...treeIssues, ...extraIssues],
-        graduated: true,
-        ...boxReport,
-        ...pendingEgress,
+    // Wave 9 — an edit that rode the ladder to an automation is an audit event
+    // in its own right (the row main has carried since the ladder shipped): the
+    // trigger now fires unattended, so the trail must say when it was authored.
+    if (lane.automation !== undefined) {
+      await reportGuard(ctx.principal.subject, appId, ctx, {
+        operation: "automation-created",
+        mode: lane.automation.mode,
+        triggerKind: lane.automation.trigger.on.kind,
       });
     }
-    if (bound.tree !== undefined) stripServerAuthoritativeFields(bound.tree);
-    const persisted = await persistEdit(base, bound, version, ctx.principal.subject);
-    return withPinDrift({
-      app: persisted,
-      version: { ...version },
-      ...(extraIssues.length === 0 ? {} : { issues: [...extraIssues] }),
-      graduated: true,
-      ...boxReport,
-      ...pendingEgress,
-    });
+    // Arming's own sentences are the CALLER's, not just the log's: a trigger
+    // left disarmed is the person's to fix, and the sentence names the surface
+    // that fixes it. The rest of the lane's findings stay operator-side.
+    const armingIssues = lane.armingIssues ?? [];
+    return {
+      document,
+      findings,
+      ...(lane.automation === undefined ? {} : { automation: lane.automation }),
+      ...(lane.server === undefined ? {} : { graduated: true }),
+      ...(issues.length === 0 && armingIssues.length === 0
+        ? {}
+        : { issues: [...issues, ...armingIssues] }),
+    };
   };
 
+
   /**
-   * Wave 9 — the escalation ladder's rungs (a) and (b): author a STEPS or
-   * AGENTIC automation for a server-shaped instruction instead of graduating
-   * to a box. One structured model call plans the trigger (seconds, no
-   * machine); the trigger and its results-collection declaration land on the
-   * document through the normal edit persist, ARMED so the existing
-   * automations engine fires it; then the tree gains a query over the results
-   * rows through the same tree-edit dialect graduation uses for fn: bindings.
-   * Grant capture stays lazy: an away run's first ungranted mutating step
-   * parks the standard approval card (park/resume already handles it).
+   * Forward ONE already-authorized request into the app's machine. Extracted
+   * because §9.8's served door and the fn door differ ONLY in the level they
+   * require (`viewer` vs `editor`) — the wake, the egress pre-flight and the
+   * redaction guard are identical, and a second copy of them is exactly how the
+   * two would drift apart.
    */
-  const automate = async (
-    previous: AppDocument,
-    instruction: string,
+  const forwardToBox = async (
+    app: AppDocument,
+    request: BoxRequest,
     ctx: RunContext,
-    mode: "steps" | "agentic",
-  ): Promise<EditResult> => {
-    if (config.model === undefined) {
-      throw new VendoError("not-implemented", "generation requires a model");
-    }
-    const toolContext = await generationToolContext(ctx);
-    const planned = await planAutomation({
-      appId: previous.id,
-      appName: previous.name,
-      instruction,
-      mode,
-      tools: toolContext.tools ?? [],
-      ...(toolContext.toolShapes === undefined ? {} : { toolShapes: toolContext.toolShapes }),
-    }, config.model);
-    if (planned.kind === "failure") {
-      return failedEdit(previous, instruction, [
-        `this instruction needs ${mode === "steps" ? "a scheduled/triggered steps" : "an agentic"} automation, but no valid plan validated`,
-        ...planned.issues,
-      ]);
-    }
-    const { plan } = planned;
-    const automated = structuredClone(previous);
-    automated.trigger = structuredClone(plan.trigger);
-    if (plan.resultsCollection !== undefined && automated.storage?.[plan.resultsCollection] === undefined) {
-      automated.storage = {
-        ...automated.storage,
-        [plan.resultsCollection]: {
-          about: `Latest results written by the "${plan.name ?? "automation"}" automation for the app board.`,
-          kind: "records",
-        },
+  ): Promise<BoxResponse> => {
+    // Lane E — the fn door wakes the machine, so it carries the same
+    // egress pre-flight (and re-prompt on a grown declaration) as wake.
+    await ensureEgressApproved(app, ctx);
+    const machine = await lifecycle.wake(app);
+    // Lane E redaction guard — a box may echo its own env (fn responses
+    // are host-side artifacts that reach clients and logs): scrub every
+    // known secret value out of the response, and out of any error
+    // message crossing this seam. issue #566 — prefer the values already
+    // injected into THIS box (the lifecycle's per-box cache) so a value
+    // that entered the box is always redactable without a refetch that
+    // could fail; only names NOT injected fall back to a best-effort read.
+    const secretValues = await collectSecretValues(
+      app.secrets,
+      config.secrets,
+      lifecycle.injectedSecretValues(app.id),
+    );
+    try {
+      const answer = await machine.request(request);
+      if (secretValues.size === 0) return answer;
+      const text = new TextDecoder().decode(answer.body);
+      const scrubbed = redactSecretText(text, secretValues);
+      return {
+        status: answer.status,
+        headers: Object.fromEntries(Object.entries(answer.headers)
+          .map(([header, value]) => [header, redactSecretText(value, secretValues)])),
+        // Untouched bodies pass through byte-identical (binary safety).
+        body: scrubbed === text ? answer.body : new TextEncoder().encode(scrubbed),
       };
-    }
-    // Bind the tree to the results rows BEFORE the single persist, so one
-    // version entry carries the whole edit. A failed rebind never blocks the
-    // automation (same rule as graduation's fn: bindings): the trigger still
-    // lands and the miss is reported for a retry edit.
-    let bound = automated;
-    const issues: string[] = [];
-    if (plan.resultsCollection !== undefined && automated.tree?.formatVersion === VENDO_TREE_FORMAT) {
-      const rebindInstruction = `The app now has a ${mode} automation${plan.name === undefined ? "" : ` ("${plan.name}")`} that runs while the user is away and writes its latest displayable result into the app data collection "${plan.resultsCollection}" (record id "latest"). Rewire the tree to show those results:
-- Add (or repoint) a query over the results rows: <Query id="results" tool="vendo_apps_data_list" input={{appId:"${previous.id}", collection:"${plan.resultsCollection}"}}/> — the input is LITERAL JSON exactly as written. The tool's result shape is {records: [{id, data: <what the automation stored>}]}, so bind node props against /results/records/... paths (e.g. {results.records.0.data.summary}).
-- Keep the layout; change only what is needed to surface the automation's results (add a small section if none fits).
-- Emit no id attributes on nodes (ids are compiler-owned); a <Query> id is its name.`;
-      let treeIssues: string[] = [];
-      let rebound: AppDocument | undefined;
-      for (let attempt = 0; attempt < 2 && rebound === undefined; attempt += 1) {
-        const generated = await engine.edit(
-          {
-            app: structuredClone(automated),
-            instruction: rebindInstruction,
-            ...(treeIssues.length === 0 ? {} : { repairIssues: treeIssues }),
-          },
-          generationDependencies(config, config.model, toolContext),
-        );
-        if (generated.kind === "document") {
-          rebound = { ...generated.document, id: previous.id };
-        } else {
-          treeIssues = distinctIssues(treeIssues, generated.issues);
-        }
+    } catch (error) {
+      if (error instanceof Error) {
+        // Mutate in place so the error keeps its type, stack, and code.
+        error.message = redactSecretText(error.message, secretValues);
       }
-      if (rebound === undefined) {
-        issues.push(
-          "automation armed, but the tree binding to its results collection did not validate — retry the edit to wire the board",
-          ...treeIssues,
-        );
-      } else {
-        // The rebind must never drop the just-authored automation fields.
-        rebound.trigger = structuredClone(plan.trigger);
-        rebound.storage = structuredClone(automated.storage);
-        bound = rebound;
+      if (error instanceof VendoError && error.detail !== undefined) {
+        error.detail = redactSecretJson(error.detail, secretValues);
       }
+      throw error;
     }
-    if (bound.tree !== undefined) stripServerAuthoritativeFields(bound.tree);
-    const version: VersionEntry = { at: new Date().toISOString(), intent: instruction, rung: rungFor(bound) };
-    // Arming: through the seam when the host wired one (the umbrella wires
-    // automations.enable — the 07 §3 grant-capture flow), directly otherwise.
-    const persisted = await persistEdit(previous, bound, version, ctx.principal.subject, undefined, {
-      armTrigger: config.armAutomation === undefined,
-    });
-    let pendingGrants: ApprovalRequest[] | undefined;
-    // Direct arming happened inside persistEdit (armTrigger) — enabled unless
-    // a seam below reports otherwise.
-    let enabled = true;
-    if (config.armAutomation !== undefined) {
-      try {
-        const armed = await config.armAutomation(previous.id, ctx);
-        if (armed.missing.length > 0) pendingGrants = structuredClone(armed.missing);
-        enabled = armed.enabled;
-        // A seam that answers without arming is the same miss as a thrown one:
-        // the trigger must never sit silently disarmed.
-        if (!armed.enabled) {
-          issues.push("the automation was authored but the arming seam left it disabled — enable it explicitly via the automations engine (automations.enable / POST /automations/:appId/enable)");
-        }
-      } catch (error) {
-        // Never a silently dead automation: the trigger is on the document but
-        // disarmed — say so, with the arming surface to use.
-        enabled = false;
-        issues.push(`the automation was authored but arming it failed (${error instanceof Error ? error.message : "unknown error"}) — enable it explicitly via the automations engine (automations.enable / POST /automations/:appId/enable)`);
-      }
-    }
-    await reportGuard(ctx.principal.subject, previous.id, ctx, {
-      operation: "automation-created",
-      mode,
-      triggerKind: plan.trigger.on.kind,
-    });
-    return withPinDrift({
-      app: persisted,
-      version: { ...version },
-      ...(issues.length === 0 ? {} : { issues }),
-      automation: {
-        mode,
-        trigger: structuredClone(plan.trigger),
-        enabled,
-        ...(plan.resultsCollection === undefined ? {} : { resultsCollection: plan.resultsCollection }),
-        ...(pendingGrants === undefined ? {} : { pendingGrants }),
-      },
-    });
   };
 
   const runtime: AppsRuntime = {
     async prewarm() {
-      const models = [config.model, config.paint?.model].filter(
+      const models = [config.model, config.fill?.model].filter(
         (model): model is LanguageModel => model !== undefined,
       );
       if (models.length > 0) await prewarmModels(models);
@@ -1816,32 +2171,18 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       if (config.model === undefined) {
         throw new VendoError("not-implemented", "generation requires a model");
       }
-      // execution-v2 Wave 4 — a prompt that needs a served web app (layer 3)
-      // refuses cleanly while the experimental flag is off: no tree is built
-      // that could only disappoint, and the error names the flag.
-      if (config.experimentalServedApps !== true && instructionRequiresServedApp({}, input.prompt)) {
-        throw servedAppsDisabledError();
-      }
-      // execution-v2 Wave 9 — same rule for a prompt whose server work only a
-      // box can express (the ladder's rung c) while machines are off: a typed
-      // refusal naming the flag, never a silent degrade. Automation-shaped
-      // prompts (rungs a/b) proceed — they never need a machine.
-      if (config.experimentalMachines !== true && serverWorkRung({ ui: "tree" }, input.prompt) === "box") {
-        throw machinesDisabledError();
-      }
       // Mint before generation so every partial already carries its permanent id.
       const appId = `app_${globalThis.crypto.randomUUID()}`;
       const createStartedAt = Date.now();
-      // 0.4.5 E2E cert (defect D) — the build's dead-man switch. The catch
-      // below persists a terminal failure when the build turn THROWS, but a
-      // build task that hangs (a provider stream that never settles) or dies
-      // with its promise chain severed by the host runtime settles nothing:
-      // the embed polls {kind:"pending"} forever. A timer is independent of
-      // the promise chain, so it fires either way; if by then NOTHING was
-      // persisted for this id, it writes the terminal failed record itself so
-      // open() resolves the embed with a reason. Any persist (success or the
-      // catch) clears it; a late success after a fired watchdog overwrites
-      // the failed record — self-healing, never the reverse.
+      // The build's dead-man switch. The catch below persists a terminal failure
+      // when the build turn THROWS, but a build task that hangs (a provider
+      // stream that never settles) or dies with its promise chain severed
+      // settles nothing: the embed polls {kind:"pending"} forever. A timer is
+      // independent of the promise chain, so it fires either way; if by then
+      // NOTHING was persisted for this id, it writes the terminal failed record
+      // itself so open() resolves the embed with a reason. Any persist clears
+      // it; a late success after a fired watchdog overwrites the failed record —
+      // self-healing, never the reverse.
       const watchdog = setTimeout(() => {
         void (async () => {
           if (await apps.get(appId) !== null) return;
@@ -1880,40 +2221,22 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           if (latestTree === undefined) return;
           emit({ ...structuredClone(latestTree), data, streaming: true } as Tree);
         });
-      // v4 data-verify — the runtime owns the endPass flag now: queries
-      // resolve HERE, so the verification runs data-sighted at this seam and
-      // the engine's blind end pass is suppressed (it demonstrably could not
-      // catch label-vs-data lies it never saw — gate 2026-07-21).
-      const verifyEnabled = config.pipeline?.endPass === true;
-      const engineConfig = verifyEnabled
-        ? { ...config, pipeline: { ...config.pipeline, endPass: false } }
-        : config;
-      const generationDeps = generationDependencies(engineConfig, config.model, await generationToolContext(ctx), input.onView === undefined ? undefined : (partial) => {
-        // v2 spec §1 — the payload carries islands at payload level (the
-        // renderer lifts them); a mid-stream payload is marked streaming.
+      const generationDeps = generationDependencies(config, config.model, await generationToolContext(ctx), input.onView === undefined ? undefined : (partial) => {
+        // The skeleton, then the same tree again as each group's contents land:
+        // the app grows on the screen instead of appearing all at once.
         latestTree = assembleTree(partial);
         emit({ ...structuredClone(latestTree), streaming: true } as Tree);
         queryResolver?.update(latestTree);
       });
-      let generated: Awaited<ReturnType<GenerationEngine["create"]>>;
-      try {
-        generated = await engine.create({ prompt: input.prompt }, generationDeps);
-        // 0.4.5 E2E cert (defect D) — a build whose every substantive region
-        // was disclaimed away "succeeds" into an app that only says "not
-        // available": no failure record, no log line, and a host chat that
-        // reads as a build that never finished. Fail it LOUDLY through the
-        // same terminal path as a thrown build turn.
-        if (generated.tree?.formatVersion === VENDO_TREE_FORMAT && isDisclaimerOnlyTree(generated.tree as unknown as Tree)) {
-          throw new VendoError("validation", HOST_CAPABILITY_MISS_REASON);
-        }
-      } catch (error) {
-        // The build turn threw (model error, quota, timeout). `vendo_create_app`
-        // already returned an app-ref the instant the FIRST partial streamed, so
-        // the embed is mounted polling open() — with no persisted record it would
-        // spin to APP_BUILD_DEADLINE_MS and then show the generic failed beat.
-        // Persist a TERMINAL failed record so open() answers {kind:"failed"} with
-        // the reason on the very next poll — the prompt resolution approvals get.
-        const { reason, retryable } = buildFailureReason(error);
+
+      /** The terminal failed record + the classified throw, shared by a thrown
+       *  build turn and an honest refusal. */
+      const failBuild = async (
+        reason: string,
+        retryable: boolean,
+        detail: readonly string[],
+        code: VendoError["code"] = "validation",
+      ): Promise<never> => {
         await apps.put(appRecordInput({
           format: "vendo/app@1",
           id: appId,
@@ -1921,163 +2244,163 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           buildFailed: { reason, retryable, at: new Date().toISOString(), prompt: input.prompt },
         }, ctx.principal.subject)).catch(() => undefined);
         clearTimeout(watchdog);
-        // The operator's terminal gets the un-canned detail (the engine folds
-        // provider errors into the VendoError's issue list) — a silent failed
-        // build was the 0.4.x E2E's hardest defect to self-diagnose.
+        console.error(`[vendo] app build failed (${appId}): ${reason}${detail.map((line) => `\n  - ${line}`).join("")}`);
+        throw new VendoError(
+          code,
+          `${VENDO_APP_BUILD_FAILED_PREFIX}: ${reason}`,
+          { appId, reason, retryable, issues: [...detail] },
+        );
+      };
+
+      let conducted: ConductedResult;
+      try {
+        conducted = await conductCreate(
+          { prompt: input.prompt },
+          generationDeps,
+          conductorOptions(config, queryRunnerFor(queryApp, ctx)),
+        );
+      } catch (error) {
+        const { reason, retryable } = buildFailureReason(error);
         const detail = error instanceof VendoError && Array.isArray(error.detail)
           ? error.detail.filter((item): item is string => typeof item === "string")
           : [];
-        const detailLines = detail.length > 0 ? detail : [safeErrorMessage(error)];
-        console.error(`[vendo] app build failed (${appId}): ${reason}${detailLines
-          .map((line) => `\n  - ${line}`).join("")}`);
-        // Re-throw CARRYING the classified reason: the tool outcome the calling
-        // agent reads is built from this message, and "model could not produce
-        // a valid app" told it (and the user) nothing actionable. detail keeps
-        // the raw issue list for in-process callers (the wire serializes only
-        // code + message, so nothing un-canned crosses to clients).
-        throw new VendoError(
+        return failBuild(
+          reason,
+          retryable,
+          detail.length > 0 ? detail : [safeErrorMessage(error)],
           error instanceof VendoError ? error.code : "validation",
-          `${VENDO_APP_BUILD_FAILED_PREFIX}: ${reason}`,
-          { appId, reason, retryable, issues: detailLines },
         );
       }
-      let app: AppDocument = {
-        ...generated,
-        id: appId,
-      };
-      // Same rule at rest: open() strips before serving, but a model-forged
-      // venue or drift field has no business being persisted in the first place.
-      if (app.tree !== undefined) stripServerAuthoritativeFields(app.tree);
-      // Lane E — same rule for egress grant state: a freshly generated app
-      // has approved nothing, whatever the model emitted.
-      delete app.egressApproved;
-      // buildFailed is server-written only (the create catch above): a
-      // successfully generated document never carries it, whatever the model
-      // emitted into the tree markup.
-      delete app.buildFailed;
-      // v4 data-verify: resolve the finished app's queries once, show the
-      // verifier the ACTUAL values next to the labels, adopt the (copy-only,
-      // revalidated) correction before anything persists or paints. The
-      // resolved data stays valid across the patch — the guard forbids
-      // touching queries — so the final view reuses it. Best-effort: any
-      // failure ships the unverified app.
-      let verifiedData: Record<string, Json> | undefined;
-      if (verifyEnabled && app.tree?.formatVersion === VENDO_TREE_FORMAT) {
-        try {
-          const verifyResolver = createProgressiveQueryResolver(caller, app, ctx);
-          verifyResolver.update(assembleTree({ tree: app.tree, components: app.components, componentTools: app.componentTools }));
-          verifiedData = await verifyResolver.complete();
-          const { id: _verifyId, ...unidentified } = structuredClone(app);
-          const verified = await verifyDocumentAgainstData(unidentified, input.prompt, verifiedData, generationDeps);
-          app = { ...verified, id: appId };
-        } catch (error) {
-          // The unverified app ships; open() resolves its data as always. But
-          // say so in the operator's terminal — a silently skipped verify pass
-          // is indistinguishable from a verify pass that found nothing.
-          console.warn(`[vendo] data-sighted verify skipped for ${appId} (the unverified app ships): ${safeErrorMessage(error)}`);
-        }
+      // An honest refusal is the ANSWER, not a crash: the brain read the ask
+      // against this host's real surface and said what is out of reach. The
+      // sentences are the person's, verbatim — never a canned reason.
+      if (conducted.kind === "cannot") {
+        return failBuild(conducted.reasons.join(" "), false, conducted.reasons);
       }
+      if (conducted.kind === "failure") {
+        // The conductor never throws a provider error — it folds the reason into
+        // `issues` — so classification has to happen HERE or a quota exhaustion
+        // ships as a retryable "generation failed" and the person retries into
+        // the same wall.
+        const { reason, retryable } = buildFailureReason(new VendoError(
+          "validation",
+          conducted.issues[0] ?? "generation failed",
+          conducted.issues,
+        ));
+        return failBuild(reason, retryable, conducted.issues);
+      }
+      // The floor STOPS a bad app here, before the view is emitted and before
+      // anything is written. The conductor's fix rounds have already had their
+      // chance, so a block that survives is one nobody could fix — and an app
+      // that lies to the person is worse than no app. Not persisting is the
+      // whole mechanism: nothing exists, so there is nothing to flag, override,
+      // or roll back to.
+      const blocking = blockedBy(conducted.findings);
+      if (blocking.length > 0) {
+        for (const finding of conducted.findings) console.info(findingLine(finding));
+        const reason = notShipped(CREATE_BLOCKED, blocking);
+        return failBuild(reason, true, [reason]);
+      }
+
+      let app: AppDocument = { ...conducted.document, id: appId };
+      // Same rule at rest as at serve time: a model-forged venue, drift, egress
+      // grant or build-failure field has no business being persisted.
+      if (app.tree !== undefined) stripServerAuthoritativeFields(app.tree);
+      delete app.egressApproved;
+      delete app.buildFailed;
+
       let finalTree: Tree | undefined;
       if (input.onView !== undefined && app.tree?.formatVersion === VENDO_TREE_FORMAT) {
         finalTree = assembleTree({ tree: app.tree, components: app.components, componentTools: app.componentTools });
         latestTree = structuredClone(finalTree);
         queryResolver?.update(finalTree);
-        finalTree.data = verifiedData ?? await queryResolver?.complete() ?? structuredClone(finalTree.data ?? {});
+        // The plan's queries already ran at plan time; reuse those reads for the
+        // first paint instead of making them again.
+        finalTree.data = Object.keys(conducted.queryResults).length > 0
+          ? structuredClone(conducted.queryResults) as Record<string, Json>
+          : await queryResolver?.complete() ?? structuredClone(finalTree.data ?? {});
       }
       // The finished view reaches the screen BEFORE anything that can fail.
       // Live 2026-07-27 (deployed Maple): the emit sat after the persist, so a
-      // store that refused the write froze every card mid-stream — one
-      // half-painted donut, one blank, one empty-state table, none of them
-      // ever resolving — while the engine's own logs read all-green. The
-      // document is generated, validated and data-resolved by this point; a
-      // storage fault is no reason to withhold it.
+      // store that refused the write froze every card mid-stream while the
+      // engine's own logs read all-green. The document is generated, checked and
+      // data-resolved by this point; a storage fault is no reason to withhold it.
       if (finalTree !== undefined) emit(finalTree);
       let unsavedReason: string | undefined;
       try {
-        await apps.put(appRecordInput(app, ctx.principal.subject));
+        await apps.put(appRecordInput(app, ctx.principal.subject, false, conducted.session));
       } catch (error) {
-        // A persist failure degrades the app to view-only — it renders, it
-        // just is not in the user's apps list and cannot be reopened. That is
-        // a far better outcome than discarding a working view, but it is
-        // never silent: the operator gets a classified line (the user path
-        // previously logged NOTHING here, so the outage read as a mystery),
-        // and the caller is told so the agent can say it plainly instead of
-        // apologizing for a view the user can see.
+        // A persist failure degrades the app to view-only — it renders, it just
+        // is not in the user's list and cannot be reopened. Far better than
+        // discarding a working view, but never silent.
         unsavedReason = safeErrorMessage(error);
         console.error(`[vendo] app not saved (${appId}): the view rendered but the store rejected it — ${unsavedReason}`);
       }
       clearTimeout(watchdog);
       if (unsavedReason === undefined) await reportLifecycle("create", app.id, ctx);
+      for (const finding of conducted.findings) {
+        console.info(findingLine(finding));
+      }
       console.info(`[vendo] gen create complete app=${appId} total=${((Date.now() - createStartedAt) / 1000).toFixed(1)}s${unsavedReason === undefined ? "" : " (NOT SAVED)"}`);
       if (unsavedReason !== undefined) {
-        // Escalation (automations, graduation) all write through the same
-        // store the persist just failed on, and every one of them assumes a
-        // stored app — so an unsaved create ends here, with the view up.
+        // The server lane writes through the same store the persist just failed
+        // on, and it assumes a stored app — so an unsaved create ends here.
         input.onUnsaved?.(unsavedReason);
         return structuredClone(app);
       }
-      // execution-v2 Wave 9 — escalate on create when the prompt needs server
-      // capability, walking the ladder: a steps/agentic automation (seconds,
-      // no machine) before box graduation. The tree is already on screen; the
-      // trigger (or the machine + fn: bindings) lands additively — the user
-      // never picks a tier. Best-effort: an escalation failure leaves the
-      // working tree app to retry via edit, so create never regresses to a
-      // white box.
-      const servedCreate = instructionRequiresServedApp(app, input.prompt);
-      const rung = servedCreate ? "box" : serverWorkRung(app, input.prompt);
-      // The streamed view parts are last-write-wins, and the pre-escalation
-      // emit above already painted resolved query data — so this emit must
-      // resolve the escalated tree's queries too (fn: refs are resolvable —
-      // the machine exists; a results query reads the app's own rows). On a
-      // resolver failure, emit nothing rather than a data-less tree that
-      // would blank the screen.
-      const emitEscalated = async (escalated: AppDocument): Promise<void> => {
-        if (input.onView === undefined || escalated.tree?.formatVersion !== VENDO_TREE_FORMAT) return;
+      // The server work the PLAN declared — an automation on the existing engine
+      // (seconds, no machine) or a box that writes real code. The tree is
+      // already on screen; this lands additively, and a failure leaves the
+      // working app to retry via edit rather than regressing to a white box.
+      if (conducted.plan?.server !== undefined && conducted.skeleton !== undefined) {
         try {
-          const tree = assembleTree({ tree: escalated.tree, components: escalated.components, componentTools: escalated.componentTools });
-          stripServerAuthoritativeFields(tree);
-          const escalatedResolver = createProgressiveQueryResolver(caller, escalated, ctx);
-          escalatedResolver.update(tree);
-          tree.data = await escalatedResolver.complete();
-          emit(tree);
-        } catch {
-          // Best-effort: the pre-escalation view stands until open().
-        }
-      };
-      if (rung === "steps" || rung === "agentic") {
-        try {
-          const automated = await automate(structuredClone(app), input.prompt, ctx, rung);
-          if (automated.failure === undefined) {
-            await emitEscalated(automated.app);
-            return structuredClone(automated.app);
+          const served = await runServerWork({
+            plan: conducted.plan,
+            document: app,
+            skeleton: conducted.skeleton,
+            request: input.prompt,
+            session: conducted.session,
+          }, ctx, generationDeps);
+          app = served.document;
+          for (const finding of served.findings) {
+            console.info(findingLine(finding));
           }
-        } catch {
-          // Automation is best-effort on create; the working tree app stands.
-        }
-      } else if (rung === "box" && lifecycle.available()) {
-        // Rung (c) reaches here only with experimentalMachines on — the
-        // flag-off case refused before generation above.
-        try {
-          const graduated = await graduate(structuredClone(app), input.prompt, ctx, {
-            served: servedCreate,
-          });
-          if (graduated.failure === undefined) {
-            await emitEscalated(graduated.app);
-            return structuredClone(graduated.app);
+          // The streamed view parts are last-write-wins and the emit above
+          // already painted resolved data, so the escalated tree must resolve
+          // its own queries too. On a resolver failure emit nothing rather than
+          // a data-less tree that would blank the screen.
+          if (input.onView !== undefined && app.tree?.formatVersion === VENDO_TREE_FORMAT) {
+            const tree = assembleTree({ tree: app.tree, components: app.components, componentTools: app.componentTools });
+            stripServerAuthoritativeFields(tree);
+            const resolver = createProgressiveQueryResolver(caller, app, ctx);
+            resolver.update(tree);
+            tree.data = await resolver.complete();
+            emit(tree);
           }
-        } catch {
-          // Graduation is best-effort on create; the working tree app stands.
+        } catch (error) {
+          console.warn(`[vendo] server work skipped for ${appId} (the app stands without it): ${safeErrorMessage(error)}`);
         }
       }
       return structuredClone(app);
     },
 
+
     async get(appId, ctx) {
-      return owned(appId, ctx.principal.subject);
+      // The brain's conversation is server-authoritative, on the same footing as
+      // pinDrift and buildFailed: it is read server-side through sessionOf and
+      // never rides a document out to a caller.
+      const app = await owned(appId, ctx, "viewer");
+      return app === null ? null : withoutSession(app);
     },
 
     async list(ctx) {
       const records = await allRecords(config.store, { subject: ctx.principal.subject });
+      // Build contract §9.3 — owned ∪ granted. The grant rows already name the
+      // apps this caller reaches, so the union is one extra id fetch rather
+      // than a scan; `can()` still decides each one (a grant to a team the
+      // caller is not in this request does not match).
+      const granted = await grantedRecords(ctx, new Set(records.map((record) => record.id)));
+      records.push(...granted);
       const documents: AppDocument[] = [];
       for (const record of records
         .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id))) {
@@ -2086,7 +2409,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           // A terminally failed build is a tombstone open() reads to resolve
           // the embed — not a real app; it never joins the listable surface.
           if (document.buildFailed !== undefined) continue;
-          documents.push(document);
+          documents.push(withoutSession(document));
         } catch {
           // Corrupt rows cannot be surfaced, but must not hide valid owned apps.
         }
@@ -2095,7 +2418,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     },
 
     async delete(appId, ctx) {
-      const app = await requireOwned(appId, ctx.principal.subject);
+      const app = await requireOwned(appId, ctx, "owner");
       // execution-v2 — deleting the app reaps its machine (live sandbox +
       // stored snapshot) directly, without rewriting the doomed document: a
       // graduated tree's fn: refs would fail a machine-cleared re-validation
@@ -2114,7 +2437,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     },
 
     async fork(appId, ctx) {
-      const source = await requireOwned(appId, ctx.principal.subject);
+      const source = await requireOwned(appId, ctx, "viewer");
       // Wave 4 — a served (layer-3) app's ENTIRE surface lives in its machine,
       // and machines never travel with a copy: the fork would be an app that
       // can never open (ui: http, no tree, no machine). Refuse loudly instead
@@ -2139,115 +2462,380 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // fork re-approves its declaration.
       delete fork.egressApproved;
       delete fork.server;
+      // The conversation belongs to the owner who had it, not to the copy: the
+      // persist already drops it (appRecordInput takes no session here), and the
+      // RETURNED document must not hand it back either.
       await apps.put(appRecordInput(fork, ctx.principal.subject));
       await reportLifecycle("fork", fork.id, ctx, { sourceAppId: source.id });
-      return structuredClone(fork);
+      return withoutSession(structuredClone(fork));
     },
 
-    async agentToolRisk(call, ctx) {
-      if (call.tool !== "vendo_apps_edit") return undefined;
-      if (typeof call.args !== "object" || call.args === null || Array.isArray(call.args)) {
-        return "write";
-      }
-      const args = call.args as Record<string, Json>;
-      if (typeof args.appId !== "string" || typeof args.instruction !== "string") {
-        return "write";
-      }
-      const app = await owned(args.appId, ctx.principal.subject);
-      if (app === null) return "write";
-      // Wave 9 — any ladder rung (steps/agentic automation or box work) is a
-      // write-class edit; only pure-tree instructions stay read-class.
-      return serverWorkRung(app, args.instruction) !== null ? "write" : "read";
-    },
-
-    async edit(appId, instruction, ctx) {
-      if (config.model === undefined) {
-        throw new VendoError("not-implemented", "generation requires a model");
-      }
-      const previous = await requireOwned(appId, ctx.principal.subject);
-      // execution-v2 Wave 4 — an instruction whose UI needs exceed the tree
-      // escalates 2→3 (the box builds a real served web app). Experimental:
-      // the flag refuses this path CLEANLY before any box work happens.
-      const served = instructionRequiresServedApp(previous, instruction);
-      if (served && config.experimentalServedApps !== true) {
-        throw servedAppsDisabledError();
-      }
-      // execution-v2 Wave 9 — server-shaped instructions walk the escalation
-      // ladder: (a) a steps automation, (b) an agentic automation (both ride
-      // the existing automations engine — seconds, no machine), (c) box
-      // graduation only when custom code is required (experimental). A served
-      // ask is a fortiori a box ask (Wave 4), and an app that ALREADY has a
-      // machine keeps its box workflow — existing apps are never rerouted.
-      // A pure-UI instruction stays on the cheap tree path.
-      const rung = served ? "box" : serverWorkRung(previous, instruction);
-      if (rung !== null) {
-        if (previous.machine === undefined && (rung === "steps" || rung === "agentic")) {
-          return automate(previous, instruction, ctx, rung);
-        }
-        // Rung (c): NEW graduation (no machine yet) is gated by the
-        // experimental flag — a typed refusal, never a silent degrade.
-        if (previous.machine === undefined && config.experimentalMachines !== true) {
-          throw machinesDisabledError();
-        }
-        return graduate(previous, instruction, ctx, { served });
-      }
-      let repairIssues: string[] | undefined;
-      let collectedIssues: string[] = [];
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        const generated = await engine.edit(
-          {
-            app: structuredClone(previous),
-            instruction,
-            ...(repairIssues === undefined ? {} : { repairIssues }),
-          },
-          generationDependencies(config, config.model, await generationToolContext(ctx)),
+    async promote(appId, orgId, ctx) {
+      requireMultiParty("promote");
+      const app = await requireOwned(appId, ctx, "owner");
+      // The host asserted this request's orgs; promoting into one you are not
+      // in is the same refusal shape as any other over-reach on a visible app.
+      if (!(ctx.memberships ?? []).some((membership) => membership.org === orgId)) {
+        throw new VendoError(
+          "forbidden",
+          `you are not a member of ${orgId}, so this app cannot be promoted into it`,
         );
-        if (generated.kind === "failure") {
-          collectedIssues = distinctIssues(collectedIssues, generated.issues);
-          repairIssues = collectedIssues;
-          continue;
-        }
-        const app: AppDocument = { ...generated.document, id: appId };
-        // Same strip-before-persist rule as create(): open() strips at serve
-        // time, but a model-forged venue or drift field must not be persisted.
-        if (app.tree !== undefined) stripServerAuthoritativeFields(app.tree);
-        const version: VersionEntry = {
-          at: new Date().toISOString(),
-          intent: instruction,
-          rung: rungFor(app),
-        };
-        return withPinDrift({
-          app: await persistEdit(previous, app, version, ctx.principal.subject),
-          version: { ...version },
-        });
       }
-      return failedEdit(
-        previous,
-        instruction,
-        collectedIssues.length === 0 ? ["edit failed validation"] : collectedIssues,
-      );
+      const from = (await apps.get(appId))?.refs?.subject;
+      if (from === undefined) throw new VendoError("not-found", `app not found: ${appId}`);
+      if (from === orgId) return withoutSession(structuredClone(app));
+      if (config.promoteApp === undefined) {
+        // Build contract §9.5, ruled 2026-08-01: promote is BYO-store-only for
+        // now. A promote crosses subjects AND moves workspace rows, which needs
+        // a local engine handle the Cloud-hosted store does not have — a
+        // hosted-store promote door is Cloud-console work. The refusal stays
+        // LOUD and never half-moves an app; it names the limit and the fix so
+        // nobody has to read this comment to get unstuck.
+        throw new VendoError(
+          "cloud-required",
+          "moving an app into a team workspace isn't available on the hosted store yet — "
+          + "wire your own Postgres with createVendo({ store: createStore({ url }) }) to move it, "
+          + "or share a copy with fork instead",
+        );
+      }
+      // "Share implies promote", so the promoter must not lock themselves out
+      // of the app they just handed over. Minted BEFORE the flip, because
+      // afterwards the row belongs to the org and the owner gate on `grant`
+      // would have nothing to admit them by — the promoter is not necessarily
+      // an org admin.
+      const promoter = encodeGrantPrincipal({ kind: "user", subject: ctx.principal.subject });
+      // Mint-then-KNOW: what the promoter held BEFORE this call, so a failure
+      // takes back exactly what this call added and nothing else. Inferring it
+      // afterwards cannot tell "I minted this" from "someone else did".
+      const heldBefore = (await config.appAccess?.list(ctx, appId))
+        ?.find((row) => row.principal === promoter)?.level;
+      await config.appAccess?.grant(ctx, appId, promoter, "owner");
+      // The row's subject becomes the org id VERBATIM — the same convention the
+      // workspace `owner` column uses (contract §3.3), so one id names the app's
+      // rows and its documents alike, and the documents move with it.
+      try {
+        await config.promoteApp(appId, from, orgId);
+      } catch (failure) {
+        // All-or-nothing means undoing what THIS call did — and only that. If
+        // the row no longer names `from`, a concurrent promote won: the grant
+        // now admits the promoter to the app that just moved, and revoking it
+        // would lock her out of her own app.
+        if ((await apps.get(appId))?.refs?.subject === from && config.appAccess !== undefined) {
+          const undo = heldBefore === undefined
+            ? config.appAccess.revoke(ctx, appId, promoter)
+            : config.appAccess.grant(ctx, appId, promoter, heldBefore);
+          await undo.catch(() => undefined);
+        }
+        throw failure;
+      }
+      // Re-stamped now that the row names the org, so the grant's `org_id`
+      // records the org that actually holds the app (one row per (app,
+      // principal), so this updates in place rather than accreting).
+      await config.appAccess?.grant(ctx, appId, promoter, "owner");
+      // An automation runs with a PERSON's access — their connections, their
+      // secrets, their name in the audit log — and there is no org principal to
+      // run as (inventing one would run it as a synthetic user named after the
+      // org). The person who armed it may not even be in the team. So the move
+      // DISARMS it, the same law an edited trigger already follows; re-enabling
+      // mints a fresh sponsorship under whoever turns it back on.
+      const moved = await apps.get(appId);
+      const movedRow = moved === null ? null : rowFromRecord(moved);
+      const disarmed = movedRow?.enabled === true;
+      if (disarmed) {
+        await apps.put(appRecordInput(movedRow.doc, orgId, false, sessionOf(movedRow.doc)));
+      }
+      await reportLifecycle("promote", appId, ctx, { orgId, from, ...(disarmed ? { disarmed } : {}) });
+      return withoutSession(structuredClone(app));
+    },
+
+    access: {
+      async list(appId, ctx) {
+        if (config.appAccess === undefined) {
+          // No seam wired ⇒ no grant row can exist (§9.6), so the empty list is
+          // the honest answer — the same absence `levelFor` reports without
+          // throwing. A 402 from a READ told the Share dialog to go buy
+          // something on every keyless (default OSS) deployment. Still
+          // viewer-gated: a caller who cannot see the app is told nothing.
+          const record = await apps.get(appId);
+          if (record === null || !(await holds(appId, ctx, "viewer", record))) {
+            throw new VendoError("not-found", `app not found: ${appId}`);
+          }
+          return [];
+        }
+        return await config.appAccess.list(ctx, appId);
+      },
+      async grant(appId, principal, level, ctx) {
+        requireMultiParty("sharing");
+        await requireAccess().grant(ctx, appId, principal, level);
+        await reportShare(appId, ctx, { operation: "grant", principal, level });
+      },
+      async revoke(appId, principal, ctx) {
+        requireMultiParty("sharing");
+        await requireAccess().revoke(ctx, appId, principal);
+        await reportShare(appId, ctx, { operation: "revoke", principal });
+      },
+      async levelFor(appId, ctx) {
+        if (config.appAccess === undefined) {
+          // No seam ⇒ no grant row can exist, so ownership is the only level —
+          // which is exactly what `holds` degenerates to, at one store read.
+          return await holds(appId, ctx, "owner") ? "owner" : null;
+        }
+        return await config.appAccess.levelFor(ctx, appId);
+      },
+      async holder(appId, ctx) {
+        // Viewer-gated like the grant list: a caller who cannot see the app is
+        // told nothing about who holds it.
+        const record = await apps.get(appId);
+        if (record === null || !(await holds(appId, ctx, "viewer", record))) return null;
+        return record.refs?.subject ?? null;
+      },
     },
 
     /**
-     * ⚠️ OWNERSHIP IS THE CALLER'S RESPONSIBILITY. The frozen 06 §1 signature
-     * `history(appId)` takes no RunContext, so — unlike create/get/edit/delete/fork/
-     * open/call, which all scope by `ctx.principal.subject` — this handle cannot check
-     * ownership itself. The umbrella wire route (`/apps/:id/history`, 09 §3) MUST resolve
-     * the principal and confirm ownership before exposing `list`/`undo`; that route is the
-     * system's cross-user auth boundary ("the unauthenticated surface is exactly nothing").
-     * Flagged by Codex + Greptile review; closing it inside this block needs a contract
-     * major to add `ctx` here — see the PR's escalation note.
+     * No contextual projection for app self-mutation.
+     *
+     * Yousef's ruling (2026-07-28): an app edit does not need approval. Changing
+     * your own view is not an act on the world — the static descriptors say
+     * `read` for create and edit, and there is nothing per-call that should
+     * raise them. What an app DOES still carries full ceremony: every host tool
+     * an app calls goes through the guard on its own risk, an away run's first
+     * ungranted mutating step parks the normal card, and egress needs the
+     * owner's approval before a machine is provisioned.
+     *
+     * `undefined` means the static descriptor stands.
      */
-    history(appId) {
+    async agentToolRisk() {
+      return undefined;
+    },
+
+    async validate(input, ctx) {
+      if (config.model === undefined) {
+        // The floor's fact checks read the generation dependencies, which are
+        // built around a model. Nothing to hide behind: say so.
+        throw new VendoError("not-implemented", "validate requires a model");
+      }
+      const deps = generationDependencies(config, config.model, await generationToolContext(ctx));
+
+      if (typeof input.document === "string") {
+        // Wire text, not a stored app: compile it in the PRODUCTION dialect (the
+        // one every other compile of model wire uses — a compile that lacked
+        // these options once failed every app built on inline tool references),
+        // then run the shipped create validation. Its issues are already the
+        // sentences a model can act on.
+        const compiled = compileWire(
+          input.document,
+          wireCompileOptionsFor(deps, deps.catalog.map(({ name }) => name)),
+        );
+        const { issues } = await validateCompiledCreate(compiled, deps);
+        return {
+          ok: issues.length === 0,
+          findings: issues.map((message) => ({ severity: "block" as const, message })),
+        };
+      }
+
+      if (input.appId === undefined) {
+        throw new VendoError("validation", "validate needs an appId or a document to check");
+      }
+      // Editor-scoped, like edit itself: checking the shape of an app you may
+      // change is part of changing it, and a mere viewer is masked as ever.
+      const document = await requireOwned(input.appId, ctx);
+      // The SAME floor create and edit run, with the host's and every pack's
+      // plugged checks. `request` is empty because a verb call carries no user
+      // text — the checks that read it treat that as "no carve-out", which is the
+      // conservative direction.
+      const findings = await createCheckingLayer({
+        deps,
+        ...(config.checks === undefined ? {} : { checks: config.checks }),
+      }).run({ document, request: "" });
+      return { ok: !findings.some(({ severity }) => severity === "block"), findings };
+    },
+
+    async schedule(appId, cron, ctx) {
+      const previous = await requireOwned(appId, ctx);
+      const trigger = previous.trigger;
+      if (trigger === undefined || trigger.on.kind !== "schedule") {
+        throw new VendoError(
+          "validation",
+          `app ${appId} has no schedule to change. Ask for the automation itself first — a schedule needs `
+          + "something to run, and that is an edit, not a cron.",
+          { appId },
+        );
+      }
+      // Exactly one of cron/every/at may be set (core `triggerSchema`), so
+      // choosing a cron REPLACES whichever the app carried. The cron string
+      // itself is validated by the arming leg below, which is the one place that
+      // knows the parser.
+      await updateAppDocument(appId, (document) => ({
+        ...document,
+        trigger: { ...trigger, on: { kind: "schedule", cron } },
+      }));
+      if (config.armAutomation === undefined) {
+        // No automations engine composed: the cron is stored, and saying it is
+        // armed would be a lie.
+        return { appId, cron, enabled: false, missing: 0 };
+      }
+      const armed = await config.armAutomation(appId, ctx);
+      return { appId, cron, enabled: armed.enabled, missing: armed.missing.length };
+    },
+
+    async edit(appId, instruction, ctx) {
+      // Permission before capability (§9.4): a viewer must hear "you can't
+      // change the team's copy" — the sentence the fork offer renders from —
+      // whether or not this deployment happens to have a model wired.
+      const previous = await requireOwned(appId, ctx);
+      if (config.model === undefined) {
+        throw new VendoError("not-implemented", "generation requires a model");
+      }
+      // A SERVED app has no tree — its whole surface is the code in its machine —
+      // so there is nothing for the brain to edit as text. Every instruction goes
+      // to the in-box agent instead, through the same conversation the person is
+      // already having with the app.
+      if (previous.ui === "http" && previous.machine !== undefined) {
+        if (config.experimentalServedApps !== true) throw servedAppsDisabledError();
+        const box = await editServerViaBox(previous, instruction, ctx, { served: true });
+        if (!box.ok) {
+          return failedEdit(previous, instruction, [
+            `the in-box agent could not change the served app: ${box.result.summary}`,
+          ]);
+        }
+        const landed = await requireOwned(appId, ctx);
+        const boxVersion: VersionEntry = {
+          at: new Date().toISOString(),
+          intent: instruction,
+          rung: rungFor(landed),
+        };
+        await history.append(landed.id, previous, boxVersion, []);
+        return withPinDrift({
+          app: landed,
+          version: { ...boxVersion },
+          graduated: true,
+          box: {
+            ok: box.result.ok,
+            summary: box.result.summary,
+            ...(box.result.fns === undefined ? {} : { fns: box.result.fns }),
+            filesChanged: box.result.filesChanged,
+          },
+        });
+      }
+      const deps = generationDependencies(config, config.model, await generationToolContext(ctx));
+      // The SAME conversation, carried: the brain remembers the plan and every
+      // turn, so "no, the other chart" resolves. The old commit path rebuilt the
+      // row without a session and silently wiped it on every edit.
+      const conducted = await conductEdit(
+        { app: previous, instruction, session: sessionOf(previous) },
+        deps,
+        conductorOptions(config, queryRunnerFor(previous, ctx)),
+      );
+      if (conducted.kind === "cannot") {
+        // An honest refusal is not a broken edit: the reasons are the person's
+        // answer, and retrying the same words would earn the same one.
+        return failedEdit(previous, instruction, conducted.reasons, false);
+      }
+      if (conducted.kind === "failure") {
+        return failedEdit(
+          previous,
+          instruction,
+          conducted.issues.length === 0 ? ["edit failed validation"] : conducted.issues,
+        );
+      }
+      // Same floor, same point: a blocking finding is never written. The
+      // previous app is simply not overwritten, so it keeps serving out of its
+      // own row — which is why this needs no flagged version and no pointer.
+      const blockingFindings = blockedBy(conducted.findings);
+      if (blockingFindings.length > 0) {
+        for (const finding of conducted.findings) console.info(findingLine(finding));
+        return failedEdit(previous, instruction, [notShipped(EDIT_BLOCKED, blockingFindings)]);
+      }
+      let app: AppDocument = { ...conducted.document, id: appId };
+      // Same strip-before-persist rule as create(): open() strips at serve time,
+      // but a model-forged venue or drift field must not be persisted.
+      if (app.tree !== undefined) stripServerAuthoritativeFields(app.tree);
+      const version: VersionEntry = {
+        at: new Date().toISOString(),
+        intent: instruction,
+        rung: rungFor(app),
+      };
+      app = await persistEdit(previous, app, version, ctx.principal.subject, undefined, {}, conducted.session);
+      for (const finding of conducted.findings) {
+        console.info(findingLine(finding));
+      }
+      // Server work the amendment declared lands additively on the stored app,
+      // exactly as it does on create.
+      let automation: EditResult["automation"] | undefined;
+      let graduated: boolean | undefined;
+      const serverIssues: string[] = [];
+      if (conducted.plan?.server !== undefined && conducted.skeleton !== undefined) {
+        try {
+          const served = await runServerWork({
+            plan: conducted.plan,
+            document: app,
+            skeleton: conducted.skeleton,
+            request: instruction,
+            session: conducted.session,
+          }, ctx, deps);
+          if (served.failed !== undefined) {
+            // The plan REQUIRED this server work and it could not be built, so
+            // no edit happened: the stored app is untouched and says why.
+            return failedEdit(previous, instruction, served.failed);
+          }
+          app = served.document;
+          automation = served.automation;
+          graduated = served.graduated;
+          serverIssues.push(...(served.issues ?? []));
+          for (const finding of served.findings) {
+            console.info(findingLine(finding));
+          }
+        } catch (error) {
+          console.warn(`[vendo] server work skipped for ${appId} (the edit stands without it): ${safeErrorMessage(error)}`);
+        }
+      }
+      // No blocking finding can reach here — one would have stopped the write
+      // above. What is left is the server lane's own issues, reported beside an
+      // edit that DID land.
+      const issues = [...serverIssues];
+      // The version records the surface the edit LANDED on, so a flip to a
+      // served app reports rung 3 rather than the tree rung it started from.
+      const landedVersion: VersionEntry = { ...version, rung: rungFor(app) };
+      return withPinDrift({
+        app,
+        version: landedVersion,
+        ...(issues.length === 0 ? {} : { issues }),
+        ...(automation === undefined ? {} : { automation }),
+        ...(graduated === undefined ? {} : { graduated }),
+      });
+    },
+
+
+    /**
+     * Build contract §9.3 — the level lives HERE, not only at the wire route
+     * that used to be the sole boundary: reading the log needs `viewer`,
+     * rolling the app back needs `EDITOR`. A caller who cannot even see the app
+     * stays masked (`not-found`) at both verbs, exactly like every other door.
+     * The 06 §1 signature gained the ctx for this reason (wave-3 ruling).
+     */
+    history(appId, ctx) {
       const surface = history.surface(appId);
       return Object.freeze({
-        list: () => surface.list(),
-        undo: () => surface.undo(),
+        list: async () => {
+          await requireOwned(appId, ctx, "viewer");
+          return await surface.list();
+        },
+        undo: async () => {
+          const previous = await requireOwned(appId, ctx, "editor");
+          const restored = await surface.undo();
+          // §9.9 — a rollback CHANGES WHAT THE APP IS, so it is an edit for every
+          // purpose the choke point serves: a third party rewinding the team's
+          // app has to invalidate the sponsorship exactly as their edit would.
+          // The history module writes the row itself, so the announcement is made
+          // here, at the one door every undo comes through.
+          await reportDocumentEdit(previous, restored, ctx.principal.subject);
+          return withoutSession(restored);
+        },
       });
     },
 
     async open(appId, ctx) {
-      const app = await requireOwned(appId, ctx.principal.subject);
+      const app = await requireOwned(appId, ctx, "viewer");
       // Review-kind (2026-08-02): an unapproved current version is invisible —
       // open() serves the newest APPROVED version from the existing history
       // instead (or the pending state when none was ever approved). Instant
@@ -2256,7 +2844,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     },
 
     async call(appId, ref, args, ctx) {
-      const app = await requireOwned(appId, ctx.principal.subject);
+      const app = await requireOwned(appId, ctx, "viewer");
       // A host-tool ref goes straight to the guard-bound registry; an fn: ref
       // settles as a contained not-implemented outcome until the in-runtime
       // fn path lands (see call.ts).
@@ -2272,24 +2860,26 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     },
 
     async share(appId, ctx) {
-      const app = await requireOwned(appId, ctx.principal.subject);
+      const app = await requireOwned(appId, ctx, "owner");
       if (config.cloud === undefined) {
         throw new VendoError("cloud-required", "Vendo Cloud requires VENDO_API_KEY");
       }
       // Lane E grant hygiene — a share copy never carries the owner's egress
       // approval; whoever runs the copy approves its declaration themselves.
+      // …and the brain's conversation never travels either: it is the owner's
+      // transcript, not part of the app.
       const { egressApproved: _egressApproved, ...shared } = app;
-      return config.cloud.share(appId, shared);
+      return config.cloud.share(appId, withoutSession(shared));
     },
 
     async publish(appId, ctx) {
-      const app = await requireOwned(appId, ctx.principal.subject);
+      const app = await requireOwned(appId, ctx, "owner");
       if (config.cloud === undefined) {
         throw new VendoError("cloud-required", "Vendo Cloud requires VENDO_API_KEY");
       }
       // Lane E grant hygiene — same rule as share: approval never travels.
       const { egressApproved: _published, ...published } = app;
-      return config.cloud.publish(appId, published);
+      return config.cloud.publish(appId, withoutSession(published));
     },
 
     agentTools() {
@@ -2298,38 +2888,43 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
 
     inClient: {
       async shipDiff(appId, ctx) {
-        const app = await requireOwned(appId, ctx.principal.subject);
+        const app = await requireOwned(appId, ctx, "viewer");
         return computeShipDiff(app, config.pinBaselines ?? []);
       },
       async approvals(appId, ctx) {
-        await requireOwned(appId, ctx.principal.subject);
+        await requireOwned(appId, ctx, "viewer");
         return inClientApprovals.list(appId);
       },
       async verdict(appId, ctx) {
-        const app = await requireOwned(appId, ctx.principal.subject);
+        const app = await requireOwned(appId, ctx, "viewer");
         return inClientApprovals.verdictFor(app);
       },
       async approve(input, ctx) {
         // Round-2 hardening (2026-08-02) — a review-kind approval IS the
         // review, so it never comes from the remixing user themselves: the
-        // owner is refused unless the host's reviewer assertion
+        // requester is refused unless the host's reviewer assertion
         // (apps.review.reviewer) covers them, and an asserted reviewer may
         // approve across the owner boundary (that is the reviewer's job).
-        // Instant-kind keeps the plain owner scoping unchanged.
+        // Instant-kind keeps the plain access scoping unchanged.
         const record = await apps.get(input.appId);
         if (record === null) throw new VendoError("not-found", `app not found: ${input.appId}`);
         const row = rowFromRecord(record);
         const app = classifyLegacyPlacements(row.doc, config.pinBaselines);
-        const isOwner = row.subject === ctx.principal.subject;
+        // `holds` rather than a bare subject compare: the row is read WITHOUT
+        // owner scoping here (a reviewer crosses that boundary), so the access
+        // question is asked through the ONE permission check — which keeps the
+        // org/sharing editor reaching their own team's app. Neither branch ever
+        // approves; only which refusal the caller is told apart.
+        const permitted = await holds(input.appId, ctx, "editor", record);
         if (review.isReviewKind(app)) {
           if (!await reviewerAsserted(ctx)) {
-            if (isOwner) {
+            if (permitted) {
               throw new VendoError("blocked", "a review-kind remix cannot be approved by its own user — set apps.review.reviewer(ctx) in your composition to assert who reviews");
             }
-            // Masked like every unowned app read.
+            // Masked like every unreachable app read.
             throw new VendoError("not-found", `app not found: ${input.appId}`);
           }
-        } else if (!isOwner) {
+        } else if (!permitted) {
           throw new VendoError("not-found", `app not found: ${input.appId}`);
         }
         const approval = await inClientApprovals.record({
@@ -2385,7 +2980,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
 
     pins: {
       async drift(appId, ctx) {
-        const app = await requireOwned(appId, ctx.principal.subject);
+        const app = await requireOwned(appId, ctx, "viewer");
         return detectPinDrift(app, config.pinBaselines ?? []);
       },
 
@@ -2400,15 +2995,16 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         }
         const forkOnto = (base: AppDocument): AppDocument => {
           const forked = structuredClone(base);
-          // applyPinFork prefixes issues with "<ForkPin> failed:" for the
-          // stored-app op compiler; a user gesture never saw that op, so the
-          // prefix is stripped from the surfaced error.
+          // applyPinFork prefixes its issues for the compiler that calls it; a
+          // user gesture never saw that op, so the prefix is stripped from the
+          // surfaced error. `props` are the wrapper's live props at fork time
+          // (2026-08-02 final shape) — they become the pinned node's props.
           const issues = applyPinFork(
             forked,
             { slot: input.slot, ...(input.props === undefined ? {} : { props: input.props }) },
             config.pinBaselines,
           )
-            .map((issue) => issue.replace(/^<ForkPin> failed: /, ""));
+            .map((issue) => issue.replace(/^pin fork failed: /, ""));
           if (issues.length > 0) throw new VendoError("conflict", issues.join("; "));
           const validation = validateAppDocument(forked);
           if (!validation.ok) throw new VendoError("validation", validation.error.message);
@@ -2433,7 +3029,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         };
         let previous: AppDocument;
         if (input.appId !== undefined) {
-          previous = await requireOwned(input.appId, ctx.principal.subject);
+          previous = await requireOwned(input.appId, ctx);
           if (previous.tree?.formatVersion !== VENDO_TREE_FORMAT) {
             throw new VendoError("conflict", "a pin fork requires a vendo-genui/v2 tree app");
           }
@@ -2475,7 +3071,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           // Re-read the stored row: persistEdit's concurrency check compares
           // against the store's own JSON round-trip of the document (a jsonb
           // store may normalize key order), never the in-memory original.
-          previous = await requireOwned(minted.id, ctx.principal.subject);
+          previous = await requireOwned(minted.id, ctx);
         }
         const working = forkOnto(previous);
         const version: VersionEntry = {
@@ -2536,7 +3132,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         if (config.model === undefined) {
           throw new VendoError("not-implemented", "generation requires a model");
         }
-        const app = await requireOwned(input.appId, ctx.principal.subject);
+        const app = await requireOwned(input.appId, ctx);
         const pin = (app.pins ?? []).find(({ slot }) => slot === input.slot);
         if (pin === undefined) {
           throw new VendoError("not-found", `pin not found: ${input.slot}`);
@@ -2588,16 +3184,28 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           failed: { intent, issues },
           remaining,
         });
+        // Replay rides the brain's own edit path: the recorded intents are the
+        // user's own words, and re-saying them to the brain is what replaying
+        // them MEANS. Each turn starts from the conversation as it stood, so a
+        // trail that only makes sense in sequence still does.
+        const replayDeps = generationDependencies(config, config.model, await generationToolContext(ctx));
+        let replaySession: readonly BrainTurn[] = sessionOf(app);
         for (const [index, intent] of replayIntents.entries()) {
-          const generated = await engine.edit(
-            { app: structuredClone(working), instruction: intent },
-            generationDependencies(config, config.model, await generationToolContext(ctx)),
+          const conducted = await conductEdit(
+            { app: structuredClone(working), instruction: intent, session: replaySession },
+            replayDeps,
+            conductorOptions(config, queryRunnerFor(working, ctx)),
           );
           const remaining = replayIntents.slice(index + 1);
-          if (generated.kind === "failure") {
-            return failedRebase(intent, [...generated.issues], remaining);
+          if (conducted.kind !== "app") {
+            return failedRebase(
+              intent,
+              conducted.kind === "cannot" ? [...conducted.reasons] : [...conducted.issues],
+              remaining,
+            );
           }
-          const next: AppDocument = { ...structuredClone(generated.document), id: app.id };
+          replaySession = conducted.session;
+          const next: AppDocument = { ...structuredClone(conducted.document), id: app.id };
           if (next.tree !== undefined) stripServerAuthoritativeFields(next.tree);
           const survived = (next.pins ?? []).some((candidate) =>
             candidate.slot === input.slot && candidate.base === baseline.hash)
@@ -2621,7 +3229,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         // exactly the replayed trail on the new baseline, and replaying a
         // "rebase" instruction through the model on a future rebase would be
         // meaningless. Undo of this version therefore removes no intents.
-        const persisted = await persistEdit(app, working, version, ctx.principal.subject, []);
+        const persisted = await persistEdit(app, working, version, ctx.principal.subject, [], {}, replaySession);
         await reportLifecycle("pin-rebase", app.id, ctx, {
           slot: input.slot,
           fromBaseHash: pin.base,
@@ -2641,7 +3249,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
 
     machine: {
       async provision(appId, ctx) {
-        const app = await requireOwned(appId, ctx.principal.subject);
+        const app = await requireOwned(appId, ctx);
         const alreadyProvisioned = app.machine !== undefined;
         // Wave 9 — provisioning a NEW machine is experimental (typed refusal
         // while the flag is off); an already-provisioned app stays idempotent
@@ -2657,18 +3265,18 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         return provisioned;
       },
       async wake(appId, ctx) {
-        const app = await requireOwned(appId, ctx.principal.subject);
+        const app = await requireOwned(appId, ctx);
         // Lane E — a manifest change adding domains re-prompts at the next
         // wake: the new declaration parks a fresh card for the delta only.
         await ensureEgressApproved(app, ctx);
         return lifecycle.wake(app);
       },
       async sleep(appId, ctx) {
-        const app = await requireOwned(appId, ctx.principal.subject);
+        const app = await requireOwned(appId, ctx);
         return lifecycle.sleep(app);
       },
       async editApp(appId, instruction, ctx) {
-        const app = await requireOwned(appId, ctx.principal.subject);
+        const app = await requireOwned(appId, ctx);
         if (app.machine === undefined) {
           throw new VendoError("validation", `app ${appId} has not graduated; use edit to graduate it first`);
         }
@@ -2690,7 +3298,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         };
       },
       async ping(appId, ctx) {
-        const app = await requireOwned(appId, ctx.principal.subject);
+        const app = await requireOwned(appId, ctx, "viewer");
         if (app.machine === undefined) {
           throw new VendoError("validation", `app ${appId} has no machine to ping`);
         }
@@ -2706,7 +3314,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         return { state: wasAwake ? "awake" as const : "woke" as const };
       },
       async destroy(appId, ctx) {
-        const app = await requireOwned(appId, ctx.principal.subject);
+        const app = await requireOwned(appId, ctx, "owner");
         const cleared = await lifecycle.destroyMachine(app);
         // De-graduation retires the cached schedule state with the machine.
         await scheduleEngine.clearForApp(appId);
@@ -2718,7 +3326,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     schedules: {
       tick: (at) => scheduleEngine.tick(at),
       async sync(appId, ctx) {
-        const app = await requireOwned(appId, ctx.principal.subject);
+        const app = await requireOwned(appId, ctx);
         return scheduleEngine.syncManifest(app);
       },
       report: () => scheduleEngine.report(),
@@ -2726,7 +3334,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
 
     secrets: {
       async exposure(appId, ctx) {
-        const app = await requireOwned(appId, ctx.principal.subject); // owner-only read
+        const app = await requireOwned(appId, ctx, "owner"); // which secrets are live is owner-only
         const grants = new Map((await exposure.list(appId)).map((grant) => [grant.secretName, grant]));
         return (app.secrets ?? []).map((secretName) => {
           const grant = grants.get(secretName);
@@ -2738,8 +3346,9 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       },
 
       async setExposure(input, ctx) {
-        // Owner-only: requireOwned throws not-found for any non-owner principal.
-        const app = await requireOwned(input.appId, ctx.principal.subject);
+        // Owner-only: exposing a real secret value is the highest-risk
+        // write an app has; a shared editor never reaches it (§9.3).
+        const app = await requireOwned(input.appId, ctx, "owner");
         if (!(app.secrets ?? []).includes(input.secretName)) {
           throw new VendoError("validation", `secret not declared by app: ${input.secretName}`);
         }
@@ -2805,50 +3414,24 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       },
     },
 
+    async serve(appId, request, ctx) {
+      // §9.8 — LIVE rows, every request. `viewer` is the level because a
+      // viewer may see and USE a shared app; a caller who cannot see it stays
+      // masked, exactly as every other app door answers them.
+      //
+      // The BoxRequest is forwarded as given. Keeping the browser's cookies,
+      // authorization and host headers off the skin is the WIRE route's job:
+      // `servedProxyRoutes` assembles the request from method, path,
+      // content-type and body alone. A direct caller of this door — the host's
+      // own code — chooses its own headers.
+      return await forwardToBox(await requireOwned(appId, ctx, "viewer"), request, ctx);
+    },
     box: {
       // v2 only: the fn door rides the machine lifecycle's wake — an
       // un-provisioned app fails loudly here (graduation provisions first);
       // the dying v1 session cache never serves a box request.
       async request(appId, request, ctx) {
-        const app = await requireOwned(appId, ctx.principal.subject);
-        // Lane E — the fn door wakes the machine, so it carries the same
-        // egress pre-flight (and re-prompt on a grown declaration) as wake.
-        await ensureEgressApproved(app, ctx);
-        const machine = await lifecycle.wake(app);
-        // Lane E redaction guard — a box may echo its own env (fn responses
-        // are host-side artifacts that reach clients and logs): scrub every
-        // known secret value out of the response, and out of any error
-        // message crossing this seam. issue #566 — prefer the values already
-        // injected into THIS box (the lifecycle's per-box cache) so a value
-        // that entered the box is always redactable without a refetch that
-        // could fail; only names NOT injected fall back to a best-effort read.
-        const secretValues = await collectSecretValues(
-          app.secrets,
-          config.secrets,
-          lifecycle.injectedSecretValues(appId),
-        );
-        try {
-          const answer = await machine.request(request);
-          if (secretValues.size === 0) return answer;
-          const text = new TextDecoder().decode(answer.body);
-          const scrubbed = redactSecretText(text, secretValues);
-          return {
-            status: answer.status,
-            headers: Object.fromEntries(Object.entries(answer.headers)
-              .map(([header, value]) => [header, redactSecretText(value, secretValues)])),
-            // Untouched bodies pass through byte-identical (binary safety).
-            body: scrubbed === text ? answer.body : new TextEncoder().encode(scrubbed),
-          };
-        } catch (error) {
-          if (error instanceof Error) {
-            // Mutate in place so the error keeps its type, stack, and code.
-            error.message = redactSecretText(error.message, secretValues);
-          }
-          if (error instanceof VendoError && error.detail !== undefined) {
-            error.detail = redactSecretJson(error.detail, secretValues);
-          }
-          throw error;
-        }
+        return await forwardToBox(await requireOwned(appId, ctx), request, ctx);
       },
 
       async redact(appId, value) {

@@ -1,14 +1,21 @@
 /**
- * Vendo lane adapter (Task 4): drives an injected GenerationEngine-shaped
- * fake — zero model calls — and proves the LaneResult contract: ok carries
- * document + wire + ordered tapped events + durationMs; an engine throw
- * resolves (never rejects) to status:"failed" WITH the partial events
- * captured up to the throw.
+ * Vendo lane adapter: drives an injected conductor-shaped fake — zero model
+ * calls — and proves the LaneResult contract over all three conducted
+ * outcomes. An app carries document + wire + the checking layer's findings; a
+ * refusal ("cannot") and an unreadable answer ("failure") are VALUES, not
+ * throws, and both land as status:"failed" with their sentences on the error;
+ * a genuine crash resolves (never rejects) to status:"failed" too.
  */
 import { describe, expect, it } from "vitest";
 import { VendoError, VENDO_APP_FORMAT, VENDO_TREE_FORMAT } from "@vendoai/core";
-import type { GeneratedAppDocument, GenerationDependencies, PipelineEvent } from "@vendoai/apps";
-import { createVendoAdapter, failureReason, transformModelParams, type ModelCallParams } from "./vendo";
+import type { Finding, GeneratedAppDocument, GenerationDependencies } from "@vendoai/apps";
+import {
+  createVendoAdapter,
+  failureReason,
+  transformModelParams,
+  type ModelCallParams,
+  type VendoAdapterOverrides,
+} from "./vendo";
 import { MAX_OUTPUT_TOKENS, PRODUCTION_MODEL, findModel, type BenchModel } from "../runner/models";
 import type { HostFixture } from "../runner/types";
 import { stubHostFixture } from "../fixtures/stub";
@@ -34,41 +41,45 @@ const generatedDocument: GeneratedAppDocument = {
   },
 };
 
-const events: PipelineEvent[] = [
-  { stage: "full", attempt: 1, valid: false, ms: 10 },
-  { stage: "repair", rounds: 1, repaired: true, noValidFix: 0, ms: 20 },
-  { stage: "full", attempt: 2, valid: true, ms: 30 },
+const findings: Finding[] = [
+  { severity: "warn", where: 'node "owner" prop "value"', message: "profile.name may be absent" },
+  { severity: "block", where: "document", message: "the app has a title and no content" },
 ];
+
+/** The conducted app the fakes hand back. */
+const conductedApp = (over: { findings?: Finding[] } = {}) =>
+  ({
+    kind: "app" as const,
+    document: generatedDocument,
+    queryResults: {},
+    findings: over.findings ?? [],
+    session: [],
+  });
 
 const fakeModel = { modelId: "fake" } as unknown as GenerationDependencies["model"];
 
 describe("vendo lane adapter", () => {
-  it("returns document, wire, and the tapped events in order", async () => {
+  it("returns document, wire, and the checking layer's findings", async () => {
     const seen: { prompt?: string; deps?: GenerationDependencies } = {};
-    const adapter = createVendoAdapter({
-      model: fakeModel,
-      engine: {
-        create: async (input, deps) => {
-          seen.prompt = input.prompt;
-          seen.deps = deps;
-          for (const event of events) deps.onPipeline?.(event);
-          return generatedDocument;
-        },
-      },
-    });
+    const conduct: VendoAdapterOverrides["conduct"] = async (input, deps) => {
+      seen.prompt = input.prompt;
+      seen.deps = deps;
+      return conductedApp({ findings });
+    };
+    const adapter = createVendoAdapter({ model: fakeModel, conduct });
 
     const result = await adapter.generate("show my profile", fixture);
     if (result.status !== "ok") throw new Error(`expected ok, got ${JSON.stringify(result)}`);
     expect(result.document?.id).toMatch(/^app_/);
     expect(result.document?.tree).toEqual(generatedDocument.tree);
-    expect(result.events).toEqual(events);
+    expect(result.findings).toEqual(findings);
     expect(typeof result.durationMs).toBe("number");
     expect(result.startedAt).toBeGreaterThan(0);
     // The canonical printed wire of the returned tree.
     expect(result.wire).toContain("Stat");
     expect(result.wire).toContain("host_getProfile");
 
-    // The engine saw the fixture surface, production-default pipeline config.
+    // The conductor saw the fixture surface, production defaults.
     expect(seen.prompt).toBe("show my profile");
     expect(seen.deps?.catalog).toBe(fixture.catalog);
     expect(seen.deps?.tools).toBe(fixture.tools);
@@ -76,49 +87,51 @@ describe("vendo lane adapter", () => {
     expect(seen.deps?.pipeline).toBeUndefined();
   });
 
-  it("never throws: an engine crash resolves to failed with the partial events", async () => {
+  /** An honest refusal is a first-class RESULT, not a crash: the conductor
+   *  returns it, so the lane must say plainly that the host refused and carry
+   *  the reasons a person would read. */
+  it('a refusal ("cannot") lands as failed with the host\'s reasons', async () => {
+    const reasons = ["Maple cannot move money to an account it does not hold."];
     const adapter = createVendoAdapter({
       model: fakeModel,
-      engine: {
-        create: async (_input, deps) => {
-          deps.onPipeline?.(events[0] as PipelineEvent);
-          throw new Error("model exploded mid-pipeline");
-        },
+      conduct: async () => ({ kind: "cannot", reasons, session: [] }),
+    });
+
+    const result = await adapter.generate("wire $5k to my cousin", fixture);
+    if (result.status !== "failed") throw new Error(`expected failed, got ${JSON.stringify(result)}`);
+    expect(result.error).toContain("refused");
+    expect(result.error).toContain(reasons[0]!);
+  });
+
+  /** The old validation throw is now a returned failure — the issues still
+   *  have to reach the error string or a failed run is unreadable. */
+  it('an unreadable answer ("failure") lands as failed with the issues', async () => {
+    const issues = [
+      'tree root "root" renders an empty layout; keep at least one attached, visible node',
+      "the app has a title and no content",
+    ];
+    const adapter = createVendoAdapter({
+      model: fakeModel,
+      conduct: async () => ({ kind: "failure", issues, session: [] }),
+    });
+
+    const result = await adapter.generate("create a component with a big Y", fixture);
+    if (result.status !== "failed") throw new Error(`expected failed, got ${JSON.stringify(result)}`);
+    for (const issue of issues) expect(result.error).toContain(issue);
+  });
+
+  it("never throws: a genuine crash resolves to failed", async () => {
+    const adapter = createVendoAdapter({
+      model: fakeModel,
+      conduct: async () => {
+        throw new Error("model exploded mid-generation");
       },
     });
 
     const result = await adapter.generate("boom", fixture);
     if (result.status !== "failed") throw new Error(`expected failed, got ${JSON.stringify(result)}`);
-    expect(result.error).toContain("model exploded mid-pipeline");
-    expect(result.events).toEqual([events[0]]);
+    expect(result.error).toContain("model exploded mid-generation");
     expect(typeof result.durationMs).toBe("number");
-  });
-
-  /** A generation failure's message is the generic "model could not produce a
-   *  valid app"; the reason rides the VendoError detail and the per-attempt
-   *  events. Both must survive into the LaneResult or a failed run in the
-   *  cockpit is unreadable. */
-  it("a validation failure is self-explanatory: the issues ride the error AND the events", async () => {
-    const issues = [
-      'tree root "root" renders an empty layout; keep at least one attached, visible node',
-      "the app has a title and no content",
-    ];
-    const invalidAttempt: PipelineEvent = { stage: "full", attempt: 0, valid: false, ms: 6984, issues };
-    const adapter = createVendoAdapter({
-      model: fakeModel,
-      engine: {
-        create: async (_input, deps) => {
-          deps.onPipeline?.(invalidAttempt);
-          throw new VendoError("validation", "model could not produce a valid app", issues);
-        },
-      },
-    });
-
-    const result = await adapter.generate("create a component with a big Y", fixture);
-    if (result.status !== "failed") throw new Error(`expected failed, got ${JSON.stringify(result)}`);
-    expect(result.error).toContain("model could not produce a valid app");
-    for (const issue of issues) expect(result.error).toContain(issue);
-    expect(result.events).toEqual([invalidAttempt]);
   });
 });
 
@@ -136,14 +149,14 @@ describe("failureReason", () => {
 /** RunRequest.model → the adapter. No model calls: `createModel` is the seam
  *  that captures the id, and the params rewrite is a pure function. */
 describe("vendo lane model controls", () => {
-  const okEngine = { create: async () => generatedDocument };
+  const okConduct: VendoAdapterOverrides["conduct"] = async () => conductedApp();
 
   function adapterCapturingId(): { seen: string[]; adapter: ReturnType<typeof createVendoAdapter> } {
     const seen: string[] = [];
     return {
       seen,
       adapter: createVendoAdapter({
-        engine: okEngine,
+        conduct: okConduct,
         createModel: (id) => {
           seen.push(id);
           return fakeModel;

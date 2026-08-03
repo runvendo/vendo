@@ -1,7 +1,10 @@
 "use client";
 
-import { createVendoClient, VendoProvider } from "@vendoai/ui";
+import { createVendoClient, hostComponentMap, VendoProvider } from "@vendoai/ui";
 import { useMemo, type ComponentProps } from "react";
+import type { PackProvider } from "@vendoai/core";
+import { packComponents } from "./packs/components.js";
+import type { PackContext } from "./packs/merge.js";
 
 // Named re-exports, not `export *`: this file is a "use client" boundary, and
 // Next's flight loader builds the client-reference manifest by statically
@@ -40,6 +43,7 @@ export {
   // hooks/*
   useActivity,
   useApp,
+  useAppGrants,
   useApps,
   useApprovals,
   useAutomations,
@@ -101,12 +105,40 @@ export { VendoOverlay, type VendoOverlayProps } from "@vendoai/ui/chrome";
 
 type ProviderProps = ComponentProps<typeof VendoProvider>;
 
-/** 09-vendo §1 — the UI provider prewired to the default wire base. */
+/**
+ * 09-vendo §1 — the UI provider prewired to the default wire base.
+ *
+ * `packs` is the CLIENT half of `createVendo({ packs })`: a pack module is
+ * imported twice, and this is where its components get mounted (design §5).
+ *
+ * Pass the packs that SHIP COMPONENTS — not necessarily the whole server list.
+ * `apps()` in particular belongs only on the server: it value-imports
+ * `@vendoai/apps`, so naming it here would pull the apps block into the client
+ * bundle. It contributes no components, so there is nothing to lose by leaving it
+ * out. The host's own `components` still win a repeated name.
+ */
 export function VendoRoot(props: Omit<ProviderProps, "client"> & {
   client?: ProviderProps["client"];
   baseUrl?: string;
+  packs?: readonly PackProvider<PackContext>[];
 }): ReturnType<typeof VendoProvider> {
-  const { client: configuredClient, baseUrl = "/api/vendo", ...providerProps } = props;
+  const { client: configuredClient, baseUrl = "/api/vendo", packs, components, ...providerProps } = props;
   const defaultClient = useMemo(() => createVendoClient({ baseUrl }), [baseUrl]);
-  return <VendoProvider {...providerProps} client={configuredClient ?? defaultClient} />;
+  // Both sides normalize to the plain name→component map (the components input
+  // is one form or the other, never a mix), and the host's own registrations are
+  // spread last so they win a repeated name — the same precedence the server
+  // gives them over a pack's components.
+  const merged = useMemo(
+    () => (packs === undefined
+      ? components
+      : { ...hostComponentMap(packComponents(packs)), ...hostComponentMap(components) }),
+    [packs, components],
+  );
+  return (
+    <VendoProvider
+      {...providerProps}
+      {...(merged === undefined ? {} : { components: merged })}
+      client={configuredClient ?? defaultClient}
+    />
+  );
 }

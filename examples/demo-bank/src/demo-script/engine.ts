@@ -468,25 +468,25 @@ async function automationArmedConfirmation(context: BeatContext, key: Automation
   if (key === "weekly") {
     await streamText(
       writer,
-      "Set. Every Friday at 5:00 PM I'll put together that week's spending by category and email it to you. It's live under Workspace → Automations — you can pause it anytime.",
+      "Set. Every Friday at 5:00 PM I'll put together that week's spending by category and have the digest drafted for you — sending is always yours, one tap. It's live under Workspace → Automations — you can pause it anytime.",
       signal,
     );
     await gmailDeliveryMoment(
       context,
-      "One thing left — connect Gmail below and the first digest goes out this Friday.",
-      "Connect Gmail so the digest lands in your inbox.",
+      "One thing left — connect Gmail below and the first digest will be waiting there as a draft this Friday.",
+      "Connect Gmail so the digest can land as a draft, ready to send.",
     );
     return;
   }
   await streamText(
     writer,
-    "Armed — you'll get an email if checking dips below $2,000. It's live under Workspace → Automations.",
+    "Armed — if checking dips below $2,000, an alert will be drafted for you that same morning. It's live under Workspace → Automations.",
     signal,
   );
   await gmailDeliveryMoment(
     context,
-    "One thing left — connect Gmail below so the alert can reach you.",
-    "Connect Gmail so the alert lands in your inbox.",
+    "One thing left — connect Gmail below so the alert has somewhere to be drafted.",
+    "Connect Gmail so the alert can land as a draft, ready to send.",
   );
 }
 
@@ -599,7 +599,7 @@ async function lowBalanceBeat(context: BeatContext): Promise<void> {
 async function gmailConnectedBeat({ writer, signal }: BeatContext): Promise<void> {
   await streamText(
     writer,
-    "Gmail is connected — anything I email you now lands in your inbox. Your automations are fully live; they're under Workspace → Automations whenever you want to pause them.",
+    "Gmail is connected — anything I draft for you lands there, ready to send with one tap. Your automations are fully live; they're under Workspace → Automations whenever you want to pause them.",
     signal,
   );
 }

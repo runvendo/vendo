@@ -25,7 +25,15 @@ function escapeHtml(value: string): string {
 function loginPage(request: Request, message?: string): Response {
   const url = new URL(request.url);
   const returnTo = safeReturnTo(url.searchParams.get("returnTo"), publicOrigin(request));
-  const demoUsers = mapleDemoUsers().map((user) => escapeHtml(user.email)).join(" · ");
+  // The account switcher links here with ?email=<seeded staff member> so
+  // switching people is one click plus the shared demo password — which stays
+  // server-side, exactly as it does for a first sign-in.
+  const asked = url.searchParams.get("email")?.trim().toLowerCase();
+  const users = mapleDemoUsers();
+  const prefill = asked !== undefined && users.some((user) => user.email === asked)
+    ? asked
+    : mapleDemoEmail();
+  const demoUsers = users.map((user) => escapeHtml(user.email)).join(" · ");
   const html = `<!doctype html>
 <html lang="en">
 <head>
@@ -56,7 +64,7 @@ function loginPage(request: Request, message?: string): Response {
     ${message ? `<div class="error" role="alert">${escapeHtml(message)}</div>` : ""}
     <form method="post" action="${withBasePath("/login")}">
       <input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}">
-      <label>Email<input name="email" type="email" autocomplete="username" value="${escapeHtml(mapleDemoEmail())}" required></label>
+      <label>Email<input name="email" type="email" autocomplete="username" value="${escapeHtml(prefill)}" required></label>
       <label>Password<input name="password" type="password" autocomplete="current-password" required autofocus></label>
       <button type="submit">Sign in</button>
     </form>

@@ -9,6 +9,7 @@ import type {
   RunContext,
   ToolRegistry,
 } from "@vendoai/core";
+import { VENDO_TOOL_TITLES } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
 import {
   createKnowledgeTools,
@@ -849,3 +850,15 @@ function twoIntentAdapter(
     },
   } as KnowledgeAdapter;
 }
+
+describe("§3 consumer voice — the knowledge tool carries a title", () => {
+  // Wave-1 live proof E1-5: without a title, `ToolListing.title` falls back to
+  // the identifier and the model speaks `vendo_knowledge_search` to a person.
+  it("titles the descriptor from the shared table", async () => {
+    const tools = createKnowledgeTools({ adapter: memoryKnowledgeAdapter([]) });
+    const [descriptor] = await tools.descriptors();
+    expect(descriptor?.title).toBe(VENDO_TOOL_TITLES[VENDO_KNOWLEDGE_SEARCH_TOOL]);
+    expect(descriptor?.title).toBeTruthy();
+    expect(descriptor?.title).not.toMatch(/vendo|_/i);
+  });
+});

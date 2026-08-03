@@ -90,11 +90,13 @@ const sdkEngine = async ({ prompt, systemAppend, model, url, key, env, appDir, l
     model,
     maxTurns: MAX_TURNS,
     systemPrompt: { type: "preset", preset: "claude_code", append: systemAppend },
-    // The box IS the sandbox: every tool is pre-approved, the provider network
-    // layer (deny-by-default egress) is the real boundary.
+    // The box IS the sandbox: every tool is pre-approved, and the provider's
+    // domain-filtered egress is the boundary. That boundary is real against
+    // ordinary clients and bypassable by one that omits SNI, so it is defence
+    // in depth rather than containment — docs/verification/box-egress/README.md.
     permissionMode: "bypassPermissions",
     allowDangerouslySkipPermissions: true,
-    // Web tools are pointless behind deny-by-default egress; subagents and
+    // Web tools have no allowlisted host to reach; subagents and
     // interactive tools have no place in a headless box task.
     disallowedTools: ["WebSearch", "WebFetch", "Task", "AskUserQuestion"],
     mcpServers: { vendo: reportServer },

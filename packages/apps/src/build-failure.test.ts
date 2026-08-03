@@ -1,10 +1,8 @@
 import type { LanguageModel } from "ai";
-import type { RunContext, ToolRegistry, Tree } from "@vendoai/core";
+import type { RunContext, ToolRegistry } from "@vendoai/core";
 import { VendoError } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
 import { buildFailureReason, createApps } from "./index.js";
-import { DISCLAIMER_TEXT, isDisclaimerOnlyTree } from "./pipeline.js";
-import { HOST_CAPABILITY_MISS_REASON } from "./runtime.js";
 import { guardFixture, memoryStore, scriptedLanguageModel } from "./testing/index.js";
 
 // Incident (runvendo/vendo#492): vendo_create_app returns fast with a
@@ -127,7 +125,7 @@ describe("build-failure lifecycle (#492)", () => {
         .then(() => undefined, (error: unknown) => error);
       expect(rejection).toBeInstanceOf(VendoError);
       const issues = ((rejection as VendoError).detail as { issues: string[] }).issues;
-      expect(issues.some((issue) => issue.includes("completed without any text output"))).toBe(true);
+      expect(issues.some((issue) => issue.includes("no text at all"))).toBe(true);
       expect(issues.some((issue) => issue.includes("missing-app"))).toBe(false);
     } finally {
       errorSpy.mockRestore();
@@ -156,29 +154,29 @@ describe("build-failure lifecycle (#492)", () => {
   });
 });
 
-// 0.4.5 E2E cert (defect D, byo-ai-sdk host): a create whose every region was
-// disclaimed away by repair "succeeded" into an app that only said "not
-// available" — no failure record, no log, and a host chat that read as a
-// build hanging forever. And a build task that never SETTLES (hung provider
-// stream, promise chain severed by the host runtime) persisted nothing at
-// all, so the embed polled {kind:"pending"} past every deadline.
+// 0.4.5 E2E cert (defect D, byo-ai-sdk host): an ask this host cannot serve
+// must fail LOUDLY rather than "succeed" into an app that says nothing — no
+// failure record, no log, and a host chat that reads as a build hanging
+// forever. And a build task that never SETTLES (hung provider stream, promise
+// chain severed by the host runtime) persisted nothing at all, so the embed
+// polled {kind:"pending"} past every deadline.
 describe("defect D — silent degenerate/hung builds fail loudly", () => {
-  const disclaimerMarkup =
-    `<App name="Hello stat"><Surface><Text text="${DISCLAIMER_TEXT}"/></Surface></App>`;
-
-  it("fails a disclaimer-only build terminally: record persisted, open() answers the host-capability reason, create() throws it", async () => {
+  it("fails a refused build terminally: record persisted, open() answers the refusal, create() throws it", async () => {
+    // The brain's own sentences ARE the reason: an impossible ask comes back as
+    // <Cannot> lines, and those are what the person reads.
+    const reason = "Your host has no way to read account balances, so nothing here can show one.";
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
-      const { runtime, store } = setup(scriptedLanguageModel(disclaimerMarkup));
+      const { runtime, store } = setup(scriptedLanguageModel(`<Cannot>${reason}</Cannot>`));
       const ctx = context("user_ada");
       const rejection = await runtime.create({ prompt: "one stat tile that says hello" }, ctx)
         .then(() => undefined, (error: unknown) => error);
       expect(rejection).toBeInstanceOf(VendoError);
-      expect((rejection as VendoError).message).toBe(`app build failed: ${HOST_CAPABILITY_MISS_REASON}`);
+      expect((rejection as VendoError).message).toBe(`app build failed: ${reason}`);
       const rows = await store.records("vendo_apps").list({});
       expect(rows.records).toHaveLength(1);
       const surface = await runtime.open(rows.records[0]!.id, ctx);
-      expect(surface).toEqual({ kind: "failed", reason: HOST_CAPABILITY_MISS_REASON, retryable: false, prompt: "one stat tile that says hello" });
+      expect(surface).toEqual({ kind: "failed", reason, retryable: false, prompt: "one stat tile that says hello" });
       expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("app build failed"));
     } finally {
       errorSpy.mockRestore();
@@ -243,88 +241,7 @@ describe("defect D — silent degenerate/hung builds fail loudly", () => {
   });
 });
 
-describe("isDisclaimerOnlyTree", () => {
-  const tree = (nodes: Tree["nodes"]): Tree => ({
-    formatVersion: "vendo-genui/v2",
-    root: "root",
-    nodes: [{ id: "root", component: "Stack", source: "prewired", children: nodes.map((node) => node.id) }, ...nodes],
-  } as Tree);
-  const disclaimer = (id: string): Tree["nodes"][number] =>
-    ({ id, component: "Text", source: "prewired", props: { text: DISCLAIMER_TEXT } }) as Tree["nodes"][number];
-
-  it("flags the pure disclaimer tree (the cert's persisted shape)", () => {
-    expect(isDisclaimerOnlyTree(tree([disclaimer("text-1")]))).toBe(true);
-  });
-
-  it("static copy around the disclaimers does not rescue it (the cloud-rung cert shape: heading + disclaimer)", () => {
-    expect(isDisclaimerOnlyTree(tree([
-      { id: "heading-1", component: "Text", source: "prewired", props: { text: "Dashboard", variant: "heading" } } as Tree["nodes"][number],
-      disclaimer("text-1"),
-    ]))).toBe(true);
-  });
-
-  it("a disclaimer MERGED into adjacent copy by the repair recompile still counts (containment, review 2026-07-26)", () => {
-    expect(isDisclaimerOnlyTree(tree([
-      {
-        id: "text-1",
-        component: "Text",
-        source: "prewired",
-        props: { text: `Overview\n    ${DISCLAIMER_TEXT}` },
-      } as Tree["nodes"][number],
-    ]))).toBe(true);
-  });
-
-  it("a data binding beside a disclaimer is real content — not degenerate", () => {
-    expect(isDisclaimerOnlyTree(tree([
-      disclaimer("text-1"),
-      { id: "stat-1", component: "Stat", source: "prewired", props: { label: "Total", value: { $path: "/totals/sum" } } } as Tree["nodes"][number],
-    ]))).toBe(false);
-  });
-
-  it("an action binding beside a disclaimer is real content — not degenerate", () => {
-    expect(isDisclaimerOnlyTree(tree([
-      disclaimer("text-1"),
-      { id: "button-1", component: "Button", source: "prewired", props: { label: "Refresh", onClick: { action: "host_refresh" } } } as Tree["nodes"][number],
-    ]))).toBe(false);
-  });
-
-  it("a generated island or host component beside a disclaimer is real content — not degenerate", () => {
-    expect(isDisclaimerOnlyTree(tree([
-      disclaimer("text-1"),
-      { id: "appshell-1", component: "AppShell", source: "generated" } as Tree["nodes"][number],
-    ]))).toBe(false);
-    expect(isDisclaimerOnlyTree(tree([
-      disclaimer("text-1"),
-      { id: "chart-1", component: "RevenueChart", source: "host" } as Tree["nodes"][number],
-    ]))).toBe(false);
-  });
-
-  it("a tree with no disclaimers is never degenerate, whatever else it lacks", () => {
-    expect(isDisclaimerOnlyTree(tree([
-      { id: "text-1", component: "Text", source: "prewired", props: { text: "hello" } } as Tree["nodes"][number],
-    ]))).toBe(false);
-  });
-
-  it("ignores unreachable disclaimer nodes (pruned subtrees)", () => {
-    const detached: Tree = {
-      formatVersion: "vendo-genui/v2",
-      root: "root",
-      nodes: [
-        { id: "root", component: "Stack", source: "prewired", children: ["text-1"] },
-        { id: "text-1", component: "Text", source: "prewired", props: { text: "hello" } },
-        { id: "orphan-1", component: "Text", source: "prewired", props: { text: DISCLAIMER_TEXT } },
-      ],
-    } as Tree;
-    expect(isDisclaimerOnlyTree(detached)).toBe(false);
-  });
-});
-
 describe("buildFailureReason", () => {
-  it("passes the host-capability miss reason through verbatim, non-retryable (defect D)", () => {
-    expect(buildFailureReason(new VendoError("validation", HOST_CAPABILITY_MISS_REASON)))
-      .toEqual({ reason: HOST_CAPABILITY_MISS_REASON, retryable: false });
-  });
-
   it("maps an aborted turn to a retryable timeout", () => {
     const aborted = Object.assign(new Error("aborted"), { name: "AbortError" });
     expect(buildFailureReason(aborted)).toEqual({ reason: "timed out", retryable: true });

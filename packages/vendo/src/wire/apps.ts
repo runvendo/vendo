@@ -1,6 +1,16 @@
-import { VendoError, type Json } from "@vendoai/core";
+import { VendoError, type AccessLevel, type Json } from "@vendoai/core";
 import type { VendoStore } from "@vendoai/store";
 import { json, requestJson, route, string, type RouteEntry } from "./shared.js";
+
+/** Build contract §9.3 — the level vocabulary is CLOSED, so the wire refuses
+    anything outside it instead of letting a typo reach the store. */
+function accessLevel(value: unknown): AccessLevel {
+  const level = string(value, "level");
+  if (level !== "viewer" && level !== "editor" && level !== "owner") {
+    throw new VendoError("validation", "level must be viewer, editor, or owner");
+  }
+  return level;
+}
 
 /** What the ?pending=1 disambiguation learned about a record open() refused
     to serve this caller. */
@@ -159,7 +169,28 @@ export const appRoutes: RouteEntry[] = [
           return json(await deps.apps.open(appId, ctx));
         } catch (reason) {
           if (reason instanceof VendoError && reason.code === "not-found") {
+            // Build contract §9.4 — the probe is a DIAGNOSTIC for a caller who
+            // can already see the app, never a lookup for one who cannot. It
+            // reads UNSCOPED rows, so running it for a non-viewer made
+            // `?pending=1` an existence oracle: any stranger with an app id
+            // learned whether a team app was real, at HTTP 200, while the same
+            // request without the flag correctly 404'd. A non-viewer now gets
+            // exactly what a non-existent app gets.
             const probe = await probeUnownedAppRecord(deps.store, appId);
+            if (await deps.apps.access.levelFor(appId, ctx) === null) {
+              // The principal-mismatch diagnosis (0.4.1 E2E cert B4) is a HOST
+              // wiring problem in a developer's voice, so it keeps its signal
+              // where only the host reads it — the server log — instead of
+              // being served to whoever asked.
+              if (probe.exists) {
+                console.warn(
+                  `[vendo] GET /apps/${appId}/open answered not-found, but a record with that id `
+                  + "exists under another subject: this wire route's principal must resolve the same "
+                  + "subject your agent loop uses (see docs.vendo.run/existing-agents)",
+                );
+              }
+              return json({ kind: "pending" });
+            }
             // A terminal build failure is terminal for EVERY caller: pass the
             // server-written reason through instead of masking it as a build
             // still in progress (0.4.6 cert defect D2).
@@ -170,15 +201,11 @@ export const appRoutes: RouteEntry[] = [
                 ...(probe.buildFailed.retryable === undefined ? {} : { retryable: probe.buildFailed.retryable }),
               });
             }
-            if (probe.exists) {
-              return json({
-                kind: "failed",
-                reason: "this app exists but is not visible to this surface's caller — "
-                  + "the wire route's principal must resolve the same subject your agent loop uses "
-                  + "(see the principal comment in the generated route, or docs.vendo.run/existing-agents)",
-                retryable: false,
-              });
-            }
+            // This caller CAN see the app (checked above) and it carries no
+            // terminal marker, so "still building" is the honest answer. The
+            // principal-mismatch diagnosis that used to live here belongs to the
+            // non-viewer branch, where it is now logged for the host instead of
+            // served to the caller.
             return json({ kind: "pending" });
           }
           throw reason;
@@ -194,23 +221,32 @@ export const appRoutes: RouteEntry[] = [
       const body = await requestJson(request);
       return json(await deps.apps.edit(appId, string(body["instruction"], "instruction"), ctx));
     }
+    // Build contract §9.3 — the LEVEL lives in the runtime: `list` needs
+    // viewer, `undo` needs editor (rolling the team's app back is an edit), and
+    // a caller who cannot see the app stays masked. This route just names the
+    // caller; it is no longer the only thing standing between a viewer and the
+    // team's history.
     if (operation === "history" && segments.length === 3) {
+      // The door still masks an app this caller cannot see at all, so a
+      // not-found answer never depends on which verb they asked for.
       if (await deps.apps.get(appId, ctx) === null) throw new VendoError("not-found", `app not found: ${appId}`);
-      if (request.method === "GET") return json(await deps.apps.history(appId).list());
+      if (request.method === "GET") return json(await deps.apps.history(appId, ctx).list());
       if (request.method === "POST") {
         const body = await requestJson(request);
         if (body["op"] !== "undo") throw new VendoError("validation", "history op must be undo");
-        return json(await deps.apps.history(appId).undo());
+        return json(await deps.apps.history(appId, ctx).undo());
       }
     }
     // 06-apps §8–§9 — additive: the reviewable diff of what this app ships
     // relative to the captured host baselines, hash-pinned to the version
-    // an in-client approval would cover. Owner-scoped like every app route.
+    // an in-client approval would cover. Viewer-scoped: reading what a shared
+    // app ships is part of seeing it (the runtime owns the level, as ever).
     if (request.method === "GET" && operation === "ship-diff" && segments.length === 3) {
       return json(await deps.apps.inClient.shipDiff(appId, ctx));
     }
-    // 06-apps §8 — additive drift→rebase surface, owner-scoped like every
-    // app route. A rebase rewrites content, so it is only ever invoked
+    // 06-apps §8 — additive drift→rebase surface. `drift` only reads, so it is
+    // viewer-scoped; a rebase rewrites content and is editor-scoped. The
+    // runtime owns both levels. A rebase is only ever invoked
     // explicitly here or via the vendo_apps_rebase_pin agent tool — drift
     // detection never auto-rebases.
     if (request.method === "GET" && operation === "pin-drift" && segments.length === 3) {
@@ -221,7 +257,7 @@ export const appRoutes: RouteEntry[] = [
       return json(await deps.apps.pins.rebase({ appId, slot: string(body["slot"], "slot") }, ctx));
     }
     // 06-apps §8 — the same gesture fork landing in an EXISTING app (the
-    // filled-slot / driver surface). Owner-scoped like every app route.
+    // filled-slot / driver surface). Editor-scoped: it lands a change.
     if (request.method === "POST" && operation === "fork-pin" && segments.length === 3) {
       const body = await requestJson(request);
       return json(await deps.apps.pins.fork({
@@ -263,6 +299,95 @@ export const appRoutes: RouteEntry[] = [
     }
     if (request.method === "POST" && operation === "fork" && segments.length === 3) {
       return json(await deps.apps.fork(appId, ctx));
+    }
+    // Build contract §9.1 companion — the host names the person. Vendo holds no
+    // directory, so the dialog cannot resolve "Mia" and must not pretend to; it
+    // asks here, and the grant is written for the SUBJECT that comes back.
+    //
+    // Owner-gated on purpose: whoever may ask this may enumerate the host's own
+    // directory, so the gate is the same one that writes the grant. A caller who
+    // cannot see the app at all stays masked (§9.4).
+    if (request.method === "POST" && operation === "grants" && segments[3] === "resolve" && segments.length === 4) {
+      const level = await deps.apps.access.levelFor(appId, ctx);
+      if (level === null) throw new VendoError("not-found", `app not found: ${appId}`);
+      if (level !== "owner") throw new VendoError("forbidden", `owner access is required for ${appId}`);
+      // ...and an owner with NO asserted org, on top of that. A person-share
+      // implies an org workspace (§9.5), so a caller in no org can never complete
+      // the share this lookup exists for — answering them is nothing but
+      // directory exposure. A signed-in stranger probing from their own personal
+      // app was handed the host's real subjects and display names at HTTP 200.
+      if ((ctx.memberships ?? []).length === 0) {
+        throw new VendoError(
+          "forbidden",
+          `no org is asserted for this caller, so a person-share on ${appId} could never be completed`,
+        );
+      }
+      if (deps.resolvePerson === undefined) {
+        throw new VendoError(
+          "not-implemented",
+          "sharing with one person needs the auth preset's `resolvePerson` seam:"
+          + " Vendo has no directory, so only your identity system can turn a typed"
+          + " name into one of your subjects",
+        );
+      }
+      const body = await requestJson(request);
+      // The asker rides along: only the host knows which part of its own
+      // directory this person may see.
+      return json({ person: await deps.resolvePerson(string(body["query"], "query"), ctx.principal) });
+    }
+    // Build contract §9.2–§9.6 — the Share dialog's door. Reading the grant
+    // list is viewer-gated and OSS; writing one is owner-gated AND
+    // Cloud-gated, and the runtime (not this route) is where both are decided,
+    // so the MCP door inherits the same rules without a second copy.
+    if (operation === "grants" && segments.length === 3) {
+      if (request.method === "GET") {
+        return json({
+          level: await deps.apps.access.levelFor(appId, ctx),
+          grants: await deps.apps.access.list(appId, ctx),
+          // §9.5 — "share implies promote" needs to know whether this is still
+          // the caller's own copy. Derived from who HOLDS the row, so the
+          // dialog never has to guess from an empty grant list.
+          personal: await deps.apps.access.holder(appId, ctx) === ctx.principal.subject,
+        });
+      }
+      if (request.method === "POST") {
+        const body = await requestJson(request);
+        await deps.apps.access.grant(
+          appId,
+          string(body["principal"], "principal"),
+          accessLevel(body["level"]),
+          ctx,
+        );
+        return json({ grants: await deps.apps.access.list(appId, ctx) });
+      }
+      if (request.method === "DELETE") {
+        const principal = wire.url.searchParams.get("principal");
+        await deps.apps.access.revoke(appId, string(principal, "principal"), ctx);
+        // The revoke LANDED. Reading the list back is a courtesy for the dialog,
+        // and a caller who just removed their OWN last grant may no longer read
+        // it — that is §9.4's masking answering a different question, not a
+        // failed removal, and reporting it as one told them to retry work that
+        // was already done. Answer with what they can still legitimately see:
+        // nothing.
+        //
+        // Only `can()` may be forgiven here, and `can()` always refuses with a
+        // VendoError — so the TYPE is half the test. A hosted store carries a
+        // misbehaving console's failure on a plain Error with the server's code
+        // attached (hosted-store.ts), and "the console said not-found" is not
+        // "the caller may no longer look": that, and every other failure,
+        // surfaces.
+        const remaining = await deps.apps.access.list(appId, ctx).catch((reason: unknown) => {
+          const masked = reason instanceof VendoError
+            && (reason.code === "not-found" || reason.code === "forbidden");
+          if (masked) return [];
+          throw reason;
+        });
+        return json({ grants: remaining });
+      }
+    }
+    if (request.method === "POST" && operation === "promote" && segments.length === 3) {
+      const body = await requestJson(request);
+      return json(await deps.apps.promote(appId, string(body["orgId"], "orgId"), ctx));
     }
     return undefined;
   }),

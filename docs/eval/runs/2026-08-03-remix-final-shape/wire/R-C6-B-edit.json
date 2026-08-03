@@ -1,0 +1,58 @@
+{
+  "appId": "app_a38ec75f-d2d7-440a-81e6-588da5cef65d",
+  "instruction": "add a donut of documents by status next to it",
+  "status": 200,
+  "wireMs": 67563,
+  "response": {
+    "app": {
+      "format": "vendo/app@1",
+      "id": "app_a38ec75f-d2d7-440a-81e6-588da5cef65d",
+      "name": "MissingDocsHero remix",
+      "ui": "tree",
+      "tree": {
+        "formatVersion": "vendo-genui/v2",
+        "root": "root",
+        "nodes": [
+          {
+            "id": "root",
+            "source": "prewired",
+            "children": [
+              "pinnedmissingdocshero9380a4f2-1"
+            ],
+            "component": "Stack"
+          },
+          {
+            "id": "pinnedmissingdocshero9380a4f2-1",
+            "source": "generated",
+            "component": "PinnedMissingDocsHero9380a4f2"
+          }
+        ],
+        "queries": [
+          {
+            "name": "doc_status_summary",
+            "tool": "list_client_documents",
+            "input": {}
+          }
+        ]
+      },
+      "components": {
+        "PinnedMissingDocsHero9380a4f2": "\"use client\"\n\n/**\n * The dashboard's hero number — clients with documents still outstanding —\n * remixable by Vendo (06-apps §8).\n *\n * Deliberately self-contained (React only, inline styles) so `vendo sync`\n * static capture reproduces it faithfully inside the sandboxed jail, whose\n * module space is React plus captured sub-sources and whose CSS is the\n * captured app-root stylesheet, not the compiled Tailwind bundle. The values\n * mirror the Cadence brand tokens in `src/app/globals.css`.\n */\n\nconst INK = \"#111111\"\nconst INK_SOFT = \"#46443f\"\nconst INK_FAINT = \"#908c85\"\nconst LINE = \"#ecebe8\"\nconst LEDGER_GREEN = \"#1e7f53\"\nconst STATUS_MISSING = \"#a16207\"\nconst STATUS_MISSING_BG = \"#faf3e3\"\nconst FONT = 'var(--font-inter, system-ui), ui-sans-serif, system-ui, sans-serif'\n\n// Donut slice colors — ink-family, no traffic-light palette\nconst SLICE_COLORS = [\"#111111\", \"#908c85\", \"#c8c5be\", \"#e2e0db\"]\n\nexport interface MissingDocsHeroProps {\n  /** Clients with at least one outstanding (missing/rejected) document. */\n  missingCount: number\n  /** All active clients. */\n  clientCount: number\n  badgeLabel?: string\n}\n\nfunction humanizeStatus(raw: string): string {\n  const map: Record<string, string> = {\n    missing: \"Missing\",\n    missing_docs: \"Missing\",\n    received: \"Received\",\n    upload_received: \"Received\",\n    verified: \"Verified\",\n    review: \"Needs review\",\n    needs_review: \"Needs review\",\n    rejected: \"Rejected\",\n    overdue: \"Overdue\",\n    pending: \"Pending\",\n  }\n  const key = (raw || \"\").toLowerCase().replace(/-/g, \"_\")\n  return map[key] ?? raw.replace(/_/g, \" \").replace(/\\b\\w/g, c => c.toUpperCase())\n}\n\nfunction DonutChart({ slices }: { slices: { label: string; value: number; color: string }[] }) {\n  const total = slices.reduce((s, d) => s + d.value, 0)\n  if (total === 0) return null\n\n  const R = 44\n  const CX = 56\n  const CY = 56\n  const STROKE = 18\n\n  let cumAngle = -Math.PI / 2\n  const paths = slices.map((slice, i) => {\n    const frac = slice.value / total\n    const angle = frac * 2 * Math.PI\n    const x1 = CX + R * Math.cos(cumAngle)\n    const y1 = CY + R * Math.sin(cumAngle)\n    cumAngle += angle\n    const x2 = CX + R * Math.cos(cumAngle)\n    const y2 = CY + R * Math.sin(cumAngle)\n    const large = angle > Math.PI ? 1 : 0\n    const d = `M ${x1} ${y1} A ${R} ${R} 0 ${large} 1 ${x2} ${y2}`\n    return { d, color: slice.color, key: i }\n  })\n\n  return (\n    <svg width={112} height={112} viewBox=\"0 0 112 112\" aria-hidden>\n      {paths.map(p => (\n        <path\n          key={p.key}\n          d={p.d}\n          fill=\"none\"\n          stroke={p.color}\n          strokeWidth={STROKE}\n          strokeLinecap=\"butt\"\n        />\n      ))}\n      <circle cx={CX} cy={CY} r={R - STROKE / 2 - 1} fill=\"#ffffff\" />\n      <text\n        x={CX}\n        y={CY - 6}\n        textAnchor=\"middle\"\n        dominantBaseline=\"middle\"\n        fontSize={13}\n        fontWeight={600}\n        fill={INK}\n        fontFamily={FONT}\n      >\n        {total}\n      </text>\n      <text\n        x={CX}\n        y={CY + 10}\n        textAnchor=\"middle\"\n        dominantBaseline=\"middle\"\n        fontSize={9}\n        fill={INK_FAINT}\n        fontFamily={FONT}\n      >\n        docs\n      </text>\n    </svg>\n  )\n}\n\nfunction StatusDonut() {\n  const [slices, setSlices] = useState<{ label: string; value: number; color: string }[]>([])\n  const [loading, setLoading] = useState(true)\n\n  useEffect(() => {\n    let cancelled = false\n    async function load() {\n      try {\n        const result = await tools.list_client_documents({})\n        if (cancelled) return\n        const docs = Array.isArray(result) ? result : Array.isArray(result?.data) ? result.data : []\n        const counts: Record<string, number> = {}\n        for (const doc of docs) {\n          const s = (doc.status || doc.document_status || \"unknown\").toLowerCase()\n          counts[s] = (counts[s] || 0) + 1\n        }\n        const entries = Object.entries(counts).sort((a, b) => b[1] - a[1])\n        const built = entries.map(([status, value], i) => ({\n          label: humanizeStatus(status),\n          value,\n          color: SLICE_COLORS[i % SLICE_COLORS.length],\n        }))\n        setSlices(built)\n      } catch {\n        // leave empty\n      } finally {\n        if (!cancelled) setLoading(false)\n      }\n    }\n    load()\n    return () => { cancelled = true }\n  }, [])\n\n  if (loading) {\n    return (\n      <div style={{ width: 112, height: 112, display: \"flex\", alignItems: \"center\", justifyContent: \"center\" }}>\n        <span style={{ fontSize: 11, color: INK_FAINT, fontFamily: FONT }}>Loading…</span>\n      </div>\n    )\n  }\n\n  if (slices.length === 0) {\n    return (\n      <div style={{ width: 112, height: 112, display: \"flex\", alignItems: \"center\", justifyContent: \"center\" }}>\n        <span style={{ fontSize: 11, color: INK_FAINT, fontFamily: FONT }}>No data</span>\n      </div>\n    )\n  }\n\n  return (\n    <div style={{ display: \"flex\", flexDirection: \"column\", alignItems: \"flex-start\", gap: 8 }}>\n      <DonutChart slices={slices} />\n      <div style={{ display: \"flex\", flexDirection: \"column\", gap: 3 }}>\n        {slices.map((s, i) => (\n          <div key={i} style={{ display: \"flex\", alignItems: \"center\", gap: 5 }}>\n            <span style={{ width: 8, height: 8, borderRadius: 2, background: s.color, flexShrink: 0 }} />\n            <span style={{ fontSize: 11, color: INK_SOFT, fontFamily: FONT, whiteSpace: \"nowrap\" }}>\n              {s.label}\n              <span style={{ color: INK_FAINT, marginLeft: 4 }}>{s.value}</span>\n            </span>\n          </div>\n        ))}\n      </div>\n    </div>\n  )\n}\n\nexport function MissingDocsHero({\n  missingCount,\n  clientCount,\n  badgeLabel = \"Action needed\",\n}: MissingDocsHeroProps) {\n  return (\n    <article\n      style={{\n        borderRadius: 12,\n        border: `1px solid ${LINE}`,\n        background: \"#ffffff\",\n        boxShadow: `inset 3px 0 0 ${LEDGER_GREEN}, 0 1px 2px rgba(17,17,17,0.04)`,\n        padding: 20,\n        fontFamily: FONT,\n      }}\n    >\n      <p\n        style={{\n          margin: 0,\n          fontSize: 13,\n          fontWeight: 500,\n          whiteSpace: \"nowrap\",\n          color: INK_SOFT,\n        }}\n      >\n        Clients still owing documents\n      </p>\n      <div\n        style={{\n          marginTop: 12,\n          display: \"flex\",\n          alignItems: \"flex-start\",\n          justifyContent: \"space-between\",\n          gap: 24,\n        }}\n      >\n        {/* Left: hero number + badge + caption */}\n        <div style={{ flex: \"1 1 auto\" }}>\n          <div\n            style={{\n              display: \"flex\",\n              alignItems: \"center\",\n              justifyContent: \"space-between\",\n              gap: 12,\n            }}\n          >\n            <span\n              style={{\n                fontSize: 40,\n                lineHeight: 1,\n                fontWeight: 600,\n                letterSpacing: \"-0.025em\",\n                color: INK,\n                fontVariantNumeric: \"tabular-nums\",\n              }}\n            >\n              {missingCount}\n            </span>\n            <span\n              style={{\n                display: \"inline-flex\",\n                alignItems: \"center\",\n                gap: 6,\n                borderRadius: 9999,\n                padding: \"2px 8px\",\n                fontSize: 11,\n                fontWeight: 500,\n                whiteSpace: \"nowrap\",\n                background: STATUS_MISSING_BG,\n                color: STATUS_MISSING,\n              }}\n            >\n              <span\n                aria-hidden\n                style={{\n                  width: 6,\n                  height: 6,\n                  borderRadius: 9999,\n                  background: \"currentcolor\",\n                }}\n              />\n              {badgeLabel}\n            </span>\n          </div>\n          <p\n            style={{\n              margin: \"10px 0 0\",\n              fontSize: 12,\n              color: INK_FAINT,\n            }}\n          >\n            of {clientCount} active clients need chasing\n          </p>\n        </div>\n\n        {/* Right: donut by document status */}\n        <div\n          style={{\n            flexShrink: 0,\n            borderLeft: `1px solid ${LINE}`,\n            paddingLeft: 20,\n          }}\n        >\n          <p style={{ margin: \"0 0 8px\", fontSize: 11, fontWeight: 500, color: INK_SOFT }}>\n            Documents by status\n          </p>\n          <StatusDonut />\n        </div>\n      </div>\n    </article>\n  )\n}\n\n// <Remixable> derives its remix slot from this identity at runtime, and the\n// production bundle minifies the function name away — displayName is the\n// React-canonical identity that survives, matching the exported identifier\n// sync captures the baseline under.\nMissingDocsHero.displayName = \"MissingDocsHero\"\n\n// The jail's module loader renders a fork's DEFAULT export (08-ui §5), so a\n// remixable component must carry one; the named export stays for host imports.\nexport default MissingDocsHero\n"
+      },
+      "componentTools": {},
+      "pins": [
+        {
+          "slot": "MissingDocsHero",
+          "base": "sha256:b129041125772145d059e2ef0703bbd3849428f928b08646bda806b43720ecda"
+        }
+      ],
+      "placements": [
+        "MissingDocsHero"
+      ]
+    },
+    "version": {
+      "at": "2026-08-03T05:01:11.990Z",
+      "intent": "add a donut of documents by status next to it",
+      "rung": 1
+    }
+  }
+}

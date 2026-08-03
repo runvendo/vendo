@@ -19,12 +19,16 @@ import { ensureProviderDeps, ensureZodFloor, type InstallRunner } from "./provid
 import {
   customServerSource,
   expressServerSource,
+  importsGeneratedMap,
+  missingRegistrationLines,
+  missingRegistrations,
   registrySource,
+  requiredServerActions,
   routeSource,
   serverActionsModuleSource,
+  serverActionsWiring,
   VENDO_ENV_EXAMPLE,
   vendoRootWrapperSource,
-  wiringServerActions,
 } from "./init-scaffolds.js";
 import { createPrettyOutput, plainSelect, usePrettyOutput, type PrettyOutput, type SelectOption } from "./pretty.js";
 import { contrastingText } from "./theme/color.js";
@@ -35,6 +39,7 @@ import {
   type ThemeSlotValues,
   type ThemeSummary,
 } from "./theme/extract-theme.js";
+import { baseFrom, writeBase } from "./theme/provenance.js";
 import {
   askYesNo,
   cloudProjectProps,
@@ -42,6 +47,7 @@ import {
   envLocalValueSync,
   errorClass,
   exists,
+  invokedByPackageScript,
   readOptional,
   toolingTelemetry,
   type Output,
@@ -53,18 +59,23 @@ import {
  * questions on the happy path, no ceremony.
  *
  *   scan → wire (the surface files — empty vendo/registry.tsx, the client
- *   mount vendo/vendo-root.tsx, the catch-all handler wired to the registry,
- *   and the ONE bounded layout edit that mounts <VendoRoot> + <VendoOverlay />
- *   so a by-the-book install is actually visible (0.4.1 E2E cert B3); a
- *   detected auth preset gets one consent-style confirm in interactive runs,
+ *   mount vendo/vendo-root.tsx, the catch-all handler wired to the registry;
+ *   a detected auth preset gets one consent-style confirm in interactive runs,
  *   --yes/non-interactive accept it silently — plus package.json hooks)
  *   → key (env stated, else the cloud starter offer) → done summary (files
- *   changed, any remaining paste, next steps).
+ *   changed, the mount paste, next steps).
  *
- * The layout edit is the one place init touches user-authored code: it is
- * idempotent (skipped when <VendoRoot> or <VendoOverlay> is already mounted),
- * bounded (wrap the single JSX `{children}` + one import line), and degrades
- * to the printed paste when the layout can't be edited safely.
+ * INIT ONLY EVER CREATES FILES IN YOUR SOURCE TREE (locked DX law). Everything
+ * above is a NEW Vendo-owned file, or Vendo-owned config: `package.json`'s two
+ * sync hooks, and one idempotent append of `VENDO_BASE_URL` to `.env.example`
+ * (the only pre-existing host-authored file init still writes, and it appends
+ * — it never rewrites a line). A source file that already exists is never
+ * written at all, however stale: mounting the visible
+ * surface in the host's own layout, wiring `serverActions` into a route that
+ * predates the host's actions, refreshing a stale registration map — each one
+ * is the developer's paste, so the run ends with one unmissable block naming
+ * the file and the exact lines (the `ManualEdit`s below), and `vendo doctor`
+ * fails until they land (E-WIRE-004, E-WIRE-009).
  *
  * Removed by design: the interview, per-diff y/N approvals, the lib/ai.ts
  * scaffold (createVendo's `model` is optional now), remix offers, the
@@ -117,14 +128,37 @@ export interface RiskRecommendation {
   recommendation: string;
 }
 
+/** A step init cannot take for you. Init only ever CREATES files in your source
+    tree, so every change to a file that already exists — the visible-surface
+    mount, the server-action wiring — is the developer's paste, structured so
+    the terminal block, the `manualSteps` lines, and the `--agent` plan all
+    carry the SAME file and lines. */
+export interface ManualEdit {
+  /** The file the paste goes in, relative to the init root. */
+  file: string;
+  /** The exact lines to paste (or the diff to apply), in order. */
+  lines: string[];
+  /** What skipping it costs. */
+  why: string;
+}
+
 export interface InitPlan {
   framework: Exclude<HostFramework, "unknown"> | "custom";
   root: string;
   writes: string[];
   codeChanges: Array<{ path: string; diff: string }>;
-  /** Whatever wiring the run could not do safely itself (empty when the
-      layout auto-wire landed): the paste lines for the user. */
+  /** Whatever wiring the run could not do safely itself: the paste lines for
+      the user. Always carries the mount when one is outstanding. */
   manualSteps: string[];
+  /** The mount paste as data (absent when a surface is already mounted, and
+      on Express/custom hosts, whose two wiring lines have no single file to
+      name — they ride `manualSteps`). */
+  mount?: ManualEdit;
+  /** Changes init found for files that already exist and it therefore will not
+      write: an existing route.ts missing its `serverActions` wiring, a
+      registration map that has fallen behind the host's `"use server"`
+      surface. Absent when there are none. */
+  edits?: ManualEdit[];
   /** --agent only: deterministic extraction results, so an agent can act on
       real tool names instead of re-deriving them. */
   extraction?: { tools: ExtractedTool[]; warnings: string[] };
@@ -150,8 +184,11 @@ export interface InitOptions {
   cloudKey?: string;
   /** --byo: answer the cloud-login offer with "no — bring my own key". */
   byo?: boolean;
-  /** --ai-polish: consent to the AI extraction pass without the prompt. */
-  aiPolish?: boolean;
+  /** --ai / --no-ai (`--ai-polish` is the legacy spelling of `--ai`): `true`
+      runs the judgment pass with no prompt, `false` forces it off, and
+      `undefined` asks in an interactive run and skips otherwise. No answer is
+      ever persisted — every interactive run asks again. */
+  ai?: boolean;
   /** --engine: pin the AI-polish rung family (claude | codex | npx). */
   engine?: string;
   /** --theme slot=value answers for the uncertain-slot review. */
@@ -341,41 +378,36 @@ function diff(path: string, before: string | null, after: string): string {
 }
 
 /**
- * Wire the server-action registration map into an EXISTING generated route
- * (ENG-248 idempotency fix): a host that adds `"use server"` actions AFTER the
- * initial init gets vendo-actions.ts generated, but its route.ts still calls
- * `createVendo` without `serverActions` — so every server-action call fails
- * closed at runtime. Best-effort: rewrites only the recognized
- * `createVendo({ ... })` shape; returns null when already wired or the shape is
- * unrecognized (never corrupts a hand-customized route). Idempotent: a route
- * that already imports and passes serverActions yields null.
+ * The server-action wiring an EXISTING route is missing (ENG-248): a host that
+ * adds `"use server"` actions AFTER the initial init gets vendo-actions.ts
+ * generated, but its route.ts still calls `createVendo` without
+ * `serverActions` — so every server-action call fails closed at runtime. Init
+ * does not own a file it did not create, so this returns the developer's paste
+ * rather than a rewrite. Null when there is nothing to say: the route already
+ * passes a map (including one sourced from somewhere else — a local map, an
+ * aliased import — which our import would only shadow), or the composition is
+ * unrecognized and no honest two-line paste exists for it.
  */
-function wireRouteServerActions(source: string): string | null {
-  const importsMap = /from\s+["']\.\/vendo-actions["']/.test(source);
-  const call = source.match(/createVendo\(\s*\{/);
-  if (!call) return null; // unrecognized composition — leave it untouched
-  const callIndex = source.indexOf(call[0]);
-  const passesActions = /(^|[\s{,])serverActions\b/.test(source.slice(callIndex));
-  // Already wired, or hand-customized: a route that passes serverActions
-  // sourced from anywhere other than ./vendo-actions (a local map, an aliased
-  // import) would get a conflicting duplicate binding from our import — leave
-  // it untouched either way.
-  if (passesActions) return null;
-
-  let next = source;
-  if (!importsMap) {
-    const importLine = `import { serverActions } from "./vendo-actions";`;
-    const serverImport = next.match(/^.*from\s+["']@vendoai\/vendo\/server["'];?[^\n]*$/m);
-    if (serverImport) {
-      const at = next.indexOf(serverImport[0]) + serverImport[0].length;
-      next = `${next.slice(0, at)}\n${importLine}${next.slice(at)}`;
-    } else {
-      next = `${importLine}\n${next}`;
-    }
-  }
-  next = next.replace(/createVendo\(\s*\{/, (match) => `${match}\n  serverActions,`);
-  return next === source ? null : next;
+function routeServerActionsEdit(source: string, file: string): ManualEdit | null {
+  if (serverActionsWiring(source) !== "unwired") return null;
+  return {
+    file,
+    lines: [
+      ...(importsGeneratedMap(source) ? [] : [`import { serverActions } from "./vendo-actions";`]),
+      `… then add inside createVendo({ … }): serverActions,`,
+    ],
+    why: "createVendo dispatches server-action tools through that map — without it every one of them fails closed at execution time (no work performed).",
+  };
 }
+
+/** The auto-installed hooks carry `--no-ai` explicitly so they can never
+    prompt and never spend: a hook runs on someone's `npm run dev`/`build`,
+    which is exactly the run that must stay deterministic. `[hook, the bare
+    form earlier inits wrote, the flagged form]`. */
+const SYNC_HOOKS = [
+  ["predev", "vendo sync", "vendo sync --no-ai"],
+  ["prebuild", "vendo sync --strict", "vendo sync --strict --no-ai"],
+] as const;
 
 function packageWithSyncHooks(raw: string): string | null {
   const manifest = JSON.parse(raw) as Record<string, unknown>;
@@ -384,18 +416,28 @@ function packageWithSyncHooks(raw: string): string | null {
     ? priorScripts as Record<string, unknown>
     : {};
   let changed = false;
-  const hook = (name: "predev" | "prebuild", command: string): void => {
+  const hook = (name: string, bare: string, command: string): void => {
     const prior = scripts[name];
     if (typeof prior !== "string") {
       scripts[name] = command;
       changed = true;
-    } else if (!prior.includes(command)) {
-      scripts[name] = `${command} && ${prior}`;
-      changed = true;
+      return;
     }
+    const segments = prior.split("&&").map((segment) => segment.trim());
+    // Idempotent upgrade of the hookless entry a prior init wrote — and only
+    // that exact entry. Any other `vendo sync …` in the script is the user's
+    // own call (their flags, their order) and is left alone; a script with no
+    // vendo sync at all gets the flagged command prepended.
+    if (segments.includes(bare)) {
+      scripts[name] = segments.map((segment) => (segment === bare ? command : segment)).join(" && ");
+      changed = true;
+      return;
+    }
+    if (segments.some((segment) => segment.startsWith("vendo sync"))) return;
+    scripts[name] = `${command} && ${prior}`;
+    changed = true;
   };
-  hook("predev", "vendo sync");
-  hook("prebuild", "vendo sync --strict");
+  for (const [name, bare, command] of SYNC_HOOKS) hook(name, bare, command);
   if (!changed) return null;
   manifest["scripts"] = scripts;
 
@@ -472,13 +514,66 @@ async function setupSkillSource(): Promise<string | null> {
   }
 }
 
-/** The remaining manual wiring lines, derived from how far the auto-wire got.
-    A layout wired this run (or one that already mounts a surface) leaves
-    nothing to paste; an uneditable layout gets the wrapper paste (the wrapper
-    owns the registry/theme imports — pasting them into a Server Component
-    layout is the RSC-serialization crash the wrapper exists to avoid); a
-    <VendoRoot>-without-surface host gets the one overlay line; Express keeps
-    its printed wiring lines. */
+/** The mount paste for a Next host, as data. A host that already mounts a
+    surface needs nothing; a <VendoRoot>-without-surface host needs the one
+    overlay line; everyone else pastes the wrapper mount (the wrapper owns the
+    registry/theme imports — pasting them into a Server Component layout is the
+    RSC-serialization crash the wrapper exists to avoid). Null on Express and
+    custom hosts: their wiring has no single host file to name, so it stays in
+    the printed lines below. */
+async function mountStep(root: string, layout: LayoutWiring, withRegistry: boolean): Promise<ManualEdit | null> {
+  if (layout.kind === "already" || layout.kind === "express" || layout.kind === "custom") return null;
+  if (layout.kind === "overlay-missing") {
+    return {
+      file: layout.layoutPath,
+      lines: [
+        `import { VendoOverlay } from "@vendoai/vendo/react";`,
+        `… then add inside <VendoRoot>: <VendoOverlay />`,
+      ],
+      why: "<VendoRoot> is a context provider — it renders nothing. <VendoOverlay /> is the launcher pill + panel your users open.",
+    };
+  }
+  const app = await appDirectory(root);
+  const { file: entry, children } = await clientRoot(root);
+  const entryDir = dirname(entry);
+  if (withRegistry) {
+    const wrapperSpecifier = relative(entryDir, join(dirname(app), "vendo", "vendo-root")).split(sep).join("/");
+    return {
+      file: relative(root, entry),
+      lines: [
+        `import { VendoRoot } from ${JSON.stringify(wrapperSpecifier)};`,
+        `… then wrap: <VendoRoot>${children}</VendoRoot>`,
+      ],
+      why: `${join("vendo", "vendo-root.tsx")} mounts <VendoOverlay />, the visible launcher + panel — until this lands, Vendo is wired but invisible.`,
+    };
+  }
+  // No registry consumer (a hand-wired route that ignores it): the direct
+  // provider + overlay paste — theme.json is serializable, so it may cross
+  // the Server Component boundary; the registry may not.
+  const specifier = await themeImportSpecifier(root, entryDir);
+  return {
+    file: relative(root, entry),
+    lines: [
+      `import { VendoOverlay, VendoRoot } from "@vendoai/vendo/react";`,
+      ...(specifier === null
+        ? []
+        : [
+            `import theme from ${JSON.stringify(specifier)};`,
+            `import type { VendoTheme } from "@vendoai/vendo";`,
+          ]),
+      `… then wrap: <VendoRoot${specifier === null ? "" : " theme={theme as VendoTheme}"}>${children}<VendoOverlay /></VendoRoot>`,
+    ],
+    why: "<VendoRoot> alone renders nothing — <VendoOverlay /> is the visible launcher + panel; until this lands, Vendo is wired but invisible.",
+  };
+}
+
+/** A manual edit as the compact printed/plan lines. */
+function editLines(step: ManualEdit): string[] {
+  return [`In ${step.file}:`, ...step.lines.map((line) => `  ${line}`), `  (${step.why})`];
+}
+
+/** Everything the run could not do itself: the mount paste plus, on Express
+    and custom runtimes, their own two wiring lines. */
 async function manualWiringLines(root: string, layout: LayoutWiring, withRegistry: boolean): Promise<string[]> {
   if (layout.kind === "express") {
     const wrap = withRegistry
@@ -499,42 +594,8 @@ async function manualWiringLines(root: string, layout: LayoutWiring, withRegistr
       `Set VENDO_BASE_URL to the deployed origin (credential forwarding fails closed without it).`,
     ];
   }
-  if (layout.kind === "wired" || layout.kind === "already") return [];
-  if (layout.kind === "overlay-missing") {
-    return [
-      `In ${layout.layoutPath}: nothing renders yet — <VendoRoot> is a context provider. Mount the visible surface inside it:`,
-      `  import { VendoOverlay } from "@vendoai/vendo/react";`,
-      `  … then add: <VendoOverlay />  (the launcher pill + panel users open)`,
-    ];
-  }
-  const app = await appDirectory(root);
-  const { file: entry, children } = await clientRoot(root);
-  const entryDir = dirname(entry);
-  const entryRel = relative(root, entry);
-  if (withRegistry) {
-    const wrapperSpecifier = relative(entryDir, join(dirname(app), "vendo", "vendo-root")).split(sep).join("/");
-    return [
-      `In ${entryRel}:`,
-      `  import { VendoRoot } from ${JSON.stringify(wrapperSpecifier)};`,
-      `  … then wrap: <VendoRoot>${children}</VendoRoot>`,
-      `  (${join("vendo", "vendo-root.tsx")} mounts <VendoOverlay />, the visible launcher + panel)`,
-    ];
-  }
-  // No registry consumer (a hand-wired route that ignores it): the direct
-  // provider + overlay paste — theme.json is serializable, so it may cross
-  // the Server Component boundary; the registry may not.
-  const specifier = await themeImportSpecifier(root, entryDir);
-  const importLines = [
-    `import { VendoOverlay, VendoRoot } from "@vendoai/vendo/react";`,
-    ...(specifier === null
-      ? []
-      : [
-          `import theme from ${JSON.stringify(specifier)};`,
-          `import type { VendoTheme } from "@vendoai/vendo";`,
-        ]),
-  ];
-  const wrap = `<VendoRoot${specifier === null ? "" : " theme={theme as VendoTheme}"}>${children}<VendoOverlay /></VendoRoot>`;
-  return [`In ${entryRel}:`, ...importLines.map((line) => `  ${line}`), `  … then wrap: ${wrap}`];
+  const step = await mountStep(root, layout, withRegistry);
+  return step === null ? [] : editLines(step);
 }
 
 /** The repo-specific agent tail (agent-install-dx): a non-interactive
@@ -554,6 +615,8 @@ async function agentTailLines(args: {
   /** No model credential resolved this run — the tail points the agent at
       the auth.md key flow (Agent Install DX, Layer 2). */
   cloudKeyMissing: boolean;
+  /** Files that already existed, so init printed the change instead. */
+  edits: ManualEdit[];
 }): Promise<string[]> {
   const lines: string[] = [];
   // Auth is a tail fact only when a composition was created this run — a
@@ -577,13 +640,14 @@ async function agentTailLines(args: {
     // No exact entry file exists to name on Express — point at the printed
     // wiring lines instead of guessing a path.
     lines.push("edit your server and client entries — paste the mountVendo() and <VendoRoot>/<VendoOverlay /> lines above (without a mounted surface, users see nothing)");
-  } else if (args.layout.kind === "wired") {
-    lines.push(`surface: ${args.layout.layoutPath} wired this run — <VendoRoot> wraps the app and mounts <VendoOverlay /> (the visible launcher + panel) via ${join("vendo", "vendo-root.tsx")}; review the diff`);
   } else if (args.layout.kind === "overlay-missing") {
     lines.push(`edit ${args.layout.layoutPath} — add <VendoOverlay /> inside your <VendoRoot> (see the lines above; <VendoRoot> alone renders NOTHING visible)`);
   } else if (args.layout.kind === "manual") {
     const entry = relative(args.root, (await clientRoot(args.root)).file);
     lines.push(`edit ${entry} — wrap the app in the <VendoRoot> lines above (it mounts <VendoOverlay />, the visible surface; without it users see nothing)`);
+  }
+  for (const edit of args.edits) {
+    lines.push(`edit ${edit.file} — apply the change printed above yourself (it already exists, so init did not write it)`);
   }
   if (await readOptional(join(args.root, ".vendo", "brief.md")) === BRIEF_PLACEHOLDER) {
     lines.push(`edit ${join(".vendo", "brief.md")} — replace the placeholder with what this product does and for whom`);
@@ -633,19 +697,17 @@ export function starViaGh(spawnStar: NonNullable<InitOptions["spawnStar"]>, time
   });
 }
 
-/** How the visible surface reached (or didn't reach) the host's layout —
-    drives the manual fallback lines and the agent tail. */
+/** Whether the visible surface is already mounted in the host's own source —
+    drives the mount paste and the agent tail. Init never edits those files, so
+    there is no "wired by init" state: the only question is what is left for
+    the developer to paste. */
 type LayoutWiring =
-  /** Init edited the layout this run: <VendoRoot> (the generated wrapper)
-      now wraps `{children}` and mounts <VendoOverlay />. */
-  | { kind: "wired"; layoutPath: string }
   /** The layout already mounts <VendoRoot> but no <VendoOverlay /> is
       mounted anywhere obvious — the one remaining paste is the overlay. */
   | { kind: "overlay-missing"; layoutPath: string }
   /** A Vendo mount already exists — nothing to do or say. */
   | { kind: "already" }
-  /** The layout couldn't be edited safely (missing, no single JSX
-      `{children}`) — the printed paste is the fallback. */
+  /** Nothing mounts Vendo yet — the printed paste is the step. */
   | { kind: "manual" }
   /** Express hosts keep their two printed wiring lines. */
   | { kind: "express" }
@@ -653,53 +715,15 @@ type LayoutWiring =
       printed wiring lines — route requests through it, mount the client. */
   | { kind: "custom" };
 
-/** Where the wrapped `{children}` insert lands: the SINGLE JSX-rendered
-    `{children}` (between a `>` and a `<`). Requiring the JSX position keeps
-    the layout's own `({ children })` parameter destructure out of the count. */
-const LAYOUT_CHILDREN = /(>)(\s*\{\s*children\s*\}\s*)(<)/g;
-
-/** End index for the wrapper import: after the last top-level import
-    statement (lazy up to its module-specifier string literal, so multi-line
-    destructures work), else after a leading directive ("use client"), else 0. */
-function importInsertionIndex(source: string): number {
-  const heads = [...source.matchAll(/^import\b/gm)];
-  if (heads.length === 0) {
-    const directive = /^(?:\s*(?:'[^']*'|"[^"]*");?[^\S\n]*\n)+/.exec(source);
-    return directive === null ? 0 : directive[0].length;
-  }
-  const last = heads[heads.length - 1]!.index!;
-  const statement = /import\s[\s\S]*?["'][^"']*["'][^\S\n]*;?/.exec(source.slice(last));
-  const end = last + (statement === null ? 0 : statement[0].length);
-  const newline = source.indexOf("\n", end);
-  return newline === -1 ? source.length : newline + 1;
-}
-
-/**
- * The one bounded edit init makes to user-authored code (visible-surface fix,
- * 0.4.1 E2E cert B3): mount the generated client wrapper around the layout's
- * `{children}` and import it. Null — leave the file untouched, fall back to
- * the printed paste — whenever a Vendo mount already exists (idempotence) or
- * the file doesn't have exactly one JSX `{children}` to wrap (ambiguity).
- * Exported for direct unit tests.
- */
-export function wireNextLayout(source: string, wrapperSpecifier: string): string | null {
-  if (source.includes("VendoRoot") || source.includes("VendoOverlay")) return null;
-  const matches = [...source.matchAll(LAYOUT_CHILDREN)];
-  if (matches.length !== 1) return null;
-  const match = matches[0]!;
-  const open = match.index! + match[1]!.length;
-  const close = match.index! + match[0]!.length - match[3]!.length;
-  let next = `${source.slice(0, open)}<VendoRoot>${source.slice(open, close)}</VendoRoot>${source.slice(close)}`;
-  const at = importInsertionIndex(next);
-  const importLine = `import { VendoRoot } from ${JSON.stringify(wrapperSpecifier)};\n`;
-  next = `${next.slice(0, at)}${importLine}${next.slice(at)}`;
-  return next;
-}
-
 async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, selectAuth?: SelectAuth): Promise<{
   plan: InitPlan;
   changes: PlannedChange[];
   manualSteps: string[];
+  /** The mount paste as data; null when a surface is already mounted or the
+      host is Express/custom (their lines ride `manualSteps`). */
+  mount: ManualEdit | null;
+  /** Changes to files that already exist, which init therefore leaves alone. */
+  edits: ManualEdit[];
   authAdvice: string | null;
   /** What the fresh composition wired (agent-tail fact); null when no
       composition was created this run OR it stayed anonymous. */
@@ -719,6 +743,7 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
   const detected = options.framework ?? await detectFramework(root);
   const framework: "next" | "express" | "custom" = detected === "unknown" ? "custom" : detected;
   const changes: PlannedChange[] = [];
+  const edits: ManualEdit[] = [];
   let authAdvice: string | null = null;
   let authWired: AuthMatch | null = null;
   let compositionPath: string | null = null;
@@ -804,7 +829,7 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
     const actionsModule = join(app, "api", "vendo", "[...vendo]", "vendo-actions.ts");
     const routeBefore = await readOptional(route);
     const actionsBefore = await readOptional(actionsModule);
-    const registrations = await wiringServerActions(root);
+    const registrations = await requiredServerActions(root);
     // The shared registry mirrors the app dir (src/app → src/vendo): generated
     // only while absent and only when the route uses it — a fresh scaffold, or
     // a route that already imports vendo/registry. A hand-wired route that
@@ -820,14 +845,34 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
       registryPath = path;
     }
     withRegistry = registryBefore !== null || registryPlanned;
-    // The registration map regenerates whenever the detected "use server"
-    // surface changes; an existing map is kept compiling (emptied, never
-    // deleted) when the last action disappears.
-    if (registrations.length > 0 || actionsBefore !== null) {
-      const actionsAfter = serverActionsModuleSource(root, dirname(actionsModule), registrations);
-      if (actionsAfter !== actionsBefore) {
-        const path = relative(root, actionsModule);
-        changes.push({ absolute: actionsModule, path, before: actionsBefore, after: actionsAfter, diff: diff(path, actionsBefore, actionsAfter) });
+    // The registration map is generated once, when the host's first
+    // "use server" action appears. After that it is the developer's file and is
+    // never rewritten — so an existing one is compared by the KEYS it registers,
+    // not byte-for-byte. Byte-comparing would demand a paste for their own
+    // formatting, their own extra entries, and even a reworded comment in a
+    // Vendo release, forever, on a surface that never moved.
+    // …and the map exists only for a route that will CONSUME it: the one being
+    // created now, one that already imports ./vendo-actions, or one init is
+    // about to hand the import paste to. A route composing its own map never
+    // grows an orphan — the same rule the registry above follows, and the same
+    // shape doctor stays silent about.
+    const mapConsumed = routeBefore === null
+      || importsGeneratedMap(routeBefore)
+      || serverActionsWiring(routeBefore) === "unwired";
+    if (registrations.length > 0 && mapConsumed) {
+      const path = relative(root, actionsModule);
+      if (actionsBefore === null) {
+        const actionsAfter = serverActionsModuleSource(root, dirname(actionsModule), registrations);
+        changes.push({ absolute: actionsModule, path, before: null, after: actionsAfter, diff: diff(path, null, actionsAfter) });
+      } else {
+        const missing = missingRegistrations(actionsBefore, registrations);
+        if (missing.length > 0) {
+          edits.push({
+            file: path,
+            lines: missingRegistrationLines(root, dirname(actionsModule), actionsBefore, missing),
+            why: `${missing.length} action${missing.length === 1 ? "" : "s"} the host exposes ${missing.length === 1 ? "is" : "are"} not registered here — ${missing.length === 1 ? "it fails" : "each one fails"} closed at execution time (no work performed). The rest of the file is yours; nothing else needs to change.`,
+          });
+        }
       }
     }
     if (routeBefore === null) {
@@ -842,54 +887,39 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
       compositionPath = path;
     } else if (registrations.length > 0) {
       // The route already exists but server actions appeared since it was
-      // generated: wire the registration map into the existing createVendo so
-      // server-action execution doesn't fail closed (ENG-248 idempotency fix).
-      const wiredRoute = wireRouteServerActions(routeBefore);
-      if (wiredRoute !== null) {
-        const path = relative(root, route);
-        changes.push({ absolute: route, path, before: routeBefore, after: wiredRoute, diff: diff(path, routeBefore, wiredRoute) });
-      }
+      // generated: name the wiring the existing createVendo is missing, so
+      // server-action execution stops failing closed (ENG-248).
+      const edit = routeServerActionsEdit(routeBefore, relative(root, route));
+      if (edit !== null) edits.push(edit);
     }
 
     // Visible surface (0.4.1 E2E cert B3): the client mount wrapper next to
     // the registry — the "use client" boundary that owns the registry + theme
     // imports (passing the registry from the Server Component layout into the
-    // client provider fails RSC serialization) and mounts <VendoOverlay /> —
-    // plus the ONE bounded layout edit that wraps `{children}` in it. Both
-    // idempotent: an existing wrapper is never clobbered, a layout already
-    // mounting <VendoRoot> or <VendoOverlay> is never re-edited, and an
-    // uneditable layout degrades to the printed paste.
+    // client provider fails RSC serialization) and mounts <VendoOverlay />.
+    // A NEW Vendo-owned file, so init writes it; mounting it in the host's own
+    // layout is the developer's paste (init never writes user-authored files),
+    // printed by mountStep and gated by doctor's E-WIRE-004.
     const wrapperFile = join(dirname(app), "vendo", "vendo-root.tsx");
     const wrapperBefore = await readOptional(wrapperFile);
-    const layoutFile = join(app, "layout.tsx");
-    const layoutBefore = await readOptional(layoutFile);
     // The generated wrapper doesn't count as a host mount: its overlay is
     // only real once a layout mounts the wrapper itself.
     const mounts = await detectVendoWiring(root, { exclude: [wrapperFile] });
     if (mounts.client || mounts.surface) {
       // A mounted <VendoRoot> next to an existing wrapper IS the surface —
-      // the wrapper renders <VendoOverlay /> (the re-run after an auto-wire).
+      // the wrapper renders <VendoOverlay />.
       layout = mounts.surface || wrapperBefore !== null
         ? { kind: "already" }
         // A pages-only host mounted <VendoRoot> in pages/_app.tsx, not in an
         // app/layout.tsx it doesn't have — name the file it really wraps in.
         : { kind: "overlay-missing", layoutPath: relative(root, (await clientRoot(root)).file) };
-    } else if (withRegistry) {
+    } else if (withRegistry && wrapperBefore === null) {
       // The wrapper consumes ./registry, so it exists only alongside one —
-      // a hand-wired host that ignores the registry keeps the manual paste.
-      if (wrapperBefore === null) {
-        const path = relative(root, wrapperFile);
-        const themeSpecifier = await themeImportSpecifier(root, dirname(wrapperFile));
-        const wrapperAfter = vendoRootWrapperSource({ themeSpecifier });
-        changes.push({ absolute: wrapperFile, path, before: null, after: wrapperAfter, diff: diff(path, null, wrapperAfter) });
-      }
-      const wrapperSpecifier = relative(app, join(dirname(app), "vendo", "vendo-root")).split(sep).join("/");
-      const layoutAfter = layoutBefore === null ? null : wireNextLayout(layoutBefore, wrapperSpecifier);
-      if (layoutAfter !== null) {
-        const path = relative(root, layoutFile);
-        changes.push({ absolute: layoutFile, path, before: layoutBefore, after: layoutAfter, diff: diff(path, layoutBefore, layoutAfter) });
-        layout = { kind: "wired", layoutPath: path };
-      }
+      // a hand-wired host that ignores the registry keeps the direct paste.
+      const path = relative(root, wrapperFile);
+      const themeSpecifier = await themeImportSpecifier(root, dirname(wrapperFile));
+      const wrapperAfter = vendoRootWrapperSource({ themeSpecifier });
+      changes.push({ absolute: wrapperFile, path, before: null, after: wrapperAfter, diff: diff(path, null, wrapperAfter) });
     }
   }
   const packageJson = join(root, "package.json");
@@ -928,12 +958,19 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
     ".vendo/policy.json",
     ".vendo/brief.md",
     ".vendo/theme.json",
+    ".vendo/theme.extracted.json",
     ".vendo/data/.gitignore",
   ];
-  const manualSteps = await manualWiringLines(root, layout, withRegistry);
+  const mount = await mountStep(root, layout, withRegistry);
+  const manualSteps = [
+    ...await manualWiringLines(root, layout, withRegistry),
+    ...edits.flatMap(editLines),
+  ];
   return {
     changes,
+    edits,
     manualSteps,
+    mount,
     authAdvice,
     authWired,
     compositionPath,
@@ -945,6 +982,8 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
       writes,
       codeChanges: changes.map(({ path, diff: rendered }) => ({ path, diff: rendered })),
       manualSteps,
+      ...(mount === null ? {} : { mount }),
+      ...(edits.length === 0 ? {} : { edits }),
     },
   };
 }
@@ -1012,7 +1051,8 @@ export async function runInit(options: InitOptions): Promise<number> {
   // Detect + confirm (interactive runs only): --yes and non-interactive runs
   // accept the detected default silently — the same interactivity posture as
   // the AI-polish consent.
-  const interactive = options.interactive ?? (Boolean(stdin.isTTY) && Boolean(stdout.isTTY));
+  const interactive = options.interactive
+    ?? (!invokedByPackageScript() && Boolean(stdin.isTTY) && Boolean(stdout.isTTY));
   // An undetectable framework has NO safe default: a non-interactive run
   // (agents) errors with the exact flag instead of guessing the Next layout
   // into an unknown host. An interactive run keeps today's fall-through to the
@@ -1045,7 +1085,7 @@ export async function runInit(options: InitOptions): Promise<number> {
     ? undefined
     : (options.selectAuth ?? (pretty === null ? plainSelect : pretty.select));
   const detectStarted = Date.now();
-  const { plan, changes, manualSteps, authAdvice, authWired, compositionPath, registryPath, layout } = await buildPlan(options, confirmAuth, selectAuth);
+  const { plan, changes, edits, manualSteps, mount, authAdvice, authWired, compositionPath, registryPath, layout } = await buildPlan(options, confirmAuth, selectAuth);
   const detectMs = Date.now() - detectStarted;
   let telemetry = telemetryFor(options, output, root);
   await telemetry.track("init_started", { framework: plan.framework });
@@ -1173,6 +1213,10 @@ export async function runInit(options: InitOptions): Promise<number> {
       themeMs = Date.now() - themeStarted;
       pretty?.stopSpin();
       await writeText(themePath, `${JSON.stringify(toVendoTheme(themeSummary.slots), null, 2)}\n`);
+      // The merge base for every later `vendo sync` theme re-scan: what the
+      // DETERMINISTIC pass read, before any model fill or --theme answer —
+      // those are decisions, and sync must pin them (theme/provenance.ts).
+      await writeBase(join(root, ".vendo"), baseFrom(themeSummary));
     }
     await writeIfMissing(join(root, ".vendo", "data", ".gitignore"), "*\n!.gitignore\n", options.force === true);
 
@@ -1223,9 +1267,9 @@ export async function runInit(options: InitOptions): Promise<number> {
       output,
       env: effectiveEnv,
       yes: options.yes === true,
-      // --ai-polish IS the consent: no prompt, and non-interactive runs
-      // stop skipping.
-      ...(options.aiPolish === true ? { consent: true } : {}),
+      // --ai IS the consent (no prompt, non-interactive runs stop skipping);
+      // --no-ai is the refusal. No flag = ask, every interactive run.
+      ...(options.ai === undefined ? {} : { ai: options.ai }),
       ...(options.force === true ? { force: true } : {}),
       ...(options.engine === undefined ? {} : { engine: options.engine }),
       ...(pretty === null ? {} : { confirm: pretty.confirm, choose: pretty.select }),
@@ -1369,12 +1413,29 @@ export async function runInit(options: InitOptions): Promise<number> {
       output.error(`warning: installed ai@${aiVersion} is unsupported — Vendo supports ai@6; downgrade (npm install ai@^6 @ai-sdk/anthropic@^3 @ai-sdk/react@^3) or track github.com/runvendo/vendo/issues/478`);
     }
 
-    // Done — whatever paste remains (none when the layout auto-wire landed),
-    // then their own dev server.
-    if (layout.kind === "wired") {
-      output.log(`\nMounted <VendoRoot> + <VendoOverlay /> (the visible launcher + panel) in ${layout.layoutPath} — review the diff before committing.`);
+    // Done — the pastes init cannot take (it only ever CREATES files in your
+    // source tree), then their own dev server. They get their own framed block
+    // because skipping them is the whole failure mode: a green install nobody
+    // can see, or server-action tools that silently fail closed.
+    const handSteps = [...(mount === null ? [] : [mount]), ...edits];
+    if (handSteps.length > 0) {
+      const rule = "─".repeat(64);
+      output.log(`\n${rule}`);
+      output.log(handSteps.length === 1
+        ? "ONE STEP LEFT — paste this yourself (init never edits your files)"
+        : `${handSteps.length} STEPS LEFT — paste these yourself (init never edits your files)`);
+      for (const step of handSteps) {
+        output.log(`\n  File: ${step.file}`);
+        for (const line of step.lines) output.log(`    ${line}`);
+        output.log(`\n  ${step.why}`);
+      }
+      output.log("  Then confirm it landed: npx vendo doctor");
+      output.log(rule);
     }
-    if (manualSteps.length > 0) {
+    // Express and custom hosts have no single host file to name, so their
+    // wiring keeps the compact list; the block above already said everything
+    // a Next host needs, and nothing is printed twice.
+    if (handSteps.length === 0 && manualSteps.length > 0) {
       output.log("\nLast steps are yours:");
       for (const line of manualSteps) output.log(`  ${line}`);
     }
@@ -1388,14 +1449,20 @@ export async function runInit(options: InitOptions): Promise<number> {
     // key" is the whole story, while one init did not write may pass its own
     // `model` to createVendo — nothing here can see that, so state the
     // condition rather than guess either way.
+    // …and it only gets to speak at all once nothing is outstanding: a paste
+    // still pending means the frame above just said Vendo is invisible until
+    // it lands, so "the agent is live in your app" would contradict it in the
+    // same breath (self-serve audit F5).
     const modelReady = credential.rung === "env-key"
       || (credential.rung === "vendo-cloud" && cloud.keyValid);
-    output.log(`\nThen start your dev server — ${modelReady
-      ? "the agent is live in your app."
-      : compositionPath !== null
-        ? "the agent is live once you add a model key."
-        : "no model key resolved here, so the agent is live only if your composition passes its own model."}`);
-    output.log("Verify everything: `npx vendo doctor` (it can start the server and run a live turn).");
+    if (handSteps.length === 0) {
+      output.log(`\nThen start your dev server — ${modelReady
+        ? "the agent is live in your app."
+        : compositionPath !== null
+          ? "the agent is live once you add a model key."
+          : "no model key resolved here, so the agent is live only if your composition passes its own model."}`);
+    }
+    output.log(`${handSteps.length === 0 ? "" : "\n"}Verify everything: \`npx vendo doctor\` (it can start the server and run a live turn).`);
 
     // Agent tail (agent-install-dx): the --yes-or-non-TTY path is agent-driven
     // — the run's FINAL block is the repo-specific pointers an agent parses.
@@ -1403,7 +1470,7 @@ export async function runInit(options: InitOptions): Promise<number> {
     // never reaches here (its read-only JSON plan returned above).
     if (options.yes === true || !interactive) {
       output.log("\nAgent tail:");
-      const tail = await agentTailLines({ root, framework: plan.framework, registryPath, compositionPath, authWired, layout, cloudKeyMissing: credential.rung === "none" });
+      const tail = await agentTailLines({ root, framework: plan.framework, registryPath, compositionPath, authWired, layout, edits, cloudKeyMissing: credential.rung === "none" });
       for (const line of tail) output.log(`  ${line}`);
     } else {
       // Star ask (agent-install-dx §CLI-5): the interactive success screen
@@ -1437,6 +1504,16 @@ export async function runInit(options: InitOptions): Promise<number> {
       } catch {
         // The ask is best-effort by design; init already succeeded.
       }
+    }
+    // The run's LAST word is the outstanding paste, on both paths (self-serve
+    // audit F5: interactive installs used to end on the star ask with the one
+    // step that matters scrolled off-screen). The frame itself stays up-screen
+    // — the agent tail's "the lines above" pointers depend on that order — so
+    // the closer is a one-line echo of it, not a second copy.
+    if (handSteps.length > 0) {
+      output.log(handSteps.length === 1
+        ? `\n→ Don't forget the paste in ${handSteps[0]!.file} (frame above)`
+        : `\n→ Don't forget the ${handSteps.length} pastes above (frame above)`);
     }
     pretty?.done(Date.now() - started, true);
     return 0;

@@ -1,10 +1,14 @@
 import { join, resolve } from "node:path";
+import { stdin, stdout } from "node:process";
 import { vendoSync, type SyncReportWithWarnings } from "@vendoai/actions/sync";
 import type { ToolImpact } from "../sync-impact.js";
+import { pushPinBaselines } from "./cloud/pin-baselines.js";
 import { pushSyncReport } from "./cloud/services.js";
 import { mergeEnvOverDotEnv, readDotEnvFallback } from "./doctor.js";
 import { runJudgmentPass, type JudgmentPassOptions } from "./judge/pass.js";
-import { askYesNo, consoleOutput, withCommandRun, type Output, type TelemetryOptions } from "./shared.js";
+import { extractTheme } from "./theme/extract-theme.js";
+import { baseFrom, mergeExtraction, readBase, writeBase } from "./theme/provenance.js";
+import { askYesNo, consoleOutput, exists, invokedByPackageScript, readOptional, withCommandRun, writeText, type Output, type TelemetryOptions } from "./shared.js";
 
 export interface SyncReportPayload {
   report: SyncReportWithWarnings;
@@ -30,12 +34,23 @@ export interface SyncOptions {
   review?: boolean;
   /** --full: judge the whole catalog instead of only what moved. */
   full?: boolean;
-  /** --no-ai: workspace-internal sync — skip the judgment pass entirely (the
-   *  demo apps' predev/prebuild hooks; committed files must not churn).
-   *  `--no-watermark` remains a silent alias. */
-  noAi?: boolean;
+  /** --ai / --no-ai (`--no-watermark` is the legacy spelling of `--no-ai`):
+   *  `true` runs the judgment pass with no prompt, `false` forces it off, and
+   *  `undefined` asks in an interactive run and skips otherwise. Identical to
+   *  init's rule; no answer is ever persisted. */
+  ai?: boolean;
+  /** --yes: this run cannot ask (never prompt, take the flags as given). */
+  yes?: boolean;
+  /** --theme-refresh: take the deterministic theme scan's values even for
+   *  slots a human hand-edited. */
+  themeRefresh?: boolean;
   /** --engine: pin the judgment engine family (claude | codex | npx). */
   engine?: string;
+  /** Test seam: interactivity override for the AI question (default: TTY),
+   *  mirroring init's. */
+  interactive?: boolean;
+  /** Test seam: the wall-clock budget for the whole pin-baseline reconcile. */
+  baselineBudgetMs?: number;
   /** Judgment-pass seams (tests / init's chosen harness). */
   judge?: Pick<JudgmentPassOptions,
     "harness" | "harnesses" | "resolveCredential" | "confirm" | "onProgress">;
@@ -44,14 +59,22 @@ export interface SyncOptions {
 /** `sync --json` — the one machine-readable object printed on stdout. */
 export interface SyncJsonResult {
   ok: boolean;                       // exitCode === 0
-  /** 2 = uncapturable `<Remixable>` wrapper, or breaking changes under
+  /** 1 = the run could not do what was asked (`--report` with no Cloud key);
+   *  2 = uncapturable `<Remixable>` wrapper, or breaking changes under
    *  --strict; 3 = breaking changes with saved references. */
-  exitCode: 0 | 2 | 3;
+  exitCode: 0 | 1 | 2 | 3;
   report: SyncReportWithWarnings;
   /** [] = nothing referenced the changed tools; null = impact unknown (dev server unreachable). */
   impact: ToolImpact[] | null;
   /** CLI-level events not carried by the report (unreachable impact endpoint, report-push problems). */
   notes: string[];
+  /** The theme re-scan: which slots this run took from the host, and which
+   *  the host disagrees with but a human owns. null = no `.vendo/theme.json`
+   *  to reconcile (run `vendo init`). */
+  theme: { updated: string[]; pinned: string[] } | null;
+  /** The pin baselines reconciled with Vendo Cloud. null = keyless/BYO — the
+   *  baselines stayed on disk and no request was made. */
+  baselines: { pushed: string[]; pruned: string[] } | null;
   error?: string;                    // present when extraction itself failed soft
 }
 
@@ -89,6 +112,53 @@ function printImpact(output: Output, impact: ToolImpact[]): void {
 
 function nonzero(entry: ToolImpact): boolean {
   return entry.apps.length > 0 || entry.automations.length > 0 || entry.grants > 0;
+}
+
+/**
+ * The theme re-scan (decision 3): a rebrand must reach Vendo, but a hand edit
+ * must never be clobbered. Deterministic, keyless, and fail-soft — a theme
+ * problem is a note, never an exit code. See theme/provenance.ts for the law.
+ */
+async function reconcileTheme(
+  root: string,
+  vendoDir: string,
+  force: boolean,
+  note: (message: string) => void,
+): Promise<SyncJsonResult["theme"]> {
+  const raw = await readOptional(join(vendoDir, "theme.json"));
+  if (raw === null) return null;
+  let theme: unknown;
+  try {
+    theme = JSON.parse(raw);
+  } catch {
+    note("theme: .vendo/theme.json is not valid JSON — skipped (fix it, or delete it and re-run `vendo init`)");
+    return null;
+  }
+  const summary = await extractTheme(root);
+  const base = await readBase(vendoDir);
+  const merge = mergeExtraction({ theme, base, summary, ...(force ? { force: true } : {}) });
+  if (merge.theme !== null) {
+    await writeText(join(vendoDir, "theme.json"), `${JSON.stringify(merge.theme, null, 2)}\n`);
+  }
+  // The base advances whenever this run is unambiguous — everything agreed, or
+  // every disagreement was resolved. While disagreements remain unresolved it
+  // stays put, so the warning repeats every sync instead of quietly baking the
+  // stale value in as the new truth.
+  if (merge.pinned.length === 0) await writeBase(vendoDir, baseFrom(summary));
+  // One line, and every claim in it is literally true: "re-read" names ONLY
+  // the slots just written to theme.json, and a pinned slot shows BOTH values
+  // so nobody can read it as "your accent now tracks your CSS" — the earlier
+  // `accent → #b91c1c` phrasing read exactly like that assignment.
+  const parts: string[] = [];
+  if (merge.updated.length > 0) {
+    parts.push(`${merge.updated.length} slot${merge.updated.length === 1 ? "" : "s"} re-read from your app (${merge.updated.join(", ")}) → .vendo/theme.json`);
+  }
+  if (merge.pinned.length > 0) {
+    const detail = merge.pinned.map((entry) => `${entry.slot} — yours ${entry.mine} vs your app's ${entry.theirs}`).join("; ");
+    parts.push(`${merge.pinned.length} pinned by you, unchanged (${detail}) — \`vendo sync --theme-refresh\` takes your app's values`);
+  }
+  if (parts.length > 0) note(`theme: ${parts.join(" · ")}`);
+  return { updated: merge.updated, pinned: merge.pinned.map((entry) => entry.slot) };
 }
 
 /** 04-actions §1 / 09-vendo §5 — fail-soft extraction, strict CI gate. */
@@ -146,28 +216,55 @@ async function sync(options: SyncOptions): Promise<number> {
 
     const wireUrl = (options.url ?? process.env.VENDO_URL ?? "http://localhost:3000/api/vendo").replace(/\/+$/, "");
 
+    // Theme (decision 3): sync owns the WHOLE scan, so a rebrand reaches Vendo
+    // instead of the agent rendering the old brand forever. Runs before the
+    // judgment pass so `--json` still emits exactly one object at the end.
+    const theme = await reconcileTheme(root, vendoDir, options.themeRefresh === true, note);
+
+    // The credential env for both the judgment pass and the Cloud key: the
+    // project's dotenv must be visible, because `vendo login` and BYO keys land
+    // in `.env.local` / `.env` and a fresh shell that never `source`d them
+    // would otherwise sync structural-only with no signal why (#567). Reuse
+    // doctor's parser (never hand-roll) — real process env still wins over both
+    // files. Precedence end to end: explicit > process.env > .env.local > .env.
+    const env = mergeEnvOverDotEnv(await readDotEnvFallback(root), process.env);
+
     // The judgment pass: grade the freshly synced catalog, with a verbatim
     // quote behind every proposal and an independent skeptic checking each one.
     // Hardenings and prose apply themselves; loosenings wait for a human —
     // `--review` asks now, otherwise they queue as `pending`. Keyless resolves
-    // to one structural-only line; `--no-ai` (workspace-internal syncs) skips
-    // the pass entirely. Fail-soft like everything else in sync — the exit code
-    // never changes.
-    if (options.noAi !== true) {
-      // The judgment credential resolves from this env, so the project's
-      // dotenv must be visible: `vendo login` and BYO keys land in `.env.local`
-      // / `.env`, and a fresh shell that never `source`d them would otherwise
-      // sync structural-only with no signal why (#567). Reuse doctor's parser
-      // (never hand-roll) — real process env still wins over both files.
-      // Precedence end to end: explicit > process.env > .env.local > .env.
-      const judgeEnv = mergeEnvOverDotEnv(await readDotEnvFallback(root), process.env);
+    // to one structural-only line. Fail-soft like everything else in sync — the
+    // exit code never changes.
+    //
+    // Consent (decision 2, identical to init's rule): `--ai` runs it, `--no-ai`
+    // skips it, and with neither flag an interactive run ASKS — every run,
+    // because no answer is ever persisted — while a non-interactive one skips,
+    // so CI builds stay deterministic and never spend. `--json` and `--yes`
+    // are non-interactive by construction, and so is a run started by a
+    // package script: the `predev` hook an older init wrote has a TTY, but the
+    // human asked for a dev server, not a question (invokedByPackageScript).
+    const interactive = options.interactive
+      ?? (options.yes !== true && !json && !invokedByPackageScript()
+        && Boolean(stdin.isTTY) && Boolean(stdout.isTTY));
+    let runAi = options.ai;
+    if (runAi === undefined) {
+      runAi = interactive
+        && await (options.judge?.confirm ?? askYesNo)(
+          "Let a coding agent read this codebase to grade the tools sync just extracted? Source goes to your model provider under your account.",
+          true,
+        );
+      if (!runAi && !interactive) {
+        note("judgment: skipped — this run cannot ask (pass `--ai` to judge non-interactively, `--no-ai` to say so explicitly)");
+      }
+    }
+    if (runAi) {
       try {
         await runJudgmentPass({
           root,
           out: vendoDir,
           mode: options.full === true ? "full" : "incremental",
           loosenings: options.review === true ? "review" : "queue",
-          env: judgeEnv,
+          env,
           // --json keeps exactly one object on stdout, so the pass's narrative
           // rides the same `notes` channel every other human line does.
           output: { log: note, error: noteError },
@@ -204,10 +301,57 @@ async function sync(options: SyncOptions): Promise<number> {
       }
     }
 
+    // Pin baselines → Vendo Cloud (decision 4). Part of a NORMAL keyed sync,
+    // not something `--report` gates: the console's Remix reviews screen cannot
+    // show a fork's diff without the host baseline it forked from. Keyless/BYO
+    // makes no request at all, and a Cloud hiccup is a note — never a failed
+    // build. What crosses the wire is the captured component source; see
+    // cloud/pin-baselines.ts.
+    const cloudKey = options.apiKey ?? env.VENDO_API_KEY;
+    // No `.vendo/remixable/` at all means this host has never had a wrapper —
+    // nothing to push, and nothing Cloud could be holding to prune.
+    let baselines: SyncJsonResult["baselines"] = null;
+    if (await exists(join(vendoDir, "remixable")) && cloudKey !== undefined && cloudKey.trim() !== "") {
+      // Never throws: whatever landed before a failure is still accounted for,
+      // so `--json` can't report `null` over rows that really did reach Cloud.
+      const result = await pushPinBaselines({
+        vendoDir,
+        apiKey: cloudKey,
+        ...(options.apiUrl === undefined ? {} : { baseUrl: options.apiUrl }),
+        ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
+        ...(options.baselineBudgetMs === undefined ? {} : { budgetMs: options.baselineBudgetMs }),
+      });
+      baselines = { pushed: result.pushed, pruned: result.pruned };
+      if (result.unreadable.length > 0) {
+        // A file that exists but won't parse is a half-written capture, not a
+        // deleted slot — its Cloud row was deliberately left in place.
+        noteError(`warning: unreadable baselines left untouched in Vendo Cloud: ${result.unreadable.join(", ")} — re-run sync to recapture .vendo/remixable/<slot>.json`);
+      }
+      if (result.pushed.length > 0 || result.pruned.length > 0) {
+        note(`baselines → Vendo Cloud: ${result.pushed.length} pushed, ${result.pruned.length} pruned (component source crosses the wire so the console can review forks)`);
+      }
+      if (result.error !== undefined) {
+        noteError(`warning: pin baselines did not fully reach Vendo Cloud: ${result.error} — the rest stay in .vendo/remixable/ and the next sync retries`);
+      }
+    } else if (await exists(join(vendoDir, "remixable"))) {
+      // Captures exist but this environment has no key. Keyless is a supported
+      // path (BYO), so this is a statement of fact rather than a warning — but
+      // it must be SAID: a build env that lacks the key the runtime has pushes
+      // nothing, and the console then shows a fork it cannot diff.
+      note("baselines stay local — no Vendo Cloud key in this environment; Cloud's Remix reviews screen needs a keyed sync to diff forks");
+    }
+
+    let reportUnkeyed = false;
     if (options.report === true) {
-      const apiKey = options.apiKey ?? process.env.VENDO_API_KEY;
+      // The same resolved key the baseline push uses — a `--report` that saw a
+      // different env from the reconcile beside it was a trap (#567's fix
+      // applies to every keyed leg of a sync, not just the judgment pass).
+      const apiKey = cloudKey;
       if (!apiKey) {
-        noteError("--report requires VENDO_API_KEY or --key");
+        // Self-serve audit B6: this used to complain and exit 0, so a CI
+        // reporting lane stayed green for as long as it never reported.
+        reportUnkeyed = true;
+        noteError("vendo sync: --report needs a Vendo Cloud key — run `vendo login`, set VENDO_API_KEY, or pass --key.");
       } else {
         const payload: SyncReportPayload = {
           report,
@@ -233,6 +377,9 @@ async function sync(options: SyncOptions): Promise<number> {
       const breakingTools = new Set(report.breaking.map((breaking) => breaking.tool));
       exitCode = impact?.some((entry) => breakingTools.has(entry.tool) && nonzero(entry)) === true ? 3 : 2;
     }
+    // A --report that never reported is a failed run, whatever the catalog
+    // said; the --strict codes are more specific, so they keep their meaning.
+    if (reportUnkeyed && exitCode === 0) exitCode = 1;
     if (json) {
       const result: SyncJsonResult = {
         ok: exitCode === 0,
@@ -242,6 +389,8 @@ async function sync(options: SyncOptions): Promise<number> {
         // reachable dev server → unknown, surfaced as null plus a note.
         impact: impact ?? (tools.length === 0 ? [] : null),
         notes,
+        theme,
+        baselines,
       };
       output.log(JSON.stringify(result, null, 2));
     }
@@ -256,6 +405,8 @@ async function sync(options: SyncOptions): Promise<number> {
         report: { tools: { added: [], removed: [], changed: [] }, breaking: [], pins: { captured: [], drifted: [] }, remixableErrors: [], catalog: { discovered: 0, registered: 0 }, warnings: [] },
         impact: null,
         notes,
+        theme: null,
+        baselines: null,
         error: message,
       };
       output.log(JSON.stringify(result, null, 2));

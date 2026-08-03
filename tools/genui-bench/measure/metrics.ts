@@ -34,13 +34,6 @@ export interface AppMeasurement {
   queryCount: number;
   nodeCount: number;
 
-  /** Full-lane attempts, repair rounds, island-scoped repairs. */
-  fullAttempts: number;
-  repairRounds: number;
-  islandRepairs: number;
-  /** Validation issues still outstanding at any stage that reported them. */
-  validationIssues: string[];
-
   /** Host tools islands reach imperatively (compiler-stamped componentTools). */
   islandToolReads: string[];
   islandToolWrites: string[];
@@ -87,17 +80,6 @@ export function measureRecord(
   const islandToolWrites = reachedTools.filter((tool) => hostWrites.has(tool));
   const islandToolReads = reachedTools.filter((tool) => !hostWrites.has(tool));
 
-  let fullAttempts = 0;
-  let repairRounds = 0;
-  let islandRepairs = 0;
-  const validationIssues: string[] = [];
-  for (const event of lane?.status === "no-key" ? [] : (lane?.events ?? [])) {
-    if (event.stage === "full") fullAttempts += 1;
-    if (event.stage === "repair") repairRounds += event.rounds;
-    if (event.stage === "island-repair") islandRepairs += 1;
-    if ("issues" in event && event.issues !== undefined) validationIssues.push(...event.issues);
-  }
-
   return {
     runId: record.id,
     createdAt: record.createdAt,
@@ -114,11 +96,6 @@ export function measureRecord(
     islandCount,
     queryCount,
     nodeCount: tree?.nodes?.length ?? 0,
-
-    fullAttempts,
-    repairRounds,
-    islandRepairs,
-    validationIssues,
 
     islandToolReads,
     islandToolWrites,
@@ -147,7 +124,6 @@ export interface Summary {
   islandReadsWithoutQueries: number;
   dataFreeUtility: number;
   mutatingIslandTools: number;
-  repairRoundsTotal: number;
   islandRatioHistogram: Record<string, number>;
 }
 
@@ -196,7 +172,6 @@ export function summarize(label: string, rows: readonly AppMeasurement[]): Summa
     islandReadsWithoutQueries: count((row) => row.islandReadsWithoutQueries),
     dataFreeUtility: count((row) => row.dataFreeUtility),
     mutatingIslandTools: count((row) => row.mutatingIslandTools),
-    repairRoundsTotal: ok.reduce((total, row) => total + row.repairRounds, 0),
     islandRatioHistogram: histogram,
   };
 }

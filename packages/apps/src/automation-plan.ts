@@ -6,8 +6,7 @@ import {
 } from "@vendoai/core";
 import type { LanguageModel } from "ai";
 import { Cron } from "croner";
-import { modelCallParams } from "./model-params.js";
-import { distinctIssues, type HostToolInfo } from "./engine.js";
+import { askModel, distinctIssues, type HostToolInfo } from "./engine.js";
 
 /**
  * execution-v2 Wave 9 — the escalation ladder's automation authoring: ONE
@@ -22,7 +21,8 @@ export interface AutomationPlanInput {
   appId: string;
   appName: string;
   instruction: string;
-  /** The judge's rung: (a) steps or (b) agentic (see engine.serverWorkRung). */
+  /** How the automation runs: deterministic `steps`, or `agentic` when each
+   *  firing needs a model's judgment. The PLAN declares which (`<Server kind>`). */
   mode: "steps" | "agentic";
   /** The tools steps may name / the agentic prompt may reference — the SAME
    *  guard-bound surface the automations engine executes through. */
@@ -108,22 +108,6 @@ const extractJson = (text: string): string => {
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
   return start === -1 || end <= start ? text : text.slice(start, end + 1);
-};
-
-const generatePlanText = async (
-  model: LanguageModel,
-  system: string,
-  prompt: string,
-): Promise<{ text?: string; issues: string[] }> => {
-  try {
-    const { streamText } = await import("ai");
-    const result = streamText({ model, system, prompt, ...modelCallParams(model), maxRetries: 0 });
-    let text = "";
-    for await (const delta of result.textStream) text += delta;
-    return { text, issues: [] };
-  } catch (error) {
-    return { issues: [`model generation failed: ${error instanceof Error ? error.message : "unknown error"}`] };
-  }
 };
 
 /** The same schedule constraints the automations engine enforces at
@@ -260,7 +244,7 @@ export const planAutomation = async (
 ): Promise<AutomationPlanResult> => {
   let issues: string[] = [];
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const output = await generatePlanText(
+    const output = await askModel(
       model,
       planContract(input),
       `TASK: PLAN_AUTOMATION\nAPP_ID: ${input.appId}\nAPP_NAME: ${input.appName}\nINSTRUCTION: ${input.instruction}${repairPrompt(issues)}`,

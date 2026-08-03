@@ -99,24 +99,27 @@ export const systemRoutes: RouteEntry[] = [
   prefixRoute("POST", "/webhooks/", async ({ request, deps }) => {
     return await deps.automations.webhook(request);
   }),
-  route("POST", "/tick", async ({ request, deps }) => {
+  route("POST", "/tick", async ({ request, deps, sweep }) => {
     if (!await tickAuthorized(request)) {
       return json({ error: { code: "blocked", message: "invalid tick credential" } }, 401);
     }
     // execution-v2 Lane D — one authenticated tick drives BOTH schedulers: the
     // automations engine and the machine-app vendo.json schedules (additive
-    // `schedules` field). Point any external cron here (Vercel cron, GitHub
-    // Actions, crontab); the Cloud broker calls this same surface. The engines
-    // settle independently so one failing can never suppress the other; any
-    // failure still answers 500 so a retrying cron comes back (both engines
-    // are idempotent within their windows).
-    const [runs, schedules] = await Promise.allSettled([
+    // `schedules` field), plus the hosted TTL sweep (sweepOnTick). Point any
+    // external cron here (Vercel cron, GitHub Actions, crontab); the Cloud
+    // broker calls this same surface. The legs settle independently so one
+    // failing can never suppress the others; any failure still answers 500 so
+    // a retrying cron comes back (all three are idempotent within their
+    // windows).
+    const [runs, schedules, sessions] = await Promise.allSettled([
       deps.automations.tick(),
       deps.apps.schedules.tick(),
+      deps.sweepOnTick ? sweep() : Promise.resolve(),
     ]);
     const errors = [
       ...(runs.status === "rejected" ? [`automations: ${runs.reason instanceof Error ? runs.reason.message : "tick failed"}`] : []),
       ...(schedules.status === "rejected" ? [`schedules: ${schedules.reason instanceof Error ? schedules.reason.message : "tick failed"}`] : []),
+      ...(sessions.status === "rejected" ? [`sessions: ${sessions.reason instanceof Error ? sessions.reason.message : "sweep failed"}`] : []),
     ];
     return json({
       ...(runs.status === "fulfilled" ? { runIds: runs.value } : {}),
@@ -165,10 +168,19 @@ export const activityRoutes: RouteEntry[] = [
 
 export const statusRoutes: RouteEntry[] = [
   route("GET", "/status", async ({ deps, context }) => {
-    await context("chat");
+    const ctx = await context("chat");
     return json({
       posture: deps.guard.status().posture,
       version: VERSION,
+      // Build contract §9.1 — the orgs the host ASSERTED for this caller, so
+      // the Share dialog can offer them by name. Nothing is stored: this is
+      // the same per-request answer `can()` just used, echoed to the surface.
+      ...(ctx.memberships === undefined ? {} : { memberships: ctx.memberships }),
+      // Build contract §9.1 companion — can the HOST name a person from what
+      // someone types? Vendo holds no directory, so with the `resolvePerson`
+      // seam unset the Share dialog must not offer to share with one person at
+      // all: it used to, and encoded whatever was typed as the subject.
+      ...(deps.resolvePerson === undefined ? {} : { namesPeople: true }),
       blocks: {
         store: true,
         agent: true,

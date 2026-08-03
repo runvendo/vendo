@@ -29,15 +29,9 @@ export const vendo = createVendo({
       "When you render a view, let it carry the data — don't restate it in prose.",
     ].join("\n"),
   },
-  apps: {
-    // speed-core ruling (2026-07-26, supersedes demo-refresh Part 5): same
-    // amended config as demo-bank — regionParallel OFF (live evidence:
-    // docs/verification/demo-live-readiness/speed-core/after.md), endPass on
-    // (the runtime's data-sighted verify), everything else default.
-    pipeline: {
-      endPass: true,
-    },
-  },
+  // There is ONE generation pipeline now (the 2026-07-28 rebuild), so the
+  // speed-core knobs this demo used to amend are gone with the lanes they chose
+  // between; the island smoke-render gate is on by default.
   // BYO Composio when Cadence brings its own key; otherwise the slot stays
   // UNSET so a VENDO_API_KEY deployment composes the Cloud pair. No apps
   // scoping (2026-07-30 ruling): the dock offers every toolkit with an

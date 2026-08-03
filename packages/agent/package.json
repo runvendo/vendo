@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/agent",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "The Vendo agent loop: streaming, tool-calling, context engineering — BYO ai-SDK LanguageModel, guard-bound tools, thread persistence via the store seam.",
   "keywords": [
     "ai",
@@ -31,6 +31,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./internal": {
+      "types": "./dist/internal.d.ts",
+      "default": "./dist/internal.js"
     }
   },
   "files": [

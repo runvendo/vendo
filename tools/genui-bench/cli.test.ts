@@ -34,7 +34,7 @@ describe("cli", () => {
     expect(summary.runs[0].prompt).toBe("hi");
     expect(summary.runs[0].vendo.status).toBe("ok");
     expect(typeof summary.runs[0].vendo.durationMs).toBe("number");
-    expect(summary.runs[0].vendo.repairs).toBe(0);
+    expect(summary.runs[0].vendo.findings).toBe(0);
   }, 30_000);
 
   it("runs every prompt in a pack", () => {

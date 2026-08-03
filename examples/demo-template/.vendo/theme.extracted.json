@@ -1,0 +1,8 @@
+{
+  "format": "vendo/theme-extracted@1",
+  "slots": {
+    "border": "#ecebe8",
+    "fontFamily": "Inter, sans-serif",
+    "headingFamily": "Inter, sans-serif"
+  }
+}

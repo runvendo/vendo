@@ -6,7 +6,6 @@
 import { describe, expect, it } from "vitest";
 import { VENDO_APP_FORMAT, VENDO_TREE_FORMAT } from "@vendoai/core";
 import type { AppDocument } from "@vendoai/core";
-import type { PipelineEvent } from "@vendoai/apps";
 import { measureRecord, summarize } from "./metrics";
 import type { HostName, RunRecord } from "../runner/types";
 
@@ -26,7 +25,6 @@ const document = (over: Partial<AppDocument> & { componentTools?: Record<string,
 const record = (over: {
   document: AppDocument;
   wire: string;
-  events?: PipelineEvent[];
   prompt?: string;
 }): RunRecord => ({
   id: "20260727-000000-abcd",
@@ -41,7 +39,6 @@ const record = (over: {
       durationMs: 40_000,
       document: over.document,
       wire: over.wire,
-      events: over.events ?? [],
     },
   },
 });
@@ -80,7 +77,7 @@ describe("measureRecord", () => {
     expect(row.mutatingIslandTools).toBe(false);
   });
 
-  it("counts queries, nodes, and pipeline work on a composed app", () => {
+  it("counts queries and nodes on a composed app", () => {
     const row = measureRecord(record({
       wire: "<App/>".padEnd(1_000, " "),
       document: document({
@@ -91,11 +88,6 @@ describe("measureRecord", () => {
           queries: [{ name: "txns", tool: "host_listTransactions" }],
         },
       } as Partial<AppDocument>),
-      events: [
-        { stage: "full", attempt: 0, valid: false, ms: 1, issues: ["bad binding"] },
-        { stage: "repair", rounds: 2, repaired: true, noValidFix: 0, ms: 2 },
-        { stage: "full", attempt: 1, valid: true, ms: 3 },
-      ],
     }), WRITE_TOOLS);
 
     expect(row.queryCount).toBe(1);
@@ -103,9 +95,6 @@ describe("measureRecord", () => {
     expect(row.islandCount).toBe(0);
     expect(row.islandRatio).toBe(0);
     expect(row.zeroQueryIsland).toBe(false);
-    expect(row.fullAttempts).toBe(2);
-    expect(row.repairRounds).toBe(2);
-    expect(row.validationIssues).toEqual(["bad binding"]);
   });
 
   it("records a failed lane without inventing shape numbers", () => {

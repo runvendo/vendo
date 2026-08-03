@@ -1,5 +1,7 @@
 import {
   VENDO_APPS_CREATE_TOOL,
+  VENDO_APPS_EDIT_TOOL,
+  VENDO_TOOL_TITLES,
   VENDO_VIEW_STREAM,
   VendoError,
   vendoViewStreamId,
@@ -18,7 +20,14 @@ import type { AppsRuntime } from "./runtime.js";
 
 const DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema";
 
-const descriptors: ToolDescriptor[] = [
+/** Exported so the apps PACK can declare exactly these tools through the public
+ *  `Pack.tools` slot rather than a privileged path into the registry.
+ *
+ *  Titles are applied in ONE place below, from core's shared table, rather than
+ *  authored per entry: `ToolListing.title` falls back to the identifier, so a
+ *  tool that forgets its title hands the model `vendo_apps_edit` as its human
+ *  label — which is how it reached a live refusal message (wave-1 proof E1-5). */
+const descriptors = [
   {
     // The agent's streaming-view bridge keys on this exact core-defined name.
     name: VENDO_APPS_CREATE_TOOL,
@@ -39,7 +48,7 @@ const descriptors: ToolDescriptor[] = [
     risk: "read",
   },
   {
-    name: "vendo_apps_edit",
+    name: VENDO_APPS_EDIT_TOOL,
     description: "Edit an existing Vendo app with one natural-language instruction — this is also how you add or change a recurring/scheduled automation on an app (e.g. \"send this every hour\"). If the result has failure.retryable=true, retry vendo_apps_edit on the same appId with a narrower instruction; do not rebuild it with vendo_apps_create.",
     inputSchema: {
       $schema: DRAFT_2020_12,
@@ -51,7 +60,13 @@ const descriptors: ToolDescriptor[] = [
       required: ["appId", "instruction"],
       additionalProperties: false,
     },
-    risk: "write",
+    // Yousef's ruling (2026-07-28): an app edit does not need approval. Editing
+    // an app is structurally the same act as creating one — a jailed document
+    // render with no server, no host-tool execution, no egress — and the only
+    // write is to Vendo's own app store. The ceremony belongs on what an app
+    // DOES (money, messages, deletion), never on the person rearranging their
+    // own view. History and undo are the safety net here, not a consent gate.
+    risk: "read",
   },
   {
     name: "vendo_apps_rebase_pin",
@@ -132,7 +147,15 @@ const descriptors: ToolDescriptor[] = [
     },
     risk: "write",
   },
-];
+] satisfies ToolDescriptor[];
+
+export const agentToolDescriptors: ToolDescriptor[] = descriptors.map((descriptor) => {
+  // Deliberately NOT `?? descriptor.name`: a silent fallback to the identifier is
+  // the defect itself. A tool missing from the table stays titleless and
+  // `agent-tools.test.ts` fails, which is the loud outcome.
+  const title = VENDO_TOOL_TITLES[descriptor.name];
+  return title === undefined ? descriptor : { ...descriptor, title };
+});
 
 const input = (
   value: Json,
@@ -179,15 +202,40 @@ const optionalLimit = (value: Json | undefined): number | undefined => {
 
 export interface AgentToolsDataDependencies {
   data: AppDataAccess;
-  requireOwned(appId: AppId, subject: string): Promise<AppDocument>;
+  requireOwned(appId: AppId, ctx: RunContext): Promise<AppDocument>;
 }
 
-const errorOutcome = (error: unknown): ToolOutcome => ({
-  status: "error",
-  error: error instanceof VendoError
-    ? { code: error.code, message: error.message }
-    : { code: "internal", message: error instanceof Error ? error.message : "unknown apps error" },
-});
+/**
+ * Build contract §9.4 + the consumer voice law (design §3) — `forbidden` is
+ * thrown for exactly one situation, and it is an ANSWERABLE one: the caller
+ * provably sees the app and may not change it. The runtime's sentence names the
+ * level and the app id ("editor access is required for app_7c2f…") because a
+ * host developer reads it in a log; the MODEL relays what it is handed to a
+ * person, so what it is handed here is the fork offer the level vocabulary
+ * exists to make possible. The code is untouched: machines match on the code,
+ * people read the message.
+ */
+// Deliberately DIRECTS rather than promises: there is no fork tool in this
+// registry (create · edit · rebase_pin · open · data_*), so a message saying "I
+// will make you one" would have the model claim a capability it does not have.
+const FORK_OFFER = "I can’t change the team’s copy of this app. Say so plainly, and offer them"
+  + " their own copy instead — forking the app from its card gives them one I can change freely.";
+
+const errorOutcome = (error: unknown): ToolOutcome => {
+  if (error instanceof VendoError) {
+    return {
+      status: "error",
+      error: {
+        code: error.code,
+        message: error.code === "forbidden" ? FORK_OFFER : error.message,
+      },
+    };
+  }
+  return {
+    status: "error",
+    error: { code: "internal", message: error instanceof Error ? error.message : "unknown apps error" },
+  };
+};
 
 /** 06-apps §§1,5 — unbound Vendo app capabilities; the umbrella binds this registry. */
 export const createAgentTools = (
@@ -195,7 +243,7 @@ export const createAgentTools = (
   dependencies: AgentToolsDataDependencies,
 ): ToolRegistry => ({
   async descriptors() {
-    return structuredClone(descriptors);
+    return structuredClone(agentToolDescriptors);
   },
   async execute(call, ctx: RunContext): Promise<ToolOutcome> {
     try {
@@ -228,7 +276,7 @@ export const createAgentTools = (
           }) as unknown as Json,
         };
       }
-      if (call.tool === "vendo_apps_edit") {
+      if (call.tool === VENDO_APPS_EDIT_TOOL) {
         const args = input(call.args, ["appId", "instruction"]);
         const result = await runtime.edit(args.appId as string, args.instruction as string, ctx);
         return {
@@ -259,7 +307,7 @@ export const createAgentTools = (
       }
       if (call.tool === "vendo_apps_data_list") {
         const args = input(call.args, ["appId", "collection"], ["refs", "limit", "cursor"]);
-        const app = await dependencies.requireOwned(args.appId as string, ctx.principal.subject);
+        const app = await dependencies.requireOwned(args.appId as string, ctx);
         const refs = optionalRefs(args.refs);
         const limit = optionalLimit(args.limit);
         if (args.cursor !== undefined && (typeof args.cursor !== "string" || args.cursor.trim() === "")) {
@@ -280,7 +328,7 @@ export const createAgentTools = (
         if (!Object.prototype.hasOwnProperty.call(args, "data") || args.data === undefined) {
           throw new VendoError("validation", "data is required");
         }
-        const app = await dependencies.requireOwned(args.appId as string, ctx.principal.subject);
+        const app = await dependencies.requireOwned(args.appId as string, ctx);
         const refs = optionalRefs(args.refs);
         const record = await dependencies.data.records(app, args.collection as string).put({
           id: args.id as string,
@@ -291,7 +339,7 @@ export const createAgentTools = (
       }
       if (call.tool === "vendo_apps_data_delete") {
         const args = input(call.args, ["appId", "collection", "id"]);
-        const app = await dependencies.requireOwned(args.appId as string, ctx.principal.subject);
+        const app = await dependencies.requireOwned(args.appId as string, ctx);
         await dependencies.data.records(app, args.collection as string).delete(args.id as string);
         return { status: "ok", output: { status: "ok" } };
       }

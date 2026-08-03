@@ -16,28 +16,45 @@ interface ModelCall {
   }>;
 }
 
-const scriptedModel = (responses: string[]): LanguageModel => {
-  let call = 0;
-  const next = (): string => {
-    const response = responses[Math.min(call, responses.length - 1)];
-    call += 1;
-    if (response === undefined) throw new Error("scripted model exhausted");
-    return response;
-  };
+const promptText = (call: ModelCall): string => call.prompt
+  .map((message) => typeof message.content === "string"
+    ? message.content
+    : message.content.map((part) => part.text ?? "").join(""))
+  .join("\n");
+
+const APP_AS_IT_STANDS = "THE APP AS IT STANDS — the only true copy of it, and what an <Old> must quote:\n";
+
+/** The app exactly as the brain was shown it — the text every answer is built
+ *  from. */
+const printedApp = (prompt: string): string => {
+  const at = prompt.indexOf(APP_AS_IT_STANDS);
+  if (at === -1) return "";
+  return prompt.slice(at + APP_AS_IT_STANDS.length).split("\n\nTHEY ARE ASKING NOW:")[0] ?? "";
+};
+
+/** What this turn was ASKED to do. The live ask carries its own marker, so it is
+ *  unambiguous even though the carried conversation quotes earlier turns. */
+const instructionOf = (prompt: string): string => {
+  const marker = "THEY ARE ASKING NOW: ";
+  const at = prompt.lastIndexOf(marker);
+  return at === -1 ? "" : (prompt.slice(at + marker.length).split("\n")[0] ?? "");
+};
+
+const scriptedModel = (respond: (prompt: string) => string): LanguageModel => {
   return {
     specificationVersion: "v2",
     provider: "vendo-inclient-fixture",
     modelId: "vendo-inclient-fixture-v1",
     supportedUrls: {},
-    async doGenerate(_call: ModelCall) {
+    async doGenerate(call: ModelCall) {
       return {
-        content: [{ type: "text" as const, text: next() }],
+        content: [{ type: "text" as const, text: respond(promptText(call)) }],
         finishReason: "stop" as const,
         usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
       };
     },
-    async doStream(_call: ModelCall) {
-      const text = next();
+    async doStream(call: ModelCall) {
+      const text = respond(promptText(call));
       return {
         stream: new ReadableStream({
           start(controller) {
@@ -96,15 +113,19 @@ export default function Page() {
     expect(synced.pins.captured).toEqual(["MapleNetWorthCard"]);
 
     const componentName = pinComponentName("MapleNetWorthCard");
-    const remixedSource = hostSource.replace("$1.2M", "$1.2M — remixed");
-    const model = scriptedModel([
-      // Edit 1: fork the pin (copies captured source verbatim, records the pin).
-      '<Edit><ForkPin slot="MapleNetWorthCard" into="root"/></Edit>',
-      // Edit 2: change the fork — the reviewable delta the ship-diff must show.
-      `<Edit><Island name="${componentName}">${remixedSource}</Island></Edit>`,
-      // Edit 3: any content change after approval — must invalidate the pin.
-      '<Edit><SetName name="Net worth (renamed)"/></Edit>',
-    ]);
+    // The brain, scripted. Only BRAIN turns are answered ("THEY ARE ASKING NOW:" is its
+    // marker); the AI reviewer rides the same model and reports nothing.
+    const model = scriptedModel((prompt) => {
+      if (!prompt.includes("THEY ARE ASKING NOW:")) return "";
+      // Any content change after approval — must invalidate the pin. The app's
+      // name is printed on its opening <App> line, so a rename is one edit.
+      if (instructionOf(prompt).startsWith("Rename")) {
+        return '<Edit><Old><App name="Maple overview"></Old><New><App name="Net worth (renamed)"></New></Edit>';
+      }
+      // Change the fork — the reviewable delta the ship-diff must show. Written
+      // WHOLE (a finished <App>, the tiny-ask answer) off the app as it stands.
+      return printedApp(prompt).replace("$1.2M", "$1.2M — remixed");
+    });
 
     const store = createStore({ dataDir: join(root, ".data") });
     cleanups.push(async () => store.close());
@@ -130,8 +151,10 @@ export default function Page() {
       },
     } as AppDocument, ctx);
 
-    const forked = await vendo.apps.edit(imported.id, "Remix the net worth card", ctx);
-    expect(forked.failure).toBeUndefined();
+    // The fork is the user's Remix GESTURE, executed deterministically by the
+    // engine (the captured source is copied, the pin recorded, no model call).
+    const forked = await vendo.apps.pins.fork({ appId: imported.id, slot: "MapleNetWorthCard" }, ctx);
+    expect(forked.componentName).toBe(componentName);
     const remixed = await vendo.apps.edit(imported.id, "Call out that it is remixed", ctx);
     expect(remixed.failure).toBeUndefined();
     const appId = imported.id;

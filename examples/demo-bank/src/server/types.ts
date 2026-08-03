@@ -71,4 +71,7 @@ export interface Profile {
   /** Present (true) only when the session was auto-minted (DEMO_AUTOLOGIN) —
    * gates the "Live demo" chip; absent for credential logins. */
   demoAutologin?: boolean
+  /** The seeded staff the account switcher can switch between (E8 needs two
+   * real people in one org). Identity only — never a password. */
+  staff?: Array<{ subject: string; display: string; email: string }>
 }

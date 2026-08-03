@@ -18,12 +18,10 @@ export const LANE_FOOTNOTES: Record<LaneName, string> = {
   tambo: "component registry + AI orchestration · their SDK",
 };
 
-/** Same counting the CLI summary uses. */
-export function repairCount(result: LaneResult | undefined): number {
-  if (!result || result.status === "no-key") return 0;
-  return (result.events ?? []).filter(
-    (event) => event.stage === "repair" || event.stage === "island-repair",
-  ).length;
+/** What the checking layer still reported on the app that shipped (same count
+ *  the CLI summary uses). */
+export function findingCount(result: LaneResult | undefined): number {
+  return result?.status === "ok" ? (result.findings?.length ?? 0) : 0;
 }
 
 export function formatDuration(ms: number): string {

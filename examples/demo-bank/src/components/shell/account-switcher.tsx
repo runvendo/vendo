@@ -9,7 +9,15 @@ import { useProfile } from "@/lib/hooks"
 export function AccountSwitcher() {
   const { data, isLoading } = useProfile()
   const toast = useToast()
-  const demo = () => toast({ title: "Demo only", description: "Account actions are disabled in this demo." })
+  // Build contract §9.1 (E8) — the switcher is real: one entry per seeded
+  // staff member, each landing on the existing /login credentials flow with
+  // that person's email prefilled. Two real people in one org is what makes
+  // sharing, the fork offer and revoke provable in a browser.
+  const staff = data?.staff ?? []
+  const switchTo = (email: string) => {
+    const returnTo = `${window.location.pathname}${window.location.search}`
+    window.location.assign(`/login?email=${encodeURIComponent(email)}&returnTo=${encodeURIComponent(returnTo)}`)
+  }
   // Real sign-out: POST /logout clears the Auth.js session cookie server-side,
   // then land on /login (pages 401/redirect there without a session anyway).
   const signout = async () => {
@@ -55,10 +63,35 @@ export function AccountSwitcher() {
         <DropdownLabel className="px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-muted">
           Switch account
         </DropdownLabel>
-        <DropdownItem onSelect={demo}>
-          <UserRound className="h-4 w-4 text-muted" />
-          Personal
-        </DropdownItem>
+        {staff.length === 0 ? (
+          // Honest about WHY there is nobody to switch to: the roster is empty
+          // exactly when password login is unconfigured (production without
+          // MAPLE_DEMO_PASSWORD), and the fix is one env var. Saying "Personal"
+          // here made a configuration gap look like a feature that does nothing.
+          <DropdownItem
+            onSelect={() => toast({
+              title: "Account switching is off",
+              description: "Set MAPLE_DEMO_PASSWORD on this deployment to sign in as the other seeded user.",
+            })}
+          >
+            <UserRound className="h-4 w-4 text-muted" />
+            Switching unavailable
+          </DropdownItem>
+        ) : (
+          staff.map((member) => {
+            const isCurrent = member.email === data?.email
+            return (
+              <DropdownItem
+                key={member.subject}
+                onSelect={() => (isCurrent ? undefined : switchTo(member.email))}
+              >
+                <UserRound className="h-4 w-4 text-muted" />
+                {member.display}
+                {isCurrent ? <span className="ml-auto text-[11px] text-muted">Current</span> : null}
+              </DropdownItem>
+            )
+          })
+        )}
         <DropdownSeparator />
         <DropdownItem onSelect={() => void signout()}>
           <LogOut className="h-4 w-4 text-muted" />

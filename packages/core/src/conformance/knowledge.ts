@@ -291,7 +291,7 @@ export function knowledgeAdapterConformance(opts: KnowledgeConformanceOptions): 
         const unlimited = await adapter.search({ text: seed.public.title, limit: 10 }, ctx);
         assert(unlimited.hits.length >= 3, "seeding two siblings did not produce three hits — prefix truncation cannot be exercised");
         const limited = await adapter.search({ text: seed.public.title, limit: 2 }, ctx);
-        const identity = (hit: { ref: { docId: string; chunkId?: string } }): string => `${hit.ref.docId} ${hit.ref.chunkId ?? ""}`;
+        const identity = (hit: { ref: { docId: string; chunkId?: string } }): string => `${hit.ref.docId}\0${hit.ref.chunkId ?? ""}`;
         assert(
           JSON.stringify(limited.hits.map(identity)) === JSON.stringify(unlimited.hits.slice(0, 2).map(identity)),
           "limit: 2 did not return the unlimited ranking's exact two-hit prefix — limit must truncate, never re-rank",

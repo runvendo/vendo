@@ -4,9 +4,10 @@ import { vendoAutoJudge } from "@vendoai/guard";
 import { createStore } from "@vendoai/store";
 import { authJs } from "@vendoai/vendo/auth/auth-js";
 import { createVendo, vendoModel } from "@vendoai/vendo/server";
-import { authSecret, resolveMapleSubject } from "@/server/users";
+import { authSecret, primaryMapleUser, resolveMaplePerson, resolveMapleSubject } from "@/server/users";
 import { mapleKnowledgeDocs } from "./knowledge";
 import { mapleMcpConfig } from "./mcp-config";
+import { namedHarness } from "./proof-harness";
 import { mapleRegistry } from "./registry";
 
 const composioApiKey = process.env.COMPOSIO_API_KEY;
@@ -24,6 +25,35 @@ export const mapleAuth = authJs({
     const user = resolveMapleSubject(subject);
     return user ? { display: user.display, email: user.email } : null;
   },
+  // Build contract §9.1 — Maple's OWN identity tables answer "which orgs?".
+  // One query against what the host already knows; Vendo stores nothing about
+  // it. Keyed on the Principal, not the request, so an unattended automation
+  // fire resolves the same orgs an attended click does. Both seeded staff are
+  // in `maple`; Yousef is the org admin (implicit owner of every org app),
+  // Mia is an ordinary member who reaches an app only through a grant.
+  memberships: async (principal) => {
+    const user = resolveMapleSubject(principal.subject);
+    if (!user) return [];
+    return [{
+      org: "maple",
+      display: "Maple Bank",
+      teams: ["support"],
+      admin: user.subject === primaryMapleUser().subject,
+    }];
+  },
+  // Build contract §9.1 companion — Maple's OWN roster answers "who is the
+  // person they typed?". Vendo holds no directory, so this seam is the only
+  // reason the Share dialog may offer to share with one person: without it the
+  // dialog does not offer it, and the app is never moved for a grant that could
+  // not be written. The grant is written for the SUBJECT this returns.
+  // The ASKER decides what they may see: Maple answers its own staff and nobody
+  // else. One org here, so membership is the same question as "did Maple issue
+  // you" — a real deployment would compare the asker's org to the match's.
+  resolvePerson: async (query, asker) => {
+    if (!resolveMapleSubject(asker.subject)) return null;
+    const user = resolveMaplePerson(query);
+    return user ? { subject: user.subject, display: user.display } : null;
+  },
 });
 
 export const vendo = createVendo({
@@ -35,6 +65,18 @@ export const vendo = createVendo({
   // fast model on BYO — so the demo runs the fast two-lane path with no
   // hardcoded model names (speed-core lane; BYO rule).
   auth: mapleAuth,
+  // Wave-2 live-proof seam (docs/verification/wave2-lane-f/), same shape as the
+  // wave-1 MAPLE_HARNESS switch. Unset — the shipped demo — leaves the slot
+  // empty, which since the wave-2 flip means the composed `vendo()` serves the
+  // chat route. `MAPLE_HARNESS` names a specialist instead, which is the only
+  // way to measure a harness column against the default's.
+  ...namedHarness(),
+  // The remix review seam (/apps/review-queue, /apps/:id/reject-review, and
+  // the /dev/inclient-approval door) rides the development composition only.
+  // `next start` runs production NODE_ENV, so a local session that drives a
+  // real review (the W1e E2E) opts in explicitly; unset, the environment
+  // default stands and no deployed surface composes the seam.
+  ...(process.env.MAPLE_DEV_SEAMS === "1" ? { development: true } : {}),
   // The shared registry (01 §14): the server reads only the data fields;
   // <VendoRoot> takes the same object and reads only component references.
   catalog: mapleRegistry,
@@ -60,16 +102,17 @@ export const vendo = createVendo({
     experimentalServedApps: process.env.VENDO_EXPERIMENTAL_SERVED_APPS === "1",
     experimentalMachines: process.env.VENDO_EXPERIMENTAL_MACHINES === "1"
       || process.env.VENDO_EXPERIMENTAL_SERVED_APPS === "1",
-    // speed-core ruling (2026-07-26, supersedes demo-refresh Part 5):
-    // regionParallel is OFF for the demos — live evidence
-    // (docs/verification/demo-live-readiness/speed-core/after.md) showed its
-    // serial outline + assembly-invalid fallback made creates SLOWER on this
-    // surface (p50 55s vs 31.4s without it). endPass stays on: the runtime
-    // rides it as the data-sighted verify. structuredRepair and smokeRender
-    // are default-on and island repair is the engine's first resort.
-    pipeline: {
-      endPass: true,
+    // Remix review (round-2 hardening 2026-08-02): Mia is Maple's host
+    // reviewer — this assertion is what lets her read the full review queue,
+    // reject, and approve review-kind remixes; a user can never approve
+    // their own, so the two-user demo demonstrates the real boundary.
+    review: {
+      reviewer: (ctx) => resolveMapleSubject(ctx.principal.subject)?.email === "mia@maple.com",
     },
+    // There is ONE generation pipeline now (the 2026-07-28 rebuild), so the
+    // speed-core knobs this demo used to amend — regionParallel off, endPass on
+    // — no longer exist: the lanes they chose between are deleted. The island
+    // smoke-render gate is the only flag left and it is on by default.
   },
   // Knowledge posture — the same shape as the store slot below. With
   // VENDO_API_KEY set, the slot stays UNSET so the env ladder composes the

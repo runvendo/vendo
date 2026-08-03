@@ -1,16 +1,17 @@
 import type { AppDocument, RunContext, ToolRegistry } from "@vendoai/core";
 import { VENDO_APP_FORMAT, VendoError } from "@vendoai/core";
+import type { LanguageModel } from "ai";
 import { describe, expect, it, vi } from "vitest";
 import { createApps, type SandboxAdapter } from "./index.js";
 import { createAppHistory } from "./history.js";
 import { enabledAfterDocumentEdit } from "./persistence.js";
 import {
-  basicLanguageModel,
   fakeSandbox,
   guardFixture,
   memoryStore,
   seedAppRow,
   scriptedLanguageModel,
+  type ScriptedModelCall,
 } from "./testing/index.js";
 
 const tools: ToolRegistry = {
@@ -29,6 +30,28 @@ const context = (subject: string): RunContext => ({
   sessionId: `session_${subject}`,
 });
 
+const promptText = (call: ScriptedModelCall): string => call.prompt.map((message) => (
+  typeof message.content === "string" ? message.content : message.content.map((part) => part.text ?? "").join("")
+)).join("\n");
+
+/** What the person just said, as the brain hears it. Capped at the create
+ *  validator's display-title length, so the derived app name is legal. */
+const lastSaid = (prompt: string): string => {
+  const marker = "THEY ARE ASKING NOW: ";
+  const at = prompt.lastIndexOf(marker);
+  if (at === -1) return "Untitled app";
+  const said = prompt.slice(at + marker.length).split("\n")[0]?.trim() ?? "";
+  return said.slice(0, 40) || "Untitled app";
+};
+
+/** The brain, scripted: every ask is tiny, so it writes the whole app on the
+ *  spot and names it after what was said — a create and an edit alike (an edit
+ *  answered whole is the same pipeline, just the `direct` branch of it). */
+const brainModel = (): LanguageModel => scriptedLanguageModel((call) => {
+  const said = lastSaid(promptText(call)).replaceAll('"', "'");
+  return `<App name="${said}"><Text text="${said}"/><Disclaimer reason="Scripted fixture app."/></App>`;
+});
+
 const setup = (withModel = true) => {
   const store = memoryStore();
   const guard = guardFixture();
@@ -37,7 +60,7 @@ const setup = (withModel = true) => {
     guard,
     tools,
     catalog: [],
-    model: withModel ? basicLanguageModel() : undefined,
+    model: withModel ? brainModel() : undefined,
   });
   return { store, guard, runtime };
 };
@@ -139,7 +162,7 @@ describe("apps lifecycle", () => {
     expect(await store.records(`app:${fork.id}:notes`).list()).toEqual({ records: [] });
     expect(await store.records("vendo_state").get(`${fork.id}:${ctx.principal.subject}`)).toBeNull();
     expect(await store.blobs(`app:${fork.id}:files`).list()).toEqual([]);
-    expect(await runtime.history(fork.id).list()).toEqual([]);
+    expect(await runtime.history(fork.id, ctx).list()).toEqual([]);
   });
 
   it("a fork never carries a machine or a retired v1 server ref", async () => {
@@ -213,7 +236,7 @@ describe("apps lifecycle", () => {
       await runtime.edit(app.id, `Edit ${index}`, ctx);
     }
 
-    const history = runtime.history(app.id);
+    const history = runtime.history(app.id, ctx);
     const entries = await history.list();
     expect(entries).toHaveLength(50);
     expect(entries[0]?.intent).toBe("Edit 51");
@@ -258,7 +281,7 @@ describe("apps lifecycle", () => {
       guard: guardFixture(),
       tools,
       catalog: [],
-      model: basicLanguageModel(),
+      model: brainModel(),
     });
     const app: AppDocument = {
       format: VENDO_APP_FORMAT,
@@ -279,8 +302,8 @@ describe("apps lifecycle", () => {
       await runtime.edit(app.id, "First", context("user_ada"));
       await runtime.edit(app.id, "Second", context("user_ada"));
 
-      await expect(runtime.history(app.id).undo()).resolves.toMatchObject({ name: "First" });
-      await expect(runtime.history(app.id).undo()).resolves.toEqual(app);
+      await expect(runtime.history(app.id, context("user_ada")).undo()).resolves.toMatchObject({ name: "First" });
+      await expect(runtime.history(app.id, context("user_ada")).undo()).resolves.toEqual(app);
     } finally {
       uuid.mockRestore();
     }
@@ -289,7 +312,7 @@ describe("apps lifecycle", () => {
   it("rejects undo on empty history", async () => {
     const { runtime } = setup();
     const app = await runtime.create({ prompt: "No history" }, context("user_ada"));
-    await expect(runtime.history(app.id).undo()).rejects.toEqual(
+    await expect(runtime.history(app.id, context("user_ada")).undo()).rejects.toEqual(
       new VendoError("conflict", "nothing to undo"),
     );
   });
@@ -333,6 +356,6 @@ describe("apps lifecycle", () => {
     });
 
     await expect(runtime.list(ctx)).resolves.toEqual([edited.app]);
-    await expect(runtime.history(valid.id).list()).resolves.toEqual([edited.version]);
+    await expect(runtime.history(valid.id, ctx).list()).resolves.toEqual([edited.version]);
   });
 });

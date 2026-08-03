@@ -9,12 +9,10 @@ import {
   hostFetch,
   loginCookie,
   partsOfType,
-  readSse,
+  readSseMidStream,
   resetFixture,
-  resumeApproval,
   textTurn,
   toolCallTurn,
-  vendoApprovalId,
   type Stack,
 } from "./harness.js";
 
@@ -48,7 +46,10 @@ describe("ENG-261: loud grant invalidation through the composed wire", () => {
       ],
     });
 
-    const first = await readSse(
+    // Build contract §1.4: the guarded call blocks INSIDE the tool call
+    // awaiting the tap, holding this one request open — decide against the
+    // still-open stream rather than a later, separately-posted resume.
+    const first = readSseMidStream(
       await stack.wireFetch("/threads", {
         method: "POST",
         body: JSON.stringify({
@@ -61,7 +62,9 @@ describe("ENG-261: loud grant invalidation through the composed wire", () => {
         }),
       }, ADA),
     );
-    const firstApprovalId = vendoApprovalId(first);
+    const firstApprovalCard = await first.approval;
+    const firstApprovalId = firstApprovalCard.approvalId;
+    if (firstApprovalId === undefined) throw new Error("approval card carried no approvalId");
 
     const decided = await stack.wireFetch("/approvals/decide", {
       method: "POST",
@@ -79,12 +82,15 @@ describe("ENG-261: loud grant invalidation through the composed wire", () => {
     expect(grant).toMatchObject({ tool: TOOL, duration: "standing", source: "chat" });
     if (grant === undefined) throw new Error("standing grant was not minted");
 
-    const resumed = await readSse(
-      await resumeApproval(stack, "thr_grant_invalidation", "call_grant_v1", true, ADA),
-    );
+    // Build contract §1.5: tool calls are mirrored by the RUNTIME on its own
+    // freshly-minted id — never the scripted model's own toolCallId — so the
+    // correlation check is against the SAME card's id, not the model's literal.
+    // Build contract §1.1: `output` is the tool's OWN return value, not a
+    // second `status` wrapper (the old `createAgent` raw-outcome shape).
+    const resumed = await first.done;
     expect(partsOfType(resumed, "tool-output-available")[0]).toMatchObject({
-      toolCallId: "call_grant_v1",
-      output: { status: "ok" },
+      toolCallId: firstApprovalCard.toolCallId,
+      output: { ok: true },
     });
     expect(await invoiceExists(FIRST)).toBe(false);
 
@@ -99,7 +105,12 @@ describe("ENG-261: loud grant invalidation through the composed wire", () => {
     const currentHash = descriptorHash(descriptor);
     expect(currentHash).not.toBe(grant.descriptorHash);
 
-    const second = await readSse(
+    // This turn's call also blocks on the wire (§1.4) — but this journey never
+    // decides it (the point is the invalidated-grant metadata on the pending
+    // ask, not the eventual outcome), so the underlying request is aborted
+    // once the assertions below are done rather than left to time out.
+    const abortSecond = new AbortController();
+    const second = readSseMidStream(
       await stack.wireFetch("/threads", {
         method: "POST",
         body: JSON.stringify({
@@ -110,12 +121,16 @@ describe("ENG-261: loud grant invalidation through the composed wire", () => {
             parts: [{ type: "text", text: `Delete invoice ${SECOND}` }],
           },
         }),
+        signal: abortSecond.signal,
       }, ADA),
     );
-    expect(partsOfType(second, "tool-approval-request")[0]).toMatchObject({
-      toolCallId: "call_grant_v2",
+    const secondApprovalCard = await second.approval;
+    expect(typeof secondApprovalCard.toolCallId).toBe("string");
+    expect(secondApprovalCard).toMatchObject({
+      invalidatedGrant: { id: grant.id, grantedAt: grant.grantedAt },
     });
-    const secondApprovalId = vendoApprovalId(second);
+    const secondApprovalId = secondApprovalCard.approvalId;
+    if (secondApprovalId === undefined) throw new Error("approval card carried no approvalId");
 
     const pending = (await (await stack.wireFetch("/approvals", {}, ADA)).json()) as Array<{
       id: string;
@@ -162,5 +177,10 @@ describe("ENG-261: loud grant invalidation through the composed wire", () => {
         currentHash,
       },
     });
+
+    // Never decided by design (see above) — cut the still-blocked request
+    // short instead of waiting out the frozen approval bound.
+    abortSecond.abort();
+    await second.done.catch(() => {});
   });
 });

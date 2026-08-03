@@ -1,0 +1,161 @@
+import {
+  canonicalJson,
+  intentHash,
+  type AppDocument,
+  type AppIntent,
+  type IsoDateTime,
+  type Json,
+  type RecordStore,
+  type Trigger,
+} from "@vendoai/core";
+import { z } from "zod";
+
+/** Build contract §9.9 — sponsorship lives in its OWN routed collection, never
+ *  on the app row: the row is the automation's declaration, this is who it runs
+ *  as, and two independent facts on one row drift. Engine-internal state like
+ *  `automations:captures`, so the generic records door is right here. */
+export const SPONSORSHIPS = "automations:sponsorships";
+
+/** The era marker: "this app has been sponsored at least once", keyed to the app
+ *  and carrying NO subject data at all.
+ *
+ *  It exists because the sponsorship row itself must be erasable: it holds a
+ *  person's subject, so `eraseStore.bySubject` collects it (`refs.subject`) —
+ *  and a missing row otherwise reads as "never sponsored", which would hand the
+ *  automation silently back to the app's owner the next time it fired. With this
+ *  marker, marker-present + row-absent means "the sponsor is gone": the run
+ *  stops and asks to be adopted. `refs` carry only `app_id`, so a subject erase
+ *  cannot reach it and an app erase collects it. */
+export const SPONSORED = "automations:sponsored";
+
+/** Build contract §9.9, frozen. Keyed by appId — one automation, one sponsor. */
+export interface Sponsorship {
+  appId: string;
+  /** The sponsor's subject. An automation always runs as a named person. */
+  sponsor: string;
+  /** The sponsor's own display name, as their Principal asserted it at enable or
+   *  adoption (additive to the §9.9 shape, ruled 2026-08-01). Captured with
+   *  their consent in the same moment they take the automation on, so every
+   *  surface can say "Dana" instead of `user_dana` without Vendo ever holding a
+   *  directory. Absent when the host asserts no display name. */
+  display?: string;
+  /** Core `intentHash()` over the app's §7 intent at mint time. */
+  intentHash: string;
+  status: "active" | "invalidated";
+  reason?: "edit" | "departure" | "grants";
+  invalidatedAt?: IsoDateTime;
+}
+
+export const sponsorshipSchema = z.object({
+  appId: z.string(),
+  sponsor: z.string(),
+  display: z.string().optional(),
+  intentHash: z.string(),
+  status: z.enum(["active", "invalidated"]),
+  reason: z.enum(["edit", "departure", "grants"]).optional(),
+  invalidatedAt: z.string().optional(),
+}) satisfies z.ZodType<Sponsorship>;
+
+/** The name a person reads for the sponsor: their asserted display name, else
+ *  the host's own identifier for them as a last resort. Never a phrase invented
+ *  about a real person — an anonymous stand-in is only correct once the row (and
+ *  with it the name) is gone, which is why callers handle that case, not this. */
+export const sponsorName = (row: Sponsorship): string => row.display ?? row.sponsor;
+
+/** The tools an automation DECLARES it will use: its steps' host tools, deduped
+ *  and `fn:` refs excluded (those are the app's own code, not host authority).
+ *  An agentic run declares nothing — its toolset is whatever the registry binds
+ *  at fire time, which is not a declaration and must not enter the intent hash
+ *  (a new connector would silently invalidate every agentic automation). */
+export const declaredSurface = (trigger: Trigger | undefined): string[] =>
+  trigger === undefined || trigger.run.kind !== "steps"
+    ? []
+    : [...new Set(trigger.run.steps.map((step) => step.tool).filter((tool) => !tool.startsWith("fn:")))];
+
+/** Build contract §7's `AppIntent` for an automation document.
+ *
+ *  `runBody` is the canonical JSON of the trigger's RUN definition — for steps
+ *  that is the ordered steps (tool, args, if, forEach), for an agentic run the
+ *  prompt and budget. It is derived rather than hand-picked so that every part
+ *  of "what this automation will do" is bound: an argument change is as much a
+ *  change of intent as a new tool is, and a hash that ignored it would let an
+ *  edit re-point a granted call at a different invoice. */
+export const appIntentOf = (doc: AppDocument): AppIntent => ({
+  name: doc.name,
+  tools: declaredSurface(doc.trigger),
+  trigger: (doc.trigger?.on ?? null) as Json,
+  runBody: doc.trigger === undefined ? "" : canonicalJson(doc.trigger.run),
+});
+
+export const currentIntentHash = (doc: AppDocument): string => intentHash(appIntentOf(doc));
+
+/** The stored sponsorship, or undefined when there is none (an automation
+ *  enabled before sponsorship shipped) or the row is unreadable. A corrupt row
+ *  is not a sponsorship — it degenerates to the pre-sponsorship behavior of
+ *  running as the app's owner rather than stranding the automation. */
+export const readSponsorship = async (
+  records: RecordStore,
+  appId: string,
+): Promise<{ row: Sponsorship; revision?: string } | undefined> => {
+  const record = await records.get(appId);
+  if (record === null) return undefined;
+  const parsed = sponsorshipSchema.safeParse(record.data);
+  if (!parsed.success) return undefined;
+  return { row: parsed.data, ...(record.revision === undefined ? {} : { revision: record.revision }) };
+};
+
+/** Both refs are load-bearing: the 02-store §5 erase cascade collects generic
+ *  rows by `refs.subject` (erasing the sponsor takes their name off the row)
+ *  AND by `refs.app_id` (deleting the app takes its sponsorship with it). A row
+ *  that survived either cascade would be a dangling name. */
+const sponsorshipRefs = (row: Sponsorship): Record<string, string> =>
+  ({ subject: row.sponsor, app_id: row.appId });
+
+export const writeSponsorship = async (records: RecordStore, row: Sponsorship): Promise<void> => {
+  await records.put({ id: row.appId, data: { ...row }, refs: sponsorshipRefs(row) });
+};
+
+/** Record that this app is sponsored, without recording WHO. Idempotent. */
+export const markSponsored = async (
+  records: RecordStore,
+  appId: string,
+  at: IsoDateTime,
+): Promise<void> => {
+  if (await records.get(appId) !== null) return;
+  await records.put({ id: appId, data: { appId, since: at }, refs: { app_id: appId } });
+};
+
+/** Has this app ever been sponsored? A `false` here is what keeps automations
+ *  armed before this lane shipped running as their owner. */
+export const wasSponsored = async (records: RecordStore, appId: string): Promise<boolean> =>
+  await records.get(appId) !== null;
+
+/** Claim a stopped automation for a new sponsor. Returns false when another
+ *  editor got there first — adoption is first-past-the-post, and the loser is
+ *  told so honestly rather than silently overwriting the winner.
+ *
+ *  Two shapes, because there are two ways an automation stops: an invalidated
+ *  row is compare-and-swapped, while an ERASED sponsor left no row at all and
+ *  the claim is an insert. Stores with no atomic door re-read and check instead:
+ *  it narrows, but cannot close, a cross-process race (the engine's schedule
+ *  cursor makes the same trade). */
+export const claimSponsorship = async (
+  records: RecordStore,
+  next: Sponsorship,
+  expected: { kind: "row"; revision?: string } | { kind: "erased" },
+): Promise<boolean> => {
+  const input = { id: next.appId, data: { ...next }, refs: sponsorshipRefs(next) };
+  if (expected.kind === "erased") {
+    if (records.atomic !== undefined) return await records.atomic.insertIfAbsent(input) !== null;
+    if (await records.get(next.appId) !== null) return false;
+    await records.put(input);
+    return true;
+  }
+  if (records.atomic !== undefined && expected.revision !== undefined) {
+    return await records.atomic.compareAndSwap(input, expected.revision) !== null;
+  }
+  const current = await readSponsorship(records, next.appId);
+  if (current?.row.status !== "invalidated") return false;
+  await records.put(input);
+  return true;
+};

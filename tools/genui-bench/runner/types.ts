@@ -1,5 +1,5 @@
 import type { AppDocument, VendoTheme } from "@vendoai/core";
-import type { PipelineEvent } from "@vendoai/apps";
+import type { Finding } from "@vendoai/apps";
 import type { RunModel } from "./models";
 
 export type { RunModel };
@@ -28,12 +28,12 @@ export type LaneResult =
       document?: AppDocument;
       /** Vendo lane: raw wire text as streamed. */
       wire?: string;
-      /** Vendo lane: the tapped pipeline events (JSON-safe). */
-      events?: PipelineEvent[];
+      /** Vendo lane: what the checking layer still reported on the shipped app. */
+      findings?: Finding[];
       /** Competitor lanes: their raw response payload, renderable by their SDK. */
       raw?: unknown }
   | { status: "failed"; startedAt: number; durationMs: number; error: string;
-      events?: PipelineEvent[]; wire?: string; raw?: unknown }
+      wire?: string; raw?: unknown }
   | { status: "no-key" };
 
 export interface RunRecord {

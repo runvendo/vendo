@@ -188,3 +188,77 @@ export function mergeRuntimeCatalog(
     ...explicit,
   ];
 }
+
+/**
+ * Design §4's `search_components` verb: find what the model may render, by
+ * intent.
+ *
+ * Ranked the same way `find_tools` ranks tools (`searchToolDescriptors` in
+ * @vendoai/actions): an exact name token beats a name substring beats a
+ * description hit, ties break by name. Deliberately the same shape rather than a
+ * cleverer one — a model that has learned how one search behaves should not have
+ * to learn a second.
+ *
+ * It never answers an empty query with the whole catalog. That is not a size
+ * guard: a model that can dump the catalog stops searching and starts guessing
+ * from the top of the list.
+ */
+const SEARCH_EXACT_NAME_TOKEN = 8;
+const SEARCH_WHOLE_QUERY_IN_NAME = 5;
+const SEARCH_NAME_SUBSTRING = 4;
+const SEARCH_DESCRIPTION_MATCH = 2;
+const SEARCH_DEFAULT_LIMIT = 10;
+const SEARCH_MAX_LIMIT = 50;
+
+const searchTokens = (value: string): string[] =>
+  value
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+
+/** One catalog entry as the model reads it: today's shipped vocabulary
+ *  (`{ component, description, props?, examples? }`, build contract
+ *  §5), where `props` is the JSON Schema — a component whose props you cannot see
+ *  is a component you cannot use. */
+export interface CatalogSearchMatch {
+  component: string;
+  description: string;
+  props?: JsonSchema;
+  examples?: string[];
+}
+
+export function searchRuntimeCatalog(
+  catalog: NormalizedCatalog,
+  query: string,
+  limit = SEARCH_DEFAULT_LIMIT,
+): CatalogSearchMatch[] {
+  const wanted = searchTokens(query);
+  if (wanted.length === 0) return [];
+  const whole = wanted.join("");
+
+  const scored = catalog.map((entry) => {
+    const nameTokens = searchTokens(entry.name);
+    const flatName = nameTokens.join("");
+    const descriptionTokens = new Set(searchTokens(entry.description));
+    let score = 0;
+    for (const token of wanted) {
+      if (nameTokens.includes(token)) score += SEARCH_EXACT_NAME_TOKEN;
+      else if (flatName.includes(token)) score += SEARCH_NAME_SUBSTRING;
+      if (descriptionTokens.has(token)) score += SEARCH_DESCRIPTION_MATCH;
+    }
+    if (flatName.includes(whole)) score += SEARCH_WHOLE_QUERY_IN_NAME;
+    return { entry, score };
+  });
+
+  return scored
+    .filter(({ score }) => score > 0)
+    .sort((left, right) => right.score - left.score || left.entry.name.localeCompare(right.entry.name))
+    .slice(0, Math.min(Math.max(1, Math.trunc(limit)), SEARCH_MAX_LIMIT))
+    .map(({ entry }) => ({
+      component: entry.name,
+      description: entry.description,
+      ...(entry.propsJsonSchema === undefined ? {} : { props: entry.propsJsonSchema }),
+      ...(entry.examples === undefined ? {} : { examples: [...entry.examples] }),
+    }));
+}

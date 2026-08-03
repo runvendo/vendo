@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { PipelineEvent } from "@vendoai/apps";
+import type { Finding } from "@vendoai/apps";
 import { listRuns, loadRun, saveRun, setPin } from "../runner/store";
 import type { LaneName, RunRecord } from "../runner/types";
 import type { PaneComponent } from "./pane-props";
@@ -21,18 +21,9 @@ const PANES: Record<LaneName, PaneComponent> = {
   tambo: GenericPane,
 };
 
-const VENDO_EVENTS: PipelineEvent[] = [
-  { stage: "full", attempt: 1, valid: false, ms: 6200 },
-  { stage: "repair", rounds: 1, repaired: true, noValidFix: 0, ms: 2900 },
+const VENDO_FINDINGS: Finding[] = [
+  { severity: "warn", where: 'node "n3" prop "limit"', message: "budget.limit bound to string, expected number" },
 ];
-
-/** A payload-bearing event with a stage the timeline doesn't know — proves
- *  the drawer renders unknown tags with their raw payloads. */
-const GUARDRAIL_EVENT = {
-  stage: "guardrail",
-  verdict: "shape-check",
-  detail: "budget.limit bound to string, expected number",
-} as unknown as PipelineEvent;
 
 let runsDir: string;
 
@@ -55,7 +46,7 @@ function cannedRuns(): { current: RunRecord; pinned: RunRecord } {
         costUsd: 0.09,
         document: { app: "spending" } as never,
         wire: "<App><Chart /></App>",
-        events: [...VENDO_EVENTS, GUARDRAIL_EVENT],
+        findings: VENDO_FINDINGS,
       },
       "thesys-c1": { status: "ok", startedAt: 1, durationMs: 11200, raw: { text: "c1 answer" } },
       copilotkit: { status: "failed", startedAt: 1, durationMs: 8900, error: "registry rejected the ask" },
@@ -76,7 +67,7 @@ function cannedRuns(): { current: RunRecord; pinned: RunRecord } {
         durationMs: 19200,
         document: { app: "dispute" } as never,
         wire: "<App><Dispute /></App>",
-        events: [{ stage: "full", attempt: 1, valid: true, ms: 9000 }],
+        findings: [],
       },
     },
   };
@@ -144,8 +135,8 @@ test("selecting a rail run loads its lane results into the panes", async () => {
   render(<Cockpit panes={PANES} />);
   fireEvent.click(await screen.findByText("spending by category with budgets"));
 
-  // Vendo header: duration + repair count from the events.
-  await screen.findByText("18.4s · 1 repair");
+  // Vendo header: duration + finding count from the checking layer.
+  await screen.findByText("18.4s · 1 finding");
   // Failed lane shows its error; keyless lane says so.
   screen.getByText("registry rejected the ask");
   screen.getByText(/no key for this lane/);
@@ -169,14 +160,14 @@ test("pinned runs sort first in the rail", async () => {
 test("⌥-click split-compares: panes render both documents, drawer stacks both timelines", async () => {
   render(<Cockpit panes={PANES} />);
   fireEvent.click(await screen.findByText("spending by category with budgets"));
-  await screen.findByText("18.4s · 1 repair");
+  await screen.findByText("18.4s · 1 finding");
 
   fireEvent.click(screen.getByText(/dispute this charge from Uber/), { altKey: true });
 
   // The Vendo pane splits into labeled current/compare halves (read-only).
   await screen.findByText("current");
   screen.getByText("compare");
-  // The drawer aligns both event timelines.
+  // The drawer aligns both runs' findings.
   screen.getByText("current · 20260726-140000-aaaa");
   screen.getByText("compare · 20260726-130000-bbbb");
 });

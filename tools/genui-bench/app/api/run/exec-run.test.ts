@@ -38,7 +38,7 @@ beforeAll(() => {
     join(lanesDir, "vendo.ts"),
     `const adapter = {
       name: "vendo",
-      generate: async () => ({ status: "ok", startedAt: Date.now(), durationMs: 5, events: [] }),
+      generate: async () => ({ status: "ok", startedAt: Date.now(), durationMs: 5, findings: [] }),
     };
     export default adapter;\n`,
   );

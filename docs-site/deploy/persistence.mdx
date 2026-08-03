@@ -1,7 +1,7 @@
 ---
 title: "Persistence: Postgres schema and PGlite for local dev"
 sidebarTitle: "Persistence"
-description: "How Vendo's Postgres schema, default-on secret encryption, append-only audit, and eraseStore API work across PGlite dev and hosted production."
+description: "How Vendo's Postgres schema, secret encryption, append-only audit, and eraseStore API work across PGlite dev and hosted production."
 ---
 
 Vendo persists threads, apps, records, blobs, state, grants, approvals,
@@ -54,10 +54,12 @@ Anonymous traffic keeps serving, and local stores are unaffected.
 
 ### Stable tables
 
-The stable public tables are `vendo_meta`, `vendo_apps`, `vendo_records`,
-`vendo_blobs`, `vendo_state`, `vendo_threads`, `vendo_grants`,
-`vendo_approvals`, `vendo_audit`, `vendo_runs`, `vendo_secrets`, and
-`vendo_sessions` (the anonymous-session registry the TTL sweep reads).
+The sixteen stable public tables are `vendo_meta`, `vendo_apps`,
+`vendo_records`, `vendo_blobs`, `vendo_state`, `vendo_threads`,
+`vendo_grants`, `vendo_approvals`, `vendo_audit`, `vendo_runs`,
+`vendo_secrets`, `vendo_mcp_clients`, `vendo_mcp_grants`, `vendo_sessions`
+(the anonymous-session registry the TTL sweep reads), `vendo_knowledge_docs`,
+and `vendo_knowledge_chunks`. `eraseStore` covers all sixteen.
 
 ### PGlite is single-writer
 
@@ -69,20 +71,36 @@ safe. A lock left behind by a killed process is reclaimed automatically. If
 boot logs show the store waiting on a pid, another server owns that dir:
 stop it, give each server its own `dataDir`, or move to a Postgres `url`.
 
-### Encryption is on by default
+### Encryption is opt-in, and production fails closed without it
 
-Set a 32-byte base64 key at `VENDO_STORE_ENCRYPTION_KEY` in your host
-`.env`. The default composition reads it when no store is passed to
-`createVendo`, so secret values in `vendo_secrets` are encrypted at rest
-without extra wiring. Do not rotate the key by hand: losing it makes
-existing secrets unreadable.
+Encryption covers exactly one column, `vendo_secrets.ciphertext`. Everything
+else stays host-queryable plaintext by design.
+
+What actually gates it is the store's own `allowUnencryptedSecrets` option:
+with no encryption key and no explicit opt-in to plaintext, reading or writing
+a secret value throws. `createStore({})` by hand therefore refuses secrets
+even in development. Deleting and listing secrets keep working without a key —
+neither touches ciphertext.
+
+The default composition — no `store` passed to `createVendo` — supplies that
+opt-in for you from the environment. Set a 32-byte base64 key at
+`VENDO_STORE_ENCRYPTION_KEY` in your host `.env` and secrets encrypt. Without
+it, the composition passes `allowUnencryptedSecrets` when `NODE_ENV` is not
+`production`, so:
+
+- In dev, secrets are written **unencrypted** under the gitignored data dir,
+  and the first plaintext write logs a warning.
+- In production, reading or writing a secret value **throws**. Set the key
+  before you deploy anything that stores a secret.
 
 An explicitly configured store always wins. If you pass
 `store: createStore({ encryption: { key } })` to `createVendo`, the
-environment variable is ignored.
+environment variable is ignored — and so is the `NODE_ENV` convenience above.
 
-Ciphertext is bound to the secret name with AES-GCM authenticated data, so a
-tampered or swapped row fails to decrypt.
+Ciphertext is AES-256-GCM and bound to the secret name as authenticated data,
+so a tampered or swapped row fails to decrypt. Do not rotate the key by hand:
+losing it makes existing secrets unreadable. Encryption needs the Node
+runtime — see [edge runtimes](/deploy/edge-runtimes).
 
 ### Audit is append-only
 
@@ -115,35 +133,14 @@ const byApp = await eraseStore(vendo.store).byApp(appId);
 Each call returns per-table deleted counts so you can log or verify the
 cascade.
 
-### Atomic claims
+### Compare-and-set on your own collections
 
-The store contract exposes a compare-and-set (CAS) claim primitive so
-concurrent workers can safely coordinate on a shared key without external
-locks. Use it whenever two ticks, retries, or agent runs might race on the
-same record: for example, deduplicating a webhook delivery, claiming a
-queued token exchange, or ensuring only one worker processes an invoice.
-
-```ts
-const claim = await vendo.store.claim({
-  key: `invoice:${invoiceId}`,
-  owner: runId,
-  ttlMs: 60_000,
-});
-
-if (!claim.acquired) {
-  // Another run already holds this key. Skip.
-  return;
-}
-
-try {
-  await processInvoice(invoiceId);
-} finally {
-  await vendo.store.release(claim);
-}
-```
-
-Claims are keyed per principal and expire after `ttlMs`, so a crashed worker
-never holds a key forever. `acquired` is false when another owner holds the
-key and its TTL has not elapsed. The same CAS machinery backs run-lifecycle
-transitions (start, stop, complete), so cancellation and scheduler ticks
-cannot resurrect a terminal run.
+When two ticks, retries, or agent runs might race on the same record, a
+record store exposes optional compare-and-set primitives on the collection
+handle: `records(name).claim(expected, replacement?)` returns `true` for the
+single caller whose read of `expected` still matched, and
+`records(name).atomic?.insertIfAbsent(record)` /
+`.compareAndSwap(record, expectedRevision)` return `null` when another caller
+won. Your own collections expose both. Vendo's internal tables vary — the
+routed reserved tables expose no `claim` at all — so feature-detect the
+method on the handle rather than assuming it is there.

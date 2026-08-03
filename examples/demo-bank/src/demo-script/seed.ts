@@ -30,7 +30,7 @@ function weeklySummaryDocument(id: string): AppDocument {
     id,
     name: "Weekly spending summary",
     description:
-      "Every Friday at 5:00 PM, email a digest of that week's spending by category.",
+      "Every Friday at 5:00 PM, prepare a digest of that week's spending by category, drafted and ready for you to send.",
     trigger: {
       on: { kind: "schedule", cron: "0 17 * * 5" },
       // Steps run model: the capture surface stays exactly these host reads
@@ -52,7 +52,7 @@ function lowBalanceAlertDocument(id: string): AppDocument {
     id,
     name: "Low balance alert",
     description:
-      "Every morning at 8:00 AM, check Maple Checking and email an alert if the balance is below $2,000.",
+      "Every morning at 8:00 AM, check Maple Checking and draft an alert if the balance is below $2,000, ready for you to send.",
     trigger: {
       on: { kind: "schedule", cron: "0 8 * * *" },
       // One host read keeps the standing-grant surface to a single consent

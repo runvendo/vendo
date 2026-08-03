@@ -17,6 +17,7 @@ import {
   createStack,
   generationTurn,
   readSse,
+  readSseMidStream,
   resetFixture,
   textTurn,
   toolCallTurn,
@@ -98,13 +99,21 @@ describe("ENG-263: anonymous→signed-in auto-merge", () => {
         message: { id: "u1", role: "user", parts: [{ type: "text", text: "Build a greeting card" }] },
       }),
     }));
-    await readSse(await anon.fetch("/threads", {
+    // Build contract §1.4: the guarded call blocks INSIDE the tool call
+    // awaiting the tap, so the approval is only "pending" while this request
+    // is still open. This journey never decides it (the point is that it
+    // does NOT migrate on merge), so synchronize on the approval card and
+    // abort the request afterward instead of waiting out the frozen bound.
+    const abortDelete = new AbortController();
+    const del = readSseMidStream(await anon.fetch("/threads", {
       method: "POST",
       body: JSON.stringify({
         threadId: "thr_merge_del",
         message: { id: "u2", role: "user", parts: [{ type: "text", text: "Delete invoice inv_0003" }] },
       }),
+      signal: abortDelete.signal,
     }));
+    await del.approval;
     const anonApprovals = (await (await anon.fetch("/approvals")).json()) as unknown[];
     expect(anonApprovals).toHaveLength(1);
     const cookie = anon.cookie();
@@ -157,6 +166,11 @@ describe("ENG-263: anonymous→signed-in auto-merge", () => {
     expect(
       await stack.sql("SELECT id FROM vendo_audit WHERE kind = 'principal'"),
     ).toHaveLength(1); // no second merge event
+
+    // Never decided by design (see above) — cut the still-blocked request
+    // short instead of waiting out the frozen approval bound.
+    abortDelete.abort();
+    await del.done.catch(() => {});
   });
 
   it("cannot steal another subject's rows and ignores forged cookies", async () => {

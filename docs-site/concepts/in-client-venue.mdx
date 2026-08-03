@@ -32,25 +32,23 @@ one app. The hash covers all app content, so any edit (a pin change, a
 generated-component change, a tree edit) produces a new hash and invalidates
 every existing approval for that app.
 
-The three verdict states behave differently in the surface:
-
-- An approved, unchanged version mounts in the host page.
-- A version that changed after approval renders jailed with a loud in-surface
-  notice ("…running in the sandbox again until the new version is
-  re-approved"), so users know an approval was invalidated.
-- An app that was never approved renders jailed and silent. That is the
-  universal state and does not announce itself.
+One exception to the jail fallback: a *review-kind* app — one whose pins were
+captured with `review: true` — never drops to the jail while it waits.
+Anything short of a grant becomes `pending-review`, the surface ships no
+executable source at all, and the user sees the review standing.
 
 If an approved component fails to compile or render, the surface drops back
-to the jail with an error notice. The exact record and verdict shapes are in
-the [Approval reference](#approval-reference).
+to the jail with an error notice. Every verdict and how it renders is in the
+[Approval reference](#approval-reference).
 
 ## Reviewing what changed: ship-diff
 
-Before minting an approval, a reviewer reads the *ship-diff*: the diff of
-approvable code against the last approved baseline, hash-pinned to the current
-version. Pinned host slots are diffed against the baseline captured when the
-pin was created; drift or a missing baseline is flagged and fails closed.
+Before minting an approval, a reviewer reads the *ship-diff*: approvable code
+diffed against the host baselines `vendo sync` captured, hash-pinned to the
+current version. Approvals are not an input — the diff answers "how far has
+this drifted from the shipped product", not "what changed since last
+approval". A pin whose captured baseline has since moved is flagged
+`drifted`; the diff still returns, and approving is still possible.
 Net-new generated components appear as pure additions. The tree structure
 itself is not in the diff; the reviewable *code* is.
 
@@ -63,13 +61,15 @@ const diff = await client.apps.shipDiff(appId);
 Or on the server:
 
 ```ts
-const diff = await vendo.apps.inClient.shipDiff(appId, {
-  principal
-});
+// ctx is the RunContext for the request: { principal, venue, presence, sessionId }
+const diff = await vendo.apps.inClient.shipDiff(appId, ctx);
 ```
 
-Both routes are owner-scoped. Only the app's owner can read the diff. The
-response shape is in [Ship-diff shape](#ship-diff-shape).
+Both are owner-scoped: only the app's owner can read the diff. The one
+exception is the review queue — `vendo.apps.review.queue(ctx)` hands the
+ship-diffs of *other* users' review-kind apps to a caller your composition's
+`apps.review.reviewer(ctx)` hook asserts. The response shape is in
+[Ship-diff shape](#ship-diff-shape).
 
 ## Minting approvals
 
@@ -81,8 +81,13 @@ is running, never a hand-crafted hash.
 ### Server-side
 
 ```ts
-await vendo.apps.inClient.approve(appId, { principal });
+await vendo.apps.inClient.approve({ appId, approvedBy: reviewerId }, ctx);
 ```
+
+`approvedBy` is required — the record names who reviewed. A review-kind app
+refuses to be approved by its own owner unless your composition asserts a
+reviewer through `apps.review.reviewer(ctx)`; without that hook the call is
+`blocked` with a pointer to it.
 
 ### Development wire route
 
@@ -93,19 +98,20 @@ curl -X POST \
   -d '{ "appId": "app_…" }'
 ```
 
-This route follows the rules in [Dev route rules](#dev-route-rules); it never
-mounts in production.
+`approvedBy` is optional here and defaults to `"local-dev"`. The route
+returns the approval record, and follows the rules in
+[Dev route rules](#dev-route-rules); it never mounts in production.
 
 Approvals are audited through `guard.report`. Read the record store with
-`vendo.apps.inClient.approvals(appId, { principal })`.
+`vendo.apps.inClient.approvals(appId, ctx)`.
 
 ## What runs in the host page
 
 Approved content runs in a closed module space: sucrase-compiled code with a
 controlled `require` that resolves React and captured sub-sources only, the
 same evaluation model the jail uses, in the venue the approved verdict
-unlocks. `sampleProps` are not used in the host mount; the shipped surface
-never renders stub data.
+unlocks. Venue parity extends to props: a node with no live props falls back
+to its captured `sampleProps` rehearsal stub, exactly as it would in the jail.
 
 The `$action` dispatch continues to route through the tree chokepoint, so
 host tools remain gated by the same policy, grants, and audit path as the
@@ -119,9 +125,13 @@ jailed venue.
 
 | State | Field on `payload.inClient` | Rendering |
 | --- | --- | --- |
-| Approved | `{ granted: true, versionHash }` | Host-page mount |
-| Approval exists but version changed | `{ granted: false, reason: "version-changed" }` | Jailed, with a loud in-surface notice |
+| Approved | `{ granted: true, versionHash, approvedBy, at, review? }` | Host-page mount |
+| Approval exists but version changed | `{ granted: false, versionHash, reason: "version-changed" }` | Jailed, with a loud in-surface notice |
+| Review-kind app not yet granted | `{ granted: false, versionHash, reason: "pending-review", review }` | No source shipped; the review standing is rendered instead |
 | No approval ever recorded | field omitted | Jailed, silent (the default) |
+
+`review` is the standing: `{ status: "pending", versionHash }` or
+`{ status: "rejected", versionHash, note, by, at }`.
 
 ### The approval record
 
@@ -145,6 +155,7 @@ approvals.
 
 ```json
 {
+  "appId": "app_…",
   "versionHash": "…",
   "pins": [{ "slot": "…", "component": "…",
              "baseHash": "…", "baselineHash": "…",
@@ -155,9 +166,10 @@ approvals.
 
 ### Dev route rules
 
-`POST /api/vendo/dev/inclient-approval` is only mounted in development
-compositions (production returns `404`, matching `/dev/remixable-source`).
-The request must resolve a host principal; anonymous callers get `401`.
+`POST /api/vendo/dev/inclient-approval` is the only `/dev/*` route Vendo
+serves, and it is mounted in development compositions only (production
+returns `404`). The request must resolve a host principal; anonymous callers
+get `401`.
 
 ## Related reading
 

@@ -1,3 +1,4 @@
+import type { FilesAdapter } from "@vendoai/core";
 import { eraseStore } from "./erase.js";
 import { dbFor, type VendoStore } from "./store.js";
 
@@ -86,11 +87,14 @@ export async function isEphemeralSubject(store: VendoStore, subject: string): Pr
     from under its visitor. */
 export async function sweepEphemeralSubjects(
   store: VendoStore,
-  opts: { idleMs: number; now?: number },
+  opts: { idleMs: number; now?: number; files: FilesAdapter },
 ): Promise<string[]> {
   const now = opts.now ?? Date.now();
   const stale = await listStaleEphemeralSubjects(store, { idleMs: opts.idleMs, now });
-  const erase = eraseStore(store);
+  // The sweep IS a full erase, so it needs the same files adapter: the whole
+  // point of erase's required parameter is that no path may quietly leave a
+  // host's bucket full after the rows are gone (build contract §3.4).
+  const erase = eraseStore(store, { files: opts.files });
   const evicted: string[] = [];
   for (const subject of stale) {
     if (!(await claimEphemeralSubject(store, subject, { idleMs: opts.idleMs, now }))) continue; // adopted or re-touched mid-sweep — not ours

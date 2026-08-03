@@ -5,12 +5,12 @@ import type { LaneName, LaneResult, RunRecord } from "./types";
 /** Artifact filenames per lane, alongside run.json in `runs/<id>/`. */
 const wireFile = (lane: LaneName) => `${lane}.wire.txt`;
 const documentFile = (lane: LaneName) => `${lane}.document.json`;
-const eventsFile = (lane: LaneName) => `${lane}.events.json`;
+const findingsFile = (lane: LaneName) => `${lane}.findings.json`;
 const rawFile = (lane: LaneName) => `${lane}.raw.json`;
 
 /**
  * Persist a RunRecord: `run.json` keeps the slim record (statuses, timings,
- * pin); the bulky per-lane payloads (wire/document/events/raw) go to sibling
+ * pin); the bulky per-lane payloads (wire/document/findings/raw) go to sibling
  * artifact files so history listing stays cheap and artifacts stay greppable.
  * Returns the run.json path.
  */
@@ -24,13 +24,16 @@ export function saveRun(runsDir: string, record: RunRecord): string {
       slimLanes[name] = result;
       continue;
     }
-    const { wire, events, raw, ...rest } = result;
-    const { document, ...slim } = rest as typeof rest & { document?: unknown };
+    const { wire, raw, ...rest } = result;
+    const { document, findings, ...slim } = rest as typeof rest & {
+      document?: unknown;
+      findings?: unknown;
+    };
     slimLanes[name] = slim as LaneResult;
 
     if (wire !== undefined) writeFileSync(join(runDir, wireFile(name)), wire);
     if (document !== undefined) writeJson(join(runDir, documentFile(name)), document);
-    if (events !== undefined) writeJson(join(runDir, eventsFile(name)), events);
+    if (findings !== undefined) writeJson(join(runDir, findingsFile(name)), findings);
     if (raw !== undefined) writeJson(join(runDir, rawFile(name)), raw);
   }
 
@@ -65,8 +68,10 @@ export function loadRun(runsDir: string, id: string): RunRecord {
     if (existsSync(documentPath) && result.status === "ok") {
       result.document = JSON.parse(readFileSync(documentPath, "utf8"));
     }
-    const eventsPath = join(runDir, eventsFile(name));
-    if (existsSync(eventsPath)) result.events = JSON.parse(readFileSync(eventsPath, "utf8"));
+    const findingsPath = join(runDir, findingsFile(name));
+    if (existsSync(findingsPath) && result.status === "ok") {
+      result.findings = JSON.parse(readFileSync(findingsPath, "utf8"));
+    }
     const rawPath = join(runDir, rawFile(name));
     if (existsSync(rawPath)) result.raw = JSON.parse(readFileSync(rawPath, "utf8"));
   }

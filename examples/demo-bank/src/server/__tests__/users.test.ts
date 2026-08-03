@@ -17,6 +17,16 @@ describe("Maple seeded demo users", () => {
     expect(new Set(users.map(({ email }) => email)).size).toBe(2)
   })
 
+  it("has no switchable roster when password login is unconfigured", () => {
+    // The account switcher offers exactly this list, so an empty one is a
+    // CONFIGURATION gap, not a feature: the menu says so and names the env var
+    // (see the Authentication section of the README).
+    vi.stubEnv("NODE_ENV", "production")
+    expect(mapleDemoUsers()).toEqual([])
+    vi.stubEnv("MAPLE_DEMO_PASSWORD", "set-in-production")
+    expect(mapleDemoUsers().map(({ subject }) => subject)).toEqual(["vendo-demo", "maple-mia"])
+  })
+
   it("authenticates both seeded users case-insensitively and rejects bad passwords", async () => {
     vi.stubEnv("MAPLE_DEMO_EMAIL", "demo@maple.test")
     vi.stubEnv("MAPLE_DEMO_PASSWORD", "correct horse battery staple")

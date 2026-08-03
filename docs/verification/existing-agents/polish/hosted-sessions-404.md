@@ -1,5 +1,12 @@
 # Hosted-store session sweep 404 — findings + flowlet fix (Polish Lane B)
 
+**STATUS: HEALED** — the console restored the doors over the `end_user` model
+(vendo-web #88, `b37dceea`, 2026-07-20); live-verified against prod 2026-08-02
+(all four doors 200, `adopt` returned a merge report). The latch described
+below is dormant and self-re-arming: it is per-process, trips only on a bare
+404, and needs no client change if the doors ever go away again. Everything
+from here down is the historical record of the outage.
+
 **PROD-IMPACT.** Until this branch lands, any keyed host (Cloud hosted store)
 serving anonymous traffic hard-fails those requests in prod: the first
 session registration fails closed against a route the console no longer

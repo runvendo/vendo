@@ -1,4 +1,4 @@
-import { authMaterialSchema, principalSchema, type AuthMaterial, type PermissionGrant, type Principal } from "@vendoai/core";
+import { authMaterialSchema, principalSchema, type AuthMaterial, type Membership, type PermissionGrant, type Principal } from "@vendoai/core";
 import type { ConformanceSuite } from "@vendoai/core/conformance";
 import type { HostAuthPreset } from "./shared.js";
 
@@ -37,6 +37,11 @@ export interface HostAuthPresetConformanceOptions {
       system's verify half here; return the verified subject, or null when
       verification rejects the material. */
   verifyActAs?(material: AuthMaterial): Promise<string | null> | string | null;
+  /** Build contract §9.1 — set when the preset under test was configured with a
+      `memberships` callback: the orgs/teams it must assert for `knownSubject`.
+      Unset, the memberships case asserts the seam stays cleanly absent (no
+      orgs asserted ⇒ `can()` degenerates to ownership). */
+  expectedMemberships?: Membership[];
 }
 
 const assert: (condition: unknown, message: string) => asserts condition = (condition, message) => {
@@ -161,6 +166,27 @@ export function hostAuthPresetConformance(opts: HostAuthPresetConformanceOptions
             grantFor(opts.unknownSubject),
           );
           assert(material === null, "actAs minted material for an unknown subject");
+        },
+      },
+      {
+        name: "build contract §9.1 — memberships answers from the Principal alone (no session)",
+        async run(): Promise<void> {
+          const seam = opts.preset.memberships;
+          if (opts.expectedMemberships === undefined) {
+            assert(
+              seam === undefined,
+              "preset asserts memberships but the suite declares none — pass expectedMemberships",
+            );
+            return;
+          }
+          assert(seam !== undefined, "preset was configured with memberships but does not expose the seam");
+          // Keyed on Principal, NOT Request: an unattended run (a fire-time
+          // sponsor check) has no session to hand it.
+          const asserted = await seam({ kind: "user", subject: opts.knownSubject });
+          assert(
+            JSON.stringify(asserted) === JSON.stringify(opts.expectedMemberships),
+            `memberships asserted ${JSON.stringify(asserted)}, expected ${JSON.stringify(opts.expectedMemberships)}`,
+          );
         },
       },
       {

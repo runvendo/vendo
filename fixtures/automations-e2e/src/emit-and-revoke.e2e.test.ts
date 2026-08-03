@@ -47,6 +47,12 @@ describe("host-event scoping and grant revocation", () => {
     }
   });
 
+  // The subject here is REVOCATION being live — the next run asks again. It
+  // rides a non-destructive write (PATCH `host_invoices_update`) because THE LAW
+  // (design §12) refuses a destructive or external action in an unattended run
+  // outright, so the "first run succeeds on its captured grant" premise this
+  // scenario needs is only reachable for a legal write. The law's own refusal is
+  // proven in park-resume.e2e.test.ts.
   it("parks the next run after its standing grant is revoked", async () => {
     const stack = await createStack();
     try {
@@ -56,19 +62,22 @@ describe("host-event scoping and grant revocation", () => {
         id: appId,
         trigger: {
           on: { kind: "host-event", event: "invoice.autosend" },
-          run: { kind: "steps", steps: [{ id: "send", tool: "host_invoices_send", args: { id: "event.id" } }] },
+          run: {
+            kind: "steps",
+            steps: [{ id: "send", tool: "host_invoices_update", args: { id: "event.id", memo: "'autoswept'" } }],
+          },
         },
       }));
       await enableAndApprove(stack, appId, ctx);
 
-      // First run: the captured grant authorizes the away send.
+      // First run: the captured grant authorizes the away write.
       const first = await stack.automations.emit("invoice.autosend", { id: "inv_0003" }, ADA);
       expect((await stack.automations.runs.get(first[0] ?? "", ctx))?.status).toBe("ok");
-      expect((await fixtureInvoices()).find(({ id }) => id === "inv_0003")?.status).toBe("open");
+      expect((await fixtureInvoices()).find(({ id }) => id === "inv_0003")?.memo).toBe("autoswept");
 
       // Revoke the standing automation grant.
       const grants = await stack.guard.grants.list(ADA);
-      const grant = grants.find((entry) => entry.appId === appId && entry.tool === "host_invoices_send");
+      const grant = grants.find((entry) => entry.appId === appId && entry.tool === "host_invoices_update");
       if (!grant) throw new Error("automation grant not found");
       await stack.guard.grants.revoke(grant.id, ADA);
       expect((await stack.sql<{ revoked_at: unknown }>(
@@ -84,9 +93,9 @@ describe("host-event scoping and grant revocation", () => {
       if (!secondId) throw new Error("second emit did not return a run id");
       const secondRun = await stack.automations.runs.get(secondId, ctx);
       expect(secondRun?.status).toBe("pending-approval");
-      expect(secondRun?.steps.at(-1)).toMatchObject({ tool: "host_invoices_send", outcome: "pending-approval" });
+      expect(secondRun?.steps.at(-1)).toMatchObject({ tool: "host_invoices_update", outcome: "pending-approval" });
       const away = (await stack.guard.approvals.pending(ADA)).find((request) =>
-        request.call.tool === "host_invoices_send"
+        request.call.tool === "host_invoices_update"
         && request.ctx.presence === "away"
         && request.ctx.appId === appId
       );

@@ -14,16 +14,52 @@ import { extractedRisk, graphqlRisk, trpcRisk } from "./common.js";
 const PACKAGES_DIR = fileURLToPath(new URL("../../../", import.meta.url));
 /** The exact identifiers the spec's AC1 grep names, plus the helper that made
  *  a word list usable. Written split so this file does not match itself. */
-const BANNED = ["DESTRUCTIVE" + "_WORDS", "READ" + "_WORDS", "DESTRUCTIVE" + "_TOKENS", "READ" + "_VERBS"];
+const BANNED = [
+  "DESTRUCTIVE" + "_WORDS", "READ" + "_WORDS", "DESTRUCTIVE" + "_TOKENS",
+  "READ" + "_VERBS", "DESTRUCTIVE" + "_VERBS",
+];
+
+/**
+ * The ONE place a verb vocabulary still lives, and it is not extraction.
+ *
+ * The rebuild cutover (#736) landed a SECOND mechanical vote in core
+ * (`mechanicalRisk` / `resolvedRisk`, grant-sets.ts): it reads a tool's name at
+ * DECISION time to escalate — never to grade a catalog, never to lower a label,
+ * and skipped for Vendo-authored tools. D1 ("no code path concludes anything
+ * from a tool's name") and that vote are not reconciled, and a merge is not the
+ * place to decide which survives. Until it is decided, this holds the line where
+ * the spec's own evidence is: nothing in EXTRACTION or the connectors carries a
+ * word list, and no NEW copy may appear anywhere. If the core vote goes, this
+ * list must shrink with it — that failure is the reminder.
+ */
+const KNOWN_DECISION_TIME_VOTE = [
+  "packages/core/src/grant-sets.ts",
+  "packages/core/src/tools.ts",
+];
 
 describe("no code path grades a tool from its NAME (D1, AC1)", () => {
-  it("carries no word list anywhere under packages/", async () => {
+  it("carries no word list anywhere under packages/, bar the one named exception", async () => {
     const sources = await walk(PACKAGES_DIR, (relative) =>
       /\.(?:ts|tsx|mts|cts)$/.test(relative) && !relative.includes("/dist/"));
     // Guards the grep itself: an empty sweep would pass vacuously forever.
     expect(sources.length).toBeGreaterThan(200);
     const offenders: string[] = [];
     for (const file of sources) {
+      const source = await readFile(file, "utf8");
+      if (!BANNED.some((token) => source.includes(token))) continue;
+      const relative = file.slice(file.indexOf("packages/"));
+      if (KNOWN_DECISION_TIME_VOTE.includes(relative)) continue;
+      offenders.push(relative);
+    }
+    expect(offenders).toEqual([]);
+  }, 60_000);
+
+  it("keeps every word list OUT of extraction and the connectors, which is what D1 governs", async () => {
+    const graders = await walk(fileURLToPath(new URL("../", import.meta.url)), (relative) =>
+      /\.(?:ts|tsx)$/.test(relative) && !relative.includes("/dist/"));
+    expect(graders.length).toBeGreaterThan(20);
+    const offenders: string[] = [];
+    for (const file of graders) {
       const source = await readFile(file, "utf8");
       if (BANNED.some((token) => source.includes(token))) offenders.push(file);
     }

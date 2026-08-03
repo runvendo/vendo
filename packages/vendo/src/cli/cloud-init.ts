@@ -122,16 +122,17 @@ function gitCheckIgnore(cwd: string, path: string): Promise<IgnoreVerdict> {
 export const AUTH_MD_URL = "https://vendo.run/auth.md";
 
 /** The agent-path key pointer: when an agent-driven init needs a Cloud key
-    and none exists, this block is the whole story — discovery URL, the CLI
-    command that runs the user-claimed ceremony, and both fallbacks (paste a
-    key with --cloud-key; stay keyless with --byo). Deterministic lines an
-    agent parses; exported so init's tail and the tests share one source. */
+    and none exists, this block is the whole story — the CLI command that runs
+    the user-claimed ceremony, its discovery URL, and both fallbacks (paste a
+    key with --cloud-key; stay keyless with --byo). Three lines, not the full
+    device-flow walkthrough: `vendo login` narrates its own ceremony step by
+    step, and the upsell used to open a keyless init before the user learned
+    what init did (self-serve audit F8). Deterministic lines an agent parses;
+    exported so init's tail and the tests share one source. */
 export function agentKeyPointerLines(): string[] {
   return [
-    `Vendo Cloud key (agent path): fetch ${AUTH_MD_URL} and follow the user-claimed flow —`,
-    "  1. run `vendo login` — it prints a code your human approves in the browser",
-    "  2. the minted VENDO_API_KEY lands in .env.local automatically (never printed)",
-    "  3. re-run `vendo init` (it picks the key up from .env.local) or pass --cloud-key <key>",
+    "Vendo Cloud key (agent path): run `vendo login` — it prints a code your human approves in the browser, and the minted VENDO_API_KEY lands in .env.local (never printed).",
+    `Then re-run \`vendo init\` (it picks the key up) or pass --cloud-key <key>. Protocol: ${AUTH_MD_URL}`,
     "No Cloud account wanted? Re-run with --byo and set a provider key (ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY).",
   ];
 }

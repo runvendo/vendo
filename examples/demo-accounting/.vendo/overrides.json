@@ -8,7 +8,7 @@
     "host_listClientMessages": { "audience": "end-user", "disabled": false },
     "host_listClients": { "audience": "end-user", "disabled": false },
     "host_listDeadlines": { "audience": "end-user", "disabled": false },
-    "host_sendClientMessage": { "audience": "end-user", "disabled": false },
-    "host_setDocumentStatus": { "audience": "end-user", "disabled": false }
+    "host_sendClientMessage": { "audience": "end-user", "disabled": false, "risk": "destructive" },
+    "host_setDocumentStatus": { "audience": "end-user", "disabled": false, "risk": "write" }
   }
 }
