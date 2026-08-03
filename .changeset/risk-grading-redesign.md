@@ -73,7 +73,7 @@ contends on that same transition and answers `spent` / `already-spent` /
 `taken-back`. Custom Guards are unaffected — callers feature-detect it, exactly
 like `abandonApprovals`.
 
-Two known limits, both written down at the code that carries them. The receipt
+Three known limits, all written down at the code that carries them. The receipt
 is the only atomic step: an approval ROW has no guarded write (the store offers
 `atomic` for threads, apps and generic rows only), so every marker on it is a
 read followed by a write and something can move the row in between. Because the
@@ -82,7 +82,12 @@ stale marker — never an execution, since the transition a call would need is
 already spent. And a custom `Guard` that does not implement the optional
 `spendApproval` puts the automations grant mint back on that read-then-write
 footing, where a revoke landing in the window can lose to the mint; the guard
-that ships here has the seam.
+that ships here has the seam. Third: when an automation's parked run resumes, its
+standing grant is written just before the call and taken back if the call is not
+authorized after all — every outcome the process lives through, a thrown one
+included, but a hard kill in between leaves that grant behind and nothing sweeps
+it. It shows up in `grants.list`, pinned to the tool's `descriptorHash`,
+app-bound and away-only, and you can revoke it.
 
 One consequence worth knowing: `descriptorHash` follows the field rename, so
 approvals and grants persisted before the upgrade no longer match their tool's

@@ -743,6 +743,56 @@ describe("steps execution, parking, and resumption", () => {
     });
   });
 
+  /**
+   * Checker round 7, finding 1 — the same law for a THROW. A dispatch that dies
+   * (store hiccup, a VendoError out of the registry) never spent the yes either,
+   * so the grant minted moments earlier must not outlive the failed resume.
+   */
+  it("takes the grant back when the resumed dispatch throws", async () => {
+    const store = memoryStoreAdapter();
+    const guard = new GuardDouble();
+    let attempt = 0;
+    const tools = registry([writeTool], async (call, runCtx) => {
+      const currentAttempt = attempt++;
+      if (currentAttempt > 0) throw new Error("the host went away mid-resume");
+      const request = {
+        id: "apr_throws",
+        call: structuredClone(call),
+        descriptor: writeTool,
+        inputPreview: "write",
+        ctx: { principal: runCtx.principal, venue: runCtx.venue, presence: runCtx.presence, appId: runCtx.appId, trigger: runCtx.trigger },
+        createdAt: NOW.toISOString(),
+      };
+      await store.records("vendo_approvals").put({ id: request.id, data: { request, status: "pending" } });
+      return { status: "pending-approval", approvalId: request.id };
+    });
+    const doc = app("app_resume_throws", {
+      on: { kind: "host-event", event: "go" },
+      run: { kind: "steps", steps: [{ id: "needs", tool: writeTool.name }] },
+    });
+    await seedApp(store, doc, "user_a", true);
+    const engine = createAutomations({ apps: appsDouble(), tools, guard, store, now: () => NOW });
+    const [runId] = await engine.emit("go", {}, ctx().principal);
+    await store.records("vendo_approvals").put({
+      id: "apr_throws",
+      data: {
+        ...((await store.records("vendo_approvals").get("apr_throws"))?.data as object),
+        status: "approved",
+        decidedAt: NOW.toISOString(),
+      },
+    });
+
+    guard.decide("apr_throws", true);
+    await flush();
+
+    expect((await store.records("vendo_grants").list()).records).toHaveLength(0);
+    expect(await engine.runs.get(runId!, ctx())).toMatchObject({
+      status: "error",
+      summary: "stopped at resume: the host went away mid-resume",
+    });
+    expect(await store.records("automations:parked").get("apr_throws")).toBeNull();
+  });
+
   it("turns a denied parked call into a blocked hard failure and tick sweeps decided rows", async () => {
     const store = memoryStoreWithoutAtomic();
     const guard = new GuardDouble();

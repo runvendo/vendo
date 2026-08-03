@@ -931,6 +931,10 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       let trigger: Trigger;
       let step: Step;
       let outcome: ToolOutcome;
+      // Hoisted so the catch can take the grant back too: a throw between the
+      // mint and the dispatch would otherwise strand exactly the standing
+      // authority this section exists to keep from outliving its yes.
+      let armed: string | undefined;
       try {
         trigger = validateTrigger(appFound.row.doc.trigger);
         if (trigger.run.kind !== "steps") throw new VendoError("validation", "parked agentic run is invalid");
@@ -945,14 +949,30 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
         // user only through captured authority (05 §6). So the grant is minted
         // first and TAKEN BACK when the replay did not win — the receipt is the
         // arbiter, which is the only thing that can tell "the person revoked it
-        // mid-resume" from "we read the row a moment too early". A yes taken back
-        // leaves no standing authority behind, wherever in the window it landed.
-        const armed = await mintGrant(approvalData.request);
+        // mid-resume" from "we read the row a moment too early". Deleted rather
+        // than tombstoned with a `revokedAt`, symmetric with the mint (which
+        // writes no audit event either): a revoked-grant row for authority the
+        // person never actually held would read as history that did not happen.
+        //
+        // KNOWN LIMIT — this holds for every outcome the process lives through,
+        // including a throw, but NOT for a crash between the mint and the
+        // take-back: a kill there leaves the grant behind, and nothing sweeps it.
+        // It is visible in `grants.list`, pinned to this tool's `descriptorHash`,
+        // app-bound and away-only, and the person can revoke it. Closing it needs
+        // the mint and the delete in one transaction, which the store's
+        // record-at-a-time seam does not offer.
+        armed = await mintGrant(approvalData.request);
         outcome = await executeCall(run.appId, step, state.call, ctx);
         if (outcome.status === "pending-approval" || outcome.status === "blocked") {
           await config.store.records(GRANTS).delete(armed);
         }
       } catch (error) {
+        // Same law as a refused replay: the yes was never spent, so it leaves no
+        // standing authority. Best-effort — a failed delete must not replace the
+        // real failure below with its own.
+        if (armed !== undefined) {
+          await config.store.records(GRANTS).delete(armed).catch(() => undefined);
+        }
         await terminal(run, ctx, "error", `stopped at resume: ${message(error)}`, {
           code: "validation",
           message: message(error),
