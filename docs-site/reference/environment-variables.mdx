@@ -21,7 +21,7 @@ part of any contract — if a name is not on this page, do not depend on it.
 | `VENDO_POSTHOG_KEY` · `VENDO_POSTHOG_HOST` | override the telemetry project key and the host capture events are sent to |
 | `DO_NOT_TRACK=1` | disables telemetry and is also honored by Scarf |
 | `CI` | disables telemetry |
-| `NODE_ENV=production` | disables build and development telemetry at runtime |
+| `NODE_ENV` | gates the **runtime** (dev-server) telemetry collector only: it collects when `NODE_ENV` is `development` or `test`, and refuses otherwise — an unset or unrecognized value fails closed, so a production deploy that forgot to set it is never collected from. Build-side and CLI telemetry are unaffected by this variable; use `VENDO_TELEMETRY_DISABLED=1`, `DO_NOT_TRACK=1`, or `CI` to turn those off |
 | `E2B_API_KEY` | default key read by the E2B SDK when `e2bSandbox` receives no explicit `apiKey`; also auto-selects the E2B execution venue in `createVendo` when no `sandbox:` is passed and the optional `e2b` package is installed (takes precedence over the `VENDO_API_KEY` hosted sandbox default) |
 | `VENDO_BOX_TEMPLATE` | provider base template a provisioned machine boots from (the box image with Node and the in-box agent harness); used by the BYO e2b path, ignored by the Cloud pool which ships its own image |
 | `VENDO_BOX_EDIT_TIMEOUT_MS` | long-poll budget for one in-box agent edit; default 8 minutes |
