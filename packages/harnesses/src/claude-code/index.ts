@@ -32,11 +32,17 @@ import type { SessionMachine } from "./machine.js";
 import { localMachine } from "./local.js";
 import { boxMachine, type SandboxAdapterLike } from "./box.js";
 
+/** The knobs a TURN may still carry (harness-declared; see optionsSchema). */
+export interface ClaudeCodeTurnOptions {
+  maxTurns?: number;
+}
+
 /** v1 options, exactly (design §3): nothing else until asked. */
-export interface ClaudeCodeOptions {
+export interface ClaudeCodeOptions extends ClaudeCodeTurnOptions {
+  /** Construction-time only (agents spec 2026-08-04 cut per-turn model/effort):
+   *  which model thinks binds when the harness is built, never per request. */
   model?: string;
   effort?: "low" | "medium" | "high";
-  maxTurns?: number;
   /** Run the SDK on the host's own server instead of a sandbox. Never default. */
   machine?: "local";
   /**
@@ -77,10 +83,13 @@ export interface ClaudeCodeOptions {
  * `egress` is absent for a harder version of the same reason: it IS the box's
  * network boundary, so a per-turn override would let request text — which is
  * where prompt injection lives — name the host it wants to be reachable.
+ *
+ * `model` and `effort` left too (agents spec 2026-08-04, feature cut): which
+ * model thinks — and how hard — binds at construction, like every other
+ * harness knob. The per-turn path was declared and never enforced, and a knob
+ * that big must not ride request payloads.
  */
 const optionsSchema = z.object({
-  model: z.string().optional(),
-  effort: z.enum(["low", "medium", "high"]).optional(),
   maxTurns: z.number().int().positive().optional(),
 });
 
@@ -333,8 +342,8 @@ function eventQueue<T>() {
 
 export function claudeCode(
   options: ClaudeCodeOptions & ClaudeCodeDeps = {},
-): Harness<ClaudeCodeOptions> {
-  const harness: Harness<ClaudeCodeOptions> = defineHarness<ClaudeCodeOptions>({
+): Harness<ClaudeCodeTurnOptions> {
+  const harness: Harness<ClaudeCodeTurnOptions> = defineHarness<ClaudeCodeTurnOptions>({
     name: "claude-code",
     optionsSchema: optionsSchema as never,
     // The factory reads its OWN arg; the compose gate stays dumb (§9: a
@@ -352,16 +361,12 @@ export function claudeCode(
     // Lifecycle tools (`vendo_apps_open`, the pin and data verbs) stay.
     toolSurface: { curated: false, withhold: [VENDO_APPS_CREATE_TOOL, VENDO_APPS_EDIT_TOOL] },
 
-    async *run(turn: Turn<ClaudeCodeOptions>): AsyncGenerator<HarnessEvent, void, void> {
-      // Per-turn options may override the model knobs and NOTHING else: `machine`
-      // is read off the constructor, so a request can never move the SDK onto the
-      // host's server.
+    async *run(turn: Turn<ClaudeCodeTurnOptions>): AsyncGenerator<HarnessEvent, void, void> {
+      // Everything about the brain — model, effort, machine, template, egress —
+      // is the CONSTRUCTOR's; a turn may only bound its own length.
       const resolved = {
         ...options,
-        ...(turn.options ?? {}),
-        machine: options.machine,
-        egress: options.egress,
-        template: options.template,
+        ...(turn.options?.maxTurns === undefined ? {} : { maxTurns: turn.options.maxTurns }),
       };
       const state = readState(turn.state.get());
 
@@ -604,7 +609,7 @@ export function claudeCode(
  * conversations because both happened to have no identity is the one outcome
  * that must never happen.
  */
-function threadOf(turn: Turn<ClaudeCodeOptions>): string {
+function threadOf(turn: Turn<ClaudeCodeTurnOptions>): string {
   const named: unknown = turn.threadId;
   if (typeof named === "string" && named !== "") return named;
   const first = turn.messages[0]?.id;
