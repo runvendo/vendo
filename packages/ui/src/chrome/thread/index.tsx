@@ -26,11 +26,19 @@ export interface VendoSuggestionCard {
 
 export interface VendoThreadProps {
   threadId?: string;
-  /** Landing headline shown above the composer while the thread is empty. */
+  /** Landing headline shown above the composer while the thread is empty —
+   * the hero's big title (Sift-style empty state). Host-driven. */
   greeting?: string;
-  /** One quiet capability line under the landing headline (muted, centered).
-   * Purely additive: absent means today's headline-only landing. */
+  /** One quiet capability line under the landing headline — the hero's muted
+   * tagline. Purely additive: absent means a title-only hero. */
   intro?: string;
+  /** Small uppercase label above the hero title (Sift shows "SIFTGPT"). The
+   * hero's app-name eyebrow; host-driven and brand-neutral. */
+  heroEyebrow?: string;
+  /** App icon shown in the hero's rounded accent square (top-left). A short
+   * monogram string or a node/img; absent falls back to the eyebrow's initial
+   * (or renders no icon when there is no eyebrow either). */
+  heroIcon?: import("react").ReactNode;
   /** Starter prompts on the empty landing; clicking sends one. Lane pick 4B —
    * a plain string keeps today's pill chip; the object form renders a two-line
    * starter card (title + concrete outcome, optional icon) with more scent. */
@@ -59,6 +67,8 @@ export function VendoThread({
   threadId,
   greeting = "What can I help you build?",
   intro,
+  heroEyebrow,
+  heroIcon,
   suggestions = [],
   onVoice,
   onThreadId,
@@ -445,10 +455,19 @@ export function VendoThread({
                 </div>
               </div>
             ) : (
-              <>
-                <h1 className="fl-greet">{greeting}</h1>
-                {intro ? <p className="fl-intro">{intro}</p> : null}
-              </>
+              // Sift-style hero: app icon · eyebrow · big title · muted tagline,
+              // all host-driven. The icon glyph is the host's heroIcon (a short
+              // monogram or node); with only an eyebrow we fall back to its
+              // initial, and with neither we render no icon square at all.
+              <div className="fl-hero">
+                {(() => {
+                  const glyph = heroIcon ?? (heroEyebrow ? heroEyebrow.trim().charAt(0).toUpperCase() : undefined);
+                  return glyph ? <span className="fl-hero-icon" aria-hidden="true">{glyph}</span> : null;
+                })()}
+                {heroEyebrow ? <p className="fl-hero-eyebrow">{heroEyebrow}</p> : null}
+                <h1 className="fl-hero-title">{greeting}</h1>
+                {intro ? <p className="fl-hero-tagline">{intro}</p> : null}
+              </div>
             )}
             {!tutorialActive && suggestions.length > 0 ? (
               // Lane pick 4B — object suggestions render as two-line starter

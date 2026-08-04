@@ -666,6 +666,52 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
    the panel edge) and truncate a long title to one ellipsised line. */
 .fl-convo-item { min-width: 0; max-width: 100%; overflow: hidden; justify-content: flex-start; text-align: left; }
 .fl-convo-title { min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- conversation rail (Sift-style, text-forward) ----------
+   A lightweight, borderless list: a small header with a quiet "+" for a new
+   conversation, then plain text rows that truncate to one line, with a subtle
+   hover, a LIGHT selected wash (no black pills), and a "…" overflow menu that
+   fades in on hover. Optional muted date-group headers. */
+.fl-convos { align-self: stretch; display: flex; flex-direction: column; min-height: 0;
+  gap: 2px; padding: 2px; }
+.fl-convos-head { display: flex; align-items: center; justify-content: space-between; padding: 4px 6px 6px; }
+.fl-convos-label { font: 700 11px/1 var(--vendo-font); letter-spacing: .1em; text-transform: uppercase;
+  color: var(--vendo-fg-muted); }
+.fl-convos-new { width: 27px; height: 27px; border-radius: 8px; display: grid; place-items: center;
+  border: 1px solid transparent; background: transparent; color: var(--vendo-fg-muted); cursor: pointer;
+  transition: background .12s, color .12s; }
+.fl-convos-new:hover { background: var(--vendo-accent-soft); color: var(--vendo-fg); }
+.fl-convos-new:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
+.fl-convos-list { flex: 1 1 auto; display: flex; flex-direction: column; gap: 1px; min-height: 0;
+  overflow-y: auto; scrollbar-width: none; }
+.fl-convos-list::-webkit-scrollbar { display: none; }
+.fl-convos-empty { padding: 8px 10px; font-size: 12px; color: var(--vendo-fg-muted); }
+.fl-convos-group { font: 600 10.5px/1 var(--vendo-font); letter-spacing: .06em; text-transform: uppercase;
+  color: var(--vendo-fg-muted); margin: 13px 8px 5px; }
+.fl-convos-list > .fl-convos-group:first-child { margin-top: 3px; }
+.fl-convo-row { position: relative; display: flex; align-items: center; border-radius: 8px;
+  transition: background .12s; }
+.fl-convo-row:hover { background: var(--vendo-accent-soft); }
+.fl-convo-row.is-active { background: color-mix(in srgb, var(--vendo-accent) 10%, transparent); }
+.fl-convo-open { flex: 1; min-width: 0; text-align: left; border: 0; background: transparent;
+  color: var(--vendo-fg); cursor: pointer; font: 500 12.5px/1.35 var(--vendo-font); letter-spacing: -.006em;
+  padding: 8px 6px 8px 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fl-convo-row.is-active .fl-convo-open { font-weight: 600; }
+.fl-convo-more { flex-shrink: 0; width: 24px; height: 24px; margin-right: 4px; border-radius: 6px;
+  border: 0; background: transparent; color: var(--vendo-fg-muted); cursor: pointer; opacity: 0;
+  display: grid; place-items: center; transition: opacity .12s, background .12s, color .12s; }
+.fl-convo-row:hover .fl-convo-more, .fl-convo-row.is-menu-open .fl-convo-more,
+.fl-convo-more:focus-visible { opacity: 1; }
+.fl-convo-more:hover { background: var(--vendo-surface); color: var(--vendo-fg); }
+.fl-convo-menu { position: absolute; top: calc(100% - 3px); right: 4px; z-index: 20; min-width: 136px;
+  padding: 5px; border-radius: 10px; border: 1px solid var(--vendo-border); background: var(--vendo-surface);
+  box-shadow: var(--vendo-shadow); display: flex; flex-direction: column; gap: 1px;
+  animation: fl-fade-in .12s ease; }
+.fl-convo-menu button { text-align: left; border: 0; background: transparent; cursor: pointer;
+  padding: 7px 9px; border-radius: 6px; font: 500 12px/1 var(--vendo-font); color: var(--vendo-fg); }
+.fl-convo-menu button:hover { background: var(--vendo-accent-soft); }
+.fl-convo-menu .fl-convo-del { color: var(--vendo-warn); }
+.fl-convo-menu .fl-convo-del:hover { background: color-mix(in srgb, var(--vendo-warn) 12%, transparent); }
 /* Inline button spinner (Reconnect) — tinted for a filled primary button. */
 .fl-btn-spin { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
   border: 2px solid color-mix(in srgb, var(--vendo-accent-fg) 35%, transparent);
@@ -915,13 +961,31 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-send:hover { opacity: .92; background: var(--vendo-accent); color: var(--vendo-accent-fg); }
 .fl-send:disabled:hover { opacity: .4; background: var(--vendo-accent); }
 
-/* ---------- landing ---------- */
-/* The landing is ONLY the greeting + starter cards: the composer renders as a
-   sibling below (the same bottom slot it occupies in an active conversation),
-   so sending the first message never moves it. Content centers in the free
-   space and scrolls when the panel is shorter than the card stack. */
-.fl-landing { display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 16px; flex: 1; min-height: 0; overflow-y: auto; padding: 30px 30px 10px; text-align: center; }
+/* ---------- landing / hero (Sift-style empty state) ---------- */
+/* The landing is the hero (app icon · eyebrow · big title · muted tagline) over
+   a tidy starter-card grid; the composer renders as a sibling below (the same
+   bottom slot it occupies in an active conversation), so sending the first
+   message never moves it. Left-aligned and inset 16px so the hero column and
+   card grid line up with the composer bar below. Content is host-driven: title
+   (greeting), tagline (intro), eyebrow, and icon all arrive as props. */
+.fl-landing { display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
+  gap: 24px; flex: 1; min-height: 0; overflow-y: auto; padding: 40px 16px 16px; text-align: left; }
+.fl-hero { display: flex; flex-direction: column; align-items: flex-start; gap: 13px;
+  width: 100%; max-width: 720px; }
+/* App icon — a rounded accent square; a host icon node (or img) sits inside,
+   else the monogram fallback the component renders. */
+.fl-hero-icon { width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center;
+  background: var(--vendo-accent); color: var(--vendo-accent-fg); overflow: hidden;
+  font-family: var(--vendo-heading-font); font-weight: 700; font-size: 18px; letter-spacing: -.02em;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--vendo-fg) 20%, transparent), inset 0 1px 0 rgba(255,255,255,.16); }
+.fl-hero-icon img, .fl-hero-icon svg { width: 22px; height: 22px; display: block; object-fit: contain; }
+.fl-hero-eyebrow { margin: 1px 0 0; font: 700 11px/1 var(--vendo-font); letter-spacing: .13em;
+  text-transform: uppercase; color: var(--vendo-fg-muted); }
+.fl-hero-title { margin: 0; max-width: 16ch; font-family: var(--vendo-heading-font); font-weight: 680;
+  font-size: calc(var(--vendo-base-size) * 2.06); line-height: 1.12; letter-spacing: -.028em;
+  color: var(--vendo-fg); text-wrap: balance; }
+.fl-hero-tagline { margin: 0; max-width: 54ch; font-size: var(--vendo-text-body); line-height: 1.6;
+  letter-spacing: -.004em; color: var(--vendo-fg-muted); }
 .fl-greet { margin: 0; font-family: var(--vendo-heading-font); font-size: calc(var(--vendo-base-size) * 1.533); font-weight: 600; letter-spacing: -.022em; }
 /* The optional capability line under the landing headline (VendoThread's
    \`intro\` prop) — muted assistant voice, canvas geometry (max 460px). */
@@ -934,7 +998,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
   max-width: 560px; margin: 0 auto; text-align: left; }
 .fl-greeting-intro { margin: 0; line-height: 1.65; font-size: var(--vendo-text-body); letter-spacing: -.006em; }
 .fl-greeting .fl-chips { justify-content: flex-start; }
-.fl-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.fl-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-start; }
 /* Mixed suggestions (cards + chips): the chips are the second tier, under an
    "Or try this" micro-label (demo-live-readiness mockup §1). */
 .fl-try-row { margin-top: 16px; }
@@ -2104,25 +2168,21 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
   box-shadow: var(--vendo-shadow); text-decoration: none; margin-top: 0; }
 .fl-fold-pill:hover { border-color: var(--vendo-accent); }
 
-/* 4B — starter cards on the landing (object suggestions). */
-.fl-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px;
-  width: 100%; max-width: 560px; }
-/* Five(+) cards (2026-07 demo feedback): the grid would leave a hole in the
-   last row — flex-wrap instead, so the trailing cards stretch edge-to-edge
-   (3 up top, 2 wide below at the overlay's landing width). */
-.fl-cards:has(> .fl-card:nth-child(5)) { display: flex; flex-wrap: wrap; }
-.fl-cards:has(> .fl-card:nth-child(5)) > .fl-card { flex: 1 1 160px; min-width: 150px; }
-.fl-card { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; text-align: left;
+/* 4B — starter cards on the landing (object suggestions). Sift-style: a calm
+   two-up grid of bold-title + muted-subtitle cards, aligned left with the hero
+   column above and the composer below (shared 720px max-width, 16px inset). */
+.fl-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(228px, 1fr)); gap: 10px;
+  width: 100%; max-width: 720px; }
+.fl-card { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; text-align: left;
   cursor: pointer; border: 1px solid var(--vendo-border); border-radius: var(--vendo-radius);
-  background: var(--vendo-glass-strong); -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
-  padding: 12px 13px; color: var(--vendo-fg);
-  transition: border-color .14s, transform .18s cubic-bezier(.22, 1, .36, 1), box-shadow .18s; }
-.fl-card:hover { border-color: var(--vendo-border-strong); transform: translateY(-1px);
-  box-shadow: 0 2px 10px color-mix(in srgb, var(--vendo-fg) 8%, transparent); }
-.fl-card:active { transform: translateY(0); box-shadow: none; }
+  background: var(--vendo-surface); padding: 14px 16px; color: var(--vendo-fg);
+  transition: border-color .14s, background .14s, box-shadow .14s; }
+.fl-card:hover { border-color: var(--vendo-border-strong); background: var(--vendo-accent-soft);
+  box-shadow: var(--vendo-shadow); }
+.fl-card:active { box-shadow: none; }
 .fl-card:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
-.fl-card b { font: 600 12.5px/1.3 var(--vendo-font); }
-.fl-card span { font: 400 11.5px/1.45 var(--vendo-font); color: var(--vendo-fg-muted); }
+.fl-card b { font: 600 13.5px/1.35 var(--vendo-font); letter-spacing: -.012em; }
+.fl-card span { font: 400 12px/1.5 var(--vendo-font); color: var(--vendo-fg-muted); }
 .fl-card svg { color: var(--vendo-fg-muted); }
 
 /* 8A — code header bar (Copy is always visible; overrides the hover reveal). */

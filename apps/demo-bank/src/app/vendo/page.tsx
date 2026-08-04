@@ -21,7 +21,19 @@ export default function VendoTabPage() {
   return (
     <div style={{ height: "calc(100dvh - 112px)", minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <VendoRoot>
-        <VendoPage thread={{ suggestions, discoverability: "quiet" }} />
+        <VendoPage
+          thread={{
+            suggestions,
+            discoverability: "quiet",
+            // Maple's own Sift-style hero copy (title · tagline · eyebrow ·
+            // icon) — the shared chrome stays brand-neutral; the words are ours.
+            greeting: "Ask anything about your money",
+            intro:
+              "Maple knows your accounts, spending, and bills. Ask in plain English and get an answer you can act on — or pin to your home screen.",
+            heroEyebrow: "Ask Maple",
+            heroIcon: "M",
+          }}
+        />
       </VendoRoot>
     </div>
   );

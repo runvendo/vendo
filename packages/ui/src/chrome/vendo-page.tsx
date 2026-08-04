@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useVendoContext } from "../context.js";
+import type { ThreadSummary } from "../wire-types.js";
 import { useApp } from "../hooks/use-app.js";
 import { useApps } from "../hooks/use-apps.js";
 import { useMobileTakeover } from "../hooks/use-mobile-takeover.js";
@@ -14,11 +15,15 @@ import { TakeoverPortal } from "./takeover-portal.js";
 import { VendoThread, type VendoThreadProps } from "./thread/index.js";
 import { WaitingQueue } from "./waiting-queue.js";
 
-/** Host passthrough for the chat tab's thread — the same starter cards and
-    discoverability dial a standalone VendoThread takes, so a host's curated
-    landing survives the move onto the full workspace. */
+/** Host passthrough for the chat tab's thread — the same starter cards, hero
+    copy (title · tagline · eyebrow · icon) and discoverability dial a
+    standalone VendoThread takes, so a host's curated landing survives the move
+    onto the full workspace. */
 export interface VendoPageProps {
-  thread?: Pick<VendoThreadProps, "suggestions" | "discoverability">;
+  thread?: Pick<
+    VendoThreadProps,
+    "suggestions" | "discoverability" | "greeting" | "intro" | "heroEyebrow" | "heroIcon"
+  >;
 }
 
 const TABS = ["chat", "apps", "automations", "accounts", "activity"] as const;
@@ -32,9 +37,120 @@ function title(tab: Tab): string {
   return tab[0]!.toUpperCase() + tab.slice(1);
 }
 
+const DAY_MS = 86_400_000;
+
+/** Sift-style date grouping: split the (recency-ordered) list into "Last 30
+ *  days" and "Older than last month". Headers only appear when BOTH buckets
+ *  have entries — otherwise a single clean, unlabelled list (the grouping is a
+ *  nicety, never a requirement). */
+function groupThreads(threads: ThreadSummary[], now: number): { label?: string; items: ThreadSummary[] }[] {
+  const recent: ThreadSummary[] = [];
+  const older: ThreadSummary[] = [];
+  for (const thread of threads) {
+    const ts = Date.parse(thread.updatedAt);
+    if (!Number.isNaN(ts) && now - ts > 30 * DAY_MS) older.push(thread);
+    else recent.push(thread);
+  }
+  if (recent.length > 0 && older.length > 0) {
+    return [
+      { label: "Last 30 days", items: recent },
+      { label: "Older than last month", items: older },
+    ];
+  }
+  return [{ items: threads }];
+}
+
+/** The conversation rail (Sift-style): a quiet "+" in the header for a new
+ *  conversation, then text-forward rows — truncated title, subtle hover, light
+ *  selected wash, and a "…" overflow menu (Delete) that fades in on hover. */
+function ConversationList({ threads, activeId, onSelect, onNew, onDelete }: {
+  threads: ThreadSummary[];
+  activeId: string | undefined;
+  onSelect: (id: string) => void;
+  onNew: () => void;
+  onDelete: (id: string) => void;
+}) {
+  const [menuFor, setMenuFor] = useState<string | undefined>();
+  // Any click outside the open menu (or Escape) dismisses it. The trigger and
+  // the menu itself stop propagation, so this only ever fires for outside hits.
+  useEffect(() => {
+    if (menuFor === undefined) return;
+    const close = () => setMenuFor(undefined);
+    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") setMenuFor(undefined); };
+    window.addEventListener("click", close);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [menuFor]);
+  // Date.now() only re-reads when the list changes — buckets don't drift within
+  // a session, and this component is client-only (no SSR hydration concern).
+  const groups = useMemo(() => groupThreads(threads, Date.now()), [threads]);
+  return (
+    <nav className="fl-convos" aria-label="Conversations">
+      <div className="fl-convos-head">
+        <span className="fl-convos-label">Conversations</span>
+        <button type="button" className="fl-convos-new" aria-label="New conversation" onClick={onNew}>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 5v14" /><path d="M5 12h14" />
+          </svg>
+        </button>
+      </div>
+      <div className="fl-convos-list">
+        {threads.length === 0 ? <p className="fl-convos-empty">No conversations yet.</p> : null}
+        {groups.map((group, groupIndex) => (
+          <Fragment key={group.label ?? groupIndex}>
+            {group.label ? <div className="fl-convos-group">{group.label}</div> : null}
+            {group.items.map(thread => {
+              const open = menuFor === thread.id;
+              return (
+                <div
+                  className={`fl-convo-row${activeId === thread.id ? " is-active" : ""}${open ? " is-menu-open" : ""}`}
+                  key={thread.id}
+                >
+                  <button
+                    type="button"
+                    className="fl-convo-open"
+                    aria-current={activeId === thread.id ? "page" : undefined}
+                    title={thread.title}
+                    onClick={() => onSelect(thread.id)}
+                  ><span className="fl-convo-title">{thread.title}</span></button>
+                  <button
+                    type="button"
+                    className="fl-convo-more"
+                    aria-label="Conversation options"
+                    aria-haspopup="menu"
+                    aria-expanded={open}
+                    onClick={event => { event.stopPropagation(); setMenuFor(open ? undefined : thread.id); }}
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                      <circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" />
+                    </svg>
+                  </button>
+                  {open ? (
+                    <div className="fl-convo-menu" role="menu" onClick={event => event.stopPropagation()}>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="fl-convo-del"
+                        onClick={() => { setMenuFor(undefined); onDelete(thread.id); }}
+                      >Delete conversation</button>
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </Fragment>
+        ))}
+      </div>
+    </nav>
+  );
+}
+
 function ChatWorkspace({ thread }: { thread?: VendoPageProps["thread"] }) {
   const takeover = useMobileTakeover();
-  const { threads, isLoading, error: threadsError, refresh } = useThreads();
+  const { threads, isLoading, error: threadsError, refresh, remove } = useThreads();
   const [selected, setSelected] = useState<string>();
   // ENG-222 — the thr_ the server mints for a "New conversation" turn. Tracked
   // separately from `selected` (which drives VendoThread's threadId prop) so a
@@ -52,6 +168,23 @@ function ChatWorkspace({ thread }: { thread?: VendoPageProps["thread"] }) {
     setSelected(current => current ?? threads[0]?.id);
   }, [threads]);
   const onThreadId = useCallback((id: string) => setMinted(id), []);
+  const startNew = useCallback(() => { userChose.current = true; setSelected(undefined); setMinted(undefined); }, []);
+  const selectThread = useCallback((id: string) => { userChose.current = true; setSelected(id); setMinted(undefined); }, []);
+  // Deleting the active conversation drops back to the landing; the hook's own
+  // refresh re-lists, and the auto-select effect may then re-adopt the newest.
+  const deleteThread = useCallback((id: string) => {
+    void (async () => {
+      try {
+        await remove(id as Parameters<typeof remove>[0]);
+      } catch {
+        // A failed delete leaves the row in place — the list re-lists on the
+        // next poll; nothing to surface for this quiet, reversible action.
+        return;
+      }
+      setSelected(current => (current === id ? undefined : current));
+      setMinted(current => (current === id ? undefined : current));
+    })();
+  }, [remove]);
   // ENG-222 — a conversation started via "New conversation" mints a thr_ the
   // sidebar list has never seen; refresh so it appears (and highlights). The
   // mint arrives at turn START while the row persists at turn END, and every
@@ -79,26 +212,19 @@ function ChatWorkspace({ thread }: { thread?: VendoPageProps["thread"] }) {
         // thread to one character per line at 375px — below the breakpoint
         // the conversation list stacks above a full-width thread.
         gridTemplateColumns: takeover.active ? "minmax(0, 1fr)" : "minmax(180px, 240px) minmax(0, 1fr)",
-        gridTemplateRows: takeover.active ? "auto minmax(0, 1fr)" : undefined,
+        // The single content row fills the pane so the rail and thread both run
+        // full-height and the composer sits flush at the bottom — no dead space.
+        gridTemplateRows: takeover.active ? "auto minmax(0, 1fr)" : "minmax(0, 1fr)",
         padding: 14,
       }}
     >
-      <nav
-        className="fl-picker"
-        aria-label="Conversations"
-        style={{ alignSelf: "stretch", display: "flex", flexDirection: "column", gap: 8, maxHeight: "none", maxWidth: "none", padding: 12 }}
-      >
-        <button type="button" className="fl-btn fl-btn-primary" onClick={() => { userChose.current = true; setSelected(undefined); setMinted(undefined); }}>New conversation</button>
-        {threads.map(thread => (
-          <button
-            type="button"
-            className={`fl-btn fl-convo-item${activeId === thread.id ? " fl-btn-primary" : ""}`}
-            aria-current={activeId === thread.id ? "page" : undefined}
-            key={thread.id}
-            onClick={() => { userChose.current = true; setSelected(thread.id); setMinted(undefined); }}
-          ><span className="fl-convo-title">{thread.title}</span></button>
-        ))}
-      </nav>
+      <ConversationList
+        threads={threads}
+        activeId={activeId}
+        onSelect={selectThread}
+        onNew={startNew}
+        onDelete={deleteThread}
+      />
       {/* ENG-225 — the waiting-on-you strip parks above the live conversation;
           it renders nothing while no approvals are pending. */}
       <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
@@ -118,6 +244,10 @@ function ChatWorkspace({ thread }: { thread?: VendoPageProps["thread"] }) {
             threadId={selected}
             onThreadId={onThreadId}
             {...(thread?.suggestions === undefined ? {} : { suggestions: thread.suggestions })}
+            {...(thread?.greeting === undefined ? {} : { greeting: thread.greeting })}
+            {...(thread?.intro === undefined ? {} : { intro: thread.intro })}
+            {...(thread?.heroEyebrow === undefined ? {} : { heroEyebrow: thread.heroEyebrow })}
+            {...(thread?.heroIcon === undefined ? {} : { heroIcon: thread.heroIcon })}
             discoverability={
               thread?.discoverability
                 ?? (userChose.current || (!isLoading && threadsError === undefined && threads.length === 0)

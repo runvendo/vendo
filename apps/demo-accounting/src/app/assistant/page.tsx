@@ -31,7 +31,19 @@ export default function AssistantPage() {
       }}
     >
       <VendoRoot>
-        <VendoPage thread={{ suggestions, discoverability: "quiet" }} />
+        <VendoPage
+          thread={{
+            suggestions,
+            discoverability: "quiet",
+            // Cadence's own Sift-style hero copy (title · tagline · eyebrow ·
+            // icon) — the shared chrome stays brand-neutral; the words are ours.
+            greeting: "Ask anything about your practice",
+            intro:
+              "Cadence knows your clients, documents, and deadlines. Ask in plain English and get an answer you can act on — or pin as a view.",
+            heroEyebrow: "Ask Cadence",
+            heroIcon: "C",
+          }}
+        />
       </VendoRoot>
     </div>
   );
