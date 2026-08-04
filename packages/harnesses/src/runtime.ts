@@ -17,8 +17,8 @@ import {
   type Harness,
   type HarnessEvent,
   type Principal,
-  type ResolvedModels,
   type RunContext,
+  type SeatModels,
   type ThreadId,
   type ToolRegistry,
   type Turn,
@@ -152,8 +152,10 @@ export interface TurnRunInput<Options = unknown> {
   messages: UIMessage[];
   ctx: RunContext;
   workspace: WorkspaceFs;
-  /** The resolved seats, as `Turn.models` carries them (contract §4). */
-  models: ResolvedModels<LanguageModel>;
+  /** The seats `Turn.models` carries (contract §4, relaxed): any subset — only
+   *  a seat the harness actually reads matters. Unset = no seats, which is the
+   *  whole truth for a harness like `claudeCode()` that brings its own brain. */
+  models?: SeatModels<LanguageModel>;
   options?: Options;
   /** §1.4 — did the caller prove presence (a click/message/submit)? */
   interactive: boolean;
@@ -265,6 +267,15 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
       // exactly the swap-resuming-from-our-transcript case.
       await abandonStaleApprovals(deps.guard, input, messages);
 
+      // ONE frozen copy of the canonical transcript serves both `turn.messages`
+      // and `ctx.messages` — the accessor guards and judges read (RunContext,
+      // agents spec 2026-08-04). Attached HERE because the runtime is where the
+      // resolved thread and the ctx first meet; the ctx the wire built has no
+      // thread yet. In-process only: everything persisted stays an explicit
+      // data projection.
+      const transcriptView = deepFreeze(messages.map((message) => structuredClone(message)));
+      const ctx: RunContext = { ...input.ctx, messages: () => transcriptView };
+
       const signal = input.signal ?? new AbortController().signal;
       let usage: UsageTotals | undefined;
       let failure: { message: string; code?: string } | undefined;
@@ -303,7 +314,7 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
           const tools = createTurnTools({
             registry: deps.tools,
             guard: deps.guard,
-            ctx: input.ctx,
+            ctx,
             interactive: input.interactive,
             mirror,
             // The shipped bridge's rails ride along: the writer every
@@ -367,7 +378,7 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
           const turn: Turn<Options> = {
             // Frozen: ours, read-only. Freezing makes the contract's word true at
             // runtime instead of only at compile time.
-            messages: deepFreeze(messages.map((message) => structuredClone(message))),
+            messages: transcriptView,
             tools: {
               list: () => tools.list(),
               // A workspace tool edit lands the moment it returns, so the
@@ -380,7 +391,7 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
             },
             skills: deps.skills,
             workspace,
-            models: input.models,
+            models: input.models ?? {},
             state,
             options: input.options as Options,
             signal,
@@ -394,7 +405,7 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
           // call arriving over the door is the call the harness would have made.
           const unpublish = deps.liveTurn?.({
             threadId: input.threadId,
-            ctx: input.ctx,
+            ctx,
             tools: turn.tools,
           });
 

@@ -337,9 +337,9 @@ describe("the tool surface it asks for (design §D2/§D4)", () => {
 });
 
 describe("options — declared, then overridable per turn", () => {
-  test("only the model knobs are per-turn overridable", () => {
+  test("only `maxTurns` is per-turn overridable — model and effort are construction-time (agents spec 2026-08-04 cut)", () => {
     const shape = (claudeCode().optionsSchema as never as { shape: Record<string, unknown> }).shape;
-    expect(Object.keys(shape).sort()).toEqual(["effort", "maxTurns", "model"]);
+    expect(Object.keys(shape).sort()).toEqual(["maxTurns"]);
   });
 
   test("m1 · `machine` is construction-time only — a per-turn option cannot move the SDK onto the host", async () => {
