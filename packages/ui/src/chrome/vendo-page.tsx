@@ -63,12 +63,16 @@ function groupThreads(threads: ThreadSummary[], now: number): { label?: string; 
 /** The conversation rail (Sift-style): a quiet "+" in the header for a new
  *  conversation, then text-forward rows — truncated title, subtle hover, light
  *  selected wash, and a "…" overflow menu (Delete) that fades in on hover. */
-function ConversationList({ threads, activeId, onSelect, onNew, onDelete }: {
+function ConversationList({ threads, activeId, onSelect, onNew, onDelete, divided }: {
   threads: ThreadSummary[];
   activeId: string | undefined;
   onSelect: (id: string) => void;
   onNew: () => void;
   onDelete: (id: string) => void;
+  // In the two-column desktop layout the rail carries a vertical divider on its
+  // right edge (same 1px --vendo-border hairline the host nav uses); the mobile
+  // takeover stacks the rail above the thread, where a divider would misread.
+  divided?: boolean;
 }) {
   const [menuFor, setMenuFor] = useState<string | undefined>();
   // Any click outside the open menu (or Escape) dismisses it. The trigger and
@@ -88,7 +92,7 @@ function ConversationList({ threads, activeId, onSelect, onNew, onDelete }: {
   // a session, and this component is client-only (no SSR hydration concern).
   const groups = useMemo(() => groupThreads(threads, Date.now()), [threads]);
   return (
-    <nav className="fl-convos" aria-label="Conversations">
+    <nav className={`fl-convos${divided ? " fl-convos--divided" : ""}`} aria-label="Conversations">
       <div className="fl-convos-head">
         <span className="fl-convos-label">Conversations</span>
         <button type="button" className="fl-convos-new" aria-label="New conversation" onClick={onNew}>
@@ -207,7 +211,12 @@ function ChatWorkspace({ thread }: { thread?: VendoPageProps["thread"] }) {
       className="fl-page-pane"
       style={{
         display: "grid",
-        gap: 14,
+        // Desktop columns are split by the rail's own right-edge divider, so the
+        // track gap collapses to 0 and the breathing room lives in the rail's
+        // padding-right + the chat column's padding-left (equal, on either side
+        // of the hairline). The mobile takeover keeps a real gap between the
+        // stacked rail and thread.
+        gap: takeover.active ? 14 : 0,
         // ENG-228: the sidebar+thread two-column grid is what crushed the
         // thread to one character per line at 375px — below the breakpoint
         // the conversation list stacks above a full-width thread.
@@ -215,7 +224,10 @@ function ChatWorkspace({ thread }: { thread?: VendoPageProps["thread"] }) {
         // The single content row fills the pane so the rail and thread both run
         // full-height and the composer sits flush at the bottom — no dead space.
         gridTemplateRows: takeover.active ? "auto minmax(0, 1fr)" : "minmax(0, 1fr)",
-        padding: 14,
+        // No bottom padding in the desktop layout: the chat column runs to the
+        // pane's bottom edge and the composer's own 16px margin is the only gap
+        // beneath it, so it sits flush at the bottom instead of floating high.
+        padding: takeover.active ? 14 : "14px 14px 0",
       }}
     >
       <ConversationList
@@ -224,10 +236,14 @@ function ChatWorkspace({ thread }: { thread?: VendoPageProps["thread"] }) {
         onSelect={selectThread}
         onNew={startNew}
         onDelete={deleteThread}
+        divided={!takeover.active}
       />
       {/* ENG-225 — the waiting-on-you strip parks above the live conversation;
           it renders nothing while no approvals are pending. */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
+      <div
+        className={takeover.active ? undefined : "fl-chat-col"}
+        style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}
+      >
         <WaitingQueue />
         <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
           {/* Discoverability gate (§6): this thread mounts with threadId

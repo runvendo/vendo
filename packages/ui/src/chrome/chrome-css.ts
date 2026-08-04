@@ -673,8 +673,18 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
    hover, a LIGHT selected wash (no black pills), and a "…" overflow menu that
    fades in on hover. Optional muted date-group headers. */
 .fl-convos { align-self: stretch; display: flex; flex-direction: column; min-height: 0;
-  gap: 2px; padding: 2px; }
-.fl-convos-head { display: flex; align-items: center; justify-content: space-between; padding: 4px 6px 6px; }
+  gap: 2px; padding: 2px 2px 2px 0; }
+/* Desktop two-column layout: a vertical hairline on the rail's right edge, the
+   same 1px --vendo-border line the host nav sidebar draws down its own edge, so
+   the conversation list reads as its own column beside the thread. The 14px
+   padding-right pairs with the chat column's 14px padding-left (.fl-chat-col)
+   to sit the line midway between the two, with equal air on either side. */
+.fl-convos--divided { border-right: 1px solid var(--vendo-border); padding-right: 14px; }
+/* Chat column's inner air, mirroring the rail's padding-right across the
+   divider; the grid track gap is 0 in this layout so the two paddings + the
+   hairline are the whole seam. */
+.fl-chat-col { padding-left: 14px; }
+.fl-convos-head { display: flex; align-items: center; justify-content: space-between; padding: 4px 6px 6px 2px; }
 .fl-convos-label { font: 700 11px/1 var(--vendo-font); letter-spacing: .1em; text-transform: uppercase;
   color: var(--vendo-fg-muted); }
 .fl-convos-new { width: 27px; height: 27px; border-radius: 8px; display: grid; place-items: center;
@@ -685,9 +695,9 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-convos-list { flex: 1 1 auto; display: flex; flex-direction: column; gap: 1px; min-height: 0;
   overflow-y: auto; scrollbar-width: none; }
 .fl-convos-list::-webkit-scrollbar { display: none; }
-.fl-convos-empty { padding: 8px 10px; font-size: 12px; color: var(--vendo-fg-muted); }
+.fl-convos-empty { padding: 8px 10px 8px 2px; font-size: 12px; color: var(--vendo-fg-muted); }
 .fl-convos-group { font: 600 10.5px/1 var(--vendo-font); letter-spacing: .06em; text-transform: uppercase;
-  color: var(--vendo-fg-muted); margin: 13px 8px 5px; }
+  color: var(--vendo-fg-muted); margin: 13px 8px 5px 2px; }
 .fl-convos-list > .fl-convos-group:first-child { margin-top: 3px; }
 .fl-convo-row { position: relative; display: flex; align-items: center; border-radius: 8px;
   transition: background .12s; }
@@ -695,7 +705,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-convo-row.is-active { background: color-mix(in srgb, var(--vendo-accent) 10%, transparent); }
 .fl-convo-open { flex: 1; min-width: 0; text-align: left; border: 0; background: transparent;
   color: var(--vendo-fg); cursor: pointer; font: 500 12.5px/1.35 var(--vendo-font); letter-spacing: -.006em;
-  padding: 8px 6px 8px 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  padding: 8px 6px 8px 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fl-convo-row.is-active .fl-convo-open { font-weight: 600; }
 .fl-convo-more { flex-shrink: 0; width: 24px; height: 24px; margin-right: 4px; border-radius: 6px;
   border: 0; background: transparent; color: var(--vendo-fg-muted); cursor: pointer; opacity: 0;
