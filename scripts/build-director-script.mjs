@@ -6,7 +6,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-const OUT = resolve("apps/demo-accounting/public/vendo-director/script.json");
+const OUT = resolve("examples/demo-accounting/public/vendo-director/script.json");
 
 async function dataUri(url) {
   const response = await fetch(url);
@@ -19,7 +19,7 @@ async function dataUri(url) {
 const favicon = domain => `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
 
 const logos = {
-  bluebottle: `data:image/jpeg;base64,${readFileSync(resolve("apps/demo-accounting/public/logos/bluebottle.png")).toString("base64")}`,
+  bluebottle: `data:image/jpeg;base64,${readFileSync(resolve("examples/demo-accounting/public/logos/bluebottle.png")).toString("base64")}`,
   linear: await dataUri(favicon("linear.app")),
   sweetgreen: await dataUri(favicon("sweetgreen.com")),
   equinox: await dataUri(favicon("equinox.com")),

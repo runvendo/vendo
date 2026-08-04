@@ -40,7 +40,7 @@ const criticalTool: ToolDescriptor = {
   description: "Do a critical action",
   inputSchema: { type: "object" },
   risk: "destructive",
-  critical: true,
+  confirmEach: true,
 };
 
 const ctx = (subject = "user_a"): RunContext => ({
@@ -73,6 +73,9 @@ const seedApp = async (
 
 class GuardDouble implements Guard {
   readonly audit: AuditEvent[] = [];
+  /** The optional spend seam (05 §2 amendment), scripted. Left unset by default
+   *  so every existing case still exercises the pre-seam fallback path. */
+  spendApproval?: (id: ApprovalId) => Promise<"spent" | "already-spent" | "taken-back">;
   private readonly callbacks = new Set<(id: ApprovalId, approved: boolean) => void>();
 
   async check(): Promise<{ action: "run"; decidedBy: "default" }> {
@@ -462,6 +465,73 @@ describe("grant sets: one set per enable, dedupe against pending, list projectio
     expect(again.missing).toHaveLength(0);
     expect(again.grantSetId).toBeUndefined();
   });
+
+  /**
+   * Checker round 5, finding 2 — arming a standing grant SPENDS the approval it
+   * rode in on, so it has to contend with `approvals.revoke` on the same
+   * one-time transition. The engine asks the guard for that spend and grants
+   * only on "spent"; the two orderings of the race itself are pinned against the
+   * real receipt in `packages/guard/test/ungraded-default.test.ts`.
+   */
+  it("arms nothing when the person took the yes back before the callback could spend it", async () => {
+    const engine = makeEngine();
+    guard.spendApproval = async () => "taken-back";
+    const { missing } = await engine.enable(weekly.id, ctx());
+
+    guard.decide(missing[0]!.id, true);
+    await flush();
+
+    expect((await store.records("vendo_grants").list()).records).toHaveLength(0);
+  });
+
+  it("arms nothing when someone else already spent the yes", async () => {
+    const engine = makeEngine();
+    guard.spendApproval = async () => "already-spent";
+    const { missing } = await engine.enable(weekly.id, ctx());
+
+    guard.decide(missing[0]!.id, true);
+    await flush();
+
+    expect((await store.records("vendo_grants").list()).records).toHaveLength(0);
+  });
+
+  it("arms exactly one grant per won spend, and leaves the approval row to the guard", async () => {
+    const engine = makeEngine();
+    guard.spendApproval = async () => "spent";
+    const { missing } = await engine.enable(weekly.id, ctx());
+
+    guard.decide(missing[0]!.id, true);
+    await flush();
+
+    expect((await store.records("vendo_grants").list()).records).toHaveLength(1);
+    // The guard owns the row now: the engine no longer writes `consumedAt`
+    // itself (which is what used to erase a concurrent take-back).
+    expect((await store.records("vendo_approvals").get(missing[0]!.id))?.data)
+      .not.toHaveProperty("consumedAt");
+  });
+
+  it("fallback for a Guard predating the seam: a taken-back yes arms nothing and keeps its marker", async () => {
+    // No `spendApproval` on this double, so the engine takes the old write-back
+    // path. It cannot linearize without a receipt, but it must still refuse the
+    // take-back it can see — and must not strip `voidedAt`/`deniedBy` off the
+    // row (the parse used to drop both).
+    const engine = makeEngine();
+    const { missing } = await engine.enable(weekly.id, ctx());
+    const takenBack = missing[0]!.id;
+    const row = (await store.records("vendo_approvals").get(takenBack))?.data as Record<string, unknown>;
+    await store.records("vendo_approvals").put({
+      id: takenBack,
+      data: { ...row, status: "approved", decidedAt: NOW.toISOString(), voidedAt: NOW.toISOString() },
+    });
+
+    guard.decide(takenBack, true);
+    await flush();
+
+    expect((await store.records("vendo_grants").list()).records).toHaveLength(0);
+    expect((await store.records("vendo_approvals").get(takenBack))?.data).toMatchObject({
+      voidedAt: NOW.toISOString(),
+    });
+  });
 });
 
 describe("steps execution, parking, and resumption", () => {
@@ -605,6 +675,122 @@ describe("steps execution, parking, and resumption", () => {
       tool: writeTool.name, appId: doc.id, source: "automation",
     });
     expect(await store.records("automations:parked").get("apr_park")).toBeNull();
+  });
+
+  /**
+   * Checker round 6, finding 1 — the resume path reads the approval, then arms a
+   * standing grant from it. A take-back landing in that window used to arm the
+   * grant anyway: the replay refused, but `#matchingGrant` accepted the brand new
+   * grant and the tool ran on the next fire. The replay is the spend, so the
+   * grant is armed only after that spend won.
+   */
+  it("arms nothing when a take-back lands between the resume read and the grant", async () => {
+    const store = memoryStoreAdapter();
+    const guard = new GuardDouble();
+    let attempt = 0;
+    const tools = registry([writeTool], async (call, runCtx) => {
+      const currentAttempt = attempt++;
+      const request = {
+        id: `apr_window_${currentAttempt}`,
+        call: structuredClone(call),
+        descriptor: writeTool,
+        inputPreview: "write",
+        ctx: { principal: runCtx.principal, venue: runCtx.venue, presence: runCtx.presence, appId: runCtx.appId, trigger: runCtx.trigger },
+        createdAt: NOW.toISOString(),
+      };
+      await store.records("vendo_approvals").put({ id: request.id, data: { request, status: "pending" } });
+      if (currentAttempt === 1) {
+        // The person hits "take that back" while the resume is in flight: the
+        // guard voids the row and REFUSES the replay, which is all the engine
+        // ever gets to see.
+        const held = (await store.records("vendo_approvals").get("apr_window_0"))?.data as object;
+        await store.records("vendo_approvals").put({
+          id: "apr_window_0",
+          data: { ...held, voidedAt: NOW.toISOString() },
+        });
+      }
+      return { status: "pending-approval", approvalId: request.id };
+    });
+    const doc = app("app_resume_window", {
+      on: { kind: "host-event", event: "go" },
+      run: { kind: "steps", steps: [{ id: "needs", tool: writeTool.name }] },
+    });
+    await seedApp(store, doc, "user_a", true);
+    const engine = createAutomations({ apps: appsDouble(), tools, guard, store, now: () => NOW });
+    const [runId] = await engine.emit("go", {}, ctx().principal);
+    await store.records("vendo_approvals").put({
+      id: "apr_window_0",
+      data: {
+        ...((await store.records("vendo_approvals").get("apr_window_0"))?.data as object),
+        status: "approved",
+        decidedAt: NOW.toISOString(),
+      },
+    });
+
+    guard.decide("apr_window_0", true);
+    await flush();
+
+    // No standing grant from a yes that was taken back…
+    expect((await store.records("vendo_grants").list()).records).toHaveLength(0);
+    // …the run says what happened (it is asking again, on the new approval)…
+    expect(await engine.runs.get(runId!, ctx())).toMatchObject({
+      status: "pending-approval",
+      steps: [{ id: "needs", outcome: "pending-approval", detail: "apr_window_1" }],
+    });
+    // …and the take-back marker is intact.
+    expect((await store.records("vendo_approvals").get("apr_window_0"))?.data).toMatchObject({
+      voidedAt: NOW.toISOString(),
+    });
+  });
+
+  /**
+   * Checker round 7, finding 1 — the same law for a THROW. A dispatch that dies
+   * (store hiccup, a VendoError out of the registry) never spent the yes either,
+   * so the grant minted moments earlier must not outlive the failed resume.
+   */
+  it("takes the grant back when the resumed dispatch throws", async () => {
+    const store = memoryStoreAdapter();
+    const guard = new GuardDouble();
+    let attempt = 0;
+    const tools = registry([writeTool], async (call, runCtx) => {
+      const currentAttempt = attempt++;
+      if (currentAttempt > 0) throw new Error("the host went away mid-resume");
+      const request = {
+        id: "apr_throws",
+        call: structuredClone(call),
+        descriptor: writeTool,
+        inputPreview: "write",
+        ctx: { principal: runCtx.principal, venue: runCtx.venue, presence: runCtx.presence, appId: runCtx.appId, trigger: runCtx.trigger },
+        createdAt: NOW.toISOString(),
+      };
+      await store.records("vendo_approvals").put({ id: request.id, data: { request, status: "pending" } });
+      return { status: "pending-approval", approvalId: request.id };
+    });
+    const doc = app("app_resume_throws", {
+      on: { kind: "host-event", event: "go" },
+      run: { kind: "steps", steps: [{ id: "needs", tool: writeTool.name }] },
+    });
+    await seedApp(store, doc, "user_a", true);
+    const engine = createAutomations({ apps: appsDouble(), tools, guard, store, now: () => NOW });
+    const [runId] = await engine.emit("go", {}, ctx().principal);
+    await store.records("vendo_approvals").put({
+      id: "apr_throws",
+      data: {
+        ...((await store.records("vendo_approvals").get("apr_throws"))?.data as object),
+        status: "approved",
+        decidedAt: NOW.toISOString(),
+      },
+    });
+
+    guard.decide("apr_throws", true);
+    await flush();
+
+    expect((await store.records("vendo_grants").list()).records).toHaveLength(0);
+    expect(await engine.runs.get(runId!, ctx())).toMatchObject({
+      status: "error",
+      summary: "stopped at resume: the host went away mid-resume",
+    });
+    expect(await store.records("automations:parked").get("apr_throws")).toBeNull();
   });
 
   it("turns a denied parked call into a blocked hard failure and tick sweeps decided rows", async () => {
@@ -1114,6 +1300,68 @@ describe("localTriggerKinds: deferring schedule/external firing to another autho
 
     expect(ids).toHaveLength(1);
     expect((await store.records("vendo_runs").list()).records).toHaveLength(1);
+  });
+
+  // Cloud-audit fix 3. A fn: step is an HTTP call into the APP's own sandbox
+  // machine (packages/apps/src/fn.ts POSTs /fn/<name>), so the authority that
+  // fires the trigger is the one that has to wake and reach that machine. When
+  // this engine defers firing to Cloud, whether Cloud can do that is not
+  // knowable here — so the operator hears about it at the arming point, which
+  // is the only place that sees both the trigger kind and the steps.
+  describe("fn: steps deferred to another firing authority warn at enable()", () => {
+    const enableWithWarn = async (
+      doc: AppDocument,
+      localTriggerKinds?: ReadonlySet<"schedule" | "external">,
+    ): Promise<string[]> => {
+      const store = memoryStoreAdapter();
+      await seedApp(store, doc);
+      const engine = createAutomations({
+        apps: appsDouble(), tools: registry([readTool]), guard: new GuardDouble(), store, now: () => NOW,
+        ...(localTriggerKinds === undefined ? {} : { localTriggerKinds }),
+      });
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      try {
+        await engine.enable(doc.id, ctx());
+        return warn.mock.calls
+          .map(([message]) => (typeof message === "string" ? message : ""))
+          .filter((message) => message.includes("fn: steps"));
+      } finally {
+        warn.mockRestore();
+      }
+    };
+
+    it("warns, naming the app and the deferred trigger kind", async () => {
+      const warns = await enableWithWarn(app("app_fn_cloud", {
+        on: { kind: "schedule", every: "15m" },
+        run: { kind: "steps", steps: [{ id: "run", tool: "fn:main" }] },
+      }, "Weekly digest"), new Set());
+
+      expect(warns).toHaveLength(1);
+      expect(warns[0]).toContain("Weekly digest");
+      expect(warns[0]).toContain("schedule");
+      expect(warns[0]).toContain("sandbox machine");
+    });
+
+    it("stays silent for a deferred automation whose steps are all host tools", async () => {
+      expect(await enableWithWarn(app("app_tools_cloud", {
+        on: { kind: "external", connector: "github", event: "push" },
+        run: { kind: "steps", steps: [{ id: "handle", tool: readTool.name }] },
+      }), new Set())).toEqual([]);
+    });
+
+    it("stays silent when this engine fires the trigger itself — the machine is one it wakes", async () => {
+      expect(await enableWithWarn(app("app_fn_local", {
+        on: { kind: "schedule", every: "15m" },
+        run: { kind: "steps", steps: [{ id: "run", tool: "fn:main" }] },
+      }))).toEqual([]);
+    });
+
+    it("stays silent for host-event automations, which are never deferred", async () => {
+      expect(await enableWithWarn(app("app_fn_host", {
+        on: { kind: "host-event", event: "invoice.paid" },
+        run: { kind: "steps", steps: [{ id: "run", tool: "fn:main" }] },
+      }), new Set())).toEqual([]);
+    });
   });
 });
 

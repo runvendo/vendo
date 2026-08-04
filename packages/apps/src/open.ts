@@ -97,6 +97,19 @@ interface QueryState {
 export interface ProgressiveQueryResolver {
   update(tree: Tree): void;
   complete(): Promise<Record<string, Json>>;
+  /**
+   * Whether a settled query contributed no data because it FAILED — threw,
+   * answered "error", or was refused by the guard ("blocked", "connect-required",
+   * "pending-approval"). The caller turns this into the tree's `dataUnavailable`
+   * marker (renderer.tsx).
+   *
+   * The refusals count deliberately: in every one of them the person's data did
+   * not arrive and every binding renders "—". An actionable refusal deserves its
+   * own affordance too, but that is renderer work on top of this marker, not
+   * instead of it. An "ok" answer with an empty result is NOT a failure: empty is
+   * an answer, and claiming otherwise is the same lie in reverse.
+   */
+  dataUnavailable(): boolean;
 }
 
 /**
@@ -114,6 +127,8 @@ export const createProgressiveQueryResolver = (
   const pending = new Set<Promise<void>>();
   let baseData: Record<string, Json> = {};
   let resolvedData: Record<string, Json> = {};
+  /** Recomputed with the data, so a re-run query (update()) clears it. */
+  let unavailable = false;
 
   // A query that does not settle "ok" contributes NO data, so the app renders
   // its empty state ("No spending data") with the tree, the document and the
@@ -135,18 +150,18 @@ export const createProgressiveQueryResolver = (
 
   const recompute = (notify = true): void => {
     const data = structuredClone(baseData);
+    let failed = false;
     for (const state of states) {
-      if (!state.settled || state.result === undefined) {
-        if (state.settled) reportUnresolved(state);
-        continue;
-      }
-      if (state.result.status !== "ok") {
+      if (!state.settled) continue;
+      if (state.result?.status !== "ok") {
         reportUnresolved(state);
+        failed = true;
         continue;
       }
       setQueryData(data, queryPointer(state.query), state.result.output);
     }
     resolvedData = data;
+    unavailable = failed;
     if (notify) onData?.(structuredClone(data));
   };
 
@@ -188,6 +203,9 @@ export const createProgressiveQueryResolver = (
       recompute(false);
       return structuredClone(resolvedData);
     },
+    dataUnavailable() {
+      return unavailable;
+    },
   };
 };
 
@@ -198,11 +216,36 @@ export const createProgressiveQueryResolver = (
  * document must never reach the client: strip both before the verified
  * verdict and the computed drift (when any) are attached — and strip at
  * persist time too (the runtime shares this helper), streamed or at rest.
+ *
+ * `dataUnavailable` joins them: only the code that ran the queries and watched
+ * them fail may tell the user their data did not load. Document-carried it would
+ * be a claim about a load that never happened, and a transient failure must never
+ * be persisted as one.
  */
 export const stripServerAuthoritativeFields = <T extends object>(payload: T): T => {
   delete (payload as { inClient?: unknown }).inClient;
   delete (payload as { pinDrift?: unknown }).pinDrift;
+  delete (payload as { dataUnavailable?: unknown }).dataUnavailable;
+  stripFurnishingPackages(payload);
   return payload;
+};
+
+/**
+ * CDN package loading is a PREVIEW-VENUE capability, and this is the wall that
+ * keeps it there. `attachPinFurnishings` below copies a fixed field list that
+ * has never included `packages`, so the runtime cannot produce one; this strip
+ * covers the other direction — a model-written or imported `.vendoapp` tree
+ * CLAIMING it. Without it, a stored document could make a customer's own page
+ * fetch scripts from a third party on their end users' behalf.
+ */
+const stripFurnishingPackages = (payload: object): void => {
+  const { furnishings } = payload as { furnishings?: unknown };
+  if (typeof furnishings !== "object" || furnishings === null) return;
+  for (const furnishing of Object.values(furnishings as Record<string, unknown>)) {
+    if (typeof furnishing === "object" && furnishing !== null) {
+      delete (furnishing as { packages?: unknown }).packages;
+    }
+  }
 };
 
 /** 06-apps §8 — jail furnishing for forked pins rides inside the tagged tree
@@ -234,7 +277,11 @@ const attachPinFurnishings = (
  */
 export interface ServedSurface {
   enabled: boolean;
-  urlFor(app: AppDocument): Promise<string>;
+  /** Build contract §9.8 — takes the ctx because an ORG-owned served app is
+      answered with an authenticated PROXY url (checked per request) while a
+      personal one keeps the provider's own ingress url. The runtime decides;
+      this seam only hands it what it needs to. */
+  urlFor(app: AppDocument, ctx: RunContext): Promise<string>;
 }
 
 /** Wave 4 — the one refusal for every layer-3 path while the flag is off. */
@@ -256,12 +303,37 @@ export const machinesDisabledError = (): VendoError => new VendoError(
   { experiment: "machines", flag: "experimentalMachines" },
 );
 
+/** The additive venue states for this open, or none when the seam fails.
+ *  Reported once per failure so a broken seam is visible to an operator without
+ *  costing the person their app. */
+const additionalVenueState = async (
+  venueState: ((app: AppDocument, ctx: RunContext) => Promise<Record<string, unknown> | undefined>) | undefined,
+  app: AppDocument,
+  ctx: RunContext,
+): Promise<Record<string, unknown>> => {
+  try {
+    return await venueState?.(app, ctx) ?? {};
+  } catch (error) {
+    console.warn(`[vendo] venue state for app ${app.id} could not be resolved: ${safeErrorMessage(error)}; the app opens without it`);
+    return {};
+  }
+};
+
 /** 06-apps §§1–2 — construct the open surface. */
 export const createAppOpener = (
   caller: AppCaller,
   pinBaselines: readonly PinBaseline[] = [],
   inClientVenue?: (app: AppDocument) => Promise<InClientVenueState | undefined>,
   served?: ServedSurface,
+  /**
+   * Build contract §9.9 — the ADDITIVE venue-state slot, ctx-aware because the
+   * states that ride it are per-caller (lane H's adoption card is served only
+   * to `can(editor)`). Its keys spread onto the payload beside `inClient`; the
+   * server-authoritative strip has already run, so nothing here can be forged
+   * by a document. Composable by construction: a second additive state is
+   * another key, not another parameter.
+   */
+  venueState?: (app: AppDocument, ctx: RunContext) => Promise<Record<string, unknown> | undefined>,
 ): ((app: AppDocument, ctx: RunContext) => Promise<OpenSurface>) => async (app, ctx) => {
   // A terminally failed build never becomes servable: resolve the poll now
   // with the persisted reason (approvals resolve to denied/expired the same
@@ -295,7 +367,7 @@ export const createAppOpener = (
     // Wake-on-open: a sleeping machine resumes here (the accepted wake
     // latency; the host shows its ordinary loading state — no v1 cover or
     // screenshot machinery).
-    return { kind: "http", url: await served.urlFor(app) };
+    return { kind: "http", url: await served.urlFor(app, ctx) };
   }
 
   if (app.tree === undefined) {
@@ -312,14 +384,42 @@ export const createAppOpener = (
     if (inClient !== undefined) {
       (tree as Tree & { inClient: InClientVenueState }).inClient = inClient;
     }
+    // §9.9 — additive, and deliberately AFTER inClient: an additive state may
+    // add keys, never overwrite the trust-axis verdict the client renders from.
+    //
+    // Guarded like the runtime's `onDocumentEdit` hook, and for the same reason:
+    // this state is an ENRICHMENT of the app, resolved through host-composed
+    // seams that touch the store. A hiccup in the adoption lookup must cost the
+    // caller the card, never the app — an app that will not open is a far worse
+    // failure than one that opens without an ask on it.
+    for (const [key, value] of Object.entries(await additionalVenueState(venueState, app, ctx))) {
+      // `dataUnavailable` is reserved for the same reason as the other three: it is
+      // a claim about queries THIS open ran, which a venue hook has not.
+      if (key === "inClient" || key === "data" || key === "pinDrift" || key === "dataUnavailable") continue;
+      (tree as Tree & Record<string, unknown>)[key] = value;
+    }
     const pinDrift = detectPinDrift(app, pinBaselines);
     if (pinDrift.length > 0) {
       (tree as Tree & { pinDrift: PinDrift[] }).pinDrift = pinDrift;
+    }
+    // Review-kind gate (2026-08-02): an unapproved review-kind version ships
+    // NO executable source — no components, no componentTools, no furnishings,
+    // no resolved query data — so a jailed fork render cannot occur even on a
+    // client that ignores the venue state. The client keeps the ORIGINAL host
+    // component in place and surfaces the standing riding `inClient`.
+    if (inClient?.granted === false && inClient.reason === "pending-review") {
+      return { kind: "tree", payload: tree as unknown as UIPayload };
     }
     attachPinFurnishings(tree, app, pinBaselines);
     const queries = createProgressiveQueryResolver(caller, app, ctx);
     queries.update(tree);
     tree.data = await queries.complete();
+    // A query that failed contributes no data, so every binding under it renders
+    // "—" and reads as "you have no spending". Written here, after the strip above,
+    // so no document can forge it.
+    if (queries.dataUnavailable()) {
+      (tree as Tree & { dataUnavailable: true }).dataUnavailable = true;
+    }
     const payload = {
       ...tree,
       ...(app.components === undefined ? {} : { components: structuredClone(app.components) }),

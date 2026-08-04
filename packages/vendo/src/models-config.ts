@@ -1,5 +1,5 @@
 import type { LanguageModel } from "ai";
-import { VendoError } from "@vendoai/core";
+import { migrateModelSeats, seatConflict, VendoError, type ResolvedModels } from "@vendoai/core";
 import { vendoModel, type VendoModelOptions } from "#dev-creds/model";
 
 /**
@@ -14,7 +14,21 @@ import { vendoModel, type VendoModelOptions } from "#dev-creds/model";
  * string, i.e. vendoAutoJudge({ model: vendoModel("vendo-judge") }).
  */
 export interface ModelsConfig {
+  /** Build contract §4's seat vocabulary. A seat is a JOB, not a model. These
+   *  are additive: the legacy slot names below keep working for one minor, and
+   *  `migrateModelSeats` (core) maps them on, so a half-migrated config still
+   *  composes. Where both name one seat, the SEAT wins — a host mid-migration
+   *  should get the new key they just wrote, not the old one they forgot to
+   *  delete. */
+  default?: string | LanguageModel;
+  reviewer?: string | LanguageModel;
+  /** The knowledge check's cheap/fast model. Its own seat: pinning the model
+   *  that GRADES answers must never repoint the one that ANSWERS. */
+  verifier?: string | LanguageModel;
+  fill?: string | LanguageModel;
+  /** @deprecated superseded by `default` (still functional for one minor). */
   agent?: string | LanguageModel;
+  /** @deprecated superseded by `fill` (still functional for one minor). */
   paint?: string | LanguageModel;
   judge?: string | LanguageModel;
   /** K15 — the knowledge tool's evidence check (a cheap/fast model reading the
@@ -32,15 +46,28 @@ export interface ResolveModelsInput {
   /** @deprecated model half superseded by models.paint; `disabled` stays. */
   paint?: { model?: LanguageModel; disabled?: boolean };
   models?: ModelsConfig;
+  /** A model named by a harness's own options. Build contract §4 makes it a BOOT
+   *  ERROR for this and `models.default` to both be set: two places naming the
+   *  model that thinks is ambiguous, and guessing would silently ignore one. */
+  harnessOptionModel?: string | LanguageModel;
 }
 
-export interface ResolvedModels {
+export interface ComposedModelSlots {
   /** The one model the agent and apps blocks consume, plus the /status venue:
    *  "custom" (host-passed object) or "ladder" (env-resolved, incl. strings). */
   agent: { model: LanguageModel; venue: "custom" | "ladder" };
   /** The apps-block paint knob, post-precedence. Undefined = engine falls
    *  back to the agent model (today's explicit-model behavior). */
   paint: { model?: LanguageModel; disabled?: boolean } | undefined;
+  /** The knowledge check's cheap/fast model (contract amendment 2026-07-30 — its
+   *  own seat, never the agent's). Undefined = the family fast pick. */
+  verifier: { model: LanguageModel } | undefined;
+  /** Build contract §4's `ResolvedModels` — every seat filled, which is what a
+   *  `Turn` carries. Same resolution order as the slots above, stated once: an
+   *  explicit seat, else `default`. Borrowing `default` is the contract's own
+   *  fallback ("seat → default → the env credential ladder"), and `default`
+   *  itself already rode the ladder, so no seat can be unfilled. */
+  seats: ResolvedModels<LanguageModel>;
 }
 
 type MakeModel = (name?: string, options?: VendoModelOptions) => LanguageModel;
@@ -62,21 +89,60 @@ function validateSlot(slot: string, value: string | LanguageModel | undefined): 
  *  lane composes the family fast pick (vendo-paint on Cloud, the provider's
  *  fast model on BYO rungs); when the host passed an explicit agent model,
  *  paint falls back to that model exactly as before. */
-export function resolveModels(config: ResolveModelsInput, makeModel: MakeModel = vendoModel): ResolvedModels {
+export function resolveModels(config: ResolveModelsInput, makeModel: MakeModel = vendoModel): ComposedModelSlots {
+  validateSlot("default", config.models?.default);
+  validateSlot("reviewer", config.models?.reviewer);
+  validateSlot("fill", config.models?.fill);
   validateSlot("agent", config.models?.agent);
   validateSlot("paint", config.models?.paint);
   validateSlot("judge", config.models?.judge);
+  validateSlot("verifier", config.models?.verifier);
   validateSlot("knowledgeVerifier", config.models?.knowledgeVerifier);
 
-  const agentConfigured = config.models?.agent ?? config.model;
-  const agent: ResolvedModels["agent"] = agentConfigured === undefined
+  // Collapse both vocabularies onto seats once, here, so the precedence below
+  // never has to know which spelling a host used.
+  const seats = migrateModelSeats<LanguageModel>(config.models ?? {});
+  // Build contract §4's boot error, pointed at the collision a real host can
+  // ACTUALLY create. It used to guard `harnessOptionModel`, which no production
+  // path sets, while the deprecated top-level `model` colliding with
+  // `models.default` resolved last-write-wins — silently ignoring one of two
+  // explicit instructions. Two knobs naming one seat is ambiguous whichever
+  // spellings they use, so refuse instead of guessing.
+  // Checked against the RAW keys, not the collapsed seats, because the two
+  // vocabularies carry different promises. `models.agent` SUPERSEDING the
+  // deprecated top-level `model` is shipped, documented, tested behaviour — the
+  // whole point of the shim is that a host mid-migration can leave the old key in
+  // place. The NEW seat names have no such promise, so `model` + `models.default`
+  // is two instructions for one seat with nothing to disambiguate them, and
+  // guessing is what made a host's explicit choice disappear.
+  const collisions: Array<[string, string]> = [
+    ...(config.model !== undefined && config.models?.default !== undefined
+      ? [["model", "models.default"] as [string, string]] : []),
+    ...(config.paint?.model !== undefined && config.models?.fill !== undefined
+      ? [["paint.model", "models.fill"] as [string, string]] : []),
+  ];
+  if (collisions.length > 0) {
+    const detail = collisions.map(([left, right]) => `\`${left}\` and \`${right}\``).join("; ");
+    throw new VendoError(
+      "validation",
+      `Two knobs set the same model seat: ${detail}. Remove one — the deprecated key or the seat.`,
+    );
+  }
+  const conflict = seatConflict<LanguageModel>({
+    ...(config.harnessOptionModel === undefined ? {} : { harnessOptionModel: config.harnessOptionModel }),
+    seats,
+  });
+  if (conflict !== undefined) throw new VendoError("validation", conflict);
+
+  const agentConfigured = seats.default ?? config.model;
+  const agent: ComposedModelSlots["agent"] = agentConfigured === undefined
     ? { model: makeModel(undefined, { slot: "agent" }), venue: "ladder" }
     : typeof agentConfigured === "string"
       ? { model: makeModel(agentConfigured, { slot: "agent" }), venue: "ladder" }
       : { model: agentConfigured, venue: "custom" };
 
   const disabled = config.paint?.disabled;
-  const paintConfigured = config.models?.paint ?? config.paint?.model;
+  const paintConfigured = seats.fill ?? config.paint?.model;
   const paintModel = disabled === true
     ? undefined // no model behind a disabled lane
     : typeof paintConfigured === "string"
@@ -91,5 +157,45 @@ export function resolveModels(config: ResolveModelsInput, makeModel: MakeModel =
         ...(disabled === undefined ? {} : { disabled }),
       };
 
-  return { agent, paint };
+  // The verifier seat resolves independently of `agent` — that independence IS
+  // the amendment: a host setting only the knowledge check's model must not
+  // change which model answers users.
+  const verifierConfigured = seats.verifier;
+  const verifier = verifierConfigured === undefined
+    ? undefined
+    : {
+        model: typeof verifierConfigured === "string"
+          ? makeModel(verifierConfigured, { slot: "knowledgeVerifier" })
+          : verifierConfigured,
+      };
+
+  // Build contract §4's seat record, resolved from the SAME values above so the
+  // model a seat names can never disagree with the model the matching slot got.
+  // A seat nobody set borrows `default`; that is the contract's fallback, not a
+  // guess, and it is why every seat is non-optional.
+  const seat = (
+    configured: string | LanguageModel | undefined,
+    options?: VendoModelOptions,
+  ): LanguageModel =>
+    configured === undefined
+      ? agent.model
+      : typeof configured === "string"
+        ? makeModel(configured, options)
+        : configured;
+
+  const resolvedSeats: ResolvedModels<LanguageModel> = {
+    default: agent.model,
+    // `fill` already has its own precedence (including the family fast pick when
+    // the default rides the ladder), so take the resolved value rather than
+    // re-deriving it and risking two answers for one seat.
+    fill: paintModel ?? agent.model,
+    verifier: verifier?.model ?? agent.model,
+    // No `slot` for the reviewer: the ladder's slots are the ones with an env pin
+    // and a Cloud family name, and `reviewer` has neither yet — so a reviewer
+    // model named as a string rides `inferSlot`, exactly like any other name.
+    reviewer: seat(seats.reviewer),
+    judge: seat(seats.judge, { slot: "judge" }),
+  };
+
+  return { agent, paint, verifier, seats: resolvedSeats };
 }

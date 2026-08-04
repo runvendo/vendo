@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { ambientKitEquivalent, prepareIslands } from "./generation/validation/islands.js";
-import { islandIssueNames } from "./engine.js";
 
 /**
  * Rematch gate 2026-07-25 (docs/eval/runs/2026-07-25-rematch): 17+ Cadence
@@ -100,10 +99,5 @@ describe("prepareIslands — host components inside islands teach the substituti
     };
     const prepared = await prepareIslands(source, undefined, ["CadenceStatusBadge"]);
     expect(prepared.issues).toEqual([]);
-  });
-
-  it("routes the teaching issues to the island-scoped repair (issue shape stays island-prefixed)", async () => {
-    const prepared = await prepare("<CadenceStatusBadge />", ["CadenceStatusBadge"]);
-    expect(islandIssueNames(prepared.issues)).toEqual(["Panel"]);
   });
 });

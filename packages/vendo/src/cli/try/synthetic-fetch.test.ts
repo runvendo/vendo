@@ -4,7 +4,7 @@ import { VENDO_FIXTURES_FORMAT, type FixturesFile } from "./profile.js";
 import { createSyntheticFetch } from "./synthetic-fetch.js";
 
 /** The same shapes deterministic extraction emits into `.vendo/tools.json`
- *  (see apps/demo-bank/.vendo/tools.json): route and openapi bindings carry
+ *  (see examples/demo-bank/.vendo/tools.json): route and openapi bindings carry
  *  method + `{param}` path templates; executeHost substitutes the params and
  *  issues `<baseUrl><path>` — the synthetic fetch must invert exactly that. */
 const tools: ExtractedTool[] = [

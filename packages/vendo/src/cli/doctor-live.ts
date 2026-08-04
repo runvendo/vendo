@@ -162,7 +162,11 @@ export const CLOUD_UNLOCKS: readonly string[] = [
   "a free dev-mode starter model allowance (keyless first turns)",
   "team sharing and org governance (roles, SSO)",
   "hosted deploys of your enabled automations",
-  "registry publishing and hosted infrastructure defaults like the managed MCP broker",
+  "registry publishing, and hosted defaults for the adapter slots you leave unset (managed inference, the sandbox pool, the hosted store, the connections broker)",
+  // Truthful again since the selectMcpBroker seam (provisioning plan
+  // 2026-08-03): a key really does wire the hosted broker now — the condition
+  // rides along so the promise stays exactly as big as the code path.
+  "the hosted MCP broker for your app's MCP door, once it is deployed to a public URL",
 ];
 
 export interface CloudDoctorResult {

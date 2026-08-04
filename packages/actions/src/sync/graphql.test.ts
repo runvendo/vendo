@@ -244,18 +244,20 @@ describe("extractGraphql — SDL sources", () => {
     expect(binding(byOperation.get("createPoll")!).type).toBe("mutation");
   });
 
-  it("labels risk fail-closed: read-shaped queries read, mutations write, destructive words destructive", async () => {
+  it("labels risk from the PROTOCOL only: mutations write, queries ungraded, names irrelevant", async () => {
     const root = await temporaryHost();
     await writeSdlHost(root);
     const { tools } = await extractGraphql(root);
     const risk = (operation: string) => tools.find((tool) => binding(tool).operation === operation)?.risk;
-    expect(risk("pollsList")).toBe("read");
-    expect(risk("pollGet")).toBe("read");
-    // A query without a read-shaped name never auto-earns read.
-    expect(risk("serverVersion")).toBe("write");
+    // A declared mutation is at least a write — that IS a protocol fact, and
+    // `deletePoll`'s NAME adds nothing to it (risk-grading redesign D1).
     expect(risk("createPoll")).toBe("write");
     expect(risk("renamePoll")).toBe("write");
-    expect(risk("deletePoll")).toBe("destructive");
+    expect(risk("deletePoll")).toBe("write");
+    // A query is not a declared read: GraphQL does not stop one from writing.
+    expect(risk("pollsList")).toBe("ungraded");
+    expect(risk("pollGet")).toBe("ungraded");
+    expect(risk("serverVersion")).toBe("ungraded");
   });
 
   it("derives inputSchema deterministically from argument types", async () => {
@@ -328,7 +330,7 @@ describe("extractGraphql — SDL sources", () => {
     const result = await extractGraphql(root);
     const updated = result.tools.find((tool) => binding(tool).operation === "pollUpdated")!;
     expect(updated.disabled).toBe(true);
-    expect(updated.risk).toBe("destructive");
+    expect(updated.risk).toBe("ungraded");
     expect(updated.note).toContain("subscriptions");
     expect(binding(updated).type).toBe("mutation");
     expect(result.warnings.some((warning) => warning.includes("pollUpdated"))).toBe(true);
@@ -348,7 +350,7 @@ type Query {
     const { tools } = await extractGraphql(root);
     expect(tools).toHaveLength(1);
     expect(binding(tools[0]!).endpoint).toBe("/graphql");
-    expect(tools[0]!.risk).toBe("read");
+    expect(tools[0]!.risk).toBe("ungraded");
   });
 
   it("warns and extracts nothing when no schema source exists", async () => {
@@ -450,15 +452,15 @@ describe("extractGraphql — code-first NestJS sources", () => {
     expect(byOperation.get("findInvoice")).toBeUndefined();
   });
 
-  it("labels code-first risk with the same fail-closed rules", async () => {
+  it("labels code-first risk with the same protocol-only rules", async () => {
     const root = await temporaryHost();
     await writeNestHost(root);
     const { tools } = await extractGraphql(root);
     const risk = (operation: string) => tools.find((tool) => binding(tool).operation === operation)?.risk;
-    expect(risk("invoicesList")).toBe("read");
-    expect(risk("invoice")).toBe("write");
     expect(risk("createInvoice")).toBe("write");
-    expect(risk("removeInvoice")).toBe("destructive");
+    expect(risk("removeInvoice")).toBe("write");
+    expect(risk("invoicesList")).toBe("ungraded");
+    expect(risk("invoice")).toBe("ungraded");
   });
 
   it("derives inputSchema from @Args decorators, input classes, and custom scalars", async () => {
@@ -568,7 +570,7 @@ export class TagsResolver {
     const { tools } = await extractGraphql(root);
     const changed = tools.find((tool) => binding(tool).operation === "invoiceChanged")!;
     expect(changed.disabled).toBe(true);
-    expect(changed.risk).toBe("destructive");
+    expect(changed.risk).toBe("ungraded");
     expect(changed.note).toContain("subscriptions");
   });
 
@@ -604,7 +606,7 @@ export class MetadataModule {}
       expect(tool.note).toContain("endpoint");
     }
     // Risk labels still apply to disabled tools.
-    expect(result.tools.find((tool) => binding(tool).operation === "removeInvoice")!.risk).toBe("destructive");
+    expect(result.tools.find((tool) => binding(tool).operation === "removeInvoice")!.risk).toBe("write");
     expect(result.warnings.some((warning) => warning.includes("/metadata"))).toBe(true);
   });
 

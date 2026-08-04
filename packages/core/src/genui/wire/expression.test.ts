@@ -267,7 +267,7 @@ describe("parseExpression totality", () => {
       "{".repeat(200_000),
       "\\".repeat(999),
       '"' + "\\".repeat(999),
-      " ￿\uD800",
+      "\0￿\uD800",
       "{ a: [ } ]",
       "state.",
       "|",
@@ -360,5 +360,75 @@ describe("numeric path segments", () => {
     const result = parseExpression("accounts.data.0.sparkline", { queryNames: new Set(["accounts"]) });
     expect(result.issues).toEqual([]);
     expect(result.value).toEqual({ $path: "/accounts/data/0/sparkline" });
+  });
+});
+
+describe("computed values ($expr)", () => {
+  it("compiles an attribute carrying an operator or a known call to { $expr }", () => {
+    expectValue("sum(revenue.amount_cents) / count(payments)", {
+      $expr: "sum(revenue.amount_cents) / count(payments)",
+    });
+    expectValue("count(payments)", { $expr: "count(payments)" });
+    expectValue("revenue.total / 100", { $expr: "revenue.total / 100" });
+    expectValue("(revenue.total - 500) * 2", { $expr: "(revenue.total - 500) * 2" });
+    expectValue("days_until(revenue.due)", { $expr: "days_until(revenue.due)" });
+    expectValue('group_by(payments.paid_at, "month", sum(payments.amount))', {
+      $expr: 'group_by(payments.paid_at, "month", sum(payments.amount))',
+    });
+    expectValue("-revenue.total + 1", { $expr: "-revenue.total + 1" });
+    // A bare subtraction is infix even with whitespace around the operator.
+    expectValue("revenue.total - 500", { $expr: "revenue.total - 500" });
+    expectValue("sum(revenue.rows) - 1", { $expr: "sum(revenue.rows) - 1" });
+    expectValue("difference(revenue.total, payments.total)", {
+      $expr: "difference(revenue.total, payments.total)",
+    });
+  });
+
+  it("leaves every non-computed value on the binding/literal grammar", () => {
+    // The tell: no infix operator and no expression call.
+    expectValue("revenue.total", { $path: "/revenue/total" });
+    expectValue("state.note", { $state: "note" });
+    expectValue("revenue.rows | count()", { $path: "/revenue/rows", $reshape: [{ op: "count", args: [] }] });
+    expectValue("-2", -2);
+    expectValue("2.5E-2", 0.025);
+    expectValue('"a / b"', "a / b");
+    expectValue("[1, 2]", [1, 2]);
+    expectValue("{ limit: 5 }", { limit: 5 });
+    expectValue("{ note: 5 }", { note: 5 });
+  });
+
+  it("drops a computed value whose expression does not parse or names no query", () => {
+    expectDropped("sum(revenue.total) + * 2", "malformed-expression");
+    expectDropped("total(revenue.total) + 1", "malformed-expression");
+    expectDropped("sum(ghost.total) / count(payments)", "unknown-reference");
+  });
+});
+
+/**
+ * Two grammars answer "compute a value" — a computed expression and a reshape
+ * pipe — and a model that mixes them used to be told its CALL was an unknown
+ * `<Query>`, which sent it renaming queries instead of dropping the pipe.
+ */
+describe("parseExpression — an expression with a pipe bolted on", () => {
+  it("says which grammar was mixed, naming the call that already computes", () => {
+    const result = parse('sum(revenue.total) | format("money")');
+    expect(result.dropped).toBe(true);
+    expect(result.issues.map((issue) => issue.code)).toEqual(["malformed-expression"]);
+    const message = result.issues[0]?.message ?? "";
+    expect(message).toContain("mixes the pipe grammar into a computed expression");
+    expect(message).toContain("sum(...)");
+    // The old message blamed the wrong thing entirely.
+    expect(message).not.toContain("does not name a declared");
+  });
+
+  it("still accepts the legitimate reshape pipe, whose stages ARE calls", () => {
+    expectValue("revenue.rows | count()", {
+      $path: "/revenue/rows",
+      $reshape: [{ op: "count", args: [] }],
+    });
+  });
+
+  it("leaves a plain computed expression alone", () => {
+    expectValue("sum(revenue.total)", { $expr: "sum(revenue.total)" });
   });
 });

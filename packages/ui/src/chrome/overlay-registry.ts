@@ -2,8 +2,8 @@
  * generalized to the conversation surface (ui-usage-dx §2/§4).
  *
  * A mounted VendoOverlay registers an opener; any affordance that wants to
- * open the chat preloaded with a prompt (the Slot remix flag, a Trigger
- * button, palette default commands) calls `openVendoConversation` without
+ * open the chat preloaded with a prompt (a Trigger button, palette default
+ * commands, the ✦ remix popover) calls `openVendoConversation` without
  * needing a ref to the overlay. LIFO like the palette registries: the most
  * recently mounted overlay owns the call.
  *
@@ -21,6 +21,17 @@ import { createContext } from "react";
 export interface OpenConversationOptions {
   /** Text to preload into the conversation's composer. */
   prompt?: string;
+  /**
+   * Grounding the AGENT needs and the person does not — the app id behind a
+   * remix, the slot a view lives in. It rides the message the composer sends
+   * (so the model reads it) and appears nowhere a person looks: not the
+   * textarea, not the transcript bubble, not "edit last message".
+   *
+   * spec §16 law 3, LEAK 4's follow-up: the remix prefill used to read
+   * "Update my <slot> remix (app app_…): " — an id typed at a person — and
+   * removing it took the agent's grounding with it. This is the other half.
+   */
+  context?: string;
   /** Send the prompt immediately (default: leave it in the composer). */
   send?: boolean;
   /** Start a fresh conversation instead of resuming the current one. */
@@ -103,6 +114,8 @@ export function subscribeConversationCommands(listener: () => void): () => void 
 interface Prefill {
   prompt: string;
   send: boolean;
+  /** {@link OpenConversationOptions.context} — never rendered. */
+  context?: string;
 }
 
 /** Stamped by VendoOverlay around its thread so the composer registers its

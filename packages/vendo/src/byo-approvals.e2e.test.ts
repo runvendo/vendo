@@ -9,7 +9,7 @@ import {
   type ToolDescriptor,
   type ToolRegistry,
 } from "@vendoai/core";
-import { createGuard } from "@vendoai/guard";
+import { createGuard, type VendoGuard } from "@vendoai/guard";
 import { createStore } from "@vendoai/store";
 import { afterEach, describe, expect, it } from "vitest";
 import { createByoApprovals } from "./byo-approvals.js";
@@ -80,7 +80,20 @@ function messagingHost(): {
   };
 }
 
-async function harness() {
+/** A Guard that never grew the OPTIONAL `abandonApprovals` — an older or
+ *  wrapping implementation. The sweep's decide-then-revoke fallback is the only
+ *  expiry path such a guard has. */
+function withoutAbandonApprovals(guard: VendoGuard): VendoGuard {
+  return new Proxy(guard, {
+    get(target, key) {
+      if (key === "abandonApprovals") return undefined;
+      const value = (target as unknown as Record<string | symbol, unknown>)[key];
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+}
+
+async function harness(options: { hideAbandonApprovals?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), "vendo-byo-approvals-"));
   cleanups.push(async () => rm(root, { recursive: true, force: true }));
   const store = createStore({ dataDir: join(root, ".data") });
@@ -89,7 +102,11 @@ async function harness() {
   // Every write-class call asks — the gate the pack's approval envelope rides.
   const guard = createGuard({ store, policy: { rules: [{ match: { risk: "write" }, action: "ask" }] } });
   const host = messagingHost();
-  const byo = createByoApprovals({ guard, tools: guard.bind(host.tools), store });
+  const byo = createByoApprovals({
+    guard: options.hideAbandonApprovals === true ? withoutAbandonApprovals(guard) : guard,
+    tools: guard.bind(host.tools),
+    store,
+  });
   return { guard, store, host, byo };
 }
 
@@ -159,6 +176,23 @@ describe.sequential("existing-agents — parked BYO guarded calls", () => {
     // Idempotent: a second sweep pass is a no-op.
     await byo.sweepExpired(60_000, Date.now() + 120_000);
     await expect(byo.read(parked.approvalId, principal)).resolves.toEqual({ state: "expired" });
+  });
+
+  it("expires through the fallback path without turning the timeout into the user's no", async () => {
+    // A custom Guard with no `abandonApprovals`: the sweep can only reach the
+    // human-consent verb, so it must take its own no back. An embed nobody
+    // answered is not a refusal — the identical call has to ask again.
+    const { host, byo } = await harness({ hideAbandonApprovals: true });
+    const expiring = sendCall("call_stable_byo", "Nobody was watching");
+
+    const parked = await byo.registry.execute(expiring, ctx);
+    if (parked.status !== "pending-approval") throw new Error("expected the mutation to park");
+    await byo.sweepExpired(60_000, Date.now() + 61_000);
+    await expect(byo.read(parked.approvalId, principal)).resolves.toEqual({ state: "expired" });
+
+    const reissued = await byo.registry.execute(expiring, ctx);
+    expect(reissued.status).toBe("pending-approval");
+    expect(host.delivered).toHaveLength(0);
   });
 
   it("scopes reads to the owner and answers not-found for unknown ids", async () => {

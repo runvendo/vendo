@@ -14,12 +14,23 @@ import * as chrome from "../../src/chrome/index.js";
 
 const VALUE_EXPORTS = [
   "ActivityPanel",
+  // Build contract §9.9 — the adoption card: the presentational half, the
+  // client-bound half the app surface renders from venue state, and the
+  // window label the panel and the card share.
+  "ADOPTION_VENUE_KEY",
+  "AdoptionCard",
+  "AdoptionVenueCard",
+  "sponsorLabel",
   "ApprovalCard",
   "AutomationCard",
   "AutomationsPanel",
   "ConnectCard",
   "ConnectedAccountsPanel",
   "GrantSetCard",
+  // Build contract §9.2-§9.6 — the share surface and the viewer fork offer.
+  "ShareDialog",
+  "ForkOffer",
+  "encodeGrantPrincipal",
   "NoPolicyNotice",
   "VendoOverlay",
   "VendoPage",
@@ -38,9 +49,16 @@ const VALUE_EXPORTS = [
   // Shelf Task 4 — the conversation-opening registry seam (slot remix,
   // triggers, palette defaults all route through it).
   "openVendoConversation",
+  // Keystone graduates B8 — the pin ceremony. `usePinAction` is what every pin
+  // affordance calls; `playPinCeremony` is the same sequence for a host running
+  // a pin from its own control.
+  "playPinCeremony",
+  "usePinAction",
   // Shelf Lane B — the two placeable pieces (ui-usage-dx §2).
   "VendoActivities",
   "VendoTrigger",
+  // Keystone graduates B7 — the remixable-surface affordance.
+  "Remixable",
   // The eject surface (§4 customization ladder): internals the ejected
   // thread compiles against, exported deliberately so ejected chrome keeps
   // data/wire logic as a package dependency and only forks pixels.
@@ -54,6 +72,10 @@ const VALUE_EXPORTS = [
   "formatRelativeAuditTime",
   "kindGlyph",
   "BuildBeat",
+  // Spec §1 (2026-08-03) — the settled turn's summary row. Public because the
+  // ejected thread template renders it (the eject standalone guard requires
+  // every template import to be part of the chrome surface).
+  "BeatSummary",
   "StatusRibbon",
   // 2026-07 loading-state audit — the between-steps busy voice; the ejected
   // thread template renders it, so it must be public (eject standalone rule).
@@ -93,11 +115,14 @@ const VALUE_EXPORTS = [
 ] as const;
 
 const TYPE_EXPORTS = [
+  "AdoptionCardProps",
   "ApprovalCardProps",
   "AutomationCardProps",
   "ConnectCardProps",
   "GrantSetCardProps",
   "GrantSetPermission",
+  "ShareDialogProps",
+  "ForkOfferProps",
   "VendoOverlayProps",
   "VendoCommand",
   "HotkeyChord",
@@ -109,6 +134,9 @@ const TYPE_EXPORTS = [
   "OpenConversationOptions",
   "VendoActivitiesProps",
   "VendoTriggerProps",
+  // 2026-08-02 final shape: RemixContext died with the context-chip behavior
+  // (remix always means fork now) — deliberately absent.
+  "RemixableProps",
   // Eject surface types.
   "VendoThreadProps",
   "MorphToastProps",

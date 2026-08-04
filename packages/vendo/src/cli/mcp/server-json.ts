@@ -17,6 +17,8 @@ export interface ServerJsonOptions {
   force?: boolean;
   prompt?: (question: string) => Promise<string>;
   output?: Output;
+  /** TTY seam (tests pin both sides). */
+  isTty?: boolean;
 }
 
 interface HostIdentity {
@@ -61,10 +63,28 @@ export async function runServerJson(options: ServerJsonOptions): Promise<number>
     return 1;
   }
 
+  // Self-serve audit B6: the two questions below used to fire on a piped stdin
+  // too, so a CI job or an agent wedged on a prompt nobody could ever answer.
+  // Ask only where an answer can arrive; everywhere else, name both flags.
+  // A flag present but blank (`--domain=`, `--domain ""`) is an ANSWER NOBODY
+  // GAVE, not an answer: the option parser hands back "" for both spellings,
+  // so treating it as supplied skipped the prompt on a TTY and slipped past
+  // this guard everywhere else, surfacing as `Invalid registry domain:` from
+  // the generator instead of the two flag names.
+  const supplied = (value: string | undefined): string | undefined =>
+    value === undefined || value.trim() === "" ? undefined : value;
+  const suppliedDomain = supplied(options.domain);
+  const suppliedUrl = supplied(options.url);
+  const tty = options.isTty ?? stdin.isTTY === true;
+  if (!tty && (suppliedDomain === undefined || suppliedUrl === undefined)) {
+    output.error("vendo mcp server-json: --domain and --url are required non-interactively (example: vendo mcp server-json --domain example.com --url https://example.com/api/vendo/mcp)");
+    return 1;
+  }
+
   try {
     const prompt = options.prompt ?? promptOnce;
-    const domain = options.domain ?? await prompt("Registry domain (for example example.com): ");
-    const publicUrl = options.url ?? await prompt("Public MCP URL: ");
+    const domain = suppliedDomain ?? await prompt("Registry domain (for example example.com): ");
+    const publicUrl = suppliedUrl ?? await prompt("Public MCP URL: ");
     const identity = await hostIdentity(root);
     const server = {
       $schema: SERVER_SCHEMA_URL,

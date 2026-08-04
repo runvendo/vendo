@@ -1,9 +1,10 @@
 /** J3 — APP EDIT + HISTORY through the composed wire.
  *
- * Create an app (POST /apps drives the generation engine's CREATE dialect), then
- * edit it (POST /apps/:id/edit drives the EDIT dialect — an <Edit> wire patch
- * the composed engine applies and re-validates). The wire returns an EditResult;
- * history surfaces the prior version; undo restores it.
+ * Create an app (POST /apps — a tiny ask, so the brain writes the whole app on
+ * the spot), then edit it (POST /apps/:id/edit — the brain quotes the app's own
+ * printed text and says what replaces it, which the composed engine applies and
+ * re-validates). The wire returns an EditResult; history surfaces the prior
+ * version; undo restores it.
  *
  * History note: the frozen history surface (06 §1) lists RESTORABLE prior
  * snapshots (the undo targets), appended only on edit — so one edit yields
@@ -29,9 +30,15 @@ interface AppDoc {
 
 const CREATE_DIALECT = '<App name="Greeting"><Text text="Hello"/><Disclaimer reason="Fixture app."/></App>';
 
-// EDIT dialect: patch the greeting text. The instruction avoids the
-// engine's server-keyword heuristic so it routes to the tree (not code) dialect.
-const EDIT_DIALECT = '<Edit><Set id="text-1" text="Goodbye"/></Edit>';
+// The small-change answer: the exact text as the app prints it (a bare-text
+// <Text> node prints as its own text) and what replaces it. Identity carries by
+// edit span, so the greeting node keeps the id the screen already mounted.
+const EDIT_DIALECT = '<Edit><Old>Hello</Old><New>Goodbye</New></Edit>';
+
+// The AI reviewer rides the same scripted model once per landed document. It is
+// asked for a strict `report_findings` tool call, so prose is how a reviewer with
+// nothing to say says it.
+const REVIEW_SILENT = "Nothing to report.";
 
 const greetingText = (doc: AppDoc): string | undefined =>
   doc.tree.nodes.find((node) => node.id === "text-1")?.props?.text;
@@ -42,10 +49,15 @@ afterEach(async () => {
 });
 
 describe("J3: app edit + history through the composed wire", () => {
-  it("creates, edits via the tree dialect, lists the prior version, and undoes to restore it", async () => {
+  it("creates, edits by quoting the app's own text, lists the prior version, and undoes to restore it", async () => {
     await resetFixture();
     stack = await createStack({
-      turns: [generationTurn(CREATE_DIALECT), generationTurn(EDIT_DIALECT)],
+      turns: [
+        generationTurn(CREATE_DIALECT),
+        generationTurn(REVIEW_SILENT, "review_1"),
+        generationTurn(EDIT_DIALECT, "gen_2"),
+        generationTurn(REVIEW_SILENT, "review_2"),
+      ],
     });
 
     // --- Create -----------------------------------------------------------
@@ -57,7 +69,7 @@ describe("J3: app edit + history through the composed wire", () => {
     expect(greetingText(created)).toBe("Hello");
     expect(await stack.sql("SELECT id FROM vendo_apps WHERE subject = $1", [ADA.subject])).toHaveLength(1);
 
-    // --- Edit (tree dialect) ----------------------------------------------
+    // --- Edit ---------------------------------------------------------------
     const edited = (await (await stack.wireFetch(`/apps/${appId}/edit`, {
       method: "POST",
       body: JSON.stringify({ instruction: "Change the greeting text to Goodbye" }),

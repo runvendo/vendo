@@ -1,14 +1,5 @@
 # Vendo quickstart
 
-## See it before you install
-
-To see your product's agent before installing anything, run `npx vendo try`
-from your app's repo: a read-only pass extracts tools and theme, a live local
-demo opens in seconds, and the AI engine ladder deepens it in the background.
-Nothing is written to your repo and no key is required; with zero keys the
-surfaces serve against scripted data. (`vendo try` replaces the retired
-`vendo playground`.)
-
 ## Install and init
 
 ```bash
@@ -38,7 +29,8 @@ Enter keeps the extracted one.
 Loosenings are the one decision that has no unattended default: risk is never
 lowered without a human, so they are held as pending and printed with the
 command to review them (`vendo sync --review`), never silently applied. Init
-writes the whole server side and mounts the visible surface for you:
+writes the whole server side and prints the one paste that makes the agent
+visible:
 
 - the catch-all route `app/api/vendo/[...vendo]/route.ts` holding the entire
   `createVendo` composition (on Express or any other Web-standard runtime,
@@ -47,26 +39,24 @@ writes the whole server side and mounts the visible surface for you:
 - the client mount `vendo/vendo-root.tsx` — a `"use client"` wrapper that
   applies the registry and the extracted theme and mounts `<VendoOverlay />`,
   the launcher pill + panel users actually see
-- one bounded edit to `app/layout.tsx` wrapping the single JSX `{children}` in
-  that wrapper, so a by-the-book install is visible the moment the dev server
-  starts
+- a printed paste for you: the import plus wrapping `{children}` in that
+  wrapper in `app/layout.tsx`. Init never edits a file you authored, so this
+  one step is yours — and it is the step that makes the install visible, so
+  `vendo doctor` fails until it lands
 - `vendo-actions.ts`, the server-action registration map, when `"use server"`
   actions are detected
-- two `package.json` script hooks (`predev: vendo sync`,
-  `prebuild: vendo sync --strict`)
+- two `package.json` script hooks (`predev: vendo sync --no-ai`,
+  `prebuild: vendo sync --strict --no-ai`)
 - your tools and brand theme extracted into `.vendo/` (`tools.json`,
-  `overrides.json`, `policy.json`, `brief.md`, `theme.json`) plus
-  `.env.example`
+  `overrides.json`, `policy.json`, `brief.md`, `theme.json`,
+  `theme.extracted.json`) plus `.env.example`
 
-The layout edit is the one place init touches code you wrote. It is
-idempotent (skipped when a Vendo surface is already mounted), bounded (one
-import line plus the `{children}` wrap), and shows up as a reviewable diff
-like everything else. When the layout can't be edited unambiguously, init
-degrades to printing the paste lines instead — see
+The mount paste is idempotent (init prints nothing when a Vendo surface is
+already mounted) and bounded: one import line plus the `{children}` wrap. See
 [the client mount](#vendovendo-roottsx--the-client-mount).
 
-Then start your dev server — the agent is live in your app — and run
-`npx vendo doctor` to verify everything with one real model turn.
+Then land the paste, start your dev server, and run `npx vendo doctor` to
+verify everything with one real model turn.
 
 ## Non-interactive runs (agents)
 
@@ -75,7 +65,7 @@ on a prompt: `--auth <preset>` (authJs, clerk, supabase, auth0, jwt, none)
 answers the auth confirm and picker, `--framework <next|express|custom>`
 overrides detection (`custom` is the runtime-neutral scaffold for Cloudflare
 Workers, Bun, Deno, Hono, and Lambda adapters), `--cloud-key <key>` or `--byo`
-answers the Cloud offer, `--ai-polish` grants consent for the AI pass (tool
+answers the Cloud offer, `--ai` grants consent for the AI pass (tool
 judgment and theme-slot filling, one consent for both), and `--theme
 slot=value` (repeatable) overrides a theme slot value directly. When a
 decision has no flag and no detected default — an undetectable framework — a
@@ -133,7 +123,8 @@ hand-write one.
 ### The catch-all route — the composition
 
 ```ts
-// app/api/vendo/[...vendo]/route.ts — exactly what `vendo init` scaffolds
+// app/api/vendo/[...vendo]/route.ts — equivalent to what `vendo init` scaffolds
+// (init writes a relative registry import; the `@/*` alias reads better here)
 import { authJs } from "@vendoai/vendo/auth/auth-js";
 import { createVendo, nextVendoHandler } from "@vendoai/vendo/server";
 import { registry } from "@/vendo/registry";
@@ -213,10 +204,10 @@ framework-agnostic.
 
 ### `vendo/vendo-root.tsx` — the client mount
 
-Init generates this wrapper and wires it into your layout. It is a
-`"use client"` boundary because the registry carries component references,
-which cannot cross a Server Component boundary as props (RSC serialization
-fails, and every page 500s).
+Init generates this wrapper; you mount it in your layout (init prints the
+exact two lines). It is a `"use client"` boundary because the registry carries
+component references, which cannot cross a Server Component boundary as props
+(RSC serialization fails, and every page 500s).
 
 ```tsx
 // vendo/vendo-root.tsx — generated by `vendo init`, then yours
@@ -246,12 +237,13 @@ TypeScript's widened JSON-module string literals.
 `<VendoClientRoot>` is a context provider and renders nothing by itself,
 which is why the generated wrapper mounts `<VendoOverlay />` inside it. Swap
 that for `<VendoThread />`, `<VendoPage />`, `<VendoPalette />`, or the
-headless hooks from `@vendoai/ui` — they all speak to the same wire. The
-shipped surfaces live in `@vendoai/ui/chrome`, re-exported from
-`@vendoai/vendo/react`.
+headless hooks — they all speak to the same wire. The hooks and the BYO embeds
+are re-exported from `@vendoai/vendo/react`, so they cost you nothing extra.
+The other chrome surfaces live in `@vendoai/ui/chrome` and need `@vendoai/ui`
+as a direct dependency; of the standalone surfaces, only `<VendoOverlay />` is
+re-exported.
 
-When init cannot edit your layout safely (no single unambiguous `{children}`),
-it prints the paste that remains instead:
+The paste init prints:
 
 ```tsx
 // app/layout.tsx
@@ -263,7 +255,7 @@ import { VendoRoot } from "../vendo/vendo-root";
 
 ## Model keys
 
-The agent needs an LLM. `models.agent` is optional: when you don't name a
+The agent needs an LLM. `models.default` is optional: when you don't name a
 model, the composed default resolves a real key from the environment, in this
 order:
 
@@ -277,7 +269,7 @@ order:
    never paste a key. (`vendo cloud login <email>` remains as an email-OTP
    fallback.)
    Model calls go through the Vendo Cloud model gateway (`vendo` by
-   default — pin another id with `VENDO_MODEL` or `models.agent`, served via
+   default — pin another id with `VENDO_MODEL` or `models.default`, served via
    `@ai-sdk/anthropic`) and meter your dev-mode runs allowance.
 3. Nothing available: chat fails honestly, with exact instructions in the
    server log.
@@ -357,29 +349,8 @@ never stopping to wait. Judgments live in their own file, so
 `overrides.json` keeps meaning only "what a person decided" and a re-sync can
 never clobber either.
 
-Without `--ai-polish` the whole pass is skipped silently in non-interactive
-runs, since consent cannot be assumed; re-run `vendo init` any time to add it.
-
-### Bring your own coding agent
-
-The extraction contract is portable: any coding agent already living in your
-repo (Claude Code, Cursor, Codex) can do the reading instead. `npx vendo init
---agent` emits an `aiPolish` object in its read-only plan: the composed
-`instructions`, the exact draft `draftSchema`, and the apply command. Let your
-agent read the codebase against the instructions and write the draft JSON to a
-file, then apply it:
-
-```bash
-npx vendo extract --apply draft.json
-```
-
-The apply step is non-interactive safe and runs the same deterministic guards
-as the built-in pass, so delegation never becomes a second, weaker path into
-`.vendo/`. It writes the same artifacts, re-syncs, and prints the same
-summary. An unusable draft (unreadable file, schema mismatch) exits non-zero
-with the reason; guard refusals (unknown tool names, risk downgrades,
-unreasoned wakes) are printed per entry while the rest of the draft applies.
-`--force` replaces a hand-edited brief, exactly like `vendo init --force`.
+Without `--ai` the whole pass is skipped silently in non-interactive runs,
+since consent cannot be assumed; re-run `vendo init` any time to add it.
 
 ## First turn
 
@@ -452,7 +423,7 @@ grant, the run parks for approval before `actAs` is called.
 
 ## The whole configuration surface
 
-Every key is optional. `models.agent` resolves from the environment when
+Every key is optional. `models.default` resolves from the environment when
 absent (see [Model keys](#model-keys)), and with neither `auth` nor
 `principal` every session is ephemeral and anonymous. `auth` and any of
 `principal`/`actAs`/`oauth` are mutually exclusive — supplying both throws a
@@ -468,29 +439,34 @@ compiled against the real `CreateVendoConfig` in
 ```ts
 import type {
   ActAs, ActionsRegistry, AppsRuntime, AutomationsEngine, CatalogFile,
-  ComponentCatalog, ComponentRegistry, Connector, ExtractedTool,
-  HostOAuthAdapter, Json, Judge, KnowledgeAdapter, OverridesFile, PolicyConfig,
-  PolicyFile, Principal, RunId, SandboxAdapter, SecretsProvider, ToolRegistry,
+  ComponentCatalog, ComponentRegistry, Connector, ExtractedTool, FilesAdapter,
+  Harness, HostOAuthAdapter, Json, Judge, KnowledgeAdapter, OverridesFile,
+  PackProvider, PolicyConfig, PolicyFile, Principal, RunContext, RunId,
+  SandboxAdapter, SecretsProvider, ToolRegistry,
   VendoAgent, VendoGuard, VendoStore, VendoTheme,
 } from "@vendoai/vendo";
 import type {
-  ConnectionsService, HostAuthPreset, ModelsConfig, ServerActionHandler,
+  AppsConfig, ConnectionsService, HarnessTurns, HostAuthPreset, ModelsConfig,
+  PackContext, ServerActionHandler, TourEntry,
 } from "@vendoai/vendo/server";
 import type { LanguageModel } from "ai";
 
 export interface CreateVendoConfig {
-  /** @deprecated superseded by `models.agent`. */
+  /** @deprecated superseded by `models.default`. */
   model?: LanguageModel;
-  /** @deprecated the model half is superseded by `models.paint`; `disabled` stays. */
+  /** @deprecated the model half is superseded by `models.fill`; `disabled` stays. */
   paint?: { model?: LanguageModel; disabled?: boolean };
-  models?: ModelsConfig;      // { agent, paint, judge, knowledgeVerifier } — name or model object
+  models?: ModelsConfig;      // seats: default, reviewer, judge, fill, verifier
   auth?: HostAuthPreset;      // one preset fills principal + actAs + oauth
   principal?: (req: Request) => Promise<Principal | null>; // escape hatch
+  tools?: ExtractedTool[];    // `vendo init`/`vendo sync` declarations, in memory
   catalog?: ComponentCatalog | ComponentRegistry;          // registry.tsx, or the array form
   theme?: VendoTheme;         // programmatic override for .vendo/theme.json
   brief?: string;             // programmatic override for .vendo/brief.md
   store?: VendoStore;
+  files?: FilesAdapter;       // workspace file content; unset → blobs in the store, 5 MiB cap
   sandbox?: SandboxAdapter;
+  harness?: Harness<never>;   // WHO THINKS. unset → vendo(). also: instant(), claudeCode()
   knowledge?: KnowledgeAdapter; // unset → no vendo_knowledge_search tool
   connectors?: Connector[];
   connectorApps?: string[];   // toolkit scope for the auto-composed Cloud connector
@@ -501,7 +477,7 @@ export interface CreateVendoConfig {
   judge?: Judge;
   secrets?: SecretsProvider;
   telemetry?: boolean;
-  development?: boolean | { root?: string; out?: string }; // dev-only source capture
+  development?: boolean;    // dev-only injection seams
   profileDir?: string;        // the project root .vendo/ is read under
   fetch?: typeof fetch;       // the fetch host tool bindings execute through
   profile?: {                 // the same .vendo/ pieces, in memory (filesystem-less venues)
@@ -526,7 +502,6 @@ export interface CreateVendoConfig {
     historyWindow?: number;
     maxInitialTools?: number;
     loadout?: string[];
-    maxSearchExpansions?: number;
     maxSteps?: number;
   };
   sessions?: { ttlMs?: number; sweepIntervalMs?: number; now?: () => number };
@@ -534,16 +509,16 @@ export interface CreateVendoConfig {
   apps?: {
     experimentalServedApps?: boolean;
     experimentalMachines?: boolean;
-    pipeline?: {              // generation-pipeline knobs, measured before default-on
-      structuredRepair?: boolean;
-      regionParallel?: boolean;
-      endPass?: boolean;
-      exemplarContract?: boolean;
-      smokeRender?: boolean;
-      rebind?: boolean;
+    review?: {                // review-kind remixes: who may review (queue/reject/approve)
+      reviewer?(ctx: RunContext): boolean | Promise<boolean>;
     };
+    pipeline?: AppsConfig["pipeline"];                 // { smokeRender } — the island render gate
+    fillConcurrency?: AppsConfig["fillConcurrency"];   // groups filled at once (default 2)
+    checks?: AppsConfig["checks"];                     // the host's own checks, appended to the built-ins
     designRules?: string;
   };
+  packs?: readonly PackProvider<PackContext>[]; // where capability comes from. unset → [apps()]
+  tours?: readonly TourEntry[];
 }
 
 export interface Vendo {
@@ -557,6 +532,7 @@ export interface Vendo {
   actions: ActionsRegistry;
   connections: ConnectionsService;
   store: VendoStore;
+  harness: HarnessTurns;      // turns served through the composed Harness
 }
 ```
 
@@ -595,16 +571,8 @@ the installed version as a query param, so an agent's remediation loop is:
 doctor → read `fix_ref` → fix → repeat.
 
 `sync` extracts the host API and remix baselines. In strict mode, breaking
-extraction changes exit with code 2.
-
-`sync` also fills per-tool field `semantics` inside `.vendo/tools.json`
-(cents money, ISO/epoch dates, enum vocabularies with display labels, ids,
-percents), inferred ONCE by sampling each zero-input read tool through the
-dev server. Inferred entries never churn on re-sync, and `overrides.json`
-`tools[name].semantics` wins over everything. Generation treats it as fact:
-annotated response shapes and correct money/date formatting by default. A tool
-your API does not describe carries an empty description — write one in
-`overrides.json`.
+extraction changes exit with code 2. A tool your API does not describe carries
+an empty description — write one in `overrides.json`.
 
 To make the deployed door discoverable through the official registry, follow
 [Publish to the MCP registry](publish-mcp-registry.md).

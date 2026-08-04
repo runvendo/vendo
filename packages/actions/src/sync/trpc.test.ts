@@ -151,17 +151,21 @@ describe("extractTrpc", () => {
     }
   });
 
-  it("labels risk fail-closed: read-shaped queries read, mutations write, destructive words destructive", async () => {
+  it("labels risk from the PROTOCOL only: mutations write, queries ungraded, names irrelevant", async () => {
     const root = await temporaryHost();
     await writeTrpcHost(root);
     const { tools } = await extractTrpc(root);
     const risk = (procedure: string) =>
       tools.find((tool) => (tool.binding as TrpcBinding).procedure === procedure)?.risk;
-    expect(risk("polls.list")).toBe("read");
-    expect(risk("user.get")).toBe("read");
+    // A declared mutation is at least a write — that IS a protocol fact.
     expect(risk("polls.create")).toBe("write");
     expect(risk("polls.reindex")).toBe("write");
-    expect(risk("polls.delete")).toBe("destructive");
+    // `delete` in the name proves nothing (risk-grading redesign D1); the
+    // procedure is a declared mutation, so it grades exactly like the others.
+    expect(risk("polls.delete")).toBe("write");
+    // A query is not a declared read — tRPC does not stop one from writing.
+    expect(risk("polls.list")).toBe("ungraded");
+    expect(risk("user.get")).toBe("ungraded");
   });
 
   it("interprets common zod patterns statically", async () => {
@@ -216,7 +220,7 @@ describe("extractTrpc", () => {
     const result = await extractTrpc(root);
     const watch = result.tools.find((tool) => (tool.binding as TrpcBinding).procedure === "polls.watch")!;
     expect(watch.disabled).toBe(true);
-    expect(watch.risk).toBe("destructive");
+    expect(watch.risk).toBe("ungraded");
     expect(watch.note).toContain("subscriptions");
     expect(result.warnings.some((warning) => warning.includes("polls.watch"))).toBe(true);
   });

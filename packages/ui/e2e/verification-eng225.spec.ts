@@ -94,8 +94,17 @@ test("sent attachments render beside the user bubble", async ({ page }) => {
 
 test("waiting-on-you queue", async ({ page }) => {
   await openScenario(page, "waiting");
-  await expect(page.getByRole("region", { name: "Waiting on you" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Approve" })).toBeVisible();
+  const queue = page.getByRole("region", { name: "Waiting on you" });
+  await expect(queue).toBeVisible();
+  // spec §4 (N1) — the strip is COUNT-FIRST now: it lands as a slim
+  // "Waiting on you · N" summary and expands the cards in place. So the count
+  // is the first thing asserted, and the rows come after the disclosure opens.
+  const summary = queue.locator(".fl-waiting-strip > summary");
+  await expect(summary).toContainText("Waiting on you ·");
+  await summary.click();
+  // The scenario now carries several parked approvals, so scope the Approve to
+  // the queue's first row instead of matching every one on the page.
+  await expect(queue.getByRole("button", { name: "Approve" }).first()).toBeVisible();
   await page.screenshot({ path: shotPath("05-waiting-queue"), animations: "disabled" });
 });
 

@@ -102,30 +102,27 @@ const DEMO_POLICY = {
 };
 
 /**
- * genqa defect 1 (venue self-strangulation): `extractedRisk` (packages/actions
- * sync/common.ts) fail-closes every route-scanned GET to `write` — a route
- * scan can't prove a real host's handler is side-effect-free, so core is
- * right to be cautious there. But `npx vendo try` never talks to a real
- * host: every tool call runs against the synthetic fixtures THIS
- * deterministic pass just wrote, so a route GET's honesty is no longer in
- * question the way it is for production traffic. Left uncorrected, the
- * demo policy's read-auto-run rules never match these tools, and the
- * guard's per-session write budget (packages/guard maxWritesPerRun) parks
- * every one of them alongside real writes — a demo run dies after ~10 calls
- * regardless of how many were genuine mutations.
+ * genqa defect 1 (venue self-strangulation): a route-scanned GET is
+ * `ungraded` (packages/actions sync/common.ts) — a route scan can't prove a
+ * real host's handler is side-effect-free, so core is right to say nothing
+ * there, and the guard asks. But `npx vendo try` never talks to a real host:
+ * every tool call runs against the synthetic fixtures THIS deterministic pass
+ * just wrote, so a route GET's honesty is no longer in question the way it is
+ * for production traffic. Left uncorrected, every one of them parks on an
+ * approval and the demo is a wall of consent cards.
  *
  * Fixed at THIS seam, never common.ts: an override is a correction, not a
- * reclassification of the extractor's own fail-closed default, and it rides
- * the SAME `.vendo/overrides.json` mechanism doctor/the running server
- * already treat as authoritative over tools.json (mergeOverride,
- * packages/actions runtime/registry.ts). Scoped tight — only
- * `binding.kind === "route"` GETs the extractor left at `write`; a
- * `destructive` GET (a delete-shaped name) is a real signal and stays as is.
+ * reclassification of what the extractor could prove, and it rides the SAME
+ * `.vendo/overrides.json` mechanism doctor/the running server already treat
+ * as authoritative over tools.json (mergeOverride, packages/actions
+ * runtime/registry.ts). Scoped tight — only `binding.kind === "route"` GETs
+ * nobody graded; any real grade (including a `destructive` one an override or
+ * the judge assigned) is a signal and stays as is.
  */
 async function writeTryReadDowngrades(vendoDir: string, tools: readonly ExtractedTool[]): Promise<void> {
   const corrections: Record<string, ToolOverride> = {};
   for (const tool of tools) {
-    if (tool.binding.kind === "route" && tool.binding.method === "GET" && tool.risk === "write") {
+    if (tool.binding.kind === "route" && tool.binding.method === "GET" && tool.risk === "ungraded") {
       corrections[tool.name] = { risk: "read" };
     }
   }
@@ -254,9 +251,9 @@ export async function runDeterministicPass(
     tools = { status: "written", count: written.tools.length, warnings: report.warnings };
     // Try-venue-only downgrade (genqa defect 1): every call here executes
     // against fixtures THIS pass just extracted, never a real host, so write
-    // it as a normal overrides.json correction — never touch common.ts's
-    // fail-closed extractedRisk default, which stays exactly as cautious for
-    // every OTHER caller (init/sync against a real host).
+    // it as a normal overrides.json correction — never touch common.ts, whose
+    // protocol-facts-only grading stays exactly as honest for every OTHER
+    // caller (init/sync against a real host).
     await writeTryReadDowngrades(vendoDir, written.tools);
   } catch (error) {
     tools = { status: "failed", count: 0, warnings: [String(error)] };

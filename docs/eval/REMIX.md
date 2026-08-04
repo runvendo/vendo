@@ -177,7 +177,7 @@ Measured steps are (A), (B), (C) in order on the scenario's fresh base app.
 carrying that instruction; with no instruction it is the plain add-as-is
 gesture.
 
-### demo-bank (Maple) — R-M1–R-M6
+### demo-bank (Maple) — R-M1–R-M7
 
 - **R-M1** [gesture-fork][fork-modify] — (A) Remix gesture on
   `MapleNetWorthCard` with «also show the change in dollars for the selected
@@ -216,8 +216,18 @@ gesture.
   `drifted`. (C) invoke the explicit rebase for the slot — expect
   `status:"rebased"` with the (A) intent replayed, the reopened fork showing
   BOTH the host's new label and the 1Y default, and the drift notice gone.
+- **R-M7** [gesture-fork][pin-preserve] — (A) Remix gesture on
+  `MapleNetWorthCard` with «show the total in whole dollars — drop the
+  cents». (B) text edit `add my savings goals with progress bars next to the
+  card`. Expect: (A) fork faithful with the headline rounded to whole dollars
+  (the cents digits gone, nothing else changed — badge, switcher, and chart
+  intact); (B) leaves the fork byte-identical (pin diff unchanged between
+  shots), pin still listed, goals section added outside the fork showing the
+  goals `listGoals` returns — each with its name and progress toward target —
+  no invented goals or amounts. (Blind replacement for burned R-C6, authored
+  2026-08-03 under rule 4.)
 
-### demo-accounting (Cadence) — R-C1–R-C6
+### demo-accounting (Cadence) — R-C1–R-C5
 
 - **R-C1** [gesture-fork][fork-modify] — (A) Remix gesture on
   `CadenceMissingDocsHero` with «also show what percent of clients are fully
@@ -247,10 +257,6 @@ gesture.
   per the F4 ruling (no invented literals, no lookalike), and the table
   composed from real data. A silently minted pin or fabricated hero numbers
   are FAILs.
-- **R-C6** [gesture-fork][pin-preserve] — (A) Remix gesture with «make the
-  label read 'Clients still owing documents'». (B) text edit `add a donut of
-  documents by status next to it`. Expect: (B) leaves the fork byte-identical,
-  pin intact, donut added outside the fork from real document data.
 
 ## DEV list — burned scenarios
 
@@ -258,11 +264,22 @@ gesture.
 restatement is eval maintenance under the design rulings above, not a fix-PR
 discussion; the asks and bar substance are unchanged, so the set stays live.)
 
+Entries below are kept verbatim for development use only. They are NEVER
+scored and do not count toward the 12.
+
+- **R-C6** [gesture-fork][pin-preserve] — BURNED 2026-08-03 under rule 4
+  (analyzed in a fix PR; replaced blind by R-M7) — (A) Remix gesture with
+  «make the label read 'Clients still owing documents'». (B) text edit `add a
+  donut of documents by status next to it`. Expect: (B) leaves the fork
+  byte-identical, pin intact, donut added outside the fork from real document
+  data.
+
 ## Run ledger
 
 | Date | Set | Score | Main @ | Evidence |
 |---|---|---|---|---|
 | 2026-07-21 | frozen 12 (baseline, pre-restatement) | **2/12** | 4cb6cdb6 | `docs/eval/runs/2026-07-21-remix-baseline/` |
+| 2026-08-03 | frozen 12 (final wrapper shape) | **9/12** | 4f64c01e | `docs/eval/runs/2026-08-03-remix-final-shape/` |
 
 Baseline headline (pre-redesign semantics): the drift→rebase machinery is
 solid end-to-end, but the headline "remix X so that Y" journey failed 6/8

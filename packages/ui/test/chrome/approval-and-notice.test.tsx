@@ -7,10 +7,15 @@ import {
   ActivityPanel,
   ApprovalCard,
   AutomationsPanel,
+  ChromeRoot,
   NoPolicyNotice,
+  VendoOverlay,
   VendoPage,
   VendoPalette,
+  VendoSlot,
   VendoStage,
+  VendoThread,
+  WaitingQueue,
 } from "../../src/chrome/index.js";
 import { createWireServer } from "../wire-server.js";
 
@@ -49,7 +54,8 @@ describe("ApprovalCard and NoPolicyNotice exports", () => {
       row.querySelector("dt")?.textContent,
       row.querySelector("dd")?.textContent,
     ]);
-    expect(rows).toEqual([["Invoice id", "inv_42"], ["Permanent", "true"]]);
+    // A boolean is an answer, not a literal (this line used to pin "true").
+    expect(rows).toEqual([["Invoice id", "inv_42"], ["Permanent", "Yes"]]);
     // The risk chip speaks the user's language; the data attr keeps the slug.
     expect(screen.getByText("Irreversible").getAttribute("data-risk")).toBe("destructive");
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
@@ -134,28 +140,69 @@ describe("ApprovalCard and NoPolicyNotice exports", () => {
     await waitFor(() => expect(screen.queryByRole("region", { name: "Vendo is running without a policy" })).toBeNull());
   });
 
-  it("automatically renders the notice on every standalone chrome surface", async () => {
+  it("renders the developer banner on NO end-user surface, even under unconfigured posture", async () => {
+    // C1 — the banner names a file to configure, so it may never ride a surface
+    // a PERSON reaches. It used to arrive automatically inside every chrome
+    // boundary (ChromeRoot's default was `true`): the thread, the overlay, a
+    // pinned slot, an embed, the voice stage, the share dialog. Now it is opt-in.
     wire.state.posture = "unconfigured";
-    // VendoPalette is headless now (one-surface ⌘K, ui-lane-entry): it renders
-    // no chrome of its own, so it is no longer a notice-bearing surface.
-    const surfaces = [<ActivityPanel />, <AutomationsPanel />, <VendoStage />];
-
+    const surfaces: React.ReactNode[] = [
+      <VendoThread threadId="thr_1" />,
+      <VendoOverlay open />,
+      <VendoSlot appId="app_1" />,
+      <VendoStage />,
+      <ApprovalCard approval={approval} onDecide={() => undefined} />,
+      <WaitingQueue pollMs={0} />,
+      <ActivityPanel />,
+    ];
     for (const surface of surfaces) {
-      render(<VendoProvider client={client}>{surface}</VendoProvider>);
-      expect(await screen.findByRole("region", { name: "Vendo is running without a policy" })).toBeTruthy();
+      // The host's OWN explicit banner rides alongside: it renders only on a
+      // known-unconfigured posture, so its presence proves the probe answered —
+      // and the count proves the surface beside it contributed none of its own.
+      render(<VendoProvider client={client}><NoPolicyNotice />{surface}</VendoProvider>);
+      await screen.findByRole("region", { name: "Vendo is running without a policy" });
+      expect(screen.getAllByRole("region", { name: "Vendo is running without a policy" })).toHaveLength(1);
       cleanup();
     }
   });
 
-  it("renders exactly one automatic notice across nested chrome roots", async () => {
+  it("still renders the banner for a surface that explicitly opts in", async () => {
     wire.state.posture = "unconfigured";
-    render(<VendoProvider client={client}><VendoPage /></VendoProvider>);
+    render(
+      <VendoProvider client={client}>
+        <ChromeRoot automaticPolicyNotice>developer console</ChromeRoot>
+      </VendoProvider>,
+    );
+    expect(await screen.findByRole("region", { name: "Vendo is running without a policy" })).toBeTruthy();
+  });
+
+  // ⚠️ These three used to pin the AUTOMATIC banner (C1's defect): they asserted
+  // that ActivityPanel / AutomationsPanel / VendoStage / VendoPage each grew the
+  // developer banner on their own, which is the same code path that put it on a
+  // customer's thread, slot, embed and voice stage. They now pin the guarantee
+  // instead — no chrome surface renders it, the host's explicit mount does.
+  it("no workspace surface grows the banner on its own — the host's mount is the one source", async () => {
+    wire.state.posture = "unconfigured";
+    const surfaces = [<ActivityPanel />, <AutomationsPanel />, <VendoStage />];
+
+    for (const surface of surfaces) {
+      render(<VendoProvider client={client}><NoPolicyNotice />{surface}</VendoProvider>);
+      await screen.findByRole("region", { name: "Vendo is running without a policy" });
+      expect(screen.getAllByRole("region", { name: "Vendo is running without a policy" })).toHaveLength(1);
+      cleanup();
+    }
+  });
+
+  it("renders exactly one notice beside a page full of nested chrome roots", async () => {
+    wire.state.posture = "unconfigured";
+    render(<VendoProvider client={client}><NoPolicyNotice /><VendoPage /></VendoProvider>);
     await waitFor(() => expect(screen.getAllByRole("region", { name: "Vendo is running without a policy" })).toHaveLength(1));
   });
 
-  it("renders no automatic notice on any chrome surface under rules posture", async () => {
+  it("renders no notice on any chrome surface under rules posture", async () => {
     render(
       <VendoProvider client={client}>
+        <NoPolicyNotice />
         <ActivityPanel />
         <AutomationsPanel />
         <VendoPalette />
@@ -163,7 +210,7 @@ describe("ApprovalCard and NoPolicyNotice exports", () => {
         <VendoPage />
       </VendoProvider>,
     );
-    await waitFor(() => expect(wire.requests.filter(request => request.path === "/status").length).toBeGreaterThanOrEqual(4));
+    await waitFor(() => expect(wire.requests.some(request => request.path === "/status")).toBe(true));
     expect(screen.queryByRole("region", { name: "Vendo is running without a policy" })).toBeNull();
   });
 });

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { ChromeRoot } from "../chrome/chrome-root.js";
 import { ConnectCard } from "../chrome/connect-card.js";
+import { developmentMode } from "../chrome/dev-mode.js";
 import { useVendoContext } from "../context.js";
 import { PayloadView } from "../tree/renderer.js";
-import type { VoiceSessionView, VoiceState } from "./driver.js";
+import type { VoiceDriverError, VoiceSessionView, VoiceState } from "./driver.js";
 import { useVoiceApprovals } from "./use-voice-approvals.js";
 import { useVoice } from "./use-voice.js";
 import { VoiceBlob, type VoiceBlobState } from "./voice-blob.js";
@@ -27,6 +28,24 @@ const STATUS_COPY: Record<VoiceState, string> = {
   speaking: "Speaking",
   error: "Voice session failed",
 };
+
+/**
+ * M36 — what a person is told when the voice session breaks.
+ *
+ * THE DEFECT: the banner and the status line both printed
+ * `voice.error.message`, and the real driver builds that from any thrown
+ * Error's own message (`realtime-driver.ts`: `cause instanceof Error ?
+ * cause.message : …`). So a raw exception reached the stage's most visible
+ * line — "NotAllowedError: Permission denied", "Failed to fetch", a provider's
+ * 401 sentence. The driver's text is a developer's aid (dev mode); the person
+ * gets the standing line, with Retry beside it.
+ */
+function voiceErrorLine(error: VoiceDriverError | null | undefined): string {
+  const message = error?.message?.trim();
+  return developmentMode() && message !== undefined && message.length > 0
+    ? message
+    : STATUS_COPY.error;
+}
 
 /** fluidkit MorphSurface's BODY_SPRING (stiffness 240, damping 24) sampled to a
     CSS linear() easing — the dock morph rides the library's own curve. */
@@ -87,7 +106,7 @@ export function VendoStage({ onSessionEnd, suggestions }: VendoStageProps) {
   // C-A spoken-yes: a recognized "approve"/"decline" decides the act-tier bar —
   // but ONLY the request that was already on screen when the words were spoken.
   // The refs pin that request: an intent with no matching request is discarded
-  // (never carried forward to a later approval), criticals stay hand-only, and
+  // (never carried forward to a later approval), confirmEach asks stay hand-only, and
   // automation requests (rich card, no spoken affordance) are never voice-decided.
   const decide = approvals.decide;
   const { clearIntent } = voice;
@@ -100,8 +119,8 @@ export function VendoStage({ onSessionEnd, suggestions }: VendoStageProps) {
     if (!intent) return;
     const request = pendingApprovalRef.current;
     if (request && voiceStateRef.current === "listening") {
-      const critical = request.descriptor.risk === "destructive" || request.descriptor.critical === true;
-      if (!critical && !isAutomation(request)) void decide(request, intent === "approve");
+      const ceremony = request.descriptor.risk === "destructive" || request.descriptor.confirmEach === true;
+      if (!ceremony && !isAutomation(request)) void decide(request, intent === "approve");
     }
     clearIntent();
   }, [voice.intent, decide, clearIntent]);
@@ -123,7 +142,7 @@ export function VendoStage({ onSessionEnd, suggestions }: VendoStageProps) {
   // P-C: the presence owns the stage only until the first view lands.
   const docked = voice.views.length > 0 && !leaving;
   const blobState = voiceBlobState(displayState, voice.muted);
-  const status = displayState === "error" ? voice.error?.message ?? STATUS_COPY.error : STATUS_COPY[displayState];
+  const status = displayState === "error" ? voiceErrorLine(voice.error) : STATUS_COPY[displayState];
   const tickerLines = voice.transcript.slice(-3);
 
   // P-C dock morph: FLIP the head's travel on the MorphSurface spring. The
@@ -228,7 +247,7 @@ export function VendoStage({ onSessionEnd, suggestions }: VendoStageProps) {
         ) : null}
         {voice.state === "error" && !leaving ? (
           <div className="fl-voice-banner" role="alert">
-            <span>{voice.error?.message ?? STATUS_COPY.error}</span>
+            <span>{voiceErrorLine(voice.error)}</span>
             <button type="button" className="fl-btn" onClick={voice.start}>Retry</button>
           </div>
         ) : null}

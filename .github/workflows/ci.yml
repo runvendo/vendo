@@ -40,8 +40,12 @@ jobs:
       # --concurrency=4 bounds turbo's cross-package parallelism: unbounded
       # parallelism oversubscribes the runner's CPUs and flakes the
       # live-Next-server suites (see PR #340).
+      # --continue so ONE red package cannot hide every other package's result.
+      # Without it turbo cancels the rest of the graph on the first failure, and
+      # a run that reports "1 failing package" may be sitting on several — which
+      # is how a deterministic fixture breakage read as a shifting flake.
       - name: Test with coverage (PGlite + PostgreSQL)
-        run: pnpm exec turbo run test:coverage --concurrency=4
+        run: pnpm exec turbo run test:coverage --concurrency=4 --continue
         env:
           POSTGRES_URL: postgres://vendo:vendo@localhost:5432/vendo_test
       - run: pnpm typecheck
@@ -166,9 +170,54 @@ jobs:
       # `test:browser` (not `exec playwright test`) so the pretest:browser hook
       # builds the gitignored jail runtime first; extra args pass through to
       # playwright as the file list.
+      #
+      # The consumer-voice family joins them (post-check checklist 11): those
+      # specs are what keeps a developer's sentence — an env var, a raw
+      # exception, a status slug, a wire reason — off a person's screen, and
+      # every one of them was running nowhere. `build-failed-banner` was RED on
+      # its own branch for exactly that reason. They stub their doors with
+      # page.route and assert text, so nothing in them depends on the
+      # :focus-visible / light-dark() resolution that keeps the legacy specs
+      # local.
+      #
+      # Post-check round 2 additions, and why each one is here:
+      #   accessibility     the paragraph above lumped "axe" in with the
+      #                     :focus-visible specs. That was never true of it —
+      #                     it is eleven pure axe sweeps over the chrome and
+      #                     asserts no outline and no light-dark() anywhere.
+      #   center-a11y       the durable half of postcheck-b's one-shot proof
+      #                     script, which lived under docs/ outside `testDir`
+      #                     and so could never catch a regression. It is also
+      #                     the only CI home of four BROWSER-ONLY mechanisms
+      #                     the wave otherwise pinned in jsdom alone: `inert`
+      #                     (H11/H12), real focus order (H10/H18/M34),
+      #                     IntersectionObserver (H16) and contrast (M33).
+      #   approvals-poller  H15's ~20s request COUNT. Eventual consistency —
+      #                     what the smoke pack checks — is also what three
+      #                     independent pollers give you; only counting tells
+      #                     them apart, and nothing in CI counted.
+      #   jail-and-tree     containment: the opaque-origin CSP jail, the
+      #                     bridge, iframe height, and a node failure staying
+      #                     inside its boundary in the consumer's words.
+      #
+      # DELIBERATELY STILL OUT, with reasons rather than silence:
+      #   keyboard.spec.ts     the whole file asserts :focus-visible outlines
+      #                        (`expectFocusIndicator` on every tab stop),
+      #                        which headless CI mis-resolves — the same reason
+      #                        the legacy specs above stay local. It is GREEN
+      #                        locally: the product defect this comment used to
+      #                        cite (`workspace tabs rove…`, the Automations
+      #                        tab's aria-selected stuck at "false") was real
+      #                        and is fixed — an ACT was sitting in the tablist
+      #                        with role="tab", forcing manual activation. The
+      #                        focus-order coverage CI actually needs is in
+      #                        center-a11y (H10/H18/M34), which is green here.
+      #   screenshots.spec.ts  writes PNGs; it is a capture job, not a gate.
+      #   live-voice.spec.ts   needs OPENAI_API_KEY and a real model.
       - name: UI solidity + stress suite
         run: >-
           pnpm --filter @vendoai/ui test:browser
+          e2e/smoke.spec.ts
           e2e/stress.spec.ts
           e2e/scroll-management.spec.ts
           e2e/extreme-content.spec.ts
@@ -176,6 +225,14 @@ jobs:
           e2e/height-chain.spec.ts
           e2e/verification-eng225.spec.ts
           e2e/verification-eng229.spec.ts
+          e2e/pass3-consumer-voice.spec.ts
+          e2e/wave3-consumer-voice.spec.ts
+          e2e/run-history-voice.spec.ts
+          e2e/build-failed-banner.spec.ts
+          e2e/accessibility.spec.ts
+          e2e/center-a11y.spec.ts
+          e2e/approvals-poller-proof.spec.ts
+          e2e/jail-and-tree.spec.ts
       - if: failure()
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4
         with:
@@ -210,7 +267,7 @@ jobs:
       # app itself through `next dev`.
       - run: pnpm turbo run build --filter=demo-accounting^...
       - run: supabase start
-        working-directory: apps/demo-accounting
+        working-directory: examples/demo-accounting
       - run: pnpm --filter demo-accounting test
 
   # Supply-chain gate: fails on high/critical advisories in the PRODUCTION

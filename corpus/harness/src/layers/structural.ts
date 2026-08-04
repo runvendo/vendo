@@ -169,8 +169,6 @@ function importBindingOf(mod: BoundModule, use: TS.Identifier): { specifier: str
   }
   return null;
 }
-const DESTRUCTIVE_NAME = /(^|_)(delete|remove|destroy|cancel|close|reset|revoke|purge|wipe)(_|$)/;
-
 export function corpusHostCommandEnv(env?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return {
     ...process.env,
@@ -665,10 +663,14 @@ function effectiveWriteMethod(tool: ExtractedTool): string {
   return tool.binding.method;
 }
 
+/** Fail-closed against PROTOCOL FACTS only (risk-grading redesign D1: a tool
+ * NAME grades nothing). `ungraded` is never auto-allowed — the guard asks on
+ * it — so two defects remain: a write-capable method that landed `read`, and
+ * a DELETE that is not `destructive`. */
 function isUnsafeAutoAllowed(tool: ExtractedTool): boolean {
   const method = effectiveWriteMethod(tool);
   if (WRITE_METHODS.has(method) && tool.risk === "read") return true;
-  if ((method === "DELETE" || DESTRUCTIVE_NAME.test(tool.name)) && tool.risk !== "destructive") return true;
+  if (method === "DELETE" && tool.risk !== "destructive") return true;
   return false;
 }
 

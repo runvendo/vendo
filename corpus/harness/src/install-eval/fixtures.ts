@@ -74,7 +74,7 @@ export const INSTALL_EVAL_FIXTURES: readonly InstallEvalFixture[] = [
   },
   {
     name: "demo-bank",
-    sourcePath: "apps/demo-bank",
+    sourcePath: "examples/demo-bank",
     devServer: {
       command: "npm run dev",
       readinessUrl: "http://127.0.0.1:3000",
@@ -84,7 +84,7 @@ export const INSTALL_EVAL_FIXTURES: readonly InstallEvalFixture[] = [
   },
   {
     name: "demo-accounting",
-    sourcePath: "apps/demo-accounting",
+    sourcePath: "examples/demo-accounting",
     devServer: {
       command: "npm run dev",
       readinessUrl: "http://127.0.0.1:3000",

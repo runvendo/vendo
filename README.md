@@ -111,7 +111,7 @@ schema on Postgres. Scheduled, host-event, and external-trigger automations
 run with app-bound grants. Headless hooks ship alongside optional,
 theme-driven React chrome.
 
-`vendo init` also asks about the model import, product brief, critical-tool
+`vendo init` also asks about the model import, product brief, confirm-each
 risk labels, and whether to open the [MCP door](https://docs.vendo.run/capabilities/mcp)
 (a host decision, never a default), extracts your theme automatically, and
 writes the reviewable `.vendo/` directory with its PGlite data directory

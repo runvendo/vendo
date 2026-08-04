@@ -1,0 +1,30 @@
+$ pnpm --filter @vendoai/ui test:ui   # playwright test e2e/smoke.spec.ts
+$ pnpm run build:jail
+$ node scripts/build-jail-runtime.mjs
+vite v6.4.3 building for production...
+transforming...
+✓ 781 modules transformed.
+rendering chunks...
+✓ built in 1.36s
+[ui] generated jail runtime (909444 bytes)
+$ playwright test e2e/smoke.spec.ts
+
+
+
+
+
+Running 11 tests using 1 worker
+
+[1/11] [chromium] › e2e/smoke.spec.ts:72:1 › landing renders its greeting, suggestions and composer
+[2/11] [chromium] › e2e/smoke.spec.ts:86:1 › a scripted turn streams assistant text into the transcript
+[3/11] [chromium] › e2e/smoke.spec.ts:92:1 › the approval card approves and reports the decision
+[4/11] [chromium] › e2e/smoke.spec.ts:102:1 › the overlay opens from the launcher and closes on Escape
+[5/11] [chromium] › e2e/smoke.spec.ts:113:1 › a multi-tool turn narrates its steps as beats, then folds into one settled summary
+[6/11] [chromium] › e2e/smoke.spec.ts:131:1 › a build animates exactly one thing, and the bar flips to the app's name
+[7/11] [chromium] › e2e/smoke.spec.ts:147:1 › the launcher pill works while the panel is closed, then offers the result
+[8/11] [chromium] › e2e/smoke.spec.ts:166:1 › the waiting strip counts the asks and clears when they are decided
+[9/11] [chromium] › e2e/smoke.spec.ts:178:1 › the center carries its two doors and a needs-you section that clears
+[10/11] [chromium] › e2e/smoke.spec.ts:199:1 › §15 — a turn whose stream died offers no Retry component
+[11/11] [chromium] › e2e/smoke.spec.ts:215:1 › a failed build ends the turn in ✕ and prose, and offers no component to poke
+  1 skipped
+  10 passed (15.6s)

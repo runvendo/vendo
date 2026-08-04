@@ -1,0 +1,274 @@
+/**
+ * The brain's edit surface: the app is printed id-free (print.ts with
+ * `includeIds: false`) and edited the way a file is edited — old/new pairs of
+ * exact text. Two entries:
+ *
+ * - {@link applyTextEdits} replaces exact substrings, one match each, in
+ *   order. It never guesses: no match or more than one match returns a
+ *   teaching issue instead of a text.
+ * - {@link recompileWithIdentity} compiles the edited text and carries node
+ *   ids across the edit, so untouched sections keep the ids the renderer
+ *   already mounted. Only nodes inside the changed region can lose theirs.
+ *
+ * Both are pure and total — an edit that cannot be applied is an issue, and
+ * identity carry degrades to a plain compile rather than throwing (the same
+ * discipline as {@link compileWire}).
+ */
+
+import type { Tree } from "../tree.js";
+import type { TreeNode } from "../tree-node.js";
+import { compileWire, type WireCompileOptions, type WireCompileResult } from "./compile.js";
+
+/** One replacement: the exact text as printed, and what replaces it. */
+export interface TextEdit {
+  old: string;
+  new: string;
+}
+
+/** Exactly one side is present: the edited text, or the reason it was not
+ *  applied (a sentence for the model, not a code). */
+export interface TextEditResult {
+  text?: string;
+  issue?: string;
+}
+
+/** Long `old` strings are quoted back truncated — the issue is a hint, not a
+ *  transcript. */
+const EXCERPT_MAX = 80;
+
+const excerpt = (text: string): string =>
+  text.length <= EXCERPT_MAX ? text : `${text.slice(0, EXCERPT_MAX)}…`;
+
+/** The line in `text` most like `old`, by shared token overlap. A stale `<Old>`
+ *  is usually the RIGHT element with the wrong details, so the line that shares
+ *  the most words with it is almost always the line the model meant. */
+const closestLine = (text: string, old: string): string | undefined => {
+  const wanted = new Set(old.split(/\s+/).filter((word) => word.length > 2));
+  if (wanted.size === 0) return undefined;
+  let best: { line: string; score: number } | undefined;
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed === "") continue;
+    let score = 0;
+    for (const word of new Set(trimmed.split(/\s+/))) if (wanted.has(word)) score += 1;
+    if (score > 0 && (best === undefined || score > best.score)) best = { line: trimmed, score };
+  }
+  return best?.line;
+};
+
+/**
+ * What the document actually says where the edit expected its `old` — quoted
+ * verbatim so a retry carries NEW information.
+ *
+ * An error that only repeats the string that failed tells the model nothing it
+ * did not already believe, and it retries the same edit. Showing the present
+ * text is what makes the second attempt different from the first.
+ */
+const presentTense = (text: string, old: string): string => {
+  const near = closestLine(text, old);
+  return near === undefined
+    ? `\nThe app right now is:\n${excerpt2(text)}`
+    : `\nThe closest line in the app right now is:\n${near}\nQuote from THAT, exactly.`;
+};
+
+/** A whole-document fallback excerpt: enough to re-anchor on, not a transcript. */
+const DOCUMENT_MAX = 600;
+const excerpt2 = (text: string): string =>
+  text.length <= DOCUMENT_MAX ? text : `${text.slice(0, DOCUMENT_MAX)}…`;
+
+const countMatches = (haystack: string, needle: string): number => {
+  let count = 0;
+  let from = 0;
+  for (;;) {
+    const at = haystack.indexOf(needle, from);
+    if (at === -1) return count;
+    count += 1;
+    from = at + needle.length;
+  }
+};
+
+/**
+ * Apply `edits` to `source` in order — each edit sees the result of the ones
+ * before it. The first edit that cannot be applied exactly once aborts the
+ * batch with an issue, so a partial rewrite never reaches the compiler.
+ */
+export const applyTextEdits = (source: string, edits: readonly TextEdit[]): TextEditResult => {
+  let text = source;
+  for (const [index, edit] of edits.entries()) {
+    const label = edits.length === 1 ? "the edit" : `edit ${index + 1} of ${edits.length}`;
+    if (edit.old.length === 0) {
+      return { issue: `${label} has an empty old string; quote the exact text you are replacing` };
+    }
+    const matches = countMatches(text, edit.old);
+    if (matches === 0) {
+      return {
+        issue: `${label} found no match for "${excerpt(edit.old)}"; copy the text exactly as it was printed.`
+          + presentTense(text, edit.old),
+      };
+    }
+    if (matches > 1) {
+      return {
+        issue: `${label} found ${matches} matches for "${excerpt(edit.old)}"; ambiguous — `
+          + "include more surrounding text so the old string appears exactly once."
+          + presentTense(text, edit.old),
+      };
+    }
+    const at = text.indexOf(edit.old);
+    text = text.slice(0, at) + edit.new + text.slice(at + edit.old.length);
+  }
+  return { text };
+};
+
+/** A node reduced to what its own printed line says: depth, component, props.
+ *  Two nodes with the same signature printed the same line, so an unchanged
+ *  signature means the node sat outside every replaced span. */
+interface NodeSignature {
+  id: string;
+  component: string;
+  depth: number;
+  key: string;
+}
+
+const depthsFromRoot = (tree: Tree): Map<string, number> => {
+  const byId = new Map(tree.nodes.map((node) => [node.id, node]));
+  const depths = new Map<string, number>();
+  const queue: string[] = [tree.root];
+  depths.set(tree.root, 0);
+  for (let cursor = 0; cursor < queue.length; cursor += 1) {
+    const id = queue[cursor] as string;
+    const depth = depths.get(id) as number;
+    for (const childId of byId.get(id)?.children ?? []) {
+      if (depths.has(childId)) continue;
+      depths.set(childId, depth + 1);
+      queue.push(childId);
+    }
+  }
+  return depths;
+};
+
+/** Document order (the compiler appends nodes as it parses), root excluded —
+ *  the root is synthetic and its id is `root` on both sides. */
+const signatures = (tree: Tree): NodeSignature[] => {
+  const depths = depthsFromRoot(tree);
+  return tree.nodes
+    .filter((node) => node.id !== tree.root)
+    .map((node) => {
+      const depth = depths.get(node.id) ?? -1;
+      return {
+        id: node.id,
+        component: node.component,
+        depth,
+        key: `${depth}\0${node.component}\0${JSON.stringify(node.props ?? {})}`,
+      };
+    });
+};
+
+/**
+ * new node id → previous node id. The identical prefix and suffix of the two
+ * signature runs are exactly the nodes outside every replaced span: they
+ * inherit by order. Whatever is left is the changed region, where a node
+ * inherits only when the same component still stands at the same depth in the
+ * same order — a prop-only edit inside a node's own tag keeps its id, an
+ * element rewritten into something else does not.
+ *
+ * Known ambiguity (inherent to matching on text, not a bug): when two
+ * same-component siblings both change inside one region, which of them
+ * inherits is a coin flip on order. Ids stay unique either way.
+ */
+const carriedIds = (previous: Tree, next: Tree): Map<string, string> => {
+  const before = signatures(previous);
+  const after = signatures(next);
+  const carried = new Map<string, string>();
+
+  let prefix = 0;
+  while (prefix < before.length && prefix < after.length) {
+    const beforeNode = before[prefix] as NodeSignature;
+    const afterNode = after[prefix] as NodeSignature;
+    if (beforeNode.key !== afterNode.key) break;
+    carried.set(afterNode.id, beforeNode.id);
+    prefix += 1;
+  }
+
+  let suffix = 0;
+  for (;;) {
+    const beforeIndex = before.length - 1 - suffix;
+    const afterIndex = after.length - 1 - suffix;
+    if (beforeIndex < prefix || afterIndex < prefix) break;
+    const beforeNode = before[beforeIndex] as NodeSignature;
+    const afterNode = after[afterIndex] as NodeSignature;
+    if (beforeNode.key !== afterNode.key) break;
+    carried.set(afterNode.id, beforeNode.id);
+    suffix += 1;
+  }
+
+  const beforeEnd = before.length - suffix;
+  let cursor = prefix;
+  for (let index = prefix; index < after.length - suffix; index += 1) {
+    const candidate = after[index] as NodeSignature;
+    let scan = cursor;
+    while (scan < beforeEnd) {
+      const previousNode = before[scan] as NodeSignature;
+      if (previousNode.component === candidate.component && previousNode.depth === candidate.depth) break;
+      scan += 1;
+    }
+    if (scan >= beforeEnd) continue;
+    carried.set(candidate.id, (before[scan] as NodeSignature).id);
+    cursor = scan + 1;
+  }
+  return carried;
+};
+
+/** Final id per fresh node id: the carried one, or the next unused ordinal in
+ *  that component's pool (the compiler's own `component-n` shape), so a mint
+ *  can never collide with an id that was carried. */
+const renaming = (next: Tree, carried: Map<string, string>): Map<string, string> => {
+  const used = new Set<string>(carried.values());
+  used.add(next.root);
+  const ordinals = new Map<string, number>();
+  const rename = new Map<string, string>();
+  for (const node of next.nodes) {
+    const inherited = node.id === next.root ? node.id : carried.get(node.id);
+    if (inherited !== undefined) {
+      rename.set(node.id, inherited);
+      continue;
+    }
+    const pool = node.component.toLowerCase();
+    let ordinal = (ordinals.get(pool) ?? 0) + 1;
+    while (used.has(`${pool}-${ordinal}`)) ordinal += 1;
+    ordinals.set(pool, ordinal);
+    const minted = `${pool}-${ordinal}`;
+    used.add(minted);
+    rename.set(node.id, minted);
+  }
+  return rename;
+};
+
+const applyRenaming = (result: WireCompileResult, rename: Map<string, string>): WireCompileResult => {
+  const renamed = (id: string): string => rename.get(id) ?? id;
+  const nodes = result.tree.nodes.map((node) => {
+    const next: TreeNode = { ...node, id: renamed(node.id) };
+    if (node.children !== undefined) next.children = node.children.map(renamed);
+    return next;
+  });
+  return { ...result, tree: { ...result.tree, root: renamed(result.tree.root), nodes } };
+};
+
+/**
+ * Compile the edited text, carrying node identity from `previous`. The result
+ * is a normal compile result — same issues, same binding errors — with ids
+ * that survived the edit wherever the markup did.
+ */
+export const recompileWithIdentity = (
+  edited: string,
+  previous: Tree,
+  options?: WireCompileOptions,
+): WireCompileResult => {
+  const result = compileWire(edited, options);
+  try {
+    return applyRenaming(result, renaming(result.tree, carriedIds(previous, result.tree)));
+  } catch {
+    // Identity carry is best-effort: a hand-built `previous` with props that
+    // resist serialization must cost ids, never the compile.
+    return result;
+  }
+};

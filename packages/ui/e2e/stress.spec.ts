@@ -25,15 +25,20 @@ function send(page: import("@playwright/test").Page, text: string) {
   return box.fill(text).then(() => box.press("Enter"));
 }
 
-test("mid-stream network kill surfaces a visible error banner with Retry", async ({ page }) => {
+test("mid-stream network kill surfaces a visible error banner, and the turn owns the redo", async ({ page }) => {
   await openScenario(page, "composer");
   await send(page, "[stream-kill] walk me through the welcome flow");
   // The partial delta lands, then the stream drops — the thread must say so
-  // visibly (not only via the hidden aria span) and offer Retry (ENG-214).
+  // visibly, not only via the hidden aria span (ENG-214).
   const banner = page.locator(".fl-error");
   await expect(banner).toBeVisible();
   await expect(banner).toContainText(/didn.t finish/i);
-  await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+  // ⚠️ TEST EDIT (ruling 16): this required a "Retry" button INSIDE the banner.
+  // §15 gives the conversation zero failure components: the recovery is the
+  // turn's own Regenerate action (and the composer), which is what a reader
+  // already knows how to use.
+  await expect(page.getByRole("button", { name: "Retry" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Regenerate" })).toBeVisible();
 });
 
 test("a phone viewport never crushes the thread to one column of characters", async ({ page }) => {
@@ -65,7 +70,7 @@ test("a sent conversation persists across a reload (the P0 regression guard)", a
   // Start a NEW conversation so the send mints a fresh server thread (rather
   // than appending to the seeded one), then send a turn the server persists
   // under that minted id (ENG-211/222).
-  await page.getByRole("button", { name: "New conversation" }).click();
+  await page.getByRole("button", { name: "New chat" }).click();
   await send(page, "what happened to my money this month");
   await expect(page.getByText("what happened to my money this month")).toBeVisible();
   await expect(page.getByText("Turn complete").first()).toBeVisible();

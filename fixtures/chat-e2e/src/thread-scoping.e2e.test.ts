@@ -24,6 +24,18 @@ const ADA = "user_ada";
 const BOB = "user_bob";
 const THREAD = "thr_scoped";
 
+/** The transcript, reassembled by seq, as a `messages` column.
+ *
+ *  Build contract §6 moved the transcript out of `vendo_threads.messages` (the
+ *  column is DROPPED) into one row per message in `vendo_thread_messages`. The
+ *  SQL proof below is unchanged in what it proves — the owner's transcript is
+ *  byte-for-byte intact after a foreign subject is refused — only in where it
+ *  reads it from. Ordering is `(seq, id)`, matching `THREAD_MESSAGES_AGGREGATE`
+ *  in the store exactly, so this reads a thread in the same order the store's
+ *  own door does. */
+const TRANSCRIPT = `(SELECT jsonb_agg(m.message ORDER BY m.seq, m.id)
+     FROM vendo_thread_messages m WHERE m.thread_id = t.id) AS messages`;
+
 let env: Env;
 afterEach(async () => {
   await env?.close();
@@ -77,11 +89,14 @@ describe("scenario 7: thread persistence + subject scoping", () => {
       await agentAda.stream({ threadId: THR, message: userMessage("u1", "Ada's message"), ctx: ctxAda }),
     );
     const before = await env.sql<{ id: string; subject: string; messages: unknown }>(
-      "SELECT id, subject, messages FROM vendo_threads WHERE id = $1",
+      `SELECT t.id, t.subject, ${TRANSCRIPT} FROM vendo_threads t WHERE t.id = $1`,
       [THR],
     );
     expect(before).toHaveLength(1);
     expect(before[0]).toMatchObject({ id: THR, subject: ADA });
+    // Ada's transcript really is on disk, so the "intact afterwards" comparison
+    // below cannot pass vacuously on two empty reads.
+    expect(JSON.stringify(before[0]!.messages)).toContain("Ada's message");
 
     // Bob streaming to the SAME id must be refused before any turn runs —
     // without this, the turn's persist() would upsert the bare-id row and
@@ -93,7 +108,7 @@ describe("scenario 7: thread persistence + subject scoping", () => {
 
     // SQL: Ada's row is INTACT — same subject, same messages — and Bob wrote nothing.
     const after = await env.sql<{ id: string; subject: string; messages: unknown }>(
-      "SELECT id, subject, messages FROM vendo_threads WHERE id = $1",
+      `SELECT t.id, t.subject, ${TRANSCRIPT} FROM vendo_threads t WHERE t.id = $1`,
       [THR],
     );
     expect(after).toEqual(before);
@@ -124,11 +139,15 @@ describe("scenario 7: thread persistence + subject scoping", () => {
 
     // SQL proof: Ada's row is untouched, Bob owns nothing.
     const rows = await env.sql<{ subject: string; messages: unknown }>(
-      "SELECT subject, messages FROM vendo_threads WHERE id = $1",
+      `SELECT t.subject, ${TRANSCRIPT} FROM vendo_threads t WHERE t.id = $1`,
       [THR],
     );
     expect(rows).toHaveLength(1);
     expect(rows[0]!.subject).toBe(ADA);
+    // Ada's transcript is still exactly what she wrote — not merely "a row exists".
+    expect(rows[0]!.messages).toEqual([
+      { role: "user", parts: [{ type: "text", text: "Ada's message" }] },
+    ]);
     expect(JSON.stringify(rows[0]!.messages)).not.toContain("Bob's takeover");
     expect(await env.count("vendo_threads", "subject = $1", [BOB])).toBe(0);
   });

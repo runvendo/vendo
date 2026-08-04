@@ -105,7 +105,7 @@ describe("guard fixture", () => {
     description: "Send a payment",
     inputSchema: { type: "object" },
     risk: "destructive",
-    critical: true,
+    confirmEach: true,
   };
   const blocked: ToolDescriptor = {
     name: "host_private_read",

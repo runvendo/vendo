@@ -1,0 +1,35 @@
+
+ RUN  v2.1.9 /Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui
+
+ ✓ test/tmp-cr1-table.test.ts (1 test) 1ms
+stdout | test/tmp-cr1-table.test.ts > prints the CR-1 classification table
+
+tool                          grade       grant row word  mandatory line
+----------------------------------------------------------------------------------------------------------------------
+host_getSharePrice            read        Reads           This reads your data, as you.
+host_getOrder                 read        Reads           This reads your data, as you.
+host_getChargeDetails         read        Reads           This reads your data, as you.
+host_listEmailTemplates       read        Reads           This reads your data, as you.
+host_getSpendingInsights      read        Reads           This reads your data, as you.
+host_getAccount               read        Reads           This reads your data, as you.
+host_listTransactions         read        Reads           This reads your data, as you.
+host_listPayees               read        Reads           This reads your data, as you.
+host_listScheduledPayments    read        Reads           This reads your data, as you.
+host_getBudgets               read        Reads           This reads your data, as you.
+host_getProfile               read        Reads           This reads your data, as you.
+host_getTransaction           read        Reads           This reads your data, as you.
+host_createOrder              write       Creates         This creates something, as you.
+host_transferMoney            destructive Moves money     This moves money, as you.
+host_email_send               read        Sends           This sends a message, as you.
+host_invoices_list            read        (none)          This reads your data, as you.
+gmail_GMAIL_SEND_EMAIL        write       Sends           This sends a message, as you.
+slack_SLACK_SEND_MESSAGE      write       Sends           This sends a message, as you.
+host_thing_do                 write       (none)          This changes something in your account, as you.
+
+
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  13:50:43
+   Duration  516ms (transform 124ms, setup 49ms, collect 176ms, tests 1ms, environment 152ms, prepare 30ms)
+

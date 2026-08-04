@@ -11,16 +11,16 @@ const ctx: RunContext = {
   sessionId: "sess-conformance",
 };
 
-const criticalDescriptor: ToolDescriptor = {
+const confirmEachDescriptor: ToolDescriptor = {
   name: "host_account_close",
   description: "Close the account permanently.",
   inputSchema: { type: "object", properties: { accountId: { type: "string" } } },
   risk: "destructive",
-  critical: true,
+  confirmEach: true,
 };
 
-const criticalCall: ToolCall = {
-  id: "call-conformance-critical",
+const confirmEachCall: ToolCall = {
+  id: "call-conformance-confirmEach",
   tool: "host_account_close",
   args: { accountId: "acct_1" },
 };
@@ -56,8 +56,8 @@ describe("core Guard conformance kit", () => {
       guardConformance({
         makeGuard: async () => createGuard({ store: memoryStoreAdapter() }),
         ctx,
-        criticalDescriptor,
-        criticalCall,
+        confirmEachDescriptor,
+        confirmEachCall,
         readDescriptor,
         readCall,
         sampleAuditEvent,
@@ -75,8 +75,8 @@ describe("core Guard conformance kit", () => {
         guardConformance({
           makeGuard: async () => createGuard({ store }),
           ctx,
-          criticalDescriptor,
-          criticalCall,
+          confirmEachDescriptor,
+          confirmEachCall,
           readDescriptor,
           readCall,
           sampleAuditEvent,

@@ -67,7 +67,14 @@ export function useVoiceApprovals(client: VendoClient, active: boolean) {
       if (receiptTimerRef.current) clearTimeout(receiptTimerRef.current);
       receiptTimerRef.current = setTimeout(() => setReceipt(undefined), RECEIPT_MS);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Couldn't record that decision");
+      // spec §16 law 3 — a spoken surface must not read out the wire's
+      // developer sentence; the person hears what happened to their decision.
+      const code = (reason as { code?: unknown } | null)?.code;
+      setError(code === "not-found"
+        ? "That request isn’t waiting any more."
+        : code === "forbidden"
+          ? "You can’t decide this one."
+          : "We couldn’t record that decision — nothing changed.");
     } finally {
       setBusyId(undefined);
     }

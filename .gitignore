@@ -9,6 +9,12 @@ dist
 .next/
 *.log
 
+# Next rewrites this on every dev/build boot to point at whichever distDir ran
+# last, so a tracked copy is dirty after every test run — over a hundred stashes
+# in this repo's history are named for exactly that churn. Every other Next app
+# here already leaves it untracked; fixtures/host-app was the lone exception.
+next-env.d.ts
+
 # misc
 corpus/.repos/
 
@@ -39,13 +45,13 @@ docs/verification/**/*.mp4
 docs/verification/**/*.mov
 
 # Generated prospect demos — NEVER committed. `demo:create` clones outside the
-# repo by default, but an explicit `--target-dir apps` run must not be one
+# repo by default, but an explicit `--target-dir examples` run must not be one
 # `git add -A` away from publishing a prospect's brand in the OSS repo. Only
-# the three real apps are tracked.
-apps/demo-*
-!apps/demo-bank/
-!apps/demo-accounting/
-!apps/demo-template/
+# the three real example apps are tracked.
+examples/demo-*
+!examples/demo-bank/
+!examples/demo-accounting/
+!examples/demo-template/
 
 # Factory lane scratch at the repo ROOT — a lane's working notes, contract,
 # park file and report are its own, never the repo's. Four of these had already
@@ -61,10 +67,14 @@ apps/demo-*
 /LANE-REPORT.md
 
 # Vendo demo runtime state (PGlite) — never committed.
-apps/*/.vendo/data/
-apps/*/.vendo/data-*/
-fixtures/*/.vendo/data/
+.vendo/data/
 examples/*/.vendo/data/
+examples/*/.vendo/data-*/
+fixtures/*/.vendo/data/
+# Same state, written by a package's own tests: the capability-miss sink resolves
+# its data dir from the cwd, so a real-path test of that rail
+# (packages/vendo/src/harness-wire.test.ts) lands misses.jsonl here.
+packages/*/.vendo/data/
 
 # wave-6 orchestration lane briefs/signals (never committed)
 .lanes/
@@ -72,6 +82,7 @@ examples/*/.vendo/data/
 # type-surface test fixtures (packages/vendo/src/type-surface.test.ts) — cleaned
 # in afterEach; ignored so an interrupted run can never dirty a commit.
 packages/vendo/.type-surface.*.ts
+packages/vendo/.wire-parity.*.ts
 
 # chrome export-surface test fixtures (packages/ui/test/chrome/export-surface.test.ts)
 # — same afterEach cleanup, same interrupted-run hazard.
@@ -84,7 +95,7 @@ coverage/
 .env
 .env.local
 .env.*.local
-apps/*/.env.local
+examples/*/.env.local
 
 # speed lane raw samples (aggregated into README table)
 docs/verification/vendo-v2-speed/samples.ndjson
@@ -97,3 +108,20 @@ docs/verification/w4-pipeline/samples.ndjson
 
 # throwaway design exploration (never committed)
 design-canvas/
+packages/apps/box/claude-turn.mjs
+
+# Agent working notes and factory process exhaust — useful locally, not shipped.
+# Lane contracts, raw proof logs, and eval run dumps stay on their branches;
+# only frozen specs (cited by source comments) live in the tree.
+.claude/
+docs/verification/
+docs/superpowers/evidence/
+docs/superpowers/plans/
+docs/superpowers/lanes/
+docs/eval/runs/
+
+# Red gate runs (scripts/serial-gate.sh) — logs kept for inspection, never evidence.
+.gate-failures/
+
+# Per-PID scratch fixtures written by wire-type-parity.test.ts (a killed run leaves them behind)
+packages/vendo/.wire-parity.*

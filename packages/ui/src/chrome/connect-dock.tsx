@@ -41,6 +41,32 @@ export async function completeConnection(
   if (!isCancelled()) throw new Error(`Timed out waiting for the ${input.toolkit} connection — try again.`);
 }
 
+/**
+ * The consumer's half of a failed connect (spec §16 law 3, the consumer-voice
+ * law), living beside the throws it answers. The keyless (default OSS)
+ * deployment refuses with a sentence written for the HOST DEVELOPER — "pass a
+ * Composio connector (composioConnector) to createVendo({ connectors }) or set
+ * VENDO_API_KEY" — and every connect surface rendered `reason.message`, so that
+ * TypeScript call and that environment variable reached whoever was trying to
+ * connect their Slack. The developer sentence keeps its home (the server's own
+ * error, the dev-mode console); the person is told what it means for THEM.
+ * `refusalCopy` in adoption-card is the pattern.
+ */
+export function connectRefusalCopy(reason: unknown, name: string): string {
+  const code = (reason as { code?: unknown } | null)?.code;
+  // Nothing is configured behind this button, so there is no retry that helps.
+  if (code === "not-implemented" || code === "cloud-required") {
+    return `Connecting ${name} isn’t set up here yet — there’s nothing you can do from this screen.`;
+  }
+  // Guard/policy refusals: the person CAN act, but not from here as they are.
+  if (code === "blocked") return `Sign in first, then connect ${name}.`;
+  if (code === "forbidden") return `You don’t have access to connect ${name} here.`;
+  if (code === "not-found") return `${name} isn’t available to connect any more.`;
+  // The OAuth lifecycle failures (failed, expired, timed out) all mean one
+  // thing to the person: it did not connect, and trying again is fair.
+  return `We couldn’t finish connecting ${name} — nothing changed. You can try again.`;
+}
+
 function displayName(option: ConnectorOption): string {
   if (option.label !== undefined) return option.label;
   return toolkitDisplayName(option.toolkit);
@@ -215,7 +241,7 @@ export function ConnectTray({ onClose, anchorRef, closing = false }: {
       await refresh();
       setJustConnected(row.toolkit);
     } catch (reason) {
-      if (!cancelledRef.current) setError(reason instanceof Error ? reason.message : String(reason));
+      if (!cancelledRef.current) setError(connectRefusalCopy(reason, row.name));
     } finally {
       if (!cancelledRef.current) setConnecting(undefined);
     }

@@ -64,12 +64,13 @@ function hostAgentModel(toolName: string, input: unknown): LanguageModel {
 }
 
 /** Vendo's own model seam: answers `vendo_create_app` generation requests with
- *  a minimal valid tree so the build streams for real. */
+ *  a minimal valid tree so the build streams for real. The ask is tiny, so the
+ *  brain writes the whole app on the spot (`THEY ARE ASKING NOW:` is the brain's marker). */
 function generationModel(): LanguageModel {
   return new MockLanguageModelV3({
     doStream: async ({ prompt }) => {
       const serialized = JSON.stringify(prompt);
-      if (serialized.includes("TASK: CREATE_APP")) {
+      if (serialized.includes("THEY ARE ASKING NOW:")) {
         return {
           stream: simulateReadableStream({
             chunks: [

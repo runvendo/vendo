@@ -1,3 +1,4 @@
+import type { GradedRiskLabel } from "@vendoai/core";
 import { bindingIdentity } from "./binding-identity.js";
 import type { ExtractedTool, JudgmentFields, JudgmentsFile, PendingLoosening, ToolJudgment } from "./formats.js";
 
@@ -6,9 +7,9 @@ import type { ExtractedTool, JudgmentFields, JudgmentsFile, PendingLoosening, To
  * which half of a model's proposal may land and which half waits for a human.
  *
  * The safety property is one-way and absolute. A judgment may make a tool MORE
- * restrictive on its own — raise risk, narrow audience, disable, mark critical,
+ * restrictive on its own — raise risk, narrow audience, disable, mark confirmEach,
  * rewrite prose. It may never make one LESS restrictive: lowering risk, widening
- * audience, waking a disabled tool, or clearing a critical mark is a human act.
+ * audience, waking a disabled tool, or clearing a confirmEach mark is a human act.
  * Those do not get refused and forgotten (the old clamp's failure: a real
  * finding evaporated into a log line) — they are QUEUED as `pending` on the
  * judgment, each with its own evidence, and stay inert at runtime until a human
@@ -19,6 +20,9 @@ import type { ExtractedTool, JudgmentFields, JudgmentsFile, PendingLoosening, To
  * `JudgmentFields` is the whole AI-writable surface.
  */
 
+/** Restrictiveness order over the grades someone actually assigned.
+ *  `ungraded` is the ABSENCE of a grade, so it is not a rung here —
+ *  `classifyField` handles it directly. */
 export const RISK_RANK = { read: 0, write: 1, destructive: 2 } as const;
 
 /** Audience narrowing order: an ungraded tool behaves as end-user-visible, so
@@ -36,7 +40,7 @@ export interface JudgmentProposal extends JudgmentFields {
 
 /** The four capability grades a loosening can touch. Prose is not among them:
  *  a description has no loose/tight direction, and the AI is its sole author. */
-const CAPABILITY_FIELDS = ["risk", "critical", "disabled", "audience"] as const;
+const CAPABILITY_FIELDS = ["risk", "confirmEach", "disabled", "audience"] as const;
 
 type CapabilityField = (typeof CAPABILITY_FIELDS)[number];
 
@@ -56,7 +60,13 @@ export function classifyField(
   value: unknown,
 ): "harden" | "loosen" {
   if (field === "risk") {
-    return RISK_RANK[value as ExtractedTool["risk"]] >= RISK_RANK[tool.risk] ? "harden" : "loosen";
+    // Grading an `ungraded` tool is the GRADING, not a relaxation of one: the
+    // judge and a human are both authorized graders (D2), and holding the
+    // first grade for review would leave every keyless catalog blank forever.
+    // Trading a real grade back for a blank is the loosening a human owns.
+    if (tool.risk === "ungraded") return "harden";
+    if (value === "ungraded") return "loosen";
+    return RISK_RANK[value as GradedRiskLabel] >= RISK_RANK[tool.risk] ? "harden" : "loosen";
   }
   if (field === "audience") {
     // An ungraded baseline behaves as end-user-visible: any grade on it is
@@ -64,7 +74,7 @@ export function classifyField(
     const current = AUDIENCE_RANK[tool.audience ?? "end-user"];
     return AUDIENCE_RANK[value as NonNullable<ExtractedTool["audience"]>] >= current ? "harden" : "loosen";
   }
-  if (field === "critical" || field === "disabled") return value === true ? "harden" : "loosen";
+  if (field === "confirmEach" || field === "disabled") return value === true ? "harden" : "loosen";
   return "harden";
 }
 
@@ -105,7 +115,7 @@ export function splitProposal(tool: ExtractedTool, proposal: JudgmentProposal): 
 /** A field restating what the tool already carries. Semantics are exempt: they
  *  merge per key, so any proposed map is a real (additive) change. */
 function isNoOp(tool: ExtractedTool, field: keyof JudgmentFields, value: unknown): boolean {
-  if (field === "critical" || field === "disabled") return value === (tool[field] ?? false);
+  if (field === "confirmEach" || field === "disabled") return value === (tool[field] ?? false);
   if (field === "semantics") return Object.keys(value as Record<string, unknown>).length === 0;
   return value === tool[field];
 }

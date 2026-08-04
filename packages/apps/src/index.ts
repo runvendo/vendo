@@ -15,6 +15,7 @@ export {
   createApps,
   type AppsConfig,
   type AppsRuntime,
+  type AuthoredAppResult,
   type BoxRequest,
   type BoxResponse,
   type EditFailure,
@@ -70,17 +71,22 @@ export { appVersionHash } from "./version-hash.js";
 export {
   type InClientVenueState,
   type InClientVerdict,
+  type ReviewStanding,
 } from "./inclient.js";
+// Remix final shape (2026-08-02) — the review-kind lifecycle vocabulary:
+// the queue entry the console seam lists and the rejection record the note
+// surfaces from (AppsRuntime.review is the behavior surface).
+export {
+  remixRejectionSchema,
+  type RemixRejection,
+  type ReviewQueueEntry,
+} from "./review.js";
 export {
   type ShipDiff,
   type ShipDiffGenerated,
   type ShipDiffPin,
 } from "./ship-diff.js";
-// The opt-in per-stage diagnostics event already surfaced through
-// GenerationDependencies.onPipeline — exported as a type so onPipeline
-// consumers (apps/genui-bench runner tap) can name what they accumulate.
-export type { PipelineEvent } from "./pipeline.js";
-// The bench host surface (apps/genui-bench): the demo-bank catalog/tool/shape
+// The bench host surface (tools/genui-bench): the demo-bank catalog/tool/shape
 // loaders the live harnesses already share, exported because the exports map
 // closes deep imports. Data-only helpers — no engine behavior rides on them.
 // HostToolInfo is the tool slice those loaders (and GenerationDependencies)
@@ -91,6 +97,19 @@ export {
   loadDemoBankCatalog,
   loadDemoBankTools,
 } from "./bench/demo-bank-surface.js";
+// The checking layer's contract: the shape a host writes an AppsConfig.checks
+// entry in, and the finding shape every check reports (checking/types.ts).
+export type {
+  Check,
+  CheckInput,
+  CheckingLayer,
+  Finding,
+} from "./checking/types.js";
+// The plan→layout function, exported for the same reason as the bench loaders
+// above (the exports map closes deep imports): it is a pure, deterministic
+// function of the public AppPlan, so demo/harness surfaces can render a plan's
+// skeleton without booting the engine.
+export { skeletonFromPlan, type Skeleton } from "./generation/skeleton.js";
 // The model-capability rule (model-params.ts): which Claude ids still accept
 // sampling params, and the output cap for ids a sampling-era provider registry
 // does not know. Exported for the umbrella's model ladder — its lazy wrapper
@@ -101,13 +120,24 @@ export {
   acceptsSamplingParams,
   UNKNOWN_MODEL_MAX_OUTPUT_TOKENS,
 } from "./model-params.js";
-// The generation seam for the genui-bench vendo lane: the SAME modelEngine
-// createApps() rides, driven directly with production PipelineConfig defaults
-// (no forked engine config). Additive export — engine behavior is unchanged.
 export {
-  modelEngine,
+  UNSTORED_APP_ID,
   type GeneratedAppDocument,
-  type GenerationCreateInput,
   type GenerationDependencies,
-  type GenerationEngine,
 } from "./generation/engine.js";
+// The apps PACK's raw materials: the tools it declares through `Pack.tools` and
+// the skill it teaches the pattern with. The pack itself is assembled in the
+// umbrella (`vendo/src/packs/apps.ts`), which is the only layer that has both
+// the runtime and `definePack` in scope.
+export { agentToolDescriptors } from "./agent-tools.js";
+export { buildingAppsSkill } from "./skills/building-apps.js";
+// The generation seam for the genui-bench vendo lane: the SAME conductor
+// createApps() rides, driven directly against a host fixture with no store
+// behind it. Additive export — generation behavior is identical.
+export {
+  conductCreate,
+  conductEdit,
+  type ConductedApp,
+  type ConductedResult,
+  type ConductorOptions,
+} from "./generation/conductor.js";

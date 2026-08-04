@@ -21,22 +21,33 @@ describe("VendoPage, VendoPalette, and VendoSlot exports", () => {
     await wire.close();
   });
 
-  it("uses roving automatic tabs, swaps panels, and lists and opens fixture apps", async () => {
+  // Roving tabindex with APG MANUAL activation: arrows move focus, Enter/Space
+  // ⚠️ TEST EDIT — this asserted MANUAL activation ("New chat" was a tab, and
+  // arrowing onto it ACTED, discarding the open conversation and its draft —
+  // H18). The act is a plain button outside the tablist now, so the arrows
+  // cannot reach it and the remaining VIEW tabs select as focus moves, per APG.
+  it("uses roving tabs, swaps panels, and lists and opens fixture apps", async () => {
     render(<VendoProvider client={client}><VendoPage /></VendoProvider>);
-    const chat = screen.getByRole("tab", { name: "Chat" });
-    chat.focus();
-    fireEvent.keyDown(chat, { key: "ArrowRight" });
+    expect(screen.getByRole("button", { name: "New chat" })).toBeTruthy();
     const apps = screen.getByRole("tab", { name: "Apps" });
-    expect(document.activeElement).toBe(apps);
+    apps.focus();
+    fireEvent.keyDown(apps, { key: "ArrowRight" });
+    const automations = screen.getByRole("tab", { name: "Automations" });
+    expect(document.activeElement).toBe(automations);
+    expect(automations.getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(apps);
     expect(apps.getAttribute("aria-selected")).toBe("true");
     expect(await screen.findByText("Invoices")).toBeTruthy();
     expect(screen.getByText("Invoice watcher")).toBeTruthy();
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Open" })[0]!);
+    fireEvent.click(screen.getByRole("button", { name: "Open Invoices" }));
     expect(await screen.findByText("Invoices app surface")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("tab", { name: "Automations" }));
     expect(await screen.findByRole("heading", { name: "Automations" })).toBeTruthy();
+    // Activity moved under the rail's quiet ··· row (redesign §10: the two
+    // named doors are Apps and Automations; receipts are one gesture away).
+    fireEvent.click(screen.getByRole("button", { name: "More sections" }));
     fireEvent.click(screen.getByRole("tab", { name: "Activity" }));
     expect(await screen.findByRole("heading", { name: "Activity" })).toBeTruthy();
   });
@@ -106,7 +117,14 @@ describe("VendoPage, VendoPalette, and VendoSlot exports", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Describe a new app" }), { target: { value: "Build a report" } });
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
-    expect((await screen.findByRole("alert")).textContent).toContain("App creation unavailable");
+    // The failure is CONTAINED (an alert, no unhandled rejection) and it is
+    // contained in the CONSUMER's voice: the page used to render the wire's own
+    // sentence verbatim, which is how "app not found: app_1" and a sentence
+    // naming VENDO_API_KEY reached whoever was using the app (design §3). The
+    // developer sentence keeps its home in the server's error and the console.
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).not.toContain("App creation unavailable");
+    expect(alert.textContent).toMatch(/didn’t go through/i);
     await new Promise(resolve => globalThis.setTimeout(resolve, 0));
     expect(unhandled).not.toHaveBeenCalled();
     window.removeEventListener("unhandledrejection", unhandled);

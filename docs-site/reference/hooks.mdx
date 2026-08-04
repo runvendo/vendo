@@ -1,56 +1,88 @@
 ---
 title: "Headless hooks"
 sidebarTitle: "Hooks"
-description: "React hooks from @vendoai/ui share a { data, error, isLoading, refresh } contract with optional polling for threads, apps, approvals, and grants."
+description: "React hooks from @vendoai/ui: the shared { data, error, isLoading, refresh } read shape, opt-in polling, and the per-hook write callbacks for threads, apps, approvals, grants, and connections."
 ---
 
 `@vendoai/ui` exposes headless React hooks that read from the same wire the
 built-in chrome uses. Pair them with your own UI when you need a bespoke
 surface, or drop them next to `VendoOverlay` to power an inline widget.
 
-## Uniform result shape
-
-Every read hook returns the same four fields, so you can render loading,
-error, and empty states with one pattern across the whole surface.
+Every hook on this page is exported from the package root:
 
 ```ts
-export interface UseResourceResult<T> {
-  data: T | undefined;   // undefined while loading or after an error
-  error: Error | null;   // last fetch error, or null when the read succeeded
-  isLoading: boolean;    // true only on the first load; refresh does not flip it
-  refresh: () => Promise<void>;  // re-fetch on demand; returns after the read settles
+import { useThreads, useApprovals, useVendoThread } from "@vendoai/ui";
+```
+
+## The shared read shape
+
+The collection hooks all return the same four fields, so you can render
+loading, error, and empty states with one pattern across the whole surface.
+
+```ts
+// The shape every collection hook spreads. The type itself is internal —
+// name it through the hook (ReturnType<typeof useApprovals>) rather than
+// importing it.
+{
+  data: T;                       // seeded, never undefined: [] before the first read lands
+  error: Error | undefined;      // last fetch error, or undefined when the read succeeded
+  isLoading: boolean;            // true only on the first load; refresh does not flip it
+  refresh: () => Promise<void>;  // re-fetch on demand; resolves after the read settles
 }
 ```
 
+Two details matter when you write against it:
+
+- **`data` is seeded, not `undefined`.** A collection hook starts at `[]`, so
+  `data.length === 0` means "empty *or* not loaded yet" — read `isLoading` to
+  tell those apart. `useApp` is the exception: it returns a single document,
+  so its `data` is `AppDocument | undefined`.
+- **`error` is `undefined`, not `null`,** when the read succeeded. A failed
+  read keeps the last good `data`, so you can render a retry affordance
+  without blanking the surface.
+
 `isLoading` is `true` only for the first fetch. Subsequent `refresh()` calls
 and background polls do not flip it back to `true`, so a spinner shown on
-first mount does not flash on every update. Read `error` to render a retry
-affordance without losing the last good `data`.
+first mount does not flash on every update.
 
 ## Available hooks
 
-| Hook | Reads |
-| --- | --- |
-| `useThreads()` | thread summaries for the current principal |
-| `useApp(appId)` | one `AppDocument` |
-| `useApps()` | the principal's owned apps |
-| `useApprovals()` | pending approval requests |
-| `useGrants()` | active standing grants |
-| `useConnections()` | connected accounts by connector |
-| `useAutomations()` | automations and their enablement state |
-| `useActivity()` | audit events, self-scoped |
-| `useVendoStatus()` | posture, version, and block wiring from `/status` |
+| Hook | Returns | Polling |
+| --- | --- | --- |
+| `useThreads(options?)` | `threads` / `data`: `ThreadSummary[]`, plus `get(id)` and `remove(id)` | `pollMs` |
+| `useApp(appId)` | `app` / `data`: `AppDocument \| undefined`, `surface`, plus `call(ref, args)`, `edit(instruction)`, `history` | — |
+| `useApps(options?)` | `apps` / `data`: `AppDocument[]`, plus `create`, `remove`, `fork`, `exportApp`, `importApp` | `pollMs` |
+| `useApprovals(options?)` | `pending` / `data`: `ApprovalRequest[]`, plus `decide(ids, decision, options?)` | `pollMs` |
+| `useGrants(options?)` | `grants` / `data`: `PermissionGrant[]`, plus `revoke(id)` | `pollMs` |
+| `useConnections(options?)` | `connections` / `data`: `ConnectionAccount[]`, plus `disconnect(id, connector?)` | `pollMs` |
+| `useConnectorCatalog()` | `{ options, resolved, explicit, failed, retry }` — the connect dock's effective catalog | — |
+| `useAutomations(options?)` | `automations` / `data`: `AutomationEntry[]`, plus `enable`, `disable`, `runs`, `dryRun`, `stopRun` | `pollMs` |
+| `useActivity(options?)` | `events` / `data`: `AuditEvent[]`, plus `hasMore` and `loadMore()` | `pollMs` |
+| `useSlotApp(slotId, options?)` | `{ appId, error, isLoading, refresh }` — the app currently placed in a slot | on by default |
+| `useVendoStatus()` | `{ posture, connected }` | — |
+| `useVendoThread(threadId?)` | the streaming conversation — see [Threads](#threads) | — |
+| `useVendoOverlay(options?)` | `VendoOverlayController` — see [Overlay control](#overlay-control-usevendooverlay) | — |
+| `useMobileTakeover()` | `{ active, keyboardInset, style }` — the full-bleed mobile breakpoint | — |
+| `useApprovalSheetPresentation()` | `boolean` — whether an in-thread consent presents as the bottom sheet | — |
 
-Hooks that write (approve, revoke, enable, disable) return an `execute`
-callback alongside the same `{ data, error, isLoading }` fields, where
-`isLoading` reflects the in-flight mutation.
+Each collection hook also exposes a named alias for `data` (`threads`,
+`apps`, `pending`, `grants`, `connections`, `automations`, `events`); the two
+are the same value.
+
+**There is no generic `execute` callback.** Hooks that write name their
+verbs: `decide`, `revoke`, `disconnect`, `enable`, `disable`, `create`,
+`remove`, `fork`, `importApp`, `edit`, `dryRun`, `stopRun`. Each returns a
+promise, and the ones that change the collection refresh it when they
+resolve. `exportApp` is the exception — it is a pure read and refreshes
+nothing. Either way the hook's `isLoading` still tracks only the first read,
+so drive mutation-pending UI from your own `await`.
 
 ## Polling
 
-Pass `pollMs` to any read hook to keep the value fresh without a manual
-refresh. Polls are serialized per hook: an in-flight request finishes before
-the next tick starts, so a slow server never stacks up requests. When the tab
-is hidden, polling pauses; it resumes on focus.
+Pass `pollMs` to the hooks marked above to keep the value fresh without a
+manual refresh. Polls are self-scheduling rather than interval-driven: the
+next tick is armed only after the current refresh settles, so a slow server
+never stacks overlapping requests.
 
 ```tsx
 "use client";
@@ -63,14 +95,23 @@ export function ApprovalBadge() {
   if (isLoading) return <span aria-hidden />;
   if (error) return <button onClick={refresh}>Retry</button>;
 
-  const pending = data?.length ?? 0;
-  return pending > 0 ? <span>{pending} to review</span> : null;
+  return data.length > 0 ? <span>{data.length} to review</span> : null;
 }
 ```
 
-Omit `pollMs` for a one-shot fetch on mount. Call `refresh()` from a websocket
-message, a mutation callback, or a button when you want to invalidate on your
-own schedule.
+Omit `pollMs` for a one-shot fetch on mount. Polling does not pause when the
+tab is hidden — a hidden tab keeps fetching on the cadence you set, so pick a
+number you are willing to pay for in the background, or call `refresh()` from
+your own trigger instead.
+
+`useApp` and `useVendoStatus` take no options and never poll. `useApp` still
+returns `refresh()`, so you can re-read it on demand; `useVendoStatus` returns
+only `{ posture, connected }` — it reads once per mount, and remounting is the
+only way to re-read it. `useSlotApp` is the
+opposite: it polls every 5 seconds by default, because a placement made in
+the conversation surface has to appear in the slot on its own. Pass
+`{ pollMs }` to change the cadence, or `{ enabled: false }` to stand the
+discovery down entirely.
 
 ## Threads
 
@@ -88,15 +129,13 @@ export function ThreadList({ onSelect }: { onSelect: (id: string) => void }) {
 
   if (isLoading) return <p>Loading…</p>;
   if (error) return <button onClick={refresh}>Retry</button>;
-  if (!data?.length) return <p>No conversations yet.</p>;
+  if (data.length === 0) return <p>No conversations yet.</p>;
 
   return (
     <ul>
       {data.map((thread) => (
         <li key={thread.id}>
-          <button onClick={() => onSelect(thread.id)}>
-            {thread.title ?? "Untitled"}
-          </button>
+          <button onClick={() => onSelect(thread.id)}>{thread.title}</button>
         </li>
       ))}
     </ul>
@@ -104,15 +143,37 @@ export function ThreadList({ onSelect }: { onSelect: (id: string) => void }) {
 }
 ```
 
+`ThreadSummary.title` is always a string — no `?? "Untitled"` fallback
+needed.
+
 Pair with `useVendoThread(threadId)` to drive the streaming turn for the
-selected conversation. Alongside `messages`, `send`, `stop`, `regenerate`,
-`clearError`, and `error`, the hook returns `setMessages`. Use it to
-implement edit-last in a custom composer: drop the last user turn (and
-anything after) from the transcript, then refill your input from that
-message so re-sending amends the turn instead of duplicating it. This is
-the same flow the shipped chrome's **Edit** affordance uses. Sends issued
-while a turn is streaming queue and auto-send when the reply finishes,
-matching the built-in composer.
+selected conversation. It wraps the AI SDK's `useChat`, so its vocabulary is
+the AI SDK's:
+
+```ts
+const {
+  threadId,      // the effective id: yours, or the one the server minted on the first turn
+  messages,      // UIMessage[]
+  sendMessage,   // send a turn — NOT `send`
+  status,        // the AI SDK chat status ("ready" | "submitted" | "streaming" | "error")
+  error,
+  approvals,     // the turn's pending approval parts, ready to render
+  addToolApprovalResponse,
+  stop,
+  setMessages,
+  regenerate,
+  clearError,
+} = useVendoThread(selectedThreadId);
+```
+
+The argument is named `selectedThreadId` above on purpose: the hook also
+*returns* `threadId`, so destructuring into that name while passing it in is a
+use-before-declaration error.
+
+`setMessages` is what an edit-last affordance is built on: drop the last user
+turn (and anything after) from the transcript, then refill your input from
+that message so re-sending amends the turn instead of duplicating it. This is
+the same flow the shipped chrome's **Edit** affordance uses.
 
 ```tsx
 "use client";
@@ -125,18 +186,23 @@ export function EditLastButton() {
   function editLast() {
     const lastUser = [...messages].reverse().find((m) => m.role === "user");
     if (!lastUser) return;
-    const cut = messages.indexOf(lastUser);
-    setMessages(messages.slice(0, cut));
-    // refill your own composer input with lastUser.content
+    setMessages(messages.slice(0, messages.indexOf(lastUser)));
+    // refill your own composer input from lastUser
   }
 
   return <button onClick={editLast}>Edit last</button>;
 }
 ```
 
+The hook does **not** queue sends. Calling `sendMessage` mid-stream hands the
+message straight to the AI SDK. The "type while it is answering, and it sends
+when the reply lands" behavior belongs to the shipped chrome's composer,
+which holds the draft and re-sends it on the busy edge — reproduce that in
+your own composer by watching `status` if you want it.
+
 ## Apps export and import
 
-`useApps` exposes `export(appId)` and `import(bytes)` alongside the read
+`useApps` exposes `exportApp(appId)` and `importApp(bytes)` alongside the read
 fields so a custom apps drawer can round-trip an `AppDocument` through the
 wire without hand-rolling calls to `/apps/:id/export` and `/apps/import`.
 
@@ -146,7 +212,7 @@ wire without hand-rolling calls to `/apps/:id/export` and `/apps/import`.
 import { useApps } from "@vendoai/ui";
 
 export function AppsDrawer() {
-  const { data, error, isLoading, refresh, export: exportApp, import: importApp } = useApps();
+  const { data, error, isLoading, refresh, exportApp, importApp } = useApps();
 
   async function onExport(id: string) {
     const bytes = await exportApp(id);
@@ -155,7 +221,7 @@ export function AppsDrawer() {
 
   async function onImport(file: File) {
     await importApp(new Uint8Array(await file.arrayBuffer()));
-    await refresh();
+    // importApp already refreshed the list
   }
 
   // …render list, use error/isLoading as with any read hook
@@ -228,10 +294,12 @@ the new-conversation button in the panel header, or bump the
 ## BYO-agent embeds
 
 If you run your own agent loop and spread in the
-[guarded tool pack](/existing-agents), a separate set of `@vendoai/ui`
-components (`VendoToolResult`, `VendoAppEmbed`, `VendoApprovalEmbed`) renders
-Vendo inside that chat instead of these hooks. See
-[Embeds and envelopes](/existing-agents/embeds) for the full reference.
+[guarded tool pack](/existing-agents), a separate set of components
+(`VendoToolResult`, `VendoAppEmbed`, `VendoApprovalEmbed`) renders Vendo
+inside that chat instead of these hooks. Import them from
+`@vendoai/vendo/react`, which re-exports them — reaching for `@vendoai/ui`
+directly works too, but only if you add that package as a direct dependency.
+See [Embeds and envelopes](/existing-agents/embeds) for the full reference.
 
 ## When to use hooks vs. chrome
 

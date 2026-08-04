@@ -38,7 +38,7 @@ const expected: RepoAiExpectations = {
   tools: [
     { name: "listInvoices", method: "GET", path: "/api/invoices", risk: "read" },
     { name: "createInvoice", method: "POST", path: "/api/invoices", risk: "write" },
-    { name: "deleteInvoice", method: "DELETE", path: "/api/invoices/{id}", risk: "destructive", critical: true },
+    { name: "deleteInvoice", method: "DELETE", path: "/api/invoices/{id}", risk: "destructive", confirmEach: true },
     { name: "webhook", method: "POST", path: "/api/webhooks", risk: "write" },
   ],
 };
@@ -51,7 +51,7 @@ function judgment(name: string, fields: AiScoredJudgment["fields"], evidence = "
 }
 
 /** Everything the labels ask for, landed: the DELETE hardened to destructive +
- * critical, the unclassifiable webhook woken as an ordinary write. */
+ * confirmEach, the unclassifiable webhook woken as an ordinary write. */
 const perfectJudgments: Record<string, AiScoredJudgment> = {
   host_api_invoices_get: judgment("host_api_invoices_get", {
     description: "List the current user's invoices with status and totals.",
@@ -62,7 +62,7 @@ const perfectJudgments: Record<string, AiScoredJudgment> = {
   host_api_invoices_id_delete: judgment("host_api_invoices_id_delete", {
     description: "Permanently delete an invoice by id; this cannot be undone.",
     risk: "destructive",
-    critical: true,
+    confirmEach: true,
   }),
   host_api_webhooks_unclassified: judgment("host_api_webhooks_unclassified", {
     description: "Receive payment-provider webhook events and update invoice state.",
@@ -87,7 +87,7 @@ describe("scoreAiJudgments", () => {
       expect(entry.pass, `${entry.id}: ${entry.detail}`).toBe(true);
     }
     expect(Object.keys(result.dimensions).sort()).toEqual([
-      "critical", "descriptions", "evidence", "pass", "risk", "wake",
+      "confirmEach", "descriptions", "evidence", "pass", "risk", "wake",
     ]);
   });
 
@@ -214,8 +214,8 @@ describe("scoreAiJudgments", () => {
     expect(wake.detail).toContain("must stay asleep");
   });
 
-  it("scores the critical marks the labels ask for", () => {
-    const uncritical = {
+  it("scores the confirmEach marks the labels ask for", () => {
+    const unconfirmed = {
       ...perfectJudgments,
       host_api_invoices_id_delete: judgment("host_api_invoices_id_delete", {
         description: "Permanently delete an invoice by id; this cannot be undone.",
@@ -223,8 +223,8 @@ describe("scoreAiJudgments", () => {
       }),
     };
 
-    const result = scoreAiJudgments({ staticTools, judgments: uncritical, expected });
-    expect(check(result, "ai.critical.applied").pass).toBe(false);
+    const result = scoreAiJudgments({ staticTools, judgments: unconfirmed, expected });
+    expect(check(result, "ai.confirmEach.applied").pass).toBe(false);
     // Risk still landed, so the two dimensions move independently.
     expect(check(result, "ai.risk.accuracy").pass).toBe(true);
   });
@@ -235,7 +235,7 @@ describe("scoreAiJudgments", () => {
         ...perfectJudgments,
         host_api_invoices_id_delete: {
           binding: identityOf("host_api_invoices_id_delete"),
-          fields: { risk: "destructive", critical: true },
+          fields: { risk: "destructive", confirmEach: true },
         },
       };
 
@@ -275,7 +275,7 @@ describe("scoreAiJudgments", () => {
     const result = scoreAiJudgments({ staticTools, judgments: perfectJudgments, expected: null });
 
     expect(result.checks.some((entry) => entry.id === "ai.risk.accuracy")).toBe(false);
-    expect(result.checks.some((entry) => entry.id === "ai.critical.applied")).toBe(false);
+    expect(result.checks.some((entry) => entry.id === "ai.confirmEach.applied")).toBe(false);
     expect(result.checks.some((entry) => entry.id === "ai.wake.correct")).toBe(false);
     expect(check(result, "ai.pass.judged").pass).toBe(true);
     expect(check(result, "ai.evidence.present").pass).toBe(true);

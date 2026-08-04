@@ -2,6 +2,7 @@ import type { VendoTheme } from "@vendoai/core";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { themeCssVariables } from "../theme.js";
+import { ToolkitLogo } from "./card-shell.js";
 
 /**
  * The approval→notification morph: the decided panel lifts out of the thread
@@ -132,12 +133,7 @@ export function MorphToast({ startRect, title, sub, logoUrl, theme, holdMs, dock
           <div className="fl-morph-title">{title}</div>
           {sub ? <div className="fl-morph-sub">{sub}</div> : null}
         </div>
-        {logoUrl ? (
-          <span className="fl-morph-logo">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={logoUrl} alt="" width={18} height={18} />
-          </span>
-        ) : null}
+        {logoUrl ? <ToolkitLogo src={logoUrl} className="fl-morph-logo" /> : null}
       </div>
     </div>,
     document.body,

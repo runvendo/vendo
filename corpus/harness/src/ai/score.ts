@@ -3,7 +3,6 @@ import {
   VENDO_JUDGMENTS_FORMAT,
   applyJudgment,
   judgmentFieldsSchema,
-  pendingLooseningSchema,
   type ExtractedTool,
 } from "@vendoai/actions";
 import type { ScorecardCheck, ScorecardScore } from "../scorecard.js";
@@ -46,7 +45,7 @@ import { aiExpectedToolIdentity, type AiExpectedTool, type RepoAiExpectations } 
  *   hardening applies itself; a downgrade is a loosening that only lands once a
  *   human accepts it, so a repo that never earns its downgrades now scores lower
  *   instead of being excused by an informational check;
- * - critical — the critical marks the labels ask for;
+ * - confirmEach — the confirmEach marks the labels ask for;
  * - wake — the wake decision for statically-unclassifiable (disabled) tools.
  */
 
@@ -73,7 +72,15 @@ export const aiScoredJudgmentSchema = z.object({
   srcHash: z.string().min(1).optional(),
   fields: judgmentFieldsSchema,
   evidence: z.string().optional(),
-  pending: z.array(pendingLooseningSchema.partial({ evidence: true })).optional(),
+  // Spelled out rather than derived from `pendingLooseningSchema` for the same
+  // reason `evidence` is optional above: the acceptance lane must READ what the
+  // channel actually wrote, including entries the strict schema would reject.
+  pending: z.array(z.object({
+    field: z.enum(["risk", "confirmEach", "disabled", "audience"]),
+    value: z.union([z.string(), z.boolean()]),
+    evidence: z.string().optional(),
+    reason: z.string().optional(),
+  }).passthrough()).optional(),
 }).passthrough();
 
 export type AiScoredJudgment = z.infer<typeof aiScoredJudgmentSchema>;
@@ -98,7 +105,7 @@ export interface AiJudgmentScore {
   score: ScorecardScore;
   checks: ScorecardCheck[];
   /** Sub-scores grouped by rubric dimension (pass, evidence, descriptions, risk,
-   * critical, wake) for the scoreboard columns. */
+   * confirmEach, wake) for the scoreboard columns. */
   dimensions: Record<string, ScorecardScore>;
   hardFailure: boolean;
 }
@@ -230,7 +237,7 @@ export function scoreAiJudgments(input: ScoreAiJudgmentsInput): AiJudgmentScore 
   // scored branch. The sets below are judgment-independent so those conditions
   // never diverge between branches.
   const describable = staticTools.filter((entry) => entry.tool.disabled !== true);
-  const criticalLabels = joined.filter(({ label }) => label.critical === true);
+  const confirmEachLabels = joined.filter(({ label }) => label.confirmEach === true);
   const wakeLabels = joined.filter(({ entry }) => entry.tool.disabled === true);
 
   const checks: WeightedCheck[] = [];
@@ -258,7 +265,7 @@ export function scoreAiJudgments(input: ScoreAiJudgmentsInput): AiJudgmentScore 
     checks.push(zero("ai.descriptions.length"));
     checks.push(zero("ai.descriptions.mentions-resource"));
     if (expected !== null && joined.length > 0) checks.push(zero("ai.risk.accuracy"));
-    if (criticalLabels.length > 0) checks.push(zero("ai.critical.applied"));
+    if (confirmEachLabels.length > 0) checks.push(zero("ai.confirmEach.applied"));
     if (wakeLabels.length > 0) checks.push(zero("ai.wake.correct"));
     return finalize(checks, true);
   }
@@ -352,8 +359,11 @@ export function scoreAiJudgments(input: ScoreAiJudgmentsInput): AiJudgmentScore 
 
     /** Which way the label asks the STATIC grade to move. This is the whole point
      *  of the dimension: a hardening applies itself, a downgrade has to survive
-     *  the skeptic AND a human, and those are very different odds. */
-    const direction = ({ label, entry }: ExpectedJoin): "hardenings" | "downgrades" | "already-correct" => {
+     *  the skeptic AND a human, and those are very different odds. A tool
+     *  extraction left `ungraded` has no grade to move — the label is the first
+     *  one, and it lands directly (risk-grading redesign D2). */
+    const direction = ({ label, entry }: ExpectedJoin): "gradings" | "hardenings" | "downgrades" | "already-correct" => {
+      if (entry.tool.risk === "ungraded") return "gradings";
       const from = RISK_ORDER[entry.tool.risk];
       const to = RISK_ORDER[label.risk];
       if (to > from) return "hardenings";
@@ -362,6 +372,7 @@ export function scoreAiJudgments(input: ScoreAiJudgmentsInput): AiJudgmentScore 
     };
 
     const tally: Record<string, { matched: number; total: number }> = {
+      gradings: { matched: 0, total: 0 },
       hardenings: { matched: 0, total: 0 },
       downgrades: { matched: 0, total: 0 },
       "already-correct": { matched: 0, total: 0 },
@@ -391,15 +402,15 @@ export function scoreAiJudgments(input: ScoreAiJudgmentsInput): AiJudgmentScore 
     ));
   }
 
-  if (criticalLabels.length > 0) {
-    const wrong = criticalLabels
-      .filter(({ entry }) => effectiveOf(entry).critical !== true)
+  if (confirmEachLabels.length > 0) {
+    const wrong = confirmEachLabels
+      .filter(({ entry }) => effectiveOf(entry).confirmEach !== true)
       .map(({ entry }) => entry.tool.name);
     checks.push(weighted(
-      "ai.critical.applied",
-      criticalLabels.length - wrong.length,
-      criticalLabels.length,
-      `${criticalLabels.length - wrong.length}/${criticalLabels.length} expected critical marks were applied`
+      "ai.confirmEach.applied",
+      confirmEachLabels.length - wrong.length,
+      confirmEachLabels.length,
+      `${confirmEachLabels.length - wrong.length}/${confirmEachLabels.length} expected confirmEach marks were applied`
         + (wrong.length > 0 ? `; missing: ${listed(wrong)}` : ""),
     ));
   }

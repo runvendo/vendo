@@ -2,7 +2,9 @@ import { readOptionalVendoJson } from "#actions/host-files";
 import {
   VendoError,
   descriptorHash,
+  isVendoAuthored,
   toolDescriptorSchema,
+  vendoAuthored,
   type ActAs,
   type PermissionGrant,
   type Principal,
@@ -36,7 +38,7 @@ import {
 import { applyJudgment } from "../judgments.js";
 import { createCompoundExecutor, validateCapabilities, type PrimitiveStepTarget } from "./compound.js";
 import { error, isArgsObject } from "./outcome.js";
-import { searchToolDescriptors, tokenize, type ToolSearchMatch, type ToolSearchOptions } from "./search.js";
+import { searchToolDescriptors, type ToolSearchMatch, type ToolSearchOptions } from "./search.js";
 import { defaultFetch } from "@vendoai/core";
 
 export interface ActionsRegistry extends ToolRegistry {
@@ -49,13 +51,13 @@ export interface ActionsRegistry extends ToolRegistry {
    * descriptor set), so a hit is always a loadable, guard-bound tool.
    */
   search(query: string, options?: ToolSearchOptions): Promise<ToolSearchMatch[]>;
-  /** Fetch + register the named lazy toolkits' tools (idempotent, global —
-   * descriptors are the same for every principal; per-USER scoping lives in
-   * the agent's loadout, spec 2026-07-20). */
-  expandToolkits(toolkits: string[]): Promise<void>;
-  /** The per-turn initial loadout: host/eager tools first, then the given
-   * (connected) toolkits' tools — never an alphabetical slice of the catalog. */
-  loadoutSeed(connectedToolkits: string[]): Promise<string[]>;
+  /** The per-turn initial loadout: every loaded tool, never an alphabetical
+   * slice of the catalog. It used to take the turn's connected toolkits, to
+   * decide which lazily expanded connector tools that turn could see; nothing
+   * loads lazily any more — a connector either registers its tools at boot or
+   * serves them through the permanent service-tool pair, and both are on the
+   * seed unconditionally — so there is nothing left for the set to narrow. */
+  loadoutSeed(): Promise<string[]>;
   /**
    * The tool menu one SURFACE offers, resolved from `.vendo/overrides.json`'s
    * `surfaces` block. `undefined` means unrestricted — the surface offers
@@ -174,10 +176,6 @@ interface LoadedRegistry {
    *  descriptor surface deliberately drops, kept here because the door's
    *  default menu is defined in terms of it. Absent name = ungraded. */
   audience: Map<string, ExtractedTool["audience"]>;
-  /** Every name any source claimed — including disabled/quarantined entries
-   * that never reach dispatch. Incremental expansion checks it so a
-   * mid-run toolkit append can never shadow a reserved name. */
-  reserved: Set<string>;
 }
 
 const STRIPPED_HEADERS = new Set([
@@ -189,14 +187,61 @@ const STRIPPED_HEADERS = new Set([
   "upgrade",
 ]);
 
-function descriptorOf(tool: ToolDescriptor): ToolDescriptor {
+/**
+ * Design §12's second mechanical vote, METHOD axis — the tool's execution shape
+ * distilled into the one fact the vote needs (`ToolDescriptor.bindingRisk`).
+ *
+ * DERIVED here rather than copied off the tool, because the descriptor surface is
+ * fed by data a host controls (`.vendo/tools.json`, `overrides.json`, a connector
+ * catalog) and `overrides.json` may LOWER a declared `risk`. The vote is the
+ * backstop for exactly that, so it must read something no author can set.
+ *
+ * Every value returned escalates or says nothing: `undefined` for a read shape is
+ * how the vote behaved before this existed, and there is no value meaning "read".
+ * A compound returns nothing on purpose — its declared risk is already the
+ * riskiest step's (§4), and each step re-enters the guard on its own.
+ */
+function bindingRiskOf(binding: ToolBinding | undefined): ToolDescriptor["bindingRisk"] {
+  switch (binding?.kind) {
+    case "route":
+    case "openapi":
+      if (binding.method === "DELETE") return "destructive";
+      return binding.method === "GET" ? undefined : "write";
+    case "trpc":
+    case "graphql":
+      return binding.type === "mutation" ? "write" : undefined;
+    // A server action is a POST-shaped mutation surface and static parsing cannot
+    // prove otherwise — the same stance `serverActionRisk` takes at build time.
+    case "server-action":
+      return "write";
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * The descriptor surface, as a field WHITELIST: provenance the registry knows
+ * (audience, semantics, the binding itself) deliberately does not travel to
+ * whoever reads `descriptors()`.
+ *
+ * `bindingRisk` is the one field added FROM the binding rather than passed
+ * through, and it is added because the whitelist was silently disabling half of
+ * THE LAW: `mechanicalRisk` reads the tool's method, the whitelist dropped
+ * `binding.method`, and so a DELETE-bound tool labelled `write` was projected
+ * into unattended runs. It is derived, never copied, so nothing a host can author
+ * widens what reaches the vote (see {@link bindingRiskOf}).
+ */
+function descriptorOf(tool: ToolDescriptor & { binding?: ToolBinding }): ToolDescriptor {
+  const bindingRisk = bindingRiskOf(tool.binding);
   return {
     name: tool.name,
     description: tool.description,
     inputSchema: tool.inputSchema,
     risk: tool.risk,
-    ...(tool.critical !== undefined ? { critical: tool.critical } : {}),
+    ...(tool.outputSchema !== undefined ? { outputSchema: tool.outputSchema } : {}),
+    ...(tool.confirmEach !== undefined ? { confirmEach: tool.confirmEach } : {}),
     ...(tool.title !== undefined ? { title: tool.title } : {}),
+    ...(bindingRisk !== undefined ? { bindingRisk } : {}),
   };
 }
 
@@ -208,7 +253,7 @@ function mergeOverride<T extends ToolDescriptor & Pick<ExtractedTool, "audience"
   return {
     ...descriptor,
     ...(override.risk !== undefined ? { risk: override.risk } : {}),
-    ...(override.critical !== undefined ? { critical: override.critical } : {}),
+    ...(override.confirmEach !== undefined ? { confirmEach: override.confirmEach } : {}),
     ...(override.description !== undefined ? { description: override.description } : {}),
     ...(override.title !== undefined ? { title: override.title } : {}),
     ...(override.disabled !== undefined ? { disabled: override.disabled } : {}),
@@ -344,11 +389,19 @@ function parseExtractedTool(value: unknown, source: string): ExtractedTool {
 }
 
 function parseToolDescriptor(value: unknown, source: string): ToolDescriptor {
+  let parsed: ToolDescriptor;
   try {
-    return toolDescriptorSchema.parse(value);
+    parsed = toolDescriptorSchema.parse(value);
   } catch (cause) {
     throw validationError(source, cause);
   }
+  // Parsing must not LAUNDER provenance. Zod rebuilds the object from its string
+  // keys, which drops the `vendoAuthored` symbol brand — and a Vendo verb that
+  // arrives here unbranded falls back to §12's mechanical vote, which mis-votes
+  // on the names we chose ourselves (core `resolvedRisk`). Carried over from the
+  // SOURCE object, so it stays unforgeable: a descriptor that arrived as data —
+  // a connector catalog, tools.json, the wire — cannot carry a symbol at all.
+  return isVendoAuthored(value as ToolDescriptor) ? vendoAuthored(parsed) : parsed;
 }
 
 function setHeader(headers: Record<string, string>, name: string, value: string): void {
@@ -999,135 +1052,8 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       // Runtime dispatch keeps only enabled entries once all collision checks ran.
       const dispatch = new Map<string, Dispatch>();
       for (const [name, entry] of reserved) if (entry) dispatch.set(name, entry);
-      return { descriptors, dispatch, audience, reserved: new Set(reserved.keys()) };
+      return { descriptors, dispatch, audience };
     })();
-  }
-
-  /** Discovery discipline (spec 2026-07-25): merge ONLY the newly expanded connectors'
-   * tools into an already-loaded registry — same override + disabled
-   * semantics as buildRegistry, without redoing the host/compound merge. A
-   * name that is already reserved is kept as-is (previously expanded tools
-   * re-listed by the connector) rather than thrown as a boot-style conflict:
-   * expansion runs on live traffic, and a collision here would poison the
-   * load memo for the rest of the process. */
-  async function appendExpanded(
-    current: Promise<LoadedRegistry>,
-    changed: Connector[],
-  ): Promise<LoadedRegistry> {
-    const [loaded, host] = await Promise.all([current, loadHost()]);
-    const descriptors = [...loaded.descriptors];
-    const dispatch = new Map(loaded.dispatch);
-    const reserved = new Set(loaded.reserved);
-    // Audience is carried forward the same way buildRegistry records it, so a
-    // mid-run expanded tool grades identically for the door's default menu.
-    const audience = new Map(loaded.audience);
-    for (const connector of changed) {
-      const list = await cachedDescriptors(connector);
-      for (let index = 0; index < list.length; index += 1) {
-        const rawDescriptor = parseToolDescriptor(list[index]!, `connector ${connector.name}[${index}]`);
-        if (reserved.has(rawDescriptor.name)) continue;
-        const merged = mergeOverride(rawDescriptor, host.overrides.tools[rawDescriptor.name]);
-        const { disabled: _disabled, audience: _audience, semantics: _semantics, ...descriptor } = merged;
-        reserved.add(descriptor.name);
-        if (merged.audience !== undefined) audience.set(descriptor.name, merged.audience);
-        if (merged.disabled === true) continue;
-        descriptors.push(descriptor);
-        dispatch.set(descriptor.name, { kind: "connector", descriptor, connector });
-      }
-    }
-    return { descriptors, dispatch, audience, reserved };
-  }
-
-  /** Default cap on toolkits one search may expand — bounds fan-out when a
-   * broad intent matches many index blurbs. Hosts tune it per query via
-   * ToolSearchOptions.maxExpansions. */
-  const MAX_SEARCH_EXPANSIONS = 3;
-  let indexPromise: Promise<Array<{ toolkit: string; label?: string; description?: string }>> | undefined;
-  /** Discovery discipline (spec 2026-07-25): identical queries answer from a process-lifetime memo — repeat
-   * discovery costs zero index reads, zero expansions, zero schema fetches.
-   * add() invalidates it (the searchable surface changed). */
-  const searchMemo = new Map<string, Promise<ToolSearchMatch[]>>();
-
-  function discoveryEntries() {
-    if (indexPromise === undefined) {
-      const building = (async () => {
-        const lists = await Promise.all(connectors.map((connector) => connector.discoveryIndex?.() ?? Promise.resolve([])));
-        return lists.flat();
-      })();
-      indexPromise = building;
-      // A rejected index is not the answer forever (see cachedDescriptors).
-      building.catch(() => {
-        if (indexPromise === building) indexPromise = undefined;
-      });
-    }
-    return indexPromise;
-  }
-
-  /** Expand named toolkits on every lazy connector; on any growth, bust that
-   * connector's descriptor memo and APPEND the new tools to an already-loaded
-   * registry — never a full load-memo bust, so the host/compound merge
-   * and every other source's schemas stay done. A failed append degrades to
-   * the full rebuild rather than a poisoned load memo. */
-  async function expand(toolkits: string[]): Promise<boolean> {
-    if (toolkits.length === 0) return false;
-    const changed: Connector[] = [];
-    for (const connector of connectors) {
-      if (connector.expandToolkits === undefined) continue;
-      if (await connector.expandToolkits(toolkits)) {
-        descriptorPromises.delete(connector);
-        changed.push(connector);
-      }
-    }
-    if (changed.length === 0) return false;
-    const current = loadedPromise;
-    if (current !== undefined) {
-      loadedPromise = appendExpanded(current, changed).catch(() => buildRegistry());
-    }
-    return true;
-  }
-
-  async function runSearch(query: string, options?: ToolSearchOptions): Promise<ToolSearchMatch[]> {
-    // Rank the discovery index FIRST (toolkit-level pseudo-descriptors for
-    // lazily-loaded connectors) and expand the top matches, so an unloaded
-    // toolkit's tools are findable by intent ("send email" → gmail).
-    const index = await discoveryEntries();
-    const maxExpansions = Math.max(Math.trunc(options?.maxExpansions ?? MAX_SEARCH_EXPANSIONS), 0);
-    const expandedNames = new Set<string>();
-    if (index.length > 0 && maxExpansions > 0) {
-      // Whole-word overlap scoring: the tool scorer's substring matching
-      // lets stopwords ("an" ⊂ "channels") expand unrelated toolkits, so the
-      // index ranks on exact word tokens only, ignoring 1–2 char tokens.
-      const queryTokens = tokenize(query).filter((token) => token.length >= 3);
-      const scored = index
-        .map((entry) => {
-          const words = new Set(tokenize(`${entry.label ?? ""} ${entry.description ?? ""}`));
-          let score = 0;
-          for (const token of queryTokens) {
-            if (token === entry.toolkit.toLowerCase()) score += 8;
-            else if (words.has(token)) score += 2;
-          }
-          return { toolkit: entry.toolkit, score };
-        })
-        .filter((hit) => hit.score > 0)
-        .sort((a, b) => (b.score - a.score) || (a.toolkit < b.toolkit ? -1 : 1))
-        .slice(0, maxExpansions);
-      await expand(scored.map((hit) => hit.toolkit));
-      for (const hit of scored) expandedNames.add(hit.toolkit);
-    }
-    // load().descriptors is the post-override, enabled-only surface — disabled
-    // tools never reach it, so they can never be returned as loadable.
-    const matches = searchToolDescriptors((await load()).descriptors, query, options);
-    if (expandedNames.size === 0) return matches;
-    return matches.map((match) => {
-      const toolkit = [...expandedNames].find((name) => match.name.startsWith(`${name}_`));
-      // A plain fact, not an invitation (discovery-discipline criterion 12):
-      // the old suffix told the model calling unconnected tools was the way
-      // to prompt a connect, which turned catalogs into call sprees.
-      return toolkit === undefined ? match : {
-        ...match,
-        description: `${match.description} (part of the ${toolkit} toolkit — requires a connected ${toolkit} account)`,
-      };
-    });
   }
 
   const compoundExecutor = createCompoundExecutor({
@@ -1142,7 +1068,6 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
     add(tools: ToolRegistry): void {
       added.push(tools);
       loadedPromise = undefined;
-      searchMemo.clear();
     },
 
     async descriptors(): Promise<ToolDescriptor[]> {
@@ -1153,10 +1078,6 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       return (await loadHost()).briefs;
     },
 
-    async expandToolkits(toolkits: string[]): Promise<void> {
-      await expand(toolkits);
-    },
-
     async connectorToolkit(tool: string): Promise<{ connector: string; toolkit: string } | undefined> {
       const entry = (await load()).dispatch.get(tool);
       if (!entry || entry.kind !== "connector") return undefined;
@@ -1164,22 +1085,9 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       return toolkit === undefined ? undefined : { connector: entry.connector.name, toolkit };
     },
 
-    async loadoutSeed(connectedToolkits: string[]): Promise<string[]> {
-      await expand(connectedToolkits);
+    async loadoutSeed(): Promise<string[]> {
       const { descriptors: all, dispatch } = await load();
-      const eager: string[] = [];
-      const connected: string[] = [];
-      for (const descriptor of all) {
-        const entry = dispatch.get(descriptor.name);
-        if (!entry) continue;
-        const isLazyConnectorTool = entry.kind === "connector" && entry.connector.expandToolkits !== undefined;
-        if (!isLazyConnectorTool) {
-          eager.push(descriptor.name);
-          continue;
-        }
-        if (connectedToolkits.some((toolkit) => descriptor.name.startsWith(`${toolkit}_`))) connected.push(descriptor.name);
-      }
-      return [...eager, ...connected];
+      return all.filter((descriptor) => dispatch.has(descriptor.name)).map((descriptor) => descriptor.name);
     },
 
     async surfaceMenu(surface: "agent" | "mcp"): Promise<string[] | undefined> {
@@ -1188,20 +1096,20 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       if (authored !== undefined) {
         // A menu is a FILTER, not a validated reference list. The authored set
         // is returned whole and matched against the live surface at use time,
-        // because the surface grows: a lazy connector's tools do not exist at
-        // boot, and dropping their names here would make them permanently
-        // unreachable the moment they DO arrive. Unmatched names simply never
-        // match anything, which is what a filter should do.
+        // because the surface grows: an `add()`-registered registry's tools do
+        // not exist at boot, and dropping their names here would make them
+        // permanently unreachable the moment they DO arrive. Unmatched names
+        // simply never match anything, which is what a filter should do.
         const unmatched = authored.tools.filter((name) => !dispatch.has(name));
         if (unmatched.length > 0 && !surfaceMenuWarned.has(surface)) {
           surfaceMenuWarned.add(surface);
           console.warn(
             unmatched.length === authored.tools.length
               ? `[vendo] surfaces.${surface}.tools in .vendo/overrides.json matches no registered tool at all `
-                + `(${unmatched.join(", ")}). If these are not lazy connector tools awaiting expansion, this surface `
+                + `(${unmatched.join(", ")}). If these are not tools a later \`add()\` registers, this surface `
                 + "will offer nothing — check for typos or re-run `vendo sync`."
               : `[vendo] surfaces.${surface}.tools in .vendo/overrides.json names tools that are not registered right `
-                + `now: ${unmatched.join(", ")}. They stay on the menu (a lazy connector tool matches once expanded); `
+                + `now: ${unmatched.join(", ")}. They stay on the menu (a later \`add()\` can still supply them); `
                 + "if that is not what they are, check for a typo, a disabled tool, or re-run `vendo sync`.",
           );
         }
@@ -1217,19 +1125,9 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
     },
 
     async search(query: string, options?: ToolSearchOptions): Promise<ToolSearchMatch[]> {
-      const memoKey = [
-        query.trim().toLowerCase().replace(/\s+/g, " "),
-        options?.limit ?? "",
-        options?.maxExpansions ?? "",
-      ].join("\u0000");
-      const memoized = searchMemo.get(memoKey);
-      if (memoized !== undefined) return memoized;
-      if (searchMemo.size > 500) searchMemo.clear();
-      const promise = runSearch(query, options);
-      searchMemo.set(memoKey, promise);
-      // A failed search must not pin its failure for the process lifetime.
-      promise.catch(() => searchMemo.delete(memoKey));
-      return promise;
+      // Post-override and enabled-only, so a disabled tool can never come back
+      // as loadable.
+      return searchToolDescriptors((await load()).descriptors, query, options);
     },
 
     async execute(call: ToolCall, ctx: RunContext): Promise<ToolOutcome> {

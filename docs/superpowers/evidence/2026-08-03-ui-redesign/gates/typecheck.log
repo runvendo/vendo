@@ -1,0 +1,183 @@
+# 20260803T235135Z — branch redesign/ui-s1 @ 4b6e362991a6a69eeafce4391899464cdbe0f007
+# cwd: /Users/yousefh/orca/workspaces/flowlet/ui-s1
+# argv: pnpm typecheck --force
+
+$ turbo run typecheck --force
+• turbo 2.10.1
+
+   • Packages in scope: @vendoai-corpus/express-host, @vendoai-examples/ai-sdk-agent, @vendoai-examples/mastra-agent, @vendoai-fixtures/automations-e2e, @vendoai-fixtures/chat-e2e, @vendoai-fixtures/existing-agents-e2e, @vendoai-fixtures/host-app, @vendoai-fixtures/integration, @vendoai-fixtures/integration-browser, @vendoai-fixtures/mcp-e2e, @vendoai/actions, @vendoai/agent, @vendoai/apps, @vendoai/automations, @vendoai/bench, @vendoai/core, @vendoai/corpus-harness, @vendoai/engine, @vendoai/guard, @vendoai/harnesses, @vendoai/knowledge, @vendoai/mcp, @vendoai/redteam-e2e, @vendoai/store, @vendoai/telemetry, @vendoai/ui, @vendoai/vendo, demo-accounting, demo-bank, demo-template, genui-bench, vendoai, video-studio
+   • Running typecheck in 33 packages
+   • Remote caching disabled, using shared worktree cache
+
+@vendoai-fixtures/existing-agents-e2e:typecheck: cache bypass, force executing fbf9ad6b41cb91be
+@vendoai/engine:typecheck: cache bypass, force executing 41014c5d48094130
+@vendoai/telemetry:build: cache bypass, force executing 314b0108dd434df1
+@vendoai/core:typecheck: cache bypass, force executing 8a11c04b109ba75b
+@vendoai/telemetry:typecheck: cache bypass, force executing bd6f8ad7c59e8835
+@vendoai/core:build: cache bypass, force executing 53a45b7fa70ac0bb
+@vendoai-fixtures/existing-agents-e2e:typecheck: $ tsc -p tsconfig.json --noEmit
+@vendoai/telemetry:typecheck: $ tsc -p tsconfig.json --noEmit
+@vendoai/core:build: $ tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node -e "require('node:fs').writeFileSync('dist/cjs/package.json', JSON.stringify({ type: 'commonjs' }) + '\n')"
+@vendoai/engine:typecheck: $ tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit
+@vendoai/core:typecheck: $ tsc -p tsconfig.json --noEmit
+@vendoai/telemetry:build: $ tsc -p tsconfig.json
+@vendoai/actions:build: cache bypass, force executing 80e6bf7e2ad2396e
+@vendoai/mcp:typecheck: cache bypass, force executing e42a14cdbefb042d
+@vendoai/apps:typecheck: cache bypass, force executing fb3162c9fa35f2ef
+@vendoai/knowledge:build: cache bypass, force executing 682a11f770f9073b
+@vendoai/mcp:build: cache bypass, force executing 573aee1bcd0b1f72
+@vendoai/apps:build: cache bypass, force executing a0e2e62f3367c57e
+@vendoai/store:typecheck: cache bypass, force executing ab27084366c62aa5
+@vendoai/knowledge:typecheck: cache bypass, force executing 98a2c7054ca01138
+@vendoai/guard:typecheck: cache bypass, force executing a1a1a2f88461a15d
+@vendoai/ui:typecheck: cache bypass, force executing 089e72ba3029b7de
+@vendoai/mcp:build: $ tsc -p tsconfig.json
+@vendoai/knowledge:typecheck: $ tsc -p tsconfig.json --noEmit
+@vendoai/mcp:typecheck: $ tsc -p tsconfig.json --noEmit
+@vendoai/apps:typecheck: $ tsc -p tsconfig.json --noEmit
+@vendoai/apps:build: $ tsc -p tsconfig.json
+@vendoai/actions:build: $ tsc -p tsconfig.json
+@vendoai/knowledge:build: $ tsc -p tsconfig.json
+@vendoai/store:typecheck: $ tsc -p tsconfig.json --noEmit
+@vendoai/ui:typecheck: $ pnpm run build:jail
+@vendoai/guard:typecheck: $ tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit
+@vendoai/ui:typecheck: $ node scripts/build-jail-runtime.mjs
+@vendoai/ui:typecheck: vite v6.4.3 building for production...
+@vendoai/ui:typecheck: transforming...
+@vendoai/actions:typecheck: cache bypass, force executing c6a5a24db1688c64
+@vendoai/agent:typecheck: cache bypass, force executing ca74792a28c809ec
+@vendoai/agent:build: cache bypass, force executing 2ff86a5ad196c007
+@vendoai/actions:typecheck: $ tsc -p tsconfig.json --noEmit
+@vendoai/store:build: cache bypass, force executing d9fd3ceb928b0e40
+@vendoai/agent:typecheck: $ tsc -p tsconfig.json --noEmit
+@vendoai/guard:build: cache bypass, force executing 97605dda99672b17
+@vendoai/agent:build: $ tsc -p tsconfig.json
+@vendoai/store:build: $ tsc -p tsconfig.json
+@vendoai/guard:build: $ tsc -p tsconfig.json
+@vendoai/ui:build: cache bypass, force executing e9220f4c68ca7f71
+@vendoai/automations:build: cache bypass, force executing a1dd102814fd007c
+@vendoai/automations:typecheck: cache bypass, force executing 09942b9618f00124
+@vendoai/ui:build: $ pnpm run build:jail
+@vendoai/harnesses:typecheck: cache bypass, force executing e4791b4800f431cf
+@vendoai/harnesses:build: cache bypass, force executing ce02f54943171f0e
+@vendoai-fixtures/chat-e2e:typecheck: cache bypass, force executing 17f0b5b3f53d2c05
+@vendoai/ui:typecheck: ✓ 784 modules transformed.
+@vendoai/automations:build: $ tsc -p tsconfig.json
+@vendoai/automations:typecheck: $ tsc -p tsconfig.json --noEmit
+@vendoai/ui:build: $ node scripts/build-jail-runtime.mjs
+@vendoai/harnesses:build: $ tsc -p tsconfig.json
+@vendoai/harnesses:typecheck: $ tsc -p tsconfig.json --noEmit
+@vendoai/ui:build: vite v6.4.3 building for production...
+@vendoai/ui:build: transforming...
+@vendoai-fixtures/chat-e2e:typecheck: $ tsc -p tsconfig.json --noEmit
+@vendoai/ui:typecheck: rendering chunks...
+@vendoai/ui:typecheck: ✓ built in 3.55s
+@vendoai/ui:typecheck: [ui] generated jail runtime (942092 bytes)
+@vendoai/ui:typecheck: $ tsc -p tsconfig.json --noEmit
+@vendoai-fixtures/automations-e2e:typecheck: cache bypass, force executing 98d22dd3e929f376
+@vendoai-fixtures/automations-e2e:typecheck: $ tsc -p tsconfig.json --noEmit
+@vendoai/ui:build: ✓ 784 modules transformed.
+@vendoai/ui:build: rendering chunks...
+@vendoai/ui:build: ✓ built in 2.10s
+@vendoai/ui:build: [ui] generated jail runtime (942092 bytes)
+@vendoai/ui:build: $ tsc -p tsconfig.json
+@vendoai/ui:build: $ node scripts/build-eject-templates.mjs
+@vendoai/ui:build: [ui] assembled eject templates v0.7.0: thread (10 files), activities (1 files)
+genui-bench:typecheck: cache bypass, force executing 2b886185b079aadb
+@vendoai/vendo:typecheck: cache bypass, force executing fcf249568640493e
+@vendoai-fixtures/host-app:typecheck: cache bypass, force executing 4a0489579c6e2be8
+@vendoai/vendo:build: cache bypass, force executing 2a8cb790392ef314
+video-studio:typecheck: cache bypass, force executing 360c3cbe0ea98239
+@vendoai-fixtures/host-app:typecheck: $ tsc --noEmit
+video-studio:typecheck: $ tsc -p tsconfig.json --noEmit
+genui-bench:typecheck: $ tsc --noEmit
+@vendoai/vendo:typecheck: $ pnpm run build:playground
+@vendoai/vendo:build: $ pnpm run build:playground
+@vendoai/vendo:build: $ node scripts/build-playground.mjs
+@vendoai/vendo:typecheck: $ node scripts/build-playground.mjs
+@vendoai/vendo:typecheck: [vendo] generated playground bundle (2941915 bytes)
+@vendoai/vendo:build: [vendo] generated playground bundle (2941915 bytes)
+@vendoai/vendo:typecheck: [vendo] generated embed bundle (2895182 bytes)
+@vendoai/vendo:typecheck: $ tsc -p tsconfig.json --noEmit && tsc -p tsconfig.docs-check.json --noEmit
+@vendoai/vendo:build: [vendo] generated embed bundle (2895182 bytes)
+@vendoai/vendo:build: $ tsc -p tsconfig.json
+vendoai:typecheck: cache bypass, force executing 1d5675f942b4ede6
+@vendoai-corpus/express-host:typecheck: cache bypass, force executing 1ecc49ac5ca3db7c
+@vendoai/corpus-harness:typecheck: cache bypass, force executing 0b30c3e5adadde77
+@vendoai-examples/mastra-agent:typecheck: cache bypass, force executing 518940b0ded57f0b
+@vendoai-fixtures/integration:typecheck: cache bypass, force executing 17ade8c02f977efe
+@vendoai/redteam-e2e:typecheck: cache bypass, force executing 0807bcb93c206455
+demo-template:build: cache bypass, force executing 911fe149053c9dc7
+@vendoai-fixtures/integration-browser:typecheck: cache bypass, force executing 9b116eeb0c73ad59
+@vendoai-fixtures/mcp-e2e:typecheck: cache bypass, force executing 9e3b2b6b7fcfaef9
+@vendoai-fixtures/mcp-e2e:typecheck: $ tsc -p tsconfig.json --noEmit
+@vendoai-corpus/express-host:typecheck: $ tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.test.json --noEmit
+@vendoai-examples/mastra-agent:typecheck: $ tsc -p tsconfig.json --noEmit
+@vendoai-fixtures/integration:typecheck: $ tsc -p tsconfig.json --noEmit
+demo-template:build: $ vendo sync . --no-ai
+@vendoai/corpus-harness:typecheck: $ tsc -p tsconfig.json --noEmit
+vendoai:typecheck: $ tsc -p tsconfig.json --noEmit
+@vendoai-fixtures/integration-browser:typecheck: $ tsc -p tsconfig.json --noEmit
+@vendoai/redteam-e2e:typecheck: $ tsc -p tsconfig.json --noEmit
+demo-template:build: tools: +0 -0 ~0
+demo-template:build: pins: 0 captured, 0 drifted
+demo-template:build: catalog.json: 0 discovered, 0 registered
+demo-template:build: components: 0 captured, 0 updated
+demo-template:build: $ next build
+demo-template:build: ▲ Next.js 16.2.11 (Turbopack)
+demo-template:build: 
+demo-template:build:   Creating an optimized production build ...
+demo-template:build: Turbopack build encountered 1 warnings:
+demo-template:build: ./examples/demo-template/next.config.ts
+demo-template:build: Encountered unexpected file in NFT list
+demo-template:build: A file was traced that indicates that the whole project was traced unintentionally. Somewhere in the import trace below, there are:
+demo-template:build: - filesystem operations (like path.join, path.resolve or fs.readFile), or
+demo-template:build: - very dynamic requires (like require('./' + foo)).
+demo-template:build: To resolve this, you can
+demo-template:build: - remove them if possible, or
+demo-template:build: - only use them in development, or
+demo-template:build: - make sure they are statically scoped to some subfolder: path.join(process.cwd(), 'data', bar), or
+demo-template:build: - add ignore comments: path.join(/*turbopackIgnore: true*/ process.cwd(), bar)
+demo-template:build: 
+demo-template:build: Import trace:
+demo-template:build:   App Route:
+demo-template:build:     ./examples/demo-template/next.config.ts
+demo-template:build:     ./packages/guard/dist/policy.js
+demo-template:build:     ./packages/guard/dist/guard.js
+demo-template:build:     ./packages/vendo/dist/server.js
+demo-template:build:     ./examples/demo-template/src/app/api/vendo/[...vendo]/route.ts
+demo-template:build: 
+demo-template:build: 
+demo-template:build: ✓ Compiled successfully in 4.1s
+demo-template:build:   Running TypeScript ...
+demo-template:build:   Finished TypeScript in 1108ms ...
+demo-template:build:   Collecting page data using 9 workers ...
+demo-template:build: [vendo] VENDO_BASE_URL is not set in production. Present-mode host tool calls that need to forward the caller's credentials will fail instead of running unauthenticated. Set VENDO_BASE_URL to this deployment's public origin and restart the server.
+demo-template:build: [vendo] model: no model credential found
+demo-template:build: [vendo] Vendo found no model key. Set ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY in .env.local (with the matching @ai-sdk provider installed), or run `vendo login` for a free dev key. Production always needs a real server-side key.
+demo-template:build:   Generating static pages using 9 workers (0/3) ...
+demo-template:build: ✓ Generating static pages using 9 workers (3/3) in 148ms
+demo-template:build:   Finalizing page optimization ...
+demo-template:build: 
+demo-template:build: Route (app)
+demo-template:build: ┌ ○ /
+demo-template:build: ├ ○ /_not-found
+demo-template:build: ├ ƒ /api/items
+demo-template:build: ├ ƒ /api/items/[id]/archive
+demo-template:build: ├ ƒ /api/vendo/[...vendo]
+demo-template:build: ├ ƒ /demo-status
+demo-template:build: └ ƒ /vendo
+demo-template:build: 
+demo-template:build: 
+demo-template:build: ○  (Static)   prerendered as static content
+demo-template:build: ƒ  (Dynamic)  server-rendered on demand
+demo-template:build: 
+@vendoai/bench:typecheck: cache bypass, force executing ea17df51b13c956b
+@vendoai/bench:typecheck: $ tsc -p tsconfig.json --noEmit
+
+ Tasks:    43 successful, 43 total
+Cached:    0 cached, 43 total
+  Time:    30.783s 
+
+
+EXIT=0

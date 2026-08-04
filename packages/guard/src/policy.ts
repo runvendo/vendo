@@ -16,6 +16,7 @@ const DEFAULT_POLICY_FILE = ".vendo/policy.json";
 const POLICY_PRESET_RULES: Record<PolicyPresetName, PolicyRule[]> = {
   cautious: [
     { match: { risk: "destructive" }, action: "ask" },
+    { match: { risk: "ungraded" }, action: "ask" },
     { match: { risk: "write" }, action: "ask" },
     { match: { risk: "read" }, action: "run" },
   ],
@@ -23,6 +24,11 @@ const POLICY_PRESET_RULES: Record<PolicyPresetName, PolicyRule[]> = {
     { match: { risk: "read" }, action: "run" },
     { match: { risk: "write" }, action: "block" },
     { match: { risk: "destructive" }, action: "block" },
+    // D3 — `ungraded` behaves like `destructive`. Leaving it to the guard's
+    // ask-default would have INVERTED this preset: the one posture that blocks
+    // a known write would have offered the user an approve button for a tool
+    // nobody has graded, which could be a write.
+    { match: { risk: "ungraded" }, action: "block" },
   ],
   autopilot: [{ match: {}, action: "run" }],
 };

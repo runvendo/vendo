@@ -72,13 +72,16 @@ describe("lane-cards picks", () => {
     expect(screen.getByLabelText("Real tool inputs").closest("details")).toBe(details);
   });
 
-  it("1-A: a destructive ask keeps every input in plain sight (no fold)", () => {
+  it("1-A: a destructive ask keeps every input in plain sight (no fold) — and still says what it does", () => {
     const critical: ApprovalRequest = {
       ...slackApproval,
       descriptor: { ...slackApproval.descriptor, risk: "destructive" },
     };
     render(<VendoProvider client={client}><ApprovalCard approval={critical} onDecide={() => undefined} /></VendoProvider>);
-    expect(document.querySelector(".fl-approval-consequence-line")).toBeNull();
+    // This used to assert NO consequence line on a critical ask, which left the
+    // money card with the robotic fallback. The exemption is about the FOLD, not
+    // the sentence: maximum scrutiny means the sentence AND the open fields.
+    expect(document.querySelector(".fl-approval-consequence-line")?.textContent).toContain("#renewals");
     expect(document.querySelector("details.fl-approval-details")).toBeNull();
     expect(screen.getByLabelText("Real tool inputs")).toBeTruthy();
   });

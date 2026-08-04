@@ -1,0 +1,14 @@
+### PROOF 5 — genui-bench maxBuffer RESTORED (64 MB, run.ts:117-121)
+$ pnpm exec vitest run runner/run.test.ts
+
+
+ RUN  v3.2.7 /Users/yousefh/orca/workspaces/flowlet/ui-s1-fixdefects/tools/genui-bench
+
+ ✓ runner/run.test.ts (11 tests) 452ms
+   ✓ readGitStateFromCli > survives a tracked diff larger than Node's default 1 MB buffer  325ms
+
+ Test Files  1 passed (1)
+      Tests  11 passed (11)
+   Start at  13:56:19
+   Duration  902ms (transform 59ms, setup 0ms, collect 97ms, tests 452ms, environment 0ms, prepare 107ms)
+

@@ -1,0 +1,27 @@
+<Plan name="Money HQ" display="stage">
+  streamId          vendo-view:app_moneyhq
+  part.type         data-vendo-view
+  part.appId        app_moneyhq
+  payload.display   "stage"
+  payload keys      formatVersion, root, nodes, queries, display, streaming
+  skeleton nodes    12 (tabs: Overview / Spending)
+
+<Plan name="Money HQ" display="inline">
+  streamId          vendo-view:app_moneyhq
+  part.type         data-vendo-view
+  part.appId        app_moneyhq
+  payload.display   "inline"
+  payload keys      formatVersion, root, nodes, queries, display, streaming
+  skeleton nodes    12 (tabs: Overview / Spending)
+
+<Plan name="Money HQ">
+  streamId          vendo-view:app_moneyhq
+  part.type         data-vendo-view
+  part.appId        app_moneyhq
+  payload.display   undefined   (key absent)
+  payload keys      formatVersion, root, nodes, queries, streaming
+  skeleton nodes    12 (tabs: Overview / Spending)
+
+wire envelope     data.payload.display = "stage" (schema parse ok: true)
+
+unparseable plan → no part emitted (law holds)

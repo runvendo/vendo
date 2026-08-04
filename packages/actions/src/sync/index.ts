@@ -12,18 +12,21 @@ import {
   type SyncReport,
   type ToolOverride,
   type ToolsFile,
-  type UnresolvedPin,
 } from "../formats.js";
 import { bindingIdentity, clearAliasCache, withUniqueNames, writeIfChanged, type SourcedExtractedTool } from "./common.js";
 import { compilerFloorWarning } from "./compiler-gate.js";
 import { scanComponentCatalog } from "./catalog-scan.js";
 import { writeCatalog } from "./catalog.js";
+import { captureHostComponents } from "./components.js";
 import { runExtractors } from "./extractors.js";
 import { capturePins } from "./pins.js";
 
 export type SyncReportWithWarnings = SyncReport & {
   warnings: string[];
-  unresolvedPins: UnresolvedPin[];
+  /** Loud `<Remixable>` wrapper errors ("file:line — message"). The CLI fails
+   *  the run on them: a wrapper that cannot capture is a defended constraint,
+   *  not a degradation. */
+  remixableErrors: string[];
 };
 
 function definedOverride(override: ToolOverride): ToolOverride {
@@ -271,18 +274,41 @@ export async function vendoSync(options: {
   await writeIfChanged(toolsPath, `${JSON.stringify(extracted, null, 2)}\n`);
   const catalogScan = await scanComponentCatalog(root);
   warnings.push(...catalogScan.warnings);
-  await writeCatalog(out, catalogScan.entries);
+  const catalog = await writeCatalog(out, catalogScan.entries);
   const pins = await capturePins(root, out, new Set(overrides?.remix?.ignoreSlots ?? []));
   warnings.push(...pins.warnings);
+  // The host's OWN registered components, captured for real so the console's
+  // gallery renders them instead of a grey labeled block. Shares the pin walk's
+  // app-root stylesheets — one project, one set of root CSS.
+  const components = await captureHostComponents({
+    root,
+    out,
+    sites: catalogScan.sites,
+    styles: pins.styles,
+    catalog: catalog.entries,
+    degraded: catalogScan.degraded,
+  });
+  warnings.push(...components.warnings);
   // One report-level warning when any loader rejected a too-old host compiler
   // (the per-extractor "skipped" lines say what degraded; this says why).
   const floorWarning = compilerFloorWarning();
   if (floorWarning !== null) warnings.push(floorWarning);
   const report: SyncReportWithWarnings = {
     ...comparison,
-    pins: { captured: pins.captured, drifted: pins.drifted },
-    unresolvedPins: pins.unresolved,
+    pins: {
+      captured: pins.captured,
+      drifted: pins.drifted,
+      ...(pins.pruned.length === 0 ? {} : { pruned: pins.pruned }),
+    },
+    remixableErrors: pins.errors,
     catalog: { discovered: catalogScan.discovered, registered: catalogScan.registered },
+    components: {
+      captured: components.captured,
+      drifted: components.drifted,
+      ...(components.pruned.length === 0 ? {} : { pruned: components.pruned }),
+      ...(components.skipped.length === 0 ? {} : { skipped: components.skipped }),
+      ...(components.withoutSamples.length === 0 ? {} : { withoutSamples: components.withoutSamples }),
+    },
     warnings,
   };
   if (options.strict && report.breaking.length > 0) {

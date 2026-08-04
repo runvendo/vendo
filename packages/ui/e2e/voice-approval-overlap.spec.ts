@@ -4,7 +4,7 @@ import { openScenario } from "./helpers.js";
 /**
  * Regression for the demo-bank /vendo composition (VendoThread + VendoStage
  * mounted as siblings under one bounded, scrollable flex column — see
- * apps/demo-bank/src/app/vendo/page.tsx and docs/verification/
+ * examples/demo-bank/src/app/vendo/page.tsx and docs/verification/
  * simplify-v2-wave2/README.md): at short viewport heights, once voice goes
  * active (VendoStage's consent bar + caption + feed rows claim real height
  * from the shared flex column), the in-conversation approval card's own

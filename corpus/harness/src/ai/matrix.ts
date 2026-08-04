@@ -457,7 +457,7 @@ export function buildAiScoreboard(input: {
  *  label accuracy first, then the channel's own integrity, then prose. */
 const DIMENSION_COLUMNS = [
   { key: "risk", header: "Risk accuracy" },
-  { key: "critical", header: "Critical" },
+  { key: "confirmEach", header: "Confirm each" },
   { key: "wake", header: "Wake" },
   { key: "evidence", header: "Evidence" },
   { key: "descriptions", header: "Descriptions" },

@@ -1,0 +1,34 @@
+{
+  "a_reachedBuild": true,
+  "a_movingDuringBuild": [
+    "fl-boot-hairline"
+  ],
+  "a_beatsDuringBuild": [
+    "Get spending insights· 6 data"
+  ],
+  "a_barLabel": "Building your view…",
+  "a_appBeats": [],
+  "b_failed": true,
+  "b_settled": true,
+  "b_movingAtSettle": [],
+  "b_stillBuildingAtSettle": {
+    "hairlines": 0,
+    "buildingBars": 0,
+    "appCards": 0,
+    "formingSkeletons": 0,
+    "stageOnSkeleton": 0,
+    "stageEmptyState": 1
+  },
+  "b_cardsAtSettle": [],
+  "b_failureProse": [
+    "Couldn't build the appI couldn't finish building that view — nothing was changed. Ask again and I'll try a different approach.",
+    "Couldn't build the appI couldn't finish building that view — nothing was changed. Ask again and I'll try a different approach."
+  ],
+  "b_beatsAtSettle": [
+    "Build an app — couldn't finish",
+    "Couldn't build the app",
+    "Build an app — couldn't finish",
+    "Couldn't build the app"
+  ],
+  "b_codeShapedInProse": []
+}

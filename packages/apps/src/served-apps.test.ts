@@ -1,5 +1,6 @@
 import { VENDO_APP_FORMAT, VendoError, type AppDocument, type RunContext, type ToolRegistry, type VendoTheme } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
+import { createAppHistory } from "./history.js";
 import { createApps } from "./index.js";
 import { fakeBoxSandbox, type FakeBoxAgent } from "./testing/fake-box.js";
 import { guardFixture, memoryStore, scriptedLanguageModel, seedAppRow } from "./testing/index.js";
@@ -51,6 +52,32 @@ const kanbanAgent: FakeBoxAgent = ({ box }) => {
   return { ok: true, summary: "serving the kanban web app", filesChanged: ["/app/server.js"], testsRun: 2, fns: ["listInvoices"], servesUi: true };
 };
 
+/**
+ * The model for these tests, driven by what it is asked rather than by call
+ * order (the pipeline interleaves brain turns, fill workers and the reviewer).
+ *
+ * Layer 3 is declared in the PLAN now: the brain writes `<Server kind="box"
+ * served>` for an interaction no component can express, and a plain
+ * `<Server kind="box">` for ordinary custom server work. That declaration is one
+ * of the two signals the surface flip needs — the host's own `GET /` check is
+ * the other.
+ */
+const servedAppsBrain = (call: { prompt: Array<{ content: string | Array<{ text?: string }> }> }): string => {
+  const text = call.prompt
+    .map(({ content }) => typeof content === "string" ? content : content.map(({ text: part }) => part ?? "").join(""))
+    .join("\n");
+  // A fill worker writes one group's markup; it never sees an instruction.
+  if (text.includes("YOUR SECTION")) return '<Text text="Board"/>';
+  const said = text.split("THEY ARE ASKING NOW:").pop() ?? "";
+  const server = /kanban|drag-and-drop/i.test(said)
+    ? '<Server kind="box" served why="Dragging cards between columns is an interaction no component can express."/>'
+    : '<Server kind="box" why="Custom matching logic no tool composition can express."/>';
+  return `<Plan name="Invoice board">
+  <Group tab="Board"><Leaf component="Text" purpose="the board"/></Group>
+  ${server}
+</Plan>`;
+};
+
 const setup = (options: {
   agent?: FakeBoxAgent;
   experimentalServedApps?: boolean;
@@ -65,7 +92,7 @@ const setup = (options: {
     guard,
     tools,
     catalog: [],
-    model: scriptedLanguageModel(options.edit ?? '<Edit><SetName name="unused"/></Edit>'),
+    model: scriptedLanguageModel(options.edit ?? servedAppsBrain),
     // Wave 9 — served apps (layer 3) require machines (layer 2); every setup
     // here exercises box machinery, so the machines flag is always on.
     experimentalMachines: true,
@@ -84,19 +111,11 @@ const expectServedAppsRefusal = async (run: () => Promise<unknown>): Promise<voi
 };
 
 describe("experimental flag OFF (the default)", () => {
-  it("refuses layer-3 generation on create with a typed error naming the flag", async () => {
-    const { runtime } = setup();
-    await expectServedAppsRefusal(() => runtime.create({ prompt: LAYER3_INSTRUCTION }, ctx()));
-  });
-
-  it("refuses a layer-3 edit instruction the same way (no box work happens)", async () => {
-    const { store, sandbox, runtime } = setup();
-    await seedAppRow(store, treeApp(), "user_ada");
-    await expectServedAppsRefusal(() => runtime.edit("app_served", LAYER3_INSTRUCTION, ctx()));
-    expect(sandbox.machines).toHaveLength(0);
-    // The app is untouched: still the tree.
-    expect((await runtime.get("app_served", ctx()))?.ui).toBe("tree");
-  });
+  // The pre-emptive typed refusal on create and edit is GONE with the regex
+  // judge that guessed a layer-3 ask from the instruction text
+  // (`instructionRequiresServedApp`). A lane this host does not have is now
+  // stated to the brain as fact before it plans, and the ask comes back as an
+  // honest <Cannot> the person reads — covered by build-failure.test.ts.
 
   it("refuses open() on a served app that exists from elsewhere", async () => {
     const { store, runtime } = setup();
@@ -108,10 +127,7 @@ describe("experimental flag OFF (the default)", () => {
     // A layer-2 instruction whose box work sneaks in servesUi: the flag is
     // off, so the flip is refused — loudly, in the result issues — and the
     // tree keeps serving.
-    const { store, runtime } = setup({
-      agent: kanbanAgent,
-      edit: '<Edit><Query id="data" tool="fn:listInvoices"/><Insert into="root"><Text text={data.summary}/></Insert></Edit>',
-    });
+    const { store, runtime } = setup({ agent: kanbanAgent });
     await seedAppRow(store, treeApp(), "user_ada");
     // Wave 9 — a box-rung instruction (custom logic): schedule-y phrasing now
     // rides the automations ladder and would never reach the box.
@@ -284,5 +300,36 @@ describe("experimental flag ON: serving + wake-on-open", () => {
     expect(result.failure).toBeUndefined();
     expect(result.app.ui).toBe("http");
     expect(sandbox.machines.length).toBeGreaterThan(machinesBefore);
+  });
+
+  it("keeps version history at its 50 cap — the box path prunes like every other write", async () => {
+    // The box path appends its own undo point (the box already landed the write,
+    // so that version is real history the moment it exists) and is therefore the
+    // third site the cap is applied at. Nothing pinned it: dropping its
+    // `pruneHistory` call left the log growing past 50 with the suite green.
+    const { store, runtime } = await flipped();
+    const history = createAppHistory(store);
+    const current = (await runtime.get("app_served", ctx()))!;
+    // Filled to EXACTLY the cap, counting the version the 2→3 flip itself left —
+    // the oldest one in the log, so it is the one the box edit's prune must drop.
+    const existing = (await runtime.history("app_served", ctx()).list()).length;
+    for (let index = 1; index <= 50 - existing; index += 1) {
+      await history.append("app_served", current, {
+        at: new Date(1_754_000_000_000 + index).toISOString(),
+        intent: `Edit ${index}`,
+        rung: 3,
+      });
+    }
+    expect(await runtime.history("app_served", ctx()).list()).toHaveLength(50);
+
+    const result = await runtime.edit("app_served", "Make the board header blue", ctx());
+    expect(result.failure).toBeUndefined();
+
+    const versions = await runtime.history("app_served", ctx()).list();
+    // The cap held with this edit's version in it, and the oldest undo point in
+    // the log — one of the two the 2→3 flip left — is what paid for it.
+    expect(versions).toHaveLength(50);
+    expect(versions[0]?.intent).toBe("Make the board header blue");
+    expect(versions.filter(({ intent }) => intent === LAYER3_INSTRUCTION)).toHaveLength(1);
   });
 });

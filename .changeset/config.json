@@ -11,6 +11,7 @@
       "@vendoai/guard",
       "@vendoai/apps",
       "@vendoai/automations",
+      "@vendoai/harnesses",
       "@vendoai/ui",
       "@vendoai/mcp",
       "@vendoai/knowledge",

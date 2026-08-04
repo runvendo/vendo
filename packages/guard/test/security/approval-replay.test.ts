@@ -8,7 +8,7 @@ import { FixtureTools, alice, bob, call, context } from "../fixtures/tools.js";
 // the user saw. They never replay across uses, across present→away, or across
 // subjects.
 describe("approval replay is single-use and context-pinned", () => {
-  it("resumes an approved non-critical call once, then parks the identical replay", async () => {
+  it("resumes an approved non-confirmEach call once, then parks the identical replay", async () => {
     const store = createMemoryStore();
     const guard = createGuard({ store, policy: { rules: [{ match: {}, action: "ask" }] } });
     const tools = new FixtureTools();

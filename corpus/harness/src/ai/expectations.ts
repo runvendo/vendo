@@ -15,7 +15,7 @@ import {
  * server-action module#export) and add the judgment the AI pass is scored on:
  *
  * - `risk`: the correct semantic risk grade for the tool.
- * - `critical`: the tool is irreversible and must carry a critical mark.
+ * - `confirmEach`: the tool is irreversible and must carry a confirmEach mark.
  * - `wake`: only meaningful for statically-unclassifiable (disabled) tools.
  *   `false` pins a tool that must stay asleep; when omitted, a disabled tool
  *   with a labeled risk is expected to be woken with that grade.
@@ -25,7 +25,7 @@ const riskSchema = z.enum(["read", "write", "destructive"]);
 
 const aiJudgmentFields = {
   risk: riskSchema,
-  critical: z.boolean().optional(),
+  confirmEach: z.boolean().optional(),
   wake: z.boolean().optional(),
 };
 

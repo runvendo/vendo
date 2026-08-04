@@ -123,6 +123,17 @@ describe("VendoStage", () => {
     expect(await screen.findByText("Approved: Send email")).toBeTruthy();
   });
 
+  it("speaks a declared cents amount as money — the voice card's one fact gates the same money", async () => {
+    // Wave-1 live proof E2c on the voice surface: `approvalFact` picks `amount`
+    // FIRST, so a $47.50 transfer confirmed by voice said "Amount: 4750".
+    const driver = new ScriptedVoiceDriver();
+    renderStage(driver, { client: testClient({ pending: async () => [moneyApproval] }) });
+    fireEvent.click(screen.getByRole("button", { name: "Start voice" }));
+
+    expect(await screen.findByText("Amount: $47.50")).toBeTruthy();
+    expect(screen.queryByText("Amount: 4750")).toBeNull();
+  });
+
   it("uses the named hand-confirm register for critical approvals and records decline", async () => {
     const driver = new ScriptedVoiceDriver();
     const decide = vi.fn(async () => undefined);
@@ -130,7 +141,7 @@ describe("VendoStage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Start voice" }));
 
     const confirm = await screen.findByRole("button", { name: "Confirm — Delete invoice" });
-    expect(confirm.classList.contains("fl-btn-critical")).toBe(true);
+    expect(confirm.classList.contains("fl-btn-ceremony")).toBe(true);
     expect(confirm.closest(".fl-voice-consent")?.classList.contains("is-critical")).toBe(true);
     expect(screen.getByText("Confirm this action by hand")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Decline" }));
@@ -151,19 +162,40 @@ describe("VendoStage", () => {
     expect(approval.textContent).not.toContain("chat · present");
   });
 
-  it("shows the driver error and Retry starts a clean session", () => {
+  it("shows a failed session and Retry starts a clean one", () => {
+    // ⚠️ TEST EDIT (M36): this required the DRIVER's own sentence in the banner.
+    // The real driver builds that string from any thrown Error's message
+    // (realtime-driver.ts), so the line carried raw exceptions —
+    // "NotAllowedError: Permission denied", "Failed to fetch", a provider 401.
+    // The person gets the standing line with Retry beside it; the driver's text
+    // is dev-mode only (next test).
     const driver = new ScriptedVoiceDriver();
     renderStage(driver);
     fireEvent.click(screen.getByRole("button", { name: "Start voice" }));
 
-    act(() => driver.emit({ type: "error", error: { message: "Microphone permission was denied" } }));
+    act(() => driver.emit({ type: "error", error: { message: "NotAllowedError: Permission denied" } }));
     const alert = screen.getByRole("alert");
-    expect(alert.textContent).toContain("Microphone permission was denied");
+    expect(alert.textContent).toContain("Voice session failed");
+    expect(alert.textContent).not.toContain("NotAllowedError");
     fireEvent.click(within(alert).getByRole("button", { name: "Retry" }));
 
     expect(driver.starts).toBe(2);
     expect(screen.getByRole("status", { name: "Voice status" }).textContent).toBe("Connecting…");
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("keeps the driver's own sentence for developers — dev mode only", () => {
+    const previous = process.env.NODE_ENV;
+    process.env.NODE_ENV = "development";
+    try {
+      const driver = new ScriptedVoiceDriver();
+      renderStage(driver);
+      fireEvent.click(screen.getByRole("button", { name: "Start voice" }));
+      act(() => driver.emit({ type: "error", error: { message: "NotAllowedError: Permission denied" } }));
+      expect(screen.getByRole("alert").textContent).toContain("NotAllowedError: Permission denied");
+    } finally {
+      process.env.NODE_ENV = previous;
+    }
   });
 
   it("toggles mute with an announced pressed state", () => {
@@ -357,9 +389,24 @@ const actApproval: ApprovalRequest = {
 const criticalApproval: ApprovalRequest = {
   ...actApproval,
   id: "apr_critical",
-  call: { id: "call_critical", tool: "host_invoice_delete", args: { invoiceId: "inv_42" } },
+  call: { id: "call_confirm_each", tool: "host_invoice_delete", args: { invoiceId: "inv_42" } },
   descriptor: { name: "host_invoice_delete", description: "Delete invoice", inputSchema: {}, risk: "destructive" },
   inputPreview: "invoice inv_42",
+};
+
+const moneyApproval: ApprovalRequest = {
+  ...actApproval,
+  id: "apr_money",
+  call: { id: "call_money", tool: "host_transferMoney", args: { amount: 4750, recipient_name: "Acme Utilities" } },
+  descriptor: {
+    name: "host_transferMoney",
+    title: "Send money",
+    description: "Send money to a person from the user's checking account.",
+    // The host's declaration — the only thing that can tell 4750 from $4,750.
+    inputSchema: { type: "object", properties: { amount: { type: "integer", description: "Amount in integer cents" } } },
+    risk: "destructive",
+  },
+  inputPreview: "amount 4750",
 };
 
 const automationApproval: ApprovalRequest = {

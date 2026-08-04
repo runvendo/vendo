@@ -106,6 +106,47 @@ export function inferFieldSemantic(name: string, values: readonly unknown[]): Fi
   return { kind: "plain" };
 }
 
+// ---------------------------------------------------------------------------
+// Declaration (input args). Not inference: the caller has one value, and a
+// magnitude cannot tell cents from dollars.
+// ---------------------------------------------------------------------------
+
+// The same two regexes `amountUnitIssue` (packages/apps/src/call.ts) and
+// `unitAnnotation` (apps generation contracts) already classify unit metadata
+// with. Kept here so the consent surface reads the host's declaration through
+// the same rule the call seam enforces it with.
+const CENTS_DESCRIPTION = /\bcents\b|\bminor units?\b/i;
+const DOLLARS_DESCRIPTION = /\bdollars\b/i;
+
+/**
+ * What the HOST declared about one tool-input field's money unit.
+ *
+ * `"cents"` / `"dollars"` — declared, in the property's description or by a
+ * name that states its own unit (`amountCents`). `"unknown"` — the field is
+ * money-shaped but nobody said in which unit, so a renderer must NOT present it
+ * as an amount. `undefined` — not money at all; leave it alone.
+ *
+ * Wave-1 live proof E2c is why this exists: a $47.50 payment's consent card
+ * rendered `amount 4750`, which reads as $4,750 — a 100× misread on the one
+ * surface that gates irreversible money movement. Declaration only, never a
+ * guess from the value: mislabelling a non-money integer as currency would be
+ * the same defect pointing the other way.
+ */
+export function declaredMoneyUnit(
+  field: string,
+  schema: Record<string, unknown> | undefined,
+): "cents" | "dollars" | "unknown" | undefined {
+  const named = CENTS_NAME.test(field) ? "cents" as const : undefined;
+  if (named === undefined && !(MONEY_NAME.test(field) && !NOT_MONEY_NAME.test(field))) return undefined;
+  const description = typeof schema?.description === "string" ? schema.description : "";
+  const saysCents = CENTS_DESCRIPTION.test(description);
+  const saysDollars = DOLLARS_DESCRIPTION.test(description);
+  // Contradictory metadata declares nothing — `unitAnnotation`'s own rule.
+  const described = saysCents === saysDollars ? undefined : saysCents ? "cents" as const : "dollars" as const;
+  if (named !== undefined && described !== undefined && named !== described) return "unknown";
+  return named ?? described ?? "unknown";
+}
+
 /** Resolve a binding's RFC 6901 pointer against collapsed-path semantics:
  *  numeric (array) segments drop out. */
 export function semanticAtPointer(semantics: ToolSemantics, pointer: string): FieldSemantic | undefined {

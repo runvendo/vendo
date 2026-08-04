@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/vendo",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "The Vendo umbrella: default composition, public wire routes, React provider, and the vendo CLI.",
   "keywords": [
     "ai",
@@ -109,6 +109,7 @@
     "@vendoai/automations": "workspace:*",
     "@vendoai/core": "workspace:*",
     "@vendoai/guard": "workspace:*",
+    "@vendoai/harnesses": "workspace:*",
     "@vendoai/knowledge": "workspace:*",
     "@vendoai/mcp": "workspace:*",
     "@vendoai/store": "workspace:*",

@@ -99,14 +99,14 @@ async function writeInitOutput(
             name: "host_listInvoices",
             description: "List invoices.",
             inputSchema: { type: "object", properties: {} },
-            risk: "read",
+            risk: "ungraded",
             binding: { kind: "route", method: "GET", path: "/api/invoices", argsIn: "query" },
           },
           {
             name: "host_createInvoice",
             description: "Create invoice.",
             inputSchema: { type: "object", properties: {} },
-            risk: options.createMutating === false ? "read" : "write",
+            risk: options.createMutating === false ? "read" : "ungraded",
             binding: { kind: "route", method: "POST", path: "/api/invoices", argsIn: "body" },
           },
           ...(options.extraTool
@@ -114,7 +114,7 @@ async function writeInitOutput(
                 name: "host_listCustomers",
                 description: "List customers.",
                 inputSchema: { type: "object", properties: {} },
-                risk: "read",
+                risk: "ungraded",
                 binding: { kind: "route" as const, method: "GET" as const, path: "/api/customers", argsIn: "query" as const },
               }]
             : []),
@@ -232,7 +232,7 @@ describe("runScoredLayer", () => {
             name: "host_polls_list",
             description: "tRPC query polls.list",
             inputSchema: { type: "object", properties: {} },
-            risk: "read",
+            risk: "ungraded",
             binding: { kind: "trpc", procedure: "polls.list", type: "query", mount: "/api/trpc" },
           },
           {
@@ -307,7 +307,7 @@ describe("runScoredLayer", () => {
       JSON.stringify({
         format: "vendo/tools@3",
         tools: [
-          graphqlTool("host_api_keys", "apiKeys", "query", "read"),
+          graphqlTool("host_api_keys", "apiKeys", "query", "ungraded"),
           graphqlTool("host_create_api_key", "createApiKey", "mutation", "write"),
         ],
       }, null, 2) + "\n",
@@ -363,14 +363,14 @@ describe("runScoredLayer", () => {
             name: "host_create_invoice",
             description: "server action app/actions/invoices.ts#createInvoice",
             inputSchema: { type: "object", properties: {} },
-            risk: "write",
+            risk: "ungraded",
             binding: { kind: "server-action", module: "app/actions/invoices.ts", exportName: "createInvoice", params: ["input"] },
           },
           {
             name: "host_delete_invoice",
             description: "server action app/actions/invoices.ts#deleteInvoice",
             inputSchema: { type: "object", properties: {} },
-            risk: "destructive",
+            risk: "ungraded",
             binding: { kind: "server-action", module: "app/actions/invoices.ts", exportName: "deleteInvoice", params: ["id"] },
           },
         ],

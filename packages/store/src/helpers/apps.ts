@@ -12,6 +12,12 @@ export function appStore(store: VendoStore): {
   list(principal: Principal): Promise<AppRow[]>;
   setEnabled(id: AppId, enabled: boolean): Promise<void>;
   delete(id: AppId): Promise<void>;
+  /** Build contract §9.5 — the SECOND sanctioned door through 02-store §2's
+      "rows never cross subjects" (the first is anon→signed-in adoption): a
+      promote moves the canonical app into an org, and the org id becomes the
+      row subject verbatim. Guarded on the CURRENT subject, so a promote can
+      only ever move a row its caller was proven to own. */
+  promote(id: AppId, from: string, orgId: string): Promise<void>;
 } {
   const db = dbFor(store);
   return {
@@ -53,6 +59,21 @@ export function appStore(store: VendoStore): {
     async delete(id) {
       await db.query("DELETE FROM vendo_state WHERE app_id = $1", [id]);
       await db.query("DELETE FROM vendo_apps WHERE id = $1", [id]);
+    },
+    async promote(id, from, orgId) {
+      // Wave 7's rule holds here too: every vendo_apps write door bumps the
+      // token, or a CAS armed before the promote would revert the move.
+      const result = await db.query(
+        `UPDATE vendo_apps SET subject = $3, updated_at = $4, revision = revision + 1
+         WHERE id = $1 AND subject = $2 RETURNING id`,
+        [id, from, orgId, new Date().toISOString()],
+      );
+      if (result.rows.length === 0) {
+        throw new VendoError("conflict", `app ${id} belongs to another subject`);
+      }
+      // Per-user app data (vendo_state, the app's record collections) is keyed
+      // by app id and stays subject-partitioned, so it needs nothing: the org
+      // now owns the app, and each member still sees only their own rows.
     },
   };
 }

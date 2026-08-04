@@ -50,7 +50,10 @@ test("a throwing pin mount falls back to the original host component", async ({ 
 
   // The app open() throws; the pin error boundary shows the original children.
   await expect(page.getByRole("heading", { name: "Original host hero" })).toBeVisible();
-  await expect(page.getByText("Host fallback stayed on screen.")).toBeVisible();
+  // FluidReveal keeps its EXITING layer in the DOM beside the boundary's
+  // recovery children, so this copy resolves twice by text (the heading above
+  // resolves once because getByRole skips the aria-hidden exiting layer).
+  await expect(page.getByText("Host fallback stayed on screen.").first()).toBeVisible();
 
   // Only the deliberately-thrown pin error may reach the page error channel.
   const unexpected = pageErrors.filter(message => !message.includes("pin mount exploded during render"));

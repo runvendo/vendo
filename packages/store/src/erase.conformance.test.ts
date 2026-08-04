@@ -1,3 +1,4 @@
+import { storeFiles } from "./files-store.js";
 import { VendoError, type Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "./backends.test-util.js";
@@ -7,7 +8,7 @@ import { appFixture, approvalFixture, auditFixture, grantFixture } from "./fixtu
 import { appStore, grantStore, registerEphemeralSubject } from "./index.js";
 
 // 02-store §5: "A store-level erase API ... erases by subject (full erasure)
-// or by app, cascading the matching data across all 16 tables, and is
+// or by app, cascading the matching data across every table of §2's map, and is
 // exposed on the umbrella. It is the only sanctioned deletion path for audit
 // rows."
 
@@ -45,7 +46,7 @@ for (const backend of backends()) {
     afterAll(async () => { if (made) await made.cleanup(); });
 
     it("rejects an empty subject", async () => {
-      await expect(eraseStore(made.store).bySubject(""))
+      await expect(eraseStore(made.store, { files: storeFiles(made.store) }).bySubject(""))
         .rejects.toMatchObject<VendoError>({ code: "validation" });
     });
 
@@ -112,7 +113,7 @@ for (const backend of backends()) {
       const bystanderEvent = auditFixture("aud_erase_bystander", { principal: { kind: "user", subject: bystander } });
       await store.records("vendo_audit").put({ id: bystanderEvent.id, data: bystanderEvent });
 
-      const report = await eraseStore(store).bySubject(erased);
+      const report = await eraseStore(store, { files: storeFiles(store) }).bySubject(erased);
       expect(report).toEqual({
         vendo_meta: 0,
         vendo_apps: 1,
@@ -120,6 +121,12 @@ for (const backend of backends()) {
         vendo_blobs: 1,
         vendo_state: 1,
         vendo_threads: 1,
+        // The seeded thread carries an empty transcript, so it owns no message
+        // rows; the cascade is proven on a populated thread in thread-messages.test.ts.
+        vendo_thread_messages: 0,
+        // No selector can reach vendo_effects: the build contract freezes it
+        // without a subject or app column (see ERASE_TABLES).
+        vendo_effects: 0,
         vendo_grants: 1,
         vendo_approvals: 1,
         vendo_audit: 1,
@@ -130,6 +137,10 @@ for (const backend of backends()) {
         vendo_sessions: 0, // durable subject — never registered as a session
         vendo_knowledge_docs: 1,
         vendo_knowledge_chunks: 1,
+        vendo_app_grants: 0, // ...and holds no app-access grant (§9.2)
+        vendo_workspace_files: 0, // this subject wrote no workspace files
+        vendo_workspace_history: 0,
+        workspace_content_objects: 0, // ...so no workspace content was deleted either
       });
 
       // Gone through the doors...
@@ -164,7 +175,7 @@ for (const backend of backends()) {
       const event = auditFixture("aud_erase_anon", { principal: anon });
       await store.records("vendo_audit").put({ id: event.id, data: event });
 
-      const report = await eraseStore(store).bySubject(anon.subject);
+      const report = await eraseStore(store, { files: storeFiles(store) }).bySubject(anon.subject);
       expect(report.vendo_apps).toBe(1);
       expect(report.vendo_records).toBe(1);
       expect(report.vendo_threads).toBe(1);
@@ -176,6 +187,37 @@ for (const backend of backends()) {
       expect(await store.records("vendo_threads").get("thr_erase_anon")).toBeNull();
       expect(await store.records("vendo_audit").get(event.id)).toBeNull();
       expect(await grantStore(store).get("grt_erase_anon")).toBeNull();
+    });
+
+    it("takes the departing person out of vendo_app_grants — the row they hold AND their name on the rows they wrote", async () => {
+      // §9.2's `created_by` is a SUBJECT, kept for audit. A full erasure that
+      // leaves it behind leaves the person's identifier in the store; deleting
+      // the whole row instead would revoke a team's access because the person
+      // who set it up left, so the arrangement stays and the name goes.
+      const store = made.store;
+      const leaver = "user_erase_granter";
+      const grants = store.records("vendo_app_grants");
+      await grants.put({
+        id: "ag_erase_theirs",
+        data: { appId: "app_shared", orgId: "acme", principal: `user:${leaver}`, level: "editor", createdBy: "dana" },
+        refs: { app_id: "app_shared", principal: `user:${leaver}` },
+      });
+      await grants.put({
+        id: "ag_erase_authored",
+        data: { appId: "app_shared", orgId: "acme", principal: "team:acme/finance", level: "viewer", createdBy: leaver },
+        refs: { app_id: "app_shared", principal: "team:acme/finance" },
+      });
+
+      const report = await eraseStore(store, { files: storeFiles(store) }).bySubject(leaver);
+      // Their own access row is deleted and counted...
+      expect(report.vendo_app_grants).toBe(1);
+      expect(await grants.get("ag_erase_theirs")).toBeNull();
+      // ...the team's access survives, with the leaver's name redacted off it.
+      expect(await grants.get("ag_erase_authored")).not.toBeNull();
+      expect(await made.sql(
+        "SELECT created_by FROM vendo_app_grants WHERE id = $1",
+        ["ag_erase_authored"],
+      )).toEqual([{ created_by: "" }]);
     });
   });
 
@@ -189,7 +231,7 @@ for (const backend of backends()) {
     afterAll(async () => { if (made) await made.cleanup(); });
 
     it("rejects an empty appId", async () => {
-      await expect(eraseStore(made.store).byApp(""))
+      await expect(eraseStore(made.store, { files: storeFiles(made.store) }).byApp(""))
         .rejects.toMatchObject<VendoError>({ code: "validation" });
     });
 
@@ -216,7 +258,7 @@ for (const backend of backends()) {
         data: { subject, messages: [] },
       });
 
-      const report = await eraseStore(store).byApp("app_erase_drop");
+      const report = await eraseStore(store, { files: storeFiles(store) }).byApp("app_erase_drop");
       expect(report.vendo_apps).toBe(1);
       expect(report.vendo_records).toBe(1);
       expect(report.vendo_blobs).toBe(1);

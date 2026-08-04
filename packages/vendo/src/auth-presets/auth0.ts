@@ -95,7 +95,7 @@ function tenantJwks(jose: JoseModule, issuer: string): unknown {
  * convention: /auth/login, which natively honors returnTo.
  */
 export function auth0(options: HostAuthPresetOptions = {}): HostAuthPreset {
-  const { secret, user } = options;
+  const { secret, user, memberships, resolvePerson } = options;
 
   const sessionClaims = async (request: Request): Promise<JwtClaims | null> => {
     const token = bearerToken(request);
@@ -116,6 +116,10 @@ export function auth0(options: HostAuthPresetOptions = {}): HostAuthPreset {
 
   return composeHostAuthPreset({
     sessionClaims,
+    // Build contract §9.1 (+ its companion) — handed straight through: the org
+    // chart and the directory are the HOST's, and no preset interprets either.
+    memberships,
+    resolvePerson,
     resolveUser: makeUserResolver(user, userFromNameEmailClaims),
     // Away + MCP execution: the shipped away-token producer half (04 §2.1);
     // the host mounts the matching verify middleware on its API.

@@ -42,7 +42,7 @@ describe("JUDGE_OUTPUT_RULES", () => {
 
 describe("judgmentFacts", () => {
   it("projects judgment fields only — never the machine skeleton", () => {
-    const facts = judgmentFacts([tool("host_a", { critical: true, audience: "operator", disabled: true })]);
+    const facts = judgmentFacts([tool("host_a", { confirmEach: true, audience: "operator", disabled: true })]);
     expect(facts).toContain("host_a");
     expect(facts).toContain("GET /api/host_a");
     expect(facts).toContain("operator");

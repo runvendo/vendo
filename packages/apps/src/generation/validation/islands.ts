@@ -19,7 +19,6 @@ import {
 } from "@vendoai/core";
 import { hasDefaultExport } from "../../pins.js";
 import type { HostToolInfo } from "../engine.js";
-import { islandSubstitutionViolations } from "./capability-substitution.js";
 
 /** Models wrap island TSX in a JSX template-literal expression (`{`…`}`)
  *  despite instructions; strip it deterministically, the way the engine's
@@ -73,7 +72,15 @@ const esbuildTransform = (async () => {
  *  side-effect `import "x"`, `export … from`), dynamic `import("x")`, and
  *  `require("x")`. The jail's sucrase loader rewrites all of these to its
  *  require table, so any specifier here that is not an island-resolvable
- *  module (`ISLAND_STRIPPED_SPECIFIERS`) cannot resolve at runtime. */
+ *  module (`ISLAND_STRIPPED_SPECIFIERS`) cannot resolve at runtime.
+ *
+ *  Deliberately the STRIPPED set, not the wider resolvable one: the jail also
+ *  bundles clsx/tailwind-merge/zod for captured HOST components, but a
+ *  GENERATED island must not reach them. The smoke-render gate evaluates
+ *  islands with `require = () => ({})`, so permitting an import it cannot
+ *  resolve would trade this gate's precise message for a confusing render
+ *  crash one stage later. Islands have the ambient Kit; they do not need
+ *  packages. */
 const IMPORT_SPECIFIER =
   /(?:\bimport\b|\bexport\b)[^'"]*?\bfrom\s*["']([^"']+)["']|\bimport\s*["']([^"']+)["']|\bimport\s*\(\s*["']([^"']+)["']\s*\)|\brequire\s*\(\s*["']([^"']+)["']\s*\)/g;
 
@@ -239,11 +246,6 @@ export const prepareIslands = async (
     // arithmetic over tool-derived values is invented data (the FX-rate
     // class).
     for (const violation of islandDerivedValueViolations(source, requestText === undefined ? undefined : { requestText })) {
-      issues.push(`island "${name}" ${violation}`);
-    }
-    // D5 — a mutating tool called with a hand-typed target/amount is that tool
-    // repurposed for a capability the host lacks (the live Slack-memo transfer).
-    for (const violation of islandSubstitutionViolations(source, tools, requestText)) {
       issues.push(`island "${name}" ${violation}`);
     }
     // The ambient tools contract: literal member access only, every chain

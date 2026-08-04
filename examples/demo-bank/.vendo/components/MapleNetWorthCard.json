@@ -1,0 +1,29 @@
+{
+  "name": "MapleNetWorthCard",
+  "hash": "sha256:9cc3d0ff9f435793bbe9a01fda84b767f4969d19c44207c42f8b380895b49c11",
+  "capturedAt": "2026-08-03T09:06:42.879Z",
+  "module": "src/components/home/net-worth-view.tsx",
+  "entry": "916e8299b3392bb0ad4d71dcced4c89db2b20f956c16027dc10cbcaf155ea8ca",
+  "styles": [
+    {
+      "path": "src/app/globals.css",
+      "ref": "9283964eac86c1f84276b7f21e362a195256a1d1e8f8e8929a4e875487bd9fb4"
+    }
+  ],
+  "bytes": 10697,
+  "sampleProps": {
+    "valueCents": 5490715,
+    "series": [
+      5329117,
+      5446991,
+      5589669,
+      5679262,
+      5733114,
+      5794065,
+      5901309,
+      5748395
+    ],
+    "changeLabel": "▲ 2.3% this month"
+  },
+  "sampleOrigin": "declared"
+}

@@ -18,8 +18,9 @@ const report = (
   tools: { added: [], removed: [], changed },
   breaking,
   pins: { captured: [], drifted: [] },
-  unresolvedPins: [],
+  remixableErrors: [],
   catalog: { discovered: 2, registered: 1 },
+  components: { captured: [], drifted: [] },
   warnings: [],
 });
 
@@ -178,7 +179,27 @@ describe("vendo sync", () => {
     });
 
     expect(exit).toBe(2);
-    expect(messages.errors).toContain("--report requires VENDO_API_KEY or --key");
+    expect(messages.errors).toContain("vendo sync: --report needs a Vendo Cloud key — run `vendo login`, set VENDO_API_KEY, or pass --key.");
+  });
+
+  // Self-serve audit B6: a keyless --report used to complain and exit 0, so a
+  // CI reporting lane stayed green for as long as it never reported anything.
+  it("a keyless --report is a failed run, not a note (exit 1)", async () => {
+    vi.stubEnv("VENDO_API_KEY", "");
+    const messages = captureOutput();
+    const fetchImpl = vi.fn() as typeof fetch;
+
+    const exit = await runSync({
+      targetDir: ".",
+      report: true,
+      output: messages.output,
+      fetchImpl,
+      sync: async () => report(),
+    });
+
+    expect(exit).toBe(1);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(messages.errors).toContain("vendo sync: --report needs a Vendo Cloud key — run `vendo login`, set VENDO_API_KEY, or pass --key.");
   });
 
   it("warns when report push rejects and preserves blast-radius exit three", async () => {
@@ -206,24 +227,47 @@ describe("vendo sync", () => {
     expect(messages.errors).toContain("warning: failed to push sync report: cloud offline");
   });
 
-  it("warns about every unresolved remixable slot as experimental and exits zero", async () => {
+  it("prints every remixable wrapper error and exits two", async () => {
     const errors: string[] = [];
     const output = { log() {}, error(message: string) { errors.push(message); } };
-    const unresolved = {
+    const failed = {
       ...report(),
-      unresolvedPins: [{
-        slot: "InlineCard",
-        component: "() => null",
-        reason: "inline-component" as const,
-        hint: "run the host in dev with Vendo mounted to runtime-capture it",
-      }],
+      remixableErrors: [
+        "src/app/page.tsx:4 \u2014 <Remixable> must wrap exactly one component element; extract it into a component and wrap that",
+      ],
     };
-    // Remix is experimental: the failed capture warns loudly but never fails
-    // the host's build.
-    expect(await runSync({ targetDir: ".", output, sync: async () => unresolved })).toBe(0);
-    expect(errors.join("\n")).toContain("experimental");
-    expect(errors.join("\n")).toContain("InlineCard [inline-component]");
-    expect(errors.join("\n")).toContain("run the host in dev with Vendo mounted to runtime-capture it");
+    // An uncapturable wrapper is a defended constraint (final-shape spec
+    // 2026-08-02): the sync run fails loudly, never degrades silently.
+    expect(await runSync({ targetDir: ".", output, sync: async () => failed })).toBe(2);
+    expect(errors.join("\n")).toContain("src/app/page.tsx:4");
+    expect(errors.join("\n")).toContain("extract it into a component and wrap that");
+  });
+
+  it("keeps wrapper errors at exit two under --strict as well", async () => {
+    const failed = {
+      ...report(),
+      remixableErrors: [
+        "src/app/page.tsx:4 — <Remixable> must wrap exactly one component element; extract it into a component and wrap that",
+      ],
+    };
+    // Exit 2 in ANY mode: --strict adds nothing here because the failure is
+    // already hard — a wrapper the host marked remixable that cannot capture
+    // means the remix silently would not exist.
+    expect(await runSync({ targetDir: ".", strict: true, output: captureOutput().output, sync: async () => failed })).toBe(2);
+  });
+
+  it("prints one line per pruned stale baseline", async () => {
+    const messages = captureOutput();
+    const pruned = {
+      ...report(),
+      pins: { captured: [], drifted: [], pruned: ["MapleNetWorthCard", "CadenceMissingDocsHero"] },
+    };
+    expect(await runSync({ targetDir: ".", output: messages.output, sync: async () => pruned })).toBe(0);
+    const prunedLines = messages.logs.filter((line) => line.startsWith("pruned:"));
+    expect(prunedLines).toHaveLength(2);
+    expect(prunedLines[0]).toContain("MapleNetWorthCard");
+    expect(prunedLines[1]).toContain("CadenceMissingDocsHero");
+    expect(prunedLines[0]).toContain("stale baseline deleted");
   });
 
   it("names drifted slots and says forks stay on the old capture until rebased", async () => {
@@ -240,20 +284,17 @@ describe("vendo sync", () => {
     // Drift alone never fails the sync and never mutates any fork.
   });
 
-  it("still pushes --report and keeps blast-radius exit three when slots are also unresolved", async () => {
+  it("still pushes --report and keeps blast-radius exit three when wrappers also fail", async () => {
     const messages = captureOutput();
     const push = vi.fn(async () => {});
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
       impact: [{ tool: "host_x", apps: [{ id: "app_x", title: "X" }], automations: [], grants: 0 }],
     }), { status: 200 })) as typeof fetch;
-    const unresolved = {
+    const failed = {
       ...report([{ tool: "host_x", change: "removed" as const }]),
-      unresolvedPins: [{
-        slot: "InlineCard",
-        component: "() => null",
-        reason: "inline-component" as const,
-        hint: "run the host in dev with Vendo mounted to runtime-capture it",
-      }],
+      remixableErrors: [
+        "src/app/page.tsx:4 \u2014 <Remixable> must wrap exactly one component element; extract it into a component and wrap that",
+      ],
     };
 
     const exit = await runSync({
@@ -264,14 +305,14 @@ describe("vendo sync", () => {
       output: messages.output,
       fetchImpl,
       push,
-      sync: async () => unresolved,
+      sync: async () => failed,
     });
 
-    // Unresolved slots never mask the more severe blast-radius signal, and the
+    // Wrapper errors never mask the more severe blast-radius signal, and the
     // pushed report still carries them for the Cloud console.
     expect(exit).toBe(3);
-    expect(push).toHaveBeenCalledWith(expect.objectContaining({ report: unresolved }));
-    expect(messages.errors.join("\n")).toContain("InlineCard [inline-component]");
+    expect(push).toHaveBeenCalledWith(expect.objectContaining({ report: failed }));
+    expect(messages.errors.join("\n")).toContain("src/app/page.tsx:4");
   });
 
   it("prints the init-style catalog summary", async () => {
@@ -302,31 +343,30 @@ describe("vendo sync", () => {
       exitCode: 0,
       report: report([{ tool: "host_x", change: "removed" }], ["host_x"]),
       impact: [{ tool: "host_x", apps: [], automations: [{ id: "app_a", title: "A" }], grants: 0 }],
-      notes: [],
+      notes: ["judgment: skipped — this run cannot ask (pass `--ai` to judge non-interactively, `--no-ai` to say so explicitly)"],
+      theme: null,
+      baselines: null,
+      components: null,
     });
   });
 
-  it("--json carries unresolved slots in the report, exits zero, and keeps stdout to one object", async () => {
+  it("--json carries wrapper errors in the report, exits two, and keeps stdout to one object", async () => {
     const messages = captureOutput();
-    const unresolved = {
+    const failed = {
       ...report(),
-      unresolvedPins: [{
-        slot: "InlineCard",
-        component: "() => null",
-        reason: "inline-component" as const,
-        hint: "run the host in dev with Vendo mounted to runtime-capture it",
-      }],
+      remixableErrors: [
+        "src/app/page.tsx:4 — <Remixable> must wrap exactly one component element; extract it into a component and wrap that",
+      ],
     };
 
-    expect(await runSync({ targetDir: ".", json: true, output: messages.output, sync: async () => unresolved })).toBe(0);
+    expect(await runSync({ targetDir: ".", json: true, output: messages.output, sync: async () => failed })).toBe(2);
 
     expect(messages.logs).toHaveLength(1);
     expect(messages.errors).toHaveLength(0);
     expect(JSON.parse(messages.logs[0]!)).toMatchObject({
-      ok: true,
-      exitCode: 0,
-      report: { unresolvedPins: [{ slot: "InlineCard", reason: "inline-component" }] },
-      notes: [],
+      ok: false,
+      exitCode: 2,
+      report: { remixableErrors: [expect.stringContaining("src/app/page.tsx:4")] },
     });
   });
 
@@ -351,7 +391,7 @@ describe("vendo sync", () => {
       ok: false,
       exitCode: 2,
       impact: null,
-      notes: ["impact unknown — dev server not reachable at http://offline.test/api/vendo"],
+      notes: ["judgment: skipped — this run cannot ask (pass `--ai` to judge non-interactively, `--no-ai` to say so explicitly)", "impact unknown — dev server not reachable at http://offline.test/api/vendo"],
     });
   });
 
@@ -369,14 +409,14 @@ describe("vendo sync", () => {
       sync: async () => report(),
     });
 
-    expect(exit).toBe(0);
+    expect(exit).toBe(1);
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(messages.errors).toHaveLength(0);
     expect(JSON.parse(messages.logs[0]!)).toMatchObject({
-      ok: true,
-      exitCode: 0,
+      ok: false,
+      exitCode: 1,
       impact: [],
-      notes: ["--report requires VENDO_API_KEY or --key"],
+      notes: ["judgment: skipped — this run cannot ask (pass `--ai` to judge non-interactively, `--no-ai` to say so explicitly)", "vendo sync: --report needs a Vendo Cloud key — run `vendo login`, set VENDO_API_KEY, or pass --key."],
     });
   });
 
@@ -560,6 +600,7 @@ describe("sync judgment-pass integration", () => {
       output: messages.output,
       fetchImpl: offline,
       sync: async () => report(),
+      ai: true,
       judge: {
         resolveCredential: async () => ({ rung: "none" }),
         // proof, not inference: ANY engine touchpoint (even the availability
@@ -588,6 +629,7 @@ describe("sync judgment-pass integration", () => {
       output: messages.output,
       fetchImpl: offline,
       sync: async () => report(),
+      ai: true,
       judge: { harness: scripted([...HARDENING]) },
     });
     expect(exit).toBe(0);
@@ -613,7 +655,7 @@ describe("sync judgment-pass integration", () => {
       output: messages.output,
       fetchImpl: offline,
       sync: syncSeam as never,
-      noAi: true,
+      ai: false,
       judge: {
         harness: {
           id: "never",
@@ -652,6 +694,7 @@ describe("sync judgment-pass integration", () => {
       fetchImpl: offline,
       sync: async () => report(),
       review: true,
+      ai: true,
       judge: {
         harness: scripted([
           reply({
@@ -696,6 +739,7 @@ describe("sync judgment-pass integration", () => {
       output: messages.output,
       fetchImpl: offline,
       sync: async () => report(),
+      ai: true,
       judge: {
         harnesses: [{
           id: "npx-engine",
@@ -733,6 +777,7 @@ describe("sync judgment-pass integration", () => {
       output: messages.output,
       fetchImpl: offline,
       sync: async () => report(),
+      ai: true,
       judge: {
         harnesses: [{
           id: "npx-engine",
@@ -760,6 +805,7 @@ describe("sync judgment-pass integration", () => {
       fetchImpl: offline,
       json: true,
       sync: async () => report(),
+      ai: true,
       judge: { resolveCredential: async () => ({ rung: "none" }) },
     });
     expect(exit).toBe(0);

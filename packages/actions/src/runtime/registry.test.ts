@@ -88,7 +88,7 @@ describe("createActions registry", () => {
       {
         format: VENDO_OVERRIDES_FORMAT,
         tools: {
-          host_probe: { risk: "destructive", critical: true, description: "Overridden host" },
+          host_probe: { risk: "destructive", confirmEach: true, description: "Overridden host" },
           host_hidden: { disabled: true },
           ext_write: { risk: "read", description: "Overridden connector" },
           ext_hidden: { disabled: true },
@@ -103,7 +103,7 @@ describe("createActions registry", () => {
     const actions = createActions({ dir: root, connectors: [ext], fetch: vi.fn() as unknown as typeof fetch, baseUrl: "http://stub" });
 
     await expect(actions.descriptors()).resolves.toEqual([
-      { name: "host_probe", description: "Overridden host", inputSchema: { type: "object" }, risk: "destructive", critical: true },
+      { name: "host_probe", description: "Overridden host", inputSchema: { type: "object" }, risk: "destructive", confirmEach: true },
       { name: "ext_write", description: "Overridden connector", inputSchema: {}, risk: "read" },
     ]);
     await actions.descriptors();
@@ -116,6 +116,22 @@ describe("createActions registry", () => {
       status: "error",
       error: { code: "not-found" },
     });
+  });
+
+  // D5 (2026-08-03): extraction records the host's declared response body, and
+  // the descriptor whitelist used to drop it — so the model learned a query's
+  // fields only by calling it once. Carried verbatim now, still never invented.
+  it("carries an extracted outputSchema onto the descriptor, and omits it when there is none", async () => {
+    const outputSchema = { type: "object", properties: { data: { type: "array" } }, required: ["data"] };
+    const root = await tempVendo({
+      format: VENDO_TOOLS_FORMAT,
+      tools: [routeTool("host_declared", { outputSchema }), routeTool("host_undeclared")],
+    });
+    const actions = createActions({ dir: root, fetch: vi.fn() as unknown as typeof fetch, baseUrl: "http://stub" });
+
+    const [declared, undeclared] = await actions.descriptors();
+    expect(declared?.outputSchema).toEqual(outputSchema);
+    expect(undeclared).not.toHaveProperty("outputSchema");
   });
 
   describe("hosted-config overrides injection (cse lane 3)", () => {
@@ -238,18 +254,18 @@ describe("createActions registry", () => {
     const base = routeTool("host_invoices_delete", { risk: "write" });
     const root = await tempVendo(
       { format: VENDO_TOOLS_FORMAT, tools: [base] },
-      { format: VENDO_OVERRIDES_FORMAT, tools: { host_invoices_delete: { risk: "destructive", critical: true } } },
+      { format: VENDO_OVERRIDES_FORMAT, tools: { host_invoices_delete: { risk: "destructive", confirmEach: true } } },
     );
     const actions = createActions({ dir: root, baseUrl: "http://stub" });
     const [descriptor] = await actions.descriptors();
-    expect(descriptor).toMatchObject({ name: "host_invoices_delete", risk: "destructive", critical: true });
+    expect(descriptor).toMatchObject({ name: "host_invoices_delete", risk: "destructive", confirmEach: true });
 
     const merged: ToolDescriptor = {
       name: "host_invoices_delete",
       description: "host_invoices_delete",
       inputSchema: { type: "object" },
       risk: "destructive",
-      critical: true,
+      confirmEach: true,
     };
     const preMerge: ToolDescriptor = { name: "host_invoices_delete", description: "host_invoices_delete", inputSchema: { type: "object" }, risk: "write" };
     expect(descriptorHash(descriptor!)).toBe(descriptorHash(merged));
@@ -1045,14 +1061,14 @@ describe("in-memory overrides (unified try surface Task 15a, rebased on the v3 i
       overrides: {
         format: VENDO_OVERRIDES_FORMAT,
         tools: {
-          host_probe: { risk: "destructive", critical: true, description: "Overridden host" },
+          host_probe: { risk: "destructive", confirmEach: true, description: "Overridden host" },
           host_hidden: { disabled: true },
         },
       },
     });
 
     await expect(actions.descriptors()).resolves.toEqual([
-      { name: "host_probe", description: "Overridden host", inputSchema: { type: "object" }, risk: "destructive", critical: true },
+      { name: "host_probe", description: "Overridden host", inputSchema: { type: "object" }, risk: "destructive", confirmEach: true },
     ]);
     await expect(actions.execute({ id: "1", tool: "host_hidden", args: {} }, ctx)).resolves.toMatchObject({
       status: "error",

@@ -1,0 +1,13 @@
+[vendo] app build failed (app_5d88809b-a449-4b66-b1cf-778763dbcb81): generation failed
+  - model generation failed: boom
+[vendo] app build failed (app_691d3a17-5155-4d43-a43f-464f5ea38f26): quota exhausted
+  - model generation failed: insufficient quota (402)
+   × buildFailureReason quota classification (fix-quota-lie) > a validation failure whose findings quote the host tool inventory → generation failed, RETRYABLE 2ms
+     → expected { reason: 'quota exhausted', …(1) } to deeply equal { reason: 'generation failed', …(1) }
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/build-failure.test.ts > buildFailureReason quota classification (fix-quota-lie) > a validation failure whose findings quote the host tool inventory → generation failed, RETRYABLE
+AssertionError: expected { reason: 'quota exhausted', …(1) } to deeply equal { reason: 'generation failed', …(1) }
+-   "reason": "generation failed",
++   "reason": "quota exhausted",
+    350|     ))).toEqual({ reason: "generation failed", retryable: true });
+      Tests  1 failed | 19 passed (20)

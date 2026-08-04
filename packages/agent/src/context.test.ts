@@ -41,12 +41,16 @@ describe("context engineering", () => {
 
     const output = parts.find((part) => part.type === "tool-output-available")?.output as {
       status: string;
-      output: { truncated: boolean; chars: number; preview: string };
+      output: { vendo_truncated: boolean; vendo_chars: number; vendo_preview: string };
     };
     expect(output.status).toBe("ok");
-    expect(output.output.truncated).toBe(true);
-    expect(output.output.chars).toBeGreaterThan(500);
-    expect(output.output.preview).toHaveLength(100);
+    // Reserved `vendo_` keys: the MCP door advertises the host's declared output
+    // schema to clients that validate every result against it, and a host field
+    // named `preview` of another type made its own tool throw on a truncated
+    // answer (proved against the official client's validator).
+    expect(output.output.vendo_truncated).toBe(true);
+    expect(output.output.vendo_chars).toBeGreaterThan(500);
+    expect(output.output.vendo_preview).toHaveLength(100);
     expect(JSON.stringify(model.prompts[1])).not.toContain(bigValue);
   });
 

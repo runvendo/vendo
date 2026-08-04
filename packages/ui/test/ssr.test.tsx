@@ -9,6 +9,7 @@ import {
   ApprovalCard,
   AutomationsPanel,
   NoPolicyNotice,
+  Remixable,
   VendoOverlay,
   VendoPage,
   VendoPalette,
@@ -87,6 +88,9 @@ describe("every chrome surface server-renders without a DOM", () => {
   };
   const noop = async () => ({ status: "ok", output: null } as const);
   const tree = { formatVersion: "vendo-genui/v2", root: "root", nodes: [{ id: "root", component: "Text", props: { text: "SSR tree" } }] } as const;
+  // A NAMED component child: the wrapper derives its slot from the child's
+  // identifier (2026-08-02 final shape — the `name` prop is gone).
+  const SsrCard = () => <span>original</span>;
 
   // Each entry is a surface that, without the effects/DOM a browser provides,
   // must still produce markup — proving no unguarded window/document access.
@@ -94,6 +98,7 @@ describe("every chrome surface server-renders without a DOM", () => {
     ["VendoThread", <VendoThread />],
     ["VendoOverlay", <VendoOverlay />],
     ["VendoSlot", <VendoSlot id="hero" appId="app_ssr"><span>original</span></VendoSlot>],
+    ["Remixable", <Remixable><SsrCard /></Remixable>],
     ["VendoPage", <VendoPage />],
     ["VendoPalette", <VendoPalette />],
     ["VendoStage", <VendoStage />],

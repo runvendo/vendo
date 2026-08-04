@@ -53,7 +53,7 @@ describe("hostComponentMap", () => {
   it("extracts name→component from registry entries and passes plain entries through", () => {
     const map = hostComponentMap({
       Plain: MetricCard,
-      FromRegistry: { component: MetricCard, description: "d", remixable: true },
+      FromRegistry: { component: MetricCard, description: "d" },
     });
     expect(map).toEqual({ Plain: MetricCard, FromRegistry: MetricCard });
   });

@@ -1,0 +1,21 @@
+$ pnpm --filter @vendoai/ui test:browser <the CI browser job's consumer-voice half>
+
+
+
+
+
+Running 11 tests using 1 worker
+
+[1/11] [chromium] › e2e/build-failed-banner.spec.ts:14:1 › the failed-build banner tells the reader what happened, in their words
+[2/11] [chromium] › e2e/pass3-consumer-voice.spec.ts:75:1 › the positive control — the vocabulary DOES fail on the pre-fix strings
+[3/11] [chromium] › e2e/pass3-consumer-voice.spec.ts:96:1 › (a) the approval card fed a model-instruction descriptor says its OWN words
+[4/11] [chromium] › e2e/pass3-consumer-voice.spec.ts:112:1 › (b) the SAME ask's queue row agrees with the card
+[5/11] [chromium] › e2e/pass3-consumer-voice.spec.ts:133:1 › (c) a failed unattended run tells its owner what did not happen
+[6/11] [chromium] › e2e/run-history-voice.spec.ts:60:1 › the vocabulary CANNOT catch this — which is why the row's own text is the control
+[7/11] [chromium] › e2e/run-history-voice.spec.ts:67:1 › a run-history row names its state and its time in the owner's words
+[8/11] [chromium] › e2e/wave3-consumer-voice.spec.ts:60:1 › the share picker speaks human, and offers a person
+[9/11] [chromium] › e2e/wave3-consumer-voice.spec.ts:86:1 › a keyless deployment's refusal is a consumer sentence, not an env var
+[10/11] [chromium] › e2e/wave3-consumer-voice.spec.ts:119:1 › a stopped automation is findable, with the reason in the consumer's words
+[11/11] [chromium] › e2e/wave3-consumer-voice.spec.ts:151:1 › a viewer denied an EDIT is offered their own copy
+  1 skipped
+  10 passed (6.4s)

@@ -20,9 +20,11 @@ import { ensureChromeStyles } from "./chrome-root.js";
  *
  * Portals to <body> with its own theme boundary (the MorphToast pattern) so
  * no host stacking context can trap it. The child is the regular
- * <ApprovalCard> — it keeps every behavior (remember, error, busy) and the
- * sheet CSS sheds the card's own chrome; the approve morph keeps working
- * because the DOM still carries `.fl-approval` for the start-rect lookup.
+ * <ApprovalCard> — it keeps every behavior (remember, error, busy) and, spec
+ * §16 law 1, the sheet only SIZES it: this ancestor used to strip the card's
+ * padding, border and background, which is why the same consent looked like a
+ * different product on a phone. The approve morph keeps working because the
+ * DOM still carries `.fl-approval` for the start-rect lookup.
  */
 export function ApprovalSheet({ children, label }: {
   children: ReactNode;

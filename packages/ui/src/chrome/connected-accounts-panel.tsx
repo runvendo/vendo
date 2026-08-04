@@ -5,7 +5,7 @@ import { useConnectorCatalog } from "../hooks/use-connector-catalog.js";
 import type { ConnectionAccount } from "../wire-types.js";
 import { toolkitLogoUrl } from "./build-beat.js";
 import { ChromeRoot } from "./chrome-root.js";
-import { completeConnection } from "./connect-dock.js";
+import { completeConnection, connectRefusalCopy } from "./connect-dock.js";
 import { toolkitDisplayName } from "./humanize.js";
 
 /** ui-lane-panels picks A + D + F — identity-forward rows, a two-step
@@ -131,7 +131,11 @@ export function ConnectedAccountsPanel({ undoMs = 10_000 }: ConnectedAccountsPan
         try {
           await disconnect(id, connection.connector);
         } catch (reason) {
-          if (!cancelled.current) setError(reason instanceof Error ? reason.message : String(reason));
+          // spec §16 law 3 — the wire's sentence is the developer's; the person
+          // is told that the account is still connected and nothing changed.
+          if (!cancelled.current) {
+            setError(`We couldn’t disconnect ${toolkitDisplayName(connection.toolkit)} — it is still connected. Try again in a moment.`);
+          }
         } finally {
           if (!cancelled.current) {
             setBusy(current => ({ ...current, [id]: false }));
@@ -163,7 +167,7 @@ export function ConnectedAccountsPanel({ undoMs = 10_000 }: ConnectedAccountsPan
       );
       if (!cancelled.current) await refresh();
     } catch (reason) {
-      if (!cancelled.current) setError(reason instanceof Error ? reason.message : String(reason));
+      if (!cancelled.current) setError(connectRefusalCopy(reason, toolkitDisplayName(connection.toolkit)));
     } finally {
       if (!cancelled.current) setBusy(current => ({ ...current, [`reconnect-${connection.id}`]: false }));
     }
@@ -179,7 +183,7 @@ export function ConnectedAccountsPanel({ undoMs = 10_000 }: ConnectedAccountsPan
       await completeConnection(client, { toolkit: option.toolkit, connector: option.connector }, () => cancelled.current);
       if (!cancelled.current) await refresh();
     } catch (reason) {
-      if (!cancelled.current) setError(reason instanceof Error ? reason.message : String(reason));
+      if (!cancelled.current) setError(connectRefusalCopy(reason, option.label ?? toolkitDisplayName(option.toolkit)));
     } finally {
       if (!cancelled.current) setBusy(current => ({ ...current, [`connect-${option.toolkit}`]: false }));
     }

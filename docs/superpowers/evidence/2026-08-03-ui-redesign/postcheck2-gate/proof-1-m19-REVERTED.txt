@@ -1,0 +1,48 @@
+### PROOF 1 — M19 CSS suppression REVERTED (chrome-css.ts:399-401 deleted)
+$ pnpm exec playwright test e2e/smoke.spec.ts -g 'animates exactly one thing'
+
+
+
+
+
+
+Running 1 test using 1 worker
+
+[1/1] [chromium] › e2e/smoke.spec.ts:178:1 › a build animates exactly one thing, and the bar flips to the app's name
+  1) [chromium] › e2e/smoke.spec.ts:178:1 › a build animates exactly one thing, and the bar flips to the app's name 
+
+    Error: expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 0
+    + Received  + 4
+
+      Array [
+        "fl-boot-hairline",
+    +   "fl-caret",
+    +   "fl-skeleton-bar",
+    +   "p::after",
+    +   "table::after",
+      ]
+
+      196 |   // for the WHOLE build: no blinking caret, no pulsing beat orb, no shimmering
+      197 |   // forming row. Reverting the suppression puts the caret and shimmer back here.
+    > 198 |   expect(window_.moved).toEqual(["fl-boot-hairline"]);
+          |                         ^
+      199 |
+      200 |   await expect(page.getByText("Spending board").first()).toBeVisible({ timeout: 20_000 });
+      201 |   await expect(page.getByRole("button", { name: /Did 3 things/ })).toBeVisible({ timeout: 20_000 });
+        at /Users/yousefh/orca/workspaces/flowlet/ui-s1-fixdefects/packages/ui/e2e/smoke.spec.ts:198:25
+
+    Error Context: e2e/test-results/smoke-a-build-animates-exa-eebed-bar-flips-to-the-app-s-name-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/test-results/smoke-a-build-animates-exa-eebed-bar-flips-to-the-app-s-name-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace e2e/test-results/smoke-a-build-animates-exa-eebed-bar-flips-to-the-app-s-name-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+  1 failed
+    [chromium] › e2e/smoke.spec.ts:178:1 › a build animates exactly one thing, and the bar flips to the app's name 

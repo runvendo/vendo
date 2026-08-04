@@ -50,13 +50,13 @@ export const demoHosts: Record<ConcreteDemoHost, DemoHostDefinition> = {
     threadId: "thr_cadence_demo",
     demoPasswordEnv: "CADENCE_DEMO_PASSWORD",
     // Must match the canon: cadenceDemoPassword() in
-    // apps/demo-accounting/src/server/users.ts.
+    // examples/demo-accounting/src/server/users.ts.
     demoPasswordFallback: "cadence-demo",
   },
 };
 
 /**
- * The generic adapter for a template-derived demo app (apps/demo-template or
+ * The generic adapter for a template-derived demo app (examples/demo-template or
  * a per-prospect clone). Everything is derived from the app directory by the
  * template's conventions, not flags:
  *

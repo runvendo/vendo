@@ -5,7 +5,13 @@ import { ADA, enableAndApprove, fixtureInvoices, record } from "./support.js";
 describe("deterministic steps pipelines", () => {
   beforeEach(resetFixture);
 
-  it("lists then fans out over open invoices, sends each, and records ordered outcomes", async () => {
+  // The subject here is the FAN-OUT machinery — forEach over a previous step's
+  // output, one ordered step outcome per item, persisted and audited. It rides a
+  // non-destructive write (PATCH `host_invoices_update`) because THE LAW
+  // (design §12) never projects a destructive or external action into an
+  // unattended run, so `host_invoices_send` could not reach the fan-out at all.
+  // The law's own refusal is proven in park-resume.e2e.test.ts.
+  it("lists then fans out over open invoices, updates each, and records ordered outcomes", async () => {
     const stack = await createStack();
     try {
       const appId = "app_steps_fanout";
@@ -19,9 +25,9 @@ describe("deterministic steps pipelines", () => {
               { id: "list", tool: "host_invoices_list" },
               {
                 id: "send",
-                tool: "host_invoices_send",
+                tool: "host_invoices_update",
                 forEach: "$filter(steps.list.invoices, function($invoice) { $invoice.status = 'open' })",
-                args: { id: "item.id" },
+                args: { id: "item.id", memo: "'swept'" },
               },
             ],
           },
@@ -61,9 +67,12 @@ describe("deterministic steps pipelines", () => {
       ]);
       expect(typeof stored.summary).toBe("string");
 
+      // Each fanned-out item really executed against the host: both open
+      // invoices carry the memo the step wrote. (Asserting only `status` would
+      // now pass vacuously — `open` is what the forEach filtered ON.)
       const invoices = await fixtureInvoices();
-      expect(invoices.find(({ id }) => id === "inv_0002")?.status).toBe("open");
-      expect(invoices.find(({ id }) => id === "inv_0005")?.status).toBe("open");
+      expect(invoices.find(({ id }) => id === "inv_0002")?.memo).toBe("swept");
+      expect(invoices.find(({ id }) => id === "inv_0005")?.memo).toBe("swept");
       expect(Number((await stack.sql<{ count: unknown }>(
         "SELECT COUNT(*)::int AS count FROM vendo_audit WHERE kind = 'run' AND app_id = $1",
         [appId],

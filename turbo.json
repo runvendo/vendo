@@ -3,6 +3,7 @@
   "tasks": {
     "build": { "dependsOn": ["^build"], "outputs": ["dist/**", ".next/**", "!.next/cache/**"] },
     "test": { "dependsOn": ["^build", "build"], "env": ["CI", "POSTGRES_URL"] },
+    "test:ui": { "dependsOn": ["^build", "build"], "env": ["CI"] },
     "test:coverage": { "dependsOn": ["^build", "build"], "outputs": ["coverage/**"], "env": ["CI", "POSTGRES_URL"] },
     "conformance": { "dependsOn": ["^build", "build"], "env": ["CI", "POSTGRES_URL"] },
     "typecheck": { "dependsOn": ["^build"] },

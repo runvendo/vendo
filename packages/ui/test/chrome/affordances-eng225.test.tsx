@@ -131,7 +131,10 @@ describe("waiting-on-you queue (ENG-225)", () => {
     within(region).getByText(/Waiting on you ·/);
     // No host metadata in this render → the ENG-216 prettified-id fallback.
     within(region).getByText("Email send");
-    within(region).getByText("to a@example.com");
+    // spec §16.2 — the row humanizes the REAL args (dt "To" / dd the address);
+    // the server's own preview string is never what an end user reads.
+    within(region).getByText("a@example.com");
+    expect(region.textContent).not.toContain("to a@example.com");
     within(region).getByText(/^Asked /);
 
     fireEvent.click(within(region).getByRole("button", { name: "Approve" }));
@@ -157,6 +160,56 @@ describe("toasts (ENG-225)", () => {
 
     fireEvent.click(within(region).getByRole("button", { name: "Dismiss notification" }));
     await waitFor(() => expect(screen.queryByText("Invoice watcher finished")).toBeNull());
+    await wire.close();
+  });
+
+  /** M35 — WCAG 2.2.1. A timed toast carrying an ACTION is a time limit on an
+   *  interactive control, and there was no way to stop it: a reader still
+   *  parsing the sentence, or a switch user still travelling to the button,
+   *  lost both. */
+  it("pauses its countdown while a pointer is over it, and resumes on the way out", async () => {
+    const wire = await createWireServer();
+    const client = createVendoClient({ baseUrl: wire.url });
+    render(<VendoProvider client={client}><VendoToasts /></VendoProvider>);
+    // ⚠️ THE BUDGET IS THE TEST'S OWN, not the runner's. These two cases used
+    // `durationMs: 80`, which made the SETUP a race: everything between minting
+    // the toast and pausing it (an async `findByRole`) had to finish inside
+    // 80ms of wall clock, or the countdown had already elapsed and the toast
+    // was gone before the pause could hold anything. Under coverage
+    // instrumentation on a loaded CI runner it does not, and the keyboard case
+    // failed exactly that way (`expected null not to be null`). 800ms of
+    // headroom to arrange, then a wait that still OUTLASTS the countdown — so
+    // the assertion continues to prove the pause, not merely the delay.
+    act(() => {
+      vendoToast({ text: "Invoice watcher finished", actions: [{ label: "View", onAction: () => undefined }], durationMs: 800 });
+    });
+    const region = await screen.findByRole("region", { name: "Notifications" });
+
+    fireEvent.mouseEnter(region);
+    // Well past the countdown: it is held, and so is the action.
+    await new Promise(resolve => setTimeout(resolve, 1_200));
+    expect(screen.queryByText("Invoice watcher finished")).not.toBeNull();
+    expect(within(region).getByRole("button", { name: "View" })).toBeTruthy();
+
+    fireEvent.mouseLeave(region);
+    await waitFor(() => expect(screen.queryByText("Invoice watcher finished")).toBeNull(), { timeout: 3_000 });
+    dismissAllVendoToasts();
+    await wire.close();
+  });
+
+  it("pauses for the keyboard too — focus inside the stack holds the countdown", async () => {
+    const wire = await createWireServer();
+    const client = createVendoClient({ baseUrl: wire.url });
+    render(<VendoProvider client={client}><VendoToasts /></VendoProvider>);
+    act(() => {
+      vendoToast({ text: "Payroll run finished", actions: [{ label: "View", onAction: () => undefined }], durationMs: 800 });
+    });
+    const region = await screen.findByRole("region", { name: "Notifications" });
+    fireEvent.focus(within(region).getByRole("button", { name: "View" }));
+    // Outlasts the countdown, so this proves the HOLD (see the note above).
+    await new Promise(resolve => setTimeout(resolve, 1_200));
+    expect(screen.queryByText("Payroll run finished")).not.toBeNull();
+    dismissAllVendoToasts();
     await wire.close();
   });
 
@@ -258,7 +311,17 @@ describe("connect dock + tray (ENG-225)", () => {
     // 2026-07 demo feedback — the dock used to vanish whenever the auto
     // catalog came back empty, which also swallowed fetch failures. Only an
     // explicit connectors={[]} hides the entry point now.
+    // Both fixtures must be empty, not just the catalog. The tray reads two
+    // independent sources (`/connections/catalog` and `/connections`), and the
+    // fixture ships an active gmail account: once `/connections` lands, that
+    // account renders as connected — correctly, since "no tools available" is
+    // NOT the honest state for someone who has one — and the empty copy is
+    // gone. Emptying only the catalog left the copy on screen for the single
+    // event-loop turn between the two responses, so this assertion passed or
+    // failed on machine load (measured ~2/8 failures at HEAD and 3/8 at the
+    // pre-wave baseline, i.e. a flake that predates this wave).
     wire.state.catalog = [];
+    wire.state.connections = [];
     render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
     await screen.findByText("Existing thread");
     const dock = await screen.findByRole("button", { name: "Connect tools" });

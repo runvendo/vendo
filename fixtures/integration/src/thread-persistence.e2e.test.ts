@@ -10,11 +10,10 @@ import {
   ADA,
   createStack,
   readSse,
+  readSseMidStream,
   resetFixture,
-  resumeApproval,
   textTurn,
   toolCallTurn,
-  vendoApprovalId,
   type Stack,
 } from "./harness.js";
 
@@ -78,24 +77,27 @@ describe("ENG-211: server-minted thread persistence", () => {
       ],
     });
 
+    // Build contract §1.4: the guarded call blocks INSIDE the tool call
+    // awaiting the tap, holding this one request open — decide against the
+    // still-open stream rather than a later, separately-posted resume.
     const pausedResponse = await stack.wireFetch("/threads", {
       method: "POST",
       body: JSON.stringify({ message: userMessage("u_resume", "Delete invoice inv_0003") }),
     }, ADA);
     const threadId = pausedResponse.headers.get(THREAD_ID_HEADER);
     expect(threadId).toMatch(/^thr_.+$/);
-    const paused = await readSse(pausedResponse);
+    const paused = readSseMidStream(pausedResponse);
 
-    const approvalId = vendoApprovalId(paused);
+    const approvalCard = await paused.approval;
+    const approvalId = approvalCard.approvalId;
+    if (approvalId === undefined) throw new Error("approval card carried no approvalId");
     const decision = await stack.wireFetch("/approvals/decide", {
       method: "POST",
       body: JSON.stringify({ ids: [approvalId], decision: { approve: true } }),
     }, ADA);
     expect(decision.status).toBe(200);
 
-    const resumedResponse = await resumeApproval(stack, threadId!, "call_resume", true, ADA);
-    expect(resumedResponse.headers.get(THREAD_ID_HEADER)).toBe(threadId);
-    await readSse(resumedResponse);
+    await paused.done;
 
     const rows = await stack.sql<{ id: string }>(
       "SELECT id FROM vendo_threads WHERE subject = $1",

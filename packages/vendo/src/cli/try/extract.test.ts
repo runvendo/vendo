@@ -133,12 +133,12 @@ describe("runDeterministicPass artifacts", () => {
   });
 });
 
-// genqa defect 1 (venue self-strangulation): route-scanned GETs extract at
-// risk "write" (common.ts's fail-closed default — correct against a real
-// host, wrong against try's own synthetic fixtures). The try pass must
+// genqa defect 1 (venue self-strangulation): route-scanned GETs extract
+// `ungraded` (a GET is not a protocol fact about reading — correct against a
+// real host, wrong against try's own synthetic fixtures). The try pass must
 // correct it via overrides.json, never by touching the extractor's default.
 describe("runDeterministicPass try-venue read downgrade", () => {
-  it("downgrades a route-scanned GET from write to read via overrides.json, without touching tools.json", async () => {
+  it("downgrades a route-scanned GET from ungraded to read via overrides.json, without touching tools.json", async () => {
     const repoRoot = await nextFixture();
     const profileRoot = await tempDir("vendo-try-profile-");
 
@@ -147,8 +147,8 @@ describe("runDeterministicPass try-venue read downgrade", () => {
     const tools = toolsFileSchema.parse(JSON.parse(await readFile(join(profileRoot, ".vendo", "tools.json"), "utf8")));
     const listTool = tools.tools.find((tool) => tool.name === "host_invoices_list");
     expect(listTool?.binding.kind).toBe("route");
-    // tools.json stays the extractor's own fail-closed call — untouched.
-    expect(listTool?.risk).toBe("write");
+    // tools.json stays what the extractor could actually prove — untouched.
+    expect(listTool?.risk).toBe("ungraded");
 
     const overrides = JSON.parse(await readFile(join(profileRoot, ".vendo", "overrides.json"), "utf8")) as {
       format: string;
@@ -160,10 +160,11 @@ describe("runDeterministicPass try-venue read downgrade", () => {
     expect(result.tools.status).toBe("written");
   });
 
-  it("never downgrades a destructive-shaped route GET (a real signal, not the extractor's plain fallback)", async () => {
+  it("never touches a tool that carries a real grade (only ungraded GETs are corrected)", async () => {
     const repoRoot = await nextFixture();
-    await write(repoRoot, "app/api/invoices/[id]/delete/route.ts",
-      "export async function GET() { return Response.json({ ok: true }); }\n");
+    // A DELETE route: the one HTTP grade extraction can prove.
+    await write(repoRoot, "app/api/invoices/[id]/purge/route.ts",
+      "export async function DELETE() { return Response.json({ ok: true }); }\n");
     const profileRoot = await tempDir("vendo-try-profile-");
 
     await runDeterministicPass({ repoRoot, profileRoot });

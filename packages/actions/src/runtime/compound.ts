@@ -20,7 +20,9 @@ import { walkSteps, type StepResumePoint } from "./steps.js";
  * without the seam a compound performs no work at all.
  */
 
-const RISK_ORDER: Record<RiskLabel, number> = { read: 0, write: 1, destructive: 2 };
+/** `ungraded` dominates the step max: a compound cannot claim to know its own
+ *  risk while one of its steps is un-graded. */
+const RISK_ORDER: Record<RiskLabel, number> = { read: 0, write: 1, destructive: 2, ungraded: 3 };
 
 /** What a compound step may target: a registered primitive host/connector tool. */
 export interface PrimitiveStepTarget {

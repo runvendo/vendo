@@ -39,7 +39,7 @@ export function vendoAutoJudge(config: {
           name: input.descriptor.name,
           description: input.descriptor.description,
           risk: input.descriptor.risk,
-          critical: input.descriptor.critical,
+          confirmEach: input.descriptor.confirmEach,
         },
         call: {
           tool: input.call.tool,

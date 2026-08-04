@@ -163,15 +163,27 @@ API keys use the format `vnd_` followed by 40 hex characters. `vendo init
 --cloud-key` rejects a malformed key before writing it; `vendo doctor` warns
 on one already in the environment. Neither makes a network call to do so.
 
-### The `fn:` limitation for synced automations
+### The `fn:` limitation for Cloud-fired automations
 
-Automations whose steps use `fn:` tools (calls back into the host
-application's process) warn on sync. Hosted sandboxes cannot reach your
-machine in v1, so those steps will fail or park when the automation fires
-in the cloud. Either replace them with tools the hosted runtime can
-execute, or pass an explicit local `store:` (see the warning above) to keep
-that composition's schedule- and external-trigger automations firing on
-your own machine instead of Cloud's.
+A `fn:` step is not a call back into your host process — it is an HTTP call
+into the generated app's **own sandbox machine** (`POST /fn/<name>`). When
+your composition fires the automation itself, that machine is one it just
+woke. When Cloud fires it (schedule and external triggers under the hosted
+store), the Cloud runner is the one that has to wake and reach the machine,
+and in v1 it may not be able to; a step that cannot reach a machine settles
+as an error outcome for that step, not a crashed run.
+
+Enabling such an automation warns once, naming the app:
+
+```
+[vendo] automation "Weekly digest" has fn: steps but its schedule trigger
+fires on Vendo Cloud, not in this process: ...
+```
+
+Either replace the `fn:` steps with host tools the Cloud runner can execute,
+or pass an explicit local `store:` (see the warning above) to keep that
+composition's schedule- and external-trigger automations firing on your own
+machine instead of Cloud's.
 
 ### Hosted sandboxes
 

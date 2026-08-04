@@ -1,0 +1,138 @@
+### PROOF 6 — H16 viewport gate and H11 inert REVERTED in center/home.tsx
+#   useApp(appId, { enabled: seen })  ->  useApp(appId)
+#   <div className="fl-tile-view" inert>  ->  <div className="fl-tile-view">
+$ pnpm exec playwright test e2e/center-a11y.spec.ts
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Running 10 tests using 1 worker
+
+[1/10] [chromium] › e2e/center-a11y.spec.ts:34:1 › axe: the center has zero WCAG 2.1 A/AA violations (desktop)
+  1) [chromium] › e2e/center-a11y.spec.ts:34:1 › axe: the center has zero WCAG 2.1 A/AA violations (desktop) 
+
+    Error: desktop violations: ["color-contrast ×1"]
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "color-contrast ×1",
+    + ]
+
+      42 |   const apps = await axeOf(page).analyze();
+      43 |   const report = [...home.violations, ...apps.violations].map(v => `${v.id} ×${v.nodes.length}`);
+    > 44 |   expect(report, `desktop violations: ${JSON.stringify(report)}`).toEqual([]);
+         |                                                                   ^
+      45 | });
+      46 |
+      47 | test("axe: the center has zero WCAG 2.1 A/AA violations (390px, sheet open)", async ({ page }) => {
+        at /Users/yousefh/orca/workspaces/flowlet/ui-s1-fixdefects/packages/ui/e2e/center-a11y.spec.ts:44:67
+
+    Error Context: e2e/test-results/center-a11y-axe-the-center-fcac3--1-A-AA-violations-desktop--chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/test-results/center-a11y-axe-the-center-fcac3--1-A-AA-violations-desktop--chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace e2e/test-results/center-a11y-axe-the-center-fcac3--1-A-AA-violations-desktop--chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[2/10] [chromium] › e2e/center-a11y.spec.ts:47:1 › axe: the center has zero WCAG 2.1 A/AA violations (390px, sheet open)
+[3/10] [chromium] › e2e/center-a11y.spec.ts:60:1 › H10: ··· → Activity → ··· leaves a tab stop and a named panel
+[4/10] [chromium] › e2e/center-a11y.spec.ts:84:1 › H18: a keyboard walk of the rail destroys nothing
+[5/10] [chromium] › e2e/center-a11y.spec.ts:107:1 › H11: nothing inside a live tile preview is reachable
+  2) [chromium] › e2e/center-a11y.spec.ts:107:1 › H11: nothing inside a live tile preview is reachable 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 3
+    Received: 0
+
+      120 |   });
+      121 |   expect(inside.previews).toBeGreaterThan(0);
+    > 122 |   expect(inside.inert).toBe(inside.previews);
+          |                        ^
+      123 |   expect(inside.ariaHidden).toBe(0);
+      124 |
+      125 |   // The real browser's own answer: plant a focusable in every preview, focus it,
+        at /Users/yousefh/orca/workspaces/flowlet/ui-s1-fixdefects/packages/ui/e2e/center-a11y.spec.ts:122:24
+
+    Error Context: e2e/test-results/center-a11y-H11-nothing-in-86324-e-tile-preview-is-reachable-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/test-results/center-a11y-H11-nothing-in-86324-e-tile-preview-is-reachable-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace e2e/test-results/center-a11y-H11-nothing-in-86324-e-tile-preview-is-reachable-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[6/10] [chromium] › e2e/center-a11y.spec.ts:141:1 › H12: the takeover inerts the host page and brings no second main
+[7/10] [chromium] › e2e/center-a11y.spec.ts:164:1 › M34: the mobile sheet takes focus, traps it, and gives it back on Escape
+[8/10] [chromium] › e2e/center-a11y.spec.ts:184:1 › M33: every state indicator clears 3:1, measured in the browser
+[9/10] [chromium] › e2e/center-a11y.spec.ts:253:1 › H16: a tile the observer has not reported boots nothing, and boots when it does
+  3) [chromium] › e2e/center-a11y.spec.ts:253:1 › H16: a tile the observer has not reported boots nothing, and boots when it does 
+
+    Error: every view-bearing tile must still be a skeleton
+
+    expect(received).toBeGreaterThan(expected)
+
+    Expected: > 0
+    Received:   0
+
+      258 |
+      259 |   const skeletons = await page.locator(".fl-tile-skel").count();
+    > 260 |   expect(skeletons, "every view-bearing tile must still be a skeleton").toBeGreaterThan(0);
+          |                                                                         ^
+      261 |   await expect(page.locator(".fl-tile-scale")).toHaveCount(0);
+      262 |
+      263 |   // Now report them all as on screen. The gate delays work, it never drops it.
+        at /Users/yousefh/orca/workspaces/flowlet/ui-s1-fixdefects/packages/ui/e2e/center-a11y.spec.ts:260:73
+
+    Error Context: e2e/test-results/center-a11y-H16-a-tile-the-5e21c-hing-and-boots-when-it-does-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/test-results/center-a11y-H16-a-tile-the-5e21c-hing-and-boots-when-it-does-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace e2e/test-results/center-a11y-H16-a-tile-the-5e21c-hing-and-boots-when-it-does-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[10/10] [chromium] › e2e/center-a11y.spec.ts:268:1 › H16 fails OPEN: an engine with no IntersectionObserver still shows every tile
+  3 failed
+    [chromium] › e2e/center-a11y.spec.ts:34:1 › axe: the center has zero WCAG 2.1 A/AA violations (desktop) 
+    [chromium] › e2e/center-a11y.spec.ts:107:1 › H11: nothing inside a live tile preview is reachable 
+    [chromium] › e2e/center-a11y.spec.ts:253:1 › H16: a tile the observer has not reported boots nothing, and boots when it does 
+  7 passed (12.9s)

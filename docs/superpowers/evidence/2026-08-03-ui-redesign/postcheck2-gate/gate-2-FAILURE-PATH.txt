@@ -1,0 +1,60 @@
+### GATE 2 — THE FAILURE PATH (deliberate single-target break, reverted after)
+#
+# The break: a comment carrying the portability gate's own Leg C hazard pattern,
+# planted at packages/ui/src/client.ts:1 —
+#   // DELIBERATE GATE-FAILURE PROBE (reverted): ?? globalThis.fetch
+# It fails ONLY lint (the source-hazard leg); build, test and typecheck are unaffected.
+
+$ zsh scripts/serial-gate.sh
+EXIT=0
+EXIT=0
+EXIT=0
+EXIT=1
+
+GATE 20260803T215429Z — branch redesign/postcheck2-gate @ 4f8b310633866419d9b825cacff85aae339e16f7
+  build      EXIT=0
+  test       EXIT=0
+  typecheck  EXIT=0
+  lint       EXIT=1
+VERDICT: FAIL (1/4 red: lint) — /Users/yousefh/orca/workspaces/flowlet/ui-s1-fixdefects/docs/superpowers/evidence/2026-08-03-ui-redesign/gates NOT updated; logs in /Users/yousefh/orca/workspaces/flowlet/ui-s1-fixdefects/.gate-failures/20260803T215429Z
+
+$ echo $?
+1
+
+--- the evidence tree was NOT updated (md5, before the run vs after) ---
+before:
+d6f14c9f4362bc20d2b48e3351dfd367
+3baa3a05704d0077ee8f056c7d18daf5
+after:
+d6f14c9f4362bc20d2b48e3351dfd367
+3baa3a05704d0077ee8f056c7d18daf5
+
+--- and it still names the GREEN run, not this one ---
+PASS 4/4 · 20260803T214112Z · branch redesign/postcheck2-gate @ 4f8b310633866419d9b825cacff85aae339e16f7
+
+--- the failure's own logs, outside the evidence tree ---
+total 2336
+drwxr-xr-x@ 10 yousefh  staff      320 Aug  3 15:11 .
+drwxr-xr-x@  3 yousefh  staff       96 Aug  3 15:11 ..
+-rw-r--r--@  1 yousefh  staff    34796 Aug  3 15:11 build.log
+-rw-r--r--@  1 yousefh  staff        2 Aug  3 15:11 build.status
+-rw-r--r--@  1 yousefh  staff     1660 Aug  3 15:11 lint.log
+-rw-r--r--@  1 yousefh  staff        2 Aug  3 15:11 lint.status
+-rw-r--r--@  1 yousefh  staff  1124167 Aug  3 15:11 test.log
+-rw-r--r--@  1 yousefh  staff        2 Aug  3 15:11 test.status
+-rw-r--r--@  1 yousefh  staff    11921 Aug  3 15:11 typecheck.log
+-rw-r--r--@  1 yousefh  staff        2 Aug  3 15:11 typecheck.status
+
+--- lint.log tail: WHY it was red ---
+portability-gate: ok — server entry bundles for a Worker target with zero unresolved imports
+portability-gate: ok — no Node-only leg in the worker server graph (609 modules checked)
+portability-gate: ok — store postgres entry stays PGlite-free under node resolution (144 modules checked)
+portability-gate: ok — @vendoai/harnesses bundles for a Worker target (286 modules checked)
+portability-gate: BROKEN — packages/ui/src/client.ts: detached `?? globalThis.fetch` default (Illegal invocation on Workers) — use defaultFetch from @vendoai/core
+[vendo] `model` is deprecated: use the `models.default` seat — `models: { default: … }`. It still works for one more minor.
+[vendo] smoke-render gate skipped: react/jsdom did not resolve to filesystem paths in this environment (bundled server); islands ship without the crash gate
+[vendo] Vendo Cloud is the hosted store for this deployment: schedule and external-trigger automations are Cloud's job (its scheduler and Composio delivery already fire them for this deployment) — the local automations engine will not fire them itself, to avoid double-running them. Host-event automations (vendo.emit) are unaffected.
+portability-gate: ok — fixture worker constructed createVendo at module scope and served /status 200 under workerd
+portability-gate: 1 failure(s)
+
+EXIT=1

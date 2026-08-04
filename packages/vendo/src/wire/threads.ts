@@ -21,7 +21,19 @@ export const threadRoutes: RouteEntry[] = [
     const turnAbort = new AbortController();
     if (request.signal.aborted) turnAbort.abort();
     else request.signal.addEventListener("abort", () => turnAbort.abort(), { once: true });
-    const turn = await deps.agent.stream({
+    // Architecture §3 — one turn, two possible thinkers, ONE request shape. The
+    // harness path takes the same `{ threadId?, message, ctx, signal }` and
+    // returns the same SSE `Response` with the same thread-id header, so nothing
+    // downstream (liveness, abort, the client) can tell which ran.
+    //
+    // Post-flip (wave 2) EVERY host is routed here — `harness:` when the host
+    // named one, `vendo()` when they did not. `deps.harness` is unset for exactly
+    // one reason, and it is a capability fact rather than a preference: a store
+    // with no SQL handle cannot serve the transcript and workspace TABLES a
+    // harness turn needs, so those deployments keep `agent.stream`, which needs
+    // neither. See `storeServesHarnessTurns` in server.ts.
+    const runTurn = deps.harness ?? deps.agent;
+    const turn = await runTurn.stream({
       ...(body["threadId"] === undefined ? {} : { threadId: string(body["threadId"], "threadId") }),
       message: body["message"] as never,
       ctx,

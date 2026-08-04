@@ -1,0 +1,45 @@
+### PROOF 2/3 — shared poller UN-SHARED
+# approvals-feed.ts: one feed per hook INSTANCE (stable across renders) = the pre-H15 behaviour.
+# use-approvals.ts:30  const [feed] = useState(() => ownApprovalsFeedForProof(client));
+$ pnpm exec playwright test e2e/approvals-poller-proof.spec.ts
+
+
+
+
+
+
+Running 2 tests using 1 worker
+
+[1/2] [chromium] › e2e/approvals-poller-proof.spec.ts:51:1 › three attention surfaces spend ONE poller's worth of requests
+  1) [chromium] › e2e/approvals-poller-proof.spec.ts:51:1 › three attention surfaces spend ONE poller's worth of requests 
+
+    Error: mount burst was 4 requests for 3 surfaces
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 1
+    Received: 4
+
+      60 |   await page.waitForTimeout(1_500);
+      61 |   const onMount = polls.at.length;
+    > 62 |   expect(onMount, `mount burst was ${onMount} requests for ${SURFACES} surfaces`).toBe(1);
+         |                                                                                   ^
+      63 |
+      64 |   // …and it really is polling. A dead poller is also "few requests", so the
+      65 |   // count must GROW by exactly one per tick.
+        at /Users/yousefh/orca/workspaces/flowlet/ui-s1-fixdefects/packages/ui/e2e/approvals-poller-proof.spec.ts:62:83
+
+    Error Context: e2e/test-results/approvals-poller-proof-thr-3ba49--poller-s-worth-of-requests-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/test-results/approvals-poller-proof-thr-3ba49--poller-s-worth-of-requests-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace e2e/test-results/approvals-poller-proof-thr-3ba49--poller-s-worth-of-requests-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[2/2] [chromium] › e2e/approvals-poller-proof.spec.ts:78:1 › the 60-second poller trace
+  1 failed
+    [chromium] › e2e/approvals-poller-proof.spec.ts:51:1 › three attention surfaces spend ONE poller's worth of requests 

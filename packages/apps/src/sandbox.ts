@@ -15,9 +15,16 @@ export interface SandboxAdapter {
     template?: string;
     env: Record<string, string>;
     /**
-     * Grant-style outbound-domain allowlist enforced at the provider network
-     * layer. Undefined means unrestricted egress; an empty list denies all
-     * egress. Wave 2 Lane E wires the approval flow on top of this knob.
+     * Grant-style outbound-domain allowlist, filtered at the provider network
+     * layer. Undefined means unrestricted egress; an empty list asks for
+     * everything to be filtered out. Wave 2 Lane E wires the approval flow on
+     * top of this knob.
+     *
+     * This states what the provider is ASKED for, not what it guarantees. e2b
+     * matches on the requested server name, so the filter holds against
+     * ordinary clients and is bypassed by one that omits SNI
+     * (`docs/verification/box-egress/README.md`). Callers should treat it as
+     * defence in depth, not as containment.
      */
     allowedDomains?: string[];
   }): Promise<SandboxMachine>;

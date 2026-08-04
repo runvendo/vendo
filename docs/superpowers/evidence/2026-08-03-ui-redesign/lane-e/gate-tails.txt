@@ -1,0 +1,35 @@
+# Lane E gate tails — 2026-08-03 (three other lanes ran their suites on the same laptop; load average 95–154)
+
+## pnpm build
+ Tasks:    24 successful, 24 total
+Cached:    24 cached, 24 total
+  Time:    534ms >>> FULL TURBO
+
+
+## pnpm typecheck
+ Tasks:    43 successful, 43 total
+Cached:    12 cached, 43 total
+  Time:    2m53.931s 
+TYPECHECK EXIT=0
+
+## pnpm lint
+Cached:    6 cached, 6 total
+  Time:    496ms >>> FULL TURBO
+
+LINT EXIT=0
+
+## pnpm test — 54 of 55 tasks; @vendoai/vendo failed with 32 failures, EVERY ONE a 30s timeout, zero assertion failures
+ Tasks:    54 successful, 55 total
+Cached:    27 cached, 55 total
+  Time:    44m51.793s 
+
+
+### the flake, isolated: same package alone
+ Test Files  1 failed | 167 passed | 5 skipped (173)
+      Tests  2 failed | 2012 passed | 23 skipped (2037)
+(24 failing files → 1)
+
+### and that last file alone
+ Test Files  1 passed (1)
+      Tests  5 passed | 2 skipped (7)
+EXIT=0 — the whole set was contention, not this branch

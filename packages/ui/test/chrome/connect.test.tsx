@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
 import { ConnectCard, ConnectedAccountsPanel } from "../../src/chrome/index.js";
@@ -103,6 +104,26 @@ describe("ConnectCard and ConnectedAccountsPanel", () => {
     expect(container.querySelector(".fl-approval")).toBeNull();
   });
 
+  it("still completes after a StrictMode remount (the cancel latch resets)", async () => {
+    // React's dev StrictMode mounts, tears down, and re-mounts every effect.
+    // A cancel ref that is only ever SET by the cleanup stays latched through
+    // the second mount, so the poll loop in completeConnection exits on its
+    // first check and the card sits on "Connecting…" forever (the demo host
+    // had to ship reactStrictMode:false because of this).
+    vi.stubGlobal("open", vi.fn());
+    const onConnected = vi.fn();
+    render(
+      <StrictMode>
+        <VendoProvider client={client}>
+          <ConnectCard connector="composio" toolkit="gmail" message="Connect gmail." onConnected={onConnected} />
+        </VendoProvider>
+      </StrictMode>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Connect Gmail" }));
+    await waitFor(() => expect(onConnected).toHaveBeenCalledTimes(1));
+    expect((await screen.findByRole("status")).textContent).toContain("Connected");
+  });
+
   it("surfaces an initiation failure inline and stays retryable", async () => {
     vi.stubGlobal("open", vi.fn());
     wire.state.failures.push({
@@ -118,7 +139,12 @@ describe("ConnectCard and ConnectedAccountsPanel", () => {
       </VendoProvider>,
     );
     fireEvent.click(screen.getByRole("button", { name: "Connect Gmail" }));
-    expect((await screen.findByRole("alert")).textContent).toContain("requires a signed-in user");
+    // The wire's sentence is the DEVELOPER's ("connecting external accounts
+    // requires a signed-in user; sign in first"); the card says what it means
+    // for the person (spec §16 law 3, LEAK 2).
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe("Sign in first, then connect Gmail.");
+    expect(alert.textContent).not.toContain("external accounts");
     expect(screen.getByRole("button", { name: "Connect Gmail" }).hasAttribute("disabled")).toBe(false);
   });
 
@@ -188,6 +214,11 @@ describe("ConnectCard and ConnectedAccountsPanel", () => {
 
   it("hides connect-ahead entirely when the host configured no connectors", async () => {
     wire.state.connections = [];
+    // The AUTO catalog is what feeds connect-ahead, and the fixture's is
+    // non-empty — so this test could only pass by beating the in-flight fetch to
+    // the assertion, which it lost about one run in three under load. Emptying
+    // the catalog is what its own name describes, and makes it deterministic.
+    wire.state.catalog = [];
     render(<VendoProvider client={client}><ConnectedAccountsPanel /></VendoProvider>);
     expect(await screen.findByText(/No connected accounts yet/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: /^Connect / })).toBeNull();

@@ -4,15 +4,27 @@ export { VendoActivities, type VendoActivitiesProps } from "./vendo-activities.j
 export { ApprovalCard, type ApprovalCardProps } from "./approval-card.js";
 export { VendoAppEmbed, VendoApprovalEmbed, VendoToolResult } from "./embeds.js";
 export { ApprovalSheet } from "./approval-sheet.js";
-export { AutomationCard, type AutomationCardProps } from "./automation-card.js";
+export { ADOPTION_VENUE_KEY, AdoptionCard, AdoptionVenueCard, type AdoptionCardProps } from "./adoption-card.js";
+export { AutomationCard, sponsorLabel, type AutomationCardProps } from "./automation-card.js";
 export { GrantSetCard, type GrantSetCardProps, type GrantSetPermission } from "./grant-set-card.js";
 export { AutomationsPanel } from "./automations-panel.js";
 export { ConnectCard, type ConnectCardProps } from "./connect-card.js";
 export { ConnectedAccountsPanel } from "./connected-accounts-panel.js";
+// Build contract §9.2-§9.6 — the one surface that writes app-access grants,
+// and the consumer-voice fork offer a viewer sees instead of a refusal.
+export {
+  ForkOffer,
+  ShareDialog,
+  encodeGrantPrincipal,
+  type ForkOfferProps,
+  type ShareDialogProps,
+} from "./share-dialog.js";
 export { NoPolicyNotice } from "./no-policy-notice.js";
 export { VendoOverlay, type VendoOverlayProps } from "./vendo-overlay.js";
 export { defaultVendoGreeting, hasSeen, markSeen, type VendoDiscoverability, type VendoGreeting } from "./discoverability.js";
 export { openVendoConversation, type OpenConversationOptions } from "./overlay-registry.js";
+export { Remixable, type RemixableProps } from "./remixable.js";
+export { playPinCeremony, usePinAction, type PinCeremonyOptions } from "./pin-ceremony.js";
 export { VendoTrigger, type VendoTriggerProps } from "./vendo-trigger.js";
 export { VendoPage, type VendoPageProps } from "./vendo-page.js";
 export { VendoPalette, type VendoCommand } from "./vendo-palette.js";
@@ -38,7 +50,7 @@ export {
   type ActivityGlyph,
   type OutcomeTone,
 } from "./activity-semantics.js";
-export { BuildBeat, StatusRibbon, WorkingRibbon, toolPresentation } from "./build-beat.js";
+export { BeatSummary, BuildBeat, StatusRibbon, WorkingRibbon, toolPresentation } from "./build-beat.js";
 export { ChromeRoot } from "./chrome-root.js";
 export { useCopyFeedback } from "./clipboard.js";
 export { ConnectDockButton, ConnectTray } from "./connect-dock.js";

@@ -75,17 +75,18 @@ const raiseStoreError = (response: Response): Promise<never> =>
     throw Object.assign(new Error(message), { code: code ?? "unavailable" });
   });
 
-/** vendo-web@7cd0a02 (2026-07-19) deleted the console's ephemeral-session op
- * family (/api/v1/store/sessions/*) per spec — the removed routes answer
- * Next.js's BARE 404 page, no error envelope. Typed so the composition layer
- * (hostedSessionOps in server.ts) can disable the session doors gracefully
- * instead of failing anonymous traffic; an ENVELOPED 404 is a live console
- * answering "not-found" and keeps the loud path, same for every other
- * failure. */
+/** A console that is not serving the ephemeral-session op family
+ * (/api/v1/store/sessions/*) answers Next.js's BARE 404 page, no error
+ * envelope. Typed so the composition layer (hostedSessionOps in server.ts)
+ * can disable the session doors gracefully instead of failing anonymous
+ * traffic; an ENVELOPED 404 is a live console answering "not-found" and keeps
+ * the loud path, same for every other failure. Prod has served the doors
+ * again since 2026-07-20 (vendo-web #88), so this is a guard, not a
+ * description of today. */
 export class HostedSessionDoorsMissingError extends Error {
   constructor() {
     super(
-      "Vendo Cloud console does not serve /api/v1/store/sessions/* (removed in vendo-web@7cd0a02)",
+      "Vendo Cloud console did not serve /api/v1/store/sessions/* (bare 404)",
     );
     this.name = "HostedSessionDoorsMissingError";
   }

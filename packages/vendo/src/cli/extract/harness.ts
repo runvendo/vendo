@@ -14,7 +14,7 @@ export const draftToolSchema = z.object({
   name: z.string().min(1),
   description: z.string().min(1).max(500),
   risk: z.enum(["read", "write", "destructive"]).optional(),
-  critical: z.boolean().optional(),
+  confirmEach: z.boolean().optional(),
   /** false = wake a statically-unclassifiable tool (needs reasoning). */
   disabled: z.boolean().optional(),
   /** Who the handler's own auth admits; non-end-user grades exclude the tool

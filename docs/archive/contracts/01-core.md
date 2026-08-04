@@ -81,14 +81,20 @@ export interface ToolDescriptor {
                                 // Namespaced by underscore: "host_invoices_list", "gmail_send", "vendo_apps_create"
   description: string;
   inputSchema: JsonSchema;      // the MCP/Anthropic field name; "input" would collide with TreeQuery.input (values)
+  outputSchema?: JsonSchema;    // amended 2026-08-03 (harness redesign D5): the host's DECLARED result shape, when
+                                // extraction found one (an OpenAPI 2xx application/json schema) — never invented,
+                                // carried verbatim to ToolListing and the door so the model knows a query's fields
+                                // before calling it. NOT in the descriptorHash preimage: no person approved it.
   risk: RiskLabel;
-  critical?: boolean;           // always asks the running user; no grant, rule, or judge may suppress
+  confirmEach?: boolean;        // always asks the running user; no grant, rule, or judge may suppress
+                                // (renamed from `critical` by #747, 2026-08-03; a `critical` field is
+                                //  still read as an alias so stored descriptors keep working)
 }
 // provenance is carried by the name prefix (host_*, <connector>_*, vendo_*) — no separate source field
 
 /** Canonical descriptor fingerprint, algorithm-prefixed like every other ref in the system
  *  ("sha256:<hex>", cf. Pin.base and snapshot refs): SHA-256 over the RFC 8785 (JCS) canonicalization
- *  of { name, description, inputSchema, risk, critical }, absent optional fields omitted — so independent
+ *  of { name, description, inputSchema, risk, confirmEach }, absent optional fields omitted — so independent
  *  implementations always agree, and the algorithm can rotate without a flag-day. */
 export function descriptorHash(d: ToolDescriptor): string;   // "sha256:ab12..."
 export function canonicalJson(value: unknown): string;        // RFC 8785 canonical JSON
@@ -126,7 +132,8 @@ The grant machinery the app-format spec pins ("exact or tool-wide scopes, critic
 ```ts
 export type GrantScope =
   | { kind: "tool" }                                             // the whole tool
-  | { kind: "exact"; inputHash: string; inputPreview: string };  // these args only; inputHash = `sha256:${sha256Hex(canonicalJson(args))}`
+  | { kind: "exact"; inputHash: string; inputPreview: string }   // these args only; inputHash = `sha256:${sha256Hex(canonicalJson(args))}`
+  | { kind: "service-tool"; slug: string };                      // one service action, any args  <!-- amended 2026-08-03: connector discovery put a ~20,000-tool catalog behind ONE tool name (`use_service_tool`), for which "the whole tool" is not a width anyone can consent to and "these args only" expires on the next run. Code grants.ts. -->
 
 export type GrantDuration = "standing" | "session" | "task";
 
@@ -172,7 +179,7 @@ The choke point interface. guard implements it (05); every other block only cons
 ```ts
 export type GuardDecision =
   | { action: "run"; decidedBy: "grant" | "rule" | "judge" | "default"; grantId?: GrantId }
-  | { action: "ask"; approval: ApprovalRequest; decidedBy: "critical" | "rule" | "judge" | "breaker" | "default" }
+  | { action: "ask"; approval: ApprovalRequest; decidedBy: "confirmEach" | "rule" | "judge" | "breaker" | "default" }
   | { action: "block"; reason: string; decidedBy: "rule" | "judge" | "breaker" };
 
 export interface Guard {
@@ -618,3 +625,40 @@ Persistence and transport are normative:
 - **Changed:** §14 adds the name-keyed `ComponentRegistry` form (`ComponentRegistryEntry`): keys are component names; each value holds `component` (a host component reference the server MUST IGNORE — it exists so the same object serves the client), `description`, optional `props` (the single schema), optional `examples`, optional `remixable`. Accepted anywhere the array form is (09 §2); the array form remains valid.
 - **Why:** the server-wiring DX brainstorm (decision 2): `propsJsonSchema` was one schema hand-expressed twice, and name-keying kills the mirror-two-maps catalog discipline. Deriving one JSON Schema that drives both the prompt and generated-props validation also closes 04 §1's disk-catalog permissive-validation gap for schema-bearing entries.
 - **Approved by:** Yousef, 2026-07-18 (server-wiring DX brainstorm, `docs/brainstorms/server-wiring-dx.md`, converged).
+
+### 2026-08-03 — Optional `payload.display` view hint (V4 auto-stage)
+
+- **Changed (additive):** the §8 UI payload gains an optional top-level
+  `display: "inline" | "stage"`, authored by the brain at PLAN time and carried
+  through both plan emitters onto the `data-vendo-view` part of §16. Absent means
+  `inline` — every stored payload and every existing emitter stays valid, and
+  validators MUST accept its absence.
+- **Semantics (presentation only):** `stage` tells the chrome to open its split
+  stage the moment the build STARTS, so the skeleton assembles where the user can
+  see it; `inline` lands the view as a compact in-thread app card. The hint sets
+  only the STARTING posture — inline cards keep Expand, staged views keep
+  Back-to-chat, and a wrong hint costs one tap. It grants no capability, changes
+  no data, and a renderer that ignores it is still correct.
+- **Why:** the shape is known at plan time and the size is not known until the
+  fill, so a measured-size rule decides too late to stage the build (design §5,
+  pick V4).
+- **Authorized by:** the Yousef-decided agentic-UI redesign design
+  (`docs/superpowers/specs/2026-08-02-agentic-ui-redesign-design.md`, §5).
+### 2026-08-03 — a listing belongs to ONE run (lazy connector expansion is no longer process-wide)
+
+- **Changed:** §4's `ToolRegistry.descriptors(ctx?)` parameter is named: `ToolListingContext = Pick<RunContext, "venue" | "presence">`, which every `RunContext` already satisfies. No field is added and no caller changes shape. What is now normative is that the context object also IDENTIFIES the run, and a registry may narrow a listing by it — so a caller must pass a run's OWN context object through rather than rebuilding an equivalent one per call.
+- **Changed:** `@vendoai/actions` scopes lazily expanded connector toolkits (connection-scoped tool loading, spec 2026-07-20) to the run that expanded them, keyed by that object's identity; `ActionsRegistry.expandToolkits`, `loadoutSeed` and `search` take the same optional context. The FETCH stays process-wide and cached — one network walk per toolkit, never one per listing — and dispatch stays global, so what a run can SEE never decides what may RUN (the guard and the per-user connect check do). A contextless `descriptors()` still answers with the whole loaded surface (the guard's own descriptor lookup, `@vendoai/core/conformance`).
+- **Changed:** `guard.bind`'s `descriptors` forwards its context INWARD instead of asking the wrapped registry for the unscoped set.
+- **Why:** measured live 2026-08-03 in a boxed claude-code run — one conversation's `search_connectors` expanded slack, and the NEXT conversation's very first `tools/list`, before any search, answered 301 tools instead of 35, carrying the whole slack + slackbot catalogs. Expansion was instance-level state on the connector adapter, so "lazy" was a one-way process-lifetime ratchet: every later conversation and every other user paid someone else's expansion in context cost, and in-session reachability was never what made an expanded tool callable later.
+- **Why the object and not its fields:** `RunContext` carries no conversation id, and `sessionId` is the wire's PROCESS-WIDE fallback for host-resolved principals, so a key built from fields would still have put every conversation of one user in one bucket — the exact leak. The door projects a live turn's context verbatim, the wire mints one per request, and the agent threads the same object through descriptors, seed, search and execute, so identity is the finest correct grain available without a new contract field.
+- **Known limits:** the scope is the RUN, so a lazy toolkit found by search in one turn is not on the next turn's listing unless it is searched again or its toolkit is connected (`loadoutSeed` re-expands connected toolkits every turn). A rebuilt or cloned context reads as a fresh run — it fails toward re-search, never toward another run's set — which also means an app-venue or automation run does not inherit a chat turn's expansions (an automation over a connector tool must still be enabled where that toolkit is visible, as before). A lazy connector that reports neither `ToolDescriptor.toolkit` nor `toolkitOf(name)` cannot be scoped and stays visible to every listing rather than becoming unreachable.
+
+### 2026-08-03 — a listing never narrows (lazy connector expansion is gone)
+
+- **Supersedes:** the entry immediately above, in full.
+- **Changed:** §4's `ToolListingContext` keeps `Pick<RunContext, "venue" | "presence">` and loses `listingScope`; `ToolRegistry.releaseListingScope` is removed. A listing no longer has to be IDENTIFIED, because nothing narrows it any more: every tool a run may call is on every listing that run is given, and `venue`/`presence` remain the only filter (design §12's projection, applied by the guard).
+- **Changed:** `Connector.discoveryIndex`, `Connector.expandToolkits` and the `ToolkitIndexEntry` type are removed, as are `ActionsRegistry.expandToolkits` and the context parameter of `ActionsRegistry.search`/`loadoutSeed`. In their place, three optional connector capabilities: `searchTools(need, ctx)` (the broker's own catalog search, returning slug + schema + per-caller connect status), `toolRisk(slug)` (the broker's per-tool risk tag, `undefined` for a slug it does not have) and `executeSlug(slug, args, ctx)`. `Connector.toolkitOf` is unchanged.
+- **Changed:** the MCP door no longer advertises `tools.listChanged` and no longer diffs its listing around a call.
+- **Why:** the machinery above existed so that a tool a search MATERIALIZED could be reached on a later listing. Measured live 2026-08-03, the client that surface serves never re-lists — Claude Code's agent SDK registers no list-changed handler for an HTTP MCP server, exactly one `tools/list` per session — so the tool a search had just named was uncallable for the rest of the session no matter how correctly the expansion was scoped. Scoping a listing correctly does not help when the listing is read once.
+- **Why the catalog is still reachable:** through a permanent tool instead of a growing listing. `use_service_tool(slug, arguments)` dispatches to any connector that owns the slug, graded per-slug by `toolRisk` through the guard's existing `resolveRisk` seam, so a connector call travels the same guarded, audited path as a `host_*` call and the door's menu is the same on the last turn as the first.
+- **Known limits:** a connector that implements none of the three new capabilities can only put tools on the listing eagerly (its host scoping its toolkits explicitly); an unscoped one contributes no descriptors at all. "No adapter, no tool" now applies per capability, not just per connector.

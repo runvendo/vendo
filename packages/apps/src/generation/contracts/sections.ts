@@ -43,7 +43,7 @@ const pinBaselinesPrompt = (baselines: readonly PinBaseline[] = []): string => J
 );
 
 export interface GenerationPromptSection {
-  id: "role" | "tree-contract" | "clock" | "component-styling" | "catalog" | "theme" | "design-rules" | "remixable-slots" | "prewired-props";
+  id: "role" | "tree-contract" | "clock" | "component-styling" | "catalog" | "theme" | "design-rules" | "remixable-slots" | "prewired-props" | "limits";
   content: string;
 }
 
@@ -59,6 +59,31 @@ export const composePromptSections = (sections: readonly GenerationPromptSection
  *  the message below. Create-only — stored apps with long names keep editing
  *  fine (the edit path never re-validates the name). */
 export const APP_NAME_MAX_CHARS = 40;
+
+/**
+ * The host's own facts, as prompt sections — shared by every actor that needs
+ * them (the brain planning, the workers writing markup).
+ *
+ * These are the HOST'S configuration, not prompt polish: `apps.designRules` and
+ * the theme tokens are documented seams a host sets and expects to be obeyed.
+ * A prompt that omits them makes those config keys silently do nothing.
+ */
+export const hostDesignRulesSection = (deps: GenerationDependencies): GenerationPromptSection[] => {
+  const rules = (typeof deps.designRules === "function" ? deps.designRules() : deps.designRules)?.trim();
+  // The section is emitted even when the host set no rules: "(none provided)" is
+  // the difference between a model that knows there are no house rules and one
+  // that was never told either way.
+  return [{
+    id: "design-rules" as const,
+    content: `HOST DESIGN RULES:\n${rules === undefined || rules === "" ? "(none provided)" : rules}`,
+  }];
+};
+
+export const hostThemeSection = (deps: GenerationDependencies): GenerationPromptSection[] =>
+  deps.theme === undefined ? [] : [{
+    id: "theme" as const,
+    content: `THEME TOKENS:\n${JSON.stringify(deps.theme, null, 2)}`,
+  }];
 
 export const generationPromptSections = (deps: GenerationDependencies): GenerationPromptSection[] => [{
   id: "role",
@@ -109,7 +134,8 @@ export const generationPromptSections = (deps: GenerationDependencies): Generati
   content: (deps.pinBaselines ?? []).length === 0 ? "" : `REMIXABLE HOST SLOTS (slot -> the generated component a user fork ships under):
 ${pinBaselinesPrompt(deps.pinBaselines)}
 - Forking a slot is a USER GESTURE the engine executes deterministically — never fork a slot yourself, and never copy or imitate captured host source in a new island.
-- A slot the user has forked appears as the generated component named above (its pin is listed in APP_META.pins) with its full source in CURRENT_APP. Edit it like any island: re-declare <Island name="componentName">...complete updated source...</Island> with the SMALLEST change the instruction needs — keep the original structure, styling, behavior, and every comment intact (the fork is reviewed as a diff against the host's source; wholesale rewrites and stripped comments are review noise).
+- A slot the user has forked appears as the generated component named above (its pin is listed in APP_META.pins) with its full source in CURRENT_APP. When the instruction asks to change THAT forked component itself, declare the target and re-declare its island in the same patch: <EditPin name="componentName"/> plus <Island name="componentName">...complete updated source...</Island> with the SMALLEST change the instruction needs — keep the original structure, styling, behavior, and every comment intact (the fork is reviewed as a diff against the host's source; wholesale rewrites and stripped comments are review noise). An <Island> that changes a pinned component without its <EditPin> declaration is rejected.
+- Content the instruction wants NEAR a fork (next to, below, beside, above it) is NOT a change to the fork: leave the pinned component's source untouched and compose the new content as a SIBLING node — <Insert> next to the pinned node, with a NEW <Island> under a different name when it needs custom source.
 - Never remove or rename a pinned component, and never invent or alter baseline hashes.`,
 }];
 

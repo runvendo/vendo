@@ -43,9 +43,10 @@ ensureChromeStyles();
  * The mount every real @vendoai/ui component on camera sits inside: the real
  * provider and the real chrome boundary, themed with the brand tokens.
  *
- * `automaticPolicyNotice={false}` matters — the notice subscribes to
- * useVendoStatus, which calls client.status() on mount. The film has no wire,
- * and the notice is host-configuration chrome that has no place in the film.
+ * No automatic policy notice — ChromeRoot's default since C1, and the film needs
+ * it: the notice subscribes to useVendoStatus, which calls client.status() on
+ * mount, and the film has no wire. Host-configuration chrome has no place on
+ * camera either.
  *
  * `onPin` is the host seam that makes the app card's REAL keep affordance
  * render: `ThreadAppCard` shows `.fl-barpin` "Pin to dashboard" on the card bar
@@ -62,6 +63,6 @@ export const VendoStage: React.FC<{children: React.ReactNode}> = ({
     theme={videoVendoTheme}
     onPin={() => undefined}
   >
-    <ChromeRoot automaticPolicyNotice={false}>{children}</ChromeRoot>
+    <ChromeRoot>{children}</ChromeRoot>
   </VendoProvider>
 );

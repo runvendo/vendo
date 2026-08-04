@@ -21,7 +21,7 @@ const descriptorCanonical = (descriptor: ToolDescriptor): string => {
     inputSchema: descriptor.inputSchema,
     risk: descriptor.risk,
   };
-  if (descriptor.critical !== undefined) preimage.critical = descriptor.critical;
+  if (descriptor.confirmEach !== undefined) preimage.confirmEach = descriptor.confirmEach;
   return canonicalJson(preimage);
 };
 
@@ -42,14 +42,14 @@ describe("descriptorHash", () => {
     expect(descriptorHash(first)).toBe(descriptorHash(second));
   });
 
-  it("distinguishes absent critical from explicit false", () => {
+  it("distinguishes absent confirmEach from explicit false", () => {
     const descriptor: ToolDescriptor = {
       name: "host_read",
       description: "Read",
       inputSchema: {},
       risk: "read",
     };
-    expect(descriptorHash(descriptor)).not.toBe(descriptorHash({ ...descriptor, critical: false }));
+    expect(descriptorHash(descriptor)).not.toBe(descriptorHash({ ...descriptor, confirmEach: false }));
   });
 
   it("locks both canonical preimages and hashes to the committed vectors", () => {

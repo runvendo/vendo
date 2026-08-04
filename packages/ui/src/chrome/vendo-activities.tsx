@@ -79,6 +79,11 @@ export function VendoActivities({ pollMs = 5000, maxItems = 8 }: VendoActivities
   const index = Math.min(rawIndex, Math.max(0, queue.length - 1));
   const current = queue[index];
   const paged = queue.length > 1;
+  // The byline can only NAME the app when this surface already knows it (the ask
+  // carries an id); without a match the card says the bare venue phrase.
+  const currentAppName = current?.kind === "single"
+    ? automations.automations.find(entry => entry.app.id === current.ask.ctx.appId)?.app.name
+    : undefined;
   const afterDecide = () => setRawIndex(value => Math.min(value, Math.max(0, queue.length - 2)));
 
   return (
@@ -118,7 +123,6 @@ export function VendoActivities({ pollMs = 5000, maxItems = 8 }: VendoActivities
                       permissions={current.asks.map(ask => ({
                         approvalId: ask.id,
                         tool: ask.call.tool,
-                        ...(ask.descriptor.description.length > 0 ? { description: ask.descriptor.description } : {}),
                         risk: ask.descriptor.risk,
                       }))}
                       state="parked"
@@ -137,6 +141,7 @@ export function VendoActivities({ pollMs = 5000, maxItems = 8 }: VendoActivities
                 })() : (
                   <ApprovalCard
                     approval={current.ask}
+                    {...(currentAppName === undefined ? {} : { venueName: currentAppName })}
                     onDecide={async decision => {
                       await decide(current.ask.id, decision);
                       afterDecide();

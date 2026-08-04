@@ -1,4 +1,4 @@
-import type { ApprovalRequest, AppId, Trigger } from "@vendoai/core";
+import { serviceToolSlug, type ApprovalRequest, type AppId, type Trigger } from "@vendoai/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { APPROVALS_DECIDED_EVENT } from "../client-impl.js";
 import { useVendoContext, useVendoTheme } from "../context.js";
@@ -6,8 +6,9 @@ import { useApprovals } from "../hooks/use-approvals.js";
 import { useAutomations } from "../hooks/use-automations.js";
 import type { RunPlan, RunRecord, RunStatus } from "../wire-types.js";
 import { formatAuditTime } from "./activity-semantics.js";
-import { automationFlow } from "./automation-card.js";
+import { automationFlow, sponsorLabel } from "./automation-card.js";
 import { ChromeRoot } from "./chrome-root.js";
+import { developmentMode } from "./dev-mode.js";
 import { GrantSetCard } from "./grant-set-card.js";
 
 const ENABLE_CELEBRATION_MS = 3_100;
@@ -40,6 +41,28 @@ function runRollup(runs: RunRecord[]): string {
     .filter(status => counts.has(status))
     .map(status => `${counts.get(status)} ${RUN_STATUS_ROLLUP[status]}`)
     .join(" · ");
+}
+
+/**
+ * The consumer's half of a refusal (design §3, the consumer-voice law). Every
+ * sentence the wire throws is written for the HOST DEVELOPER — one names an
+ * environment variable, another carries an app id — and rendering
+ * `reason.message` put all of them in front of whoever was using the product.
+ * The developer sentence keeps its home (the server's own error, the browser
+ * console); the person reading this panel is told what it means for THEM. Same
+ * treatment the Share dialog (`refusalCopy`) and the apps page
+ * (`refusalSentence`) already carry.
+ *
+ * One sentence per code, not per verb: turning an automation on, dry-running
+ * it, reading its history and stopping a run all fail for the same few reasons,
+ * and the code is the part that differs.
+ */
+function refusalCopy(reason: unknown): string {
+  const code = (reason as { code?: unknown } | null)?.code;
+  if (code === "forbidden") return "You can see this automation, but not change it.";
+  if (code === "not-found") return "That automation isn’t available any more.";
+  if (code === "cloud-required") return "That isn’t turned on for this workspace yet.";
+  return "That didn’t go through — nothing changed. Try again in a moment.";
 }
 
 /** Lane pick 7-A — liveness. `every` durations the wire uses ("30m", "6h",
@@ -198,7 +221,7 @@ export function AutomationsPanel() {
     try {
       await action();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(refusalCopy(reason));
     } finally {
       setBusy(current => ({ ...current, [key]: false }));
     }
@@ -249,9 +272,13 @@ export function AutomationsPanel() {
     try {
       await automations.disable(appId);
     } catch (reason) {
-      setError(`The permissions were denied, but switching the automation off failed (${
-        reason instanceof Error ? reason.message : String(reason)
-      }). It is still enabled — use its toggle to turn it off.`);
+      // Same rule as a failed run: what did not happen, and what is still true.
+      // The wire's sentence goes to the developer's own channel.
+      if (developmentMode()) console.warn("[vendo] switching the automation off after a denial failed:", reason);
+      setError(
+        "You said no to those permissions, but this automation could not be switched off."
+        + " It is still enabled — use its toggle to turn it off.",
+      );
     }
   };
 
@@ -271,6 +298,7 @@ export function AutomationsPanel() {
           const appId = entry.app.id;
           const appRuns = runs[appId];
           const flow = automationFlow(entry.app.trigger);
+          const runsAs = sponsorLabel(entry.sponsor, entry.editors);
           // The set-card rows come from the persisted pending queue; the count
           // prefers the engine's own projection (they agree modulo poll skew).
           const pendingAsks = pendingByApp.get(appId) ?? [];
@@ -316,7 +344,18 @@ export function AutomationsPanel() {
                 <div>
                   <div className="fl-auto-title">{entry.app.name}</div>
                   <div className="fl-auto-sub">
-                    {runningRun ? (
+                    {/* §9.9 — `stopped` is the SERVER's word on the automation
+                        itself and it outranks any run row: the fire-time check
+                        stops a run before its first tool call, so a run left
+                        looking live cannot be allowed to report "running now"
+                        about something that will not run again until it is
+                        taken on. */}
+                    {entry.stopped !== undefined ? (
+                      <>
+                        <span className="fl-auto-live fl-auto-wait" aria-hidden="true" />
+                        Stopped
+                      </>
+                    ) : runningRun ? (
                       <>
                         <span className="fl-act-spin" aria-hidden="true" />
                         <span className="fl-auto-nextrun">running now{runningStep}</span>
@@ -341,6 +380,20 @@ export function AutomationsPanel() {
                       </>
                     )}
                   </div>
+                  {/* §9.9 — WHY it stopped, in the server's own consumer sentence
+                      (the same one the adoption card carries, so the list and the
+                      card never say two different things). The card in the app is
+                      where it gets taken on; this is how it gets found. */}
+                  {entry.stopped === undefined ? null : (
+                    <div className="fl-auto-sub fl-auto-stopped" style={{ display: "block" }} role="status">
+                      {entry.stopped.summary}
+                    </div>
+                  )}
+                  {/* §13 — an automation always runs as a named person, and its
+                      window says so. */}
+                  {runsAs === null
+                    ? null
+                    : <div className="fl-auto-sub" style={{ display: "block" }}>{runsAs}</div>}
                 </div>
                 <button
                   className="fl-auto-toggle"
@@ -353,7 +406,10 @@ export function AutomationsPanel() {
                   aria-checked={entry.enabled}
                   disabled={busy[`toggle-${appId}`]}
                   style={{
-                    background: entry.enabled ? "var(--vendo-accent)" : "var(--vendo-border-strong)",
+                    // OFF has to be VISIBLE as a state (WCAG 1.4.11): the 14%
+                    // hairline track sat at ~1.4:1, so "off" read as "no
+                    // control here". --vendo-indicator is the 3:1 derivation.
+                    background: entry.enabled ? "var(--vendo-accent)" : "var(--vendo-indicator)",
                     transform: entry.enabled ? undefined : "rotate(180deg)",
                     transition: "background .2s ease, transform .2s cubic-bezier(.22,1,.36,1)",
                   }}
@@ -373,8 +429,11 @@ export function AutomationsPanel() {
                 />
               </div>
 
+              {/* role="group": a bare <div> may not carry aria-label (axe
+                  aria-prohibited-attr) — and this IS a group, the two labelled
+                  nodes of one trigger→action flow. */}
               {flow ? (
-                <div className="fl-auto-flow" aria-label={`Automation flow for ${entry.app.name}`}>
+                <div className="fl-auto-flow" role="group" aria-label={`Automation flow for ${entry.app.name}`}>
                   <span className="fl-auto-node" style={{ flex: 1 }}>
                     <span className="fl-auto-node-ic" aria-hidden="true">↳</span>
                     <span>
@@ -395,8 +454,11 @@ export function AutomationsPanel() {
                 </div>
               ) : null}
 
+              {/* role="img": the dots and the rollup are all aria-hidden, so
+                  the label IS the whole content — a graphic with a text
+                  alternative, which is what role=img means. */}
               {strip && strip.length > 0 ? (
-                <div className="fl-auto-runs" aria-label={`Last ${strip.length} run${strip.length === 1 ? "" : "s"} for ${entry.app.name}: ${runRollup(strip)}`}>
+                <div className="fl-auto-runs" role="img" aria-label={`Last ${strip.length} run${strip.length === 1 ? "" : "s"} for ${entry.app.name}: ${runRollup(strip)}`}>
                   <span className="fl-auto-runs-lbl" aria-hidden="true">Last {strip.length} run{strip.length === 1 ? "" : "s"}</span>
                   {strip.map(run => (
                     <span
@@ -451,12 +513,18 @@ export function AutomationsPanel() {
               {pendingAsks.length > 0 ? (
                 <GrantSetCard
                   name={entry.app.name}
-                  permissions={pendingAsks.map(ask => ({
-                    approvalId: ask.id,
-                    tool: ask.call.tool,
-                    ...(ask.descriptor.description.length > 0 ? { description: ask.descriptor.description } : {}),
-                    risk: ask.descriptor.risk,
-                  }))}
+                  permissions={pendingAsks.map(ask => {
+                    // A connector ask is FOR its service action, not for the
+                    // dispatcher — two service actions are otherwise the same
+                    // row twice.
+                    const slug = serviceToolSlug(ask.call);
+                    return {
+                      approvalId: ask.id,
+                      tool: ask.call.tool,
+                      ...(slug === undefined ? {} : { slug }),
+                      risk: ask.descriptor.risk,
+                    };
+                  })}
                   state="parked"
                   onDecide={async approve => {
                     await decideSet(appId, pendingAsks, entry.grantSetId, approve);
@@ -468,6 +536,9 @@ export function AutomationsPanel() {
               {plans[appId] ? (
                 <div
                   className="fl-auto-flow"
+                  // role="group": a bare <div> may not carry aria-label
+                  // (aria-prohibited-attr) — same fix as the flow block above.
+                  role="group"
                   aria-label={`Dry run for ${entry.app.name}`}
                   style={{ alignItems: "stretch", flexDirection: "column", gap: 10 }}
                 >
@@ -491,15 +562,15 @@ export function AutomationsPanel() {
               ) : null}
 
               {appRuns !== undefined ? (
-                <div className="fl-act-body" aria-label={`Run history for ${entry.app.name}`}>
+                <div className="fl-act-body" role="group" aria-label={`Run history for ${entry.app.name}`}>
                   {appRuns.length === 0 ? <p className="fl-act-row">No runs yet.</p> : appRuns.map(run => (
                     <article key={run.id}>
                       <div className="fl-act-row">
                         <span className={`fl-act-ic ${run.status === "error" ? "fl-act-x" : "fl-act-tick"}`} aria-hidden="true">
                           {run.status === "error" ? "✕" : "✓"}
                         </span>
-                        <strong className="fl-act-lbl">{run.status}</strong>
-                        <time className="fl-act-sub" dateTime={run.startedAt}>{run.startedAt}</time>
+                        <strong className="fl-act-lbl">{RUN_STATUS_LABEL[run.status]}</strong>
+                        <time className="fl-act-sub" dateTime={run.startedAt}>{formatAuditTime(run.startedAt)}</time>
                         {run.status === "running" ? (
                           <button className="fl-btn fl-btn-ceremony" type="button" onClick={() => void during(`stop-${run.id}`, async () => {
                             await automations.stopRun(run.id);
@@ -511,7 +582,23 @@ export function AutomationsPanel() {
                         ) : null}
                       </div>
                       {run.summary ? <p className="fl-act-peek">{run.summary}</p> : null}
-                      {run.error ? <p role="alert" className="fl-error">{run.error.code}: {run.error.message}</p> : null}
+                      {/* Ruling 11 — a failed UNATTENDED run tells its owner what
+                          did not happen and that nothing changed. The run's own
+                          code and reason are written for whoever runs the
+                          deployment (the scheduler's refusals name billing
+                          allowances and console URLs), so they ride the dev-mode
+                          rail — the same seam the queue row's server preview
+                          uses. */}
+                      {run.error ? (
+                        <>
+                          <p role="alert" className="fl-error">
+                            {`This run didn’t finish — nothing in your account was changed.`}
+                          </p>
+                          {developmentMode()
+                            ? <p className="fl-act-sub">{`${run.error.code}: ${run.error.message}`}</p>
+                            : null}
+                        </>
+                      ) : null}
                     </article>
                   ))}
                 </div>

@@ -7,15 +7,22 @@ import {
 } from "@vendoai/core";
 import { dynamicTool, jsonSchema, type ToolSet } from "ai";
 
-/** The meta-tool the agent uses to discover and load host tools mid-run. */
-export const VENDO_TOOLS_SEARCH_TOOL_NAME = "vendo_tools_search";
+/** The meta-tool the agent uses to discover and load host tools mid-run.
+ *
+ *  Named `find_tools` (design §4). Note it does NOT carry the `vendo_` prefix
+ *  that `isAlwaysActive` below exempts — it stays active because
+ *  `activeToolNames` adds it explicitly, which is asserted in the tests so the
+ *  two rules cannot drift into disabling discovery. */
+export const FIND_TOOLS_TOOL_NAME = "find_tools";
 
 /** Default bound on the uncurated initial loadout. A large host (dub ≈ 617
  * tools, papermark ≈ 388) would otherwise flood the model's context; the rest
- * stay reachable through {@link VENDO_TOOLS_SEARCH_TOOL_NAME}. */
+ * stay reachable through {@link FIND_TOOLS_TOOL_NAME}. */
 export const DEFAULT_MAX_INITIAL_TOOLS = 128;
 
-const RISK_ORDER: Record<RiskLabel, number> = { read: 0, write: 1, destructive: 2 };
+/** Seed order for the capped loadout: safest first, ungraded last — an
+ *  uncapped tool nobody has graded is the weakest claim on the budget. */
+const RISK_ORDER: Record<RiskLabel, number> = { read: 0, write: 1, destructive: 2, ungraded: 3 };
 
 /** A hit from the injected search seam — the structural twin of actions'
  * `ToolSearchMatch` (the agent block depends on core only, so it cannot import
@@ -28,22 +35,35 @@ export interface ToolSearchMatch {
 }
 
 /** Ranks the merged, enabled, guard-bound tool surface against a free-text
- * intent. The umbrella wires this to `ActionsRegistry.search`. */
-export type ToolSearchFn = (query: string, options?: { limit?: number }) => Promise<ToolSearchMatch[]>;
+ * intent. The umbrella wires this to `ActionsRegistry.search`.
+ *
+ * `ctx` is the CALLER's, handed down from the run — a search may EXPAND a lazy
+ * connector toolkit, and that expansion belongs to the conversation that asked
+ * for it rather than to every later listing in the process. Without it the
+ * matches can name tools this run's own listing will not contain. */
+export type ToolSearchFn = (
+  query: string,
+  options?: { limit?: number },
+  ctx?: RunContext,
+) => Promise<ToolSearchMatch[]>;
 
 export interface ToolSearchConfig {
   /** The registry query seam (umbrella wires it to the guard-bound registry). */
   search: ToolSearchFn;
+  /** Whether this subject still has to connect an account before a toolkit's
+   *  tools can run. Used to ANNOTATE search results, which the tool description
+   *  and the system prompt both promise and the connect-card flow depends on.
+   *  Unwired = no annotation (and nothing claims otherwise). */
+  connectRequired?: (toolkit: string, ctx: RunContext) => Promise<boolean>;
   /** Uncurated loadout cap. Defaults to {@link DEFAULT_MAX_INITIAL_TOOLS}. */
   maxInitialTools?: number;
   /** Explicit curated initial loadout by tool name. When set, exactly these
    *  (that exist and are enabled) start active; the cap is not applied. */
   loadout?: string[];
-  /** Per-turn initial-loadout seed (connection-scoped tool loading, spec
-   *  2026-07-20): typically the connected toolkits' tools — the umbrella
-   *  wires this to registry.loadoutSeed(connectedToolkits). Runs BEFORE the
-   *  toolset is built so freshly expanded tools are included. A failure
-   *  degrades to the risk/name fallback, never the turn. */
+  /** Per-turn initial-loadout seed — the umbrella wires this to
+   *  `registry.loadoutSeed()`, every tool the registry has loaded. Resolved per
+   *  turn rather than once, because `add()` can register a source after boot. A
+   *  failure degrades to the risk/name fallback, never the turn. */
   seed?: (ctx: RunContext) => Promise<string[] | undefined>;
   /** The host's curated menu for THIS surface (`surfaces.agent` in
    *  `.vendo/overrides.json`, resolved by the umbrella). `undefined` means
@@ -130,12 +150,15 @@ export interface ToolSearchSession {
   /** Names the model may call this step: initial loadout ∪ everything loaded so
    *  far ∪ the always-active `vendo_*` tools (which include this meta-tool). */
   activeToolNames(): string[];
-  /** Register `vendo_tools_search` into the run's toolset. */
+  /** Register `find_tools` into the run's toolset. */
   attach(tools: ToolSet): void;
 }
 
 export interface ToolSearchSessionOptions {
   config: ToolSearchConfig;
+  /** This turn's context. Used to annotate search results connect-required for
+   *  THIS subject (a connection is per person, not per deployment). */
+  ctx?: RunContext;
   /** The full built toolset's descriptors (names available to load). */
   descriptors: readonly ToolDescriptor[];
   /** Per-run loaded set — persists across turns within a thread. Mutated here. */
@@ -154,6 +177,11 @@ export interface ToolSearchSessionOptions {
 
 export function createToolSearchSession(options: ToolSearchSessionOptions): ToolSearchSession {
   const available = new Set(options.descriptors.map((descriptor) => descriptor.name));
+  // Toolkit per tool name, so a search result can be annotated connect-required.
+  // Updated when a lazily expanded tool is resolved mid-search.
+  const toolkits = new Map<string, string | undefined>(
+    options.descriptors.map((d) => [d.name, (d as { toolkit?: string }).toolkit]),
+  );
   const initial = computeInitialLoadout(options.descriptors, options.config, options.seedNames, options.menuNames);
   // THIS turn's menu. `loaded` persists across turns within a thread, so a tool
   // searched in while the menu was unresolved (the degrade-to-unrestricted
@@ -171,7 +199,7 @@ export function createToolSearchSession(options: ToolSearchSessionOptions): Tool
   return {
     activeToolNames() {
       const active = new Set<string>(initial);
-      active.add(VENDO_TOOLS_SEARCH_TOOL_NAME);
+      active.add(FIND_TOOLS_TOOL_NAME);
       for (const name of Object.keys(attached ?? {})) if (isAlwaysActive(name)) active.add(name);
       for (const name of options.loaded) {
         if (available.has(name) && offeredByMenu(menu, name)) active.add(name);
@@ -181,10 +209,10 @@ export function createToolSearchSession(options: ToolSearchSessionOptions): Tool
 
     attach(tools) {
       attached = tools;
-      if (tools[VENDO_TOOLS_SEARCH_TOOL_NAME] !== undefined) {
-        throw new VendoError("conflict", `Reserved internal tool name: ${VENDO_TOOLS_SEARCH_TOOL_NAME}`);
+      if (tools[FIND_TOOLS_TOOL_NAME] !== undefined) {
+        throw new VendoError("conflict", `Reserved internal tool name: ${FIND_TOOLS_TOOL_NAME}`);
       }
-      tools[VENDO_TOOLS_SEARCH_TOOL_NAME] = dynamicTool({
+      tools[FIND_TOOLS_TOOL_NAME] = dynamicTool({
         description:
           "Search this product's tools and connected-service tools by intent, and LOAD the matches so you can call them this run. "
           + "Use this only when no currently-available tool fits the ask — never to browse or enumerate what exists. "
@@ -200,7 +228,11 @@ export function createToolSearchSession(options: ToolSearchSessionOptions): Tool
           const limit = typeof parsed?.limit === "number" ? parsed.limit : undefined;
           let matches: ToolSearchMatch[];
           try {
-            matches = await options.config.search(query, limit === undefined ? undefined : { limit });
+            matches = await options.config.search(
+              query,
+              limit === undefined ? undefined : { limit },
+              options.ctx,
+            );
           } catch {
             return { status: "error", error: { code: "execution", message: "Tool search failed." } };
           }
@@ -213,6 +245,7 @@ export function createToolSearchSession(options: ToolSearchSessionOptions): Tool
               for (const descriptor of await options.resolve(missing)) {
                 options.materialize(descriptor);
                 available.add(descriptor.name);
+                toolkits.set(descriptor.name, (descriptor as { toolkit?: string }).toolkit);
               }
             } catch {
               // Unresolved names simply stay unloadable below.
@@ -222,11 +255,34 @@ export function createToolSearchSession(options: ToolSearchSessionOptions): Tool
           // — a stale or drifting search seam can never conjure an unbound tool.
           const loadable = matches.filter((match) => available.has(match.name));
           for (const match of loadable) options.loaded.add(match.name);
+          // Annotate the unconnected ones. A result the model cannot actually run
+          // yet has to say so, or it burns a turn calling it and reads the refusal
+          // as a failure — which is exactly the loop the connect card exists to
+          // replace. `toolkit` comes off the descriptor (01-core §4).
+          const annotate = async (match: ToolSearchMatch): Promise<Record<string, unknown>> => {
+            const row: Record<string, unknown> = {
+              name: match.name, description: match.description, risk: match.risk,
+            };
+            const toolkit = toolkits.get(match.name);
+            if (toolkit === undefined) return row;
+            row["toolkit"] = toolkit;
+            if (options.config.connectRequired === undefined) return row;
+            try {
+              if (options.ctx !== undefined
+                  && await options.config.connectRequired(toolkit, options.ctx)) {
+                row["connectRequired"] = true;
+              }
+            } catch {
+              // A failed lookup must never fail the search; the tool's own
+              // connect-required outcome still catches the call.
+            }
+            return row;
+          };
           return {
             status: "ok",
             output: {
               loaded: loadable.map((match) => match.name),
-              tools: loadable.map((match) => ({ name: match.name, description: match.description, risk: match.risk })),
+              tools: await Promise.all(loadable.map(annotate)),
             },
           };
         },

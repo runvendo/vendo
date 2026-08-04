@@ -16,6 +16,7 @@
  * as VENDO_BOX_TEMPLATE on the host so machine provisioning boots from it. This
  * is the reproducible recipe — re-run it to rebuild the base snapshot.
  */
+import { copyFileSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import process from "node:process";
@@ -29,10 +30,14 @@ const AGENT_SDK_VERSION = "0.3.215";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const name = process.argv[2] ?? "vendo-box";
 
-// e2b's build context is the current working directory and copy() sources must
-// be RELATIVE to it — run this script from packages/apps/box so the three
-// harness files resolve.
+// e2b resolves every copy() source against THIS SCRIPT's directory, and a
+// source that climbs out of it fails the build before it starts (measured
+// 2026-08-01: `../dist/...` → TemplateError; chdir does not move the base).
+// The compiled turn runner is therefore STAGED in beside the harness files and
+// removed again below — it is a build artifact, and .gitignore says so.
 process.chdir(here);
+const STAGED_RUNNER = "claude-turn.mjs";
+copyFileSync(path.join(here, "../dist/claude-turn.js"), path.join(here, STAGED_RUNNER));
 
 const template = Template()
   // The full node:22 image already ships curl + ca-certificates (the agent
@@ -51,6 +56,16 @@ const template = Template()
   .copy("harness.mjs", "/opt/vendo-box/harness.mjs", { user: "root" })
   .copy("agent-sdk.mjs", "/opt/vendo-box/agent-sdk.mjs", { user: "root" })
   .copy("bootstrap.mjs", "/opt/vendo-box/bootstrap.mjs", { user: "root" })
+  // Wave 2 lane E — the conversational turn door and the SDK loop behind it.
+  // `claude-turn.mjs` is the COMPILED `packages/apps/src/claude-turn.ts`, the
+  // same module `machine: "local"` runs on the host: one implementation, two
+  // homes. Run `pnpm build` before this script so dist/ is current.
+  .copy("turn-routes.mjs", "/opt/vendo-box/turn-routes.mjs", { user: "root" })
+  .copy(STAGED_RUNNER, "/opt/vendo-box/claude-turn.mjs", { user: "root" })
+  // The materialized workspace's home. It is emptied and rewritten every turn,
+  // so the SDK's session deliberately stays at its $HOME default — the snapshot
+  // carries the whole disk either way.
+  .runCmd("mkdir -p /workspace && chmod 777 /workspace", { user: "root" })
   // Wave 7 H2 — the pre-baked served-app scaffold: a layer-3 build starts
   // warm by copying it into /app and EDITING (skin-contract plumbing —
   // /fn envelopes, vendo.json, theme handoff — already wired and
@@ -73,12 +88,15 @@ let info;
 try {
   info = await Template.build(template, name, { cpuCount: 1, memoryMB: 1024 });
 } catch (error) {
+  rmSync(path.join(here, STAGED_RUNNER), { force: true });
   console.error(`[vendo-box] build failed: ${error?.constructor?.name}: ${error?.message ?? error}`);
   for (const key of Object.keys(error ?? {})) {
     console.error(`  ${key}: ${JSON.stringify(error[key]).slice(0, 500)}`);
   }
   process.exit(1);
 }
+
+rmSync(path.join(here, STAGED_RUNNER), { force: true });
 
 const id = info.templateId ?? info.aliases?.[0] ?? name;
 console.log(`\n[vendo-box] built template: ${id}`);

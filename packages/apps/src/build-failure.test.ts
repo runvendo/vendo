@@ -1,10 +1,8 @@
 import type { LanguageModel } from "ai";
-import type { RunContext, ToolRegistry, Tree } from "@vendoai/core";
+import type { RunContext, ToolRegistry } from "@vendoai/core";
 import { VendoError } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
 import { buildFailureReason, createApps } from "./index.js";
-import { DISCLAIMER_TEXT, isDisclaimerOnlyTree } from "./pipeline.js";
-import { HOST_CAPABILITY_MISS_REASON } from "./runtime.js";
 import { guardFixture, memoryStore, scriptedLanguageModel } from "./testing/index.js";
 
 // Incident (runvendo/vendo#492): vendo_create_app returns fast with a
@@ -127,7 +125,7 @@ describe("build-failure lifecycle (#492)", () => {
         .then(() => undefined, (error: unknown) => error);
       expect(rejection).toBeInstanceOf(VendoError);
       const issues = ((rejection as VendoError).detail as { issues: string[] }).issues;
-      expect(issues.some((issue) => issue.includes("completed without any text output"))).toBe(true);
+      expect(issues.some((issue) => issue.includes("no text at all"))).toBe(true);
       expect(issues.some((issue) => issue.includes("missing-app"))).toBe(false);
     } finally {
       errorSpy.mockRestore();
@@ -156,29 +154,29 @@ describe("build-failure lifecycle (#492)", () => {
   });
 });
 
-// 0.4.5 E2E cert (defect D, byo-ai-sdk host): a create whose every region was
-// disclaimed away by repair "succeeded" into an app that only said "not
-// available" — no failure record, no log, and a host chat that read as a
-// build hanging forever. And a build task that never SETTLES (hung provider
-// stream, promise chain severed by the host runtime) persisted nothing at
-// all, so the embed polled {kind:"pending"} past every deadline.
+// 0.4.5 E2E cert (defect D, byo-ai-sdk host): an ask this host cannot serve
+// must fail LOUDLY rather than "succeed" into an app that says nothing — no
+// failure record, no log, and a host chat that reads as a build hanging
+// forever. And a build task that never SETTLES (hung provider stream, promise
+// chain severed by the host runtime) persisted nothing at all, so the embed
+// polled {kind:"pending"} past every deadline.
 describe("defect D — silent degenerate/hung builds fail loudly", () => {
-  const disclaimerMarkup =
-    `<App name="Hello stat"><Surface><Text text="${DISCLAIMER_TEXT}"/></Surface></App>`;
-
-  it("fails a disclaimer-only build terminally: record persisted, open() answers the host-capability reason, create() throws it", async () => {
+  it("fails a refused build terminally: record persisted, open() answers the refusal, create() throws it", async () => {
+    // The brain's own sentences ARE the reason: an impossible ask comes back as
+    // <Cannot> lines, and those are what the person reads.
+    const reason = "Your host has no way to read account balances, so nothing here can show one.";
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
-      const { runtime, store } = setup(scriptedLanguageModel(disclaimerMarkup));
+      const { runtime, store } = setup(scriptedLanguageModel(`<Cannot>${reason}</Cannot>`));
       const ctx = context("user_ada");
       const rejection = await runtime.create({ prompt: "one stat tile that says hello" }, ctx)
         .then(() => undefined, (error: unknown) => error);
       expect(rejection).toBeInstanceOf(VendoError);
-      expect((rejection as VendoError).message).toBe(`app build failed: ${HOST_CAPABILITY_MISS_REASON}`);
+      expect((rejection as VendoError).message).toBe(`app build failed: ${reason}`);
       const rows = await store.records("vendo_apps").list({});
       expect(rows.records).toHaveLength(1);
       const surface = await runtime.open(rows.records[0]!.id, ctx);
-      expect(surface).toEqual({ kind: "failed", reason: HOST_CAPABILITY_MISS_REASON, retryable: false, prompt: "one stat tile that says hello" });
+      expect(surface).toEqual({ kind: "failed", reason, retryable: false, prompt: "one stat tile that says hello" });
       expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("app build failed"));
     } finally {
       errorSpy.mockRestore();
@@ -243,88 +241,7 @@ describe("defect D — silent degenerate/hung builds fail loudly", () => {
   });
 });
 
-describe("isDisclaimerOnlyTree", () => {
-  const tree = (nodes: Tree["nodes"]): Tree => ({
-    formatVersion: "vendo-genui/v2",
-    root: "root",
-    nodes: [{ id: "root", component: "Stack", source: "prewired", children: nodes.map((node) => node.id) }, ...nodes],
-  } as Tree);
-  const disclaimer = (id: string): Tree["nodes"][number] =>
-    ({ id, component: "Text", source: "prewired", props: { text: DISCLAIMER_TEXT } }) as Tree["nodes"][number];
-
-  it("flags the pure disclaimer tree (the cert's persisted shape)", () => {
-    expect(isDisclaimerOnlyTree(tree([disclaimer("text-1")]))).toBe(true);
-  });
-
-  it("static copy around the disclaimers does not rescue it (the cloud-rung cert shape: heading + disclaimer)", () => {
-    expect(isDisclaimerOnlyTree(tree([
-      { id: "heading-1", component: "Text", source: "prewired", props: { text: "Dashboard", variant: "heading" } } as Tree["nodes"][number],
-      disclaimer("text-1"),
-    ]))).toBe(true);
-  });
-
-  it("a disclaimer MERGED into adjacent copy by the repair recompile still counts (containment, review 2026-07-26)", () => {
-    expect(isDisclaimerOnlyTree(tree([
-      {
-        id: "text-1",
-        component: "Text",
-        source: "prewired",
-        props: { text: `Overview\n    ${DISCLAIMER_TEXT}` },
-      } as Tree["nodes"][number],
-    ]))).toBe(true);
-  });
-
-  it("a data binding beside a disclaimer is real content — not degenerate", () => {
-    expect(isDisclaimerOnlyTree(tree([
-      disclaimer("text-1"),
-      { id: "stat-1", component: "Stat", source: "prewired", props: { label: "Total", value: { $path: "/totals/sum" } } } as Tree["nodes"][number],
-    ]))).toBe(false);
-  });
-
-  it("an action binding beside a disclaimer is real content — not degenerate", () => {
-    expect(isDisclaimerOnlyTree(tree([
-      disclaimer("text-1"),
-      { id: "button-1", component: "Button", source: "prewired", props: { label: "Refresh", onClick: { action: "host_refresh" } } } as Tree["nodes"][number],
-    ]))).toBe(false);
-  });
-
-  it("a generated island or host component beside a disclaimer is real content — not degenerate", () => {
-    expect(isDisclaimerOnlyTree(tree([
-      disclaimer("text-1"),
-      { id: "appshell-1", component: "AppShell", source: "generated" } as Tree["nodes"][number],
-    ]))).toBe(false);
-    expect(isDisclaimerOnlyTree(tree([
-      disclaimer("text-1"),
-      { id: "chart-1", component: "RevenueChart", source: "host" } as Tree["nodes"][number],
-    ]))).toBe(false);
-  });
-
-  it("a tree with no disclaimers is never degenerate, whatever else it lacks", () => {
-    expect(isDisclaimerOnlyTree(tree([
-      { id: "text-1", component: "Text", source: "prewired", props: { text: "hello" } } as Tree["nodes"][number],
-    ]))).toBe(false);
-  });
-
-  it("ignores unreachable disclaimer nodes (pruned subtrees)", () => {
-    const detached: Tree = {
-      formatVersion: "vendo-genui/v2",
-      root: "root",
-      nodes: [
-        { id: "root", component: "Stack", source: "prewired", children: ["text-1"] },
-        { id: "text-1", component: "Text", source: "prewired", props: { text: "hello" } },
-        { id: "orphan-1", component: "Text", source: "prewired", props: { text: DISCLAIMER_TEXT } },
-      ],
-    } as Tree;
-    expect(isDisclaimerOnlyTree(detached)).toBe(false);
-  });
-});
-
 describe("buildFailureReason", () => {
-  it("passes the host-capability miss reason through verbatim, non-retryable (defect D)", () => {
-    expect(buildFailureReason(new VendoError("validation", HOST_CAPABILITY_MISS_REASON)))
-      .toEqual({ reason: HOST_CAPABILITY_MISS_REASON, retryable: false });
-  });
-
   it("maps an aborted turn to a retryable timeout", () => {
     const aborted = Object.assign(new Error("aborted"), { name: "AbortError" });
     expect(buildFailureReason(aborted)).toEqual({ reason: "timed out", retryable: true });
@@ -360,10 +277,94 @@ describe("buildFailureReason", () => {
     expect(buildFailureReason(new Error(noKeyLine))).toEqual({ reason: noKeyLine, retryable: false });
   });
 
+  it("passes the ladder's REJECTED-key lines through too — a 401 is the same actionable class", () => {
+    // Both shapes are crafted by vendo/dev-creds (rejectedKey), not by a
+    // provider: the whole point is that only the ladder knows which credential
+    // was refused, so collapsing them to "generation failed · retry" sends the
+    // person back to the same dead key with nothing to act on.
+    const envLine = "your Anthropic API key was rejected (401) — check ANTHROPIC_API_KEY in .env.local; "
+      + "a revoked or mistyped key fails exactly this way.";
+    expect(buildFailureReason(new VendoError("validation", "model could not produce a valid app", [
+      `model generation failed: ${envLine}`,
+    ]))).toEqual({ reason: envLine, retryable: false });
+    const cloudLine = "VENDO_API_KEY was rejected by the Vendo Cloud model gateway (401) — run `vendo login` to mint "
+      + "a fresh key (it lands in .env.local), or manage project keys in the Vendo Cloud console.";
+    expect(buildFailureReason(new Error(cloudLine))).toEqual({ reason: cloudLine, retryable: false });
+  });
+
   it("never mistakes a provider key error for the dev-model class (no raw-message leak)", () => {
     // A provider message that mentions a key must stay canned — raw provider
     // text (which can echo key prefixes) never reaches the surface.
     expect(buildFailureReason(new Error("Incorrect API key provided: sk-proj-123")))
+      .toEqual({ reason: "generation failed", retryable: true });
+  });
+});
+
+// A quota exhaustion is a BILLING claim about the host's account and it is
+// non-retryable, so a false one tells the person two lies at once. The
+// classifier used to scan a blob of every candidate string joined together —
+// including the honesty gate's findings, which quote the whole host tool
+// inventory (checking/facts.ts `the host tools are: …`). demo-bank's inventory
+// contains `host_listScheduledPayments`, the pattern contained the bare word
+// "payment", so ordinary generation failures shipped as "quota exhausted ·
+// retryable: false" (observed live 2026-08-03, wave E2E). Both halves are
+// pinned here: the SOURCE is the provider's own error lines only, and the
+// PATTERN needs provider quota language rather than a word that lives in tool
+// and field names.
+describe("buildFailureReason quota classification (fix-quota-lie)", () => {
+  /** The engine's `model generation failed: ` prefix is the ONLY marker of a
+   *  provider line inside the terminal validation throw's issues, so it is what
+   *  the classifier keys on (generation/engine.ts askModel). */
+  const providerFailure = (message: string) =>
+    new VendoError("validation", `model generation failed: ${message}`, [`model generation failed: ${message}`]);
+
+  /** A terminal validation throw: the issues are the gate's own findings, with
+   *  no provider line anywhere. */
+  const validationFailure = (...issues: string[]) =>
+    new VendoError("validation", issues[0]!, issues);
+
+  const hostToolInventory = "host_getAccounts, host_getAccountBalance, host_listTransactions, "
+    + "host_listScheduledPayments, host_schedulePayment, host_listInvoices";
+
+  it("a real provider quota error → quota exhausted, non-retryable", () => {
+    expect(buildFailureReason(providerFailure(
+      "You exceeded your current quota, please check your plan and billing details.",
+    ))).toEqual({ reason: "quota exhausted", retryable: false });
+    // OpenAI's machine code: the underscore means there is no word boundary
+    // before "quota", so the pattern must name this shape itself.
+    expect(buildFailureReason(providerFailure("429 insufficient_quota")))
+      .toEqual({ reason: "quota exhausted", retryable: false });
+  });
+
+  it("a real 402 → quota exhausted, non-retryable", () => {
+    expect(buildFailureReason(providerFailure("Provider returned 402 Payment Required")))
+      .toEqual({ reason: "quota exhausted", retryable: false });
+  });
+
+  it("a validation failure whose findings quote the host tool inventory → generation failed, RETRYABLE", () => {
+    // The live defect, verbatim in shape: `host_listScheduledPayments` inside
+    // the finding's inventory used to be read as the provider saying the
+    // account is out of credit.
+    expect(buildFailureReason(validationFailure(
+      `query "scheduledOut" names unknown tool "spending.data.reduce"; the host tools are: ${hostToolInventory}`,
+    ))).toEqual({ reason: "generation failed", retryable: true });
+    // The same class through the app's own content: a payments view, a billing
+    // identifier, a "payment" label. None of it is a provider signal.
+    expect(buildFailureReason(validationFailure(
+      'binding "$payments.billing_id" does not resolve; the fields are: billing_id, payment_status, amount',
+      "the Payment History table has no rows and no empty state",
+    ))).toEqual({ reason: "generation failed", retryable: true });
+  });
+
+  it("a provider timeout → timed out, retryable", () => {
+    expect(buildFailureReason(providerFailure("Request timed out after 60000ms")))
+      .toEqual({ reason: "timed out", retryable: true });
+  });
+
+  it("a plain unknown failure → generation failed, retryable", () => {
+    expect(buildFailureReason(new Error("boom")))
+      .toEqual({ reason: "generation failed", retryable: true });
+    expect(buildFailureReason(validationFailure("the model answered with no text at all")))
       .toEqual({ reason: "generation failed", retryable: true });
   });
 });

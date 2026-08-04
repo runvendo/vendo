@@ -1,0 +1,75 @@
+==============================================================
+A. ALL GREEN — evidence tree updated as the LAST step
+==============================================================
+EXIT=0
+EXIT=0
+EXIT=0
+EXIT=0
+
+GATE 20260803T210130Z — branch main @ 1f3ac3125e780fa5ac381f382b1d9af961ae838e
+  build      EXIT=0
+  test       EXIT=0
+  typecheck  EXIT=0
+  lint       EXIT=0
+VERDICT: PASS (4/4) — logs copied to /private/var/folders/mb/8gs457ws78dcdwmtbryr76qr0000gn/T/serial-gate-demo-r5Yz/docs/superpowers/evidence/2026-08-03-ui-redesign/gates
+exit=0
+-- docs/superpowers/evidence/2026-08-03-ui-redesign/gates/build.log now:
+# 20260803T210130Z — branch main @ 1f3ac3125e780fa5ac381f382b1d9af961ae838e
+# cwd: /private/var/folders/mb/8gs457ws78dcdwmtbryr76qr0000gn/T/serial-gate-demo-r5Yz
+# argv: true
+-- docs/superpowers/evidence/2026-08-03-ui-redesign/gates/VERDICT:
+PASS 4/4 · 20260803T210130Z · branch main @ 1f3ac3125e780fa5ac381f382b1d9af961ae838e
+
+==============================================================
+B. ONE TARGET RED — non-zero exit, named verdict, evidence NOT touched
+==============================================================
+EXIT=0
+EXIT=0
+EXIT=1
+EXIT=0
+
+GATE 20260803T210130Z — branch main @ 1f3ac3125e780fa5ac381f382b1d9af961ae838e
+  build      EXIT=0
+  test       EXIT=0
+  typecheck  EXIT=1
+  lint       EXIT=0
+VERDICT: FAIL (1/4 red: typecheck) — /private/var/folders/mb/8gs457ws78dcdwmtbryr76qr0000gn/T/serial-gate-demo-r5Yz/docs/superpowers/evidence/2026-08-03-ui-redesign/gates NOT updated; logs in /private/var/folders/mb/8gs457ws78dcdwmtbryr76qr0000gn/T/serial-gate-demo-r5Yz/.gate-failures/20260803T210130Z
+exit=1
+-- evidence build.log unchanged from the green run:
+   IDENTICAL (not overwritten)
+-- failure logs written elsewhere:
+build.log
+build.status
+lint.log
+lint.status
+test.log
+test.status
+typecheck.log
+typecheck.status
+
+==============================================================
+C. TORN RUN — a target that never wrote its STATUS reads as FAILURE
+==============================================================
+EXIT=0
+EXIT=0
+EXIT=0
+EXIT=0
+
+GATE 20260803T210130Z — branch main @ 1f3ac3125e780fa5ac381f382b1d9af961ae838e
+  build      EXIT=0
+  test       EXIT=0
+  typecheck  NO STATUS (killed or never finished) — counted as FAILURE
+  lint       EXIT=0
+VERDICT: FAIL (1/4 red: typecheck) — /private/var/folders/mb/8gs457ws78dcdwmtbryr76qr0000gn/T/serial-gate-demo-r5Yz/docs/superpowers/evidence/2026-08-03-ui-redesign/gates NOT updated; logs in /private/var/folders/mb/8gs457ws78dcdwmtbryr76qr0000gn/T/serial-gate-demo-r5Yz/.gate-failures/20260803T210130Z
+exit=1
+
+==============================================================
+D. ABORTED MID-TARGET (SIGTERM, i.e. Ctrl-C) — nothing is written at all
+==============================================================
+EXIT=0
+EXIT=0
+exit=143 (143 = SIGTERM)
+-- evidence VERDICT still names the OLD run, so nothing reads as current:
+PASS 4/4 · OLD-RUN-STAMP · branch main @ deadbeefdeadbeef
+
+demo tree: /var/folders/mb/8gs457ws78dcdwmtbryr76qr0000gn/T//serial-gate-demo-r5Yz

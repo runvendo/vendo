@@ -35,6 +35,7 @@ import { appendFileSync, mkdirSync, readFileSync, statSync, writeFileSync } from
 import http from "node:http";
 import path from "node:path";
 import { runAgentTask as defaultRunAgentTask } from "./agent-sdk.mjs";
+import { createSessionRoutes } from "./turn-routes.mjs";
 
 const RESPAWN_DELAY_MS = 1_000;
 const RUN_WATCH_INTERVAL_MS = 2_000;
@@ -198,9 +199,26 @@ export const createHarness = (options = {}) => {
     response.end(JSON.stringify(payload));
   };
 
+  // Wave 2 lane E — the conversational door beside the layer-3 builder's. Same
+  // control port, same supervisor, a different kind of turn.
+  const turnRoutes = options.turnRoutes ?? createSessionRoutes({ env: boundaryEnv() });
+
   const handle = async (request, response) => {
     const url = new URL(request.url ?? "/", "http://box.internal");
     const route = `${request.method} ${url.pathname}`;
+    if (turnRoutes.owns(url.pathname)) {
+      let payload;
+      try {
+        const body = await readBody(request);
+        payload = body === "" ? {} : JSON.parse(body);
+      } catch {
+        sendJson(response, 400, { error: "body must be JSON" });
+        return;
+      }
+      const answer = await turnRoutes.handle(request.method, url.pathname, request.headers, payload);
+      sendJson(response, answer.status, answer.body);
+      return;
+    }
     if (route === "GET /agent/health") {
       sendJson(response, 200, {
         ok: true,
