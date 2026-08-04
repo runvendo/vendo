@@ -7,7 +7,7 @@ import { policyRuleSchema } from "./types.js";
  *  `/orgs/<orgId>/policy.json` in the org's workspace and managed by the
  *  console. Its own format tag: an org policy is NOT a host policy file and
  *  must never be loadable as one (the host's may say `run`; this one may not). */
-export const VENDO_ORG_POLICY_FORMAT = "vendo/org-policy@1";
+const VENDO_ORG_POLICY_FORMAT = "vendo/org-policy@1";
 
 /** The same match vocabulary as a host rule, with `run` removed from the action
  *  axis: org policy tightens, never loosens, and that is enforced at PARSE so a

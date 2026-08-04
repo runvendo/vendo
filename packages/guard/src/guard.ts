@@ -365,6 +365,7 @@ class GuardImplementation implements VendoGuard {
   readonly #writeCounts = new Map<string, { count: number; touchedAt: number }>();
   #lastSweepAt = 0;
   readonly #approvalCallbacks = new Set<(id: ApprovalId, approved: boolean) => void>();
+  readonly #approvalRequestedCallbacks = new Set<(request: ApprovalRequest) => void>();
 
   readonly approvals = {
     pending: (principal: Principal): Promise<ApprovalRequest[]> =>
@@ -456,6 +457,13 @@ class GuardImplementation implements VendoGuard {
     this.#approvalCallbacks.add(cb);
     return () => {
       this.#approvalCallbacks.delete(cb);
+    };
+  }
+
+  onApprovalRequested(cb: (request: ApprovalRequest) => void): () => void {
+    this.#approvalRequestedCallbacks.add(cb);
+    return () => {
+      this.#approvalRequestedCallbacks.delete(cb);
     };
   }
 
@@ -1544,6 +1552,17 @@ class GuardImplementation implements VendoGuard {
       sessionId: ctx.sessionId,
     };
     await this.#store.records(APPROVALS_COLLECTION).put({ id: request.id, data, refs: approvalRefs(data) });
+    // Subscribers see the park only after it persisted, and a returned
+    // thenable is awaited (as decision callbacks are) so check() resolves
+    // only after notification work lands. A subscriber failure never turns a
+    // successfully parked ask into an error.
+    for (const callback of this.#approvalRequestedCallbacks) {
+      try {
+        await (callback(request) as void | Promise<void>);
+      } catch {
+        // The approval row is the truth; notification is best-effort.
+      }
+    }
     return request;
   }
 
