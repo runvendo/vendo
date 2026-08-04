@@ -31,6 +31,7 @@ import {
 } from "./test-doubles.test-util.js";
 
 const THREAD = "thr_live" as ThreadId;
+const RUN_CTX = ctx();
 
 interface Published {
   threadId: ThreadId;
@@ -54,7 +55,7 @@ async function runWith(harness: Harness, publish: (published: Published) => () =
     harness,
     threadId: THREAD,
     messages: [userMessage("m1", "hello")] as UIMessage[],
-    ctx,
+    ctx: RUN_CTX,
     workspace: testWorkspace({}),
     models: unusedModels(),
     interactive: true,
@@ -80,7 +81,11 @@ describe("the runtime publishes the turn in flight", () => {
 
     expect(published).toBeDefined();
     expect(published!.threadId).toBe(THREAD);
-    expect(published!.ctx).toBe(ctx);
+    // The published ctx is the TURN's ctx: the caller's fields plus the
+    // transcript accessor the runtime attaches (RunContext.messages).
+    const { messages, ...rest } = published!.ctx as Record<string, unknown>;
+    expect(rest).toEqual(RUN_CTX);
+    expect((messages as () => UIMessage[])().map((message) => message.id)).toEqual(["m1"]);
     // THE assertion: not "an equivalent surface", the SAME one.
     expect(published!.tools).toBe(held);
   });
