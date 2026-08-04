@@ -40,7 +40,23 @@ export function parseInstant(value: string | null | undefined): Date | undefined
   const trimmed = value.trim()
   if (trimmed === "" || !ISO_8601_INSTANT.test(trimmed)) return undefined
   const parsed = new Date(trimmed)
-  return Number.isNaN(parsed.getTime()) ? undefined : parsed
+  if (Number.isNaN(parsed.getTime())) return undefined
+  // Guard the calendar date too: the regex accepts a well-FORMED but
+  // non-existent day like "2026-02-30", and `new Date` silently rolls it into a
+  // real instant (March 2) — a bound that would then project a falsely
+  // historical checklist. Round-trip the Y-M-D literal (always the first 10
+  // chars per the regex) through a UTC date and reject if any component moved.
+  const [year, month, day] = trimmed.slice(0, 10).split("-").map(Number)
+  const calendar = new Date(0)
+  calendar.setUTCFullYear(year, month - 1, day)
+  if (
+    calendar.getUTCFullYear() !== year
+    || calendar.getUTCMonth() !== month - 1
+    || calendar.getUTCDate() !== day
+  ) {
+    return undefined
+  }
+  return parsed
 }
 
 /** One document as it stood at `asOf`. Undefined `asOf` returns it untouched. */

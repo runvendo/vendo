@@ -68,7 +68,7 @@ function deadlineDigestDocument(id: string): AppDocument {
  *
  *  Pinned to Blue Bottle Coffee, the seeded hero client: its checklist holds
  *  one "received" and one "needs_review" document, so the forEach fans out to
- *  at most two cards per firing; historical as-of reads (../asof) can yield
+ *  at most two cards per firing; historical as-of reads (../server/asof) can yield
  *  fewer before each upload landed, never an unreadable wall of them. */
 function pendingUploadReviewDocument(id: string): AppDocument {
   return {

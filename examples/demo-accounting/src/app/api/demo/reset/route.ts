@@ -20,18 +20,32 @@ export async function POST() {
   // restores any the presenter deleted. Insert-if-absent, so an automation
   // that survived (and any edit to it) is left exactly as it was.
   //
-  // AWAITED so reset completion is meaningful: a presenter who reopens the
-  // panel the instant reset returns must find the scripted automations (and
-  // their Rehearse controls) already back, not racing a fire-and-forget seed.
-  // Unlike register()'s boot path, awaiting here cannot hang — this is a
-  // request handler on the already-running instance, not a second boot polling
-  // the cross-process writer lock. A seed failure is logged, never fatal to the
-  // reset itself.
-  try {
-    await seedDemoScript()
-  } catch (error: unknown) {
+  // BOUNDED-await, not unbounded: reset completion should be meaningful — a
+  // presenter who reopens the panel the instant reset returns should find the
+  // scripted automations (and their Rehearse controls) already back — so we
+  // wait for the seed rather than firing it and forgetting. But the seed writes
+  // through the shared PGlite writer lock, and if ANOTHER Cadence process holds
+  // it, an unbounded await would join that lock-wait and the reset response
+  // would hang indefinitely. Capping the wait keeps reset responsive: the seed
+  // is a handful of insert-if-absent writes and normally lands well within the
+  // budget, so the common uncontended path still returns with the panel
+  // repopulated; only a genuinely contended writer falls through to the
+  // background, where the seed keeps running (its .catch swallows any late
+  // failure) and re-lands on the next reset or the lock holder's boot seed. A
+  // seed failure is logged, never fatal to the reset itself.
+  const SEED_BUDGET_MS = 3_000
+  const seeded = seedDemoScript()
+  seeded.catch((error: unknown) => {
     console.error("[cadence] automation re-seed failed:", error)
-  }
+  })
+  let seedTimer: ReturnType<typeof setTimeout> | undefined
+  await Promise.race([
+    seeded.catch(() => undefined),
+    new Promise<void>((resolve) => {
+      seedTimer = setTimeout(resolve, SEED_BUDGET_MS)
+    }),
+  ])
+  if (seedTimer !== undefined) clearTimeout(seedTimer)
   // Chip cache repair, fire-and-forget (a reset must answer fast —
   // generation takes minutes). Idempotent: intact cached apps are skipped.
   pregenerateChips().catch((error: unknown) => {

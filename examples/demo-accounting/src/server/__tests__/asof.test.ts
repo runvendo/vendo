@@ -29,6 +29,15 @@ describe("parseInstant", () => {
     expect(parseInstant("0")).toBeUndefined()
     expect(parseInstant("1754308800000")).toBeUndefined()
     expect(parseInstant("2026")).toBeUndefined()
+    // Well-FORMED but non-existent calendar days: `new Date` rolls "2026-02-30"
+    // to March 2 and "2026-04-31" to May 1. Both must degrade, not project a
+    // date the user never named.
+    expect(parseInstant("2026-02-30")).toBeUndefined()
+    expect(parseInstant("2026-04-31")).toBeUndefined()
+    expect(parseInstant("2026-13-01")).toBeUndefined()
+    // A real leap day survives; a non-leap-year Feb 29 does not.
+    expect(parseInstant("2028-02-29")?.toISOString()).toBe("2028-02-29T00:00:00.000Z")
+    expect(parseInstant("2026-02-29")).toBeUndefined()
     // A plain calendar date and a full instant are both the documented form.
     expect(parseInstant("2026-07-01")?.toISOString()).toBe("2026-07-01T00:00:00.000Z")
     expect(parseInstant("2026-07-01T00:00:00.000Z")?.toISOString())

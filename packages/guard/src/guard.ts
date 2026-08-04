@@ -366,6 +366,11 @@ class GuardImplementation implements VendoGuard {
   readonly #maxWritesPerRun: number;
   readonly #callWindows = new Map<string, number[]>();
   readonly #writeCounts = new Map<string, { count: number; touchedAt: number }>();
+  // Per-rehearsal-firing simulated-write tally, keyed on the firing's runId. It
+  // models maxWritesPerRun WITHIN a firing without ever charging the shared live
+  // #writeCounts a preview must leave untouched; swept on the same 60-minute
+  // backstop as #writeCounts.
+  readonly #rehearsalWrites = new Map<string, { count: number; touchedAt: number }>();
   #lastSweepAt = 0;
   readonly #approvalCallbacks = new Set<(id: ApprovalId, approved: boolean) => void>();
 
@@ -1130,6 +1135,9 @@ class GuardImplementation implements VendoGuard {
     for (const [runKey, entry] of this.#writeCounts) {
       if (entry.touchedAt <= writeCutoff) this.#writeCounts.delete(runKey);
     }
+    for (const [runKey, entry] of this.#rehearsalWrites) {
+      if (entry.touchedAt <= writeCutoff) this.#rehearsalWrites.delete(runKey);
+    }
   }
 
   async #pipeline(
@@ -1247,6 +1255,9 @@ class GuardImplementation implements VendoGuard {
     ctx: RunContext,
   ): Promise<{ wouldAsk: boolean; grantsMissing: string[]; wouldBlock?: string }> {
     const awayCtx: RunContext = { ...ctx, venue: "automation", presence: "away" };
+    // Sweep on the same cadence the live path does, so a firing's per-run tally
+    // (below) cannot outlive its 60-minute backstop.
+    this.#sweepBreakerState(Date.now());
     let { decision } = await this.#pipeline(call, descriptor, awayCtx, true);
 
     // The card must reflect the SAME verdict the enabled away automation would
@@ -1274,12 +1285,17 @@ class GuardImplementation implements VendoGuard {
       }
     }
 
-    // Breaker / write-budget: a run that would trip parks (→ ask). Peek-only —
-    // the shared window/budget is never charged by a rehearsal preview.
+    // Breaker / write-budget: a run that would trip parks (→ ask). The live
+    // per-minute window and #writeCounts are PEEKED, never charged by a preview.
+    // The per-firing simulated-write budget IS modeled locally (#rehearsalWrites,
+    // keyed on the firing's runId, charged at the tail), so once a single
+    // firing's simulated writes exhaust maxWritesPerRun the rest honestly read
+    // "would ask" instead of a rosy "would run".
+    const write = descriptor.risk === "write" || descriptor.risk === "destructive";
+    const runKey = awayCtx.trigger?.runId ?? awayCtx.sessionId;
     if (decision.action === "run") {
-      const write = descriptor.risk === "write" || descriptor.risk === "destructive";
-      const runKey = awayCtx.trigger?.runId ?? awayCtx.sessionId;
-      const writes = this.#writeCounts.get(runKey)?.count ?? 0;
+      const writes = (this.#writeCounts.get(runKey)?.count ?? 0)
+        + (this.#rehearsalWrites.get(runKey)?.count ?? 0);
       const writesTripped = write && writes >= this.#maxWritesPerRun;
       const callsTripped = this.#peekCallsTripped(awayCtx.principal.subject);
       if (callsTripped || writesTripped) {
@@ -1311,6 +1327,17 @@ class GuardImplementation implements VendoGuard {
         && decision.decidedBy !== "org";
       const grantsMissing = grantSuppressible ? [call.tool] : [];
       return { wouldAsk: true, grantsMissing };
+    }
+    // Reaching here, the simulated write would actually RUN, so the enabled
+    // firing would spend one of its maxWritesPerRun slots. Charge the per-firing
+    // tally (never the live #writeCounts) so a LATER simulated write in the SAME
+    // firing sees the exhausted budget in the breaker check above.
+    if (write) {
+      const entry = this.#rehearsalWrites.get(runKey);
+      this.#rehearsalWrites.set(runKey, {
+        count: (entry?.count ?? 0) + 1,
+        touchedAt: Date.now(),
+      });
     }
     return { wouldAsk: false, grantsMissing: [] };
   }

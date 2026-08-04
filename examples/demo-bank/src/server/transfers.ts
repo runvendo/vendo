@@ -51,7 +51,25 @@ export function transferMoney(input: TransferMoneyInput = {}): Transaction {
   const destination = store.accounts.find(
     (a) => a.id !== accountId && a.name.trim().toLowerCase() === recipient.toLowerCase(),
   )
-  if (destination) destination.balance += amount
+  if (destination) {
+    destination.balance += amount
+    // Post the matching CREDIT row on the destination account so its own
+    // Transactions view shows the incoming transfer — mirroring the seed's
+    // paired "INTERNAL XFER" representation (source debit + destination credit).
+    const at = new Date().toISOString()
+    store.transactions.unshift({
+      id: `txn_transfer_${Date.now()}_destination`,
+      accountId: destination.id,
+      merchant: `Transfer from ${account?.name ?? "Checking"}`,
+      descriptor: "INTERNAL XFER",
+      amount,
+      timestamp: at,
+      category: "transfer",
+      status: "posted",
+      statusTimeline: [{ state: "posted", at }],
+      method: "Internal transfer",
+    })
+  }
 
   const txn: Transaction = {
     id: `txn_transfer_${Date.now()}`,

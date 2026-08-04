@@ -100,6 +100,39 @@ describe("rehearsal venue at the guard choke point", () => {
     expect(await guard.approvals.pending(alice)).toHaveLength(0);
   });
 
+  it("models maxWritesPerRun WITHIN a firing: writes past the budget flip to would-ask, live budget untouched", async () => {
+    const store = createMemoryStore();
+    const guard = createGuard({ store, policy: demoPolicy, breakers: { maxWritesPerRun: 2 } });
+    // Enable-captured authority so each write WOULD run (and thus spend a slot).
+    await seedGrant(store, { descriptor: descriptor("write"), source: "automation", appId: "app_1", duration: "standing" });
+    const tools = new FixtureTools();
+    const bound = guard.bind(tools);
+
+    // Three simulated writes in ONE firing (they share a runKey via the one ctx).
+    const verdicts: Array<{ wouldAsk: boolean; grantsMissing: string[] }> = [];
+    for (let index = 0; index < 3; index += 1) {
+      const outcome = await bound.execute(call("host_write", { v: index }, `call_w${index}`), rehearsalCtx);
+      verdicts.push((outcome as { output: { wouldAsk: boolean; grantsMissing: string[] } }).output);
+    }
+    // The first two fit the budget and would run; the third exhausts it and
+    // would ask (breaker) — the exact rosy-preview regression this models away.
+    expect(verdicts[0]).toMatchObject({ wouldAsk: false, grantsMissing: [] });
+    expect(verdicts[1]).toMatchObject({ wouldAsk: false, grantsMissing: [] });
+    expect(verdicts[2]).toMatchObject({ wouldAsk: true, grantsMissing: [] });
+    // Peek-only: nothing executed and nothing parked while modeling the budget.
+    expect(tools.executions).toHaveLength(0);
+    expect(await guard.approvals.pending(alice)).toHaveLength(0);
+    // The SHARED live write budget was never charged — a real away write for the
+    // same run key still runs (had the preview charged #writeCounts, session_1
+    // would already sit at the 2-write cap and this would trip instead).
+    const live = await bound.execute(
+      call("host_write", { v: "live" }, "call_live"),
+      context({ venue: "automation", presence: "away", appId: "app_1" }),
+    );
+    expect(live).toMatchObject({ status: "ok" });
+    expect(tools.executions).toHaveLength(1);
+  });
+
   it("a CHAT-source grant does NOT suppress the away verdict: the enabled automation still asks", async () => {
     const store = createMemoryStore();
     const guard = createGuard({ store, policy: demoPolicy });

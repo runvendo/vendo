@@ -139,10 +139,12 @@ function RehearsalStepRow({ step }: { step: RehearsalStep }) {
     const verdictSub = step.wouldBlock !== undefined
       ? `Would have been blocked — ${step.wouldBlock}`
       : missing.length > 0
-        // A missing grant is an APPROVAL request, not a hard block: approving it
-        // once mints the grant and the automation runs. Frame it that way so the
+        // A missing grant is an APPROVAL request, not a hard block, so the
         // sub-line agrees with the "would ask first" label (not "blocked").
-        ? `Would have asked for approval first — missing grant: ${grantList} (approve once and it runs)`
+        // It stops short of promising execution, though: a standing grant does
+        // not clear an unattended destructive call — THE LAW still refuses it —
+        // so the copy states only that approval is the gate, not that it runs.
+        ? `Would have asked for approval first — missing grant: ${grantList} (approval is required before it can run)`
         : step.wouldAsk === true
           ? "Would have asked for approval first — this action always needs sign-off"
           : "Not executed — this is what it would have sent";
