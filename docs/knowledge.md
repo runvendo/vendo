@@ -8,7 +8,7 @@ the same contract:
 
 | Engine | What it is | Posture |
 | --- | --- | --- |
-| `lexicalKnowledge()` | Free tier: keyword retrieval in your own store — works offline, zero keys | full (`fetch`, `write`, `visibility: "enforced"`) |
+| `vendoKnowledge()` | Free tier: keyword retrieval in your own store — works offline, zero keys | full (`fetch`, `write`, `visibility: "enforced"`) |
 | `cloudKnowledge({ apiKey })` | Vendo Cloud's managed engine over `vendo/knowledge-wire@1` — composed for you from `VENDO_API_KEY` | full |
 | `httpKnowledge({ url })` | BYO: any endpoint you run, in any language, speaking the same wire | declared — partial implementations are first-class |
 
@@ -49,7 +49,7 @@ applies, so stop the dev server first or point the engines at your own
 Postgres). Re-running with no changes pushes nothing.
 
 The agent side needs no wiring beyond the knowledge slot on `createVendo`:
-`knowledge: lexicalKnowledge()` — the composed store is injected for you, and
+`knowledge: vendoKnowledge()` — the composed store is injected for you, and
 the agent's `vendo_knowledge_search` tool retrieves snippets, fetches
 read-more context, and cites documents or refuses when evidence is weak.
 
@@ -59,7 +59,7 @@ Which engine backs the tool is the standard adapter decision, made once in
 `createVendo`:
 
 1. An explicit `knowledge: <adapter>` always wins — including the keyless BYO
-   engines (`lexicalKnowledge()`, `httpKnowledge({ url })`). A Cloud
+   engines (`vendoKnowledge()`, `httpKnowledge({ url })`). A Cloud
    subscriber therefore keeps its own engine by construction: a key never
    shadows a slot you filled.
 2. `VENDO_API_KEY` fills the slot with the Vendo Cloud engine (`cloudKnowledge`
@@ -140,7 +140,7 @@ ranking with title/heading boosts over the `vendo_knowledge_docs` /
 returns zero hits (the agent says it doesn't know), `deep` intent is
 documented as no-op escalation locally, and `schema` intent is exact
 term/title lookup over glossary/api entries. Pass
-`lexicalKnowledge({ store })` to keep the knowledge tables in a different
+`vendoKnowledge({ store })` to keep the knowledge tables in a different
 database.
 
 **Cloud** — `cloudKnowledge({ apiKey })` speaks `vendo/knowledge-wire@1`

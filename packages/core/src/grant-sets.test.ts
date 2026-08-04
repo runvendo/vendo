@@ -3,9 +3,9 @@ import {
   grantSetDelta,
   intentHash,
   isBundleEligible,
-  mechanicalRisk,
   projectableForRun,
   VENUES,
+  withheldFromUnattended,
   type AppIntent,
   type ToolDescriptor,
 } from "./index.js";
@@ -17,12 +17,11 @@ const intent: AppIntent = {
   runBody: "Summarise last week's invoices and draft an email.",
 };
 
-const tool = (name: string, risk: ToolDescriptor["risk"], extra: Partial<ToolDescriptor> = {}): ToolDescriptor => ({
+const tool = (name: string, risk: ToolDescriptor["risk"]): ToolDescriptor => ({
   name,
   description: `${risk} tool`,
   inputSchema: { type: "object" },
   risk,
-  ...extra,
 });
 
 describe("intentHash (build contract §7)", () => {
@@ -97,35 +96,19 @@ describe("THE LAW: destructive and external actions are never unattended (§12)"
     expect(projected).toHaveLength(3);
   });
 
-  it("withholds a tool the SECOND MECHANICAL VOTE calls destructive even when the label says write", () => {
-    // Eligibility never rests on the AI-assigned label alone. A tool named
-    // *_delete labelled `write` is treated as destructive, because disagreement
-    // resolves against the tool.
-    const mislabelled = [tool("maple_customer_delete", "write")];
-    expect(projectableForRun(mislabelled, { venue: "automation", presence: "away" })).toEqual([]);
+  it("projects by the DECLARED label alone — the dev's label is final", () => {
+    // The two-vote risk grading is gone: no name or method heuristic second-
+    // guesses the label a dev shipped and reviewed. A `read` named like a
+    // deletion is a read.
+    const labelled = [tool("maple_customer_delete", "read")];
+    expect(projectableForRun(labelled, { venue: "automation", presence: "away" }))
+      .toEqual(labelled);
   });
 
-  it("treats a DELETE-method tool as destructive however it is labelled", () => {
-    // `bindingRisk: "destructive"` is what the actions registry derives from a
-    // DELETE route or OpenAPI operation. The tool's own name is a retirement, not
-    // a deletion, so the binding is the only thing that can convict it.
-    //
-    // Asserted here at the unit, and — because a hand-built descriptor cannot
-    // reproduce the bug this field was added for — through a real route binding
-    // in `packages/vendo/src/law-binding-method.e2e.test.ts`.
-    const mislabelled = [tool("maple_thing_retire", "write", { bindingRisk: "destructive" })];
-    expect(projectableForRun(mislabelled, { venue: "automation", presence: "away" })).toEqual([]);
-  });
-
-  it("agrees with an honest read label, so the vote is not just 'everything is destructive'", () => {
-    expect(mechanicalRisk(tool("maple_invoices_list", "read"))).toBe("read");
-    expect(mechanicalRisk(tool("maple_invoice_update", "write"))).toBe("write");
-    expect(mechanicalRisk(tool("maple_payments_send", "destructive"))).toBe("destructive");
-  });
-
-  it("counts a human-messaging verb as destructive-external, not an ordinary write", () => {
-    // "message humans" is in the law alongside money and deletion.
-    expect(mechanicalRisk(tool("maple_email_send", "write"))).toBe("destructive");
+  it("withholds an UNGRADED tool from an unattended run — unlabeled means asks, and away has nobody to ask", () => {
+    const ungraded = [tool("maple_frobnicate_widget", "ungraded")];
+    expect(withheldFromUnattended(ungraded[0]!)).toBe(true);
+    expect(projectableForRun(ungraded, { venue: "automation", presence: "away" })).toEqual([]);
   });
 
   // The predicate is PRESENCE, never the venue label (§12 clarification
