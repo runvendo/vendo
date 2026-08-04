@@ -56,9 +56,12 @@ describe("cadenceDemoAutomations", () => {
       expect(on.kind).toBe("schedule")
       const cron = on.kind === "schedule" ? on.cron : undefined
       expect(cron).toBeDefined()
-      // "m h dom mon dow" — a pinned day-of-week is what makes it weekly.
-      const dow = cron!.split(" ")[4]
-      expect(dow).not.toBe("*")
+      // A genuinely WEEKLY cron: "m h * * dow" with a FIXED minute and hour and
+      // a SINGLE pinned day-of-week, so it fires once a week (~4-5 times in a
+      // 30-day replay). A pinned day-of-week alone is not enough — `0 * * * 1`
+      // fires every hour on Mondays (~96 firings, over the 30-firing cap), which
+      // the old `dow !== "*"` check let straight through.
+      expect(cron).toMatch(/^\d{1,2} \d{1,2} \* \* [0-6]$/)
     }
   })
 

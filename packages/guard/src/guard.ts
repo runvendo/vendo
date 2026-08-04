@@ -481,7 +481,18 @@ class GuardImplementation implements VendoGuard {
         // (#checkWithMetadata blocks would-asks, so rehearsal never parks).
         let rehearsalResolved: ToolDescriptor | undefined;
         if (ctx.venue === "rehearsal") {
-          const effective = await this.#effectiveDescriptor(call, descriptor, ctx);
+          // Classify against the SAME context the enabled away automation would
+          // run under (venue "automation", presence "away"), not the rehearsal
+          // context — a context-sensitive resolveRisk must not be able to score
+          // this call "read" here (so it executes for real) while the live
+          // automation would treat it as a write. The classification that picks
+          // simulate-vs-execute is the load-bearing safety boundary, so it must
+          // match the live verdict resolved the same way in #rehearsalWriteVerdict.
+          const effective = await this.#effectiveDescriptor(call, descriptor, {
+            ...ctx,
+            venue: "automation",
+            presence: "away",
+          });
           if (effective.risk !== "read") {
             // Resolve what the ENABLED automation's decision would be, so the
             // card can say "would ask / would be blocked" rather than a rosy
@@ -1108,16 +1119,68 @@ class GuardImplementation implements VendoGuard {
   ): Promise<{ wouldAsk: boolean; grantsMissing: string[]; wouldBlock?: string }> {
     const awayCtx: RunContext = { ...ctx, venue: "automation", presence: "away" };
     let { decision } = await this.#pipeline(call, descriptor, awayCtx, true);
+
+    // The card must reflect the SAME verdict the enabled away automation would
+    // reach, so it passes through the equivalent post-pipeline gates that
+    // #checkWithMetadata + bind() apply — org clamp, breaker/write-budget, and
+    // THE LAW's unattended-destructive refusal — done side-effect-free here (no
+    // park, no grant spend, no execute), never a rosy "would run" for a call a
+    // downstream gate would actually stop.
+
+    // 05 §6: an away "run" that is not grant-authorized parks (→ ask).
     if (decision.action === "run" && decision.decidedBy !== "grant") {
       decision = { action: "ask", decidedBy: "default" };
     }
+
+    // Org-admin clamp (run < ask < block), with the same consumed-replay
+    // carve-out #checkWithMetadata makes. A standing grant stays clampable.
+    const consumedApproval = decision.action === "run"
+      && decision.decidedBy === "grant" && decision.grantId === undefined;
+    if (!consumedApproval) {
+      const orgRule = await this.#orgRule(call, descriptor, awayCtx);
+      if (orgRule !== undefined && strictness(orgRule.action) > strictness(decision.action)) {
+        decision = orgRule.action === "block"
+          ? { action: "block", reason: orgRule.note ?? "blocked by org policy", decidedBy: "org" }
+          : { action: "ask", decidedBy: "org" };
+      }
+    }
+
+    // Breaker / write-budget: a run that would trip parks (→ ask). Peek-only —
+    // the shared window/budget is never charged by a rehearsal preview.
+    if (decision.action === "run") {
+      const write = descriptor.risk === "write" || descriptor.risk === "destructive";
+      const runKey = awayCtx.trigger?.runId ?? awayCtx.sessionId;
+      const writes = this.#writeCounts.get(runKey)?.count ?? 0;
+      const writesTripped = write && writes >= this.#maxWritesPerRun;
+      const callsTripped = this.#peekCallsTripped(awayCtx.principal.subject);
+      if (callsTripped || writesTripped) {
+        decision = { action: "ask", decidedBy: "breaker" };
+      }
+    }
+
+    // THE LAW: an unattended destructive "run" on a standing grant is refused
+    // outright — only a consumed approval replay survives it. The card shows the
+    // block, never "would run".
+    const replayApproved = decision.action === "run"
+      && decision.decidedBy === "grant" && decision.grantId === undefined;
+    if (
+      decision.action === "run" && !replayApproved
+      && isUnattended(awayCtx) && resolvedRisk(descriptor) === "destructive"
+    ) {
+      return { wouldAsk: false, grantsMissing: [], wouldBlock: UNATTENDED_DESTRUCTIVE_REASON };
+    }
+
     if (decision.action === "block") {
       return { wouldAsk: false, grantsMissing: [], wouldBlock: decision.reason };
     }
     if (decision.action === "ask") {
-      // A critical ask is not a MISSING-GRANT condition (a grant can't suppress
-      // a critical call), so it mirrors dryRun by staying out of grantsMissing.
-      const grantsMissing = decision.decidedBy === "critical" ? [] : [call.tool];
+      // Only a plain policy/default ask is grant-suppressible; a critical,
+      // breaker, or org ask can never be cleared by minting a grant, so those
+      // mirror dryRun by staying out of grantsMissing.
+      const grantSuppressible = decision.decidedBy !== "critical"
+        && decision.decidedBy !== "breaker"
+        && decision.decidedBy !== "org";
+      const grantsMissing = grantSuppressible ? [call.tool] : [];
       return { wouldAsk: true, grantsMissing };
     }
     return { wouldAsk: false, grantsMissing: [] };

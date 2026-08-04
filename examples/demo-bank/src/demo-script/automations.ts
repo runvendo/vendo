@@ -36,7 +36,7 @@ function weeklySummaryDocument(id: string): AppDocument {
     id,
     name: "Weekly spending summary",
     description:
-      "Every Friday at 5:00 PM, email a digest of that week's spending by category.",
+      "Every Friday at 5:00 PM, compile a digest of that week's spending by category to review.",
     trigger: {
       on: { kind: "schedule", cron: "0 17 * * 5" },
       // Steps run model: the capture surface stays exactly these host reads
@@ -56,14 +56,14 @@ function lowBalanceAlertDocument(id: string): AppDocument {
   return {
     format: "vendo/app@1",
     id,
-    name: "Low balance alert",
+    name: "Low balance check",
     description:
-      "Every morning at 8:00 AM, check Maple Checking and email an alert if the balance is below $2,000.",
+      "Every morning at 8:00 AM, check your Maple Checking balance so a low balance is easy to catch.",
     trigger: {
       on: { kind: "schedule", cron: "0 8 * * *" },
       // One host read keeps the standing-grant surface to a single consent
-      // moment in the scripted beat (the email is the delivery story, exactly
-      // like the weekly digest above).
+      // moment in the scripted beat (a read-only morning balance check, like
+      // the weekly digest above).
       run: {
         kind: "steps",
         steps: [{ id: "balance", tool: "host_listAccounts" }],

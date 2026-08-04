@@ -25,12 +25,21 @@
 import { getStore } from "./store"
 import type { DocumentRequest } from "./types"
 
+/** The documented bound form: an ISO-8601 calendar date, optionally with a time
+ *  and zone (what rehearse() pins via `.toISOString()`). Matched BEFORE `new
+ *  Date` because that constructor is far more permissive — `new Date("0")` is a
+ *  real instant, not a rejection — and a loosely-accepted junk bound would
+ *  project a falsely historical checklist instead of degrading to live. */
+const ISO_8601_INSTANT = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/
+
 /** Parse an ISO instant from a query param. Invalid or absent -> undefined
  *  (the caller then reads live data), never a thrown error: a malformed bound
  *  should degrade to "now", not fail the read mid-rehearsal. */
 export function parseInstant(value: string | null | undefined): Date | undefined {
-  if (value == null || value.trim() === "") return undefined
-  const parsed = new Date(value)
+  if (value == null) return undefined
+  const trimmed = value.trim()
+  if (trimmed === "" || !ISO_8601_INSTANT.test(trimmed)) return undefined
+  const parsed = new Date(trimmed)
   return Number.isNaN(parsed.getTime()) ? undefined : parsed
 }
 

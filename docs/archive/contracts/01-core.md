@@ -52,7 +52,7 @@ Attached to every tool call, guard decision, and audit event. The two axes the p
 export interface RunContext {
   principal: Principal;
   actor?: Principal;             // the human behind an org request (ENG-263): principal is the org (vendo:org:<id>), actor is the member who initiated it — audit records both
-  venue: "chat" | "app" | "automation" | "mcp" | "rehearsal";   // "mcp" is live — the door (10-mcp.md); "rehearsal" is live — the automation preview (07-automations §1 rehearse())  <!-- amended 2026-07-14: MCP door landed (PR #139); original froze pre-door and read "mcp reserved for the deferred door". The value is now live in code (run-context.ts:21,32). --> <!-- amended 2026-08-01: "rehearsal" added — Automation Rehearsal v1 landed (07-automations §1 rehearse()), code run-context.ts:36,58. -->
+  venue: "chat" | "app" | "automation" | "mcp";   // "mcp" is live — the door (10-mcp.md)  <!-- amended 2026-07-14: MCP door landed (PR #139); original froze pre-door and read "mcp reserved for the deferred door". The value is now live in code (run-context.ts:21,32). -->
 
   presence: "present" | "away";
   sessionId: string;
@@ -618,9 +618,3 @@ Persistence and transport are normative:
 - **Changed:** §14 adds the name-keyed `ComponentRegistry` form (`ComponentRegistryEntry`): keys are component names; each value holds `component` (a host component reference the server MUST IGNORE — it exists so the same object serves the client), `description`, optional `props` (the single schema), optional `examples`, optional `remixable`. Accepted anywhere the array form is (09 §2); the array form remains valid.
 - **Why:** the server-wiring DX brainstorm (decision 2): `propsJsonSchema` was one schema hand-expressed twice, and name-keying kills the mirror-two-maps catalog discipline. Deriving one JSON Schema that drives both the prompt and generated-props validation also closes 04 §1's disk-catalog permissive-validation gap for schema-bearing entries.
 - **Approved by:** Yousef, 2026-07-18 (server-wiring DX brainstorm, `docs/brainstorms/server-wiring-dx.md`, converged).
-
-### 2026-08-01 — Automation Rehearsal v1 (additive `rehearsal` venue)
-
-- **Changed:** §3's `RunContext.venue` (and its zod schema) gains the additive `"rehearsal"` member — the automation preview venue (07-automations §1 `rehearse()`) that replays a schedule's trailing-7-day firings through the live interactive session. `AuditEvent.venue` (§7) and `ApprovalRequest.ctx.venue` (§5) inherit the new member through their existing `RunContext["venue"]` reference; no separate schema update needed at those two positions.
-- **Why:** Automation Rehearsal v1 needed a distinct, always-visible venue so a rehearsal call's audit trail, policy rules, and guard decisions are never mistaken for a live `"automation"` run.
-- **Approved by:** Ayush Amawate (@Ayush2k02).

@@ -132,10 +132,14 @@ export function buildSeed(anchor: Date = new Date()): SeedData {
   // These two are the ONLY pending uploads the "Verify pending uploads"
   // automation acts on, and rehearsal replays that schedule over the trailing
   // 30 days with each firing's checklist projected back (../asof). An upload
-  // dated inside the last week therefore reads as `missing` at every replayed
-  // Tuesday and the automation rehearses to nothing at all. Staggered well
-  // behind the weekly cadence so the replay ramps 0 -> 1 -> 1 -> 2 cards
-  // instead: the checklist visibly fills up across the month.
+  // dated inside the last week would read as `missing` at every replayed
+  // Tuesday and the automation would rehearse to nothing at all. Staggered well
+  // behind the weekly cadence (payroll ~24 days, bank ~10 days) so the replay
+  // instead RAMPS UP toward two cards as each upload lands within the window:
+  // the earliest Tuesdays see 0, the middle ones see the payroll alone, and the
+  // most recent see both — the checklist visibly fills across the month. (The
+  // exact per-firing counts shift with which weekday "today" is; the ramp shape
+  // is what matters, not a fixed sequence.)
   // Keep act_006 / act_004 in the activity feed below dated to match.
   doc("doc_rivera_bank", "cl_rivera", "Bank statements (2025)", "received",
     { name: "boa-business-statements-jan-jun.pdf", daysAgo: 10 })
@@ -274,15 +278,18 @@ export function buildSeed(anchor: Date = new Date()): SeedData {
     })
   }
 
+  // Dated to match the checklist + activity feed: the Gusto payroll went up ~24
+  // days ago (act_004) and the BofA statements ~10 days ago (act_006), so the
+  // rehearsal's as-of replay ramps the same way this thread reads.
   msg("cl_rivera", "firm", "Maya Alvarez",
-    "Hi Marisol, kicking off your 2025 filing. We still need your January-June bank statements, owner W-2, any 1099-NECs you issued to crews, and expense receipts. The secure upload link is in your portal.",
-    6, 10, 12)
+    "Hi Marisol, kicking off your 2025 filing. We still need your Gusto payroll summary, January-June bank statements, owner W-2, any 1099-NECs you issued to crews, and expense receipts. The secure upload link is in your portal.",
+    26, 10, 12)
   msg("cl_rivera", "client", "Marisol Rivera",
-    "Just uploaded the Bank of America statements through June. Still tracking down the 1099s, our old bookkeeper had those on file.",
-    3, 14, 41)
+    "Uploaded the Bank of America statements through June. Still tracking down the 1099s, our old bookkeeper had those on file.",
+    10, 14, 41)
   msg("cl_rivera", "firm", "Maya Alvarez",
-    "Got the statements, thank you. The Gusto payroll summary is under review; it looks like Q1 may be cut off, so I will confirm shortly.",
-    2, 9, 55)
+    "Got the statements, thank you. The Gusto payroll summary you sent earlier is still under review; it looks like Q1 may be cut off, so I will confirm shortly.",
+    9, 9, 55)
   msg("cl_rivera", "client", "Marisol Rivera",
     "Thanks Maya. I should have the 1099-NECs from Miguel by Friday and will send the receipts folder with them.",
     1, 16, 8)

@@ -20,13 +20,18 @@ export async function POST() {
   // restores any the presenter deleted. Insert-if-absent, so an automation
   // that survived (and any edit to it) is left exactly as it was.
   //
-  // Fire-and-forget, unlike demo-bank's awaited call: Maple erases each
-  // subject's Vendo state on reset and so MUST re-seed before answering, but
-  // Cadence's reset leaves that state alone — nothing here is urgent enough
-  // to hold the response behind a store schema check.
-  seedDemoScript().catch((error: unknown) => {
+  // AWAITED so reset completion is meaningful: a presenter who reopens the
+  // panel the instant reset returns must find the scripted automations (and
+  // their Rehearse controls) already back, not racing a fire-and-forget seed.
+  // Unlike register()'s boot path, awaiting here cannot hang — this is a
+  // request handler on the already-running instance, not a second boot polling
+  // the cross-process writer lock. A seed failure is logged, never fatal to the
+  // reset itself.
+  try {
+    await seedDemoScript()
+  } catch (error: unknown) {
     console.error("[cadence] automation re-seed failed:", error)
-  })
+  }
   // Chip cache repair, fire-and-forget (a reset must answer fast —
   // generation takes minutes). Idempotent: intact cached apps are skipped.
   pregenerateChips().catch((error: unknown) => {

@@ -24,6 +24,13 @@ describe("parseInstant", () => {
     expect(parseInstant(null)).toBeUndefined()
     expect(parseInstant("")).toBeUndefined()
     expect(parseInstant("not-a-date")).toBeUndefined()
+    // `new Date` would accept these as real instants; a non-ISO bound must
+    // degrade to live rather than project a falsely historical checklist.
+    expect(parseInstant("0")).toBeUndefined()
+    expect(parseInstant("1754308800000")).toBeUndefined()
+    expect(parseInstant("2026")).toBeUndefined()
+    // A plain calendar date and a full instant are both the documented form.
+    expect(parseInstant("2026-07-01")?.toISOString()).toBe("2026-07-01T00:00:00.000Z")
     expect(parseInstant("2026-07-01T00:00:00.000Z")?.toISOString())
       .toBe("2026-07-01T00:00:00.000Z")
   })

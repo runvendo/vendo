@@ -117,7 +117,6 @@ Mounted under one base (default `/api/vendo`). Auth: every request passes throug
 | `/automations` | GET | list |
 | `/automations/:id/enable` · `/disable` | POST | `{ enabled, missing }` · `{}` |
 | `/automations/:id/dry-run` | POST | `RunPlan` |
-| `/automations/:id/rehearse` | POST | `RehearsalReport` |
 | `/runs` · `/runs/:id` | GET | run records |
 | `/runs/:id/stop` | POST | `{}` |
 | `/tick` | POST | scheduler tick (serverless cron target; requires `Authorization: Bearer <secret>` — what Vercel cron sends natively) |
@@ -214,9 +213,3 @@ Exit codes: doctor `0` green / `1` broken wiring; sync `0` (fail-soft warns) / w
 - **Changed:** §3's auth line, the `/mcp` row, and the pre-auth/CSRF paragraphs read "the composed principal resolver"; the door mounts when `mcp: true` has an oauth adapter from either channel (10-mcp §1 cross-reference updated in step).
 - **Why:** the server-wiring DX brainstorm (decisions 1, 2, 6): demo-bank derived all three identity seams from the same two lookups (~115 lines of glue for one identity story); bare `createVendo()` legitimately boots; `model` + `auth` is the real quickstart rung.
 - **Approved by:** Yousef, 2026-07-18 (server-wiring DX brainstorm, `docs/brainstorms/server-wiring-dx.md`, converged).
-
-### 2026-08-01 — Automation Rehearsal v1 wire route
-
-- **Changed:** §3's automations route table adds `POST /automations/:id/rehearse → RehearsalReport` beside `dry-run`.
-- **Why:** wires the automations engine's additive `rehearse()` (07-automations §1) onto the umbrella.
-- **Approved by:** Ayush Amawate (@Ayush2k02).

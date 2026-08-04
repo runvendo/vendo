@@ -74,10 +74,15 @@ const ctx = (subject = "user_a"): RunContext => ({
 const app = (id: string, trigger: NonNullable<AppDocument["trigger"]>): AppDocument =>
   ({ format: VENDO_APP_FORMAT, id, name: id, trigger });
 
-const seedApp = async (store: StoreAdapter, doc: AppDocument, subject = "user_a"): Promise<void> => {
+const seedApp = async (
+  store: StoreAdapter,
+  doc: AppDocument,
+  subject = "user_a",
+  enabled = false,
+): Promise<void> => {
   await store.records("vendo_apps").put({
     id: doc.id,
-    data: { subject, enabled: false, doc },
+    data: { subject, enabled, doc },
     refs: { subject, ...(doc.trigger === undefined ? {} : { trigger_kind: doc.trigger.on.kind }) },
   });
 };
@@ -106,9 +111,9 @@ const engine = (store: StoreAdapter, descriptors: ToolDescriptor[]) => createAut
   now: () => NOW,
 });
 
-const outlookOf = async (doc: AppDocument, descriptors: ToolDescriptor[]) => {
+const outlookOf = async (doc: AppDocument, descriptors: ToolDescriptor[], enabled = false) => {
   const store = memoryStoreAdapter();
-  await seedApp(store, doc);
+  await seedApp(store, doc, "user_a", enabled);
   const rows = await engine(store, descriptors).list(ctx());
   return rows.find(row => row.app.id === doc.id)!.rehearsal!;
 };
@@ -226,5 +231,60 @@ describe("rehearsal outlook", () => {
       readSteps: 1,
       historicalReads: 1,
     });
+  });
+
+  it("marks an unknown non-fn: tool unsupported — and rehearse() really does reject it", async () => {
+    const doc = app("app_unknown", {
+      on: { kind: "schedule", cron: "0 8 * * *" },
+      run: {
+        kind: "steps",
+        steps: [
+          { id: "read", tool: ledgerTool.name },
+          { id: "act", tool: "host_not_bound" },
+        ],
+      },
+    });
+    // A schedule+steps shape, but one step names a tool the guard cannot resolve:
+    // rehearse() would throw, so the outlook must not advertise the action.
+    expect((await outlookOf(doc, [ledgerTool])).supported).toBe(false);
+
+    const store = memoryStoreAdapter();
+    await seedApp(store, doc);
+    await expect(engine(store, [ledgerTool]).rehearse(doc.id, ctx()))
+      .rejects.toThrow(/unknown tool/);
+  });
+
+  it("does NOT count a read that hard-codes both bounds as historical (it repeats a fixed range)", async () => {
+    const outlook = await outlookOf(
+      app("app_fixed", {
+        on: { kind: "schedule", cron: "0 17 * * 5" },
+        run: {
+          kind: "steps",
+          steps: [
+            // Both from AND to fixed: rehearse()'s `??=` leaves them, so every
+            // firing re-reads the same range — not a per-firing historical window.
+            { id: "fixed", tool: ledgerTool.name, args: { from: "'2026-01-01'", to: "'2026-02-01'" } },
+          ],
+        },
+      }),
+      [ledgerTool],
+    );
+    expect(outlook).toMatchObject({ readSteps: 1, historicalReads: 0 });
+  });
+
+  it("marks an ENABLED automation unsupported — and rehearse() really does reject it", async () => {
+    const doc = app("app_live", {
+      on: { kind: "schedule", cron: "0 18 * * 5" },
+      run: { kind: "steps", steps: [{ id: "read", tool: ledgerTool.name }] },
+    });
+    // Rehearsal is the pre-enable step; an enabled row is rejected, so the list
+    // must not offer the control for it either.
+    expect((await outlookOf(doc, [ledgerTool], true)).supported).toBe(false);
+    expect((await outlookOf(doc, [ledgerTool], false)).supported).toBe(true);
+
+    const store = memoryStoreAdapter();
+    await seedApp(store, doc, "user_a", true);
+    await expect(engine(store, [ledgerTool]).rehearse(doc.id, ctx()))
+      .rejects.toThrow(/pre-enable/);
   });
 });

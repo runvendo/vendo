@@ -11,6 +11,7 @@ import {
 } from "./ids.js";
 import { principalSchema, type Principal } from "./principal.js";
 import type { RunContext } from "./run-context.js";
+import { venueSchema } from "./venue.js";
 import { triggerRefSchema, type TriggerRef } from "./triggers.js";
 import { toolCallSchema, toolDescriptorSchema, type ToolCall, type ToolDescriptor } from "./tools.js";
 
@@ -107,7 +108,7 @@ export const approvalRequestSchema = z.object({
   }).passthrough().optional(),
   ctx: z.object({
     principal: principalSchema,
-    venue: z.enum(["chat", "app", "automation", "mcp", "rehearsal"]),
+    venue: venueSchema,
     presence: z.enum(["present", "away"]),
     appId: appIdSchema.optional(),
     trigger: triggerRefSchema.optional(),

@@ -19,7 +19,13 @@ test("rehearse trigger is unnamed; the in-results 7d/30d toggle re-runs the wind
   await openScenario(page, "automations");
 
   // (1) The trigger button is plain "Rehearse" — the window is never named on it.
-  const trigger = page.getByRole("button", { name: "Rehearse", exact: true });
+  // Scope it to the intended automation's row (asserting that row's identity) so
+  // the locator is unambiguous even when other rehearsable rows are present —
+  // a bare "Rehearse" locator would match one button per eligible row and trip
+  // Playwright's strict-mode check.
+  const row = page.locator(".fl-automation").filter({ hasText: "Invoice watcher" });
+  await expect(row).toHaveCount(1);
+  const trigger = row.getByRole("button", { name: "Rehearse", exact: true });
   await expect(trigger).toBeVisible();
   // No results panel and therefore no window toggle exist before the first run.
   await expect(page.getByRole("group", { name: "Rehearsal window" })).toHaveCount(0);

@@ -16,7 +16,11 @@ const shot = (name: string) => `${EVIDENCE}/${name}.png`;
 test("every rehearsed firing row is collapsed by default; click toggles the newest", async ({ page }) => {
   await openScenario(page, "automations");
 
-  await page.getByRole("button", { name: "Rehearse", exact: true }).click();
+  // Scope the trigger to its automation row: a bare "Rehearse" locator matches
+  // one button per eligible row and would trip Playwright strict mode.
+  const row = page.locator(".fl-automation").filter({ hasText: "Invoice watcher" });
+  await expect(row).toHaveCount(1);
+  await row.getByRole("button", { name: "Rehearse", exact: true }).click();
   const results = page.getByLabel(/^Rehearsal for /);
   await expect(results.getByText("Rehearsal — last 30 days")).toBeVisible();
 

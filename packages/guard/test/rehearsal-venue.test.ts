@@ -197,7 +197,10 @@ describe("rehearsal venue at the guard choke point", () => {
   });
 
   it("a full-length rehearsal (30 reads) never trips the call-rate breaker on itself", async () => {
-    const guard = createGuard({ store: createMemoryStore(), policy: demoPolicy });
+    // maxCallsPerMinute:29 is BELOW the 30-firing count on purpose: if rehearsal
+    // reads charged the shared window (the regression this guards), the 30th
+    // would trip the breaker and block. The default 60 could never catch that.
+    const guard = createGuard({ store: createMemoryStore(), policy: demoPolicy, breakers: { maxCallsPerMinute: 29 } });
     const tools = new FixtureTools();
     const bound = guard.bind(tools);
     // One read per firing at the automations cap (REHEARSAL_MAX_FIRINGS) —

@@ -226,7 +226,10 @@ export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
           windowDays: resolvedWindowDays,
           from: new Date(to - resolvedWindowDays * day).toISOString(),
           to: new Date(to).toISOString(),
-          firings: [6, 4, 2].map((daysAgo) => {
+          // One firing per day in the window (a DAILY automation), so the
+          // narrower 7d window genuinely returns fewer rows than 30d rather than
+          // repeating the same three.
+          firings: Array.from({ length: resolvedWindowDays }, (_, index) => resolvedWindowDays - index).map((daysAgo) => {
             const firedAt = new Date(to - daysAgo * day).toISOString();
             return {
               scheduledFor: firedAt,

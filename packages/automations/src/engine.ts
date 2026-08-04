@@ -17,6 +17,7 @@ import {
   type PermissionGrant,
   type Principal,
   type RecordStore,
+  type RiskLabel,
   type RunContext,
   type RunId,
   type Step,
@@ -1690,12 +1691,26 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   const rehearsalOutlook = (
     doc: AppDocument,
     byName: Map<string, ToolDescriptor>,
+    enabled: boolean,
   ): RehearsalOutlook => {
     const trigger = doc.trigger;
+    const steps = trigger !== undefined && trigger.run.kind === "steps" ? trigger.run.steps : [];
+    // rehearse() throws `unknown tool in automation` on any non-`fn:` step it
+    // cannot resolve, so a schedule carrying an unknown tool is NOT actually
+    // rehearsable — offering the action would just fail. Mark it unsupported so
+    // the list and the endpoint agree.
+    const hasUnknownTool = steps.some(
+      (step) => !step.tool.startsWith("fn:") && !byName.has(step.tool),
+    );
+    // ENABLED automations are rejected by rehearse() (below): the replay anchors
+    // `schedule.every` at the window end, which only matches a DISABLED row (no
+    // enable cursor) — rehearsal is the pre-enable confidence step. Drop the
+    // control rather than offer an action that errors on an enabled row.
     const supported = trigger !== undefined
       && trigger.on.kind === "schedule"
-      && trigger.run.kind === "steps";
-    const steps = trigger !== undefined && trigger.run.kind === "steps" ? trigger.run.steps : [];
+      && trigger.run.kind === "steps"
+      && !hasUnknownTool
+      && !enabled;
     let actingSteps = 0;
     let readSteps = 0;
     let historicalReads = 0;
@@ -1709,7 +1724,11 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       }
       if (descriptor.risk !== "read") continue;
       readSteps += 1;
-      if (acceptsDateBounds(descriptor)) historicalReads += 1;
+      // Historical only when rehearse() will actually pin the window: it fills
+      // `from`/`to` with `??=`, so a step that hard-codes BOTH bounds re-reads
+      // the same fixed range every firing and replays no different history.
+      const fixesBothBounds = step.args?.["from"] !== undefined && step.args?.["to"] !== undefined;
+      if (acceptsDateBounds(descriptor) && !fixesBothBounds) historicalReads += 1;
     }
     return { supported, actingSteps, readSteps, historicalReads };
   };
@@ -1808,7 +1827,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       entries.push({
         app: row.doc,
         enabled: row.enabled,
-        rehearsal: rehearsalOutlook(row.doc, byName),
+        rehearsal: rehearsalOutlook(row.doc, byName, row.enabled),
         sponsor: { subject: sponsor, ...(display === undefined ? {} : { display }) },
         ...(stopped === undefined ? {} : { stopped }),
         ...(editors === undefined ? {} : { editors }),
@@ -2235,15 +2254,36 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   ): Promise<RehearsalFiring> => {
     const event: Json = { scheduledFor: firedAt.toISOString(), firedAt: firedAt.toISOString() };
     const rehearsalCtx: RunContext = {
-      principal: base.caller.principal,
+      // Preserve the caller's COMPLETE interactive context (memberships, actor,
+      // requestHeaders, …) — editableApp() already authorized this caller using
+      // ctx.memberships, so the subsequent guarded/host reads must see the same
+      // identity or org-policy and host access checks disagree with what was
+      // authorized. Only the rehearsal-specific fields below are overridden.
+      ...base.caller,
       venue: "rehearsal",
       presence: "present",
-      sessionId: base.caller.sessionId,
       appId: base.appId,
-      // AUDIT-SCOPED ONLY: rehearsal persists nothing to run history 
+      // AUDIT-SCOPED ONLY: rehearsal persists nothing to run history.
       trigger: { runId: id("run_rehearsal_") as RunId, kind: "schedule" },
-      ...(base.caller.requestHeaders === undefined ? {} : { requestHeaders: base.caller.requestHeaders }),
     };
+    // The guard classifies read-vs-simulate against the enabled automation's
+    // away context (venue "automation", presence "away") via the SAME resolver
+    // wired into createGuard's resolveRisk (apps.agentToolRisk). Resolve risk
+    // the same way here so date-bound pinning and the read/window row agree with
+    // what the guard actually did — never pin a call the guard treats as a write,
+    // and always pin a real read the guard executes.
+    const awayCtx: RunContext = { ...rehearsalCtx, venue: "automation", presence: "away" };
+    const effectiveRisk = async (call: ToolCall, descriptor: ToolDescriptor): Promise<RiskLabel> => {
+      try {
+        const risk = await config.apps.agentToolRisk(call, awayCtx);
+        if (risk === "read" || risk === "write" || risk === "destructive") return risk;
+      } catch {
+        // The static descriptor is the conservative fallback — mirrors the
+        // guard's #effectiveDescriptor on a classifier throw.
+      }
+      return descriptor.risk;
+    };
+
     const rows: RehearsalStep[] = [];
     const outputs: Record<string, Json> = {};
     let simulatedActions = 0;
@@ -2290,18 +2330,26 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
           failed = true;
           break;
         }
-        // Pin the firing's window onto date-bounded reads the step left open.
-        if (descriptor.risk === "read" && acceptsDateBounds(descriptor)) {
+        const call: ToolCall = { id: id("call_"), tool: step.tool, args };
+        const risk = await effectiveRisk(call, descriptor);
+        // Pin the firing's window onto date-bounded reads the step left open —
+        // keyed on the EFFECTIVE risk (what the guard executes), not the static
+        // label, so a reclassified tool pins exactly when the guard reads.
+        if (risk === "read" && acceptsDateBounds(descriptor)) {
           args["from"] ??= windowFrom.toISOString();
           args["to"] ??= firedAt.toISOString();
         }
         const bounded = typeof args["from"] === "string" && typeof args["to"] === "string";
-        const call: ToolCall = { id: id("call_"), tool: step.tool, args };
         const outcome = await config.tools.execute(call, rehearsalCtx);
         const row: RehearsalStep = { id: step.id, tool: step.tool, status: "ok" };
         if (Object.keys(args).length > 0) row.args = clone(args);
         if (outcome.status === "ok") {
-          if (isRehearsalSimulation(outcome.output)) {
+          // Gate the simulated-card discriminator on the EFFECTIVE risk: the
+          // guard only ever mints a RehearsalSimulation for a non-read call, so
+          // a real read whose payload happens to carry `rehearsalSimulated: true`
+          // (a host's own field) keeps its preview/result and is never counted
+          // as a simulated action.
+          if (risk !== "read" && isRehearsalSimulation(outcome.output)) {
             row.status = "simulated";
             simulatedActions += 1;
             const sim = outcome.output;
@@ -2312,7 +2360,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
             if (sim.wouldBlock !== undefined) row.wouldBlock = sim.wouldBlock;
           } else {
             row.preview = rehearsalPreview(outcome.output);
-            if (descriptor.risk === "read") {
+            if (risk === "read") {
               const result = rehearsalResult(outcome.output, hostSemantics?.[step.tool]);
               if (result !== undefined) row.result = result;
               if (bounded) {
@@ -2348,8 +2396,15 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   const rehearse: AutomationsEngine["rehearse"] = async (appId, ctx, windowDays) => {
     const found = await editableApp(appId, ctx);
     if (found.row.doc.trigger === undefined) throw new VendoError("validation", "app has no trigger");
+    // Rehearsal is the PRE-ENABLE confidence step: `schedule.every` replay
+    // anchors at the window end, which only matches a disabled row (no enable
+    // cursor — see everyFireTimes). An enabled row would get a timeline that
+    // disagrees with its real schedule, so reject it rather than mislead.
+    if (found.row.enabled) {
+      throw new VendoError("validation", "rehearsal is a pre-enable step; disable the automation to rehearse it");
+    }
     const trigger = validateTrigger(found.row.doc.trigger);
- 
+
     if (trigger.on.kind !== "schedule" || trigger.run.kind !== "steps") {
       throw new VendoError("validation", trigger.on.kind !== "schedule"
         ? "rehearsal supports schedule triggers only"

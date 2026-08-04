@@ -70,7 +70,10 @@ function refusalCopy(reason: unknown): string {
 function formatRehearsalDay(iso: string): string {
   const at = Date.parse(iso);
   if (Number.isNaN(at)) return iso;
-  return new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  // Format in UTC: the server supplies ISO window bounds and the rest of the
+  // timeline reads dates in UTC, so a local-timezone render here would drift the
+  // displayed day off the actual pinned range by one for many viewers.
+  return new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
 /** Firings-box sizing. One collapsed firing row ≈ .fl-act-row (8+8px padding +
@@ -135,7 +138,10 @@ function RehearsalStepRow({ step }: { step: RehearsalStep }) {
     const verdictSub = step.wouldBlock !== undefined
       ? `Would have been blocked — ${step.wouldBlock}`
       : missing.length > 0
-        ? `Would have been blocked — missing grant: ${grantList} (needs approval before it runs)`
+        // A missing grant is an APPROVAL request, not a hard block: approving it
+        // once mints the grant and the automation runs. Frame it that way so the
+        // sub-line agrees with the "would ask first" label (not "blocked").
+        ? `Would have asked for approval first — missing grant: ${grantList} (approve once and it runs)`
         : step.wouldAsk === true
           ? "Would have asked for approval first — this action always needs sign-off"
           : "Not executed — this is what it would have sent";
@@ -230,7 +236,11 @@ function RehearsalTimeline({
   onWindowChange: (windowDays: 7 | 30) => void;
 }) {
   const [open, setOpen] = useState<Record<string, boolean>>({});
-  const fired = report.firings.filter(firing => firing.status === "fired").length;
+  // Every scheduled firing in the window, including the ones that skipped (all
+  // `if`s false / a forEach matched nothing) — those still show as rows in the
+  // timeline below, so the headline count must include them or it contradicts
+  // what the reader sees.
+  const firingCount = report.firings.length;
   const simulated = report.firings.reduce((count, firing) => count + firing.simulatedActions, 0);
   const newestFirst = report.firings.slice().reverse();
   // The firings box renders at its full natural height — no cap, no internal
@@ -282,7 +292,7 @@ function RehearsalTimeline({
       <div className="fl-auto-sub" style={{ display: "block" }}>
         {report.firings.length === 0
           ? `This schedule would not have fired in the last ${report.windowDays} days.`
-          : `Would have fired ${fired} time${fired === 1 ? "" : "s"}`
+          : `Would have fired ${firingCount} time${firingCount === 1 ? "" : "s"}`
             + (simulated > 0 ? ` · ${simulated} simulated action${simulated === 1 ? "" : "s"} — nothing was executed` : " · nothing was executed")
             + (report.truncated === true ? " · showing the most recent firings" : "")}
       </div>
@@ -315,8 +325,12 @@ function RehearsalTimeline({
                     ) : null}
                     {(() => {
                       const wouldStop = firingWouldStopCount(firing);
+                      // "would stop", not "would ask": this count folds in
+                      // policy-BLOCKED actions (which never run) alongside
+                      // would-ask ones, so labelling it "would ask" would present
+                      // a rule that will never fire as an approval request.
                       return wouldStop > 0 ? (
-                        <span className="fl-act-x" style={{ fontWeight: 600 }}>· {wouldStop} would ask</span>
+                        <span className="fl-act-x" style={{ fontWeight: 600 }}>· {wouldStop} would stop</span>
                       ) : null;
                     })()}
                     {headline !== undefined ? (

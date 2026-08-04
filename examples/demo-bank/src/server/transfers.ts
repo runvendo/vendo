@@ -40,8 +40,18 @@ export function transferMoney(input: TransferMoneyInput = {}): Transaction {
   const ref = 4100 + ((transferCounter * 17) % 900)
   transferCounter++
 
-  // Debit the account (the demo's "money actually left" moment).
+  // Debit the source account (the demo's "money actually left" moment).
   if (account) account.balance -= amount
+
+  // Account-aware: when the recipient names one of the user's OWN accounts
+  // (e.g. the "Friday savings sweep" moving 10% into "Maple Savings"), also
+  // CREDIT that account so an internal transfer is net-worth-neutral and the
+  // money genuinely lands in savings — not debited from checking into thin air.
+  // A person/payee recipient matches no account and behaves exactly as before.
+  const destination = store.accounts.find(
+    (a) => a.id !== accountId && a.name.trim().toLowerCase() === recipient.toLowerCase(),
+  )
+  if (destination) destination.balance += amount
 
   const txn: Transaction = {
     id: `txn_transfer_${Date.now()}`,

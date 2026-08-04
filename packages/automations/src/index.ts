@@ -117,8 +117,9 @@ export interface RunRecord {
  *  there was nothing to consent to. */
 export interface RehearsalOutlook {
   /** rehearse() takes schedule triggers driving a `steps` run model, and
-   *  nothing else — an agentic run is rejected outright, so offering the
-   *  action at all is a mistake when this is false. */
+   *  nothing else — an agentic run, or a step naming a non-`fn:` tool the guard
+   *  cannot resolve, is rejected outright, so offering the action at all is a
+   *  mistake when this is false. */
   supported: boolean;
   /** Steps bound to a write/destructive tool: the ones that resolve to
    *  simulated cards. ZERO is the load-bearing case — reads execute and
@@ -129,9 +130,11 @@ export interface RehearsalOutlook {
    *  the read returns, and that count is only knowable by running it. */
   actingSteps: number;
   readSteps: number;
-  /** Reads whose window rehearse() will pin (`acceptsDateBounds`). Short of
-   *  readSteps, some firings re-read today's data and repeat each other
-   *  rather than replaying genuinely different history. */
+  /** Reads whose per-firing window rehearse() will actually pin: `acceptsDateBounds`
+   *  AND at least one of `from`/`to` left unset by the step (a step that
+   *  hard-codes BOTH bounds re-reads the same fixed range every firing, so it is
+   *  not counted here). Short of readSteps, some firings re-read today's data and
+   *  repeat each other rather than replaying genuinely different history. */
   historicalReads: number;
 }
 
@@ -147,7 +150,8 @@ export interface RehearsalStep {
   tool: string;
   /** "simulated" = write/destructive risk; the guard resolved the call to its
    *  simulated card instead of executing. "skipped" = an `if` condition was
-   *  false, or the step is an app function call (fn:, not rehearsed in v1). */
+   *  false, a `forEach` matched no items, or the step is an app function call
+   *  (fn:, not rehearsed in v1). */
   status: "ok" | "simulated" | "skipped" | "blocked" | "error";
   /** The call's fully resolved arguments (JSONata evaluated against the
    *  firing's event and REAL upstream step outputs). */
@@ -188,7 +192,8 @@ export interface RehearsalStep {
 /** Additive (rehearse()) — one historical firing of the trigger. */
 export interface RehearsalFiring {
   scheduledFor: IsoDateTime;
-  /** "skipped" = every step's `if` condition was false, nothing evaluated. */
+  /** "skipped" = no tool call ran for this firing: e.g. every step's `if` was
+   *  false, a `forEach` matched no items, or every step was an `fn:` app call. */
   status: "fired" | "skipped" | "error";
   /** Count of simulated write/destructive actions in this firing. */
   simulatedActions: number;
