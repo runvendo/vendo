@@ -40,6 +40,14 @@ export interface ClaudeCodeOptions {
   /** Run the SDK on the host's own server instead of a sandbox. Never default. */
   machine?: "local";
   /**
+   * Provider template the conversation box boots from; defaults to
+   * `VENDO_BOX_TEMPLATE`. Construction-time like `machine`: which image a box
+   * runs is a deployment decision, never a request's.
+   *
+   * Sandbox path only: `machine: "local"` has no box to template.
+   */
+  template?: string;
+  /**
    * Extra outbound domains the box may reach, ADDED to the minimum set
    * ({@link boxEgress}). Bare hostnames, as `vendo.json`'s `egress` writes them.
    *
@@ -87,8 +95,8 @@ export interface ClaudeCodeDeps {
  *  model to think, and that is the ONLY credential in the machine. */
 export function inferenceEnv(): Record<string, string> {
   const source = globalThis.process?.env ?? {};
-  const key = source["ANTHROPIC_API_KEY"] ?? source["VENDO_INFERENCE_KEY"];
-  const url = source["ANTHROPIC_BASE_URL"] ?? source["VENDO_INFERENCE_URL"];
+  let key = source["ANTHROPIC_API_KEY"] ?? source["VENDO_INFERENCE_KEY"];
+  let url = source["ANTHROPIC_BASE_URL"] ?? source["VENDO_INFERENCE_URL"];
   const env: Record<string, string> = {
     // Nothing the CLI reaches for on the side: its telemetry and update hosts are
     // not on the box's allowlist (`boxEgress` below), so those calls fail rather
@@ -96,6 +104,24 @@ export function inferenceEnv(): Record<string, string> {
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
     DISABLE_AUTOUPDATER: "1",
   };
+  // The third rung, mirroring server.ts's `boxInference()`: no Anthropic
+  // credential and no pre-resolved gateway means VENDO_API_KEY — the same key
+  // that provisions the Cloud machine — funds the box's model through the
+  // console's Anthropic-compatible gateway at `<console>/api/v1`. The gateway
+  // serves the vendo model family as literal ids, so the DEFAULT model is
+  // pinned to the family name — the SDK's own default is a raw claude-* id the
+  // gateway would grace-remap. Only the default: an explicit `options.model`
+  // rides the session-open payload, which beats ANTHROPIC_MODEL.
+  const cloudKey = source["VENDO_API_KEY"];
+  if ((key === undefined || key === "") && (url === undefined || url === "")
+    && cloudKey !== undefined && cloudKey !== "") {
+    const cloudUrl = source["VENDO_CLOUD_URL"];
+    const base = (cloudUrl === undefined || cloudUrl === "" ? "https://console.vendo.run" : cloudUrl)
+      .replace(/\/+$/, "");
+    key = cloudKey;
+    url = base.endsWith("/api/v1") ? base : `${base}/api/v1`;
+    env["ANTHROPIC_MODEL"] = "vendo";
+  }
   if (key !== undefined && key !== "") env["ANTHROPIC_API_KEY"] = key;
   if (url !== undefined && url !== "") {
     env["ANTHROPIC_BASE_URL"] = url.replace(/\/+$/, "").replace(/\/v1$/, "");
@@ -195,24 +221,6 @@ export function promptFor(messages: readonly UIMessage[], resuming: boolean): st
   if (earlier.length === 0) return spoken === "" ? "Continue." : spoken;
   return `Here is the conversation so far, so you can pick it up mid-thread:\n\n${earlier.join("\n\n")}\n\n`
     + `The user now says:\n\n${spoken}`;
-}
-
-/**
- * The few lines the co-trained preset does NOT already know: where it is, who it
- * is talking to, and which hands touch reality.
- *
- * This replaced a ~14-line wall that re-explained the mount layout, the copy
- * semantics, the save timing and the refusal etiquette. Claude Code already knows
- * how to work in a directory — that is what the preset IS. What it cannot know is
- * the EMBEDDING, so that is all this says.
- */
-function embeddingBrief(root: string): string {
-  return `\n\nYou are embedded in this product, talking to one of its customers — plain language, no file paths, no tool names.`
-    + `\n\nTheir files are in ${root}. Real-world actions — the product's own operations, their data — are the \`vendo\` tools;`
-    + ` if one comes back refused, say so plainly and move on.`
-    + ` Anything they want to look at, track, or keep using is an app you build in \`app.vendo\` —`
-    + ` the \`building-apps\` skill is the manual.`
-    + ` This session stays open for the whole conversation, so what you already read and built is still here.`;
 }
 
 /** `turn.state` — the opaque blob (§1.3). Ours to shape, nobody else's to read. */
@@ -353,6 +361,7 @@ export function claudeCode(
         ...(turn.options ?? {}),
         machine: options.machine,
         egress: options.egress,
+        template: options.template,
       };
       const state = readState(turn.state.get());
 
@@ -425,6 +434,7 @@ export function claudeCode(
           threadId: threadOf(turn),
           env: boxEnv,
           allowedDomains: boxEgress(boxEnv, doorPort?.url, resolved.egress),
+          ...(resolved.template === undefined ? {} : { template: resolved.template }),
         });
       }
 
@@ -509,7 +519,9 @@ export function claudeCode(
         const skillNames = (await turn.skills.list().catch(() => [])).map((skill) => skill.name);
         const running = machine.send({
           prompt: promptFor(turn.messages, sessionId !== undefined),
-          systemPrompt: `${turn.system ?? ""}${embeddingBrief(rootHintFor(resolved))}`,
+          // The host's composed brief, WHOLE and ALONE: what the box thinks with
+          // is the host's prompt seam, never lines this harness appends after it.
+          systemPrompt: turn.system ?? "",
           ...(door === undefined ? {} : { toolDoor: door }),
           ...(resolved.model === undefined ? {} : { model: resolved.model }),
           ...(resolved.effort === undefined ? {} : { effort: resolved.effort }),
@@ -599,9 +611,4 @@ function threadOf(turn: Turn<ClaudeCodeOptions>): string {
   if (typeof first === "string" && first !== "") return first;
   return `anon_${globalThis.crypto.randomUUID()}`;
 }
-
-/** What the workspace brief calls the root. The box path pins it; local mints a
- *  temp dir, and naming it exactly is not worth a round trip. */
-const rootHintFor = (resolved: ClaudeCodeOptions): string =>
-  resolved.machine === "local" ? "your working directory" : "/workspace";
 
