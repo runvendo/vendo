@@ -20,22 +20,13 @@ const BANNED = [
 ];
 
 /**
- * The ONE place a verb vocabulary still lives, and it is not extraction.
- *
- * The rebuild cutover (#736) landed a SECOND mechanical vote in core
- * (`mechanicalRisk` / `resolvedRisk`, grant-sets.ts): it reads a tool's name at
- * DECISION time to escalate — never to grade a catalog, never to lower a label,
- * and skipped for Vendo-authored tools. D1 ("no code path concludes anything
- * from a tool's name") and that vote are not reconciled, and a merge is not the
- * place to decide which survives. Until it is decided, this holds the line where
- * the spec's own evidence is: nothing in EXTRACTION or the connectors carries a
- * word list, and no NEW copy may appear anywhere. If the core vote goes, this
- * list must shrink with it — that failure is the reminder.
+ * NO verb vocabulary lives anywhere any more. The core decision-time vote
+ * (`mechanicalRisk` / `resolvedRisk`, grant-sets.ts) that once held the last
+ * word list was removed with two-vote grading (agents-v0, 2026-08-04): the
+ * dev's label is final, so D1 now holds repo-wide with no exception —
+ * nothing anywhere concludes anything from a tool's name.
  */
-const KNOWN_DECISION_TIME_VOTE = [
-  "packages/core/src/grant-sets.ts",
-  "packages/core/src/tools.ts",
-];
+const KNOWN_DECISION_TIME_VOTE: string[] = [];
 
 describe("no code path grades a tool from its NAME (D1, AC1)", () => {
   it("carries no word list anywhere under packages/, bar the one named exception", async () => {

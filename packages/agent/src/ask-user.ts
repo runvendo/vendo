@@ -2,7 +2,6 @@ import {
   ASK_USER_TOOL,
   isUnattended,
   VENDO_TOOL_TITLES,
-  vendoAuthored,
   type RunContext,
   type ToolDescriptor,
   type ToolRegistry,
@@ -34,7 +33,7 @@ export { ASK_USER_TOOL };
  * stream-parts.ts), and it holds a turn — and, for a boxed harness, a machine —
  * open on a human's attention.
  */
-const DESCRIPTOR: ToolDescriptor = vendoAuthored({
+const DESCRIPTOR: ToolDescriptor = {
   name: ASK_USER_TOOL,
   title: VENDO_TOOL_TITLES[ASK_USER_TOOL],
   description:
@@ -52,7 +51,7 @@ const DESCRIPTOR: ToolDescriptor = vendoAuthored({
     additionalProperties: false,
   },
   risk: "read",
-});
+};
 
 const UNATTENDED_REASON =
   "There is nobody here to answer a question: this run is unattended. "
@@ -71,12 +70,8 @@ const NEXT_STEP =
  * guard, the audit trail, and `find_tools` all see it like any other tool.
  *
  * It is a `read` because asking costs no authority — §12's "reads are silent,
- * always" — so a question never spends a grant or raises a consent card. That
- * label is HAND-WRITTEN here, which is why the descriptor is marked
- * `vendoAuthored`: the second mechanical vote is for AI-assigned labels, and its
- * verb-shape heuristic (calibrated for extracted `noun_verb` names) reads the
- * trailing noun of `ask_user` and fail-closes to `write`, which would make a
- * question mutating.
+ * always" — so a question never spends a grant or raises a consent card. The
+ * hand-written label is final.
  *
  * What it must never be is available with nobody present, which is enforced
  * twice: the descriptor is withheld from an unattended run, and execute refuses

@@ -1,8 +1,7 @@
-import {
-  resolvedRisk,
-  type AppDocument,
-  type RiskLabel,
-  type ToolDescriptor,
+import type {
+  AppDocument,
+  RiskLabel,
+  ToolDescriptor,
 } from "@vendoai/core";
 import type { Sponsorship } from "./sponsorship.js";
 
@@ -11,8 +10,7 @@ import type { Sponsorship } from "./sponsorship.js";
  *  Design §12: consent surfaces are the one carve-out from the voice law —
  *  plain language, but ONE LINE PER STEP (never a single summary line for a
  *  compound), the real tool title, the material arguments where the automation
- *  declares them, and a risk the model cannot author (`resolvedRisk`: the
- *  declared label and the mechanical vote, resolved against the tool). */
+ *  declares them, and the tool's declared risk label. */
 export interface AdoptionNeed {
   tool: string;
   title: string;
@@ -48,10 +46,9 @@ const needFor = (
     tool,
     title: descriptor?.title ?? tool,
     ...(descriptor?.description === undefined ? {} : { description: descriptor.description }),
-    // A tool the registry no longer binds is a write: the same fail-closed
-    // default the mechanical vote uses for a name it does not recognise —
-    // an unknown declaration is not evidence of safety.
-    risk: descriptor === undefined ? "write" : resolvedRisk(descriptor),
+    // A tool the registry no longer binds is a write, fail-closed: an unknown
+    // declaration is not evidence of safety.
+    risk: descriptor === undefined ? "write" : descriptor.risk,
     ...(args === undefined || Object.keys(args).length === 0 ? {} : { args: { ...args } }),
   };
 };

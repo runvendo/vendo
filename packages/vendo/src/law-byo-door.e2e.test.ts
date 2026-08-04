@@ -38,8 +38,7 @@ const routeTool = (name: string, method: "GET" | "POST", risk: "read" | "write" 
   binding: { kind: "route" as const, method, path: `/api/${name}`, argsIn: "query" as const },
 });
 
-/** Plainly labelled tools: this door's bug is about the CTX, not the vote, so
- *  nothing here needs the mechanical vote to reach the right answer. */
+/** Plainly labelled tools: this door's bug is about the CTX, not the labels. */
 const PROFILE = {
   tools: [
     routeTool("maple_invoices_list", "GET", "read"),

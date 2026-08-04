@@ -2,9 +2,7 @@ import { readOptionalVendoJson } from "#actions/host-files";
 import {
   VendoError,
   descriptorHash,
-  isVendoAuthored,
   toolDescriptorSchema,
-  vendoAuthored,
   type ActAs,
   type PermissionGrant,
   type Principal,
@@ -188,51 +186,11 @@ const STRIPPED_HEADERS = new Set([
 ]);
 
 /**
- * Design §12's second mechanical vote, METHOD axis — the tool's execution shape
- * distilled into the one fact the vote needs (`ToolDescriptor.bindingRisk`).
- *
- * DERIVED here rather than copied off the tool, because the descriptor surface is
- * fed by data a host controls (`.vendo/tools.json`, `overrides.json`, a connector
- * catalog) and `overrides.json` may LOWER a declared `risk`. The vote is the
- * backstop for exactly that, so it must read something no author can set.
- *
- * Every value returned escalates or says nothing: `undefined` for a read shape is
- * how the vote behaved before this existed, and there is no value meaning "read".
- * A compound returns nothing on purpose — its declared risk is already the
- * riskiest step's (§4), and each step re-enters the guard on its own.
- */
-function bindingRiskOf(binding: ToolBinding | undefined): ToolDescriptor["bindingRisk"] {
-  switch (binding?.kind) {
-    case "route":
-    case "openapi":
-      if (binding.method === "DELETE") return "destructive";
-      return binding.method === "GET" ? undefined : "write";
-    case "trpc":
-    case "graphql":
-      return binding.type === "mutation" ? "write" : undefined;
-    // A server action is a POST-shaped mutation surface and static parsing cannot
-    // prove otherwise — the same stance `serverActionRisk` takes at build time.
-    case "server-action":
-      return "write";
-    default:
-      return undefined;
-  }
-}
-
-/**
  * The descriptor surface, as a field WHITELIST: provenance the registry knows
  * (audience, semantics, the binding itself) deliberately does not travel to
  * whoever reads `descriptors()`.
- *
- * `bindingRisk` is the one field added FROM the binding rather than passed
- * through, and it is added because the whitelist was silently disabling half of
- * THE LAW: `mechanicalRisk` reads the tool's method, the whitelist dropped
- * `binding.method`, and so a DELETE-bound tool labelled `write` was projected
- * into unattended runs. It is derived, never copied, so nothing a host can author
- * widens what reaches the vote (see {@link bindingRiskOf}).
  */
 function descriptorOf(tool: ToolDescriptor & { binding?: ToolBinding }): ToolDescriptor {
-  const bindingRisk = bindingRiskOf(tool.binding);
   return {
     name: tool.name,
     description: tool.description,
@@ -241,7 +199,6 @@ function descriptorOf(tool: ToolDescriptor & { binding?: ToolBinding }): ToolDes
     ...(tool.outputSchema !== undefined ? { outputSchema: tool.outputSchema } : {}),
     ...(tool.confirmEach !== undefined ? { confirmEach: tool.confirmEach } : {}),
     ...(tool.title !== undefined ? { title: tool.title } : {}),
-    ...(bindingRisk !== undefined ? { bindingRisk } : {}),
   };
 }
 
@@ -389,19 +346,11 @@ function parseExtractedTool(value: unknown, source: string): ExtractedTool {
 }
 
 function parseToolDescriptor(value: unknown, source: string): ToolDescriptor {
-  let parsed: ToolDescriptor;
   try {
-    parsed = toolDescriptorSchema.parse(value);
+    return toolDescriptorSchema.parse(value);
   } catch (cause) {
     throw validationError(source, cause);
   }
-  // Parsing must not LAUNDER provenance. Zod rebuilds the object from its string
-  // keys, which drops the `vendoAuthored` symbol brand — and a Vendo verb that
-  // arrives here unbranded falls back to §12's mechanical vote, which mis-votes
-  // on the names we chose ourselves (core `resolvedRisk`). Carried over from the
-  // SOURCE object, so it stays unforgeable: a descriptor that arrived as data —
-  // a connector catalog, tools.json, the wire — cannot carry a symbol at all.
-  return isVendoAuthored(value as ToolDescriptor) ? vendoAuthored(parsed) : parsed;
 }
 
 function setHeader(headers: Record<string, string>, name: string, value: string): void {

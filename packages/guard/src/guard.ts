@@ -2,9 +2,7 @@ import {
   canonicalJson,
   descriptorHash,
   isUnattended,
-  mechanicalRisk,
   projectableForRun,
-  resolvedRisk,
   serviceToolSlug,
   withheldFromUnattended,
   withResolvedRisk,
@@ -624,7 +622,6 @@ class GuardImplementation implements VendoGuard {
               detail: {
                 reason: "unattended-destructive",
                 declaredRisk: completed.descriptor.risk,
-                mechanicalRisk: mechanicalRisk(completed.descriptor),
               },
             }),
           );
@@ -648,11 +645,11 @@ class GuardImplementation implements VendoGuard {
           // touched, because that is the only point where skipping is both safe
           // (authority was still checked) and effective (the effect is avoided).
           //
-          // `resolvedRisk`, not the declared label: gating on what the model said
-          // left the most dangerous class — a destructive tool mislabelled
-          // `read` — with no ledger protection at all.
-          const resolved = resolvedRisk(completed.descriptor);
-          const mutating = resolved === "write" || resolved === "destructive";
+          // The DECLARED label decides — the dev's label is final (two-vote
+          // grading removed), so a declared `read` is silent and takes no
+          // receipt.
+          const risk = completed.descriptor.risk;
+          const mutating = risk === "write" || risk === "destructive";
           const base = mutating ? effectBaseKey(ctx, call) : undefined;
           const key = base === undefined ? undefined : effectKeyOf(base, this.#effectOrdinal(base, call.id));
           const recorded = key === undefined ? undefined : await this.#recordedEffect(key);
