@@ -4,6 +4,7 @@
  * is deliberately not what is under test (CLAUDE.md: test the SEAM).
  */
 import type { ApprovalRequest, RunContext, Turn } from "@vendoai/core";
+import type { VendoGuard } from "@vendoai/guard";
 import { defineHarness } from "@vendoai/harnesses";
 import { createStore, threadMessageStore, threadStore } from "@vendoai/store";
 import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
@@ -11,7 +12,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { agent } from "./agent.js";
-import type { GuardLike } from "./pending-types.js";
 import { tool } from "./tools.js";
 
 let stores = 0;
@@ -148,17 +148,22 @@ describe("session", () => {
   it("surfaces parked approvals to on('approval') and decides through the guard", async () => {
     let requested: ((request: ApprovalRequest) => void) | undefined;
     const decisions: unknown[] = [];
-    const guard: GuardLike = {
+    const guard: VendoGuard = {
       check: async () => ({ action: "run", decidedBy: "default" }),
       report: async () => {},
       directions: async () => [],
       onApprovalDecision: () => () => {},
       bind: (tools) => tools,
       approvals: {
+        pending: async () => [],
         decide: async (ids, decision, by) => {
           decisions.push([ids, decision, by]);
         },
+        revoke: async () => {},
       },
+      grants: { list: async () => [], revoke: async () => {} },
+      audit: { query: async () => ({ events: [] }), export: async function* () {} },
+      status: () => ({ posture: "unconfigured" }),
       onApprovalRequested: (cb) => {
         requested = cb;
         return () => {};

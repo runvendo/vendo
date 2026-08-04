@@ -19,8 +19,8 @@ export type { AgentSession, ApprovalEvent, SessionOptions } from "./session.js";
 export { api, tool, type ApiOptions, type HostTool, type ToolConfig, type ToolSource } from "./tools.js";
 export type { McpServerConfig } from "./mcp.js";
 export type { EgressConfig } from "./egress.js";
-export type { EnrichedRunContext, GuardLike } from "./pending-types.js";
+export type { RunContext } from "@vendoai/core";
 
-export { createGuard } from "@vendoai/guard";
+export { createGuard, type GuardLike, type VendoGuard } from "@vendoai/guard";
 export { s3 } from "@vendoai/store";
 export { vendoKnowledge } from "@vendoai/knowledge";

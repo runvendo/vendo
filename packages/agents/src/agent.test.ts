@@ -1,10 +1,10 @@
 import type { SandboxAdapter } from "@vendoai/apps";
 import type { AuditEvent, ToolRegistry } from "@vendoai/core";
+import type { VendoGuard } from "@vendoai/guard";
 import { defineHarness, harnessAdapters } from "@vendoai/harnesses";
 import { createStore } from "@vendoai/store";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { agent, e2b, postgres, provideCloudAdapters, withDefaultTemplate } from "./agent.js";
-import type { GuardLike } from "./pending-types.js";
 import { tool } from "./tools.js";
 
 let stores = 0;
@@ -44,7 +44,7 @@ const fakeSandbox = (): SandboxAdapter & { created: unknown[] } => {
   };
 };
 
-const fakeGuard = (): GuardLike & { reports: AuditEvent[]; bound: ToolRegistry[] } => {
+const fakeGuard = (): VendoGuard & { reports: AuditEvent[]; bound: ToolRegistry[] } => {
   const reports: AuditEvent[] = [];
   const bound: ToolRegistry[] = [];
   return {
@@ -56,10 +56,15 @@ const fakeGuard = (): GuardLike & { reports: AuditEvent[]; bound: ToolRegistry[]
     },
     directions: async () => [],
     onApprovalDecision: () => () => {},
+    onApprovalRequested: () => () => {},
     bind(tools) {
       bound.push(tools);
       return tools;
     },
+    approvals: { pending: async () => [], decide: async () => {}, revoke: async () => {} },
+    grants: { list: async () => [], revoke: async () => {} },
+    audit: { query: async () => ({ events: [] }), export: async function* () {} },
+    status: () => ({ posture: "unconfigured" }),
   };
 };
 

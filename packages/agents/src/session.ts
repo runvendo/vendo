@@ -16,9 +16,11 @@ import {
   type Json,
   type PackSkill,
   type Principal,
+  type RunContext,
   type ThreadId,
   type ToolRegistry,
 } from "@vendoai/core";
+import type { VendoGuard } from "@vendoai/guard";
 import { createHarnessRuntime } from "@vendoai/harnesses";
 import {
   harnessStateStore,
@@ -29,7 +31,6 @@ import {
 } from "@vendoai/store";
 import type { UIMessage } from "ai";
 import { randomUUID } from "node:crypto";
-import { relaxedModels, type EnrichedRunContext, type GuardLike } from "./pending-types.js";
 import { assemblePrompt } from "./prompt.js";
 
 export interface SessionOptions {
@@ -62,7 +63,7 @@ export interface SessionDeps {
   harness: Harness<unknown>;
   store: VendoStore;
   files: FilesAdapter;
-  guard: GuardLike;
+  guard: VendoGuard;
   /** Guard-bound already — the one choke point. */
   tools: ToolRegistry;
   skills: readonly PackSkill[];
@@ -108,7 +109,7 @@ export async function createSession(
   // reopened per turn below, so a turn always sees a fresh path index.
   let workspace = await workspaces.open(principal, { host: hostSkillFiles(deps.skills) });
 
-  const contextFor = (turnContext: Record<string, unknown> | undefined): EnrichedRunContext => ({
+  const contextFor = (turnContext: Record<string, unknown> | undefined): RunContext => ({
     principal,
     venue: "chat",
     presence: "present",
@@ -121,13 +122,10 @@ export async function createSession(
   });
 
   const handlers = new Set<(req: ApprovalEvent) => void>();
-  const decide = async (request: ApprovalRequest, approve: boolean): Promise<void> => {
-    if (deps.guard.approvals === undefined) return;
-    await deps.guard.approvals.decide([request.id], { approve }, principal);
-  };
-  // P5's hook; feature-detected so today's guard still boots. Decisions
-  // re-dispatch through the guard's own `onApprovalDecision` subscribers.
-  deps.guard.onApprovalRequested?.((request) => {
+  const decide = (request: ApprovalRequest, approve: boolean): Promise<void> =>
+    deps.guard.approvals.decide([request.id], { approve }, principal);
+  // Decisions re-dispatch through the guard's own `onApprovalDecision` subscribers.
+  deps.guard.onApprovalRequested((request) => {
     const event: ApprovalEvent = {
       request,
       approve: () => decide(request, true),
@@ -146,8 +144,9 @@ export async function createSession(
       const userMessage = asUserMessage(message);
       const persisted = await transcript.list(principal, threadId);
       const messages = [...persisted, userMessage];
+      // `ctx.messages` (the frozen accessor) is the runtime's to attach — it
+      // resolves the thread and freezes the canonical copy.
       const ctx = contextFor(streamOptions.context);
-      ctx.messages = messages;
 
       workspace = await workspaces.open(principal, { host: hostSkillFiles(deps.skills) });
       const directions = await deps.guard.directions(ctx);
@@ -164,7 +163,6 @@ export async function createSession(
         messages,
         ctx,
         workspace,
-        models: relaxedModels(),
         interactive: true,
         system,
         ...(streamOptions.signal === undefined ? {} : { signal: streamOptions.signal }),

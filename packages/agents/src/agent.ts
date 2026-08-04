@@ -11,13 +11,12 @@ import {
   type Harness,
   type PackSkill,
 } from "@vendoai/core";
-import { createGuard } from "@vendoai/guard";
+import { createGuard, type VendoGuard } from "@vendoai/guard";
 import { provideHarnessAdapters } from "@vendoai/harnesses";
 import { createStore, storeFiles, type VendoStore } from "@vendoai/store";
 import { randomUUID } from "node:crypto";
 import { withEgress, type EgressConfig } from "./egress.js";
 import type { McpServerConfig } from "./mcp.js";
-import type { GuardLike } from "./pending-types.js";
 import { createSession, type AgentSession, type SessionOptions } from "./session.js";
 import { mergeSources, type ToolSource } from "./tools.js";
 import { loadSkillFolders } from "./skills.js";
@@ -30,7 +29,7 @@ export interface AgentConfig {
   tools?: readonly ToolSource[];
   mcp?: readonly McpServerConfig[];
   /** Always an instance; unset → default `createGuard({ store })`. */
-  guard?: GuardLike;
+  guard?: VendoGuard;
   /** Skill folders, boot-loaded; deploy = update the folder. */
   skills?: readonly string[];
   /** Agent-level outbound allowlist; unset = the harness's minimum. */
@@ -165,7 +164,7 @@ export function agent(config: AgentConfig): VendoAgent {
 
   const store = config.store ?? defaultStore();
   const files = storeBlobs.get(store) ?? storeFiles(store);
-  const guard = config.guard ?? (createGuard({ store }) as GuardLike);
+  const guard = config.guard ?? createGuard({ store });
   const tools = mergeSources(config.tools ?? [], config.mcp ?? []);
   const bound = guard.bind(tools);
   const skills: PackSkill[] = loadSkillFolders(config.skills);
