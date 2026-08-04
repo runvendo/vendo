@@ -1,8 +1,0 @@
-Local gate at the pushed tip (post-rebase onto main f49b1de67):
-
-=== POST-REBASE GATE ===
- Tasks:    22 successful, 22 total
- Tasks:    51 successful, 51 total
- Tasks:    40 successful, 40 total
- Tasks:    5 successful, 5 total
-POST-REBASE GATE: GREEN

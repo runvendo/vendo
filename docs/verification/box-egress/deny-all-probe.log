@@ -1,6 +1,0 @@
-PASS · the provider ACCEPTS an empty allowlist (create did not throw) — machine iosnrixlpf0r05t5g0xd8
-PASS · with an EMPTY allowlist, even the inference host is blocked (deny-all is real, not 'no rules') — curl api.anthropic.com → "curl: (28) Resolving timed out after 12000 milliseconds\n000BLOCKED"
-PASS · an arbitrary host is blocked too — curl example.com → "curl: (28) Resolving timed out after 12000 milliseconds\n000BLOCKED"
-PASS · the box still runs its own app and serves it locally under deny-all — "LOCAL-OK"
-
-[probe] 4/4 checks passed

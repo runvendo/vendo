@@ -1,4 +1,0 @@
-# The repo-wide .gitignore drops *.png. These frames ARE the E2E proof for a
-# video lane (the contract names them), so they are deliberately tracked.
-!*.png
-!frames/*.png
