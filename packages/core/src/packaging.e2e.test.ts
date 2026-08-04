@@ -112,8 +112,8 @@ describe("packaging e2e — the artifact blocks will install", () => {
         description: (vector.descriptor as { description: string }).description,
         inputSchema: (vector.descriptor as { inputSchema: unknown }).inputSchema,
         risk: (vector.descriptor as { risk: string }).risk,
-        ...((vector.descriptor as { critical?: boolean }).critical !== undefined
-          ? { critical: (vector.descriptor as { critical?: boolean }).critical }
+        ...((vector.descriptor as { confirmEach?: boolean }).confirmEach !== undefined
+          ? { confirmEach: (vector.descriptor as { confirmEach?: boolean }).confirmEach }
           : {}),
       })).toBe(vector.canonical);
       expect(core.descriptorHash(vector.descriptor)).toBe(vector.hash);

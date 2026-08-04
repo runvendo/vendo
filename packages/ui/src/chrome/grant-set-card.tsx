@@ -2,6 +2,17 @@ import type { RiskLabel } from "@vendoai/core";
 import { useState } from "react";
 import { useVendoTools } from "../context.js";
 import { toolPresentation } from "./build-beat.js";
+import {
+  CardActions,
+  CardHead,
+  CardLine,
+  CardList,
+  CardShell,
+  CARD_EYEBROWS,
+  SHIELD_GLYPH,
+  TICK_GLYPH,
+  ToolkitLogo,
+} from "./card-shell.js";
 import { ChromeRoot } from "./chrome-root.js";
 
 /** demo-live-readiness 2026-07 — the grant-SET consent card (approved mockup,
@@ -11,44 +22,57 @@ import { ChromeRoot } from "./chrome-root.js";
  * transcript as the settled record ("Enabled · N permissions granted" /
  * "Denied — the automation stays paused."). Presentational: the caller owns
  * deciding the guard approvals and resuming the parked turn.
+ *
+ * spec §16 — contents only: the geometry is the one card shell.
  */
-
-/** The shield head both consent cards wear. ONE copy, because the grant-set ask
-    and the adoption ask have to read as the same kind of thing — they are. */
-export function ConsentShieldIcon() {
-  return (
-    <span className="fl-approval-ic" aria-hidden="true">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />
-      </svg>
-    </span>
-  );
-}
-
-/** One grant row's icon: the tool's own logo when the registry has one, the
-    generic wrench when it does not. Shared for the same reason. */
-export function GrantRowIcon({ logoUrl }: { logoUrl?: string }) {
-  return (
-    <span className="fl-grant-ic" aria-hidden="true">
-      {logoUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element -- chrome surface, plain img by design
-        <img src={logoUrl} alt="" width={14} height={14} style={{ display: "block", objectFit: "contain" }} />
-      ) : (
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="m21 2-9.6 9.6" /><circle cx="7.5" cy="15.5" r="5.5" /><path d="m21 2-1 1" /><path d="m15.5 7.5 3 3L22 7l-3-3" />
-        </svg>
-      )}
-    </span>
-  );
-}
 
 export interface GrantSetPermission {
   /** The pending guard approval this row settles. */
   approvalId: string;
   tool: string;
-  /** The tool descriptor's one-line description. */
-  description?: string;
+  /** The service action this row is for, when the tool is the connector
+      dispatcher. It, not the tool name, is what the person is allowing — two
+      service actions on one card are otherwise the same row twice. */
+  slug?: string;
   risk: RiskLabel;
+}
+
+/** What a permission LETS the automation do, in our words. spec §16 law 3 —
+ *  a grant row used to print the tool descriptor's `description`, and that
+ *  sentence is authored for the MODEL: demo-bank's own catalog put "Amounts are
+ *  integer cents (e.g. 285000 = $2,850.00): divide by 100 exactly once before
+ *  displaying" on a bank customer's consent card (live, `standing-01-pending`).
+ *  The row now says the verb and the thing — the cadence is the card's own
+ *  plain-words line — and the only sentence allowed under it is one the HOST
+ *  wrote for people (`ToolMeta.description`). Shared with the adoption card so
+ *  both consent surfaces speak one vocabulary. */
+const RISK_WORD: Record<string, string> = {
+  read: "Reads",
+  write: "Changes",
+  // Ruling 15 — an irreversible permission may NEVER share a word with an
+  // ordinary write. This is the approval card's own chip vocabulary, so one
+  // grade reads the same on every consent surface.
+  destructive: "Irreversible",
+  // #747's word for the state, taken verbatim from the approval card's chip.
+  ungraded: "Not reviewed",
+};
+
+/**
+ * The word a permission row leads with — FROM THE GRADE, and only the grade.
+ *
+ * This briefly took the word from the ask's own verb instead (ruling 15, to
+ * stop a `read`-graded send tool rendering "Reads: Email send"). Yousef's
+ * grading ruling retires that mechanism: no code path may conclude anything
+ * from a tool's NAME, because a word list misses silently and its existence
+ * reads as coverage. The honest fix for a mis-graded tool is to fix the GRADE —
+ * the judge and `overrides.json` exist for exactly that — not to have the
+ * highest-stakes card in the product second-guess it from a slug.
+ *
+ * An UNGRADED permission says so. It may not borrow "Reads": that is the
+ * safest-sounding word available and the one thing nobody has established.
+ */
+export function grantRowWord(risk: RiskLabel | string): string {
+  return RISK_WORD[risk] ?? RISK_WORD.ungraded!;
 }
 
 export interface GrantSetCardProps {
@@ -72,6 +96,19 @@ export function allowLabel(count: number): string {
 const revokePronoun = (count: number): string =>
   count === 1 ? "it" : count === 2 ? "either" : "any of them";
 
+/** The consumer's half of a refusal (spec §16 law 3) — the same defect the
+ *  connect card carried: this card rendered whatever `onDecide` threw, and the
+ *  wire's sentences carry app and grant-set ids. `refusalCopy` in adoption-card
+ *  is the pattern; the developer sentence keeps its home in the server log. */
+function refusalCopy(reason: unknown): string {
+  const code = (reason as { code?: unknown } | null)?.code;
+  if (code === "not-found") return "This automation isn’t available any more.";
+  if (code === "forbidden") return "Only someone who can edit this app can allow these.";
+  if (code === "conflict") return "Someone else already decided this one.";
+  if (code === "cloud-required") return "Standing access isn’t turned on for this workspace yet.";
+  return "That didn’t go through — nothing was granted. Try again in a moment.";
+}
+
 export function GrantSetCard({ name, permissions, state, onDecide }: GrantSetCardProps) {
   const tools = useVendoTools();
   const [busy, setBusy] = useState(false);
@@ -84,7 +121,7 @@ export function GrantSetCard({ name, permissions, state, onDecide }: GrantSetCar
     try {
       await onDecide(approve);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(refusalCopy(reason));
     } finally {
       setBusy(false);
     }
@@ -92,61 +129,60 @@ export function GrantSetCard({ name, permissions, state, onDecide }: GrantSetCar
 
   return (
     <ChromeRoot>
-      <article
+      <CardShell
+        label={`Standing access — ${name}`}
         className="fl-approval fl-grantset fl-item-in"
         data-vendo-grant-set-card=""
         data-state={state}
-        aria-label={`Standing access — ${name}`}
       >
-        <div className="fl-approval-head">
-          <ConsentShieldIcon />
-          <div className="fl-approval-heading">
-            <div className="fl-approval-eyebrow">Standing access</div>
-            <div className="fl-approval-title">{name} needs {permissionCount(permissions.length)}</div>
-            <div className="fl-approval-desc" style={{ marginTop: 3 }}>
-              Granted once, used every run. You can revoke {revokePronoun(permissions.length)} any time in Settings.
-            </div>
-          </div>
-        </div>
-        <ul className="fl-grants">
+        <CardHead
+          icon={<ToolkitLogo fallback={SHIELD_GLYPH} />}
+          eyebrow={CARD_EYEBROWS.standingAccess}
+          title={`${name} needs ${permissionCount(permissions.length)}`}
+        />
+        <CardLine>
+          Granted once, used every run. You can revoke {revokePronoun(permissions.length)} any time in Settings.
+        </CardLine>
+        <CardList className="fl-grants">
           {permissions.map(permission => {
-            const presentation = toolPresentation(permission.tool, undefined, tools[permission.tool]);
-            const description = (presentation.description ?? permission.description ?? "").trim();
+            const presentation = toolPresentation(
+              permission.tool,
+              permission.slug === undefined ? undefined : { slug: permission.slug },
+              tools[permission.tool],
+            );
+            // Host-authored only: `toolPresentation` carries `ToolMeta.description`
+            // (the host's own sentence) or one we compose ourselves — never the
+            // descriptor's model-facing line. A connector row's `slug` reaches
+            // presentation above, so the service action names itself without
+            // that line being needed.
+            const description = (presentation.description ?? "").trim();
             return (
               <li className="fl-grant" key={permission.approvalId}>
-                <GrantRowIcon {...(presentation.logoUrl === undefined ? {} : { logoUrl: presentation.logoUrl })} />
+                <ToolkitLogo {...(presentation.logoUrl === undefined ? {} : { src: presentation.logoUrl })} />
                 <span className="fl-grant-copy">
-                  <b>{presentation.title}</b>
+                  <b>{grantRowWord(permission.risk)}: {presentation.title}</b>
                   {description.length > 0 ? <span>{description}</span> : null}
                 </span>
                 {state === "approved" ? (
-                  <span className="fl-grant-check" aria-hidden="true">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M20 6 9 17l-5-5" />
-                    </svg>
-                  </span>
+                  <span className="fl-grant-check" aria-hidden="true">{TICK_GLYPH}</span>
                 ) : null}
               </li>
             );
           })}
-        </ul>
+        </CardList>
         {error ? <div role="alert" className="fl-error">{error}</div> : null}
         {state === "parked" ? (
-          <div className="fl-approval-actions">
+          <CardActions>
             <button className="fl-btn fl-btn-primary" type="button" disabled={busy} onClick={() => void decide(true)}>
               {allowLabel(permissions.length)}
             </button>
             <button className="fl-btn" type="button" disabled={busy} onClick={() => void decide(false)}>Deny</button>
-          </div>
+          </CardActions>
         ) : (
           <div className="fl-grantset-outcome" role="status">
             {state === "approved" ? (
               <>
-                <span className="fl-connect-done-ic" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M20 6 9 17l-5-5" />
-                  </svg>
-                </span>
+                <span className="fl-connect-done-ic" aria-hidden="true">{TICK_GLYPH}</span>
                 Enabled · {permissionCount(permissions.length)} granted
               </>
             ) : (
@@ -154,7 +190,7 @@ export function GrantSetCard({ name, permissions, state, onDecide }: GrantSetCar
             )}
           </div>
         )}
-      </article>
+      </CardShell>
     </ChromeRoot>
   );
 }

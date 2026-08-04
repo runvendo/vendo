@@ -70,6 +70,17 @@ async function cadenceTools(): Promise<Parameters<typeof createActions>[0]["tool
   return parsed.tools as Parameters<typeof createActions>[0]["tools"]
 }
 
+/** Cadence's own `.vendo/overrides.json`, handed to the registry exactly as the
+ *  real composition hands it. Left out until now, which was invisible while
+ *  extraction guessed grades from names: the catalog carried a `risk` for
+ *  everything. Grades come from a person, the judge, or a protocol fact now
+ *  (risk-grading redesign D2), so the file has to be here for the drill to see
+ *  what the running app sees. */
+async function cadenceOverrides(): Promise<Parameters<typeof createActions>[0]["overrides"]> {
+  return JSON.parse(await readFile(join(appDir, ".vendo", "overrides.json"), "utf8")) as
+    Parameters<typeof createActions>[0]["overrides"]
+}
+
 async function createStack(): Promise<Stack> {
   const dataDir = await mkdtemp(join(tmpdir(), "cadence-away-drill-"))
   const store = createStore({ dataDir })
@@ -77,6 +88,7 @@ async function createStack(): Promise<Stack> {
   const guard = createGuard({ store })
   const actions = createActions({
     tools: await cadenceTools(),
+    overrides: await cadenceOverrides(),
     baseUrl: app!.origin,
     // The drill's point: away identity is a REAL Supabase user JWT minted
     // with the project's own secret. Unknown subjects are declined via

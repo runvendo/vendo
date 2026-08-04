@@ -5,6 +5,9 @@ import {
   mechanicalRisk,
   projectableForRun,
   resolvedRisk,
+  serviceToolSlug,
+  withheldFromUnattended,
+  withResolvedRisk,
   sha256Hex,
   toolOutcomeSchema,
   UNATTENDED_DESTRUCTIVE_REASON,
@@ -30,6 +33,7 @@ import type {
   StoreAdapter,
   ToolCall,
   ToolDescriptor,
+  ToolListingContext,
   ToolOutcome,
   ToolRegistry,
   VendoRecord,
@@ -49,7 +53,19 @@ const APPROVALS_COLLECTION = "vendo_approvals";
  *  `consumed:<id>` rows in a guard-owned generic collection, written only via
  *  the store's atomic `insertIfAbsent` (02-store §4) so exactly one caller —
  *  across processes — wins each transition. Rows carry `refs.subject`, so the
- *  02-store §5 erase cascade collects them with the rest of the subject's data. */
+ *  02-store §5 erase cascade collects them with the rest of the subject's data.
+ *
+ *  KNOWN LIMIT — the receipt is the only atomic thing in the protocol. The
+ *  `vendo_approvals` row itself has no CAS: the routed store exposes
+ *  `RecordStore.atomic` (01-core §12) for `vendo_threads`, `vendo_apps` and
+ *  generic rows only, so every marker written onto an approval — `consumedAt`,
+ *  `voidedAt`, a decided status — is a `get` followed by a `put`, and something
+ *  else can move the row in between. The receipt is what makes that survivable:
+ *  the winner of a transition is decided BEFORE any row write, so the worst a
+ *  lost race can do is leave a marker stale or (if an erase lands inside the
+ *  window) let a re-put resurrect a row nobody can act on — the transition it
+ *  would need is already spent, so no call ever executes off it. Closing the
+ *  window properly needs guarded writes on `vendo_approvals`; not chased here. */
 const APPROVAL_CLAIMS_COLLECTION = "guard:approval-claims";
 const AUDIT_COLLECTION = "vendo_audit";
 /** Build contract §7 — the effect ledger: one row per completed mutating call,
@@ -68,6 +84,18 @@ interface ApprovalRecordData {
   decidedAt?: IsoDateTime;
   sessionId: string;
   consumedAt?: IsoDateTime;
+  /** WHO decided, and it is only ever a standing answer when it was a person.
+   *  Every denial converges on the same row — a real "no", the chat turn the
+   *  user walked away from, a BYO embed timing out, the 60-minute TTL sweep —
+   *  and only the first of those is the user telling us something. Absent on
+   *  rows written before this field existed, which read as `system`: the
+   *  fail-safe direction is to ask again, never to enforce a no nobody said. */
+  deniedBy?: "human" | "system";
+  /** This decision no longer stands: the person took it back
+   *  (`approvals.revoke`), or a newer human decision on the same call
+   *  superseded it. A voided row is inert for replay and for standing denial,
+   *  and is kept rather than deleted so the audit trail stays whole. */
+  voidedAt?: IsoDateTime;
 }
 
 type DraftDecision =
@@ -221,9 +249,13 @@ function auditData(record: VendoRecord): AuditEvent {
   return record.data as AuditEvent;
 }
 
-function scopeMatches(scope: GrantScope, args: unknown): boolean {
+function scopeMatches(scope: GrantScope, call: ToolCall): boolean {
   if (scope.kind === "tool") return true;
-  return scope.inputHash === exactInputHash(args);
+  // A `service-tool` grant is authority over ONE service action, whatever
+  // arguments it is called with — the connector dispatcher's tool name says
+  // nothing about what the call does, so the slug is the thing consented to.
+  if (scope.kind === "service-tool") return scope.slug === serviceToolSlug(call);
+  return scope.inputHash === exactInputHash(call.args);
 }
 
 function durationMatches(grant: PermissionGrant, ctx: RunContext): boolean {
@@ -246,11 +278,48 @@ function presenceMatches(grant: PermissionGrant, ctx: RunContext): boolean {
  *  permanently empty region plus a dead approval card, so the HEURISTIC
  *  deciders (judge, call-rate breaker) may run or block such a read but never
  *  park it. Deliberate postures are exempt and keep their ask: policy rules
- *  and host policy code are host-authored, critical descriptors always ask
+ *  and host policy code are host-authored, confirmEach descriptors always ask
  *  (05 §2), and away runs still park (the 05 §6 downgrade needs a captured
  *  grant regardless of what decided the run — hence the present-only scope). */
 function neverParkAppRead(descriptor: ToolDescriptor, ctx: RunContext): boolean {
   return descriptor.risk === "read" && ctx.venue === "app" && ctx.presence === "present";
+}
+
+/** Every write of an approval row derives its refs here, so the index can
+ *  never drift from the data. `call` is what keeps the standing-denial lookup
+ *  off a subject's whole approval history: chat's random ids simply miss it. */
+function approvalRefs(data: ApprovalRecordData): Record<string, string> {
+  return {
+    subject: data.request.ctx.principal.subject,
+    status: data.status,
+    call: data.request.call.id,
+  };
+}
+
+/** The identity a parked approval answers for: the exact call the user saw, in
+ *  exactly the context they saw it. Beyond subject + call identity this pins
+ *  (a) the inputs — a replay with tampered args never rides the decision — (b)
+ *  the frozen descriptor — flipping the same tool from read to destructive
+ *  after parking can't ride it either — and (c) the parked venue/presence/app,
+ *  so a present chat decision can't answer an away, app-bound automation call.
+ *  Shared by the approved-replay, standing-denial and supersede lookups so a
+ *  yes and a no can never come to mean different calls. */
+function sameParkedCall(
+  request: ApprovalRequest,
+  call: ToolCall,
+  // The parked shape, not the live one, so a stored decision can be matched
+  // against another stored decision (the supersede lookup) with no cast.
+  ctx: ApprovalRequest["ctx"],
+  descriptorFingerprint: string,
+): boolean {
+  return request.ctx.principal.subject === ctx.principal.subject
+    && request.call.id === call.id
+    && request.call.tool === call.tool
+    && exactInputHash(request.call.args) === exactInputHash(call.args)
+    && descriptorHash(request.descriptor) === descriptorFingerprint
+    && request.ctx.venue === ctx.venue
+    && request.ctx.presence === ctx.presence
+    && request.ctx.appId === ctx.appId;
 }
 
 function normalizeCodeDecision(decision: GuardDecision): DraftDecision {
@@ -307,7 +376,9 @@ class GuardImplementation implements VendoGuard {
       ids: ApprovalId | ApprovalId[],
       decision: ApprovalDecision,
       principal: Principal,
-    ): Promise<void> => this.#decideApprovals(ids, decision, principal),
+    ): Promise<void> => this.#decideApprovals(ids, decision, principal, "human"),
+    revoke: (id: ApprovalId, principal: Principal): Promise<void> =>
+      this.#revokeApproval(id, principal),
   };
 
   readonly grants = {
@@ -399,7 +470,7 @@ class GuardImplementation implements VendoGuard {
   async abandonApprovals(ids: ApprovalId[], ctx: RunContext): Promise<void> {
     for (const id of ids) {
       try {
-        await this.#decideApprovals(id, { approve: false }, ctx.principal);
+        await this.#decideApprovals(id, { approve: false }, ctx.principal, "system");
       } catch (error) {
         if (error instanceof VendoError && (error.code === "conflict" || error.code === "not-found")) {
           continue;
@@ -407,6 +478,29 @@ class GuardImplementation implements VendoGuard {
         throw error;
       }
     }
+  }
+
+  /**
+   * Spends an approval's single use for a caller that will NOT replay its call:
+   * the automations engine turns one yes into the app-bound standing grant its
+   * consent moment asked for (07 §3) instead of re-dispatching it. That spend
+   * claims the very same `consumed:<id>` transition a replay and a take-back
+   * claim, so a revoke landing at the same instant can never lose to a grant
+   * mint. Owner-scoped, and unknown/foreign/undecided ids all read as
+   * `already-spent` — this is a subscriber's fast path, not a place to learn
+   * whether someone else's approval exists.
+   */
+  async spendApproval(
+    id: ApprovalId,
+    principal: Principal,
+  ): Promise<"spent" | "already-spent" | "taken-back"> {
+    const record = await this.#store.records(APPROVALS_COLLECTION).get(id);
+    if (record === null) return "already-spent";
+    const data = approvalData(record);
+    if (data.request.ctx.principal.subject !== principal.subject) return "already-spent";
+    if (data.status !== "approved" || data.consumedAt !== undefined) return "already-spent";
+    if (data.voidedAt !== undefined) return "taken-back";
+    return await this.#spendConsumedTransition(id, principal.subject);
   }
 
   /** Spec 2026-07-20 (#5): the TTL backstop over the general approvals
@@ -429,7 +523,7 @@ class GuardImplementation implements VendoGuard {
       if (!Number.isFinite(parkedAt) || parkedAt + ttlMs > at) continue;
       try {
         // Deny as the approval's OWN principal — a foreign subject would 404.
-        await this.#decideApprovals(record.id, { approve: false }, data.request.ctx.principal);
+        await this.#decideApprovals(record.id, { approve: false }, data.request.ctx.principal, "system");
         swept += 1;
       } catch (error) {
         // Already decided (conflict) or gone (not-found): the queue already
@@ -450,8 +544,12 @@ class GuardImplementation implements VendoGuard {
       // see is one it cannot be talked into using; a tool it can see but is
       // refused becomes something it retries and works around. Callers that pass
       // no context get the full set, exactly as before.
-      descriptors: async (ctx?: Pick<RunContext, "venue" | "presence">) => {
-        const all = await tools.descriptors();
+      // The context is forwarded INWARD as well as read here: the registry
+      // narrows a lazily expanded connector toolkit to the listing that searched
+      // it, so answering from the unscoped set would hand every reader another
+      // conversation's expansion.
+      descriptors: async (ctx?: ToolListingContext) => {
+        const all = await tools.descriptors(ctx);
         return ctx === undefined ? all : projectableForRun(all, ctx);
       },
       execute: async (call, ctx) => {
@@ -552,9 +650,25 @@ class GuardImplementation implements VendoGuard {
         // no override reaches past this.
         const replayApproved = decision.action === "run"
           && decision.decidedBy === "grant" && decision.grantId === undefined;
+        // `withheldFromUnattended`, not `=== "destructive"`: an `ungraded` tool
+        // is refused here too. The two laws land on the same answer — §12 keeps
+        // irreversible actions off an unattended run, and the risk-grading
+        // redesign (D3) says a tool nobody has graded needs a PERSON — and an
+        // unattended venue has none to ask. Without this the merge left a real
+        // hole: extraction stopped guessing from names (D1), so Maple's
+        // `host_transferMoney` reads `ungraded`, the vote that used to call it
+        // destructive no longer speaks for it, and an enable-time standing grant
+        // authorized an unattended transfer. Proved by the away drill: the run
+        // came back `ok` and the money moved.
+        //
+        // Park-and-resume survives, which is what makes this a gate and not a
+        // wall: an UNGRANTED ungraded step still parks (`ask` never reaches
+        // here), and the approved replay that follows is exempt above. What
+        // cannot happen any more is a standing grant silently running an
+        // unjudged tool with nobody watching.
         if (
           decision.action === "run" && !replayApproved
-          && isUnattended(ctx) && resolvedRisk(completed.descriptor) === "destructive"
+          && isUnattended(ctx) && withheldFromUnattended(completed.descriptor)
         ) {
           const refused: ToolOutcome = { status: "blocked", reason: UNATTENDED_DESTRUCTIVE_REASON };
           await this.report(
@@ -801,7 +915,10 @@ class GuardImplementation implements VendoGuard {
     }
 
     if (draft.action === "run") {
-      const write = effectiveDescriptor.risk === "write" || effectiveDescriptor.risk === "destructive";
+      // `ungraded` spends the write budget too: the budget exists to bound how
+      // much a single run can change, and a tool nobody has graded is exactly
+      // the one we cannot say is harmless.
+      const write = effectiveDescriptor.risk !== "read";
       const runKey = ctx.trigger?.runId ?? ctx.sessionId;
       const writes = this.#writeCounts.get(runKey)?.count ?? 0;
       const writesTripped = write && writes >= this.#maxWritesPerRun;
@@ -835,6 +952,10 @@ class GuardImplementation implements VendoGuard {
           ? draft.decidedBy
           : "rule",
       };
+    }
+
+    if (draft.action === "ask" && await this.#standingDenial(call, effectiveDescriptor, ctx)) {
+      draft = { action: "block", reason: "you denied this", decidedBy: "denied" };
     }
 
     if (draft.action === "ask") {
@@ -955,9 +1076,7 @@ class GuardImplementation implements VendoGuard {
     const resolveRisk = this.#config.resolveRisk;
     if (resolveRisk === undefined) return descriptor;
     try {
-      const risk = await resolveRisk(call, descriptor, ctx);
-      if (risk !== "read" && risk !== "write" && risk !== "destructive") return descriptor;
-      return risk === descriptor.risk ? descriptor : { ...descriptor, risk };
+      return withResolvedRisk(descriptor, await resolveRisk(call, descriptor, ctx));
     } catch {
       // The static descriptor is the conservative fallback. Vendo's dynamic
       // edit descriptor is write-class, so lookup/classifier failures still ask.
@@ -1020,12 +1139,13 @@ class GuardImplementation implements VendoGuard {
     preview = false,
   ): Promise<DecisionMetadata> {
     // `preview` never CONSUMES the single-use approval replay (the one side
-    // effect here), which is also all that answers a critical ask (05 §2).
+    // effect here), which is also all that answers a confirmEach ask (05 §2
+    // stays otherwise: grants/rules/judge never suppress confirmEach).
     let consumedReplay = false;
-    if (descriptor.critical === true) {
+    if (descriptor.confirmEach === true) {
       consumedReplay = preview ? false : await this.#consumeApprovedCall(call, descriptor, ctx);
       if (!consumedReplay) {
-        return { decision: { action: "ask", decidedBy: "critical" } };
+        return { decision: { action: "ask", decidedBy: "confirmEach" } };
       }
     }
 
@@ -1106,6 +1226,15 @@ class GuardImplementation implements VendoGuard {
       }
     }
 
+    // Nothing spoke. An `ungraded` tool is one nobody has graded — no human,
+    // no judge, no protocol fact — so not-knowing is felt here rather than
+    // hidden behind a run: it asks, exactly as `destructive` does under the
+    // default policy. Guard-level on purpose, so a hand-wired server with no
+    // policy config at all gets it too. A host that consciously wants these to
+    // run says so in writing, with a `risk: "ungraded"` rule.
+    if (descriptor.risk === "ungraded") {
+      return withInvalidated({ decision: { action: "ask", decidedBy: "default" } });
+    }
     return withInvalidated({ decision: { action: "run", decidedBy: "default" } });
   }
 
@@ -1174,10 +1303,10 @@ class GuardImplementation implements VendoGuard {
       return { wouldAsk: false, grantsMissing: [], wouldBlock: decision.reason };
     }
     if (decision.action === "ask") {
-      // Only a plain policy/default ask is grant-suppressible; a critical,
+      // Only a plain policy/default ask is grant-suppressible; a confirmEach,
       // breaker, or org ask can never be cleared by minting a grant, so those
       // mirror dryRun by staying out of grantsMissing.
-      const grantSuppressible = decision.decidedBy !== "critical"
+      const grantSuppressible = decision.decidedBy !== "confirmEach"
         && decision.decidedBy !== "breaker"
         && decision.decidedBy !== "org";
       const grantsMissing = grantSuppressible ? [call.tool] : [];
@@ -1283,11 +1412,17 @@ class GuardImplementation implements VendoGuard {
    *  receipt through the store's atomic `insertIfAbsent` — a single statement,
    *  so exactly one claimant succeeds no matter how many processes race. Fails
    *  closed when the adapter omits the capability: single-use state cannot be
-   *  guaranteed without database-level CAS (02-store §4). */
+   *  guaranteed without database-level CAS (02-store §4).
+   *
+   *  The `consumed` transition has TWO kinds of claimant: a replay spending the
+   *  yes, and a void taking the decision back. They contend on the one receipt,
+   *  so a call can never both run and be voided; the receipt records WHICH won,
+   *  so the loser can say honestly what beat it. */
   async #claimApprovalTransition(
     transition: "decided" | "consumed",
     approvalId: string,
     subject: string,
+    claimant?: "replay" | "void",
   ): Promise<boolean> {
     const atomic = this.#store.records(APPROVAL_CLAIMS_COLLECTION).atomic;
     if (atomic === undefined) {
@@ -1298,10 +1433,100 @@ class GuardImplementation implements VendoGuard {
     }
     const receipt = await atomic.insertIfAbsent({
       id: `${transition}:${approvalId}`,
-      data: { approvalId, transition, at: now() },
+      data: { approvalId, transition, at: now(), ...(claimant === undefined ? {} : { claimant }) },
       refs: { subject },
     });
     return receipt !== null;
+  }
+
+  /** Which claimant holds an approval's `consumed` transition. Read only by a
+   *  LOSER, to tell "the yes was spent" from "it was already taken back".
+   *
+   *  MIXED-VERSION WINDOW: receipts written before claimants existed carry none,
+   *  and read as `undefined` here — which the void path treats as "spent". That
+   *  is the fail-closed reading and the true one: the older build claimed this
+   *  receipt only from the replay path. */
+  async #consumedTransitionClaimant(approvalId: string): Promise<"replay" | "void" | undefined> {
+    const receipt = await this.#store.records(APPROVAL_CLAIMS_COLLECTION).get(`consumed:${approvalId}`);
+    const claimant = (receipt?.data as { claimant?: unknown } | undefined)?.claimant;
+    return claimant === "void" || claimant === "replay" ? claimant : undefined;
+  }
+
+  /**
+   * Spends an approval as a REPLAY would: claim the one-time `consumed`
+   * transition, then mark the row. Shared by the replay lookup and the
+   * automations engine's {@link spendApproval} seam so the two can never
+   * disagree about what spending means.
+   *
+   * The claim is the gate; the marker is observability, so a crash between them
+   * fails closed (the row reads un-consumed but can never be claimed again).
+   * Two things can still cost the spend after a won claim: a GONE row — subject
+   * erasure (02-store §5) and anonymous-subject adoption both DELETE approval
+   * rows, and re-putting the caller's stale copy would resurrect an erased
+   * subject's approval AND run the tool as them — and a void that beat the
+   * claim, which must not be overwritten. Hence the re-read.
+   */
+  async #spendConsumedTransition(
+    id: string,
+    subject: string,
+  ): Promise<"spent" | "already-spent" | "taken-back"> {
+    if (!(await this.#claimApprovalTransition("consumed", id, subject, "replay"))) {
+      return (await this.#consumedTransitionClaimant(id)) === "void" ? "taken-back" : "already-spent";
+    }
+    const store = this.#store.records(APPROVALS_COLLECTION);
+    const current = await store.get(id);
+    if (current === null) return "already-spent";
+    const fresh = approvalData(current);
+    if (fresh.voidedAt !== undefined) return "taken-back";
+    const spent: ApprovalRecordData = { ...fresh, consumedAt: now() };
+    await store.put({ id, data: spent, refs: approvalRefs(spent) });
+    return "spent";
+  }
+
+  /**
+   * Takes a decision back, SPENDING the approval's one-time transition to do
+   * it. Voiding and replaying claim the SAME `consumed:<id>` receipt, so they
+   * linearize: without that, a void's plain put could land on a row a replay
+   * had already read and erase the void marker while the tool ran anyway.
+   *
+   * - `voided` — this call took it back; the caller records it.
+   * - `already-void` — the take-back had already landed: idempotent, and nothing
+   *   to say twice.
+   * - `spent` — a replay won the transition, so the call it authorized is
+   *   running or ran. The take-back came too late and must never read as
+   *   success.
+   */
+  async #voidApprovalDecision(
+    id: string,
+    data: ApprovalRecordData,
+  ): Promise<"voided" | "already-void" | "spent"> {
+    const store = this.#store.records(APPROVALS_COLLECTION);
+    const claimed = await this.#claimApprovalTransition(
+      "consumed",
+      id,
+      data.request.ctx.principal.subject,
+      "void",
+    );
+    // A REPLAY holding the receipt means the call already ran. Losing it to
+    // another VOID does not prove that void's marker landed, though: the receipt
+    // is durable BEFORE the row write, so a take-back whose put failed leaves
+    // the receipt claimed and the row still standing. Fall through and re-assert
+    // it — otherwise the retry would report success while a human denial kept
+    // blocking.
+    if (!claimed && (await this.#consumedTransitionClaimant(id)) !== "void") return "spent";
+    // Re-read rather than trusting the caller's copy, which may predate a decide
+    // landing on the same row: the receipt, not that copy, is the gate. A row
+    // that is GONE was erased (02-store §5) or dropped by anon-adoption while
+    // this was in flight; re-putting it would resurrect erased data, so there is
+    // nothing left to void.
+    const current = await store.get(id);
+    if (current === null) return "already-void";
+    const fresh = approvalData(current);
+    // The take-back this call is retrying already landed: nothing to say twice.
+    if (!claimed && fresh.voidedAt !== undefined) return "already-void";
+    const voided: ApprovalRecordData = { ...fresh, voidedAt: fresh.voidedAt ?? now() };
+    await store.put({ id, data: voided, refs: approvalRefs(voided) });
+    return "voided";
   }
 
   /** Releases transition receipts a BATCH decide won before its claim phase
@@ -1324,6 +1549,55 @@ class GuardImplementation implements VendoGuard {
     }
   }
 
+  /**
+   * Has the user already said no to exactly this call?
+   *
+   * A caller that re-issues a STABLE call id — the apps runtime derives a
+   * query's id from (app, tool, args), so its refetch is byte-identical — would
+   * otherwise mint a fresh approval on every retry: deny, reopen, new card,
+   * forever. The denial answers the re-issue instead.
+   *
+   * Unlike an approval this is NOT consumed. A yes is spent because it
+   * authorizes one act; a no is a standing answer about a question, and it
+   * keeps standing until the question changes — different inputs, or a tool
+   * whose descriptor moved (a re-grade rehashes it) both miss this match and
+   * ask again.
+   *
+   * ONLY A PERSON'S NO STANDS. Four different things write a denied row — a
+   * real decision, the chat turn the user walked away from, a BYO embed timing
+   * out, the 60-minute TTL sweep — and three of them are housekeeping, not an
+   * answer. Enforcing those would let an hour of inattention permanently brick
+   * a ceremony that re-issues a stable call id (the apps runtime's secret and
+   * egress approvals do exactly that behind frozen descriptors). A system
+   * denial reaps the pending row and nothing more: the next issue asks again.
+   *
+   * KNOWN LIMIT: `descriptorHash` covers name, description, inputSchema, risk
+   * and confirmEach — NOT the binding. A host that re-points a route behind a
+   * byte-identical descriptor inherits the old denial, because from the user's
+   * side nothing they were shown has changed. Re-pointing a live route under
+   * an unchanged descriptor is already indistinguishable at the consent
+   * surface; `approvals.revoke` is the way out.
+   */
+  async #standingDenial(
+    call: ToolCall,
+    descriptor: ToolDescriptor,
+    ctx: RunContext,
+  ): Promise<boolean> {
+    const fingerprint = descriptorHash(descriptor);
+    // Indexed on the call id: chat's random ids miss here and never pay for a
+    // scan of the subject's history.
+    const records = await listAll(this.#store.records(APPROVALS_COLLECTION), {
+      refs: { subject: ctx.principal.subject, status: "denied", call: call.id },
+    });
+    return records.some((record) => {
+      const data = approvalData(record);
+      return data.status === "denied"
+        && data.deniedBy === "human"
+        && data.voidedAt === undefined
+        && sameParkedCall(data.request, call, ctx, fingerprint);
+    });
+  }
+
   async #consumeApprovedCall(
     call: ToolCall,
     descriptor: ToolDescriptor,
@@ -1332,48 +1606,38 @@ class GuardImplementation implements VendoGuard {
     const fingerprint = descriptorHash(descriptor);
     const store = this.#store.records(APPROVALS_COLLECTION);
     const records = await listAll(store, {
-      refs: { subject: ctx.principal.subject, status: "approved" },
+      refs: { subject: ctx.principal.subject, status: "approved", call: call.id },
     });
     for (const record of records) {
       const data = approvalData(record);
       const request = data.request;
-      // A single-use approval re-authorizes exactly the call the user saw, in
-      // exactly the context they saw it. Beyond subject + call identity this
-      // pins (a) the approved inputs — a replay with tampered args never rides
-      // the approval — (b) the frozen descriptor — flipping the same tool from
-      // read to destructive after parking can't ride it either — and (c) the
-      // parked venue/presence/app — a present chat approval can't be replayed
-      // to satisfy an away, app-bound automation call.
+      // Sessions are DELIBERATELY not among the things `sameParkedCall` pins.
+      // One person approving on their phone and seeing the result render on
+      // their laptop is the same person answering the same question — the
+      // identity that matters is the subject, and everything that could change
+      // what they said yes to (inputs, frozen descriptor, venue/presence/app) is
+      // pinned there. Single-use is enforced by the CAS receipt below, so a
+      // cross-session replay still spends the one approval rather than
+      // multiplying it. Documented so it stays a choice.
       if (
-        data.status !== "approved" ||
-        data.consumedAt !== undefined ||
-        request.ctx.principal.subject !== ctx.principal.subject ||
-        request.call.id !== call.id ||
-        request.call.tool !== call.tool ||
-        exactInputHash(request.call.args) !== exactInputHash(call.args) ||
-        descriptorHash(request.descriptor) !== fingerprint ||
-        request.ctx.venue !== ctx.venue ||
-        request.ctx.presence !== ctx.presence ||
-        request.ctx.appId !== ctx.appId
+        data.status !== "approved"
+        || data.consumedAt !== undefined
+        // Voided: the person took this yes back, or their later no on the same
+        // call superseded it. Parking never dedupes, so a stable call id can
+        // hold both an older approved row and a newer denied one — without
+        // this, the stale yes would run right after the fresh no.
+        || data.voidedAt !== undefined
+        || !sameParkedCall(request, call, ctx, fingerprint)
       ) {
         continue;
       }
-      // Single-use is enforced by the receipt, not by the consumedAt read
-      // above (that check is only a fast path): the atomic insert has exactly
-      // one winner across processes. A loser falls through to the next
-      // candidate — the same approved call parked twice yields two approvals,
-      // each replayable once, exactly as before.
-      if (!(await this.#claimApprovalTransition("consumed", record.id, ctx.principal.subject))) {
-        continue;
-      }
-      // Observability marker on the row itself; the receipt is the source of
-      // truth, so a crash between the two writes fails closed (the approval
-      // reads un-consumed but can never be claimed again).
-      await store.put({
-        id: record.id,
-        data: { ...data, consumedAt: now() },
-        refs: { subject: ctx.principal.subject, status: "approved" },
-      });
+      // Single-use is enforced by the receipt, not by the consumedAt read above
+      // (that check is only a fast path): the atomic insert has exactly one
+      // winner across processes. Anything short of `spent` falls through to the
+      // next candidate — the same approved call parked twice yields two
+      // approvals, each replayable once, exactly as before, and a lost claim can
+      // also mean the person took the yes back between the list and here.
+      if (await this.#spendConsumedTransition(record.id, ctx.principal.subject) !== "spent") continue;
       return true;
     }
     return false;
@@ -1399,7 +1663,7 @@ class GuardImplementation implements VendoGuard {
       if (grant.revokedAt !== undefined) continue;
       if (expiresAt !== undefined && (!Number.isFinite(expiresAt) || expiresAt <= at)) continue;
       if (!durationMatches(grant, ctx) || !presenceMatches(grant, ctx)) continue;
-      if (!scopeMatches(grant.scope, call.args)) continue;
+      if (!scopeMatches(grant.scope, call)) continue;
       if (grant.descriptorHash !== fingerprint) {
         invalidated.push(grant);
         continue;
@@ -1442,11 +1706,7 @@ class GuardImplementation implements VendoGuard {
       status: "pending",
       sessionId: ctx.sessionId,
     };
-    await this.#store.records(APPROVALS_COLLECTION).put({
-      id: request.id,
-      data,
-      refs: { subject: ctx.principal.subject, status: "pending" },
-    });
+    await this.#store.records(APPROVALS_COLLECTION).put({ id: request.id, data, refs: approvalRefs(data) });
     return request;
   }
 
@@ -1467,6 +1727,7 @@ class GuardImplementation implements VendoGuard {
     ids: ApprovalId | ApprovalId[],
     decision: ApprovalDecision,
     principal: Principal,
+    provenance: "human" | "system",
   ): Promise<void> {
     const normalizedIds = [...new Set(Array.isArray(ids) ? ids : [ids])];
     const store = this.#store.records(APPROVALS_COLLECTION);
@@ -1533,7 +1794,7 @@ class GuardImplementation implements VendoGuard {
     const applied: Array<{ id: string; prior: ReturnType<typeof approvalData>; grantId?: GrantId }> = [];
     try {
       for (const { id, data } of toDecide) {
-        await this.#commitDecidedMember(id, data, decision, normalizedIds.length > 1, principal, applied);
+        await this.#commitDecidedMember(id, data, decision, normalizedIds.length > 1, principal, provenance, applied);
       }
     } catch (error) {
       await this.#compensateDecidedMembers(applied, claimed, principal, error);
@@ -1555,6 +1816,45 @@ class GuardImplementation implements VendoGuard {
     }
   }
 
+  /**
+   * A person's no also voids any UNCONSUMED yes still sitting on the same
+   * call. Parking never dedupes, so one stable call id can hold an older
+   * approved row and a newer denied one; without this the replay lookup would
+   * find the stale approval and run the very thing that was just refused.
+   * Voided rather than deleted — the audit trail keeps both answers, in order.
+   */
+  async #supersedeApprovedSiblings(denied: ApprovalRecordData): Promise<void> {
+    const store = this.#store.records(APPROVALS_COLLECTION);
+    const fingerprint = descriptorHash(denied.request.descriptor);
+    const siblings = await listAll(store, {
+      refs: {
+        subject: denied.request.ctx.principal.subject,
+        status: "approved",
+        call: denied.request.call.id,
+      },
+    });
+    for (const record of siblings) {
+      const data = approvalData(record);
+      if (data.consumedAt !== undefined || data.voidedAt !== undefined) continue;
+      // The SAME matcher the replay and standing-denial lookups use: a no must
+      // void exactly the yeses that answer the identical question, so the three
+      // can never drift into meaning different calls.
+      if (!sameParkedCall(data.request, denied.request.call, denied.request.ctx, fingerprint)) continue;
+      if (await this.#voidApprovalDecision(record.id, data) !== "spent") continue;
+      // The yes was being spent as the no landed, so the call ran. The denial
+      // still stands for every later issue, but the trail must not imply this
+      // one was stopped.
+      await this.report(
+        eventFromContext(denied.request.ctx as RunContext, {
+          kind: "approval",
+          tool: denied.request.call.tool,
+          inputPreview: denied.request.inputPreview,
+          detail: { supersedeTooLate: record.id },
+        }),
+      );
+    }
+  }
+
   /** One member's committed writes: the decided approval row, the optional
    *  remembered grant, and the audit record. Every landed write is pushed
    *  onto `applied` FIRST, so a failure anywhere leaves an exact rollback
@@ -1565,18 +1865,22 @@ class GuardImplementation implements VendoGuard {
     decision: ApprovalDecision,
     batch: boolean,
     principal: Principal,
+    provenance: "human" | "system",
     applied: Array<{ id: string; prior: ReturnType<typeof approvalData>; grantId?: GrantId }>,
   ): Promise<void> {
     const store = this.#store.records(APPROVALS_COLLECTION);
     const decidedAt = now();
     const status = decision.approve ? "approved" : "denied";
     const entry: { id: string; prior: ReturnType<typeof approvalData>; grantId?: GrantId } = { id, prior: data };
-    await store.put({
-      id,
-      data: { ...data, status, decidedAt },
-      refs: { subject: principal.subject, status },
-    });
+    const decided: ApprovalRecordData = {
+      ...data,
+      status,
+      decidedAt,
+      ...(decision.approve ? {} : { deniedBy: provenance }),
+    };
+    await store.put({ id, data: decided, refs: approvalRefs(decided) });
     applied.push(entry);
+    if (!decision.approve && provenance === "human") await this.#supersedeApprovedSiblings(decided);
 
     let grant: PermissionGrant | undefined;
     if (decision.approve && decision.remember !== undefined) {
@@ -1649,11 +1953,19 @@ class GuardImplementation implements VendoGuard {
         if (member.grantId !== undefined) {
           await this.#store.records(GRANTS_COLLECTION).delete(member.grantId);
         }
-        await store.put({
-          id: member.id,
-          data: member.prior,
-          refs: { subject: principal.subject, status: "pending" },
-        });
+        // Restore only a row nothing else has acted on. In the ms between this
+        // member's commit and a LATER member's store failure, a concurrent
+        // replay can spend it and a take-back can void it — and both of those
+        // transitions are single-use, so re-opening the ask would advertise a
+        // decision no one can make again and erase the marker of what did
+        // happen. A gone row was erased (02-store §5) and must never be
+        // re-created here. Both cases leave the member decided, which its own
+        // audit line already says; the retry then reads it as decided.
+        const current = await store.get(member.id);
+        if (current === null) continue;
+        const live = approvalData(current);
+        if (live.consumedAt !== undefined || live.voidedAt !== undefined) continue;
+        await store.put({ id: member.id, data: member.prior, refs: approvalRefs(member.prior) });
         const requestCtx = member.prior.request.ctx;
         try {
           await this.report({
@@ -1713,6 +2025,51 @@ class GuardImplementation implements VendoGuard {
     return records
       .map(grantData)
       .filter((grant) => grant.subject === principal.subject);
+  }
+
+  /**
+   * "I take that back." The mirror of {@link #revokeGrant}, for the other
+   * durable answer a person can give: a decided approval stops standing, so a
+   * denial no longer answers its call and an unconsumed approval can no longer
+   * replay. Without it a misclicked no on a frozen-descriptor ceremony (the
+   * apps runtime's secret and egress approvals re-issue a stable call id) would
+   * have no undo at all. Owner-scoped like every approval read: a foreign or
+   * unknown id is not-found, never a hint that it exists. Idempotent, and a
+   * still-pending approval is nothing to take back — deny it instead.
+   */
+  async #revokeApproval(id: ApprovalId, principal: Principal): Promise<void> {
+    const store = this.#store.records(APPROVALS_COLLECTION);
+    const record = await store.get(id);
+    if (record === null) throw new VendoError("not-found", `Approval ${id} was not found`);
+    const data = approvalData(record);
+    if (data.request.ctx.principal.subject !== principal.subject) {
+      throw new VendoError("not-found", `Approval ${id} was not found`);
+    }
+    if (data.status === "pending") {
+      throw new VendoError("conflict", `Approval ${id} has not been decided yet`);
+    }
+    const outcome = await this.#voidApprovalDecision(id, data);
+    // Already taken back: idempotent, and the trail says it once.
+    if (outcome === "already-void") return;
+    if (outcome === "spent") {
+      throw new VendoError(
+        "conflict",
+        `Approval ${id} was already spent by the call it authorized, so there is nothing left to take back`,
+      );
+    }
+    try {
+      await this.report(
+        eventFromContext(data.request.ctx as RunContext, {
+          kind: "approval",
+          tool: data.request.call.tool,
+          inputPreview: data.request.inputPreview,
+          detail: { approvalRevoked: id, priorStatus: data.status },
+        }),
+      );
+    } catch {
+      // The take-back itself landed; a missing audit line must not report it as
+      // a failure the caller should retry (the retry would say "already void").
+    }
   }
 
   async #revokeGrant(id: GrantId, principal: Principal): Promise<void> {

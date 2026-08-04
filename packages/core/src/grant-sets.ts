@@ -208,7 +208,12 @@ export function mechanicalRisk(descriptor: ToolDescriptor): RiskLabel {
   return "write";
 }
 
-const RANK: Record<RiskLabel, number> = { read: 0, write: 1, destructive: 2 };
+/** `ungraded` outranks every real grade, so the mechanical vote can never
+ *  launder "nobody has graded this" into a `write` it guessed from the name —
+ *  the state exists precisely to say the risk is unknown, and a guess is not an
+ *  answer (risk-grading redesign D1/D3). The vote still escalates every label
+ *  someone did assign, which is the job §12 gave it. */
+const RANK: Record<RiskLabel, number> = { read: 0, write: 1, destructive: 2, ungraded: 3 };
 
 /**
  * The risk the guard should act on: the RISKIER of the AI-assigned label and the
@@ -292,7 +297,30 @@ export function projectableForRun(
   ctx: Pick<RunContext, "venue" | "presence">,
 ): ToolDescriptor[] {
   if (!isUnattended(ctx)) return [...descriptors];
-  return descriptors.filter((descriptor) => resolvedRisk(descriptor) !== "destructive");
+  return descriptors.filter((descriptor) => !withheldFromUnattended(descriptor));
+}
+
+/**
+ * §12's law, extended to the state that says "nobody knows": an `ungraded` tool
+ * is withheld from an unattended run exactly as a destructive one is.
+ *
+ * The two laws meet here. §12 withholds what is known to be dangerous; the
+ * risk-grading redesign (D3) says an ungraded tool needs a PERSON, because
+ * nothing — human, judge, or protocol fact — has said what it does. An
+ * unattended run is precisely the venue with no person to ask, so "needs a
+ * person" can only mean "not offered". Anything else would rely on the guard
+ * parking a call nobody will ever answer.
+ *
+ * The cost is real and deliberate: on a catalog that has never been judged,
+ * EVERY host tool is ungraded, so automations are offered nothing until the
+ * catalog is graded (`vendo sync` with a model key, `.vendo/overrides.json`, or
+ * a policy rule that accepts `ungraded`). That is the same fail-closed direction
+ * the redesign takes everywhere else, in the one venue where asking is not an
+ * option.
+ */
+export function withheldFromUnattended(descriptor: ToolDescriptor): boolean {
+  const resolved = resolvedRisk(descriptor);
+  return resolved === "destructive" || resolved === "ungraded";
 }
 
 /** §12 — "Whole-registry declarations are rejected, not bundled; a declared set

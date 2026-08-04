@@ -1,0 +1,1258 @@
+$ pnpm run build:jail
+$ node scripts/build-jail-runtime.mjs
+vite v6.4.3 building for production...
+transforming...
+✓ 781 modules transformed.
+rendering chunks...
+✓ built in 1.36s
+[ui] generated jail runtime (909444 bytes)
+$ vitest run
+
+ RUN  v2.1.9 /Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui
+
+ ✓ test/tree/tree-view.test.tsx (19 tests) 117ms
+ ✓ test/chrome/approval-degraded.test.tsx (22 tests) 181ms
+stderr | test/voice/stage.test.tsx > VendoStage > docks the ConnectCard when a connector call needs an account (Cn-A)
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: Failed to parse URL from /api/vendo/connections/catalog
+    at node:internal/deps/undici/undici:15482:13
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: TypeError: Invalid URL: /api/vendo/connections/catalog
+      at new URLImpl (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/whatwg-url@14.2.0/node_modules/whatwg-url/lib/URL-impl.js:20:13)
+      at Object.exports.setup (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/whatwg-url@14.2.0/node_modules/whatwg-url/lib/URL.js:54:12)
+      at new URL (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/whatwg-url@14.2.0/node_modules/whatwg-url/lib/URL.js:115:22)
+      at new Request (node:internal/deps/undici/undici:10239:25)
+      at fetch (node:internal/deps/undici/undici:11009:25)
+      at fetch (node:internal/deps/undici/undici:15480:10)
+      at fetch (node:internal/bootstrap/web/exposed-window-or-worker:83:12)
+      at globalThis.fetch (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/test/setup.ts:38:23)
+      at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:13)
+      at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:22)
+}
+
+ ✓ test/voice/stage.test.tsx (20 tests) 760ms
+ ✓ test/chrome/share-dialog.test.tsx (19 tests) 538ms
+ ✓ test/chrome/panels.test.tsx (18 tests) 689ms
+stderr | test/chrome/affordances-eng225.test.tsx > connect dock + tray (ENG-225) > keeps the dock when the auto catalog fetch FAILS and the tray offers a retry
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: Error: kaboom
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/test/chrome/affordances-eng225.test.tsx:294:38)
+    at fetchCatalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/hooks/use-connector-catalog.ts:19:38)
+    at /Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/hooks/use-connector-catalog.ts:66:10
+    at Object.react_stack_bottom_frame (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:25989:20)
+    at runWithFiberInDEV (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+    at commitHookEffectListMount (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:13249:29)
+    at commitHookPassiveMountEffects (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:13336:11)
+    at commitPassiveMountOnFiber (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:15484:13)
+    at recursivelyTraversePassiveMountEffects (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:15439:11)
+    at commitPassiveMountOnFiber (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:15718:11)
+
+stderr | test/chrome/affordances-eng225.test.tsx > connect dock + tray (ENG-225) > keeps the dock when the auto catalog fetch FAILS and the tray offers a retry
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: Error: kaboom
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/test/chrome/affordances-eng225.test.tsx:294:38)
+    at fetchCatalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/hooks/use-connector-catalog.ts:19:38)
+    at /Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/hooks/use-connector-catalog.ts:66:10
+    at Object.react_stack_bottom_frame (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:25989:20)
+    at runWithFiberInDEV (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+    at commitHookEffectListMount (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:13249:29)
+    at commitHookPassiveMountEffects (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:13336:11)
+    at commitPassiveMountOnFiber (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:15484:13)
+    at recursivelyTraversePassiveMountEffects (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:15439:11)
+    at commitPassiveMountOnFiber (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:15718:11)
+
+stderr | test/chrome/affordances-eng225.test.tsx > connect dock + tray (ENG-225) > keeps the dock when the auto catalog fetch FAILS and the tray offers a retry
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: Error: kaboom
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/test/chrome/affordances-eng225.test.tsx:294:38)
+    at fetchCatalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/hooks/use-connector-catalog.ts:19:38)
+    at /Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/hooks/use-connector-catalog.ts:66:10
+    at Object.react_stack_bottom_frame (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:25989:20)
+    at runWithFiberInDEV (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+    at commitHookEffectListMount (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:13249:29)
+    at commitHookPassiveMountEffects (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:13336:11)
+    at commitPassiveMountOnFiber (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:15484:13)
+    at recursivelyTraversePassiveMountEffects (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:15439:11)
+    at commitPassiveMountOnFiber (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:15718:11)
+
+stderr | test/chrome/split-view.test.tsx > VendoOverlay split view > features the LATEST embed on the stage; clicking a rail embed features it instead
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:54758
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -61,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 54758
+  }
+}
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:54798
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -61,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 54798
+  }
+}
+
+ ✓ test/tree/frames-and-jail.test.tsx (16 tests) 145ms
+ ✓ test/hooks.test.tsx (22 tests) 1336ms
+stderr | test/chrome/split-view.test.tsx > VendoOverlay split view > staged = blurred in chat: the featured card shows the Full screened veil; collapse clears it
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNRESET 127.0.0.1:54826
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -54,
+    code: 'ECONNRESET',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 54826
+  }
+}
+
+stderr | test/chrome/split-view.test.tsx > VendoOverlay split view > pin from fullscreen: the stage bar's Pin to dashboard fires onPin and CLOSES the whole overlay
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNRESET 127.0.0.1:54831
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -54,
+    code: 'ECONNRESET',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 54831
+  }
+}
+
+ ✓ test/chrome/affordances-eng225.test.tsx (15 tests) 1331ms
+   ✓ connect dock + tray (ENG-225) > shows the dock with an active-count badge and opens the tray 323ms
+ ✓ test/voice/realtime-driver.test.ts (10 tests) 32ms
+ ✓ test/embeds.test.tsx (27 tests) 1800ms
+   ✓ existing-agents embeds > VendoAppEmbed > resolves the build beat into the app when the build lands mid-poll 1207ms
+ ✓ test/chrome/remixable.test.tsx (21 tests) 1772ms
+   ✓ Remixable — the wrapper fork gesture + in-place jailed mount > mounts the fork JAILED, IN PLACE of the wrapped child 537ms
+stderr | test/tree/convert-payload.test.tsx > streaming error recovery > recovers a node that threw on absent streaming data once the data arrives
+TypeError: Cannot read properties of undefined (reading 'slice')
+    at Sparkline (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/test/tree/convert-payload.test.tsx:343:37)
+    at Object.react_stack_bottom_frame (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:25904:20)
+    at renderWithHooks (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:7662:22)
+    at updateFunctionComponent (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:10166:19)
+    at beginWork (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:11778:18)
+    at runWithFiberInDEV (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+    at performUnitOfWork (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:17641:22)
+    at workLoopSync (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:17469:41)
+    at renderRootSync (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:17450:11)
+    at performWorkOnRoot (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:16583:35) {
+  [stack]: [Getter/Setter],
+  [message]: "Cannot read properties of undefined (reading 'slice')"
+}
+
+The above error occurred in the <Sparkline> component.
+
+React will try to recreate this component tree from scratch using the error boundary you provided, NodeErrorBoundary.
+
+
+ ✓ test/tree/convert-payload.test.tsx (15 tests) 153ms
+ ✓ test/chrome/connect.test.tsx (14 tests) 1178ms
+stderr | test/chrome/transcript-beats.test.tsx > the transcript's beats > keeps the ✕ beat and grows ZERO failure components
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNRESET 127.0.0.1:54947
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -54,
+    code: 'ECONNRESET',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 54947
+  }
+}
+
+stderr | test/chrome/transcript-beats.test.tsx
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNRESET 127.0.0.1:54952
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -54,
+    code: 'ECONNRESET',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 54952
+  }
+}
+
+ ✓ test/chrome/transcript-beats.test.tsx (20 tests) 3358ms
+   ✓ the transcript's beats > restores a turn folded, counting its steps without inventing a duration 3011ms
+ ✓ test/voice/voice-act.test.ts (6 tests) 172ms
+stderr | test/chrome/pill-states.test.tsx > launcher pill — waiting asks (numbered badge) > counts the waiting asks as a NUMBER, and outranks the unseen-results dot
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:59999
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -61,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 59999
+  }
+}
+
+stderr | test/chrome/mobile-takeover.test.tsx > mobile takeover (ENG-228) > follows live breakpoint flips (rotation / resize)
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:54975
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -61,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 54975
+  }
+}
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:54992
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -61,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 54992
+  }
+}
+
+stderr | test/chrome/overlay-api.test.tsx > VendoOverlay supported entry API > autofocuses the composer on open
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:54956
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -61,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 54956
+  }
+}
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:54981
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -61,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 54981
+  }
+}
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:54987
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -61,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 54987
+  }
+}
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:54994
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -61,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 54994
+  }
+}
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:55003
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -61,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 55003
+  }
+}
+
+stderr | test/chrome/overlay-api.test.tsx > VendoOverlay supported entry API > autofocuses the composer on open
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:54990
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -61,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 54990
+  }
+}
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:54997
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -61,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 54997
+  }
+}
+
+ ✓ test/chrome/pill-states.test.tsx (12 tests) 1223ms
+   ✓ closing the panel mid-run (G1: closing is leaving) > keeps the run alive, narrates it on the pill, then toasts the result into the record 374ms
+ ✓ test/chrome/split-view.test.tsx (15 tests) 3700ms
+   ✓ VendoOverlay split view > pin from fullscreen: the stage bar's Pin to dashboard fires onPin and CLOSES the whole overlay 3228ms
+ ✓ test/chrome/error-surface.test.tsx (10 tests) 1532ms
+   ✓ visible error surface + retry (ENG-214) > shows the error banner on a mid-stream failure and keeps the aria announcement 475ms
+   ✓ visible error surface + retry (ENG-214) > retries a mid-stream failure through Regenerate, without duplicating messages 306ms
+   ✓ visible error surface + retry (ENG-214) > shows the banner on a failed send, and Edit re-issues the same turn 325ms
+ ✓ test/tree/branded.test.tsx (16 tests) 237ms
+ ✓ test/chrome/adoption-and-sponsor.test.tsx (12 tests) 771ms
+ ✓ test/chrome/lane-cards-picks.test.tsx (10 tests) 568ms
+ ✓ test/chrome/thread-and-overlay.test.tsx (5 tests) 1269ms
+   ✓ VendoThread and VendoOverlay exports > runs a complete wire turn, renders receipts and approvals, and honors composer keys 788ms
+stderr | test/chrome/mobile-takeover.test.tsx > mobile takeover (ENG-228) > routes ⌘K to the overlay, takeover-stamped and portaled on mobile
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:55128
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -61,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 55128
+  }
+}
+
+stderr | test/chrome/mobile-takeover.test.tsx > mobile takeover (ENG-228) > routes ⌘K to the overlay, takeover-stamped and portaled on mobile
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:55131
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -61,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 55131
+  }
+}
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:55135
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -61,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 55135
+  }
+}
+
+stderr | test/chrome/mobile-takeover.test.tsx > mobile takeover (ENG-228) > routes ⌘K to the overlay, takeover-stamped and portaled on mobile
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:55138
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -61,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 55138
+  }
+}
+
+stderr | test/chrome/approval-and-notice.test.tsx > ApprovalCard and NoPolicyNotice exports > renders exactly one notice beside a page full of nested chrome roots
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: read ECONNRESET
+      at TCP.onStreamRead (node:internal/stream_base_commons:216:20) {
+    errno: -54,
+    code: 'ECONNRESET',
+    syscall: 'read'
+  }
+}
+
+ ✓ test/chrome/center.test.tsx (12 tests) 5730ms
+   ✓ Needs you > exists only while asks are waiting, and carries the count 5012ms
+ ✓ test/chrome/activity-semantics.test.ts (18 tests) 3ms
+stderr | test/chrome/card-shell.test.tsx > one card shell, three laws > M31 — announces a raised ask through a region that was mounted before it
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:55169
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -61,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 55169
+  }
+}
+
+ ✓ test/chrome/build-failed-banner.test.tsx (8 tests) 213ms
+ ✓ test/chrome/card-shell.test.tsx (7 tests) 290ms
+ ✓ test/chrome/pin-ceremony.test.tsx (9 tests) 447ms
+ ✓ test/tree/jail-manifest.test.tsx (6 tests) 72ms
+stderr | test/chrome/overlay-api.test.tsx > VendoOverlay supported entry API > skips a display:none restore target instead of swallowing focus
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:55239
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -61,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 55239
+  }
+}
+
+ ✓ test/chrome/overlay-api.test.tsx (17 tests) 5043ms
+   ✓ VendoOverlay supported entry API > opens uncontrolled via defaultOpen and positions the default launcher 372ms
+   ✓ VendoOverlay supported entry API > keeps the conversation across close/reopen instead of discarding it (ENG-221) 556ms
+   ✓ VendoOverlay supported entry API > preserves the conversation across an Escape close too 3294ms
+ ✓ test/eject-templates.test.ts (7 tests) 1454ms
+   ✓ eject template assembly > assembles the thread surface into dist with a generated header and manifest 425ms
+   ✓ eject templates pack-and-inspect > packed tarball ships the templates; runtime export map and files are untouched 877ms
+ ✓ test/client.test.ts (2 tests) 84ms
+ ✓ test/chrome/knowledge-citations.test.tsx (10 tests) 377ms
+ ✓ test/anon-session-race.test.ts (2 tests) 90ms
+ ✓ test/chrome/workspace-palette-slot.test.tsx (5 tests) 716ms
+   ✓ VendoPage, VendoPalette, and VendoSlot exports > uses roving automatic tabs, swaps panels, and lists and opens fixture apps 418ms
+stderr | test/chrome/tool-humanization.test.tsx > tool beat humanization > prefers a host-supplied friendly label
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNRESET 127.0.0.1:55383
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -54,
+    code: 'ECONNRESET',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 55383
+  }
+}
+
+stderr | test/chrome/tool-humanization.test.tsx > tool beat humanization > collapses consecutive identical failed beats into one with a count
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNRESET 127.0.0.1:55389
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -54,
+    code: 'ECONNRESET',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 55389
+  }
+}
+
+stderr | test/chrome/tool-humanization.test.tsx > tool beat humanization > does not collapse beats whose args differ
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNRESET 127.0.0.1:55391
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -54,
+    code: 'ECONNRESET',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 55391
+  }
+}
+
+stderr | test/chrome/tool-humanization.test.tsx > Vendo's own tools never read as their identifiers (§3) > labels a failed beat for one of Vendo's own tools with its title too
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNRESET 127.0.0.1:55395
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -54,
+    code: 'ECONNRESET',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 55395
+  }
+}
+
+ ✓ test/theme-tokens.test.tsx (14 tests) 44ms
+ ✓ test/chrome/composer.test.tsx (7 tests) 1071ms
+   ✓ composer: type-while-streaming, queued send, edit, regenerate (ENG-215) > keeps the composer typeable while a turn streams (typing never blocked) 369ms
+stderr | test/chrome/mobile-takeover.test.tsx > mobile takeover (ENG-228) > routes desktop ⌘K to the overlay without the takeover stamp
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:55419
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -61,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 55419
+  }
+}
+
+ ✓ test/chrome/grant-set-thread.test.tsx (7 tests) 624ms
+   ✓ grant-set consent in the thread > enumerates every permission with exactly one Approve and one Deny (criterion 18) 310ms
+stderr | test/chrome/approval-and-notice.test.tsx > ApprovalCard and NoPolicyNotice exports > renders no notice on any chrome surface under rules posture
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: read ECONNRESET
+      at TCP.onStreamRead (node:internal/stream_base_commons:216:20) {
+    errno: -54,
+    code: 'ECONNRESET',
+    syscall: 'read'
+  }
+}
+
+ ✓ test/voice/use-voice.test.tsx (9 tests) 18ms
+ ✓ test/mcp-shim-core.test.ts (14 tests) 5ms
+stderr | test/tree/inclient-mount.test.tsx > in-client venue enforcement (06-apps §9) > drops an erroring approved component back to the sandboxed iframe, loudly
+Error: kaboom
+    at Widget (eval at evaluateModule (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/tree/host-mount.tsx:76:22), <anonymous>:3:101)
+    at Object.react_stack_bottom_frame (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:25904:20)
+    at renderWithHooks (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:7662:22)
+    at updateFunctionComponent (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:10166:19)
+    at beginWork (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:11778:18)
+    at runWithFiberInDEV (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+    at performUnitOfWork (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:17641:22)
+    at workLoopSync (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:17469:41)
+    at renderRootSync (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:17450:11)
+    at performWorkOnRoot (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/node_modules/.pnpm/react-dom@19.2.7_react@19.2.7/node_modules/react-dom/cjs/react-dom-client.development.js:16583:35) {
+  [stack]: [Getter/Setter],
+  [message]: 'kaboom'
+}
+
+The above error occurred in the <Widget> component.
+
+React will try to recreate this component tree from scratch using the error boundary you provided, InClientBoundary.
+
+
+ ✓ test/tree/inclient-mount.test.tsx (10 tests) 120ms
+ ✓ test/tree/jail-runtime-ambient.test.ts (7 tests) 934ms
+ ✓ test/chrome/run-activity-honesty.test.ts (8 tests) 3ms
+ ✓ test/tree/jail-runtime-form-submit.test.ts (2 tests) 755ms
+stderr | test/chrome/palette-defaults.test.tsx > VendoPalette self-sufficient defaults (one-surface) > ⌘K opens the conversation overlay — no palette dialog, no chip strip
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:55465
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -61,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 55465
+  }
+}
+
+stderr | test/chrome/extreme-content.test.tsx > long-thread windowing (ENG-218) > renders only a bounded trailing window of a very long thread, not every turn
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: getaddrinfo ENOTFOUND vendo.test
+      at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26) {
+    errno: -3008,
+    code: 'ENOTFOUND',
+    syscall: 'getaddrinfo',
+    hostname: 'vendo.test'
+  }
+}
+
+stderr | test/chrome/extreme-content.test.tsx > long-thread windowing (ENG-218) > reveals the deferred head in chunks via the 'earlier messages' control
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: getaddrinfo ENOTFOUND vendo.test
+      at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26) {
+    errno: -3008,
+    code: 'ENOTFOUND',
+    syscall: 'getaddrinfo',
+    hostname: 'vendo.test'
+  }
+}
+
+stderr | test/chrome/extreme-content.test.tsx > long-thread windowing (ENG-218) > does not window a short thread (no 'earlier messages' control)
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: getaddrinfo ENOTFOUND vendo.test
+      at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26) {
+    errno: -3008,
+    code: 'ENOTFOUND',
+    syscall: 'getaddrinfo',
+    hostname: 'vendo.test'
+  }
+}
+
+ ✓ test/chrome/consumer-voice-law.test.tsx (21 tests) 12598ms
+   ✓ LEAK 2 — the connect card printed the wire's developer sentence > tells the person what it means for them, never how to configure the SDK 3058ms
+   ✓ LEAK 2 — the connect card printed the wire's developer sentence > stays consumer-voiced for an uncoded failure too (OAuth failed, expired, timed out) 3023ms
+   ✓ LEAK 2 — the connect card printed the wire's developer sentence > keeps the developer sentence for developers — the dev-mode console 3023ms
+   ✓ the widened audit — no chrome surface renders a developer string > sweeps every surface for ids, code, dotted paths, env vars and config instructions 3042ms
+stderr | test/chrome/extreme-content.test.tsx > entrance-animation gating on restore (ENG-218) > marks every restored turn as no-entrance so a reopened thread doesn't stampede
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: getaddrinfo ENOTFOUND vendo.test
+      at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26) {
+    errno: -3008,
+    code: 'ENOTFOUND',
+    syscall: 'getaddrinfo',
+    hostname: 'vendo.test'
+  }
+}
+
+stderr | test/chrome/extreme-content.test.tsx > huge-message truncation + expand (ENG-218) > collapses a huge assistant message and expands it on demand
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: getaddrinfo ENOTFOUND vendo.test
+      at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26) {
+    errno: -3008,
+    code: 'ENOTFOUND',
+    syscall: 'getaddrinfo',
+    hostname: 'vendo.test'
+  }
+}
+
+stderr | test/chrome/extreme-content.test.tsx > huge-message truncation + expand (ENG-218) > collapses a huge user message and expands it on demand
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: getaddrinfo ENOTFOUND vendo.test
+      at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26) {
+    errno: -3008,
+    code: 'ENOTFOUND',
+    syscall: 'getaddrinfo',
+    hostname: 'vendo.test'
+  }
+}
+
+ ✓ test/chrome/extreme-content.test.tsx (7 tests) 637ms
+ ✓ test/chrome/tool-humanization.test.tsx (12 tests) 6234ms
+   ✓ tool beat humanization > leaves NO transcript trace for a settled successful call — no sources chips, no raw slug 3125ms
+   ✓ Vendo's own tools never read as their identifiers (§3) > labels a failed beat for one of Vendo's own tools with its title too 3028ms
+stderr | test/chrome/mobile-takeover.test.tsx > mobile takeover (ENG-228) > ⌘K toggles an already-open overlay closed (one surface, no second modal)
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNRESET 127.0.0.1:55482
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -54,
+    code: 'ECONNRESET',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 55482
+  }
+}
+
+ ✓ test/chrome/mobile-takeover.test.tsx (17 tests) 9618ms
+   ✓ mobile takeover (ENG-228) > follows live breakpoint flips (rotation / resize) 3101ms
+   ✓ mobile takeover (ENG-228) > routes ⌘K to the overlay, takeover-stamped and portaled on mobile 3021ms
+   ✓ mobile takeover (ENG-228) > routes desktop ⌘K to the overlay without the takeover stamp 3013ms
+stderr | test/chrome/mobile-takeover.test.tsx
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:55487
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -61,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 55487
+  }
+}
+
+ ✓ test/chrome/approval-and-notice.test.tsx (11 tests) 6793ms
+   ✓ ApprovalCard and NoPolicyNotice exports > shows the real inputs as fields and emits basic approve and deny decisions 332ms
+   ✓ ApprovalCard and NoPolicyNotice exports > renders exactly one notice beside a page full of nested chrome roots 3025ms
+   ✓ ApprovalCard and NoPolicyNotice exports > renders no notice on any chrome surface under rules posture 3030ms
+ ✓ test/tree/jail-runtime-furnishing.test.ts (3 tests) 1174ms
+   ✓ generated component jail furnishing runtime > renders the fork through captured local modules and applies CSS in the inner document 814ms
+ ✓ test/chrome/vendo-activities.test.tsx (9 tests) 3715ms
+   ✓ VendoActivities > renders pending approvals as decidable cards and decisions call through 353ms
+   ✓ VendoActivities > is a labeled region 3019ms
+ ✓ test/chrome/page-sidebar-refresh.test.tsx (2 tests) 2393ms
+   ✓ VendoPage thread sidebar refresh > surfaces a newly started conversation in the sidebar after its first turn 925ms
+   ✓ VendoPage thread sidebar refresh > re-polls a not-yet-persisted mint on a slow cadence, never a hot GET /threads loop 1468ms
+ ✓ test/chrome/slot-discovery.test.tsx (8 tests) 329ms
+stderr | test/chrome/slot-cta-pin.test.tsx > VendoSlot empty-state CTA + pinned-component path (ENG-223) > suggestion chips prefill the conversation composer — never send
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:55776
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -61,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 55776
+  }
+}
+
+stderr | test/chrome/conversation-registry.test.tsx > openVendoConversation registry > targets the opened overlay's composer, not an embedded thread mounted later
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:55784
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -61,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 55784
+  }
+}
+
+stderr | test/chrome/conversation-registry.test.tsx > openVendoConversation registry > targets the opened overlay's composer, not an embedded thread mounted later
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:55827
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -61,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 55827
+  }
+}
+
+stderr | test/chrome/slot-cta-pin.test.tsx > VendoSlot empty-state CTA + pinned-component path (ENG-223) > threads live pin data through, overriding the tree's embedded data model
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:55803
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -61,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 55803
+  }
+}
+
+ ✓ test/chrome/approval-money.test.tsx (5 tests) 148ms
+ ✓ test/chrome/slot-cta-pin.test.tsx (9 tests) 1197ms
+   ✓ VendoSlot empty-state CTA + pinned-component path (ENG-223) > renders the empty-state CTA as a real, focusable button 318ms
+   ✓ VendoSlot empty-state CTA + pinned-component path (ENG-223) > falls back to the host children when the pinned component throws on mount 493ms
+ ✓ test/kit/forms.test.tsx (12 tests) 206ms
+ ✓ test/kit-intl.test.tsx (15 tests) 63ms
+ ✓ test/chrome/fork-offer-on-edit.test.tsx (1 test) 1029ms
+   ✓ the fork offer answers an EDIT a viewer may not make > offers the fork in the person's own words, forks on request, and leaves other failures alone 1007ms
+stderr | test/chrome/lane-thread-picks.test.tsx > lane pick 4B — landing starter cards > mixed suggestions render N chips under the 'Or try this' micro-label
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNRESET 127.0.0.1:55980
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -54,
+    code: 'ECONNRESET',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 55980
+  }
+}
+
+stderr | test/chrome/lane-thread-picks.test.tsx > lane pick 4B — landing starter cards > cards without strings render no chip row and no micro-label
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNRESET 127.0.0.1:55984
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -54,
+    code: 'ECONNRESET',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 55984
+  }
+}
+
+stderr | test/chrome/lane-thread-picks.test.tsx > composer chrome stays hint-free (2C hint row removed 2026-07-23) > renders no keyboard-hint row inside the composer (removed 2026-07-23)
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNRESET 127.0.0.1:55989
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -54,
+    code: 'ECONNRESET',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 55989
+  }
+}
+
+ ✓ test/chrome/automation-card.test.tsx (6 tests) 210ms
+ ✓ test/chrome/export-surface.test.ts (4 tests) 8527ms
+   ✓ @vendoai/ui/chrome export surface > re-exports every chrome type from the source entry 3165ms
+   ✓ @vendoai/ui/chrome export surface > has teeth: a missing type re-export fails the tsc gate with TS2305 5360ms
+stderr | test/chrome/palette-defaults.test.tsx > VendoPalette self-sufficient defaults (one-surface) > registry select on 'new-conversation' starts a fresh thread through the overlay
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:56077
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -61,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 56077
+  }
+}
+
+ ✓ test/chrome/boot-bar.test.tsx (6 tests) 31ms
+stderr | test/chrome/discoverability-whisper.test.tsx > whisper launcher (ui-usage-dx §6 — ambient discoverability) > does not burn the flag while the overlay is open at mount; arms on close (Devin PR#365)
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: bad port
+      at makeNetworkError (node:internal/deps/undici/undici:9924:35)
+      at mainFetch (node:internal/deps/undici/undici:11200:20)
+      at fetching (node:internal/deps/undici/undici:11186:7)
+      at fetch (node:internal/deps/undici/undici:11052:20)
+      at fetch (node:internal/deps/undici/undici:15480:10)
+      at fetch (node:internal/bootstrap/web/exposed-window-or-worker:83:12)
+      at globalThis.fetch (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/test/setup.ts:38:23)
+      at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:13)
+      at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:137:12)
+      at processTicksAndRejections (node:internal/process/task_queues:105:5)
+}
+
+stderr | test/chrome/discoverability-whisper.test.tsx > whisper launcher (ui-usage-dx §6 — ambient discoverability) > hides the caption once the overlay opens
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: bad port
+      at makeNetworkError (node:internal/deps/undici/undici:9924:35)
+      at mainFetch (node:internal/deps/undici/undici:11200:20)
+      at fetching (node:internal/deps/undici/undici:11186:7)
+      at fetch (node:internal/deps/undici/undici:11052:20)
+      at fetch (node:internal/deps/undici/undici:15480:10)
+      at fetch (node:internal/bootstrap/web/exposed-window-or-worker:83:12)
+      at globalThis.fetch (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/test/setup.ts:38:23)
+      at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:13)
+      at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:137:12)
+      at processTicksAndRejections (node:internal/process/task_queues:105:5)
+}
+
+ ✓ test/chrome/discoverability-whisper.test.tsx (10 tests) 342ms
+stderr | test/chrome/palette-singleton.test.tsx > VendoPalette singleton, host-collision-safe keybinding > delivers the shared keybinding exactly once even when two palettes mount
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:56085
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -61,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 56085
+  }
+}
+
+ ✓ test/chrome/conversation-registry.test.tsx (7 tests) 4101ms
+   ✓ openVendoConversation registry > delivers a newConversation prompt to the fresh thread, not the outgoing composer 416ms
+   ✓ openVendoConversation registry > queues a send:true prompt fired mid-turn instead of bypassing the single-in-flight contract 423ms
+   ✓ openVendoConversation registry > targets the opened overlay's composer, not an embedded thread mounted later 3067ms
+ ✓ test/chrome/streaming-polish.test.tsx (3 tests) 740ms
+   ✓ streaming polish: caret + liveness (ENG-217) > shows the lone caret while a streamed turn is still empty, never after 506ms
+stderr | test/chrome/discoverability-greeting.test.tsx > greeting-as-tutorial (ui-usage-dx §6 — first-open discoverability) > shows no greeting on a thread that has history, without burning the flag
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: read ECONNRESET
+      at TCP.onStreamRead (node:internal/stream_base_commons:216:20) {
+    errno: -54,
+    code: 'ECONNRESET',
+    syscall: 'read'
+  }
+}
+
+stderr | test/chrome/discoverability-greeting.test.tsx > greeting-as-tutorial (ui-usage-dx §6 — first-open discoverability) > host-supplied greeting config (provider prop) replaces the default
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:56134
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -61,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 56134
+  }
+}
+
+stderr | test/chrome/discoverability-greeting.test.tsx > greeting-as-tutorial (ui-usage-dx §6 — first-open discoverability) > reaches the overlay's thread, honoring the overlay-level greeting prop
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNRESET 127.0.0.1:56136
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -54,
+    code: 'ECONNRESET',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 56136
+  }
+}
+
+ ✓ test/chrome/discoverability-greeting.test.tsx (7 tests) 6505ms
+   ✓ greeting-as-tutorial (ui-usage-dx §6 — first-open discoverability) > renders the default greeting on a first-ever fresh conversation, marks seen, fires NO transport calls 3364ms
+   ✓ greeting-as-tutorial (ui-usage-dx §6 — first-open discoverability) > chip tap PREFILLS the composer and never sends 3047ms
+ ✓ test/theme-scheme.test.tsx (7 tests) 69ms
+ ✓ test/kit/format.test.ts (15 tests) 40ms
+ ✓ test/kit/charts.test.tsx (11 tests) 46ms
+ ✓ test/tree/pin-drift-notice.test.tsx (5 tests) 123ms
+ ✓ test/chrome/lane-thread-picks.test.tsx (5 tests) 3691ms
+   ✓ lane pick 4B — landing starter cards > renders object suggestions as two-line cards and sends the prompt on tap 548ms
+   ✓ composer chrome stays hint-free (2C hint row removed 2026-07-23) > renders no keyboard-hint row inside the composer (removed 2026-07-23) 3029ms
+ ✓ test/tree/forming-skeleton.test.tsx (8 tests) 78ms
+ ✓ test/chrome/nested-money.test.ts (7 tests) 3ms
+ ✓ test/chrome/discoverability-store.test.ts (5 tests) 3ms
+ ✓ test/kit/data-display.test.tsx (9 tests) 155ms
+stderr | test/chrome/user-bubble.test.tsx > user bubble phantom-line regressions > renders exactly the text node and no other in-flow children inside the bubble
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNRESET 127.0.0.1:56259
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -54,
+    code: 'ECONNRESET',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 56259
+  }
+}
+
+ ✓ test/chrome/user-bubble.test.tsx (4 tests) 3161ms
+   ✓ user bubble phantom-line regressions > renders the sent text without a trailing-newline tail (pre-wrap would paint it as a blank line) 3133ms
+stderr | test/chrome/user-bubble.test.tsx
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at request (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:131:16)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNRESET 127.0.0.1:56261
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -54,
+    code: 'ECONNRESET',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 56261
+  }
+}
+
+ ✓ test/kit/feedback.test.tsx (6 tests) 137ms
+stderr | test/chrome/palette-defaults.test.tsx > VendoPalette self-sufficient defaults (one-surface) > defers entirely to a supplied onCommand handler and closes the surface first
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:56299
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -61,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 56299
+  }
+}
+
+ ✓ test/kit/registry.test.ts (9 tests) 6ms
+ ✓ test/chrome/palette-singleton.test.tsx (3 tests) 3392ms
+   ✓ VendoPalette singleton, host-collision-safe keybinding > delivers the shared keybinding exactly once even when two palettes mount 3353ms
+stderr | test/chrome/palette-singleton.test.tsx
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNRESET 127.0.0.1:56322
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -54,
+    code: 'ECONNRESET',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 56322
+  }
+}
+
+ ✓ test/tree/expr-binding.test.tsx (3 tests) 65ms
+ ✓ test/chrome/discoverability-page.test.tsx (3 tests) 688ms
+   ✓ greeting-as-tutorial on VendoPage > returning user: no tutorial during the auto-select transient and no burned flag; explicit New conversation is the first open 444ms
+stderr | test/chrome/discoverability-page.test.tsx
+[vendo] connector catalog fetch failed; the connect tray will offer a retry: TypeError: fetch failed
+    at node:internal/deps/undici/undici:15482:13
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at send (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:89:7)
+    at readJson (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:141:22)
+    at Object.catalog (/Users/yousefh/orca/workspaces/flowlet/ui-s1-fixleaks/packages/ui/src/client-impl.ts:189:29) {
+  [cause]: Error: connect ECONNRESET 127.0.0.1:56361
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+    errno: -54,
+    code: 'ECONNRESET',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 56361
+  }
+}
+
+ ✓ test/chrome/automation-stopped.test.tsx (3 tests) 188ms
+ ✓ test/kit/data-table.test.tsx (6 tests) 269ms
+ ✓ test/tree/review-standing.test.tsx (2 tests) 116ms
+ ✓ test/chrome/vendo-trigger.test.tsx (4 tests) 490ms
+   ✓ VendoTrigger > renders a native button with the given label and opens the conversation with its prompt 361ms
+ ✓ test/chrome/app-load-retry.test.tsx (3 tests) 1496ms
+   ✓ useApp load retry (Keystone graduates A5) > rides out a transient open failure instead of skeletoning forever 436ms
+   ✓ useApp load retry (Keystone graduates A5) > gives up after a bounded number of attempts and offers a retry 1039ms
+ ✓ test/viewport-css.test.ts (4 tests) 1ms
+ ✓ test/tree/jail-runtime-resize.test.ts (1 test) 915ms
+   ✓ generated component jail resize runtime > reports the mount content height as it grows and shrinks, independent of the frame height 914ms
+ ✓ test/mcp-shim-theme.test.ts (2 tests) 2ms
+ ✓ test/chrome/s1-recipe.test.ts (5 tests) 5ms
+ ✓ test/kit/values.test.tsx (10 tests) 171ms
+ ✓ test/kit/schema.test.ts (4 tests) 2ms
+ ✓ test/embed-contract.test.ts (3 tests) 4ms
+ ✓ test/mcp-http-open-card.test.tsx (1 test) 88ms
+ ✓ test/chrome/discoverability-store-ssr.test.ts (1 test) 7ms
+ ✓ test/chrome/humanize.test.ts (14 tests) 2ms
+ ✓ test/registry-components.test.tsx (4 tests) 75ms
+ ✓ test/tree/jail-runtime-empty.test.ts (1 test) 777ms
+   ✓ generated component jail empty render runtime > reports an explicit empty result instead of ready for a null render 777ms
+ ✓ test/chrome/palette-defaults.test.tsx (7 tests) 12234ms
+   ✓ VendoPalette self-sufficient defaults (one-surface) > ⌘K opens the conversation overlay — no palette dialog, no chip strip 3151ms
+   ✓ VendoPalette self-sufficient defaults (one-surface) > still publishes the command set through the overlay registry 3007ms
+   ✓ VendoPalette self-sufficient defaults (one-surface) > registry select on 'new-conversation' starts a fresh thread through the overlay 3018ms
+   ✓ VendoPalette self-sufficient defaults (one-surface) > defers entirely to a supplied onCommand handler and closes the surface first 3033ms
+ ✓ test/ssr.test.tsx (15 tests) 22ms
+
+ Test Files  98 passed (98)
+      Tests  890 passed (890)
+   Start at  10:51:23
+   Duration  27.85s (transform 2.84s, setup 13.13s, collect 80.32s, tests 136.06s, environment 38.95s, prepare 5.39s)
+

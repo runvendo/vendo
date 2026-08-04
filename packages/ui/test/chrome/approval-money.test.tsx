@@ -130,7 +130,8 @@ describe("the consent card's money rendering", () => {
     expect(rows).toEqual([
       ["Invoice id", "inv_42"],
       ["Count", "4750"],
-      ["Permanent", "true"],
+      // Not currency guessing, but not the literal either (used to pin "true").
+      ["Permanent", "Yes"],
       ["Quantity", "2"],
     ]);
   });

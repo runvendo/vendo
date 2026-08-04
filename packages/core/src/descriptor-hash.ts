@@ -10,11 +10,11 @@ export function descriptorHash(descriptor: ToolDescriptor): string {
     inputSchema: descriptor.inputSchema,
     risk: descriptor.risk,
   };
-  if (descriptor.critical !== undefined) preimage.critical = descriptor.critical;
+  if (descriptor.confirmEach !== undefined) preimage.confirmEach = descriptor.confirmEach;
   // Embedded-agent design §12: `title` is what a PERSON approved on the card, so
   // a retitle must invalidate grants exactly like a rename — otherwise the words
   // someone consented to can be changed under a still-valid grant. Included only
-  // when defined, the same rule `critical` follows, so every grant minted before
+  // when defined, the same rule `confirmEach` follows, so every grant minted before
   // titles existed keeps matching instead of being silently revoked.
   if (descriptor.title !== undefined) preimage.title = descriptor.title;
   return `sha256:${sha256Hex(canonicalJson(preimage))}`;

@@ -487,14 +487,17 @@ function riskRecommendations(tools: ExtractedTool[]): RiskRecommendation[] {
     if (tool.disabled === true) {
       return [{ tool: tool.name, risk: tool.risk, recommendation: "extracted disabled (unclassifiable); enable it deliberately in .vendo/overrides.json after review" }];
     }
-    if (tool.critical === true) {
-      return [{ tool: tool.name, risk: tool.risk, recommendation: "already marked critical in .vendo/overrides.json; policy asks before running it" }];
+    if (tool.confirmEach === true) {
+      return [{ tool: tool.name, risk: tool.risk, recommendation: "already marked confirmEach in .vendo/overrides.json; policy asks before running it" }];
+    }
+    if (tool.risk === "ungraded") {
+      return [{ tool: tool.name, risk: tool.risk, recommendation: "nobody has graded this yet, so it asks on every call; run `vendo sync` with a model key, or grade it in .vendo/overrides.json" }];
     }
     if (tool.risk === "destructive") {
-      return [{ tool: tool.name, risk: tool.risk, recommendation: "irreversible; mark it critical in .vendo/overrides.json so policy asks first" }];
+      return [{ tool: tool.name, risk: tool.risk, recommendation: "irreversible; mark it confirmEach in .vendo/overrides.json so policy asks first" }];
     }
     if (tool.risk === "write") {
-      return [{ tool: tool.name, risk: tool.risk, recommendation: "writes host data; review it and mark critical in .vendo/overrides.json when irreversible" }];
+      return [{ tool: tool.name, risk: tool.risk, recommendation: "writes host data; review it and mark confirmEach in .vendo/overrides.json when irreversible" }];
     }
     return [];
   });
@@ -1341,7 +1344,7 @@ export async function runInit(options: InitOptions): Promise<number> {
     // Judgment state, one line: a pass that ran already narrated itself (it
     // owns the judged/queued/rejected counts); otherwise say so honestly.
     if (!polish.ran) {
-      output.log("judgment: structural-only — extraction grades stand (add a model key and run `vendo sync` to judge the catalog)");
+      output.log("judgment: structural-only — only protocol facts are graded, so every ungraded tool asks on each call (add a model key and run `vendo sync` to grade the catalog)");
     }
 
     // Project-shape enrichment (posthog-analytics §3): bools, closed enums,

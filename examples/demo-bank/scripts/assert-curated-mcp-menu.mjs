@@ -44,7 +44,12 @@ const expectedTitles = Object.fromEntries(
   expected.map((name) => [name, overrides.tools?.[name]?.title]),
 );
 const extracted = JSON.parse(await readFile(`${appDir}/.vendo/tools.json`, "utf8"));
-const riskByName = Object.fromEntries(extracted.tools.map((tool) => [tool.name, tool.risk]));
+// The MERGED risk, the way the registry's mergeOverride resolves it — an
+// override's `risk` is what the door annotates from, so reading tools.json
+// alone measures a grade the wire never carried.
+const riskByName = Object.fromEntries(
+  extracted.tools.map((tool) => [tool.name, overrides.tools?.[tool.name]?.risk ?? tool.risk]),
+);
 
 // ---- earn a bearer over the door's real OAuth wire ---------------------------
 const cookie = `${COOKIE_NAME}=${await encode({
@@ -178,8 +183,11 @@ for (const tool of hostTools) {
   if (title && tool.title !== title) problems.push(`${tool.name}: title "${tool.title}" != "${title}"`);
   if (title && tool.annotations?.title !== title) problems.push(`${tool.name}: annotations.title missing`);
   const risk = riskByName[tool.name];
-  const readOnly = risk === "read";
-  const destructive = risk === "destructive";
+  // An `ungraded` tool asserts NEITHER hint: MCP's default for
+  // `destructiveHint` is `true`, so `false` would claim safety about a tool
+  // nobody graded. Absent is the answer, and this measures that it is absent.
+  const readOnly = risk === "ungraded" ? undefined : risk === "read";
+  const destructive = risk === "ungraded" ? undefined : risk === "destructive";
   if (tool.annotations?.readOnlyHint !== readOnly) problems.push(`${tool.name}: readOnlyHint != ${readOnly} (risk ${risk})`);
   if (tool.annotations?.destructiveHint !== destructive) problems.push(`${tool.name}: destructiveHint != ${destructive} (risk ${risk})`);
 }

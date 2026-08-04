@@ -13,11 +13,6 @@ export interface ToolSearchMatch {
 export interface ToolSearchOptions {
   /** Max matches returned. Defaults to 10; clamped to [1, 50]. */
   limit?: number;
-  /** Max lazy toolkits ONE query may expand from the discovery index
-   * (registry-level; ignored by the descriptor scorer). Defaults to 3.
-   * Discovery discipline (spec 2026-07-25): hosts tune it via
-   * `createVendo({ agent: { maxSearchExpansions } })`. */
-  maxExpansions?: number;
 }
 
 const DEFAULT_LIMIT = 10;

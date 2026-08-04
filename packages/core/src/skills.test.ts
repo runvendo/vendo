@@ -4,6 +4,7 @@ import {
   createTurnSkills,
   hostSkillFiles,
   renderSkillMd,
+  skillFilePath,
   skillPath,
   type PackSkill,
   type SkillsFs,
@@ -127,6 +128,48 @@ describe("hostSkillFiles — the /host projection, not stored rows", () => {
 
   it("projects nothing for no skills", () => {
     expect(hostSkillFiles([])).toEqual({});
+  });
+});
+
+describe("companion files ride beside a skill's SKILL.md", () => {
+  // The skill format is a DIRECTORY, and Claude Code reads it whole. Depth the
+  // body should not carry (the full .vendo reference) lands here and the body
+  // points at it.
+  const withFiles: PackSkill = {
+    ...skill("building-apps", "Build an app.", "body\n"),
+    files: { "references/format.md": "# The format\n", "checklist.md": "- one\n" },
+  };
+
+  it("lands each file at its relative path under the skill's own directory", () => {
+    expect(skillFilePath("building-apps", "references/format.md"))
+      .toBe("/host/skills/building-apps/references/format.md");
+
+    expect(hostSkillFiles([withFiles])).toEqual({
+      "/host/skills/building-apps/SKILL.md": renderSkillMd(withFiles),
+      "/host/skills/building-apps/references/format.md": "# The format\n",
+      "/host/skills/building-apps/checklist.md": "- one\n",
+    });
+  });
+
+  it("refuses a companion path that would leave the skill's directory", () => {
+    const hostile = ["../format.md", "references/../../../user/apps/x", "/etc/passwd", "a//b", ".", "..", "with space.md", ""];
+    for (const file of hostile) {
+      expect(() => skillFilePath("building-apps", file)).toThrow(/companion-file path/i);
+      expect(() => hostSkillFiles([{ ...withFiles, files: { [file]: "x" } }])).toThrow(/companion-file path/i);
+    }
+  });
+
+  it("refuses a companion file that would overwrite the skill's own body", () => {
+    expect(() => skillFilePath("building-apps", "SKILL.md")).toThrow(/companion-file path/i);
+  });
+
+  it("validates the skill name too, so the guard cannot be walked around", () => {
+    expect(() => skillFilePath("../../secrets", "a.md")).toThrow(/skill name/i);
+  });
+
+  it("leaves the listing alone — a companion is a file, never a skill", async () => {
+    const listed = await createTurnSkills(memoryFs(hostSkillFiles([withFiles]))).list();
+    expect(listed).toEqual([{ name: "building-apps", description: "Build an app." }]);
   });
 });
 

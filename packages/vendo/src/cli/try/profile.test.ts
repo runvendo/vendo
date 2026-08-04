@@ -68,7 +68,12 @@ describe("assembleTryProfile on the committed demo-bank profile", () => {
     expect(profile.tools.counts.enabled).toBeLessThan(profile.tools.counts.total);
     const authTool = profile.tools.list.find((tool) => tool.name === "host_auth_create");
     expect(authTool?.disabled).toBe(true);
-    expect(authTool?.description).toBe("Auth.js endpoint - never agent-callable");
+    // A tool's description is the sentence a CONSENT CARD shows the person being
+    // asked (spec §16 law 3), so it is consumer copy even on a disabled tool —
+    // `disabled: true` above is what carries "never agent-callable". This used to
+    // pin "Auth.js endpoint - never agent-callable", a note written for whoever
+    // maintains the host.
+    expect(authTool?.description).toBe("Signs you in or out of Maple.");
 
     expect(profile.catalog).toContain("MapleNetWorthCard");
 

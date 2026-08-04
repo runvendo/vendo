@@ -12,6 +12,7 @@
 import {
   type AppDocument,
   type NormalizedCatalog,
+  type PlanDisplay,
   type ShapeType,
   type ToolSemantics,
   type Tree,
@@ -37,6 +38,10 @@ export interface GeneratedPartial {
   name?: string;
   tree: Tree;
   components?: Record<string, string>;
+  /** The plan's arrival posture (redesign spec §5), forwarded so the in-process
+   *  emitter puts it on the same payload field the harness render seam does.
+   *  Absent means inline. */
+  display?: PlanDisplay;
 }
 
 export interface GenerationDependencies {

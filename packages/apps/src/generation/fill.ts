@@ -261,7 +261,11 @@ export const fillPlan = async (
   const commit = (next: Tree): void => {
     tree = next;
     if (deps.onPartial === undefined) return;
-    emitted.push(Promise.resolve(deps.onPartial({ tree, name: plan.name })).catch(() => undefined));
+    emitted.push(Promise.resolve(deps.onPartial({
+      tree,
+      name: plan.name,
+      ...(plan.display === undefined ? {} : { display: plan.display }),
+    })).catch(() => undefined));
   };
 
   /** What is wrong with one candidate fragment: its own compile issues, plus

@@ -70,7 +70,7 @@ export interface MachineLifecycleConfig {
    * Required, and never optional: an omitted policy used to mean UNRESTRICTED
    * egress, so a caller who simply forgot handed a machine an unfiltered
    * internet and the call site read as complete. Unnamed must mean denied — the
-   * same law `boxPermission` states for tools and `BoxMachineOptions.allowedDomains`
+   * same law `disallowedTools` applies at the session and `BoxMachineOptions.allowedDomains`
    * states for the conversational box. A deployment with nothing to allow says
    * so with a function returning `[]`.
    */

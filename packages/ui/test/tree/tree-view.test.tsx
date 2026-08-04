@@ -128,7 +128,13 @@ describe("TreeView public surface", () => {
     );
 
     expect(screen.getByText("Sibling survived")).toBeTruthy();
-    expect(screen.getByRole("note", { name: /node render error/i }).textContent).toContain("bad");
+    // ⚠️ TEST EDIT (M36): this asserted the NODE ID ("bad") in the notice's text.
+    // The id is our plumbing and the exception's message is generated-component
+    // code talking; both are now the dev-mode `detail`. The notice a person
+    // reads says what happened.
+    const note = screen.getByRole("note", { name: /node render error/i });
+    expect(note.textContent).toContain("didn’t load");
+    expect(note.textContent).not.toContain("bad");
   });
 
   it("skeletons an erroring host node while STREAMING, then verdicts on the final payload", () => {
@@ -153,7 +159,9 @@ describe("TreeView public surface", () => {
     // The FINAL payload (streaming flag gone) re-evaluates fresh: the crash
     // is now a verdict and the notice renders.
     view.rerender(<TreeView tree={tree(nodes)} components={{ Boom }} onAction={ok} />);
-    expect(screen.getByRole("note", { name: /node render error/i }).textContent).toContain("bad");
+    // ⚠️ TEST EDIT (M36): as above — the verdict is the honest line, not the id.
+    expect(screen.getByRole("note", { name: /node render error/i }).textContent)
+      .toContain("didn’t load");
   });
 
   it("skeletons an unknown component name while STREAMING instead of the unknown-component notice", () => {

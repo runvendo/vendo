@@ -60,7 +60,13 @@ describe("useApp load retry (Keystone graduates A5)", () => {
 
     const retry = await screen.findByRole("button", { name: /try again/i });
     expect(spy.mock.calls).toHaveLength(3);
-    expect(screen.getByRole("alert").textContent).toContain("app machine is down");
+    // The consumer-voice law (spec §16 law 3, wave-3 integration): a slot sits on
+    // the HOST'S OWN PAGE, so the developer's sentence ("app machine is down" —
+    // and in the wild an env-var name or an app id) must never be what the person
+    // reads. This assertion used to demand exactly that raw string.
+    const alert = screen.getByRole("alert").textContent!;
+    expect(alert).toContain("Something on our side didn’t answer");
+    expect(alert).not.toContain("app machine is down");
 
     // The affordance is real: with the wire healed, the same button loads the app.
     spy.mockImplementation(open);

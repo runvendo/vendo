@@ -1,7 +1,15 @@
 import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { VendoError, type HarnessEvent, type Json, type ToolResult, type Turn } from "@vendoai/core";
+import {
+  VENDO_APPS_CREATE_TOOL,
+  VENDO_APPS_EDIT_TOOL,
+  VendoError,
+  type HarnessEvent,
+  type Json,
+  type ToolResult,
+  type Turn,
+} from "@vendoai/core";
 import { afterEach, describe, expect, test, vi } from "vitest";
 // The REAL box door, driven over a fake transport — see the block comment below.
 // A package subpath, not a relative climb: the door is the wire contract between
@@ -310,6 +318,21 @@ describe("the boot gate — a spawned harness with no machine to live on (design
     expect(claudeCode().requires?.toolDoor).toBe(true);
     expect(claudeCode({ machine: "local" }).requires?.toolDoor).toBe(true);
     expect(() => assertHarnessComposable(claudeCode({ machine: "local" }) as never, {})).not.toThrow();
+  });
+});
+
+describe("the tool surface it asks for (design §D2/§D4)", () => {
+  test("uncurated, with both app-generation tools withheld", () => {
+    // Exact, not `toMatchObject`: an extra withheld name is a capability this
+    // harness silently lost, and the loadout coming back is the friction §D2
+    // removed. Both legs declare it — the surface is the harness's, not the
+    // machine's.
+    for (const harness of [claudeCode(), claudeCode({ machine: "local" })]) {
+      expect(harness.toolSurface).toEqual({
+        curated: false,
+        withhold: [VENDO_APPS_CREATE_TOOL, VENDO_APPS_EDIT_TOOL],
+      });
+    }
   });
 });
 

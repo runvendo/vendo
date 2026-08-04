@@ -40,7 +40,7 @@ type MemoryRecordInput = Pick<VendoRecord, "id" | "data" | "refs">;
 
 const RESERVED_REF_KEYS: Readonly<Record<string, readonly string[]>> = {
   vendo_grants: ["subject", "tool", "app_id"],
-  vendo_approvals: ["subject", "status"],
+  vendo_approvals: ["subject", "status", "call"],
   vendo_audit: ["subject", "kind", "app_id", "tool"],
   vendo_threads: ["subject"],
   vendo_runs: ["app_id", "status"],
@@ -161,6 +161,11 @@ const projectMemoryRecord = (
       const decidedAt = optionalReservedDate(value["decidedAt"], "approval decidedAt");
       const sessionId = optionalReservedString(value["sessionId"], "approval sessionId");
       const consumedAt = optionalReservedDate(value["consumedAt"], "approval consumedAt");
+      const voidedAt = optionalReservedDate(value["voidedAt"], "approval voidedAt");
+      const deniedByValue = value["deniedBy"];
+      const deniedBy = deniedByValue === undefined || deniedByValue === "human" || deniedByValue === "system"
+        ? deniedByValue
+        : invalidReserved("approval deniedBy must be human or system");
       return {
         data: {
           request,
@@ -168,10 +173,14 @@ const projectMemoryRecord = (
           ...(decidedAt === undefined ? {} : { decidedAt }),
           ...(sessionId === undefined ? {} : { sessionId }),
           ...(consumedAt === undefined ? {} : { consumedAt }),
+          ...(deniedBy === undefined ? {} : { deniedBy }),
+          ...(voidedAt === undefined ? {} : { voidedAt }),
         },
-        refs: { subject: request.ctx.principal.subject, status },
+        // `call` is derived like every other reserved ref, so the guard can look
+        // a decision up by the call it answers instead of scanning a subject.
+        refs: { subject: request.ctx.principal.subject, status, call: request.call.id },
         createdAt: request.createdAt,
-        updatedAt: consumedAt ?? decidedAt ?? request.createdAt,
+        updatedAt: voidedAt ?? consumedAt ?? decidedAt ?? request.createdAt,
       };
     }
     case "vendo_audit": {

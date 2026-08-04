@@ -328,19 +328,32 @@ describe("H2 — turn.messages is genuinely ours", () => {
   });
 });
 
-describe("H3 — the seam's payload is a STREAMING tree", () => {
+describe("H3 — the seam's payload streams, then settles", () => {
   const APP_VENDO = "/user/apps/app_5/app.vendo";
+  const PLAN_VENDO = "/user/apps/app_5/plan.vendo";
   const GOOD = `<App name="X"><Stack><Text value="Hi" /></Stack></App>`;
+  const PLAN = `<Plan name="X"><Group title="G"><Leaf component="Table" /></Group></Plan>`;
 
-  it("stamps streaming:true, so a mid-build tree is not read as a finished one", async () => {
-    const view = await viewForWrite(APP_VENDO, GOOD, { emit: () => undefined });
-    expect((view?.part.payload as { streaming?: boolean }).streaming).toBe(true);
+  it("stamps streaming:true on the skeleton, so a mid-build tree is not read as a finished one", async () => {
+    const plan = await viewForWrite(PLAN_VENDO, PLAN, { emit: () => undefined });
+    expect((plan?.part.payload as { streaming?: boolean }).streaming).toBe(true);
+    const skeletons: boolean[] = [];
+    await viewForWrite(APP_VENDO, GOOD, {
+      emit: (_id, part) => skeletons.push((part.payload as { streaming?: boolean }).streaming === true),
+      authoredApp: async () => undefined,
+    });
+    expect(skeletons).toEqual([true]);
   });
 
-  it("awaits an async progressive fill, so the real resolver can wire in", async () => {
+  it("settles the finished paint, so the app leaves \"building\" and can reach a verdict", async () => {
+    const view = await viewForWrite(APP_VENDO, GOOD, { emit: () => undefined });
+    expect((view?.part.payload as { streaming?: boolean }).streaming).toBe(false);
+  });
+
+  it("awaits the async app half, so the real resolver can wire in", async () => {
     const view = await viewForWrite(APP_VENDO, GOOD, {
       emit: () => undefined,
-      fillData: async () => ({ rows: [{ id: 1 }] }),
+      authoredApp: async () => ({ data: { rows: [{ id: 1 }] } }),
     });
     expect((view?.part.payload as { data?: unknown }).data).toEqual({ rows: [{ id: 1 }] });
   });

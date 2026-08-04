@@ -423,9 +423,9 @@ function inferredPageVerbs(module: ParsedModule, route: RouteSource, assumed = f
   // (checked earlier), is method-blind by construction: it answers every
   // verb identically. GET is the minimal truthful capability to claim for
   // it — the handler demonstrably serves GET, so leaving it unclassified
-  // would be less honest, not more careful. Risk still falls out of
-  // extractedRisk's route-source fail-closed rule (GET from a route never
-  // earns "read"; it earns "write" here). The unclassified fallback remains
+  // would be less honest, not more careful. Risk is unaffected either way:
+  // GET is not a protocol fact about reading, so it stays "ungraded". The
+  // unclassified fallback remains
   // for routes where the default export is opaque — an unresolved re-export,
   // or a call to a wrapper whose body this scan never inspects (see
   // hasInlineDefaultFunctionBody) — because the real evidence may be hiding
@@ -629,7 +629,10 @@ export async function scanRoutes(root: string): Promise<RouteScanResult> {
         name,
         description: `Route ${route.urlPath} could not be classified`,
         inputSchema: { type: "object", properties: {} },
-        risk: "destructive",
+        // D2 — nothing spoke, so nothing is graded. `disabled` keeps it out of the
+        // agent's hands; `ungraded` keeps it counted in doctor's tally and asking
+        // rather than running if a human ever re-enables it.
+        risk: "ungraded",
         disabled: true,
         note: `${reason}; enable only after review; overrides.json can flip disabled/risk`,
         binding: { kind: "route", method: "POST", path: route.urlPath, argsIn: "body" },
@@ -649,7 +652,7 @@ export async function scanRoutes(root: string): Promise<RouteScanResult> {
         name,
         description: `${method} ${route.urlPath}`,
         inputSchema,
-        risk: extractedRisk(method, name, "route"),
+        risk: extractedRisk(method),
         ...(note ? { note } : {}),
         binding: {
           kind: "route",

@@ -46,6 +46,11 @@ export {
   useAppGrants,
   useApps,
   useApprovals,
+  // spec §4 (N1) — the one attention source (askCount + unseen results), and
+  // the shapes it hands back.
+  useAttention,
+  type RunActivity,
+  type RunResult,
   useAutomations,
   useConnections,
   useConnectorCatalog,

@@ -14,10 +14,12 @@
  * Read with: build contract §1 (the contract), §1.4 (approvals), §3.5
  * (materialization), and design §3 / §8 / §9.
  */
-import type {
-  Harness,
-  HarnessEvent,
-  Turn,
+import {
+  VENDO_APPS_CREATE_TOOL,
+  VENDO_APPS_EDIT_TOOL,
+  type Harness,
+  type HarnessEvent,
+  type Turn,
 } from "@vendoai/core";
 import type { ClaudeTurnEvent } from "@vendoai/apps/claude-turn";
 import type { UIMessage } from "ai";
@@ -207,7 +209,10 @@ export function promptFor(messages: readonly UIMessage[], resuming: boolean): st
 function embeddingBrief(root: string): string {
   return `\n\nYou are embedded in this product, talking to one of its customers — plain language, no file paths, no tool names.`
     + `\n\nTheir files are in ${root}. Real-world actions — the product's own operations, their data — are the \`vendo\` tools;`
-    + ` if one comes back refused, say so plainly and move on. UI you build goes in \`app.vendo\`.`;
+    + ` if one comes back refused, say so plainly and move on.`
+    + ` Anything they want to look at, track, or keep using is an app you build in \`app.vendo\` —`
+    + ` the \`building-apps\` skill is the manual.`
+    + ` This session stays open for the whole conversation, so what you already read and built is still here.`;
 }
 
 /** `turn.state` — the opaque blob (§1.3). Ours to shape, nobody else's to read. */
@@ -330,6 +335,14 @@ export function claudeCode(
     // remote MCP whether it runs in a box or as a subprocess here, so this is
     // what makes composition mount a door with no `mcp` option in sight.
     requires: { toolDoor: true, ...(options.machine === "local" ? {} : { sandbox: true }) },
+    // Design §D2/§D4. UNCURATED: this model reads a large listing natively, so a
+    // loadout that hides tools behind a search is friction it does not need — the
+    // ctx safety projection still decides what may be projected at all. And app
+    // generation leaves this surface: the model builds and edits apps by writing
+    // `plan.vendo` / `app.vendo` with its own hands, so the two engine tools are
+    // withheld rather than left as a second, coin-flip path to the same outcome.
+    // Lifecycle tools (`vendo_apps_open`, the pin and data verbs) stay.
+    toolSurface: { curated: false, withhold: [VENDO_APPS_CREATE_TOOL, VENDO_APPS_EDIT_TOOL] },
 
     async *run(turn: Turn<ClaudeCodeOptions>): AsyncGenerator<HarnessEvent, void, void> {
       // Per-turn options may override the model knobs and NOTHING else: `machine`

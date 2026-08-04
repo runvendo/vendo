@@ -7,6 +7,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
 import { VendoThread } from "../../src/chrome/index.js";
+import { ThreadPart } from "../../src/chrome/thread/parts.js";
 import { APPROVALS_DECIDED_EVENT, type ApprovalsDecidedDetail } from "../../src/client-impl.js";
 import { createWireServer } from "../wire-server.js";
 
@@ -39,8 +40,15 @@ describe("grant-set consent in the thread", () => {
   it("enumerates every permission with exactly one Approve and one Deny (criterion 18)", async () => {
     const card = await parkOnGrantSet();
     expect(card.textContent).toContain("Invoice watcher needs 2 permissions");
-    expect(card.textContent).toContain("Send email digests as you.");
-    expect(card.textContent).toContain("Read invoices across your account.");
+    // Each permission in OUR words — the GRADE and the thing.
+    // ⚠️ TEST EDIT (Yousef's grading ruling D1): this briefly asserted "Sends:
+    // Email send", a word derived from the TOOL NAME. Name inference is gone;
+    // the row reads the grade. The fixture's send ask is now graded `write`
+    // (it was hardcoded `read`, which is what made the false row possible).
+    expect(card.textContent).toContain("Changes: Email send");
+    expect(card.textContent).not.toContain("Sends: Email send");
+    expect(card.textContent).toContain("Reads: Invoices list");
+    expect(card.textContent).not.toContain("Send email digests as you.");
     expect(card.querySelectorAll(".fl-grant")).toHaveLength(2);
     const buttons = [...card.querySelectorAll("button")].map(button => button.textContent);
     expect(buttons).toEqual(["Allow both & enable", "Deny"]);
@@ -91,5 +99,61 @@ describe("grant-set consent in the thread", () => {
       body: { ids: ["apr_set_1", "apr_set_2"], decision: { approve: false } },
     })));
     await waitFor(() => expect(card.textContent).toContain("Denied — the automation stays paused."));
+  });
+});
+
+/** H13 — the wire shape was CAST after an `Array.isArray` check, so a malformed
+ *  member rendered a row with no verb (": Send money") and pushed an undefined
+ *  id into the decision call. */
+describe("the grant-set wire shape is validated, not cast (H13)", () => {
+  let wire: Awaited<ReturnType<typeof createWireServer>>;
+  let client: VendoClient;
+
+  beforeEach(async () => {
+    wire = await createWireServer();
+    client = createVendoClient({ baseUrl: wire.url });
+  });
+
+  afterEach(async () => {
+    cleanup();
+    await wire.close();
+  });
+
+  const part = (permissions: unknown[]) => ({
+    type: "data-vendo-grant-set",
+    data: { toolCallId: "call_1", grantSetId: "gset_1", name: "Invoice watcher", permissions },
+  }) as never;
+
+  const show = (permissions: unknown[]) => render(
+    <VendoProvider client={client}>
+      <ThreadPart part={part(permissions)} partKey="m-0" role="assistant" restored={false} risks={new Map()} />
+    </VendoProvider>,
+  );
+
+  it("drops a member with no risk and keeps the graded ones", () => {
+    show([
+      { approvalId: "apr_1", tool: "host_transferMoney" },
+      { approvalId: "apr_2", tool: "host_invoices_list", risk: "read" },
+    ]);
+    const rows = [...document.querySelectorAll(".fl-grant")].map(row => row.textContent);
+    expect(rows).toEqual(["Reads: Invoices list"]);
+    expect(rows.some(row => row?.startsWith(": "))).toBe(false);
+    expect(document.body.textContent).toContain("needs 1 permission");
+  });
+
+  it("drops a member with an unknown risk, a missing id, or a non-object entry", () => {
+    show([
+      { approvalId: "apr_1", tool: "host_transferMoney", risk: "catastrophic" },
+      { tool: "host_invoices_list", risk: "read" },
+      "apr_3",
+      null,
+      { approvalId: "apr_4", tool: "host_invoices_list", risk: "read" },
+    ]);
+    expect([...document.querySelectorAll(".fl-grant")]).toHaveLength(1);
+  });
+
+  it("renders NO card when nothing in the set survives — never decide([undefined])", () => {
+    show([{ tool: "host_transferMoney" }, { risk: "read" }]);
+    expect(screen.queryByLabelText(/^Standing access/)).toBeNull();
   });
 });

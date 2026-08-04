@@ -24,6 +24,16 @@ export const approvalRoutes: RouteEntry[] = [
     if (url.searchParams.get("org") !== null) orgsCloudRequired();
     return json(await deps.byoApprovals.read(string(params["id"], "approval id"), ctx.principal));
   }),
+  // "I take that back" — the exact mirror of DELETE /grants/:id, for the other
+  // durable answer a person can give. A revoked denial stops answering its
+  // call, so a misclicked no on a ceremony that re-issues a stable call id
+  // (the apps runtime's secret and egress approvals) has a way out.
+  route("DELETE", "/approvals/:id", async ({ url, deps, context, params }) => {
+    const ctx = await context("chat");
+    if (url.searchParams.get("org") !== null) orgsCloudRequired();
+    await deps.guard.approvals.revoke(string(params["id"], "approval id"), ctx.principal);
+    return json({});
+  }),
   route("POST", "/approvals/decide", async ({ request, deps, context }) => {
     const body = await requestJson(request);
     const ids = Array.isArray(body["ids"]) ? body["ids"].map((id) => string(id, "approval id")) : [];

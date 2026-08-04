@@ -242,6 +242,13 @@ describe("generated component jail structure", () => {
     expect(iframe.srcdoc).toContain('http-equiv="Content-Security-Policy"');
     expect(iframe.srcdoc).toContain("default-src 'none'");
     expect(iframe.srcdoc).toContain("connect-src 'none'");
+    // No nonce, ever. Generated code shares this document, so it can read a
+    // nonce off a script element and stamp its own remote <script> with it —
+    // and a nonce in script-src also makes `'unsafe-inline'` be ignored. Only
+    // with no nonce does the (empty) source list actually govern.
+    expect(iframe.srcdoc).toContain("script-src 'unsafe-inline' 'unsafe-eval'");
+    expect(iframe.srcdoc).not.toContain("'nonce-");
+    expect(iframe.srcdoc).not.toMatch(/<script[^>]*nonce/);
     expect((globalThis as Record<string, unknown>).__vendoHostExecuted).toBeUndefined();
     expect(document.querySelector("script")).toBeNull();
     expect(evalSpy).not.toHaveBeenCalled();

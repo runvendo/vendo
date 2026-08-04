@@ -3,15 +3,34 @@
   "tools": {
     "host_auth_create": {
       "disabled": true,
-      "description": "Auth.js endpoint - never agent-callable"
+      "title": "Sign in to Maple",
+      "description": "Signs you in or out of Maple."
     },
     "host_auth_get": {
       "disabled": true,
-      "description": "Auth.js endpoint - never agent-callable"
+      "title": "Check your Maple sign-in",
+      "description": "Reads whether you are signed in to Maple."
     },
     "host_proof_list": {
       "disabled": true,
-      "description": "Wave-1 live-proof endpoint - never agent-callable"
+      "title": "Read Maple's own records",
+      "description": "Reads Maple's internal record of what happened in this workspace."
+    },
+    "host_demo_chips_list": {
+      "title": "List Maple's suggestions",
+      "description": "Reads the suggestions Maple offers you to try."
+    },
+    "host_demo_pin_create": {
+      "title": "Pin a view to your home page",
+      "description": "Pins one of your views onto your Maple home page, where it stays."
+    },
+    "host_demo_reset_create": {
+      "title": "Start Maple over",
+      "description": "Erases everything in this Maple workspace and starts it fresh. This cannot be undone."
+    },
+    "host_voice_create": {
+      "title": "Start talking to Maple",
+      "description": "Starts a voice session so you can talk to Maple instead of typing."
     },
     "host_listAccounts": { "title": "List your accounts" },
     "host_getAccount": { "title": "Show one account" },
@@ -23,8 +42,13 @@
     "host_listPayees": { "title": "List saved payees" },
     "host_listScheduledPayments": { "title": "List scheduled payments" },
     "host_getSpendingInsights": { "title": "Show spending by category" },
+    "host_getProfile": { "risk": "read", "title": "Show your profile" },
     "host_listGoals": { "title": "List savings goals" },
-    "host_transferMoney": { "title": "Send money" },
+    "host_transferMoney": {
+      "title": "Send money",
+      "risk": "destructive",
+      "description": "Send money from the user's checking account. This IRREVERSIBLY MOVES MONEY: it debits checking and appends a posted transfer. There is no undo."
+    },
     "host_createOrder": {
       "title": "Place an order",
       "risk": "destructive",

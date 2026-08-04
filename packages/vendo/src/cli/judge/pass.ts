@@ -1,7 +1,7 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { z } from "zod";
-import { fieldSemanticSchema } from "@vendoai/core";
+import { fieldSemanticSchema, gradedRiskLabelSchema } from "@vendoai/core";
 import {
   VENDO_JUDGMENTS_FORMAT,
   applyJudgment,
@@ -65,8 +65,9 @@ const judgeProposalSchema = z.object({
   reason: z.string().max(300).optional(),
   description: z.string().min(1).max(500).optional(),
   title: z.string().min(1).max(60).optional(),
-  risk: z.enum(["read", "write", "destructive"]).optional(),
-  critical: z.boolean().optional(),
+  // The judge GRADES: "ungraded" is the absence of a grade, never a proposal.
+  risk: gradedRiskLabelSchema.optional(),
+  confirmEach: z.boolean().optional(),
   disabled: z.boolean().optional(),
   audience: z.enum(["end-user", "operator", "internal"]).optional(),
   semantics: z.record(fieldSemanticSchema).optional(),
@@ -222,7 +223,7 @@ function assertsNoMutation(reason: string): boolean {
 }
 
 /** Every field a judgment may carry, in the order the narrative reports them. */
-const JUDGMENT_FIELDS = ["description", "title", "risk", "critical", "disabled", "audience", "semantics"] as const;
+const JUDGMENT_FIELDS = ["description", "title", "risk", "confirmEach", "disabled", "audience", "semantics"] as const;
 
 export interface JudgmentPassOptions {
   root: string;
@@ -352,7 +353,7 @@ function promote(fields: JudgmentFields, pending: PendingLoosening): boolean {
     fields.audience = value;
     return true;
   }
-  if ((field === "critical" || field === "disabled") && typeof value === "boolean") {
+  if ((field === "confirmEach" || field === "disabled") && typeof value === "boolean") {
     fields[field] = value;
     return true;
   }

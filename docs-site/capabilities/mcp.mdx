@@ -168,6 +168,13 @@ so a client can warn a person before a write without re-reading prose:
 | `read` | `true` | `false` |
 | `write` | `false` | `false` |
 | `destructive` | `false` | `true` |
+| `ungraded` | *omitted* | *omitted* |
+
+An `ungraded` tool asserts neither hint. MCP's own default for
+`destructiveHint` is `true`, so emitting `false` would be an active claim of
+safety about a tool nobody has graded — and `true` would be the opposite guess.
+Omitting them leaves the client on the spec's conservative defaults. Grade the
+tool (`vendo sync`, or `.vendo/overrides.json`) and the hints appear.
 
 Annotations are hints for presentation. The guard is what decides.
 

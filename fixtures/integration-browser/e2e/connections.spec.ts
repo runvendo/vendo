@@ -5,7 +5,9 @@
  *      streams a typed connect-required outcome; the shipped VendoThread
  *      renders the inline connect card; clicking Connect opens the broker's
  *      OAuth window, the card polls the connection active, and the thread
- *      retries the call, which now executes through the connected account;
+ *      retries the call — which now ASKS first, because a connector tool with no
+ *      upstream hint is `ungraded` and the guard will not send someone's email on
+ *      a guess (risk-grading redesign D1/D3) — and executes on approval;
  *   2. persistent settings panel — the shipped ConnectedAccountsPanel lists
  *      the account and disconnects it over the wire.
  *
@@ -20,7 +22,7 @@ async function reset(request: APIRequestContext): Promise<void> {
   }).toPass({ timeout: 30_000 });
 }
 
-test("in-flow connect card: connect-required → connect → automatic retry executes", async ({ page, request }) => {
+test("in-flow connect card: connect-required → connect → retry asks → approve executes", async ({ page, request }) => {
   await reset(request);
   const scripted = await request.post("/__test/script", {
     data: {
@@ -55,7 +57,24 @@ test("in-flow connect card: connect-required → connect → automatic retry exe
   const popup = await popupPromise;
   await popup?.close().catch(() => undefined);
 
-  // The retry executed the REAL connector call through the fresh connection.
+  // The retry does NOT execute on its own any more, and that is the point: this
+  // connector tool is `ungraded` — Composio ships no destructive/read hint for
+  // it, and nothing else may guess from its name (risk-grading redesign D1/D3) —
+  // so the guard asks before the send leaves. The connector seam is where the
+  // old behavior read worst: "connect, then it sends itself" is exactly the
+  // moment a person should see the recipient.
+  const approval = page.getByRole("article", { name: /^Approval for/ });
+  await expect(approval).toBeVisible({ timeout: 20_000 });
+  await expect(approval).toContainText("Needs your approval");
+  // "Not reviewed" is the ungraded chip in the user's words, and the real
+  // payload is on the card — not a summary of it.
+  await expect(approval).toContainText("Not reviewed");
+  await expect(approval).toContainText("ada@example.test");
+  await page.screenshot({ path: "e2e/artifacts/connect-card-retry-asks.png", fullPage: false });
+
+  await approval.getByRole("button", { name: "Approve" }).click();
+
+  // Approved: the same call executes through the fresh connection.
   // Scoped to the thread: the approval→toast morph card carries the same text
   // while it flies (a deliberate visual clone) — an unscoped getByText can catch
   // it mid-flight on slow runners and trip strict mode.

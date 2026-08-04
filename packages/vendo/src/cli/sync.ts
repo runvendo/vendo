@@ -2,6 +2,11 @@ import { join, resolve } from "node:path";
 import { stdin, stdout } from "node:process";
 import { vendoSync, type SyncReportWithWarnings } from "@vendoai/actions/sync";
 import type { ToolImpact } from "../sync-impact.js";
+import {
+  pushHostComponents,
+  readPushComponents,
+  writePushComponents,
+} from "./cloud/host-components.js";
 import { pushPinBaselines } from "./cloud/pin-baselines.js";
 import { pushSyncReport } from "./cloud/services.js";
 import { mergeEnvOverDotEnv, readDotEnvFallback } from "./doctor.js";
@@ -49,8 +54,15 @@ export interface SyncOptions {
   /** Test seam: interactivity override for the AI question (default: TTY),
    *  mirroring init's. */
   interactive?: boolean;
-  /** Test seam: the wall-clock budget for the whole pin-baseline reconcile. */
+  /** Test seam: the wall-clock budget for each Cloud reconcile (pin baselines,
+   *  registered components). */
   baselineBudgetMs?: number;
+  /** --push-components / --no-push-components: send the registered-component
+   *  source corpus to Vendo Cloud. `undefined` reads the project's saved answer
+   *  (`.vendo/cloud.json`) and, with none, ASKS once in an interactive run. */
+  pushComponents?: boolean;
+  /** askYesNo seam for the component-upload question (tests inject an answer). */
+  confirm?: (question: string, defaultYes?: boolean) => Promise<boolean>;
   /** Judgment-pass seams (tests / init's chosen harness). */
   judge?: Pick<JudgmentPassOptions,
     "harness" | "harnesses" | "resolveCredential" | "confirm" | "onProgress">;
@@ -75,6 +87,9 @@ export interface SyncJsonResult {
   /** The pin baselines reconciled with Vendo Cloud. null = keyless/BYO — the
    *  baselines stayed on disk and no request was made. */
   baselines: { pushed: string[]; pruned: string[] } | null;
+  /** The registered-component corpus reconciled with Vendo Cloud. null =
+   *  keyless/BYO, or the project has not said yes — nothing left the machine. */
+  components: { pushed: string[]; pruned: string[]; modules: { uploaded: number; deleted: number } } | null;
   error?: string;                    // present when extraction itself failed soft
 }
 
@@ -198,6 +213,17 @@ async function sync(options: SyncOptions): Promise<number> {
         output.log(`pruned: ${slot} — stale baseline deleted (no <Remixable> wrapper names this slot anymore)`);
       }
       output.log(`catalog.json: ${report.catalog.discovered} discovered, ${report.catalog.registered} registered`);
+      output.log(`components: ${report.components.captured.length} captured, ${report.components.drifted.length} updated${report.components.skipped === undefined ? "" : `, ${report.components.skipped.length} skipped`}`);
+      if (report.components.withoutSamples !== undefined) {
+        // One line, not one warning per component: a preview with no seed is a
+        // labeled placeholder, not a failure — but it IS why a component looks
+        // blank in the console, so it must be visible and fixable from here.
+        const names = report.components.withoutSamples;
+        output.log(`components: ${names.join(", ")} ${names.length === 1 ? "declares" : "declare"} no examples, so the console can only show a labeled placeholder — add \`examples\` to ${names.length === 1 ? "its" : "their"} registration to preview ${names.length === 1 ? "it" : "them"}`);
+      }
+      for (const name of report.components.pruned ?? []) {
+        output.log(`pruned: ${name} — stale component capture deleted (your app no longer registers it)`);
+      }
       if (report.pins.drifted.length > 0) {
         // 06-apps §8 — drift never auto-rebases: the fork's owner decides.
         output.log(`drifted: ${report.pins.drifted.join(", ")} — existing forks stay on the old capture until each owner rebases (POST /apps/:id/rebase-pin or the vendo_apps_rebase_pin agent tool)`);
@@ -341,6 +367,48 @@ async function sync(options: SyncOptions): Promise<number> {
       note("baselines stay local — no Vendo Cloud key in this environment; Cloud's Remix reviews screen needs a keyed sync to diff forks");
     }
 
+    // Registered host components → Vendo Cloud. This widens what leaves the
+    // machine from "the components you wrapped" to "every component you
+    // register", so the project answers once and the answer is committed with
+    // the rest of `.vendo/`. Keyless/BYO never asks and never uploads.
+    let componentsPush: SyncJsonResult["components"] = null;
+    const keyed = cloudKey !== undefined && cloudKey.trim() !== "";
+    if (keyed && await exists(join(vendoDir, "components"))) {
+      let allowed = options.pushComponents ?? await readPushComponents(vendoDir);
+      if (allowed === undefined) {
+        allowed = interactive && await (options.confirm ?? askYesNo)(
+          "Send this project's registered host components to Vendo Cloud, so the console renders them instead of grey placeholders? Their source and your app-root CSS cross the wire; package code never does. Saved to .vendo/cloud.json — asked once.",
+          true,
+        );
+        if (interactive) await writePushComponents(vendoDir, allowed);
+        else note("components: not pushed — this run cannot ask (pass `--push-components` in CI, or run `vendo sync` once in a terminal to decide)");
+      }
+      if (allowed) {
+        const result = await pushHostComponents({
+          vendoDir,
+          apiKey: cloudKey!,
+          ...(options.apiUrl === undefined ? {} : { baseUrl: options.apiUrl }),
+          ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
+          ...(options.baselineBudgetMs === undefined ? {} : { budgetMs: options.baselineBudgetMs }),
+        });
+        componentsPush = { pushed: result.pushed, pruned: result.pruned, modules: result.modules };
+        if (result.unreadable.length > 0) {
+          noteError(`warning: unreadable component captures left untouched in Vendo Cloud: ${result.unreadable.join(", ")} — re-run sync to recapture .vendo/components/<Name>.json`);
+        }
+        if (result.pushed.length > 0 || result.pruned.length > 0 || result.modules.uploaded > 0) {
+          note(`components → Vendo Cloud: ${result.pushed.length} pushed, ${result.pruned.length} pruned, ${result.modules.uploaded} new module${result.modules.uploaded === 1 ? "" : "s"} (${Math.round(result.uploadedBytes / 1024)} KB)`);
+        }
+        if (result.error !== undefined) {
+          noteError(`warning: host components did not fully reach Vendo Cloud: ${result.error} — the rest stay in .vendo/components/ and the next sync retries`);
+        }
+      }
+    } else if (await exists(join(vendoDir, "components"))) {
+      // Same statement of fact #765 makes for baselines, for the same reason:
+      // a build env without the key its runtime has pushes nothing, and the
+      // console then draws grey placeholders with no host-side signal why.
+      note("components stay local — no Vendo Cloud key in this environment; the console needs a keyed sync to render your components instead of placeholders");
+    }
+
     let reportUnkeyed = false;
     if (options.report === true) {
       // The same resolved key the baseline push uses — a `--report` that saw a
@@ -391,6 +459,7 @@ async function sync(options: SyncOptions): Promise<number> {
         notes,
         theme,
         baselines,
+        components: componentsPush,
       };
       output.log(JSON.stringify(result, null, 2));
     }
@@ -402,11 +471,12 @@ async function sync(options: SyncOptions): Promise<number> {
       const result: SyncJsonResult = {
         ok: exitCode === 0,
         exitCode,
-        report: { tools: { added: [], removed: [], changed: [] }, breaking: [], pins: { captured: [], drifted: [] }, remixableErrors: [], catalog: { discovered: 0, registered: 0 }, warnings: [] },
+        report: { tools: { added: [], removed: [], changed: [] }, breaking: [], pins: { captured: [], drifted: [] }, remixableErrors: [], catalog: { discovered: 0, registered: 0 }, components: { captured: [], drifted: [] }, warnings: [] },
         impact: null,
         notes,
         theme: null,
         baselines: null,
+        components: null,
         error: message,
       };
       output.log(JSON.stringify(result, null, 2));

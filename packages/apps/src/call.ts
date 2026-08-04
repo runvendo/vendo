@@ -1,4 +1,6 @@
 import {
+  canonicalJson,
+  sha256Hex,
   type AppDocument,
   type ApprovalId,
   type Json,
@@ -23,8 +25,9 @@ export interface AppCaller {
  * W0 — hooks the runtime attaches to capture the exact parked call. When a
  * mutating in-app ACTION (call(), not a read query) parks on an approval, the
  * runtime records the byte-exact call + context so it can re-dispatch it when
- * the owner approves (see parked-action.ts). Only actions resume; a parked
- * read query surfaces as a render error, not a stalled effect.
+ * the owner approves (see parked-action.ts). Only actions resume, because only
+ * actions have an effect to land — a parked QUERY is satisfied by the surface's
+ * own refetch riding the approval, which is what `queryCallId` below is for.
  */
 export interface AppCallerHooks {
   onParkedAction(
@@ -106,6 +109,20 @@ export const fnOutcome = (name: string): ToolOutcome => ({
     : { code: "validation", message: `invalid fn reference: fn:${name}` },
 });
 
+/**
+ * A QUERY's call id is derived, not random. A query is idempotent and its
+ * identity is exactly (app, tool, args) — the same triple the resolver keys
+ * its own state on. That matters because the guard's approved replay pins the
+ * call id (05 §2): with a fresh UUID per invocation, an ungraded query that
+ * parks could never be satisfied — approve, refetch, and the new id would miss
+ * the approval and park again, forever. Deriving the id makes the refetch the
+ * SAME call the user approved, so their yes actually lands. Actions keep their
+ * random ids: two identical mutations are two separate acts, and each one has
+ * to earn its own approval.
+ */
+const queryCallId = (app: AppDocument, ref: string, args: Json): string =>
+  `call_q_${sha256Hex(canonicalJson({ app: app.id, tool: ref, args })).slice(0, 32)}`;
+
 /** 06-apps §4.1 — resolve fn: references and guard-bound host tools. */
 export const createAppCaller = (tools: ToolRegistry, hooks?: AppCallerHooks): AppCaller => {
   // Returns the outcome AND the exact call/ctx it ran under, so the action path
@@ -115,8 +132,9 @@ export const createAppCaller = (tools: ToolRegistry, hooks?: AppCallerHooks): Ap
     ref: string,
     args: Json,
     ctx: RunContext,
+    callId = `call_${globalThis.crypto.randomUUID()}`,
   ): Promise<{ call: ToolCall; appCtx: RunContext; outcome: ToolOutcome }> => {
-    const call: ToolCall = { id: `call_${globalThis.crypto.randomUUID()}`, tool: ref, args };
+    const call: ToolCall = { id: callId, tool: ref, args };
     const appCtx: RunContext = { ...ctx, venue: "app", appId: app.id };
     // The deterministic unit guard (above) runs before the guard-bound
     // execute, so a provably-wrong-unit mutation never parks an approval the
@@ -149,7 +167,10 @@ export const createAppCaller = (tools: ToolRegistry, hooks?: AppCallerHooks): Ap
     },
     async callQuery(app, ref, args, ctx) {
       if (ref.startsWith("fn:")) return fnOutcome(ref.slice(3));
-      return (await hostTool(app, ref, args, ctx)).outcome;
+      // No parked-action hook here on purpose: a query has no effect to land,
+      // so nothing needs re-dispatching. What it needs is for the user's yes to
+      // be findable by the refetch, which the derived call id gives it.
+      return (await hostTool(app, ref, args, ctx, queryCallId(app, ref, args))).outcome;
     },
   };
 };

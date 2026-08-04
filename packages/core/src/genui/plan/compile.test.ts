@@ -593,4 +593,37 @@ describe("compilePlan", () => {
       expect(result.issues.join(" ")).toContain("bare flag");
     });
   });
+
+  describe("the display hint (redesign spec §5)", () => {
+    const planNamed = (head: string) => compilePlan(
+      `<${head}>
+         <Group tab="Board"><Leaf component="StatTile" purpose="Something"/></Group>
+       </Plan>`,
+      FACTS,
+    );
+
+    it('reads display="stage" off the plan head', () => {
+      const result = planNamed('Plan name="Money HQ" display="stage"');
+      expect(result.issues).toEqual([]);
+      expect(result.plan?.display).toBe("stage");
+    });
+
+    it('reads display="inline"', () => {
+      const result = planNamed('Plan name="Balance" display="inline"');
+      expect(result.issues).toEqual([]);
+      expect(result.plan?.display).toBe("inline");
+    });
+
+    it("leaves it absent when the plan never declares one — inline is the default", () => {
+      const result = planNamed('Plan name="Balance"');
+      expect(result.issues).toEqual([]);
+      expect(result.plan).not.toHaveProperty("display");
+    });
+
+    it("drops a display nobody can render and says what the two values are", () => {
+      const result = planNamed('Plan name="Balance" display="fullscreen"');
+      expect(result.plan?.display).toBeUndefined();
+      expect(result.issues.join(" ")).toContain('display is "inline" or "stage"');
+    });
+  });
 });

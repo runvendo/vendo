@@ -39,13 +39,42 @@ export const SAFE_SKILL_NAME = /^[a-zA-Z0-9_-]{1,64}$/;
  * public exports, and the runtime builds the `/host` projection through them — so
  * the guard belongs where the path is built, not only where packs are configured.
  */
-export const skillPath = (name: string): string => {
+const skillDir = (name: string): string => {
   if (!SAFE_SKILL_NAME.test(name)) {
     throw new Error(
       `"${name}" is not a usable skill name: a skill name is a directory under ${HOST_SKILLS_MOUNT} and a model asks for it by name, so it may only use letters, digits, "_" and "-", up to 64 characters.`,
     );
   }
-  return `${HOST_SKILLS_MOUNT}/${name}/SKILL.md`;
+  return `${HOST_SKILLS_MOUNT}/${name}`;
+};
+
+export const skillPath = (name: string): string => `${skillDir(name)}/SKILL.md`;
+
+/**
+ * One segment of a companion file's relative path. Same posture as
+ * {@link SAFE_SKILL_NAME}, one level looser — a dot may separate parts of a
+ * segment (`format.md`) but may never BE one, so `..`, `.`, an empty segment
+ * (a leading or doubled slash) and anything with whitespace in it cannot be
+ * spelled.
+ */
+const SAFE_SKILL_FILE_SEGMENT = /^[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*$/;
+
+/**
+ * A companion file beside a skill's SKILL.md, from a path relative to the skill's
+ * own directory.
+ *
+ * Validated here for the same reason {@link skillPath} is: this builds a path
+ * into the projection, and `references/../../../user/apps` would leave the mount.
+ */
+export const skillFilePath = (name: string, file: string): string => {
+  const dir = skillDir(name);
+  const usable = file.split("/").every((segment) => SAFE_SKILL_FILE_SEGMENT.test(segment));
+  if (!usable || file === "SKILL.md") {
+    throw new Error(
+      `"${file}" is not a usable companion-file path for the "${name}" skill: it is a path relative to ${dir}, so it may only use letters, digits, ".", "_" and "-" in each segment, and it may not be SKILL.md.`,
+    );
+  }
+  return `${dir}/${file}`;
 };
 
 /**
@@ -123,14 +152,20 @@ const bodyOf = (text: string): string => text.replace(FRONTMATTER, "");
 
 /**
  * The merged pack skills as the `/host/skills` half of the workspace's host
- * projection: path → SKILL.md text, ready to hand to the workspace open call.
+ * projection: path → content, ready to hand to the workspace open call. Each
+ * skill contributes its SKILL.md and whatever companion files it declared.
  *
  * It is a plain value because the projection is per turn. Nothing is persisted,
  * so a skill renamed or reworded between deploys cannot leave a stale copy
  * behind — the configured packs are simply what exists, every turn.
  */
 export const hostSkillFiles = (skills: readonly PackSkill[]): Record<string, string> =>
-  Object.fromEntries(skills.map((skill) => [skillPath(skill.name), renderSkillMd(skill)]));
+  Object.fromEntries(skills.flatMap((skill): Array<[string, string]> => [
+    [skillPath(skill.name), renderSkillMd(skill)],
+    ...Object.entries(skill.files ?? {}).map(
+      ([file, content]): [string, string] => [skillFilePath(skill.name, file), content],
+    ),
+  ]));
 
 /** Every skill directory on the mount, sorted, so a listing never depends on
  *  how the filesystem happens to enumerate. */

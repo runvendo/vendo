@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { developmentMode } from "../chrome/dev-mode.js";
 
 const noticeStyle = (danger: boolean): CSSProperties => ({
   display: "block",
@@ -24,14 +25,29 @@ const noticeStyle = (danger: boolean): CSSProperties => ({
   padding: "var(--vendo-space-small, 8px) var(--vendo-space-medium, 11px)",
 });
 
-/** 01-core §15; 08-ui §5 — a failure may not escape its surface. */
+/**
+ * 01-core §15; 08-ui §5 — a failure may not escape its surface.
+ *
+ * `children` is what a PERSON reads and always renders. `detail` is the
+ * developer's half — an exception's own message, a validator's code line — and
+ * renders only in dev mode (M36).
+ *
+ * The gate lives here because every notice in a generated app goes through this
+ * component, and there is no way for it to tell a consumer sentence from a raw
+ * exception by looking at the string (ruling 14: a regex set cannot be that
+ * authority). So the two halves are separate arguments, and a caller that has
+ * developer text says so.
+ */
 export function ContainedNotice(props: {
   label: string;
   children: string;
+  /** Developer text: rendered in dev mode only, never to a person. */
+  detail?: string;
   code?: string;
   outcome?: string;
 }) {
   const danger = props.outcome === "error" || props.outcome === "blocked";
+  const detail = props.detail !== undefined && developmentMode() ? ` ${props.detail}` : "";
   return (
     <small
       role="note"
@@ -40,7 +56,7 @@ export function ContainedNotice(props: {
       data-vendo-notice={props.outcome ?? "contained"}
       style={noticeStyle(danger)}
     >
-      {props.children}
+      {`${props.children}${detail}`}
     </small>
   );
 }

@@ -102,9 +102,10 @@ describe("composioConnector", () => {
     });
     const descriptors = await connector.descriptors();
     expect(descriptors).toEqual([
-      expect.objectContaining({ name: "gmail_SEND_EMAIL", risk: "write", description: "Send email" }),
-      // The curated risk map (04-actions §3) reads the slug verb: LIST_* is read.
-      expect.objectContaining({ name: "gmail_LIST_THREADS", risk: "read" }),
+      // Neither slug carries an upstream hint, so neither is graded: the verb
+      // in a slug is a NAME (risk-grading redesign D1) and grades nothing.
+      expect.objectContaining({ name: "gmail_SEND_EMAIL", risk: "ungraded", description: "Send email" }),
+      expect.objectContaining({ name: "gmail_LIST_THREADS", risk: "ungraded" }),
     ]);
     expect(seen[0]?.query.get("toolkit_slug")).toBe("gmail");
     expect(seen[1]?.query.get("cursor")).toBe("page_2");

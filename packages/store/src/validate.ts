@@ -23,6 +23,8 @@ export interface ApprovalData {
   decidedAt?: string;
   sessionId?: string;
   consumedAt?: string;
+  deniedBy?: ApprovalRow["deniedBy"];
+  voidedAt?: string;
 }
 
 export type ThreadData = Pick<ThreadRow, "subject" | "messages" | "title">;
@@ -124,12 +126,19 @@ export function parseApprovalData(value: unknown, id: string): ApprovalData {
   const decidedAt = optionalDate(input["decidedAt"], "approval decidedAt");
   const sessionId = optionalString(input["sessionId"], "approval sessionId");
   const consumedAt = optionalDate(input["consumedAt"], "approval consumedAt");
+  const voidedAt = optionalDate(input["voidedAt"], "approval voidedAt");
+  const deniedBy = input["deniedBy"];
+  if (deniedBy !== undefined && deniedBy !== "human" && deniedBy !== "system") {
+    invalid("approval deniedBy must be human or system");
+  }
   return {
     request,
     status,
     ...(decidedAt === undefined ? {} : { decidedAt }),
     ...(sessionId === undefined ? {} : { sessionId }),
     ...(consumedAt === undefined ? {} : { consumedAt }),
+    ...(deniedBy === undefined ? {} : { deniedBy }),
+    ...(voidedAt === undefined ? {} : { voidedAt }),
   };
 }
 

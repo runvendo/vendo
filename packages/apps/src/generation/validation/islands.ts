@@ -72,7 +72,15 @@ const esbuildTransform = (async () => {
  *  side-effect `import "x"`, `export … from`), dynamic `import("x")`, and
  *  `require("x")`. The jail's sucrase loader rewrites all of these to its
  *  require table, so any specifier here that is not an island-resolvable
- *  module (`ISLAND_STRIPPED_SPECIFIERS`) cannot resolve at runtime. */
+ *  module (`ISLAND_STRIPPED_SPECIFIERS`) cannot resolve at runtime.
+ *
+ *  Deliberately the STRIPPED set, not the wider resolvable one: the jail also
+ *  bundles clsx/tailwind-merge/zod for captured HOST components, but a
+ *  GENERATED island must not reach them. The smoke-render gate evaluates
+ *  islands with `require = () => ({})`, so permitting an import it cannot
+ *  resolve would trade this gate's precise message for a confusing render
+ *  crash one stage later. Islands have the ambient Kit; they do not need
+ *  packages. */
 const IMPORT_SPECIFIER =
   /(?:\bimport\b|\bexport\b)[^'"]*?\bfrom\s*["']([^"']+)["']|\bimport\s*["']([^"']+)["']|\bimport\s*\(\s*["']([^"']+)["']\s*\)|\brequire\s*\(\s*["']([^"']+)["']\s*\)/g;
 

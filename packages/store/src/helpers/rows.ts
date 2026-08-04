@@ -268,6 +268,7 @@ export async function putGrantRow(db: Db, grant: PermissionGrant): Promise<void>
 export function approvalFromRow(row: Record<string, unknown>): ApprovalRow {
   const decidedAt = optionalIso(row["decided_at"]);
   const consumedAt = optionalIso(row["consumed_at"]);
+  const voidedAt = optionalIso(row["voided_at"]);
   return {
     id: text(row["id"]),
     subject: text(row["subject"]),
@@ -276,6 +277,8 @@ export function approvalFromRow(row: Record<string, unknown>): ApprovalRow {
     ...(decidedAt === undefined ? {} : { decidedAt }),
     ...(row["session_id"] == null ? {} : { sessionId: text(row["session_id"]) }),
     ...(consumedAt === undefined ? {} : { consumedAt }),
+    ...(row["denied_by"] == null ? {} : { deniedBy: text(row["denied_by"]) as ApprovalRow["deniedBy"] }),
+    ...(voidedAt === undefined ? {} : { voidedAt }),
     createdAt: iso(row["created_at"]),
   };
 }
@@ -283,14 +286,18 @@ export function approvalFromRow(row: Record<string, unknown>): ApprovalRow {
 export async function putApprovalRow(db: Db, row: ApprovalRow, upsert = true): Promise<void> {
   await db.query(
     `INSERT INTO vendo_approvals
-     (id, subject, request, status, decided_at, session_id, consumed_at, created_at)
-     VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $8)
+     (id, subject, request, status, decided_at, session_id, consumed_at, denied_by, voided_at, call_id, created_at)
+     VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11)
      ${upsert ? `ON CONFLICT (id) DO UPDATE SET subject = EXCLUDED.subject, request = EXCLUDED.request,
        status = EXCLUDED.status, decided_at = EXCLUDED.decided_at,
        session_id = EXCLUDED.session_id, consumed_at = EXCLUDED.consumed_at,
+       denied_by = EXCLUDED.denied_by, voided_at = EXCLUDED.voided_at, call_id = EXCLUDED.call_id,
        created_at = EXCLUDED.created_at` : ""}`,
     [row.id, row.subject, JSON.stringify(row.request), row.status, row.decidedAt ?? null,
-      row.sessionId ?? null, row.consumedAt ?? null, row.createdAt],
+      row.sessionId ?? null, row.consumedAt ?? null, row.deniedBy ?? null, row.voidedAt ?? null,
+      // `call_id` is a denormalized index column, always the request's own call
+      // id — the guard looks a decision up by the call it answers.
+      row.request.call.id, row.createdAt],
   );
 }
 

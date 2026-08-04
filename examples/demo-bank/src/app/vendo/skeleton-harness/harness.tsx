@@ -24,7 +24,7 @@ function Variant({ label, tree }: { label: string; tree: WalkTree }) {
 export function SkeletonHarness({ tabbed, single }: { tabbed: WalkTree; single: WalkTree }) {
   return (
     <VendoRoot>
-      <ChromeRoot automaticPolicyNotice={false}>
+      <ChromeRoot>
         <div style={{ display: "flex", flexDirection: "column", gap: 48, maxWidth: 880, margin: "0 auto", padding: 32 }}>
           <Variant label="Tabbed skeleton" tree={tabbed} />
           <Variant label="Single surface" tree={single} />

@@ -134,7 +134,7 @@
     "/api/insights/spending": {
       "get": {
         "operationId": "getSpendingInsights",
-        "summary": "Spending by category for the current period. Amounts are integer cents (e.g. 285000 = $2,850.00): divide by 100 exactly once before displaying, including any totals you compute.",
+        "summary": "Spending by category for the current period.",
         "x-vendo-formats": { "amount": "cents" },
         "responses": {
           "200": {
@@ -155,7 +155,7 @@
                             "type": "string",
                             "enum": ["dining", "groceries", "coffee", "transport", "subscriptions", "shopping", "income", "transfer", "housing", "other"]
                           },
-                          "amount": { "type": "integer", "description": "Amount spent in integer cents." }
+                          "amount": { "type": "integer", "description": "Amount spent in integer cents (e.g. 285000 = $2,850.00): divide by 100 exactly once before displaying, including any totals you compute." }
                         },
                         "required": ["category", "amount"]
                       }
@@ -172,9 +172,37 @@
     "/api/insights/cashflow": {
       "get": {
         "operationId": "getCashflowInsights",
-        "summary": "Cash inflow/outflow summary. Amounts are integer cents (e.g. 1284000 = $12,840.00): divide by 100 exactly once before displaying, including any totals you compute.",
+        "summary": "Cash inflow/outflow summary.",
         "x-vendo-formats": { "in": "cents", "out": "cents" },
-        "responses": { "200": { "description": "Cashflow: { data: [{ label, in, out }] } — in/out are integer cents" } }
+        "responses": {
+          "200": {
+            "description": "Cashflow: { data: [{ label, in, out }] } — in/out are integer cents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "The cashflow periods live under `data` — the array itself is `data`, never the response body.",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "description": "One entry per period, oldest first.",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": { "type": "string" },
+                          "in": { "type": "integer", "description": "Money in for the period, in integer cents (e.g. 1284000 = $12,840.00): divide by 100 exactly once before displaying, including any totals you compute." },
+                          "out": { "type": "integer", "description": "Money out for the period, in integer cents: divide by 100 exactly once before displaying." }
+                        },
+                        "required": ["label", "in", "out"]
+                      }
+                    }
+                  },
+                  "required": ["data"]
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/insights/budgets": {

@@ -707,8 +707,26 @@ function StatefulTreeView({
     )
     : null;
 
+  // The view settled without the data it asked for (render-seam.ts writes this when
+  // a query fails). Every unresolved binding renders "—" or an empty state, so a
+  // silent settle reads as "you have no spending". SERVER-AUTHORITATIVE like
+  // `inClient` and `pinDrift`: a document-carried value is stripped, and only
+  // exactly `true` speaks.
+  //
+  // The marker fires when ANY query failed, so the copy has to hold when the rest
+  // succeeded — a view with one live number in it cannot be told "the values below
+  // are blank" while that number is on screen.
+  const dataNotice = (tree as WalkTree & { dataUnavailable?: unknown }).dataUnavailable === true
+    ? (
+      <ContainedNotice label="Data didn't load" outcome="error">
+        {"Some values below couldn't load — that isn't your data being empty. Try opening it again in a moment."}
+      </ContainedNotice>
+    )
+    : null;
+
   return (
     <NodeErrorBoundary nodeId={validation.tree.root} retryKey={data ?? validation.tree.data} streaming={streaming}>
+      {dataNotice}
       {dropBackNotice}
       {driftNotice}
       {/* §9.9 — a stopped automation asks IN the app, above its own surface:

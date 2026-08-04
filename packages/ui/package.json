@@ -65,6 +65,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "pretest:browser": "pnpm run build:jail",
     "test:browser": "playwright test",
+    "pretest:ui": "pnpm run build:jail",
+    "test:ui": "playwright test e2e/smoke.spec.ts",
     "test:mcp-shim": "playwright test --config e2e/mcp-shim.config.ts",
     "build:mcp-shim": "node scripts/build-mcp-app-shim.mjs",
     "build:onest-font": "node scripts/build-onest-font.mjs",
@@ -74,13 +76,15 @@
     "@ai-sdk/react": "3.0.30",
     "@tanstack/react-table": "^8.20.0",
     "@vendoai/core": "workspace:*",
+    "clsx": "2.1.1",
     "fluidkit": "^0.5.0",
     "motion": "^11.11.0",
     "react-markdown": "^9.0.1",
     "recharts": "^3.2.0",
     "remark-gfm": "^4.0.0",
     "sucrase": "^3.35.0",
-    "zod": "^3.25.76"
+    "tailwind-merge": "3.6.0",
+    "zod": "3.25.76"
   },
   "peerDependencies": {
     "ai": "^6.0.0",

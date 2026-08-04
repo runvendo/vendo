@@ -72,6 +72,10 @@ const VALUE_EXPORTS = [
   "formatRelativeAuditTime",
   "kindGlyph",
   "BuildBeat",
+  // Spec §1 (2026-08-03) — the settled turn's summary row. Public because the
+  // ejected thread template renders it (the eject standalone guard requires
+  // every template import to be part of the chrome surface).
+  "BeatSummary",
   "StatusRibbon",
   // 2026-07 loading-state audit — the between-steps busy voice; the ejected
   // thread template renders it, so it must be public (eject standalone rule).

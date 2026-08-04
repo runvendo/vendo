@@ -189,7 +189,12 @@ describe("find_tools meta-tool", () => {
       ctx: ctx(),
     }));
 
-    expect(search).toHaveBeenCalledWith("export csv", undefined);
+    // The turn's ctx rides the search: an expansion it triggers belongs to THIS
+    // run's listing, not to every later one in the process (fix 2026-08-03).
+    expect(search).toHaveBeenCalledWith("export csv", undefined, expect.objectContaining({
+      principal: expect.objectContaining({ subject: "u1" }),
+      sessionId: "s1",
+    }));
     // Gated at the start: the host tool is not offered until it is searched in.
     expect(model.toolNamesPerCall[0]).toContain(FIND_TOOLS_TOOL_NAME);
     expect(model.toolNamesPerCall[0]).not.toContain("host_export_csv");

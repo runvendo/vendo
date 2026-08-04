@@ -8,13 +8,6 @@
         "type": "object",
         "properties": {}
       },
-      "risk": "write",
-      "binding": {
-        "kind": "openapi",
-        "operationId": "createVoiceSession",
-        "method": "POST",
-        "path": "/cadence/api/voice"
-      },
       "outputSchema": {
         "type": "object",
         "properties": {
@@ -26,7 +19,14 @@
           }
         }
       },
-      "srcHash": "sha256:580253d46d0e91f8b615f17640bbe2567c29f0f5ec5502a995a75dde8fef94e2"
+      "risk": "ungraded",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "createVoiceSession",
+        "method": "POST",
+        "path": "/cadence/api/voice"
+      },
+      "srcHash": "sha256:fa2689c1aa3a55288dd4a897413e5bea32e73ccdc6a1d9fff6bb105be8b6dfe2"
     },
     {
       "name": "host_getClient",
@@ -42,13 +42,6 @@
         "required": [
           "id"
         ]
-      },
-      "risk": "read",
-      "binding": {
-        "kind": "openapi",
-        "operationId": "getClient",
-        "method": "GET",
-        "path": "/cadence/api/clients/{id}"
       },
       "outputSchema": {
         "type": "object",
@@ -129,7 +122,14 @@
           }
         }
       },
-      "srcHash": "sha256:580253d46d0e91f8b615f17640bbe2567c29f0f5ec5502a995a75dde8fef94e2"
+      "risk": "ungraded",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "getClient",
+        "method": "GET",
+        "path": "/cadence/api/clients/{id}"
+      },
+      "srcHash": "sha256:fa2689c1aa3a55288dd4a897413e5bea32e73ccdc6a1d9fff6bb105be8b6dfe2"
     },
     {
       "name": "host_getDashboard",
@@ -137,13 +137,6 @@
       "inputSchema": {
         "type": "object",
         "properties": {}
-      },
-      "risk": "read",
-      "binding": {
-        "kind": "openapi",
-        "operationId": "getDashboard",
-        "method": "GET",
-        "path": "/cadence/api/dashboard"
       },
       "outputSchema": {
         "type": "object",
@@ -191,20 +184,14 @@
           }
         }
       },
-      "semantics": {
-        "data.nearestDeadline": {
-          "kind": "date",
-          "format": "iso"
-        },
-        "data.nearestDeadlineClient.id": {
-          "kind": "id"
-        },
-        "data.nearestDeadlineClient.filingDeadline": {
-          "kind": "date",
-          "format": "iso"
-        }
+      "risk": "ungraded",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "getDashboard",
+        "method": "GET",
+        "path": "/cadence/api/dashboard"
       },
-      "srcHash": "sha256:580253d46d0e91f8b615f17640bbe2567c29f0f5ec5502a995a75dde8fef94e2"
+      "srcHash": "sha256:fa2689c1aa3a55288dd4a897413e5bea32e73ccdc6a1d9fff6bb105be8b6dfe2"
     },
     {
       "name": "host_listActivity",
@@ -225,13 +212,6 @@
             "description": "Only events at or before this ISO 8601 instant."
           }
         }
-      },
-      "risk": "read",
-      "binding": {
-        "kind": "openapi",
-        "operationId": "listActivity",
-        "method": "GET",
-        "path": "/cadence/api/activity"
       },
       "outputSchema": {
         "type": "object",
@@ -269,30 +249,14 @@
           }
         }
       },
-      "semantics": {
-        "data.id": {
-          "kind": "id"
-        },
-        "data.type": {
-          "kind": "enum",
-          "labels": {
-            "deadline_approaching": "Deadline approaching",
-            "document_rejected": "Document rejected",
-            "document_verified": "Document verified",
-            "message_sent": "Message sent",
-            "upload_received": "Upload received"
-          }
-        },
-        "data.clientId": {
-          "kind": "id",
-          "entity": "client"
-        },
-        "data.at": {
-          "kind": "date",
-          "format": "iso"
-        }
+      "risk": "ungraded",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listActivity",
+        "method": "GET",
+        "path": "/cadence/api/activity"
       },
-      "srcHash": "sha256:580253d46d0e91f8b615f17640bbe2567c29f0f5ec5502a995a75dde8fef94e2"
+      "srcHash": "sha256:fa2689c1aa3a55288dd4a897413e5bea32e73ccdc6a1d9fff6bb105be8b6dfe2"
     },
     {
       "name": "host_listClientDocuments",
@@ -316,13 +280,6 @@
         "required": [
           "id"
         ]
-      },
-      "risk": "read",
-      "binding": {
-        "kind": "openapi",
-        "operationId": "listClientDocuments",
-        "method": "GET",
-        "path": "/cadence/api/clients/{id}/documents"
       },
       "outputSchema": {
         "type": "object",
@@ -375,7 +332,14 @@
           }
         }
       },
-      "srcHash": "sha256:580253d46d0e91f8b615f17640bbe2567c29f0f5ec5502a995a75dde8fef94e2"
+      "risk": "ungraded",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listClientDocuments",
+        "method": "GET",
+        "path": "/cadence/api/clients/{id}/documents"
+      },
+      "srcHash": "sha256:fa2689c1aa3a55288dd4a897413e5bea32e73ccdc6a1d9fff6bb105be8b6dfe2"
     },
     {
       "name": "host_listClientMessages",
@@ -391,13 +355,6 @@
         "required": [
           "id"
         ]
-      },
-      "risk": "read",
-      "binding": {
-        "kind": "openapi",
-        "operationId": "listClientMessages",
-        "method": "GET",
-        "path": "/cadence/api/clients/{id}/messages"
       },
       "outputSchema": {
         "type": "object",
@@ -436,7 +393,14 @@
           }
         }
       },
-      "srcHash": "sha256:580253d46d0e91f8b615f17640bbe2567c29f0f5ec5502a995a75dde8fef94e2"
+      "risk": "ungraded",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listClientMessages",
+        "method": "GET",
+        "path": "/cadence/api/clients/{id}/messages"
+      },
+      "srcHash": "sha256:fa2689c1aa3a55288dd4a897413e5bea32e73ccdc6a1d9fff6bb105be8b6dfe2"
     },
     {
       "name": "host_listClients",
@@ -456,13 +420,6 @@
             "description": "Case-insensitive search on business name or contact name, e.g. 'rivera'"
           }
         }
-      },
-      "risk": "read",
-      "binding": {
-        "kind": "openapi",
-        "operationId": "listClients",
-        "method": "GET",
-        "path": "/cadence/api/clients"
       },
       "outputSchema": {
         "type": "object",
@@ -546,40 +503,14 @@
           }
         }
       },
-      "semantics": {
-        "data.id": {
-          "kind": "id"
-        },
-        "data.entityType": {
-          "kind": "enum",
-          "labels": {
-            "c_corp": "C corp",
-            "individual": "Individual",
-            "partnership": "Partnership",
-            "s_corp": "S corp",
-            "sole_prop": "Sole prop"
-          }
-        },
-        "data.assigneeId": {
-          "kind": "id",
-          "entity": "assignee"
-        },
-        "data.filingDeadline": {
-          "kind": "date",
-          "format": "iso"
-        },
-        "data.status": {
-          "kind": "enum",
-          "labels": {
-            "complete": "Complete",
-            "missing_docs": "Missing docs"
-          }
-        },
-        "data.assignee.id": {
-          "kind": "id"
-        }
+      "risk": "ungraded",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listClients",
+        "method": "GET",
+        "path": "/cadence/api/clients"
       },
-      "srcHash": "sha256:580253d46d0e91f8b615f17640bbe2567c29f0f5ec5502a995a75dde8fef94e2"
+      "srcHash": "sha256:fa2689c1aa3a55288dd4a897413e5bea32e73ccdc6a1d9fff6bb105be8b6dfe2"
     },
     {
       "name": "host_listDeadlines",
@@ -596,13 +527,6 @@
             "description": "As-of instant (ISO 8601): return the checklist as it stood then. Only uploads are timestamped, so a document uploaded after this reads as missing; verified/rejected state is always the current one. Omit for live data."
           }
         }
-      },
-      "risk": "read",
-      "binding": {
-        "kind": "openapi",
-        "operationId": "listDeadlines",
-        "method": "GET",
-        "path": "/cadence/api/deadlines"
       },
       "outputSchema": {
         "type": "object",
@@ -702,40 +626,14 @@
           }
         }
       },
-      "semantics": {
-        "data.id": {
-          "kind": "id"
-        },
-        "data.entityType": {
-          "kind": "enum",
-          "labels": {
-            "c_corp": "C corp",
-            "individual": "Individual",
-            "partnership": "Partnership",
-            "s_corp": "S corp",
-            "sole_prop": "Sole prop"
-          }
-        },
-        "data.assigneeId": {
-          "kind": "id",
-          "entity": "assignee"
-        },
-        "data.filingDeadline": {
-          "kind": "date",
-          "format": "iso"
-        },
-        "data.status": {
-          "kind": "enum",
-          "labels": {
-            "complete": "Complete",
-            "missing_docs": "Missing docs"
-          }
-        },
-        "data.assignee.id": {
-          "kind": "id"
-        }
+      "risk": "ungraded",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listDeadlines",
+        "method": "GET",
+        "path": "/cadence/api/deadlines"
       },
-      "srcHash": "sha256:580253d46d0e91f8b615f17640bbe2567c29f0f5ec5502a995a75dde8fef94e2"
+      "srcHash": "sha256:fa2689c1aa3a55288dd4a897413e5bea32e73ccdc6a1d9fff6bb105be8b6dfe2"
     },
     {
       "name": "host_listDemoChips",
@@ -743,13 +641,6 @@
       "inputSchema": {
         "type": "object",
         "properties": {}
-      },
-      "risk": "read",
-      "binding": {
-        "kind": "openapi",
-        "operationId": "listDemoChips",
-        "method": "GET",
-        "path": "/cadence/api/demo/chips"
       },
       "outputSchema": {
         "type": "object",
@@ -782,7 +673,14 @@
           }
         }
       },
-      "srcHash": "sha256:580253d46d0e91f8b615f17640bbe2567c29f0f5ec5502a995a75dde8fef94e2"
+      "risk": "ungraded",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listDemoChips",
+        "method": "GET",
+        "path": "/cadence/api/demo/chips"
+      },
+      "srcHash": "sha256:fa2689c1aa3a55288dd4a897413e5bea32e73ccdc6a1d9fff6bb105be8b6dfe2"
     },
     {
       "name": "host_resetDemo",
@@ -790,13 +688,6 @@
       "inputSchema": {
         "type": "object",
         "properties": {}
-      },
-      "risk": "destructive",
-      "binding": {
-        "kind": "openapi",
-        "operationId": "resetDemo",
-        "method": "POST",
-        "path": "/cadence/api/demo/reset"
       },
       "outputSchema": {
         "type": "object",
@@ -844,7 +735,14 @@
           }
         }
       },
-      "srcHash": "sha256:580253d46d0e91f8b615f17640bbe2567c29f0f5ec5502a995a75dde8fef94e2"
+      "risk": "ungraded",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "resetDemo",
+        "method": "POST",
+        "path": "/cadence/api/demo/reset"
+      },
+      "srcHash": "sha256:fa2689c1aa3a55288dd4a897413e5bea32e73ccdc6a1d9fff6bb105be8b6dfe2"
     },
     {
       "name": "host_sendClientMessage",
@@ -877,13 +775,6 @@
           "id",
           "body"
         ]
-      },
-      "risk": "destructive",
-      "binding": {
-        "kind": "openapi",
-        "operationId": "sendClientMessage",
-        "method": "POST",
-        "path": "/cadence/api/clients/{id}/messages"
       },
       "outputSchema": {
         "type": "object",
@@ -919,11 +810,18 @@
           }
         }
       },
-      "srcHash": "sha256:580253d46d0e91f8b615f17640bbe2567c29f0f5ec5502a995a75dde8fef94e2"
+      "risk": "ungraded",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "sendClientMessage",
+        "method": "POST",
+        "path": "/cadence/api/clients/{id}/messages"
+      },
+      "srcHash": "sha256:fa2689c1aa3a55288dd4a897413e5bea32e73ccdc6a1d9fff6bb105be8b6dfe2"
     },
     {
       "name": "host_setDocumentStatus",
-      "description": "Advance a document through its lifecycle: 'receive' marks a missing document as uploaded (attaching a file name), 'verify' confirms an uploaded document is correct, 'reject' returns a wrong upload to missing with a reason the client sees. Verify and reject only apply to documents in status received or needs_review.",
+      "description": "Marks one of a client's requested documents as received, verified or rejected.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -948,7 +846,7 @@
                   "verify",
                   "reject"
                 ],
-                "description": "Lifecycle transition to apply"
+                "description": "Lifecycle transition to apply: 'receive' marks a missing document as uploaded (attaching a file name), 'verify' confirms an uploaded document is correct, 'reject' returns a wrong upload to missing with a reason the client sees. Verify and reject only apply to documents in status received or needs_review."
               },
               "fileName": {
                 "type": "string",
@@ -966,13 +864,6 @@
           "docId",
           "body"
         ]
-      },
-      "risk": "write",
-      "binding": {
-        "kind": "openapi",
-        "operationId": "setDocumentStatus",
-        "method": "POST",
-        "path": "/cadence/api/clients/{id}/documents/{docId}/status"
       },
       "outputSchema": {
         "type": "object",
@@ -1022,11 +913,18 @@
           }
         }
       },
-      "srcHash": "sha256:580253d46d0e91f8b615f17640bbe2567c29f0f5ec5502a995a75dde8fef94e2"
+      "risk": "ungraded",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "setDocumentStatus",
+        "method": "POST",
+        "path": "/cadence/api/clients/{id}/documents/{docId}/status"
+      },
+      "srcHash": "sha256:fa2689c1aa3a55288dd4a897413e5bea32e73ccdc6a1d9fff6bb105be8b6dfe2"
     },
     {
       "name": "host_simulateClientUpload",
-      "description": "Demo control: simulate a client uploading a file for a missing document. variant 'correct' lands the document in status received; variant 'wrong' (e.g. a personal bank statement instead of the business one) lands it in needs_review with an explanatory note. Also records a client-to-firm message and activity.",
+      "description": "Demo control: simulate a client uploading a file for a missing document. Also records a client-to-firm message and activity.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1064,13 +962,6 @@
         "required": [
           "body"
         ]
-      },
-      "risk": "write",
-      "binding": {
-        "kind": "openapi",
-        "operationId": "simulateClientUpload",
-        "method": "POST",
-        "path": "/cadence/api/demo/simulate/upload"
       },
       "outputSchema": {
         "type": "object",
@@ -1154,7 +1045,14 @@
           }
         }
       },
-      "srcHash": "sha256:580253d46d0e91f8b615f17640bbe2567c29f0f5ec5502a995a75dde8fef94e2"
+      "risk": "ungraded",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "simulateClientUpload",
+        "method": "POST",
+        "path": "/cadence/api/demo/simulate/upload"
+      },
+      "srcHash": "sha256:fa2689c1aa3a55288dd4a897413e5bea32e73ccdc6a1d9fff6bb105be8b6dfe2"
     }
   ]
 }

@@ -56,7 +56,7 @@ function composioStub() {
     const entry: (typeof requests)[number] = { method: req.method ?? "GET", path: url.pathname, query: url.searchParams };
     res.setHeader("content-type", "application/json");
 
-    if (req.method === "GET" && url.pathname === "/api/v3/tools") {
+    if (req.method === "GET" && url.pathname === "/api/v3.1/tools") {
       requests.push(entry);
       res.end(JSON.stringify({
         items: [{
@@ -99,7 +99,7 @@ function composioStub() {
       res.end(JSON.stringify({ success: true }));
       return;
     }
-    if (req.method === "POST" && url.pathname.startsWith("/api/v3/tools/execute/")) {
+    if (req.method === "POST" && url.pathname.startsWith("/api/v3.1/tools/execute/")) {
       entry.body = await jsonBody(req);
       requests.push(entry);
       if ((entry.body as { user_id?: unknown }).user_id === "user_ada") {

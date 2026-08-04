@@ -14,6 +14,7 @@ import type {
 } from "@vendoai/core";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv";
 import {
   CallToolRequestSchema,
   ListResourcesRequestSchema,
@@ -159,8 +160,8 @@ export interface McpDoorConfig {
    *
    * The door calls it FRESH for every listing and every call, and deliberately
    * does not memoize — not even the resolved value, and never a rejection. The
-   * bound registry grows at runtime (a lazy connector's `expandToolkits`, an
-   * `add()`), so a menu frozen at the first request would leave every
+   * bound registry grows at runtime (an `add()`), so a menu frozen at the
+   * first request would leave every
    * late-arriving tool invisible AND uncallable until the process restarted;
    * caching a failed read would freeze the door just as permanently. The
    * registry memoizes its own load underneath, so re-asking costs a map lookup.
@@ -578,6 +579,10 @@ class Door {
         await this.#state.deleteSession(sessionId);
       },
     });
+    // No `listChanged`: the door's listing is fixed for the life of a session.
+    // Nothing materializes tools mid-session any more (the service-tool pair is
+    // permanent), and an SDK client lists once and caches — a promise nobody
+    // keeps is worse than none.
     const capabilities = this.#config.apps === undefined
       ? { tools: {} }
       : {
@@ -590,6 +595,67 @@ class Door {
       { capabilities },
     );
     const initialContextKey = `mcpr_${randomHex(16)}`;
+    // The reader for the standalone SSE body this session is serving. The DOOR
+    // holds it, and only the door ever cancels it, because cancelling it is the
+    // one thing that releases the transport's `_GET_stream` registration — see
+    // `releaseStandalone`.
+    let standalone: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    /** Give the transport back its standalone slot, and wait until it is gone. */
+    const releaseStandalone = async (): Promise<void> => {
+      const held = standalone;
+      if (held === undefined) return;
+      standalone = undefined;
+      // Awaited: the transport deletes the registration inside the body's own
+      // `cancel` callback, so this has to finish BEFORE anything registers a
+      // replacement. `closeStandaloneSSEStream` is not enough and not used —
+      // it closes the controller with frames still queued, which leaves the
+      // stream readable, so the release fires whenever the abandoned body is
+      // eventually discarded and deletes whatever is registered THEN.
+      await held.cancel().catch(() => {});
+    };
+    /** Hand the client a body the DOOR owns, so the transport's registration is
+     *  reached only by whoever still HOLDS the slot — this body's own cancel, or
+     *  `releaseStandalone` — and never by a body a reconnect replaced. */
+    const adoptStandalone = (response: Response): Response => {
+      if (response.body === null) return response;
+      const reader = response.body.getReader();
+      standalone = reader;
+      const relayed = new ReadableStream<Uint8Array>({
+        // EOF and read errors pass straight through and leave the slot alone.
+        // The transport DOES end this stream on a slot the door still holds: the
+        // client's own DELETE routes into `handleDeleteRequest`, which closes the
+        // transport and with it the controller. Harmless, because `onsessionclosed`
+        // drops the session from `#state` first, so the closure holding this stale
+        // reader is unreachable and that session id answers `unknownSession()`.
+        // Every other end is genuinely unreachable: the transport never calls
+        // `controller.error` (`writeSSEEvent` swallows a throwing enqueue), there
+        // is no timeout, abort or backpressure close, `closeStandaloneSSEStream`
+        // is only wired when an event store is configured (the door configures
+        // none), and POST stream ids are random UUIDs so `closeSSEStream` can
+        // never resolve to the standalone slot.
+        async pull(controller) {
+          const frame = await reader.read();
+          if (frame.done) controller.close();
+          else controller.enqueue(frame.value);
+        },
+        // The client hung up — a LIVE one, so the transport's registration and
+        // this reader are dead weight until something clears them, and the idle
+        // sweep only runs on another request, never on a timer. Cancelling is what
+        // releases the registration.
+        //
+        // Guarded on still HOLDING the slot, and it is the SLOT this protects, not
+        // the cancel: a dead body is discarded whenever the runtime gets round to
+        // it, so this can fire after a reconnect moved the slot on, and clearing it
+        // there would drop the door's only handle on the stream it is now serving —
+        // leaving `releaseStandalone` unable to free the next 409.
+        cancel() {
+          if (standalone !== reader) return;
+          standalone = undefined;
+          void reader.cancel();
+        },
+      });
+      return new Response(relayed, { status: response.status, headers: response.headers });
+    };
     state = {
       subject,
       replayScope: initialContextKey,
@@ -598,8 +664,27 @@ class Door {
         : bearing.turn.ctx,
       ...(bearing === undefined ? {} : { turn: bearing.turn, turnToken: bearing.token }),
       server,
-      handleRequest: (req) => transport.handleRequest(req),
-      close: () => transport.close(),
+      handleRequest: async (req) => {
+        if (req.method !== "GET") return transport.handleRequest(req);
+        let response = await transport.handleRequest(req);
+        // 409 is the transport guarding a standalone registration, and it is the
+        // LAST gate it applies: a wrong `Accept` (406), a bad protocol version and
+        // DNS-rebinding validation all answer before it. So a 409 — and ONLY a
+        // 409 — means this GET is a healthy client asking to be reachable and the
+        // sole obstacle is a registration nobody is reading. Releasing before
+        // every GET instead destroys a healthy stream whenever the transport goes
+        // on to reject the request, which is why this waits for the 409.
+        if (response.status === 409) {
+          await releaseStandalone();
+          response = await transport.handleRequest(req);
+        }
+        if (!(response.headers.get("content-type") ?? "").includes("text/event-stream")) return response;
+        return adoptStandalone(response);
+      },
+      close: async () => {
+        await releaseStandalone();
+        await transport.close();
+      },
     };
     this.#registerHandlers(state, identity);
     await server.connect(transport);
@@ -607,11 +692,12 @@ class Door {
   }
 
   #registerHandlers(state: SessionState, identity: HostIdentity): void {
-    state.server.setRequestHandler(ListToolsRequestSchema, async () => ({
-      tools: state.turn === undefined
+    state.server.setRequestHandler(ListToolsRequestSchema, async () => {
+      const tools = state.turn === undefined
         ? await this.#listedTools(state)
-        : await turnTools(state.turn),
-    }));
+        : await turnTools(state.turn);
+      return { tools };
+    });
     state.server.setRequestHandler(CallToolRequestSchema, async (request) =>
       this.#callTool(request.params.name, request.params.arguments ?? {}, state, identity));
 
@@ -634,8 +720,8 @@ class Door {
 
   /**
    * Resolve the menu FRESH for every listing and every call. It is deliberately
-   * not memoized: the registry behind the provider grows at runtime (a lazy
-   * connector's `expandToolkits`, an `add()`), and a door that froze its menu at
+   * not memoized: the registry behind the provider grows at runtime (an
+   * `add()`), and a door that froze its menu at
    * the first request would leave every late-arriving tool invisible AND
    * uncallable until the process restarted. The registry memoizes its own load,
    * so re-asking costs a map lookup. A rejected resolution is likewise never
@@ -658,6 +744,7 @@ class Door {
     const descriptors = (await this.#config.tools.descriptors(state.context))
       .filter((descriptor) => offeredAtDoor(menu, descriptor.name));
     const appsConfigured = this.#config.apps !== undefined;
+    const compiles = wireSchemaCompiler();
     // The bound registry's descriptors are served VERBATIM — name, description,
     // and inputSchema are the registry's, never the door's (10-mcp §2/§4). But a
     // registry that owns an app-viewer name (e.g. vendo_apps_open from
@@ -666,7 +753,7 @@ class Door {
     // door's `_meta.ui` to those listings (FIX E). Execution still routes through
     // the registry (one guard decision), and #callTool unwraps its OpenSurface
     // output into a shim-renderable payload.
-    const tools: Tool[] = descriptors.map(({ name, description, inputSchema, risk, title }) => {
+    const tools: Tool[] = descriptors.map(({ name, description, inputSchema, outputSchema, risk, title }) => {
       // A generated tools.json can carry title: "" (the authored file's schema
       // forbids it, the machine layer's does not). An empty label is worse than
       // none — a client would render a blank menu row — so it reads as absent.
@@ -675,6 +762,7 @@ class Door {
         name,
         description,
         inputSchema: inputSchema as Tool["inputSchema"],
+        ...wireOutputSchema(outputSchema, compiles),
         ...(label === undefined ? {} : { title: label }),
         annotations: toolAnnotations(risk, label),
       };
@@ -704,7 +792,10 @@ class Door {
     // parity by construction rather than a second implementation of it. The
     // turn's own curation (the loadout, `surfaces.agent`, §12) already decided
     // what is callable, and an unknown name comes back as its own error.
-    if (state.turn !== undefined) return turnResult(await state.turn.tools.call(name, args as Json));
+    if (state.turn !== undefined) {
+      const turn = state.turn;
+      return turnResult(await turn.tools.call(name, args as Json));
+    }
     const descriptors = await this.#config.tools.descriptors(state.context);
     // An off-menu name answers exactly like a name that does not exist: the
     // menu decides what this door OFFERS, and offering nothing is the whole
@@ -1090,6 +1181,23 @@ const APP_TOOL_NAMES = new Set(APP_TOOL_DESCRIPTORS.map((descriptor) => descript
  *  literal because block layering keeps mcp off the agent/actions packages. */
 const VENDO_TOOL_PREFIX = "vendo_";
 
+/**
+ * Vendo's reserved namespace for keys the RUNTIME adds to a tool result — the
+ * `toolOutputCap` truncation envelope (`vendo_truncated`/`vendo_chars`/
+ * `vendo_preview`, minted in `packages/agent/src/tools.ts`) and
+ * {@link VENDO_RESULT_VALUE} here. Reserved because the official client validates
+ * every result against the advertised schema: a host declaring a field of the
+ * same name and a different type would make its own tool throw on a truncated
+ * answer. Which is also why the sanitizer drops declared `vendo_*` properties.
+ */
+const VENDO_RESULT_PREFIX = "vendo_";
+
+/** The one key a NON-record ok output rides under. `structuredContent` must be an
+ *  object, so a string, a number or a bare array needs a wrapper or it travels
+ *  as text only — which the client reads as a broken server whenever the tool
+ *  advertised a schema. */
+const VENDO_RESULT_VALUE = `${VENDO_RESULT_PREFIX}value`;
+
 /** Whether a curated door offers `name`. Asked by BOTH the listing and the call
  *  path, so a curated door cannot advertise one surface and answer to another. */
 function offeredAtDoor(menu: Set<string> | undefined, name: string): boolean {
@@ -1104,13 +1212,208 @@ function offeredAtDoor(menu: Set<string> | undefined, name: string): boolean {
  * rides along here too — the spec moved it to a top-level field, but clients
  * that predate that move still read `annotations.title`, so the door emits
  * both and neither can drift from the other.
+ *
+ * `ungraded` asserts NEITHER hint. MCP's own default for `destructiveHint` is
+ * `true`, so emitting `false` was an active claim of safety about a tool nobody
+ * judged — the exact guess the risk-grading redesign deleted everywhere else.
+ * `true` would be the opposite guess and just as unfounded, and `readOnlyHint:
+ * false` claims "modifies its environment", also unknown. Omitted, the client
+ * falls back to the spec's own conservative defaults and the door says nothing
+ * it cannot support.
  */
 function toolAnnotations(risk: RiskLabel, title?: string): NonNullable<Tool["annotations"]> {
   return {
     ...(title === undefined ? {} : { title }),
-    readOnlyHint: risk === "read",
-    destructiveHint: risk === "destructive",
+    ...(risk === "ungraded" ? {} : { readOnlyHint: risk === "read", destructiveHint: risk === "destructive" }),
   };
+}
+
+/** ~32KiB of serialized JSON Schema, in BYTES on the wire (a CJK-labelled schema
+ *  is ~3x its `.length`). A generated response schema can be an entire inlined
+ *  OpenAPI response model, and every `tools/list` pays for it — the model's
+ *  context first. Past the cap the door says nothing rather than everything,
+ *  exactly as it does for a shape it cannot state. */
+const OUTPUT_SCHEMA_CAP = 32 * 1024;
+
+const utf8 = new TextEncoder();
+
+/**
+ * Keywords dropped from the TOP level of a sanitized output schema: each one can
+ * reject an object over keys the schema never mentions, which is exactly what the
+ * door substitutes when it cannot return what the host declared (the
+ * `toolOutputCap` truncation envelope, the `vendo_value` wrapper). Every entry was
+ * proven against the official client's own Ajv validator; a swept run over the
+ * rest of the family found nothing else to add.
+ *
+ * Top level ONLY: a nested constraint applies to the value of a field the host
+ * declared, so it can only reject the host's own result, never a reserved-key
+ * envelope whose keys no host schema mentions.
+ *
+ * Four reject WITHOUT ever naming a key, which is why a "does it mention a
+ * reserved name?" check could never have found them:
+ * - `patternProperties` types keys by REGEX, and `"^.*$"` types every key there is.
+ * - `$ref`/`$dynamicRef` reach around this whole strip — a top-level `$ref` into
+ *   `$defs` re-imposes the `required` and closed `additionalProperties` deleted
+ *   here. (`$defs` itself stays: an unreferenced definition constrains nothing.)
+ * - `const`/`enum` pin the WHOLE object to a listed value, so the strip above them
+ *   is beside the point.
+ */
+const UNKEEPABLE_KEYWORDS = [
+  "required",
+  "allOf",
+  "anyOf",
+  "oneOf",
+  "not",
+  "if",
+  "then",
+  "else",
+  "dependencies",
+  "dependentRequired",
+  "dependentSchemas",
+  "minProperties",
+  "maxProperties",
+  "propertyNames",
+  "unevaluatedProperties",
+  "patternProperties",
+  "$ref",
+  "$dynamicRef",
+  "const",
+  "enum",
+] as const;
+
+/**
+ * The tool's declared result shape on the wire (design 2026-08-03 D5) so the
+ * model knows a query's fields before calling it — SANITIZED, because the
+ * official MCP client turns the declaration into three hard promises and the
+ * door has to be able to keep all three.
+ *
+ * 1. `tools/list` is parsed with the SDK's `ToolSchema`, whose `outputSchema` is
+ *    `{ type: "object", properties?: Record<string, object>, required?: string[] }`.
+ *    A top-level `{"type":"array"}` (ordinary in an OpenAPI spec) or a boolean
+ *    property subschema (`{"x": true}` — legal JSON Schema 2020-12) fails that
+ *    parse and takes the WHOLE listing down, every other tool with it. So the
+ *    shape is checked here, and a schema that cannot be stated is omitted.
+ * 2. `cacheToolMetadata` (run on every successful `listTools()`) COMPILES every
+ *    advertised schema with Ajv, and a compile throw likewise kills the entire
+ *    listing. A shape check cannot see that: a dangling `$ref` (extraction leaves
+ *    one for recursive response models — `actions/src/sync/openapi.ts`),
+ *    `{"type":"bogus"}` and Swagger 2.0's boolean `exclusiveMinimum` are all
+ *    well-shaped and all throw, so the door asks the client's own validator.
+ * 3. `tools/call` THROWS on any non-`isError` result whose `structuredContent` is
+ *    missing or fails the advertised schema — and the door cannot promise the
+ *    host's declaration describes every result it must return (`toolOutputCap`'s
+ *    truncation envelope, the `vendo_value` wrapper). So `additionalProperties` is
+ *    forced open, {@link UNKEEPABLE_KEYWORDS} is dropped, and so is any declared
+ *    property in the reserved `vendo_` namespace. Field names and types survive —
+ *    the whole of D5's value to the model; what dies is the schema's power to
+ *    REJECT a result the door has no choice about.
+ *
+ * The descriptor still carries the original for the in-process surfaces, which
+ * have no wire constraint.
+ */
+function wireOutputSchema(
+  schema: Record<string, unknown> | undefined,
+  compiles: (wire: Record<string, unknown>, serialized: string) => boolean,
+): { outputSchema?: Tool["outputSchema"] } {
+  if (!isRecord(schema) || schema.type !== "object") return {};
+  if (schema.properties !== undefined && !isObjectValued(schema.properties)) return {};
+  // `type` is respelled (not re-ordered — the key keeps its place) so the wire
+  // shape is the literal the SDK's schema demands without a cast.
+  const wire: Record<string, unknown> = { ...schema, type: "object", additionalProperties: true };
+  for (const keyword of UNKEEPABLE_KEYWORDS) delete wire[keyword];
+  if (isRecord(wire.properties)) {
+    wire.properties = Object.fromEntries(
+      Object.entries(wire.properties).filter(([field]) => !field.startsWith(VENDO_RESULT_PREFIX)),
+    );
+  }
+  // A host schema can be cyclic (an OpenAPI model inlined into itself), which
+  // throws inside the listing map — one tool's schema is never worth the listing.
+  const serialized = tryStringify(wire);
+  if (serialized === undefined) return {};
+  // `.length` is UTF-16 units and can only UNDER-count bytes, so it is a free
+  // pre-reject before the encode.
+  if (serialized.length > OUTPUT_SCHEMA_CAP || utf8.encode(serialized).length > OUTPUT_SCHEMA_CAP) return {};
+  if (!compiles(wire, serialized)) return {};
+  return { outputSchema: wire as Tool["outputSchema"] };
+}
+
+/**
+ * "Would the official client compile this?", asked with the client's own
+ * validator — `Client` defaults to `AjvJsonSchemaValidator`, which the door
+ * already carries. It earns its keep beyond the hand-listable throwers: a
+ * `pattern` carrying a Python-style named group, ordinary in a generated OpenAPI
+ * spec, is a compile throw no shape check would catch.
+ *
+ * ONE Ajv instance per listing pass, then discarded: Ajv memoizes every compiled
+ * schema keyed by the schema OBJECT, and the door builds a fresh wire object per
+ * listing, so a door-lifetime instance would grow without bound. The VERDICT
+ * carries across listings instead ({@link compileVerdicts}), keyed on the
+ * serialized schema this pass already computed for the size cap — compiling is the
+ * expensive half and it is pure (1370ms for 301 schemas, on EVERY `tools/list`).
+ *
+ * On a runtime that forbids code generation (Workers et al) Ajv compiles nothing,
+ * so no schema is advertised there and the door says so once. Same rule as the
+ * size cap, and the safe direction: an unaskable schema is exactly the one that
+ * took a client's whole listing down.
+ */
+function wireSchemaCompiler(): (wire: Record<string, unknown>, serialized: string) => boolean {
+  let validator: AjvJsonSchemaValidator | undefined;
+  return (wire, serialized) => {
+    const cached = compileVerdicts.get(serialized);
+    if (cached !== undefined) return cached;
+    try {
+      validator ??= new AjvJsonSchemaValidator();
+      validator.getValidator(wire as Parameters<AjvJsonSchemaValidator["getValidator"]>[0]);
+      return rememberVerdict(serialized, true);
+    } catch (error) {
+      if (error instanceof EvalError && !codegenWarned) {
+        codegenWarned = true;
+        console.warn(
+          "[vendo] mcp door: this runtime forbids code generation, so declared tool output schemas "
+          + "cannot be validated before they are advertised and are omitted from tools/list. "
+          + "Tools still list and still run; the model just loses the declared result fields.",
+        );
+      }
+      return rememberVerdict(serialized, false);
+    }
+  };
+}
+
+/** Once per process: a runtime without code generation is a deployment fact, not
+ *  a per-listing event. */
+let codegenWarned = false;
+
+/**
+ * "Does this exact schema compile?", remembered across listings and sessions. A
+ * pure function of the serialized schema, so the answer never goes stale — a
+ * schema that changes is a different key.
+ *
+ * Bounded by the BYTES it holds, not by entry count: the key IS the schema text,
+ * up to {@link OUTPUT_SCHEMA_CAP} of it each. Over the cap a pathological surface
+ * just recompiles, the behaviour before this cache existed. Oldest evicted first;
+ * there is no recency to protect, because a listing re-reads the whole set.
+ */
+const compileVerdicts = new Map<string, boolean>();
+const VERDICT_CACHE_BYTES = 4 * 1024 * 1024;
+let verdictBytes = 0;
+
+function rememberVerdict(serialized: string, verdict: boolean): boolean {
+  compileVerdicts.set(serialized, verdict);
+  verdictBytes += serialized.length;
+  while (verdictBytes > VERDICT_CACHE_BYTES) {
+    const oldest = compileVerdicts.keys().next();
+    if (oldest.done === true) break;
+    compileVerdicts.delete(oldest.value);
+    verdictBytes -= oldest.value.length;
+  }
+  return verdict;
+}
+
+/** The client's `ToolSchema` asserts every `properties` value is an OBJECT, so a
+ *  boolean subschema is legal JSON Schema the wire cannot carry. */
+function isObjectValued(value: unknown): boolean {
+  return isRecord(value)
+    && Object.values(value).every((entry) => typeof entry === "object" && entry !== null);
 }
 
 /** 10-mcp §4 — the MCP Apps `_meta` that advertises the shim resource so a host
@@ -1158,12 +1461,14 @@ function bearerOf(req: Request): string | undefined {
  */
 async function turnTools(turn: LiveTurn): Promise<Tool[]> {
   const listings = await turn.tools.list();
+  const compiles = wireSchemaCompiler();
   return listings.map((listing) => {
     const label = listing.title === undefined || listing.title.trim() === "" ? undefined : listing.title;
     return {
       name: listing.name,
       description: listing.description,
       inputSchema: (listing.inputSchema ?? { type: "object", properties: {} }) as Tool["inputSchema"],
+      ...wireOutputSchema(listing.outputSchema, compiles),
       ...(label === undefined ? {} : { title: label }),
       annotations: toolAnnotations(listing.risk, label),
     };
@@ -1266,13 +1571,28 @@ function mapOutcome(outcome: ToolOutcome, productName: string): CallToolResult {
   }
 }
 
+/**
+ * An ok result on the wire. A record rides as `structuredContent` verbatim; a
+ * non-record output — a string, a number, a bare array — rides under
+ * {@link VENDO_RESULT_VALUE}, because `structuredContent` must be an object.
+ *
+ * UNCONDITIONALLY, without asking whether this tool advertised a schema. The
+ * official client reads an advertised `outputSchema` as a guarantee (an ok result
+ * with no conforming `structuredContent` makes `callTool` THROW) and permits
+ * `structuredContent` with no schema advertised at all — it compiles no validator,
+ * so it never looks. Asking cost a `tools/list` AFTER the write had executed,
+ * where a throw turns a committed call into a failure the model believes, and it
+ * could only answer for the listing as it is NOW rather than the one the client
+ * cached.
+ */
 function textResult(output: unknown): CallToolResult {
   const text = isOpenInProductPayload(output)
     ? `Open ${output.appName ?? "this app"} in ${output.productName}: ${output.url}`
     : stringify(output);
-  const result: CallToolResult = { content: [{ type: "text", text }] };
-  if (isRecord(output)) result.structuredContent = output;
-  return result;
+  return {
+    content: [{ type: "text", text }],
+    structuredContent: isRecord(output) ? output : { [VENDO_RESULT_VALUE]: output },
+  };
 }
 
 function inBandError(text: string): CallToolResult {
@@ -1293,6 +1613,16 @@ function isOpenInProductPayload(value: unknown): value is OpenInProductPayload {
 
 function stringify(value: unknown): string {
   return JSON.stringify(value) ?? "null";
+}
+
+/** JSON, or undefined for a value that cannot be serialized at all — a cyclic
+ *  host schema, a BigInt. The caller decides what an unstateable value means. */
+function tryStringify(value: unknown): string | undefined {
+  try {
+    return JSON.stringify(value) ?? undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function mcpContext(

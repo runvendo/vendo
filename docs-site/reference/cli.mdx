@@ -56,7 +56,7 @@ detection precedence and the non-interactive `--framework` fallback.
 `dir` is the app to initialize and defaults to the current directory.
 
 Init also adds idempotent `predev`/`prebuild` `vendo sync` hooks to
-`package.json` and writes critical-tool risk answers to `.vendo/overrides.json`,
+`package.json` and writes confirm-each risk answers to `.vendo/overrides.json`,
 which future sync runs respect.
 
 Options:
@@ -67,9 +67,10 @@ Options:
   `{ file, lines, why }`) plus the same lines in `manualSteps`, `extraction`
   (deterministic extraction runs first,
   against a throwaway directory, so the plan carries the extracted tools),
-  and `riskRecommendations` (per-tool advice: destructive tools should be
-  marked critical, disabled tools reviewed before enabling). It is a read-only
-  plan, not a scaffolding step; scaffold with `--yes`.
+  `riskRecommendations` (per-tool advice: destructive tools should be marked
+  confirmEach, disabled tools reviewed before enabling), and an `aiPolish`
+  delegation contract. It is a read-only plan, not a scaffolding step; scaffold
+  with `--yes`.
 - `--yes` skips the interactive prompts (auth confirm, theme review, Cloud
   offer) and scaffolds non-interactively, ending with an `Agent tail:` block
   naming the files left to hand-edit.
@@ -381,6 +382,34 @@ before you set a key. Keyless and BYO installs make no request at all; the
 baselines stay on disk. A Cloud failure is a warning line and never changes the
 exit code; the next sync retries.
 
+### Registered host components reach Vendo Cloud
+
+Sync also captures the source of every component your `<VendoRoot>`
+`components` map registers into `.vendo/components/` (see
+[What sync captures](/connect/host-components#what-sync-captures)) and, with a
+Cloud key, reconciles it with the `vendo_host_components` collection and blob
+namespace — so the console's Apps gallery renders your real component instead
+of a grey labeled placeholder.
+
+This widens what leaves your machine, so sync asks **once per project** and
+saves the answer to `.vendo/cloud.json` (`{ "pushComponents": true }`); every
+later run is silent. `--push-components` / `--no-push-components` answer it in
+CI, and a non-interactive run with neither the flag nor a saved answer pushes
+nothing and says so. Keyless and BYO installs never ask and never make a
+request.
+
+What crosses the wire: the source of every registered component, the source of
+every module in its import closure, your app-root stylesheets, and the preview
+seed — your declared `examples`, or values deterministically generated from your
+declared `props:` schema when you have none (a preview has no data plane, so
+without a seed a data-guarded component draws nothing). Package code never does
+— capture stops at `node_modules`.
+
+The reconcile is manifest-driven. Component records hold references, not
+source, so listing them is itself the hash comparison; module bodies are
+content-addressed blobs, and one keys-only `list` answers which hashes Cloud
+already has. An unchanged second sync costs two calls and uploads nothing.
+
 ### The judgment pass
 
 After the structural scan, sync judges the freshly extracted catalog: a coding
@@ -424,12 +453,17 @@ Options:
 - `--strict`: CI gate: exit 2 on breaking tool changes, exit 3 when a
   breaking tool impacts saved references.
 - `--json`: print exactly one machine-readable object on stdout:
-  `{ ok, exitCode, report, impact, notes, theme, baselines }`, where `report`
-  carries `tools`/`breaking`/`pins`/`remixableErrors`/`catalog`/`warnings`
-  (`pins` lists the slots captured, drifted, and pruned this run), `impact`
+  `{ ok, exitCode, report, impact, notes, theme, baselines, components }`,
+  where `report` carries
+  `tools`/`breaking`/`pins`/`remixableErrors`/`catalog`/`components`/`warnings`
+  (`pins` lists the slots captured, drifted, and pruned this run;
+  `components` the registered components captured, updated, pruned, and
+  skipped), `impact`
   is the per-tool blast radius (`[]` when nothing changed, `null` when unknown),
   `theme` is `{ updated, pinned }` (or `null` with no `.vendo/theme.json`),
-  `baselines` is `{ pushed, pruned }` (or `null` when keyless), and `notes`
+  `baselines` is `{ pushed, pruned }` (or `null` when keyless), `components`
+  is `{ pushed, pruned, modules }` (or `null` when keyless or not permitted),
+  and `notes`
   collects CLI-level events. An `error` field appears when extraction itself
   failed soft. `--json` never prompts.
 - `--url <url>`: override `VENDO_URL` for the blast-radius impact query
@@ -448,6 +482,9 @@ Options:
 - `--yes`: this run cannot ask — take the flags as given and never prompt.
 - `--theme-refresh`: take the theme scan's values even for slots you
   hand-edited.
+- `--push-components` / `--no-push-components`: answer the registered-component
+  upload question without a prompt (for CI). Neither flag reads
+  `.vendo/cloud.json`; passing one does not overwrite it.
 - `--key <key>` / `--api-url <url>`: the Vendo Cloud key and console base URL
   used for the baseline reconcile (and `--report`).
 
@@ -457,8 +494,10 @@ tools: +0 -0 ~1
 pins: 1 captured, 0 drifted
 pruned: LegacyHeroCard — stale baseline deleted (no <Remixable> wrapper names this slot anymore)
 catalog.json: 2 discovered, 2 registered
+components: 2 captured, 0 updated
 theme: 2 slots re-read from your app (accent, accentText) → .vendo/theme.json
 baselines → Vendo Cloud: 1 pushed, 1 pruned (component source crosses the wire so the console can review forks)
+components → Vendo Cloud: 2 pushed, 0 pruned, 4 new modules (37 KB)
 breaking: host_listAccounts input-narrowed
 impact: host_listAccounts breaks 1 automation, 1 grant
 ```

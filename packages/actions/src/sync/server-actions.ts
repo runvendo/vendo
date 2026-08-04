@@ -4,7 +4,6 @@ import type TS from "typescript";
 import type { ExtractedTool, ServerActionBinding } from "../formats.js";
 import {
   allocateToolName,
-  serverActionRisk,
   serverActionToolFullName,
   walk,
 } from "./common.js";
@@ -267,9 +266,9 @@ interface CollectedAction {
   module: FileModule;
   moduleRel: string;
   exportName: string;
-  /** The name risk labeling and tool naming derive from (the declared function
-   * name for default exports, the export name otherwise). */
-  riskName: string;
+  /** The name the tool name derives from (the declared function name for
+   * default exports, the export name otherwise). */
+  sourceName: string;
   params: ActionParam[];
   /** Fail-closed dispositions. */
   disabled?: "inline" | "unclassifiable";
@@ -318,11 +317,11 @@ async function collectModuleActions(
   const { ts } = extraction;
   const base = { module, moduleRel };
 
-  const pushFunction = async (exportName: string, riskName: string, fn: FunctionNode): Promise<void> => {
-    out.push({ ...base, exportName, riskName, params: await actionParams(extraction, module, fn) });
+  const pushFunction = async (exportName: string, sourceName: string, fn: FunctionNode): Promise<void> => {
+    out.push({ ...base, exportName, sourceName, params: await actionParams(extraction, module, fn) });
   };
   const pushUnclassifiable = (exportName: string, reason: string): void => {
-    out.push({ ...base, exportName, riskName: exportName, params: [], disabled: "unclassifiable", unclassifiableReason: reason });
+    out.push({ ...base, exportName, sourceName: exportName, params: [], disabled: "unclassifiable", unclassifiableReason: reason });
   };
 
   for (const statement of module.sf.statements) {
@@ -350,7 +349,7 @@ async function collectModuleActions(
         const wrapped = await wrappedAction(extraction, module, declaration.initializer);
         if (wrapped !== null) {
           if ("fn" in wrapped) await pushFunction(exportName, exportName, wrapped.fn);
-          else out.push({ ...base, exportName, riskName: exportName, params: wrapped.params });
+          else out.push({ ...base, exportName, sourceName: exportName, params: wrapped.params });
           continue;
         }
         pushUnclassifiable(exportName, "the export is not a statically confirmable function");
@@ -359,19 +358,19 @@ async function collectModuleActions(
     }
     if (ts.isExportAssignment(statement) && !statement.isExportEquals) {
       let expr = unwrapExpression(ts, statement.expression);
-      let riskName = moduleStem(moduleRel);
+      let sourceName = moduleStem(moduleRel);
       if (ts.isIdentifier(expr)) {
-        riskName = expr.text;
+        sourceName = expr.text;
         const local = localFunction(extraction, module, expr.text);
         if (local) {
-          await pushFunction("default", riskName, local);
+          await pushFunction("default", sourceName, local);
           continue;
         }
         pushUnclassifiable("default", `default export "${expr.text}" is not a statically confirmable function`);
         continue;
       }
       const fn = functionNode(ts, expr);
-      if (fn) await pushFunction("default", ts.isFunctionExpression(fn) && fn.name ? fn.name.text : riskName, fn);
+      if (fn) await pushFunction("default", ts.isFunctionExpression(fn) && fn.name ? fn.name.text : sourceName, fn);
       else pushUnclassifiable("default", "the default export is not a statically confirmable function");
       continue;
     }
@@ -472,7 +471,7 @@ function collectInlineActions(
             module,
             moduleRel,
             exportName: name,
-            riskName: name,
+            sourceName: name,
             params: await actionParams(extraction, module, node),
             disabled: "inline",
           });
@@ -563,12 +562,15 @@ export async function extractServerActions(root: string): Promise<ServerActionsE
     seen.add(dedup);
 
     if (action.disabled === "unclassifiable") {
-      const name = allocateToolName(serverActionToolFullName(action.riskName), "action", usedNames);
+      const name = allocateToolName(serverActionToolFullName(action.sourceName), "action", usedNames);
       tools.push({
         name,
         description: `server action ${action.moduleRel}#${action.exportName} could not be classified`,
         inputSchema: { type: "object", properties: {} },
-        risk: "destructive",
+        // D2 — nothing spoke, so nothing is graded. `disabled` keeps it out of the
+        // agent's hands; `ungraded` keeps it counted in doctor's tally and asking
+        // rather than running if a human ever re-enables it.
+        risk: "ungraded",
         disabled: true,
         note: `${action.unclassifiableReason ?? "not statically classifiable"}; enable only after review; overrides.json can flip disabled/risk`,
         binding: bindingFor(action),
@@ -578,14 +580,16 @@ export async function extractServerActions(root: string): Promise<ServerActionsE
     }
 
     const { inputSchema, note } = inputSchemaFor(action.params);
-    const name = allocateToolName(serverActionToolFullName(action.riskName), "action", usedNames);
+    const name = allocateToolName(serverActionToolFullName(action.sourceName), "action", usedNames);
     const inline = action.disabled === "inline";
     const inlineNote = "inline server action (declared inside a component); the generated wiring cannot import it — hoist it into an exported \"use server\" module to enable; execution fails closed until then";
     tools.push({
       name,
       description: `server action ${action.moduleRel}#${action.exportName}`,
       inputSchema,
-      risk: serverActionRisk(action.riskName),
+      // A server action is a POST-shaped RPC endpoint, not a declared
+      // mutation: nothing about the protocol says whether it reads or writes.
+      risk: "ungraded",
       ...(inline
         ? { disabled: true, note: note === undefined ? inlineNote : `${inlineNote}; ${note}` }
         : note === undefined ? {} : { note }),

@@ -17,7 +17,7 @@
  *   manifest's tools through the postMessage seam (never trusting the iframe),
  *   using {@link resolveIslandToolName} / {@link islandToolFallbackManifest}.
  */
-import { JAIL_ALLOWED_MODULES } from "./jail-modules.js";
+import { JAIL_ALLOWED_MODULES, JAIL_BUNDLED_PACKAGES } from "./jail-modules.js";
 
 /** React values ambient in every island (the names pretraining reaches for). */
 export const ISLAND_AMBIENT_REACT_NAMES = [
@@ -80,17 +80,43 @@ export const ISLAND_STRIPPED_SPECIFIERS = [
   "vendo/kit",
 ] as const;
 
+/**
+ * Everything the jail runtime can resolve when jailed code imports it: the
+ * stripped specifiers (mapped onto the ambient scope) PLUS the third-party
+ * packages the runtime bundles.
+ *
+ * This is the set a PRODUCER must check — the generation engine's import gate,
+ * and `vendo sync`'s host-component capture. `ISLAND_STRIPPED_SPECIFIERS` is
+ * NOT that set: stripping is about deleting an import whose name the ambient
+ * scope provides, and a bundled package's import must survive so its compiled
+ * module request for "clsx" reaches the module table.
+ */
+export const ISLAND_RESOLVABLE_SPECIFIERS = [
+  ...ISLAND_STRIPPED_SPECIFIERS,
+  ...JAIL_BUNDLED_PACKAGES,
+] as const;
+
 /** A module specifier the jail runtime can resolve for island code — the
- *  react table plus the kit-ish names mapped onto the bundled ambient scope
- *  (so a not-yet-stripped streaming partial renders). */
-export type IslandResolvableModule = (typeof ISLAND_STRIPPED_SPECIFIERS)[number];
+ *  react table and the kit-ish names mapped onto the bundled ambient scope
+ *  (so a not-yet-stripped streaming partial renders), plus the bundled
+ *  third-party packages. */
+export type IslandResolvableModule = (typeof ISLAND_RESOLVABLE_SPECIFIERS)[number];
 
 const STRIPPED_SPECIFIER_SET: ReadonlySet<string> = new Set(ISLAND_STRIPPED_SPECIFIERS);
+const RESOLVABLE_SPECIFIER_SET: ReadonlySet<string> = new Set(ISLAND_RESOLVABLE_SPECIFIERS);
 const AMBIENT_NAME_SET: ReadonlySet<string> = new Set(ISLAND_AMBIENT_NAMES);
 
-/** A module specifier the ambient island scope already provides. */
+/** A module specifier the ambient island scope already provides, so its import
+ *  statement is deleted. NOT the same question as "can the jail resolve it" —
+ *  use {@link isIslandResolvableSpecifier} for that. */
 export const isStrippedIslandSpecifier = (specifier: string): boolean =>
   STRIPPED_SPECIFIER_SET.has(specifier);
+
+/** A module specifier the jail runtime can resolve at runtime — ambient names
+ *  plus bundled packages. The question a producer asks before shipping source
+ *  into the jail. */
+export const isIslandResolvableSpecifier = (specifier: string): boolean =>
+  RESOLVABLE_SPECIFIER_SET.has(specifier);
 
 export interface IslandImportStrip {
   /** The source with every known static import removed. */

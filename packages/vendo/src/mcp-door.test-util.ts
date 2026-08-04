@@ -12,6 +12,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ExtractedTool } from "@vendoai/actions";
 import type { AuditEvent, Principal, ToolDescriptor, ToolRegistry } from "@vendoai/core";
 import { defineHarness, harnessAdapters } from "@vendoai/harnesses";
 import { createStore, type VendoStore } from "@vendoai/store";
@@ -184,6 +185,10 @@ export async function composedHost(
  */
 export async function composedHostOverDoor(
   script: (door: DoorSession, mint: () => string | undefined) => Promise<void>,
+  /** Extracted host tools (`.vendo/tools.json` shape) to compose IN ADDITION to
+   *  the two registry tools — the only way to drive the extraction → registry →
+   *  door plumbing from here. Left out, the host is exactly what it always was. */
+  extracted?: ExtractedTool[],
 ): Promise<ComposedHost> {
   const store = await tempStore();
   const observed: string[] = [];
@@ -209,6 +214,7 @@ export async function composedHostOverDoor(
     policy: "cautious",
     harness: harness as never,
     mcp: true,
+    ...(extracted === undefined ? {} : { tools: extracted }),
     oauth: {
       async authorize() {
         return { subject: SUBJECT };
@@ -355,7 +361,7 @@ export async function bearer(vendo: Vendo): Promise<string> {
 }
 
 export interface DoorSession {
-  listTools(): Promise<Array<{ name: string; description?: string; annotations?: unknown }>>;
+  listTools(): Promise<Array<{ name: string; description?: string; annotations?: unknown; outputSchema?: unknown }>>;
   callTool(name: string, args: Record<string, unknown>): Promise<{ isError?: boolean; text: string }>;
 }
 
@@ -407,7 +413,7 @@ export async function openDoor(vendo: Vendo, token: string): Promise<DoorSession
   return {
     async listTools() {
       const result = await rpc("tools/list");
-      return (result["tools"] as Array<{ name: string; description?: string; annotations?: unknown }>) ?? [];
+      return (result["tools"] as Awaited<ReturnType<DoorSession["listTools"]>>) ?? [];
     },
     async callTool(name, args) {
       const result = await rpc("tools/call", { name, arguments: args });

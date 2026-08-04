@@ -30,6 +30,31 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
     expect(wire.requests).toContainEqual(expect.objectContaining({ method: "GET", path: "/activity?cursor=eyJjIjoiMjAyNi0wNy0xMVQxMjowMDowMC4wMDBaIiwiaSI6ImF1ZF8yIn0" }));
   });
 
+  it("humanizes a row's inputs and never prints the guard's raw preview (C2)", async () => {
+    render(<VendoProvider client={client}><ActivityPanel /></VendoProvider>);
+    await waitFor(() => expect(screen.getAllByText("Invoices list")).toHaveLength(2));
+    const row = document.querySelector(".fl-act-led-row")!;
+    // The guard mints `<tool slug> <canonical JSON>`; this row used to print it.
+    expect(row.textContent).not.toContain("host_invoices_list {");
+    expect(row.textContent).not.toContain('"limit"');
+    // The consent surfaces' own humanization, money seam included.
+    expect(row.querySelector(".fl-act-led-det")?.textContent)
+      .toBe(" — Amount cents $47.50 · Limit 10 · Status open");
+  });
+
+  it("keeps the raw preview for developers — dev mode only", async () => {
+    const previous = process.env.NODE_ENV;
+    process.env.NODE_ENV = "development";
+    try {
+      render(<VendoProvider client={client}><ActivityPanel /></VendoProvider>);
+      await waitFor(() => expect(screen.getAllByText("Invoices list")).toHaveLength(2));
+      expect(document.querySelector(".fl-act-led-det")?.textContent)
+        .toContain('host_invoices_list {"amount_cents":4750');
+    } finally {
+      process.env.NODE_ENV = previous;
+    }
+  });
+
   it("retires Load more and shows an end-of-list marker once the history is exhausted", async () => {
     render(<VendoProvider client={client}><ActivityPanel /></VendoProvider>);
     await waitFor(() => expect(screen.getAllByText("Invoices list")).toHaveLength(2));
@@ -51,8 +76,15 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
     // enumerated, exactly one Approve and one Deny.
     const card = await screen.findByLabelText("Standing access — Invoice watcher");
     expect(card.textContent).toContain("Invoice watcher needs 2 permissions");
-    expect(card.textContent).toContain("Send email digests as you.");
-    expect(card.textContent).toContain("Read invoices across your account.");
+    // Each permission in OUR words, not the descriptor's model-facing sentence
+    // (spec §16 law 3, LEAK 1).
+    // ⚠️ TEST EDIT (Yousef's grading ruling D1): the row word came from the
+    // tool NAME. It comes from the GRADE now, and the fixture grades the send
+    // ask `write` instead of the `read` it used to claim.
+    expect(card.textContent).toContain("Changes: Email send");
+    expect(card.textContent).not.toContain("Sends: Email send");
+    expect(card.textContent).toContain("Reads: Invoices list");
+    expect(card.textContent).not.toContain("Read invoices across your account.");
     expect(card.querySelectorAll("button")).toHaveLength(2);
     await waitFor(() => expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("true"));
     fireEvent.click(screen.getByRole("button", { name: "Allow both & enable" }));
@@ -65,16 +97,23 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
     }));
 
     fireEvent.click(screen.getByRole("button", { name: "Dry run" }));
-    expect((await screen.findByLabelText("Dry run for Invoice watcher")).textContent).toContain("host_invoices_list — ready");
+    // M30 — the dry-run block is a real group; a bare <div> may not be labelled.
+    const dry = await screen.findByRole("group", { name: "Dry run for Invoice watcher" });
+    expect(dry.textContent).toContain("host_invoices_list — ready");
 
     fireEvent.click(screen.getByRole("button", { name: "Run history" }));
     const stop = await screen.findByRole("button", { name: "Stop" });
     fireEvent.click(stop);
-    await waitFor(() => expect(screen.getByText("stopped")).toBeTruthy());
+    // ⚠️ The row label is the owner-facing label, never the status slug
+    // (spec §16 law 3): RUN_STATUS_LABEL.stopped === "Stopped".
+    await waitFor(() => expect(screen.getByText("Stopped")).toBeTruthy());
     expect(wire.requests).toContainEqual(expect.objectContaining({ method: "POST", path: "/runs/run_1/stop" }));
 
     fireEvent.click(screen.getByRole("switch", { name: "Enable Invoice watcher" }));
     await waitFor(() => expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("false"));
+    // M33 — OFF is a STATE, so its track has to be visible as one (WCAG 1.4.11);
+    // the 14% hairline it used to wear sat at ~1.4:1.
+    expect(screen.getByRole("switch").style.background).toBe("var(--vendo-indicator)");
     expect(wire.requests).toContainEqual(expect.objectContaining({ method: "POST", path: "/automations/app_auto/disable" }));
   });
 
@@ -145,7 +184,10 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
     // Visible failure: the card keeps its actions (retry is one click) and
     // NOTHING was decided — asks still pending, automation state untouched.
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain("Store briefly unavailable");
+    // The wire's sentence names our store; the card says what happened to the
+    // person and that nothing was granted (spec §16 law 3, LEAK 2).
+    expect(alert.textContent).toBe("That didn’t go through — nothing was granted. Try again in a moment.");
+    expect(alert.textContent).not.toContain("Store");
     const card = screen.getByLabelText("Standing access — Invoice watcher");
     expect(card.contains(alert)).toBe(true);
     expect((screen.getByRole("button", { name: "Deny" }) as HTMLButtonElement).disabled).toBe(false);
@@ -186,7 +228,10 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
     // automation and points at the retry; the row honestly reads enabled.
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("It is still enabled");
-    expect(alert.textContent).toContain("Store briefly unavailable");
+    // Ruling 11 — the WIRE's sentence ("Store briefly unavailable") is written
+    // for whoever runs the deployment and no longer rides along; what the owner
+    // needs is what did not happen and what is still true, which is above.
+    expect(alert.textContent).not.toContain("Store briefly unavailable");
     expect(screen.getByRole("switch", { name: "Enable Invoice watcher" }).getAttribute("aria-checked")).toBe("true");
 
     // Retry IS the toggle: the next disable succeeds and the row disarms.
@@ -251,30 +296,53 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
     expect(screen.queryByLabelText(/^Standing access/)).toBeNull();
   });
 
-  it("renders a scheduler-refused run as failed with its blocked reason in run history (pricing v3 §5)", async () => {
-    const blockedReason =
-      "blocked by allowance: Vendo Cloud paused automation runs — the allowance for this billing "
-      + "period is used up (resets 2026-08-01). Upgrade your plan (https://console.vendo.run/billing) "
-      + "or bring your own infrastructure (https://docs.vendo.run/byo).";
-    wire.state.runs.push({
-      id: "run_blocked",
-      appId: "app_auto",
-      trigger: { kind: "schedule" },
-      status: "error",
-      startedAt: "2026-07-11T12:00:00.000Z",
-      finishedAt: "2026-07-11T12:00:05.000Z",
-      steps: [],
-      error: { code: "meter-exhausted", message: blockedReason },
-    });
+  /** The scheduler's own refusal, written for whoever runs the deployment: it
+   *  names a billing allowance and links a console. */
+  const BLOCKED_REASON =
+    "blocked by allowance: Vendo Cloud paused automation runs — the allowance for this billing "
+    + "period is used up (resets 2026-08-01). Upgrade your plan (https://console.vendo.run/billing) "
+    + "or bring your own infrastructure (https://docs.vendo.run/byo).";
+
+  const seedRefusedRun = () => wire.state.runs.push({
+    id: "run_blocked",
+    appId: "app_auto",
+    trigger: { kind: "schedule" },
+    status: "error",
+    startedAt: "2026-07-11T12:00:00.000Z",
+    finishedAt: "2026-07-11T12:00:05.000Z",
+    steps: [],
+    error: { code: "meter-exhausted", message: BLOCKED_REASON },
+  });
+
+  it("tells the owner of a failed run what did not happen and that nothing changed (pricing v3 §5)", async () => {
+    seedRefusedRun();
     render(<VendoProvider client={client}><AutomationsPanel /></VendoProvider>);
     await screen.findByRole("switch", { name: "Enable Invoice watcher" });
 
     fireEvent.click(screen.getByRole("button", { name: "Run history" }));
-    // The refused run reads as a plain failed run: error status row + the
-    // refusal's own code and reason on the run's alert line.
-    const reason = await screen.findByText(`meter-exhausted: ${blockedReason}`);
-    expect(reason.getAttribute("role")).toBe("alert");
-    expect(reason.closest("article")?.textContent).toContain("error");
+    const failure = await screen.findByText(/didn’t finish/);
+    expect(failure.getAttribute("role")).toBe("alert");
+    // The row heading and time are in the owner's words, not the wire's
+    // (spec §16 law 3): "Failed", not "error"; an absolute human timestamp,
+    // not the ISO instant (which stays in <time dateTime> for machines).
+    expect(failure.closest("article")?.textContent).toContain("Failed");
+    expect(failure.closest("article")?.textContent).toContain("Jul 11, 2026, 12:00 PM");
+    expect(failure.closest("article")?.textContent).not.toContain("2026-07-11T12:00:00.000Z");
+    expect(failure.textContent).toMatch(/nothing (?:in your account )?was changed/i);
+    expect(failure.closest("article")?.textContent).not.toContain("meter-exhausted");
+    expect(failure.closest("article")?.textContent).not.toContain(BLOCKED_REASON);
+  });
+
+  it("keeps the run's own code and reason for whoever runs the deployment — the dev-mode rail", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    seedRefusedRun();
+    render(<VendoProvider client={client}><AutomationsPanel /></VendoProvider>);
+    await screen.findByRole("switch", { name: "Enable Invoice watcher" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Run history" }));
+    const detail = await screen.findByText(new RegExp("meter-exhausted"));
+    expect(detail.textContent).toContain(BLOCKED_REASON);
+    vi.unstubAllEnvs();
   });
 
   it("contains activity wire errors in an alert without an unhandled rejection", async () => {
@@ -291,7 +359,11 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Load more" }));
-    expect((await screen.findByRole("alert")).textContent).toContain("Activity unavailable");
+    // Contained and SHOWN, in the consumer's voice: "Activity unavailable" is
+    // our store's own words (spec §16 law 3, the widened audit).
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe("We couldn’t load more just now — try again.");
+    expect(alert.textContent).not.toContain("Activity unavailable");
     await new Promise(resolve => globalThis.setTimeout(resolve, 0));
     expect(unhandled).not.toHaveBeenCalled();
     window.removeEventListener("unhandledrejection", unhandled);

@@ -3,7 +3,10 @@ export { useActivity } from "./use-activity.js";
 export { useApp } from "./use-app.js";
 export { useApps } from "./use-apps.js";
 export { useAppGrants } from "./use-app-grants.js";
-export { useApprovals } from "./use-approvals.js";
+export { useApprovals, useAttention } from "./use-approvals.js";
+// LANE D §2/§3 — the shapes useAttention hands back (the finished-run headline
+// the launcher toast and any host notification hook read).
+export type { RunActivity, RunResult } from "../chrome/run-activity.js";
 export { useAutomations } from "./use-automations.js";
 export { useConnections } from "./use-connections.js";
 export { useConnectorCatalog } from "./use-connector-catalog.js";

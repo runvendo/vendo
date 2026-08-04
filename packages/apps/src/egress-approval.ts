@@ -16,7 +16,7 @@ import { listAllRecords } from "./persistence.js";
  * The app's `egress` declaration (mirroring `vendo.json`) is an ASK, not an
  * authority: each declared domain needs a one-time owner approval before a
  * machine may provision or wake with it. The flow reuses the guard's existing
- * critical-approval machinery (the ENG-345 exposure-grant pattern — no new
+ * confirmEach-approval machinery (the ENG-345 exposure-grant pattern — no new
  * ceremony types): an unapproved declaration parks ONE approval naming the
  * missing domains, and the decision seam commits them onto the app document's
  * `egressApproved` field. This module owns the pure policy math and the store

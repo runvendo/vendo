@@ -33,25 +33,25 @@
  * reason to install a ~250MB platform binary. Keep it that way — the emitted
  * `dist/claude-turn.js` is copied verbatim into a machine image.
  *
- * One permission law still lives here (design §3, "claudeCode() specifics"): the
- * box is AUTO-ALLOW for its own file/bash work (the box IS the permission —
- * copies only, no credentials, domain-filtered egress at the provider's network
- * layer, reality happens at commit), so those tools are pre-approved. Our
- * guard's asks are no longer delivered through the SDK's native permission hook,
- * because the guard now decides at the DOOR: a refusal arrives as the tool's own
- * in-band error text, which is still something the model narrates and never a
- * throw.
+ * There is no local permission system left (design §3, "claudeCode() specifics";
+ * harness-redesign D1). The session runs in `bypassPermissions` because the two
+ * things that decide are elsewhere: the BOX is the permission for the box's own
+ * hands (copies only, no credentials, domain-filtered egress at the provider's
+ * network layer, reality happens at commit), and the DOOR is the permission for
+ * host tools — the guard decides there, with the turn's own context, and a refusal
+ * arrives as the tool's own in-band error text, which the model narrates and never
+ * a throw. {@link DISALLOWED_TOOLS} is the only local tool law that survives.
  *
- * Two limits on how far that law reaches.
+ * Two limits on how far the box's containment reaches.
  *
  * The egress half is weaker than it sounds: the provider filters by DOMAIN, so
  * an ordinary client is held to the allowlist and a client that omits SNI is
  * not (`docs/verification/box-egress/README.md`). The box is filtered, not
  * jailed.
  *
- * And the law is about a BOX at all, which this module's other home —
- * `machine: "local"` — does not have: there the same auto-allow is a real shell
- * on the host's own server, with no network boundary of any kind. The mode is an
+ * And the containment is about a BOX at all, which this module's other home —
+ * `machine: "local"` — does not have: there the same bypass is a real shell on
+ * the host's own server, with no network boundary of any kind. The mode is an
  * explicit deployment opt-in and warns the operator on its first turn
  * (`claude-code/local.ts`), but nothing in THIS file makes it safe, and reading
  * the paragraph above as if it did is the mistake to avoid.
@@ -60,19 +60,44 @@
 /** The MCP server name our projected tools live under (`mcp__vendo__<tool>`). */
 export const VENDO_MCP_SERVER = "vendo";
 
-/** The box's own hands (design §4): a real shell over a workspace COPY. */
-export const BOX_TOOLS = ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "TodoWrite"] as const;
-
-/** Never available to a headless box turn: no user to ask, no egress to spend.
- *  Redundant with the hook's allow-list ON PURPOSE: `disallowedTools` removes
- *  these from the model's view entirely, so it never plans around them; the
- *  hook denial below is the backstop for an SDK that offers them anyway. */
-const DISALLOWED_TOOLS = ["WebSearch", "WebFetch", "AskUserQuestion"];
-
-/** The SDK's subagent door. Allowing the dispatcher grants nothing by itself:
- *  a subagent's inner calls come back through the same permission hook one by
- *  one, each judged on its own name. */
-const SUBAGENT_TOOLS = ["Task"];
+/** The whole of the local tool law, in three groups.
+ *
+ *  The PROVIDER-SIDE tools act on the vendor's own surfaces over the inference
+ *  channel rather than through this host, which puts them outside the box and the
+ *  door both — no guard, no audit row, no egress filter. (`Projects`' own
+ *  `project_write` uploads a workspace file provider-side and its schema says the
+ *  contents "never enter your context", so not even the transcript records what
+ *  left; `ClaudeDesign` writes to a design server behind its own login.)
+ *
+ *  The SCHEDULING family leaves execution BEHIND: a cron job, remote trigger or
+ *  wakeup outlives the turn that created it and fires with no turn to be
+ *  accountable to, so whatever it then does passes no guard, lands no audit row and
+ *  meets no egress filter. `CronDelete`/`CronList` are here for the other direction
+ *  too — under `machine: "local"` the schedules on that disk are the OPERATOR's,
+ *  and a tenant's turn may neither enumerate nor destroy them.
+ *
+ *  `disallowedTools` removes them from the model's view entirely, so it never plans
+ *  around them. Everything else the SDK ships runs — and `claude-turn.test.ts`
+ *  holds a ledger of every tool the SDK's own generated schemas enumerate, so a
+ *  name a future SDK adds fails a test instead of being admitted in silence. */
+const DISALLOWED_TOOLS = [
+  // No user to ask, no egress to spend.
+  "WebSearch",
+  "WebFetch",
+  "AskUserQuestion",
+  // Provider-side: the vendor's surfaces, over the inference channel.
+  "Projects",
+  "Artifact",
+  "PushNotification",
+  "SendFeedback",
+  "ClaudeDesign",
+  // Scheduling: execution that outlives the turn that asked for it.
+  "RemoteTrigger",
+  "CronCreate",
+  "CronDelete",
+  "CronList",
+  "ScheduleWakeup",
+];
 
 export type ClaudeTurnEvent =
   | { type: "text"; delta: string }
@@ -98,8 +123,6 @@ export interface ClaudeSessionInput {
   /** `CLAUDE_CONFIG_DIR` included: where the SDK keeps its session file is the
    *  machine's choice, made in the environment and never read back here. */
   env: Record<string, string>;
-  /** Names the box may run without asking. Defaults to {@link BOX_TOOLS}. */
-  allowedBoxTools?: readonly string[];
   /**
    * A local PLUGIN root for native skill discovery — the SDK reads
    * `<pluginPath>/skills/<name>/SKILL.md`, which is EXACTLY the layout our
@@ -183,39 +206,6 @@ export interface SdkModule {
   }): AsyncIterable<Record<string, unknown>> & { interrupt?: () => Promise<unknown> };
 }
 
-/**
- * The box's permission hook — an ALLOW-LIST, and now the whole of it.
- *
- * It used to be where a projected tool actually EXECUTED: `turn.tools.call()` is
- * atomic (guard + execute + audit + mirror), so it could not be split into a
- * check for the hook and a run for the handler, and doing it in the hook was
- * what let a guard denial come back as the SDK's native `{behavior:"deny"}`.
- * All of that moved to the door. What is left is the one law that was always
- * local: the box may use its own hands, and nothing else.
- *
- * "Its own hands" is only a safe grant where there is a BOX. On the
- * `machine: "local"` path these same names are the host server's shell and
- * filesystem — see this module's header.
- *
- * `mcp__vendo__*` is allowed here because the DOOR is the permission for those
- * — the guard decides there, on the host, with the turn's own context. A denial
- * comes back as the tool's in-band error text instead of the native deny
- * behavior; the model narrates either way, and it is the guard's own sentence.
- */
-function boxPermission(input: ClaudeSessionInput) {
-  const prefix = `mcp__${VENDO_MCP_SERVER}__`;
-  // A deny-list here meant every tool nobody had foreseen — say an SDK upgrade
-  // shipping a new built-in with egress — was silently allowed; unnamed must
-  // mean denied.
-  const boxAllowed = new Set<string>([...(input.allowedBoxTools ?? BOX_TOOLS), ...SUBAGENT_TOOLS]);
-  return async (name: string, rawArgs: Record<string, unknown>): Promise<Record<string, unknown>> => {
-    if (name.startsWith(prefix) || boxAllowed.has(name)) {
-      return { behavior: "allow", updatedInput: rawArgs };
-    }
-    return { behavior: "deny", message: `${name} isn't available in this workspace.` };
-  };
-}
-
 /** The SDK's `usage` block, in the `HarnessEvent` vocabulary. */
 function usageEvent(raw: unknown, model: string | undefined): ClaudeTurnEvent | undefined {
   if (typeof raw !== "object" || raw === null) return undefined;
@@ -297,8 +287,8 @@ export function createClaudeSession(input: ClaudeSessionInput): ClaudeSession {
     const hook = raw as { tool_input?: { file_path?: unknown } };
     const written = hook.tool_input?.file_path;
     input.onFileWritten?.(typeof written === "string" ? written : undefined);
-    // This hook OBSERVES. Permission lives in `boxPermission`, and a hook that
-    // returned a decision here would be a second, quieter permission system.
+    // This hook OBSERVES. Permission is the box and the door; a hook that
+    // returned a decision here would be a permission system smuggled back in.
     return {};
   };
 
@@ -306,8 +296,6 @@ export function createClaudeSession(input: ClaudeSessionInput): ClaudeSession {
   let live: { interrupt?: () => Promise<unknown> } | undefined;
 
   const drain = (async () => {
-    const canUseTool = boxPermission(input);
-
     const options: Record<string, unknown> = {
       cwd: input.cwd,
       ...(input.model === undefined ? {} : { model: input.model }),
@@ -317,17 +305,21 @@ export function createClaudeSession(input: ClaudeSessionInput): ClaudeSession {
       // Append, never replace: the co-trained Claude Code harness IS the product
       // decision behind this adapter.
       systemPrompt: { type: "preset", preset: "claude_code", append: input.systemPrompt ?? "" },
-      // NOT bypassPermissions: the hook is how our guard's asks reach the model.
-      permissionMode: "default",
-      canUseTool,
-      allowedTools: [...(input.allowedBoxTools ?? BOX_TOOLS)],
+      // Nothing local left to ask: the box contains the box's own hands, and the
+      // guard decides host tools at the door (module header).
+      permissionMode: "bypassPermissions",
+      // The SDK documents the pair as required ("Must be set to `true` when using
+      // `permissionMode: 'bypassPermissions'`"); today's CLI treats it as advisory
+      // (measured 2026-08-03), so this is hygiene against one that enforces it.
+      allowDangerouslySkipPermissions: true,
       disallowedTools: DISALLOWED_TOOLS,
-      // The host's own door, over native remote MCP. `alwaysLoad` because our
-      // tools are ALREADY curated (the loadout, `surfaces.agent`, THE LAW's §12
-      // withholding) — letting the engine defer them behind its own tool search
-      // would be a second curation layer over a set we deliberately shaped, and
-      // it makes an unreachable door fail at startup instead of silently
-      // presenting a model with no hands.
+      // The host's own door, over native remote MCP. `alwaysLoad` because this
+      // surface is deliberately UNCURATED (`toolSurface: { curated: false }`):
+      // the door lists everything the ctx projects — THE LAW's §12 withholding
+      // and the host's `surfaces.agent` menu still decide that set — so letting
+      // the engine defer the listing behind its own tool search would put back
+      // exactly the friction the redesign removed. It also makes an unreachable
+      // door fail at startup instead of silently presenting a model with no hands.
       ...(input.toolDoor === undefined ? {} : {
         mcpServers: {
           [VENDO_MCP_SERVER]: {
@@ -343,6 +335,13 @@ export function createClaudeSession(input: ClaudeSessionInput): ClaudeSession {
       // This disables FILESYSTEM settings discovery only — `plugins` below is an
       // explicit programmatic list, so native skills survive tenant isolation.
       settingSources: [],
+      // The other half of that rule, for MCP: `settingSources` closes SETTINGS
+      // discovery, and the SDK names a project `.mcp.json` as something only this
+      // flag ignores. The box's cwd is a disk the model writes itself, and `reopen`
+      // relaunches a fresh CLI over it — a server mounted that way would arrive as
+      // `mcp__*` tools, outside DISALLOWED_TOOLS, the guard, the audit log and the
+      // egress filter. The door above is the only MCP server this box wants.
+      strictMcpConfig: true,
       // Without this the SDK hands us whole assistant blocks and the user watches
       // a still screen for the length of a paragraph.
       includePartialMessages: true,

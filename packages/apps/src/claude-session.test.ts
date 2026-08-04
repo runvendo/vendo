@@ -32,7 +32,8 @@ interface SessionRecord {
   prompts: string[];
   /** The options the (single) query was opened with. */
   options: Record<string, any>;
-  permissions: Array<{ name: string; verdict: string }>;
+  /** Every tool the scripted turns used, in order. */
+  used: string[];
 }
 
 /**
@@ -58,11 +59,6 @@ function fakeSessionSdk(
       return {
         async *[Symbol.asyncIterator]() {
           yield { type: "system", subtype: "init", session_id: sessionId, model: "claude-test" };
-          const handlers = new Map<string, any>(
-            ((options.mcpServers?.[VENDO_MCP_SERVER]?.__tools ?? []) as any[]).map(
-              (entry) => [`mcp__${VENDO_MCP_SERVER}__${entry.name}`, entry],
-            ),
-          );
           let index = 0;
           // The INPUT ITERABLE is the live session: this loop only ends when the
           // caller closes the stream, which is what `end()` must do.
@@ -80,23 +76,10 @@ function fakeSessionSdk(
                 };
               }
               if (step.use === undefined) continue;
-              let verdict: any = { behavior: "allow", updatedInput: step.use.input };
-              if (!(options.allowedTools ?? []).includes(step.use.name) && options.canUseTool) {
-                verdict = await options.canUseTool(step.use.name, step.use.input, {
-                  signal: new AbortController().signal,
-                });
-              }
-              record.permissions.push({ name: step.use.name, verdict: verdict.behavior });
-              if (verdict.behavior !== "allow") continue;
-              const entry = handlers.get(step.use.name);
-              if (entry !== undefined) {
-                const raw = (verdict.updatedInput ?? step.use.input) as Record<string, unknown>;
-                const declared = Object.keys((entry.inputSchema ?? {}) as Record<string, unknown>);
-                await entry.handler(
-                  Object.fromEntries(declared.filter((key) => raw[key] !== undefined).map((key) => [key, raw[key]])),
-                  {},
-                );
-              }
+              // No permission dispatch to simulate: the session runs in
+              // `bypassPermissions` (D1), and an `mcp__vendo__*` use is dispatched
+              // by the ENGINE over HTTP to the host's door — out of this process.
+              record.used.push(step.use.name);
             }
             index += 1;
             yield {
@@ -128,7 +111,7 @@ function openSession(
   extra: Record<string, unknown> = {},
 ) {
   const events: ClaudeTurnEvent[] = [];
-  const record: SessionRecord = { queries: 0, prompts: [], options: {}, permissions: [] };
+  const record: SessionRecord = { queries: 0, prompts: [], options: {}, used: [] };
   const session = createClaudeSession({
     tools: listing,
     cwd: "/workspace",
@@ -213,9 +196,9 @@ describe("one session per conversation, chat in / stream out", () => {
         alwaysLoad: true,
       },
     });
-    // The hook allows it and the ENGINE dispatches it over HTTP — nothing
-    // executes in this process, which is what deleted the bridge.
-    expect(record.permissions[0]?.verdict).toBe("allow");
+    // The ENGINE dispatches it over HTTP — nothing executes in this process,
+    // which is what deleted the bridge.
+    expect(record.used).toEqual([`mcp__${VENDO_MCP_SERVER}__maple_invoices_list`]);
   });
 
   test("two CONCURRENT sends are serialized — both settle, in order, and neither hangs", async () => {

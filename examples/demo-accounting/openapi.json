@@ -202,7 +202,7 @@
       "post": {
         "operationId": "setDocumentStatus",
         "x-vendo-dangerous": true,
-        "summary": "Advance a document through its lifecycle: 'receive' marks a missing document as uploaded (attaching a file name), 'verify' confirms an uploaded document is correct, 'reject' returns a wrong upload to missing with a reason the client sees. Verify and reject only apply to documents in status received or needs_review.",
+        "summary": "Marks one of a client's requested documents as received, verified or rejected.",
         "parameters": [
           {
             "name": "id",
@@ -240,7 +240,7 @@
                       "verify",
                       "reject"
                     ],
-                    "description": "Lifecycle transition to apply"
+                    "description": "Lifecycle transition to apply: 'receive' marks a missing document as uploaded (attaching a file name), 'verify' confirms an uploaded document is correct, 'reject' returns a wrong upload to missing with a reason the client sees. Verify and reject only apply to documents in status received or needs_review."
                   },
                   "fileName": {
                     "type": "string",
@@ -587,7 +587,7 @@
     "/api/demo/simulate/upload": {
       "post": {
         "operationId": "simulateClientUpload",
-        "summary": "Demo control: simulate a client uploading a file for a missing document. variant 'correct' lands the document in status received; variant 'wrong' (e.g. a personal bank statement instead of the business one) lands it in needs_review with an explanatory note. Also records a client-to-firm message and activity.",
+        "summary": "Demo control: simulate a client uploading a file for a missing document. Also records a client-to-firm message and activity.",
         "requestBody": {
           "required": true,
           "content": {

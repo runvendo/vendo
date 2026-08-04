@@ -8,11 +8,13 @@ const shotPath = (file: string) =>
 
 test("palette opens via the keybinding (singleton)", async ({ page }) => {
   // The /palette scenario focuses a host button then dispatches ⌘K; the shared
-  // singleton listener opens exactly one conversation surface (one-surface ⌘K
-  // — the palette is headless and its commands ride the overlay chip strip).
+  // singleton listener opens exactly one conversation surface (one-surface ⌘K —
+  // the palette is headless). The overlay's command CHIP STRIP was deleted on
+  // 2026-07-23 as clutter, so there is no toolbar to assert any more; the
+  // registry seam survives without UI.
   await openScenario(page, "palette");
   await expect(page.getByRole("dialog", { name: "Vendo assistant" })).toHaveCount(1);
-  await expect(page.getByRole("toolbar", { name: "Commands" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Message" })).toBeVisible();
   await page.screenshot({ path: shotPath("palette-keybinding"), fullPage: true, animations: "disabled" });
 });
 
@@ -36,10 +38,10 @@ async function newConversationAppears(page: import("@playwright/test").Page) {
   // conversation shows the one-time greeting-as-tutorial instead
   // (discoverability §6), so mark it already seen for this origin.
   await page.evaluate(() => localStorage.setItem("vendo:discoverability:greeting", "1"));
-  await page.getByRole("button", { name: "New conversation" }).click();
+  await page.getByRole("button", { name: "New chat" }).click();
   await expect(page.getByRole("heading", { name: "What can I help you build?" })).toBeVisible();
   await page.getByRole("textbox", { name: "Message" }).fill("Plan my week");
-  await page.getByRole("button", { name: "Send" }).click();
+  await page.getByRole("button", { name: "Send", exact: true }).click();
   // The freshly minted conversation is pulled into the sidebar by the refresh.
   await expect(list).toHaveCount(before + 1);
 }

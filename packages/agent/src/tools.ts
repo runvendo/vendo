@@ -132,6 +132,14 @@ function knowledgeCitationsPart(toolCallId: string, output: unknown): VendoCitat
   return parsed.success ? parsed.data : null;
 }
 
+/**
+ * The truncation envelope's keys live in Vendo's reserved `vendo_` namespace, and
+ * have to: this envelope replaces an output the host DECLARED a schema for, and the
+ * MCP door advertises that declaration to clients that validate every result
+ * against it — a host field named `preview` of a different type made its own tool
+ * throw on a truncated answer. The door's schema sanitizer drops declared `vendo_*`
+ * properties so the namespace cannot collide.
+ */
 function capOutcome(outcome: ToolOutcome, cap: number | undefined): ToolOutcome {
   if (outcome.status !== "ok" || cap === undefined) return outcome;
   let serialized: string | undefined;
@@ -144,9 +152,9 @@ function capOutcome(outcome: ToolOutcome, cap: number | undefined): ToolOutcome 
   return {
     status: "ok",
     output: {
-      truncated: true,
-      chars: serialized.length,
-      preview: serialized.slice(0, cap),
+      vendo_truncated: true,
+      vendo_chars: serialized.length,
+      vendo_preview: serialized.slice(0, cap),
     },
   };
 }

@@ -3,8 +3,19 @@ import { useVendoContext } from "../context.js";
 import { useConnections } from "../hooks/use-connections.js";
 import { useConnectorCatalog } from "../hooks/use-connector-catalog.js";
 import { toolkitLogoUrl } from "./build-beat.js";
+import {
+  CardActions,
+  CardHead,
+  CardLine,
+  CardShell,
+  CARD_EYEBROWS,
+  LINK_GLYPH,
+  TICK_GLYPH,
+  ToolkitLogo,
+} from "./card-shell.js";
 import { ChromeRoot } from "./chrome-root.js";
-import { completeConnection } from "./connect-dock.js";
+import { completeConnection, connectRefusalCopy } from "./connect-dock.js";
+import { developmentMode } from "./dev-mode.js";
 import { toolkitDisplayName } from "./humanize.js";
 
 export interface ConnectCardProps {
@@ -25,12 +36,6 @@ export interface ConnectCardProps {
 }
 
 type Phase = "idle" | "connecting" | "connected" | "failed";
-
-const tick = (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="m5 12 4 4L19 6" />
-  </svg>
-);
 
 /** 04-actions §3 / 08-ui §4 — the inline connect card: a connector call ended
  * `connect-required`, so offer the broker's OAuth redirect in place, poll the
@@ -73,9 +78,6 @@ export function ConnectCard({ connector, toolkit, message, onConnected, live = t
     }, 1_000);
     return () => clearInterval(timer);
   }, [phase]);
-  // Keyed to the toolkit so a failed mark for one toolkit never suppresses
-  // branding after the prop changes.
-  const [logoFailedFor, setLogoFailedFor] = useState<string>();
   const cancelled = useRef(false);
   useEffect(() => {
     // cancelled persists across effects; reset for StrictMode remounts.
@@ -89,7 +91,6 @@ export function ConnectCard({ connector, toolkit, message, onConnected, live = t
   // the connect dock); otherwise the proper-cased toolkit.
   const option = connectors.find(candidate => candidate.toolkit === toolkit);
   const displayName = option?.label ?? toolkitDisplayName(toolkit);
-  const logoUrl = logoFailedFor === toolkit ? undefined : toolkitLogoUrl(toolkit);
 
   const wireConnected = !live
     && connections.some(account => account.toolkit === toolkit && account.status === "active");
@@ -109,60 +110,44 @@ export function ConnectCard({ connector, toolkit, message, onConnected, live = t
     } catch (reason) {
       if (cancelled.current) return;
       setPhase("failed");
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(connectRefusalCopy(reason, displayName));
+      // Where a developer reads it: the host who forgot the connector needs the
+      // sentence that names what to configure, and only they should see it.
+      if (developmentMode()) {
+        console.warn(`[vendo] ConnectCard "${toolkit}": ${reason instanceof Error ? reason.message : String(reason)}`);
+      }
     }
   };
 
   return (
     <ChromeRoot>
-      <article className="fl-approval fl-item-in" aria-label={`Connect ${displayName}`} data-vendo-connect-card={connected ? "connected" : phase}>
-        <div className="fl-approval-head">
-          <span className="fl-approval-ic" aria-hidden="true">
-            {logoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element -- chrome surface, plain img by design
-              <img
-                src={logoUrl}
-                alt=""
-                width={16}
-                height={16}
-                style={{ display: "block", objectFit: "contain" }}
-                onError={() => setLogoFailedFor(toolkit)}
-              />
-            ) : (
-              <svg
-                width="15"
-                height="15"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M9 17H7A5 5 0 0 1 7 7h2M15 7h2a5 5 0 1 1 0 10h-2M8 12h8" />
-              </svg>
-            )}
-          </span>
-          <div className="fl-approval-heading">
-            <div className="fl-approval-eyebrow">CONNECT</div>
-            <div className="fl-approval-title">{displayName}</div>
-          </div>
-          <span
-            className="fl-chip"
-            title={connector}
-            style={{ marginLeft: "auto", padding: "2px 7px", fontSize: "10px", cursor: "default" }}
-          >
-            OAuth
-          </span>
-        </div>
-        <p className="fl-approval-more" style={{ marginTop: "8px" }}>{message}</p>
+      <CardShell
+        label={`Connect ${displayName}`}
+        className="fl-approval fl-item-in"
+        data-vendo-connect-card={connected ? "connected" : phase}
+      >
+        <CardHead
+          icon={<ToolkitLogo src={toolkitLogoUrl(toolkit)} fallback={LINK_GLYPH} />}
+          eyebrow={CARD_EYEBROWS.connect}
+          title={displayName}
+          aside={
+            <span
+              className="fl-chip"
+              title={connector}
+              style={{ marginLeft: "auto", padding: "2px 7px", fontSize: "10px", cursor: "default" }}
+            >
+              OAuth
+            </span>
+          }
+        />
+        <CardLine>{message}</CardLine>
         {error ? <div role="alert" className="fl-error">{error}</div> : null}
-        <div className="fl-approval-actions">
+        <CardActions>
           {connected ? (
             // The permanent record: the button becomes a quiet connected badge
             // — the card stays in the transcript as proof the account is live.
             <span role="status" className="fl-connect-done">
-              <span className="fl-connect-done-ic" aria-hidden="true">{tick}</span>
+              <span className="fl-connect-done-ic" aria-hidden="true">{TICK_GLYPH}</span>
               Connected
             </span>
           ) : (
@@ -189,8 +174,8 @@ export function ConnectCard({ connector, toolkit, message, onConnected, live = t
               ) : null}
             </>
           )}
-        </div>
-      </article>
+        </CardActions>
+      </CardShell>
     </ChromeRoot>
   );
 }

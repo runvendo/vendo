@@ -1,0 +1,31 @@
+{
+  "name": "CadenceDocProgress",
+  "hash": "sha256:6a8cafcd58717a498871a751dccabde26cfd8f209244fcfa68f2b999a2c1395d",
+  "capturedAt": "2026-08-03T16:11:39.226Z",
+  "module": "src/vendo/registry.tsx",
+  "export": "CadenceDocProgress",
+  "entry": "b59524b68c0b6085d3cd73ebda12e018566bbbc58ac9644740b6725580ac5410",
+  "modules": {
+    "src/components/dashboard/missing-docs-hero.tsx": "a6d0b8b85f8328c4eb183fa656da9ce14f87781b18c95b2b03c633969120b283",
+    "src/components/ui/badge.tsx": "396370e01c9cd9262236adbe9f965e13eabced741013e9644e619f8877ee295d",
+    "src/components/ui/progress.tsx": "2947886bc4c28fdd1b651e80095950d343774245dae26bac636e561b78930434",
+    "src/lib/cn.ts": "98a4ff513cfe758171eface9ad52f0bc4498c1592f41217bbbbb76fb1e127de8"
+  },
+  "styles": [
+    {
+      "path": "src/app/globals.css",
+      "ref": "f3285cc25a13458b7761b9d2cc9488a4cf4d28a8bf476e55a25288f629f76e2f"
+    }
+  ],
+  "bytes": 8347,
+  "requires": [
+    "clsx",
+    "tailwind-merge",
+    "zod"
+  ],
+  "sampleProps": {
+    "max": 228,
+    "value": 9
+  },
+  "sampleOrigin": "generated"
+}

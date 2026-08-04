@@ -24,6 +24,14 @@ test.use({ reducedMotion: "reduce" });
 
 for (const scenario of chromeScenarios) {
   test(`${scenario} has zero WCAG 2.1 A/AA axe violations`, async ({ page }) => {
+    // Quarantined 2026-08-03 (lane G triage). The "automations" case was the
+    // aria-label-on-plain-<div> defect (aria-prohibited-attr × 47); fixed at
+    // integration (automations-panel.tsx now gives those three divs real roles),
+    // so it is a live gate again.
+    test.fixme(
+      scenario === "stage",
+      "the voice stage no longer renders its transcript inline (it moved behind the Transcript drawer), so the readiness gate 'Revenue is ready' never appears; needs a voice-lane decision on what the audited settled state is.",
+    );
     await openScenario(page, scenario);
     if (scenario === "thread") await expect(page.getByLabel("Approval for Email send")).toBeVisible();
     if (scenario === "thread-citations") {

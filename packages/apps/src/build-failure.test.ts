@@ -277,10 +277,94 @@ describe("buildFailureReason", () => {
     expect(buildFailureReason(new Error(noKeyLine))).toEqual({ reason: noKeyLine, retryable: false });
   });
 
+  it("passes the ladder's REJECTED-key lines through too — a 401 is the same actionable class", () => {
+    // Both shapes are crafted by vendo/dev-creds (rejectedKey), not by a
+    // provider: the whole point is that only the ladder knows which credential
+    // was refused, so collapsing them to "generation failed · retry" sends the
+    // person back to the same dead key with nothing to act on.
+    const envLine = "your Anthropic API key was rejected (401) — check ANTHROPIC_API_KEY in .env.local; "
+      + "a revoked or mistyped key fails exactly this way.";
+    expect(buildFailureReason(new VendoError("validation", "model could not produce a valid app", [
+      `model generation failed: ${envLine}`,
+    ]))).toEqual({ reason: envLine, retryable: false });
+    const cloudLine = "VENDO_API_KEY was rejected by the Vendo Cloud model gateway (401) — run `vendo login` to mint "
+      + "a fresh key (it lands in .env.local), or manage project keys in the Vendo Cloud console.";
+    expect(buildFailureReason(new Error(cloudLine))).toEqual({ reason: cloudLine, retryable: false });
+  });
+
   it("never mistakes a provider key error for the dev-model class (no raw-message leak)", () => {
     // A provider message that mentions a key must stay canned — raw provider
     // text (which can echo key prefixes) never reaches the surface.
     expect(buildFailureReason(new Error("Incorrect API key provided: sk-proj-123")))
+      .toEqual({ reason: "generation failed", retryable: true });
+  });
+});
+
+// A quota exhaustion is a BILLING claim about the host's account and it is
+// non-retryable, so a false one tells the person two lies at once. The
+// classifier used to scan a blob of every candidate string joined together —
+// including the honesty gate's findings, which quote the whole host tool
+// inventory (checking/facts.ts `the host tools are: …`). demo-bank's inventory
+// contains `host_listScheduledPayments`, the pattern contained the bare word
+// "payment", so ordinary generation failures shipped as "quota exhausted ·
+// retryable: false" (observed live 2026-08-03, wave E2E). Both halves are
+// pinned here: the SOURCE is the provider's own error lines only, and the
+// PATTERN needs provider quota language rather than a word that lives in tool
+// and field names.
+describe("buildFailureReason quota classification (fix-quota-lie)", () => {
+  /** The engine's `model generation failed: ` prefix is the ONLY marker of a
+   *  provider line inside the terminal validation throw's issues, so it is what
+   *  the classifier keys on (generation/engine.ts askModel). */
+  const providerFailure = (message: string) =>
+    new VendoError("validation", `model generation failed: ${message}`, [`model generation failed: ${message}`]);
+
+  /** A terminal validation throw: the issues are the gate's own findings, with
+   *  no provider line anywhere. */
+  const validationFailure = (...issues: string[]) =>
+    new VendoError("validation", issues[0]!, issues);
+
+  const hostToolInventory = "host_getAccounts, host_getAccountBalance, host_listTransactions, "
+    + "host_listScheduledPayments, host_schedulePayment, host_listInvoices";
+
+  it("a real provider quota error → quota exhausted, non-retryable", () => {
+    expect(buildFailureReason(providerFailure(
+      "You exceeded your current quota, please check your plan and billing details.",
+    ))).toEqual({ reason: "quota exhausted", retryable: false });
+    // OpenAI's machine code: the underscore means there is no word boundary
+    // before "quota", so the pattern must name this shape itself.
+    expect(buildFailureReason(providerFailure("429 insufficient_quota")))
+      .toEqual({ reason: "quota exhausted", retryable: false });
+  });
+
+  it("a real 402 → quota exhausted, non-retryable", () => {
+    expect(buildFailureReason(providerFailure("Provider returned 402 Payment Required")))
+      .toEqual({ reason: "quota exhausted", retryable: false });
+  });
+
+  it("a validation failure whose findings quote the host tool inventory → generation failed, RETRYABLE", () => {
+    // The live defect, verbatim in shape: `host_listScheduledPayments` inside
+    // the finding's inventory used to be read as the provider saying the
+    // account is out of credit.
+    expect(buildFailureReason(validationFailure(
+      `query "scheduledOut" names unknown tool "spending.data.reduce"; the host tools are: ${hostToolInventory}`,
+    ))).toEqual({ reason: "generation failed", retryable: true });
+    // The same class through the app's own content: a payments view, a billing
+    // identifier, a "payment" label. None of it is a provider signal.
+    expect(buildFailureReason(validationFailure(
+      'binding "$payments.billing_id" does not resolve; the fields are: billing_id, payment_status, amount',
+      "the Payment History table has no rows and no empty state",
+    ))).toEqual({ reason: "generation failed", retryable: true });
+  });
+
+  it("a provider timeout → timed out, retryable", () => {
+    expect(buildFailureReason(providerFailure("Request timed out after 60000ms")))
+      .toEqual({ reason: "timed out", retryable: true });
+  });
+
+  it("a plain unknown failure → generation failed, retryable", () => {
+    expect(buildFailureReason(new Error("boom")))
+      .toEqual({ reason: "generation failed", retryable: true });
+    expect(buildFailureReason(validationFailure("the model answered with no text at all")))
       .toEqual({ reason: "generation failed", retryable: true });
   });
 });

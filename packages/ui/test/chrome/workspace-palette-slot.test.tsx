@@ -21,22 +21,33 @@ describe("VendoPage, VendoPalette, and VendoSlot exports", () => {
     await wire.close();
   });
 
-  it("uses roving automatic tabs, swaps panels, and lists and opens fixture apps", async () => {
+  // Roving tabindex with APG MANUAL activation: arrows move focus, Enter/Space
+  // ⚠️ TEST EDIT — this asserted MANUAL activation ("New chat" was a tab, and
+  // arrowing onto it ACTED, discarding the open conversation and its draft —
+  // H18). The act is a plain button outside the tablist now, so the arrows
+  // cannot reach it and the remaining VIEW tabs select as focus moves, per APG.
+  it("uses roving tabs, swaps panels, and lists and opens fixture apps", async () => {
     render(<VendoProvider client={client}><VendoPage /></VendoProvider>);
-    const chat = screen.getByRole("tab", { name: "Chat" });
-    chat.focus();
-    fireEvent.keyDown(chat, { key: "ArrowRight" });
+    expect(screen.getByRole("button", { name: "New chat" })).toBeTruthy();
     const apps = screen.getByRole("tab", { name: "Apps" });
-    expect(document.activeElement).toBe(apps);
+    apps.focus();
+    fireEvent.keyDown(apps, { key: "ArrowRight" });
+    const automations = screen.getByRole("tab", { name: "Automations" });
+    expect(document.activeElement).toBe(automations);
+    expect(automations.getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(apps);
     expect(apps.getAttribute("aria-selected")).toBe("true");
     expect(await screen.findByText("Invoices")).toBeTruthy();
     expect(screen.getByText("Invoice watcher")).toBeTruthy();
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Open" })[0]!);
+    fireEvent.click(screen.getByRole("button", { name: "Open Invoices" }));
     expect(await screen.findByText("Invoices app surface")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("tab", { name: "Automations" }));
     expect(await screen.findByRole("heading", { name: "Automations" })).toBeTruthy();
+    // Activity moved under the rail's quiet ··· row (redesign §10: the two
+    // named doors are Apps and Automations; receipts are one gesture away).
+    fireEvent.click(screen.getByRole("button", { name: "More sections" }));
     fireEvent.click(screen.getByRole("tab", { name: "Activity" }));
     expect(await screen.findByRole("heading", { name: "Activity" })).toBeTruthy();
   });

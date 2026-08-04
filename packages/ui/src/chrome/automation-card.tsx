@@ -1,4 +1,13 @@
 import type { Trigger } from "@vendoai/core";
+import {
+  BOLT_GLYPH,
+  CardByline,
+  CardHead,
+  CardLine,
+  CardShell,
+  CARD_EYEBROWS,
+  ToolkitLogo,
+} from "./card-shell.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { humanizeToolName } from "./humanize.js";
 
@@ -109,31 +118,30 @@ export function AutomationCard({ name, enabled, trigger, description, pendingGra
   const runsAs = sponsorLabel(sponsor, editors);
   return (
     <ChromeRoot>
-      <article className="fl-automation" data-vendo-automation-card="" aria-label={`Automation — ${name}`}>
-        <div className="fl-auto-head">
-          <span className="fl-auto-ic" aria-hidden="true">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="m13 2-9 12h8l-1 8 9-12h-8l1-8Z" />
-            </svg>
-          </span>
-          <div>
-            <div className="fl-auto-title">{name}</div>
-            <div className="fl-auto-sub">
+      <CardShell label={`Automation — ${name}`} className="fl-automation" data-vendo-automation-card="">
+        <CardHead
+          icon={<ToolkitLogo fallback={BOLT_GLYPH} />}
+          eyebrow={CARD_EYEBROWS.automationStatus}
+          title={name}
+          aside={
+            <span className="fl-auto-sub" style={{ marginLeft: "auto" }}>
               {enabled ? <span className={`fl-auto-live${waiting ? " fl-auto-wait" : ""}`} aria-hidden="true" /> : null}
               {enabled
                 ? waiting
                   ? `Enabled · waiting on ${pendingGrants} permission${pendingGrants === 1 ? "" : "s"}`
                   : "Enabled"
                 : "Disabled"}
-            </div>
-            {description ? <div className="fl-auto-sub" style={{ display: "block" }}>{description}</div> : null}
-            {runsAs === null
-              ? null
-              : <div className="fl-auto-sub" style={{ display: "block" }}>{runsAs}</div>}
-          </div>
-        </div>
+            </span>
+          }
+        />
+        {/* Law 3 — what this automation DOES, in the user's words. */}
+        <CardLine>{description ?? (flow ? `${flow.trigger.title} → ${flow.action.title}` : name)}</CardLine>
+        {runsAs === null ? null : <CardByline>{runsAs}</CardByline>}
+        {/* role="group": a bare <div> may not carry aria-label
+            (aria-prohibited-attr). The panel's copy of this node was fixed at
+            integration; the thread's copy was not. */}
         {flow ? (
-          <div className="fl-auto-flow" aria-label={`Automation flow for ${name}`}>
+          <div className="fl-auto-flow" role="group" aria-label={`Automation flow for ${name}`}>
             <span className="fl-auto-node" style={{ flex: 1 }}>
               <span className="fl-auto-node-ic" aria-hidden="true">↳</span>
               <span>
@@ -151,7 +159,7 @@ export function AutomationCard({ name, enabled, trigger, description, pendingGra
             </span>
           </div>
         ) : null}
-      </article>
+      </CardShell>
     </ChromeRoot>
   );
 }

@@ -29,30 +29,38 @@
       ]
     }
   },
+  // `.next/app` is the BUILD's dist dir (next.config.mjs); every `.next/<suite>`
+  // beside it belongs to one e2e suite's dev server. Next APPENDS the entry for
+  // whichever dist dir it just booted, so the full set is committed on purpose —
+  // trimming it only means the next test run dirties this file again. `exclude`
+  // below is what actually keeps them harmless.
   "include": [
     "next-env.d.ts",
-    ".next/types/**/*.ts",
     "src/**/*.ts",
     "src/**/*.tsx",
-    ".next/dev/types/**/*.ts",
-    ".next/dev/dev/types/**/*.ts",
-    ".next-automations-e2e/dev/types/**/*.ts",
-    ".next-automations-e2e/dev/dev/types/**/*.ts",
+    ".next/app/types/**/*.ts",
+    ".next/app/dev/types/**/*.ts",
+    ".next/actions-e2e/dev/types/**/*.ts",
+    ".next/actions-e2e/dev/dev/types/**/*.ts",
     ".next/automations-e2e/dev/types/**/*.ts",
     ".next/automations-e2e/dev/dev/types/**/*.ts",
-    ".next/mcp-e2e/dev/types/**/*.ts",
-    ".next/mcp-e2e/dev/dev/types/**/*.ts",
-    ".next/redteam-e2e/dev/types/**/*.ts",
-    ".next/redteam-e2e/dev/dev/types/**/*.ts",
     ".next/integration-e2e/dev/types/**/*.ts",
     ".next/integration-e2e/dev/dev/types/**/*.ts",
-    ".next/integration-browser/dev/types/**/*.ts",
-    ".next/integration-browser/dev/dev/types/**/*.ts",
-    ".next/integration-browser/types/**/*.ts",
-    ".next/actions-e2e/dev/types/**/*.ts",
-    ".next/actions-e2e/dev/dev/types/**/*.ts"
+    ".next/redteam-e2e/dev/types/**/*.ts",
+    ".next/redteam-e2e/dev/dev/types/**/*.ts",
+    ".next/mcp-e2e/dev/types/**/*.ts",
+    ".next/mcp-e2e/dev/dev/types/**/*.ts"
   ],
+  // Dev-server type output is excluded on purpose. Next emits a `validator.ts`
+  // there that references helpers it only defines in the dev type context, so
+  // `next build`'s TypeScript pass fails on a LEFTOVER one
+  // (`.next/integration-e2e/dev/types/validator.ts:181 Cannot find name
+  // 'IsExpected'`). That used to be invisible because the build wiped all of
+  // `.next` first — which is exactly the deletion that took out four running dev
+  // servers. Neither the build nor `pnpm typecheck` should depend on which dev
+  // server happened to run last.
   "exclude": [
-    "node_modules"
+    "node_modules",
+    ".next/*/dev/**"
   ]
 }

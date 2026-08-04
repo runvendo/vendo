@@ -1,9 +1,11 @@
+import { catalogEntrySchema } from "@vendoai/actions";
 import { parseModule, zodFromExpression, type StaticExtraction } from "@vendoai/actions/sync";
+import { SAFE_COMPONENT_NAME, VendoError } from "@vendoai/core";
 import type { ComponentCatalog, ComponentRegistry, NormalizedCatalog } from "@vendoai/core";
 import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { mergeRuntimeCatalog, normalizeCatalogConfig, runtimeCatalogFromJson } from "./catalog.js";
+import { mergeRuntimeCatalog, normalizeCatalogConfig, runtimeCatalogFromFile, runtimeCatalogFromJson } from "./catalog.js";
 
 const validateResult = async (
   entry: NormalizedCatalog[number] | undefined,
@@ -65,6 +67,89 @@ describe("catalog@1 runtime mapping", () => {
       propsSchema: { "~standard": { validate: (value: unknown) => ({ value }) } },
     }]);
     expect(mergeRuntimeCatalog(disk, explicit)).toEqual(explicit);
+  });
+
+  it("drops only the entry whose name the /host projection cannot carry, and keeps the rest", () => {
+    // `catalogFileSchema` already rejects a hyphen, but its pattern is
+    // `[A-Z][A-Za-z0-9_$]*` — LOOSER than core's in two ways: `$` is legal in it,
+    // and there is no length cap. Such a name parses, so a THROW here lands inside
+    // `runtimeCatalogFromJson`'s catch, which logs and returns `[]` — one bad
+    // component erasing every good one and booting the host with nothing, while
+    // advising a `vendo sync` that regenerates the very same file. The document is
+    // machine-written; the entry is what is wrong with it, so the entry is what is
+    // dropped.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const entry = (name: string) =>
+      ({ name, exportPath: `./x#${name}`, propsSchema: {}, description: "D.", source: "scanned" });
+
+    const catalog = runtimeCatalogFromJson(
+      JSON.stringify({ format: "vendo/catalog@1", entries: [entry("MetricCard"), entry("Card$Legacy")] }),
+      ".vendo/catalog.json",
+    );
+    expect(catalog.map((loaded) => loaded.name)).toEqual(["MetricCard"]);
+    // A dropped entry is a WARNING, never the whole-document error: the host booted.
+    expect(error).not.toHaveBeenCalled();
+
+    const line = String(warn.mock.calls[0]?.[0]);
+    expect(line).toContain(".vendo/catalog.json");
+    expect(line).toContain("Card$Legacy");
+    expect(line).toContain("letters, digits and \"_\"");
+    // Actionable, and it says what happened to everything else.
+    expect(line).toContain("the rest of the catalog loads");
+    warn.mockRestore();
+    error.mockRestore();
+  });
+
+  it("degrades the in-memory profile leg the same way, and names the source it was given", () => {
+    // `config.profile.catalog` is handed to `runtimeCatalogFromFile` directly, with
+    // no swallow in front of it — so this leg used to be the one that took the host
+    // down at boot, and (before V13b) blamed a file it had never read. Both legs
+    // carry machine-written entries, so both degrade per entry; the difference is
+    // only which origin the warning names.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const file = (...names: string[]) => ({
+      format: "vendo/catalog@1",
+      entries: names.map((name) => ({ name, exportPath: `./x#${name}`, propsSchema: {}, description: "D.", source: "scanned" })),
+    } as never);
+
+    // 65 characters: one past core's cap, which the file schema does not have.
+    const catalog = runtimeCatalogFromFile(
+      file("Card$Legacy", "MetricCard", `C${"a".repeat(64)}`),
+      "createVendo({ profile: { catalog } })",
+    );
+    expect(catalog.map((loaded) => loaded.name)).toEqual(["MetricCard"]);
+    expect(warn).toHaveBeenCalledTimes(2);
+    for (const call of warn.mock.calls) {
+      expect(String(call[0])).toContain("createVendo({ profile: { catalog } })");
+      expect(String(call[0])).not.toContain(".vendo/catalog.json");
+    }
+
+    warn.mockClear();
+    expect(runtimeCatalogFromFile(file("MetricCard"))).toHaveLength(1);
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("nothing `vendo sync` is able to write can erase the catalog", () => {
+    // The two grammars disagree, and this is the disagreement DERIVED rather than
+    // restated: names the catalog@1 schema accepts (so sync can emit them, and a
+    // host may already have one on disk) that core's projection refuses. If
+    // `catalogEntrySchema` is ever tightened to core's grammar the set empties and
+    // this passes vacuously — by then the concrete case above is the live guard.
+    const entry = (name: string) =>
+      ({ name, exportPath: `./x#${name}`, propsSchema: {}, description: "D.", source: "scanned" });
+    const writableButUnprojectable = ["Card$Legacy", `C${"a".repeat(64)}`, "$", "A$"]
+      .filter((name) => catalogEntrySchema.safeParse(entry(name)).success && !SAFE_COMPONENT_NAME.test(name));
+
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    for (const name of writableButUnprojectable) {
+      const catalog = runtimeCatalogFromFile(
+        { format: "vendo/catalog@1", entries: [entry(name), entry("MetricCard")] } as never,
+      );
+      expect(catalog.map((loaded) => loaded.name), `${name} must not take MetricCard with it`).toEqual(["MetricCard"]);
+    }
+    warn.mockRestore();
   });
 
   it("warns loudly and actionably when strict catalog parsing fails", () => {
@@ -183,6 +268,36 @@ describe("normalizeCatalogConfig (01 §14 registry form + derivation)", () => {
 
   it("returns an empty catalog for undefined config", () => {
     expect(normalizeCatalogConfig(undefined)).toEqual([]);
+  });
+
+  describe("a name the /host projection cannot carry fails at BOOT, not on every turn", () => {
+    // `hostComponentFiles` builds `/host/components/<Name>.md` through core's
+    // `componentPath`, per TURN. So a name core rejects used to normalize fine,
+    // boot green, and throw for the whole life of the deployment — once per turn.
+    // Same defect the pack merge closes for a pack's components; this is the HOST
+    // half of it, and both ends call the same builder so they cannot drift.
+    for (const name of ["Data-Table", "9Lives", "Data Table", "../x", "data.table"]) {
+      it(`rejects the registered name ${JSON.stringify(name)}`, () => {
+        expect(() => normalizeCatalogConfig([{ name, description: "D." }])).toThrow(VendoError);
+        expect(() => normalizeCatalogConfig({ [name]: { component: null, description: "D." } }))
+          .toThrow(VendoError);
+      });
+    }
+
+    it("names the source and the entry, and gives core's own reason", () => {
+      const attempt = (): unknown => normalizeCatalogConfig([{ name: "Data-Table", description: "D." }]);
+      expect(attempt).toThrow(/createVendo\(\{ catalog \}\)/);
+      expect(attempt).toThrow(/Data-Table/);
+      expect(attempt).toThrow(/letters, digits and "_"/);
+    });
+
+    it("still accepts the names real hosts register", () => {
+      expect(() => normalizeCatalogConfig([
+        { name: "MetricCard", description: "D." },
+        { name: "Chart2", description: "D." },
+        { name: "spending_donut", description: "D." },
+      ])).not.toThrow();
+    });
   });
 
   it("derives the SAME JSON Schema statically (sync/disk) and at runtime (live registration)", async () => {

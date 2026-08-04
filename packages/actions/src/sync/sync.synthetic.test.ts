@@ -72,7 +72,7 @@ describe("sync public helpers", () => {
       format: "vendo/overrides@3",
       tools: {
         host_items_list: { risk: "destructive", disabled: true, description: "new" },
-        host_typo_target: { critical: true },
+        host_typo_target: { confirmEach: true },
       },
     });
     expect(merged[0]).toMatchObject({ risk: "destructive", disabled: true, description: "new" });
@@ -161,7 +161,7 @@ describe("validation and route classification", () => {
     await vendoSync({ root, out });
     const tools = await toolsAt(out);
     const byName = new Map(tools.map((tool) => [tool.name, tool]));
-    expect(byName.get("host_opaque_unclassified")).toMatchObject({ disabled: true, risk: "destructive" });
+    expect(byName.get("host_opaque_unclassified")).toMatchObject({ disabled: true, risk: "ungraded" });
     expect(byName.get("host_files_get")?.binding.path).toBe("/api/files/{slug}");
     expect(byName.get("host_reports_create")?.binding.path).toBe("/api/reports/{parts}");
     expect(byName.get("host_comment_only_unclassified")).toMatchObject({

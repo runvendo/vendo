@@ -39,7 +39,8 @@ The rules:
 - **An honest risk label.** `read` auto-runs, `write` and `destructive` are
   policy-gated (default policy: destructive asks first). Risk can be raised in
   overrides, never lowered.
-- **`critical: true` on irreversible actions** (delete, send, cancel) so
+- **`confirmEach: true` on actions that need a person** (payments, sends,
+  exports) so
   policy always asks before running them.
 
 Init's own judgment pass drafts exactly this, behind one consent question in

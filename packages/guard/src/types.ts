@@ -1,4 +1,4 @@
-import { VENDO_POLICY_FORMAT } from "@vendoai/core";
+import { riskLabelSchema, VENDO_POLICY_FORMAT } from "@vendoai/core";
 import type {
   AppId,
   ApprovalDecision,
@@ -12,6 +12,7 @@ import type {
   PermissionGrant,
   Principal,
   RiskLabel,
+  RiskResolver,
   RunContext,
   StoreAdapter,
   ToolCall,
@@ -38,14 +39,9 @@ export type PolicyFn = (
   ctx: RunContext,
 ) => GuardDecision | undefined;
 
-/** Additive composition hook: resolve a call's effective risk before policy
- * rules, grants, breakers, and approvals evaluate it. Throwing, returning an
- * unknown value, or returning undefined preserves the descriptor's risk. */
-export type RiskResolver = (
-  call: ToolCall,
-  descriptor: ToolDescriptor,
-  ctx: RunContext,
-) => RiskLabel | undefined | Promise<RiskLabel | undefined>;
+/** Re-exported: the hook is defined in core because the automations engine
+ * grades an arm-time declaration with the same resolver the guard runs. */
+export type { RiskResolver };
 
 /** Named policy presets: pure sugar that expands to rules before evaluation
  *  (00-overview decision 8). "cautious" asks before write/destructive and
@@ -74,7 +70,7 @@ export const policyRuleSchema = z
     match: z
       .object({
         tool: z.string().optional(),
-        risk: z.enum(["read", "write", "destructive"]).optional(),
+        risk: riskLabelSchema.optional(),
         venue: z.enum(["chat", "app", "automation", "mcp", "rehearsal"]).optional(),
         presence: z.enum(["present", "away"]).optional(),
       })
@@ -118,6 +114,11 @@ export interface VendoGuard extends Guard {
       decision: ApprovalDecision,
       principal: Principal,
     ): Promise<void>;
+    /** "I take that back" — the mirror of `grants.revoke` for a DECIDED
+     *  approval. A revoked denial stops answering its call (the next issue
+     *  asks again); a revoked, unconsumed approval can no longer replay.
+     *  Owner-scoped; a pending approval conflicts (deny it instead). */
+    revoke(id: ApprovalId, principal: Principal): Promise<void>;
   };
 
   /** Spec 2026-07-20 (#5): TTL backstop over the general approvals collection —

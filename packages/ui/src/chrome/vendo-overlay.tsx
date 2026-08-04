@@ -7,6 +7,8 @@ import { themeCssVariables } from "../theme.js";
 import { PayloadView } from "../tree/renderer.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { hasSeen, markSeen, type VendoDiscoverability, type VendoGreeting } from "./discoverability.js";
+import { inertBehind } from "./inert-behind.js";
+import { LauncherFace, LauncherToast, useLauncherStatus } from "./launcher-status.js";
 import { deliverPrefill, PrefillScopeContext, registerOverlayOpener } from "./overlay-registry.js";
 import { usePinAction } from "./pin-ceremony.js";
 import {
@@ -260,8 +262,21 @@ export function VendoOverlay({
   // The compact card's Expand affordance: expand the workspace with THAT app
   // featured. Rides a ref to setWorkspace (defined below — it closes over
   // per-render state for the ghost flight) so the identity stays stable.
-  const setWorkspaceRef = useRef<(next: boolean, featureAppId?: string) => void>(() => undefined);
+  const setWorkspaceRef = useRef<(next: boolean, featureAppId?: string, auto?: boolean) => void>(() => undefined);
   const expandTo = useCallback((appId: string) => setWorkspaceRef.current(true, appId), []);
+  // The plan hint's ONE shot per BUILD (§2 G1 + ruling 23). The ledger lives in
+  // the split state, not in the calling card, so the shot is spent even when the
+  // hint arrives against an already-open workspace — otherwise the second staged
+  // view of a turn never records, and the first Back-to-chat re-opens the panel
+  // on the user's behalf. It is keyed by the BUILD, so a new build the user
+  // ASKED for can still stage after they collapsed the previous one.
+  const autoStage = useCallback((appId: string, buildKey: string) => {
+    const state = splitStateRef.current;
+    if (state.autoStaged.includes(buildKey)) return;
+    dispatchSplit({ type: "auto-stage", buildKey });
+    if (state.expanded) return;
+    setWorkspaceRef.current(true, appId, true);
+  }, []);
   const registerEmbed = useCallback((appId: string, payload: unknown) => {
     const state = splitStateRef.current;
     if (!state.expanded && !state.embeds.some(embed => embed.appId === appId)) {
@@ -278,9 +293,10 @@ export function VendoOverlay({
     featuredAppId,
     feature: featureApp,
     expandTo,
+    autoStage,
     registerEmbed,
     removeEmbed,
-  }), [expanded, featuredAppId, featureApp, expandTo, registerEmbed, removeEmbed]);
+  }), [expanded, featuredAppId, featureApp, expandTo, autoStage, registerEmbed, removeEmbed]);
 
   // Yousef polish (2026-07): the expand↔collapse must read as ONE continuous
   // morph — a FLIP-style shared-element flight (EmbedMorphGhost above) of the
@@ -299,7 +315,7 @@ export function VendoOverlay({
     clone: HTMLElement;
   } | null>(null);
   const ghostSeq = useRef(0);
-  const setWorkspace = (next: boolean, featureAppId?: string) => {
+  const setWorkspace = (next: boolean, featureAppId?: string, auto = false) => {
     if (next === splitState.expanded) {
       return;
     }
@@ -357,7 +373,7 @@ export function VendoOverlay({
       }
     }
     if (featureAppId !== undefined) dispatchSplit({ type: "feature", appId: featureAppId });
-    dispatchSplit({ type: next ? "expand" : "collapse" });
+    dispatchSplit(next ? { type: "expand", ...(auto ? { auto: true } : {}) } : { type: "collapse" });
   };
   setWorkspaceRef.current = setWorkspace;
   const providerDial = useVendoDiscoverability();
@@ -455,37 +471,13 @@ export function VendoOverlay({
   // close AND on unmount-while-open via the effect cleanup.
   useEffect(() => {
     if (!open) return;
-    const wrapper = portalRoot.current;
     const { body } = document;
     const previousOverflow = body.style.overflow;
     body.style.overflow = "hidden";
-    const inerted: Element[] = [];
-    const inert = (child: Element) => {
-      if (child === wrapper || child.tagName === "SCRIPT" || child.tagName === "STYLE" || child.hasAttribute("inert")) return;
-      // Never inert another modal surface: the palette's takeover portal can
-      // mount above this overlay (Cmd/Ctrl+K while open) and must stay
-      // interactive — an inert ancestor would freeze the whole dialog.
-      if (child.matches('[aria-modal="true"]') || child.querySelector('[aria-modal="true"]')) return;
-      child.setAttribute("inert", "");
-      inerted.push(child);
-    };
-    for (const child of Array.from(body.children)) inert(child);
-    // ENG-228: body children can also appear WHILE the overlay is open — the
-    // page/palette TakeoverPortals mount on a breakpoint flip, hosts mint
-    // toast portals. The open-time snapshot alone would leave those
-    // interactive behind the modal scrim, so keep watching.
-    const observer = new MutationObserver(records => {
-      for (const record of records) {
-        for (const node of record.addedNodes) {
-          if (node instanceof Element && node.parentElement === body) inert(node);
-        }
-      }
-    });
-    observer.observe(body, { childList: true });
+    const release = inertBehind(portalRoot.current);
     return () => {
-      observer.disconnect();
+      release();
       body.style.overflow = previousOverflow;
-      for (const element of inerted) element.removeAttribute("inert");
     };
   }, [open]);
 
@@ -521,11 +513,29 @@ export function VendoOverlay({
     const prompt = typeof options?.prompt === "string" ? options.prompt : "";
     if (prompt.length > 0) {
       deliverPrefill(
-        { prompt, send: options?.send === true },
+        {
+          prompt,
+          send: options?.send === true,
+          ...(typeof options?.context === "string" && options.context.length > 0
+            ? { context: options.context }
+            : {}),
+        },
         { scope: prefillScope.current, defer: fresh },
       );
     }
   }), [setOpen, open]);
+
+  // LANE D (spec §2, §3, §4) — what the pill says while the user is elsewhere:
+  // the live beat of a run that kept going after they left, the result toast
+  // that leads back into the record, the badge of asks and the dot of unseen
+  // results. The panel's own thread id scopes the toast to runs this panel can
+  // actually show.
+  const [panelThreadId, setPanelThreadId] = useState<string>();
+  const status = useLauncherStatus({
+    open,
+    ...(panelThreadId === undefined ? {} : { threadId: panelThreadId }),
+    onOpen: () => setOpen(true),
+  });
 
   const newConversation = () => {
     setConversationEpoch(epoch => epoch + 1);
@@ -692,7 +702,12 @@ export function VendoOverlay({
             </div>
             <div className="fl-split-rail" key="rail">
               <PrefillScopeContext.Provider value={prefillScope.current}>
-                <Thread key={`${conversationKey ?? 0}:${conversationEpoch}`} discoverability={dial} firstRunGreeting={greeting} />
+                <Thread
+                  key={`${conversationKey ?? 0}:${conversationEpoch}`}
+                  discoverability={dial}
+                  firstRunGreeting={greeting}
+                  onThreadId={setPanelThreadId}
+                />
               </PrefillScopeContext.Provider>
             </div>
           </div>
@@ -727,15 +742,19 @@ export function VendoOverlay({
           // Present only while the whisper is live: keys the one-time pulse
           // (suppressed under prefers-reduced-motion — the caption still shows).
           {...(whisperActive && !open ? { "data-vendo-whisper": "" } : {})}
+          // Keys the live-progress treatment (label swap + ring) in the sheet.
+          {...(status.working ? { "data-vendo-run": "" } : {})}
           type="button"
           aria-expanded={open}
           aria-controls="vendo-overlay-dialog"
-          // The visible label names the button; the orb needs an explicit one.
-          {...(launcherLabel === null ? { "aria-label": "AI agent" } : {})}
+          // The button's NAME is pinned: the pill's text changes while a run
+          // narrates, and a name that moves under the user's cursor (or their
+          // voice command) is a worse trade than a name that stays the entry
+          // point it always was. The beat is announced by the live region below.
+          aria-label={launcherLabel ?? "AI agent"}
           onClick={() => setOpen(!open)}
         >
-          {launcherConfig.icon ?? <span className="fl-launcher-blob" aria-hidden="true" />}
-          {launcherLabel}
+          <LauncherFace status={status} label={launcherLabel} {...(launcherConfig.icon === undefined ? {} : { icon: launcherConfig.icon })} />
         </button>
       )}
       {/* The whisper caption rides above the pill and auto-dismisses; opening
@@ -746,6 +765,17 @@ export function VendoOverlay({
           <strong>You can reshape this app</strong>
           <span>Ask Vendo to build the view you need.</span>
         </div>
+      ) : null}
+      {/* The run finished while the user was elsewhere: one line, one way back
+          into the conversation where the record sits (§3). Ignored, it
+          withdraws and leaves the quiet dot. */}
+      {!launcherHidden && status.toast !== undefined ? (
+        <LauncherToast
+          result={status.toast}
+          position={launcherPosition}
+          onView={status.view}
+          onDismiss={status.dismissToast}
+        />
       ) : null}
       {portal}
     </ChromeRoot>

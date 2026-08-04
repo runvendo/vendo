@@ -50,7 +50,7 @@ export {
   type ActivityGlyph,
   type OutcomeTone,
 } from "./activity-semantics.js";
-export { BuildBeat, StatusRibbon, WorkingRibbon, toolPresentation } from "./build-beat.js";
+export { BeatSummary, BuildBeat, StatusRibbon, WorkingRibbon, toolPresentation } from "./build-beat.js";
 export { ChromeRoot } from "./chrome-root.js";
 export { useCopyFeedback } from "./clipboard.js";
 export { ConnectDockButton, ConnectTray } from "./connect-dock.js";

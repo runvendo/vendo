@@ -35,12 +35,14 @@
  * The OUTSIDE-agent path is unchanged and pinned separately, in
  * `mcp-door-outside-agent.e2e.test.ts`.
  */
+import type { ExtractedTool } from "@vendoai/actions";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   MOUNT,
   READ_TOOL,
   SUBJECT,
   WRITE_TOOL,
+  type DoorSession,
   composedHost,
   composedHostOverDoor,
   mirroredToolParts,
@@ -187,6 +189,49 @@ describe("parity gate — the MCP door vs the in-process projection", () => {
     expect(host.observed[0]).toMatch(/^minted:vtk_/);
     expect(listed).toContain(READ_TOOL);
     expect(listed).toContain(WRITE_TOOL);
+  }, 30_000);
+
+  // D5 (2026-08-03): the model in the box learns a query's field names from the
+  // listing. The schema travels extraction → descriptor → turn listing → wire;
+  // a tool whose host declared none lists without the field.
+  //
+  // The FIELDS travel verbatim — that is D5's whole value — but `required` does
+  // not reach the wire and `additionalProperties` arrives open. The official
+  // client turns an advertised outputSchema into a validator it THROWS on, and
+  // the door has to be able to return results the host never declared (the
+  // `toolOutputCap` truncation envelope first among them), so the door omits the
+  // parts of the declaration it cannot honour. Pinned at the source in
+  // `packages/mcp/src/door.test.ts`.
+  it("an EXTRACTED tool's declared outputSchema reaches the wire listing, and an undeclared one carries none", async () => {
+    const outputSchema = {
+      type: "object",
+      properties: { data: { type: "array", items: { type: "object", properties: { id: { type: "string" } } } } },
+      required: ["data"],
+    };
+    const extracted = (name: string, declared?: Record<string, unknown>): ExtractedTool => ({
+      name,
+      description: `the ${name} tool`,
+      inputSchema: { type: "object", properties: {} },
+      ...(declared === undefined ? {} : { outputSchema: declared }),
+      risk: "read",
+      binding: { kind: "openapi", operationId: name, method: "GET", path: `/api/${name}` },
+    });
+    let listed: Awaited<ReturnType<DoorSession["listTools"]>> = [];
+    const host = await composedHostOverDoor(
+      async (door) => {
+        listed = await door.listTools();
+      },
+      [extracted("host_declared", outputSchema), extracted("host_undeclared")],
+    );
+    await runHarnessTurn(host.vendo, "thr_output_schema", "what can you do");
+
+    const byName = new Map(listed.map((tool) => [tool.name, tool]));
+    expect(byName.get("host_declared")?.outputSchema).toEqual({
+      type: outputSchema.type,
+      properties: outputSchema.properties,
+      additionalProperties: true,
+    });
+    expect(byName.get("host_undeclared")).not.toHaveProperty("outputSchema");
   }, 30_000);
 
   it("§12 — an UNATTENDED turn's door call carries `away`/`automation` into the AUDIT, identically to in process", async () => {

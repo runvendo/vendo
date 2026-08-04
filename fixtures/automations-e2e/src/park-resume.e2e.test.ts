@@ -213,7 +213,7 @@ describe("away run park and resume", () => {
       await stack.putApp(ADA.subject, automationDoc({
         id: appId,
         trigger: {
-          on: { kind: "host-event", event: "invoice.critical" },
+          on: { kind: "host-event", event: "invoice.confirmEach" },
           run: {
             kind: "steps",
             steps: [{ id: "send", tool: "host_invoices_send_critical", args: { id: "event.id" } }],
@@ -222,7 +222,7 @@ describe("away run park and resume", () => {
       }));
       const enabled = await stack.automations.enable(appId, ctx);
       await approve(stack, enabled.missing);
-      const [runId] = await stack.automations.emit("invoice.critical", { id: "inv_0003" }, ADA);
+      const [runId] = await stack.automations.emit("invoice.confirmEach", { id: "inv_0003" }, ADA);
       if (!runId) throw new Error("emit did not return a run id");
       const approval = (await stack.guard.approvals.pending(ADA)).find((request) =>
         request.call.tool === "host_invoices_send_critical" && request.ctx.appId === appId

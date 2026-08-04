@@ -1,0 +1,25 @@
+# Lane E unit tests — the display hint through the dialect, the fill emitter and the render seam
+
+## packages/core — plan dialect
+
+ Test Files  1 passed (1)
+      Tests  49 passed (49)
+   Start at  03:35:57
+   Duration  334ms (transform 92ms, setup 0ms, collect 136ms, tests 8ms, environment 0ms, prepare 43ms)
+
+
+## packages/apps — in-process partial emitter
+
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+   Start at  03:35:58
+   Duration  583ms (transform 187ms, setup 0ms, collect 291ms, tests 88ms, environment 0ms, prepare 38ms)
+
+
+## packages/harnesses — render seam + parity
+
+ Test Files  2 passed (2)
+      Tests  46 passed (46)
+   Start at  03:35:59
+   Duration  6.50s (transform 326ms, setup 0ms, collect 825ms, tests 5.92s, environment 0ms, prepare 91ms)
+

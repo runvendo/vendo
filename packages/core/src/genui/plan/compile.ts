@@ -525,6 +525,14 @@ const compilePlanUnsafe = (text: string, facts: PlanFacts): PlanCompileResult =>
     plan.issues.push('the plan needs a name — <Plan name="Invoices workspace"> — because it becomes the app\'s title.');
   }
   const appPlan: AppPlan = { name: name ?? "", queries: [], groups: [], cannot: [] };
+  const display = head.props?.display;
+  if (display === "inline" || display === "stage") {
+    appPlan.display = display;
+  } else if (display !== undefined) {
+    plan.issues.push(
+      `a plan's display is "inline" or "stage", and ${describe(display)} is neither — this one arrives inline.`,
+    );
+  }
   if (!head.selfClosing) compilePlanChildren(plan, appPlan);
   if (appPlan.groups.length === 0 && appPlan.cannot.length === 0) {
     plan.issues.push(

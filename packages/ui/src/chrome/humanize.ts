@@ -110,6 +110,12 @@ export function argProperties(inputSchema: JsonSchema | undefined): ArgPropertie
   return typeof declared === "object" && declared !== null ? declared as Record<string, JsonSchema> : undefined;
 }
 
+/** A boolean field answers a question ("Permanent?"), so it reads as an answer.
+    `true` in front of a bank customer is the developer's literal, not the
+    person's word; the raw literal stays on `CardFieldRow.raw` for dev mode.
+    The KEY carries the meaning — this never invents a sentence around it. */
+export const yesNo = (value: boolean): string => (value ? "Yes" : "No");
+
 /**
  * One argument value, as a person must read it — the consent surfaces' rule.
  *
@@ -123,6 +129,7 @@ export function argProperties(inputSchema: JsonSchema | undefined): ArgPropertie
  */
 export function argValue(field: string, value: unknown, properties: ArgProperties): string {
   const raw = String(value);
+  if (typeof value === "boolean") return yesNo(value);
   if (typeof value !== "number" || !Number.isFinite(value)) return raw;
   const unit = declaredMoneyUnit(field, properties?.[field]);
   if (unit === undefined) return raw;

@@ -146,7 +146,7 @@ describe("overridesFileSchema", () => {
       tools: {
         host_invoices_list: {
           risk: "write",
-          critical: true,
+          confirmEach: true,
           disabled: false,
           description: "List invoices for the signed-in client",
           audience: "end-user",
@@ -208,7 +208,7 @@ describe("judgmentsFileSchema", () => {
             description: "List the signed-in client's invoices",
             title: "List invoices",
             risk: "read",
-            critical: true,
+            confirmEach: true,
             disabled: true,
             audience: "operator",
             semantics: { "data.amountCents": { kind: "money", unit: "cents" } },
@@ -261,7 +261,7 @@ describe("judgmentsFileSchema", () => {
   });
 
   it("only the four capability fields can be queued as a pending loosening", () => {
-    for (const field of ["risk", "critical", "disabled", "audience"]) {
+    for (const field of ["risk", "confirmEach", "disabled", "audience"]) {
       expect(judgmentsFileSchema.safeParse(judgmentsFile({
         tools: { host_x: judgment({ pending: [{ field, value: "x", evidence: "quoted handler line" }] }) },
       })).success).toBe(true);

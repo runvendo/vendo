@@ -41,6 +41,24 @@ function SlotGhost({ label, detail, loading = false }: { label: string; detail?:
   );
 }
 
+/**
+ * The consumer's half of a failed load (spec §16 law 3, the consumer-voice
+ * law). Every sentence the wire throws is written for the HOST DEVELOPER — one
+ * names an environment variable, another carries an app id — so rendering
+ * `reason.message` put all of them on a HOST PAGE, the most public surface we
+ * have. The developer sentence keeps its home (the server's own error, the
+ * browser console); the person looking at this slot is told what it means for
+ * THEM. Same treatment as the adoption card (`refusalCopy`) and the
+ * apps page (`refusalSentence`).
+ */
+function loadFailureCopy(reason: unknown): string {
+  const code = (reason as { code?: unknown } | null)?.code;
+  if (code === "forbidden") return "You don’t have access to this view.";
+  if (code === "not-found") return "This view isn’t available any more.";
+  if (code === "cloud-required") return "This view isn’t turned on for this workspace yet.";
+  return "Something on our side didn’t answer — nothing changed.";
+}
+
 /** The terminal load failure. useApp already spent its retries, so this is a
  *  dead end until the user asks again — and without a way to ask, the slot sat
  *  on its skeleton until a page reload (Keystone graduates A5). */
@@ -50,7 +68,7 @@ function SlotLoadFailed({ reason, onRetry }: { reason: Error; onRetry(): void })
       <GhostSkeleton />
       <span className="fl-slot-cta" role="alert">
         <span className="fl-slot-cta-label">This view didn’t load</span>
-        <small>{reason.message}</small>
+        <small>{loadFailureCopy(reason)}</small>
         <button type="button" className="fl-invite-btn" onClick={onRetry}>Try again</button>
       </span>
     </div>

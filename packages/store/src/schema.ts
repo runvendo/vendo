@@ -208,6 +208,13 @@ const ADDITIVE_DDL = [
   "ALTER TABLE vendo_records ADD COLUMN IF NOT EXISTS revision bigint NOT NULL DEFAULT 1",
   "ALTER TABLE vendo_approvals ADD COLUMN IF NOT EXISTS session_id text",
   "ALTER TABLE vendo_approvals ADD COLUMN IF NOT EXISTS consumed_at timestamptz",
+  // Risk-grading redesign: a standing denial must know WHO said no, must be
+  // takeable-back, and must be findable by call id without scanning a
+  // subject's whole approval history.
+  "ALTER TABLE vendo_approvals ADD COLUMN IF NOT EXISTS denied_by text",
+  "ALTER TABLE vendo_approvals ADD COLUMN IF NOT EXISTS voided_at timestamptz",
+  "ALTER TABLE vendo_approvals ADD COLUMN IF NOT EXISTS call_id text",
+  "CREATE INDEX IF NOT EXISTS vendo_approvals_subject_status_call_idx ON vendo_approvals (subject, status, call_id)",
   "ALTER TABLE vendo_state ADD COLUMN IF NOT EXISTS id text GENERATED ALWAYS AS (app_id || ':' || subject) STORED",
   // created_at is the pagination cursor column, so it must never be NULL. DEFAULT now()
   // fills the column for any direct INSERT that omits it (the table map is public); our

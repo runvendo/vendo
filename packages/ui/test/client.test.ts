@@ -81,7 +81,8 @@ describe("createVendoClient", () => {
     });
     expect((await client.runs.get("run_1")).status).toBe("running");
     await client.runs.stop("run_1");
-    expect(await client.activity.list({ cursor: "aud_2", limit: 10 })).toHaveLength(2);
+    // ⚠️ FIXTURE WIDENED (CR-2): one more audit row behind the cursor.
+    expect(await client.activity.list({ cursor: "aud_2", limit: 10 })).toHaveLength(3);
     expect((await client.status()).posture).toBe("rules");
     await client.threads.delete("thr_1");
 

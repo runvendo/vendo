@@ -21,9 +21,6 @@
         "additionalProperties": false
       },
       "description": "Use for Cadence document-collection or checklist completion when the user needs progress toward a known total.",
-      "examples": [
-        "{\"value\":7,\"max\":10}"
-      ],
       "source": "registered"
     },
     {

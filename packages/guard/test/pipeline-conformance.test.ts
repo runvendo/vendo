@@ -13,7 +13,7 @@ describe("decision pipeline conformance", () => {
   // "org" (build contract §9.10) is not a pipeline stage but the strictness
   // clamp OVER it: whatever the pipeline drafts, a matching org block wins,
   // which is why it is pinned across every presence and risk here too.
-  const stages = ["critical", "grant", "rule", "code", "judge", "default", "org"] as const;
+  const stages = ["confirmEach", "grant", "rule", "code", "judge", "default", "org"] as const;
   const presences = ["present", "away"] as const;
   const risks: RiskLabel[] = ["read", "write", "destructive"];
 
@@ -24,7 +24,7 @@ describe("decision pipeline conformance", () => {
           const store = createMemoryStore();
           const d = descriptor(risk, {
             name: `host_${stage}_${presence}_${risk}`,
-            ...(stage === "critical" ? { critical: true } : {}),
+            ...(stage === "confirmEach" ? { confirmEach: true } : {}),
           });
           const toolCall = call(d.name, { amount: 10 }, `call_${stage}_${presence}_${risk}`);
           const ctx = context({
@@ -69,7 +69,7 @@ describe("decision pipeline conformance", () => {
 
           const decision = await guard.check(toolCall, d, ctx);
           const expected = {
-            critical: { action: "ask", decidedBy: "critical" },
+            confirmEach: { action: "ask", decidedBy: "confirmEach" },
             grant: { action: "run", decidedBy: "grant" },
             rule: { action: "block", decidedBy: "rule" },
             code: { action: "block", decidedBy: "rule" },
@@ -225,15 +225,15 @@ describe("decision pipeline conformance", () => {
   });
 
   it.each([
-    ["critical beats grant", "critical"],
+    ["confirmEach beats grant", "confirmEach"],
     ["grant beats rule", "grant"],
     ["rule beats code", "rule"],
     ["code beats judge", "code"],
     ["judge beats default", "judge"],
   ] as const)("stage precedence: %s", async (_name, winner) => {
     const store = createMemoryStore();
-    const d = descriptor("read", { critical: winner === "critical" });
-    if (["critical", "grant"].includes(winner)) await seedGrant(store, { descriptor: d });
+    const d = descriptor("read", { confirmEach: winner === "confirmEach" });
+    if (["confirmEach", "grant"].includes(winner)) await seedGrant(store, { descriptor: d });
     const guard = createGuard({
       store,
       policy: {
@@ -285,10 +285,10 @@ describe("decision pipeline conformance", () => {
       action: "block",
       decidedBy: "rule",
     });
-    const critical = descriptor("write", { name: "host_critical", critical: true });
-    await expect(blockedGuard.check(call(critical.name), critical, context())).resolves.toMatchObject({
+    const confirmEach = descriptor("write", { name: "host_confirm_each", confirmEach: true });
+    await expect(blockedGuard.check(call(confirmEach.name), confirmEach, context())).resolves.toMatchObject({
       action: "ask",
-      decidedBy: "critical",
+      decidedBy: "confirmEach",
     });
 
     vi.setSystemTime(new Date("2026-01-01T00:01:00.001Z"));

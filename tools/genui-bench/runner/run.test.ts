@@ -1,8 +1,9 @@
-import { mkdtempSync, readFileSync, existsSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, existsSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { executeRun, type GitState } from "./run";
+import { executeRun, readGitStateFromCli, type GitState } from "./run";
 import { listRuns, loadRun, saveRun, setPin } from "./store";
 import type { AppDocument } from "@vendoai/core";
 import type { Finding } from "@vendoai/apps";
@@ -258,5 +259,38 @@ describe("store", () => {
     }
     const competitor = loaded.lanes["thesys-c1"];
     if (competitor?.status === "ok") expect(competitor.raw).toEqual({ answer: 42 });
+  });
+});
+
+describe("readGitStateFromCli", () => {
+  /**
+   * The ENOBUFS trap, pinned. Node's default maxBuffer is 1 MB and `git diff`
+   * prints the whole working diff, so ONE large tracked-but-uncommitted file
+   * used to kill this call — and with it whatever unrelated target happened to
+   * be running. Reverting the maxBuffer on run.ts makes this throw
+   * `spawnSync git ENOBUFS`.
+   */
+  it("survives a tracked diff larger than Node's default 1 MB buffer", () => {
+    const repo = mkdtempSync(join(tmpdir(), "genui-bench-git-"));
+    const git = (...args: string[]) => execFileSync("git", args, { cwd: repo, encoding: "utf8" });
+    git("init", "-q");
+    git("config", "user.email", "bench@example.com");
+    git("config", "user.name", "bench");
+    writeFileSync(join(repo, "log.txt"), "");
+    git("add", "log.txt");
+    git("commit", "-qm", "seed");
+    // 3 MB of tracked churn — comfortably past the 1 MB default, well under 64 MB.
+    writeFileSync(join(repo, "log.txt"), `${"gate log line\n".repeat(220_000)}`);
+
+    const cwd = process.cwd();
+    process.chdir(repo);
+    try {
+      const state = readGitStateFromCli();
+      expect(state.sha).toMatch(/^[0-9a-f]{40}$/);
+      expect(state.dirty).toMatch(/^[0-9a-f]{64}$/);
+    } finally {
+      process.chdir(cwd);
+      rmSync(repo, { recursive: true, force: true });
+    }
   });
 });

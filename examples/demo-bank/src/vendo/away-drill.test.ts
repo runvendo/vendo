@@ -155,6 +155,22 @@ async function mapleTools(): Promise<Parameters<typeof createActions>[0]["tools"
   return parsed.tools as Parameters<typeof createActions>[0]["tools"];
 }
 
+/**
+ * Maple's own `.vendo/overrides.json`, handed to the registry exactly as the
+ * real composition hands it.
+ *
+ * It used to be left out, and while extraction guessed grades from tool names
+ * that was invisible — the raw catalog already carried a `risk` for everything.
+ * Grades now come from a person, the judge, or a protocol fact (risk-grading
+ * redesign D2), so a drill built from the catalog ALONE sees `ungraded` where
+ * the running app sees Maple's authored grade. Loading the file is what makes
+ * this drill the app again.
+ */
+async function mapleOverrides(): Promise<Parameters<typeof createActions>[0]["overrides"]> {
+  return JSON.parse(await readFile(join(appDir, ".vendo", "overrides.json"), "utf8")) as
+    Parameters<typeof createActions>[0]["overrides"];
+}
+
 async function createStack(): Promise<Stack> {
   const dataDir = await mkdtemp(join(tmpdir(), "maple-away-drill-"));
   const hostAnswers: string[] = [];
@@ -163,6 +179,7 @@ async function createStack(): Promise<Stack> {
   const guard = createGuard({ store });
   const actions = createActions({
     tools: await mapleTools(),
+    overrides: await mapleOverrides(),
     baseUrl: origin,
     // The drill's point: away identity is a REAL Auth.js session minted with
     // the host's own secret. Unknown subjects are declined via claims → null.

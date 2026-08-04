@@ -37,6 +37,6 @@ export const auditEventSchema = z.object({
   tool: z.string().optional(),
   inputPreview: z.string().optional(),
   outcome: z.enum(["ok", "error", "pending-approval", "blocked", "connect-required"]).optional(),
-  decidedBy: z.enum(["grant", "rule", "judge", "default", "critical", "breaker", "org"]).optional(),
+  decidedBy: z.enum(["grant", "rule", "judge", "default", "confirmEach", "breaker", "denied", "org"]).optional(),
   detail: z.unknown().optional(),
 }).passthrough() satisfies z.ZodType<AuditEvent>;

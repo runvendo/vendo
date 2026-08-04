@@ -42,7 +42,7 @@ model, anonymous ephemeral sessions, and default persistence;
 | `profile` | the `.vendo/` pieces as in-memory compose-time inputs, for venues with no filesystem: `{ overrides?, theme?, brief?, catalog?, policy?, designRules? }`, each independent and each winning over its file. `profile.tools` is **deprecated** — use the `tools:` slot |
 | `mcp` | opens the [MCP door](/capabilities/mcp) so outside agents reach host tools through the guarded path; `true` for defaults, or an object carrying `{ baseUrl?, remoteAs?, federation? }` when door-specific settings need to flow through the umbrella (see [Configure the door through the umbrella](/capabilities/mcp#configure-the-door-through-the-umbrella)); off by default |
 | `oauth` | escape hatch: `HostOAuthAdapter` used by the door for session lookup and principal resolution; required when `mcp` is enabled and `auth` supplies no oauth half. Mutually exclusive with `auth`. The door renders consent when the adapter uses `session`, or hands off the whole page when it supplies `authorize` instead — see [MCP door](/capabilities/mcp) |
-| `agent` | chat context controls: `instructions`, `toolOutputCap`, `maxOutputTokens`, `historyWindow`, `maxInitialTools`, `loadout`, `maxSearchExpansions`, `maxSteps` (see [Agent context](#agent-context)) |
+| `agent` | chat context controls: `instructions`, `toolOutputCap`, `maxOutputTokens`, `historyWindow`, `maxInitialTools`, `loadout`, `maxSteps` (see [Agent context](#agent-context)) |
 | `sessions` | ephemeral (anonymous) session lifecycle: `ttlMs` idle timeout before a session is swept (default 30 minutes; `0` disables eviction) and `sweepIntervalMs` sweep cadence (default 60 seconds) |
 | `approvals` | approval lifecycle knobs: `parkedCallTtlMs` is the idle timeout for a guarded call parked from a [BYO agent loop](/existing-agents) (default 60 min; `0` disables expiry). Past it, the sweep denies the approval and `<VendoApprovalEmbed>` reads "expired". Vendo-thread approvals are untouched |
 | `packs` | the only way capability arrives: each pack contributes tools (to the one guarded registry), skills (to the workspace mount), checks (to the checking floor) and components (to the catalog). Names are global as authored and a collision fails at boot naming both packs. Unset means `[apps()]` |
@@ -77,7 +77,6 @@ createVendo({
     historyWindow: 20,      // last N whole messages re-sent per turn; omit to send the full thread
     maxInitialTools: 128,   // cap on host tools shown to the model at turn start; the rest stay discoverable via search
     loadout: ["issues_list", "issues_create"], // explicit initial host tools; overrides the default policy
-    maxSearchExpansions: 3, // lazy connector toolkits one tool search may expand
     maxSteps: 20,           // max agent steps per turn before Vendo stops the loop
   },
 });
@@ -111,11 +110,6 @@ createVendo({
   Anything omitted from the list is still discoverable via
   `find_tools`. Every tool, initial or searched-in, still
   executes through the same guard binding.
-- `maxSearchExpansions` bounds how many lazy connector toolkits one
-  `vendo_tools_search` query may expand from the discovery index. Defaults to
-  `3`. Lower it to keep a broad intent from fanning out schema loads; `0`
-  disables index-driven expansion entirely (already-loaded tools stay
-  searchable).
 - `maxSteps` caps how many agent steps (model call + tool round-trip) run in
   a single turn. Defaults to `20`. When the cap is hit, Vendo stops the loop
   and emits a step-limit notice on the stream so the client can render a

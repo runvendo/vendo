@@ -17,6 +17,8 @@
 import {
   TOOL_NAME_PATTERN,
   VendoError,
+  componentPath,
+  skillFilePath,
   type Check,
   type ComponentRegistry,
   type Pack,
@@ -90,6 +92,28 @@ const requireSafeName = (slot: string, name: string, pack: string): void => {
     throw new VendoError(
       "validation",
       `pack "${pack}" declares the ${slot} name ${JSON.stringify(name)}, which is not a legal ${slot} name. A ${slot} name addresses something (a skill is a path segment, and a model asks for it by name), so it may only use letters, digits, "_" and "-", up to 64 characters.`,
+    );
+  }
+};
+
+/**
+ * The `/host` projection's own grammars, run at boot. {@link SAFE_SLOT_NAME} is
+ * deliberately loose (it is the shape of a name a model asks for), but two slots
+ * are narrower where the path is built: a component name is also an element in an
+ * app's markup, and a skill's companion path must stay inside the skill's
+ * directory. Those checks live in core, per TURN — a pack component named
+ * "Data-Table" passes the slot name here, boots green, and throws on every turn
+ * afterwards. Calling core's builders rather than restating their patterns is what
+ * keeps the two ends from disagreeing again.
+ */
+const requireProjectable = (subject: string, pack: string, project: () => unknown): void => {
+  try {
+    project();
+  } catch (cause) {
+    throw new VendoError(
+      "validation",
+      `pack "${pack}" declares ${subject}, which cannot be projected onto the read-only /host mount: ${cause instanceof Error ? cause.message : String(cause)}`,
+      { cause },
     );
   }
 };
@@ -234,6 +258,13 @@ export const mergePacks = (
     }
     for (const skill of pack.skills ?? []) {
       claimSkill(skill.name, pack.name);
+      for (const file of Object.keys(skill.files ?? {})) {
+        requireProjectable(
+          `the companion file ${JSON.stringify(file)} of its "${skill.name}" skill`,
+          pack.name,
+          () => skillFilePath(skill.name, file),
+        );
+      }
       skills.push(skill);
     }
     for (const check of pack.checks ?? []) {
@@ -242,6 +273,7 @@ export const mergePacks = (
       checks.push(check);
     }
     for (const [name, entry] of Object.entries(pack.components ?? {})) {
+      requireProjectable(`the component name ${JSON.stringify(name)}`, pack.name, () => componentPath(name));
       claimComponent(name, pack.name);
       components[name] = entry;
     }

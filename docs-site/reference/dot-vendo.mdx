@@ -24,6 +24,18 @@ re-judge the AI layer without ever clobbering a decision a person made.
 | `catalog.json` | sync | `vendo/catalog@1` (04) |
 | `policy.json` | init / human | `vendo/policy@1` (05) |
 | `remixable/<slot>.json` | sync | `PinBaseline` (06 §8) |
+| `components/<Name>.json` | sync | `CapturedHostComponent` — one registered host component, refs only, no source ([Host components](/connect/host-components#what-sync-captures)) |
+| `components/modules/<hex>.json` | sync | `CapturedModule` — `{ source, imports? }`, content-addressed by the sha-256 of its canonical JSON, so a module ten components share is stored once |
+| `cloud.json` | sync (asked once) | `{ "pushComponents": boolean }` — this project's answer to "may registered-component source go to Vendo Cloud?" |
+
+Commit `components/`. It is generated, but a missing local file is **not** a
+deletion signal to the Cloud push (that rule is what keeps a half-written
+capture from wiping the console's copy), so gitignoring it does not clean
+anything up — it just hides drift. Size scales with distinct modules, not with
+components: the two demo hosts here store 3 components in ~25 KB, and a
+50-component registry over a shared design system lands in the low hundreds of
+KB because every shared module and the app-root CSS are stored once. Mark it
+`linguist-generated=true` in `.gitattributes` so reviews collapse it.
 | `brief.md` | init | product brief for the system prompt (03 §3) |
 | `design-rules.md` | host, optional | generation-time design rules (06 §5), re-read per generation so edits apply without a restart; `createVendo({ apps: { designRules } })` wins over it |
 | `theme.json` | init extraction / human | `VendoTheme` |

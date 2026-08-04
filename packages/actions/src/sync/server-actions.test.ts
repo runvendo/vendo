@@ -290,25 +290,29 @@ describe("extractServerActions", () => {
     expect(report.disabled).toBeUndefined();
   });
 
-  it("labels risk fail-closed: default write, destructive words apply, no read grants", async () => {
+  it("grades every enabled server action ungraded — a POST-shaped RPC proves nothing", async () => {
     const { byKey } = await extractFixture();
-    expect(byKey.get("src/actions/api-tokens.ts#deleteApiToken")!.risk).toBe("destructive");
-    // "send" is on the destructive word list; the default-export tool is named
-    // from its declared function name.
+    // A server action is not a declared mutation and not a declared read, so
+    // the protocol says nothing and the name says nothing either
+    // (risk-grading redesign D1/D2): `delete`, `send`, `search`, `list`, and
+    // `create` all land in exactly the same place, and the guard asks.
+    for (const key of [
+      "src/actions/api-tokens.ts#deleteApiToken",
+      "src/actions/api-tokens.ts#searchAccounts",
+      "src/actions/api-tokens.ts#listApiTokens",
+      "src/actions/invoices.ts#createInvoice",
+    ]) expect(byKey.get(key)!.risk).toBe("ungraded");
+    // The default-export tool is still named from its declared function name.
     const report = byKey.get("src/actions/report.ts#default")!;
-    expect(report.risk).toBe("destructive");
+    expect(report.risk).toBe("ungraded");
     expect(report.name).toBe("host_send_report");
-    // A read-shaped name never earns read: server actions default to write.
-    expect(byKey.get("src/actions/api-tokens.ts#searchAccounts")!.risk).toBe("write");
-    expect(byKey.get("src/actions/api-tokens.ts#listApiTokens")!.risk).toBe("write");
-    expect(byKey.get("src/actions/invoices.ts#createInvoice")!.risk).toBe("write");
   });
 
   it("emits unclassifiable exports disabled with a note", async () => {
     const { byKey } = await extractFixture();
     const wrapped = byKey.get("src/actions/misc.ts#wrapped")!;
     expect(wrapped.disabled).toBe(true);
-    expect(wrapped.risk).toBe("destructive");
+    expect(wrapped.risk).toBe("ungraded");
     expect(wrapped.note).toMatch(/overrides\.json/);
   });
 

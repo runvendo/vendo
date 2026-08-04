@@ -134,7 +134,7 @@ overrides apply. Under- or over-declaring risk quarantines the entry.
 
 The `tools` map of the same file applies to compounds by name, field by
 field, the same way it applies to extracted tools. Use it to mark a compound
-`critical`, or to disable it, without editing the compound entry.
+`confirmEach`, or to disable it, without editing the compound entry.
 
 `risk` is the exception. Overrides merge *before* validation, and the rule
 above is equality, not a floor — so an override that changes a compound's
@@ -147,7 +147,7 @@ declaration and the steps together.
 {
   "format": "vendo/overrides@3",
   "tools": {
-    "host_invoice_send_reminder": { "critical": true }
+    "host_invoice_send_reminder": { "confirmEach": true }
   }
 }
 ```
@@ -160,7 +160,7 @@ Every step crosses `guard.bind` on its own descriptor.
   approval card. The user sees the real step name, arguments, and risk.
 - A standing grant for the step tool runs the walk under `decidedBy: "grant"`
   with the grant id in audit.
-- `critical` on a step forces an ask on every run, even under a standing grant.
+- `confirmEach` on a step forces an ask on every run, even under a standing grant.
 - The `maxWritesPerRun` breaker counts each write step and can trip mid-walk.
 - Policy `block` on any step halts the compound before that step runs.
 

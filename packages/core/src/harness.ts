@@ -16,6 +16,7 @@ import type { LanguageModel, UIMessage } from "ai";
 import type { Json } from "./ids.js";
 import type { JsonSchema } from "./ids.js";
 import type { ResolvedModels } from "./model-seats.js";
+import type { RiskLabel } from "./tools.js";
 import type { WorkspaceFs } from "./workspace.js";
 
 /** Build contract §1 */
@@ -33,6 +34,13 @@ export interface Harness<Options = unknown> {
    * composition for a door, and composition always answers.
    */
   readonly requires?: { sandbox?: boolean; toolDoor?: boolean };
+  /**
+   * Amendment 2026-08-03: how this harness wants the equipped-tool surface
+   * shaped. `curated: false` = skip the discovery loadout (the ctx safety
+   * projection still applies); `withhold` = names never listed to and never
+   * callable by this harness.
+   */
+  readonly toolSurface?: { curated?: false; withhold?: readonly string[] };
   run(turn: Turn<Options>): AsyncGenerator<HarnessEvent, void, void>;
 }
 
@@ -106,13 +114,22 @@ export interface ToolListing {
   name: string;
   title: string;
   description: string;
-  risk: "read" | "write" | "destructive";
+  /** The tool's grade as it stands, `ungraded` included: a harness's model is
+   *  told "nobody has graded this" rather than handed a `write` we invented for
+   *  it (risk-grading redesign D3). The guard is still the gate — an ungraded
+   *  call asks at call time — but a harness that can read the state can say so
+   *  before it tries. */
+  risk: RiskLabel;
   /** Amendment 2026-07-30: JSON Schema for the tool's input. Every in-process
    *  harness must hand schemas to its model, and JSON Schema is the interchange —
    *  without it a harness can SEE a tool and still not call it. The runtime has
    *  populated this since the amendment landed; the field was missing from the
    *  type, so the contract held at runtime and not at compile time. */
   inputSchema?: JsonSchema;
+  /** The tool's DECLARED result shape — extraction captures it from the host's
+   *  own contract; surfaces hand it to the model so data fields are known before
+   *  any call. Absent when the host's source declares none (never invented). */
+  outputSchema?: JsonSchema;
 }
 
 /** Build contract §1.2 */

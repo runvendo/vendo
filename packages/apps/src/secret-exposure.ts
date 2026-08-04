@@ -18,7 +18,7 @@ import { listAllRecords } from "./persistence.js";
  *   - off by default (no record → handle),
  *   - owner-only (only the principal who owns the app copy can set it),
  *   - gated by the guard's existing high-risk approval flow (written `active`
- *     only after the parked critical approval is decided approved),
+ *     only after the parked confirmEach approval is decided approved),
  *   - audited per run (machine.ts emits one exposed-run event per run), and
  *   - NEVER carried by shares/remixes.
  *

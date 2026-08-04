@@ -98,7 +98,17 @@ export interface WireDeps {
     present(ctx: RunContext): Promise<ToolOutcome>;
     actAs(): Promise<ToolOutcome>;
   };
-  mcp: boolean;
+  /** The mcp block's /status posture (connections-posture pattern): false
+      when the door is closed, "local" when it serves its own OAuth surface,
+      "broker" when an external authorization server fronts it. */
+  mcp: "local" | "broker" | false;
+  /** The broker seam's selection as CHOSEN at composition (dev-only
+      /doctor/mcp probe): the /status posture above collapses an explicit
+      `mcp.remoteAs` and the Cloud-managed broker into one "broker", but
+      doctor must keep the seam's explicit-wins precedence — it never ensures
+      a tenant for an explicitly configured authorization server. Unlike the
+      posture this never degrades: it records what the seam chose. */
+  mcpSelection: "off" | "explicit" | "broker" | "local";
   door?: McpDoor;
   /** True only in a development composition — gates the local injection seams. */
   development: boolean;

@@ -196,10 +196,57 @@ describe("every slot name is a safe identifier (F3)", () => {
   it("accepts the names real packs actually use", () => {
     expect(() => merge([definePack({
       name: "compliance-reports",
-      skills: [{ name: "building-compliance-reports", description: "D.", body: "b" }],
+      skills: [{
+        name: "building-compliance-reports",
+        description: "D.",
+        body: "b",
+        files: { "references/format.md": "f" },
+      }],
       checks: [{ name: "no-unmasked-accounts", kind: "judgment", rule: "R." }],
       components: { RetentionBadge: { component: 1, description: "D." } },
     })])).not.toThrow();
+  });
+});
+
+describe("a pack fails at BOOT for anything the /host projection cannot carry", () => {
+  // The slot-name grammar above is deliberately loose; two slots are narrower
+  // where the path is actually built, and those checks used to run per TURN only.
+  it("rejects a component name the markup grammar forbids, though the slot grammar allows it", () => {
+    // THE collision: `SAFE_SLOT_NAME` allows hyphens and `SAFE_COMPONENT_NAME`
+    // (core, where the file path and the element name are built) does not. So
+    // this booted green and threw on every single turn afterwards.
+    const attempt = (): unknown => merge([
+      definePack({ name: "reporting", components: { "Data-Table": { component: 1, description: "D." } } }),
+    ]);
+    expect(attempt).toThrow(VendoError);
+    expect(attempt).toThrow(/reporting/);
+    expect(attempt).toThrow(/Data-Table/);
+    // The real reason, from core's own message — not a restated regex.
+    expect(attempt).toThrow(/letters, digits and "_"/);
+  });
+
+  it("rejects a component name that does not start with a letter", () => {
+    expect(() => merge([definePack({ name: "bad", components: { "9Lives": { component: 1, description: "D." } } })]))
+      .toThrow(VendoError);
+  });
+
+  it("rejects a skill companion file that would leave the skill's directory", () => {
+    const attempt = (): unknown => merge([
+      definePack({
+        name: "reporting",
+        skills: [{ name: "reports", description: "D.", body: "b", files: { "../../user/apps/app_x/app.vendo": "x" } }],
+      }),
+    ]);
+    expect(attempt).toThrow(VendoError);
+    expect(attempt).toThrow(/reporting/);
+    expect(attempt).toThrow(/app\.vendo/);
+  });
+
+  it("rejects a companion file that would overwrite the skill's own SKILL.md", () => {
+    expect(() => merge([definePack({
+      name: "bad",
+      skills: [{ name: "reports", description: "D.", body: "b", files: { "SKILL.md": "hijacked" } }],
+    })])).toThrow(VendoError);
   });
 });
 

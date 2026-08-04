@@ -1,6 +1,7 @@
 import type {
   ApprovalId,
   Guard,
+  Harness,
   Json,
   RunContext,
   ToolDescriptor,
@@ -10,7 +11,7 @@ import type {
   ToolResult,
   TurnTools,
 } from "@vendoai/core";
-import { guardedCall, previewApproval, type ToolBridgeOptions } from "@vendoai/agent/internal";
+import { FIND_TOOLS_TOOL_NAME, guardedCall, previewApproval, type ToolBridgeOptions } from "@vendoai/agent/internal";
 import type { DiscoveryRails } from "./discovery.js";
 
 /**
@@ -57,6 +58,10 @@ export interface TurnToolsOptions {
    *  meta-tools. Unset means every projected tool is equipped and neither
    *  meta-tool exists — the pre-rails behaviour. */
   discovery?: DiscoveryRails;
+  /** Contract §1, amendment 2026-08-03: how the HARNESS asked for this surface to
+   *  be shaped. Never a safety mechanism — the ctx projection above is — only the
+   *  harness's own say over what it is offered and what it may name. */
+  toolSurface?: Harness["toolSurface"];
   /** Test seam only — production always uses {@link APPROVAL_WAIT_MS}. */
   approvalWaitMs?: number;
 }
@@ -171,6 +176,16 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
     guard: options.guard,
   };
 
+  // The harness's own shaping of the surface (§1 amendment 2026-08-03). An
+  // UNCURATED harness is offered everything its ctx projects, so the loadout is
+  // skipped — and `find_tools`, whose entire job is unlocking what the loadout
+  // withheld, goes with it. The capability-miss reporter is untouched: an honest
+  // refusal has nothing to do with curation.
+  const curated = options.toolSurface?.curated !== false;
+  const withheld = new Set(options.toolSurface?.withhold ?? []);
+  const hidden = (name: string): boolean =>
+    withheld.has(name) || (!curated && name === FIND_TOOLS_TOOL_NAME);
+
   const descriptorFor = async (name: string): Promise<ToolDescriptor | undefined> => {
     try {
       return (await options.registry.descriptors()).find((descriptor) => descriptor.name === name);
@@ -199,11 +214,12 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
       // connection-scoped seed, the host's `surfaces.agent` menu and the
       // uncurated-loadout cap all decide this set, and every one of them binds
       // here rather than at any one branch.
-      const equipped = options.discovery?.activeToolNames?.();
+      const equipped = curated ? options.discovery?.activeToolNames?.() : undefined;
       const offered = equipped === undefined ? undefined : new Set(equipped);
-      const descriptors = offered === undefined
+      const descriptors = (offered === undefined
         ? projected
-        : projected.filter((descriptor) => offered.has(descriptor.name));
+        : projected.filter((descriptor) => offered.has(descriptor.name)))
+        .filter((descriptor) => !hidden(descriptor.name));
       const listings: ToolListing[] = descriptors.map((descriptor) => ({
         name: descriptor.name,
         // `title` is presentation-only and optional; absent it the surfaces that
@@ -217,12 +233,18 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
         // it — only `vendo()` worked, because composition hands IT the
         // descriptor catalog by closure.
         ...(descriptor.inputSchema === undefined ? {} : { inputSchema: descriptor.inputSchema }),
+        // Contract §1.1 amendment 2026-08-03: the host's DECLARED result shape,
+        // when extraction found one. The model reads field names off the listing
+        // instead of calling a query once to learn them.
+        ...(descriptor.outputSchema === undefined ? {} : { outputSchema: descriptor.outputSchema }),
       }));
       // The meta-tools ride the same listing, so a harness offers `find_tools`
       // exactly the way it offers everything else. They are never loadout-gated:
       // gating discovery out of the loadout would make the long tail unreachable,
       // which is the whole point of having a loadout.
-      for (const tool of options.discovery?.meta.values() ?? []) listings.push(tool.listing);
+      for (const [name, tool] of options.discovery?.meta ?? []) {
+        if (!hidden(name)) listings.push(tool.listing);
+      }
       return listings;
     },
 
@@ -241,7 +263,9 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
         // row. Every tool they lead the model TO is guard-bound, and search can
         // only equip a name the ctx already projects, so there is no path back to
         // a withheld tool. They are still mirrored and audited like any call.
-        const metaTool = options.discovery?.meta.get(name);
+        // A hidden name is not a tool this harness has: it was never listed, so
+        // the honest answer to calling it is the same not-found any typo gets.
+        const metaTool = hidden(name) ? undefined : options.discovery?.meta.get(name);
         if (metaTool !== undefined) {
           const outcome = await metaTool.execute(args);
           return finish(
@@ -251,7 +275,7 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
           );
         }
 
-        const descriptor = await descriptorFor(name);
+        const descriptor = hidden(name) ? undefined : await descriptorFor(name);
         if (descriptor === undefined) {
           return finish({
             status: "error",

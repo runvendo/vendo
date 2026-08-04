@@ -20,7 +20,7 @@
  * scripted.
  */
 import { mkdtemp, rm } from "node:fs/promises";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LanguageModel, UIMessage } from "ai";
@@ -63,6 +63,9 @@ interface BoxScript {
    *  nothing else (10-mcp §3b). */
   toolDoor?: { url: string; token: string };
   emit: (event: Record<string, unknown>) => void;
+  /** The box's own disk. A files-first turn (D4) builds the app by WRITING here;
+   *  the sync-back carries it home and the render seam does the rest. */
+  root?: string;
 }
 
 interface BoxDoor {
@@ -100,6 +103,7 @@ function fakeSandbox(script: (box: BoxScript) => Promise<void>): {
             await script({
               ...(input.toolDoor === undefined ? {} : { toolDoor: input.toolDoor }),
               emit: input.emit,
+              root,
             });
           },
           async interrupt() { /* the turn stops; the session lives */ },
@@ -307,6 +311,70 @@ describe("createVendo({ sandbox, harness: claudeCode() })", () => {
     const toolRows = rows.filter((row) => row.kind === "tool-call" && row.tool === "maple_invoices_list");
     expect(toolRows).toHaveLength(1);
     expect(toolRows[0]).toMatchObject({ venue: "chat", presence: "present", outcome: "ok" });
+  });
+
+  /**
+   * D4 files-first, end to end on the real composition — the highest-priority
+   * defect of this wave (live E2E, 2026-08-03): the model built the app by
+   * WRITING `app.vendo`, and the app rendered every value as "—" while the host
+   * data sat one call away, never appeared in the person's list, and answered
+   * `vendo_apps_open` with "couldn't finish".
+   *
+   * The seam declared a data-fill slot and composition never filled it, and
+   * nothing ever made the file an app. Both halves are `AppsRuntime.authored`,
+   * wired here — so this drives the whole chain with nothing hand-wired: a box
+   * writes the file, the sync-back commits it, the seam paints it, and the app is
+   * a real app afterwards.
+   */
+  it("a files-first app.vendo renders with REAL data, and is a real app afterwards", async () => {
+    const appId = "app_filesfirst";
+    const sandbox = fakeSandbox(async (box) => {
+      // Exactly what the building-apps skill teaches: write the app, with a query
+      // for the numbers. No `vendo_apps_create` — the engine is not on this
+      // surface at all (D4).
+      mkdirSync(join(box.root!, "user", "apps", appId), { recursive: true });
+      writeFileSync(
+        join(box.root!, "user", "apps", appId, "app.vendo"),
+        `<App name="Open invoices">
+  <Query id="invoices" tool="maple_invoices_list" />
+  <Stack>
+    <Text text={invoices.invoices[0].id} />
+  </Stack>
+</App>`,
+      );
+      box.emit({ type: "text", delta: "Here are your open invoices." });
+    });
+    const { vendo, host } = await compose({ sandbox, harness: claudeCode() });
+
+    const turn = await vendo.handler(post("/threads", {
+      threadId: "thr_filesfirst",
+      message: userMessage("m1", "Show me my open invoices"),
+    }));
+    expect(turn.status).toBe(200);
+    const body = await turn.text();
+
+    // 1. The view reached the screen for the app the MODEL named, with the
+    //    query's real rows on it — not an empty tree of em-dashes.
+    expect(body).toContain("data-vendo-view");
+    expect(body).toContain(appId);
+    expect(body).toContain("inv_1");
+    // The read ran through the one guard-bound registry, as the app venue.
+    expect(host.calls).toHaveLength(1);
+
+    // 2. It is an app: in the person's list, with the title the model gave it.
+    const ctx = {
+      principal,
+      venue: "chat" as const,
+      presence: "present" as const,
+      sessionId: "s_filesfirst",
+    };
+    const listed = await vendo.apps.list(ctx);
+    expect(listed.map((app) => [app.id, app.name])).toEqual([[appId, "Open invoices"]]);
+
+    // 3. And it opens — the three red "couldn't finish" beats of the live run.
+    const surface = await vendo.apps.open(appId, ctx);
+    expect(surface.kind).toBe("tree");
+    expect(JSON.stringify((surface as { payload: unknown }).payload)).toContain("inv_1");
   });
 
   it("the credential dies with the turn — the box cannot reach the door after its message ends", async () => {

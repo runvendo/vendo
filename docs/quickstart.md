@@ -502,7 +502,6 @@ export interface CreateVendoConfig {
     historyWindow?: number;
     maxInitialTools?: number;
     loadout?: string[];
-    maxSearchExpansions?: number;
     maxSteps?: number;
   };
   sessions?: { ttlMs?: number; sweepIntervalMs?: number; now?: () => number };

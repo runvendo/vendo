@@ -417,7 +417,8 @@ export function createAgent(config: AgentConfig): VendoAgent {
         input.ctx,
         config.system,
         config.capabilityMiss !== undefined,
-        config.toolSearch !== undefined,
+        // This thinker is `vendo()`'s loadout path: its meta-tool is find_tools.
+        config.toolSearch === undefined ? false : "find-tools",
       );
 
       // self-serve P: the writer, reachable from the stream's own onError below

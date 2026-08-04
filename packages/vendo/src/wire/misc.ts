@@ -192,8 +192,10 @@ export const statusRoutes: RouteEntry[] = [
         // Inference seam (cloud definition 2026-07-17): "custom" (host-passed
         // model) or "ladder" (the composed vendoModel env default).
         model: deps.model,
-        // 10-mcp §1 — the door is off by default; true only when
-        // createVendo({ mcp: true }) opened it.
+        // 10-mcp §1 + the broker seam (selectMcpBroker): false while the door
+        // is closed (it is off by default); "local" when the open door serves
+        // its own OAuth surface; "broker" when an external authorization
+        // server fronts it.
         mcp: deps.mcp,
         // 04-actions §3 — how per-user connected accounts are brokered:
         // "byo" (host's own Composio key), "cloud" (VENDO_API_KEY), or off.

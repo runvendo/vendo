@@ -137,7 +137,7 @@ describe("rehearsal venue at the guard choke point", () => {
 
   it("a critical write reports wouldAsk:true but NOT as a missing grant (a grant can't suppress critical)", async () => {
     const guard = createGuard({ store: createMemoryStore(), policy: demoPolicy });
-    const critical = descriptor("write", { name: "host_critical_write", critical: true });
+    const critical = descriptor("write", { name: "host_critical_write", confirmEach: true });
     const tools = new FixtureTools([critical]);
     const outcome = await guard.bind(tools).execute(call("host_critical_write"), rehearsalCtx);
     expect(outcome.status).toBe("ok");
@@ -162,7 +162,7 @@ describe("rehearsal venue at the guard choke point", () => {
 
   it("a critical read blocks instead of parking (critical always asks; rehearsal cannot)", async () => {
     const guard = createGuard({ store: createMemoryStore(), policy: demoPolicy });
-    const critical = descriptor("read", { name: "host_critical_read", critical: true });
+    const critical = descriptor("read", { name: "host_critical_read", confirmEach: true });
     const tools = new FixtureTools([critical]);
     const outcome = await guard.bind(tools).execute(call("host_critical_read"), rehearsalCtx);
     expect(outcome).toMatchObject({ status: "blocked" });

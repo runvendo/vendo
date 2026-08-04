@@ -12,7 +12,15 @@ const LOAD_ATTEMPTS = 3;
  *  inside the skeleton the user is already looking at. */
 const RETRY_BASE_MS = 300;
 
-export function useApp(appId: AppId): {
+export interface AppOptions {
+  /** H16 — `false` means DON'T boot: no `apps.get`, no `apps.open`, no iframe.
+   *  A grid of live app tiles pairs this with `useInViewport` so the thirty
+   *  apps below the fold cost nothing until they are scrolled to. Defaults on,
+   *  so every existing caller is unchanged. */
+  enabled?: boolean;
+}
+
+export function useApp(appId: AppId, { enabled = true }: AppOptions = {}): {
   app: AppDocument | undefined;
   /** Alias for `app` — the consistent `data` field across data hooks (§3). */
   data: AppDocument | undefined;
@@ -67,13 +75,19 @@ export function useApp(appId: AppId): {
     setApp(undefined);
     setSurface(undefined);
     setError(undefined);
+    // Nothing is loading while the surface is off, so say so rather than
+    // leaving a consumer on a skeleton that will never resolve.
+    if (!enabled) {
+      setIsLoading(false);
+      return;
+    }
     void refresh();
     // Bump the generation on unmount / appId change so an in-flight response
     // can't land on a stale (or torn-down) app.
     return () => {
       generationRef.current += 1;
     };
-  }, [refresh]);
+  }, [enabled, refresh]);
 
   const call = useCallback((ref: string, args: Json) => client.apps.call(appId, ref, args), [appId, client]);
   const edit = useCallback(

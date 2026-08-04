@@ -319,6 +319,11 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
               connectCards: new Set<string>(),
             },
             ...(input.discovery === undefined ? {} : { discovery: input.discovery }),
+            // §1 amendment 2026-08-03: the harness's own say over the surface —
+            // whether the loadout curates it, and which names it never sees.
+            ...(input.harness.toolSurface === undefined
+              ? {}
+              : { toolSurface: input.harness.toolSurface }),
             ...(deps.approvalWaitMs === undefined ? {} : { approvalWaitMs: deps.approvalWaitMs }),
           });
 

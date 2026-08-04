@@ -17,9 +17,10 @@
  * ~250MB platform binary on disk. This file is the only place on any host path
  * that names it.
  *
- * **What this mode does NOT have: a box.** The session's tools are auto-allowed
- * by `boxPermission` on the stated grounds that "the box IS the permission —
- * copies only, no credentials, reality happens at commit". Here:
+ * **What this mode does NOT have: a box.** The session runs its own tools
+ * unprompted (`permissionMode: "bypassPermissions"`, claude-turn.ts) on the
+ * stated grounds that "the box IS the permission — copies only, no
+ * credentials, reality happens at commit". Here:
  *
  *   - "copies only" is FALSE. `cwd` is a directory the shell is POINTED at, not
  *     a boundary it is held inside; `Bash` runs as the host's own server process

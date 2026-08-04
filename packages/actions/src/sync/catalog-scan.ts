@@ -13,17 +13,38 @@ async function loadTypeScript(): Promise<typeof tsTypes> {
   return (await import("typescript")).default;
 }
 
+/** Where one registered component's source actually lives — the input to
+ *  source capture (components.ts). */
+export interface HostComponentSite {
+  name: string;
+  /** Absolute path of the module that declares the component. */
+  file: string;
+  /** The declaration's own binding name, or "default" for an anonymous
+   *  `export default`. Capture turns it into the jail's default export. Null
+   *  when the declaration has no name to re-export — carried through (rather
+   *  than dropped here) so capture records ONE explanation per uncapturable
+   *  component and the console can show it. */
+  binding: string | null;
+}
+
 export interface CatalogScanResult {
   entries: CatalogEntry[];
   warnings: string[];
   discovered: number;
   registered: number;
+  /** Registered components with a resolvable declaration, for source capture. */
+  sites: HostComponentSite[];
+  /** True when this scan could not see the whole project (no compiler, no
+   *  tsconfig, or a walk that hit its file cap). A degraded scan prunes
+   *  nothing — the same rule the pin capture follows. */
+  degraded: boolean;
 }
 
 interface ComponentCandidate {
   name: string;
   declaration: tsTypes.FunctionLikeDeclaration;
   exportPath: string;
+  site: HostComponentSite | null;
 }
 
 interface SchemaResult {
@@ -32,6 +53,7 @@ interface SchemaResult {
 }
 
 const PASCAL_CASE = /^[A-Z][A-Za-z0-9_$]*$/;
+const MAX_SCAN_FILES = 5_000;
 
 function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
@@ -429,12 +451,36 @@ function exportedObjectCandidates(
       if (inner === undefined) continue;
       componentExpression = unwrapExpression(inner);
     }
-    const component = functionFromDeclaration(symbolDeclaration(checker, componentExpression));
+    const declared = symbolDeclaration(checker, componentExpression);
+    const component = functionFromDeclaration(declared);
     if (component !== undefined && hasJsxEvidence(component)) {
-      candidates.push({ name, declaration: component, exportPath: `${modulePath}#${exportName}.${name}` });
+      candidates.push({
+        name,
+        declaration: component,
+        exportPath: `${modulePath}#${exportName}.${name}`,
+        site: componentSite(name, declared),
+      });
     }
   }
   return candidates;
+}
+
+/** The module and binding a registered component's declaration names. A null
+ *  BINDING means the declaration has no name to re-export (an anonymous
+ *  non-default value); capture records that as the skip reason. A null SITE
+ *  means there is no declaration at all, so there is nothing to explain. */
+function componentSite(name: string, declaration: tsTypes.Declaration | undefined): HostComponentSite | null {
+  if (declaration === undefined) return null;
+  const file = declaration.getSourceFile().fileName;
+  const named = ts.isFunctionDeclaration(declaration) || ts.isClassDeclaration(declaration)
+    ? declaration.name?.text
+    : ts.isVariableDeclaration(declaration) && ts.isIdentifier(declaration.name)
+      ? declaration.name.text
+      : undefined;
+  if (named !== undefined) return { name, file, binding: named };
+  const isDefault = ts.canHaveModifiers(declaration)
+    && (ts.getModifiers(declaration) ?? []).some((modifier) => modifier.kind === ts.SyntaxKind.DefaultKeyword);
+  return { name, file, binding: isDefault ? "default" : null };
 }
 
 function literalValue(type: tsTypes.Type): string | number | boolean | undefined {
@@ -644,31 +690,34 @@ async function catalogEvidenceFiles(files: string[]): Promise<{ componentFiles: 
 /** Deterministic TypeScript-compiler scan. No model output can alter these fields. */
 export async function scanComponentCatalog(root: string): Promise<CatalogScanResult> {
   const resolvedRoot = path.resolve(root);
-  const sourceFiles = await walk(resolvedRoot, (relative) => /\.(?:ts|tsx)$/.test(relative) && !/\.d\.ts$/.test(relative));
-  if (sourceFiles.length === 0) return { entries: [], warnings: [], discovered: 0, registered: 0 };
+  const sourceFiles = await walk(resolvedRoot, (relative) => /\.(?:ts|tsx)$/.test(relative) && !/\.d\.ts$/.test(relative), MAX_SCAN_FILES);
+  const blank = { entries: [], sites: [], discovered: 0, registered: 0 };
+  if (sourceFiles.length === 0) return { ...blank, warnings: [], degraded: true };
+  // A walk that hit its cap never saw the whole project.
+  const capped = sourceFiles.length >= MAX_SCAN_FILES;
   try {
     ts = await loadTypeScript();
   } catch (error) {
     return {
-      entries: [],
+      ...blank,
       warnings: [`component catalog scan skipped: TypeScript compiler unavailable; install typescript for sync-time extraction (${error instanceof Error ? error.message : String(error)})`],
-      discovered: 0,
-      registered: 0,
+      degraded: true,
     };
   }
   const tooOld = unsupportedCompiler(ts);
   if (tooOld !== null) {
     noteRejectedCompiler(tooOld);
     return {
-      entries: [],
+      ...blank,
       warnings: [`component catalog scan skipped: host typescript ${tooOld.version} is older than the >=${COMPILER_FLOOR} extraction floor`],
-      discovered: 0,
-      registered: 0,
+      degraded: true,
     };
   }
   const evidenceFiles = await catalogEvidenceFiles(sourceFiles);
   if (evidenceFiles.componentFiles.length === 0 && evidenceFiles.registrationFiles.length === 0) {
-    return { entries: [], warnings: [], discovered: 0, registered: 0 };
+    // A complete walk that found no registration is trustworthy: the host
+    // really has no registered components, and stale artifacts should go.
+    return { ...blank, warnings: [], degraded: capped };
   }
   const candidates: ComponentCandidate[] = [];
   const configured = programFor(resolvedRoot, evidenceFiles.componentFiles);
@@ -696,6 +745,7 @@ export async function scanComponentCatalog(root: string): Promise<CatalogScanRes
 
   candidates.sort((left, right) => compareText(left.name, right.name) || compareText(left.exportPath, right.exportPath));
   const scannedEntries: CatalogEntry[] = [];
+  const sites: HostComponentSite[] = [];
   const seen = new Set<string>();
   if (checker !== undefined) {
     for (const candidate of candidates) {
@@ -704,6 +754,9 @@ export async function scanComponentCatalog(root: string): Promise<CatalogScanRes
         continue;
       }
       seen.add(candidate.name);
+      // A site with a null binding still travels: capture writes the one
+      // honest explanation, so this never warns in two places.
+      if (candidate.site !== null) sites.push(candidate.site);
       const converted = schemaForComponent(checker, candidate.declaration);
       scannedEntries.push({
         name: candidate.name,
@@ -724,5 +777,14 @@ export async function scanComponentCatalog(root: string): Promise<CatalogScanRes
     ...scannedEntries.filter((entry) => !registeredNames.has(entry.name)),
     ...registeredEntries,
   ].sort((left, right) => compareText(left.name, right.name));
-  return { entries, warnings, discovered: scannedEntries.length, registered: registeredEntries.length };
+  return {
+    entries,
+    warnings,
+    discovered: scannedEntries.length,
+    registered: registeredEntries.length,
+    sites: sites.sort((left, right) => compareText(left.name, right.name)),
+    // No program means no component map was resolvable — nothing was seen, so
+    // nothing may be pruned.
+    degraded: capped || configured.program === undefined || checker === undefined,
+  };
 }

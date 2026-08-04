@@ -647,3 +647,23 @@ was removed by hand.
 **Fix:** Re-run `vendo init` extraction. Connector-only deployments (the
 agent works purely through connected third-party tools) can ignore this
 warning.
+
+### E-TOOLS-003 {#E-TOOLS-003}
+
+**Symptom:** `catalog: N/M tools ungraded` (warning, not failure).
+
+**Cause:** Nobody has graded those tools. Extraction only asserts protocol
+facts — an HTTP `DELETE` is destructive, a declared GraphQL/tRPC mutation is
+at least a write — and never guesses a grade from a tool's name. Everything
+else is `ungraded` until the AI judge or a human says otherwise, and the
+guard asks the user before every ungraded call rather than running it.
+
+**Fix:** Run `vendo sync` with a model key so the judgment pass grades the
+catalog against the real handler source. Without a key, grade the tools you
+care about by hand in `.vendo/overrides.json`:
+
+```json
+{ "tools": { "host_invoices_list": { "risk": "read" } } }
+```
+
+Leaving them ungraded is safe — it just means an approval prompt per call.

@@ -4,7 +4,10 @@ import * as ReactDOMClient from "react-dom/client";
 import { createPortal, flushSync } from "react-dom";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 import { transform } from "sucrase";
-import type { Json, ToolOutcome } from "@vendoai/core";
+import { clsx } from "clsx";
+import * as tailwindMerge from "tailwind-merge";
+import type { Json, JailBundledPackage, JailModule, ToolOutcome } from "@vendoai/core";
+import { zodShim } from "./jail/zod-shim.js";
 import type { JailFurnishing } from "./jail/JailedComponent.js";
 import { ContainedNotice } from "./notice.js";
 
@@ -22,12 +25,31 @@ import { ContainedNotice } from "./notice.js";
  * module space stays closed even though the code now runs with host authority.
  */
 
-const HOST_MODULES: Record<string, unknown> = {
+/**
+ * The in-client module space. Typed `Record<JailModule | JailBundledPackage,
+ * unknown>` — NOT `Record<string, unknown>` — so it cannot drift from the jail:
+ * this path renders APPROVED remixes of the host's OWN components, which are
+ * exactly the components that import clsx/tailwind-merge/zod. Left untyped, a
+ * newly bundled package would resolve in the preview and throw here, in
+ * production, with host-page authority. A missing key is now a compile error.
+ *
+ * The kit-ish aliases (`@vendoai/ui`, `vendo/kit`, …) are deliberately absent:
+ * those exist so a not-yet-stripped GENERATED island still renders, and a
+ * generated island never reaches this path.
+ *
+ * zod is the same SHIM the jail uses, so one captured source resolves the same
+ * modules in both venues. It refuses to validate loudly rather than silently.
+ */
+const HOST_MODULES: Record<JailModule | JailBundledPackage, unknown> = {
   react: { ...React, default: React },
   "react-dom": { createPortal, flushSync, default: { createPortal, flushSync } },
   "react-dom/client": { ...ReactDOMClient, default: ReactDOMClient },
   "react/jsx-runtime": { jsx, jsxs, Fragment, default: { jsx, jsxs, Fragment } },
   "react/jsx-dev-runtime": { jsx, jsxs, jsxDEV: jsx, Fragment, default: { jsx, jsxs, Fragment } },
+  // `__esModule: true` for the same interop reason as the jail table.
+  clsx: { __esModule: true, clsx, default: clsx },
+  "tailwind-merge": { __esModule: true, ...tailwindMerge, default: tailwindMerge },
+  zod: zodShim,
 };
 
 interface VirtualSource {
@@ -66,7 +88,11 @@ export function evaluateApprovedComponent(
     const moduleRecord = { exports: {} as Record<string, unknown> };
     cache.set(id, moduleRecord);
     const localRequire = (specifier: string): unknown => {
-      if (Object.prototype.hasOwnProperty.call(HOST_MODULES, specifier)) return HOST_MODULES[specifier];
+      // The declaration stays narrowly typed (that is the drift guarantee); the
+      // lookup is by arbitrary specifier, so it reads through a string view.
+      if (Object.prototype.hasOwnProperty.call(HOST_MODULES, specifier)) {
+        return (HOST_MODULES as Record<string, unknown>)[specifier];
+      }
       const target = descriptor.imports[specifier];
       if (target !== undefined && Object.prototype.hasOwnProperty.call(modules, target)) {
         return evaluateModule(target);

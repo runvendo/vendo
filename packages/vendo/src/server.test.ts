@@ -843,26 +843,20 @@ describe("09 §3 public wire", () => {
       return vendo;
     };
 
-    // Unset slot + key → the Cloud tools connector composes LAZILY: nothing
-    // eager at boot; expansion pulls exactly the asked-for toolkit through
-    // the console broker with BYO-identical names.
+    // Unset slot + key → the Cloud tools connector composes, and registers NO
+    // tools: the console's catalog is tens of thousands of tools and the listing
+    // never carries them (connector discovery 2026-08-03).
     const auto = await compose({});
     const bootNames = (await auto.actions.descriptors()).map((descriptor) => descriptor.name);
     expect(bootNames.some((name) => name.startsWith("gmail_") || name.startsWith("slack_"))).toBe(false);
-    await auto.actions.expandToolkits(["gmail"]);
-    const expanded = (await auto.actions.descriptors()).map((descriptor) => descriptor.name);
-    expect(expanded).toContain("gmail_GMAIL_SEND_EMAIL");
 
-    // The loadout seed: connected toolkits' tools in, unconnected out.
-    const seed = await auto.actions.loadoutSeed(["gmail"]);
-    expect(seed).toContain("gmail_GMAIL_SEND_EMAIL");
-    expect(seed.some((name) => name.startsWith("slack_"))).toBe(false);
-
-    // Search discovers the UNCONNECTED toolkit by intent and annotates it.
-    const matches = await auto.actions.search("post a message to slack channels");
-    const slack = matches.find((match) => match.name.startsWith("slack_"));
-    expect(slack).toBeDefined();
-    expect(slack!.description).toMatch(/connect/i);
+    // …and the Cloud default has no search backend, so it gets `list_connections`
+    // alone. The service-tool pair would be a search that answers nothing, and
+    // there is deliberately no keyword-scoring fallback behind it.
+    const projected = (await auto.guardedTools.descriptors(ctx)).map((descriptor) => descriptor.name);
+    expect(projected).toContain("list_connections");
+    expect(projected).not.toContain("find_service_tools");
+    expect(projected).not.toContain("use_service_tool");
 
     // An explicit connectors array — even empty — always wins over the key.
     const explicit = await compose({ connectors: [] });

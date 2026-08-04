@@ -70,10 +70,21 @@ export interface PlanServer {
   served?: boolean;
 }
 
+/** Where a finished view should LAND (redesign spec §5, pick V4): a small
+ *  answer-shaped view arrives inline as a card, a multi-section build opens the
+ *  split view and assembles on the stage. Declared at plan time because that is
+ *  the only moment early enough for the stage to be open while the skeleton is
+ *  still worth watching. It sets the STARTING posture only — inline keeps
+ *  Expand, staged keeps Back-to-chat, so a wrong hint costs one tap. */
+export type PlanDisplay = "inline" | "stage";
+
 export interface AppPlan {
   name: string;
   queries: PlanQuery[];
   groups: PlanGroup[];
+  /** Absent means inline — the default posture, and what every plan written
+   *  before this field existed means. */
+  display?: PlanDisplay;
   island?: PlanIsland;
   server?: PlanServer;
   /** Honest refusals, verbatim user-facing. */

@@ -193,7 +193,10 @@ function assembleTools(
         name,
         description: `GraphQL subscription ${def.operation} is not invokable over a single HTTP request`,
         inputSchema: schema,
-        risk: "destructive",
+        // D2 — nothing spoke, so nothing is graded. `disabled` keeps it out of the
+        // agent's hands; `ungraded` keeps it counted in doctor's tally and asking
+        // rather than running if a human ever re-enables it.
+        risk: "ungraded",
         disabled: true,
         note: [
           "GraphQL subscriptions are not invokable over the single-request HTTP transport; enable only after review; overrides.json can flip disabled/risk",
@@ -228,7 +231,7 @@ function assembleTools(
       name,
       description: `GraphQL ${def.type} ${def.operation}`,
       inputSchema: schema,
-      risk: graphqlRisk(def.type, def.operation),
+      risk: graphqlRisk(def.type),
       ...(disabled ? { disabled: true } : {}),
       ...(notes.length > 0 ? { note: notes.join("; ") } : {}),
       binding: bindingFor(def.operation, def.type, endpoints.endpoint, document),

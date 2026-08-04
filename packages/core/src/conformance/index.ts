@@ -328,8 +328,8 @@ export function toolRegistryConformance(opts: {
 export function guardConformance(opts: {
   makeGuard(): Promise<Guard>;
   ctx: RunContext;
-  criticalDescriptor: ToolDescriptor;
-  criticalCall: ToolCall;
+  confirmEachDescriptor: ToolDescriptor;
+  confirmEachCall: ToolCall;
   readDescriptor: ToolDescriptor;
   readCall: ToolCall;
   sampleAuditEvent: AuditEvent;
@@ -338,28 +338,28 @@ export function guardConformance(opts: {
     seam: "Guard",
     cases: [
       {
-        /** 01-core §6: check returns a GuardDecision for critical and read calls. */
+        /** 01-core §6: check returns a GuardDecision for confirmEach and read calls. */
         name: "01-core §6 — check returns schema-valid decisions",
         async run(): Promise<void> {
           const guard = await opts.makeGuard();
-          assertParses(guardDecisionSchema, await guard.check(opts.criticalCall, opts.criticalDescriptor, opts.ctx), "critical decision is invalid");
+          assertParses(guardDecisionSchema, await guard.check(opts.confirmEachCall, opts.confirmEachDescriptor, opts.ctx), "confirmEach decision is invalid");
           assertParses(guardDecisionSchema, await guard.check(opts.readCall, opts.readDescriptor, opts.ctx), "read decision is invalid");
         },
       },
       {
-        /** 01-core §4 and 05-guard §2 step 1: critical is an unsuppressible ask. */
-        name: "01-core §4; 05-guard §2 step 1 — critical always asks with frozen descriptor and input preview",
+        /** 01-core §4 and 05-guard §2 step 1: confirmEach is an unsuppressible ask. */
+        name: "01-core §4; 05-guard §2 step 1 — confirmEach always asks with frozen descriptor and input preview",
         async run(): Promise<void> {
           const guard = await opts.makeGuard();
           const decision = assertParses(
             guardDecisionSchema,
-            await guard.check(opts.criticalCall, opts.criticalDescriptor, opts.ctx),
-            "critical decision is invalid",
+            await guard.check(opts.confirmEachCall, opts.confirmEachDescriptor, opts.ctx),
+            "confirmEach decision is invalid",
           );
-          assert(decision.action === "ask", "critical descriptor did not yield ask");
-          assert(decision.decidedBy === "critical", "critical ask was not decidedBy critical");
-          assert(decision.approval.inputPreview.trim().length > 0, "critical approval inputPreview is empty");
-          assertDeepEqual(decision.approval.descriptor, opts.criticalDescriptor, "approval descriptor was not frozen from the asked descriptor");
+          assert(decision.action === "ask", "confirmEach descriptor did not yield ask");
+          assert(decision.decidedBy === "confirmEach", "confirmEach ask was not decidedBy confirmEach");
+          assert(decision.approval.inputPreview.trim().length > 0, "confirmEach approval inputPreview is empty");
+          assertDeepEqual(decision.approval.descriptor, opts.confirmEachDescriptor, "approval descriptor was not frozen from the asked descriptor");
         },
       },
       {

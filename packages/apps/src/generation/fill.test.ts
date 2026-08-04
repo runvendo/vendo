@@ -146,6 +146,25 @@ describe("fillPlan", () => {
       .toEqual([1, 0]);
   });
 
+  it("carries the plan's display hint on every partial, and nothing when the plan declared none", async () => {
+    const partialsFor = async (source: AppPlan): Promise<GeneratedPartial[]> => {
+      const partials: GeneratedPartial[] = [];
+      const deps = depsWith(answering(fragmentFor), {
+        onPartial: (partial) => { partials.push(structuredClone(partial) as GeneratedPartial); },
+      });
+      await fillPlan(source, skeletonFromPlan(source), deps, readingQueries());
+      return partials;
+    };
+
+    // The in-process emitter is the twin of the harness render seam, so the
+    // posture has to ride the same field on both (redesign spec §5).
+    const staged = await partialsFor({ ...TWO_GROUPS, display: "stage" });
+    expect(staged.map((partial) => partial.display)).toEqual(["stage", "stage"]);
+
+    const plain = await partialsFor(TWO_GROUPS);
+    for (const partial of plain) expect(partial).not.toHaveProperty("display");
+  });
+
   it("respects the concurrency dial — never more than N workers in flight", async () => {
     const groups: AppPlan["groups"] = [0, 1, 2, 3].map((index) => ({
       tab: `Tab${index}`,

@@ -37,6 +37,14 @@ export const cadenceRegistry = {
     }),
     examples: ['{"text":"Needs review","variant":"review","dot":true}'],
   },
+  // NOTE: deliberately declares NO `examples`, unlike every other entry here.
+  // It is the committed fixture for the preview seed's SECOND rung: sync
+  // generates props from the `props:` schema below, so `.vendo/components/
+  // CadenceDocProgress.json` carries `sampleOrigin: "generated"` and the
+  // console renders a generated seed. Without one such component, the newest
+  // and largest part of the seeding logic is unreachable by rendering the demos.
+  // `description` and `props` still give the model everything it needs to pick
+  // and fill this component; examples are guidance, not a requirement.
   CadenceDocProgress: {
     component: CadenceDocProgress,
     description: "Use for Cadence document-collection or checklist completion when the user needs progress toward a known total.",
@@ -44,7 +52,6 @@ export const cadenceRegistry = {
       value: z.number(),
       max: z.number(),
     }),
-    examples: ['{"value":7,"max":10}'],
   },
   CadenceMissingDocsHero: {
     component: MissingDocsHero,

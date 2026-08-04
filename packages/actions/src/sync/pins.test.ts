@@ -38,7 +38,7 @@ afterEach(async () => {
 });
 
 describe("wrapper pin capture", () => {
-  it("captures a wrapped component with two local-import levels and direct app-root CSS", async () => {
+  it("captures a wrapped component's whole import closure — depth is no limit — and direct app-root CSS", async () => {
     const root = await temporaryRoot();
     await write(root, "src/app/page.tsx", `
       import { Remixable } from "${UI_CHROME}";
@@ -76,18 +76,18 @@ describe("wrapper pin capture", () => {
     expect(baseline.exportable).toBe(false);
     expect(baseline.sampleProps).toBeUndefined();
     expect(baseline.sourceImports).toEqual({ "./Direct": "src/components/Direct.tsx" });
+    // Four levels down and still captured: the walk runs to closure and is
+    // bounded by bytes, not hops.
     expect(Object.keys(baseline.subSources ?? {})).toEqual([
       "src/components/Deep.tsx",
       "src/components/Direct.tsx",
+      "src/components/TooDeep.tsx",
     ]);
     expect(baseline.styles).toEqual([{
       path: "src/app/globals.css",
       css: ".captured { color: rgb(12, 34, 56); }\n",
     }]);
-    expect(result.warnings).toEqual(expect.arrayContaining([
-      expect.stringContaining("./Missing"),
-      expect.stringContaining("beyond capture depth 2"),
-    ]));
+    expect(result.warnings).toEqual([expect.stringContaining("./Missing")]);
   });
 
   it("names the slot after the exported identifier and folds many wrappers into one capture", async () => {
@@ -539,6 +539,34 @@ describe("stale baseline pruning", () => {
     expect(failed.errors).not.toEqual([]);
     expect(failed.pruned).toEqual([]);
     await expect(baselineFor(root, "Card")).resolves.toMatchObject({ slot: "Card" });
+  });
+
+  it("skips a slot over the byte budget without clobbering the baseline it already captured", async () => {
+    const root = await temporaryRoot();
+    await write(root, "src/app/page.tsx", `
+      import { Remixable } from "${UI_CHROME}";
+      import { Card } from "../components/Card";
+      export default function Page() { return <Remixable><Card /></Remixable>; }
+    `);
+    await write(root, "src/components/Card.tsx", "export function Card() { return <div>card</div>; }");
+    await capturePins(root, path.join(root, ".vendo"));
+    const before = await baselineFor(root, "Card");
+
+    // The component grows a fat data import between syncs.
+    await write(root, "src/data/fixtures.ts", `export const FIXTURES = "${"x".repeat(5_000)}".split("");`);
+    await write(root, "src/components/Card.tsx", `
+      import { FIXTURES } from "../data/fixtures";
+      export function Card() { return <div>{FIXTURES.length}</div>; }
+    `);
+    const result = await capturePins(root, path.join(root, ".vendo"), new Set(), 2_000);
+
+    expect(result.captured).toEqual([]);
+    expect(result.drifted).toEqual([]);
+    expect(result.pruned).toEqual([]);
+    expect(result.warnings).toEqual(expect.arrayContaining([
+      expect.stringContaining("src/data/fixtures.ts"),
+    ]));
+    await expect(baselineFor(root, "Card")).resolves.toEqual(before);
   });
 
   it("keeps a baseline the sync config ignores", async () => {

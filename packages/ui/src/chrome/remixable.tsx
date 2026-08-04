@@ -233,7 +233,7 @@ function RemixedFork({ appId, slot, review, liveProps, menuOpen, onMenuToggle, o
   return (
     <>
       {staged?.kind === "tree" && !underReview ? (
-        <ChromeRoot automaticPolicyNotice={false}>
+        <ChromeRoot>
           <FluidReveal stateKey={`fork:${appId}`} initialExit={original}>
             <PinMount slot={slot} fallback={Original}>
               <AppFrame
@@ -245,7 +245,7 @@ function RemixedFork({ appId, slot, review, liveProps, menuOpen, onMenuToggle, o
           </FluidReveal>
         </ChromeRoot>
       ) : original}
-      <ChromeRoot className="fl-remixable-chrome" automaticPolicyNotice={false}>
+      <ChromeRoot className="fl-remixable-chrome">
         <span className="fl-remix-seed" aria-hidden="true">✦</span>
         <div className="fl-remix-menu-wrap" ref={menuRef}>
           <button
@@ -266,12 +266,17 @@ function RemixedFork({ appId, slot, review, liveProps, menuOpen, onMenuToggle, o
                 type="button"
                 onClick={() => {
                   onMenuToggle(false);
-                  // The app id rides IN the prefill text: the agent's app tools
-                  // are appId-keyed and no list tool exists, so a bare "my X
-                  // remix" prompt dead-ends in "which app?" (W1e E2E finding).
-                  // The grounding-chip channel died with the final shape; the
-                  // visible, user-editable prompt is the honest carrier.
-                  const opened = openVendoConversation({ prompt: `Update my ${slot} remix (app ${appId}): `, send: false });
+                  // The prefill names the THING, never an id (spec §16 law 3):
+                  // it used to read "Update my <slot> remix (app app_…): " and
+                  // an app id is our plumbing, not something a person types.
+                  // The agent's app tools are appId-keyed with no list tool, so
+                  // the grounding rides `context` — a marked text part on the
+                  // sent message that no surface renders.
+                  const opened = openVendoConversation({
+                    prompt: `Update my ${slot} remix: `,
+                    context: `The view being remixed is the "${slot}" slot, app ${appId}.`,
+                    send: false,
+                  });
                   if (!opened && developmentMode()) {
                     console.warn(`[vendo] Remixable "${slot}": "Open in panel" opens the conversation surface — mount a VendoOverlay for it to land in.`);
                   }
@@ -378,11 +383,7 @@ export function Remixable({ review = false, children }: RemixableProps) {
       ) : (
         <>
           {children}
-          {/* automaticPolicyNotice={false}: an affordance drawn over the host's
-              own markup must never grow the "running without a policy" banner
-              inside it — the panel the fork is managed from carries that
-              warning. */}
-          <ChromeRoot className="fl-remixable-chrome" automaticPolicyNotice={false}>
+          <ChromeRoot className="fl-remixable-chrome">
             <span className="fl-remix-seed" aria-hidden="true">✦</span>
             <button
               type="button"

@@ -1,4 +1,5 @@
 import { catalogFileSchema, type CatalogFile } from "@vendoai/actions";
+import { VendoError, componentPath } from "@vendoai/core";
 import type {
   ComponentCatalog,
   ComponentRegistry,
@@ -70,17 +71,61 @@ function parseIssue(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * Core's `/host` component-name grammar, run at BOOT rather than only per turn
+ * where the path is built: a name with a hyphen in it ("Data-Table") normalizes
+ * fine, boots green, and then throws on every turn for the life of the
+ * deployment. Calling core's own builder — never restating its pattern — is what
+ * keeps the two ends from disagreeing again.
+ *
+ * Callers decide what a refusal DOES, and the two answers differ on purpose. A
+ * name from `createVendo({ catalog })` throws, pointing at the line to fix. A
+ * name from a catalog@1 document was written by `vendo sync` and
+ * `catalogEntrySchema` is looser than core's grammar (`$` is legal, no length
+ * cap), so throwing lands in `runtimeCatalogFromJson`'s catch and boots the host
+ * with ZERO components while advising a sync that regenerates the same file —
+ * that entry is dropped with a named warning instead. The residue is real: a host
+ * that never mounts `/host` loses its one `Card$Legacy` component, because
+ * nothing here can know whether a harness will project the mount.
+ */
+const projectionRefusal = (name: string, source: string): VendoError | undefined => {
+  try {
+    componentPath(name);
+    return undefined;
+  } catch (cause) {
+    return new VendoError(
+      "validation",
+      `${source} declares the component name ${JSON.stringify(name)}, which cannot be projected onto the read-only /host mount: ${cause instanceof Error ? cause.message : String(cause)}`,
+      { cause },
+    );
+  }
+};
+
 /** Task 15a: the parsed-catalog leg of runtimeCatalogFromJson, exported so an
  * in-memory `profile.catalog` (already the catalog@1 file shape) normalizes
  * through the SAME validator-building path as the disk read. */
-export function runtimeCatalogFromFile(parsed: CatalogFile): NormalizedCatalog {
-  return parsed.entries.map((entry) => ({
-    name: entry.name,
-    description: entry.description,
-    propsSchema: diskPropsValidator(entry.propsSchema, entry.name),
-    propsJsonSchema: entry.propsSchema,
-    ...(entry.examples === undefined ? {} : { examples: entry.examples }),
-  }));
+export function runtimeCatalogFromFile(
+  parsed: CatalogFile,
+  /** What a bad entry's warning names as its origin — the file by default, because
+   *  that is where all but the in-memory `profile.catalog` caller reads from. */
+  source = ".vendo/catalog.json",
+): NormalizedCatalog {
+  const catalog: NormalizedCatalogEntry[] = [];
+  for (const entry of parsed.entries) {
+    const refusal = projectionRefusal(entry.name, source);
+    if (refusal !== undefined) {
+      console.warn(`[vendo] ${refusal.message} Skipping that entry; the rest of the catalog loads. Rename the component to recover it.`);
+      continue;
+    }
+    catalog.push({
+      name: entry.name,
+      description: entry.description,
+      propsSchema: diskPropsValidator(entry.propsSchema, entry.name),
+      propsJsonSchema: entry.propsSchema,
+      ...(entry.examples === undefined ? {} : { examples: entry.examples }),
+    });
+  }
+  return catalog;
 }
 
 /**
@@ -93,7 +138,7 @@ export function runtimeCatalogFromJson(
 ): NormalizedCatalog {
   if (raw === undefined) return [];
   try {
-    return runtimeCatalogFromFile(catalogFileSchema.parse(JSON.parse(raw)));
+    return runtimeCatalogFromFile(catalogFileSchema.parse(JSON.parse(raw)), file);
   } catch (error) {
     console.error(
       `[vendo] Failed to load host components from ${file}: ${parseIssue(error)}. Run "vendo sync" to regenerate the file.`,
@@ -126,7 +171,9 @@ function derivedJsonSchema(schema: StandardSchema | undefined, name: string): Js
   }
 }
 
-function normalizeEntry(entry: RegisteredComponent): NormalizedCatalogEntry {
+function normalizeEntry(entry: RegisteredComponent, source: string): NormalizedCatalogEntry {
+  const refusal = projectionRefusal(entry.name, source);
+  if (refusal !== undefined) throw refusal;
   const derived = derivedJsonSchema(entry.propsSchema, entry.name);
   return {
     name: entry.name,
@@ -145,15 +192,21 @@ function normalizeEntry(entry: RegisteredComponent): NormalizedCatalogEntry {
  */
 export function normalizeCatalogConfig(
   config: ComponentCatalog | ComponentRegistry | undefined,
+  /** What a bad entry's error names as its origin. The other caller is
+   *  `normalizeCatalogConfig(packs.components)`, which cannot reach a bad name:
+   *  `mergePacks` ran the same grammar first and its error names the PACK. */
+  source = "createVendo({ catalog })",
 ): NormalizedCatalog {
   if (config === undefined) return [];
-  if (Array.isArray(config)) return (config as ComponentCatalog).map(normalizeEntry);
+  if (Array.isArray(config)) {
+    return (config as ComponentCatalog).map((entry) => normalizeEntry(entry, source));
+  }
   return Object.entries(config as ComponentRegistry).map(([name, entry]) => normalizeEntry({
     name,
     description: entry.description,
     ...(entry.props === undefined ? {} : { propsSchema: entry.props }),
     ...(entry.examples === undefined ? {} : { examples: entry.examples }),
-  }));
+  }, source));
 }
 
 /** AGENT-1 — 03 §3 item (4): the model-facing summary of the host components a

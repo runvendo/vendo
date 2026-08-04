@@ -43,7 +43,7 @@ describe("VendoPage thread sidebar refresh", () => {
 
     // Start a fresh conversation; the landing greeting confirms we're on a new
     // (empty) thread and the auto-select won't snap us back to the fixture one.
-    fireEvent.click(screen.getByRole("button", { name: "New conversation" }));
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }));
     expect(await screen.findByRole("heading", { name: "What can I help you build?" }, { timeout: 12000 })).toBeTruthy();
 
     // Send the first turn via the Send button once it enables, so the turn can't
@@ -92,7 +92,7 @@ describe("VendoPage thread sidebar refresh", () => {
       { timeout: 12000 },
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "New conversation" }));
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }));
     const composer = screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement;
     fireEvent.change(composer, { target: { value: "Kick off a new conversation" } });
     const send = screen.getByRole("button", { name: "Send" });

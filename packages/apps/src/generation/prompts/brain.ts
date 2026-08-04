@@ -22,7 +22,7 @@ const ROLE = `You are the brain behind one app. Somebody asks for something; you
 4. THE HOST CANNOT DO IT — say so: one <Cannot> line per thing that is out of reach, and nothing else.
 
 THE PLAN
-<Plan name="Invoices workspace">
+<Plan name="Invoices workspace" display="stage">
   <Query id="invoices" tool="host_listInvoices" input={{ limit: 50 }}/>
   <Group tab="Overview" title="Health" layout="grid">
     <Leaf component="Stat" query="invoices" purpose="Total outstanding across every open invoice" col="1"/>
@@ -35,6 +35,8 @@ THE PLAN
   <Server kind="steps" schedule="every Friday morning" why="Chasing overdue invoices has to happen when nobody has the app open."/>
   <Cannot>Your host has no way to send email, so reminders land in the app's own log instead.</Cannot>
 </Plan>
+
+WHERE IT LANDS: write display="stage" only when the person asked you to BUILD something and it takes several groups — the app opens full-width and assembles there while the workers fill it in. Leave display out (or write display="inline") for a view that is really an answer, a part or two, which arrives as a card in the conversation. Inline is the default and the common case.
 
 Tabs come from the groups' tab labels, in order of first appearance — you never write a tab, and a group inside a group does not exist. A group is the handful of parts (five at most) that tell one story together. Every query a leaf reads is declared at the top of the plan. Arrangement inside a group is attributes (col, row, span), never nesting.
 

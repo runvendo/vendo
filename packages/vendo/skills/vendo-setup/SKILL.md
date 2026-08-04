@@ -46,7 +46,7 @@ fetch it when you need more detail than this skill carries.
 3. What init does (framework detected from `package.json`, `next` beats
    `express`; anything else is treated as Next):
    - Writes `.vendo/` — `tools.json` (extracted tools), `overrides.json`
-     (your risk/critical edits, respected forever), `policy.json`,
+     (your risk/confirmEach edits, respected forever), `policy.json`,
      `brief.md`, `theme.json` (brand extracted from the host CSS), and a
      gitignored `.vendo/data/` for the PGlite store. Commit `.vendo/`,
      never `.vendo/data/`.
@@ -110,7 +110,7 @@ fetch it when you need more detail than this skill carries.
   saved apps/automations/grants are impacted. `--json` emits one
   machine-readable report object on stdout.
 - Review `.vendo/tools.json`; put corrections in `.vendo/overrides.json`
-  (`{"tools": {"host_invoices_delete": {"critical": true}}}`) — never edit
+  (`{"tools": {"host_invoices_delete": {"confirmEach": true}}}`) — never edit
   `tools.json` by hand, sync regenerates it.
 - Tighten `.vendo/policy.json` rules (`ask` for destructive, `run` for read)
   and write a real product brief in `.vendo/brief.md`.

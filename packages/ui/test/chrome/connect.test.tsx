@@ -139,7 +139,12 @@ describe("ConnectCard and ConnectedAccountsPanel", () => {
       </VendoProvider>,
     );
     fireEvent.click(screen.getByRole("button", { name: "Connect Gmail" }));
-    expect((await screen.findByRole("alert")).textContent).toContain("requires a signed-in user");
+    // The wire's sentence is the DEVELOPER's ("connecting external accounts
+    // requires a signed-in user; sign in first"); the card says what it means
+    // for the person (spec §16 law 3, LEAK 2).
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe("Sign in first, then connect Gmail.");
+    expect(alert.textContent).not.toContain("external accounts");
     expect(screen.getByRole("button", { name: "Connect Gmail" }).hasAttribute("disabled")).toBe(false);
   });
 
@@ -209,6 +214,11 @@ describe("ConnectCard and ConnectedAccountsPanel", () => {
 
   it("hides connect-ahead entirely when the host configured no connectors", async () => {
     wire.state.connections = [];
+    // The AUTO catalog is what feeds connect-ahead, and the fixture's is
+    // non-empty — so this test could only pass by beating the in-flight fetch to
+    // the assertion, which it lost about one run in three under load. Emptying
+    // the catalog is what its own name describes, and makes it deterministic.
+    wire.state.catalog = [];
     render(<VendoProvider client={client}><ConnectedAccountsPanel /></VendoProvider>);
     expect(await screen.findByText(/No connected accounts yet/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: /^Connect / })).toBeNull();

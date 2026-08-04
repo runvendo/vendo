@@ -164,23 +164,72 @@ describe("presentation discipline", () => {
   });
 });
 
-/** Discovery-discipline 2026-07-25 (criterion 12): tool discovery gets a hard
- * budget so a connector catalog can never become an agent side-quest. Rides
- * only when tool search is configured — without the meta-tool there is
- * nothing to budget. */
-describe("discovery budget", () => {
-  it("rides the prompt when tool search is enabled", async () => {
-    const prompt = await assembleSystemPrompt(testGuard({}, []), ctx(), undefined, false, true);
+/** Discovery-discipline 2026-07-25 (criterion 12) + harness redesign D8: the
+ * discovery section is the one harness-conditional block. `"find-tools"` is the
+ * loadout path's hard budget; `"connectors"` is the claude-code surface, which
+ * has no `find_tools` to budget; `false` is a surface with no discovery at all. */
+describe("discovery sections", () => {
+  it("find-tools: the budget rides unchanged", async () => {
+    const prompt = await assembleSystemPrompt(testGuard({}, []), ctx(), undefined, false, "find-tools");
     expect(prompt).toContain("Discovery budget");
-    expect(prompt).toContain("at most 2");
+    expect(prompt).toContain("Use find_tools at most 2 times per user intent");
     expect(prompt).toMatch(/unconnected/i);
+    expect(prompt).not.toContain("find_service_tools");
   });
 
-  it("stays out when tool search is off", async () => {
+  it("connectors: names the three outside-service tools and never find_tools", async () => {
+    const prompt = await assembleSystemPrompt(testGuard({}, []), ctx(), undefined, false, "connectors");
+    expect(prompt).toContain("Connectors");
+    expect(prompt).toContain("find_service_tools");
+    expect(prompt).toContain("use_service_tool");
+    expect(prompt).toContain("list_connections");
+    expect(prompt).not.toContain("find_tools");
+    expect(prompt).not.toContain("Discovery budget");
+  });
+
+  it("connectors: carries the same connect etiquette the budget section carries", async () => {
+    const prompt = await assembleSystemPrompt(testGuard({}, []), ctx(), undefined, false, "connectors");
+    expect(prompt).toContain("A connect-required result means stop calling that service");
+    expect(prompt).toContain("connect (link) button in the message box");
+    expect(prompt).toContain("never claim a card \"should have appeared\"");
+    expect(prompt).toContain("hunt for substitutes across the catalog");
+  });
+
+  /** The section this replaced taught the model to hunt a found tool down on its
+   * own tool list, behind a `mcp__vendo__` server prefix. That was only ever true
+   * of the expansion shape, and it was never reliably true even then (measured
+   * live 2026-08-03: the client does not re-list, so the tool was not there at
+   * all). The listing is now fixed, so there is no name to reconcile — the slug
+   * goes straight back into `use_service_tool`. */
+  it("connectors: teaches the slug loop, not a hunt for a prefixed name on the listing", async () => {
+    const prompt = await assembleSystemPrompt(testGuard({}, []), ctx(), undefined, false, "connectors");
+    expect(prompt).toContain("never on your own tool list");
+    expect(prompt).toContain("passing the slug exactly as find_service_tools returned it");
+    expect(prompt).toContain("if a match came back without one, ask the user");
+    expect(prompt).not.toContain("mcp__vendo__");
+    expect(prompt).not.toContain("server prefix");
+  });
+
+  it("stays out entirely when there is no discovery rail", async () => {
     const prompt = await assembleSystemPrompt(testGuard({}, []), ctx(), undefined, false, false);
     expect(prompt).not.toContain("Discovery budget");
+    expect(prompt).not.toContain("Connectors");
     const defaulted = await assembleSystemPrompt(testGuard({}, []), ctx());
     expect(defaulted).not.toContain("Discovery budget");
+    expect(defaulted).not.toContain("Connectors");
+  });
+});
+
+/** Harness redesign D8: an ask for something to look at, track, or use is an
+ * APP, not a wall of text — the same default on every harness, so a
+ * mid-conversation swap cannot change the answer. */
+describe("app-default", () => {
+  it("rides every discovery variant, and points at the skill", async () => {
+    for (const discovery of ["find-tools", "connectors", false] as const) {
+      const prompt = await assembleSystemPrompt(testGuard({}, []), ctx(), undefined, false, discovery);
+      expect(prompt).toContain("look at, track, or use");
+      expect(prompt).toContain("building-apps skill is the manual");
+    }
   });
 });
 

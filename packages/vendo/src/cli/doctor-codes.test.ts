@@ -50,6 +50,7 @@ describe("doctor error-code registry", () => {
         "E-SCHED-001": "apps declare vendo.json schedules but no schedule caller is configured",
         "E-TOOLS-001": "every extracted host tool is disabled or excluded (zero live host tools)",
         "E-TOOLS-002": "the extracted tool surface is empty (zero host tools)",
+        "E-TOOLS-003": "part of the tool catalog is ungraded (nobody has graded it, so it asks on every call)",
         "E-TURN-001": "the live model turn did not answer",
         "E-TURN-002": "the live model turn cannot run while the dev server is down",
         "E-UI-001": "an ejected surface predates the installed @vendoai/ui",

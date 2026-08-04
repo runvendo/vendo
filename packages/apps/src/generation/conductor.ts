@@ -269,7 +269,14 @@ const growAndFill = async (
   const { plan, skeleton } = input;
   // The plan IS the layout: it reaches the screen before a single group has
   // been written, so the person sees the app's real geometry filling in.
-  await Promise.resolve(deps.onPartial?.({ tree: skeleton.tree, name: plan.name })).catch(() => undefined);
+  await Promise.resolve(deps.onPartial?.({
+    tree: skeleton.tree,
+    name: plan.name,
+    // Spec §5: the posture rides the FIRST partial, which is why the brain
+    // declares it at plan time — the stage has to be open while the skeleton is
+    // still worth watching.
+    ...(plan.display === undefined ? {} : { display: plan.display }),
+  })).catch(() => undefined);
 
   // The island comes FIRST when the plan asked for one: a group whose leaf
   // shows the island has to compile against a component that exists, and only

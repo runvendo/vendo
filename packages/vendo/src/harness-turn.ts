@@ -14,11 +14,13 @@
 import {
   VendoError,
   createTurnSkills,
+  hostComponentFiles,
   hostSkillFiles,
   isUnattended,
   type FilesAdapter,
   type Harness,
   type Membership,
+  type NormalizedCatalog,
   type PackSkill,
   type Principal,
   type ResolvedModels,
@@ -76,10 +78,22 @@ export interface HarnessTurnsConfig {
   tools: ToolRegistry;
   /** Merged pack skills, projected into the read-only `/host/skills` mount. */
   packSkills: readonly PackSkill[];
+  /** The resolved component catalog — the SAME normalized value the prompt
+   *  summary is built from — projected into `/host/components` as one reference
+   *  file per entry. Unset ⇒ no component reference on the mount. */
+  catalog?: NormalizedCatalog;
   models: ResolvedModels<LanguageModel>;
   /** The venue-gated, guard-directions-carrying system prompt. Assembled per
-   *  turn by composition because it needs the ctx a `Turn` does not carry. */
-  system: (ctx: RunContext) => Promise<string | undefined>;
+   *  turn by composition because it needs the ctx a `Turn` does not carry.
+   *
+   *  `discovery` names which rail THIS turn's harness actually has, so the prompt
+   *  never teaches a tool that is not on the listing: an uncurated surface
+   *  (`toolSurface.curated === false`) has no `find_tools`, only the connector
+   *  pair — and `false` when it has neither. */
+  system: (
+    ctx: RunContext,
+    opts?: { discovery?: "find-tools" | "connectors" | false },
+  ) => Promise<string | undefined>;
   /** The descriptor catalog the loadout and `find_tools` work over — projected for
    *  THIS ctx, so THE LAW's unattended filter decides what the model can even see,
    *  and search can never resolve its way back to a withheld tool. */
@@ -91,7 +105,16 @@ export interface HarnessTurnsConfig {
   /** The shipped capability-miss rail. Load-bearing for evaluation E1's fifth ask:
    *  an impossible request must produce an honest refusal, not an invention. */
   capabilityMiss?: CapabilityMissConfig;
-  render?: HarnessRuntimeDeps["render"];
+  /** Is the `find_service_tools` / `use_service_tool` pair projected at all? Only
+   *  when a configured connector can actually search and dispatch the broker's
+   *  catalog (server.ts gates the registry add on that) — otherwise an uncurated
+   *  surface, which has no `find_tools` either, would be taught two tools that are
+   *  not on its listing. */
+  connectorDiscovery?: boolean;
+  /** The render seam's halves composition owns, per turn — like `bridge` below,
+   *  and for the same reason: the app half (`authoredApp`) stores the app row and
+   *  runs the tree's queries as the CALLER, so it needs this turn's ctx. */
+  render?: (ctx: RunContext) => HarnessRuntimeDeps["render"];
   /** The shipped tool-bridge rails composition owns, per turn (`toolOutputCap`,
    *  the connect `preflight`, the capability-miss `onCall`). */
   bridge?: (ctx: RunContext, threadId: ThreadId) => HarnessRuntimeDeps["bridge"];
@@ -183,13 +206,17 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
     return sql;
   };
   /**
-   * The `/host` mount for this deployment: pack skills as SKILL.md files.
+   * The `/host` mount for this deployment: pack skills as SKILL.md files (plus
+   * their companion files), and the component catalog as one reference file each.
    *
-   * A plain value recomputed per turn rather than stored rows — a pack skill is a
-   * code value the host's own deploy updates, so there is nothing to migrate,
-   * invalidate, or erase (core `skills.ts`).
+   * A plain value recomputed per turn rather than stored rows — both halves are
+   * code values the host's own deploy updates, so there is nothing to migrate,
+   * invalidate, or erase (core `skills.ts`, `host-components.ts`).
    */
-  const hostProjection = (): Record<string, string> => hostSkillFiles(config.packSkills);
+  const hostProjection = (): Record<string, string> => ({
+    ...hostSkillFiles(config.packSkills),
+    ...hostComponentFiles(config.catalog ?? []),
+  });
 
   /**
    * Who thinks arrives RESOLVED from composition (server.ts) — the host's
@@ -384,7 +411,7 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
         skills: createTurnSkills(workspace),
         transcript,
         harnessState,
-        ...(config.render === undefined ? {} : { render: config.render }),
+        ...(config.render === undefined ? {} : { render: config.render(input.ctx) }),
         ...(config.bridge === undefined
           ? {}
           : { bridge: config.bridge(input.ctx, thread.id) as ToolBridgeOptions | undefined }),
@@ -393,10 +420,15 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       });
 
       const discovery = await discoveryFor(input.ctx, thread.id, thread.messages);
-      // Assembled once, per turn, for WHOEVER thinks. The venue gate and the
-      // guard's directions live in here, which is why it is composition's job and
-      // not the harness's.
-      const system = await config.system(input.ctx);
+      // Assembled once, per turn, for WHOEVER thinks. The venue gate and the guard's
+      // directions live in here, which is why it is composition's job and not the
+      // harness's. Which discovery section it may promise is decided by what is
+      // actually on the listing: a curated surface has `find_tools`, an uncurated one
+      // has the connector pair (and only with connectors configured), or neither.
+      const rail = config.harness.toolSurface?.curated !== false
+        ? "find-tools" as const
+        : config.connectorDiscovery === true ? "connectors" as const : false;
+      const system = await config.system(input.ctx, { discovery: rail });
       const response = await runtime.run<never>({
         harness: config.harness,
         threadId: thread.id,

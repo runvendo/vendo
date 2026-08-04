@@ -85,7 +85,13 @@ describe("schedule trigger extras", () => {
       clock = new Date("2026-07-12T00:00:02.000Z");
       const stop = stack.automations.start(20);
       try {
-        const deadline = Date.now() + 5_000;
+        // A poll inside a test must never have a budget TIGHTER than the test's
+        // own: this suite's testTimeout is 120s, and a 5s wall clock here was a
+        // second, invisible speed limit that would report "expected 0 to be 1"
+        // — a scheduler bug — for nothing worse than a busy machine. 60s keeps
+        // vitest's timeout the single hang-detector and costs a green run
+        // nothing (the timer fires in ~20ms when the box is idle).
+        const deadline = Date.now() + 60_000;
         while (Date.now() < deadline && (await runCount(stack, appId)) < 1) {
           await new Promise((resolve) => setTimeout(resolve, 25));
         }

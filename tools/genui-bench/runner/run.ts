@@ -106,8 +106,19 @@ function newRunId(): string {
   return `${stamp}-${randomBytes(2).toString("hex")}`;
 }
 
-function readGitStateFromCli(): GitState {
-  const git = (...args: string[]) => execFileSync("git", args, { encoding: "utf8" });
+/**
+ * `git diff` prints the whole working diff, and Node's default `maxBuffer` is
+ * 1 MB — over that, `execFileSync` throws ENOBUFS and takes the run with it. A
+ * repo with one large tracked-but-uncommitted file (an evidence log, a fixture,
+ * a lockfile) is enough, and the failure lands in whatever unrelated target
+ * happens to be running. The sibling call site (app/api/run/route.ts) already
+ * budgets 64 MB; this one matches it.
+ */
+const GIT_MAX_BUFFER = 64 * 1024 * 1024;
+
+export function readGitStateFromCli(): GitState {
+  const git = (...args: string[]) =>
+    execFileSync("git", args, { encoding: "utf8", maxBuffer: GIT_MAX_BUFFER });
   const sha = git("rev-parse", "HEAD").trim();
   const diff = git("diff");
   const dirty = diff.trim() === "" ? null : createHash("sha256").update(diff).digest("hex");

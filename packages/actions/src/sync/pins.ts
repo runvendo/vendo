@@ -5,9 +5,15 @@ import {
   capturedPinBaselineSchema,
   type CapturedPinBaseline,
   type CapturedPinStyle,
-  type CapturedPinSubSource,
 } from "../formats.js";
 import type TS from "typescript";
+import {
+  captureClosure,
+  defaultExportOf,
+  importSpecifiers,
+  overBudgetWarning,
+  portablePath,
+} from "./capture.js";
 import {
   importReferenceFor,
   isInside,
@@ -17,17 +23,8 @@ import {
   walk,
 } from "./common.js";
 
-const MAX_SUB_SOURCE_DEPTH = 2;
 const MAX_SCAN_FILES = 5_000;
-const SOURCE_FILE = /\.(?:[cm]?[jt]sx?)$/u;
 const ROOT_FILE = /^(?:src\/)?(?:app\/layout|app\/root|pages\/_app)\.(?:[cm]?[jt]sx?)$/u;
-const BLESSED_JAIL_MODULES = new Set([
-  "react",
-  "react-dom",
-  "react-dom/client",
-  "react/jsx-runtime",
-  "react/jsx-dev-runtime",
-]);
 
 /** The one fix every wrapper error points at (the constraint is defended, not
  *  hidden): the wrapped child must be a single, statically importable
@@ -48,6 +45,9 @@ export interface PinCaptureResult {
   /** Loud wrapper errors ("file:line — message"); sync must fail on them. */
   errors: string[];
   warnings: string[];
+  /** The app-root stylesheets this walk captured. Shared with the registered
+   *  component capture — the same root files, read once. */
+  styles: CapturedPinStyle[];
 }
 
 /** One `<Remixable>` element found in host source. */
@@ -224,35 +224,6 @@ function plumbingSignals(source: string, file: string): string[] {
   return [...signals];
 }
 
-function portablePath(root: string, file: string): string {
-  return path.relative(root, file).split(path.sep).join("/");
-}
-
-function importSpecifiers(source: string, fileName?: string): string[] {
-  const parsed = parseModuleSource(source, fileName);
-  if (!parsed) return [];
-  const { ts, sf } = parsed;
-  const found: Array<{ at: number; specifier: string }> = [];
-  for (const statement of sf.statements) {
-    if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier)
-      && statement.importClause?.isTypeOnly !== true) {
-      found.push({ at: statement.getStart(sf), specifier: statement.moduleSpecifier.text });
-    }
-    if (ts.isExportDeclaration(statement) && statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)
-      && !statement.isTypeOnly) {
-      found.push({ at: statement.getStart(sf), specifier: statement.moduleSpecifier.text });
-    }
-  }
-  visitNodes(ts, sf, (node) => {
-    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
-      const [argument] = node.arguments;
-      if (argument && ts.isStringLiteral(argument)) found.push({ at: node.getStart(sf), specifier: argument.text });
-    }
-  });
-  found.sort((left, right) => left.at - right.at || left.specifier.localeCompare(right.specifier));
-  return [...new Set(found.map(({ specifier }) => specifier))];
-}
-
 async function readExisting(file: string): Promise<{ exists: boolean; baseline: CapturedPinBaseline | null }> {
   try {
     const raw = await fs.readFile(file, "utf8");
@@ -300,83 +271,6 @@ async function captureRootStyles(
     }
   }
   return styles;
-}
-
-interface CaptureTask {
-  file: string;
-  id: string | null;
-  source: string;
-  depth: number;
-}
-
-async function captureSubSources(
-  root: string,
-  realRoot: string,
-  slot: string,
-  primaryFile: string,
-  primarySource: string,
-  warnings: string[],
-): Promise<{ sourceImports: Record<string, string>; subSources: Record<string, CapturedPinSubSource> }> {
-  const sourceImports: Record<string, string> = {};
-  const captured = new Map<string, CapturedPinSubSource>();
-  const capturedDepth = new Map<string, number>();
-  const queue: CaptureTask[] = [{ file: primaryFile, id: null, source: primarySource, depth: 0 }];
-
-  while (queue.length > 0) {
-    const task = queue.shift()!;
-    const imports = task.id === null ? sourceImports : captured.get(task.id)!.imports;
-    for (const specifier of importSpecifiers(task.source, task.file)) {
-      if (BLESSED_JAIL_MODULES.has(specifier)) continue;
-      const importer = task.id ?? portablePath(realRoot, primaryFile);
-      if (/\.css(?:$|\?)/iu.test(specifier)) {
-        warnings.push(`remixable slot ${slot} missed import ${specifier} from ${importer} (component stylesheet imports are not captured; use an app-root stylesheet)`);
-        continue;
-      }
-      if (task.depth >= MAX_SUB_SOURCE_DEPTH) {
-        warnings.push(`remixable slot ${slot} missed import ${specifier} from ${importer} (beyond capture depth ${MAX_SUB_SOURCE_DEPTH})`);
-        continue;
-      }
-      const resolved = await resolveImportSource(task.file, specifier, root);
-      if (resolved === null) {
-        warnings.push(`remixable slot ${slot} missed import ${specifier} from ${importer} (could not be resolved)`);
-        continue;
-      }
-      let realFile: string;
-      try {
-        realFile = await fs.realpath(resolved.file);
-      } catch {
-        warnings.push(`remixable slot ${slot} missed import ${specifier} from ${importer} (could not be resolved safely)`);
-        continue;
-      }
-      if (!isInside(realRoot, realFile)) {
-        warnings.push(`remixable slot ${slot} missed import ${specifier} from ${importer} (resolves outside the host root)`);
-        continue;
-      }
-      if (!SOURCE_FILE.test(realFile)) {
-        warnings.push(`remixable slot ${slot} missed import ${specifier} from ${importer} (not JavaScript/TypeScript source)`);
-        continue;
-      }
-      const id = portablePath(realRoot, realFile);
-      imports[specifier] = id;
-      const depth = task.depth + 1;
-      const previousDepth = capturedDepth.get(id);
-      if (previousDepth !== undefined && previousDepth <= depth) continue;
-      capturedDepth.set(id, depth);
-      captured.set(id, { source: resolved.source, imports: {} });
-      queue.push({ file: realFile, id, source: resolved.source, depth });
-    }
-  }
-
-  const sortedSubSources = Object.fromEntries([...captured.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([id, module]) => [id, {
-      source: module.source,
-      imports: Object.fromEntries(Object.entries(module.imports).sort(([left], [right]) => left.localeCompare(right))),
-    }]));
-  return {
-    sourceImports: Object.fromEntries(Object.entries(sourceImports).sort(([left], [right]) => left.localeCompare(right))),
-    subSources: sortedSubSources,
-  };
 }
 
 function sameCapturedPayload(left: CapturedPinBaseline | null, right: CapturedPinBaseline): boolean {
@@ -448,40 +342,24 @@ async function resolveSite(
 /** The declared name of a module's default export: `export default function
  *  Foo`, `export default class Foo`, `export default Foo`, or
  *  `export { Foo as default }`. Null when the default export is anonymous
- *  (or wrapped in an expression its author never named). */
+ *  (or wrapped in an expression its author never named), and null when the
+ *  module has no default export at all. */
 function defaultExportName(source: string, file: string): string | null {
-  const parsed = parseModuleSource(source, file);
-  if (!parsed) return null;
-  const { ts, sf } = parsed;
-  for (const statement of sf.statements) {
-    if (ts.isExportAssignment(statement) && !statement.isExportEquals) {
-      return ts.isIdentifier(statement.expression) ? statement.expression.text : null;
-    }
-    if ((ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement))
-      && statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.DefaultKeyword) === true) {
-      return statement.name?.text ?? null;
-    }
-    if (ts.isExportDeclaration(statement) && statement.exportClause !== undefined
-      && ts.isNamedExports(statement.exportClause)) {
-      for (const element of statement.exportClause.elements) {
-        if (element.name.text === "default" && element.propertyName !== undefined
-          && element.propertyName.text !== "default") return element.propertyName.text;
-      }
-    }
-  }
-  return null;
+  return defaultExportOf(source, file)?.name ?? null;
 }
 
 export async function capturePins(
   root: string,
   out: string,
   ignoreSlots: ReadonlySet<string> = new Set(),
+  budgetBytes?: number,
 ): Promise<PinCaptureResult> {
-  const result: PinCaptureResult = { captured: [], drifted: [], pruned: [], errors: [], warnings: [] };
+  const result: PinCaptureResult = { captured: [], drifted: [], pruned: [], errors: [], warnings: [], styles: [] };
   const realRoot = await fs.realpath(root);
   const files = await walk(root, (relativePath) => /\.(?:[cm]?[jt]sx?)$/u.test(relativePath) && !/\.d\.ts$/u.test(relativePath), MAX_SCAN_FILES);
-  let stylesPromise: Promise<CapturedPinStyle[]> | undefined;
   const remixableDir = path.join(out, "remixable");
+
+  result.styles = await captureRootStyles(root, realRoot, files, result.warnings);
 
   // Wrapper collisions are legal — the same component wrapped in two places is
   // ONE capture, many mount points — so sites group by slot before capture.
@@ -529,15 +407,23 @@ export async function capturePins(
         result.warnings.push(`remixable component ${slot} reaches into host plumbing (${signals.join("; ")}) — plumbing does not cross the fork boundary; consider <Remixable review> so approved remixes run natively in the page`);
       }
     }
-    const styles = await (stylesPromise ??= captureRootStyles(root, realRoot, files, result.warnings));
-    const { sourceImports, subSources } = await captureSubSources(
+    const styles = result.styles;
+    const walked = await captureClosure({
       root,
       realRoot,
-      slot,
-      primary.realFile,
-      primary.source,
-      result.warnings,
-    );
+      label: `remixable slot ${slot}`,
+      primaryFile: primary.realFile,
+      primarySource: primary.source,
+      ...(budgetBytes === undefined ? {} : { budgetBytes }),
+      warnings: result.warnings,
+    });
+    if (!walked.ok) {
+      // Never clobber: the previous baseline stays exactly as captured, so a
+      // fork keeps rendering while the host trims the closure.
+      result.warnings.push(overBudgetWarning(`remixable slot ${slot}`, walked.overBudget));
+      continue;
+    }
+    const { sourceImports, subSources } = walked.closure;
     const hash = `sha256:${sha256Hex(primary.source)}`;
     const existing = await readExisting(baselineFile);
     const baseline: CapturedPinBaseline = {

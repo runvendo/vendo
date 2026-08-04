@@ -54,7 +54,11 @@ function guardBound(): { tools: ToolRegistry; guard: ReturnType<typeof createGua
   return { tools: guard.bind(host), guard };
 }
 
-const listing = async (interactive: boolean, runCtx = ctx()): Promise<ToolListing[]> => {
+const listing = async (
+  interactive: boolean,
+  runCtx = ctx(),
+  toolSurface?: Parameters<typeof createTurnTools>[0]["toolSurface"],
+): Promise<ToolListing[]> => {
   const { tools, guard } = guardBound();
   const turnTools = createTurnTools({
     registry: tools,
@@ -62,6 +66,7 @@ const listing = async (interactive: boolean, runCtx = ctx()): Promise<ToolListin
     ctx: runCtx,
     interactive,
     mirror: () => undefined,
+    ...(toolSurface === undefined ? {} : { toolSurface }),
   });
   try {
     return await turnTools.list();
@@ -101,6 +106,15 @@ describe("turn.tools.list() — THE LAW's projection (design §12)", () => {
 
   it("does NOT offer a destructive tool to an automation run", async () => {
     const listed = await listing(false, ctx({ venue: "automation", presence: "away" }));
+    expect(listed.map((entry) => entry.name)).toEqual(["maple_invoices_list"]);
+  });
+
+  it("still withholds it from an unattended run on an UNCURATED surface", async () => {
+    // §1's `toolSurface` is the harness's say over CURATION, never over the law:
+    // `curated: false` skips the loadout, and the ctx projection above it runs
+    // regardless. A harness asking for everything must not be handed more than
+    // its ctx projects.
+    const listed = await listing(false, ctx({ venue: "automation", presence: "away" }), { curated: false });
     expect(listed.map((entry) => entry.name)).toEqual(["maple_invoices_list"]);
   });
 

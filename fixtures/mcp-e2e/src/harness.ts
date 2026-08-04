@@ -74,7 +74,7 @@ export const hostTools = [
     description: "Send invoice with critical confirmation",
     inputSchema: { type: "object" },
     risk: "write",
-    critical: true,
+    confirmEach: true,
     binding: { kind: "route", method: "POST", path: "/api/invoices/{id}/send", argsIn: "body" },
   },
   {

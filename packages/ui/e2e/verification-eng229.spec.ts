@@ -41,7 +41,13 @@ test("reconnecting banner", async ({ page }) => {
 
 test("error banner with Retry (no more infinite connecting)", async ({ page }) => {
   await openScenario(page, "stage-error");
-  await expect(page.getByRole("alert")).toContainText("Microphone permission was denied");
+  const banner = page.getByRole("alert");
+  // M36 / §16 law 3 — the driver builds `voice.error.message` from whatever was
+  // thrown ("NotAllowedError: Permission denied", a provider's 401 sentence), so
+  // it is a developer's aid and never the line a person reads. This assertion
+  // used to pin the driver's sentence, which §16 forbids on any surface.
+  await expect(banner).toContainText("Voice session failed");
+  await expect(banner).not.toContainText("Microphone permission");
   await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
   await page.screenshot({ path: shotPath("04-error-retry"), animations: "disabled" });
 });

@@ -264,7 +264,7 @@ export function ShareDialog({
         <div className="fl-share-head">
           <div className="fl-share-title">Share{appName === undefined ? "" : ` ${appName}`}</div>
           {onClose === undefined ? null : (
-            <button type="button" className="fl-btn fl-btn--ghost" onClick={onClose}>Done</button>
+            <button type="button" className="fl-btn fl-btn-quiet" onClick={onClose}>Done</button>
           )}
         </div>
 
@@ -332,7 +332,7 @@ export function ShareDialog({
               >
                 {LEVELS.map((entry) => <option key={entry.value} value={entry.value}>{entry.label}</option>)}
               </select>
-              <button type="button" className="fl-btn fl-btn--primary" disabled={busy || target === ""} onClick={() => void submit()}>
+              <button type="button" className="fl-btn fl-btn-primary" disabled={busy || target === ""} onClick={() => void submit()}>
                 Share
               </button>
             </div>
@@ -393,7 +393,7 @@ export function ShareDialog({
               {canShare ? (
                 <button
                   type="button"
-                  className="fl-btn fl-btn--ghost fl-share-revoke"
+                  className="fl-btn fl-btn-quiet fl-share-revoke"
                   disabled={busy}
                   onClick={() => void run("remove", () => unshare(grant.principal))}
                 >
@@ -435,7 +435,7 @@ export function ForkOffer({ instruction, onFork, onDismiss }: ForkOfferProps) {
         <div className="fl-share-fork-actions">
           <button
             type="button"
-            className="fl-btn fl-btn--primary"
+            className="fl-btn fl-btn-primary"
             disabled={busy}
             onClick={() => {
               setBusy(true);
@@ -445,7 +445,7 @@ export function ForkOffer({ instruction, onFork, onDismiss }: ForkOfferProps) {
             Make me my own copy
           </button>
           {onDismiss === undefined ? null : (
-            <button type="button" className="fl-btn fl-btn--ghost" onClick={onDismiss}>Never mind</button>
+            <button type="button" className="fl-btn fl-btn-quiet" onClick={onDismiss}>Never mind</button>
           )}
         </div>
       </div>

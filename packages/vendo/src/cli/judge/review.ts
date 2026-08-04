@@ -2,7 +2,7 @@ import type { PendingLoosening } from "@vendoai/actions";
 
 /**
  * The human gate on loosenings. A hardening applies itself; a loosening — lower
- * risk, wider audience, a woken tool, a cleared critical mark — only ever lands
+ * risk, wider audience, a woken tool, a cleared confirmEach mark — only ever lands
  * because a person read the quoted code and said yes. This module is that
  * reading surface: ONE aggregated diff (new proposals plus everything already
  * queued as `pending`), one question, one answer.

@@ -141,9 +141,10 @@ export interface BoxMachineOptions {
    * PROVIDER's domain layer. Required, and never optional: the seam reads
    * `allowedDomains: undefined` as UNRESTRICTED egress (`SandboxAdapter.create`
    * in `@vendoai/apps`), so a caller that simply forgot would hand a box driven
-   * by user text an unfiltered internet. Unnamed must mean denied — the same law
-   * `boxPermission` states for tools. An empty list is the strictest policy
-   * expressible here.
+   * by user text an unfiltered internet. Unnamed must mean denied for a
+   * network boundary, even now that the box's own TOOLS run unprompted (the
+   * box is the permission; this list is part of what makes that true). An
+   * empty list is the strictest policy expressible here.
    *
    * "Strictest expressible" is not "airtight": the provider's filter keys on the
    * requested server name, so a client that omits SNI is not matched and is let

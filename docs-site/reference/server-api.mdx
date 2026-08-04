@@ -66,7 +66,6 @@ export function createVendo(config: {
     maxOutputTokens?: number;
     historyWindow?: number;                   // last N whole messages re-sent per turn
     maxInitialTools?: number;                 // initial tool loadout cap; rest via find_tools
-    maxSearchExpansions?: number;             // lazy toolkits one tool search may expand (default 3)
     maxSteps?: number;                        // agent-loop step cap per turn (default 20)
   };
   sessions?: { ttlMs?: number; sweepIntervalMs?: number }; // anonymous-session lifecycle

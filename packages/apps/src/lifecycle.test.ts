@@ -264,6 +264,10 @@ describe("apps lifecycle", () => {
         intent: `Pin edit ${index}`,
         rung: 1,
       }, ["net-worth-card"]);
+      // The cap is applied by the caller once its write has LANDED — an append
+      // is speculative until then, and pruning inside it charged a refused write
+      // the oldest real undo point (see AppHistoryAccess.prune).
+      await history.prune(app.id);
     }
 
     expect(await history.surface(app.id).list()).toHaveLength(50);

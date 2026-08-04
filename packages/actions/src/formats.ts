@@ -7,9 +7,33 @@ import {
   toolDescriptorSchema,
   type FieldSemantic,
   type JsonSchema,
+  type RiskLabel,
   type Step,
   type ToolDescriptor,
 } from "@vendoai/core";
+
+/**
+ * `confirmEach` was called `critical` before the risk-grading redesign (D5).
+ * Every WRITER emits the new name; every host-authored file keeps reading the
+ * old one, indefinitely — the same read-old/write-new shape persisted data
+ * always gets. Applied at the file schemas rather than inside `ToolDescriptor`
+ * so the strict authored schemas (a typo must still fail loudly) accept the
+ * one legacy spelling and nothing else. An explicit `confirmEach` wins.
+ */
+function readCriticalAlias(value: unknown): unknown {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
+  const record = value as Record<string, unknown>;
+  if (!("critical" in record)) return value;
+  const { critical, ...rest } = record;
+  return { confirmEach: critical, ...rest };
+}
+
+/** The same alias for `PendingLoosening.field`, whose value NAMES the field. */
+function readCriticalFieldAlias(value: unknown): unknown {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
+  const record = value as Record<string, unknown>;
+  return record.field === "critical" ? { ...record, field: "confirmEach" } : value;
+}
 
 export const VENDO_CATALOG_FORMAT = "vendo/catalog@1" as const;
 
@@ -233,24 +257,17 @@ export const VENDO_TOOLS_FORMAT = "vendo/tools@3" as const;
 
 export const VENDO_OVERRIDES_FORMAT = "vendo/overrides@3" as const;
 
-/** 04-actions §2: a descriptor plus its execution binding — one entry of `.vendo/tools.json`. */
+/** 04-actions §2: a descriptor plus its execution binding — one entry of `.vendo/tools.json`.
+ *
+ *  `outputSchema` (the host's DECLARED response body, recorded by sync) is a plain
+ *  `ToolDescriptor` field, not extraction-only provenance: the registry carries it
+ *  and every surface lists it. Generation's `toolShapes` still come from runtime
+ *  sampling, which is ground truth. */
 export type ExtractedTool = ToolDescriptor & {
   binding: PrimitiveToolBinding;
   /** Fail-closed extraction (04 §1): a route the scanner can't classify is emitted disabled, never silently auto-allowed. */
   disabled?: boolean;
   note?: string;
-  /** The host's DECLARED response body, when its source says so (an OpenAPI
-   *  2xx `application/json` schema today). Extraction never invents one.
-   *
-   *  RECORDED ONLY — nothing consumes it yet. Generation's `toolShapes` still
-   *  come exclusively from runtime sampling (apps runtime, generationToolContext),
-   *  which is ground truth and covers every no-input read tool. The gap this
-   *  field is here to close is the tools sampling can NEVER reach — ones that
-   *  require input, mutate, or sit behind a policy gate — but feeding declared
-   *  schemas into generation changes the prompt for every OpenAPI host at once
-   *  and wants its own corpus evidence, so it is deliberately a separate
-   *  change. Until then this is committed contract data, not a live input. */
-  outputSchema?: JsonSchema;
   /** Who can legitimately call this through the product's own auth —
    *  extraction's provenance for the default exclusion of non-end-user tools. */
   audience?: "end-user" | "operator" | "internal";
@@ -261,11 +278,10 @@ export type ExtractedTool = ToolDescriptor & {
   srcHash?: string;
 };
 
-export const extractedToolSchema = toolDescriptorSchema.extend({
+export const extractedToolSchema = z.preprocess(readCriticalAlias, toolDescriptorSchema.extend({
   binding: extractedBindingSchema,
   disabled: z.boolean().optional(),
   note: z.string().optional(),
-  outputSchema: jsonSchemaSchema.optional(),
   audience: z.enum(["end-user", "operator", "internal"]).optional(),
   semantics: z.record(fieldSemanticSchema).optional(),
   srcHash: z.string().min(1).optional(),
@@ -277,7 +293,7 @@ export const extractedToolSchema = toolDescriptorSchema.extend({
       message: "compound bindings live in .vendo/overrides.json compounds — .vendo/tools.json stays deterministic (04-actions §6)",
     });
   }
-}) satisfies z.ZodType<ExtractedTool>;
+})) satisfies z.ZodType<ExtractedTool, z.ZodTypeDef, unknown>;
 
 /** `.vendo/tools.json` — generated, regenerated wholesale by `vendo sync`,
  *  never hand-edited. Passthrough like every generated artifact. */
@@ -289,7 +305,7 @@ export interface ToolsFile {
 export const toolsFileSchema = z.object({
   format: z.literal(VENDO_TOOLS_FORMAT),
   tools: z.array(extractedToolSchema),
-}).passthrough() satisfies z.ZodType<ToolsFile>;
+}).passthrough() satisfies z.ZodType<ToolsFile, z.ZodTypeDef, unknown>;
 
 /**
  * `.vendo/overrides.json` — human-written, respected forever (04 §1).
@@ -298,7 +314,7 @@ export const toolsFileSchema = z.object({
  */
 export interface ToolOverride {
   risk?: ToolDescriptor["risk"];
-  critical?: boolean;
+  confirmEach?: boolean;
   disabled?: boolean;
   description?: string;
   /** The short human label people see for this tool (MCP client menus,
@@ -315,15 +331,15 @@ export interface ToolOverride {
   semantics?: Record<string, FieldSemantic>;
 }
 
-export const toolOverrideSchema = z.object({
+export const toolOverrideSchema = z.preprocess(readCriticalAlias, z.object({
   risk: riskLabelSchema.optional(),
-  critical: z.boolean().optional(),
+  confirmEach: z.boolean().optional(),
   disabled: z.boolean().optional(),
   description: z.string().optional(),
   title: z.string().min(1).optional(),
   audience: z.enum(["end-user", "operator", "internal"]).optional(),
   semantics: z.record(fieldSemanticSchema).optional(),
-}).strict() satisfies z.ZodType<ToolOverride>;
+}).strict()) satisfies z.ZodType<ToolOverride, z.ZodTypeDef, unknown>;
 
 /**
  * 04-actions §1: a capability brief — reviewed prose the agent layer may attach
@@ -348,11 +364,11 @@ export type CompoundTool = ToolDescriptor & {
   note?: string;
 };
 
-export const compoundToolSchema = toolDescriptorSchema.extend({
+export const compoundToolSchema = z.preprocess(readCriticalAlias, toolDescriptorSchema.extend({
   binding: compoundBindingSchema,
   disabled: z.boolean().optional(),
   note: z.string().optional(),
-}) satisfies z.ZodType<CompoundTool>;
+})) satisfies z.ZodType<CompoundTool, z.ZodTypeDef, unknown>;
 
 /**
  * `.vendo/overrides.json` (vendo/overrides@3) — the AUTHORED layer, the only
@@ -403,7 +419,7 @@ export const overridesFileSchema = z.object({
   remix: z.object({
     ignoreSlots: z.array(z.string().min(1)),
   }).strict().optional(),
-}).strict() satisfies z.ZodType<OverridesFile>;
+}).strict() satisfies z.ZodType<OverridesFile, z.ZodTypeDef, unknown>;
 
 /**
  * `.vendo/judgments.json` — the AI layer, the third file of `.vendo/`, split
@@ -418,8 +434,8 @@ export const VENDO_JUDGMENTS_FORMAT = "vendo/judgments@1" as const;
 export interface JudgmentFields {
   description?: string;
   title?: string;
-  risk?: "read" | "write" | "destructive";
-  critical?: boolean;
+  risk?: RiskLabel;
+  confirmEach?: boolean;
   /** true = harden; false = approved wake-up (only ever arrives here after a
    *  human accepted the queued loosening — the model cannot write it itself). */
   disabled?: boolean;
@@ -427,11 +443,11 @@ export interface JudgmentFields {
   semantics?: Record<string, FieldSemantic>;
 }
 
-export const judgmentFieldsSchema = z.object({
+export const judgmentFieldsSchema = z.preprocess(readCriticalAlias, z.object({
   description: z.string().max(500).optional(),
   title: z.string().min(1).max(60).optional(),
   risk: riskLabelSchema.optional(),
-  critical: z.boolean().optional(),
+  confirmEach: z.boolean().optional(),
   disabled: z.boolean().optional(),
   audience: z.enum(["end-user", "operator", "internal"]).optional(),
   semantics: z.record(fieldSemanticSchema).optional(),
@@ -439,24 +455,24 @@ export const judgmentFieldsSchema = z.object({
   // surface, and `applyJudgment` spreads it onto the tool. A passthrough here
   // would let a model smuggle `binding` or `inputSchema` into a judgment and
   // rewrite the deterministic skeleton. Identity is not expressible.
-}).strict() satisfies z.ZodType<JudgmentFields>;
+}).strict()) satisfies z.ZodType<JudgmentFields, z.ZodTypeDef, unknown>;
 
 /** One queued loosening awaiting human review. NEVER merged at runtime: the
  *  only fields a loosening can touch are the four capability grades, and each
  *  one costs a quoted piece of evidence. */
 export interface PendingLoosening {
-  field: "risk" | "critical" | "disabled" | "audience";
+  field: "risk" | "confirmEach" | "disabled" | "audience";
   value: string | boolean;
   evidence: string;
   reason?: string;
 }
 
-export const pendingLooseningSchema = z.object({
-  field: z.enum(["risk", "critical", "disabled", "audience"]),
+export const pendingLooseningSchema = z.preprocess(readCriticalFieldAlias, z.object({
+  field: z.enum(["risk", "confirmEach", "disabled", "audience"]),
   value: z.union([z.string(), z.boolean()]),
   evidence: z.string().min(1).max(500),
   reason: z.string().max(300).optional(),
-}).passthrough() satisfies z.ZodType<PendingLoosening>;
+}).passthrough()) satisfies z.ZodType<PendingLoosening, z.ZodTypeDef, unknown>;
 
 export interface ToolJudgment {
   /** bindingIdentity(tool.binding) at judgment time — a mismatch makes the
@@ -476,7 +492,7 @@ export const toolJudgmentSchema = z.object({
   fields: judgmentFieldsSchema,
   evidence: z.string().min(1).max(500),
   pending: z.array(pendingLooseningSchema).optional(),
-}).passthrough() satisfies z.ZodType<ToolJudgment>;
+}).passthrough() satisfies z.ZodType<ToolJudgment, z.ZodTypeDef, unknown>;
 
 export interface JudgmentsFile {
   format: typeof VENDO_JUDGMENTS_FORMAT;
@@ -489,7 +505,7 @@ export interface JudgmentsFile {
 export const judgmentsFileSchema = z.object({
   format: z.literal(VENDO_JUDGMENTS_FORMAT),
   tools: z.record(toolJudgmentSchema),
-}).passthrough() satisfies z.ZodType<JudgmentsFile>;
+}).passthrough() satisfies z.ZodType<JudgmentsFile, z.ZodTypeDef, unknown>;
 
 /**
  * Remixable component baseline captured by sync (06 §8, written to
@@ -549,6 +565,186 @@ export const capturedPinBaselineSchema = z.object({
   styles: z.array(capturedPinStyleSchema).optional(),
 }).passthrough() satisfies z.ZodType<CapturedPinBaseline>;
 
+/**
+ * One captured module, content-addressed by the sha-256 hex of its canonical
+ * JSON. Written to `.vendo/components/modules/<hex>.json` and pushed to the
+ * Cloud blob namespace under the same key, so ten components importing one
+ * `format-currency.ts` store ONE copy and reference it ten times. A captured
+ * stylesheet is the same shape with no imports.
+ */
+export interface CapturedModule {
+  source: string;
+  /** Import specifier -> captured module id (root-relative posix path). */
+  imports?: Record<string, string>;
+}
+
+export const capturedModuleSchema = z.object({
+  source: z.string(),
+  imports: z.record(z.string()).optional(),
+}).passthrough() satisfies z.ZodType<CapturedModule>;
+
+/**
+ * Why a registered component has no captured source. Every reason is recorded,
+ * not just the one that is easy to explain: a console tile that says WHY it
+ * cannot preview a component is the difference between a bug report and a
+ * one-line fix. `detail` is a finished sentence a surface can show verbatim.
+ */
+export const HOST_COMPONENT_SKIP_REASONS = [
+  /** The import closure blew the per-component byte budget. */
+  "too-large",
+  /** The closure imports specifiers the jail cannot resolve (a package, a
+   *  component-local stylesheet), so loading it would throw. */
+  "unsupported-imports",
+  /** Registered as a module's default export, but the module has none. */
+  "no-default-export",
+  /** The module default-exports something ELSE, so the registered binding
+   *  cannot be given the default export the jail renders. */
+  "default-export-conflict",
+  /** Declared inside node_modules — package code is never captured. */
+  "in-package",
+  /** The registered value has no named declaration to re-export. */
+  "no-named-declaration",
+] as const;
+
+export type HostComponentSkipReason = (typeof HOST_COMPONENT_SKIP_REASONS)[number];
+
+export interface HostComponentSkip {
+  reason: HostComponentSkipReason;
+  /** One finished sentence, safe to render as-is. */
+  detail: string;
+  /** `too-large`: bytes the closure needed, the budget, and the biggest module. */
+  bytes?: number;
+  budgetBytes?: number;
+  largest?: string;
+  /** `unsupported-imports`: the specifiers the jail cannot resolve. */
+  specifiers?: string[];
+}
+
+/**
+ * One registered host component, captured by sync so the console can render it
+ * for real instead of a labeled placeholder (`.vendo/components/<Name>.json`).
+ * Holds no source: every byte lives in a content-addressed `CapturedModule`, so
+ * the record stays small enough that listing the collection IS the hash
+ * manifest a push compares against.
+ */
+export interface CapturedHostComponent {
+  /** The name the host registered — the name generated trees reference. */
+  name: string;
+  /** Content hash of the whole capture (refs + structure), `sha256:<hex>`. */
+  hash: string;
+  capturedAt: string;
+  /** Root-relative posix path of the module that declares the component. */
+  module: string;
+  /** The binding inside `module` to render. "default" means render the module
+   *  as-is; anything else is a local (possibly unexported) declaration, and
+   *  `hostComponentEntrySource` turns it into the jail's default export. */
+  export?: string;
+  /** Content address of the entry module. Absent when `skipped` is set. */
+  entry?: string;
+  /** Captured module id -> content address, for the whole import closure. */
+  modules?: Record<string, string>;
+  /** App-root stylesheets, shared by every component in the project. */
+  styles?: Array<{ path: string; ref: string }>;
+  /** Total captured bytes (entry + closure), for budget accounting. */
+  bytes?: number;
+  /**
+   * Every package this capture needs at render time — the ones the jail bundles
+   * (clsx / tailwind-merge / zod) and the ones a preview fetches from the pinned
+   * CDN (`packages` below). A consumer that cannot supply one MUST show an
+   * honest "preview unavailable" tile: without this field the require throws, a
+   * `streaming` surface swallows it into a shimmer skeleton, and the component
+   * is indistinguishable from one still loading. Consumers predating CDN
+   * loading find the CDN packages unsatisfied here and degrade honestly —
+   * which is exactly why the CDN pins live in a separate field.
+   */
+  requires?: string[];
+  /**
+   * PREVIEW VENUE ONLY. Import specifier -> `<name>@<exact installed
+   * version>[/subpath]`, for every package a preview may load from
+   * `JAIL_PACKAGE_CDN_ORIGIN`. Never a range and never a tag: the version is
+   * the one the host has installed, and one that cannot be resolved exactly
+   * makes the component an honest skip instead.
+   *
+   * A remix fork rendering in a customer's own page must never reach a CDN, so
+   * nothing on the production path ever copies this into a furnishing (see
+   * `attachPinFurnishings`, and the strip in `stripServerAuthoritativeFields`).
+   */
+  packages?: Record<string, string>;
+  /**
+   * The rehearsal seed a preview renders with, parsed from the registration's
+   * own first usable `examples` string.
+   *
+   * Load-bearing, not a nicety. A registered component is written to render
+   * nothing until its data binds (`if (!series?.length) return null` — what the
+   * docs recommend and what every demo component does), and a preview has NO
+   * data plane: every query stubs to `[]`. Without a seed the module loads, the
+   * component correctly draws nothing, and the surface sits on a streaming
+   * silhouette forever. `JailFurnishing.sampleProps` is exactly this seam and
+   * pin baselines already carry it.
+   */
+  sampleProps?: Record<string, unknown>;
+  /**
+   * Which rung of the seed ladder produced `sampleProps`: the host's own
+   * declared `examples`, or values synthesized from its declared props schema.
+   *
+   * A SIBLING of `sampleProps`, deliberately not a key inside it — the jail
+   * spreads `sampleProps` straight onto the component's props, so an `origin`
+   * key in there would be passed to the component as a prop and could collide
+   * with a real one. Kept out here, a surface can still say "preview uses
+   * generated sample data" instead of implying the numbers are real.
+   */
+  sampleOrigin?: "declared" | "generated";
+  /** Present INSTEAD of `sampleProps`, so a surface can label the gap ("no
+   *  sample data") rather than spin. Absent whenever `sampleProps` is set. */
+  noSampleProps?: HostComponentSampleGap;
+  skipped?: HostComponentSkip;
+}
+
+/** Why a captured component has no preview seed. Distinct from `skipped`: the
+ *  capture SUCCEEDED, there is just nothing to render it with. */
+export interface HostComponentSampleGap {
+  reason: "no-examples" | "unreadable-examples" | "unrepresentable-props";
+  /** One finished sentence, safe to render as-is. */
+  detail: string;
+}
+
+export const capturedHostComponentSchema = z.object({
+  name: z.string().min(1),
+  hash: z.string().startsWith("sha256:"),
+  capturedAt: z.string(),
+  module: z.string().min(1),
+  export: z.string().min(1).optional(),
+  entry: z.string().regex(/^[0-9a-f]{64}$/u).optional(),
+  modules: z.record(z.string().regex(/^[0-9a-f]{64}$/u)).optional(),
+  styles: z.array(z.object({ path: z.string(), ref: z.string().regex(/^[0-9a-f]{64}$/u) })).optional(),
+  bytes: z.number().optional(),
+  requires: z.array(z.string()).optional(),
+  packages: z.record(z.string()).optional(),
+  sampleProps: z.record(z.unknown()).optional(),
+  sampleOrigin: z.enum(["declared", "generated"]).optional(),
+  noSampleProps: z.object({
+    reason: z.enum(["no-examples", "unreadable-examples", "unrepresentable-props"]),
+    detail: z.string(),
+  }).passthrough().optional(),
+  skipped: z.object({
+    reason: z.enum(HOST_COMPONENT_SKIP_REASONS),
+    detail: z.string(),
+    bytes: z.number().optional(),
+    budgetBytes: z.number().optional(),
+    largest: z.string().optional(),
+    specifiers: z.array(z.string()).optional(),
+  }).passthrough().optional(),
+}).passthrough() satisfies z.ZodType<CapturedHostComponent>;
+
+/** The jail renders a module's DEFAULT export, but a host registers whatever
+ *  binding it likes — including a component its module never exports. Capture
+ *  records the binding; this turns the stored module into a renderable entry.
+ *  Capture guarantees the append is legal (a module that already
+ *  default-exports something else is skipped with a warning instead). */
+export function hostComponentEntrySource(source: string, exportName = "default"): string {
+  return exportName === "default" ? source : `${source}\nexport { ${exportName} as default };\n`;
+}
+
 /** 04-actions §1 */
 export interface BreakingChange {
   tool: string;
@@ -563,4 +759,15 @@ export interface SyncReport {
    *  `<Remixable>` wrapper names their slot anymore. */
   pins: { captured: string[]; drifted: string[]; pruned?: string[] };
   catalog: { discovered: number; registered: number };
+  /** Registered host components whose source sync captured, so the console can
+   *  render them for real. `skipped` = could not be captured at all;
+   *  `withoutSamples` = captured, but the registration declares no usable
+   *  `examples`, so a preview can only show a labeled placeholder. */
+  components: {
+    captured: string[];
+    drifted: string[];
+    pruned?: string[];
+    skipped?: string[];
+    withoutSamples?: string[];
+  };
 }

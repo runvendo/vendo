@@ -2,8 +2,10 @@
  * Build contract §1.1 (the three-status surface a harness sees) and §1.4
  * (approvals wait or fail — they never suspend a run).
  */
-import type { ApprovalId, ToolCall, ToolOutcome, ToolRegistry } from "@vendoai/core";
+import type { ApprovalId, Harness, ToolCall, ToolOutcome, ToolRegistry } from "@vendoai/core";
+import { CAPABILITY_MISS_TOOL_NAME, FIND_TOOLS_TOOL_NAME } from "@vendoai/agent/internal";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { DiscoveryRails, MetaTool } from "./discovery.js";
 import { APPROVAL_WAIT_MS, createTurnTools, type MirrorEvent } from "./turn-tools.js";
 import { boundRegistry, ctx, readTool, testGuard } from "./test-doubles.test-util.js";
 
@@ -12,6 +14,8 @@ function harness(options: {
   guard: ReturnType<typeof testGuard>;
   interactive?: boolean;
   approvalWaitMs?: number;
+  discovery?: DiscoveryRails;
+  toolSurface?: Harness["toolSurface"];
 }) {
   const mirrored: MirrorEvent[] = [];
   const tools = createTurnTools({
@@ -20,9 +24,28 @@ function harness(options: {
     ctx: ctx(),
     interactive: options.interactive ?? true,
     mirror: (event) => mirrored.push(event),
+    ...(options.discovery === undefined ? {} : { discovery: options.discovery }),
+    ...(options.toolSurface === undefined ? {} : { toolSurface: options.toolSurface }),
     ...(options.approvalWaitMs === undefined ? {} : { approvalWaitMs: options.approvalWaitMs }),
   });
   return { tools, mirrored };
+}
+
+/** The shipped rails' SHAPE: a loadout that equips a subset, and both meta-tools
+ *  as callable entries — what `createDiscoveryRails` returns, without a search
+ *  provider to configure. */
+function discoveryDouble(equipped: string[]): DiscoveryRails {
+  const metaTool = (name: string): [string, MetaTool] => [
+    name,
+    {
+      listing: { name, title: name, description: `the ${name} meta-tool`, risk: "read" },
+      execute: async () => ({ status: "ok", output: { ran: name } }),
+    },
+  ];
+  return {
+    activeToolNames: () => equipped,
+    meta: new Map([metaTool(CAPABILITY_MISS_TOOL_NAME), metaTool(FIND_TOOLS_TOOL_NAME)]),
+  };
 }
 
 describe("APPROVAL_WAIT_MS", () => {
@@ -65,6 +88,88 @@ describe("turn.tools.list", () => {
         inputSchema: schema,
       },
     ]);
+  });
+
+  // D5 (2026-08-03): a declared result shape rides the listing so the model
+  // knows a query's fields before calling it. Optional end to end — a tool
+  // whose host declared none lists exactly as before.
+  it("carries the descriptor's outputSchema when it has one", async () => {
+    const outputSchema = { type: "object", properties: { invoices: { type: "array" } } };
+    const guard = testGuard();
+    const registry = boundRegistry(
+      {
+        maple_invoices_list: {
+          descriptor: { ...readTool("maple_invoices_list"), outputSchema },
+          execute: () => [],
+        },
+        maple_pay: { descriptor: readTool("maple_pay", "destructive"), execute: () => ({ sent: true }) },
+      },
+      guard,
+    );
+    const { tools } = harness({ registry, guard });
+
+    const [declared, undeclared] = await tools.list();
+    expect(declared?.outputSchema).toEqual(outputSchema);
+    expect(undeclared).not.toHaveProperty("outputSchema");
+  });
+});
+
+/** Contract §1, amendment 2026-08-03: the harness's own say over the surface. */
+describe("turn.tools — Harness.toolSurface", () => {
+  const surfaceRig = (toolSurface?: Harness["toolSurface"]) => {
+    const guard = testGuard();
+    const registry = boundRegistry(
+      {
+        maple_invoices_list: { descriptor: readTool("maple_invoices_list"), execute: () => [] },
+        maple_reports_read: { descriptor: readTool("maple_reports_read"), execute: () => [] },
+        vendo_apps_create: { descriptor: readTool("vendo_apps_create", "write"), execute: () => ({}) },
+      },
+      guard,
+    );
+    // The loadout equips ONE name, so anything else on the listing can only be
+    // there because the loadout was skipped.
+    const discovery = discoveryDouble(["maple_reports_read"]);
+    return harness({ registry, guard, discovery, ...(toolSurface === undefined ? {} : { toolSurface }) });
+  };
+
+  it("no toolSurface: the loadout curates and find_tools is offered — today's behaviour", async () => {
+    const { tools } = surfaceRig();
+    const names = (await tools.list()).map((entry) => entry.name);
+    expect(names).not.toContain("maple_invoices_list");
+    expect(names).toContain("maple_reports_read");
+    expect(names).toContain(FIND_TOOLS_TOOL_NAME);
+    expect(names).toContain(CAPABILITY_MISS_TOOL_NAME);
+  });
+
+  it("curated:false: the loadout is skipped, find_tools is gone, the miss reporter stays", async () => {
+    const { tools } = surfaceRig({ curated: false });
+    const names = (await tools.list()).map((entry) => entry.name);
+    // The tool the loadout hid is on the listing — that IS the uncurated surface.
+    expect(names).toContain("maple_invoices_list");
+    // Nothing left for search to unlock, so the meta-tool that unlocks it goes...
+    expect(names).not.toContain(FIND_TOOLS_TOOL_NAME);
+    // ...and the honest-refusal rail, which has nothing to do with curation, stays.
+    expect(names).toContain(CAPABILITY_MISS_TOOL_NAME);
+  });
+
+  it("curated:false: calling find_tools is not-found, like any name that was never listed", async () => {
+    const { tools } = surfaceRig({ curated: false });
+    const result = await tools.call(FIND_TOOLS_TOOL_NAME, { query: "invoices" });
+    expect(result).toEqual({
+      status: "error",
+      error: { code: "not-found", message: `Unknown tool: ${FIND_TOOLS_TOOL_NAME}` },
+    });
+  });
+
+  it("withhold: the name is off the listing and answers not-found on call", async () => {
+    const { tools } = surfaceRig({ curated: false, withhold: ["vendo_apps_create"] });
+    const names = (await tools.list()).map((entry) => entry.name);
+    expect(names).not.toContain("vendo_apps_create");
+    expect(names).toContain("maple_invoices_list");
+    await expect(tools.call("vendo_apps_create", { appId: "app_1" })).resolves.toEqual({
+      status: "error",
+      error: { code: "not-found", message: "Unknown tool: vendo_apps_create" },
+    });
   });
 });
 

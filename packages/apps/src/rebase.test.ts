@@ -1,6 +1,7 @@
-import type { AppDocument, RunContext, StoreAdapter, ToolRegistry } from "@vendoai/core";
+import { compileWire, type AppDocument, type RunContext, type StoreAdapter, type ToolRegistry } from "@vendoai/core";
 import type { LanguageModel } from "ai";
 import { describe, expect, it } from "vitest";
+import { createAppHistory } from "./history.js";
 import { createApps, type AppsRuntime, type PinBaseline } from "./index.js";
 import { pinComponentName } from "./pins.js";
 import { appVersionHash } from "./version-hash.js";
@@ -142,6 +143,10 @@ const seedForkedHistory = async (
 /** The intent pins.fork records for the gesture — the first intent on the
  *  trail by construction, and the one the rebase never replays. */
 const FORK_INTENT = `Remix the host component "${SLOT}"`;
+
+/** What that row must SAY it is: the only kind that can vouch for the pinned
+ *  component having started as the captured baseline. */
+const FORK_KIND = "fork";
 
 /** Fork the pin deterministically on the OLD baseline, with no edits on top. */
 const seedBareFork = async (store: StoreAdapter, id: string): Promise<AppsRuntime> => {
@@ -441,6 +446,10 @@ describe("06-apps §8 — pin rebase via intent replay", () => {
         slot: SLOT,
         at: "2026-07-15T12:00:00.000Z",
         intent: "Persist the card to the database",
+        // A replayable row — the trail's own words. (Without the kind it is a
+        // pre-discriminator row, which fails the whole rebase closed instead;
+        // that is the test below, and it is not what this one is about.)
+        kind: "edit",
         versionId: "ver_tampered",
         seq: 99,
       },
@@ -458,6 +467,104 @@ describe("06-apps §8 — pin rebase via intent replay", () => {
     expect(result.replayed).toEqual(["Show it in green"]);
     expect(result.failed.intent).toBe("Persist the card to the database");
     expect(result.failed.issues.length).toBeGreaterThan(0);
+    await expect(runtime.get(appId, ctx)).resolves.toEqual(before);
+  });
+
+  it("refuses a trail whose remix came from a files-first SAVE, so that remix survives the drift", async () => {
+    // THE mainline sequence, end to end: `pins.fork` is the Remix gesture and
+    // files-first is how apps are written by default, so the trail reads
+    // [fork, "Saved app.vendo"]. Requiring intents[0] to BE the fork does not
+    // close this: the fork is there, and the receipt behind it went to the brain
+    // as a replay instruction. The re-fork had already overwritten the pinned
+    // component with the pristine new baseline, so whatever the brain did with
+    // "Saved app.vendo" persisted as a "rebased" app WITHOUT the person's remix —
+    // measured: status "rebased", replayed ["Saved app.vendo"], remix gone.
+    const store = memoryStore();
+    const app = seedDoc("app_files_first_remix");
+    await seedAppRow(store, app, ctx.principal.subject);
+    const authoring = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog: [],
+      model: brainScript(UNUSED_ANSWER),
+      pinBaselines: [baseline(OLD_SOURCE, "sha256:maple-old")],
+    });
+    await authoring.pins.fork({ appId: app.id, slot: SLOT }, ctx);
+
+    // The person keeps working in the FILE: they rewrite the remixed component
+    // and the harness saves `app.vendo`. Their work now exists in exactly one
+    // place — the stored document.
+    const remixWire = `<App name="Maple overview">
+  <${COMPONENT} />
+  <Island name="${COMPONENT}">export default function ${COMPONENT}() { return "Ada's own remix"; }</Island>
+</App>`;
+    await authoring.authored({ appId: app.id, compiled: compileWire(remixWire) }, ctx);
+    expect((await authoring.get(app.id, ctx))?.components?.[COMPONENT]).toContain("Ada's own remix");
+    expect((await createAppHistory(store).pinIntents(app.id, SLOT)).map(({ kind }) => kind))
+      .toEqual([FORK_KIND, "touch"]);
+
+    // The host ships a new version of that component and re-syncs: drift.
+    const prompts: string[] = [];
+    const resynced = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog: [],
+      // An answer that WOULD land, so a rebase that decides to replay the receipt
+      // gets all the way to a persisted "rebased" app.
+      model: scriptedLanguageModel((call) => {
+        if (!isBrainTurn(call)) return "";
+        prompts.push(promptText(call));
+        return islandEdit(NEW_SOURCE, REPLAYED_SOURCE);
+      }),
+      pinBaselines: [baseline(NEW_SOURCE, "sha256:maple-new")],
+    });
+    await expect(resynced.pins.drift(app.id, ctx)).resolves.toMatchObject([{ slot: SLOT }]);
+
+    // The refusal is the only honest answer: a save receipt is not an
+    // instruction, and the change it stands for cannot be replayed onto the new
+    // baseline. Refusing costs one manual remix; accepting costs the remix.
+    await expect(resynced.pins.rebase({ appId: app.id, slot: SLOT }, ctx)).rejects.toMatchObject({
+      code: "conflict",
+      message: expect.stringContaining("no recorded edit trail"),
+      detail: { reason: "unreplayable-trail", unreplayable: ["Saved app.vendo"] },
+    });
+    // Nothing was asked of the brain, nothing was written, and the person's own
+    // component is still theirs…
+    expect(prompts).toEqual([]);
+    const after = await resynced.get(app.id, ctx);
+    expect(after?.components?.[COMPONENT]).toContain("Ada's own remix");
+    expect(after?.pins).toEqual([{ slot: SLOT, base: "sha256:maple-old" }]);
+    // …and the pin stays honestly drifted, which is what offers the remix again.
+    await expect(resynced.pins.drift(app.id, ctx)).resolves.toMatchObject([{ slot: SLOT }]);
+  });
+
+  it("fails closed on a legacy trail row that cannot say what it is", async () => {
+    // Rows written before the discriminator existed prove nothing: this one may
+    // be one of the user's instructions or a save receipt, and the two have
+    // opposite consequences. Refusing costs a manual remix; guessing "edit" is
+    // how a remix gets overwritten by the pristine host component.
+    const store = memoryStore();
+    const appId = await seedForkedHistory(store);
+    await store.records(`vendo:app-pin-intents:${appId}`).put({
+      id: "pinint_legacy",
+      data: {
+        slot: SLOT,
+        at: "2026-07-15T12:00:00.000Z",
+        intent: "Show it in blue",
+        versionId: "ver_legacy",
+        seq: 99,
+      },
+      refs: { slot: SLOT },
+    });
+    const runtime = rebasedRuntime(store, [UNUSED_ANSWER]);
+    const before = await runtime.get(appId, ctx);
+
+    await expect(runtime.pins.rebase({ appId, slot: SLOT }, ctx)).rejects.toMatchObject({
+      code: "conflict",
+      detail: { reason: "unreplayable-trail" },
+    });
     await expect(runtime.get(appId, ctx)).resolves.toEqual(before);
   });
 

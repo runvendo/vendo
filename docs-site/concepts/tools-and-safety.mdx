@@ -12,10 +12,10 @@ rules live in the [Decision reference](#decision-reference) at the end.
 
 ## How guard.bind decides
 
-For each call the guard walks one fixed order: the critical flag first, then
-a matching grant, then policy rules, then policy code, then the judge, then
-the default posture. Critical tools always ask. Breakers can turn a run
-decision into an ask.
+For each call the guard walks one fixed order: the `confirmEach` flag first,
+then a matching grant, then policy rules, then policy code, then the judge,
+then the default posture. A `confirmEach` tool always asks. Breakers can turn
+a run decision into an ask.
 
 Declared risk is a conservative default. For a small set of Vendo tools
 where the safe path depends on the arguments, guard resolves the effective
@@ -60,11 +60,13 @@ lifecycle event with principal, venue, presence, and app context.
 ## Decision reference
 
 Tool names match `/^[a-zA-Z0-9_-]{1,64}$/`; underscore is the namespace
-separator. Risk is `read`, `write`, or `destructive`.
+separator. Risk is `read`, `write`, `destructive`, or `ungraded` — the last meaning
+nobody (human, judge, or protocol fact) has graded the tool yet, which the
+guard treats like `destructive` and asks about.
 
 ### guard.bind decision order
 
-1. Critical flag (critical tools always ask)
+1. `confirmEach` flag (a `confirmEach` tool always asks)
 2. Grant match
 3. Policy rules
 4. Policy code

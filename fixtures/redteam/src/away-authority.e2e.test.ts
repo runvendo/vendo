@@ -7,12 +7,14 @@
  * parks again.
  */
 import { beforeEach, describe, expect, it } from "vitest";
+import { UNATTENDED_DESTRUCTIVE_REASON } from "@vendoai/core";
 import {
   ADA,
   automationDoc,
   createStack,
   ownerCtx,
   resetFixture,
+  serviceToolCalls,
 } from "./harness.js";
 import { approve, enableAndApprove, fixtureInvoices, waitForRun } from "./support.js";
 
@@ -198,6 +200,117 @@ describe("away runs hold only app-bound automation grants", () => {
       );
       expect(replayApproval).toBeDefined();
       expect((await fixtureInvoices()).find((invoice) => invoice.id === "inv_0006")?.status).toBe("draft");
+    } finally {
+      await stack.close();
+    }
+  });
+});
+
+/** Connector discovery (design 2026-08-03) put a third-party catalog behind ONE
+ * tool name, `use_service_tool`, whose descriptor is therefore `ungraded`. The
+ * authority an away run holds over it is a grant on the SERVICE ACTION, and
+ * these three pin what that grant does and does not buy.
+ */
+describe("away runs reach a connector only through a granted service action", () => {
+  beforeEach(resetFixture);
+
+  const serviceApp = (id: string, steps: Array<{ id: string; slug: string }>) => automationDoc({
+    id,
+    name: "Inbox digest",
+    trigger: {
+      on: { kind: "host-event", event: `${id}.fire` },
+      run: {
+        kind: "steps",
+        // Step args are JSONata: a declared slug is a string literal.
+        steps: steps.map((step) => ({ id: step.id, tool: "use_service_tool", args: { slug: `'${step.slug}'` } })),
+      },
+    },
+  });
+
+  it("runs the granted service action unattended, and the audit row names the toolkit", async () => {
+    const stack = await createStack({ serviceTools: true });
+    try {
+      const appId = "app_service_away_ok";
+      await stack.putApp(ADA.subject, serviceApp(appId, [{ id: "fetch", slug: "GMAIL_FETCH_EMAILS" }]));
+      await enableAndApprove(stack, appId, ownerCtx(ADA.subject, appId));
+
+      const [runId] = await stack.automations.emit(`${appId}.fire`, {}, ADA);
+      const run = await waitForRun(stack, runId!, ownerCtx(ADA.subject, appId), "ok");
+      expect(run.steps.map((step) => [step.tool, step.outcome])).toEqual([["use_service_tool", "ok"]]);
+      expect(serviceToolCalls.map((entry) => entry.slug)).toEqual(["GMAIL_FETCH_EMAILS"]);
+
+      // Nothing about the audit changed: it is the ordinary tool-call row, on
+      // the ordinary guarded path, with the toolkit that ran it named.
+      const audit = await stack.sql<{ outcome: string | null; toolkit: string | null }>(
+        `SELECT event->>'outcome' AS outcome,
+                event->'detail'->'connectorAccount'->>'toolkit' AS toolkit
+           FROM vendo_audit
+          WHERE tool = 'use_service_tool' AND kind = 'tool-call'`,
+      );
+      expect(audit).toEqual([{ outcome: "ok", toolkit: "gmail" }]);
+    } finally {
+      await stack.close();
+    }
+  });
+
+  it("refuses a service action the automation was not granted, in the same run that runs a granted one", async () => {
+    const stack = await createStack({ serviceTools: true });
+    try {
+      const appId = "app_service_away_scope";
+      await stack.putApp(ADA.subject, serviceApp(appId, [
+        { id: "fetch", slug: "GMAIL_FETCH_EMAILS" },
+        { id: "labels", slug: "GMAIL_LIST_LABELS" },
+      ]));
+      // Approve ONLY the first action's ask. The automation arms anyway (07 §3)
+      // with the second still pending — armed, and ungranted for that slug.
+      // Both slugs grade `read`, so the two calls carry the SAME descriptor
+      // hash: the only thing that can refuse the second one is its slug.
+      const enabled = await stack.automations.enable(appId, ownerCtx(ADA.subject, appId));
+      const fetchAsk = enabled.missing.find(
+        (request) => (request.call.args as { slug?: string }).slug === "GMAIL_FETCH_EMAILS",
+      );
+      await approve(stack, [fetchAsk!]);
+      expect((await stack.guard.grants.list(ADA)).map((grant) => grant.scope)).toEqual([
+        { kind: "service-tool", slug: "GMAIL_FETCH_EMAILS" },
+      ]);
+
+      const [runId] = await stack.automations.emit(`${appId}.fire`, {}, ADA);
+      const run = await stack.automations.runs.get(runId!, ownerCtx(ADA.subject, appId));
+      expect(run?.status).toBe("pending-approval");
+      // The grant bought its own action and nothing beside it: the second slug
+      // parks with a person, exactly as an ungranted away step always has.
+      expect(run?.steps.map((step) => step.outcome)).toEqual(["ok", "pending-approval"]);
+      expect(serviceToolCalls.map((entry) => entry.slug)).toEqual(["GMAIL_FETCH_EMAILS"]);
+      const parked = (await stack.guard.approvals.pending(ADA)).find(
+        (entry) => entry.ctx.presence === "away" && entry.ctx.appId === appId,
+      );
+      expect((parked?.call.args as { slug?: string } | undefined)?.slug).toBe("GMAIL_LIST_LABELS");
+    } finally {
+      await stack.close();
+    }
+  });
+
+  it("blocks a granted service action the broker grades destructive, exactly as it blocks a granted host send", async () => {
+    const stack = await createStack({ serviceTools: true });
+    try {
+      const appId = "app_service_away_destructive";
+      await stack.putApp(ADA.subject, serviceApp(appId, [{ id: "send", slug: "GMAIL_SEND_EMAIL" }]));
+      const asks = await enableAndApprove(stack, appId, ownerCtx(ADA.subject, appId));
+      // The grant is real, standing, app-bound, and for this exact slug…
+      expect(asks[0]?.descriptor.risk).toBe("destructive");
+      expect((await stack.guard.grants.list(ADA)).map((grant) => grant.scope)).toEqual([
+        { kind: "service-tool", slug: "GMAIL_SEND_EMAIL" },
+      ]);
+
+      // …and THE LAW (design §12) still refuses it. This is the same answer
+      // `away-park-revoke` pins for a granted `host_invoices_send`: a grant has
+      // never been able to run an irreversible action with nobody watching, and
+      // a connector grant buys no more than a host one.
+      const [runId] = await stack.automations.emit(`${appId}.fire`, {}, ADA);
+      const run = await waitForRun(stack, runId!, ownerCtx(ADA.subject, appId), "error");
+      expect(run.steps.map((step) => step.outcome)).toEqual(["blocked"]);
+      expect(run.error?.message).toBe(UNATTENDED_DESTRUCTIVE_REASON);
+      expect(serviceToolCalls).toEqual([]);
     } finally {
       await stack.close();
     }

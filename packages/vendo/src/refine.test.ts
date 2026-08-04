@@ -254,7 +254,7 @@ describe("runRefine — proposals become reviewable diffs", () => {
   it("merges risk corrections, curation, and description improvements into overrides.json field-wise", async () => {
     const existingOverrides = {
       format: VENDO_OVERRIDES_FORMAT,
-      tools: { host_deleteTask: { critical: true } },
+      tools: { host_deleteTask: { confirmEach: true } },
       remix: { ignoreSlots: [] },
     };
     const root = await makeRoot({ ".vendo/overrides.json": JSON.stringify(existingOverrides) });
@@ -280,7 +280,7 @@ describe("runRefine — proposals become reviewable diffs", () => {
     };
     expect(file.format).toBe(VENDO_OVERRIDES_FORMAT);
     // Existing hand-written fields survive; refine's fields merge in.
-    expect(file.tools["host_deleteTask"]).toEqual({ critical: true, risk: "write" });
+    expect(file.tools["host_deleteTask"]).toEqual({ confirmEach: true, risk: "write" });
     expect(file.tools["host_listTasks"]).toEqual({ risk: "write" });
     expect(file.tools["host_debugDump"]).toEqual({ disabled: false });
     expect(file.tools["host_completeTask"]).toEqual({ description: "Mark a Relay task as done by id" });
@@ -488,7 +488,7 @@ describe("runRefine — everything folds into overrides.json", () => {
     const root = await makeRoot({
       ".vendo/overrides.json": JSON.stringify({
         format: VENDO_OVERRIDES_FORMAT,
-        tools: { host_deleteTask: { critical: true } },
+        tools: { host_deleteTask: { confirmEach: true } },
       }),
     });
     const result = await runRefine({
@@ -509,7 +509,7 @@ describe("runRefine — everything folds into overrides.json", () => {
     };
     expect(file.format).toBe(VENDO_OVERRIDES_FORMAT);
     // The existing authored entry survives; the correction merges beside it.
-    expect(file.tools["host_deleteTask"]).toEqual({ critical: true });
+    expect(file.tools["host_deleteTask"]).toEqual({ confirmEach: true });
     expect(file.tools["host_listTasks"]).toEqual({ risk: "write" });
     expect(file.compounds).toHaveLength(1);
     expect(file.compounds[0]!.name).toBe("host_complete_open_tasks");

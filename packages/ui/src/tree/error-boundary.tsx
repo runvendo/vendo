@@ -51,8 +51,15 @@ export class NodeErrorBoundary extends Component<BoundaryProps, BoundaryState> {
         return <FormingSkeleton name={this.props.nodeId} />;
       }
       return (
-        <ContainedNotice label="Node render error">
-          {`Node "${this.props.nodeId}" could not render: ${this.state.error.message}`}
+        // M36 — the exception's own message is generated-component code talking
+        // ("Cannot read properties of undefined (reading 'map')"), and the node
+        // id is our plumbing. Both are the developer's half; a person reads the
+        // one honest sentence.
+        <ContainedNotice
+          label="Node render error"
+          detail={`Node "${this.props.nodeId}": ${this.state.error.message}`}
+        >
+          Part of this view didn’t load.
         </ContainedNotice>
       );
     }

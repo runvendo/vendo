@@ -143,9 +143,18 @@ describe("materialize + collect", () => {
     const door = routes(root);
     await door.handle("POST", "/session/workspace", auth, {
       reset: true,
-      files: [{ path: "/host/skills/refund/SKILL.md", base64: b64("# refund"), readOnly: true }],
+      files: [
+        { path: "/host/skills/refund/SKILL.md", base64: b64("# refund"), readOnly: true },
+        // A skill's companion files and the component reference are ordinary
+        // files on the same mount — the SDK reads a skill directory whole, so
+        // they need no mechanism of their own, only these bytes on this disk.
+        { path: "/host/skills/refund/references/format.md", base64: b64("# format"), readOnly: true },
+        { path: "/host/components/DataTable.md", base64: b64("# DataTable"), readOnly: true },
+      ],
     });
     expect(readFileSync(path.join(root, "host", "skills/refund/SKILL.md"), "utf8")).toBe("# refund");
+    expect(readFileSync(path.join(root, "host", "skills/refund/references/format.md"), "utf8")).toBe("# format");
+    expect(readFileSync(path.join(root, "host", "components/DataTable.md"), "utf8")).toBe("# DataTable");
   });
 
   test("a narrowed collect answers only the asked paths, and skips ones not written yet", async () => {

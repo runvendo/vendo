@@ -20,6 +20,12 @@ export interface Harness<Options = unknown> {
   readonly name: string;                     // "vendo" | "instant" | "claude-code" | …
   readonly optionsSchema?: StandardSchemaV1;  // declares per-turn-overridable knobs
   readonly requires?: { sandbox?: boolean };  // boot-time composition check
+  /** Amendment 2026-08-03 (claudeCode() redesign, D2 + D4): how this harness
+   *  wants the equipped-tool surface shaped. `curated: false` skips the
+   *  discovery loadout and `find_tools` with it (the ctx safety projection
+   *  still runs — this is curation, never the law); `withhold` names tools
+   *  never listed to and never callable by this harness. */
+  readonly toolSurface?: { curated?: false; withhold?: readonly string[] };
   run(turn: Turn<Options>): AsyncGenerator<HarnessEvent, void, void>;
 }
 
@@ -81,10 +87,18 @@ export type DeniedNeeds =
   | { kind: "unattended-destructive" };        // §12 law: never available off-interaction
 
 export interface ToolListing {
-  name: string; title: string; description: string; risk: "read" | "write" | "destructive";
+  name: string; title: string; description: string; risk: RiskLabel;
+  /** Amendment 2026-08-03 (#747 landed): `risk` widened from the three-value
+   *  union to `RiskLabel`, which adds `ungraded` — a tool nobody has judged.
+   *  Read design §12: `ungraded` asks by default and is withheld from an
+   *  unattended run, exactly like `destructive`. */
   /** Amendment 2026-07-30: JSON Schema for the tool's input — every in-process
    *  harness must hand schemas to its model; JSON Schema is the interchange. */
   inputSchema?: JsonSchema;
+  /** Amendment 2026-08-03 (harness redesign D5): the host's DECLARED result
+   *  shape, carried verbatim from the descriptor when extraction found one —
+   *  the model learns a query's fields from the listing, not by calling it. */
+  outputSchema?: JsonSchema;
 }
 ```
 
@@ -176,6 +190,39 @@ user. Granularity is per file save (accepted trade: a harness that writes once
 at the end shows nothing until it finishes — a bench-visible quality
 difference, not a correctness one). Harnesses never yield view events;
 `HarnessEvent` stays closed.
+
+*Amendment 2026-08-03 (claudeCode() redesign, D4 files-first).* The
+"progressive query-resolver data fill" above was specified here and **never
+wired**: `fillData` had no caller in the repo, so every harness-authored app
+painted its structure and showed no data at all (measured in a live boxed run).
+Wiring it needed an app half, because the fill runs the app's queries as the
+caller and a file-authored app had no row to run them against: `AppsRuntime
+.authored({ appId, compiled }, ctx)` upserts the row through the engine's own
+writer and resolves the tree through the same guard-bound caller `open()` uses
+(`venue: "app"`, one guard decision per query), which is also what makes
+`vendo_apps_open` and the Apps list work for an app nobody called
+`vendo_apps_create` for. The seam now emits the skeleton FIRST and re-emits with
+data on the same stream id, so resolving real queries cannot cost the
+seconds-to-skeleton promise. `authored()` reads an existing row only when the
+caller may write it — an unscoped read let one subject's file land under another
+subject's appId and execute a `fn:` query on their machine. Known gaps at
+landing: island admission (`prepareIslands`) does not run on this path, so
+`validate` is the review floor; a deleted `app.vendo` leaves a listable row
+(`vendo_apps_delete` is the real verb); a served (`ui: "http"`) app would be
+demoted if a file were written for its id (experimental, off by default).
+`authored()` does not call `persistEdit`, but it now takes the three things
+`persistEdit` does that a save owes (checker round 3, same day, all on the
+mayWrite branch so no foreign row is read or announced): §9.9's
+`onDocumentEdit` announcement on every save that lands — a rewrite leaves
+`trigger` verbatim, so the intent hash does NOT move and this hook is the only
+thing that can invalidate a third party's rewrite or re-bind the sponsor's own;
+a `history.append` undo point per changing save (skipped when the save changed
+nothing); and `assertCurrent`'s baseline re-check before the put, which refuses
+a save whose document carries a stale history forward rather than reverting an
+`edit()` that landed in the window. The residual TOCTOU is persistEdit's own
+(no revision on the store seam). Pinned component sources now survive a save
+whose text omits them — `pins` carries on naming them, and a pin with no source
+is not a pin.
 
 ## 2. Layering (dependency-guard rows)
 

@@ -52,6 +52,10 @@ describe("AutomationCard", () => {
     // Read-only: no toggle, no run history.
     expect(screen.queryByRole("switch")).toBeNull();
     expect(screen.queryByRole("button", { name: "Run history" })).toBeNull();
+    // M30 — a plain <div> may not carry aria-label (aria-prohibited-attr): the
+    // flow block is a real group, exactly as the panel's copy of it is.
+    const flow = screen.getByRole("group", { name: "Automation flow for Low balance alert" });
+    expect(flow.className).toContain("fl-auto-flow");
   });
 });
 

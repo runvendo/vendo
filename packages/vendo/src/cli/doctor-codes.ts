@@ -58,9 +58,22 @@ export const DOCTOR_ERROR_CODES = {
   "E-CLOUD-001": "VENDO_API_KEY is set but not usable",
   "E-TOOLS-001": "every extracted host tool is disabled or excluded (zero live host tools)",
   "E-TOOLS-002": "the extracted tool surface is empty (zero host tools)",
+  "E-TOOLS-003": "part of the tool catalog is ungraded (nobody has graded it, so it asks on every call)",
 } as const;
 
 export type DoctorErrorCode = keyof typeof DOCTOR_ERROR_CODES;
+
+/** Informational notes (I-<AREA>-<NNN>): nothing is broken, doctor is
+ *  explaining a decision a seam made silently. They are NOT failures, carry
+ *  no verify-page anchor, and stay OUT of doctorErrorCodes (the registry-rot
+ *  CI gate enumerates error codes only). Append-only all the same; NNN stays
+ *  unique within an area across both registries (E-CLOUD-001 exists, so the
+ *  first CLOUD informational is 002). */
+export const DOCTOR_INFO_CODES = {
+  "I-CLOUD-002": "the hosted MCP broker activates when the deployment has a public base URL",
+} as const;
+
+export type DoctorInfoCode = keyof typeof DOCTOR_INFO_CODES;
 
 /** Complete list of every code doctor can emit, for CI enumeration. */
 export const doctorErrorCodes = Object.keys(DOCTOR_ERROR_CODES) as readonly DoctorErrorCode[];

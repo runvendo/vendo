@@ -235,7 +235,10 @@ describe("headless hooks", () => {
     expect(result.current.events).toEqual([]);
     await waitFor(() => expect(result.current.events.map(event => event.id)).toEqual(["aud_1", "aud_2"]));
     await act(() => result.current.loadMore());
-    expect(result.current.events.map(event => event.id)).toEqual(["aud_1", "aud_2", "aud_3"]);
+    // ⚠️ FIXTURE WIDENED (CR-2): the wire now serves a fourth audit row — the
+    // real `vendo_apps_edit` shape, whose args carry an app id. The page
+    // arithmetic is unchanged; there is simply one more row behind the cursor.
+    expect(result.current.events.map(event => event.id)).toEqual(["aud_1", "aud_2", "aud_3", "aud_edit"]);
     expect(wire.requests).toContainEqual(expect.objectContaining({ method: "GET", path: "/activity?cursor=eyJjIjoiMjAyNi0wNy0xMVQxMjowMDowMC4wMDBaIiwiaSI6ImF1ZF8yIn0" }));
   });
 
@@ -246,14 +249,14 @@ describe("headless hooks", () => {
     expect(result.current.hasMore).toBe(true);
 
     await act(() => result.current.loadMore());
-    await waitFor(() => expect(result.current.events).toHaveLength(3));
+    await waitFor(() => expect(result.current.events).toHaveLength(4));
     expect(result.current.hasMore).toBe(true);
 
     // The next page repeats already-seen rows (nothing older remains), so the
     // hook resolves to the end of the list and the panel can retire "Load more".
     await act(() => result.current.loadMore());
     await waitFor(() => expect(result.current.hasMore).toBe(false));
-    expect(result.current.events).toHaveLength(3);
+    expect(result.current.events).toHaveLength(4);
   });
 
   it("loads posture and transitions to disconnected after the server is killed", async () => {

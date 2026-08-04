@@ -3,14 +3,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { APPROVALS_DECIDED_EVENT, type ApprovalsDecidedDetail } from "../../client-impl.js";
 import { useVendoDiscoverability, useVendoGreeting } from "../../context.js";
 import { useVendoThread } from "../../hooks/use-vendo-thread.js";
-import { StatusRibbon, WorkingRibbon } from "../build-beat.js";
+import { WorkingRibbon } from "../build-beat.js";
 import { ChromeRoot } from "../chrome-root.js";
 import { defaultVendoGreeting, hasSeen, markSeen, type VendoDiscoverability, type VendoGreeting } from "../discoverability.js";
 import { MorphToast, type MorphToastProps } from "../morph-toast.js";
 import { Composer, dragHasFiles, useComposer } from "./composer.js";
 import { MessageList } from "./message-list.js";
 import { useMessageWindow, useStickToBottom } from "./scrolling.js";
-import { approvalByCall, grantSetByCall, riskByCall, userText, VENDO_ERROR_PREFIX } from "./message-data.js";
+import { approvalByCall, grantSetByCall, riskByCall, toolCallPending, turnErrorSentence, userText } from "./message-data.js";
 
 /** Lane pick 4B — a rich landing suggestion: two-line starter card. */
 export interface VendoSuggestionCard {
@@ -267,8 +267,7 @@ export function VendoThread({
   // ENG-214 — a broken turn (failed send, mid-stream drop, any thread.error)
   // surfaces VISIBLY in the thread, not only through the hidden status span.
   // The copy stays friendly — raw transport errors are announced to assistive
-  // tech below but never printed to end users. Retry regenerates the failed
-  // turn from the preserved user message (no duplication).
+  // tech below but never printed to end users.
   // A "Vendo: " prefixed message is the agent's OWN safe error (VendoError
   // code + operator-crafted text, wireErrorMessage in @vendoai/agent) — the
   // ONE error shape end users may see in detail. Raw transport/provider
@@ -278,31 +277,18 @@ export function VendoThread({
   // already saying it, the banner keeps only its headline + Retry so the same
   // sentence isn't printed twice.
   const turnErrorInThread = activeAssistant?.parts.some(part => part.type === "data-vendo-turn-error") ?? false;
-  const errorDetail = !turnErrorInThread && thread.error?.message?.startsWith(VENDO_ERROR_PREFIX) === true
-    ? thread.error.message.slice(VENDO_ERROR_PREFIX.length)
-    : null;
+  const errorDetail = turnErrorInThread ? undefined : turnErrorSentence(thread.error?.message);
+  // Ruling 16 — §15 governs the surfaces where the AGENT CAN SPEAK, and this is
+  // one: the banner used to carry its own Retry button, a bespoke failure
+  // control beside a conversation that already has one recovery path (the turn's
+  // Regenerate action, and the composer). The banner states what happened and
+  // stops there.
   const errorBanner = thread.error ? (
     <div className="fl-error">
       <span>
         Something went wrong and the response didn&rsquo;t finish.
-        {errorDetail !== null && <span className="fl-error-detail">{errorDetail}</span>}
+        {errorDetail === undefined ? null : <span className="fl-error-detail">{errorDetail}</span>}
       </span>
-      <button
-        type="button"
-        className="fl-error-retry"
-        onClick={() => {
-          // Nothing to re-issue (sends append the user turn before any request
-          // fires, so this is a defensive rail): degrade to dismissing the
-          // error instead of letting regenerate() throw on an empty thread.
-          if (thread.messages.length === 0) {
-            thread.clearError();
-            return;
-          }
-          void thread.regenerate();
-        }}
-      >
-        Retry
-      </button>
     </div>
   ) : null;
 
@@ -344,43 +330,34 @@ export function VendoThread({
     .filter((part): part is Extract<typeof part, { state: "approval-requested" }> =>
       part.state === "approval-requested" && !grantSets.has(part.toolCallId));
 
-  // Lane pick C1 — the live status ribbon: while the turn works through tool
-  // calls, the ACTIVE call narrates above the composer — label · elapsed ·
-  // step N of M. The transcript stays beat-free (parts.tsx renders only
-  // errored calls). A RUNNING call always narrates, even after prose has
-  // streamed (the agent often narrates a plan, then works the tools — hiding
-  // the ribbon behind any visible text left minutes of dead air, the observed
-  // demo class). Only while text is actively streaming (all tool parts
-  // settled) does the caret choreography own the floor.
+  // Spec §1 — the ribbon no longer narrates tool calls: the TRANSCRIPT owns the
+  // work now (one beat per call, at its position in the conversation), so a
+  // second live narration above the composer would say the same thing twice.
+  // All that survives above the composer is the between-steps gap below.
   const activeToolParts = (activeAssistant?.parts ?? []).filter(isToolUIPart);
-  const liveToolPart = [...activeToolParts].reverse()
-    .find(part => part.state !== "output-available" && part.state !== "output-error");
-  // A turn parked on an approval is not "busy" (the stream yielded), but the
-  // pause still narrates: the ribbon holds "— waiting for your approval" while
-  // the card sits in the transcript.
-  const awaitingApprovalPart = activeToolParts.find(part => part.state === "approval-requested");
-  const activeToolPart = busy
-    ? liveToolPart
-      ?? (!assistantHasVisibleText && activeToolParts.length > 0 && !caretShowing ? activeToolParts.at(-1) : undefined)
-    : awaitingApprovalPart;
+  // A call parked on an approval NEVER narrates here: its card is right there
+  // in the transcript, with the ask in its eyebrow, its title and its buttons.
+  // The ribbon used to add "Send money — waiting for your approval" directly
+  // above a card reading "NEEDS YOUR APPROVAL / Send money" — the same words
+  // twice (the D1 ruling: the card IS the step). A parked turn is not in
+  // progress either, so the pulsing orb was a lie.
+  const narratable = activeToolParts.filter(part => part.state !== "approval-requested");
+  // M22 — "live" is the SAME terminal set the transcript uses (`toolCallPending`):
+  // this list left out `output-denied`, so a refused ask counted as a live step
+  // forever and the between-steps ribbon never came back for the rest of the turn.
+  const liveToolPart = [...narratable].reverse().find(part => toolCallPending(part));
   // 2026-07 loading-state audit — the between-steps gap: a busy turn whose
   // prose has already streamed and whose tool parts have all settled had NO
-  // indicator anywhere (the ribbon needs a live part, the caret needs
-  // streaming text, FluidThinking stands down once text exists). Only while
-  // text deltas are actively flowing does the caret own the floor; every
-  // other busy moment narrates through the quiet Working ribbon.
+  // indicator anywhere (no live beat, the caret needs streaming text,
+  // FluidThinking stands down once text exists). Only while text deltas are
+  // actively flowing does the caret own the floor; every other busy moment
+  // narrates through the quiet Working ribbon — a RUNNING call excepted, since
+  // its beat is already ticking in the transcript.
   const textActivelyStreaming = lastPart?.type === "text" && lastPart.state === "streaming"
     && lastPart.text.trim().length > 0;
-  const quietBusy = busy && activeToolPart === undefined
+  const quietBusy = busy && liveToolPart === undefined
     && !textActivelyStreaming && !caretShowing && !working;
-  const ribbon = activeToolPart ? (
-    <StatusRibbon
-      part={activeToolPart}
-      stepIndex={activeToolParts.indexOf(activeToolPart) + 1}
-      stepTotal={activeToolParts.length}
-      risk={risks.get(activeToolPart.toolCallId) ?? "read"}
-    />
-  ) : quietBusy ? <WorkingRibbon /> : null;
+  const ribbon = quietBusy ? <WorkingRibbon /> : null;
 
   // Lane pick 2E — the WHOLE thread surface is the drop target (the composer
   // bar no longer owns drag): a huge, overshoot-proof zone with a centered

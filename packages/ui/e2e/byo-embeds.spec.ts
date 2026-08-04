@@ -63,3 +63,46 @@ test("the build window stays quiet: no console errors while the embed polls a no
 
   expect(errors).toEqual([]);
 });
+
+/**
+ * Spec §16 law 3, on the most public surface we have — the app embed renders
+ * inside whatever chat page a HOST built. It used to print the wire's raw
+ * build-failure `reason`, and every one of those sentences is written for
+ * whoever can FIX the build. The wire fixture serves this scenario the exact
+ * sentence the wave E2E photographed in a real user's thread (harness
+ * vite.config.ts): a component name and an unevaluated expression.
+ *
+ * The audit is mechanical, over what the browser actually painted: nothing
+ * code-shaped may be inside the embed, and no long word from the wire sentence
+ * may survive anywhere on the page.
+ */
+test("a failed build shows the consumer sentence — nothing code-shaped reaches the embed", async ({ page }) => {
+  await openScenario(page, "byo-embed-failed");
+
+  const embed = page.locator('[data-vendo-embed="app"]');
+  await expect(embed.locator(".fl-beat-error")).toBeVisible();
+  await expect(embed.getByText("I couldn't finish building that view — nothing was changed."
+    + " Ask again and I'll try a different approach.")).toBeVisible();
+  // A copy fix, not a capability removal: the embed keeps its own affordance.
+  await expect(embed.getByRole("button", { name: "Try again" })).toBeVisible();
+  await page.screenshot({ path: screenshotPath("byo-embed-failed") });
+
+  const rendered = (await embed.innerText()).replace(/\s+/g, " ");
+  const codeShaped: readonly [string, RegExp][] = [
+    ["a backtick quote", /`/],
+    ["call syntax", /\w+\(/],
+    ["a dotted path", /\w\.\w+\.\w/],
+    ["a snake_case identifier", /[A-Za-z]_[A-Za-z]/],
+    ["a package specifier", /@[\w-]+\//],
+    ["an npm command", /\bnpm\b/],
+    ["a shouted env var", /\b[A-Z][A-Z0-9_]{4,}\b/],
+  ];
+  for (const [what, pattern] of codeShaped) {
+    expect(pattern.test(rendered), `${what} reached the embed: ${rendered}`).toBe(false);
+  }
+  // Not one fragment of the developer sentence survives, anywhere on the page.
+  const wholePage = await page.locator("body").innerText();
+  for (const word of ["declarative", "JavaScript", "sum(spending.data.amount)", "DataTable", "expression"]) {
+    expect(wholePage, `"${word}" leaked to the page`).not.toContain(word);
+  }
+});

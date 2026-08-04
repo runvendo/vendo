@@ -6,11 +6,20 @@
 // ffmpeg palette GIF, the proven capture path from scripts/capture-flow-gif.mjs.
 //
 // Prereqs: ffmpeg on PATH. Usage:
-//   node scripts/capture-gallery.mjs            # capture all
+//   node scripts/capture-gallery.mjs            # capture all GIF beats
 //   node scripts/capture-gallery.mjs voice-consent long-thread   # a subset
+//   node scripts/capture-gallery.mjs cards      # one PNG per card case
 //
-// The harness vite server is launched here on a fixed port and torn down at the
-// end; nothing else needs to be running.
+// `cards` is the designed CARD reference (card audit §10): it drives the
+// gallery app's `#cards` board — every card kind × state × degraded-data case,
+// rendered through the real components — and writes one PNG per
+// `[data-gallery-case]` into the lane-G evidence folder. The toolkit logo CDN
+// is stubbed so the capture is offline-deterministic, then a second pass
+// BLOCKS it and recaptures the logo-bearing cases as `<id>--logo-failed.png`
+// (the forced `onError` fallback, proved rather than asserted).
+//
+// The vite server is launched here on a fixed port and torn down at the end;
+// nothing else needs to be running.
 import { execFile, spawn } from "node:child_process";
 import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -28,8 +37,23 @@ const { chromium } = requireFromUi("@playwright/test");
 const PORT = Number(process.env.VENDO_GALLERY_PORT) || 4271;
 const BASE = `http://127.0.0.1:${PORT}`;
 const OUT_DIR = resolve(packageRoot, "../../docs/verification/eng-232");
+/** Lane G's card reference is the default home; a later lane re-shooting the
+ *  same board for its OWN proof points VENDO_CARDS_OUT_DIR at its own folder
+ *  rather than rewriting somebody else's evidence. */
+const CARDS_OUT_DIR = process.env.VENDO_CARDS_OUT_DIR
+  ? resolve(process.env.VENDO_CARDS_OUT_DIR)
+  : resolve(packageRoot, "../../docs/superpowers/evidence/2026-08-03-ui-redesign/lane-g/cards");
 const VIEWPORT = { width: 1200, height: 720 };
 const MOBILE = { width: 390, height: 844 };
+const LOGO_CDN = "https://logos.composio.dev/**";
+/** A 16×16 solid-blue PNG — stands in for every toolkit mark so the card
+    reference never depends on the network, and stays VISIBLY a mark so the
+    blocked-logo pass reads as a real difference (a card with no `onError`
+    fallback loses the well entirely; ConnectCard's falls back to its glyph). */
+const STUB_LOGO = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAGUlEQVR4nGPQzvn2nxLMMGrAqAGjBgwXAwAulYwffXWsWgAAAABJRU5ErkJggg==",
+  "base64",
+);
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -168,32 +192,67 @@ async function captureBeat(browser, name, beat) {
   console.log(`captured ${name}.gif`);
 }
 
-async function main() {
-  const only = process.argv.slice(2);
-  const names = only.length ? only : Object.keys(BEATS);
-  mkdirSync(OUT_DIR, { recursive: true });
-
-  const vite = spawn("pnpm", ["exec", "vite", "--config", "e2e/harness/vite.config.ts",
+/** Serve one vite app on PORT until `body` resolves. */
+async function withServer(viteConfig, probePath, body) {
+  const vite = spawn("pnpm", ["exec", "vite", "--config", viteConfig,
     "--host", "127.0.0.1", "--port", String(PORT)],
     { cwd: packageRoot, env: { ...process.env, NO_COLOR: "1", VENDO_HARNESS_PORT: String(PORT) }, stdio: "ignore" });
-
-  // Wait for the harness to answer.
   for (let i = 0; i < 60; i += 1) {
-    try { const r = await fetch(`${BASE}/thread`); if (r.ok) break; } catch {}
+    try { const r = await fetch(`${BASE}${probePath}`); if (r.ok) break; } catch {}
     await wait(500);
   }
-
   const browser = await chromium.launch();
   try {
+    await body(browser);
+  } finally {
+    await browser.close();
+    vite.kill("SIGTERM");
+  }
+}
+
+/** One PNG per card case, with the logo CDN stubbed; then the blocked-logo pass. */
+async function captureCards(browser) {
+  mkdirSync(CARDS_OUT_DIR, { recursive: true });
+  let written = 0;
+  for (const logos of ["stubbed", "blocked"]) {
+    const context = await browser.newContext({ viewport: { width: 900, height: 1_200 }, deviceScaleFactor: 2 });
+    await context.route(LOGO_CDN, route => logos === "blocked"
+      ? route.abort()
+      : route.fulfill({ status: 200, contentType: "image/png", body: STUB_LOGO }));
+    const page = await context.newPage();
+    await page.goto(`${BASE}/#cards`);
+    // The blocked pass only re-shoots the cards that carry a remote mark.
+    const cases = page.locator(logos === "blocked" ? "[data-gallery-case][data-gallery-logo]" : "[data-gallery-case]");
+    await cases.first().waitFor({ timeout: 20_000 });
+    await page.evaluate(() => document.fonts.ready);
+    await wait(900); // entrance transitions settle before the shutter
+    for (const item of await cases.all()) {
+      const id = await item.getAttribute("data-gallery-case");
+      const suffix = logos === "blocked" ? "--logo-failed" : "";
+      await item.scrollIntoViewIfNeeded();
+      await item.screenshot({ path: join(CARDS_OUT_DIR, `${id}${suffix}.png`) });
+      written += 1;
+    }
+    await context.close();
+  }
+  console.log(`captured ${written} card PNGs → ${CARDS_OUT_DIR}`);
+}
+
+async function main() {
+  const only = process.argv.slice(2);
+  if (only[0] === "cards") {
+    await withServer("gallery/vite.config.ts", "/", captureCards);
+    return;
+  }
+  const names = only.length ? only : Object.keys(BEATS);
+  mkdirSync(OUT_DIR, { recursive: true });
+  await withServer("e2e/harness/vite.config.ts", "/thread", async (browser) => {
     for (const name of names) {
       const beat = BEATS[name];
       if (!beat) { console.warn(`unknown beat: ${name}`); continue; }
       await captureBeat(browser, name, beat);
     }
-  } finally {
-    await browser.close();
-    vite.kill("SIGTERM");
-  }
+  });
 }
 
 await main();
