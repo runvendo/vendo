@@ -107,6 +107,11 @@ export interface Judge {
 export interface VendoGuard extends Guard {
   bind(tools: ToolRegistry): ToolRegistry;
 
+  /** The park-side mirror of `onApprovalDecision`: fires when a check parks an
+   *  approval, with the persisted request. Optional on core's Guard (existing
+   *  implementations predate it); always present here. */
+  onApprovalRequested(cb: (request: ApprovalRequest) => void): () => void;
+
   approvals: {
     pending(principal: Principal): Promise<ApprovalRequest[]>;
     decide(

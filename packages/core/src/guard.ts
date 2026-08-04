@@ -43,6 +43,7 @@ export interface GuardLike {
   check(call: ToolCall, descriptor: ToolDescriptor, ctx: RunContext): Promise<GuardDecision>;
   report?(event: AuditEvent): Promise<void>;
   onApprovalDecision?(cb: (id: ApprovalId, approved: boolean) => void): () => void;
+  onApprovalRequested?(cb: (request: ApprovalRequest) => void): () => void;
 }
 
 /** 01-core §6 */
@@ -51,6 +52,11 @@ export interface Guard extends GuardLike {
   report(event: AuditEvent): Promise<void>;
   directions(ctx: RunContext): Promise<string[]>;
   onApprovalDecision(cb: (id: ApprovalId, approved: boolean) => void): () => void;
+  /** The park-side mirror of `onApprovalDecision`: fires when a check parks an
+   *  approval, with the persisted request. Optional here — required on the
+   *  guard package's VendoGuard — because existing implementations predate it;
+   *  callers feature-detect. */
+  onApprovalRequested?(cb: (request: ApprovalRequest) => void): () => void;
   /** AGENT-6 (wave 5, optional — 01 §6 amendment parked): resolve approvals
    *  the conversation abandoned (a fresh user turn superseded an undecided
    *  ask). Implementations deny them — subject-scoped to `ctx.principal`,
