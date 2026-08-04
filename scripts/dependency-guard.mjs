@@ -76,6 +76,21 @@ const LAYERS = {
   // views — so it reaches core (the contract), agent (the vendo() loop), apps
   // (the plan skeleton) and guard. It is NOT the umbrella: no store, no actions.
   "@vendoai/harnesses": ["@vendoai/core", "@vendoai/agent", "@vendoai/apps", "@vendoai/guard"],
+  // the standalone agent runtime (agents-v0 spec, 2026-08-04): the open-source
+  // front door Vendo's embed consumes across a real seam. It assembles what the
+  // umbrella assembles — harness runtime (harnesses), guard, store, host tools
+  // and MCP connectors (actions), knowledge, and the e2b sandbox adapter (apps)
+  // — but it is NOT the umbrella: no @vendoai/vendo, ever (the spec's
+  // dependency law; the embed consumes agents, never the reverse).
+  "@vendoai/agents": [
+    "@vendoai/core",
+    "@vendoai/actions",
+    "@vendoai/apps",
+    "@vendoai/guard",
+    "@vendoai/harnesses",
+    "@vendoai/knowledge",
+    "@vendoai/store",
+  ],
   // the canonical umbrella is the only package allowed to depend on every block
   "@vendoai/vendo": "*",
   // the unscoped compatibility package is a thin alias of the canonical umbrella
