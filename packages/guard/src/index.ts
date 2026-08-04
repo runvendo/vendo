@@ -15,6 +15,10 @@ export { policyFileSchema, policyRuleSchema } from "./types.js";
 // the composition seam that reads `/orgs/<orgId>/policy.json` out of the
 // workspace and unions the rules into the guard's `orgPolicy` resolver.
 export { parseOrgPolicyFile, VENDO_ORG_POLICY_FORMAT } from "./org-policy.js";
+// Agents spec — the minimal runtime↔guard seam (defined in core beside the
+// full Guard), re-exported here so a host wiring a custom guard imports one
+// package.
+export type { GuardLike } from "@vendoai/core";
 export type {
   Judge,
   PolicyConfig,

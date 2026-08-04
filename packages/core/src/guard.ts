@@ -33,8 +33,20 @@ export const guardDecisionSchema = z.discriminatedUnion("action", [
   }).passthrough(),
 ]) satisfies z.ZodType<GuardDecision>;
 
+/** Agents spec (existing-package changes) — the minimal seam a runtime
+ *  requires of its guard. `check` is the law: every tool call passes through
+ *  it and comes back run / ask / block. Audit reporting and the
+ *  approval-decision subscription are optional, feature-detected extras.
+ *  `Guard` below extends it, so every full guard (the guard package's
+ *  VendoGuard included) already satisfies it. */
+export interface GuardLike {
+  check(call: ToolCall, descriptor: ToolDescriptor, ctx: RunContext): Promise<GuardDecision>;
+  report?(event: AuditEvent): Promise<void>;
+  onApprovalDecision?(cb: (id: ApprovalId, approved: boolean) => void): () => void;
+}
+
 /** 01-core §6 */
-export interface Guard {
+export interface Guard extends GuardLike {
   check(call: ToolCall, descriptor: ToolDescriptor, ctx: RunContext): Promise<GuardDecision>;
   report(event: AuditEvent): Promise<void>;
   directions(ctx: RunContext): Promise<string[]>;
