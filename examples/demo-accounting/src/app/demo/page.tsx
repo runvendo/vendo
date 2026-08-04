@@ -4,7 +4,7 @@
 // state between takes and choreographs simulated client uploads. This page is
 // crew tooling, not part of the Cadence product fiction.
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { ArrowUpRight, FileUp, Loader2, RotateCcw, TerminalSquare } from "lucide-react"
 import useSWR, { useSWRConfig } from "swr"
@@ -46,6 +46,16 @@ function ResetSection() {
   const [busy, setBusy] = useState(false)
   const [metrics, setMetrics] = useState<ResetMetrics | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Guards the bounded poll below: navigating away mid-reset must stop the
+  // ~6s revalidation loop, or globalMutate(() => true) keeps firing SWR
+  // revalidation of every cached key after this component is gone.
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
 
   async function reset() {
     setBusy(true)
@@ -54,6 +64,7 @@ function ResetSection() {
       const { ok, json } = await post("/api/demo/reset")
       if (!ok) throw new Error("Reset failed")
       const envelope = json as { data: ResetMetrics; seedPending?: boolean }
+      if (!mountedRef.current) return
       await globalMutate(() => true) // every open SWR view re-reads the restored store
       if (envelope.seedPending) {
         // The reset response said the scripted automations are still landing in
@@ -63,15 +74,19 @@ function ResetSection() {
         // report success — insert-if-absent means a late re-read only gains rows.
         for (let attempt = 0; attempt < 3; attempt += 1) {
           await new Promise((resolve) => setTimeout(resolve, 2_000))
+          // Bail if the component unmounted while we waited — no revalidating
+          // cached keys for a surface that is gone.
+          if (!mountedRef.current) return
           await globalMutate(() => true)
         }
       }
       setMetrics(envelope.data)
     } catch (err) {
+      if (!mountedRef.current) return
       setMetrics(null)
       setError(err instanceof Error ? err.message : "Reset failed")
     } finally {
-      setBusy(false)
+      if (mountedRef.current) setBusy(false)
     }
   }
 

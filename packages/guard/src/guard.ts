@@ -867,8 +867,10 @@ class GuardImplementation implements VendoGuard {
     // path owns stay here — charging the write budget below, and (in bind) THE
     // LAW's refusal outcome — applied AROUND the shared decision.
     //
-    // `writes` is read here, before the verdict, and reused for the charge so
-    // the peeked count and the charged count are the same number.
+    // `writes` is read here, before the verdict, so the peek's cap check runs
+    // against this firing's own starting count. The charge below re-reads the
+    // live count so a concurrent firing that committed while we awaited cannot
+    // be spent past — see the re-check where the write is committed.
     const runKey = ctx.trigger?.runId ?? ctx.sessionId;
     const writes = this.#writeCounts.get(runKey)?.count ?? 0;
     const verdict = await this.#automationVerdict(
@@ -880,9 +882,24 @@ class GuardImplementation implements VendoGuard {
     );
     let draft = verdict.decision;
     if (verdict.chargeableWrite && commitRun) {
-      // Uncommitted preview: the run is real, but the SPEND is not — the
-      // moments-later real check (execute, commitRun=true) does this once.
-      this.#writeCounts.set(runKey, { count: writes + 1, touchedAt: Date.now() });
+      // Re-read the counter AFTER the async verdict and re-check the cap before
+      // committing. `writes` was snapshotted BEFORE the await, so two concurrent
+      // firings on the same runKey can both read the count under the cap, both
+      // await the verdict, and — without this re-check — both commit, spending
+      // the same slot twice and exceeding maxWritesPerRun. The re-read and the
+      // set below have no await between them, so they are atomic on this
+      // single-threaded loop: the firing that resumes first takes the slot; a
+      // firing that resumes to find the slot already gone parks exactly as the
+      // breaker would have (identical to #automationVerdict deciding on the live
+      // count), and charges nothing.
+      const current = this.#writeCounts.get(runKey)?.count ?? 0;
+      if (current >= this.#maxWritesPerRun) {
+        draft = { action: "ask", decidedBy: "breaker" };
+      } else {
+        // Uncommitted preview: the run is real, but the SPEND is not — the
+        // moments-later real check (execute, commitRun=true) does this once.
+        this.#writeCounts.set(runKey, { count: current + 1, touchedAt: Date.now() });
+      }
     }
 
     // Rehearsal never parks: the venue's contract is no grants and no asks —

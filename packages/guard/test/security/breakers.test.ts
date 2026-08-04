@@ -30,6 +30,35 @@ describe("deterministic breakers (05 §2)", () => {
     ).resolves.toMatchObject({ action: "ask", decidedBy: "breaker" });
   });
 
+  it("two concurrent firings cannot both spend the last write slot (charge re-checks the cap)", async () => {
+    const store = createMemoryStore();
+    const guard = createGuard({
+      store,
+      breakers: { maxWritesPerRun: 1, maxCallsPerMinute: 100 },
+      policy: { rules: [{ match: {}, action: "run" }] },
+    });
+    const write = descriptor("write");
+    const run = context({ trigger: { runId: "run_concurrent_writes", kind: "schedule" } });
+
+    // Both fire before either commits: each snapshots the counter at 0 and
+    // awaits its verdict. Only one may take the single slot — the other must
+    // park on the breaker rather than both slipping past the cap.
+    const [a, b] = await Promise.all([
+      guard.check(call(write.name, {}, "cw_a"), write, run),
+      guard.check(call(write.name, {}, "cw_b"), write, run),
+    ]);
+    const actions = [a.action, b.action].sort();
+    expect(actions).toEqual(["ask", "run"]);
+    const parked = [a, b].find((d) => d.action === "ask");
+    expect(parked).toMatchObject({ action: "ask", decidedBy: "breaker" });
+
+    // The cap is fully spent: any further write in the run parks too.
+    await expect(guard.check(call(write.name, {}, "cw_c"), write, run)).resolves.toMatchObject({
+      action: "ask",
+      decidedBy: "breaker",
+    });
+  });
+
   it("criterion 15 (discovery-discipline): a tripped write breaker never flips READS to ask", async () => {
     const store = createMemoryStore();
     const guard = createGuard({

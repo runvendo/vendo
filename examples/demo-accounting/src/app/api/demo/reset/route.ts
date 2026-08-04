@@ -51,6 +51,12 @@ export async function POST() {
       seedDone = true
     },
     (error: unknown) => {
+      // A rejected seed is SETTLED, not pending: mark it done so the response
+      // never reports a failed seed as `seedPending`. Left false, the client
+      // would poll for ~6s and then claim success while the scripted
+      // automations are absent. The failure is logged (and re-lands on the next
+      // reset or the lock holder's boot seed); the reset itself still succeeds.
+      seedDone = true
       console.error("[cadence] automation re-seed failed:", error)
     },
   )

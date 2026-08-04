@@ -529,6 +529,10 @@
                   "properties": {
                     "data": {
                       "$ref": "#/components/schemas/DashboardMetrics"
+                    },
+                    "seedPending": {
+                      "type": "boolean",
+                      "description": "True when the scripted automations are still landing in the background (a contended PGlite writer lock): the store is restored but the automations panel may be momentarily empty. The client re-reads until they appear."
                     }
                   }
                 }
