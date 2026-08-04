@@ -89,6 +89,7 @@ import {
   cloudKnowledge,
   createKnowledgeTools,
   entailmentVerifier,
+  knowledgeIndexResolver,
   type KnowledgeToolsOptions,
 } from "@vendoai/knowledge";
 import { createMcpDoor, type AppsPort, type HostOAuthAdapter, type McpDoor } from "@vendoai/mcp";
@@ -150,7 +151,6 @@ import {
   vendoDirOf,
   type PackContext,
 } from "./packs/index.js";
-import { knowledgeIndexResolver } from "./knowledge-prompt.js";
 import { bindVendoModelSlots, vendoModel } from "#dev-creds/model";
 // Models spec 2026-07-22 — `vendoModel(name?)` is the vendo model family
 // entry: the lazily-resolving env ladder createVendo composes when the host
@@ -765,9 +765,9 @@ function selectConnectors(configured: Connector[] | undefined, connectorApps?: s
 /** ADAPTER RULE, knowledge seam (ENG-368): which KnowledgeAdapter (if any)
     backs the `vendo_knowledge_search` tool. Precedence, top to bottom:
       1. an explicitly passed adapter always wins — including the no-key BYO
-         paths (`httpKnowledge({ url })`, `lexicalKnowledge()`), which is how a
+         paths (`httpKnowledge({ url })`, `vendoKnowledge()`), which is how a
          Cloud subscriber keeps its own engine by construction. A zero-config
-         `lexicalKnowledge()` is handed the composed store here
+         `vendoKnowledge()` is handed the composed store here
          (bindKnowledgeStore), so the host never plumbs one;
       2. VENDO_API_KEY makes the Cloud engine the default for the seam the host
          left unfilled (VENDO_CLOUD_URL overrides the console base URL) —

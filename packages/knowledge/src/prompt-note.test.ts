@@ -1,7 +1,7 @@
 import { memoryKnowledgeAdapter } from "@vendoai/core/conformance";
 import type { KnowledgeAdapter, KnowledgeDoc } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
-import { knowledgeIndexResolver, knowledgeIndexSummary, parseKnowledgeConfig } from "./knowledge-prompt.js";
+import { knowledgeIndexResolver, knowledgeIndexSummary, parseKnowledgeConfig } from "./prompt-note.js";
 
 const doc = (id: string, kind: KnowledgeDoc["kind"] = "docs"): KnowledgeDoc => ({
   id,

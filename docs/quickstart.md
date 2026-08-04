@@ -408,7 +408,7 @@ Cloud defaults:
   instead of local PGlite. Pass `store: createStore(...)` to keep data local;
 - the knowledge slot becomes the Cloud knowledge engine when you passed no
   `knowledge`, and the agent gets its `vendo_knowledge_search` tool over the
-  corpus you connected in the console. Pass `knowledge: lexicalKnowledge()` (or
+  corpus you connected in the console. Pass `knowledge: vendoKnowledge()` (or
   any adapter) to keep retrieval yours — see [knowledge](./knowledge.md).
 
 An explicitly passed adapter or BYO key always wins over these defaults.

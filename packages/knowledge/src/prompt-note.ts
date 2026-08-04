@@ -1,5 +1,6 @@
 import type { KnowledgeAdapter, KnowledgeStatus } from "@vendoai/core";
-import { knowledgeConfigSchema, VENDO_KNOWLEDGE_SEARCH_TOOL, type KnowledgeConfig } from "@vendoai/knowledge";
+import { VENDO_KNOWLEDGE_SEARCH_TOOL } from "./agent-tools.js";
+import { knowledgeConfigSchema, type KnowledgeConfig } from "./ingest/index.js";
 
 /** Knowledge k8 (ENG-368) — the static prompt index + usage guidance. Pure
     assembly: sources come from `.vendo/knowledge.json` (when the developer
