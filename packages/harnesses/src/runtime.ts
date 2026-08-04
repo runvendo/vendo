@@ -17,8 +17,8 @@ import {
   type Harness,
   type HarnessEvent,
   type Principal,
-  type ResolvedModels,
   type RunContext,
+  type SeatModels,
   type ThreadId,
   type ToolRegistry,
   type Turn,
@@ -152,8 +152,10 @@ export interface TurnRunInput<Options = unknown> {
   messages: UIMessage[];
   ctx: RunContext;
   workspace: WorkspaceFs;
-  /** The resolved seats, as `Turn.models` carries them (contract §4). */
-  models: ResolvedModels<LanguageModel>;
+  /** The seats `Turn.models` carries (contract §4, relaxed): any subset — only
+   *  a seat the harness actually reads matters. Unset = no seats, which is the
+   *  whole truth for a harness like `claudeCode()` that brings its own brain. */
+  models?: SeatModels<LanguageModel>;
   options?: Options;
   /** §1.4 — did the caller prove presence (a click/message/submit)? */
   interactive: boolean;
@@ -389,7 +391,7 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
             },
             skills: deps.skills,
             workspace,
-            models: input.models,
+            models: input.models ?? {},
             state,
             options: input.options as Options,
             signal,

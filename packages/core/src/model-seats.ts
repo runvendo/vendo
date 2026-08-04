@@ -16,6 +16,18 @@ export const SEATS: readonly Seat[] = ["default", "reviewer", "judge", "fill", "
  */
 export type ResolvedModels<Model = unknown> = Readonly<Record<Seat, Model>>;
 
+/**
+ * What a `Turn` carries (agents spec 2026-08-04): any subset of the seats. A
+ * seat is required only where a harness actually reads it — `claudeCode()`
+ * reads none (its box brings its own inference), `vendo()` thinks with
+ * `default`, `instant()` routes with `fill` — so demanding all five from every
+ * caller made hosts fabricate models nobody would call. Composition still
+ * hands over a full `ResolvedModels` (it is assignable); a host driving the
+ * runtime directly passes only what its harness reads. A harness that reads a
+ * seat owns saying so loudly when it is missing.
+ */
+export type SeatModels<Model = unknown> = Readonly<Partial<Record<Seat, Model>>>;
+
 /** What a host may set: any subset, each either a model or a name to resolve. */
 export type SeatConfig<Model = unknown> = Partial<Record<Seat, Model | string>>;
 
