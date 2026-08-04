@@ -125,6 +125,12 @@ interface CompletedDecision {
   decision: GuardDecision;
   descriptor: ToolDescriptor;
   rationale?: string;
+  /** THE LAW (§12) as resolved by the shared verdict (`#automationVerdict`): the
+   *  returned run is an unattended call of a withheld-from-unattended tool that
+   *  is not a consumed-approval replay. `bind()` turns this into the refusal
+   *  outcome — `check()`'s verdict is deliberately left unchanged — so the live
+   *  refusal and the rehearsal preview read THE LAW from one place. */
+  lawWithheld: boolean;
 }
 
 interface AuditQueryFilter {
@@ -590,7 +596,8 @@ class GuardImplementation implements VendoGuard {
           // this call "read" here (so it executes for real) while the live
           // automation would treat it as a write. The classification that picks
           // simulate-vs-execute is the load-bearing safety boundary, so it must
-          // match the live verdict resolved the same way in #rehearsalWriteVerdict.
+          // match the live verdict — #rehearsalWriteVerdict resolves it through
+          // the same shared #automationVerdict the live gate uses.
           const effective = await this.#effectiveDescriptor(call, descriptor, {
             ...ctx,
             venue: "automation",
@@ -641,40 +648,30 @@ class GuardImplementation implements VendoGuard {
         // THE LAW (design §12), defence in depth. `projectableForRun` above is
         // the primary mechanism; this refuses whatever still got through.
         //
-        // It sits AFTER the pipeline, not before, because two outcomes the law
-        // explicitly wants must survive it:
+        // The refusal CONDITION is resolved in the shared #automationVerdict and
+        // handed back as `completed.lawWithheld`, so the live refusal and the
+        // rehearsal preview read THE LAW from one place and cannot drift. The
+        // refusal OUTCOME stays here on purpose: it sits AFTER the pipeline (not
+        // before), because two outcomes the law explicitly wants must survive it —
         //  - `ask` parks the call and shows a person the real arguments. That IS
         //    the law's replacement pattern — the automation prepares, the human
-        //    sends. Refusing ahead of the pipeline would delete it.
+        //    sends. `lawWithheld` is a run-only flag, so an `ask` reaches the park
+        //    below untouched.
         //  - an approved REPLAY (run/"grant" with no grantId — see
-        //    #grantForExecution) means a human already tapped this exact call
-        //    with these exact arguments. That is attended irreversibility, which
-        //    is precisely what the law asks for.
-        // What it does refuse is a standing grant, rule, judge, or default
-        // authorizing an irreversible action with nobody watching. No limit and
-        // no override reaches past this.
-        const replayApproved = decision.action === "run"
-          && decision.decidedBy === "grant" && decision.grantId === undefined;
-        // `withheldFromUnattended`, not `=== "destructive"`: an `ungraded` tool
-        // is refused here too. The two laws land on the same answer — §12 keeps
-        // irreversible actions off an unattended run, and the risk-grading
-        // redesign (D3) says a tool nobody has graded needs a PERSON — and an
-        // unattended venue has none to ask. Without this the merge left a real
-        // hole: extraction stopped guessing from names (D1), so Maple's
-        // `host_transferMoney` reads `ungraded`, the vote that used to call it
-        // destructive no longer speaks for it, and an enable-time standing grant
-        // authorized an unattended transfer. Proved by the away drill: the run
-        // came back `ok` and the money moved.
-        //
-        // Park-and-resume survives, which is what makes this a gate and not a
-        // wall: an UNGRANTED ungraded step still parks (`ask` never reaches
-        // here), and the approved replay that follows is exempt above. What
-        // cannot happen any more is a standing grant silently running an
-        // unjudged tool with nobody watching.
-        if (
-          decision.action === "run" && !replayApproved
-          && isUnattended(ctx) && withheldFromUnattended(completed.descriptor)
-        ) {
+        //    #grantForExecution) means a human already tapped this exact call with
+        //    these exact arguments. That is attended irreversibility, and
+        //    #automationVerdict exempts it (its `replayApproved` carve-out).
+        // `lawWithheld` uses `withheldFromUnattended`, not `=== "destructive"`, so
+        // an `ungraded` tool is refused too: §12 keeps irreversible actions off an
+        // unattended run, and the risk-grading redesign (D3) says a tool nobody has
+        // graded needs a PERSON — and an unattended venue has none to ask. Without
+        // it the merge left a real hole: extraction stopped guessing from names
+        // (D1), so Maple's `host_transferMoney` reads `ungraded`, and an
+        // enable-time standing grant authorized an unattended transfer. What still
+        // cannot happen is a standing grant, rule, judge, or default silently
+        // running an irreversible or unjudged tool with nobody watching. No limit
+        // and no override reaches past this.
+        if (completed.lawWithheld) {
           const refused: ToolOutcome = { status: "blocked", reason: UNATTENDED_DESTRUCTIVE_REASON };
           await this.report(
             eventFromContext(ctx, {
@@ -860,86 +857,32 @@ class GuardImplementation implements VendoGuard {
       ? this.#recordCall(ctx.principal.subject)
       : this.#peekCallsTripped(ctx.principal.subject);
     const metadata = await this.#pipeline(call, effectiveDescriptor, ctx);
-    let draft = metadata.decision;
 
-    // 05 §6: away runs hold only grants captured while present and bound to the
-    // running app — a would-be "run" that is not grant-authorized (rule, code,
-    // judge, or the default posture) parks instead of running. This applies to
-    // READS too: away execution has no live session to act as the user through,
-    // so it needs captured authority (a grant) to call the host as them. The
-    // automation ENABLE flow captures grants for every tool it uses, reads
-    // included, so an enabled automation runs its reads via `decidedBy: grant`;
-    // an ungranted away read parks (approve → grant → future runs succeed)
-    // rather than erroring at execution with no actAs authority.
-    if (ctx.presence === "away" && draft.action === "run" && draft.decidedBy !== "grant") {
-      draft = { action: "ask", decidedBy: "default" };
-    }
-
-    // Build contract §9.10 — the org-admin layer, evaluated here and nowhere
-    // else: a strictness CLAMP between host policy and the user's own
-    // approvals. It deliberately binds grant-authorized drafts (an admin
-    // tightening their members' agents is precisely a rule over what those
-    // members already approved for themselves), and it can only move a decision
-    // up the rank run < ask < block — which is what makes "host policy always
-    // wins, org policy tightens never loosens" structural rather than a promise.
-    // THE LAW's call-time gate stays downstream of it, untouched.
+    // The post-pipeline automation gate sequence — 05 §6 away-park, the org
+    // strictness clamp, the breaker/write-budget trip, and THE LAW's
+    // withholding flag — is resolved ONCE, in the shared #automationVerdict, so
+    // the rehearsal preview (#rehearsalWriteVerdict) can never drift from what
+    // an enabled automation actually decides. The verdict is a pure PEEK: it
+    // computes the decision but spends nothing. The two side effects the live
+    // path owns stay here — charging the write budget below, and (in bind) THE
+    // LAW's refusal outcome — applied AROUND the shared decision.
     //
-    // ONE carve-out, and it is the same one THE LAW makes below (`replayApproved`
-    // in `bind`): a run/"grant" with NO grantId is a one-time CONSUMED approval —
-    // a human just tapped this exact call with these exact arguments, moments
-    // ago, which is the very thing an org "ask" asked for. Re-clamping it made
-    // "ask" unsatisfiable: park → approve → park, forever, with the call never
-    // getting through. A STANDING grant (grantId present) stays bound on
-    // purpose: an org ask over a remembered grant means confirm-every-time, and
-    // that is the point of the layer.
-    //
-    // Stated rather than discovered: the carve-out skips the whole org lookup,
-    // so it skips `block` too — an org rule that FORBIDS this call does not stop
-    // a consumed approval for it, even though nothing about `block` is
-    // unsatisfiable. That is the trade, and it is bounded to one already-tapped
-    // call: the alternative is asking the guard to tell `ask` and `block` apart
-    // before it has read the rule, and any such split re-opens the park →
-    // approve → park loop for `ask`.
-    //
-    // Known and accepted: an org rule adopted BETWEEN a park and its approval is
-    // not applied to that one call — the consumed replay is already authorized by
-    // the human who tapped it. That is the same time-of-check window host policy
-    // has always had for approved replays, not a new one, and closing it would
-    // re-open the unsatisfiable-ask hole above.
-    const consumedApproval = draft.action === "run"
-      && draft.decidedBy === "grant" && draft.grantId === undefined;
-    const orgRule = consumedApproval
-      ? undefined
-      : await this.#orgRule(call, effectiveDescriptor, ctx);
-    if (orgRule !== undefined && strictness(orgRule.action) > strictness(draft.action)) {
-      // Only "ask" and "block" can outrank a draft — "run" is the floor — so the
-      // else arm here is reached exactly when the org rule says ask.
-      draft = orgRule.action === "block"
-        ? { action: "block", reason: orgRule.note ?? "blocked by org policy", decidedBy: "org" }
-        : { action: "ask", decidedBy: "org" };
-    }
-
-    if (draft.action === "run") {
-      // `ungraded` spends the write budget too: the budget exists to bound how
-      // much a single run can change, and a tool nobody has graded is exactly
-      // the one we cannot say is harmless.
-      const write = effectiveDescriptor.risk !== "read";
-      const runKey = ctx.trigger?.runId ?? ctx.sessionId;
-      const writes = this.#writeCounts.get(runKey)?.count ?? 0;
-      const writesTripped = write && writes >= this.#maxWritesPerRun;
-
-      // A tripped call-rate breaker never parks a present app-venue read
-      // (neverParkAppRead): the call still counts toward the window — which
-      // keeps throttling everything else — but the read runs, because its
-      // parked approval would starve the rendering surface forever. Writes
-      // (which is all writesTripped can be) always park.
-      if ((callsTripped || writesTripped) && !neverParkAppRead(effectiveDescriptor, ctx)) {
-        draft = { action: "ask", decidedBy: "breaker" };
-      } else if (write && commitRun) {
-        // Uncommitted preview: the run is real, but the SPEND is not — the
-        // moments-later real check (execute, commitRun=true) does this once.
-        this.#writeCounts.set(runKey, { count: writes + 1, touchedAt: Date.now() });
-      }
+    // `writes` is read here, before the verdict, and reused for the charge so
+    // the peeked count and the charged count are the same number.
+    const runKey = ctx.trigger?.runId ?? ctx.sessionId;
+    const writes = this.#writeCounts.get(runKey)?.count ?? 0;
+    const verdict = await this.#automationVerdict(
+      metadata.decision,
+      call,
+      effectiveDescriptor,
+      ctx,
+      { callsTripped, writes },
+    );
+    let draft = verdict.decision;
+    if (verdict.chargeableWrite && commitRun) {
+      // Uncommitted preview: the run is real, but the SPEND is not — the
+      // moments-later real check (execute, commitRun=true) does this once.
+      this.#writeCounts.set(runKey, { count: writes + 1, touchedAt: Date.now() });
     }
 
     // Rehearsal never parks: the venue's contract is no grants and no asks —
@@ -1005,6 +948,7 @@ class GuardImplementation implements VendoGuard {
       return {
         decision,
         descriptor: effectiveDescriptor,
+        lawWithheld: verdict.lawWithheld,
         ...(metadata.rationale === undefined ? {} : { rationale: metadata.rationale }),
       };
     }
@@ -1027,8 +971,98 @@ class GuardImplementation implements VendoGuard {
     return {
       decision: draft,
       descriptor: effectiveDescriptor,
+      lawWithheld: verdict.lawWithheld,
       ...(metadata.rationale === undefined ? {} : { rationale: metadata.rationale }),
     };
+  }
+
+  /** The post-pipeline automation gate sequence, computed as a side-effect-free
+   *  PEEK and shared by BOTH the live gate (#checkWithMetadata + bind) and the
+   *  rehearsal preview (#rehearsalWriteVerdict). It is the single source of
+   *  truth for the ask/block/run verdict an enabled AWAY automation reaches, so
+   *  the rehearsal card cannot silently drift from the live decision — the exact
+   *  rosy-preview failure this feature exists to prevent.
+   *
+   *  The stages, in order, exactly as the live path applied them inline:
+   *   1. 05 §6 away-park — an away "run" not authorized by a captured grant parks.
+   *   2. Build §9.10 org strictness clamp (run < ask < block), with the one
+   *      consumed-approval carve-out THE LAW also makes: a run/"grant" with no
+   *      grantId is an already-tapped call, so it skips the whole org lookup
+   *      rather than re-clamp into an unsatisfiable park.
+   *   3. Breaker / write-budget trip. The caller passes in the breaker readings
+   *      (`callsTripped`, `writes`) it wants the verdict computed against —
+   *      RECORDED for a live committing check, PEEKED for a preview or rehearsal
+   *      — so the differing side-effect sourcing stays with the caller.
+   *   4. THE LAW (§12) as a flag: an unattended run of a withheld-from-unattended
+   *      tool (destructive or ungraded) that is not a consumed-approval replay.
+   *
+   *  It spends NOTHING — no park, no approval, no #callWindows/#writeCounts
+   *  mutation. `chargeableWrite` is true exactly when the verdict stays "run" and
+   *  the call is a write, i.e. the one case the live path charges a write-budget
+   *  slot for; the caller performs (and scopes) that charge. `lawWithheld`
+   *  carries THE LAW's refusal to bind() (live) or to the wouldBlock card
+   *  (rehearsal); the refusal outcome itself stays with each caller so `check()`'s
+   *  verdict is left unchanged. */
+  async #automationVerdict(
+    draft: DraftDecision,
+    call: ToolCall,
+    descriptor: ToolDescriptor,
+    ctx: RunContext,
+    breaker: { callsTripped: boolean; writes: number },
+  ): Promise<{ decision: DraftDecision; chargeableWrite: boolean; lawWithheld: boolean }> {
+    let decision = draft;
+
+    // 1. 05 §6 away-park: an away "run" that is not grant-authorized (rule, code,
+    //    judge, or the default posture) parks — away execution has no live
+    //    session to act as the user through, so it needs captured authority.
+    if (ctx.presence === "away" && decision.action === "run" && decision.decidedBy !== "grant") {
+      decision = { action: "ask", decidedBy: "default" };
+    }
+
+    // 2. Org-admin strictness clamp — it can only move a decision UP the rank, so
+    //    "host policy tightens never loosens" is structural. The consumed-approval
+    //    carve-out skips the whole org lookup (and so skips `block` too): a human
+    //    just tapped this exact call, so re-clamping it would make "ask"
+    //    unsatisfiable — park → approve → park forever. A STANDING grant (grantId
+    //    present) stays clampable on purpose.
+    const consumedApproval = decision.action === "run"
+      && decision.decidedBy === "grant" && decision.grantId === undefined;
+    const orgRule = consumedApproval ? undefined : await this.#orgRule(call, descriptor, ctx);
+    if (orgRule !== undefined && strictness(orgRule.action) > strictness(decision.action)) {
+      // "run" is the floor, so the else arm is reached exactly when the rule asks.
+      decision = orgRule.action === "block"
+        ? { action: "block", reason: orgRule.note ?? "blocked by org policy", decidedBy: "org" }
+        : { action: "ask", decidedBy: "org" };
+    }
+
+    // 3. Breaker / write-budget trip, computed against the caller's readings —
+    //    never charged here. `ungraded` spends the write budget too (risk !==
+    //    "read"): the budget bounds how much a run can change, and an ungraded
+    //    tool is exactly the one we cannot call harmless. A tripped call-rate
+    //    breaker never parks a present app-venue read (neverParkAppRead) — the
+    //    read runs because its parked approval would starve the surface forever;
+    //    a tripped write always parks.
+    let chargeableWrite = false;
+    if (decision.action === "run") {
+      const write = descriptor.risk !== "read";
+      const writesTripped = write && breaker.writes >= this.#maxWritesPerRun;
+      if ((breaker.callsTripped || writesTripped) && !neverParkAppRead(descriptor, ctx)) {
+        decision = { action: "ask", decidedBy: "breaker" };
+      } else if (write) {
+        chargeableWrite = true;
+      }
+    }
+
+    // 4. THE LAW (§12): an unattended run of a withheld-from-unattended tool that
+    //    is not a consumed-approval replay is refused. Surfaced as a flag — the
+    //    live refusal outcome lives in bind() (so `check()` stays unchanged) and
+    //    the rehearsal card turns it into wouldBlock.
+    const replayApproved = decision.action === "run"
+      && decision.decidedBy === "grant" && decision.grantId === undefined;
+    const lawWithheld = decision.action === "run" && !replayApproved
+      && isUnattended(ctx) && withheldFromUnattended(descriptor);
+
+    return { decision, chargeableWrite, lawWithheld };
   }
 
   /** The STRICTEST org rule matching this call, or undefined when no org layer
@@ -1248,7 +1282,9 @@ class GuardImplementation implements VendoGuard {
 
   /** What the ENABLED automation's policy decision would be for a write, for the
    *  rehearsal simulated card: resolved in the away/automation context it really
-   *  runs in, in preview mode, so it neither executes, parks, nor spends a grant. */
+   *  runs in, in preview mode, through the shared #automationVerdict so it cannot
+   *  drift from the live gate — and side-effect-free, so it neither executes,
+   *  parks, nor spends a grant/breaker/write budget. */
   async #rehearsalWriteVerdict(
     call: ToolCall,
     descriptor: ToolDescriptor,
@@ -1258,63 +1294,55 @@ class GuardImplementation implements VendoGuard {
     // Sweep on the same cadence the live path does, so a firing's per-run tally
     // (below) cannot outlive its 60-minute backstop.
     this.#sweepBreakerState(Date.now());
-    let { decision } = await this.#pipeline(call, descriptor, awayCtx, true);
+    const { decision: piped } = await this.#pipeline(call, descriptor, awayCtx, true);
 
     // The card must reflect the SAME verdict the enabled away automation would
-    // reach, so it passes through the equivalent post-pipeline gates that
-    // #checkWithMetadata + bind() apply — org clamp, breaker/write-budget, and
-    // THE LAW's unattended-destructive refusal — done side-effect-free here (no
-    // park, no grant spend, no execute), never a rosy "would run" for a call a
-    // downstream gate would actually stop.
-
-    // 05 §6: an away "run" that is not grant-authorized parks (→ ask).
-    if (decision.action === "run" && decision.decidedBy !== "grant") {
-      decision = { action: "ask", decidedBy: "default" };
-    }
-
-    // Org-admin clamp (run < ask < block), with the same consumed-replay
-    // carve-out #checkWithMetadata makes. A standing grant stays clampable.
-    const consumedApproval = decision.action === "run"
-      && decision.decidedBy === "grant" && decision.grantId === undefined;
-    if (!consumedApproval) {
-      const orgRule = await this.#orgRule(call, descriptor, awayCtx);
-      if (orgRule !== undefined && strictness(orgRule.action) > strictness(decision.action)) {
-        decision = orgRule.action === "block"
-          ? { action: "block", reason: orgRule.note ?? "blocked by org policy", decidedBy: "org" }
-          : { action: "ask", decidedBy: "org" };
-      }
-    }
-
-    // Breaker / write-budget: a run that would trip parks (→ ask). The live
-    // per-minute window and #writeCounts are PEEKED, never charged by a preview.
-    // The per-firing simulated-write budget IS modeled locally (#rehearsalWrites,
-    // keyed on the firing's runId, charged at the tail), so once a single
-    // firing's simulated writes exhaust maxWritesPerRun the rest honestly read
-    // "would ask" instead of a rosy "would run".
-    const write = descriptor.risk === "write" || descriptor.risk === "destructive";
+    // reach, so its post-pipeline gates — 05 §6 away-park, the org clamp,
+    // breaker/write-budget, and THE LAW — are resolved through the very
+    // #automationVerdict the live gate (#checkWithMetadata + bind) uses, never a
+    // second hand-copied sequence that could drift into a rosy "would run".
+    //
+    // It is resolved as a pure PEEK of the shared live state. The live per-minute
+    // window and #writeCounts are read, never charged — a rehearsal read must
+    // never spend the caller's real rate/write budget. The per-firing
+    // simulated-write budget IS modeled locally (#rehearsalWrites, keyed on the
+    // firing's runId) and folded into the peeked write count so
+    // #automationVerdict's breaker check sees a firing's own accumulating spend.
     const runKey = awayCtx.trigger?.runId ?? awayCtx.sessionId;
-    if (decision.action === "run") {
-      const writes = (this.#writeCounts.get(runKey)?.count ?? 0)
-        + (this.#rehearsalWrites.get(runKey)?.count ?? 0);
-      const writesTripped = write && writes >= this.#maxWritesPerRun;
-      const callsTripped = this.#peekCallsTripped(awayCtx.principal.subject);
-      if (callsTripped || writesTripped) {
-        decision = { action: "ask", decidedBy: "breaker" };
-      }
+    const writes = (this.#writeCounts.get(runKey)?.count ?? 0)
+      + (this.#rehearsalWrites.get(runKey)?.count ?? 0);
+    const callsTripped = this.#peekCallsTripped(awayCtx.principal.subject);
+    const { decision, chargeableWrite, lawWithheld } = await this.#automationVerdict(
+      piped,
+      call,
+      descriptor,
+      awayCtx,
+      { callsTripped, writes },
+    );
+
+    // Charge the per-firing simulated-write budget for EVERY would-run non-read
+    // — `chargeableWrite` counts `ungraded` too (risk !== "read"), matching the
+    // live #writeCounts — and do it BEFORE THE LAW below, exactly as the live
+    // path charges in #checkWithMetadata before bind()'s refusal. A destructive
+    // or ungraded action that THE LAW then blocks still spent a live write slot,
+    // so a LATER simulated write in the SAME firing must see it spent here too;
+    // otherwise a rehearsal reports several such actions runnable past
+    // maxWritesPerRun that the enabled run would park. Charged to #rehearsalWrites
+    // only, never the shared live #writeCounts.
+    if (chargeableWrite) {
+      const entry = this.#rehearsalWrites.get(runKey);
+      this.#rehearsalWrites.set(runKey, {
+        count: (entry?.count ?? 0) + 1,
+        touchedAt: Date.now(),
+      });
     }
 
-    // THE LAW: an unattended destructive "run" on a standing grant is refused
-    // outright — only a consumed approval replay survives it. The card shows the
-    // block, never "would run".
-    const replayApproved = decision.action === "run"
-      && decision.decidedBy === "grant" && decision.grantId === undefined;
-    if (
-      decision.action === "run" && !replayApproved
-      && isUnattended(awayCtx) && resolvedRisk(descriptor) === "destructive"
-    ) {
+    // THE LAW: an unattended withheld-from-unattended "run" (destructive or
+    // ungraded) that is not a consumed-approval replay is refused. The card shows
+    // the block, never "would run".
+    if (lawWithheld) {
       return { wouldAsk: false, grantsMissing: [], wouldBlock: UNATTENDED_DESTRUCTIVE_REASON };
     }
-
     if (decision.action === "block") {
       return { wouldAsk: false, grantsMissing: [], wouldBlock: decision.reason };
     }
@@ -1327,17 +1355,6 @@ class GuardImplementation implements VendoGuard {
         && decision.decidedBy !== "org";
       const grantsMissing = grantSuppressible ? [call.tool] : [];
       return { wouldAsk: true, grantsMissing };
-    }
-    // Reaching here, the simulated write would actually RUN, so the enabled
-    // firing would spend one of its maxWritesPerRun slots. Charge the per-firing
-    // tally (never the live #writeCounts) so a LATER simulated write in the SAME
-    // firing sees the exhausted budget in the breaker check above.
-    if (write) {
-      const entry = this.#rehearsalWrites.get(runKey);
-      this.#rehearsalWrites.set(runKey, {
-        count: (entry?.count ?? 0) + 1,
-        touchedAt: Date.now(),
-      });
     }
     return { wouldAsk: false, grantsMissing: [] };
   }

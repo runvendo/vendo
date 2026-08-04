@@ -1,4 +1,4 @@
-import { isRehearsalSimulation } from "@vendoai/core";
+import { isRehearsalSimulation, UNATTENDED_DESTRUCTIVE_REASON } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { createGuard } from "../src/index.js";
 import { createMemoryStore } from "./fixtures/memory-store.js";
@@ -131,6 +131,45 @@ describe("rehearsal venue at the guard choke point", () => {
     );
     expect(live).toMatchObject({ status: "ok" });
     expect(tools.executions).toHaveLength(1);
+  });
+
+  it("a law-blocked non-read (ungraded) still spends the per-firing write budget, matching the live path", async () => {
+    // The live path charges #writeCounts for a would-run non-read (incl ungraded)
+    // in #checkWithMetadata, BEFORE bind()'s THE LAW refusal — so a destructive or
+    // ungraded action that the law then blocks has still spent a write slot. The
+    // rehearsal must model the same spend, or it rosily reports later writes in
+    // the SAME firing runnable past maxWritesPerRun that the enabled run parks.
+    const store = createMemoryStore();
+    const guard = createGuard({ store, policy: demoPolicy, breakers: { maxWritesPerRun: 1 } });
+    const ungraded = descriptor("ungraded", { name: "host_ungraded" });
+    // Enable-captured authority for both, so each WOULD run away (and thus counts).
+    await seedGrant(store, { descriptor: ungraded, source: "automation", appId: "app_1", duration: "standing" });
+    await seedGrant(store, { descriptor: descriptor("write"), source: "automation", appId: "app_1", duration: "standing" });
+    const tools = new FixtureTools([ungraded, descriptor("write")]);
+    const bound = guard.bind(tools);
+
+    // The ungraded action: THE LAW blocks an unattended ungraded run — but it has
+    // already spent the firing's single write slot, exactly as the live run does.
+    const first = await bound.execute(call("host_ungraded", { v: 1 }, "call_u"), rehearsalCtx);
+    expect((first as { output: unknown }).output).toMatchObject({
+      rehearsalSimulated: true,
+      wouldAsk: false,
+      wouldBlock: UNATTENDED_DESTRUCTIVE_REASON,
+    });
+
+    // A plain write that would otherwise run — but the ungraded action exhausted
+    // the budget, so the enabled firing would PARK it. Without counting the
+    // ungraded action, this would rosily report wouldAsk:false / "would run".
+    const second = await bound.execute(call("host_write", { v: 2 }, "call_w"), rehearsalCtx);
+    expect((second as { output: unknown }).output).toMatchObject({
+      rehearsalSimulated: true,
+      wouldAsk: true,
+      grantsMissing: [],
+    });
+
+    // Peek-only: nothing executed or parked, and the shared live budget untouched.
+    expect(tools.executions).toHaveLength(0);
+    expect(await guard.approvals.pending(alice)).toHaveLength(0);
   });
 
   it("a CHAT-source grant does NOT suppress the away verdict: the enabled automation still asks", async () => {

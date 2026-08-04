@@ -53,8 +53,20 @@ function ResetSection() {
     try {
       const { ok, json } = await post("/api/demo/reset")
       if (!ok) throw new Error("Reset failed")
-      setMetrics((json as { data: ResetMetrics }).data)
+      const envelope = json as { data: ResetMetrics; seedPending?: boolean }
       await globalMutate(() => true) // every open SWR view re-reads the restored store
+      if (envelope.seedPending) {
+        // The reset response said the scripted automations are still landing in
+        // the background (a contended PGlite writer lock): the store is restored
+        // but the panel would be empty right now. Stay "resetting" and re-read a
+        // few times, bounded, so the automations panel is populated before we
+        // report success — insert-if-absent means a late re-read only gains rows.
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 2_000))
+          await globalMutate(() => true)
+        }
+      }
+      setMetrics(envelope.data)
     } catch (err) {
       setMetrics(null)
       setError(err instanceof Error ? err.message : "Reset failed")

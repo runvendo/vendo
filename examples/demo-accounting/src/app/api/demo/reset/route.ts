@@ -1,6 +1,6 @@
 // POST /api/demo/reset — restore the seeded opening state between demo takes.
+import { NextResponse } from "next/server"
 import { dashboardMetrics } from "@/server/documents"
-import { ok } from "@/server/http"
 import { resetStore } from "@/server/store"
 import { cadenceDemoUsers } from "@/server/users"
 import { seedDemoScript } from "@/demo-script/seed"
@@ -30,14 +30,30 @@ export async function POST() {
   // is a handful of insert-if-absent writes and normally lands well within the
   // budget, so the common uncontended path still returns with the panel
   // repopulated; only a genuinely contended writer falls through to the
-  // background, where the seed keeps running (its .catch swallows any late
+  // background, where the seed keeps running (its handler swallows any late
   // failure) and re-lands on the next reset or the lock holder's boot seed. A
   // seed failure is logged, never fatal to the reset itself.
+  //
+  // EXPLICIT PENDING RESPONSE: when the seed falls through to the background, the
+  // reset is only PARTIALLY done — the scripted automations are not in the store
+  // yet. Reporting a flat success would make the panel claim "Seed restored" and
+  // refresh into an empty automations list. So the response carries `seedPending`
+  // (a sibling of the metrics `data`, which stays the exact DashboardMetrics
+  // shape the dashboard returns — the ENG-202 contract), and the client keeps its
+  // status honest and re-reads the panel until the background seed lands.
   const SEED_BUDGET_MS = 3_000
   const seeded = seedDemoScript()
-  seeded.catch((error: unknown) => {
-    console.error("[cadence] automation re-seed failed:", error)
-  })
+  let seedDone = false
+  // One handler settles both concerns: mark completion and log any failure. Also
+  // prevents an unhandled rejection if the seed rejects after the race times out.
+  seeded.then(
+    () => {
+      seedDone = true
+    },
+    (error: unknown) => {
+      console.error("[cadence] automation re-seed failed:", error)
+    },
+  )
   let seedTimer: ReturnType<typeof setTimeout> | undefined
   await Promise.race([
     seeded.catch(() => undefined),
@@ -46,6 +62,7 @@ export async function POST() {
     }),
   ])
   if (seedTimer !== undefined) clearTimeout(seedTimer)
+  const seedPending = !seedDone
   // Chip cache repair, fire-and-forget (a reset must answer fast —
   // generation takes minutes). Idempotent: intact cached apps are skipped.
   pregenerateChips().catch((error: unknown) => {
@@ -53,5 +70,5 @@ export async function POST() {
   })
   // VENDO-MIGRATION: the v0 umbrella owns its persistent grants and threads;
   // the frozen wire has no demo-only reset operation.
-  return ok(dashboardMetrics())
+  return NextResponse.json({ data: dashboardMetrics(), seedPending })
 }

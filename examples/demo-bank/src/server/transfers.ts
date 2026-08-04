@@ -39,6 +39,14 @@ export function transferMoney(input: TransferMoneyInput = {}): Transaction {
   const recipient = input.recipientName?.trim() || "Payee"
   const ref = 4100 + ((transferCounter * 17) % 900)
   transferCounter++
+  // A process-unique, monotonic token for THIS transfer, shared by both posted
+  // rows (source debit + destination credit) with distinct suffixes. Date.now()
+  // alone collides for two transfers in the same millisecond — and these ids are
+  // used as pagination cursors (`listTransactions`) and detail lookups
+  // (`getTransaction` returns the FIRST id match), so a collision makes
+  // pagination skip/repeat rows and a detail URL resolve to the wrong credit.
+  // The counter (already incremented once per call) keeps every id addressable.
+  const transferToken = `${Date.now()}_${transferCounter}`
 
   // Debit the source account (the demo's "money actually left" moment).
   if (account) account.balance -= amount
@@ -58,7 +66,7 @@ export function transferMoney(input: TransferMoneyInput = {}): Transaction {
     // paired "INTERNAL XFER" representation (source debit + destination credit).
     const at = new Date().toISOString()
     store.transactions.unshift({
-      id: `txn_transfer_${Date.now()}_destination`,
+      id: `txn_transfer_${transferToken}_destination`,
       accountId: destination.id,
       merchant: `Transfer from ${account?.name ?? "Checking"}`,
       descriptor: "INTERNAL XFER",
@@ -72,7 +80,7 @@ export function transferMoney(input: TransferMoneyInput = {}): Transaction {
   }
 
   const txn: Transaction = {
-    id: `txn_transfer_${Date.now()}`,
+    id: `txn_transfer_${transferToken}`,
     accountId,
     merchant: recipient,
     descriptor: `MAPLE TRANSFER TO ${recipient.toUpperCase()} REF ${ref}`,
