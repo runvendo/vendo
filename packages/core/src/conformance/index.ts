@@ -28,6 +28,8 @@ export { memoryStoreAdapter, type MemoryStoreAdapterOptions } from "./memory-sto
 export { memoryKnowledgeAdapter, type MemoryKnowledgeAdapterOptions } from "./memory-knowledge.js";
 export { knowledgeAdapterConformance, type KnowledgeConformanceOptions } from "./knowledge.js";
 export { appAccessConformance, type AppAccessConformanceOptions } from "./app-access.js";
+export { storeOpsConformance, type StoreOpsConformanceOptions } from "./store-ops.js";
+export { memoryStoreOps } from "./memory-store-ops.js";
 export { memoryAppAccess, type MemoryAppAccess } from "./memory-app-access.js";
 
 /**
