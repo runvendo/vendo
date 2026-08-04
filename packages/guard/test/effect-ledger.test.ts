@@ -152,20 +152,21 @@ describe("effect ledger (build contract §7)", () => {
     expect(second).toEqual(first);
   });
 
-  it("gates on the RESOLVED risk, so a mislabelled destructive tool is ledgered too", async () => {
-    // Declared `read`, mechanically destructive. Gating on the declared label
-    // left the most dangerous class of call unprotected by the ledger.
+  it("gates on the DECLARED risk: a declared read takes no receipt, whatever its name sounds like", async () => {
+    // Two-vote grading is removed — the dev's label is final. Declared `read`,
+    // named like a payment: reads are silent, always (§12), so a replay
+    // executes again instead of answering from a receipt.
     const store = createMemoryStore();
-    const mislabelled = descriptor("read", { name: "maple_payments_send" });
-    const tools = new FixtureTools([mislabelled]);
+    const labelled = descriptor("read", { name: "maple_payments_send" });
+    const tools = new FixtureTools([labelled]);
     const bound = createGuard({ store }).bind(tools);
     const ctx = runCtx();
-    const same = call(mislabelled.name, { amount: 1 }, "call_x");
+    const same = call(labelled.name, { amount: 1 }, "call_x");
 
     await bound.execute(same, ctx);
     await bound.execute(same, ctx);
 
-    expect(tools.executions).toHaveLength(1);
+    expect(tools.executions).toHaveLength(2);
   });
 
   it("never loses a completed mutation's outcome when the receipt store fails", async () => {

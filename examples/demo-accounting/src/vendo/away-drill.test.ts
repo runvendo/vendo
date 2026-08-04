@@ -26,7 +26,7 @@ import { readFile, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { resolvedRisk, UNATTENDED_DESTRUCTIVE_REASON } from "@vendoai/core"
+import { UNATTENDED_DESTRUCTIVE_REASON } from "@vendoai/core"
 import type { AppDocument, Principal, Step, ToolDescriptor, ToolRegistry } from "@vendoai/core"
 import { createActions } from "@vendoai/actions"
 import { supabasePreset } from "@vendoai/actions/presets"
@@ -243,13 +243,12 @@ describe("Cadence away drill (ENG-260)", () => {
       const appId = "app_away_intake"
 
       // The drill's subject is the authority mechanic, so the tool it runs must
-      // be one an automation may legally run unattended. Pin that against the
-      // REAL resolution (both votes, including the binding axis), so relabelling
-      // or repointing this step fails here loudly instead of silently turning
+      // be one an automation may legally run unattended. Pin the declared label
+      // (overrides.json — the dev's label is final), so relabelling or
+      // repointing this step fails here loudly instead of silently turning
       // the drill into a law test.
       const intake = await descriptorFor(stack, INTAKE_TOOL)
-      expect(intake.bindingRisk).toBe("write") // POST, not DELETE
-      expect(resolvedRisk(intake)).toBe("write")
+      expect(intake.risk).toBe("write")
 
       await enableAndApprove(stack, subject, intakeAutomation(appId))
 
@@ -301,7 +300,7 @@ describe("Cadence away drill (ENG-260)", () => {
       const subject = GRANTING_USER.subject
       const appId = "app_away_chase"
       const send = await descriptorFor(stack, MESSAGE_TOOL)
-      expect(resolvedRisk(send)).toBe("destructive")
+      expect(send.risk).toBe("destructive")
 
       // Enable + approve while present: the ceremony sees the tool and mints the
       // strongest authority that exists (app-bound, automation-source). The law

@@ -51,9 +51,12 @@ describe("THE LAW: unattended destructive calls are refused at the guard", () =>
   it("runs a dev-labelled READ whatever its name sounds like — the declared label is final", async () => {
     const store = createMemoryStore();
     // Two-vote grading is removed: no mechanical vote second-guesses the label
-    // the dev shipped and reviewed. Named like a deletion, declared `read`, so
-    // it runs — silently, as a read.
+    // the dev shipped and reviewed. Named like a deletion, declared `read`, and
+    // grant-authorized for this away run (05 §6 — an ungranted away call parks,
+    // reads included), so it runs; the old vote refused exactly this call with
+    // THE LAW's reason despite the same grant.
     const labelled = descriptor("read", { name: "maple_customer_delete" });
+    await seedGrant(store, { descriptor: labelled, appId: "app_1", source: "automation" });
     const tools = new FixtureTools([labelled]);
     const bound = createGuard({ store }).bind(tools);
 
