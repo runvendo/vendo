@@ -16,6 +16,24 @@ import { openScenario, screenshotPath } from "./helpers.js";
 const BUILD_TURN = "[smoke-build] a board showing where my money goes";
 const BUILT_APP = "app_smoke";
 
+/** The view the pinned app renders — in the thread's card and, once pinned, in
+ *  its shelf tile. */
+const BUILT_VIEW = {
+  formatVersion: "vendo-genui/v2",
+  root: "root",
+  nodes: [{ id: "root", component: "Text", props: { text: "$1,240 this month across 4 categories." } }],
+};
+
+/** The record the real runtime would have persisted for the build, placed. */
+const BUILT_APP_DOC = {
+  format: "vendo/app@1",
+  id: BUILT_APP,
+  name: "Where my money goes",
+  ui: "tree",
+  tree: BUILT_VIEW,
+  placements: ["hero"],
+};
+
 /**
  * The HOST's half of a pin: its own API writes the placement, and the shelf then
  * reads the app back over the wire. `vendo_make`'s fixture turn streams the view
@@ -28,22 +46,16 @@ async function hostPinWrite(page: Page): Promise<() => void> {
     if (route.request().method() !== "GET") return await route.fallback();
     const response = await route.fetch();
     const apps = (await response.json()) as unknown[];
-    await route.fulfill({
-      json: placed
-        ? [{
-          format: "vendo/app@1",
-          id: BUILT_APP,
-          name: "Where my money goes",
-          ui: "tree",
-          tree: {
-            formatVersion: "vendo-genui/v2",
-            root: "root",
-            nodes: [{ id: "root", component: "Text", props: { text: "$1,240 this month across 4 categories." } }],
-          },
-          placements: ["hero"],
-        }, ...apps]
-        : apps,
-    });
+    await route.fulfill({ json: placed ? [BUILT_APP_DOC, ...apps] : apps });
+  });
+  // A shelf tile renders the app's OWN view, and `useApp` fetches the document
+  // and the surface TOGETHER — stubbing only the list left a real tile reading
+  // "This didn't load.", which is a fixture gap, not a product state.
+  await page.route(`**/api/vendo/apps/${BUILT_APP}`, async (route) => {
+    await route.fulfill({ json: BUILT_APP_DOC });
+  });
+  await page.route(`**/api/vendo/apps/${BUILT_APP}/open*`, async (route) => {
+    await route.fulfill({ json: { kind: "tree", payload: BUILT_VIEW } });
   });
   return () => {
     placed = true;
@@ -142,6 +154,15 @@ test("a settled build invites the pin, and the pin lands in the Apps shelf", asy
   for (const side of ["x", "y", "width", "height"] as const) {
     expect(Math.abs(ring[side] - target[side]), `the ring's ${side} follows the shelf, not the page`).toBeLessThan(2);
   }
+  // The ring lands in the ACCENT, not in body text. Borrowing the shelf's own
+  // `color` drew a near-black rectangle around it — a debug outline where the
+  // payoff of the whole ceremony should be.
+  const ink = await page.locator("[data-vendo-pin-ring]").evaluate(node => ({
+    ring: getComputedStyle(node).boxShadow,
+    accent: getComputedStyle(node.parentElement!).getPropertyValue("--vendo-accent"),
+    body: getComputedStyle(document.querySelector(".fl-shelf")!).color,
+  }));
+  expect(ink.ring, `ring ${ink.ring} · accent ${ink.accent} · body ${ink.body}`).not.toContain(ink.body);
   await page.screenshot({ path: screenshotPath("pin-ring-on-shelf") });
 
   // The host's write fired…

@@ -255,14 +255,38 @@ describe("the pin ceremony (Keystone graduates B8)", () => {
     expect(ring()!.getAttribute("style")).not.toContain("rgb(20, 21, 26)");
   });
 
-  it("a HOST slot still lends the ring its own ink — a pin lands in the host's page", async () => {
+  it("blooms instead of outlining when it lands in our own chrome", async () => {
+    const { panel } = stage();
+    document.querySelector("[data-vendo-slot]")!.remove();
+    stubRects([
+      { selector: "[data-vendo-app-embed]", rect: { left: 400, top: 120, width: 600, height: 400 } },
+      { selector: ".fl-shelf", rect: { left: 40, top: 600, width: 300, height: 200 } },
+    ]);
+    shelf().style.setProperty("--vendo-accent", "rgb(10, 125, 85)");
+    playPinCeremony({ appId: "app_1", slot: "hero", dismiss: () => panel.remove() });
+
+    await flushFrames();
+    flight()!.animation.onfinish!();
+    // The accent alone was not enough: this theme's accent IS near-black, so a
+    // full-strength 1.5px line still drew a box around the whole shelf. The
+    // shelf is a WIDE band of our own chrome — it takes a soft bloom, and the
+    // crisp hairline stays where it reads as a highlight (a host's slot).
+    const style = ring()!.getAttribute("style")!;
+    expect(style).not.toContain("1.5px");
+    expect(style).toContain("color-mix");
+  });
+
+  it("a HOST slot still lends the ring its own ink, and keeps its crisp hairline", async () => {
     stage();
     (document.querySelector("[data-vendo-slot]") as HTMLElement).style.color = "rgb(180, 40, 40)";
     playPinCeremony({ appId: "app_1", slot: "hero" });
 
     await flushFrames();
     flight()!.animation.onfinish!();
-    expect(ring()!.getAttribute("style")).toContain("rgb(180, 40, 40)");
+    const style = ring()!.getAttribute("style")!;
+    expect(style).toContain("rgb(180, 40, 40)");
+    expect(style).toContain("1.5px");
+    expect(style).not.toContain("color-mix");
   });
 
   it("dismisses and strands nothing when the destination is not mounted", async () => {

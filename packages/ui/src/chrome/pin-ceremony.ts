@@ -88,18 +88,27 @@ function destinationOf(slot: string | undefined): Element | null {
     ?? document.querySelector(OUR_CHROME);
 }
 
-/** The ring's ink.
+/**
+ * The settle ring's shadow.
  *
- *  A HOST slot lends its own `color`, and that is the point: a pin lands in the
- *  host's page and should look like it belongs to it.
+ * A HOST SLOT gets a crisp hairline in the slot's OWN `color`: it is a small,
+ * defined region in someone else's page, the line reads as "here", and
+ * borrowing the ink is what makes a pin look like it belongs to the host.
  *
- *  OUR OWN chrome must not, and this is where borrowing it went wrong: the
- *  shelf's `color` is body text, so the payoff of the whole ceremony drew a
- *  near-black rectangle around the shelf — a debug outline. Our surfaces are
- *  themed, so they have an accent to land in. */
-function inkOf(destination: Element, style: CSSStyleDeclaration): string {
-  if (!destination.matches(OUR_CHROME)) return style.color;
-  return style.getPropertyValue("--vendo-accent").trim() || style.color;
+ * OUR OWN Apps shelf gets a soft bloom instead, because the same treatment drew
+ * a debug border around it. Two things had to change, and the first alone was
+ * not enough: the shelf's `color` is body text (so the ring was inked in body
+ * text), AND a full-strength hairline around a WIDE band reads as a border
+ * whatever its hue — this theme's accent is itself near-black, so switching
+ * token changed almost nothing on screen. A wide destination takes a glow.
+ */
+function ringShadow(destination: Element, style: CSSStyleDeclaration): string {
+  if (!destination.matches(OUR_CHROME)) {
+    return `0 0 0 1.5px ${style.color}, 0 12px 40px -14px ${style.color}`;
+  }
+  const accent = style.getPropertyValue("--vendo-accent").trim() || style.color;
+  return `0 0 0 3px color-mix(in srgb, ${accent} 16%, transparent),`
+    + ` 0 10px 34px -12px color-mix(in srgb, ${accent} 40%, transparent)`;
 }
 
 /** The settle pulse: a ring drawn OVER the destination, never a style written
@@ -108,7 +117,6 @@ function pulse(destination: Element): void {
   const box = boxOf(destination);
   if (box === null) return;
   const style = getComputedStyle(destination);
-  const ink = inkOf(destination, style);
   const ring = document.createElement("div");
   ring.setAttribute("data-vendo-pin-ring", "");
   ring.setAttribute("aria-hidden", "true");
@@ -119,7 +127,7 @@ function pulse(destination: Element): void {
     width: `${box.width}px`,
     height: `${box.height}px`,
     borderRadius: style.borderRadius,
-    boxShadow: `0 0 0 1.5px ${ink}, 0 12px 40px -14px ${ink}`,
+    boxShadow: ringShadow(destination, style),
     pointerEvents: "none",
     zIndex: ABOVE_OVERLAY,
   });
