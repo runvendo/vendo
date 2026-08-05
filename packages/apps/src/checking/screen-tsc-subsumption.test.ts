@@ -28,7 +28,10 @@ import { describe, expect, it } from "vitest";
 import { bindingKindIssues, catalogIssues, kitSlotIssues } from "./facts.js";
 import { screenTypings } from "./screen-typings.js";
 import { screenTscFindings } from "./screen-tsc.js";
-import type { GenerationDependencies } from "../generation/engine.js";
+// The bespoke checks under test take the floor's own dependency type; using it
+// (not `GenerationDependencies` from ../generation/) keeps this test inside the
+// §7.3 floor-independence guard that deps.test.ts enforces.
+import type { FloorDependencies } from "./deps.js";
 import { scriptedLanguageModel } from "../testing/scripted-model.js";
 
 const TOOL = "maple_invoices_list";
@@ -72,7 +75,7 @@ const catalog: NormalizedCatalog = [{
   propsJsonSchema: netWorthJsonSchema,
 }];
 
-const deps = (): GenerationDependencies => ({
+const deps = (): FloorDependencies => ({
   model: scriptedLanguageModel(() => '<App name="unused"/>'),
   catalog,
   tools: [{ name: TOOL, description: "invoices", risk: "read", inputSchema: { type: "object", properties: {} } }],
