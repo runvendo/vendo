@@ -11,6 +11,7 @@ import {
   type MakeReceipt,
   type RecordQuery,
   type RunContext,
+  type ScreenAssembler,
   type ToolDescriptor,
   type ToolOutcome,
   type ToolRegistry,
@@ -223,6 +224,10 @@ const optionalLimit = (value: Json | undefined): number | undefined => {
 export interface AgentToolsDataDependencies {
   data: AppDataAccess;
   requireOwned(appId: AppId, ctx: RunContext): Promise<AppDocument>;
+  /** UI-generation blueprint §1 point 2 — the screen agent, in front of the
+   *  conductor. Threaded from `AppsConfig.screen`, which composition fills; see
+   *  the routing block in the `vendo_make` handler below. */
+  screen?: ScreenAssembler;
 }
 
 /**
@@ -273,8 +278,50 @@ export const createAgentTools = (
         const stream = (call as VendoViewStreamingToolCall)[VENDO_VIEW_STREAM];
         const ask = withContext(args.request as string, optionalString(args.context, "context"));
         if (app === undefined) {
+          // ── THE SEAM (blueprint §1 point 2) ─────────────────────────────────
+          // "No agent chooses 'quick screen' vs 'real build'. Every request
+          // starts in the cheap screen agent." The id is minted HERE, before the
+          // route, because both engines have to use the same one: an escalation
+          // leaves `plan.vendo` and its painted skeleton at this id, and a
+          // conductor that minted its own would strand that skeleton on a second
+          // stream as a card that builds forever.
+          //
+          // Only `assembled` WITH A ROW ends the call. The row is the check that
+          // makes default-safety true instead of merely intended: `authored`
+          // upserts it iff the seam actually compiled and painted the document,
+          // so a screen agent that saved bytes nobody can render leaves no row
+          // and this falls through to the conductor exactly as if it had never
+          // been composed.
+          const appId = `app_${globalThis.crypto.randomUUID()}` as AppId;
+          const routed = dependencies.screen === undefined
+            ? undefined
+            : await dependencies.screen.assemble({
+              appId,
+              request: ask,
+              ...(stream === undefined ? {} : {
+                onView: (part) => stream({ id: vendoViewStreamId(part.appId), part }),
+              }),
+            }, ctx).catch((error: unknown) => {
+              // A broken assembler is a slower answer, never a failed one.
+              console.warn(`[vendo] the screen agent could not serve ${appId}; the conductor takes it — ${
+                error instanceof Error ? error.message : String(error)
+              }`);
+              return undefined;
+            });
+          if (routed?.kind === "assembled") {
+            const stored = await runtime.get(appId, ctx).catch(() => null);
+            if (stored !== null) {
+              return receipt({
+                id: stored.id,
+                title: stored.name,
+                status: "ready",
+                say: `${stored.name} is on your screen.`,
+              });
+            }
+          }
           let unsaved: string | undefined;
           const created = await runtime.create({
+            appId,
             prompt: ask,
             onUnsaved: (reason) => { unsaved = reason; },
             ...(stream === undefined ? {} : {

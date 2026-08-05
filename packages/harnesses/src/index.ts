@@ -28,6 +28,18 @@ export {
   type InstantHarnessOptions,
 } from "./instant.js";
 export {
+  assembleScreen,
+  screenAgent,
+  screenAssembler,
+  ESCALATE_TOOL,
+  SAVE_APP_TOOL,
+  SCREEN_STEPS,
+  type ScreenAssemblerDeps,
+  type ScreenInput,
+  type ScreenResult,
+  type ScreenSurface,
+} from "./screen-agent.js";
+export {
   createDiscoveryRails,
   type DiscoveryOptions,
   type DiscoveryRails,

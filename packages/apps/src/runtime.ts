@@ -24,6 +24,7 @@ import {
   type NormalizedCatalog,
   type PlanDisplay,
   type RunContext,
+  type ScreenAssembler,
   type ApprovalId,
   type ApprovalRequest,
   type RiskLabel,
@@ -287,6 +288,23 @@ export interface AppsConfig {
    *  skip, host tools are unaffected, and the tools stay LISTED for
    *  generation (execution still answers `connect-required` on its own). */
   connectedToolkits?: (ctx: RunContext) => Promise<string[]>;
+  /**
+   * UI-generation blueprint §1 point 2 — the screen agent, in front of the
+   * conductor. "The seam routes, not the caller": every `vendo_make` request
+   * starts in the cheap assembly loop, and this block never decides which engine
+   * a request deserves.
+   *
+   * An ADAPTER SLOT, for the reason every other one here is: the screen agent is a
+   * lean loop in `@vendoai/harnesses` and this block depends on `core` alone, so
+   * the two sides meet on core's `ScreenAssembler` and composition is the only
+   * place that fills it. Explicitly passed always wins; unfilled changes nothing.
+   *
+   * DEFAULT-SAFE by construction. `vendo_make` routes here first and falls
+   * through to `conductCreate` on every answer but `assembled` — an escalation, an
+   * assembler that could not run, a throw, and (the check that makes the promise
+   * true rather than merely intended) an `assembled` that left no app ROW behind.
+   */
+  screen?: ScreenAssembler;
 }
 
 /** 06-apps §1 */
@@ -642,6 +660,17 @@ export interface AuthoredAppResult {
 export interface AppsRuntime {
   create(input: {
     prompt: string;
+    /**
+     * The id this build must use, when the caller already minted one.
+     *
+     * The front door mints before it routes to the screen agent (§4.5): an
+     * escalation's `plan.vendo` is already written at `/user/apps/<appId>/` and
+     * its skeleton is already on `vendoViewStreamId(appId)`, so a conductor that
+     * minted its own id would paint the finished app onto a SECOND stream and
+     * leave the plan's skeleton stranded beside it as a permanently-building
+     * card. Absent — every caller but the front door — one is minted here.
+     */
+    appId?: AppId;
     /** Additive per-call stream hook used by the agent bridge. */
     onView?: (part: VendoViewPart) => void;
     /** Called when the app was generated and STREAMED to the surface but the
@@ -2313,8 +2342,10 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       if (config.model === undefined) {
         throw new VendoError("not-implemented", "generation requires a model");
       }
-      // Mint before generation so every partial already carries its permanent id.
-      const appId = `app_${globalThis.crypto.randomUUID()}`;
+      // Mint before generation so every partial already carries its permanent id
+      // — unless the front door already did, in which case an escalated plan's
+      // skeleton and this build's paints share one stream.
+      const appId = input.appId ?? `app_${globalThis.crypto.randomUUID()}`;
       const createStartedAt = Date.now();
       // The build's dead-man switch. The catch below persists a terminal failure
       // when the build turn THROWS, but a build task that hangs (a provider
@@ -3153,7 +3184,11 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     },
 
     agentTools() {
-      return createAgentTools(runtime, { data, requireOwned });
+      return createAgentTools(runtime, {
+        data,
+        requireOwned,
+        ...(config.screen === undefined ? {} : { screen: config.screen }),
+      });
     },
 
     inClient: {
