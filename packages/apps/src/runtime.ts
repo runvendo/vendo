@@ -13,6 +13,7 @@ import {
   type AccessLevel,
   type AppAccess,
   type AppDocument,
+  type AppFloor,
   type AppGrantRecord,
   type AppId,
   type AppPlan,
@@ -54,6 +55,7 @@ import { appLifecycleEvent } from "./audit.js";
 import { createAppCaller } from "./call.js";
 import { createParkedActions } from "./parked-action.js";
 import type { Check } from "./checking/types.js";
+import { createAppFloor } from "./checking/floor.js";
 import type {
   CloudAppsClient,
   PublishRecord,
@@ -86,7 +88,7 @@ import type { Finding } from "./checking/types.js";
 // about whether a document is sound.
 import { createCheckingLayer } from "./checking/layer.js";
 import { validateCompiledCreate } from "./generation/validation/validate.js";
-import { wireCompileOptionsFor } from "./generation/wire-options.js";
+import { wireCompileOptionsFor } from "./wire-options.js";
 import type { BrainTurn } from "./generation/brain.js";
 import { createAppHistory, type PinIntentKind } from "./history.js";
 import { createInClientApprovals, type InClientVerdict } from "./inclient.js";
@@ -743,6 +745,23 @@ export interface AppsRuntime {
     input: { appId: AppId; changed: readonly string[]; workspace: WorkspaceFs },
     ctx: RunContext,
   ): Promise<void>;
+
+  /**
+   * The checks floor bound to this caller's host surface (§7.1) — the production
+   * compile dialect, and the deterministic fact checks over what it compiled.
+   *
+   * The render seam is the caller, for the same reason it is `authored`'s: it is
+   * the one place that sees every write to `app.vendo`, whoever made it. Handing it
+   * the floor is what makes the checks run for EVERY author instead of only for
+   * apps our own conductor built — the seam used to compile with no options at
+   * all, so a lying binding was invisible and an inline tool reference lost its
+   * binding silently.
+   *
+   * Its `deps` are resolved lazily and once per returned floor: building them
+   * probes the host's read tools for shape cards, and a floor is built per turn but
+   * called per commit.
+   */
+  floor(ctx: RunContext): AppFloor;
   /** Speed lane — best-effort page-open warm-up of the generation model(s)
    *  (full + paint), so the first create reuses a live connection. Safe to
    *  call on surface mount; never throws. */
@@ -2594,6 +2613,23 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       return structuredClone(app);
     },
 
+    floor(ctx) {
+      return createAppFloor({
+        // Exactly the four fields the floor reads, built directly rather than
+        // through `generationDependencies`: none of the pipeline's other knobs
+        // (theme, design rules, fill tiers, the partial-tree seam) is a fact about
+        // an app, so none of them belongs in a check's inputs. `model` rides along
+        // when the deployment has one and is absent when it does not — the seam
+        // never spends it either way, and the AI reviewer is `validate`'s.
+        deps: async () => ({
+          catalog: config.catalog,
+          ...(config.model === undefined ? {} : { model: config.model }),
+          ...await generationToolContext(ctx),
+        }),
+        ...(config.checks === undefined ? {} : { checks: config.checks }),
+      });
+    },
+
     async authored(input, ctx) {
       const record = await apps.get(input.appId);
       const row = record === null ? null : rowFromRecord(record);
@@ -2980,7 +3016,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         // sentences a model can act on.
         const compiled = compileWire(
           input.document,
-          wireCompileOptionsFor(deps, deps.catalog.map(({ name }) => name)),
+          wireCompileOptionsFor(deps),
         );
         const { issues } = await validateCompiledCreate(compiled, deps);
         return {

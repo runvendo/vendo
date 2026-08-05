@@ -2789,9 +2789,15 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // host data one call away. Without `commitSource` the app's CODE has no home but
     // the sandbox snapshot behind `machine.snapshotRef` — lose the snapshot and the
     // customer's app is gone, because the store never had it.
+    // §7.1's floor half rides the same seam: the production compile dialect and
+    // the deterministic fact checks, on every commit, for every author. Without it
+    // the seam compiled with NO options — a lying binding was invisible and an
+    // inline tool reference lost its binding silently — and nothing checked a
+    // harness's own writes at all.
     render: (ctx) => ({
       authoredApp: (input) => apps.authored(input, ctx),
       commitSource: (input) => apps.commitSource(input, ctx),
+      floor: apps.floor(ctx),
     }),
     // Build contract §9.1/§9.7 — the same host org query the wire resolves per
     // request, so a harness turn's façade mounts the team's files too.

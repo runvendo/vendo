@@ -46,6 +46,9 @@ export interface GeneratedPartial {
  * left to structural luck.
  */
 export interface GenerationDependencies extends FloorDependencies {
+  /** Narrowed to REQUIRED: the floor can run its deterministic half without a
+   *  model, but a generation cannot happen without one. */
+  model: LanguageModel;
   theme?: VendoTheme;
   /** Host design rules for the generation prompt. The function form is resolved
    *  ONCE per generation (see {@link snapshotDesignRules}), so the prompts

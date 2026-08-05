@@ -27,6 +27,9 @@ export const strictToolCall = async (
   system: string,
   prompt: string,
 ): Promise<Record<string, unknown> | undefined> => {
+  // No model, no judgment — stated here rather than left to the catch below,
+  // which would reach it as a TypeError on `model.modelId`.
+  if (deps.model === undefined) return undefined;
   try {
     const { generateText, jsonSchema } = await import("ai");
     const result = await generateText({

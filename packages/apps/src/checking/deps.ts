@@ -29,13 +29,19 @@ export interface HostToolInfo {
 /**
  * The host surface a check measures against.
  *
- * `model` is here for the AI reviewer alone — it is the one check that spends a
- * model call — and it is REQUIRED for the same reason `AppsRuntime.validate`
- * refuses without one: a floor that silently drops its judgment half would report
- * a clean bill of health on an app nobody read.
+ * `model` is for the AI reviewer alone — the one check that spends a model call —
+ * and it is OPTIONAL because the floor genuinely runs without one: the seven
+ * deterministic fact checks are pure lookups, and the paint seam calls exactly
+ * those. A modelless floor loses its judgment half the same way the reviewer loses
+ * it for any other reason it cannot judge, which is fail-open by design ("a
+ * reviewer that could not judge must never be the reason a good app dies").
+ *
+ * `AppsRuntime.validate` still refuses outright without a model, because a VERB
+ * that answers "nothing wrong" after running only half its checks is the worst lie
+ * a checker can tell. That is a door's contract, not the floor's.
  */
 export interface FloorDependencies {
-  model: LanguageModel;
+  model?: LanguageModel;
   /** The composition-normalized catalog (01 §14): propsJsonSchema is derived. */
   catalog: NormalizedCatalog;
   /** Shape-card outputs keyed by tool. Absent → the binding, kit-slot and

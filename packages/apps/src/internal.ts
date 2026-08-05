@@ -9,6 +9,14 @@
  */
 export { assembleTree } from "./runtime.js";
 export { stripServerAuthoritativeFields } from "./open.js";
+/**
+ * The checks floor, built (§7.1). Composition reaches it through
+ * `AppsRuntime.floor(ctx)`, which is the supported path; this export exists so the
+ * render seam's own tests can drive the REAL floor rather than a double of it —
+ * the seam is a producer/consumer seam, and the repo's standing lesson is that a
+ * harness which mocks its counterparty proves nothing.
+ */
+export { createAppFloor, type AppFloorOptions } from "./checking/floor.js";
 
 /**
  * The Claude Agent SDK turn lives at `@vendoai/apps/claude-turn`, NOT here.

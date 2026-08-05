@@ -38,7 +38,7 @@ import { fillPlan, type FillOptions } from "./fill.js";
 import { runIslandLane } from "./lanes.js";
 import { growSkeleton, skeletonFromPlan, type Skeleton } from "./skeleton.js";
 import { documentFromEdit, validateCompiledCreate } from "./validation/validate.js";
-import { wireCompileOptionsFor } from "./wire-options.js";
+import { wireCompileOptionsFor } from "../wire-options.js";
 
 /**
  * Fix-it turns one app gets after the checking layer blocks it. Two, for the
@@ -94,11 +94,8 @@ export interface ConductedFailure {
 
 export type ConductedResult = ConductedApp | ConductedRefusal | ConductedFailure;
 
-const hostComponentNames = (deps: GenerationDependencies): string[] =>
-  deps.catalog.map(({ name }) => name);
-
 const compileOptionsFor = (deps: GenerationDependencies): Parameters<typeof compileWire>[1] =>
-  wireCompileOptionsFor(deps, hostComponentNames(deps));
+  wireCompileOptionsFor(deps);
 
 /** The checking layer for ONE generation run: the built-in fact checks, the AI
  *  reviewer bound to the data this app's queries actually returned, and the
