@@ -27,7 +27,7 @@ import { createStore, type VendoStore } from "@vendoai/store";
 import { createGuard, type PolicyConfig, type VendoGuard } from "@vendoai/guard";
 import { createActions } from "@vendoai/actions";
 import { connectorDiscoveryRegistry } from "@vendoai/agent";
-import { createApps, type AppsRuntime } from "@vendoai/apps";
+import { createApps, type AppsRuntime, type SandboxAdapter } from "@vendoai/apps";
 import { createAutomations, type AutomationsEngine } from "@vendoai/automations";
 
 export const fixtureBaseUrl = (): string => inject("fixtureBaseUrl");
@@ -209,6 +209,10 @@ export interface StackOptions {
    *  (The v1 fn:-step sandbox vehicle died with execution-v2 Wave 1.5; fn
    *  execution returns over the box door with the fn/schedules lane.) */
   wrapTools?: (bound: ToolRegistry) => ToolRegistry;
+  /** A v2 box adapter, for suites about MACHINE apps. Composes the apps runtime
+   *  with machines enabled and its arming seam bound to this stack's own
+   *  automations engine — the umbrella's wiring, not a stand-in for it. */
+  sandbox?: SandboxAdapter;
 }
 
 export async function createStack(options: StackOptions = {}): Promise<Stack> {
@@ -231,11 +235,27 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     actions.add(connectorDiscoveryRegistry(serviceToolPorts()));
   }
   const bound = options.wrapTools === undefined ? guard.bind(actions) : options.wrapTools(guard.bind(actions));
+  // The arming seam closes over the engine composed BELOW: arming only ever
+  // happens inside a call, which is after createStack returns — the umbrella
+  // does exactly this (`automationsForArming` in packages/vendo/src/server.ts).
+  let automationsForArming: AutomationsEngine | undefined;
   const apps = createApps({
     store,
     guard,
     tools: bound,
     catalog: [],
+    ...(options.sandbox === undefined ? {} : {
+      experimentalMachines: true,
+      machine: {
+        sandbox: options.sandbox,
+        // Idle auto-sleep is irrelevant here; a no-op clock keeps boxes awake.
+        clock: { setTimeout: () => 0, clearTimeout: () => undefined },
+      },
+      armAutomation: async (appId: AppId, triggerId: string, ctx: RunContext) => {
+        if (automationsForArming === undefined) throw new Error("arming before the stack was composed");
+        return await automationsForArming.enable(appId, triggerId, ctx);
+      },
+    }),
   });
   const runner = options.runnerFrom === undefined
     ? options.runner
@@ -249,6 +269,7 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     ...(options.now === undefined ? {} : { now: options.now }),
     ...(options.serviceTools === true ? { resolveRisk: serviceToolRiskResolver } : {}),
   });
+  automationsForArming = automations;
 
   return {
     store,

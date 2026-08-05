@@ -14,7 +14,6 @@ import type { LanguageModel } from "ai";
 import { describe, expect, it } from "vitest";
 import { createApps, type AppsConfig, type AppsRuntime } from "./index.js";
 import {
-  fakeBoxSandbox,
   guardFixture,
   memoryStore,
   scriptedLanguageModel,
@@ -633,44 +632,9 @@ describe("§9.5 — the hosted-store promote limitation speaks plainly", () => {
   });
 });
 
-describe("§9.1 — an unattended app-schedule fire asserts the same orgs a request does", () => {
-  it("resolves memberships through the config seam on every fire", async () => {
-    // The seam is only worth anything if the SCHEDULE ENGINE gets it: an
-    // app-schedule fire that asserts no orgs cannot see a promoted app, so
-    // `can()` would answer differently attended and unattended.
-    const asked: string[] = [];
-    const store = memoryStore();
-    const sandbox = fakeBoxSandbox();
-    const runtime = createApps({
-      store,
-      guard: guardFixture(),
-      tools,
-      catalog: [],
-      appAccess: storeAccess(store),
-      multiParty: true,
-      experimentalMachines: true,
-      machine: { sandbox },
-      memberships: async (principal) => {
-        asked.push(principal.subject);
-        return [{ org: "acme" }];
-      },
-    });
-
-    const box = await sandbox.create({ env: {}, template: "node" });
-    const state = sandbox.machines[sandbox.machines.length - 1]!.state;
-    state.manifest = { schedules: [{ cron: "* * * * *", fn: "digest" }] };
-    state.fns.set("digest", () => ({ ok: true }));
-    const snapshotRef = await box.snapshot();
-    await seedAppRow(store, {
-      ...doc("app_fire"),
-      ui: "http",
-      machine: { snapshotRef, provisionedAt: "2026-08-01T00:00:00.000Z" },
-    }, "dana", true);
-
-    // First tick caches the manifest; the second one is due and fires.
-    await runtime.schedules.tick(new Date("2026-08-01T12:00:10.000Z"));
-    const report = await runtime.schedules.tick(new Date("2026-08-01T12:01:30.000Z"));
-    expect(report.fired.map((entry) => entry.fn)).toEqual(["digest"]);
-    expect(asked).toContain("dana");
-  });
-});
+/** §9.1 — an unattended fire asserting the same orgs a request does used to be
+ *  proven here, against the machine-app schedule engine's own `memberships`
+ *  seam. That engine is gone: a `vendo.json` schedule is a doc trigger now, and
+ *  the ONE unattended firing path is the automations engine, whose own
+ *  `memberships` seam is proven in
+ *  `packages/automations/src/sponsorship.test.ts`. */

@@ -103,27 +103,25 @@ export const systemRoutes: RouteEntry[] = [
     if (!await tickAuthorized(request)) {
       return json({ error: { code: "blocked", message: "invalid tick credential" } }, 401);
     }
-    // execution-v2 Lane D — one authenticated tick drives BOTH schedulers: the
-    // automations engine and the machine-app vendo.json schedules (additive
-    // `schedules` field), plus the hosted TTL sweep (sweepOnTick). Point any
-    // external cron here (Vercel cron, GitHub Actions, crontab); the Cloud
-    // broker calls this same surface. The legs settle independently so one
-    // failing can never suppress the others; any failure still answers 500 so
-    // a retrying cron comes back (all three are idempotent within their
-    // windows).
-    const [runs, schedules, sessions] = await Promise.allSettled([
+    // One authenticated tick drives the ONE scheduler — the automations engine,
+    // which fires every trigger including the schedules a machine app declares
+    // in its vendo.json (folded into doc triggers at manifest sync; the separate
+    // machine-app scheduler this leg used to drive is gone) — plus the hosted
+    // TTL sweep (sweepOnTick). Point any external cron here (Vercel cron, GitHub
+    // Actions, crontab); the Cloud broker calls this same surface. The legs
+    // settle independently so one failing can never suppress the other; any
+    // failure still answers 500 so a retrying cron comes back (both are
+    // idempotent within their windows).
+    const [runs, sessions] = await Promise.allSettled([
       deps.automations.tick(),
-      deps.apps.schedules.tick(),
       deps.sweepOnTick ? sweep() : Promise.resolve(),
     ]);
     const errors = [
       ...(runs.status === "rejected" ? [`automations: ${runs.reason instanceof Error ? runs.reason.message : "tick failed"}`] : []),
-      ...(schedules.status === "rejected" ? [`schedules: ${schedules.reason instanceof Error ? schedules.reason.message : "tick failed"}`] : []),
       ...(sessions.status === "rejected" ? [`sessions: ${sessions.reason instanceof Error ? sessions.reason.message : "sweep failed"}`] : []),
     ];
     return json({
       ...(runs.status === "fulfilled" ? { runIds: runs.value } : {}),
-      ...(schedules.status === "fulfilled" ? { schedules: schedules.value } : {}),
       ...(errors.length === 0 ? {} : { errors }),
     }, errors.length === 0 ? 200 : 500);
   }),
