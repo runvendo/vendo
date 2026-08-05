@@ -36,3 +36,22 @@ file-read method at all), and the new seam test deletes an app's snapshot, prove
 never held its files — byte for byte, including a file past the inline cap so the
 blob-spill leg is proven too. `trigger`, `placements`, grants and the app's id all
 ride through untouched: a commit is not a generation.
+
+Two things that ride along, because this PR is `commitApp`'s first real caller and
+both only become reachable with one:
+
+- **`commitSource` is a new authorization surface, so it is tested hostilely.** The
+  appId it writes to is derived from the COMMITTED PATHS, and a caller may write
+  anything under their own `/user` mount — including another person's app
+  directory. Three cases are now pinned: a foreign caller is refused and the
+  refusal is AUDIBLE rather than a silent skip; an org-owned app resolves to its
+  ORG address even when the caller's personal mount is writable too; and a commit
+  naming a stranger's app alongside the caller's own lands nothing on the
+  stranger's while still landing the caller's. All three pass against the gates
+  Phase 0 already put in — these document them, they do not add them.
+- **"Would not read" is no longer treated as "was deleted."** `commitApp` decided
+  deletions by whether the read-back threw, and for a spilled file that read is a
+  live fetch from the files adapter — so a blob store having a bad minute looked
+  exactly like a deletion and the entry was dropped. Now a path that still EXISTS
+  but will not read keeps its stored entry and says so loudly; only a confirmed
+  absence is a deletion. Per path, so the rest of the commit still lands.

@@ -47,7 +47,7 @@ import {
 import { createGuard } from "@vendoai/guard";
 import { wrapWorkspaceForRender } from "@vendoai/harnesses";
 import { appAccess, createStore, workspaceStore } from "@vendoai/store";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -57,6 +57,9 @@ afterEach(async () => {
 const principal: Principal = { kind: "user", subject: "user_rebuild" };
 const READER: Principal = { kind: "user", subject: "user_reader" };
 const APP = "app_rebuild_1" as AppId;
+/** Someone else's app, and the person who owns it. */
+const THEIRS = "app_rebuild_theirs" as AppId;
+const STRANGER = "user_stranger";
 const ORG = "maple";
 const MEMBERSHIP = { org: ORG, display: "Maple Bank", teams: ["support"], admin: true };
 const ctx: RunContext = { principal, venue: "chat", presence: "present", sessionId: "s_rebuild" };
@@ -80,22 +83,32 @@ const TRIGGER = {
 } as const;
 
 /** An in-memory `FilesAdapter` — the SAME seam the workspace rows spill to, which
- *  is the point: one adapter, two callers, no second spill mechanism. */
-function memoryBlobs(): FilesAdapter & { keys(): string[] } {
+ *  is the point: one adapter, two callers, no second spill mechanism.
+ *
+ *  `failRowReads` simulates the fault that makes deletion-by-failed-read
+ *  dangerous: a live blob store having a bad minute. It fails only `get`, and only
+ *  for the WORKSPACE row keys (`wsb_*`), because that is the fetch a read-back of a
+ *  spilled file actually makes. */
+function memoryBlobs(): FilesAdapter & { keys(): string[]; failRowReads: boolean } {
   const blobs = new Map<string, Uint8Array>();
-  return {
-    async put(key, bytes) {
+  const adapter = {
+    failRowReads: false,
+    async put(key: string, bytes: Uint8Array) {
       blobs.set(key, bytes);
     },
-    async get(key) {
+    async get(key: string) {
+      if (adapter.failRowReads && key.startsWith("wsb_")) {
+        throw new Error(`the blob store refused ${key}`);
+      }
       const bytes = blobs.get(key);
       return bytes === undefined ? undefined : { bytes };
     },
-    async delete(key) {
+    async delete(key: string) {
       blobs.delete(key);
     },
     keys: () => [...blobs.keys()],
   };
+  return adapter;
 }
 
 /**
@@ -365,5 +378,234 @@ describe.sequential("an app rebuilds from its row onto a fresh box, with its sna
     expect(result.status === "ok" && result.changed).toContain("/user/apps/app_no_such_row/src/App.tsx");
     // And the workspace still holds the file: the commit really did land.
     expect(await workspace.readFile(`/user/apps/app_no_such_row/src/App.tsx`)).toBe("orphan\n");
+  }, 120_000);
+});
+
+/**
+ * `commitSource` is a NEW AUTHORIZATION SURFACE, so it is tested hostilely rather
+ * than reasoned about — the lesson Phase 0 paid for three times over.
+ *
+ * The shape of the power: the render seam now writes to app ROWS on behalf of
+ * whoever committed, and the appId it writes to is derived FROM THE COMMITTED
+ * PATHS. A caller can write anything they like under their own `/user` mount,
+ * including `/user/apps/<somebody-else's-id>/`, and the façade will land it —
+ * `/user/**` is its subject's at every level. So the committed path is an
+ * ATTACKER-CONTROLLED input to an authorization decision, and the only thing
+ * standing between it and a cross-tenant write is `appDirectory`: the address comes
+ * from `ownerOf` (the row's subject) and `canCommit` is the gate over it.
+ *
+ * Every assertion below is about that gate holding, and about the refusal being
+ * AUDIBLE — because this path is deliberately non-fatal, a refusal that looked
+ * identical to "nothing to persist" would be the worst possible outcome.
+ */
+describe.sequential("committing source is an authorization surface", () => {
+  /** A stored app owned by someone else, with source already on it — so "untouched"
+   *  is a thing that can be asserted rather than an absence. */
+  const THEIR_SOURCE = "export const Theirs = () => null;\n";
+  async function seedTheirs(store: VendoStore): Promise<void> {
+    await store.records("vendo_apps").put({
+      id: THEIRS,
+      data: {
+        subject: STRANGER,
+        enabled: false,
+        doc: {
+          format: VENDO_APP_FORMAT,
+          id: THEIRS,
+          name: "Their private app",
+          source: {
+            "src/Theirs.tsx": {
+              hash: `sha256:${"0".repeat(64)}`,
+              bytes: THEIR_SOURCE.length,
+              text: THEIR_SOURCE,
+            },
+          },
+        },
+      },
+      refs: { subject: STRANGER },
+    });
+  }
+
+  const theirDoc = async (store: VendoStore): Promise<AppDocument> => {
+    const record = await store.records("vendo_apps").get(THEIRS);
+    if (record === null) throw new Error("their row vanished");
+    return appDocumentSchema.parse((record.data as { doc: unknown }).doc);
+  };
+
+  /**
+   * HOSTILE 1 — the foreign caller. Staging a file under another person's app in
+   * your OWN mount is a write the façade allows, and P0's third gate is what stops
+   * it becoming their app's source. The commit still lands (it is the caller's own
+   * mount, and persistence may never fail a commit), so the ONLY signal that
+   * anything was refused is the loud log — which is exactly why it is asserted.
+   */
+  it("refuses a commit against another person's app, out loud rather than silently", async () => {
+    const { store, open } = await harness();
+    await seedTheirs(store);
+    const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const workspace = await open();
+    // The caller really can write here — this is why permission cannot be the thing
+    // that refuses, and why the refusal has to come from OWNERSHIP.
+    expect(await workspace.canCommit(`/user/apps/${THEIRS}/src/Mine.tsx`)).toBe(true);
+    await workspace.writeFile(`/user/apps/${THEIRS}/src/Mine.tsx`, "mine\n");
+    const result = await workspace.commit();
+    expect(result.status).toBe("ok");
+
+    // Their app is exactly as it was: one file, theirs, unchanged.
+    const doc = await theirDoc(store);
+    expect(Object.keys(doc.source ?? {})).toEqual(["src/Theirs.tsx"]);
+    expect(doc.source!["src/Theirs.tsx"]!.text).toBe(THEIR_SOURCE);
+
+    // And the refusal was AUDIBLE. A silent skip here would be indistinguishable
+    // from "there was nothing to persist", which is the failure mode being ruled out.
+    expect(spy).toHaveBeenCalledWith(
+      "[vendo] render seam: source did not reach the store",
+      expect.objectContaining({
+        appId: THEIRS,
+        error: expect.stringContaining("another person's workspace"),
+      }),
+    );
+    spy.mockRestore();
+  }, 120_000);
+
+  /**
+   * HOSTILE 2 — ambiguous ownership, the exact case P0's ownership-addressing gate
+   * was written for. An org-owned app whose editor can ALSO write their own `/user`
+   * mount: both addresses answer `canCommit` yes, so permission cannot choose
+   * between them. If the address came from permission, the projection would land in
+   * the personal mount and every org edit would be filtered out and SILENTLY
+   * DROPPED. So both are written in the SAME commit, and the row must take the org
+   * one.
+   */
+  it("resolves the ORG address when the personal mount is writable too", async () => {
+    const { store, apps, open } = await harness();
+    await seedApp(store, ORG);
+
+    const workspace = await open(orgCtx);
+    expect(await workspace.canCommit(`/user/apps/${APP}/src/App.tsx`)).toBe(true);
+    expect(await workspace.canCommit(`/orgs/${ORG}/apps/${APP}/src/App.tsx`)).toBe(true);
+
+    await workspace.writeFile(`/orgs/${ORG}/apps/${APP}/src/App.tsx`, "team\n");
+    // The decoy, at the same relative path in the caller's own mount. Both land in
+    // the workspace; only one of them is the app.
+    await workspace.writeFile(`/user/apps/${APP}/src/App.tsx`, "personal\n");
+    expect((await workspace.commit()).status).toBe("ok");
+
+    const doc = await apps.get(APP, orgCtx);
+    expect(Object.keys(doc!.source ?? {})).toEqual(["src/App.tsx"]);
+    expect(doc!.source!["src/App.tsx"]!.text).toBe("team\n");
+  }, 120_000);
+
+  /**
+   * HOSTILE 3 — the sharp one, and the reason this block exists. The appId is
+   * derived from the commit's changed paths, so ONE commit can name the caller's own
+   * app and a stranger's at the same time. The seam then calls `commitSource` for
+   * both. Nothing may land on the stranger's app — and, just as important, their
+   * refusal must not take the caller's own landed work down with it.
+   */
+  it("lands nothing on a foreign app named in the same commit, and still lands the caller's own", async () => {
+    const { store, apps, open } = await harness();
+    await seedApp(store);
+    await seedTheirs(store);
+    const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const workspace = await open();
+    await workspace.writeFile(`/user/apps/${APP}/src/Mine.tsx`, "mine\n");
+    await workspace.writeFile(`/user/apps/${THEIRS}/src/Stolen.tsx`, "not yours\n");
+    const result = await workspace.commit();
+    expect(result.status).toBe("ok");
+    // Both paths really did reach the store — the attack is live, not hypothetical.
+    expect(result.status === "ok" && result.changed).toEqual(expect.arrayContaining([
+      `/user/apps/${APP}/src/Mine.tsx`,
+      `/user/apps/${THEIRS}/src/Stolen.tsx`,
+    ]));
+
+    // The caller's own app took its file.
+    const mine = await apps.get(APP, ctx);
+    expect(Object.keys(mine!.source ?? {})).toEqual(["src/Mine.tsx"]);
+
+    // The stranger's app took NOTHING. This is the cross-tenant write, refused.
+    const theirs = await theirDoc(store);
+    expect(Object.keys(theirs.source ?? {})).toEqual(["src/Theirs.tsx"]);
+    expect(theirs.source!["src/Theirs.tsx"]!.text).toBe(THEIR_SOURCE);
+
+    expect(spy).toHaveBeenCalledWith(
+      "[vendo] render seam: source did not reach the store",
+      expect.objectContaining({ appId: THEIRS }),
+    );
+    spy.mockRestore();
+  }, 120_000);
+});
+
+/**
+ * "Unreadable" and "deleted" are not the same fact — coordinator ruling,
+ * 2026-08-05, on freshly-merged `app-source.ts`.
+ *
+ * `commitApp` decided deletions by whether the read-back threw. For a spilled file
+ * that read is a LIVE FETCH from the files adapter, so a blob store having a bad
+ * minute looked exactly like "the user deleted this" and the entry was dropped from
+ * `doc.source`. With this PR making the row the app's only home, that is the lost
+ * app the whole change exists to prevent.
+ *
+ * The discriminator is `exists()`, not the error: it answers from the row index and
+ * never touches the blob. The thrown error CANNOT be the discriminator — the façade
+ * raises the same POSIX-shaped `ENOENT` for a deleted row as for a row whose bytes
+ * have gone missing (`workspace-rows.ts` `load()` returning undefined →
+ * `workspace-fs.ts` `bytesOf` → `enoent`), and it carries no code to switch on.
+ *
+ * Both directions are asserted. Survival alone would pass on code that simply never
+ * deletes anything.
+ */
+describe.sequential("a source file is never dropped because it merely would not read", () => {
+  const SMALL = "export const App = () => null;\n";
+
+  it("KEEPS the stored entry when the read-back FAILS, and says so", async () => {
+    const { store, apps, blobs, open } = await harness();
+    await seedApp(store);
+    const workspace = await open();
+
+    // v1 lands and spills, so its read-back is a real blob fetch.
+    const v1 = `// ${"a".repeat(WORKSPACE_INLINE_MAX_BYTES)}\n`;
+    await workspace.writeFile(`/user/apps/${APP}/src/big.ts`, v1);
+    expect((await workspace.commit()).status).toBe("ok");
+    const landed = (await apps.get(APP, ctx))!.source!["src/big.ts"]!;
+    expect(landed.blobRef).toBeDefined();
+
+    // Now the blob store starts refusing reads. v2 is a DIFFERENT length so the
+    // commit itself never needs the prior content — only the read-back does.
+    blobs.failRowReads = true;
+    const v2 = `// ${"b".repeat(WORKSPACE_INLINE_MAX_BYTES + 10)}\n`;
+    await workspace.writeFile(`/user/apps/${APP}/src/big.ts`, v2);
+    const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const result = await workspace.commit();
+    expect(result.status).toBe("ok");
+
+    // The file is STILL in the row, still describing v1 — stale, and stale is the
+    // correct answer. What must never happen is the entry disappearing.
+    const after = (await apps.get(APP, ctx))!.source!;
+    expect(Object.keys(after)).toEqual(["src/big.ts"]);
+    expect(after["src/big.ts"]!.bytes).toBe(landed.bytes);
+    expect(after["src/big.ts"]!.hash).toBe(landed.hash);
+    // And it was audible, naming the path that did not make it.
+    expect(spy.mock.calls.flat().join(" ")).toContain("src/big.ts");
+    spy.mockRestore();
+  }, 120_000);
+
+  it("still drops an entry the user really DELETED", async () => {
+    const { store, apps, open } = await harness();
+    await seedApp(store);
+    const workspace = await open();
+
+    await workspace.writeFile(`/user/apps/${APP}/src/App.tsx`, SMALL);
+    await workspace.writeFile(`/user/apps/${APP}/vendo.json`, "{}\n");
+    expect((await workspace.commit()).status).toBe("ok");
+    expect(Object.keys((await apps.get(APP, ctx))!.source ?? {}).sort())
+      .toEqual(["src/App.tsx", "vendo.json"]);
+
+    // A real deletion: the row goes, so `exists()` answers false and the entry
+    // must go with it.
+    await workspace.rm(`/user/apps/${APP}/src/App.tsx`);
+    expect((await workspace.commit()).status).toBe("ok");
+    expect(Object.keys((await apps.get(APP, ctx))!.source ?? {})).toEqual(["vendo.json"]);
   }, 120_000);
 });
