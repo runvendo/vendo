@@ -74,7 +74,7 @@ the brain while planning.
 ## Computed values
 
 The model never does math itself — it writes an expression like
-`sum(invoices.amount_cents)` and the runtime computes it fresh on every
+`sum(invoices.data, "amount_cents")` and the runtime computes it fresh on every
 render, so numbers never freeze stale. The reviewer judges whether the
 expression makes sense.
 
