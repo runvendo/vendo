@@ -17,7 +17,7 @@ import { assembleSystemPrompt } from "@vendoai/agent/internal";
 // Architecture §3 — the harness runtime and the default thinker. `vendo()` is
 // composed HERE (not by the host) when `harness:` is unset; its prompt and
 // descriptor catalog reach it on the turn, never at construction.
-import { assertHarnessComposable, reportHire, vendo } from "@vendoai/harnesses";
+import { assertHarnessComposable, reportHire, screenAssembler, vendo } from "@vendoai/harnesses";
 // …and re-exported, because §10's one-line opt-in is `harness: vendo()`. Without
 // this, naming the default harness costs a SECOND direct dependency on
 // `@vendoai/harnesses` — a documented one-liner that does not compile from the
@@ -638,6 +638,16 @@ export interface CreateVendoConfig {
       "cannot" in the plan rather than as a flag. */
   apps?: {
     experimentalMachines?: boolean;
+    /** UI-generation blueprint §4.2 — route every `vendo_make` request through
+        the cheap screen agent before the conductor: a small assembly loadout, the
+        host's declared result shapes, a tight step budget, and one `escalate`
+        door that hands the ask on with its plan already painted as the first
+        skeleton. OFF until the six-type proof matrix is walked, because it
+        changes which engine answers every screen ask; the conductor is untouched
+        and is what an escalation, an unserved ask, or an unavailable assembler
+        falls through to. Host config only, like the two flags above — choosing
+        the engine that answers your users is not an env-var decision. */
+    experimentalScreenAgent?: boolean;
     /** Remix review (round-2 hardening 2026-08-02) — the host's reviewer
         assertion for the review-kind remix lifecycle: whether THIS caller may
         read the full review queue, reject, and approve review-kind remixes.
@@ -2218,6 +2228,14 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // which run after createVendo returns, so the closure reference is safe —
   // same pattern as the connections loadout seed).
   let automationsForArming: AutomationsEngine | undefined;
+  // The screen agent's workspace door, filled with the harness turns composed
+  // BELOW — the same late binding as `automationsForArming`, and safe for the
+  // same reason: assembly only happens inside a request, which runs after
+  // createVendo returns. It is the PUBLIC door (`harnessTurns.workspace`) rather
+  // than a second `workspaceStore` call, so a screen agent writes through the
+  // exact mount set — `/host` projection and asserted orgs included — that a
+  // harness turn's own hands write through.
+  let harnessTurnsForScreens: HarnessTurns | undefined;
   // Build contract §9.3 — ONE `can()` over the host's store, held by the apps
   // runtime and the automations engine alike, so one rule answers both sides.
   const access = appAccess(store);
@@ -2292,6 +2310,37 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ...(configuredBaseUrl === undefined ? {} : {
       servedProxyPath: (appId: AppId) =>
         `${configuredBaseUrl.replace(/\/+$/, "")}${BASE_PATH}/apps/${encodeURIComponent(appId)}/serve/`,
+    }),
+    // THE SEAM (blueprint §1 point 2) — the screen agent in front of the
+    // conductor. Filled HERE and nowhere else: the agent is a lean loop in
+    // @vendoai/harnesses, the front door is in @vendoai/apps, and apps depends on
+    // core alone — so composition, the one place that already holds the seats, the
+    // guard-bound registry, the store and the seam, is what joins them.
+    ...(config.apps?.experimentalScreenAgent !== true ? {} : {
+      screen: screenAssembler({
+        // The SAME seats every other thinker runs on.
+        models: inference.seats,
+        // The SAME guard-bound registry. There is no second choke point.
+        tools: boundTools,
+        workspace: async (screenCtx) => {
+          if (harnessTurnsForScreens === undefined) {
+            throw new VendoError("not-implemented", "the harness turn door is not composed yet");
+          }
+          return await harnessTurnsForScreens.workspace(
+            screenCtx.principal,
+            screenCtx.memberships === undefined ? undefined : { memberships: screenCtx.memberships },
+          );
+        },
+        // §1.6's app half, the SAME one the harness turns pass the seam below:
+        // the row that makes a written file an app, and the queries that put real
+        // data behind its bindings.
+        render: (screenCtx) => ({ authoredApp: (input) => apps.authored(input, screenCtx) }),
+        // `system` is deliberately unset. The screen agent's brief is the shipped
+        // `building-apps` skill plus the host's own tool shapes, and the
+        // deployment prompt's job — voice, venue gate, guard directions, the
+        // discovery rail — belongs to the thinker talking to the PERSON. This loop
+        // talks to nobody: the front door speaks its one-line receipt.
+      }),
     }),
     // execution-v2 Wave 9 — the layer-2 experimental opt-in, host-config only
     // (never an env var: enabling machine-backed execution is a deliberate
@@ -2683,7 +2732,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ?? configuredBaseUrl
     ?? (harness.requires?.sandbox === true ? undefined : learnedLoopbackOrigin);
 
-  const harnessTurns = createHarnessTurns({
+  const harnessTurns: HarnessTurns = createHarnessTurns({
     harness: harness as Harness<never>,
     // The composed sandbox adapter, threaded through so a spawned harness's
     // machine slot is filled by the SAME adapter the boot gate approved.
@@ -2770,6 +2819,8 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       ? {}
       : { scripted: createTourScript({ tours: config.tours, apps }) }),
   });
+  // The screen agent's workspace door is now real (see the declaration above).
+  harnessTurnsForScreens = harnessTurns;
   /**
    * THE harness door — one object, served two ways.
    *
