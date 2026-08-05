@@ -3205,7 +3205,22 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // A host-tool ref goes straight to the guard-bound registry; an fn: ref
       // settles as a contained not-implemented outcome until the in-runtime
       // fn path lands (see call.ts).
-      return caller.call(app, ref, args, ctx);
+      //
+      // A READ takes the QUERY arm. This is the only door a code-land app has
+      // (@vendoai/kit's useToolQuery), so sending every call through the action
+      // arm gave a read a random uuid per invocation — and the guard's approved
+      // replay PINS the call id (05 §2), so an ungraded read that parked could
+      // never be satisfied: approve, refetch, new id, park again, forever.
+      // `callQuery` derives the id from (app, tool, args), which is exactly a
+      // query's identity. The discriminator is the tool's own authored risk
+      // grade, the server's existing classification of what a call does;
+      // everything else keeps the action arm, because two identical mutations
+      // are two separate acts and each has to earn its own approval.
+      const descriptor = (await config.tools.descriptors(ctx).catch(() => []))
+        .find((candidate) => candidate.name === ref);
+      return descriptor?.risk === "read"
+        ? caller.callQuery(app, ref, args, ctx)
+        : caller.call(app, ref, args, ctx);
     },
 
     async exportApp(appId, ctx) {
