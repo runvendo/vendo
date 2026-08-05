@@ -8,9 +8,10 @@ Add `@vendoai/kit`, the runtime a generated app imports inside its box.
 A code-land app now has the same vocabulary a `.vendo` screen has, reaching the
 same implementations rather than parallel ones:
 
-- `reshape.{pick,rename,asPoints,format,sum,avg,min,max,count}` — the nine LIVE
+- `reshape.{pick,rename,asPoints,format,sum,min,max,count}` — the eight LIVE
   reshape ops, each one call to core's `applyReshape`. The two deprecated ops
-  (`asOptions`, `template`) are deliberately not wrapped.
+  (`asOptions`, `template`) are deliberately not wrapped, and `avg` retired with
+  the pipe (#808) — code-land averages through the `average` aggregate below.
 - `sum`, `count`, `average`, `min`, `max`, `difference`, `daysUntil`, `groupBy` —
   the aggregates, evaluated by core's `evaluateExpr`. `sum(rows, "amount_cents")`
   runs the code path `sum(invoices.amount_cents)` runs; the seam is asserted

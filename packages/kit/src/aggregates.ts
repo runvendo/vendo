@@ -32,16 +32,25 @@ const ROOT = "v";
  *  the same as a field the rows do not carry. */
 const FIELD_PATH = /^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$/;
 
+/** A field name as an expression-source literal, or `undefined` when it is not
+ *  a bare dotted path — a name carrying a quote or a paren would let syntax ride
+ *  in, so it is refused here, the same as a field the rows do not carry. This is
+ *  the one place a field crosses into source text. */
+const fieldLiteral = (field: string): string | undefined =>
+  FIELD_PATH.test(field) ? `"${field}"` : undefined;
+
 /**
- * THE ONE SEAM. Every aggregate below builds its source here, so the §5.2 D2
- * dialect migration (`sum(invoices.amount_cents)` →
- * `sum(invoices.data, "amount_cents")`, Track A1's work) has exactly one place
- * to change in this package. It does NOT implement that migration.
+ * THE ONE SEAM. Every aggregate below builds its source here, on the §5.2/§5.3
+ * D2+D3 grammar `#808` landed: an aggregate takes the rows first and the field
+ * as a quoted argument (`sum(v, "amount_cents")`), never the old field-implicit
+ * `sum(v.amount_cents)`. `count` takes only the rows. If the grammar moves
+ * again, this function and `groupBy`'s descriptor are the only places in this
+ * package that change.
  */
 const callSource = (call: string, field?: string): string | undefined => {
   if (field === undefined) return `${call}(${ROOT})`;
-  if (!FIELD_PATH.test(field)) return undefined;
-  return `${call}(${ROOT}.${field})`;
+  const literal = fieldLiteral(field);
+  return literal === undefined ? undefined : `${call}(${ROOT}, ${literal})`;
 };
 
 /** Loading (`undefined`) binds no root at all, which is exactly how
@@ -110,8 +119,10 @@ const isGroupedPoints = (value: Json | undefined): value is GroupedPoint[] =>
 
 /**
  * Bucket rows by a date field and aggregate each bucket — the code-land shape
- * of `group_by(invoices.issued_at, "month", sum(invoices.amount_cents))`.
- * `valueField` is unused by (and unnecessary for) `count`.
+ * of the §5.2 D3 form `group_by(invoices, "issued_at", "month",
+ * sum.of("amount_cents"))`. The fourth argument is a `<call>.of("field")`
+ * descriptor (`count.of()` for count, which needs no field). `valueField` is
+ * unused by (and unnecessary for) `count`.
  */
 export const groupBy = (
   rows: Json | undefined,
@@ -120,10 +131,16 @@ export const groupBy = (
   aggregate: GroupByAggregate,
   valueField?: string,
 ): GroupedPoint[] | undefined => {
-  const key = callSource("group_by", keyField) === undefined ? undefined : `${ROOT}.${keyField}`;
+  const key = fieldLiteral(keyField);
   if (key === undefined) return undefined;
-  const inner = aggregate === "count" ? callSource("count") : callSource(aggregate, valueField);
-  if (inner === undefined) return undefined;
-  const value = evaluate(`group_by(${key}, "${bucket}", ${inner})`, bind(rows));
+  let descriptor: string;
+  if (aggregate === "count") {
+    descriptor = "count.of()";
+  } else {
+    const inner = valueField === undefined ? undefined : fieldLiteral(valueField);
+    if (inner === undefined) return undefined;
+    descriptor = `${aggregate}.of(${inner})`;
+  }
+  const value = evaluate(`group_by(${ROOT}, ${key}, "${bucket}", ${descriptor})`, bind(rows));
   return isGroupedPoints(value) ? value : undefined;
 };

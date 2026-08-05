@@ -23,7 +23,7 @@ const step = (value: Json | undefined, op: ReshapeOp, args: string[]): ReshapeRe
 const projected = (result: ReshapeResult): Json | undefined => (result.ok ? result.value : undefined);
 
 /** An aggregate answers with a number or it has no answer: core's `null`
- *  (avg/min/max over no values) is "no answer" exactly as a mismatch is, so
+ *  (min/max over no values) is "no answer" exactly as a mismatch is, so
  *  both arrive as `undefined` and the one posture holds. */
 const reduced = (result: ReshapeResult): number | undefined =>
   result.ok && typeof result.value === "number" ? result.value : undefined;
@@ -50,8 +50,6 @@ export const reshape = {
     projected(step(value, "format", args)),
   sum: (value: Json | undefined, field: string): number | undefined =>
     reduced(step(value, "sum", [field])),
-  avg: (value: Json | undefined, field: string): number | undefined =>
-    reduced(step(value, "avg", [field])),
   min: (value: Json | undefined, field: string): number | undefined =>
     reduced(step(value, "min", [field])),
   max: (value: Json | undefined, field: string): number | undefined =>

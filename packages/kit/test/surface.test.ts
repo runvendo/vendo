@@ -40,9 +40,9 @@ describe("@vendoai/kit's export surface", () => {
     }
   });
 
-  it("wraps the nine LIVE reshape ops and neither deprecated one", () => {
+  it("wraps the eight LIVE reshape ops and neither deprecated one (avg retired, #808)", () => {
     expect(Object.keys(kit.reshape).sort()).toEqual(
-      ["asPoints", "avg", "count", "format", "max", "min", "pick", "rename", "sum"],
+      ["asPoints", "count", "format", "max", "min", "pick", "rename", "sum"],
     );
   });
 });

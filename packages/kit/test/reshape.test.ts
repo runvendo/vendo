@@ -7,10 +7,12 @@ const rows = [
   { month: "2026-02", revenue: 250, cost: 60 },
 ];
 
-describe("the nine reshape wrappers", () => {
-  it("covers exactly the nine LIVE ops — the two deprecated ones are not wrapped", () => {
+describe("the eight reshape wrappers", () => {
+  it("covers exactly the eight LIVE ops — the deprecated ones and retired avg are not wrapped", () => {
+    // avg retired with the pipe (#808); code-land averages through the `average`
+    // aggregate (aggregates.test.ts), not a reshape op.
     expect(Object.keys(reshape).sort()).toEqual(
-      ["asPoints", "avg", "count", "format", "max", "min", "pick", "rename", "sum"],
+      ["asPoints", "count", "format", "max", "min", "pick", "rename", "sum"],
     );
   });
 
@@ -33,7 +35,6 @@ describe("the nine reshape wrappers", () => {
     ]);
     expect(reshape.format(0.42, "percent")).toBe("42%");
     expect(reshape.sum(rows, "revenue")).toBe(350);
-    expect(reshape.avg(rows, "revenue")).toBe(175);
     expect(reshape.min(rows, "revenue")).toBe(100);
     expect(reshape.max(rows, "revenue")).toBe(250);
     expect(reshape.count(rows)).toBe(2);
@@ -46,7 +47,6 @@ describe("the nine reshape wrappers", () => {
       [reshape.asPoints(rows, "month", "cost"), { op: "asPoints", args: ["month", "cost"] }],
       [reshape.format(rows, "cost", "currency"), { op: "format", args: ["cost", "currency"] }],
       [reshape.sum(rows, "cost"), { op: "sum", args: ["cost"] }],
-      [reshape.avg(rows, "cost"), { op: "avg", args: ["cost"] }],
       [reshape.min(rows, "cost"), { op: "min", args: ["cost"] }],
       [reshape.max(rows, "cost"), { op: "max", args: ["cost"] }],
       [reshape.count(rows), { op: "count", args: [] }],
@@ -78,9 +78,9 @@ describe("the nine reshape wrappers", () => {
     expect(result.ok ? "" : result.reason).toContain("numeric");
   });
 
-  it("has no answer (undefined) for avg/min/max over no rows", () => {
-    expect(reshape.avg([], "revenue")).toBeUndefined();
+  it("has no answer (undefined) for min/max over no rows", () => {
     expect(reshape.min([], "revenue")).toBeUndefined();
+    expect(reshape.max([], "revenue")).toBeUndefined();
     expect(reshape.sum([], "revenue")).toBe(0);
     expect(reshape.count([])).toBe(0);
   });
