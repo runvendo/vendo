@@ -79,8 +79,15 @@ describe("VendoPage, VendoPalette, and VendoSlot exports", () => {
       expect(set?.commands.some(command => command.kind === "open-app")).toBe(true);
     });
     const set = getConversationCommands()!;
-    set.select(set.commands.find(command => command.kind === "open-app")!);
-    expect(onCommand).toHaveBeenCalledWith(expect.objectContaining({ kind: "open-app", appId: "app_1" }));
+    // ⚠️ TEST EDIT — assert the command SELECTED is the command routed, rather
+    // than a hardcoded `app_1`. That id was only ever the first open-app command
+    // because the wire fixture served apps in insertion order; the real wire
+    // (and now the fixture) serves them newest-first, so the first is `app_auto`.
+    // The test's point is that selecting an open-app command routes it with its
+    // appId — not which app happens to sort first.
+    const openApp = set.commands.find(command => command.kind === "open-app")!;
+    set.select(openApp);
+    expect(onCommand).toHaveBeenCalledWith(expect.objectContaining({ kind: "open-app", appId: openApp.appId }));
     // Host-routed select closes the surface (close-on-select) — reopen for
     // the Escape/focus assertions below.
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Vendo assistant" })).toBeNull());
