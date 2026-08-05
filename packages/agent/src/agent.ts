@@ -1,5 +1,6 @@
 import {
   VendoError,
+  mintTurnId,
   toVendoWirePart,
   type AgentRunner,
   type ApprovalId,
@@ -392,7 +393,18 @@ export function createAgent(config: AgentConfig): VendoAgent {
   return {
     async stream(input) {
       validateMessage(input?.message);
-      const thread = await threads.resolve(input.threadId, input.ctx);
+      // §3.5 — the turn's identity, minted HERE because here is where a turn
+      // begins on this route. The harness runtime mints for its own route; this
+      // one had no mint at all, so every deployment whose store cannot serve
+      // harness turns (a host's non-SQL adapter, the Cloud hosted store — see
+      // `storeServesHarnessTurns`) produced audit rows that named no turn. It
+      // rides the CTX rather than a second parameter, so every guarded call and
+      // every audit row below joins for free. An id the caller already minted
+      // WINS: the id belongs to the turn, and a second one would split its rows.
+      const ctx: RunContext = input.ctx.turnId === undefined
+        ? { ...input.ctx, turnId: mintTurnId() }
+        : input.ctx;
+      const thread = await threads.resolve(input.threadId, ctx);
       validateUpsert(thread.messages, input.message);
       if (input.message.role === "user"
         && !thread.messages.some((message) => message.id === input.message.id)) {
@@ -403,7 +415,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
         const approvalIds = guardApprovalIds(thread.messages, abandonedCalls);
         if (approvalIds.length > 0 && config.guard.abandonApprovals !== undefined) {
           try {
-            await config.guard.abandonApprovals(approvalIds, input.ctx);
+            await config.guard.abandonApprovals(approvalIds, ctx);
           } catch {
             // The thread already reflects abandonment; queue cleanup retries
             // implicitly on the next abandoned turn.
@@ -414,7 +426,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
       clearFailedTurnRecord(thread.messages);
       const system = await assembleSystemPrompt(
         config.guard,
-        input.ctx,
+        ctx,
         config.system,
         config.capabilityMiss !== undefined,
         // This thinker is `vendo()`'s loadout path: its meta-tool is find_tools.
@@ -450,7 +462,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
           const play = await config.scripted?.({
             message: input.message,
             messages: thread.messages,
-            ctx: input.ctx,
+            ctx: ctx,
           });
           if (play !== undefined) {
             await play({ writer, ...(input.signal === undefined ? {} : { signal: input.signal }) });
@@ -460,7 +472,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
             ? undefined
             : createCapabilityMissDetector({
                 config: config.capabilityMiss,
-                ctx: input.ctx,
+                ctx: ctx,
                 threadId: thread.id,
                 intent: latestUserIntent(thread.messages),
               });
@@ -471,7 +483,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
           let seedNames: string[] | undefined;
           if (config.toolSearch?.seed !== undefined) {
             try {
-              seedNames = await config.toolSearch.seed(input.ctx);
+              seedNames = await config.toolSearch.seed(ctx);
             } catch {
               seedNames = undefined;
             }
@@ -482,7 +494,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
           let menuNames: readonly string[] | undefined;
           if (config.toolSearch?.menu !== undefined) {
             try {
-              menuNames = await config.toolSearch.menu(input.ctx);
+              menuNames = await config.toolSearch.menu(ctx);
             } catch {
               menuNames = undefined;
             }
@@ -490,7 +502,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
           const bridgeOptions = {
             registry: config.tools,
             guard: config.guard,
-            ctx: input.ctx,
+            ctx: ctx,
             writer,
             toolOutputCap: config.context?.toolOutputCap,
             ...(missDetector === undefined ? {} : { onCall: missDetector.onCall }),
@@ -505,10 +517,10 @@ export function createAgent(config: AgentConfig): VendoAgent {
             : createToolSearchSession({
                 config: config.toolSearch,
                 // Per-subject connection state annotates search results.
-                ctx: input.ctx,
+                ctx: ctx,
                 // THE LAW's projection (design §12): an unattended turn is
                 // never even offered a destructive or external tool.
-                descriptors: await config.tools.descriptors(input.ctx),
+                descriptors: await config.tools.descriptors(ctx),
                 loaded: loadedFor(thread.id),
                 ...(seedNames === undefined ? {} : { seedNames }),
                 ...(menuNames === undefined ? {} : { menuNames }),
@@ -517,7 +529,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
                 // active names each step, so they are callable next step.
                 // Search must not be a way back to a withheld tool, so the
                 // same projection applies to what it can resolve.
-                resolve: async (names) => (await config.tools.descriptors(input.ctx)).filter((d) => names.includes(d.name)),
+                resolve: async (names) => (await config.tools.descriptors(ctx)).filter((d) => names.includes(d.name)),
                 materialize: (descriptor) => addAgentTool(tools, descriptor, bridgeOptions),
               });
           toolSearch?.attach(tools);
@@ -530,6 +542,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
             system,
             messages: thread.messages,
             tools,
+            ...(ctx.turnId === undefined ? {} : { turnId: ctx.turnId }),
             ...(input.signal === undefined ? {} : { signal: input.signal }),
             ...(config.context === undefined ? {} : { context: config.context }),
             ...(toolSearch === undefined ? {} : { toolSearch }),
@@ -566,7 +579,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
           if (stepLimit !== undefined) writer.write(toVendoWirePart(stepLimit) as never);
         },
         onFinish: async ({ messages }) => {
-          await persistFinishedTurn(threads, thread, messages, input.ctx);
+          await persistFinishedTurn(threads, thread, messages, ctx);
         },
         onError: (error) => {
           const message = wireErrorMessage(error);

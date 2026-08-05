@@ -240,6 +240,9 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
           messages: [...turn.messages],
           tools: residentTools,
           signal: turn.signal,
+          // §3.5 — the runtime already minted it and put it on the Turn, so
+          // passing it is simply true.
+          turnId: turn.turnId,
           // The loadout, in the shipped loop's own vocabulary: `prepareStep`
           // re-reads this each step and restricts what the model may PICK, so a
           // tool the runtime equipped mid-turn is choosable on the next step and a

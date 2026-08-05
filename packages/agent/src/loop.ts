@@ -1,5 +1,5 @@
 /**
- * The turn loop — ONE implementation, two callers.
+ * The turn loop — ONE implementation, every caller.
  *
  * This is the `streamText` call that used to live inside `createAgent`'s
  * `createUIMessageStream` closure, lifted out verbatim so it can also be driven
@@ -14,7 +14,13 @@
  * merges `result.toUIMessageStream()`; the harness reads `result.fullStream` and
  * yields events. Everything before that fork is identical.
  */
-import { ASK_USER_TOOL, VENDO_MAKE_TOOL, VENDO_APP_BUILD_FAILED_PREFIX, type VendoStepLimitPart } from "@vendoai/core";
+import {
+  ASK_USER_TOOL,
+  VENDO_MAKE_TOOL,
+  VENDO_APP_BUILD_FAILED_PREFIX,
+  type TurnId,
+  type VendoStepLimitPart,
+} from "@vendoai/core";
 import {
   convertToModelMessages,
   isToolUIPart,
@@ -132,6 +138,10 @@ export interface TurnLoopOptions {
    *  harness runtime's delegating set). */
   tools: ToolSet;
   signal?: AbortSignal;
+  /** §3.5 — the turn this loop is running, for anything downstream that has to
+   *  name it. Optional only because a caller may drive the loop outside a
+   *  composed turn; every composed caller mints one. */
+  turnId?: TurnId;
   context?: {
     maxOutputTokens?: number;
     historyWindow?: number;

@@ -163,8 +163,11 @@ function exactInputHash(args: unknown): string {
 /** Build contract §7's key: sha256 over the run, the tool, and the exact input.
  *  `undefined` means this call is not ledger-eligible at all.
  *
- *  The contract writes the preimage as `runId|turnId`. There is no turn id
- *  anywhere in this codebase, so the run component is `ctx.trigger.runId`.
+ *  The contract writes the preimage as `runId|turnId`. `ctx.turnId` now exists
+ *  (§3.5) but the run component stays `ctx.trigger.runId` — deliberately, and
+ *  the reasoning below is why: a turn is even narrower than a session, so keying
+ *  on it would make "pay this invoice" asked twice in one conversation charge
+ *  twice, which is precisely what the ledger exists to prevent.
  *
  *  It deliberately does NOT fall back to `ctx.sessionId`, even though the write
  *  breaker and `task`-duration grants do. The ledger exists to make
