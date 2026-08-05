@@ -192,7 +192,7 @@ const existingSection = (input: AutomationPlanInput): string => {
   return `
 THIS APP'S AUTOMATIONS ALREADY (its trigger list; an id is that automation's name inside this app):
 ${existing.map(existingLine).join("\n")}
-When the INSTRUCTION changes one of THOSE rather than asking for another one, set "replaces" to its id and author the whole automation again as it should now be. Leave "replaces" out for a new automation — it lands beside them and none of them is touched.
+When the INSTRUCTION changes one of THOSE rather than asking for another one, set "replaces" to its id and author the whole automation again as it should now be. Leave "replaces" out for a new automation — it lands beside them and none of them is touched. WHEN IN DOUBT, LEAVE IT OUT: an extra automation is something the person can delete, and one you replaced is one they cannot get back. An instruction that says "also", "another" or "as well" is always a new one.
 `;
 };
 

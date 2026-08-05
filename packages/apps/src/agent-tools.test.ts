@@ -162,6 +162,83 @@ describe("apps agent tools", () => {
     });
   });
 
+  it("aims `app` by NAME as well as by id, so a fresh thread can reach the app the user named", async () => {
+    // A fresh-thread agent hears "add a weekly one to the transactions app" and
+    // holds no id: `vendo_apps_open` takes an id, and nothing lists or searches.
+    // The whole ask died there. The `app` slot already carries the aim, so it
+    // takes the name the person says out loud too.
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools: hostTools,
+      catalog: [],
+      model: scriptedLanguageModel(generated, '<App name="Tool-built dashboard"><Text text="Updated"/><Disclaimer reason="Fixture app."/></App>'),
+    });
+    const created = await runtime.create({ prompt: "Build a dashboard" }, ctx);
+    expect(created.name).toBe("Tool-built dashboard");
+
+    const outcome = await runtime.agentTools().execute({
+      id: "call_edit_by_name",
+      tool: "vendo_make",
+      // Said the way a person says it — including the case they used.
+      args: { app: "tool-BUILT dashboard", request: "Say Updated instead" },
+    }, ctx);
+
+    expect(outcome).toMatchObject({
+      status: "ok",
+      output: { id: created.id, title: created.name, status: "ready" },
+    });
+  });
+
+  it("asks which one when a name matches two apps, and changes neither", async () => {
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools: hostTools,
+      catalog: [],
+      model: scriptedLanguageModel(generated),
+    });
+    const first = await runtime.create({ prompt: "Build a dashboard" }, ctx);
+    const second = await runtime.create({ prompt: "Build another dashboard" }, ctx);
+    expect(first.id).not.toBe(second.id);
+
+    const outcome = await runtime.agentTools().execute({
+      id: "call_edit_ambiguous",
+      tool: "vendo_make",
+      args: { app: "Tool-built dashboard", request: "Say Updated instead" },
+    }, ctx);
+
+    // Never a guess: the answer names the candidates so the model can ask.
+    expect(outcome.status).toBe("error");
+    if (outcome.status !== "error") return;
+    expect(outcome.error.code).toBe("validation");
+    expect(outcome.error.message).toContain("Tool-built dashboard");
+    expect(outcome.error.message).toContain(first.id);
+    expect(outcome.error.message).toContain(second.id);
+  });
+
+  it("leaves an id that resolves to nothing exactly as it was: the runtime's own answer", async () => {
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools: hostTools,
+      catalog: [],
+      model: scriptedLanguageModel(generated),
+    });
+
+    const outcome = await runtime.agentTools().execute({
+      id: "call_edit_missing",
+      tool: "vendo_make",
+      args: { app: "app_not_here", request: "Say Updated instead" },
+    }, ctx);
+
+    expect(outcome.status).toBe("error");
+    if (outcome.status !== "error") return;
+    expect(outcome.error.code).toBe("not-found");
+  });
+
   it("creates and opens an app through the guard-bound fixture", async () => {
     const store = memoryStore();
     const guard = guardFixture();

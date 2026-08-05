@@ -297,6 +297,32 @@ const idFromName = (name: string | undefined): string | undefined => {
 };
 
 /**
+ * The ask says "one MORE", in the words people actually use for it.
+ *
+ * This is the mechanical half of create-vs-edit, and it exists because the
+ * judgment half cannot be trusted with the destructive direction: the planner is
+ * its own model call, and an existing entry in front of it is an invitation to
+ * tidy up. In-thread, "add a second schedule alongside" came back as one
+ * trigger. When the person said "another one", no plan — however it points — may
+ * land on an automation they already have.
+ *
+ * Deliberately one-way: it can only ever force an ADD. A false positive costs a
+ * second entry the person can delete; the miss it prevents costs them an
+ * automation they cannot get back.
+ */
+const ADDS_ANOTHER = /\b(also|another|second|third|as well|alongside|additionally|additional|in addition|on top of)\b/i;
+
+/** The first id in the `base`, `base_2`, `base_3` … series the app does not
+ *  already hold. Safe to search occupancy because the id is decided ONCE per
+ *  authoring, before anything is stamped. */
+const freeTriggerId = (base: string, taken: ReadonlySet<string>): string => {
+  if (!taken.has(base)) return base;
+  let suffix = 2;
+  while (taken.has(`${base}_${suffix}`)) suffix += 1;
+  return `${base}_${suffix}`;
+};
+
+/**
  * Which entry of the app's list a planned automation lands on.
  *
  * An app carries a LIST of triggers, so "add an alert to my dashboard" adds an
@@ -313,20 +339,27 @@ const idFromName = (name: string | undefined): string | undefined => {
  * entry it means outright: `plan.replaces`, which the planner sets from the app's
  * own list.
  *
- * Pure in (list, plan) on purpose: one authoring stamps the same plan twice, once
- * before the board rewire and once over the rewired document, and an id that
- * moved between the two would append a duplicate.
+ * And an ask that says "another one" outranks both: {@link ADDS_ANOTHER} makes
+ * APPEND the default direction, so neither a lazy `replaces` nor a name reused
+ * from the existing entry can land on an automation the person already has.
+ *
+ * Called ONCE per authoring, before anything is stamped — which is what makes
+ * the occupancy search safe and keeps the two stamps of one plan (before the
+ * board rewire, and over the rewired document) on the same entry.
  */
 export const plannedTriggerId = (
   triggers: readonly Pick<Trigger, "id">[] | undefined,
   plan: AutomationPlan,
+  /** The person's own words, when the caller has them. */
+  ask?: string,
 ): string => {
   const existing = triggers ?? [];
   if (existing.length === 0) return DEFAULT_TRIGGER_ID;
-  if (plan.replaces !== undefined && existing.some(({ id }) => id === plan.replaces)) {
-    return plan.replaces;
-  }
-  return idFromName(plan.name) ?? UNNAMED_TRIGGER_ID;
+  const taken = new Set(existing.map(({ id }) => id));
+  const named = idFromName(plan.name) ?? UNNAMED_TRIGGER_ID;
+  if (ask !== undefined && ADDS_ANOTHER.test(ask)) return freeTriggerId(named, taken);
+  if (plan.replaces !== undefined && taken.has(plan.replaces)) return plan.replaces;
+  return named;
 };
 
 /** Put a planned automation onto a document: the trigger the automations engine
@@ -456,6 +489,16 @@ export interface ServerLaneDeps extends GenerationDependencies {
   appId: AppId;
   ctx: RunContext;
   /**
+   * The person's own words for this change.
+   *
+   * The plan's `why` is the BRAIN's sentence about the away work, and it says
+   * nothing about whether this is one more automation or a new version of one
+   * they already have. The planner decides that, so it gets the request itself —
+   * and {@link plannedTriggerId} reads the same words as the mechanical floor
+   * under that decision.
+   */
+  request?: string;
+  /**
    * Rewire the app to surface something new (the automation's results rows).
    * Task 10 wires this to a brain edit turn. Absent → the automation still
    * arms and the missing board is a `warn`, exactly as a failed rewire is.
@@ -506,11 +549,18 @@ export interface ServerLaneResult extends LaneResult {
   };
 }
 
-/** The plan's `why` IS the instruction: the brain wrote that sentence to
- *  explain what has to happen away from the browser, which is exactly what the
- *  automation planner reads. */
-const automationInstruction = (server: PlanServer): string =>
-  server.schedule === undefined ? server.why : `${server.why}\nWHEN: ${server.schedule}`;
+/** What the planner is answering: the person's own words first when the caller
+ *  has them — "another one" and "move it to 9am" are the same shape of sentence
+ *  to everything downstream, and only the request tells them apart — then the
+ *  plan's `why`, the brain's sentence about what has to happen away from the
+ *  browser. */
+const automationInstruction = (server: PlanServer, request: string | undefined): string => [
+  ...(request === undefined || request.trim() === ""
+    ? []
+    : [`WHAT THEY ASKED FOR, IN THEIR OWN WORDS: ${request}`]),
+  server.why,
+  ...(server.schedule === undefined ? [] : [`WHEN: ${server.schedule}`]),
+].join("\n");
 
 const runAutomationArm = async (
   plan: AppPlan,
@@ -523,7 +573,7 @@ const runAutomationArm = async (
   const planned = await planAutomation({
     appId: deps.appId,
     appName: plan.name,
-    instruction: automationInstruction(server),
+    instruction: automationInstruction(server, deps.request),
     mode,
     tools: deps.tools ?? [],
     ...(deps.toolShapes === undefined ? {} : { toolShapes: deps.toolShapes }),
@@ -548,7 +598,7 @@ const runAutomationArm = async (
   // Decided ONCE, off the app as it stands: everything below — the re-stamp over
   // the rewired document, the arming, the trigger the caller's card renders —
   // has to mean the same entry.
-  const triggerId = plannedTriggerId(document.triggers, automation);
+  const triggerId = plannedTriggerId(document.triggers, automation, deps.request);
   let landed = applyAutomationPlan(document, automation, triggerId);
   // Bind the board to the results rows BEFORE landing, so one write carries the
   // whole change. A failed rewire never blocks the automation: the trigger

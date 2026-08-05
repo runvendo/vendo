@@ -33,6 +33,19 @@ describe("the away-work ladder the brain is offered", () => {
     expect(prompt.indexOf('kind="agentic"')).toBeLessThan(prompt.lastIndexOf('kind="box"'));
   });
 
+  it("says an app holds SEVERAL automations, so another one is a plan and not a text edit", () => {
+    // The other mechanical way "add a second schedule alongside" comes back with
+    // one trigger: the brain reads an app that already has an automation as an
+    // app whose away work is done, answers with <Edit> blocks over the view, and
+    // nothing ever reaches the automation lane. Rule 3 offers text edits for
+    // "small" changes and a plan for "structural" ones, and an automation is
+    // neither on its face — so the ladder says it outright.
+    const prompt = brainPrompt(deps());
+
+    expect(prompt).toMatch(/several automations/i);
+    expect(prompt).toMatch(/another one/i);
+  });
+
   it("says the two automation rungs need no machine, so a sandbox-less host still has them", () => {
     const prompt = brainPrompt(deps(laneGates({}).cannot));
 

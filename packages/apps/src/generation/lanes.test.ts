@@ -395,6 +395,77 @@ describe("runServerLane — steps and agentic automations", () => {
     expect(second.automation?.trigger.run.kind).toBe("agentic");
   });
 
+  it("refuses to land an ADD ask on an existing entry, however the plan tries to", async () => {
+    // The live failure this closes: in-thread, the model DID call vendo_make with
+    // "add a second schedule alongside", and the app came back holding one
+    // trigger. The planner is its own model call, it never saw those words, and
+    // an existing `main` in front of it is an invitation to tidy up — one lazy
+    // `"replaces":"main"` and the person's first automation is gone. An ask that
+    // says "another one" may not resolve to an existing entry at all.
+    const ADD_ASK = "add a second schedule alongside the daily nudge — a weekly summary on Fridays";
+    const before = document();
+    before.triggers = [{
+      id: "main",
+      on: { kind: "schedule", every: "1d" },
+      run: { kind: "agentic", prompt: "The daily nudge." },
+    }];
+    const LAZY_REPLACE = JSON.stringify({
+      name: "Weekly nudge summary",
+      replaces: "main",
+      trigger: {
+        on: { kind: "schedule", every: "7d" },
+        run: { kind: "agentic", prompt: "Weigh up the week's nudges.", budget: { maxToolCalls: 20 } },
+      },
+    });
+
+    const result = await runServerLane(agenticPlan(), before, serverDeps(scripted([], LAZY_REPLACE), {
+      request: ADD_ASK,
+      land: async () => undefined,
+    }));
+
+    expect(result.document.triggers?.map(({ id }) => id)).toEqual(["main", "weekly_nudge_summary"]);
+    expect(result.document.triggers?.[0]?.run).toEqual({ kind: "agentic", prompt: "The daily nudge." });
+    expect(result.automation?.trigger.id).toBe("weekly_nudge_summary");
+  });
+
+  it("keeps an ADD ask off an existing entry even when the plan reuses its name", async () => {
+    // The same hole through the other door: a plan that names the new automation
+    // exactly what the old one is called would land on it by name identity.
+    const before = document();
+    before.triggers = [{
+      id: "invoice_nudge_triage",
+      on: { kind: "schedule", every: "1d" },
+      run: { kind: "agentic", prompt: "The daily nudge." },
+    }];
+    const SAME_NAME = JSON.stringify({
+      name: "Invoice nudge triage",
+      trigger: {
+        on: { kind: "schedule", every: "7d" },
+        run: { kind: "agentic", prompt: "Weigh up the week's nudges.", budget: { maxToolCalls: 20 } },
+      },
+    });
+
+    const result = await runServerLane(agenticPlan(), before, serverDeps(scripted([], SAME_NAME), {
+      request: "also nudge them a second time each week",
+      land: async () => undefined,
+    }));
+
+    expect(result.document.triggers?.map(({ id }) => id)).toEqual(["invoice_nudge_triage", "invoice_nudge_triage_2"]);
+    expect(result.document.triggers?.[0]?.run).toEqual({ kind: "agentic", prompt: "The daily nudge." });
+  });
+
+  it("hands the planner the person's own words, not only the plan's reason", async () => {
+    // The planner decides create-vs-edit, and it was deciding it without ever
+    // seeing the request that started all this.
+    const calls: ScriptedModelCall[] = [];
+    await runServerLane(agenticPlan(), document(), serverDeps(scripted(calls, NUDGE_PLAN), {
+      request: "also send me a weekly summary of what got nudged",
+      land: async () => undefined,
+    }));
+
+    expect(promptText(calls[0])).toContain("also send me a weekly summary of what got nudged");
+  });
+
   it("changes the automation the ask is about instead of adding a second one, when the plan names it", async () => {
     // The other half of the same law. The app's ONE automation sits under the
     // default `main` id, which carries no name to match a fresh plan against, so

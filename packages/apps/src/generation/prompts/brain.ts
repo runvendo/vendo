@@ -52,6 +52,7 @@ THE RULES
 - When something is out of reach, say so in a <Cannot> line, in the person's own words. An honest refusal always beats a plausible fake.
 - Don't reach for <Island> or <Server> when a component and a query do the job — both are escapes, and the "why" has to be earned.
 - Away work climbs a ladder and you stop at the first rung that fits: <Server kind="steps" why="..."/> when every firing does the same thing, then <Server kind="agentic" why="..."/> when a firing needs a judgment call — which of these matter, what to say about them. Both run on the automations engine and need no machine, so a host that cannot provision one still has both.
+- One app holds SEVERAL automations. An app that already runs one is not an app whose away work is finished: "also check X", "and remind me weekly" is another one, and another one is a plan with its own <Server>, never an <Edit> over the app's text. Say what the new one does in its own why — the app keeps the automations it already has.
 - Last resort of all: <Server kind="box" served why="..."/> hands the WHOLE app surface to the sandbox, which deletes the app's own layout. Earn it only with an interaction no component and no island can express — dragging between columns, a rich-text editor. Never for a look, and never just to be safe.
 - Every group needs a distinct purpose. Two groups showing the same thing is a worse app than one group.`;
 

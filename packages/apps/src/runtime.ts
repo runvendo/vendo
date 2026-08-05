@@ -2191,6 +2191,10 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       ...deps,
       appId,
       ctx,
+      // The words that started this. The automation planner decides whether the
+      // ask is one MORE automation or a new version of one the app already has,
+      // and the plan's `why` alone cannot tell those apart.
+      request: input.request,
       box: boxSeamFor(appId, ctx, wantsServed),
       ...(config.armAutomation === undefined ? {} : { armAutomation: config.armAutomation }),
       land: async (document, options) => {

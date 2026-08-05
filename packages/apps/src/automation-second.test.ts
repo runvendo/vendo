@@ -74,8 +74,14 @@ const amendment = (title: string, purpose: string, schedule: string, why: string
   <Server kind="agentic" schedule="${schedule}" why="${why}"/>
 </Plan>`;
 
-const automationPlan = (name: string, every: string, prompt: string): string => JSON.stringify({
+const automationPlan = (
+  name: string,
+  every: string,
+  prompt: string,
+  replaces?: string,
+): string => JSON.stringify({
   name,
+  ...(replaces === undefined ? {} : { replaces }),
   trigger: { on: { kind: "schedule", every }, run: { kind: "agentic", prompt, budget: { maxToolCalls: 20 } } },
 });
 
@@ -86,7 +92,11 @@ const respond = (prompt: string): string => {
   if (prompt.includes("You are the Vendo automation planner")) {
     plannerPrompts.push(prompt);
     return prompt.includes(SUMMARY_WHY)
-      ? automationPlan("Weekly nudge summary", "7d", "Weigh up the week's nudges and say what mattered.")
+      // Deliberately LAZY: the planner is its own model call, and an existing
+      // `main` in front of it is an invitation to tidy up. This is what the
+      // in-thread walk got — the app came back holding one trigger — so the
+      // second automation has to survive a plan that asks to replace the first.
+      ? automationPlan("Weekly nudge summary", "7d", "Weigh up the week's nudges and say what mattered.", "main")
       : automationPlan("Invoice nudge triage", "1d", "Decide who deserves a gentle vs firm nudge.");
   }
   if (prompt.includes("YOUR SECTION")) return '<Text text="Nudges are drafted every morning."/>';
@@ -159,6 +169,9 @@ describe("a second automation on an app that already has one", () => {
     // way a plan can say "this is a new version of THAT one" instead of landing
     // beside it.
     expect(plannerPrompts[1]).toContain("main: schedule 1d — agentic");
+    // And it is answering the person's own words, not only the brain's sentence
+    // about the away work: "also" is the whole difference between the two asks.
+    expect(plannerPrompts[1]).toContain(SUMMARY_ASK);
   });
 
   it("arms only the automation it just authored: the first one's grants are not revisited", async () => {

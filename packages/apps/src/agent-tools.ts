@@ -1,6 +1,7 @@
 import {
   VENDO_MAKE_TOOL,
   VENDO_TOOL_TITLES,
+  appIdSchema,
   VENDO_VIEW_STREAM,
   VendoError,
   makeReceiptSchema,
@@ -38,7 +39,7 @@ const descriptors = [
     // live host data itself. The retry one: a rejected change is worth one
     // narrower attempt on the same app, and was worth saying because the
     // alternative the model reached for was rebuilding it from scratch.
-    description: "Make the user something to look at — a screen, or a full app — from a plain-language request. Say what they want in your own words; Vendo decides whether to assemble a screen or build an app, and it arrives on the user's own page. Pass `app` only to change one specific existing app; leave it out and Vendo decides whether to continue the last one or start something new. A recurring or scheduled task belongs here too: describe the schedule and the action in the request and it is armed as part of the same call; there is no separate automations tool. One app can hold SEVERAL automations, so to add another one to an app it already has, name that app in `app` and describe the new schedule — never refuse a second schedule. Never bake data values you computed or fetched (counts, totals, amounts) into the request — it binds live host data itself and hardcoded figures fail its checks. Never specify fonts, colors, or branding — it inherits the host theme. You get back a one-line receipt to say out loud, never the screen itself; if the receipt says \"failed\", try once more on the same `app` with a narrower request rather than rebuilding it.",
+    description: "Make the user something to look at — a screen, or a full app — from a plain-language request. Say what they want in your own words; Vendo decides whether to assemble a screen or build an app, and it arrives on the user's own page. Pass `app` only to change one specific existing app — its id, or its name exactly as the user said it, which is resolved against their own apps (if two share that name you are told both, so ask which one); leave it out and Vendo decides whether to continue the last one or start something new. A recurring or scheduled task belongs here too: describe the schedule and the action in the request and it is armed as part of the same call; there is no separate automations tool. One app can hold SEVERAL automations, so to add another one to an app it already has, name that app in `app` and describe the new schedule — never refuse a second schedule. Never bake data values you computed or fetched (counts, totals, amounts) into the request — it binds live host data itself and hardcoded figures fail its checks. Never specify fonts, colors, or branding — it inherits the host theme. You get back a one-line receipt to say out loud, never the screen itself; if the receipt says \"failed\", try once more on the same `app` with a narrower request rather than rebuilding it.",
     inputSchema: {
       $schema: DRAFT_2020_12,
       type: "object",
@@ -241,6 +242,44 @@ export interface AgentToolsDataDependencies {
 const FORK_OFFER = "I can’t change the team’s copy of this app. Say so plainly, and offer them"
   + " their own copy instead — forking the app from its card gives them one I can change freely.";
 
+/**
+ * The `app` slot as a person says it: an app id, or the app's NAME.
+ *
+ * A fresh thread holds no ids — "add a weekly one to the transactions app" is
+ * the whole ask, and until now it died on the way in, because `app` took an id
+ * and nothing in this registry lists or searches. The aim already has a slot;
+ * this is that slot understanding the name the user actually said.
+ *
+ * Exact name first, then case-insensitively, over THIS caller's own apps (the
+ * same owned ∪ granted list every other door reads). Two apps of one name is a
+ * question, never a coin toss: the candidates come back in the refusal so the
+ * model can ask which one. And a ref that matches no name is handed on
+ * untouched, so "no such app" and "you may not change that one" stay the
+ * runtime's own sentences.
+ */
+const resolveAppRef = async (
+  runtime: AppsRuntime,
+  ref: string,
+  ctx: RunContext,
+): Promise<string> => {
+  // An id is an id (core's own shape). Nothing is listed for the common path.
+  if (appIdSchema.safeParse(ref).success) return ref;
+  const apps = await runtime.list(ctx);
+  const exact = apps.filter(({ name }) => name === ref);
+  const matches = exact.length > 0
+    ? exact
+    : apps.filter(({ name }) => name.toLowerCase() === ref.toLowerCase());
+  if (matches.length === 1) return (matches[0] as AppDocument).id;
+  if (matches.length > 1) {
+    throw new VendoError(
+      "validation",
+      `More than one app is called "${ref}": ${matches.map(({ name, id }) => `${name} (${id})`).join(", ")}.`
+      + " Ask which one they mean and pass that app's id.",
+    );
+  }
+  return ref;
+};
+
 const errorOutcome = (error: unknown): ToolOutcome => {
   if (error instanceof VendoError) {
     return {
@@ -296,7 +335,7 @@ export const createAgentTools = (
               : `${created.name} is on your screen, though I couldn't save it to your apps.`,
           });
         }
-        const result = await runtime.edit(app, ask, ctx);
+        const result = await runtime.edit(await resolveAppRef(runtime, app, ctx), ask, ctx);
         // Wave 9 — a ladder-authored automation raises its own card. Published
         // HERE, by the side that knows, rather than duck-typed out of this tool's
         // return value at the bridge: the receipt carries words only.
