@@ -13,6 +13,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  DEFAULT_TRIGGER_ID,
   VENDO_APP_FORMAT,
   WORKSPACE_INLINE_MAX_BYTES,
   appDocumentSchema,
@@ -146,10 +147,14 @@ describe("app source: checkout and commit (contract §3.2)", () => {
     expect(stored.source!["src/App.tsx"]!.hash).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(stored.source!["src/App.tsx"]!.bytes).toBe("export const App = () => null;\n".length);
     // The one thing automations are owed: the trigger survives a source commit.
-    expect(stored.trigger).toEqual({
+    // The row was seeded in the PRE-LIST shape on purpose, so this also pins the
+    // read normalization — the legacy singular `trigger` comes back as the
+    // one-element list under DEFAULT_TRIGGER_ID, and the commit keeps it.
+    expect(stored.triggers).toEqual([{
+      id: DEFAULT_TRIGGER_ID,
       on: { kind: "schedule", cron: "0 9 * * *" },
       run: { kind: "agentic", prompt: "send the digest" },
-    });
+    }]);
 
     // The real read path: a SECOND workspace, opened fresh over the same rows and
     // materialized from the document alone. Nothing carried over from the writer.

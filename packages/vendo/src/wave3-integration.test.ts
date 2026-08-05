@@ -403,8 +403,16 @@ describe("ruling — vendo.emit fires an ORG-owned automation for a member", () 
     expect(fired).toHaveLength(1);
     const run = await booted.vendo.automations.runs.get(fired[0]!, ctxOf(kim));
     // It got PAST the fire-time gate and into its first step, where the real
-    // guard asks for the standing grant Kim has not yet approved.
-    expect(run).toMatchObject({ appId: app.id, status: "pending-approval" });
+    // guard asks for the standing grant Kim has not yet approved. There is no
+    // waiting state left to land in: the run ends LOUDLY on the trigger that
+    // fired, naming the tool whose permission it needed, and `runs.rerun` is how
+    // it runs again once she allows it.
+    expect(run).toMatchObject({
+      appId: app.id,
+      triggerId: DEFAULT_TRIGGER_ID,
+      status: "error",
+      error: { code: "needs-permission", tool: READ_TOOL },
+    });
 
     // ...and it is KIM who is being asked — the sponsor, never the org and never
     // the member whose event happened to trigger it.

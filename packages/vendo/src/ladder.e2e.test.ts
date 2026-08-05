@@ -130,7 +130,11 @@ const REBIND = (prompt: string): string => {
   ].join("\n") + printed.slice(firstLine);
 };
 
-const PLAN = JSON.stringify({
+/** The planner's FIRST answer: the person asked to be emailed, so the model
+ *  reaches for the send tool. §12 refuses that at authoring time now — a send is
+ *  not a thing Vendo does while nobody is watching — and the refusal rides back
+ *  as the repair instruction. */
+const PLAN_WITH_SEND = JSON.stringify({
   name: "Unpaid invoice digest",
   resultsCollection: "digest",
   trigger: {
@@ -146,10 +150,30 @@ const PLAN = JSON.stringify({
   },
 });
 
+/** The repair the refusal asks for, and the reason the refusal doubles as the
+ *  repair instruction: the away-safe HALF of the same request — read the live
+ *  data, publish the digest to the board — with the send left to the person. */
+const PLAN_AWAY_SAFE = JSON.stringify({
+  name: "Unpaid invoice digest",
+  resultsCollection: "digest",
+  trigger: {
+    on: { kind: "schedule", cron: "0 8 * * *" },
+    run: {
+      kind: "steps",
+      steps: [
+        { id: "invoices", tool: "host_list_unpaid_invoices" },
+        { id: "publish", tool: "vendo_apps_data_put", args: { appId: `'${APP_ID}'`, collection: "'digest'", id: "'latest'", data: "steps.invoices" } },
+      ],
+    },
+  },
+});
+
 /** Which turn this is, and what it answers. The AI reviewer rides the same model
  *  and gets nothing, which is how a fixture with no findings says so. */
 const respond = (prompt: string): string => {
-  if (prompt.includes("You are the Vendo automation planner")) return PLAN;
+  if (prompt.includes("You are the Vendo automation planner")) {
+    return prompt.includes("REPAIR_THESE_ISSUES") ? PLAN_AWAY_SAFE : PLAN_WITH_SEND;
+  }
   if (prompt.includes("YOUR SECTION")) return FILL;
   if (!prompt.includes("THEY ARE ASKING NOW:")) return "";
   return prompt.includes("THEY ARE ASKING NOW: The app now has a steps automation") ? REBIND(prompt) : AMENDMENT;
@@ -259,10 +283,13 @@ async function harness(): Promise<{
 }
 
 describe.sequential("Wave 9 rung (a) e2e — the 8am digest rides the automations engine, no machine anywhere", () => {
-  it("edit authors+arms the automation, tick fires it, and THE LAW refuses its unattended email", async () => {
+  it("edit authors+arms the away-safe half of the ask, and the tick fires it onto the board", async () => {
     const { store, guard, apps, automations, emails } = await harness();
 
     // 1. The server-shaped instruction becomes a STEPS automation, in seconds.
+    //    The ask names a send, so the planner's first answer does too, and §12
+    //    refuses it AT AUTHORING — the refusal doubles as the repair, and what
+    //    lands is the half that can run away (read, then publish).
     const result = await apps.edit(APP_ID, "email me a digest of unpaid invoices at 8am", ctx);
     expect(result.failure).toBeUndefined();
     expect(result.automation?.mode).toBe("steps");
@@ -279,10 +306,13 @@ describe.sequential("Wave 9 rung (a) e2e — the 8am digest rides the automation
     // (in-product this is the dock's approvals surface) so away runs can
     // complete unattended — an away run holds ONLY grants captured while
     // present (guard 05 §6).
+    //
+    // This list is also where the authoring refusal shows: `host_send_email` is
+    // NOT here, because it never became part of the automation. A law that had
+    // stopped working would put it back — the first plan named it.
     const pendingGrants = result.automation?.pendingGrants ?? [];
     expect(pendingGrants.map((request) => request.call.tool).sort()).toEqual([
       "host_list_unpaid_invoices",
-      "host_send_email",
       "vendo_apps_data_put",
     ]);
     for (const request of pendingGrants) {
@@ -300,48 +330,48 @@ describe.sequential("Wave 9 rung (a) e2e — the 8am digest rides the automation
     const runIds = await automations.tick(FIRES_AT);
     expect(runIds).toHaveLength(1);
 
-    // 3. THE LAW (design §12): destructive and external actions are never
-    //    unattended. `host_send_email` messages a human, so an unattended run
-    //    may not perform it — not with a standing grant, not with the owner's
-    //    approval captured above, not with any limit or override. The run fails
-    //    LOUDLY rather than skipping the step and reporting success.
+    // 3. The away run completes: it read the live invoices and published the
+    //    digest. Automations are not crippled by §12 — only stopped short of
+    //    irreversibility, which this one was never authored to reach.
     const run = await automations.runs.get(runIds[0]!, ctx);
-    expect(run?.status).toBe("error");
+    expect(run?.status).toBe("ok");
+    expect(run?.steps.map((step) => [step.tool, step.outcome])).toEqual([
+      ["host_list_unpaid_invoices", "ok"],
+      ["vendo_apps_data_put", "ok"],
+    ]);
 
-    const email = run?.steps.find((step) => step.tool === "host_send_email");
-    expect(email?.outcome).toBe("blocked");
-    expect(email?.detail).toContain("destructive or external");
-
-    // The read before it still ran — automations are not crippled, only stopped
-    // short of irreversibility.
-    expect(run?.steps.find((step) => step.tool === "host_list_unpaid_invoices")?.outcome).toBe("ok");
-
-    // 4. Nothing was sent. This is the assertion the whole law exists for.
+    // 4. Nothing was sent. This is the assertion the whole law exists for — and
+    //    the law now keeps it by never authoring the send, rather than by
+    //    letting one land and refusing it on every firing forever. The fire-time
+    //    refusal is still there as defence in depth, proved over the real guard
+    //    in guard/test/security/unattended-destructive.test.ts (audit trail
+    //    included) and over the whole stack in law-projection.e2e.test.ts; the
+    //    authoring refusal itself is proved in
+    //    fixtures/automations-e2e/src/automation-refusal.e2e.test.ts.
     expect(emails).toEqual([]);
 
-    // 5. The refusal is in the audit trail, which is what the run history and
-    //    the failure card on the app surface render from (§13 — a render, not
-    //    new machinery). A silent failure would leave the owner with an app
-    //    that quietly stopped working.
-    const { events } = await guard.audit.query({ principal, limit: 100 });
-    expect(events.some((event) =>
-      event.tool === "host_send_email" && event.outcome === "blocked")).toBe(true);
+    // 5. The board shows what the away run did. A run whose result nobody can
+    //    see did not happen: the trigger's last step wrote the digest into its
+    //    declared collection, and the rewired tree's query resolves those rows
+    //    into the rendered payload.
+    const surface = await apps.open(APP_ID, ctx);
+    expect(surface.kind).toBe("tree");
+    expect(JSON.stringify(surface)).toContain("1 unpaid invoice");
 
     // 6. ZERO sandbox creation: the document never grew a machine (and no
     //    sandbox adapter was configured to begin with).
     expect((await apps.get(APP_ID, ctx))?.machine).toBeUndefined();
 
-    // NOTE: prepare-then-human-sends (the outbox that turns this refusal into
-    // "your digest is ready · [Send]") arrives with the automations pack, on its
-    // own track. The wave-1 truth asserted here is the refusal itself.
+    // NOTE: prepare-then-human-sends (the outbox that turns "I couldn't author
+    // the send" into "your digest is ready · [Send]") arrives with the
+    // automations pack, on its own track.
   });
 
-  it("still round-trips a records put into the tree query, which the refusal test no longer reaches", async () => {
-    // Coverage the pre-law version of the test above uniquely carried: an
-    // automation writing to its declared collection, and open() resolving the
-    // vendo_apps_data_list query over those rows into the rendered payload. The
-    // refusal now aborts the run before the publish step, so this exercises the
-    // same round trip directly rather than letting the coverage vanish.
+  it("resolves the rewired query over rows written straight into the collection", async () => {
+    // The same round trip as step 5 above, minus the run: whatever puts a row in
+    // the declared collection, open() resolves the vendo_apps_data_list query
+    // over those rows into the rendered payload. Narrower on purpose — it keeps
+    // the query-resolution half honest even if the away run stops firing.
     const { store, apps } = await harness();
     await apps.edit(APP_ID, "email me a digest of unpaid invoices at 8am", ctx);
 

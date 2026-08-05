@@ -1,4 +1,5 @@
 import {
+  DEFAULT_TRIGGER_ID,
   VENDO_MAKE_TOOL,
   VENDO_VIEW_STREAM,
   vendoAutomationPartSchema,
@@ -54,7 +55,11 @@ const echoDescriptor: ToolDescriptor = {
   risk: "read",
 };
 
+// A trigger is one entry of the app's LIST, so it carries the `id` that names it
+// there — and the part's schema requires it. An id-less trigger is not a laxer
+// card, it is no card at all: the seam below parses the whole part or drops it.
 const TRIGGER = {
+  id: DEFAULT_TRIGGER_ID,
   on: { kind: "schedule", every: "1d" },
   run: { kind: "agentic", prompt: "check the balance" },
 } as const satisfies Trigger;
