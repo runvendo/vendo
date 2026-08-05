@@ -233,7 +233,7 @@ describe("vendo_create_app", () => {
     };
     const { byName } = await pack({ implementations });
     const output = await byName.get(VENDO_CREATE_APP_TOOL)!.execute(
-      { request: "Compare weather in 3 cities" },
+      { prompt: "Compare weather in 3 cities" },
       { ctx: ctx() },
     );
     const envelope = vendoAppRefSchema.parse(output);
@@ -243,7 +243,7 @@ describe("vendo_create_app", () => {
     release();
   });
 
-  it("derives the fast-path title from the request, capped to one 80-char line", async () => {
+  it("derives the fast-path title from the prompt, capped to one 80-char line", async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
     const implementations = {
@@ -251,8 +251,8 @@ describe("vendo_create_app", () => {
       [VENDO_MAKE_TOOL]: makeTool({ appId: "app_long", name: "ignored", gate }),
     };
     const { byName } = await pack({ implementations });
-    const request = `build me a dashboard ${"with lots of panels ".repeat(10)}`;
-    const output = await byName.get(VENDO_CREATE_APP_TOOL)!.execute({ request }, { ctx: ctx() });
+    const prompt = `build me a dashboard ${"with lots of panels ".repeat(10)}`;
+    const output = await byName.get(VENDO_CREATE_APP_TOOL)!.execute({ prompt }, { ctx: ctx() });
     const envelope = vendoAppRefSchema.parse(output);
     expect(envelope.title.length).toBeLessThanOrEqual(80);
     expect(envelope.title.endsWith("…")).toBe(true);
@@ -266,11 +266,11 @@ describe("vendo_create_app", () => {
     };
     const { byName } = await pack({ implementations });
     const output = await byName.get(VENDO_CREATE_APP_TOOL)!.execute(
-      { request: "plan my trip" },
+      { prompt: "plan my trip" },
       { ctx: ctx() },
     );
     const envelope = vendoAppRefSchema.parse(output);
-    // `title` is the receipt's, not the request-derived fallback ("plan my
+    // `title` is the receipt's, not the prompt-derived fallback ("plan my
     // trip") — which is the proof the ref was read off the receipt rather than
     // off a document that no longer arrives.
     expect(envelope).toMatchObject({ appId: "app_done", title: "Trip planner" });
@@ -289,7 +289,7 @@ describe("vendo_create_app", () => {
     };
     const { byName } = await pack({ implementations });
     const output = await byName.get(VENDO_CREATE_APP_TOOL)!.execute(
-      { request: "plan my trip" },
+      { prompt: "plan my trip" },
       { ctx: ctx() },
     );
     expect(vendoAppRefSchema.safeParse(output).success).toBe(false);
@@ -305,7 +305,7 @@ describe("vendo_create_app", () => {
       policy: { [VENDO_MAKE_TOOL]: "ask" },
     });
     const output = await byName.get(VENDO_CREATE_APP_TOOL)!.execute(
-      { request: "make a dashboard" },
+      { prompt: "make a dashboard" },
       { ctx: ctx() },
     );
     vendoApprovalRefSchema.parse(output);

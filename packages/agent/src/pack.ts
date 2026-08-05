@@ -159,21 +159,26 @@ function wrapHostTool(registry: ToolRegistry, descriptor: ToolDescriptor): Vendo
 function createAppTool(registry: ToolRegistry, descriptor: ToolDescriptor): VendoPackTool {
   return {
     name: VENDO_CREATE_APP_TOOL,
-    description: "Make the user a Vendo screen (generated UI) from a plain-language request. Returns fast with a vendo/app-ref@1 envelope meaning the work was ACCEPTED and is still streaming — it is NOT finished yet. Do not tell the user it is created/ready/done; the embed shows live progress and the final result (including any failure) itself, so never wait for or report on completion.",
+    description: "Create a Vendo app (generated UI) from a natural-language prompt. Returns fast with a vendo/app-ref@1 envelope meaning the build was ACCEPTED and is still streaming — the app is NOT built yet. Do not tell the user the app is created/ready/done; the embed shows live build progress and the final result (including any build failure) itself, so never wait for or report on build completion.",
     inputSchema: {
       $schema: DRAFT_2020_12,
       type: "object",
-      properties: { request: { type: "string", minLength: 1 } },
-      required: ["request"],
+      properties: { prompt: { type: "string", minLength: 1 } },
+      required: ["prompt"],
       additionalProperties: false,
     },
     async execute(input, options) {
-      const args = input as { request?: unknown };
-      const fallbackTitle = titleFromPrompt(args?.request);
+      const args = input as { prompt?: unknown };
+      const fallbackTitle = titleFromPrompt(args?.prompt);
       const call: VendoViewStreamingToolCall = {
         id: options.callId ?? mintCallId(),
         tool: VENDO_MAKE_TOOL,
-        args: input,
+        // This pack tool's OWN surface is `prompt`, and it stays that way: it is a
+        // separate public tool from `vendo_make` (different name, different return
+        // shape — an app-ref envelope, not a receipt), so the front door's rename
+        // is not its rename. Only the inner call speaks the new contract, which is
+        // why the argument is mapped here rather than forwarded.
+        args: { request: args?.prompt },
       };
       let resolveFast!: (ref: VendoAppRef) => void;
       const fast = new Promise<VendoAppRef>((resolve) => { resolveFast = resolve; });
