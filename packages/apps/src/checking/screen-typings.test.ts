@@ -73,7 +73,16 @@ describe("screenTypings", () => {
       queries: [],
     });
     expect(dts.match(/declare const Stack:/gu)).toHaveLength(1);
-    expect(dts).toContain("declare const Stack: (props: { gap?: number;");
+    // The renderer resolves a reserved name to the primitive before it looks at
+    // the catalog, so the primitive's prop-NAME set is what a screen may write.
+    expect(dts).toContain("declare const Stack: (props: { gap?: any;");
+  });
+
+  it("keeps the legacy prewired primitives to their prop NAMES, permissively typed", () => {
+    // They carry no schema — a hand-written signature string and an exact
+    // allowed-name set (prewired-schema.ts). Names are the contract.
+    const dts = screenTypings({ catalog: [], queries: [] });
+    expect(dts).toContain("declare const Table: (props: { columns?: any; rows?: any; caption?: any; emptyLabel?: any; rowKey?: any;");
   });
 
   it("allows `pending` on every component (the plan skeleton writes it on every leaf)", () => {
