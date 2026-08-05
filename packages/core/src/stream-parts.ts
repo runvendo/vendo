@@ -4,10 +4,12 @@ import {
   approvalIdSchema,
   grantIdSchema,
   isoDateTimeSchema,
+  turnIdSchema,
   type AppId,
   type ApprovalId,
   type GrantId,
   type IsoDateTime,
+  type TurnId,
 } from "./ids.js";
 import { knowledgeKindSchema, knowledgeVisibilitySchema, type KnowledgeKind, type KnowledgeVisibility } from "./knowledge.js";
 import { riskLabelSchema, type RiskLabel } from "./tools.js";
@@ -20,6 +22,10 @@ export interface VendoViewPart {
   type: "data-vendo-view";
   appId: AppId;
   payload: UIPayload;
+  /** The turn that painted this view, so a screen on someone's page joins back
+   *  to the exchange that made it and to that exchange's audit rows. Absent on a
+   *  paint outside a turn (a reopen, a tour replay). */
+  turnId?: TurnId;
 }
 
 /** 01-core §16 */
@@ -27,6 +33,7 @@ export const vendoViewPartSchema = z.object({
   type: z.literal("data-vendo-view"),
   appId: appIdSchema,
   payload: uiPayloadSchema,
+  turnId: turnIdSchema.optional(),
 }).passthrough() satisfies z.ZodType<VendoViewPart>;
 
 /** AGENT-10 (wave 5, additive — 01 §16 amendment parked): the ai-SDK envelope

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { appIdSchema, isoDateTimeSchema, type AppId, type IsoDateTime, type Json } from "./ids.js";
+import { appIdSchema, isoDateTimeSchema, turnIdSchema, type AppId, type IsoDateTime, type Json, type TurnId } from "./ids.js";
 import { principalSchema, type Principal } from "./principal.js";
 import type { RunContext } from "./run-context.js";
 import { triggerRefSchema, type TriggerRef } from "./triggers.js";
@@ -16,6 +16,11 @@ export interface AuditEvent {
   presence: RunContext["presence"];
   appId?: AppId;
   trigger?: TriggerRef;
+  /** The turn this row came out of, so a turn's rows join to each other, to its
+   *  mirrored calls and to the views it painted. Copied from the `RunContext` by
+   *  the mint helpers — never authored by a caller. Absent on a run with no turn
+   *  (a webhook, a schedule fire, an org-policy load). */
+  turnId?: TurnId;
   tool?: string;
   inputPreview?: string;
   outcome?: ToolOutcome["status"];
@@ -33,6 +38,7 @@ export const auditEventSchema = z.object({
   presence: z.enum(["present", "away"]),
   appId: appIdSchema.optional(),
   trigger: triggerRefSchema.optional(),
+  turnId: turnIdSchema.optional(),
   tool: z.string().optional(),
   inputPreview: z.string().optional(),
   outcome: z.enum(["ok", "error", "pending-approval", "blocked", "connect-required"]).optional(),

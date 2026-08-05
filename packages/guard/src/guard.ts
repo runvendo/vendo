@@ -215,6 +215,9 @@ function eventFromContext(
     presence: ctx.presence,
     ...(ctx.appId === undefined ? {} : { appId: ctx.appId }),
     ...(ctx.trigger === undefined ? {} : { trigger: ctx.trigger }),
+    // The turn this decision was made inside. Copied here, at the one mint every
+    // ctx-shaped guard row goes through, so nothing has to remember to add it.
+    ...(ctx.turnId === undefined ? {} : { turnId: ctx.turnId }),
     ...fields,
   };
 }

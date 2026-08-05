@@ -9,6 +9,7 @@ import type {
   ToolOutcome,
   ToolRegistry,
   ToolResult,
+  TurnId,
   TurnTools,
 } from "@vendoai/core";
 import { FIND_TOOLS_TOOL_NAME, guardedCall, previewApproval, type ToolBridgeOptions } from "@vendoai/agent/internal";
@@ -29,7 +30,11 @@ export const APPROVAL_WAIT_MS = 90_000;
  * bridge inside `guardedCall`/`previewApproval`, so a harness produces the
  * identical wire a `createAgent` turn does.
  */
-export type MirrorEvent =
+export type MirrorEvent = ({
+  /** The turn that made this call, stamped once by {@link createTurnTools} from
+   *  the ctx. Absent only for a call made outside a turn. */
+  turnId?: TurnId;
+}) & (
   | { kind: "call"; toolCallId: string; name: string; args: Json }
   /** An interactive parked call. The shipped thread renders its consent card off
    *  the NATIVE approval state, so without this the card never appears and the
@@ -38,7 +43,8 @@ export type MirrorEvent =
   /** `result` is what the MODEL reads (§1.1's three statuses). `outcome` is what
    *  the SCREEN reads: the ai-SDK path puts the whole typed outcome on the native
    *  tool part, and the connect card is rendered from it. */
-  | { kind: "result"; toolCallId: string; name: string; result: ToolResult; outcome?: ToolOutcome };
+  | { kind: "result"; toolCallId: string; name: string; result: ToolResult; outcome?: ToolOutcome }
+);
 
 export interface TurnToolsOptions {
   /** The GUARD-BOUND registry (`VendoGuard.bind(tools)`) — the one choke point.
@@ -186,6 +192,13 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
   const hidden = (name: string): boolean =>
     withheld.has(name) || (!curated && name === FIND_TOOLS_TOOL_NAME);
 
+  /** Stamp the turn on every mirrored event once, here, rather than at each of
+   *  the three raise sites — a tracer reading the mirror can join a call to its
+   *  turn's audit rows without correlating out of band. */
+  const mirror = (event: MirrorEvent): void => {
+    options.mirror(options.ctx.turnId === undefined ? event : { ...event, turnId: options.ctx.turnId });
+  };
+
   const descriptorFor = async (name: string): Promise<ToolDescriptor | undefined> => {
     try {
       return (await options.registry.descriptors()).find((descriptor) => descriptor.name === name);
@@ -250,9 +263,9 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
 
     async call(name, args): Promise<ToolResult> {
       const toolCallId = mintToolCallId();
-      options.mirror({ kind: "call", toolCallId, name, args });
+      mirror({ kind: "call", toolCallId, name, args });
       const finish = (result: ToolResult, outcome?: ToolOutcome): ToolResult => {
-        options.mirror({ kind: "result", toolCallId, name, result, ...(outcome === undefined ? {} : { outcome }) });
+        mirror({ kind: "result", toolCallId, name, result, ...(outcome === undefined ? {} : { outcome }) });
         return result;
       };
 
@@ -316,7 +329,7 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
           }
           // Raise the card BEFORE blocking: the tap that resolves this wait can
           // only come from a surface that knows the call is parked.
-          options.mirror({ kind: "approval", toolCallId, approvalId });
+          mirror({ kind: "approval", toolCallId, approvalId });
           const approved = await waiter.wait(approvalId, approvalWaitMs);
           if (approved === undefined) {
             return finish({

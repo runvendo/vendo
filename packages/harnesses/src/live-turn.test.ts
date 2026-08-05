@@ -80,7 +80,10 @@ describe("the runtime publishes the turn in flight", () => {
 
     expect(published).toBeDefined();
     expect(published!.threadId).toBe(THREAD);
-    expect(published!.ctx).toBe(ctx);
+    // The published ctx is THIS TURN's ctx: the caller's, plus the turn id the
+    // runtime minted (§3.5). A call arriving over the door is therefore audited
+    // against the same turn the harness's own calls are.
+    expect(published!.ctx).toEqual({ ...ctx, turnId: expect.stringMatching(/^trn_[0-9a-f]{32}$/) });
     // THE assertion: not "an equivalent surface", the SAME one.
     expect(published!.tools).toBe(held);
   });

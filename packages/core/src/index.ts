@@ -41,6 +41,7 @@ export * from "./tools.js";
 export * from "./genui/expr.js";
 export * from "./genui/tree-node.js";
 export * from "./genui/tree.js";
+export * from "./genui/screen.js";
 export * from "./filesystem.js";
 export * from "./triggers.js";
 export * from "./workspace.js";
@@ -71,6 +72,7 @@ export { checkBindingShapes, type BindingShapeError } from "./genui/wire/shape-c
 export { compilePlan, type PlanCompileResult, type PlanFacts } from "./genui/plan/compile.js";
 export {
   planTabs,
+  PLAN_DISPLAYS,
   type AppPlan,
   type PlanDisplay,
   type PlanGroup,
@@ -85,6 +87,7 @@ export {
 // (§4, lane D). Type-only by design — `defineHarness` and the runtime live in
 // @vendoai/harnesses (§2), so core stays the shapes every block may speak.
 export type {
+  BeatPhase,
   DeniedNeeds,
   Harness,
   HarnessEvent,
