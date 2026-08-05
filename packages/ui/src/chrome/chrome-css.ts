@@ -1856,6 +1856,23 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 @media (prefers-reduced-motion: no-preference) {
   .fl-appcard-bar[data-state="ready"] .fl-barpin { animation: fl-fade-in .3s ease both; }
 }
+/* The pin nudge (founder mockup, 2026-08-04). A settled build INVITES the pin
+   with a slow ring at the edge of vision — never a toast, never an action, and
+   never while the build is still running (§8 gives a build one moving thing).
+   Taken, it resolves to the settled accent state. Reduced motion keeps the
+   accent and drops the ring: the colour alone is the invitation. */
+.fl-barpin[data-vendo-pin] { color: var(--vendo-accent); }
+.fl-barpin[data-vendo-pin="pinned"] { background: var(--vendo-accent-soft); }
+@media (prefers-reduced-motion: no-preference) {
+  .fl-barpin[data-vendo-pin="invite"] { animation: fl-pin-nudge 2.4s var(--vendo-ease) infinite; }
+  /* The card's pin also fades in with its bar (rule above); naming both keeps
+     the entrance, which a bare nudge would silently replace. */
+  .fl-appcard-bar[data-state="ready"] .fl-barpin[data-vendo-pin="invite"] {
+    animation: fl-fade-in .3s ease both, fl-pin-nudge 2.4s var(--vendo-ease) infinite; }
+}
+@keyframes fl-pin-nudge {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--vendo-accent) 26%, transparent); }
+  45% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--vendo-accent) 10%, transparent); } }
 
 /* 2B — Send now on the queued pill. */
 .fl-queued-now { flex-shrink: 0; border: 0; background: none; cursor: pointer; padding: 3px 6px;

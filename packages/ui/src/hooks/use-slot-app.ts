@@ -61,8 +61,14 @@ export function useSlotApp(slotId: string, options: PollOptions & {
       for (const settle of settles) clearTimeout(settle);
     };
   }, [enabled, refresh]);
-  // Latest placement wins — matching the "the newest remix takes the slot"
-  // semantics the demos established (hero-slot took `.at(-1)`).
-  const appId = data.filter(app => app.placements?.includes(slotId)).at(-1)?.id;
+  // Latest placement wins ("the newest remix takes the slot"), and the wire
+  // lists apps NEWEST FIRST — `runtime.list()` sorts createdAt descending, and
+  // an AppDocument carries no timestamp, so list order is the only newness
+  // signal here. This read was `.at(-1)`, which is the OLDEST placed app: the
+  // exact opposite of its own comment. Two things hid it — the reference host
+  // strips the slot off every other app the subject owns, so only one ever
+  // carries a placement, and the test mocked `apps.list` with a hand-ordered
+  // array instead of the wire's real order.
+  const appId = data.find(app => app.placements?.includes(slotId))?.id;
   return { appId, error, isLoading, refresh };
 }

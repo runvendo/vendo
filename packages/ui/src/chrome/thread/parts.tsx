@@ -14,7 +14,7 @@ import { GrantSetCard, type GrantSetPermission } from "../grant-set-card.js";
 import { toolkitDisplayName, toolTitle } from "../humanize.js";
 import { Markdown } from "../markdown.js";
 import type { MorphToastProps } from "../morph-toast.js";
-import { usePinAction } from "../pin-ceremony.js";
+import { usePinAction, usePinNudge } from "../pin-ceremony.js";
 import { LONG_TEXT_CAP, truncateHead } from "../truncate.js";
 import { SentAttachment } from "./attachments.js";
 import { buildApprovalRequest } from "./approval-wire.js";
@@ -421,6 +421,11 @@ function ThreadAppCard({ appId, payload, restored, buildKey }: { appId: string; 
   const pin = usePinAction();
   const split = useSplitView();
   const streaming = (payload as { streaming?: boolean }).streaming === true;
+  // The nudge belongs to the build that just LANDED (§10.1: the user pins, the
+  // agent never does). Restored history and a card still building are both
+  // quiet — the second one matters twice over, because §8 gives a build exactly
+  // one moving element and an invitation is not it.
+  const nudge = usePinNudge(appId, !restored && !streaming);
   // When a LIVE build settles (streaming flips off), the full-size card
   // scrolls its own top into view once: stick-to-bottom otherwise leaves the
   // reader parked at the bottom of a tall app, mid-document with the title
@@ -583,6 +588,7 @@ function ThreadAppCard({ appId, payload, restored, buildKey }: { appId: string; 
           <button
             type="button"
             className="fl-barpin"
+            {...(nudge === undefined ? {} : { "data-vendo-pin": nudge })}
             onClick={() => pin({ appId, payload })}
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>

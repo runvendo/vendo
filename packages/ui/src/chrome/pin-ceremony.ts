@@ -22,9 +22,9 @@
  * Lifted from the Keystone demo's `pin-flight.ts`, which is where the sequence
  * was designed and proven on stage.
  */
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useVendoContext } from "../context.js";
-import { announcePin } from "../pin-events.js";
+import { announcePin, onPinAnnounced, pinTaken } from "../pin-events.js";
 import { openVendoConversation } from "./overlay-registry.js";
 
 /** 300 + 180 = 480ms end to end (the design budget is "under half a second"). */
@@ -64,17 +64,25 @@ function boxOf(element: Element | null): DOMRect | null {
 /** The destination the pin lands in — a mounted VendoSlot, or a `<Remixable>`
  *  wrapper (the fork's in-place mount boundary, 2026-08-02 final shape). A
  *  named destination is exact; unnamed, the only mounted one is unambiguous
- *  and every host with one dashboard slot gets the ceremony for free. Two or
- *  more and this returns null — better no animation than one that flies to
- *  the wrong place. */
+ *  and every host with one dashboard slot gets the ceremony for free. Host
+ *  slots keep priority; with none resolvable the Apps shelf is the floor. */
 function destinationOf(slot: string | undefined): Element | null {
   // Matched by attribute VALUE rather than an interpolated selector: slot and
   // app ids come from the host, and a quote in one would break the selector.
   const mounted = [...document.querySelectorAll("[data-vendo-slot], [data-vendo-remixable]")];
-  if (slot === undefined) return mounted.length === 1 ? mounted[0]! : null;
-  return mounted.find(element =>
-    element.getAttribute("data-vendo-slot") === slot || element.getAttribute("data-vendo-remixable") === slot,
-  ) ?? null;
+  const named = slot === undefined
+    ? (mounted.length === 1 ? mounted[0]! : null)
+    : mounted.find(element =>
+      element.getAttribute("data-vendo-slot") === slot || element.getAttribute("data-vendo-remixable") === slot,
+    ) ?? null;
+  // No slot resolved — none mounted, or several with no name to choose by. This
+  // used to return null, and since the dismiss had already fired the user's pin
+  // appeared to VANISH: no flight, no ring, nothing. The Apps shelf is where a
+  // pinned app shows up, so it is where the pin lands. The day-zero ghost shelf
+  // is the last resort: it advertises what to build and holds no apps.
+  return named
+    ?? document.querySelector(".fl-shelf:not(.fl-shelf--ghost)")
+    ?? document.querySelector(".fl-shelf");
 }
 
 /** The settle pulse: a ring drawn OVER the destination, never a style written
@@ -243,6 +251,32 @@ export function playPinCeremony({ appId, slot, dismiss = () => {} }: PinCeremony
  *  announcement that lets the slot show the result without waiting for a poll.
  *  Returns undefined when the host wired no `onPin` — which is what hides the
  *  affordances in the first place. */
+/**
+ * The pin affordance's nudge state (mockup 2026-08-04): a settled build whose
+ * pin has not been taken INVITES it with a quiet infinite pulse, and the moment
+ * it is taken the affordance resolves to a settled accent state. `undefined` is
+ * the quiet default.
+ *
+ * "Not taken yet" is the pin bus, NOT a placements read: placements live on the
+ * app document, which no pin affordance holds, so knowing it for certain costs a
+ * list fetch per card — a request to render one boolean. The honest cost of that
+ * choice is that a pin made in an earlier session invites once more.
+ *
+ * `invited` is the CALLER's — whether this surface's build just landed (the
+ * in-thread card is `restored === false`) — because only the caller knows.
+ */
+export function usePinNudge(appId: string, invited: boolean): "invite" | "pinned" | undefined {
+  const [taken, setTaken] = useState(() => pinTaken(appId));
+  useEffect(() => {
+    setTaken(pinTaken(appId));
+    return onPinAnnounced(pinned => {
+      if (pinned === appId) setTaken(true);
+    });
+  }, [appId]);
+  if (taken) return "pinned";
+  return invited ? "invite" : undefined;
+}
+
 export function usePinAction(): ((app: { appId: string; payload: unknown }) => void) | undefined {
   const { onPin, pinSlot } = useVendoContext();
   const pin = useCallback(

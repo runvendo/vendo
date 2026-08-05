@@ -12,6 +12,7 @@
 type PinListener = (appId: string) => void;
 
 const listeners = new Set<PinListener>();
+const taken = new Set<string>();
 
 /** Subscribe to pins; returns an unsubscribe. */
 export function onPinAnnounced(listener: PinListener): () => void {
@@ -21,5 +22,15 @@ export function onPinAnnounced(listener: PinListener): () => void {
 
 /** Announce that `appId` was just pinned. */
 export function announcePin(appId: string): void {
+  taken.add(appId);
   for (const listener of [...listeners]) listener(appId);
+}
+
+/** Whether this app's pin has already been taken — the same fact the bus
+ *  announces, retained so an affordance that mounts LATER (a card re-rendered
+ *  from the thread, the stage featuring the app again) is not left inviting a
+ *  pin the user already gave. Session-scoped by design: a placement made in an
+ *  earlier session lives on the app document, which no pin affordance holds. */
+export function pinTaken(appId: string): boolean {
+  return taken.has(appId);
 }
