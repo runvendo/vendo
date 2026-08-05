@@ -1301,9 +1301,12 @@ describe("createMcpDoor MCP protocol", () => {
     const harness = makeHarness({ principal: () => principal });
     const registration = await register(harness.door);
     const tokens = await issue(harness.door, registration.body.client_id);
-    const connected = await connect(harness.door, tokens.access_token);
-    await connected.client.listTools();
-    const sessionId = connected.transport.sessionId!;
+    // Raw HTTP, not the SDK client: the client's unawaited background SSE GET
+    // could observe the null principal first, kill the subject, and hand THIS
+    // request the 404 — exactly one request may be in flight across the flip.
+    const initialized = await harness.door.handler(mcpRequest(tokens.access_token));
+    expect(initialized.status).toBe(200);
+    const sessionId = initialized.headers.get("mcp-session-id")!;
 
     principal = null;
     const revoked = await harness.door.handler(mcpRequest(tokens.access_token, sessionId));
