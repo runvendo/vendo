@@ -6,7 +6,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { VendoProvider, createVendoClient } from "../../src/index.js";
 import { AutomationCard } from "../../src/chrome/index.js";
-import { humanizeCron } from "../../src/chrome/automation-card.js";
+import { humanizeCron, triggerLabel } from "../../src/chrome/automation-card.js";
 import { ThreadPart } from "../../src/chrome/thread/parts.js";
 
 afterEach(cleanup);
@@ -24,6 +24,30 @@ describe("humanizeCron", () => {
     expect(humanizeCron("*/5 * * * *")).toBeNull();
     expect(humanizeCron("0 17 * * 1-5")).toBeNull();
     expect(humanizeCron("0 99 * * *")).toBeNull();
+  });
+});
+
+describe("triggerLabel — which zone the clock is in", () => {
+  const scheduled = (cron: string) => triggerLabel({
+    id: "main",
+    on: { kind: "schedule", cron },
+    run: { kind: "steps", steps: [{ id: "s", tool: "host_listAccounts" }] },
+  });
+
+  it("names the zone on a humanized cron clock, because UTC is the zone it fires in", () => {
+    // The engine builds every cron with `{ timezone: "UTC" }` (engine.ts §325,
+    // §2068), so "0 16 * * 1" fires at 4 PM UTC — 8 AM Pacific. An unlabelled
+    // "Mondays at 4:00 PM" was read as the reader's OWN afternoon: someone who
+    // asked for 8 AM Pacific was shown a time eight hours off with nothing on
+    // screen to say so.
+    expect(scheduled("0 16 * * 1").title).toBe("Mondays at 4:00 PM UTC");
+    expect(scheduled("0 8 * * *").title).toBe("Daily at 8:00 AM UTC");
+  });
+
+  it("leaves a raw cron expression alone — it shows no clock time to mislabel", () => {
+    // "*/5 * * * *" is a cadence, not an hour. There is no hour on screen for a
+    // reader to misplace, so a zone label here would be noise.
+    expect(scheduled("*/5 * * * *").title).toBe("*/5 * * * *");
   });
 });
 
