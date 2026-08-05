@@ -37,7 +37,7 @@ import {
   VENDO_MAKE_TOOL,
   type AppId,
   type Json,
-  type ResolvedModels,
+  type SeatModels,
   type RunContext,
   type ScreenAssembler,
   type ScreenOutcome,
@@ -108,7 +108,7 @@ const NO_INPUT_SCHEMA = { type: "object", properties: {}, additionalProperties: 
  * same four fields out of the pieces it already holds.
  */
 export interface ScreenSurface {
-  readonly models: ResolvedModels<LanguageModel>;
+  readonly models: SeatModels<LanguageModel>;
   readonly tools: TurnTools;
   /** Wrapped by the render seam before it gets here, so `commit()` paints. */
   readonly workspace: WorkspaceFs;
@@ -311,10 +311,18 @@ export async function assembleScreen(
   });
 
   const equipped = Object.keys(tools);
+  // Seats are required only where a harness reads them (contract §4, relaxed) —
+  // and the screen agent thinks with `default`, so a turn without it is the
+  // caller's composition bug, named loudly rather than limped past. Same posture
+  // as `vendo()`, which reads the same seat.
+  const model = surface.models.default;
+  if (model === undefined) {
+    throw new Error("the screen agent thinks with `turn.models.default`, and this turn carries no default seat");
+  }
   let loop: Awaited<ReturnType<typeof startTurn>>;
   try {
     loop = await startTurn({
-      model: surface.models.default,
+      model,
       system: screenBrief(input, listings),
       messages: [{ id: `screen_${input.appId}`, role: "user", parts: [{ type: "text", text: input.request }] }],
       tools,
@@ -414,7 +422,7 @@ const sayFor = (result: ScreenResult): string => {
 
 export interface ScreenAssemblerDeps {
   /** The seats, as `Turn.models` carries them. */
-  models: ResolvedModels<LanguageModel>;
+  models: SeatModels<LanguageModel>;
   /** The GUARD-BOUND registry (`VendoGuard.bind(hostTools)`) — the same choke
    *  point every harness's calls pass through. */
   tools: ToolRegistry;
