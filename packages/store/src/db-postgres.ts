@@ -71,6 +71,7 @@ export function createPostgresDb(url: string): Db {
       return withAdvisoryLock(url, ADVISORY_LOCK_KEY, work);
     },
     async transaction(work, opts) {
+      if (closed) throw new Error("[vendo] store is closed");
       const client = await pool.connect();
       const txQuery: Query = async (text, params = []) => {
         const result = await client.query(text, params);

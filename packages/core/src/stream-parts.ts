@@ -4,10 +4,12 @@ import {
   approvalIdSchema,
   grantIdSchema,
   isoDateTimeSchema,
+  turnIdSchema,
   type AppId,
   type ApprovalId,
   type GrantId,
   type IsoDateTime,
+  type TurnId,
 } from "./ids.js";
 import { knowledgeKindSchema, knowledgeVisibilitySchema, type KnowledgeKind, type KnowledgeVisibility } from "./knowledge.js";
 import { riskLabelSchema, type RiskLabel } from "./tools.js";
@@ -20,6 +22,10 @@ export interface VendoViewPart {
   type: "data-vendo-view";
   appId: AppId;
   payload: UIPayload;
+  /** The turn that painted this view, so a screen on someone's page joins back
+   *  to the exchange that made it and to that exchange's audit rows. Absent on a
+   *  paint outside a turn (a reopen, a tour replay). */
+  turnId?: TurnId;
 }
 
 /** 01-core §16 */
@@ -27,6 +33,7 @@ export const vendoViewPartSchema = z.object({
   type: z.literal("data-vendo-view"),
   appId: appIdSchema,
   payload: uiPayloadSchema,
+  turnId: turnIdSchema.optional(),
 }).passthrough() satisfies z.ZodType<VendoViewPart>;
 
 /** AGENT-10 (wave 5, additive — 01 §16 amendment parked): the ai-SDK envelope
@@ -64,12 +71,25 @@ const wirePartSchema = <Type extends string, Data extends z.ZodRawShape>(
   id: z.string().optional(),
 }).passthrough();
 
-/** Additive internal bridge seam: one tool execution can publish view updates. */
+/**
+ * Additive internal bridge seam: one tool execution can publish client parts
+ * mid-flight, on the stream ids it names.
+ *
+ * It exists because `vendo_make`'s model-facing output is a {@link MakeReceipt} —
+ * four fields of words. Anything the CLIENT needs and the model must not be handed
+ * travels here instead, published explicitly by the producer rather than
+ * duck-typed out of a tool's return value at the bridge (01-core §16's
+ * anti-smuggling rule, which duck-typing was the exception to).
+ */
 export const VENDO_VIEW_STREAM = Symbol.for("@vendoai/core/vendo-view-stream");
+
+/** What a tool execution may publish: the screen, and the automation card an
+ *  armed automation raises. */
+export type VendoStreamedPart = VendoViewPart | VendoAutomationPart;
 
 export interface VendoViewStreamUpdate {
   id: string;
-  part: VendoViewPart;
+  part: VendoStreamedPart;
 }
 
 export type VendoViewStreamingToolCall = ToolCall & {
@@ -172,7 +192,7 @@ export const vendoTurnErrorPartSchema = z.object({
  *  recognize it ignore it (§15 forward-compat). */
 export interface VendoBuildFailedPart {
   type: "data-vendo-build-failed";
-  /** The failed `vendo_apps_create` call, for placement beside its beat. */
+  /** The failed `vendo_make` call, for placement beside its beat. */
   toolCallId: string;
   /** The renderable, provider-safe failure reason. */
   reason: string;

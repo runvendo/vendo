@@ -540,11 +540,11 @@ describe("the widened audit — no chrome surface renders a developer string", (
     ["waiting strip", <WaitingQueue pollMs={0} />],
     ["activity", <ActivityPanel />],
     // RULING 21 — the panel above only ever paints the wire's FIRST page, so
-    // the audit shape that carries an id (`vendo_apps_edit`: an app id and the
-    // person's instruction) could not reach the sweep through it. The ledger is
-    // the shared component both activity surfaces render, so the class is
-    // audited on the component, from the same fixture the wire serves.
-    ["activity ledger, the vendo_apps_edit shape", <ActivityLedger events={[appEditAudit()]} />],
+    // the audit shape that carries an id (`vendo_make` changing an app: an app
+    // id and the person's request) could not reach the sweep through it. The
+    // ledger is the shared component both activity surfaces render, so the class
+    // is audited on the component, from the same fixture the wire serves.
+    ["activity ledger, the vendo_make change shape", <ActivityLedger events={[appEditAudit()]} />],
     ["automations panel", <AutomationsPanel />],
     ["connected accounts", <ConnectedAccountsPanel />],
   ];

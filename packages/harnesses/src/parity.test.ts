@@ -4,7 +4,7 @@
  * rides the SHIPPED rails instead of a parallel reimplementation.
  */
 import {
-  VENDO_APPS_CREATE_TOOL,
+  VENDO_MAKE_TOOL,
   VENDO_VIEW_STREAM,
   VendoError,
   vendoViewStreamId,
@@ -69,15 +69,21 @@ function runtimeFor(options: {
 }
 
 describe("C1 — generating or opening an app RENDERS", () => {
-  const appsTool: ToolDescriptor = {
-    ...readTool(VENDO_APPS_CREATE_TOOL, "write"),
-    name: VENDO_APPS_CREATE_TOOL,
+  const makeTool: ToolDescriptor = {
+    ...readTool(VENDO_MAKE_TOOL, "write"),
+    name: VENDO_MAKE_TOOL,
+  };
+  // The tree OpenSurface belongs to `vendo_apps_open` now: `vendo_make` answers
+  // with a receipt and puts its pixels on the view channel instead.
+  const openTool: ToolDescriptor = {
+    ...readTool("vendo_apps_open", "read"),
+    name: "vendo_apps_open",
   };
 
   it("emits data-vendo-view from a vendo_apps_* tree OpenSurface, on the app's stream id", async () => {
     const guard = testGuard();
     const registry = boundRegistry(
-      { [VENDO_APPS_CREATE_TOOL]: { descriptor: appsTool, execute: () => APP_TREE } },
+      { vendo_apps_open: { descriptor: openTool, execute: () => APP_TREE } },
       guard,
     );
     const { run } = runtimeFor({ registry, guard });
@@ -85,7 +91,7 @@ describe("C1 — generating or opening an app RENDERS", () => {
       defineHarness({
         name: "builder",
         async *run(turn) {
-          await turn.tools.call(VENDO_APPS_CREATE_TOOL, { appId: "app_1" });
+          await turn.tools.call("vendo_apps_open", { appId: "app_1" });
         },
       }),
     );
@@ -96,17 +102,28 @@ describe("C1 — generating or opening an app RENDERS", () => {
   it("carries the VENDO_VIEW_STREAM partial bridge, so the app grows on screen mid-build", async () => {
     const guard = testGuard();
     // The runtime must attach the symbol to the call, exactly as the shipped
-    // bridge does — that is how the engine streams partial trees.
+    // bridge does — that is how the engine streams partial trees. Since the tool
+    // answers with a RECEIPT, the bridge is the only way any pixel reaches the
+    // screen: the settled view rides it too, exactly as the conductor emits it.
     const registry: ToolRegistry = {
-      descriptors: async () => [appsTool],
+      descriptors: async () => [makeTool],
       execute: async (call): Promise<ToolOutcome> => {
         const publish = (call as VendoViewStreamingToolCall)[VENDO_VIEW_STREAM];
         expect(publish).toBeTypeOf("function");
-        publish?.({
-          id: vendoViewStreamId("app_1"),
-          part: { type: "data-vendo-view", appId: "app_1", payload: APP_TREE.payload as never },
-        });
-        return { status: "ok", output: APP_TREE as never };
+        for (const streaming of [true, undefined]) {
+          publish?.({
+            id: vendoViewStreamId("app_1"),
+            part: {
+              type: "data-vendo-view",
+              appId: "app_1",
+              payload: { ...APP_TREE.payload, ...(streaming === undefined ? {} : { streaming }) } as never,
+            },
+          });
+        }
+        return {
+          status: "ok",
+          output: { id: "app_1", title: "Spending", status: "ready", say: "Spending is on your screen." },
+        };
       },
     };
     const { run } = runtimeFor({ registry, guard });
@@ -114,7 +131,7 @@ describe("C1 — generating or opening an app RENDERS", () => {
       defineHarness({
         name: "builder",
         async *run(turn) {
-          await turn.tools.call(VENDO_APPS_CREATE_TOOL, { appId: "app_1" });
+          await turn.tools.call(VENDO_MAKE_TOOL, { request: "where did my money go" });
         },
       }),
     );
@@ -128,8 +145,8 @@ describe("C1 — generating or opening an app RENDERS", () => {
     const guard = testGuard();
     const registry = boundRegistry(
       {
-        [VENDO_APPS_CREATE_TOOL]: {
-          descriptor: appsTool,
+        [VENDO_MAKE_TOOL]: {
+          descriptor: makeTool,
           execute: () => {
             throw new Error("app build failed: the plan referenced a component that does not exist");
           },
@@ -142,7 +159,7 @@ describe("C1 — generating or opening an app RENDERS", () => {
       defineHarness({
         name: "builder",
         async *run(turn) {
-          await turn.tools.call(VENDO_APPS_CREATE_TOOL, { appId: "app_1" });
+          await turn.tools.call(VENDO_MAKE_TOOL, { request: "where did my money go" });
         },
       }),
     );

@@ -27,12 +27,14 @@ import {
   compilePlan,
   compileWire,
   safeErrorMessage,
+  screenDescriptionSchema,
   vendoViewPartSchema,
   vendoViewStreamId,
   type AppId,
   type CommitResult,
   type Json,
   type Tree,
+  type TurnId,
   type UIPayload,
   type VendoViewPart,
   type WireCompileResult,
@@ -122,6 +124,9 @@ export interface RenderSeamOptions {
     data: Record<string, Json>;
     dataUnavailable?: boolean;
   } | undefined>;
+  /** The turn this seam is painting inside, stamped on every view it emits so a
+   *  screen joins back to the exchange that made it. Absent outside a turn. */
+  turnId?: TurnId;
 }
 
 /** The view part for a payload, or undefined when the renderer's own gate would
@@ -137,6 +142,7 @@ const viewPart = (
   appId: AppId,
   payload: UIPayload,
   streaming: boolean,
+  turnId?: TurnId,
 ): { streamId: string; part: VendoViewPart } | undefined => {
   const parsed = vendoViewPartSchema.safeParse({
     type: "data-vendo-view",
@@ -144,6 +150,7 @@ const viewPart = (
     // Spread, never mutated in place: the emitted part must not change under the
     // consumer when this function's caller fills the data in afterwards.
     payload: { ...payload, streaming },
+    ...(turnId === undefined ? {} : { turnId }),
   });
   if (!parsed.success) return undefined;
   return { streamId: vendoViewStreamId(appId), part: parsed.data };
@@ -198,16 +205,30 @@ export async function viewForWrite(
     })) as unknown as UIPayload;
   }
 
+  // Contract §3.3 — nothing paints that is not a valid `ScreenDescription`. This
+  // is where the view channel's shape becomes enforced rather than described: an
+  // emission that does not parse emits NOTHING, which is the law this seam
+  // already lives by for content that does not compile.
+  const description = screenDescriptionSchema.safeParse(payload);
+  if (!description.success) {
+    console.error(
+      `[vendo] ${appId}'s compiled screen is not a valid description; nothing painted — ${
+        description.error.issues[0]?.message ?? "unknown"
+      }`,
+    );
+    return undefined;
+  }
+
   // A plan IS the mid-build state: its skeleton stays streaming until the app
   // document itself lands.
-  if (compiledApp === undefined) return viewPart(appId, payload, true);
+  if (compiledApp === undefined) return viewPart(appId, payload, true, options.turnId);
   // "The skeleton renders the moment the plan file exists" is a promise about
   // SECONDS, and the app half runs real host queries. So the skeleton goes out
   // first and the same stream id is written again when the data lands — the
   // engine's own progressive behavior, and the reason successive views reconcile
   // in place instead of stacking.
   if (options.authoredApp !== undefined) {
-    const skeleton = viewPart(appId, payload, true);
+    const skeleton = viewPart(appId, payload, true, options.turnId);
     if (skeleton !== undefined) options.emit(skeleton.streamId, skeleton.part);
   }
   let data: Record<string, Json> | undefined;
@@ -239,9 +260,14 @@ export async function viewForWrite(
   // The app half has run: this is the finished paint, so it SETTLES.
   return viewPart(appId, {
     ...payload,
+    // §3.3's `data` law is about the DESCRIPTION, which was gated above without
+    // it. This resolved data is the shipped first-paint fill, and it rides
+    // BESIDE the description until Track A moves the query path into the slot —
+    // at which point this spread is the thing that gets deleted, and the gate
+    // above is already the wall that stops it coming back.
     ...(data === undefined ? {} : { data }),
     ...(dataUnavailable ? { dataUnavailable: true } : {}),
-  }, false);
+  }, false, options.turnId);
 }
 
 /**

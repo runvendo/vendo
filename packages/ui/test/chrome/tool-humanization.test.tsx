@@ -208,10 +208,10 @@ describe("Vendo's own tools never read as their identifiers (§3)", () => {
 
   const appsEdit = {
     type: "dynamic-tool" as const,
-    toolName: "vendo_apps_edit",
+    toolName: "vendo_make",
     toolCallId: "call_apps",
     state: "input-available" as const,
-    input: { appId: "app_1", instruction: "make it blue" },
+    input: { app: "app_1", request: "make it blue" },
   };
 
   it("narrates the live progress chip with a title — never 'Vendo apps edit…'", () => {
@@ -223,10 +223,10 @@ describe("Vendo's own tools never read as their identifiers (§3)", () => {
       </VendoProvider>,
     );
     const ribbon = document.querySelector(".fl-ribbon");
-    expect(ribbon?.textContent).toContain("Update the app");
+    expect(ribbon?.textContent).toContain("Make you a screen");
     expect(ribbon?.textContent).not.toMatch(/vendo/i);
     // The raw name stays as the machine affordance, exactly as for host tools.
-    expect(ribbon?.getAttribute("data-vendo-tool")).toBe("vendo_apps_edit");
+    expect(ribbon?.getAttribute("data-vendo-tool")).toBe("vendo_make");
     // M32 — and NOT as a tooltip on a role="status" aria-live node, where it is
     // both hoverable and read out as the live region's description.
     expect(ribbon?.hasAttribute("title")).toBe(false);
@@ -240,11 +240,11 @@ describe("Vendo's own tools never read as their identifiers (§3)", () => {
       </VendoProvider>,
     );
     const beat = document.querySelector(".fl-beat")!;
-    expect(beat.getAttribute("data-vendo-tool")).toBe("vendo_apps_edit");
+    expect(beat.getAttribute("data-vendo-tool")).toBe("vendo_make");
     expect(beat.hasAttribute("title")).toBe(false);
     // Every tooltip anywhere on the beat is free of the slug.
     for (const node of document.querySelectorAll("[title]")) {
-      expect(node.getAttribute("title")).not.toContain("vendo_apps_edit");
+      expect(node.getAttribute("title")).not.toContain("vendo_make");
     }
   });
 
@@ -256,7 +256,7 @@ describe("Vendo's own tools never read as their identifiers (§3)", () => {
       </VendoProvider>,
     );
     await waitFor(() => expect(document.querySelector(".fl-turn-assistant")).toBeTruthy(), { timeout: 15_000 });
-    expect(screen.getByText(/Update the app/)).toBeTruthy();
-    expect(screen.queryByText(/Vendo apps edit/)).toBeNull();
+    expect(screen.getByText(/Make you a screen/)).toBeTruthy();
+    expect(screen.queryByText(/Vendo make/)).toBeNull();
   });
 });

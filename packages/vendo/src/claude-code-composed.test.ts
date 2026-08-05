@@ -330,7 +330,7 @@ describe("createVendo({ sandbox, harness: claudeCode() })", () => {
     const appId = "app_filesfirst";
     const sandbox = fakeSandbox(async (box) => {
       // Exactly what the building-apps skill teaches: write the app, with a query
-      // for the numbers. No `vendo_apps_create` — the engine is not on this
+      // for the numbers. No `vendo_make` — the engine is not on this
       // surface at all (D4).
       mkdirSync(join(box.root!, "user", "apps", appId), { recursive: true });
       writeFileSync(

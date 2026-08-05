@@ -15,8 +15,7 @@
  * (materialization), and design §3 / §8 / §9.
  */
 import {
-  VENDO_APPS_CREATE_TOOL,
-  VENDO_APPS_EDIT_TOOL,
+  VENDO_MAKE_TOOL,
   type Harness,
   type HarnessEvent,
   type Turn,
@@ -339,10 +338,10 @@ export function claudeCode(
     // loadout that hides tools behind a search is friction it does not need — the
     // ctx safety projection still decides what may be projected at all. And app
     // generation leaves this surface: the model builds and edits apps by writing
-    // `plan.vendo` / `app.vendo` with its own hands, so the two engine tools are
+    // `plan.vendo` / `app.vendo` with its own hands, so the one engine tool is
     // withheld rather than left as a second, coin-flip path to the same outcome.
     // Lifecycle tools (`vendo_apps_open`, the pin and data verbs) stay.
-    toolSurface: { curated: false, withhold: [VENDO_APPS_CREATE_TOOL, VENDO_APPS_EDIT_TOOL] },
+    toolSurface: { curated: false, withhold: [VENDO_MAKE_TOOL] },
 
     async *run(turn: Turn<ClaudeCodeOptions>): AsyncGenerator<HarnessEvent, void, void> {
       // Per-turn options may override the model knobs and NOTHING else: `machine`

@@ -226,13 +226,13 @@ function audit(id: string): AuditEvent {
 /** RULING 21 — the fixture above still could not express CR-2's class: every
  *  VALUE in it is a number or a plain word, so a ledger that humanized only the
  *  LABELS still passed the law sweep. This is the real audit shape of the tool
- *  a person's rail sees most — `vendo_apps_edit`, whose args are an APP ID and
- *  the instruction the person typed. */
+ *  a person's rail sees most — `vendo_make` asked to CHANGE an app, whose args
+ *  are an APP ID and the request the person typed. */
 export function appEditAudit(): AuditEvent {
   return {
     ...audit("aud_edit"),
-    tool: "vendo_apps_edit",
-    inputPreview: 'vendo_apps_edit {"appId":"app_9a3f2b1c","instruction":"add a chart"}',
+    tool: "vendo_make",
+    inputPreview: 'vendo_make {"app":"app_9a3f2b1c","request":"add a chart"}',
   };
 }
 
@@ -633,8 +633,8 @@ export async function createWireServer(options: WireServerOptions = {}) {
               writer.write({
                 type: "tool-input-available",
                 toolCallId: "call_smoke_build",
-                toolName: "vendo_apps_create",
-                input: { prompt: "a board showing where my money goes" },
+                toolName: "vendo_make",
+                input: { request: "a board showing where my money goes" },
                 dynamic: true,
               });
               // Same stream id both times, exactly as the real emitter does
@@ -668,10 +668,13 @@ export async function createWireServer(options: WireServerOptions = {}) {
                 id: "vendo-view:app_smoke",
                 data: { appId: "app_smoke", payload: SMOKE_VIEW },
               } as UIMessageChunk);
+              // The receipt, never the document: `vendo_make` hands back four
+              // words-only fields and the screen arrives on its own channel
+              // (the `data-vendo-view` parts above).
               writer.write({
                 type: "tool-output-available",
                 toolCallId: "call_smoke_build",
-                output: { kind: "tree", appId: "app_smoke" },
+                output: { id: "app_smoke", title: "Where my money goes", status: "ready", say: "It's on your screen." },
                 dynamic: true,
               } as UIMessageChunk);
               writer.write({ type: "text-start", id: "text_smoke" });

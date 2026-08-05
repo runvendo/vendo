@@ -1,28 +1,22 @@
-import { VendoError, type FilesAdapter, type IsoDateTime } from "@vendoai/core";
+import { WORKSPACE_INLINE_MAX_BYTES, appRootPath, VendoError, type AppMount, type FilesAdapter, type IsoDateTime } from "@vendoai/core";
 import type { Db } from "./db.js";
 import { escapeLike, iso, text } from "./helpers/utils.js";
 
 /** Build contract §3.3 — inline in `content` up to this size; past it the row
     carries a `blob_ref` into the files adapter instead. */
-export const WORKSPACE_INLINE_MAX_BYTES = 65_536;
+export { WORKSPACE_INLINE_MAX_BYTES } from "@vendoai/core";
 
 /** Build contract §3.3 — retention per path, same as app history. */
 export const WORKSPACE_HISTORY_LIMIT = 50;
 
-/** Build contract §9.7 — which mount holds an app's documents: a person's
-    `/user`, or an org's `/orgs/<org>`. Owner and path prefix always travel
-    together, so naming the mount is the whole address. */
-export type AppMount =
-  | { kind: "user"; subject: string }
-  | { kind: "org"; org: string };
+/** Build contract §9.7 — the mount type and the one derivation of an app's root
+    path both live in core now: `@vendoai/apps` projects an app into a workspace
+    and has to compute the same address this file moves rows between. */
+export type { AppMount } from "@vendoai/core";
 
 const mountOwner = (mount: AppMount): string =>
   mount.kind === "user" ? mount.subject : mount.org;
 
-/** The app's own root path in a mount, with NO trailing slash: the subtree
-    hangs off it, and it is itself a path a row can sit at. */
-const appRoot = (mount: AppMount, appId: string): string =>
-  mount.kind === "user" ? `/user/apps/${appId}` : `/orgs/${mount.org}/apps/${appId}`;
 
 /** The two tables an app's documents live in; both move together. */
 const WORKSPACE_TABLES = ["vendo_workspace_files", "vendo_workspace_history"] as const;
@@ -475,8 +469,8 @@ export function workspaceRows(db: Db, files: FilesAdapter): WorkspaceRows {
     },
 
     async moveApp(appId, from, to) {
-      const before = appRoot(from, appId);
-      const after = appRoot(to, appId);
+      const before = appRootPath(from, appId);
+      const after = appRootPath(to, appId);
       // TWO anchors per mount, exactly as erase.byApp matches: the subtree, and
       // the app's own root row at exactly `…/apps/<appId>` — the path core's
       // `appOfOrgPath` says the app's grants govern, which a slash-suffixed LIKE

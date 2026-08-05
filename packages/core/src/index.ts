@@ -21,6 +21,7 @@ export * from "./island-derived-values.js";
 export * from "./jail-modules.js";
 export * from "./jcs.js";
 export * from "./knowledge.js";
+export * from "./make-receipt.js";
 export * from "./knowledge-wire.js";
 export * from "./meter-exhausted.js";
 export * from "./model-seats.js";
@@ -42,6 +43,7 @@ export * from "./tools.js";
 export * from "./genui/expr.js";
 export * from "./genui/tree-node.js";
 export * from "./genui/tree.js";
+export * from "./genui/screen.js";
 export * from "./filesystem.js";
 export * from "./triggers.js";
 export * from "./workspace.js";
@@ -72,6 +74,7 @@ export { checkBindingShapes, type BindingShapeError } from "./genui/wire/shape-c
 export { compilePlan, type PlanCompileResult, type PlanFacts } from "./genui/plan/compile.js";
 export {
   planTabs,
+  PLAN_DISPLAYS,
   type AppPlan,
   type PlanDisplay,
   type PlanGroup,
@@ -86,6 +89,7 @@ export {
 // (§4, lane D). Type-only by design — `defineHarness` and the runtime live in
 // @vendoai/harnesses (§2), so core stays the shapes every block may speak.
 export type {
+  BeatPhase,
   DeniedNeeds,
   Harness,
   HarnessEvent,
@@ -98,6 +102,8 @@ export type {
   TurnTools,
 } from "./harness.js";
 export type { CommitResult, WorkspaceFs } from "./workspace.js";
+export { WORKSPACE_INLINE_MAX_BYTES, appRootPath } from "./workspace.js";
+export type { AppMount } from "./workspace.js";
 // `Seat` / `ResolvedModels` come from `./model-seats.js` through the star export
 // above. They were ALSO re-exported here from a second, lane-A copy in
 // `./models.ts` — four seats instead of five, non-generic, and typed against the

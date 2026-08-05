@@ -1,4 +1,5 @@
 import {
+  VENDO_MAKE_TOOL,
   VENDO_VIEW_STREAM,
   vendoViewStreamId,
   vendoApprovalPartSchema,
@@ -120,7 +121,7 @@ describe("agent stream consumed by an ai-SDK client", () => {
     expect(persisted.messages.some((entry) => entry.id === "user_client_view")).toBe(true);
   });
 
-  it("reconciles partial create views and the final open view by stable id on the stock client", async () => {
+  it("reconciles partial make views and the final open view by stable id on the stock client", async () => {
     const appId = "app_stream";
     const stableId = vendoViewStreamId(appId);
     const partialOne = {
@@ -139,11 +140,11 @@ describe("agent stream consumed by an ai-SDK client", () => {
       nodes: [...partialTwo.nodes],
       data: { ready: true },
     };
-    const createDescriptor: ToolDescriptor = {
-      name: "vendo_apps_create",
-      description: "Create an app.",
-      inputSchema: { type: "object", properties: { prompt: { type: "string" } }, required: ["prompt"] },
-      risk: "write",
+    const makeDescriptor: ToolDescriptor = {
+      name: VENDO_MAKE_TOOL,
+      description: "Make the user something to look at.",
+      inputSchema: { type: "object", properties: { request: { type: "string" } }, required: ["request"] },
+      risk: "read",
     };
     const openDescriptor: ToolDescriptor = {
       name: "vendo_apps_open",
@@ -152,20 +153,21 @@ describe("agent stream consumed by an ai-SDK client", () => {
       risk: "read",
     };
     const model = scriptedModel([
-      toolCallTurn("vendo_apps_create", { prompt: "Stream it" }, "call_create_stream"),
+      toolCallTurn(VENDO_MAKE_TOOL, { request: "Stream it" }, "call_make_stream"),
       toolCallTurn("vendo_apps_open", { appId }, "call_open_stream"),
       textTurn("Ready.", "text_stream_done"),
     ]);
-    const guard = testGuard({ vendo_apps_create: "run", vendo_apps_open: "run" });
+    const guard = testGuard({ [VENDO_MAKE_TOOL]: "run", vendo_apps_open: "run" });
     const tools = boundRegistry({
-      vendo_apps_create: {
-        descriptor: createDescriptor,
+      [VENDO_MAKE_TOOL]: {
+        descriptor: makeDescriptor,
         execute: async (_args, _ctx, call) => {
           const stream = (call as VendoViewStreamingToolCall)[VENDO_VIEW_STREAM];
-          if (stream === undefined) throw new Error("create stream hook missing");
+          if (stream === undefined) throw new Error("make stream hook missing");
           stream({ id: stableId, part: { type: "data-vendo-view", appId, payload: partialOne } });
           stream({ id: stableId, part: { type: "data-vendo-view", appId, payload: partialTwo } });
-          return { format: "vendo/app@1", id: appId, name: "Streamed", ui: "tree", tree: finalPayload };
+          // The pixels went to the stream; the model gets four fields of words.
+          return { id: appId, title: "Streamed", status: "ready", say: "Streamed is on your screen." };
         },
       },
       vendo_apps_open: {

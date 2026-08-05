@@ -1,9 +1,10 @@
 import {
-  VENDO_APPS_CREATE_TOOL,
   VENDO_APPROVAL_REF_KIND,
   VENDO_APP_REF_KIND,
+  VENDO_MAKE_TOOL,
   VENDO_VIEW_STREAM,
   canonicalJson,
+  makeReceiptSchema,
   type AgentRunner,
   type Json,
   type RunContext,
@@ -102,16 +103,10 @@ function titleFromPrompt(prompt: unknown): string {
   return collapsed.length > TITLE_CAP ? `${collapsed.slice(0, TITLE_CAP - 1)}…` : collapsed;
 }
 
-function appRefFromDocument(output: unknown, fallbackTitle: string): VendoAppRef | null {
-  const document = typeof output === "object" && output !== null
-    ? output as { id?: unknown; name?: unknown }
-    : undefined;
-  if (typeof document?.id !== "string" || !document.id.startsWith("app_")) return null;
-  return {
-    kind: VENDO_APP_REF_KIND,
-    appId: document.id,
-    title: typeof document.name === "string" && document.name.length > 0 ? document.name : fallbackTitle,
-  };
+function appRefFromReceipt(output: unknown, fallbackTitle: string): VendoAppRef | null {
+  const receipt = makeReceiptSchema.safeParse(output);
+  if (!receipt.success) return null;
+  return { kind: VENDO_APP_REF_KIND, appId: receipt.data.id, title: receipt.data.title || fallbackTitle };
 }
 
 async function guardedExecute(
@@ -177,8 +172,13 @@ function createAppTool(registry: ToolRegistry, descriptor: ToolDescriptor): Vend
       const fallbackTitle = titleFromPrompt(args?.prompt);
       const call: VendoViewStreamingToolCall = {
         id: options.callId ?? mintCallId(),
-        tool: VENDO_APPS_CREATE_TOOL,
-        args: input,
+        tool: VENDO_MAKE_TOOL,
+        // This pack tool's OWN surface is `prompt`, and it stays that way: it is a
+        // separate public tool from `vendo_make` (different name, different return
+        // shape — an app-ref envelope, not a receipt), so the front door's rename
+        // is not its rename. Only the inner call speaks the new contract, which is
+        // why the argument is mapped here rather than forwarded.
+        args: { request: args?.prompt },
       };
       let resolveFast!: (ref: VendoAppRef) => void;
       const fast = new Promise<VendoAppRef>((resolve) => { resolveFast = resolve; });
@@ -192,7 +192,7 @@ function createAppTool(registry: ToolRegistry, descriptor: ToolDescriptor): Vend
       });
       const settled = guardedExecute(registry, call, options.ctx).then((outcome) => {
         if (outcome.status === "ok") {
-          return appRefFromDocument(outcome.output, fallbackTitle) ?? outcome.output;
+          return appRefFromReceipt(outcome.output, fallbackTitle) ?? outcome.output;
         }
         return mapOutcome(outcome, descriptor, input);
       });
@@ -235,8 +235,8 @@ function delegateTool(registry: ToolRegistry, runner: AgentRunner): VendoPackToo
         descriptors: (ctx) => registry.descriptors(ctx),
         async execute(call, runCtx) {
           const outcome = await registry.execute(call, runCtx);
-          if (call.tool === VENDO_APPS_CREATE_TOOL && outcome.status === "ok") {
-            const ref = appRefFromDocument(outcome.output, titleFromPrompt((call.args as { prompt?: unknown })?.prompt));
+          if (call.tool === VENDO_MAKE_TOOL && outcome.status === "ok") {
+            const ref = appRefFromReceipt(outcome.output, titleFromPrompt((call.args as { request?: unknown })?.request));
             if (ref !== null) refs.push(ref);
           } else if (outcome.status === "pending-approval") {
             const descriptor = (await descriptorsByName.catch(() => undefined))?.get(call.tool)
@@ -283,9 +283,9 @@ export async function buildVendoToolPack(options: VendoToolPackCoreOptions): Pro
   }
   // Built-ins land last: a host tool whose namespaced name collides with one
   // can never shadow the pack's own doors.
-  const appsCreate = descriptors.find((descriptor) => descriptor.name === VENDO_APPS_CREATE_TOOL);
-  if (appsCreate !== undefined) {
-    byName.set(VENDO_CREATE_APP_TOOL, createAppTool(options.registry, appsCreate));
+  const makeTool = descriptors.find((descriptor) => descriptor.name === VENDO_MAKE_TOOL);
+  if (makeTool !== undefined) {
+    byName.set(VENDO_CREATE_APP_TOOL, createAppTool(options.registry, makeTool));
   }
   byName.set(VENDO_DELEGATE_TOOL, delegateTool(options.registry, options.runner));
   const included = applyFilter([...byName.keys()], options);

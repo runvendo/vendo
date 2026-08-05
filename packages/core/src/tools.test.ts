@@ -1,18 +1,57 @@
 import { describe, expect, it } from "vitest";
-import { modelToolDescription, TOOL_NAME_PATTERN, VENDO_APPS_CREATE_TOOL, VENDO_APPS_TOOL_PREFIX } from "./index.js";
+import {
+  isVendoAppsTool,
+  modelToolDescription,
+  TOOL_NAME_PATTERN,
+  VENDO_APPS_TOOL_PREFIX,
+  VENDO_MAKE_TOOL,
+  VENDO_TOOL_TITLES,
+} from "./index.js";
 
 describe("§4 — the app runtime's reserved agent-tool namespace (AGENT-4)", () => {
   it("pins the vendo_apps_ prefix every view-capable tool name lives under", () => {
     expect(VENDO_APPS_TOOL_PREFIX).toBe("vendo_apps_");
   });
 
-  it("pins the create tool name (the streaming-view bridge target) under the prefix", () => {
-    expect(VENDO_APPS_CREATE_TOOL).toBe("vendo_apps_create");
-    expect(VENDO_APPS_CREATE_TOOL.startsWith(VENDO_APPS_TOOL_PREFIX)).toBe(true);
+  it("pins the make tool name (the streaming-view bridge target) OUTSIDE the prefix", () => {
+    // The front door is deliberately not a member of the prefixed family, which
+    // is exactly why the family's laws are stated as a predicate below and never
+    // as a prefix test: `vendo_make` fails a prefix test.
+    expect(VENDO_MAKE_TOOL).toBe("vendo_make");
+    expect(VENDO_MAKE_TOOL.startsWith(VENDO_APPS_TOOL_PREFIX)).toBe(false);
   });
 
   it("prefixed names remain provider-safe tool names", () => {
     expect(TOOL_NAME_PATTERN.test(`${VENDO_APPS_TOOL_PREFIX}open`)).toBe(true);
+    expect(TOOL_NAME_PATTERN.test(VENDO_MAKE_TOOL)).toBe(true);
+  });
+});
+
+describe("isVendoAppsTool — one predicate for the app runtime's family", () => {
+  it("covers the front door and the prefixed family alike", () => {
+    expect(isVendoAppsTool(VENDO_MAKE_TOOL)).toBe(true);
+    expect(isVendoAppsTool("vendo_apps_open")).toBe(true);
+    expect(isVendoAppsTool(`${VENDO_APPS_TOOL_PREFIX}anything_later`)).toBe(true);
+  });
+
+  it("covers nothing else — a host lookalike stays outside the family (01 §16)", () => {
+    // The laws this gates (a tree on the view channel, the build card, the
+    // router's menu, what an automation plan may call) all turn on it, so a
+    // near-miss name must not inherit any of them.
+    expect(isVendoAppsTool("host_vendo_make")).toBe(false);
+    expect(isVendoAppsTool("vendo_make_something")).toBe(false);
+    expect(isVendoAppsTool("vendo_knowledge_search")).toBe(false);
+  });
+});
+
+describe("§3 — the shared title table names the front door and nothing it replaced", () => {
+  it("titles vendo_make in the consumer voice, and drops the two tools it replaced", () => {
+    expect(VENDO_TOOL_TITLES[VENDO_MAKE_TOOL]).toBe("Make you a screen");
+    // A stale entry is not inert: the client reads this table with only a wire
+    // tool NAME in hand, so a leftover title is a label for a tool that can
+    // never be called, and its absence is what proves the rename landed here too.
+    expect(VENDO_TOOL_TITLES.vendo_apps_create).toBeUndefined();
+    expect(VENDO_TOOL_TITLES.vendo_apps_edit).toBeUndefined();
   });
 });
 

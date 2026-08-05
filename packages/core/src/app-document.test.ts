@@ -419,3 +419,35 @@ describe("placements", () => {
     if (!result.ok) expect(result.error.code).toBe("validation");
   });
 });
+
+// Contract §3.2 — a checkout writes each `source` key to disk, so the key space
+// is a security surface: `../` or a leading slash would put one app's checkout in
+// another app's files. The document validator is the gate every stored document
+// passes, so the rule lives there rather than at the write.
+describe("source", () => {
+  const file = { hash: `sha256:${"a".repeat(64)}`, bytes: 3, text: "abc" };
+
+  it("round-trips a relative path", () => {
+    const withSource = { ...minimal(), source: { "src/App.tsx": file } };
+    expect(appDocumentSchema.parse(withSource)).toEqual(withSource);
+    expect(validateAppDocument(withSource)).toEqual({ ok: true, app: withSource });
+  });
+
+  it("refuses a path that escapes the app's directory", () => {
+    for (const path of ["../other/App.tsx", "/etc/passwd", "src/../../x.ts", "src//App.tsx", "./App.tsx"]) {
+      const result = validateAppDocument({ ...minimal(), source: { [path]: file } });
+      expect(result.ok, path).toBe(false);
+    }
+  });
+
+  it("refuses a file carrying both text and a blobRef, or neither", () => {
+    expect(validateAppDocument({
+      ...minimal(),
+      source: { "a.ts": { ...file, blobRef: "wsb_1" } },
+    }).ok).toBe(false);
+    expect(validateAppDocument({
+      ...minimal(),
+      source: { "a.ts": { hash: file.hash, bytes: 3 } },
+    }).ok).toBe(false);
+  });
+});

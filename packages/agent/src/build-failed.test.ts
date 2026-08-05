@@ -1,4 +1,4 @@
-import { VENDO_APPS_CREATE_TOOL, vendoBuildFailedPartSchema, type ToolDescriptor } from "@vendoai/core";
+import { VENDO_MAKE_TOOL, vendoBuildFailedPartSchema, type ToolDescriptor } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { createAgent } from "./index.js";
 import {
@@ -21,13 +21,13 @@ import {
 // the turn ENDS on the first failed build, and the classified reason reaches
 // the surface as a renderable `data-vendo-build-failed` part.
 
-const createDescriptor: ToolDescriptor = {
-  name: VENDO_APPS_CREATE_TOOL,
-  description: "Create a Vendo app from a natural-language prompt.",
+const makeDescriptor: ToolDescriptor = {
+  name: VENDO_MAKE_TOOL,
+  description: "Make the user something to look at, from a plain-language request.",
   inputSchema: {
     type: "object",
-    properties: { prompt: { type: "string" } },
-    required: ["prompt"],
+    properties: { request: { type: "string" } },
+    required: ["request"],
     additionalProperties: false,
   },
   risk: "read",
@@ -50,12 +50,12 @@ const BUILD_FAILED_MESSAGE = "app build failed: generation failed";
 describe("failed app build in a chat turn (0.4.4 cert defect B)", () => {
   it("ends the turn after the first failed build and streams the reason", async () => {
     const guard = testGuard({});
-    // The apps registry maps the create-throw to an error outcome whose
+    // The apps registry maps the make-throw to an error outcome whose
     // message carries the classified reason (runtime.create's re-throw);
     // boundRegistry's catch arm reproduces that exact shape.
     const registry = boundRegistry({
-      [VENDO_APPS_CREATE_TOOL]: {
-        descriptor: createDescriptor,
+      [VENDO_MAKE_TOOL]: {
+        descriptor: makeDescriptor,
         execute: () => {
           throw new Error(BUILD_FAILED_MESSAGE);
         },
@@ -65,7 +65,7 @@ describe("failed app build in a chat turn (0.4.4 cert defect B)", () => {
     // the failed build, the scripted model would throw ("scripted model
     // exhausted") and the stream would carry an error part.
     const model = scriptedModel([
-      toolCallTurn(VENDO_APPS_CREATE_TOOL, { prompt: "track invoice statuses" }, "call_build_1"),
+      toolCallTurn(VENDO_MAKE_TOOL, { request: "track invoice statuses" }, "call_build_1"),
     ]);
     const agent = createAgent({ model, tools: registry, guard });
 
@@ -102,13 +102,15 @@ describe("failed app build in a chat turn (0.4.4 cert defect B)", () => {
   it("a successful build does not end the turn", async () => {
     const guard = testGuard({});
     const registry = boundRegistry({
-      [VENDO_APPS_CREATE_TOOL]: {
-        descriptor: createDescriptor,
-        execute: () => ({ id: "app_1", name: "Invoice tracker" }),
+      [VENDO_MAKE_TOOL]: {
+        descriptor: makeDescriptor,
+        // A ready receipt — the tool's whole answer, and nothing the banner
+        // path could mistake for a failure.
+        execute: () => ({ id: "app_1", title: "Invoice tracker", status: "ready", say: "Invoice tracker is on your screen." }),
       },
     }, guard);
     const model = scriptedModel([
-      toolCallTurn(VENDO_APPS_CREATE_TOOL, { prompt: "track invoice statuses" }, "call_build_ok"),
+      toolCallTurn(VENDO_MAKE_TOOL, { request: "track invoice statuses" }, "call_build_ok"),
       textTurn("Built it.", "text_build_ok"),
     ]);
     const agent = createAgent({ model, tools: registry, guard });
@@ -126,20 +128,20 @@ describe("failed app build in a chat turn (0.4.4 cert defect B)", () => {
     expect(model.prompts).toHaveLength(2);
   });
 
-  it("a cheap create error (no build-failed prefix) neither ends the turn nor raises the banner", async () => {
+  it("a cheap make error (no build-failed prefix) neither ends the turn nor raises the banner", async () => {
     const guard = testGuard({});
     // e.g. the runtime's input validation — an instant error the model can
     // correct by re-calling with fixed args; nothing minutes-long ran.
     const registry = boundRegistry({
-      [VENDO_APPS_CREATE_TOOL]: {
-        descriptor: createDescriptor,
+      [VENDO_MAKE_TOOL]: {
+        descriptor: makeDescriptor,
         execute: () => {
-          throw new Error("prompt must be a non-empty string");
+          throw new Error("request must be a non-empty string");
         },
       },
     }, guard);
     const model = scriptedModel([
-      toolCallTurn(VENDO_APPS_CREATE_TOOL, { prompt: "x" }, "call_build_cheap"),
+      toolCallTurn(VENDO_MAKE_TOOL, { request: "x" }, "call_build_cheap"),
       textTurn("Let me fix the arguments.", "text_build_cheap"),
     ]);
     const agent = createAgent({ model, tools: registry, guard });

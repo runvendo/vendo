@@ -16,16 +16,17 @@
  * channel and the transcript mirror are the runtime's exactly as they are for
  * every other harness — the specialist buys speed, never a second safety story.
  *
- * What it deliberately does NOT own: the generation pipeline. `vendo_apps_create`
- * / `vendo_apps_edit` are ordinary guarded tools that run the conductor
+ * What it deliberately does NOT own: the generation pipeline. `vendo_make` is an
+ * ordinary guarded tool that runs the conductor
  * (`packages/apps/src/generation/conductor.ts` — one plan call, parallel fill
  * workers, the checking layer with its two fix rounds). Reaching into the
  * conductor directly would mean a second, unguarded door into app generation, and
  * would put a pipeline body in `packages/harnesses`, which the layering forbids.
  */
 import {
-  VENDO_APPS_CREATE_TOOL,
-  VENDO_APPS_EDIT_TOOL,
+  VENDO_MAKE_TOOL,
+  isVendoAppsTool,
+  makeReceiptSchema,
   modelToolDescription,
   type Harness,
   type Json,
@@ -126,10 +127,12 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
  */
 function appIdsInThread(messages: readonly { parts?: unknown }[]): string[] {
   const ids: string[] = [];
+  const add = (value: unknown): void => {
+    if (typeof value === "string" && value.length > 0 && !ids.includes(value)) ids.push(value);
+  };
   const visit = (value: unknown, depth: number): void => {
     if (depth > 4 || !isRecord(value)) return;
-    const appId = value["appId"];
-    if (typeof appId === "string" && appId.length > 0 && !ids.includes(appId)) ids.push(appId);
+    add(value["appId"]);
     for (const child of Object.values(value)) {
       if (Array.isArray(child)) for (const item of child) visit(item, depth + 1);
       else visit(child, depth + 1);
@@ -140,6 +143,15 @@ function appIdsInThread(messages: readonly { parts?: unknown }[]): string[] {
       if (!isRecord(part)) continue;
       const type = String(part["type"] ?? "");
       if (type !== "dynamic-tool" && !type.startsWith("tool-")) continue;
+      // `vendo_make` says `app` going in and `id` on the receipt coming back —
+      // neither is the `appId` the rest of the family carries, and both are far
+      // too generic to harvest out of any other tool's traffic (a payment's
+      // `id` is not an app), so they are read off THIS tool's parts by name.
+      const name = type === "dynamic-tool" ? String(part["toolName"] ?? "") : type.slice("tool-".length);
+      if (name === VENDO_MAKE_TOOL) {
+        if (isRecord(part["input"])) add(part["input"]["app"]);
+        if (isRecord(part["output"])) add(part["output"]["id"]);
+      }
       visit(part["output"], 0);
       visit(part["input"], 0);
     }
@@ -203,19 +215,18 @@ async function routeAsk(
   equipped: readonly ToolListing[],
   appIds: readonly string[],
 ): Promise<Route | undefined> {
-  const canBuild = equipped.some((listing) => listing.name === VENDO_APPS_CREATE_TOOL);
-  const canEdit = equipped.some((listing) => listing.name === VENDO_APPS_EDIT_TOOL);
+  const canMake = equipped.some((listing) => listing.name === VENDO_MAKE_TOOL);
   const canSearch = equipped.some((listing) => listing.name === FIND_TOOLS);
   const menu = equipped
-    .filter((listing) => !listing.name.startsWith("vendo_apps_") && listing.name !== FIND_TOOLS)
+    .filter((listing) => !isVendoAppsTool(listing.name) && listing.name !== FIND_TOOLS)
     .map((listing) => `- ${listing.title || listing.name}: ${listing.description}`)
     .join("\n");
   const system = [
     "You sort one request into one of four branches, and nothing else. You never talk to the person.",
-    canBuild
+    canMake
       ? "This product CAN build a person a new view, screen, dashboard or small tool on demand."
       : "This product CANNOT build new views or apps. Never answer \"create\".",
-    canEdit && appIds.length > 0
+    canMake && appIds.length > 0
       ? `Apps already in this conversation, oldest first: ${appIds.join(", ")}. The one on screen is the last.`
       : "There is no app on screen yet, so \"edit\" is not available.",
     menu.length === 0 ? "This product has no other tools." : `Some of what else this product can do:\n${menu}`,
@@ -293,16 +304,8 @@ export function instant(deps: InstantHarnessDeps = {}): Harness<InstantHarnessOp
 
       // A router answer naming a tool this deployment never equipped is answered
       // by the world, not by the router: fall through to acting.
-      if (route?.do === "create" && has(VENDO_APPS_CREATE_TOOL)) {
-        yield { type: "status", label: "Building it…" };
-        const result = await turn.tools.call(VENDO_APPS_CREATE_TOOL, {
-          prompt: route.prompt?.trim() || latestAsk(turn),
-        });
-        yield* speakToolResult(result, BUILT, BUILD_FAILED);
-        return;
-      }
-
-      if (route?.do === "edit" && has(VENDO_APPS_EDIT_TOOL)) {
+      if ((route?.do === "create" || route?.do === "edit") && has(VENDO_MAKE_TOOL)) {
+        const changing = route.do === "edit";
         // The id must at least have APPEARED in this conversation's tool
         // traffic. A router asked to name an app will name one whether or not
         // it exists — measured live (2026-08-01): after a build failed, the
@@ -311,16 +314,20 @@ export function instant(deps: InstantHarnessDeps = {}): Harness<InstantHarnessOp
         // as outputs, so it stops fresh inventions but not a re-route at an id
         // an earlier failed call already carried. No app in the transcript
         // means there is nothing to edit, and the acting step (which has the
-        // create tool too) is the honest recovery.
+        // make tool too) is the honest recovery.
         const named = route.appId !== undefined && appIds.includes(route.appId) ? route.appId : undefined;
-        const appId = named ?? appIds[appIds.length - 1];
-        if (appId !== undefined) {
-          yield { type: "status", label: "Changing it…" };
-          const result = await turn.tools.call(VENDO_APPS_EDIT_TOOL, {
-            appId,
-            instruction: route.instruction?.trim() || latestAsk(turn),
+        const app = changing ? named ?? appIds[appIds.length - 1] : undefined;
+        if (!changing || app !== undefined) {
+          yield { type: "status", label: changing ? "Changing it…" : "Building it…" };
+          // `app` is omitted, never blank, on the build path: absent means the
+          // seam picks new-or-continue, which is the whole reason the two tools
+          // became one — the router's branch decides only whether THIS turn
+          // pins a specific app.
+          const result = await turn.tools.call(VENDO_MAKE_TOOL, {
+            request: (changing ? route.instruction : route.prompt)?.trim() || latestAsk(turn),
+            ...(app === undefined ? {} : { app }),
           });
-          yield* speakToolResult(result, CHANGED, EDIT_FAILED);
+          yield* speakToolResult(result, changing ? CHANGED : BUILT, changing ? EDIT_FAILED : BUILD_FAILED);
           return;
         }
       }
@@ -358,12 +365,17 @@ export function instant(deps: InstantHarnessDeps = {}): Harness<InstantHarnessOp
  * the assistant.
  */
 function* speakToolResult(
-  result: { status: string; reason?: string; error?: { message: string } },
+  result: { status: string; output?: unknown; reason?: string; error?: { message: string } },
   success: string,
   failure: string,
 ): Generator<{ type: "text"; delta: string }> {
   if (result.status === "ok") {
-    yield { type: "text", delta: success };
+    // `MakeReceipt.say` exists to be uttered verbatim, and it is the only line
+    // that knows what actually happened — a rejected change comes back OK with
+    // `status: "failed"`, so the canned "Updated." was a lie the receipt can now
+    // replace. The fallback is for tools that answer with something else.
+    const receipt = makeReceiptSchema.safeParse(result.output);
+    yield { type: "text", delta: receipt.success ? receipt.data.say : success };
     return;
   }
   if (result.status === "denied") {

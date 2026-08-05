@@ -13,7 +13,7 @@ import { basicLanguageModel, guardFixture, memoryStore } from "./testing/index.j
  * Cause: the final `emit(finalTree)` was sequenced AFTER `apps.put`, so a
  * store that refused the write (the Cloud console was 503ing every
  * `vendo_apps` write) skipped the emit entirely. Every card kept whatever
- * mid-stream payload it last received, forever, and the create tool answered
+ * mid-stream payload it last received, forever, and the make tool answered
  * the agent with a bare error — which it "fixed" by building the app twice
  * more. Three cards, one prompt, nothing saved, nothing logged on the user
  * path.
@@ -96,16 +96,21 @@ describe("a create the store refuses to persist", () => {
     });
 
     const outcome = await agentTools.execute(
-      { id: "call_1", tool: "vendo_apps_create", args: { prompt: "Show my spending by category" } },
+      { id: "call_1", tool: "vendo_make", args: { request: "Show my spending by category" } },
       ctx,
     );
 
     expect(outcome.status).toBe("ok");
     const output = (outcome as { output: Record<string, unknown> }).output;
-    const note = output.unsaved as { savedToAppsList?: boolean; guidance?: string };
-    expect(note?.savedToAppsList).toBe(false);
-    // The guidance is what stops the three-cards-per-prompt loop.
-    expect(note?.guidance).toMatch(/do NOT call vendo_apps_create again/);
+    // The receipt reads "ready", because the screen IS on the user's page. The
+    // caveat rides `say` — one true sentence with nothing in it to react to,
+    // which is what stops the three-cards-per-prompt loop. A "failed" status
+    // here, or a structured note to reason about, is an invitation to rebuild.
+    expect(output.status).toBe("ready");
+    expect(output.say).toMatch(/on your screen/i);
+    expect(output.say).toMatch(/couldn't save it to your apps/i);
+    // Contract §3.1 — four fields of words, and no document among them.
+    expect(Object.keys(output).sort()).toEqual(["id", "say", "status", "title"]);
   });
 
   it("says nothing extra when the store is healthy (the note is failure-only)", async () => {

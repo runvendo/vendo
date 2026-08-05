@@ -154,8 +154,8 @@ export interface GenerationApprovalOptions {
 const defaultPromptTimeoutMs = 240_000;
 const nativeScreenTimeoutMs = 60_000;
 const firstPaintSelector = "[data-vendo-node-id]";
-const generationToolSelector = '.fl-tool:has-text("vendo_apps_create"), .fl-tool:has-text("vendo_apps_edit")';
-const generationApprovalSelector = '.fl-approval:has-text("vendo_apps_create") button:has-text("Approve"), .fl-approval:has-text("vendo_apps_edit") button:has-text("Approve")';
+const generationToolSelector = '.fl-tool:has-text("vendo_make")';
+const generationApprovalSelector = '.fl-approval:has-text("vendo_make") button:has-text("Approve")';
 const viewport = { width: 1_440, height: 960 };
 
 export function galleryNavigationOptions(timeoutMs: number): E2eNavigationOptions {
