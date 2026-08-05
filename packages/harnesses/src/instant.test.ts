@@ -5,7 +5,9 @@
  * reaches it.
  */
 import {
-  VENDO_APPS_CREATE_TOOL,
+  VENDO_MAKE_TOOL,
+  VENDO_TOOL_TITLES,
+  type MakeReceipt,
   type ThreadId,
   type ToolDescriptor,
 } from "@vendoai/core";
@@ -32,26 +34,31 @@ import type { LanguageModel, UIMessage } from "ai";
 
 const THREAD = "thr_instant" as ThreadId;
 
-const appsTool = (name: string): ToolDescriptor => ({
-  ...readTool(name, "read"),
-  name,
-  title: name === VENDO_APPS_CREATE_TOOL ? "Build an app" : "Change an app",
+const makeTool = (): ToolDescriptor => ({
+  ...readTool(VENDO_MAKE_TOOL, "read"),
+  name: VENDO_MAKE_TOOL,
+  title: VENDO_TOOL_TITLES[VENDO_MAKE_TOOL]!,
 });
 
-/** The apps pack's two hot tools, plus whatever else a case wants equipped. */
-function appsRegistry(guard: ReturnType<typeof testGuard>, extra: Record<string, TestTool> = {}) {
+/** The receipt the tool hands back — four fields of WORDS. Never the document:
+ *  the screen arrives on the view channel, and the harness only ever gets a line
+ *  it can say. */
+const receipt = (overrides: Partial<MakeReceipt> = {}): MakeReceipt => ({
+  id: "app_7",
+  title: "Spending",
+  status: "ready",
+  say: "Spending is on your screen.",
+  ...overrides,
+});
+
+/** The apps pack's ONE hot tool, plus whatever else a case wants equipped. */
+function appsRegistry(
+  guard: ReturnType<typeof testGuard>,
+  extra: Record<string, TestTool> = {},
+  make: TestTool["execute"] = () => receipt(),
+) {
   return boundRegistry(
-    {
-      [VENDO_APPS_CREATE_TOOL]: {
-        descriptor: appsTool(VENDO_APPS_CREATE_TOOL),
-        execute: () => ({ kind: "tree", appId: "app_7", payload: { root: "r", nodes: [] } }),
-      },
-      vendo_apps_edit: {
-        descriptor: appsTool("vendo_apps_edit"),
-        execute: () => ({ app: { id: "app_7" } }),
-      },
-      ...extra,
-    },
+    { [VENDO_MAKE_TOOL]: { descriptor: makeTool(), execute: make }, ...extra },
     guard,
   );
 }
@@ -105,7 +112,7 @@ const toolInputs = (parts: Array<Record<string, unknown>>): Array<{ name: string
     .map((part) => ({ name: String(part.toolName), input: part.input }));
 
 describe("instant() — an app ask goes STRAIGHT to the apps tool", () => {
-  it("routes a create with ONE model call and no resident loop", async () => {
+  it("routes a new screen with ONE model call and no resident loop", async () => {
     const guard = testGuard();
     const registry = appsRegistry(guard);
     const model = scriptedModel([
@@ -122,22 +129,26 @@ describe("instant() — an app ask goes STRAIGHT to the apps tool", () => {
     // The whole point of the specialist: one routing call, then the pipeline.
     // A resident that had to "decide to use a tool" would cost a second one.
     expect(model.calls).toBe(1);
-    expect(registry.invocations[VENDO_APPS_CREATE_TOOL]).toBe(1);
+    expect(registry.invocations[VENDO_MAKE_TOOL]).toBe(1);
+    // `app` is OMITTED, never blank: absent is what tells the seam to decide
+    // new-or-continue, which is the whole reason the two tools became one.
     expect(toolInputs(parts)).toEqual([
-      { name: VENDO_APPS_CREATE_TOOL, input: { prompt: "a spending dashboard for this month" } },
+      { name: VENDO_MAKE_TOOL, input: { request: "a spending dashboard for this month" } },
     ]);
-    // The view is already on the user's screen; the assistant says one short
-    // true thing rather than narrating.
-    expect(saidBy(parts).length).toBeGreaterThan(0);
+    // The view is already on the user's screen; the assistant says the ONE line
+    // the receipt handed it, rather than narrating.
+    expect(saidBy(parts)).toBe("Spending is on your screen.");
   });
 
-  it("edits the app the thread is already about, without being told its id", async () => {
+  it("changes the app the thread is already about, without being told its id", async () => {
     const guard = testGuard();
     const registry = appsRegistry(guard);
     const model = scriptedModel([
       toolCallTurn("route", { do: "edit", appId: "app_7", instruction: "make the chart a bar chart" }),
     ]);
-    // The mirrored result of an earlier create — how a thread carries its app id.
+    // The mirrored result of an earlier build — how a thread carries its app id.
+    // It rides the RECEIPT's `id`, which is neither the `appId` the rest of the
+    // family carries nor anything the generic sweep would find.
     const seed: UIMessage[] = [
       userMessage("m1", "build me a dashboard"),
       {
@@ -145,11 +156,11 @@ describe("instant() — an app ask goes STRAIGHT to the apps tool", () => {
         role: "assistant",
         parts: [{
           type: "dynamic-tool",
-          toolName: VENDO_APPS_CREATE_TOOL,
+          toolName: VENDO_MAKE_TOOL,
           toolCallId: "call_1",
           state: "output-available",
-          input: { prompt: "a dashboard" },
-          output: { kind: "tree", appId: "app_7" },
+          input: { request: "a dashboard" },
+          output: receipt(),
         }],
       } as unknown as UIMessage,
     ];
@@ -162,9 +173,48 @@ describe("instant() — an app ask goes STRAIGHT to the apps tool", () => {
       messages: [...seed, userMessage("m3", "make the chart a bar chart")],
     });
 
-    expect(registry.invocations["vendo_apps_edit"]).toBe(1);
+    expect(registry.invocations[VENDO_MAKE_TOOL]).toBe(1);
     expect(toolInputs(parts)).toEqual([
-      { name: "vendo_apps_edit", input: { appId: "app_7", instruction: "make the chart a bar chart" } },
+      { name: VENDO_MAKE_TOOL, input: { request: "make the chart a bar chart", app: "app_7" } },
+    ]);
+  });
+
+  // The other half of the harvest, and the one nothing else covers: an app whose
+  // id only ever appeared as an INPUT — the earlier change that ERRORED, so no
+  // receipt was ever written. The honest scope in instant.ts says inputs count,
+  // and without that read this thread looks appless and the change is refused.
+  it("finds the app on a make call's own input when no receipt came back", async () => {
+    const guard = testGuard();
+    const registry = appsRegistry(guard);
+    const model = scriptedModel([
+      toolCallTurn("route", { do: "edit", appId: "app_12", instruction: "try a smaller table" }),
+    ]);
+    const seed: UIMessage[] = [
+      userMessage("m1", "make the table bigger"),
+      {
+        id: "m2",
+        role: "assistant",
+        parts: [{
+          type: "dynamic-tool",
+          toolName: VENDO_MAKE_TOOL,
+          toolCallId: "call_1",
+          state: "output-error",
+          input: { request: "make the table bigger", app: "app_12" },
+          errorText: "app build failed: generation failed",
+        }],
+      } as unknown as UIMessage,
+    ];
+
+    const { parts } = await runInstant({
+      registry,
+      guard,
+      model,
+      seed,
+      messages: [...seed, userMessage("m3", "try a smaller table")],
+    });
+
+    expect(toolInputs(parts)).toEqual([
+      { name: VENDO_MAKE_TOOL, input: { request: "try a smaller table", app: "app_12" } },
     ]);
   });
 
@@ -183,7 +233,7 @@ describe("instant() — an app ask goes STRAIGHT to the apps tool", () => {
 
     const { parts } = await runInstant({ registry, guard, model, messages: [userMessage("m1", "dashboard")] });
 
-    expect(toolInputs(parts).map((call) => call.name)).not.toContain(VENDO_APPS_CREATE_TOOL);
+    expect(toolInputs(parts).map((call) => call.name)).not.toContain(VENDO_MAKE_TOOL);
     expect(saidBy(parts)).toContain("balance");
   });
 });
@@ -276,17 +326,9 @@ describe("instant() — the honest refusal", () => {
 describe("instant() — what the live run caught", () => {
   it("says something when a build fails, instead of a banner and silence", async () => {
     const guard = testGuard();
-    const registry = boundRegistry(
-      {
-        [VENDO_APPS_CREATE_TOOL]: {
-          descriptor: appsTool(VENDO_APPS_CREATE_TOOL),
-          execute: () => {
-            throw new Error("app build failed: generation failed");
-          },
-        },
-      },
-      guard,
-    );
+    const registry = appsRegistry(guard, {}, () => {
+      throw new Error("app build failed: generation failed");
+    });
     const model = scriptedModel([toolCallTurn("route", { do: "create", prompt: "a dashboard" })]);
 
     const { parts } = await runInstant({
@@ -306,22 +348,14 @@ describe("instant() — what the live run caught", () => {
 
   it("passes the pipeline's own refusal through instead of shrugging", async () => {
     const guard = testGuard();
-    const registry = boundRegistry(
-      {
-        [VENDO_APPS_CREATE_TOOL]: {
-          descriptor: appsTool(VENDO_APPS_CREATE_TOOL),
-          execute: () => {
-            // The shape apps/runtime.ts throws for an honest `cannot`: the
-            // sentences are the person's, verbatim.
-            throw new Error(
-              "app build failed: This host has machines disabled, so custom server code cannot run"
-              + " — the weekly Friday summary cannot be automated.",
-            );
-          },
-        },
-      },
-      guard,
-    );
+    const registry = appsRegistry(guard, {}, () => {
+      // The shape apps/runtime.ts throws for an honest `cannot`: the sentences
+      // are the person's, verbatim.
+      throw new Error(
+        "app build failed: This host has machines disabled, so custom server code cannot run"
+        + " — the weekly Friday summary cannot be automated.",
+      );
+    });
     const model = scriptedModel([toolCallTurn("route", { do: "create", prompt: "a weekly summary" })]);
 
     const { parts } = await runInstant({
@@ -335,7 +369,49 @@ describe("instant() — what the live run caught", () => {
     expect(saidBy(parts)).not.toContain("couldn't put that together");
   });
 
-  it("does not edit an app the conversation never produced", async () => {
+  // A REJECTED change comes back OK — `status: "failed"` on the receipt, not an
+  // error outcome — so the canned "Updated." the harness used to say was simply
+  // a lie about a screen that never changed. The receipt's `say` is the only
+  // line that knows what happened, and it is uttered verbatim.
+  it("speaks the receipt's honest line when a change was refused, never 'Updated.'", async () => {
+    const guard = testGuard();
+    const registry = appsRegistry(
+      guard,
+      {},
+      () => receipt({ status: "failed", say: "I couldn't make that change to Spending." }),
+    );
+    const model = scriptedModel([
+      toolCallTurn("route", { do: "edit", appId: "app_7", instruction: "make it fetch my email" }),
+    ]);
+    const seed: UIMessage[] = [
+      userMessage("m1", "build me a dashboard"),
+      {
+        id: "m2",
+        role: "assistant",
+        parts: [{
+          type: "dynamic-tool",
+          toolName: VENDO_MAKE_TOOL,
+          toolCallId: "call_1",
+          state: "output-available",
+          input: { request: "a dashboard" },
+          output: receipt(),
+        }],
+      } as unknown as UIMessage,
+    ];
+
+    const { parts } = await runInstant({
+      registry,
+      guard,
+      model,
+      seed,
+      messages: [...seed, userMessage("m3", "make it fetch my email")],
+    });
+
+    expect(saidBy(parts)).toBe("I couldn't make that change to Spending.");
+    expect(saidBy(parts)).not.toContain("Updated.");
+  });
+
+  it("does not change an app the conversation never produced", async () => {
     const guard = testGuard();
     const registry = appsRegistry(guard);
     const model = scriptedModel([
@@ -352,7 +428,7 @@ describe("instant() — what the live run caught", () => {
       messages: [userMessage("m1", "make the amount bigger")],
     });
 
-    expect(registry.invocations["vendo_apps_edit"]).toBeUndefined();
+    expect(registry.invocations[VENDO_MAKE_TOOL]).toBeUndefined();
     expect(saidBy(parts)).toContain("nothing on screen");
   });
 
@@ -467,7 +543,7 @@ describe("instant() — the cheap exits", () => {
   });
 
   it("reports a refused apps call as a refusal, not as a crash", async () => {
-    const guard = testGuard({ [VENDO_APPS_CREATE_TOOL]: "block" });
+    const guard = testGuard({ [VENDO_MAKE_TOOL]: "block" });
     const registry = appsRegistry(guard);
     const model = scriptedModel([
       toolCallTurn("route", { do: "create", prompt: "a dashboard" }),

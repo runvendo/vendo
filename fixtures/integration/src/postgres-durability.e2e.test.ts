@@ -85,7 +85,7 @@ describe.skipIf(!POSTGRES_URL)("J9: core journeys on Postgres survive a serving-
     stack = await createStack({
       storeUrl: url,
       turns: [
-        toolCallTurn("vendo_apps_create", { prompt: "Build a durable card" }, "call_app"),
+        toolCallTurn("vendo_make", { request: "Build a durable card" }, "call_app"),
         generationTurn(CREATE_DIALECT),
         generationTurn(CREATE_DIALECT, "gen_2"),
         textTurn("Created your durable app.", "t1"),

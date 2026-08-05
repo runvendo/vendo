@@ -197,12 +197,16 @@ describe("policy files, rules, directions, and code", () => {
       ["app_tree", { ui: "tree" as const }],
       ["app_http", { ui: "http" as const }],
     ]);
+    // ONE tool now, so the shape of the CALL is what says whether this is a
+    // change to an existing app: `app` present is the edit path, absent is the
+    // create path, and only the first has an app whose ui decides the class.
     const resolveRisk = vi.fn(async (toolCall: ReturnType<typeof call>) => {
-      if (toolCall.tool !== "vendo_apps_edit") return undefined;
-      const args = toolCall.args as { appId?: string; instruction?: string };
-      const app = args.appId === undefined ? undefined : apps.get(args.appId);
-      if (app?.ui !== "tree" || typeof args.instruction !== "string") return "write" as const;
-      return args.instruction === "Make the heading blue" ? "read" as const : "write" as const;
+      if (toolCall.tool !== "vendo_make") return undefined;
+      const args = toolCall.args as { app?: string; request?: string };
+      if (args.app === undefined) return undefined;
+      const app = apps.get(args.app);
+      if (app?.ui !== "tree" || typeof args.request !== "string") return "write" as const;
+      return args.request === "Make the heading blue" ? "read" as const : "write" as const;
     });
     const guard = createGuard({
       store: createMemoryStore(),
@@ -214,42 +218,41 @@ describe("policy files, rules, directions, and code", () => {
         ],
       },
     });
-    const create = descriptor("read", { name: "vendo_apps_create" });
-    const edit = descriptor("write", { name: "vendo_apps_edit" });
+    const make = descriptor("read", { name: "vendo_make" });
     const hostWrite = descriptor("write", { name: "host_accounts_update" });
     const egress = descriptor("write", { name: "external_http_post" });
 
-    await expect(guard.check(call(create.name, { prompt: "Build a dashboard" }), create, context()))
+    await expect(guard.check(call(make.name, { request: "Build a dashboard" }), make, context()))
       .resolves.toMatchObject({ action: "run", decidedBy: "rule" });
-    await expect(guard.check(call(edit.name, {
-      appId: "app_tree",
-      instruction: "Make the heading blue",
-    }), edit, context())).resolves.toMatchObject({ action: "run", decidedBy: "rule" });
-    await expect(guard.check(call(edit.name, {
-      appId: "app_tree",
-      instruction: "Persist this to the database",
-    }), edit, context())).resolves.toMatchObject({
+    await expect(guard.check(call(make.name, {
+      app: "app_tree",
+      request: "Make the heading blue",
+    }), make, context())).resolves.toMatchObject({ action: "run", decidedBy: "rule" });
+    await expect(guard.check(call(make.name, {
+      app: "app_tree",
+      request: "Persist this to the database",
+    }), make, context())).resolves.toMatchObject({
       action: "ask",
       approval: { descriptor: { risk: "write" } },
     });
-    await expect(guard.check(call(edit.name, {
-      appId: "app_http",
-      instruction: "Change the heading",
-    }), edit, context())).resolves.toMatchObject({ action: "ask" });
+    await expect(guard.check(call(make.name, {
+      app: "app_http",
+      request: "Change the heading",
+    }), make, context())).resolves.toMatchObject({ action: "ask" });
     await expect(guard.check(call(hostWrite.name), hostWrite, context())).resolves.toMatchObject({ action: "ask" });
     await expect(guard.check(call(egress.name), egress, context())).resolves.toMatchObject({ action: "ask" });
     expect(resolveRisk).toHaveBeenCalledWith(
-      expect.objectContaining({ tool: "vendo_apps_edit" }),
-      expect.objectContaining({ risk: "write" }),
+      expect.objectContaining({ tool: "vendo_make" }),
+      expect.objectContaining({ risk: "read" }),
       expect.objectContaining({ principal: expect.any(Object) }),
     );
   });
 
   it("uses contextual risk for write-breaker accounting", async () => {
-    const edit = descriptor("write", { name: "vendo_apps_edit" });
+    const make = descriptor("read", { name: "vendo_make" });
     const resolveRisk = vi.fn(async (toolCall: ReturnType<typeof call>) => {
-      const args = toolCall.args as { instruction?: string };
-      return args.instruction === "Make the heading blue" ? "read" as const : "write" as const;
+      const args = toolCall.args as { request?: string };
+      return args.request === "Make the heading blue" ? "read" as const : "write" as const;
     });
     const guard = createGuard({
       store: createMemoryStore(),
@@ -259,24 +262,24 @@ describe("policy files, rules, directions, and code", () => {
     });
     const run = context({ trigger: { runId: "run_contextual_risk", kind: "schedule" } });
 
-    await expect(guard.check(call(edit.name, {
-      appId: "app_tree",
-      instruction: "Make the heading blue",
-    }, "tree_1"), edit, run)).resolves.toMatchObject({ action: "run" });
-    await expect(guard.check(call(edit.name, {
-      appId: "app_tree",
-      instruction: "Persist this to the database",
-    }, "server_1"), edit, run)).resolves.toMatchObject({ action: "run" });
+    await expect(guard.check(call(make.name, {
+      app: "app_tree",
+      request: "Make the heading blue",
+    }, "tree_1"), make, run)).resolves.toMatchObject({ action: "run" });
+    await expect(guard.check(call(make.name, {
+      app: "app_tree",
+      request: "Persist this to the database",
+    }, "server_1"), make, run)).resolves.toMatchObject({ action: "run" });
     // A second read-class tree edit must not consume the one-write budget.
-    await expect(guard.check(call(edit.name, {
-      appId: "app_tree",
-      instruction: "Make the heading blue",
-    }, "tree_2"), edit, run)).resolves.toMatchObject({ action: "run" });
+    await expect(guard.check(call(make.name, {
+      app: "app_tree",
+      request: "Make the heading blue",
+    }, "tree_2"), make, run)).resolves.toMatchObject({ action: "run" });
     // The second server edit is still write-class and must trip the breaker.
-    await expect(guard.check(call(edit.name, {
-      appId: "app_tree",
-      instruction: "Persist this to the database",
-    }, "server_2"), edit, run)).resolves.toMatchObject({
+    await expect(guard.check(call(make.name, {
+      app: "app_tree",
+      request: "Persist this to the database",
+    }, "server_2"), make, run)).resolves.toMatchObject({
       action: "ask",
       decidedBy: "breaker",
       approval: { descriptor: { risk: "write" } },
@@ -383,7 +386,10 @@ describe("policy files, rules, directions, and code", () => {
   });
 
   it("keeps the descriptor's conservative risk when contextual resolution fails", async () => {
-    const edit = descriptor("write", { name: "vendo_apps_edit" });
+    // A write-class app tool, because the fallback is only visible on one: a
+    // resolver that throws must leave the static risk standing, which for a
+    // write means the call still asks.
+    const edit = descriptor("write", { name: "vendo_apps_data_put" });
     const policy = { rules: [
       { match: { risk: "write" as const }, action: "ask" as const },
       { match: { risk: "read" as const }, action: "run" as const },

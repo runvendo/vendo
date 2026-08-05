@@ -9,6 +9,8 @@
  * It decides nothing. Orchestration is thinking, and thinking is the harness's.
  */
 import {
+  auditContext,
+  mintTurnId,
   VendoError,
   type ApprovalId,
   type AuditEvent,
@@ -213,7 +215,13 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
   const harnessState = deps.harnessState ?? memoryHarnessStateStore();
 
   return {
-    async run<Options>(input: TurnRunInput<Options>): Promise<Response> {
+    async run<Options>(started: TurnRunInput<Options>): Promise<Response> {
+      // The turn's identity, minted here because here is where a turn begins. It
+      // rides the CTX rather than a second parameter, so every guarded call,
+      // audit row and painted view below is joinable to this exchange for free —
+      // and the rest of this function reads `input` exactly as it always did.
+      const turnId = mintTurnId();
+      const input: TurnRunInput<Options> = { ...started, ctx: { ...started.ctx, turnId } };
       // §1.3: what the harness may remember depends on how the history moved.
       // A prefix truncation is a native rewind, so its session survives; an
       // arbitrary edit means its session no longer describes our conversation.
@@ -331,6 +339,7 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
           // whichever hands wrote it.
           const workspace = wrapWorkspaceForRender(input.workspace, {
             ...deps.render,
+            turnId,
             emit: (_streamId, part) => writeView(writer, part),
           });
 
@@ -387,6 +396,7 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
             interactive: input.interactive,
             ...(input.system === undefined ? {} : { system: input.system }),
             threadId: input.threadId,
+            turnId,
           };
 
           // Published for the process's own doors (the MCP door's turn
@@ -408,7 +418,7 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
                   text.delta(event.delta);
                   break;
                 case "status":
-                  writeStatus(writer, event.label);
+                  writeStatus(writer, event);
                   break;
                 case "error":
                   failure = { message: event.message, ...(event.code === undefined ? {} : { code: event.code }) };
@@ -601,11 +611,7 @@ async function reportRun(
     id: mintAuditId(),
     at: new Date().toISOString(),
     kind: "run",
-    principal: input.ctx.principal,
-    venue: input.ctx.venue,
-    presence: input.ctx.presence,
-    ...(input.ctx.appId === undefined ? {} : { appId: input.ctx.appId }),
-    ...(input.ctx.trigger === undefined ? {} : { trigger: input.ctx.trigger }),
+    ...auditContext(input.ctx),
     detail: body,
   });
 

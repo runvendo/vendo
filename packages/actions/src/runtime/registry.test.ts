@@ -228,7 +228,7 @@ describe("createActions registry", () => {
   it("dispatches added registries untouched and catches connector execute rejections", async () => {
     const addedOutcome: ToolOutcome = { status: "blocked", reason: "owned by child" };
     const added: ToolRegistry = {
-      descriptors: async () => [{ name: "vendo_apps_create", description: "Create app", inputSchema: {}, risk: "write" }],
+      descriptors: async () => [{ name: "vendo_make", description: "Make a screen", inputSchema: {}, risk: "read" }],
       execute: vi.fn(async () => addedOutcome),
     };
     const ext = connector(
@@ -238,8 +238,8 @@ describe("createActions registry", () => {
     const actions = createActions({ connectors: [ext] });
     actions.add(added);
 
-    expect((await actions.descriptors()).map((item) => item.name)).toEqual(["ext_fail", "vendo_apps_create"]);
-    await expect(actions.execute({ id: "1", tool: "vendo_apps_create", args: {} }, ctx)).resolves.toBe(addedOutcome);
+    expect((await actions.descriptors()).map((item) => item.name)).toEqual(["ext_fail", "vendo_make"]);
+    await expect(actions.execute({ id: "1", tool: "vendo_make", args: {} }, ctx)).resolves.toBe(addedOutcome);
     const failed = await actions.execute({ id: "2", tool: "ext_fail", args: {} }, ctx);
     expect(toolOutcomeSchema.parse(failed)).toMatchObject({
       status: "error",

@@ -1,7 +1,7 @@
 /** J1 — CHAT GENERATES AN APP, end to end through the composed umbrella.
  *
  * A single POST /threads turn as ADA: the scripted agent calls the composed
- * `vendo_apps_create` capability tool (added to the registry by the umbrella via
+ * `vendo_make` capability tool (added to the registry by the umbrella via
  * `actions.add(apps.agentTools())`); executing it drives the apps generation
  * engine — the SAME model instance, via doGenerate — which returns a valid
  * vendo-genui/v2 wire; the agent then closes with a text turn.
@@ -35,7 +35,7 @@ describe("J1: chat generates an app through the real composition", () => {
     await resetFixture();
     stack = await createStack({
       turns: [
-        toolCallTurn("vendo_apps_create", { prompt: "Build me a greeting card" }, "call_1"),
+        toolCallTurn("vendo_make", { request: "Build me a greeting card" }, "call_1"),
         // Two-lane create (v2 spec §4): the tier-0 paint lane and the full
         // lane each consume one generation turn.
         generationTurn(CREATE_DIALECT),
@@ -69,7 +69,7 @@ describe("J1: chat generates an app through the real composition", () => {
       "SELECT tool FROM vendo_audit WHERE subject = $1 AND kind = 'tool-call'",
       [ADA.subject],
     );
-    expect(audit.some((row) => row.tool === "vendo_apps_create")).toBe(true);
+    expect(audit.some((row) => row.tool === "vendo_make")).toBe(true);
 
     // Wire GET /apps lists it for ADA.
     const adaList = (await (await stack.wireFetch("/apps", {}, ADA)).json()) as Array<{ id: string }>;

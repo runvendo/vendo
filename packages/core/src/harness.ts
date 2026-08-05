@@ -13,7 +13,7 @@
  */
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { LanguageModel, UIMessage } from "ai";
-import type { Json } from "./ids.js";
+import type { AppId, Json, TurnId } from "./ids.js";
 import type { JsonSchema } from "./ids.js";
 import type { ResolvedModels } from "./model-seats.js";
 import type { RiskLabel } from "./tools.js";
@@ -83,6 +83,14 @@ export interface Turn<Options = unknown> {
    * passing it is simply true. Opaque to adapters.
    */
   readonly threadId: string;
+  /**
+   * This turn's own identity, minted per turn beside `threadId` and for the same
+   * reason: the runtime already holds it, so passing it is simply true. A thread
+   * spans a conversation; this spans one exchange, which is the grain the audit
+   * rows, the mirrored calls, the beats and the views all needed to join on.
+   * Opaque to adapters.
+   */
+  readonly turnId: TurnId;
 }
 
 /** Build contract §1.1 */
@@ -168,8 +176,14 @@ export interface TurnState {
  */
 export type HarnessEvent =
   | { type: "text"; delta: string }
-  /** Consumer-voice; ephemeral, screen-only. */
-  | { type: "status"; label: string }
+  /**
+   * Consumer-voice; ephemeral, screen-only — a BEAT.
+   *
+   * `phase` and `appId` are additive (the union stays closed; widening a member
+   * is not a breaking change, adding one is). A harness that says nothing but
+   * `label` behaves exactly as it did.
+   */
+  | { type: "status"; label: string; phase?: BeatPhase; appId?: AppId }
   /** Consumer-voice; no internals. */
   | { type: "error"; message: string; code?: string }
   | {
@@ -180,3 +194,20 @@ export type HarnessEvent =
       cacheWriteTokens?: number;
       model?: string;
     };
+
+/**
+ * Where a beat sits in the arc of making something — CLOSED at six members, so a
+ * receiver can render an ordered progression rather than a bag of strings.
+ *
+ * It is coarse on purpose: a phase is what a PERSON would recognise as a stage
+ * of the work, never a step in our pipeline. The `label` carries the words; this
+ * carries the position. Beats never name a file, a tool slug, a model, a token
+ * count, or an id.
+ */
+export type BeatPhase =
+  | "understanding"
+  | "planning"
+  | "assembling"
+  | "building"
+  | "checking"
+  | "finishing";

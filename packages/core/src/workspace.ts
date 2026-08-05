@@ -47,3 +47,36 @@ export interface FilesAdapter {
   get(key: string): Promise<{ bytes: Uint8Array; contentType?: string } | undefined>;
   delete(key: string): Promise<void>;
 }
+
+/**
+ * Build contract §9.7 — which mount holds an app's documents: a person's
+ * `/user`, or an org's `/orgs/<org>`.
+ *
+ * Owner and path prefix always travel together, so naming the mount is the whole
+ * address — and that is exactly why an app's address must be derived from its
+ * OWNERSHIP and never from which candidate path happens to be writable. An
+ * org-owned app's editor can usually write their own `/user` mount too, so
+ * permission cannot tell the two apart; ownership can.
+ *
+ * It lives here, beside `WorkspaceFs`, because it now has two readers:
+ * `@vendoai/store` (which moves an app between mounts) and `@vendoai/apps`
+ * (which projects one into a workspace and reads it back).
+ */
+export type AppMount =
+  | { kind: "user"; subject: string }
+  | { kind: "org"; org: string };
+
+/** The app's own root path in a mount, with NO trailing slash: the subtree hangs
+ *  off it, and it is itself a path a row can sit at. ONE derivation of the frozen
+ *  §3.1 layout, so a projection and a move can never disagree about an address. */
+export const appRootPath = (mount: AppMount, appId: string): string =>
+  mount.kind === "user" ? `/user/apps/${appId}` : `/orgs/${mount.org}/apps/${appId}`;
+
+/** Build contract §3.4 — the line between "inline in the row" and "in a blob".
+ *
+ *  It lives here, beside the two shapes it governs, because it now has two
+ *  readers: `@vendoai/store`'s workspace rows and `@vendoai/apps`'s app source
+ *  (contract §3.2). A source file and a workspace file spill at the same size
+ *  because they are the same bytes in two projections; two constants would be two
+ *  answers to one question. */
+export const WORKSPACE_INLINE_MAX_BYTES = 65_536;
