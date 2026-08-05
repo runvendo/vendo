@@ -16,7 +16,8 @@
  * as VENDO_BOX_TEMPLATE on the host so machine provisioning boots from it. This
  * is the reproducible recipe — re-run it to rebuild the base snapshot.
  */
-import { copyFileSync, rmSync } from "node:fs";
+import { cpSync, copyFileSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import process from "node:process";
@@ -30,6 +31,13 @@ const AGENT_SDK_VERSION = "0.3.215";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const name = process.argv[2] ?? "vendo-box";
 
+/** Where the app template's deps are installed ONCE, in the image. */
+const DEPS_DIR = "/opt/vendo-box/deps";
+/** Where the app template itself lands; `cp -a` of this is a warm start. */
+const TEMPLATE_DIR = "/opt/vendo-box/template";
+/** Where the packed workspace tarballs land. */
+const PKG_DIR = "/opt/vendo-box/pkg";
+
 // e2b resolves every copy() source against THIS SCRIPT's directory, and a
 // source that climbs out of it fails the build before it starts (measured
 // 2026-08-01: `../dist/...` → TemplateError; chdir does not move the base).
@@ -38,6 +46,76 @@ const name = process.argv[2] ?? "vendo-box";
 process.chdir(here);
 const STAGED_RUNNER = "claude-turn.mjs";
 copyFileSync(path.join(here, "../dist/claude-turn.js"), path.join(here, STAGED_RUNNER));
+
+// ─── the app template, staged in for the same e2b reason ─────────────────────
+//
+// `packages/box-template` is a real workspace package, so a developer's own
+// `pnpm install` gives it resolvable deps and it typechecks, builds and runs in
+// the monorepo. It cannot LIVE under packages/apps: the dependency guard scans a
+// package's whole directory, and an app template importing @vendoai/kit inside
+// packages/apps would (correctly) violate `apps → core`.
+const STAGED_TEMPLATE = "template";
+const STAGED_PKG = "pkg";
+const SOURCE_TEMPLATE = path.join(here, "../../box-template");
+const stagedTemplate = path.join(here, STAGED_TEMPLATE);
+const stagedPkg = path.join(here, STAGED_PKG);
+const cleanStaged = () => {
+  rmSync(path.join(here, STAGED_RUNNER), { force: true });
+  rmSync(stagedTemplate, { recursive: true, force: true });
+  rmSync(stagedPkg, { recursive: true, force: true });
+};
+
+cleanStaged();
+const skipped = new Set(["node_modules", "dist", "package-lock.json"]);
+cpSync(SOURCE_TEMPLATE, stagedTemplate, {
+  recursive: true,
+  filter: (source) => {
+    const rel = path.relative(SOURCE_TEMPLATE, source);
+    return rel === "" || !skipped.has(rel.split(path.sep)[0]);
+  },
+});
+// The Procfile entry lands under .vendo/ so one `cp -a template/. /app/` arms
+// the supervisor too.
+mkdirSync(path.join(stagedTemplate, ".vendo"), { recursive: true });
+copyFileSync(path.join(stagedTemplate, "run"), path.join(stagedTemplate, ".vendo", "run"));
+rmSync(path.join(stagedTemplate, "run"));
+
+// The running box has NO registry egress, so every @vendoai/* the template needs
+// must be materialized at bake time. `pnpm pack` each workspace package from
+// THIS commit — reproducible from the monorepo, with zero publish dependency.
+// (`pnpm build` must have run: pack ships only `files`, i.e. dist/.)
+mkdirSync(stagedPkg, { recursive: true });
+const WORKSPACE_PACKAGES = ["core", "ui", "kit"];
+const tarballs = {};
+for (const workspacePackage of WORKSPACE_PACKAGES) {
+  const packed = spawnSync("pnpm", ["pack", "--pack-destination", stagedPkg], {
+    cwd: path.join(here, "../..", workspacePackage),
+    encoding: "utf8",
+  });
+  if (packed.status !== 0) {
+    cleanStaged();
+    console.error(`[vendo-box] pnpm pack failed for @vendoai/${workspacePackage}: ${packed.stderr}`);
+    process.exit(1);
+  }
+  // Stable names, so the manifests below need no version in them.
+  const produced = readdirSync(stagedPkg).find((file) => file.startsWith(`vendoai-${workspacePackage}-`));
+  const stable = `vendoai-${workspacePackage}.tgz`;
+  copyFileSync(path.join(stagedPkg, produced), path.join(stagedPkg, stable));
+  rmSync(path.join(stagedPkg, produced));
+  tarballs[`@vendoai/${workspacePackage}`] = `file:${PKG_DIR}/${stable}`;
+}
+
+// A PACKED workspace package declares its siblings by REGISTRY range (pnpm
+// rewrites `workspace:*` to the real version on pack), and those versions are
+// published — so a plain install would resolve @vendoai/ui from npm and silently
+// shadow the local build. `overrides` forces every resolution, transitive ones
+// included, to the tarball from this commit.
+const manifest = JSON.parse(readFileSync(path.join(stagedTemplate, "package.json"), "utf8"));
+for (const [dependency, specifier] of Object.entries(tarballs)) {
+  if (manifest.dependencies?.[dependency] !== undefined) manifest.dependencies[dependency] = specifier;
+}
+manifest.overrides = { ...manifest.overrides, ...tarballs };
+writeFileSync(path.join(stagedTemplate, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 
 const template = Template()
   // The full node:22 image already ships curl + ca-certificates (the agent
@@ -66,19 +144,32 @@ const template = Template()
   // so the SDK's session deliberately stays at its $HOME default — the snapshot
   // carries the whole disk either way.
   .runCmd("mkdir -p /workspace && chmod 777 /workspace", { user: "root" })
-  // Wave 7 H2 — the pre-baked served-app scaffold: a layer-3 build starts
-  // warm by copying it into /app and EDITING (skin-contract plumbing —
-  // /fn envelopes, vendo.json, theme handoff — already wired and
-  // conformance-tested in box-scaffold.test.ts). Zero-dependency by design,
-  // so there is no node_modules to bake.
-  .copy("scaffold/package.json", "/opt/vendo-box/scaffold/package.json", { user: "root" })
-  .copy("scaffold/server.js", "/opt/vendo-box/scaffold/server.js", { user: "root" })
-  .copy("scaffold/fns.js", "/opt/vendo-box/scaffold/fns.js", { user: "root" })
-  .copy("scaffold/index.html", "/opt/vendo-box/scaffold/index.html", { user: "root" })
-  .copy("scaffold/vendo.json", "/opt/vendo-box/scaffold/vendo.json", { user: "root" })
-  // The Procfile entry lands under .vendo/ so one `cp -a scaffold/. /app/`
-  // arms the supervisor too.
-  .copy("scaffold/run", "/opt/vendo-box/scaffold/.vendo/run", { user: "root" })
+  // The universal app template (blueprint §11): Vite + React 19 with the Kit
+  // preinstalled. A build starts warm by copying it into /app and EDITING —
+  // the skin contract (/fn envelopes, vendo.json, the .vendo/run entry) is
+  // already wired and conformance-tested in apps/src/box-template.test.ts.
+  //
+  // ONE universal template, baked once per Vendo release. Nothing
+  // company-specific is ever baked: the host's brand and the host's own
+  // components arrive as FILES under /app/.vendo/host/ at provision time
+  // (packages/box-template/provision.mjs is the receiving end).
+  .copy(`${STAGED_PKG}/`, `${PKG_DIR}/`, { user: "root" })
+  .copy(`${STAGED_TEMPLATE}/`, `${TEMPLATE_DIR}/`, { user: "root" })
+  // Install the template's deps ONCE, into the image, and leave the template's
+  // own node_modules as a SYMLINK to them. Two reasons, both measured concerns:
+  // the bake has full network and the running box has none, so this is the only
+  // moment an install can happen; and `cp -a template/. /app/` then copies a
+  // link instead of a few hundred megabytes on every single build.
+  .runCmd(
+    [
+      `mkdir -p ${DEPS_DIR}`,
+      `cp ${TEMPLATE_DIR}/package.json ${DEPS_DIR}/package.json`,
+      `cd ${DEPS_DIR} && npm install --no-audit --no-fund`,
+      `ln -s ${DEPS_DIR}/node_modules ${TEMPLATE_DIR}/node_modules`,
+      "chmod -R a+rX /opt/vendo-box",
+    ].join(" && "),
+    { user: "root" },
+  )
   .setWorkdir("/app")
   // The harness owns the control port and supervises the app process; readiness
   // is the control port coming up (the app has no code until an edit lands).
@@ -88,7 +179,7 @@ let info;
 try {
   info = await Template.build(template, name, { cpuCount: 1, memoryMB: 1024 });
 } catch (error) {
-  rmSync(path.join(here, STAGED_RUNNER), { force: true });
+  cleanStaged();
   console.error(`[vendo-box] build failed: ${error?.constructor?.name}: ${error?.message ?? error}`);
   for (const key of Object.keys(error ?? {})) {
     console.error(`  ${key}: ${JSON.stringify(error[key]).slice(0, 500)}`);
@@ -96,7 +187,7 @@ try {
   process.exit(1);
 }
 
-rmSync(path.join(here, STAGED_RUNNER), { force: true });
+cleanStaged();
 
 const id = info.templateId ?? info.aliases?.[0] ?? name;
 console.log(`\n[vendo-box] built template: ${id}`);
