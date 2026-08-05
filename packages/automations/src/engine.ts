@@ -41,6 +41,7 @@ import {
   currentIntentHash,
   declaredSurface,
   markSponsored,
+  migratePreListSponsorship,
   readSponsorship,
   SPONSORED,
   SPONSORSHIPS,
@@ -592,28 +593,50 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   };
 
   /**
-   * This app's armed triggers, given the armed keys already fetched.
+   * This app's armed triggers, given the armed keys already fetched. A trigger is
+   * armed only when BOTH say so: the app-level `enabled` the apps runtime owns,
+   * and the trigger's OWN armed row.
    *
-   * The MIGRATION rule lives here, in one place: an app row that is enabled but
-   * has no per-trigger armed row at all was armed before triggers were a list,
-   * so its app-level flag still speaks for its trigger. Without it every
-   * automation armed before this shape existed would go quietly dark, which is
-   * the one failure mode an automation must never have. It cannot fire falsely
-   * afterwards: arming always writes a row, and disarming the last trigger also
-   * clears `enabled`, so "enabled with no rows" is only ever a pre-list row.
+   * There is deliberately no "enabled but no rows ⇒ all of them" fallback. That
+   * read was authority-widening for any writer that sets `enabled` without armed
+   * rows — a trigger added to the list later would fire without anyone having
+   * armed it. The pre-list state it existed for is MIGRATED in {@link armedFor}
+   * instead, which names the one trigger it always meant.
    */
-  const armedTriggers = (row: AppRow, armed: ReadonlySet<string>): Trigger[] => {
-    if (!row.enabled) return [];
-    const triggers = triggersOf(row.doc);
-    const own = triggers.filter((trigger) => armed.has(triggerKey(row.doc.id, trigger.id)));
-    return own.length === 0 && triggers.length > 0 ? triggers : own;
+  const armedTriggers = (row: AppRow, armed: ReadonlySet<string>): Trigger[] =>
+    row.enabled
+      ? triggersOf(row.doc).filter((trigger) => armed.has(triggerKey(row.doc.id, trigger.id)))
+      : [];
+
+  /**
+   * The armed set for these app rows, migrating any pre-list row on the way.
+   *
+   * "Enabled with no per-trigger armed row at all" is the on-disk state of every
+   * automation armed before triggers were a list, and it must not go quietly
+   * dark — that is the one failure mode an automation may never have. So the
+   * state is resolved ONCE, here, by seeding the armed row it always meant:
+   * `main`, the id read normalization gives a single-`trigger` document's one
+   * trigger. Deterministic (it names one id, never "whatever the list holds now")
+   * and idempotent (the row it writes is what makes the next read skip this).
+   */
+  const armedFor = async (rows: readonly AppRow[]): Promise<Set<string>> => {
+    const armed = await armedKeys(rows.flatMap(
+      (row) => triggersOf(row.doc).map((trigger) => triggerKey(row.doc.id, trigger.id)),
+    ));
+    for (const row of rows) {
+      if (!row.enabled) continue;
+      const triggers = triggersOf(row.doc);
+      if (triggers.some((trigger) => armed.has(triggerKey(row.doc.id, trigger.id)))) continue;
+      if (!triggers.some((trigger) => trigger.id === DEFAULT_TRIGGER_ID)) continue;
+      await setArmed(row.doc.id, DEFAULT_TRIGGER_ID, true);
+      armed.add(triggerKey(row.doc.id, DEFAULT_TRIGGER_ID));
+    }
+    return armed;
   };
 
   /** The same question for one trigger, for the paths that hold a single app. */
-  const isArmed = async (row: AppRow, triggerId: string): Promise<boolean> => {
-    const keys = triggersOf(row.doc).map((trigger) => triggerKey(row.doc.id, trigger.id));
-    return armedTriggers(row, await armedKeys(keys)).some((trigger) => trigger.id === triggerId);
-  };
+  const isArmed = async (row: AppRow, triggerId: string): Promise<boolean> =>
+    armedTriggers(row, await armedFor([row])).some((trigger) => trigger.id === triggerId);
 
   /** Turn ONE trigger off, leaving the app's others exactly as they were.
    *
@@ -623,8 +646,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
    *  still armed. Materializing here is what keeps a disarm from taking a
    *  sibling with it. `enabled` then follows: false exactly when nothing is left. */
   const disarmTrigger = async (record: VendoRecord, row: AppRow, triggerId: string): Promise<void> => {
-    const keys = triggersOf(row.doc).map((trigger) => triggerKey(row.doc.id, trigger.id));
-    const remaining = armedTriggers(row, await armedKeys(keys))
+    const remaining = armedTriggers(row, await armedFor([row]))
       .filter((trigger) => trigger.id !== triggerId);
     for (const trigger of remaining) await setArmed(row.doc.id, trigger.id, true);
     await setArmed(row.doc.id, triggerId, false);
@@ -715,18 +737,39 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   const sponsoredEra = (): RecordStore => config.store.records(SPONSORED);
 
   /** The sponsorship as the gates see it: the row, or — when the row is gone but
-   *  the app was sponsored once — the fact that its sponsor was ERASED. */
+   *  the app was sponsored once — the fact that its sponsor was ERASED.
+   *
+   *  The ONE door every sponsorship read goes through, because it is also where
+   *  the pre-list rekey is migrated: a row keyed by the bare app id is invisible
+   *  under the pair key, and invisible reads as "never sponsored", which runs the
+   *  automation as its OWNER. Taking the document rather than just its id is what
+   *  lets the migration recompute the intent hash under the current formula. */
   const sponsorshipState = async (
-    appId: string,
+    doc: AppDocument,
     triggerId: string,
   ): Promise<
     | { kind: "none" }
     | { kind: "erased" }
     | { kind: "row"; row: Sponsorship; revision?: string }
   > => {
-    const found = await readSponsorship(sponsorships(), appId, triggerId);
-    if (found !== undefined) return { kind: "row", ...found };
-    return await wasSponsored(sponsoredEra(), appId, triggerId) ? { kind: "erased" } : { kind: "none" };
+    const appId = doc.id;
+    const read = async (): Promise<
+      { kind: "erased" } | { kind: "row"; row: Sponsorship; revision?: string } | undefined
+    > => {
+      const found = await readSponsorship(sponsorships(), appId, triggerId);
+      if (found !== undefined) return { kind: "row", ...found };
+      return await wasSponsored(sponsoredEra(), appId, triggerId) ? { kind: "erased" } : undefined;
+    };
+    const current = await read();
+    if (current !== undefined) return current;
+    const moved = await migratePreListSponsorship(
+      sponsorships(),
+      sponsoredEra(),
+      appId,
+      triggerId,
+      currentIntentHash(doc, triggerOf(doc, triggerId)),
+    );
+    return (moved ? await read() : undefined) ?? { kind: "none" };
   };
 
   /** §9.3's `can(editor)`, through the config seam. With no seam configured the
@@ -747,18 +790,26 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     presence: "away",
     sessionId: `sess_${run.id}`,
     appId: run.appId,
-    trigger: { runId: run.id, kind: run.trigger.kind },
+    // The firing trigger's own id rides here because the guard's away-grant
+    // lookup matches on (app, trigger): without it a grant minted while arming
+    // one trigger would authorize every sibling trigger's away calls, which is
+    // the arm-time rule this run is supposed to be living under.
+    trigger: { runId: run.id, kind: run.trigger.kind, id: run.triggerId },
   });
 
   /** §9.9 — the run's identity is its SPONSOR: an automation always runs as a
    *  named person. The app row's subject is the fallback for automations armed
    *  before sponsorship existed, and for a sponsorship that has lapsed (the
    *  fire-time gate below stops those runs anyway). */
-  const runContext = async (run: InternalRunRecord, subject: string): Promise<RunContext> => {
-    const sponsorship = await readSponsorship(sponsorships(), run.appId, run.triggerId);
+  const runContext = async (doc: AppDocument, run: InternalRunRecord, subject: string): Promise<RunContext> => {
+    // Through the migrating door, not `readSponsorship` — this read happens
+    // BEFORE the fire-time gate below (the gate needs the sponsor's identity to
+    // ask `can(editor)`), so a pre-list row still keyed by the app alone would
+    // otherwise decide the run's identity while invisible.
+    const state = await sponsorshipState(doc, run.triggerId);
     const ctx = baseRunContext(
       run,
-      sponsorship?.row.status === "active" ? sponsorship.row.sponsor : subject,
+      state.kind === "row" && state.row.status === "active" ? state.row.sponsor : subject,
     );
     const principal = ctx.principal;
     // §9.1 — memberships are ASSERTED per run, never stored: an unattended fire
@@ -782,7 +833,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     trigger: Trigger,
     ctx: RunContext,
   ): Promise<{ reason: NonNullable<Sponsorship["reason"]>; summary: string } | undefined> => {
-    const state = await sponsorshipState(app.doc.id, trigger.id);
+    const state = await sponsorshipState(app.doc, trigger.id);
     // Never sponsored: an automation armed before sponsorship shipped keeps
     // running as its owner rather than being stopped by a feature it predates.
     if (state.kind === "none") return undefined;
@@ -1070,7 +1121,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
           | { reason?: NonNullable<Sponsorship["reason"]>; summary: string; detail?: string }
           | undefined;
         try {
-          ctx = await runContext(record, app.subject);
+          ctx = await runContext(app.doc, record, app.subject);
           stop = await sponsorshipRefusal(app, trigger, ctx);
         } catch (error) {
           // F10 — the consumer sentence and the operator's detail part ways
@@ -1201,6 +1252,11 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
         subject: grant.subject,
         tool: grant.tool,
         ...(grant.appId === undefined ? {} : { app_id: grant.appId }),
+        // The reserved grants table derives this ref from the row's own column,
+        // but a generic StoreAdapter honors what is passed here — and one that
+        // filtered on `app_id` alone would hand back a sibling trigger's grant,
+        // making the ref-trusting adapter WIDER than the JS filter above it.
+        ...(grant.triggerId === undefined ? {} : { trigger_id: grant.triggerId }),
       },
     });
     return grant.id;
@@ -1299,7 +1355,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       // subject instead (F10, the resume half).
       let ctx: RunContext;
       try {
-        ctx = await runContext(run, appFound.row.subject);
+        ctx = await runContext(appFound.row.doc, run, appFound.row.subject);
       } catch (error) {
         const fallback = baseRunContext(run, appFound.row.subject);
         // F10 again, the resume half: the raw throw is the audit row's, and the
@@ -1876,7 +1932,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     const keys = automations.flatMap((row) =>
       triggersOf(row.doc).map((trigger) => triggerKey(row.doc.id, trigger.id)));
     const sponsorRows = await sponsorshipsFor(keys);
-    const armed = await armedKeys(keys);
+    const armed = await armedFor(automations);
     const entries: Awaited<ReturnType<AutomationsEngine["list"]>> = [];
     for (const row of automations) {
       // "…and names a wider editor set when one exists": the count comes from
@@ -1932,11 +1988,15 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   };
 
   const onTriggerEdit = async (next: AppDocument, trigger: Trigger, editor: string): Promise<void> => {
-    const found = await readSponsorship(sponsorships(), next.id, trigger.id);
-    if (found === undefined || found.row.status !== "active") return;
-    if (editor !== found.row.sponsor) {
+    // Through the migrating door: an edit is the other way a pre-list row can be
+    // reached before its automation ever fires again, and a row nobody can see
+    // is a row a third party's edit cannot invalidate.
+    const state = await sponsorshipState(next, trigger.id);
+    if (state.kind !== "row" || state.row.status !== "active") return;
+    const row = state.row;
+    if (editor !== row.sponsor) {
       await writeSponsorship(sponsorships(), {
-        ...found.row,
+        ...row,
         status: "invalidated",
         reason: "edit",
         invalidatedAt: iso(),
@@ -1951,20 +2011,20 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     // the automations-pack session's half, and it fails at the guard with a
     // card rather than here.
     const hash = currentIntentHash(next, trigger);
-    if (hash !== found.row.intentHash) {
-      await writeSponsorship(sponsorships(), { ...found.row, intentHash: hash });
+    if (hash !== row.intentHash) {
+      await writeSponsorship(sponsorships(), { ...row, intentHash: hash });
     }
   };
 
   /** The stopped shape for one trigger, or undefined when it is not waiting. */
   const waitingFor = async (
-    appId: string,
+    doc: AppDocument,
     triggerId: string,
   ): Promise<
     | { reason: NonNullable<Sponsorship["reason"]>; sponsor?: string; stoppedAt?: string }
     | undefined
   > => {
-    const state = await sponsorshipState(appId, triggerId);
+    const state = await sponsorshipState(doc, triggerId);
     // The sponsor's row was erased with their data: the ask is real, and it is
     // anonymous — the name went with the erase and must not come back.
     if (state.kind === "erased") return { reason: "departure" };
@@ -1984,7 +2044,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     // The open payload carries ONE card, so several stopped triggers surface one
     // at a time, in declaration order: taking the first on reveals the next.
     for (const trigger of triggersOf(found.row.doc)) {
-      const waiting = await waitingFor(appId, trigger.id);
+      const waiting = await waitingFor(found.row.doc, trigger.id);
       if (waiting === undefined) continue;
       return adoptionCard(
         found.row.doc,
@@ -2003,7 +2063,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
 
   const adopt: AutomationsEngine["adopt"] = async (appId, triggerId, ctx) => {
     const found = await editableApp(appId, ctx);
-    const state = await sponsorshipState(appId, triggerId);
+    const state = await sponsorshipState(found.row.doc, triggerId);
     // Adoptable from either stopped shape: an invalidated row, or an erased
     // sponsor who left no row behind.
     const claimable = state.kind === "erased"
@@ -2071,8 +2131,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       refs: { [triggerKindRefKey("schedule")]: TRIGGER_KIND_REF_PRESENT },
     });
     const rows = appRecords.map(parseAppRow);
-    const armed = await armedKeys(rows.flatMap((row) =>
-      triggersOf(row.doc).map((trigger) => triggerKey(row.doc.id, trigger.id))));
+    const armed = await armedFor(rows);
     // Every armed schedule trigger, as (app, trigger) pairs — the unit that fires,
     // holds a cursor, and is claimed.
     const dueTriggers = rows.flatMap((row) => armedTriggers(row, armed)
@@ -2179,8 +2238,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
         refs: { subject, [triggerKindRefKey("host-event")]: TRIGGER_KIND_REF_PRESENT },
       });
       const rows = records.map(parseAppRow).filter((row) => row.subject === subject);
-      const armed = await armedKeys(rows.flatMap((row) =>
-        triggersOf(row.doc).map((trigger) => triggerKey(row.doc.id, trigger.id))));
+      const armed = await armedFor(rows);
       for (const row of rows) {
         // Every matching trigger fires, not just the first: an app may listen to
         // one event from two triggers, and they are two automations.
@@ -2262,8 +2320,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     const signed = signedWebhookBytes(headerResult.data.id, headerResult.data.timestamp, rawBytes);
     const appRecords = await allRecords(config.store.records(APPS));
     const rows = appRecords.map(parseAppRow);
-    const armed = await armedKeys(rows.flatMap((row) =>
-      triggersOf(row.doc).map((trigger) => triggerKey(row.doc.id, trigger.id))));
+    const armed = await armedFor(rows);
     // Verified per (app, TRIGGER): each external trigger holds its own secret, so
     // a signature that verifies for one says nothing about a sibling's.
     const verified: Array<{ row: AppRow; trigger: Trigger }> = [];
@@ -2450,7 +2507,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     stopped.add(runId);
     abortControllers.get(runId)?.abort();
     const parkedApprovalId = run.__resume?.approvalId;
-    const runCtx = await runContext(run, app.row.subject);
+    const runCtx = await runContext(app.row.doc, run, app.row.subject);
     await terminal(run, runCtx, "stopped", "stopped by user");
     if (parkedApprovalId !== undefined) await config.store.records(PARKED).delete(parkedApprovalId);
     if (!active.has(runId)) stopped.delete(runId);

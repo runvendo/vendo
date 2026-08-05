@@ -1,5 +1,6 @@
 import {
   canonicalJson,
+  DEFAULT_TRIGGER_ID,
   intentHash,
   type AppDocument,
   type AppIntent,
@@ -168,6 +169,72 @@ export const wasSponsored = async (
   appId: string,
   triggerId: string,
 ): Promise<boolean> => await records.get(triggerKey(appId, triggerId)) !== null;
+
+/** A sponsorship row as it was written before an app had a LIST of triggers:
+ *  the same shape minus the trigger id, because there was only one trigger to
+ *  name. It reads as `main`, the id read normalization gives that one trigger. */
+const preListSponsorshipSchema = sponsorshipSchema.extend({
+  triggerId: z.string().default(DEFAULT_TRIGGER_ID),
+});
+
+/**
+ * Move a pre-list automation's sponsorship rows onto the (app, trigger) key, and
+ * say whether anything moved.
+ *
+ * Sponsorship and its era marker were keyed by the bare `appId` before triggers
+ * were a list, so under the pair key EVERY such row reads as ABSENT — and absent
+ * means "never sponsored", the one branch that runs an automation as the app's
+ * OWNER. A STOPPED automation would silently start running again, as a person
+ * who never took it on. That is why this is a migration and not a read fallback:
+ * the rows have to actually move, or every later read repeats the mistake.
+ *
+ * Two rules make the move safe:
+ *  - The STATUS is carried verbatim. Active stays active, invalidated stays
+ *    invalidated — a stopped automation stays stopped, which is the whole
+ *    security property.
+ *  - The intent hash is RECOMPUTED under the current formula, which now has the
+ *    trigger id in its preimage. Carrying the old hash forward would fail the
+ *    fire-time intent check for every still-active pre-list sponsorship, so a
+ *    document nobody edited would stop and ask to be adopted.
+ *
+ * Only `main` can have a pre-list row, so nothing else is even looked for.
+ */
+export const migratePreListSponsorship = async (
+  sponsorships: RecordStore,
+  era: RecordStore,
+  appId: string,
+  triggerId: string,
+  intentHash: string,
+): Promise<boolean> => {
+  if (triggerId !== DEFAULT_TRIGGER_ID) return false;
+  let moved = false;
+  const legacy = await sponsorships.get(appId);
+  if (legacy !== null) {
+    const parsed = preListSponsorshipSchema.safeParse(legacy.data);
+    // An UNREADABLE row is left exactly where it is: it is already unreachable
+    // (`readSponsorship` reads a corrupt row as no sponsorship), and deleting it
+    // would destroy the only evidence of what it said.
+    if (parsed.success) {
+      await writeSponsorship(sponsorships, { ...parsed.data, triggerId, intentHash });
+      await sponsorships.delete(appId);
+      moved = true;
+    }
+  }
+  const legacyEra = await era.get(appId);
+  if (legacyEra !== null) {
+    // The marker's payload is never read — only its presence is — so it is
+    // carried forward verbatim rather than restamped with a `since` that would
+    // claim this migration is when the automation was first sponsored.
+    await era.put({
+      id: triggerKey(appId, triggerId),
+      data: { ...(legacyEra.data as Record<string, Json>), appId, triggerId },
+      refs: { app_id: appId },
+    });
+    await era.delete(appId);
+    moved = true;
+  }
+  return moved;
+};
 
 /** Claim a stopped automation for a new sponsor. Returns false when another
  *  editor got there first — adoption is first-past-the-post, and the loser is

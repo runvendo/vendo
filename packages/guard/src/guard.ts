@@ -1,5 +1,6 @@
 import {
   canonicalJson,
+  DEFAULT_TRIGGER_ID,
   descriptorHash,
   isUnattended,
   mechanicalRisk,
@@ -265,7 +266,17 @@ function durationMatches(grant: PermissionGrant, ctx: RunContext): boolean {
 
 function presenceMatches(grant: PermissionGrant, ctx: RunContext): boolean {
   if (ctx.presence === "away") {
-    return grant.appId !== undefined && grant.appId === ctx.appId && grant.source === "automation";
+    return grant.appId !== undefined && grant.appId === ctx.appId
+      // An away run is ONE trigger of that app, and each trigger is consented
+      // to on its own: the person arming it was shown that trigger's steps and
+      // allowed those. Matching on the app alone made every sibling trigger
+      // ride the first trigger's yes. A grant minted before an app had a
+      // trigger list carries no id and stays valid for the trigger it was
+      // minted for, which read normalization names `main` — the same
+      // defaulting the arm-time check in automations already applies, so the
+      // two halves of the rule cannot disagree.
+      && (grant.triggerId ?? DEFAULT_TRIGGER_ID) === (ctx.trigger?.id ?? DEFAULT_TRIGGER_ID)
+      && grant.source === "automation";
   }
   return grant.appId === undefined || grant.appId === ctx.appId;
 }

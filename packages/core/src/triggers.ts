@@ -12,12 +12,25 @@ export type TriggerSource =
 export interface TriggerRef {
   runId: RunId;
   kind: TriggerSource["kind"];
+  /**
+   * WHICH trigger of the app is firing — its id within the app's trigger list.
+   *
+   * An automation is an app with a LIST of triggers, each consented to on its
+   * own, so the app id alone cannot say what authority a fire-time call holds:
+   * `RunContext.appId` plus this is the pair the guard matches an away grant on.
+   * Optional because the ref is also read off persisted audit rows written
+   * before triggers were a list; a fire-time call that carries none is read as
+   * {@link DEFAULT_TRIGGER_ID}, the same name read normalization gives a
+   * pre-list document's one trigger.
+   */
+  id?: string;
 }
 
 /** 01-core §3 */
 export const triggerRefSchema = z.object({
   runId: runIdSchema,
   kind: z.enum(["schedule", "host-event", "external"]),
+  id: z.string().optional(),
 }).passthrough() satisfies z.ZodType<TriggerRef>;
 
 /** 01-core §11 */
