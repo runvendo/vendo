@@ -1,4 +1,5 @@
 import {
+  auditContext,
   canonicalJson,
   descriptorHash,
   isUnattended,
@@ -210,14 +211,10 @@ function eventFromContext(
   return {
     id: makeId("aud_"),
     at: now(),
-    principal: ctx.principal,
-    venue: ctx.venue,
-    presence: ctx.presence,
-    ...(ctx.appId === undefined ? {} : { appId: ctx.appId }),
-    ...(ctx.trigger === undefined ? {} : { trigger: ctx.trigger }),
-    // The turn this decision was made inside. Copied here, at the one mint every
-    // ctx-shaped guard row goes through, so nothing has to remember to add it.
-    ...(ctx.turnId === undefined ? {} : { turnId: ctx.turnId }),
+    // Core's `auditContext` — the one copy of the ctx half. This mint used to own
+    // the only correct spelling of it, which is exactly why the five rows that do
+    // not come through here each drifted when `turnId` was added.
+    ...auditContext(ctx),
     ...fields,
   };
 }

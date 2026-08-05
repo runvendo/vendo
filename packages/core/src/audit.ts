@@ -28,6 +28,31 @@ export interface AuditEvent {
   detail?: Json;
 }
 
+/**
+ * The ctx half of an audit row — the fields every row copies off the run it came
+ * out of.
+ *
+ * ONE copy, because eight hand-written ones is exactly how `turnId` reached three
+ * of them and silently missed five: the guard's own mint got it, and the
+ * connect gate, the share row, the MCP door's tool-call row and the away-run
+ * summary each kept spreading five fields by hand and were never told about the
+ * sixth. A row that cannot be joined to its turn is not a smaller row, it is an
+ * unanswerable question in the plane billing and reconciliation read.
+ *
+ * Absent optionals stay ABSENT rather than becoming `undefined` keys, so a row
+ * built through this is byte-identical to the hand-written ones it replaces.
+ */
+export const auditContext = (
+  ctx: Pick<RunContext, "principal" | "venue" | "presence" | "appId" | "trigger" | "turnId">,
+): Pick<AuditEvent, "principal" | "venue" | "presence" | "appId" | "trigger" | "turnId"> => ({
+  principal: ctx.principal,
+  venue: ctx.venue,
+  presence: ctx.presence,
+  ...(ctx.appId === undefined ? {} : { appId: ctx.appId }),
+  ...(ctx.trigger === undefined ? {} : { trigger: ctx.trigger }),
+  ...(ctx.turnId === undefined ? {} : { turnId: ctx.turnId }),
+});
+
 /** 01-core §7 */
 export const auditEventSchema = z.object({
   id: z.string().regex(/^aud_.+$/),

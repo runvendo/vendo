@@ -9,6 +9,7 @@
  * It decides nothing. Orchestration is thinking, and thinking is the harness's.
  */
 import {
+  auditContext,
   mintTurnId,
   VendoError,
   type ApprovalId,
@@ -610,12 +611,7 @@ async function reportRun(
     id: mintAuditId(),
     at: new Date().toISOString(),
     kind: "run",
-    principal: input.ctx.principal,
-    venue: input.ctx.venue,
-    presence: input.ctx.presence,
-    ...(input.ctx.appId === undefined ? {} : { appId: input.ctx.appId }),
-    ...(input.ctx.trigger === undefined ? {} : { trigger: input.ctx.trigger }),
-    ...(input.ctx.turnId === undefined ? {} : { turnId: input.ctx.turnId }),
+    ...auditContext(input.ctx),
     detail: body,
   });
 

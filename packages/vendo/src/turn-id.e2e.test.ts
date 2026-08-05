@@ -14,6 +14,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Connector } from "@vendoai/actions";
 import type { AuditEvent, Principal, ToolDescriptor, ToolRegistry } from "@vendoai/core";
 import { defineHarness } from "@vendoai/harnesses";
 import { createStore, type VendoStore } from "@vendoai/store";
@@ -118,6 +119,72 @@ describe("the turn id (contract §3.5)", () => {
       unjoinable.map((row) => `${row.kind}${row.tool === undefined ? "" : ` ${row.tool}`}`),
       "every audit row this turn produced must name the turn",
     ).toEqual([]);
+  }, 60_000);
+
+  it("stamps the turn on a GATED call's row — the only row that call produces", async () => {
+    const store = await tempStore();
+    const seen: string[] = [];
+
+    // An unconnected brokered tool. The connect gate wraps OUTSIDE guard.bind,
+    // so this call never reaches the guard at all: the gate short-circuits it
+    // and reports the row ITSELF. That makes this row the whole audit record of
+    // the attempt — and it is exactly the row that was hand-copying the ctx.
+    const connector: Connector = {
+      name: "composio",
+      descriptors: async () => [{
+        name: "gmail_GMAIL_SEND_EMAIL",
+        description: "Send an email",
+        inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        risk: "write",
+      }],
+      execute: async () => ({ status: "ok", output: { sent: true } }),
+      toolkitOf: (tool) => (tool.startsWith("gmail_") ? "gmail" : undefined),
+      connections: {
+        list: async () => [],
+        initiate: async () => ({ id: "conn_1", status: "pending", redirectUrl: "https://example.test" }),
+      },
+    } as unknown as Connector;
+
+    const harness = defineHarness({
+      name: "gate-probe",
+      async *run(turn) {
+        seen.push(turn.turnId);
+        const result = await turn.tools.call("gmail_GMAIL_SEND_EMAIL", {});
+        // Proven over a real gate, not an assumption: if this ever stops being
+        // the connect-required path the row below is a different row.
+        expect(JSON.stringify(result)).toContain("connect");
+        yield { type: "text", delta: "You'll need to connect Gmail first." };
+      },
+    });
+
+    const vendo = createVendo({
+      model: {} as LanguageModel,
+      principal: async () => principal,
+      store,
+      connectors: [connector],
+      harness: harness as never,
+    } as Parameters<typeof createVendo>[0]);
+
+    const response = await vendo.handler(new Request("https://host.test/api/vendo/threads", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        threadId: "thr_gate",
+        message: { id: "m1", role: "user", parts: [{ type: "text", text: "email my invoices" }] },
+      }),
+    }));
+    await response.text();
+    expect(response.status).toBe(200);
+
+    const turnId = seen[0];
+    const rows = await auditRows(store);
+    const gated = rows.filter((row) => row.outcome === "connect-required");
+    expect(gated, "the gate reported its own tool-call row").toHaveLength(1);
+    expect(gated[0]!.tool).toBe("gmail_GMAIL_SEND_EMAIL");
+    expect(gated[0]!.turnId).toBe(turnId);
+    // And the turn's OTHER rows agree with it, which is the whole point of a
+    // join key: one turn, one id, every plane.
+    expect(rows.filter((row) => row.turnId !== turnId)).toEqual([]);
   }, 60_000);
 
   it("mints a fresh id for the next turn on the same thread", async () => {
