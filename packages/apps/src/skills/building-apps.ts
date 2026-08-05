@@ -132,7 +132,56 @@ group.
 Write each \`purpose\` so a stranger could build that part from it and nothing
 else — because that is exactly what happens next.
 
-## 3. Know the data before you write it
+## 3. When part of it has to happen while they are away
+
+Some asks are not only a view. "Check every morning", "whenever an invoice comes
+in" — part of that has to run when nobody is looking. You do not write the
+automation yourself. You DECLARE it, once, in the plan, and the engine turns your
+sentence into the thing that fires:
+
+\`\`\`
+<Server kind="steps" why="The overdue check has to run at 8am whether or not anyone opens this." schedule="every weekday at 8am"/>
+\`\`\`
+
+- \`kind="steps"\` — **every firing does the same thing.** A fixed recipe: read,
+  work it out, publish. No model in the loop, so it is free to run at night. This
+  is the right answer far more often than it looks.
+- \`kind="agentic"\` — **each firing needs judgment.** Which of these actually
+  matter, what to say about them. It costs a model call every time it fires, so
+  only choose it when a fixed recipe genuinely cannot decide.
+- \`why\` is required and it is one sentence: why this cannot happen in the
+  browser. Without it the whole thing is dropped.
+- \`schedule\` is the cadence **the way the person said it** — "every Friday
+  morning". Write their phrasing; the engine stores the cron. Leave it out when
+  the trigger is something happening in the product rather than a clock.
+
+A clock ("every morning", "in an hour", "on the 3rd") and things happening inside
+this product are what a trigger can wait for. Something calling in from outside
+this product is not available. If that is what they asked for, say so plainly and
+build nothing around the hole.
+
+**A run that shows nothing did not happen.** Nobody watches it fire, so the only
+evidence is on screen: the run publishes its result into the app's own records,
+and the app reads those rows back. So the plan needs the group that shows it — a
+\`<Server>\` with nothing on the board to read it is an automation firing into the
+dark forever.
+
+**Nothing irreversible runs away.** If the away part is sending, messaging,
+paying or deleting, that is not an automation and you do not build one. Vendo
+will not do a thing it cannot take back while nobody is watching. Say that in
+their words, and offer the version that does work: it watches, it publishes what
+it found, and they send it themselves in one tap next time they look. The honest
+limit goes in \`<Cannot>\`; the away-safe half is what \`<Server>\` declares.
+
+**Arming is never yours.** You declare it — the person turns it on, from a card
+that tells them what it will do and what it needs access to. Do not tell them it
+is running, do not wait for it to fire, and do not go looking for a tool that
+switches it on. There isn't one, and that is the point.
+
+Name it the way they would say it out loud — "Morning overdue check", never
+"scheduled steps trigger".
+
+## 4. Know the data before you write it
 
 - **Read the query's output schema off the tool listing.** Most tools declare
   what they return, so the field names are already in front of you. That is where
@@ -143,7 +192,7 @@ else — because that is exactly what happens next.
   this product's own, \`references/format.md\` for the ones that ship with the
   format. Props are checked by name, so a guessed prop is a failed app.
 
-## 4. Fill the groups in — one worker per group, blinkered
+## 5. Fill the groups in — one worker per group, blinkered
 
 Give each group to its own worker — one \`Task\` per group, all launched together,
 where you have that tool. Without one, fill the groups yourself, one at a time in
@@ -174,7 +223,7 @@ which makes it the worst thing this app can ship. Baking in a number you looked
 up once is the same lie with a delay: it is right on the screen you built it on
 and wrong every day after.
 
-## 5. Check it, then fix it
+## 6. Check it, then fix it
 
 Run \`validate\` on the app document one last time, over the whole thing — the
 final gate after the per-save runs above. It reads like a compiler: does it parse, do the tools and components and fields and props exist,
@@ -207,7 +256,7 @@ replacement.
 There are checks after you that you cannot see and cannot skip. They are not
 your enemy; they are the reason you can move fast.
 
-## 6. The one door for a question
+## 7. The one door for a question
 
 If the ask is genuinely ambiguous — two readings that build different apps — ask
 through \`ask_user\`, once, with the choice stated plainly. Do not ask about
