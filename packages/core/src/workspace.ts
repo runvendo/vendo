@@ -47,3 +47,12 @@ export interface FilesAdapter {
   get(key: string): Promise<{ bytes: Uint8Array; contentType?: string } | undefined>;
   delete(key: string): Promise<void>;
 }
+
+/** Build contract §3.4 — the line between "inline in the row" and "in a blob".
+ *
+ *  It lives here, beside the two shapes it governs, because it now has two
+ *  readers: `@vendoai/store`'s workspace rows and `@vendoai/apps`'s app source
+ *  (contract §3.2). A source file and a workspace file spill at the same size
+ *  because they are the same bytes in two projections; two constants would be two
+ *  answers to one question. */
+export const WORKSPACE_INLINE_MAX_BYTES = 65_536;

@@ -1,10 +1,10 @@
-import { VendoError, type FilesAdapter, type IsoDateTime } from "@vendoai/core";
+import { WORKSPACE_INLINE_MAX_BYTES, VendoError, type FilesAdapter, type IsoDateTime } from "@vendoai/core";
 import type { Db } from "./db.js";
 import { escapeLike, iso, text } from "./helpers/utils.js";
 
 /** Build contract §3.3 — inline in `content` up to this size; past it the row
     carries a `blob_ref` into the files adapter instead. */
-export const WORKSPACE_INLINE_MAX_BYTES = 65_536;
+export { WORKSPACE_INLINE_MAX_BYTES } from "@vendoai/core";
 
 /** Build contract §3.3 — retention per path, same as app history. */
 export const WORKSPACE_HISTORY_LIMIT = 50;
