@@ -66,6 +66,9 @@ interface BoxScript {
   /** The box's own disk. A files-first turn (D4) builds the app by WRITING here;
    *  the sync-back carries it home and the render seam does the rest. */
   root?: string;
+  /** What the driver asked for THIS round. A second round means the validate gate
+   *  (§7.1) sent the findings back, and this is how a test reads them. */
+  prompt?: string;
 }
 
 interface BoxDoor {
@@ -99,11 +102,12 @@ function fakeSandbox(script: (box: BoxScript) => Promise<void>): {
         token: "",
         env: {},
         openSession: (input: BoxScript) => ({
-          async send() {
+          async send(prompt: string) {
             await script({
               ...(input.toolDoor === undefined ? {} : { toolDoor: input.toolDoor }),
               emit: input.emit,
               root,
+              prompt,
             });
           },
           async interrupt() { /* the turn stops; the session lives */ },
@@ -374,6 +378,78 @@ describe("createVendo({ sandbox, harness: claudeCode() })", () => {
     // 3. And it opens — the three red "couldn't finish" beats of the live run.
     const surface = await vendo.apps.open(appId, ctx);
     expect(surface.kind).toBe("tree");
+    expect(JSON.stringify((surface as { payload: unknown }).payload)).toContain("inv_1");
+  });
+
+  /**
+   * VALIDATE MUST PASS BEFORE DONE — blueprint §7.1 item 4, the live proof.
+   *
+   * Nothing tested this because nothing did it. The `validate` verb was registered,
+   * on this harness's surface, and taught by the building-apps skill; whether the
+   * model ever called it was the model's business. A builder that skipped it
+   * reported success over a broken app, and the only thing that noticed was the
+   * paint seam declining to paint — which, from the model's side, is silence.
+   *
+   * The whole chain, nothing hand-wired and nothing stubbed but the SDK loop: the
+   * box WRITES a lying binding, the sync-back commits it for real, the real floor
+   * at the real seam refuses to paint it, the gate calls the real `validate` verb
+   * through the real guard, the findings go back to the session as one bounded fix
+   * round, the box writes the honest app, and THAT paints.
+   */
+  it("a bad app.vendo comes back as findings, gets one fix round, and then the screen updates", async () => {
+    const appId = "app_validategate";
+    const app = (field: string): string => `<App name="Open invoices">
+  <Query id="invoices" tool="maple_invoices_list" />
+  <Stack>
+    <Text text={invoices.invoices[0].${field}} />
+  </Stack>
+</App>`;
+
+    const prompts: string[] = [];
+    const sandbox = fakeSandbox(async (box) => {
+      prompts.push(box.prompt ?? "");
+      mkdirSync(join(box.root!, "user", "apps", appId), { recursive: true });
+      // Round 1 LIES: `reference` is absent from what the tool returns (it returns
+      // `id`). Round 2 is the repair.
+      writeFileSync(
+        join(box.root!, "user", "apps", appId, "app.vendo"),
+        app(prompts.length === 1 ? "reference" : "id"),
+      );
+      box.emit({ type: "text", delta: prompts.length === 1 ? "Here are your open invoices." : "Fixed." });
+    });
+    const { vendo } = await compose({ sandbox, harness: claudeCode() });
+
+    const turn = await vendo.handler(post("/threads", {
+      threadId: "thr_validategate",
+      message: userMessage("m1", "Show me my open invoices"),
+    }));
+    expect(turn.status).toBe(200);
+    const body = await turn.text();
+
+    // 1. The gate fired: the turn did not end on the broken file, it asked again.
+    expect(prompts).toHaveLength(2);
+    // 2. And it asked with the FINDINGS — the teaching sentence, naming the real
+    //    field. This is the "bad file → findings" half.
+    expect(prompts[1]).toContain("validate");
+    expect(prompts[1]).toContain("reference");
+    expect(prompts[1]).toContain("app.vendo");
+
+    // 3. "→ screen updates": the honest app is what reached the screen, with the
+    //    query's real row on it. The lying binding never painted — if it had, the
+    //    seam would have put `/invoices/invoices/0/reference` on the wire.
+    expect(body).toContain("data-vendo-view");
+    expect(body).toContain(appId);
+    expect(body).toContain("inv_1");
+    expect(body).not.toContain("reference");
+
+    // 4. And it is a real app afterwards, built from the REPAIRED document.
+    const ctx = {
+      principal,
+      venue: "chat" as const,
+      presence: "present" as const,
+      sessionId: "s_validategate",
+    };
+    const surface = await vendo.apps.open(appId, ctx);
     expect(JSON.stringify((surface as { payload: unknown }).payload)).toContain("inv_1");
   });
 

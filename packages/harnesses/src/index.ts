@@ -67,6 +67,16 @@ export {
   wrapWorkspaceForRender,
   type RenderSeamOptions,
 } from "./render-seam.js";
+// The builder's validate gate (§7.1 item 4) — "validate must pass before done",
+// as a function any harness's loop can call. Public because the loop that needs it
+// is not always ours: a host's own harness driving the same workspace wants the
+// same gate, and the alternative is every driver reimplementing the verb call.
+export {
+  repairInstruction,
+  validateWrittenApps,
+  VALIDATE_TOOL,
+  type AppValidationFailure,
+} from "./validate-gate.js";
 export { VENDO_STATUS_PART } from "./wire.js";
 // The materialization seam (materialize.ts) is deliberately NOT re-exported:
 // its consumers are the harness drivers in this package, which reach it
