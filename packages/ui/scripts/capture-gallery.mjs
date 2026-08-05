@@ -3,7 +3,7 @@
 // Captures the core surface + headline-stress GIFs off the real-browser harness
 // (the deterministic wire fixture that STREAMS exactly like the demos — the same
 // @vendoai/ui chrome the hosts mount). Each clip is Playwright recordVideo →
-// ffmpeg palette GIF, the proven capture path from scripts/capture-flow-gif.mjs.
+// ffmpeg palette GIF.
 //
 // Prereqs: ffmpeg on PATH. Usage:
 //   node scripts/capture-gallery.mjs            # capture all GIF beats

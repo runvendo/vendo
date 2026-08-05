@@ -15,5 +15,4 @@ corpus/.logs
 # (theme/tools/policy/catalog) MUST ship with the app.
 **/.env*
 **/.vendo/data
-apps/*/RESEARCH
-apps/*/docs/verification
+examples/*/docs/verification

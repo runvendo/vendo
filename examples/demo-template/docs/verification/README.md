@@ -8,14 +8,13 @@ originals are gitignored under `bench/demo-capture/output/`.
 
 ## Files
 
-- **`demo-beats-acceptance.gif`** (~7.8 MB, 720px wide, 8 fps) — the
-  acceptance recording from `demo-beats --host-config examples/demo-template
-  --run-id task6-acceptance`, re-encoded from the original 12.6 MB / 960px /
-  10 fps capture so GitHub renders it inline. This IS the verification
-  artifact per `VERIFY.md` §2: one continuous recording of all three
-  `demo.config.json` beats running against a live boot of the app, with the
-  stopwatch overlay and per-beat marks burned in. Measured timings from the
-  run's `capture.json`:
+- **Acceptance recording** (not committed — media stays out of the tree;
+  regenerate with `demo-beats --host-config examples/demo-template
+  --run-id task6-acceptance`, full-res originals land in the gitignored
+  `bench/demo-capture/output/`). The verification artifact per `VERIFY.md`
+  §2: one continuous recording of all three `demo.config.json` beats
+  running against a live boot of the app, with the stopwatch overlay and
+  per-beat marks burned in. Measured timings from the run's `capture.json`:
   - `generate-ui` (`expectsView`): first paint **13.6s**, usable **76.1s**.
   - `take-action` (`expectsApproval`): **1 approval**, auto-approved consent
     card, server-side archive executed inside the recording before the beat
