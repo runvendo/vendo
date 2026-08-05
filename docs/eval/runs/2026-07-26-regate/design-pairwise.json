@@ -1,0 +1,416 @@
+{
+  "model": "claude-opus-4-8",
+  "protocol": "blind labels, both orderings, agreement rule, ties on disagreement",
+  "results": [
+    {
+      "id": "I1",
+      "comparison": "B-vs-A",
+      "o1": "B",
+      "o2": "A",
+      "verdict": "A"
+    },
+    {
+      "id": "I1",
+      "comparison": "C-vs-A",
+      "o1": "B",
+      "o2": "B",
+      "verdict": "TIE"
+    },
+    {
+      "id": "I2",
+      "comparison": "B-vs-A",
+      "o1": "B",
+      "o2": "B",
+      "verdict": "TIE"
+    },
+    {
+      "id": "I2",
+      "comparison": "C-vs-A",
+      "o1": "B",
+      "o2": "A",
+      "verdict": "A"
+    },
+    {
+      "id": "I3",
+      "comparison": "B-vs-A",
+      "o1": "A",
+      "o2": "B",
+      "verdict": "B"
+    },
+    {
+      "id": "I3",
+      "comparison": "C-vs-A",
+      "o1": "A",
+      "o2": "A",
+      "verdict": "TIE"
+    },
+    {
+      "id": "I4",
+      "comparison": "B-vs-A",
+      "o1": "B",
+      "o2": "B",
+      "verdict": "TIE"
+    },
+    {
+      "id": "I4",
+      "comparison": "C-vs-A",
+      "o1": "B",
+      "o2": "A",
+      "verdict": "A"
+    },
+    {
+      "id": "I5",
+      "comparison": "B-vs-A",
+      "o1": "B",
+      "o2": "A",
+      "verdict": "A"
+    },
+    {
+      "id": "I5",
+      "comparison": "C-vs-A",
+      "o1": "A",
+      "o2": "B",
+      "verdict": "C"
+    },
+    {
+      "id": "I6",
+      "comparison": "B-vs-A",
+      "o1": "A",
+      "o2": "A",
+      "verdict": "TIE"
+    },
+    {
+      "id": "I6",
+      "comparison": "C-vs-A",
+      "o1": "A",
+      "o2": "B",
+      "verdict": "C"
+    },
+    {
+      "id": "I7",
+      "comparison": "B-vs-A",
+      "o1": "A",
+      "o2": "B",
+      "verdict": "B"
+    },
+    {
+      "id": "I7",
+      "comparison": "C-vs-A",
+      "o1": "A",
+      "o2": "B",
+      "verdict": "C"
+    },
+    {
+      "id": "I8",
+      "comparison": "B-vs-A",
+      "o1": "B",
+      "o2": "A",
+      "verdict": "A"
+    },
+    {
+      "id": "I8",
+      "comparison": "C-vs-A",
+      "o1": "B",
+      "o2": "B",
+      "verdict": "TIE"
+    },
+    {
+      "id": "I9",
+      "comparison": "B-vs-A",
+      "o1": "A",
+      "o2": "B",
+      "verdict": "B"
+    },
+    {
+      "id": "I9",
+      "comparison": "C-vs-A",
+      "o1": "A",
+      "o2": "B",
+      "verdict": "C"
+    },
+    {
+      "id": "I10",
+      "comparison": "B-vs-A",
+      "o1": "B",
+      "o2": "B",
+      "verdict": "TIE"
+    },
+    {
+      "id": "I10",
+      "comparison": "C-vs-A",
+      "o1": "B",
+      "o2": "B",
+      "verdict": "TIE"
+    },
+    {
+      "id": "I11",
+      "comparison": "B-vs-A",
+      "o1": "B",
+      "o2": "B",
+      "verdict": "TIE"
+    },
+    {
+      "id": "I11",
+      "comparison": "C-vs-A",
+      "o1": "B",
+      "o2": "B",
+      "verdict": "TIE"
+    },
+    {
+      "id": "I12",
+      "comparison": "B-vs-A",
+      "o1": "A",
+      "o2": "B",
+      "verdict": "B"
+    },
+    {
+      "id": "I12",
+      "comparison": "C-vs-A",
+      "o1": "B",
+      "o2": "A",
+      "verdict": "A"
+    },
+    {
+      "id": "I13",
+      "comparison": "B-vs-A",
+      "o1": "B",
+      "o2": "B",
+      "verdict": "TIE"
+    },
+    {
+      "id": "I13",
+      "comparison": "C-vs-A",
+      "o1": "B",
+      "o2": "A",
+      "verdict": "A"
+    },
+    {
+      "id": "I14",
+      "comparison": "B-vs-A",
+      "o1": "A",
+      "o2": "B",
+      "verdict": "B"
+    },
+    {
+      "id": "I14",
+      "comparison": "C-vs-A",
+      "o1": "B",
+      "o2": "A",
+      "verdict": "A"
+    },
+    {
+      "id": "I15",
+      "comparison": "B-vs-A",
+      "verdict": "SKIP",
+      "reason": "missing screenshot"
+    },
+    {
+      "id": "I15",
+      "comparison": "C-vs-A",
+      "verdict": "SKIP",
+      "reason": "missing screenshot"
+    },
+    {
+      "id": "I16",
+      "comparison": "B-vs-A",
+      "o1": "B",
+      "o2": "A",
+      "verdict": "A"
+    },
+    {
+      "id": "I16",
+      "comparison": "C-vs-A",
+      "o1": "A",
+      "o2": "B",
+      "verdict": "C"
+    },
+    {
+      "id": "I17",
+      "comparison": "B-vs-A",
+      "o1": "A",
+      "o2": "B",
+      "verdict": "B"
+    },
+    {
+      "id": "I17",
+      "comparison": "C-vs-A",
+      "o1": "A",
+      "o2": "B",
+      "verdict": "C"
+    },
+    {
+      "id": "I18",
+      "comparison": "B-vs-A",
+      "verdict": "SKIP",
+      "reason": "missing screenshot"
+    },
+    {
+      "id": "I18",
+      "comparison": "C-vs-A",
+      "verdict": "SKIP",
+      "reason": "missing screenshot"
+    },
+    {
+      "id": "I19",
+      "comparison": "B-vs-A",
+      "o1": "A",
+      "o2": "B",
+      "verdict": "B"
+    },
+    {
+      "id": "I19",
+      "comparison": "C-vs-A",
+      "o1": "A",
+      "o2": "B",
+      "verdict": "C"
+    },
+    {
+      "id": "I20",
+      "comparison": "B-vs-A",
+      "o1": "A",
+      "o2": "B",
+      "verdict": "B"
+    },
+    {
+      "id": "I20",
+      "comparison": "C-vs-A",
+      "o1": "A",
+      "o2": "B",
+      "verdict": "C"
+    },
+    {
+      "id": "I21",
+      "comparison": "B-vs-A",
+      "verdict": "SKIP",
+      "reason": "missing screenshot"
+    },
+    {
+      "id": "I21",
+      "comparison": "C-vs-A",
+      "verdict": "SKIP",
+      "reason": "missing screenshot"
+    },
+    {
+      "id": "I22",
+      "comparison": "B-vs-A",
+      "o1": "B",
+      "o2": "A",
+      "verdict": "A"
+    },
+    {
+      "id": "I22",
+      "comparison": "C-vs-A",
+      "o1": "A",
+      "o2": "B",
+      "verdict": "C"
+    },
+    {
+      "id": "I23",
+      "comparison": "B-vs-A",
+      "o1": "A",
+      "o2": "B",
+      "verdict": "B"
+    },
+    {
+      "id": "I23",
+      "comparison": "C-vs-A",
+      "o1": "A",
+      "o2": "B",
+      "verdict": "C"
+    },
+    {
+      "id": "I24",
+      "comparison": "B-vs-A",
+      "verdict": "SKIP",
+      "reason": "missing screenshot"
+    },
+    {
+      "id": "I24",
+      "comparison": "C-vs-A",
+      "verdict": "SKIP",
+      "reason": "missing screenshot"
+    },
+    {
+      "id": "I25",
+      "comparison": "B-vs-A",
+      "verdict": "SKIP",
+      "reason": "missing screenshot"
+    },
+    {
+      "id": "I25",
+      "comparison": "C-vs-A",
+      "o1": "A",
+      "o2": "B",
+      "verdict": "C"
+    },
+    {
+      "id": "I26",
+      "comparison": "B-vs-A",
+      "o1": "A",
+      "o2": "B",
+      "verdict": "B"
+    },
+    {
+      "id": "I26",
+      "comparison": "C-vs-A",
+      "o1": "B",
+      "o2": "B",
+      "verdict": "TIE"
+    },
+    {
+      "id": "I27",
+      "comparison": "B-vs-A",
+      "o1": "B",
+      "o2": "B",
+      "verdict": "TIE"
+    },
+    {
+      "id": "I27",
+      "comparison": "C-vs-A",
+      "o1": "B",
+      "o2": "A",
+      "verdict": "A"
+    },
+    {
+      "id": "I28",
+      "comparison": "B-vs-A",
+      "verdict": "SKIP",
+      "reason": "missing screenshot"
+    },
+    {
+      "id": "I28",
+      "comparison": "C-vs-A",
+      "o1": "B",
+      "o2": "A",
+      "verdict": "A"
+    },
+    {
+      "id": "I29",
+      "comparison": "B-vs-A",
+      "o1": "B",
+      "o2": "A",
+      "verdict": "A"
+    },
+    {
+      "id": "I29",
+      "comparison": "C-vs-A",
+      "o1": "B",
+      "o2": "A",
+      "verdict": "A"
+    },
+    {
+      "id": "I30",
+      "comparison": "B-vs-A",
+      "o1": "B",
+      "o2": "B",
+      "verdict": "TIE"
+    },
+    {
+      "id": "I30",
+      "comparison": "C-vs-A",
+      "o1": "B",
+      "o2": "A",
+      "verdict": "A"
+    }
+  ]
+}

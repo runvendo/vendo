@@ -1,0 +1,22 @@
+{
+  "data": {
+    "id": "cl_rivera",
+    "businessName": "Blue Bottle Coffee",
+    "entityType": "s_corp",
+    "contactName": "Marisol Rivera",
+    "contactEmail": "yousef+rivera@vendo.run",
+    "assigneeId": "st_maya",
+    "filingDeadline": "2026-07-28T17:00:00-07:00",
+    "progress": {
+      "received": 3,
+      "total": 6
+    },
+    "status": "missing_docs",
+    "assignee": {
+      "id": "st_maya",
+      "name": "Maya Alvarez",
+      "role": "Account Manager",
+      "initials": "MA"
+    }
+  }
+}

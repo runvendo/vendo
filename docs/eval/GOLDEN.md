@@ -117,6 +117,59 @@ wave authors a NEW fresh pool (fresh sets, once run, become frozen tranches).
 - F9. demo-accounting: "a client detail page for Blue Bottle Coffee: everything we know, with quick actions"
 - F10. demo-accounting: "help me plan next week: what's due, who's assigned, what needs chasing"
 
+## Tranche 5 — the I-set (FROZEN 2026-07-26 after its single re-gate run)
+
+Authored blind before the 2026-07-26 re-gate (first commit of the gate branch
+`eval/regate-2026-07-26`, before any host boot or generation), in the spirit and
+difficulty of prior tranches: natural asks with an archetype spread (dashboard /
+worklist / detail page / form-flow / board-timeline / report), two `[impossible]` and
+two partially-feasible per host. T5 is the gate set for the healed-mechanisms re-run of
+the voided 2026-07-25 rematch (same three arms; T4 was burned by its single run). Run
+ONCE (`docs/eval/runs/2026-07-26-regate/`). **Result at freeze: A (rematch
+production-defaults control, pipeline {}) 14/30 · B (endPass) 14/30 ·
+C (exemplarContract+endPass) 13/30** — the refusal wall is gone (7/90 attempts produced
+no app vs the rematch's 65/90); fails are now dominated by wrong-data-binding,
+title-only empty apps (arms A/B only), the Kit Callout `accent` crash (arm C), and a
+new platform mechanism (the guard judge approval-gating read-only tools called from
+apps). Now frozen under the same rules as the 30; the next wave authors a NEW fresh
+pool. Full prompts: `docs/eval/runs/2026-07-26-regate/PROMPTS.md`.
+
+### demo-bank (Maple) — I1–I15
+
+- I1. "am I overspending? show me" [vague][chart][format]
+- I2. "show me my pending card charges that haven't posted yet" [table][format]
+- I3. "a report card for each month this year: money in, money out, and whether I came out ahead" [chart][table][format]
+- I4. "a detail page for my Japan trip goal: progress, recent contributions, and what it'll take to finish by December" [chart][format]
+- I5. "send my mom $25 for brunch" [action][select][format]
+- I6. "month by month, what have my streaming subscriptions cost me this year?" [chart][format]
+- I7. "line up my four accounts: what each is for, its balance, and the last thing that happened in it" [table][format]
+- I8. "move everything above $5,000 in checking over to savings" [action][format]
+- I9. "dispute that Steam charge — and list anything else Steam has charged me" [action][table] (partially feasible — no dispute tool)
+- I10. "put my PG&E bill on autopay and show what I've paid them this year" [action][table][format] (partially feasible — no autopay tool)
+- I11. "which stocks am I holding in my Maple Invest account and how are they doing?" [impossible→honesty (no holdings/market tools)]
+- I12. "pull up my 1099 tax forms from last year" [impossible→honesty (no tax-document tools)]
+- I13. "how much of my spending is going to eating out versus groceries lately?" [chart][format]
+- I14. "I'm meeting a financial advisor tomorrow — prep a one-pager about my finances" [vague][format]
+- I15. "a week-by-week view of this month: what came in and went out each week" [chart][table][format]
+
+### demo-accounting (Cadence) — I16–I30
+
+- I16. "which entity types are giving us the most trouble this season? s-corps, partnerships, individuals — compare" [chart][table]
+- I17. "every document that's sitting in needs-review right now, oldest first" [table][format]
+- I18. "pull up Anjali Patel: what we have from her, what's missing, and the last thing we told her" [table][format]
+- I19. "tell Figma which of their documents were rejected and need resubmitting" [action][select]
+- I20. "group our clients by how close their deadline is: this week, this month, later" [table][format]
+- I21. "how fast are we turning around document reviews? time from received to verified" [chart][format]
+- I22. "it's Monday — what does the firm need from me first?" [vague][table]
+- I23. "which clients uploaded something this week that nobody has acknowledged?" [table]
+- I24. "set up a recurring Friday reminder to Equinox until their books are in" [action] (partially feasible — no scheduling tool)
+- I25. "archive Jiffy Lube — they've left the firm — and send a goodbye note" [action] (partially feasible — no archive tool)
+- I26. "a conflict-of-interest screen for prospective client Allbirds" [report] (roster screening feasible; external registries not)
+- I27. "where are our engagement letters? show which clients have signed" [impossible→honesty (no engagement-letter/e-sign tools)]
+- I28. "send Antonio Delgado a checklist of exactly what he still owes us" [action][format]
+- I29. "are we ahead of or behind last week on document collection? week-over-week" [chart][format]
+- I30. "the managing partner wants one number: are we going to make the filing deadlines? back it up" [vague][chart][format]
+
 ## Run ledger
 
 | Date | Set | Score | Main @ | Evidence |
@@ -124,3 +177,9 @@ wave authors a NEW fresh pool (fresh sets, once run, become frozen tranches).
 | 2026-07-19 | frozen 30 (baseline) | 11/30 | pre-v3 | branches `vendo-heldout-maple`/`-cadence` |
 | 2026-07-20 | frozen 30 | **18/30** | 090b1779 (full v3) | `docs/verification/final-gate/` (PR #436) |
 | 2026-07-20 | F-set (fresh) | **8/10** | 090b1779 | `docs/verification/final-gate/` (PR #436) |
+| 2026-07-25 | H-set (T4), arms A/B/C | A 2/30 · B 5/30 · C 2/30 — **VOIDED as a config comparison** (65/90 refusals traced to mechanism bugs, fixed on main by #581/#582/#584; T4 stays burned/frozen) | afa66bec | PR #577 (`docs/eval/runs/2026-07-25-rematch/`) |
+| 2026-07-26 | I-set (fresh → frozen as Tranche 5), arm A = rematch production-defaults control (`pipeline: {}`) | **14/30** (Maple 9/15 · Cadence 5/15) | 76dcf6a3 | `docs/eval/runs/2026-07-26-regate/` |
+| 2026-07-26 | I-set, arm B = `{ endPass: true }` | **14/30** (Maple 8/15 · Cadence 6/15) | 76dcf6a3 | `docs/eval/runs/2026-07-26-regate/` |
+| 2026-07-26 | I-set, arm C = `{ exemplarContract: true, endPass: true }` | **13/30** (Maple 5/15 · Cadence 8/15) | 76dcf6a3 | `docs/eval/runs/2026-07-26-regate/` |
+| 2026-07-26 | design pairwise on shipped pairs (opus-4-8, both orderings) | see `docs/eval/runs/2026-07-26-regate/design-pairwise.md` | 76dcf6a3 | same |
+| — | NOTE: production main now ships the FULL v4 pipeline in both demo hosts (#575) — a config that is NOT among the re-gate arms; arm A was kept at `pipeline: {}` for cross-run comparability with the rematch | | | |

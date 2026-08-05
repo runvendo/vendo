@@ -1,0 +1,481 @@
+- complementary:
+  - text: Maple
+  - navigation:
+    - link "Home":
+      - /url: /
+    - link "Accounts":
+      - /url: /accounts
+    - link "Transactions":
+      - /url: /transactions
+    - link "Cards":
+      - /url: /cards
+    - link "Payments":
+      - /url: /payments
+    - link "Insights":
+      - /url: /insights
+    - link "Ask Maple":
+      - /url: /vendo
+    - link "Apps":
+      - /url: /vendo/apps
+    - link "Activity":
+      - /url: /activity
+    - link "Settings":
+      - /url: /settings
+    - button "Reset demo"
+  - button "YH Yousef Helal Personal"
+- banner:
+  - heading "Apps" [level=1]
+  - button "Search… ⌘K"
+  - button "Send"
+  - button "Request"
+  - button "Move money"
+  - button "Notifications"
+- main:
+  - heading "Apps" [level=1]
+  - paragraph: Personal apps built with Vendo, running on Maple.
+  - form "Create app":
+    - textbox "Describe a new app"
+    - button "Create" [disabled]
+  - list "Your apps":
+    - listitem:
+      - button "July 2026 — weekly cashflow"
+      - button "Remove July 2026 — weekly cashflow": ×
+    - listitem:
+      - button "July 2026 weekly cashflow"
+      - button "Remove July 2026 weekly cashflow": ×
+    - listitem:
+      - button "Financial advisor one-pager"
+      - button "Remove Financial advisor one-pager": ×
+    - listitem:
+      - button "Financial snapshot"
+      - button "Remove Financial snapshot": ×
+    - listitem:
+      - button "Financial snapshot"
+      - button "Remove Financial snapshot": ×
+    - listitem:
+      - button "Dining vs. Groceries"
+      - button "Remove Dining vs. Groceries": ×
+    - listitem:
+      - button "Dining vs. groceries"
+      - button "Remove Dining vs. groceries": ×
+    - listitem:
+      - button "Dining vs. groceries"
+      - button "Remove Dining vs. groceries": ×
+    - listitem:
+      - button "Tax forms — not available"
+      - button "Remove Tax forms — not available": ×
+    - listitem:
+      - button "Tax documents"
+      - button "Remove Tax documents": ×
+    - listitem:
+      - button "Tax documents"
+      - button "Remove Tax documents": ×
+    - listitem:
+      - button "Maple Invest holdings"
+      - button "Remove Maple Invest holdings": ×
+    - listitem:
+      - button "Maple Invest holdings"
+      - button "Remove Maple Invest holdings": ×
+    - listitem:
+      - button "Maple Invest holdings"
+      - button "Remove Maple Invest holdings": ×
+    - listitem:
+      - button "PG&E payments & autopay"
+      - button "Remove PG&E payments & autopay": ×
+    - listitem:
+      - button "PG&E Autopay & Payment History"
+      - button "Remove PG&E Autopay & Payment History": ×
+    - listitem:
+      - button "PG&E Autopay & Payment History"
+      - button "Remove PG&E Autopay & Payment History": ×
+    - listitem:
+      - button "Steam charges & dispute"
+      - button "Remove Steam charges & dispute": ×
+    - listitem:
+      - button "Steam charges & dispute"
+      - button "Remove Steam charges & dispute": ×
+    - listitem:
+      - button "Steam charges & dispute"
+      - button "Remove Steam charges & dispute": ×
+    - listitem:
+      - button "Transfer excess to savings"
+      - button "Remove Transfer excess to savings": ×
+    - listitem:
+      - button "Sweep to savings"
+      - button "Remove Sweep to savings": ×
+    - listitem:
+      - button "Transfer excess to savings"
+      - button "Remove Transfer excess to savings": ×
+    - listitem:
+      - button "Your four accounts"
+      - button "Remove Your four accounts": ×
+    - listitem:
+      - button "Account overview"
+      - button "Remove Account overview": ×
+    - listitem:
+      - button "Account overview"
+      - button "Remove Account overview": ×
+    - listitem:
+      - button "Streaming subscriptions this year"
+      - button "Remove Streaming subscriptions this year": ×
+    - listitem:
+      - button "Streaming subscriptions this year"
+      - button "Remove Streaming subscriptions this year": ×
+    - listitem:
+      - button "Streaming costs this year"
+      - button "Remove Streaming costs this year": ×
+    - listitem:
+      - button "Send $25 to mom"
+      - button "Remove Send $25 to mom": ×
+    - listitem:
+      - button "Send $25 to Mom"
+      - button "Remove Send $25 to Mom": ×
+    - listitem:
+      - button "Send $25 to Mom"
+      - button "Remove Send $25 to Mom": ×
+    - listitem:
+      - button "Japan trip goal"
+      - button "Remove Japan trip goal": ×
+    - listitem:
+      - button "Japan trip goal"
+      - button "Remove Japan trip goal": ×
+    - listitem:
+      - button "Japan trip goal"
+      - button "Remove Japan trip goal": ×
+    - listitem:
+      - button "Monthly cash flow report"
+      - button "Remove Monthly cash flow report": ×
+    - listitem:
+      - button "Monthly report card 2026"
+      - button "Remove Monthly report card 2026": ×
+    - listitem:
+      - button "Monthly report card 2026"
+      - button "Remove Monthly report card 2026": ×
+    - listitem:
+      - button "Pending card charges"
+      - button "Remove Pending card charges": ×
+    - listitem:
+      - button "Pending card charges"
+      - button "Remove Pending card charges": ×
+    - listitem:
+      - button "Pending card charges"
+      - button "Remove Pending card charges": ×
+    - listitem:
+      - button "Spending check"
+      - button "Remove Spending check": ×
+    - listitem:
+      - button "Spending vs Budget"
+      - button "Remove Spending vs Budget": ×
+    - listitem:
+      - button "Spending vs budgets"
+      - button "Remove Spending vs budgets": ×
+    - listitem:
+      - button "Low balance alert"
+      - button "Remove Low balance alert": ×
+    - listitem:
+      - button "Weekly spending summary"
+      - button "Remove Weekly spending summary": ×
+    - listitem:
+      - button "Money HQ"
+      - button "Remove Money HQ": ×
+    - listitem:
+      - button "Spending This Month"
+      - button "Remove Spending This Month": ×
+  - heading "Financial snapshot" [level=3]
+  - text: Prepared for your advisor meeting · as of July 26, 2026
+  - article:
+    - text: Total balance $54,907.15 Net worth across all accounts
+    - button "1W"
+    - button "1M"
+    - button "3M"
+    - button "1Y"
+    - button "All"
+  - article "Accounts":
+    - text: Accounts
+    - strong: "4"
+  - article "Total scheduled payments":
+    - text: Total scheduled payments
+    - strong: "-$2,850.00"
+  - article "Active cards":
+    - text: Active cards
+    - strong: "4471"
+  - article "Saved payees":
+    - text: Saved payees
+    - strong: Jordan Avery
+  - heading "Accounts" [level=3]
+  - table:
+    - rowgroup:
+      - row "Account Type Ending Balance":
+        - columnheader "Account"
+        - columnheader "Type"
+        - columnheader "Ending"
+        - columnheader "Balance"
+    - rowgroup:
+      - row "Maple Checking checking 4471 $9,412.20":
+        - cell "Maple Checking"
+        - cell "checking"
+        - cell "4471"
+        - cell "$9,412.20"
+      - row "Maple Savings savings 8820 $28,141.35":
+        - cell "Maple Savings"
+        - cell "savings"
+        - cell "8820"
+        - cell "$28,141.35"
+      - row "Maple Credit credit 0934 -$1,288.40":
+        - cell "Maple Credit"
+        - cell "credit"
+        - cell "0934"
+        - cell "-$1,288.40"
+      - row "Maple Invest investing 5567 $18,642.00":
+        - cell "Maple Invest"
+        - cell "investing"
+        - cell "5567"
+        - cell "$18,642.00"
+  - heading "Spending by category" [level=3]
+  - application
+  - text: Total $4,992.08
+  - table:
+    - rowgroup:
+      - row "Category Amount":
+        - columnheader "Category"
+        - columnheader "Amount"
+    - rowgroup:
+      - row "housing $2,850.00":
+        - cell "housing"
+        - cell "$2,850.00"
+      - row "shopping $617.49":
+        - cell "shopping"
+        - cell "$617.49"
+      - row "transport $591.81":
+        - cell "transport"
+        - cell "$591.81"
+      - row "dining $357.09":
+        - cell "dining"
+        - cell "$357.09"
+      - row "subscriptions $335.47":
+        - cell "subscriptions"
+        - cell "$335.47"
+      - row "groceries $176.09":
+        - cell "groceries"
+        - cell "$176.09"
+      - row "coffee $64.13":
+        - cell "coffee"
+        - cell "$64.13"
+  - heading "Budgets" [level=3]
+  - table:
+    - rowgroup:
+      - row "Category Spent Limit":
+        - columnheader "Category"
+        - columnheader "Spent"
+        - columnheader "Limit"
+    - rowgroup:
+      - row "dining $357.09 $600.00":
+        - cell "dining"
+        - cell "$357.09"
+        - cell "$600.00"
+      - row "groceries $176.09 $500.00":
+        - cell "groceries"
+        - cell "$176.09"
+        - cell "$500.00"
+      - row "coffee $64.13 $120.00":
+        - cell "coffee"
+        - cell "$64.13"
+        - cell "$120.00"
+      - row "transport $591.81 $300.00":
+        - cell "transport"
+        - cell "$591.81"
+        - cell "$300.00"
+      - row "shopping $617.49 $600.00":
+        - cell "shopping"
+        - cell "$617.49"
+        - cell "$600.00"
+      - row "subscriptions $335.47 $120.00":
+        - cell "subscriptions"
+        - cell "$335.47"
+        - cell "$120.00"
+  - heading "Savings goals" [level=3]
+  - table:
+    - rowgroup:
+      - row "Goal Saved Target":
+        - columnheader "Goal"
+        - columnheader "Saved"
+        - columnheader "Target"
+    - rowgroup:
+      - row "Japan trip $3,120.00 $5,000.00":
+        - cell "Japan trip"
+        - cell "$3,120.00"
+        - cell "$5,000.00"
+      - row "Emergency fund $7,400.00 $10,000.00":
+        - cell "Emergency fund"
+        - cell "$7,400.00"
+        - cell "$10,000.00"
+      - row "New MacBook $900.00 $2,500.00":
+        - cell "New MacBook"
+        - cell "$900.00"
+        - cell "$2,500.00"
+  - heading "Recurring charges" [level=3]
+  - table:
+    - rowgroup:
+      - row "Merchant Cadence Amount Next date":
+        - columnheader "Merchant"
+        - columnheader "Cadence"
+        - columnheader "Amount"
+        - columnheader "Next date"
+    - rowgroup:
+      - row "Rent — Mission St monthly -$2,850.00 Aug 1, 2026":
+        - cell "Rent — Mission St"
+        - cell "monthly"
+        - cell "-$2,850.00"
+        - cell "Aug 1, 2026"
+      - row "Equinox monthly -$285.00 Aug 1, 2026":
+        - cell "Equinox"
+        - cell "monthly"
+        - cell "-$285.00"
+        - cell "Aug 1, 2026"
+      - row "ChatGPT monthly -$20.00 Aug 12, 2026":
+        - cell "ChatGPT"
+        - cell "monthly"
+        - cell "-$20.00"
+        - cell "Aug 12, 2026"
+      - row "Netflix monthly -$15.49 Aug 7, 2026":
+        - cell "Netflix"
+        - cell "monthly"
+        - cell "-$15.49"
+        - cell "Aug 7, 2026"
+      - row "Spotify monthly -$11.99 Aug 4, 2026":
+        - cell "Spotify"
+        - cell "monthly"
+        - cell "-$11.99"
+        - cell "Aug 4, 2026"
+      - row "iCloud+ monthly -$2.99 Aug 9, 2026":
+        - cell "iCloud+"
+        - cell "monthly"
+        - cell "-$2.99"
+        - cell "Aug 9, 2026"
+  - heading "Upcoming payments" [level=3]
+  - table:
+    - rowgroup:
+      - row "Payee Cadence Amount Next date":
+        - columnheader "Payee"
+        - columnheader "Cadence"
+        - columnheader "Amount"
+        - columnheader "Next date"
+    - rowgroup:
+      - row "Mission St Property monthly -$2,850.00 Aug 1, 2026":
+        - cell "Mission St Property"
+        - cell "monthly"
+        - cell "-$2,850.00"
+        - cell "Aug 1, 2026"
+      - row "PG&E monthly -$86.40 Aug 15, 2026":
+        - cell "PG&E"
+        - cell "monthly"
+        - cell "-$86.40"
+        - cell "Aug 15, 2026"
+  - heading "Cash flow summary" [level=3]
+  - table:
+    - rowgroup:
+      - row "Period Inflow Outflow":
+        - columnheader "Period"
+        - columnheader "Inflow"
+        - columnheader "Outflow"
+    - rowgroup:
+      - row "2026-04 $0.00 $200.10":
+        - cell "2026-04"
+        - cell "$0.00"
+        - cell "$200.10"
+      - row "2026-05 $19,260.00 $4,762.60":
+        - cell "2026-05"
+        - cell "$19,260.00"
+        - cell "$4,762.60"
+      - row "2026-06 $12,840.00 $4,670.79":
+        - cell "2026-06"
+        - cell "$12,840.00"
+        - cell "$4,670.79"
+      - row "2026-07 $6,454.99 $4,992.08":
+        - cell "2026-07"
+        - cell "$6,454.99"
+        - cell "$4,992.08"
+  - heading "Recent transactions" [level=3]
+  - searchbox "Search table"
+  - table:
+    - rowgroup:
+      - row "Merchant Category Status Date Amount":
+        - columnheader "Merchant"
+        - columnheader "Category"
+        - columnheader "Status"
+        - columnheader "Date"
+        - columnheader "Amount"
+    - rowgroup:
+      - row "DoorDash dining posted Jul 26, 2026 -$87.00":
+        - cell "DoorDash"
+        - cell "dining"
+        - cell "posted"
+        - cell "Jul 26, 2026"
+        - cell "-$87.00"
+      - row "Tartine Bakery dining posted Jul 25, 2026 -$39.39":
+        - cell "Tartine Bakery"
+        - cell "dining"
+        - cell "posted"
+        - cell "Jul 25, 2026"
+        - cell "-$39.39"
+      - row "Whole Foods Market groceries posted Jul 25, 2026 -$52.18":
+        - cell "Whole Foods Market"
+        - cell "groceries"
+        - cell "posted"
+        - cell "Jul 25, 2026"
+        - cell "-$52.18"
+      - row "Apple Store shopping posted Jul 25, 2026 -$200.04":
+        - cell "Apple Store"
+        - cell "shopping"
+        - cell "posted"
+        - cell "Jul 25, 2026"
+        - cell "-$200.04"
+      - row "United Airlines transport authorized Jul 25, 2026 -$418.00":
+        - cell "United Airlines"
+        - cell "transport"
+        - cell "authorized"
+        - cell "Jul 25, 2026"
+        - cell "-$418.00"
+      - row "Tartine Bakery dining posted Jul 24, 2026 -$16.21":
+        - cell "Tartine Bakery"
+        - cell "dining"
+        - cell "posted"
+        - cell "Jul 24, 2026"
+        - cell "-$16.21"
+      - row "Lyft transport posted Jul 22, 2026 -$23.40":
+        - cell "Lyft"
+        - cell "transport"
+        - cell "posted"
+        - cell "Jul 22, 2026"
+        - cell "-$23.40"
+      - row "Uber Eats dining posted Jul 22, 2026 -$34.60":
+        - cell "Uber Eats"
+        - cell "dining"
+        - cell "posted"
+        - cell "Jul 22, 2026"
+        - cell "-$34.60"
+      - row "Shell transport posted Jul 21, 2026 -$66.17":
+        - cell "Shell"
+        - cell "transport"
+        - cell "posted"
+        - cell "Jul 21, 2026"
+        - cell "-$66.17"
+      - row "Apple Store shopping posted Jul 21, 2026 -$71.25":
+        - cell "Apple Store"
+        - cell "shopping"
+        - cell "posted"
+        - cell "Jul 21, 2026"
+        - cell "-$71.25"
+  - text: Page 1 of 2
+  - button "Previous" [disabled]
+  - button "Next"
+  - status: "About this view This one-pager covers accounts, spending, budgets, goals, recurring charges, scheduled payments, cash flow, and recent transactions. Data not available on this host: investments or brokerage holdings, credit score, tax records, insurance, loans, and payroll — bring those separately to your advisor meeting."
+  - form "Edit app":
+    - textbox "Ask Vendo to change this app (e.g. “Remix the net worth card”)"
+    - button "Edit" [disabled]
+    - button "Refresh"
+  - heading "Ship review" [level=3]
+  - button "Load ship-diff"
+  - paragraph: The reviewable delta between captured host source and what this app ships.
+- button "Ask Maple"
+- alert

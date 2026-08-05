@@ -1,0 +1,74 @@
+{
+  "data": [
+    {
+      "id": "act_001",
+      "type": "deadline_approaching",
+      "clientId": "cl_rivera",
+      "summary": "Blue Bottle Coffee filing deadline is 2 days out with 3 documents missing",
+      "at": "2026-07-26T02:11:56-07:00"
+    },
+    {
+      "id": "act_003",
+      "type": "message_sent",
+      "clientId": "cl_rivera",
+      "summary": "Marisol Rivera replied about the outstanding 1099-NECs",
+      "at": "2026-07-25T16:08:00-07:00"
+    },
+    {
+      "id": "act_002",
+      "type": "upload_received",
+      "clientId": "cl_delgado",
+      "summary": "Antonio Delgado uploaded Payroll summary (adp-payroll-summary-q1-q2.pdf)",
+      "at": "2026-07-25T12:10:00-07:00"
+    },
+    {
+      "id": "act_004",
+      "type": "upload_received",
+      "clientId": "cl_rivera",
+      "summary": "Marisol Rivera uploaded Payroll summary (gusto-payroll-summary-2025.pdf)",
+      "at": "2026-07-24T10:24:00-07:00"
+    },
+    {
+      "id": "act_005",
+      "type": "upload_received",
+      "clientId": "cl_harborview",
+      "summary": "Dana Kowalski uploaded Receipts (equipment-receipts-2025.pdf)",
+      "at": "2026-07-24T10:24:00-07:00"
+    },
+    {
+      "id": "act_006",
+      "type": "upload_received",
+      "clientId": "cl_rivera",
+      "summary": "Marisol Rivera uploaded Bank statements (boa-business-statements-jan-jun.pdf)",
+      "at": "2026-07-23T14:41:00-07:00"
+    },
+    {
+      "id": "act_008",
+      "type": "upload_received",
+      "clientId": "cl_cortez",
+      "summary": "Luis Cortez re-uploaded Receipts (shop-receipts-2025-resubmitted.pdf)",
+      "at": "2026-07-22T13:15:00-07:00"
+    },
+    {
+      "id": "act_007",
+      "type": "document_verified",
+      "clientId": "cl_kim",
+      "summary": "Prior-year return verified for Compass",
+      "at": "2026-07-22T09:30:00-07:00"
+    },
+    {
+      "id": "act_009",
+      "type": "document_rejected",
+      "clientId": "cl_cortez",
+      "summary": "Bank statements rejected for Jiffy Lube: personal account uploaded instead of business",
+      "at": "2026-07-18T11:40:00-07:00"
+    },
+    {
+      "id": "act_010",
+      "type": "document_verified",
+      "clientId": "cl_lakeside",
+      "summary": "Final document verified for Banfield Pet Hospital; checklist complete",
+      "at": "2026-07-16T15:20:00-07:00"
+    }
+  ]
+}

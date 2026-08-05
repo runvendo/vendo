@@ -1,0 +1,73 @@
+- heading "S-Corp" [level=3]
+- text: High risk 2 clients Clients missing docs
+- heading "2 / 2" [level=3]
+- text: 100%
+- progressbar
+- text: Docs outstanding
+- heading "5 / 11" [level=3]
+- text: 45%
+- progressbar
+- heading "Sole Prop" [level=3]
+- text: High risk 4 clients Clients missing docs
+- heading "3 / 4" [level=3]
+- text: 75%
+- progressbar
+- text: Docs outstanding
+- heading "9 / 18" [level=3]
+- text: 50%
+- progressbar
+- heading "Partnership" [level=3]
+- text: Moderate 3 clients Clients missing docs
+- heading "2 / 3" [level=3]
+- text: 67%
+- progressbar
+- text: Docs outstanding
+- heading "5 / 16" [level=3]
+- text: 31%
+- progressbar
+- heading "Individual" [level=3]
+- text: Moderate 2 clients Clients missing docs
+- heading "1 / 2" [level=3]
+- text: 50%
+- progressbar
+- text: Docs outstanding
+- heading "2 / 8" [level=3]
+- text: 25%
+- progressbar
+- heading "C-Corp" [level=3]
+- text: On track 1 client Clients missing docs
+- heading "0 / 1" [level=3]
+- text: 0%
+- progressbar
+- text: Docs outstanding
+- heading "0 / 6" [level=3]
+- text: 0%
+- progressbar
+- heading "Clients missing documents by entity type" [level=3]
+- text: "Stacked: missing vs. complete"
+- application: S-Corp Sole Prop Partnership Individual C-Corp 0 1 2 3 4
+- heading "Documents outstanding vs. collected by entity type" [level=3]
+- text: "Stacked: outstanding vs. collected"
+- application: S-Corp Sole Prop Partnership Individual C-Corp 0 5 10 15 20
+- heading "Entity type ranking — most trouble first" [level=3]
+- text: Sorted by share of clients missing documents (highest first)
+- heading "1. S-Corp" [level=3]
+- text: 100% of clients missing docs High risk 100%
+- progressbar
+- text: 5 of 11 documents still outstanding (45%)
+- heading "2. Sole Prop" [level=3]
+- text: 75% of clients missing docs High risk 75%
+- progressbar
+- text: 9 of 18 documents still outstanding (50%)
+- heading "3. Partnership" [level=3]
+- text: 67% of clients missing docs Moderate 67%
+- progressbar
+- text: 5 of 16 documents still outstanding (31%)
+- heading "4. Individual" [level=3]
+- text: 50% of clients missing docs Moderate 50%
+- progressbar
+- text: 2 of 8 documents still outstanding (25%)
+- heading "5. C-Corp" [level=3]
+- text: 0% of clients missing docs On track 0%
+- progressbar
+- text: 0 of 6 documents still outstanding (0%)

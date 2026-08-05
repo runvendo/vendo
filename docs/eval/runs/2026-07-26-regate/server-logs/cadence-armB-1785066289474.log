@@ -1,0 +1,16 @@
+=== boot cadence arm B at 2026-07-26T11:44:49.474Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3300
+- Network:       http://10.0.0.188:3300
+✓ Ready in 187ms
+
+=== create I26 arm B start ===
+
+=== create I26 arm B end ===
+[vendo] model: explicit ANTHROPIC_API_KEY (anthropic) → claude-sonnet-4-6
+[vendo] gen full complete at=45.5s tokens=21983→3757
+[vendo] gen full invalid (3 issues): wire unknown-reference: "clients.data" does not name a declared <Query> or state | wire unknown-reference: "deadlines.data" does not name a declared <Query> or state | island "ConflictScreen" renders <CadenceStatusBadge>
+[vendo] gen full complete at=92.5s tokens=22109→3668
+[vendo] model (paint): explicit ANTHROPIC_API_KEY (anthropic) → claude-haiku-4-5
+[vendo] gen pipeline data-verify applied=false ms=830
+[vendo] gen create complete app=app_919f196e-9d09-4d4f-9d4a-13991048ea14 total=94.7s

@@ -1,0 +1,260 @@
+- complementary:
+  - link "Cadence dashboard":
+    - /url: /
+    - text: cadence .
+  - navigation "Main":
+    - list:
+      - listitem:
+        - link "Dashboard":
+          - /url: /
+      - listitem:
+        - link "Ask Cadence":
+          - /url: /assistant
+    - paragraph: Workspace
+    - list:
+      - listitem:
+        - link "Clients":
+          - /url: /clients
+      - listitem:
+        - link "Work":
+          - /url: /work
+      - listitem:
+        - link "Calendar":
+          - /url: /calendar
+      - listitem:
+        - link "Inbox":
+          - /url: /inbox
+    - paragraph: Firm
+    - list:
+      - listitem:
+        - link "Team":
+          - /url: /team
+      - listitem:
+        - link "Integrations":
+          - /url: /integrations
+      - listitem:
+        - link "Settings":
+          - /url: /settings
+  - paragraph: Hartwell & Associates
+  - paragraph: Tax season 2026
+- banner:
+  - search:
+    - searchbox "Search"
+    - text: ⌘K
+  - text: Hartwell & Associates
+  - button "Notifications"
+  - button "MA Maya Alvarez"
+- main:
+  - main "Vendo workspace":
+    - tablist "Workspace sections":
+      - tab "Chat"
+      - tab "Apps" [selected]
+      - tab "Automations"
+      - tab "Accounts"
+      - tab "Activity"
+    - tabpanel "Apps":
+      - form "Create app":
+        - text: Describe a new app
+        - textbox "Describe a new app"
+        - button "Create" [disabled]
+      - article:
+        - strong: Filing deadline readiness
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Filing deadline readiness
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Filing deadline readiness
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Week-over-week document collection
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Week-over-week document collection
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: "Document collection: week over week"
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Chase Antonio Delgado — missing docs
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Chase Antonio Delgado — missing docs
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Engagement letter status
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Engagement letter status
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Engagement letter status
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Conflict-of-interest screen — Allbirds
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Conflict of interest — Allbirds
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Conflict of interest screen — Allbirds
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Archive Jiffy Lube & send goodbye
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Archive Jiffy Lube & send goodbye
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Equinox Friday reminder setup
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Equinox Friday reminder
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Unacknowledged uploads this week
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Unacknowledged uploads this week
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Unacknowledged uploads this week
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Monday morning priorities
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Monday morning priorities
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Your Monday morning brief
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Document review turnaround
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Document review turnaround
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Clients by deadline proximity
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Clients by deadline
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Clients by deadline proximity
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Figma — rejected documents
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Figma — rejected documents
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Figma — rejected documents
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Anjali Patel — document & message status
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Documents needing review
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Documents needing review
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Documents needing review
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Entity type trouble comparison
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Entity type trouble report
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Entity type trouble comparison
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - region "Open app":
+        - heading "Equinox — recurring Friday reminder" [level=3]
+        - text: Send a weekly document-chase message to Equinox every Friday until their books are in.
+        - iframe
+- button "Ask Cadence"
+- alert

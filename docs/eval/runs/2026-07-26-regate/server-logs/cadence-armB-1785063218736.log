@@ -1,0 +1,16 @@
+=== boot cadence arm B at 2026-07-26T10:53:38.737Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3300
+- Network:       http://10.0.0.188:3300
+✓ Ready in 296ms
+
+=== create I20 arm B start ===
+
+=== create I20 arm B end ===
+[vendo] model: explicit ANTHROPIC_API_KEY (anthropic) → claude-sonnet-4-6
+[vendo] gen full complete at=43.0s tokens=21985→3760
+[vendo] gen full invalid (1 issue): wire unknown-reference: "deadlines.data" does not name a declared <Query> or state
+[vendo] gen full complete at=81.0s tokens=22018→2977
+[vendo] model (paint): explicit ANTHROPIC_API_KEY (anthropic) → claude-haiku-4-5
+[vendo] gen pipeline data-verify applied=false ms=744
+[vendo] gen create complete app=app_b2348998-2085-4a54-9b4b-44fde47b7e4f total=83.2s

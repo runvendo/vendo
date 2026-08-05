@@ -1,0 +1,322 @@
+- complementary:
+  - link "Cadence dashboard":
+    - /url: /
+    - text: cadence .
+  - navigation "Main":
+    - list:
+      - listitem:
+        - link "Dashboard":
+          - /url: /
+      - listitem:
+        - link "Ask Cadence":
+          - /url: /assistant
+    - paragraph: Workspace
+    - list:
+      - listitem:
+        - link "Clients":
+          - /url: /clients
+      - listitem:
+        - link "Work":
+          - /url: /work
+      - listitem:
+        - link "Calendar":
+          - /url: /calendar
+      - listitem:
+        - link "Inbox":
+          - /url: /inbox
+    - paragraph: Firm
+    - list:
+      - listitem:
+        - link "Team":
+          - /url: /team
+      - listitem:
+        - link "Integrations":
+          - /url: /integrations
+      - listitem:
+        - link "Settings":
+          - /url: /settings
+  - paragraph: Hartwell & Associates
+  - paragraph: Tax season 2026
+- banner:
+  - search:
+    - searchbox "Search"
+    - text: ⌘K
+  - text: Hartwell & Associates
+  - button "Notifications"
+  - button "MA Maya Alvarez"
+- main:
+  - main "Vendo workspace":
+    - tablist "Workspace sections":
+      - tab "Chat"
+      - tab "Apps" [selected]
+      - tab "Automations"
+      - tab "Accounts"
+      - tab "Activity"
+    - tabpanel "Apps":
+      - form "Create app":
+        - text: Describe a new app
+        - textbox "Describe a new app"
+        - button "Create" [disabled]
+      - article:
+        - strong: Document review turnaround
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Document review turnaround
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Clients by deadline proximity
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Clients by deadline
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Clients by deadline proximity
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Figma — rejected documents
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Figma — rejected documents
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Figma — rejected documents
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Anjali Patel — document & message status
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Documents needing review
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Documents needing review
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Documents needing review
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Entity type trouble comparison
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Entity type trouble report
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Entity type trouble comparison
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - region "Open app":
+        - heading "Document review turnaround" [level=3]
+        - text: Time from document received to verified — firm-wide, current filing season.
+        - article "Documents received":
+          - text: Documents received
+          - strong: "38"
+        - article "Documents verified":
+          - text: Documents verified
+          - strong: "59"
+        - article "Still outstanding":
+          - text: Still outstanding
+          - strong: "21"
+        - heading "Firm-wide document progress" [level=3]
+        - progressbar
+        - text: Documents collected vs total requested across all active clients.
+        - heading "Review activity log" [level=3]
+        - text: All upload, verification, and rejection events — newest first. Use this to trace turnaround for each document.
+        - searchbox "Search table"
+        - table:
+          - rowgroup:
+            - row "When ▼ Event Detail":
+              - columnheader "When ▼"
+              - columnheader "Event"
+              - columnheader "Detail"
+          - rowgroup:
+            - row "Jul 26, 2026 deadline_approaching Blue Bottle Coffee filing deadline is 2 days out with 3 documents missing":
+              - cell "Jul 26, 2026"
+              - cell "deadline_approaching"
+              - cell "Blue Bottle Coffee filing deadline is 2 days out with 3 documents missing"
+            - row "Jul 25, 2026 message_sent Marisol Rivera replied about the outstanding 1099-NECs":
+              - cell "Jul 25, 2026"
+              - cell "message_sent"
+              - cell "Marisol Rivera replied about the outstanding 1099-NECs"
+            - row "Jul 25, 2026 upload_received Antonio Delgado uploaded Payroll summary (adp-payroll-summary-q1-q2.pdf)":
+              - cell "Jul 25, 2026"
+              - cell "upload_received"
+              - cell "Antonio Delgado uploaded Payroll summary (adp-payroll-summary-q1-q2.pdf)"
+            - row "Jul 24, 2026 upload_received Marisol Rivera uploaded Payroll summary (gusto-payroll-summary-2025.pdf)":
+              - cell "Jul 24, 2026"
+              - cell "upload_received"
+              - cell "Marisol Rivera uploaded Payroll summary (gusto-payroll-summary-2025.pdf)"
+            - row "Jul 24, 2026 upload_received Dana Kowalski uploaded Receipts (equipment-receipts-2025.pdf)":
+              - cell "Jul 24, 2026"
+              - cell "upload_received"
+              - cell "Dana Kowalski uploaded Receipts (equipment-receipts-2025.pdf)"
+            - row "Jul 23, 2026 upload_received Marisol Rivera uploaded Bank statements (boa-business-statements-jan-jun.pdf)":
+              - cell "Jul 23, 2026"
+              - cell "upload_received"
+              - cell "Marisol Rivera uploaded Bank statements (boa-business-statements-jan-jun.pdf)"
+            - row "Jul 22, 2026 upload_received Luis Cortez re-uploaded Receipts (shop-receipts-2025-resubmitted.pdf)":
+              - cell "Jul 22, 2026"
+              - cell "upload_received"
+              - cell "Luis Cortez re-uploaded Receipts (shop-receipts-2025-resubmitted.pdf)"
+            - row "Jul 22, 2026 document_verified Prior-year return verified for Compass":
+              - cell "Jul 22, 2026"
+              - cell "document_verified"
+              - cell "Prior-year return verified for Compass"
+            - 'row "Jul 18, 2026 document_rejected Bank statements rejected for Jiffy Lube: personal account uploaded instead of business"':
+              - cell "Jul 18, 2026"
+              - cell "document_rejected"
+              - 'cell "Bank statements rejected for Jiffy Lube: personal account uploaded instead of business"'
+            - row "Jul 16, 2026 document_verified Final document verified for Banfield Pet Hospital; checklist complete":
+              - cell "Jul 16, 2026"
+              - cell "document_verified"
+              - cell "Final document verified for Banfield Pet Hospital; checklist complete"
+        - heading "Clients by filing deadline" [level=3]
+        - text: Clients sorted by nearest deadline. Clients still missing documents are at highest turnaround risk.
+        - searchbox "Search table"
+        - combobox "Filter by Status":
+          - option "All Status" [selected]
+          - option "complete"
+          - option "missing_docs"
+        - combobox "Filter by Assigned to":
+          - option "All Assigned to" [selected]
+          - option "Daniel Hartwell"
+          - option "Maya Alvarez"
+          - option "Priya Natarajan"
+          - option "Tomas Okafor"
+        - table:
+          - rowgroup:
+            - row "Client Contact Filing deadline ▲ Status Received Total docs Assigned to":
+              - columnheader "Client"
+              - columnheader "Contact"
+              - columnheader "Filing deadline ▲"
+              - columnheader "Status"
+              - columnheader "Received"
+              - columnheader "Total docs"
+              - columnheader "Assigned to"
+          - rowgroup:
+            - row "Blue Bottle Coffee Marisol Rivera Jul 28, 2026 missing_docs 3 6 Maya Alvarez":
+              - cell "Blue Bottle Coffee"
+              - cell "Marisol Rivera"
+              - cell "Jul 28, 2026"
+              - cell "missing_docs"
+              - cell "3"
+              - cell "6"
+              - cell "Maya Alvarez"
+            - row "Linear Wei Chen Jul 29, 2026 missing_docs 3 5 Maya Alvarez":
+              - cell "Linear"
+              - cell "Wei Chen"
+              - cell "Jul 29, 2026"
+              - cell "missing_docs"
+              - cell "3"
+              - cell "5"
+              - cell "Maya Alvarez"
+            - row "Sweetgreen Antonio Delgado Aug 16, 2026 missing_docs 4 6 Maya Alvarez":
+              - cell "Sweetgreen"
+              - cell "Antonio Delgado"
+              - cell "Aug 16, 2026"
+              - cell "missing_docs"
+              - cell "4"
+              - cell "6"
+              - cell "Maya Alvarez"
+            - row "Equinox Dana Kowalski Aug 20, 2026 missing_docs 3 5 Priya Natarajan":
+              - cell "Equinox"
+              - cell "Dana Kowalski"
+              - cell "Aug 20, 2026"
+              - cell "missing_docs"
+              - cell "3"
+              - cell "5"
+              - cell "Priya Natarajan"
+            - row "TaskRabbit Greg Foster Aug 24, 2026 missing_docs 1 4 Tomas Okafor":
+              - cell "TaskRabbit"
+              - cell "Greg Foster"
+              - cell "Aug 24, 2026"
+              - cell "missing_docs"
+              - cell "1"
+              - cell "4"
+              - cell "Tomas Okafor"
+            - row "Anjali Patel Anjali Patel Aug 28, 2026 missing_docs 2 4 Maya Alvarez":
+              - cell "Anjali Patel"
+              - cell "Anjali Patel"
+              - cell "Aug 28, 2026"
+              - cell "missing_docs"
+              - cell "2"
+              - cell "4"
+              - cell "Maya Alvarez"
+            - row "Compass Susan Kim Sep 2, 2026 missing_docs 2 5 Priya Natarajan":
+              - cell "Compass"
+              - cell "Susan Kim"
+              - cell "Sep 2, 2026"
+              - cell "missing_docs"
+              - cell "2"
+              - cell "5"
+              - cell "Priya Natarajan"
+            - row "Jiffy Lube Luis Cortez Sep 7, 2026 missing_docs 1 5 Tomas Okafor":
+              - cell "Jiffy Lube"
+              - cell "Luis Cortez"
+              - cell "Sep 7, 2026"
+              - cell "missing_docs"
+              - cell "1"
+              - cell "5"
+              - cell "Tomas Okafor"
+            - row "Banfield Pet Hospital Emily Rhodes Sep 13, 2026 complete 6 6 Priya Natarajan":
+              - cell "Banfield Pet Hospital"
+              - cell "Emily Rhodes"
+              - cell "Sep 13, 2026"
+              - cell "complete"
+              - cell "6"
+              - cell "6"
+              - cell "Priya Natarajan"
+            - row "Figma Jonah Whitfield Sep 19, 2026 complete 4 4 Daniel Hartwell":
+              - cell "Figma"
+              - cell "Jonah Whitfield"
+              - cell "Sep 19, 2026"
+              - cell "complete"
+              - cell "4"
+              - cell "4"
+              - cell "Daniel Hartwell"
+            - row "LegalZoom Alice Mercer Sep 26, 2026 complete 5 5 Daniel Hartwell":
+              - cell "LegalZoom"
+              - cell "Alice Mercer"
+              - cell "Sep 26, 2026"
+              - cell "complete"
+              - cell "5"
+              - cell "5"
+              - cell "Daniel Hartwell"
+            - row "Grant Ellison Grant Ellison Oct 4, 2026 complete 4 4 Maya Alvarez":
+              - cell "Grant Ellison"
+              - cell "Grant Ellison"
+              - cell "Oct 4, 2026"
+              - cell "complete"
+              - cell "4"
+              - cell "4"
+              - cell "Maya Alvarez"
+        - status: About turnaround timing This host does not record per-document timestamps for the received and verified transitions, so an exact median or average days-to-verify cannot be computed from available data. The activity log above shows the sequence of events per client and document, which you can use to manually assess turnaround. A precise time-to-verify metric would require a tool that exposes per-document lifecycle timestamps.
+- button "Ask Cadence"
+- alert

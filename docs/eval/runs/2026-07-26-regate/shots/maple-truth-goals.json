@@ -1,0 +1,25 @@
+{
+  "data": [
+    {
+      "id": "goal_japan",
+      "name": "Japan trip",
+      "target": 500000,
+      "saved": 312000,
+      "icon": "plane"
+    },
+    {
+      "id": "goal_emergency",
+      "name": "Emergency fund",
+      "target": 1000000,
+      "saved": 740000,
+      "icon": "shield"
+    },
+    {
+      "id": "goal_mac",
+      "name": "New MacBook",
+      "target": 250000,
+      "saved": 90000,
+      "icon": "laptop"
+    }
+  ]
+}

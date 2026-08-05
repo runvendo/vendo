@@ -1,0 +1,28 @@
+{
+  "data": [
+    {
+      "id": "card_physical",
+      "accountId": "acc_checking",
+      "type": "physical",
+      "network": "visa",
+      "mask": "4471",
+      "expMonth": 8,
+      "expYear": 28,
+      "frozen": false,
+      "spendLimit": 500000,
+      "design": "graphite"
+    },
+    {
+      "id": "card_virtual",
+      "accountId": "acc_credit",
+      "type": "virtual",
+      "network": "visa",
+      "mask": "0934",
+      "expMonth": 3,
+      "expYear": 27,
+      "frozen": false,
+      "spendLimit": 250000,
+      "design": "amber"
+    }
+  ]
+}

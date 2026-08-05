@@ -1,0 +1,143 @@
+- table:
+  - rowgroup:
+    - row "Client Entity Deadline Progress Missing Assigned to Readiness":
+      - columnheader "Client"
+      - columnheader "Entity"
+      - columnheader "Deadline"
+      - columnheader "Progress"
+      - columnheader "Missing"
+      - columnheader "Assigned to"
+      - columnheader "Readiness"
+  - rowgroup:
+    - row "Blue Bottle Coffee Marisol Rivera S-Corp Jul 28, 2026 (2d away) 50% 50 3 of 6 docs 3 missing Maya Alvarez At risk":
+      - cell "Blue Bottle Coffee Marisol Rivera"
+      - cell "S-Corp"
+      - cell "Jul 28, 2026 (2d away)"
+      - cell "50% 50 3 of 6 docs":
+        - text: 50%
+        - progressbar
+        - text: 3 of 6 docs
+      - cell "3 missing"
+      - cell "Maya Alvarez"
+      - cell "At risk"
+    - row "Linear Wei Chen Sole Prop Jul 29, 2026 (3d away) 60% 60 3 of 5 docs 2 missing Maya Alvarez At risk":
+      - cell "Linear Wei Chen"
+      - cell "Sole Prop"
+      - cell "Jul 29, 2026 (3d away)"
+      - cell "60% 60 3 of 5 docs":
+        - text: 60%
+        - progressbar
+        - text: 3 of 5 docs
+      - cell "2 missing"
+      - cell "Maya Alvarez"
+      - cell "At risk"
+    - row "Sweetgreen Antonio Delgado Partnership Aug 16, 2026 67% 67 4 of 6 docs 2 missing Maya Alvarez Missing docs":
+      - cell "Sweetgreen Antonio Delgado"
+      - cell "Partnership"
+      - cell "Aug 16, 2026"
+      - cell "67% 67 4 of 6 docs":
+        - text: 67%
+        - progressbar
+        - text: 4 of 6 docs
+      - cell "2 missing"
+      - cell "Maya Alvarez"
+      - cell "Missing docs"
+    - row "Equinox Dana Kowalski S-Corp Aug 20, 2026 60% 60 3 of 5 docs 2 missing Priya Natarajan Missing docs":
+      - cell "Equinox Dana Kowalski"
+      - cell "S-Corp"
+      - cell "Aug 20, 2026"
+      - cell "60% 60 3 of 5 docs":
+        - text: 60%
+        - progressbar
+        - text: 3 of 5 docs
+      - cell "2 missing"
+      - cell "Priya Natarajan"
+      - cell "Missing docs"
+    - row "TaskRabbit Greg Foster Sole Prop Aug 24, 2026 25% 25 1 of 4 docs 3 missing Tomas Okafor Missing docs":
+      - cell "TaskRabbit Greg Foster"
+      - cell "Sole Prop"
+      - cell "Aug 24, 2026"
+      - cell "25% 25 1 of 4 docs":
+        - text: 25%
+        - progressbar
+        - text: 1 of 4 docs
+      - cell "3 missing"
+      - cell "Tomas Okafor"
+      - cell "Missing docs"
+    - row "Anjali Patel Anjali Patel Individual Aug 28, 2026 50% 50 2 of 4 docs 2 missing Maya Alvarez Missing docs":
+      - cell "Anjali Patel Anjali Patel"
+      - cell "Individual"
+      - cell "Aug 28, 2026"
+      - cell "50% 50 2 of 4 docs":
+        - text: 50%
+        - progressbar
+        - text: 2 of 4 docs
+      - cell "2 missing"
+      - cell "Maya Alvarez"
+      - cell "Missing docs"
+    - row "Compass Susan Kim Partnership Sep 2, 2026 40% 40 2 of 5 docs 3 missing Priya Natarajan Missing docs":
+      - cell "Compass Susan Kim"
+      - cell "Partnership"
+      - cell "Sep 2, 2026"
+      - cell "40% 40 2 of 5 docs":
+        - text: 40%
+        - progressbar
+        - text: 2 of 5 docs
+      - cell "3 missing"
+      - cell "Priya Natarajan"
+      - cell "Missing docs"
+    - row "Jiffy Lube Luis Cortez Sole Prop Sep 7, 2026 20% 20 1 of 5 docs 4 missing Tomas Okafor Missing docs":
+      - cell "Jiffy Lube Luis Cortez"
+      - cell "Sole Prop"
+      - cell "Sep 7, 2026"
+      - cell "20% 20 1 of 5 docs":
+        - text: 20%
+        - progressbar
+        - text: 1 of 5 docs
+      - cell "4 missing"
+      - cell "Tomas Okafor"
+      - cell "Missing docs"
+    - row "Banfield Pet Hospital Emily Rhodes C-Corp Sep 13, 2026 100% 100 6 of 6 docs Complete Priya Natarajan On track":
+      - cell "Banfield Pet Hospital Emily Rhodes"
+      - cell "C-Corp"
+      - cell "Sep 13, 2026"
+      - cell "100% 100 6 of 6 docs":
+        - text: 100%
+        - progressbar
+        - text: 6 of 6 docs
+      - cell "Complete"
+      - cell "Priya Natarajan"
+      - cell "On track"
+    - row "Figma Jonah Whitfield Sole Prop Sep 19, 2026 100% 100 4 of 4 docs Complete Daniel Hartwell On track":
+      - cell "Figma Jonah Whitfield"
+      - cell "Sole Prop"
+      - cell "Sep 19, 2026"
+      - cell "100% 100 4 of 4 docs":
+        - text: 100%
+        - progressbar
+        - text: 4 of 4 docs
+      - cell "Complete"
+      - cell "Daniel Hartwell"
+      - cell "On track"
+    - row "LegalZoom Alice Mercer Partnership Sep 26, 2026 100% 100 5 of 5 docs Complete Daniel Hartwell On track":
+      - cell "LegalZoom Alice Mercer"
+      - cell "Partnership"
+      - cell "Sep 26, 2026"
+      - cell "100% 100 5 of 5 docs":
+        - text: 100%
+        - progressbar
+        - text: 5 of 5 docs
+      - cell "Complete"
+      - cell "Daniel Hartwell"
+      - cell "On track"
+    - row "Grant Ellison Grant Ellison Individual Oct 4, 2026 100% 100 4 of 4 docs Complete Maya Alvarez On track":
+      - cell "Grant Ellison Grant Ellison"
+      - cell "Individual"
+      - cell "Oct 4, 2026"
+      - cell "100% 100 4 of 4 docs":
+        - text: 100%
+        - progressbar
+        - text: 4 of 4 docs
+      - cell "Complete"
+      - cell "Maya Alvarez"
+      - cell "On track"

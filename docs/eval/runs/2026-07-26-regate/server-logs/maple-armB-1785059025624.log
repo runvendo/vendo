@@ -1,0 +1,20 @@
+=== boot maple arm B at 2026-07-26T09:43:45.624Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3100
+- Network:       http://10.0.0.188:3100
+✓ Ready in 178ms
+
+=== create I8 arm B start ===
+
+=== create I8 arm B end ===
+[vendo] model: explicit ANTHROPIC_API_KEY (anthropic) → claude-sonnet-4-6
+[vendo] gen full complete at=21.1s tokens=20175→1443
+[vendo] gen full invalid (1 issue): wire nested-query: <Query> belongs at App level; the query was still hoisted
+[vendo] gen full complete at=38.7s tokens=20206→1201
+[vendo] gen full invalid (1 issue): island "SweepTransfer" must be plain TSX with an `export default` component
+[vendo] gen repair complete at=51.1s
+[vendo] gen pipeline island-repair islands=1 repaired=false ms=12980
+[vendo] gen full complete at=69.4s tokens=20241→1242
+[vendo] model (paint): explicit ANTHROPIC_API_KEY (anthropic) → claude-haiku-4-5
+[vendo] gen pipeline data-verify applied=false ms=939
+[vendo] gen create complete app=app_fdde4e10-8d8b-4ad2-8352-6adc50558077 total=73.2s

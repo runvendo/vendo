@@ -1,0 +1,19 @@
+=== boot maple arm A at 2026-07-26T09:31:21.332Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3100
+- Network:       http://10.0.0.188:3100
+✓ Ready in 222ms
+
+=== create I3 arm A start ===
+
+=== create I3 arm A end ===
+[vendo] model: explicit ANTHROPIC_API_KEY (anthropic) → claude-sonnet-4-6
+[vendo] gen full complete at=19.9s tokens=20183→1458
+[vendo] gen full invalid (4 issues): wire unknown-reference: "cashflow.data.0.in" does not name a declared <Query> or state | wire unknown-reference: "cashflow.data.0.out" does not name a declared <Query> or state | wire unknown-reference: "cashflow.data" does not name a declared <Query> or state
+[vendo] gen full complete at=38.7s tokens=20268→1415
+[vendo] gen full invalid (5 issues): wire unknown-reference: "cashflow.data" does not name a declared <Query> or state | wire unknown-reference: "cashflow.data" does not name a declared <Query> or state | wire unknown-reference: "cashflow.data" does not name a declared <Query> or state
+[vendo] gen full complete at=50.8s tokens=20327→725
+[vendo] gen full invalid (1 issue): island "MonthlySummaryCards" crashed in the smoke render: props is not defined
+[vendo] gen repair complete at=60.2s
+[vendo] gen pipeline island-repair islands=1 repaired=true ms=9463
+[vendo] gen create complete app=app_d81452b6-efb9-43a4-9e7b-08dc45cd2494 total=61.9s

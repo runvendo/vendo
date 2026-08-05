@@ -1,0 +1,15 @@
+=== boot cadence arm A at 2026-07-26T10:56:14.675Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3300
+- Network:       http://10.0.0.188:3300
+✓ Ready in 306ms
+
+=== create I20 arm A start ===
+
+=== create I20 arm A end ===
+[vendo] model: explicit ANTHROPIC_API_KEY (anthropic) → claude-sonnet-4-6
+[vendo] gen full complete at=35.4s tokens=21985→3041
+[vendo] gen full invalid (1 issue): island "DeadlineGroups" renders <CadenceStatusBadge>
+[vendo] gen repair complete at=62.5s
+[vendo] gen pipeline island-repair islands=1 repaired=true ms=27640
+[vendo] gen create complete app=app_d6f2f63e-8d3e-4dac-afc8-0c238a2617da total=63.8s

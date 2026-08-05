@@ -1,0 +1,302 @@
+- complementary:
+  - link "Cadence dashboard":
+    - /url: /
+    - text: cadence .
+  - navigation "Main":
+    - list:
+      - listitem:
+        - link "Dashboard":
+          - /url: /
+      - listitem:
+        - link "Ask Cadence":
+          - /url: /assistant
+    - paragraph: Workspace
+    - list:
+      - listitem:
+        - link "Clients":
+          - /url: /clients
+      - listitem:
+        - link "Work":
+          - /url: /work
+      - listitem:
+        - link "Calendar":
+          - /url: /calendar
+      - listitem:
+        - link "Inbox":
+          - /url: /inbox
+    - paragraph: Firm
+    - list:
+      - listitem:
+        - link "Team":
+          - /url: /team
+      - listitem:
+        - link "Integrations":
+          - /url: /integrations
+      - listitem:
+        - link "Settings":
+          - /url: /settings
+  - paragraph: Hartwell & Associates
+  - paragraph: Tax season 2026
+- banner:
+  - search:
+    - searchbox "Search"
+    - text: ⌘K
+  - text: Hartwell & Associates
+  - button "Notifications"
+  - button "MA Maya Alvarez"
+- main:
+  - main "Vendo workspace":
+    - tablist "Workspace sections":
+      - tab "Chat"
+      - tab "Apps" [selected]
+      - tab "Automations"
+      - tab "Accounts"
+      - tab "Activity"
+    - tabpanel "Apps":
+      - form "Create app":
+        - text: Describe a new app
+        - textbox "Describe a new app"
+        - button "Create" [disabled]
+      - article:
+        - strong: Filing deadline readiness
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Week-over-week document collection
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Week-over-week document collection
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: "Document collection: week over week"
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Chase Antonio Delgado — missing docs
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Chase Antonio Delgado — missing docs
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Engagement letter status
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Engagement letter status
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Engagement letter status
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Conflict-of-interest screen — Allbirds
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Conflict of interest — Allbirds
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Conflict of interest screen — Allbirds
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Archive Jiffy Lube & send goodbye
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Archive Jiffy Lube & send goodbye
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Equinox Friday reminder setup
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Equinox Friday reminder
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Unacknowledged uploads this week
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Unacknowledged uploads this week
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Unacknowledged uploads this week
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Monday morning priorities
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Monday morning priorities
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Your Monday morning brief
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Document review turnaround
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Document review turnaround
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Clients by deadline proximity
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Clients by deadline
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Clients by deadline proximity
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Figma — rejected documents
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Figma — rejected documents
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Figma — rejected documents
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Anjali Patel — document & message status
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Documents needing review
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Documents needing review
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Documents needing review
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Entity type trouble comparison
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Entity type trouble report
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Entity type trouble comparison
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - region "Open app":
+        - heading "Filing deadline readiness" [level=3]
+        - text: Are we going to make the deadlines? Every client ordered by filing date, with document progress and risk.
+        - article:
+          - paragraph: Clients missing documents
+          - text: 8 clients need chasing
+          - paragraph: of 12 active clients need chasing
+        - article "Documents collected":
+          - text: Documents collected
+          - strong: "38"
+        - article "Documents outstanding":
+          - text: Documents outstanding
+          - strong: "21"
+        - article "Nearest deadline":
+          - text: Nearest deadline
+          - strong: Jul 28, 2026
+        - text: Blue Bottle Coffee
+        - heading "All clients by filing deadline" [level=3]
+        - iframe
+        - heading "Recent activity" [level=3]
+        - table:
+          - rowgroup:
+            - row "Event When ▼":
+              - columnheader "Event"
+              - columnheader "When ▼"
+          - rowgroup:
+            - row "Blue Bottle Coffee filing deadline is 2 days out with 3 documents missing Jul 26, 2026":
+              - cell "Blue Bottle Coffee filing deadline is 2 days out with 3 documents missing"
+              - cell "Jul 26, 2026"
+            - row "Marisol Rivera replied about the outstanding 1099-NECs Jul 25, 2026":
+              - cell "Marisol Rivera replied about the outstanding 1099-NECs"
+              - cell "Jul 25, 2026"
+            - row "Antonio Delgado uploaded Payroll summary (adp-payroll-summary-q1-q2.pdf) Jul 25, 2026":
+              - cell "Antonio Delgado uploaded Payroll summary (adp-payroll-summary-q1-q2.pdf)"
+              - cell "Jul 25, 2026"
+            - row "Marisol Rivera uploaded Payroll summary (gusto-payroll-summary-2025.pdf) Jul 24, 2026":
+              - cell "Marisol Rivera uploaded Payroll summary (gusto-payroll-summary-2025.pdf)"
+              - cell "Jul 24, 2026"
+            - row "Dana Kowalski uploaded Receipts (equipment-receipts-2025.pdf) Jul 24, 2026":
+              - cell "Dana Kowalski uploaded Receipts (equipment-receipts-2025.pdf)"
+              - cell "Jul 24, 2026"
+            - row "Marisol Rivera uploaded Bank statements (boa-business-statements-jan-jun.pdf) Jul 23, 2026":
+              - cell "Marisol Rivera uploaded Bank statements (boa-business-statements-jan-jun.pdf)"
+              - cell "Jul 23, 2026"
+            - row "Luis Cortez re-uploaded Receipts (shop-receipts-2025-resubmitted.pdf) Jul 22, 2026":
+              - cell "Luis Cortez re-uploaded Receipts (shop-receipts-2025-resubmitted.pdf)"
+              - cell "Jul 22, 2026"
+            - row "Prior-year return verified for Compass Jul 22, 2026":
+              - cell "Prior-year return verified for Compass"
+              - cell "Jul 22, 2026"
+            - 'row "Bank statements rejected for Jiffy Lube: personal account uploaded instead of business Jul 18, 2026"':
+              - 'cell "Bank statements rejected for Jiffy Lube: personal account uploaded instead of business"'
+              - cell "Jul 18, 2026"
+            - row "Final document verified for Banfield Pet Hospital; checklist complete Jul 16, 2026":
+              - cell "Final document verified for Banfield Pet Hospital; checklist complete"
+              - cell "Jul 16, 2026"
+- button "Ask Cadence"
+- alert

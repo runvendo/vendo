@@ -1,0 +1,15 @@
+{
+  "data": {
+    "clientsMissingDocs": 8,
+    "documentsOutstanding": 21,
+    "documentsReceived": 38,
+    "documentsTotal": 59,
+    "clientsTotal": 12,
+    "nearestDeadline": "2026-07-28T17:00:00-07:00",
+    "nearestDeadlineClient": {
+      "id": "cl_rivera",
+      "businessName": "Blue Bottle Coffee",
+      "filingDeadline": "2026-07-28T17:00:00-07:00"
+    }
+  }
+}

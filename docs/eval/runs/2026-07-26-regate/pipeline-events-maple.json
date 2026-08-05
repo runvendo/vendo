@@ -1,0 +1,644 @@
+{
+  "I1:A": {
+    "id": "I1",
+    "arm": "A",
+    "log": "maple-armA-1785058042099.log",
+    "pipeline": [],
+    "lanes": [
+      "[vendo] gen full complete at=7.9s tokens=20170→230"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I2:A": {
+    "id": "I2",
+    "arm": "A",
+    "log": "maple-armA-1785058158773.log",
+    "pipeline": [],
+    "lanes": [
+      "[vendo] gen full complete at=5.3s tokens=20173→224"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I3:A": {
+    "id": "I3",
+    "arm": "A",
+    "log": "maple-armA-1785058281330.log",
+    "pipeline": [
+      "[vendo] gen pipeline island-repair islands=1 repaired=true ms=9463"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=19.9s tokens=20183→1458",
+      "[vendo] gen full complete at=38.7s tokens=20268→1415",
+      "[vendo] gen full complete at=50.8s tokens=20327→725",
+      "[vendo] gen repair complete at=60.2s"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I4:A": {
+    "id": "I4",
+    "arm": "A",
+    "log": "maple-armA-1785058407556.log",
+    "pipeline": [],
+    "lanes": [
+      "[vendo] gen full complete at=40.1s tokens=20185→3112",
+      "[vendo] gen full complete at=58.8s tokens=20215→1421",
+      "[vendo] gen full complete at=72.1s tokens=20263→899"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I5:A": {
+    "id": "I5",
+    "arm": "A",
+    "log": "maple-armA-1785058570042.log",
+    "pipeline": [
+      "[vendo] gen pipeline repair rounds=1 repaired=true noValidFix=2 ms=2120"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=4.8s tokens=20171→196",
+      "[vendo] gen repair complete at=6.9s"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I6:A": {
+    "id": "I6",
+    "arm": "A",
+    "log": "maple-armA-1785058709039.log",
+    "pipeline": [
+      "[vendo] gen pipeline island-repair islands=1 repaired=true ms=17252"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=26.8s tokens=20177→1996",
+      "[vendo] gen repair complete at=43.6s"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I7:A": {
+    "id": "I7",
+    "arm": "A",
+    "log": "maple-armA-1785058817187.log",
+    "pipeline": [
+      "[vendo] gen pipeline island-repair islands=1 repaired=true ms=15073"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=23.1s tokens=20184→1833",
+      "[vendo] gen repair complete at=37.5s"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I8:A": {
+    "id": "I8",
+    "arm": "A",
+    "log": "maple-armA-1785058966356.log",
+    "pipeline": [
+      "[vendo] gen pipeline island-repair islands=1 repaired=true ms=20371"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=23.1s tokens=20175→1646",
+      "[vendo] gen repair complete at=43.0s"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I9:A": {
+    "id": "I9",
+    "arm": "A",
+    "log": "maple-armA-1785059233270.log",
+    "pipeline": [],
+    "lanes": [
+      "[vendo] gen full complete at=20.5s tokens=20175→1291",
+      "[vendo] gen full complete at=38.4s tokens=20246→1056"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I10:A": {
+    "id": "I10",
+    "arm": "A",
+    "log": "maple-armA-1785059318925.log",
+    "pipeline": [
+      "[vendo] gen pipeline repair rounds=1 repaired=true noValidFix=0 ms=2023"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=15.1s tokens=20181→769",
+      "[vendo] gen repair complete at=17.1s"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I11:A": {
+    "id": "I11",
+    "arm": "A",
+    "log": "maple-armA-1785059390081.log",
+    "pipeline": [],
+    "lanes": [
+      "[vendo] gen full complete at=5.3s tokens=20180→120"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I12:A": {
+    "id": "I12",
+    "arm": "A",
+    "log": "maple-armA-1785059477565.log",
+    "pipeline": [],
+    "lanes": [
+      "[vendo] gen full complete at=5.5s tokens=20174→119"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I13:A": {
+    "id": "I13",
+    "arm": "A",
+    "log": "maple-armA-1785059587479.log",
+    "pipeline": [],
+    "lanes": [],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I14:A": {
+    "id": "I14",
+    "arm": "A",
+    "log": "maple-armA-1785059587479.log",
+    "pipeline": [],
+    "lanes": [
+      "[vendo] gen full complete at=7.0s tokens=20177→391",
+      "[vendo] gen full complete at=15.4s tokens=20179→1125"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I15:A": {
+    "id": "I15",
+    "arm": "A",
+    "log": "maple-armA-1785059709174.log",
+    "pipeline": [],
+    "lanes": [
+      "[vendo] gen full complete at=27.5s tokens=20181→2142",
+      "[vendo] gen full complete at=34.1s tokens=20212→244",
+      "[vendo] gen full complete at=41.3s tokens=20234→246"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": true,
+    "refusalIssues": [
+      "- wire unknown-reference: \"txns\" does not name a declared <Query> or state",
+      "- wire unknown-reference: \"cashflow.data\" does not name a declared <Query> or state"
+    ]
+  },
+  "I1:B": {
+    "id": "I1",
+    "arm": "B",
+    "log": "maple-armB-1785058000133.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=false ms=1214"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=20.7s tokens=20170→1498"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I2:B": {
+    "id": "I2",
+    "arm": "B",
+    "log": "maple-armB-1785058132106.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=false ms=1023"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=10.1s tokens=20173→187"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I3:B": {
+    "id": "I3",
+    "arm": "B",
+    "log": "maple-armB-1785058240636.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=false ms=1381"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=22.7s tokens=20183→1549"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I4:B": {
+    "id": "I4",
+    "arm": "B",
+    "log": "maple-armB-1785058495251.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=false ms=1474"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=25.9s tokens=20185→1898",
+      "[vendo] gen full complete at=57.6s tokens=20290→2579"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I5:B": {
+    "id": "I5",
+    "arm": "B",
+    "log": "maple-armB-1785058591667.log",
+    "pipeline": [
+      "[vendo] gen pipeline repair rounds=1 repaired=true noValidFix=3 ms=4986",
+      "[vendo] gen pipeline data-verify applied=false ms=826"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=4.6s tokens=20171→186",
+      "[vendo] gen repair complete at=9.6s"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I6:B": {
+    "id": "I6",
+    "arm": "B",
+    "log": "maple-armB-1785058652441.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=true ms=1245"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=17.4s tokens=20177→1164",
+      "[vendo] gen full complete at=40.2s tokens=20232→1689"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I7:B": {
+    "id": "I7",
+    "arm": "B",
+    "log": "maple-armB-1785058869965.log",
+    "pipeline": [
+      "[vendo] gen pipeline island-repair islands=1 repaired=true ms=13476",
+      "[vendo] gen pipeline data-verify applied=false ms=671"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=22.9s tokens=20184→1821",
+      "[vendo] gen repair complete at=35.9s"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I8:B": {
+    "id": "I8",
+    "arm": "B",
+    "log": "maple-armB-1785059025624.log",
+    "pipeline": [
+      "[vendo] gen pipeline island-repair islands=1 repaired=false ms=12980",
+      "[vendo] gen pipeline data-verify applied=false ms=939"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=21.1s tokens=20175→1443",
+      "[vendo] gen full complete at=38.7s tokens=20206→1201",
+      "[vendo] gen repair complete at=51.1s",
+      "[vendo] gen full complete at=69.4s tokens=20241→1242"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I9:B": {
+    "id": "I9",
+    "arm": "B",
+    "log": "maple-armB-1785059196392.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=false ms=1021"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=20.7s tokens=20175→1276"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I10:B": {
+    "id": "I10",
+    "arm": "B",
+    "log": "maple-armB-1785059286760.log",
+    "pipeline": [
+      "[vendo] gen pipeline repair rounds=1 repaired=true noValidFix=0 ms=1843",
+      "[vendo] gen pipeline data-verify applied=false ms=1822"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=13.1s tokens=20181→560",
+      "[vendo] gen repair complete at=15.0s"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I11:B": {
+    "id": "I11",
+    "arm": "B",
+    "log": "maple-armB-1785059411404.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=false ms=1636"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=3.9s tokens=20180→96"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I12:B": {
+    "id": "I12",
+    "arm": "B",
+    "log": "maple-armB-1785059454113.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=false ms=1920"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=5.0s tokens=20174→120"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I13:B": {
+    "id": "I13",
+    "arm": "B",
+    "log": "maple-armB-1785059523861.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=false ms=1288"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=7.1s tokens=20177→368"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I14:B": {
+    "id": "I14",
+    "arm": "B",
+    "log": "maple-armB-1785059670359.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=true ms=1255"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=20.6s tokens=20179→1557"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I15:B": {
+    "id": "I15",
+    "arm": "B",
+    "log": "maple-armB-1785059767614.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=false ms=3652"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=25.9s tokens=20181→2094"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I1:C": {
+    "id": "I1",
+    "arm": "C",
+    "log": "maple-armC-1785058067183.log",
+    "pipeline": [
+      "[vendo] gen pipeline repair rounds=2 repaired=true noValidFix=1 ms=8874",
+      "[vendo] gen pipeline data-verify applied=true ms=846"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=15.8s tokens=21790→1077",
+      "[vendo] gen full complete at=39.2s tokens=21815→1866",
+      "[vendo] gen repair complete at=45.3s",
+      "[vendo] gen repair complete at=47.3s"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I2:C": {
+    "id": "I2",
+    "arm": "C",
+    "log": "maple-armC-1785058180228.log",
+    "pipeline": [],
+    "lanes": [],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I3:C": {
+    "id": "I3",
+    "arm": "C",
+    "log": "maple-armC-1785058180228.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=true ms=1185",
+      "[vendo] gen pipeline data-verify applied=true ms=1194"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=14.5s tokens=21793→1089",
+      "[vendo] gen full complete at=14.7s tokens=21803→1192"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I4:C": {
+    "id": "I4",
+    "arm": "C",
+    "log": "maple-armC-1785058358256.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=true ms=2567"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=29.3s tokens=21805→2171"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I5:C": {
+    "id": "I5",
+    "arm": "C",
+    "log": "maple-armC-1785058617435.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=false ms=610"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=17.4s tokens=21791→1480"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I6:C": {
+    "id": "I6",
+    "arm": "C",
+    "log": "maple-armC-1785058767235.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=true ms=1025"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=33.8s tokens=21797→3009"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I7:C": {
+    "id": "I7",
+    "arm": "C",
+    "log": "maple-armC-1785058921883.log",
+    "pipeline": [
+      "[vendo] gen pipeline repair rounds=2 repaired=true noValidFix=0 ms=4903",
+      "[vendo] gen pipeline data-verify applied=true ms=2931"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=21.9s tokens=21804→1853",
+      "[vendo] gen repair complete at=23.6s",
+      "[vendo] gen repair complete at=26.3s"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I8:C": {
+    "id": "I8",
+    "arm": "C",
+    "log": "maple-armC-1785059112853.log",
+    "pipeline": [],
+    "lanes": [],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I9:C": {
+    "id": "I9",
+    "arm": "C",
+    "log": "maple-armC-1785059112853.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=false ms=703",
+      "[vendo] gen pipeline data-verify applied=true ms=849"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=28.4s tokens=21795→2152",
+      "[vendo] gen full complete at=24.4s tokens=21795→1853"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I10:C": {
+    "id": "I10",
+    "arm": "C",
+    "log": "maple-armC-1785059351211.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=true ms=1589"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=21.2s tokens=21801→1628"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I11:C": {
+    "id": "I11",
+    "arm": "C",
+    "log": "maple-armC-1785059432858.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=false ms=845"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=4.7s tokens=21800→145"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I12:C": {
+    "id": "I12",
+    "arm": "C",
+    "log": "maple-armC-1785059499678.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=false ms=1290"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=7.0s tokens=21794→296"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I13:C": {
+    "id": "I13",
+    "arm": "C",
+    "log": "maple-armC-1785059548886.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=true ms=1504"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=19.3s tokens=21797→1540"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I14:C": {
+    "id": "I14",
+    "arm": "C",
+    "log": "maple-armC-1785059638126.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=false ms=1195"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=13.2s tokens=21799→962"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I15:C": {
+    "id": "I15",
+    "arm": "C",
+    "log": "maple-armC-1785059814426.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=false ms=707"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=31.8s tokens=21801→2545"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  }
+}

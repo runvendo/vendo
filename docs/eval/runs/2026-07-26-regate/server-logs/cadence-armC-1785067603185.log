@@ -1,0 +1,16 @@
+=== boot cadence arm C at 2026-07-26T12:06:43.185Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3300
+- Network:       http://10.0.0.188:3300
+✓ Ready in 174ms
+
+=== create I30 arm C start ===
+
+=== create I30 arm C end ===
+[vendo] model: explicit ANTHROPIC_API_KEY (anthropic) → claude-sonnet-4-6
+[vendo] gen full complete at=33.8s tokens=23580→2545
+[vendo] gen full invalid (1 issue): wire malformed-expression: unexpected trailing content at index 7
+[vendo] gen full complete at=67.8s tokens=23605→2850
+[vendo] model (paint): explicit ANTHROPIC_API_KEY (anthropic) → claude-haiku-4-5
+[vendo] gen pipeline data-verify applied=false ms=1442
+[vendo] gen create complete app=app_1a459752-0df1-48f2-8e9d-ceb2cbc7cd51 total=70.4s

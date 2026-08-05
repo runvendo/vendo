@@ -1,0 +1,168 @@
+- complementary:
+  - text: Maple
+  - navigation:
+    - link "Home":
+      - /url: /
+    - link "Accounts":
+      - /url: /accounts
+    - link "Transactions":
+      - /url: /transactions
+    - link "Cards":
+      - /url: /cards
+    - link "Payments":
+      - /url: /payments
+    - link "Insights":
+      - /url: /insights
+    - link "Ask Maple":
+      - /url: /vendo
+    - link "Apps":
+      - /url: /vendo/apps
+    - link "Activity":
+      - /url: /activity
+    - link "Settings":
+      - /url: /settings
+    - button "Reset demo"
+  - button "YH Yousef Helal Personal"
+- banner:
+  - heading "Apps" [level=1]
+  - button "Search… ⌘K"
+  - button "Send"
+  - button "Request"
+  - button "Move money"
+  - button "Notifications"
+- main:
+  - heading "Apps" [level=1]
+  - paragraph: Personal apps built with Vendo, running on Maple.
+  - form "Create app":
+    - textbox "Describe a new app"
+    - button "Create" [disabled]
+  - list "Your apps":
+    - listitem:
+      - button "PG&E Autopay & Payment History"
+      - button "Remove PG&E Autopay & Payment History": ×
+    - listitem:
+      - button "Steam charges & dispute"
+      - button "Remove Steam charges & dispute": ×
+    - listitem:
+      - button "Steam charges & dispute"
+      - button "Remove Steam charges & dispute": ×
+    - listitem:
+      - button "Steam charges & dispute"
+      - button "Remove Steam charges & dispute": ×
+    - listitem:
+      - button "Transfer excess to savings"
+      - button "Remove Transfer excess to savings": ×
+    - listitem:
+      - button "Sweep to savings"
+      - button "Remove Sweep to savings": ×
+    - listitem:
+      - button "Transfer excess to savings"
+      - button "Remove Transfer excess to savings": ×
+    - listitem:
+      - button "Your four accounts"
+      - button "Remove Your four accounts": ×
+    - listitem:
+      - button "Account overview"
+      - button "Remove Account overview": ×
+    - listitem:
+      - button "Account overview"
+      - button "Remove Account overview": ×
+    - listitem:
+      - button "Streaming subscriptions this year"
+      - button "Remove Streaming subscriptions this year": ×
+    - listitem:
+      - button "Streaming subscriptions this year"
+      - button "Remove Streaming subscriptions this year": ×
+    - listitem:
+      - button "Streaming costs this year"
+      - button "Remove Streaming costs this year": ×
+    - listitem:
+      - button "Send $25 to mom"
+      - button "Remove Send $25 to mom": ×
+    - listitem:
+      - button "Send $25 to Mom"
+      - button "Remove Send $25 to Mom": ×
+    - listitem:
+      - button "Send $25 to Mom"
+      - button "Remove Send $25 to Mom": ×
+    - listitem:
+      - button "Japan trip goal"
+      - button "Remove Japan trip goal": ×
+    - listitem:
+      - button "Japan trip goal"
+      - button "Remove Japan trip goal": ×
+    - listitem:
+      - button "Japan trip goal"
+      - button "Remove Japan trip goal": ×
+    - listitem:
+      - button "Monthly cash flow report"
+      - button "Remove Monthly cash flow report": ×
+    - listitem:
+      - button "Monthly report card 2026"
+      - button "Remove Monthly report card 2026": ×
+    - listitem:
+      - button "Monthly report card 2026"
+      - button "Remove Monthly report card 2026": ×
+    - listitem:
+      - button "Pending card charges"
+      - button "Remove Pending card charges": ×
+    - listitem:
+      - button "Pending card charges"
+      - button "Remove Pending card charges": ×
+    - listitem:
+      - button "Pending card charges"
+      - button "Remove Pending card charges": ×
+    - listitem:
+      - button "Spending check"
+      - button "Remove Spending check": ×
+    - listitem:
+      - button "Spending vs Budget"
+      - button "Remove Spending vs Budget": ×
+    - listitem:
+      - button "Spending vs budgets"
+      - button "Remove Spending vs budgets": ×
+    - listitem:
+      - button "Low balance alert"
+      - button "Remove Low balance alert": ×
+    - listitem:
+      - button "Weekly spending summary"
+      - button "Remove Weekly spending summary": ×
+    - listitem:
+      - button "Money HQ"
+      - button "Remove Money HQ": ×
+    - listitem:
+      - button "Spending This Month"
+      - button "Remove Spending This Month": ×
+  - heading "Set up autopay" [level=3]
+  - text: Schedule a recurring payment to PG&E from your checking account. Recipient
+  - textbox "Recipient" [disabled]: PG&E
+  - text: Amount
+  - spinbutton "Amount"
+  - text: Memo
+  - textbox "Memo": PG&E autopay
+  - button "Schedule payment"
+  - status: One-time transfer This sends a single payment now. Fully automated recurring autopay requires PG&E's own website or a bill-pay service — this host does not support scheduled recurring payments to external billers.
+  - heading "Payments to PG&E this year" [level=3]
+  - searchbox "Search table"
+  - table "PG&E transactions in 2026":
+    - caption: PG&E transactions in 2026
+    - rowgroup:
+      - row "Date ▼ Merchant Description Amount Status":
+        - columnheader "Date ▼"
+        - columnheader "Merchant"
+        - columnheader "Description"
+        - columnheader "Amount"
+        - columnheader "Status"
+    - rowgroup:
+      - row "No PG&E payments found this year. Try sending a payment above.":
+        - cell "No PG&E payments found this year. Try sending a payment above."
+  - status: About autopay This host supports one-time money transfers only. To set up true autopay — where PG&E pulls your bill automatically each month — enroll directly at pge.com or contact your bank's bill-pay service. Payments sent here will appear in your transaction history above.
+  - form "Edit app":
+    - textbox "Ask Vendo to change this app (e.g. “Remix the net worth card”)"
+    - button "Edit" [disabled]
+    - button "Refresh"
+  - heading "Ship review" [level=3]
+  - button "Load ship-diff"
+  - paragraph: The reviewable delta between captured host source and what this app ships.
+- button "Ask Maple"
+- alert

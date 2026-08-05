@@ -1,0 +1,45 @@
+I1	B	app_fe78830f-8285-4713-95de-ab3dae23457a	Spending vs budgets	26.0	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armB-1785058000133.log
+I1	A	app_7f8a1bdc-6c22-47f5-be9b-4471ebbb4668	Spending vs Budget	9.4	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armA-1785058042099.log
+I1	C	app_4444b872-0f82-42e0-869d-f0c3ff284e25	Spending check	50.0	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armC-1785058067183.log
+I2	B	app_50e6e91e-694e-4b1d-ae47-ca3af41ab162	Pending card charges	12.1	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armB-1785058132106.log
+I2	A	app_934a1a91-a83e-4bdd-9682-79f6288d771b	Pending card charges	7.2	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armA-1785058158773.log
+I2	C	app_dee6f6a5-1493-4190-8066-19b417bd5fc9	Pending card charges	17.6	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armC-1785058180228.log
+I3	C	app_57cdd8e4-7def-4391-b117-11ee5aef5fdc	Monthly report card 2026	17.2	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armC-1785058180228.log
+I3	B	app_d43774be-0e87-4d8a-991f-62fd26c09a4c	Monthly report card 2026	26.2	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armB-1785058240636.log
+I3	A	app_d81452b6-efb9-43a4-9e7b-08dc45cd2494	Monthly cash flow report	62.0	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armA-1785058281330.log
+I4	C	app_653ca35d-87d7-4057-a878-ec47c5cd499c	Japan trip goal	34.1	1	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armC-1785058358256.log
+I4	A	app_b13b9e39-7615-469d-a6f9-2e7201658763	Japan trip goal	74.0	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armA-1785058407556.log
+I4	B	app_61b3bec2-759f-4942-8572-ad2d436edf2f	Japan trip goal	60.9	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armB-1785058495251.log
+I5	A	app_b01c7e4a-5b5f-4ae9-8306-b9b1faf19729	Send $25 to Mom	7.8	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armA-1785058570042.log
+I5	B	app_fd25eaf4-5c03-4881-a6ed-a3c2d90fe127	Send $25 to Mom	11.5	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armB-1785058591667.log
+I5	C	app_c3eb9c2d-203b-4dea-9592-67c5dd988209	Send $25 to mom	20.6	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armC-1785058617435.log
+I6	B	app_6f8c69c0-16dd-45a5-9b2c-7cc28d60bead	Streaming costs this year	42.6	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armB-1785058652441.log
+I6	A	app_75548d50-836b-44c4-b467-0cf139fc81e0	Streaming subscriptions this year	44.7	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armA-1785058709039.log
+I6	C	app_b9aac360-0b2d-456c-8f1e-e1379c0a910b	Streaming subscriptions this year	36.5	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armC-1785058767235.log
+I7	A	app_001dc67f-25be-42e6-893a-19b337539884	Account overview	38.8	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armA-1785058817187.log
+I7	B	app_c7a4e514-9e4a-466f-8997-39afdbf584df	Account overview	38.1	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armB-1785058869965.log
+I7	C	app_5c42b5f7-1a4a-4933-889a-64ea09c10045	Your four accounts	30.8	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armC-1785058921883.log
+I8	A	app_b56c9cf1-e06c-43c3-adad-c93656f58b69	Transfer excess to savings	44.6	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armA-1785058966356.log
+I8	B	app_fdde4e10-8d8b-4ad2-8352-6adc50558077	Sweep to savings	73.4	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armB-1785059025624.log
+I8	C	app_5e3159fc-9e82-4005-a835-739a54bfde06	Transfer excess to savings	31.7	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armC-1785059112853.log
+I9	C	app_1a534908-94ad-401b-b9a8-042bc92c6e35	Steam charges & dispute	27.1	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armC-1785059112853.log
+I9	B	app_f49df1e6-ba82-4878-bc29-a35328732f9a	Steam charges & dispute	23.1	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armB-1785059196392.log
+I9	A	app_866006df-4a7b-495f-88bc-97ed8c8741ff	Steam charges & dispute	39.7	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armA-1785059233270.log
+I10	B	app_7f9e96c9-a778-42e8-bb60-2d572362dd07	PG&E Autopay & Payment History	18.2	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armB-1785059286760.log
+I10	A	app_01a39001-96a1-461f-8a02-3e50c19ad8ad	PG&E Autopay & Payment History	18.0	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armA-1785059318925.log
+I10	C	app_db40e620-1521-4017-b76e-ddd04574299a	PG&E payments & autopay	24.9	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armC-1785059351211.log
+I11	A	app_9a390069-bb02-4bb3-9705-f60207ad2632	Maple Invest holdings	6.4	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armA-1785059390081.log
+I11	B	app_fa954931-aac2-4c32-97d4-8d653d63f638	Maple Invest holdings	7.0	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armB-1785059411404.log
+I11	C	app_79ad8082-aab5-4dad-a67c-b4d3e70386c3	Maple Invest holdings	6.7	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armC-1785059432858.log
+I12	B	app_957bc9c6-cc97-4318-9891-ca5de5dacbbe	Tax documents	8.6	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armB-1785059454113.log
+I12	A	app_3b065364-f721-48d6-b05b-fd5f7fc689db	Tax documents	7.0	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armA-1785059477565.log
+I12	C	app_5861b7a9-2e3a-44c4-a0f5-c416b44839e3	Tax forms — not available	9.4	1	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armC-1785059499678.log
+I13	B	app_aedc5d5d-b179-4bc0-aec7-5cd7b05d4410	Dining vs. groceries	10.0	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armB-1785059523861.log
+I13	C	app_9f1c80b2-3462-4435-bad8-cb3cc307b7fa	Dining vs. groceries	23.4	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armC-1785059548886.log
+I13	A	app_c433d301-11f4-4651-a637-85bedb5ae98c	Dining vs. Groceries	8.0	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armA-1785059587479.log
+I14	A	app_ef60f58c-1316-48db-8d40-d333e5428383	Financial snapshot	16.3	1	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armA-1785059587479.log
+I14	C	app_26858652-16f3-4409-9ba7-9986bb9f1186	Financial snapshot	15.5	1	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armC-1785059638126.log
+I14	B	app_4c2ebcf9-b909-427c-8906-fc77acc602c0	Financial advisor one-pager	23.0	1	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armB-1785059670359.log
+I15	A	UNKNOWN	?	42.9	1	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armA-1785059709174.log
+I15	B	app_6dcd32f5-7486-47dd-9da9-82a4ad4ec679	July 2026 weekly cashflow	31.6	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armB-1785059767614.log
+I15	C	app_40438201-c93f-4284-abf4-cc68469922ab	July 2026 — weekly cashflow	34.5	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/maple-armC-1785059814426.log

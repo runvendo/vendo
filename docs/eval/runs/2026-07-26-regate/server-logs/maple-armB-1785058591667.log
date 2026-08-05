@@ -1,0 +1,17 @@
+=== boot maple arm B at 2026-07-26T09:36:31.667Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3100
+- Network:       http://10.0.0.188:3100
+✓ Ready in 200ms
+
+=== create I5 arm B start ===
+
+=== create I5 arm B end ===
+[vendo] model: explicit ANTHROPIC_API_KEY (anthropic) → claude-sonnet-4-6
+[vendo] gen full complete at=4.6s tokens=20171→186
+[vendo] gen full invalid (3 issues): node "stat-1" prop "value" on <Stat> carries hand-typed LITERAL business data | node "stat-2" prop "value" on <Stat> carries hand-typed LITERAL business data | node "stat-3" prop "value" on <Stat> carries hand-typed LITERAL business data
+[vendo] gen repair complete at=9.6s
+[vendo] gen pipeline repair rounds=1 repaired=true noValidFix=3 ms=4986
+[vendo] model (paint): explicit ANTHROPIC_API_KEY (anthropic) → claude-haiku-4-5
+[vendo] gen pipeline data-verify applied=false ms=826
+[vendo] gen create complete app=app_fd25eaf4-5c03-4881-a6ed-a3c2d90fe127 total=11.4s

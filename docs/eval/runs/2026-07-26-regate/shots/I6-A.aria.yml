@@ -1,0 +1,222 @@
+- complementary:
+  - text: Maple
+  - navigation:
+    - link "Home":
+      - /url: /
+    - link "Accounts":
+      - /url: /accounts
+    - link "Transactions":
+      - /url: /transactions
+    - link "Cards":
+      - /url: /cards
+    - link "Payments":
+      - /url: /payments
+    - link "Insights":
+      - /url: /insights
+    - link "Ask Maple":
+      - /url: /vendo
+    - link "Apps":
+      - /url: /vendo/apps
+    - link "Activity":
+      - /url: /activity
+    - link "Settings":
+      - /url: /settings
+    - button "Reset demo"
+  - button "YH Yousef Helal Personal"
+- banner:
+  - heading "Apps" [level=1]
+  - button "Search… ⌘K"
+  - button "Send"
+  - button "Request"
+  - button "Move money"
+  - button "Notifications"
+- main:
+  - heading "Apps" [level=1]
+  - paragraph: Personal apps built with Vendo, running on Maple.
+  - form "Create app":
+    - textbox "Describe a new app"
+    - button "Create" [disabled]
+  - list "Your apps":
+    - listitem:
+      - button "Streaming subscriptions this year"
+      - button "Remove Streaming subscriptions this year": ×
+    - listitem:
+      - button "Streaming costs this year"
+      - button "Remove Streaming costs this year": ×
+    - listitem:
+      - button "Send $25 to mom"
+      - button "Remove Send $25 to mom": ×
+    - listitem:
+      - button "Send $25 to Mom"
+      - button "Remove Send $25 to Mom": ×
+    - listitem:
+      - button "Send $25 to Mom"
+      - button "Remove Send $25 to Mom": ×
+    - listitem:
+      - button "Japan trip goal"
+      - button "Remove Japan trip goal": ×
+    - listitem:
+      - button "Japan trip goal"
+      - button "Remove Japan trip goal": ×
+    - listitem:
+      - button "Japan trip goal"
+      - button "Remove Japan trip goal": ×
+    - listitem:
+      - button "Monthly cash flow report"
+      - button "Remove Monthly cash flow report": ×
+    - listitem:
+      - button "Monthly report card 2026"
+      - button "Remove Monthly report card 2026": ×
+    - listitem:
+      - button "Monthly report card 2026"
+      - button "Remove Monthly report card 2026": ×
+    - listitem:
+      - button "Pending card charges"
+      - button "Remove Pending card charges": ×
+    - listitem:
+      - button "Pending card charges"
+      - button "Remove Pending card charges": ×
+    - listitem:
+      - button "Pending card charges"
+      - button "Remove Pending card charges": ×
+    - listitem:
+      - button "Spending check"
+      - button "Remove Spending check": ×
+    - listitem:
+      - button "Spending vs Budget"
+      - button "Remove Spending vs Budget": ×
+    - listitem:
+      - button "Spending vs budgets"
+      - button "Remove Spending vs budgets": ×
+    - listitem:
+      - button "Low balance alert"
+      - button "Remove Low balance alert": ×
+    - listitem:
+      - button "Weekly spending summary"
+      - button "Remove Weekly spending summary": ×
+    - listitem:
+      - button "Money HQ"
+      - button "Remove Money HQ": ×
+    - listitem:
+      - button "Spending This Month"
+      - button "Remove Spending This Month": ×
+  - heading "Streaming subscriptions this year" [level=3]
+  - text: Subscription spending by month, January – July 2026
+  - application: 2026-07-09T13:00:00.000Z 2026-07-01T13:00:00.000Z 2026-06-07T13:00:00.000Z 2026-05-12T13:00:00.000Z 2026-05-01T13:00:00.000Z -$300.00 -$225.00 -$150.00 -$75.00 $0.00
+  - article "Total spent this year":
+    - text: Total spent this year
+    - strong: "-$20.00"
+  - article "Recurring subscriptions detected":
+    - text: Recurring subscriptions detected
+    - strong: "-$2,850.00"
+  - searchbox "Search table"
+  - table "All subscription transactions this year":
+    - caption: All subscription transactions this year
+    - rowgroup:
+      - row "Date ▲ Merchant Description Amount Status":
+        - columnheader "Date ▲"
+        - columnheader "Merchant"
+        - columnheader "Description"
+        - columnheader "Amount"
+        - columnheader "Status"
+    - rowgroup:
+      - row "May 1, 2026 Equinox EQUINOX SF -$285.00 posted":
+        - cell "May 1, 2026"
+        - cell "Equinox"
+        - cell "EQUINOX SF"
+        - cell "-$285.00"
+        - cell "posted"
+      - row "May 4, 2026 Spotify SPOTIFY USA -$11.99 posted":
+        - cell "May 4, 2026"
+        - cell "Spotify"
+        - cell "SPOTIFY USA"
+        - cell "-$11.99"
+        - cell "posted"
+      - row "May 7, 2026 Netflix NETFLIX.COM -$15.49 posted":
+        - cell "May 7, 2026"
+        - cell "Netflix"
+        - cell "NETFLIX.COM"
+        - cell "-$15.49"
+        - cell "posted"
+      - row "May 9, 2026 iCloud+ APPLE.COM/BILL -$2.99 posted":
+        - cell "May 9, 2026"
+        - cell "iCloud+"
+        - cell "APPLE.COM/BILL"
+        - cell "-$2.99"
+        - cell "posted"
+      - row "May 12, 2026 ChatGPT OPENAI CHATGPT -$20.00 posted":
+        - cell "May 12, 2026"
+        - cell "ChatGPT"
+        - cell "OPENAI CHATGPT"
+        - cell "-$20.00"
+        - cell "posted"
+      - row "Jun 1, 2026 Equinox EQUINOX SF -$285.00 posted":
+        - cell "Jun 1, 2026"
+        - cell "Equinox"
+        - cell "EQUINOX SF"
+        - cell "-$285.00"
+        - cell "posted"
+      - row "Jun 4, 2026 Spotify SPOTIFY USA -$11.99 posted":
+        - cell "Jun 4, 2026"
+        - cell "Spotify"
+        - cell "SPOTIFY USA"
+        - cell "-$11.99"
+        - cell "posted"
+      - row "Jun 7, 2026 Netflix NETFLIX.COM -$15.49 posted":
+        - cell "Jun 7, 2026"
+        - cell "Netflix"
+        - cell "NETFLIX.COM"
+        - cell "-$15.49"
+        - cell "posted"
+      - row "Jun 9, 2026 iCloud+ APPLE.COM/BILL -$2.99 posted":
+        - cell "Jun 9, 2026"
+        - cell "iCloud+"
+        - cell "APPLE.COM/BILL"
+        - cell "-$2.99"
+        - cell "posted"
+      - row "Jun 12, 2026 ChatGPT OPENAI CHATGPT -$20.00 posted":
+        - cell "Jun 12, 2026"
+        - cell "ChatGPT"
+        - cell "OPENAI CHATGPT"
+        - cell "-$20.00"
+        - cell "posted"
+      - row "Jul 1, 2026 Equinox EQUINOX SF -$285.00 posted":
+        - cell "Jul 1, 2026"
+        - cell "Equinox"
+        - cell "EQUINOX SF"
+        - cell "-$285.00"
+        - cell "posted"
+      - row "Jul 4, 2026 Spotify SPOTIFY USA -$11.99 posted":
+        - cell "Jul 4, 2026"
+        - cell "Spotify"
+        - cell "SPOTIFY USA"
+        - cell "-$11.99"
+        - cell "posted"
+      - row "Jul 7, 2026 Netflix NETFLIX.COM -$15.49 posted":
+        - cell "Jul 7, 2026"
+        - cell "Netflix"
+        - cell "NETFLIX.COM"
+        - cell "-$15.49"
+        - cell "posted"
+      - row "Jul 9, 2026 iCloud+ APPLE.COM/BILL -$2.99 posted":
+        - cell "Jul 9, 2026"
+        - cell "iCloud+"
+        - cell "APPLE.COM/BILL"
+        - cell "-$2.99"
+        - cell "posted"
+      - row "Jul 12, 2026 ChatGPT OPENAI CHATGPT -$20.00 posted":
+        - cell "Jul 12, 2026"
+        - cell "ChatGPT"
+        - cell "OPENAI CHATGPT"
+        - cell "-$20.00"
+        - cell "posted"
+  - iframe
+  - form "Edit app":
+    - textbox "Ask Vendo to change this app (e.g. “Remix the net worth card”)"
+    - button "Edit" [disabled]
+    - button "Refresh"
+  - heading "Ship review" [level=3]
+  - button "Load ship-diff"
+  - paragraph: The reviewable delta between captured host source and what this app ships.
+- button "Ask Maple"
+- alert

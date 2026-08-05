@@ -1,0 +1,74 @@
+- text: Most trouble this season S-Corp 2 of 2 clients still missing documents (100% incomplete) 100% S-Corp 2/2 clients 75% Sole Prop 3/4 clients 67% Partnership 2/3 clients Clients missing documents by entity type S-Corp 2 / 2 (100%) Sole Prop 3 / 4 (75%) Partnership 2 / 3 (67%) Individual 1 / 2 (50%) C-Corp 0 / 1 (0%) Document collection detail by entity type
+- table:
+  - rowgroup:
+    - row "Entity type Clients Missing docs Complete Docs outstanding Docs received Completion":
+      - columnheader "Entity type"
+      - columnheader "Clients"
+      - columnheader "Missing docs"
+      - columnheader "Complete"
+      - columnheader "Docs outstanding"
+      - columnheader "Docs received"
+      - columnheader "Completion"
+  - rowgroup:
+    - row "S-Corp Most trouble 2 2 0 5 6 55%":
+      - cell "S-Corp Most trouble"
+      - cell "2"
+      - cell "2"
+      - cell "0"
+      - cell "5"
+      - cell "6"
+      - cell "55%"
+    - row "Sole Prop 4 3 1 9 9 50%":
+      - cell "Sole Prop"
+      - cell "4"
+      - cell "3"
+      - cell "1"
+      - cell "9"
+      - cell "9"
+      - cell "50%"
+    - row "Partnership 3 2 1 5 11 69%":
+      - cell "Partnership"
+      - cell "3"
+      - cell "2"
+      - cell "1"
+      - cell "5"
+      - cell "11"
+      - cell "69%"
+    - row "Individual 2 1 1 2 6 75%":
+      - cell "Individual"
+      - cell "2"
+      - cell "1"
+      - cell "1"
+      - cell "2"
+      - cell "6"
+      - cell "75%"
+    - row "C-Corp 1 0 1 0 6 100%":
+      - cell "C-Corp"
+      - cell "1"
+      - cell "0"
+      - cell "1"
+      - cell "0"
+      - cell "6"
+      - cell "100%"
+- text: S-Corp clients still missing documents These are the 2 S-Corp clients that need chasing.
+- table:
+  - rowgroup:
+    - row "Client Contact Assigned to Docs received Filing deadline":
+      - columnheader "Client"
+      - columnheader "Contact"
+      - columnheader "Assigned to"
+      - columnheader "Docs received"
+      - columnheader "Filing deadline"
+  - rowgroup:
+    - row "Blue Bottle Coffee Marisol Rivera yousef+rivera@vendo.run Maya Alvarez 3 / 6 3d away":
+      - cell "Blue Bottle Coffee"
+      - cell "Marisol Rivera yousef+rivera@vendo.run"
+      - cell "Maya Alvarez"
+      - cell "3 / 6"
+      - cell "3d away"
+    - row "Equinox Dana Kowalski yousef+harborview@vendo.run Priya Natarajan 3 / 5 Aug 20, 2026":
+      - cell "Equinox"
+      - cell "Dana Kowalski yousef+harborview@vendo.run"
+      - cell "Priya Natarajan"
+      - cell "3 / 5"
+      - cell "Aug 20, 2026"

@@ -1,0 +1,25 @@
+=== boot cadence arm A at 2026-07-26T10:59:59.298Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3300
+- Network:       http://10.0.0.188:3300
+✓ Ready in 395ms
+
+=== create I21 arm A start ===
+
+=== create I21 arm A end ===
+[vendo] model: explicit ANTHROPIC_API_KEY (anthropic) → claude-sonnet-4-6
+[vendo] gen full complete at=55.5s tokens=21982→4114
+[vendo] gen full invalid (7 issues): wire unknown-reference: "dashboard.data.documentsReceived" does not name a declared <Query> or state | wire unknown-reference: "dashboard.data.documentsTotal" does not name a declared <Query> or state | wire unknown-reference: "dashboard.data.clientsMissingDocs" does not name a declared <Query> or state
+[vendo] gen full complete at=98.3s tokens=22136→2629
+[vendo] gen full invalid (6 issues): wire unknown-reference: "dashboard.data.documentsReceived" does not name a declared <Query> or state | wire unknown-reference: "dashboard.data.documentsTotal" does not name a declared <Query> or state | wire unknown-reference: "dashboard.data.clientsMissingDocs" does not name a declared <Query> or state
+[vendo] gen full complete at=136.5s tokens=22200→2910
+[vendo] gen full invalid (5 issues): wire unknown-reference: "dashboard.data.documentsReceived" does not name a declared <Query> or state | wire unknown-reference: "dashboard.data.documentsOutstanding" does not name a declared <Query> or state | wire unknown-reference: "dashboard.data.clientsMissingDocs" does not name a declared <Query> or state
+[vendo] app build failed (app_7d0b397e-42e2-4f9f-807c-a0b20160e5af): generation failed
+  - wire unknown-reference: "dashboard.data.documentsReceived" does not name a declared <Query> or state
+  - wire unknown-reference: "dashboard.data.documentsTotal" does not name a declared <Query> or state
+  - wire unknown-reference: "dashboard.data.clientsMissingDocs" does not name a declared <Query> or state
+  - wire unknown-reference: "activity.data" does not name a declared <Query> or state
+  - wire unknown-reference: "clients.data" does not name a declared <Query> or state
+  - node "turnaroundinsight-1" references unknown component "TurnaroundInsight"
+  - island "TurnaroundPanel" computes displayed values from the hand-typed constant 2 — a constant feeding displayed math is invented data (law 1): derive it from a tool result, or render an honest <Disclaimer/> that the rate/value isn't available on this host.
+  - wire unknown-reference: "dashboard.data.documentsOutstanding" does not name a declared <Query> or state
