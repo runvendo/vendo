@@ -76,7 +76,9 @@ export interface PlanServer {
  *  the only moment early enough for the stage to be open while the skeleton is
  *  still worth watching. It sets the STARTING posture only — inline keeps
  *  Expand, staged keeps Back-to-chat, so a wrong hint costs one tap. */
-export type PlanDisplay = "inline" | "stage";
+export const PLAN_DISPLAYS = ["inline", "stage"] as const;
+
+export type PlanDisplay = (typeof PLAN_DISPLAYS)[number];
 
 export interface AppPlan {
   name: string;

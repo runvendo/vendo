@@ -122,7 +122,7 @@ describe("turn.tools — Harness.toolSurface", () => {
       {
         maple_invoices_list: { descriptor: readTool("maple_invoices_list"), execute: () => [] },
         maple_reports_read: { descriptor: readTool("maple_reports_read"), execute: () => [] },
-        vendo_apps_create: { descriptor: readTool("vendo_apps_create", "write"), execute: () => ({}) },
+        vendo_make: { descriptor: readTool("vendo_make", "write"), execute: () => ({}) },
       },
       guard,
     );
@@ -162,13 +162,13 @@ describe("turn.tools — Harness.toolSurface", () => {
   });
 
   it("withhold: the name is off the listing and answers not-found on call", async () => {
-    const { tools } = surfaceRig({ curated: false, withhold: ["vendo_apps_create"] });
+    const { tools } = surfaceRig({ curated: false, withhold: ["vendo_make"] });
     const names = (await tools.list()).map((entry) => entry.name);
-    expect(names).not.toContain("vendo_apps_create");
+    expect(names).not.toContain("vendo_make");
     expect(names).toContain("maple_invoices_list");
-    await expect(tools.call("vendo_apps_create", { appId: "app_1" })).resolves.toEqual({
+    await expect(tools.call("vendo_make", { request: "a dashboard" })).resolves.toEqual({
       status: "error",
-      error: { code: "not-found", message: "Unknown tool: vendo_apps_create" },
+      error: { code: "not-found", message: "Unknown tool: vendo_make" },
     });
   });
 });

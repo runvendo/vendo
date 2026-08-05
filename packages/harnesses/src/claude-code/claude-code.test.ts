@@ -2,8 +2,7 @@ import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeF
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
-  VENDO_APPS_CREATE_TOOL,
-  VENDO_APPS_EDIT_TOOL,
+  VENDO_MAKE_TOOL,
   VendoError,
   type HarnessEvent,
   type Json,
@@ -322,15 +321,16 @@ describe("the boot gate — a spawned harness with no machine to live on (design
 });
 
 describe("the tool surface it asks for (design §D2/§D4)", () => {
-  test("uncurated, with both app-generation tools withheld", () => {
+  test("uncurated, with app generation withheld", () => {
     // Exact, not `toMatchObject`: an extra withheld name is a capability this
     // harness silently lost, and the loadout coming back is the friction §D2
     // removed. Both legs declare it — the surface is the harness's, not the
-    // machine's.
+    // machine's. ONE name now covers both generation paths, so a second entry
+    // creeping back in means a door reopened that this harness closed.
     for (const harness of [claudeCode(), claudeCode({ machine: "local" })]) {
       expect(harness.toolSurface).toEqual({
         curated: false,
-        withhold: [VENDO_APPS_CREATE_TOOL, VENDO_APPS_EDIT_TOOL],
+        withhold: [VENDO_MAKE_TOOL],
       });
     }
   });

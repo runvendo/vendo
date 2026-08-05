@@ -1,4 +1,4 @@
-import { vendoApprovalPartSchema, type ApprovalRequest, type ToolDescriptor } from "@vendoai/core";
+import { VENDO_MAKE_TOOL, vendoApprovalPartSchema, type ApprovalRequest, type ToolDescriptor } from "@vendoai/core";
 import type { UIMessage } from "ai";
 import { describe, expect, it } from "vitest";
 import { createAgent } from "./index.js";
@@ -109,29 +109,34 @@ async function storedAssistant(agent: ReturnType<typeof createAgent>): Promise<U
 }
 
 describe("agent approval round trip", () => {
-  it("executes a read-class Vendo create immediately without approval parts", async () => {
-    const createDescriptor: ToolDescriptor = {
-      name: "vendo_apps_create",
-      description: "Create a jailed rung-1 UI document.",
+  it("executes a read-class Vendo make immediately without approval parts", async () => {
+    const makeDescriptor: ToolDescriptor = {
+      name: VENDO_MAKE_TOOL,
+      description: "Make the user something to look at.",
       inputSchema: {
         type: "object",
-        properties: { prompt: { type: "string" } },
-        required: ["prompt"],
+        properties: { request: { type: "string" } },
+        required: ["request"],
         additionalProperties: false,
       },
       risk: "read",
     };
-    const createInput = { prompt: "Build a spending dashboard" };
+    const makeInput = { request: "Build a spending dashboard" };
     const guard = testGuard({});
     const tools = boundRegistry({
-      [createDescriptor.name]: {
-        descriptor: createDescriptor,
-        execute: async () => ({ id: "app_created", name: "Spending dashboard" }),
+      [makeDescriptor.name]: {
+        descriptor: makeDescriptor,
+        execute: async () => ({
+          id: "app_created",
+          title: "Spending dashboard",
+          status: "ready",
+          say: "Spending dashboard is on your screen.",
+        }),
       },
     }, guard);
     const agent = createAgent({
       model: scriptedModel([
-        toolCallTurn(createDescriptor.name, createInput, "call_create"),
+        toolCallTurn(makeDescriptor.name, makeInput, "call_make"),
         textTurn("Created.", "text_created"),
       ]),
       tools,
@@ -139,22 +144,24 @@ describe("agent approval round trip", () => {
     });
 
     const response = await agent.stream({
-      threadId: "thr_create",
+      threadId: "thr_make",
       message: {
-        id: "user_create",
+        id: "user_make",
         role: "user",
-        parts: [{ type: "text", text: createInput.prompt }],
+        parts: [{ type: "text", text: makeInput.request }],
       },
       ctx: ctx(),
     });
     const { parts } = await readSse(response);
 
-    expect(tools.invocations.vendo_apps_create).toBe(1);
+    expect(tools.invocations[VENDO_MAKE_TOOL]).toBe(1);
     expect(parts.some((part) => part.type === "data-vendo-approval")).toBe(false);
     expect(parts.some((part) => part.type === "tool-approval-request")).toBe(false);
+    // The receipt is the whole model-facing answer — the id and the words, and
+    // the tool part carries it through unchanged.
     expect(parts.find((part) => part.type === "tool-output-available")).toMatchObject({
-      toolCallId: "call_create",
-      output: { status: "ok", output: { id: "app_created" } },
+      toolCallId: "call_make",
+      output: { status: "ok", output: { id: "app_created", status: "ready" } },
     });
   });
 

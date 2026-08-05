@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { UIMessage } from "ai";
 import { permissionGrantSchema, type PermissionGrant } from "./grants.js";
-import { appIdSchema, type AppId, type Json } from "./ids.js";
+import { appIdSchema, turnIdSchema, type AppId, type Json, type TurnId } from "./ids.js";
 import { principalSchema, type Principal } from "./principal.js";
 import { triggerRefSchema, type TriggerRef } from "./triggers.js";
 
@@ -93,6 +93,16 @@ export interface RunContext {
       absent on a ctx built before any thread exists. In-process only; it never
       serializes. */
   messages?: () => readonly UIMessage[];
+  /**
+   * The turn this run belongs to. Carried HERE rather than passed beside the ctx
+   * because the ctx is what already reaches every audit mint, every guarded
+   * call, and every view emission — one field on the value everyone holds beats
+   * a new parameter on fifteen signatures.
+   *
+   * Optional because a run can predate a turn: a webhook, a schedule fire, an
+   * org-policy load. Absent means "no turn", never "unknown turn".
+   */
+  turnId?: TurnId;
 }
 
 /** 01-core §3 */
@@ -113,4 +123,5 @@ export const runContextSchema = z.object({
   // `messages` is deliberately not named here: it is function-valued and
   // in-process only, so no wire shape exists for it (`.passthrough()` keeps it
   // on a ctx that already carries one).
+  turnId: turnIdSchema.optional(),
 }).passthrough() satisfies z.ZodType<RunContext>;

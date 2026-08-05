@@ -1,6 +1,6 @@
 import { agentRunnerConformance, runConformance } from "@vendoai/core/conformance";
 import {
-  VENDO_APPS_CREATE_TOOL,
+  VENDO_MAKE_TOOL,
   vendoApprovalRefSchema,
   type ToolDescriptor,
 } from "@vendoai/core";
@@ -47,9 +47,9 @@ describe("tool-pack conformance — every pack tool routes through the guard", (
   const implementations: Record<string, TestToolImplementation> = {
     host_lookup: { descriptor: packDescriptor("host_lookup", "read"), execute: () => ({ leaked: true }) },
     host_send: { descriptor: packDescriptor("host_send", "write"), execute: () => ({ leaked: true }) },
-    [VENDO_APPS_CREATE_TOOL]: {
-      descriptor: packDescriptor(VENDO_APPS_CREATE_TOOL, "read"),
-      execute: () => ({ format: "vendo/app@1", id: "app_leaked", name: "leaked", ui: "tree" }),
+    [VENDO_MAKE_TOOL]: {
+      descriptor: packDescriptor(VENDO_MAKE_TOOL, "read"),
+      execute: () => ({ id: "app_leaked", title: "leaked", status: "ready", say: "leaked" }),
     },
   };
   const inputFor = (name: string): unknown => {
@@ -62,7 +62,7 @@ describe("tool-pack conformance — every pack tool routes through the guard", (
     const guard = testGuard({
       host_lookup: "ask",
       host_send: "ask",
-      [VENDO_APPS_CREATE_TOOL]: "ask",
+      [VENDO_MAKE_TOOL]: "ask",
     });
     const registry = boundRegistry(implementations, guard);
     // The REAL runner seam behind vendo_delegate: agent.asRunner() executing
@@ -97,7 +97,7 @@ describe("tool-pack conformance — every pack tool routes through the guard", (
     expect(registry.invocations).toEqual({
       host_lookup: 0,
       host_send: 0,
-      [VENDO_APPS_CREATE_TOOL]: 0,
+      [VENDO_MAKE_TOOL]: 0,
     });
     expect(JSON.stringify(guard.events)).not.toContain("leaked");
   });

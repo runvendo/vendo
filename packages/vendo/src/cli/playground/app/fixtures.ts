@@ -31,7 +31,7 @@ const PRINCIPAL: Principal = { kind: "user", subject: "user_playground", display
 export const playgroundToolMeta: ToolMetaMap = {
   host_listRenewals: { label: "Reading upcoming renewals" },
   host_listAccounts: { label: "Reading your accounts" },
-  vendo_apps_create: { label: "Building your view" },
+  vendo_make: { label: "Building your view" },
   slack_SLACK_SEND_MESSAGE: { label: "Post to #renewals in Slack" },
 };
 
@@ -198,8 +198,8 @@ export function viewScript(): DirectorScript {
           chunk(400, { type: "tool-input-start", toolCallId: "call_renewals", toolName: "host_listRenewals" }),
           chunk(300, { type: "tool-input-available", toolCallId: "call_renewals", toolName: "host_listRenewals", input: {} }),
           chunk(1000, { type: "tool-output-available", toolCallId: "call_renewals", output: { ok: true, count: 7 } }),
-          chunk(400, { type: "tool-input-start", toolCallId: "call_build", toolName: "vendo_apps_create" }),
-          chunk(300, { type: "tool-input-available", toolCallId: "call_build", toolName: "vendo_apps_create", input: { prompt: "renewals radar" } }),
+          chunk(400, { type: "tool-input-start", toolCallId: "call_build", toolName: "vendo_make" }),
+          chunk(300, { type: "tool-input-available", toolCallId: "call_build", toolName: "vendo_make", input: { request: "renewals radar" } }),
           chunk(700, streamingViewChunk(["hero"], true)),
           chunk(1600, streamingViewChunk(["hero", "list"], true)),
           chunk(1800, streamingViewChunk(["hero", "list"], false)),
@@ -269,12 +269,12 @@ export function automationScript(): DirectorScript {
         cues: [
           chunk(0, { type: "start" }),
           chunk(100, { type: "start-step" }),
-          chunk(400, { type: "tool-input-start", toolCallId: "call_arm", toolName: "vendo_apps_edit" }),
+          chunk(400, { type: "tool-input-start", toolCallId: "call_arm", toolName: "vendo_make" }),
           chunk(300, {
             type: "tool-input-available",
             toolCallId: "call_arm",
-            toolName: "vendo_apps_edit",
-            input: { appId: "app_renewals", instruction: "every morning, flag any renewal account that has gone quiet" },
+            toolName: "vendo_make",
+            input: { app: "app_renewals", request: "every morning, flag any renewal account that has gone quiet" },
           }),
           chunk(1600, {
             type: "data-vendo-automation",

@@ -81,10 +81,12 @@ describe("the runtime publishes the turn in flight", () => {
 
     expect(published).toBeDefined();
     expect(published!.threadId).toBe(THREAD);
-    // The published ctx is the TURN's ctx: the caller's fields plus the
-    // transcript accessor the runtime attaches (RunContext.messages).
+    // The published ctx is the TURN's ctx: the caller's fields plus what the
+    // runtime attaches — the transcript accessor (RunContext.messages) and the
+    // turn id it minted (§3.5). A call arriving over the door is therefore
+    // audited against the same turn the harness's own calls are.
     const { messages, ...rest } = published!.ctx as Record<string, unknown>;
-    expect(rest).toEqual(RUN_CTX);
+    expect(rest).toEqual({ ...RUN_CTX, turnId: expect.stringMatching(/^trn_[0-9a-f]{32}$/) });
     expect((messages as () => UIMessage[])().map((message) => message.id)).toEqual(["m1"]);
     // THE assertion: not "an equivalent surface", the SAME one.
     expect(published!.tools).toBe(held);

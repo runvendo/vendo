@@ -292,21 +292,25 @@ describe("replaying an app", () => {
     ]);
   });
 
-  it("names the create tool and marks every tool chunk dynamic, exactly as the live loop does", async () => {
+  it("names the make tool and marks every tool chunk dynamic, exactly as the live loop does", async () => {
     const { writer, chunks } = recorder();
     await replayTour({ writer, parts: [{ app: APP_DOCUMENT, buildMs: 1 }], seed: "s", apps: fakeApps().apps, ctx });
     const toolChunks = chunks.filter((chunk) => String(chunk["type"]).startsWith("tool-"));
     for (const chunk of toolChunks) expect(chunk["dynamic"]).toBe(true);
-    expect(toolChunks[0]!["toolName"]).toBe("vendo_apps_create");
+    expect(toolChunks[0]!["toolName"]).toBe("vendo_make");
   });
 
-  /** The id the next turn edits. Shaped exactly like the runtime's own outcome,
-   *  so nothing downstream can tell this apart from a real create. */
-  it("returns the imported document as the tool's output, id included", async () => {
+  /** The id the next turn changes. Shaped exactly like the runtime's own outcome
+   *  — a RECEIPT, never the document — so nothing downstream can tell this apart
+   *  from a real build, and no tree reaches an agent that would then describe it. */
+  it("returns a receipt carrying the imported id, and no document", async () => {
     const { writer, chunks } = recorder();
     await replayTour({ writer, parts: [{ app: APP_DOCUMENT, buildMs: 1 }], seed: "s", apps: fakeApps().apps, ctx });
     const output = chunks.find((chunk) => chunk["type"] === "tool-output-available")!["output"];
-    expect(output).toEqual({ status: "ok", output: { ...APP_DOCUMENT, id: "app_replayed" } });
+    expect(output).toEqual({
+      status: "ok",
+      output: { id: "app_replayed", title: APP_DOCUMENT.name, status: "ready", say: `${APP_DOCUMENT.name} is on your screen.` },
+    });
   });
 
   it("streams partials under one reconciling id, the last one settled", async () => {

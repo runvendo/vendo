@@ -1,5 +1,6 @@
 import {
   describeShapeWithSemantics,
+  isVendoAppsTool,
   triggerSchema,
   type ShapeType,
   type Trigger,
@@ -52,11 +53,13 @@ const COLLECTION_NAME = /^[a-z][a-z0-9_-]{0,40}$/i;
 const EVERY_DURATION = /^[1-9]\d*[smhd]$/;
 
 /** The planning surface: host + connected tools, plus ONLY the results-publish
- *  tool from the vendo_apps_* family — an automation's job is host effects and
- *  one published result, never app lifecycle operations (and live data comes
- *  from host tools, not from reading app data collections). */
+ *  tool from the apps family — an automation's job is host effects and one
+ *  published result, never app lifecycle operations (and live data comes from
+ *  host tools, not from reading app data collections). Through the predicate,
+ *  not the prefix: `vendo_make` sits outside `vendo_apps_`, and a plan able to
+ *  call it could have every firing build itself another app. */
 const plannerTools = (tools: readonly HostToolInfo[]): HostToolInfo[] =>
-  tools.filter((tool) => !tool.name.startsWith("vendo_apps_") || tool.name === RESULTS_TOOL);
+  tools.filter((tool) => !isVendoAppsTool(tool.name) || tool.name === RESULTS_TOOL);
 
 const toolLine = (
   { name, description, risk, inputSchema }: HostToolInfo,

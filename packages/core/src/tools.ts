@@ -17,16 +17,34 @@ export const TOOL_NAME_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
  *  side string-matching the other. */
 export const VENDO_APPS_TOOL_PREFIX = "vendo_apps_";
 
-/** 01-core §16 — the one prefixed tool whose execution may also stream
- *  partial views through the VENDO_VIEW_STREAM bridge seam (stream-parts). */
-export const VENDO_APPS_CREATE_TOOL = "vendo_apps_create";
+/**
+ * The ONE public tool for asking Vendo to make something to look at.
+ *
+ * It replaces `vendo_apps_create` and `vendo_apps_edit`. Two tools meant every
+ * calling agent — ours, a host's own SDK agent, an outside agent over MCP — had to
+ * decide "new or change?" before it could ask, and get it right. That is our
+ * routing decision, not theirs: the seam knows whether an app exists, and a caller
+ * that wants a specific one says so with `app`.
+ *
+ * Named here, outside the `vendo_apps_` prefix, because it is the front door
+ * rather than a member of the app runtime's family — and `isVendoAppsTool` below
+ * is what keeps the family's laws applying to it.
+ */
+export const VENDO_MAKE_TOOL = "vendo_make";
 
-/** The create tool's twin: change an app that already exists. Named here for the
- *  same reason its twin is — the apps runtime declares it, and a thinker has to
- *  recognise it to route an edit ask at all (`instant()`'s router). Two sides
- *  matching on the same identifier means the identifier is written once, here,
- *  not string-matched from each side. */
-export const VENDO_APPS_EDIT_TOOL = "vendo_apps_edit";
+/**
+ * 01-core §16 — is this one of the app runtime's own tools?
+ *
+ * The prefix was the test in four places (two through the constant, two by
+ * hand-written string), and each one gates something different: whether an
+ * ok-outcome may put a tree on the view channel, whether the transcript renders a
+ * build card, whether the router's "what else can I do" menu lists it, whether an
+ * automation plan may call it. `vendo_make` sits outside the prefix, so a fourfold
+ * prefix check would have silently dropped every one of those laws for the one
+ * tool they matter most for. One predicate, one place to state the law.
+ */
+export const isVendoAppsTool = (name: string): boolean =>
+  name === VENDO_MAKE_TOOL || name.startsWith(VENDO_APPS_TOOL_PREFIX);
 
 /**
  * The consumer-voice titles for the tools VENDO ITSELF projects (design §3:
@@ -35,7 +53,7 @@ export const VENDO_APPS_EDIT_TOOL = "vendo_apps_edit";
  * ONE table, because two sides must say the same words and neither can read the
  * other's copy. Server-side, each descriptor authors its `title` from here, so
  * `ToolListing.title` stops falling back to the identifier and the model is
- * never handed `vendo_apps_edit` as a tool's human label. Client-side, the
+ * never handed `vendo_apps_open` as a tool's human label. Client-side, the
  * render layer has no descriptor at all for a progress chip or an activity row —
  * the wire tool part carries only a name — so it reads the same table rather
  * than prettifying our own namespace into "Vendo apps edit…" (wave-1 live proof
@@ -46,8 +64,7 @@ export const VENDO_APPS_EDIT_TOOL = "vendo_apps_edit";
  * a guess. This table covers only what Vendo ships.
  */
 export const VENDO_TOOL_TITLES: Readonly<Record<string, string>> = {
-  vendo_apps_create: "Build an app",
-  vendo_apps_edit: "Update the app",
+  vendo_make: "Make you a screen",
   vendo_apps_open: "Open the app",
   vendo_apps_rebase_pin: "Refresh a remixed piece",
   vendo_apps_data_list: "Read the app's saved items",

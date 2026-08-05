@@ -1,13 +1,14 @@
 import {
-  VENDO_APPS_CREATE_TOOL,
-  VENDO_APPS_EDIT_TOOL,
+  VENDO_MAKE_TOOL,
   VENDO_TOOL_TITLES,
   VENDO_VIEW_STREAM,
   VendoError,
+  makeReceiptSchema,
   vendoViewStreamId,
   type AppDocument,
   type AppId,
   type Json,
+  type MakeReceipt,
   type RecordQuery,
   type RunContext,
   type ToolDescriptor,
@@ -25,47 +26,37 @@ const DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema";
  *
  *  Titles are applied in ONE place below, from core's shared table, rather than
  *  authored per entry: `ToolListing.title` falls back to the identifier, so a
- *  tool that forgets its title hands the model `vendo_apps_edit` as its human
+ *  tool that forgets its title hands the model `vendo_apps_open` as its human
  *  label — which is how it reached a live refusal message (wave-1 proof E1-5). */
 const descriptors = [
   {
     // The agent's streaming-view bridge keys on this exact core-defined name.
-    name: VENDO_APPS_CREATE_TOOL,
-    // Empty-states batch — calling agents were pre-computing data into the
-    // prompt ("Total Spent: $0.00"), which the engine's data-honesty law
-    // rejects as hand-typed figures; the app binds live host data itself.
-    description: "Create a Vendo app from a natural-language prompt — including a recurring or scheduled task (e.g. a recurring payment, a daily digest): describe the schedule and the action in the prompt and the automation is armed as part of the same call; no separate automations tool exists. Pass the user's request (with any clarifying context) as the prompt. Never bake data values you computed or fetched (counts, totals, amounts) into the prompt — the app binds live host data itself and hardcoded figures fail its build. Never specify fonts, colors, or branding — the app inherits the host theme.",
-    inputSchema: {
-      $schema: DRAFT_2020_12,
-      type: "object",
-      properties: { prompt: { type: "string", minLength: 1 } },
-      required: ["prompt"],
-      additionalProperties: false,
-    },
-    // Creation is structurally rung 1: a jailed document render with no server,
-    // host-tool execution, or egress. The lifecycle write is only to Vendo's
-    // own app store, so consent policy treats it like opening a local view.
-    risk: "read",
-  },
-  {
-    name: VENDO_APPS_EDIT_TOOL,
-    description: "Edit an existing Vendo app with one natural-language instruction — this is also how you add or change a recurring/scheduled automation on an app (e.g. \"send this every hour\"). If the result has failure.retryable=true, retry vendo_apps_edit on the same appId with a narrower instruction; do not rebuild it with vendo_apps_create.",
+    name: VENDO_MAKE_TOOL,
+    // Three sentences of law, each paid for by a live failure. The data-honesty
+    // one: calling agents were pre-computing figures into the request ("Total
+    // Spent: $0.00"), which the engine rejects as hand-typed — the screen binds
+    // live host data itself. The retry one: a rejected change is worth one
+    // narrower attempt on the same app, and was worth saying because the
+    // alternative the model reached for was rebuilding it from scratch.
+    description: "Make the user something to look at — a screen, or a full app — from a plain-language request. Say what they want in your own words; Vendo decides whether to assemble a screen or build an app, and it arrives on the user's own page. Pass `app` only to change one specific existing app; leave it out and Vendo decides whether to continue the last one or start something new. A recurring or scheduled task belongs here too: describe the schedule and the action in the request and it is armed as part of the same call; there is no separate automations tool. Never bake data values you computed or fetched (counts, totals, amounts) into the request — it binds live host data itself and hardcoded figures fail its checks. Never specify fonts, colors, or branding — it inherits the host theme. You get back a one-line receipt to say out loud, never the screen itself; if the receipt says \"failed\", try once more on the same `app` with a narrower request rather than rebuilding it.",
     inputSchema: {
       $schema: DRAFT_2020_12,
       type: "object",
       properties: {
-        appId: { type: "string", minLength: 1 },
-        instruction: { type: "string", minLength: 1 },
+        request: { type: "string", minLength: 1 },
+        app: { type: "string", minLength: 1 },
+        context: { type: "string", minLength: 1 },
       },
-      required: ["appId", "instruction"],
+      required: ["request"],
       additionalProperties: false,
     },
-    // Yousef's ruling (2026-07-28): an app edit does not need approval. Editing
-    // an app is structurally the same act as creating one — a jailed document
-    // render with no server, no host-tool execution, no egress — and the only
-    // write is to Vendo's own app store. The ceremony belongs on what an app
-    // DOES (money, messages, deletion), never on the person rearranging their
-    // own view. History and undo are the safety net here, not a consent gate.
+    // Structurally rung 1 whichever way it routes: a jailed document render with
+    // no server, host-tool execution, or egress. The lifecycle write is only to
+    // Vendo's own app store, so consent policy treats it like opening a local
+    // view — and Yousef's ruling (2026-07-28) says the same about a change: the
+    // ceremony belongs on what a screen DOES (money, messages, deletion), never
+    // on the person rearranging their own view. Actions INSIDE the screen are
+    // guarded individually at call time. History and undo are the safety net.
     risk: "read",
   },
   {
@@ -177,6 +168,35 @@ const input = (
   return record;
 };
 
+const optionalString = (value: Json | undefined, name: string): string | undefined => {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new VendoError("validation", `${name} must be a non-empty string`);
+  }
+  return value;
+};
+
+/**
+ * Contract §3.1 — the caller's `context` appended to the request, clearly
+ * delimited.
+ *
+ * It exists for outside agents whose conversation we cannot see: over MCP there is
+ * no transcript for us to attach, so they pass whatever background helps. On OUR
+ * doors the runtime's own transcript stays authoritative and this is supplemental
+ * — which is why it is appended rather than merged, and fenced rather than run
+ * together with the ask. Free text, never a messages array: every framework's
+ * message format differs and a string is universal.
+ */
+const withContext = (request: string, context: string | undefined): string =>
+  context === undefined ? request : `${request}\n\n<context>\n${context}\n</context>`;
+
+/** The tool's whole model-facing answer. Parsed, so the four-field law is enforced
+ *  here rather than trusted — a document that leaked into `output` would fail. */
+const receipt = (value: MakeReceipt): ToolOutcome => ({
+  status: "ok",
+  output: makeReceiptSchema.parse(value) as unknown as Json,
+});
+
 const optionalRefs = (value: Json | undefined): Record<string, string> | undefined => {
   if (value === undefined) return undefined;
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -216,7 +236,7 @@ export interface AgentToolsDataDependencies {
  * people read the message.
  */
 // Deliberately DIRECTS rather than promises: there is no fork tool in this
-// registry (create · edit · rebase_pin · open · data_*), so a message saying "I
+// registry (make · rebase_pin · open · data_*), so a message saying "I
 // will make you one" would have the model claim a capability it does not have.
 const FORK_OFFER = "I can’t change the team’s copy of this app. Say so plainly, and offer them"
   + " their own copy instead — forking the app from its card gives them one I can change freely.";
@@ -247,51 +267,65 @@ export const createAgentTools = (
   },
   async execute(call, ctx: RunContext): Promise<ToolOutcome> {
     try {
-      if (call.tool === "vendo_apps_create") {
-        const args = input(call.args, ["prompt"]);
+      if (call.tool === VENDO_MAKE_TOOL) {
+        const args = input(call.args, ["request"], ["app", "context"]);
+        const app = optionalString(args.app, "app");
         const stream = (call as VendoViewStreamingToolCall)[VENDO_VIEW_STREAM];
-        let unsaved: string | undefined;
-        const app = await runtime.create({
-          prompt: args.prompt as string,
-          onUnsaved: (reason) => { unsaved = reason; },
-          ...(stream === undefined ? {} : {
-            onView: (part) => stream({ id: vendoViewStreamId(part.appId), part }),
-          }),
-        }, ctx);
-        // View-only (the store refused the write): the app IS on the user's
-        // screen, so this is a success with a caveat, not a failure. Reporting
-        // it as an error made the agent apologize for a rendered view and
-        // rebuild it two more times — three cards, one prompt (live
-        // 2026-07-27). The note rides the document so the model can say the
-        // one true thing and stop.
-        return {
-          status: "ok",
-          output: (unsaved === undefined ? app : {
-            ...app,
-            unsaved: {
-              reason: unsaved,
-              savedToAppsList: false,
-              guidance: "The view is already rendered on the user's screen. Say in one short sentence that it could not be saved to their apps, and do NOT call vendo_apps_create again for this request.",
+        const ask = withContext(args.request as string, optionalString(args.context, "context"));
+        if (app === undefined) {
+          let unsaved: string | undefined;
+          const created = await runtime.create({
+            prompt: ask,
+            onUnsaved: (reason) => { unsaved = reason; },
+            ...(stream === undefined ? {} : {
+              onView: (part) => stream({ id: vendoViewStreamId(part.appId), part }),
+            }),
+          }, ctx);
+          // View-only (the store refused the write): the screen IS on the user's
+          // page, so this is a success with a caveat, not a failure. Reporting it
+          // as an error made the agent apologize for a rendered view and rebuild
+          // it twice more — three cards, one prompt (live 2026-07-27). The
+          // caveat rides `say`, which is the whole point of `say`: one true
+          // sentence, and nothing to react to.
+          return receipt({
+            id: created.id,
+            title: created.name,
+            status: "ready",
+            say: unsaved === undefined
+              ? `${created.name} is on your screen.`
+              : `${created.name} is on your screen, though I couldn't save it to your apps.`,
+          });
+        }
+        const result = await runtime.edit(app, ask, ctx);
+        // Wave 9 — a ladder-authored automation raises its own card. Published
+        // HERE, by the side that knows, rather than duck-typed out of this tool's
+        // return value at the bridge: the receipt carries words only.
+        if (result.automation !== undefined && stream !== undefined) {
+          stream({
+            id: `vendo-automation-${result.app.id}`,
+            part: {
+              type: "data-vendo-automation",
+              appId: result.app.id,
+              name: result.app.name,
+              enabled: result.automation.enabled,
+              ...(result.automation.trigger === undefined ? {} : { trigger: result.automation.trigger }),
+              ...(result.app.description === undefined || result.app.description.length === 0
+                ? {}
+                : { description: result.app.description }),
+              ...((result.automation.pendingGrants ?? []).length === 0
+                ? {}
+                : { pendingGrants: result.automation.pendingGrants!.length }),
             },
-          }) as unknown as Json,
-        };
-      }
-      if (call.tool === VENDO_APPS_EDIT_TOOL) {
-        const args = input(call.args, ["appId", "instruction"]);
-        const result = await runtime.edit(args.appId as string, args.instruction as string, ctx);
-        return {
-          status: "ok",
-          output: {
-            app: result.app,
-            ...(result.issues === undefined ? {} : { issues: result.issues }),
-            ...(result.failure === undefined ? {} : { failure: result.failure }),
-            ...(result.driftedPins === undefined ? {} : { driftedPins: result.driftedPins }),
-            // Wave 9 — a ladder-authored automation (mode, trigger, pending
-            // standing-grant approvals) so the agent can narrate what was set
-            // up and which approvals are waiting.
-            ...(result.automation === undefined ? {} : { automation: result.automation }),
-          } as unknown as Json,
-        };
+          });
+        }
+        return receipt({
+          id: result.app.id,
+          title: result.app.name,
+          status: result.failure === undefined ? "ready" : "failed",
+          say: result.failure === undefined
+            ? `${result.app.name} is updated.`
+            : `I couldn't make that change to ${result.app.name}.`,
+        });
       }
       if (call.tool === "vendo_apps_rebase_pin") {
         const args = input(call.args, ["appId", "slot"]);

@@ -41,6 +41,38 @@ export interface AppBuildFailure {
   prompt?: string;
 }
 
+/**
+ * One file of an app's own code, at rest in the document (contract §3.2).
+ *
+ * Today an app's code lives in three places — island TSX in `components`, the
+ * wire surface in workspace file rows, and the whole served app only inside the
+ * E2B snapshot behind `machine.snapshotRef`. Lose the snapshot and the customer's
+ * app is gone, because the store never had it. This is the one home: the row
+ * becomes the truth and a workspace becomes a working copy of it.
+ *
+ * `hash` is the CAS base a checkout stamps and a commit diffs against, so a
+ * commit lands exactly the paths that changed. `text` and `blobRef` are exclusive:
+ * inline up to {@link WORKSPACE_INLINE_MAX_BYTES}, and past it the same blob seam
+ * the workspace rows already spill to — never a second spill mechanism.
+ */
+export interface AppSourceFile {
+  /** `"sha256:<hex>"` of the bytes. */
+  hash: string;
+  bytes: number;
+  /** Inline iff `bytes <= WORKSPACE_INLINE_MAX_BYTES`. */
+  text?: string;
+  /** Else: the key in the app's blob namespace. */
+  blobRef?: string;
+}
+
+/** Contract §3.2 */
+export const appSourceFileSchema = z.object({
+  hash: z.string().regex(/^sha256:[0-9a-f]{64}$/),
+  bytes: z.number().int().nonnegative(),
+  text: z.string().optional(),
+  blobRef: z.string().min(1).optional(),
+}).passthrough() satisfies z.ZodType<AppSourceFile>;
+
 /** 01-core §9 */
 export interface Pin {
   slot: string;
@@ -105,6 +137,17 @@ export interface AppDocument {
    */
   componentTools?: Record<string, string[]>;
   storage?: Record<string, StorageDecl>;
+  /**
+   * Contract §3.2 — the app's own code, at rest. Keys are POSIX-relative paths
+   * inside the app directory ("src/App.tsx", "vendo.json"). The wire surface
+   * (`app.vendo`) is NOT here: it stays {@link AppDocument.tree}, which is what
+   * the render seam paints from.
+   *
+   * With this present, `machine.snapshotRef` is a CACHE: an app can always be
+   * rebuilt from here onto a fresh box, and nothing may read a snapshot to
+   * recover source.
+   */
+  source?: Record<string, AppSourceFile>;
   server?: string;
   machine?: AppMachine;
   trigger?: Trigger;
@@ -157,6 +200,7 @@ export const appDocumentSchema = z.object({
   components: z.record(z.string()).optional(),
   componentTools: z.record(z.array(z.string())).optional(),
   storage: z.record(storageDeclSchema).optional(),
+  source: z.record(appSourceFileSchema).optional(),
   server: z.string().optional(),
   machine: appMachineSchema.optional(),
   trigger: triggerSchema.optional(),
@@ -281,6 +325,22 @@ const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
   // dying v1 `server` snapshot until its execution path is fully removed.
   if (fnReferences.length > 0 && app.server === undefined && app.machine === undefined) {
     return fail("validation", "fn: references require a machine (or legacy app server)");
+  }
+
+  // Contract §3.2 — a source key is a POSIX-relative path inside the app
+  // directory. Checked HERE because a checkout writes each key to disk: `../` or
+  // a leading slash would put one app's checkout in another app's files, and the
+  // document validator is the gate every stored document passes.
+  for (const [path, file] of Object.entries(app.source ?? {})) {
+    if (path.length === 0 || path.startsWith("/")) {
+      return fail("validation", `source path "${path}" must be relative to the app directory`);
+    }
+    if (path.split("/").some((segment) => segment === "" || segment === "." || segment === "..")) {
+      return fail("validation", `source path "${path}" must not contain empty or dot segments`);
+    }
+    if ((file.text === undefined) === (file.blobRef === undefined)) {
+      return fail("validation", `source file "${path}" must carry exactly one of text or blobRef`);
+    }
   }
 
   for (const [name, declaration] of Object.entries(app.storage ?? {})) {

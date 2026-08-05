@@ -12,6 +12,7 @@ import type {
   ToolResult,
   VendoTheme,
 } from "@vendoai/core";
+import { auditContext } from "@vendoai/core";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv";
@@ -859,9 +860,11 @@ class Door {
         id: `aud_${randomHex(12)}`,
         at: new Date().toISOString(),
         kind: "tool-call",
-        principal: ctx.principal,
-        venue: ctx.venue,
-        presence: ctx.presence,
+        // A call arriving on a TURN credential carries that turn's ctx (§3b), so
+        // the door's rows join to the turn exactly like the harness's own — which
+        // is what the door-parity law ("identical audit rows") asks for. The
+        // hand-copied block dropped it.
+        ...auditContext(ctx),
         tool: name,
         inputPreview: appToolPreview(name, args),
         outcome: outcome.status,

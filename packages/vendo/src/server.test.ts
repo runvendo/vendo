@@ -1403,7 +1403,7 @@ describe("09 §2 composition", () => {
       refs: { subject: principal.subject },
     });
     expect((await vendo.actions.descriptors()).map((descriptor) => descriptor.name))
-      .toEqual(expect.arrayContaining(["vendo_apps_create", "vendo_apps_edit", "vendo_apps_open"]));
+      .toEqual(expect.arrayContaining(["vendo_make", "vendo_apps_open"]));
 
     const outcome = await vendo.apps.call("app_wire", "vendo_apps_open", { appId: "app_wire" }, ctx);
     expect(outcome).toMatchObject({ status: "ok", output: { kind: "tree" } });
@@ -1436,28 +1436,29 @@ describe("09 §2 composition", () => {
       refs: { subject: principal.subject },
     });
     const byName = new Map((await vendo.actions.descriptors()).map((descriptor) => [descriptor.name, descriptor]));
-    expect(byName.get("vendo_apps_create")?.risk).toBe("read");
     // Yousef's ruling (2026-07-28): an app edit does not need approval. Editing
     // your own view is the same act as creating it, so it runs — in EVERY venue,
     // which is what this test is really about: one answer per act, not per door.
-    expect(byName.get("vendo_apps_edit")?.risk).toBe("read");
-    const edit = byName.get("vendo_apps_edit")!;
+    // One tool now carries both acts, so ONE risk answers for both: a change is
+    // the same call as a build with `app` filled in.
+    const edit = byName.get("vendo_make")!;
+    expect(edit.risk).toBe("read");
     const chat = { ...ctx, venue: "chat" as const };
     const mcp = { ...ctx, venue: "mcp" as const };
     for (const [id, venue] of [["call_chat", chat], ["call_mcp", mcp]] as const) {
       await expect(vendo.guard.check({
         id,
         tool: edit.name,
-        args: { appId: "app_wire", instruction: "Persist this to the database" },
+        args: { app: "app_wire", request: "Persist this to the database" },
       }, edit, venue)).resolves.toMatchObject({ action: "run" });
     }
-    // Including an edit of an already-served app: the instruction rides the box,
+    // Including an edit of an already-served app: the request rides the box,
     // and what the BOX then does is gated on its own terms (egress approval,
     // per-tool risk), never by a prompt about rearranging a view.
     await expect(vendo.guard.check({
       id: "call_http",
       tool: edit.name,
-      args: { appId: "app_http", instruction: "Make the heading blue" },
+      args: { app: "app_http", request: "Make the heading blue" },
     }, edit, chat)).resolves.toMatchObject({ action: "run" });
     // The ceremony stays where it belongs: writing the app's stored rows asks.
     const dataPut = byName.get("vendo_apps_data_put")!;
@@ -2454,7 +2455,7 @@ describe("09 §3 conversational turn against the real composed store", () => {
         if (agentCalls === 1) {
           return {
             stream: simulateReadableStream({ chunks: [
-              { type: "tool-call", toolCallId: "call_create_sse", toolName: "vendo_apps_create", input: JSON.stringify({ prompt: "Build an SSE app" }) },
+              { type: "tool-call", toolCallId: "call_create_sse", toolName: "vendo_make", input: JSON.stringify({ request: "Build an SSE app" }) },
               { type: "finish", usage, finishReason: { unified: "tool-calls", raw: undefined } },
             ] }),
           };
