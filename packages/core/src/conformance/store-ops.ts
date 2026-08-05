@@ -1,5 +1,6 @@
 import type { VendoErrorCode } from "../errors.js";
 import { isoDateTimeSchema } from "../ids.js";
+import { canonicalJson } from "../jcs.js";
 import { VENDO_STORE_WIRE_FORMAT } from "../store-wire.js";
 import type { StoreOps } from "../store.js";
 import type { ConformanceCase, ConformanceSuite } from "./index.js";
@@ -13,8 +14,13 @@ const assert: (condition: unknown, message: string) => asserts condition = (cond
 };
 
 const assertDeepEqual = (actual: unknown, expected: unknown, message: string): void => {
-  const a = JSON.stringify(actual);
-  const b = JSON.stringify(expected);
+  // Canonical (key-sorted) JSON, not JSON.stringify: a backend that rebuilds a
+  // record with a different key insertion order is still conformant. undefined
+  // is not JSON — map it to a sentinel so a null/undefined mismatch fails with
+  // THIS assertion message, not canonicalJson's.
+  const canon = (value: unknown): string => (value === undefined ? "undefined" : canonicalJson(value));
+  const a = canon(actual);
+  const b = canon(expected);
   assert(a === b, `${message}: ${a} !== ${b}`);
 };
 
@@ -282,30 +288,30 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
       // =====================================================================
 
       opsCase(opts, "transcripts.putThread and getThread round-trip", async (ops) => {
-        const thread = { id: "t1", subject: "user_1", messages: [{ role: "user", text: "hi" }], title: "Hello" };
+        const thread = { id: "thr_t1", subject: "user_1", messages: [{ role: "user", text: "hi" }], title: "Hello" };
         const put = await ops.transcripts.putThread(thread);
-        assert(put.id === "t1", "putThread did not echo id");
-        const got = await ops.transcripts.getThread("t1");
+        assert(put.id === "thr_t1", "putThread did not echo id");
+        const got = await ops.transcripts.getThread("thr_t1");
         assert(got !== null, "getThread returned null after putThread");
-        assertDeepEqual(got!.id, "t1", "getThread returned wrong id");
+        assertDeepEqual(got!.id, "thr_t1", "getThread returned wrong id");
         const data = got!.data as Record<string, unknown>;
         assert(data["subject"] === "user_1", "thread subject not round-tripped");
         assert(Array.isArray(data["messages"]), "thread messages not round-tripped");
       }),
 
       opsCase(opts, "transcripts.listThreads filters by subject", async (ops) => {
-        await ops.transcripts.putThread({ id: "lt1", subject: "alice", messages: [] });
-        await ops.transcripts.putThread({ id: "lt2", subject: "bob", messages: [] });
-        await ops.transcripts.putThread({ id: "lt3", subject: "alice", messages: [] });
+        await ops.transcripts.putThread({ id: "thr_lt1", subject: "alice", messages: [] });
+        await ops.transcripts.putThread({ id: "thr_lt2", subject: "bob", messages: [] });
+        await ops.transcripts.putThread({ id: "thr_lt3", subject: "alice", messages: [] });
         const result = await ops.transcripts.listThreads({ subject: "alice" });
         const ids = result.records.map((r) => r.id).sort();
-        assertDeepEqual(ids, ["lt1", "lt3"], "listThreads subject filter returned wrong threads");
+        assertDeepEqual(ids, ["thr_lt1", "thr_lt3"], "listThreads subject filter returned wrong threads");
       }),
 
       opsCase(opts, "transcripts.listThreads paginates without loss or duplicates", async (ops) => {
-        const expected = ["ta", "tb", "tc", "td", "te"];
+        const expected = ["thr_ta", "thr_tb", "thr_tc", "thr_td", "thr_te"];
         for (const id of expected) await ops.transcripts.putThread({ id, subject: "pager", messages: [] });
-        await ops.transcripts.putThread({ id: "other", subject: "elsewhere", messages: [] });
+        await ops.transcripts.putThread({ id: "thr_other", subject: "elsewhere", messages: [] });
         await assertPaginates("transcripts.listThreads", expected, async (cursor) => {
           const page = await ops.transcripts.listThreads({ subject: "pager", limit: PAGE, cursor });
           return { ids: page.records.map((r) => r.id), cursor: page.cursor };
@@ -316,35 +322,35 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
           messages or a surviving answer ledger surface there, where a
           `getThread() === null` check is blind to them. */
       opsCase(opts, "transcripts.deleteThread cascades to messages, answers, and harness state", async (ops) => {
-        await ops.transcripts.putThread({ id: "dt1", subject: "u", messages: [] });
-        await ops.transcripts.putMessage("dt1", { id: "msg_1", role: "user", text: "hi" });
-        await ops.transcripts.recordAnswer("dt1", { id: "ans_1", value: 42 });
-        await ops.harness.set(harnessSlot("dt1"), "u", { session: "native_1" });
+        await ops.transcripts.putThread({ id: "thr_dt1", subject: "u", messages: [] });
+        await ops.transcripts.putMessage("thr_dt1", { id: "msg_1", role: "user", text: "hi" });
+        await ops.transcripts.recordAnswer("thr_dt1", { id: "ans_1", value: 42 });
+        await ops.harness.set(harnessSlot("thr_dt1"), "u", { session: "native_1" });
 
-        await ops.transcripts.deleteThread("dt1");
-        assert(await ops.transcripts.getThread("dt1") === null, "deleted thread remained readable");
-        assert(await ops.harness.get(harnessSlot("dt1"), "u") === null, "deleted thread left its harness state behind");
+        await ops.transcripts.deleteThread("thr_dt1");
+        assert(await ops.transcripts.getThread("thr_dt1") === null, "deleted thread remained readable");
+        assert(await ops.harness.get(harnessSlot("thr_dt1"), "u") === null, "deleted thread left its harness state behind");
 
-        await ops.transcripts.putThread({ id: "dt1", subject: "u", messages: [] });
-        await ops.transcripts.recordAnswer("dt1", { id: "ans_1", value: 42 });
-        const revived = await ops.transcripts.getThread("dt1");
+        await ops.transcripts.putThread({ id: "thr_dt1", subject: "u", messages: [] });
+        await ops.transcripts.recordAnswer("thr_dt1", { id: "ans_1", value: 42 });
+        const revived = await ops.transcripts.getThread("thr_dt1");
         const messages = (revived!.data as Record<string, unknown>)["messages"] as unknown[];
         assert(messages.length === 1, `the re-created thread should hold only its new answer, got ${messages.length} messages`);
       }),
 
       opsCase(opts, "transcripts.putMessage appends to existing thread", async (ops) => {
-        await ops.transcripts.putThread({ id: "pm1", subject: "u", messages: [{ role: "user", text: "1" }] });
-        await ops.transcripts.putMessage("pm1", { role: "assistant", text: "2" });
-        const got = await ops.transcripts.getThread("pm1");
+        await ops.transcripts.putThread({ id: "thr_pm1", subject: "u", messages: [{ role: "user", text: "1" }] });
+        await ops.transcripts.putMessage("thr_pm1", { role: "assistant", text: "2" });
+        const got = await ops.transcripts.getThread("thr_pm1");
         const msgs = (got!.data as Record<string, unknown>)["messages"] as unknown[];
         assert(msgs.length === 2, `putMessage did not append: got ${msgs.length} messages`);
       }),
 
       opsCase(opts, "transcripts.recordAnswer records answer; duplicate same-id refused as conflict", async (ops) => {
-        await ops.transcripts.putThread({ id: "ra1", subject: "u", messages: [] });
-        await ops.transcripts.recordAnswer("ra1", { id: "ans_1", value: 42 });
+        await ops.transcripts.putThread({ id: "thr_ra1", subject: "u", messages: [] });
+        await ops.transcripts.recordAnswer("thr_ra1", { id: "ans_1", value: 42 });
         await assertThrowsCode(
-          () => ops.transcripts.recordAnswer("ra1", { id: "ans_1", value: 42 }),
+          () => ops.transcripts.recordAnswer("thr_ra1", { id: "ans_1", value: 42 }),
           "conflict",
           "a duplicate answer id",
         );
@@ -466,8 +472,8 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
       opsCase(opts, "lifecycle.erase removes one subject's records, threads, harness state, and session", async (ops) => {
         await ops.records.put("conf_erase", { id: "gone", data: {}, refs: { subject: "erase_me" } });
         await ops.records.put("conf_erase", { id: "keep", data: {}, refs: { subject: "other" } });
-        await ops.transcripts.putThread({ id: "erase_t", subject: "erase_me", messages: [] });
-        await ops.transcripts.putThread({ id: "keep_t", subject: "other", messages: [] });
+        await ops.transcripts.putThread({ id: "thr_erase_t", subject: "erase_me", messages: [] });
+        await ops.transcripts.putThread({ id: "thr_keep_t", subject: "other", messages: [] });
         await ops.harness.set("app_erase", "erase_me", { v: 1 });
         await ops.lifecycle.sessionRegister("erase_me", 1000);
 
@@ -475,15 +481,15 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         assert(report !== null && report !== undefined, "erase must return a report");
         assert(await ops.records.get("conf_erase", "gone") === null, "erase left the subject's record behind");
         assert(await ops.records.get("conf_erase", "keep") !== null, "erase removed another subject's record");
-        assert(await ops.transcripts.getThread("erase_t") === null, "erase left the subject's thread behind");
-        assert(await ops.transcripts.getThread("keep_t") !== null, "erase removed another subject's thread");
+        assert(await ops.transcripts.getThread("thr_erase_t") === null, "erase left the subject's thread behind");
+        assert(await ops.transcripts.getThread("thr_keep_t") !== null, "erase removed another subject's thread");
         assert(await ops.harness.get("app_erase", "erase_me") === null, "erase left the subject's harness state behind");
         assertDeepEqual(await ops.lifecycle.sessionStale(1, 100000), [], "erase left the subject's session registered");
       }),
 
       opsCase(opts, "lifecycle.adopt moves records, threads, harness state, and the session", async (ops) => {
         await ops.records.put("conf_adopt", { id: "moved", data: {}, refs: { subject: "anon_1" } });
-        await ops.transcripts.putThread({ id: "adopt_t", subject: "anon_1", messages: [] });
+        await ops.transcripts.putThread({ id: "thr_adopt_t", subject: "anon_1", messages: [] });
         await ops.harness.set("app_adopt", "anon_1", { v: 7 });
         await ops.lifecycle.sessionRegister("anon_1", 1000);
 
@@ -501,7 +507,7 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         );
         assertDeepEqual(
           (await ops.transcripts.listThreads({ subject: "user_1" })).records.map((r) => r.id),
-          ["adopt_t"],
+          ["thr_adopt_t"],
           "adopt did not move the thread to the new subject",
         );
         assertDeepEqual(
@@ -518,7 +524,14 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
           BECOMES the org id (02-store §9.5), which is the move's only
           observable through the ops surface. */
       opsCase(opts, "lifecycle.promote hands the app record to the org; an unknown app is not-found", async (ops) => {
-        await ops.records.put("vendo_apps", { id: "app_promote", data: { name: "Promoted" }, refs: { subject: "user_1" } });
+        // The reserved vendo_apps collection is schema-validated by real
+        // backends (parseAppData): the seed must be a full app payload, not an
+        // arbitrary record.
+        await ops.records.put("vendo_apps", {
+          id: "app_promote",
+          data: { subject: "user_1", enabled: true, doc: { format: "vendo/app@1", id: "app_promote", name: "Promoted" } },
+          refs: { subject: "user_1" },
+        });
         await ops.lifecycle.promote("app_promote", "org_1");
         const promoted = await ops.records.get("vendo_apps", "app_promote");
         assert(
