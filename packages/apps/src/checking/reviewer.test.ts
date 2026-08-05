@@ -265,6 +265,7 @@ describe("the AI reviewer", () => {
       severity: "block",
       where: '<Button> labeled "Remind client"',
       message: 'the button calls host_listInvoices, which only reads invoices — it sends no reminder; drop the button or say so honestly',
+      check: "reviewer",
     });
     expect(findings.some(({ where, message }) =>
       where === 'query "invoices"' && message.includes('unknown tool "host_getInvoices"'))).toBe(true);

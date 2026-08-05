@@ -25,7 +25,7 @@
 import { createAppFloor } from "@vendoai/apps/internal";
 import type { AppFloor, NormalizedCatalog, ShapeType, VendoViewPart } from "@vendoai/core";
 import type { LanguageModel } from "ai";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { wrapWorkspaceForRender } from "./render-seam.js";
 import { testWorkspace } from "./test-doubles.test-util.js";
 
@@ -38,7 +38,13 @@ const TOOL = "maple_spend_summary";
  *  carries `total` and nothing else, which is what makes `grandTotal` a lie
  *  rather than a typo nobody can catch. */
 const toolShapes: Readonly<Record<string, ShapeType>> = {
-  [TOOL]: { kind: "object", fields: { total: { kind: "number" } } },
+  [TOOL]: {
+    kind: "object",
+    fields: {
+      total: { kind: "number" },
+      rows: { kind: "array", items: { kind: "object", fields: { id: { kind: "string" } } } },
+    },
+  },
 };
 
 const catalog: NormalizedCatalog = [];
@@ -161,4 +167,88 @@ describe("the production dialect at the seam", () => {
     expect(payload.queries).toBeUndefined();
     expect(payload.nodes.find((node) => node.component === "Text")?.props).toBeUndefined();
   });
+});
+
+/**
+ * All SEVEN deterministic fact checks, landing at the seam — §7.1 item 2.
+ *
+ * One case per check, and each asserts the same three things: the honest app is on
+ * screen first, the bad write emits NOTHING so that view stays, and the operator's
+ * log names THE CHECK that refused. The last part is what makes this a test of the
+ * floor rather than of the compiler — six of these seven wires compile perfectly
+ * cleanly (only `bindings-fit` also raises a compile issue), so without the floor
+ * every one of them would paint.
+ */
+describe("the seven fact checks all reach the seam", () => {
+  const refusals = () => vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** One wire per check, with the exact finding each is expected to produce. */
+  const cases: ReadonlyArray<{ check: string; why: string; wire: string }> = [
+    {
+      check: "document",
+      why: "the app's name is its display title, not the ask echoed back at length",
+      wire: app(`<Stack><Text text={spend.total} /></Stack>`, "x".repeat(60)),
+    },
+    {
+      check: "tools-exist",
+      why: "a query naming a tool the host has not got",
+      wire: `<App name="Spending"><Query id="spend" tool="nope_notATool" /><Stack><Text text={spend.total} /></Stack></App>`,
+    },
+    {
+      check: "components-exist",
+      why: "a prop name the renderer silently drops — the valid-table-empty-rows class",
+      wire: app(`<Stack><Table data={spend.rows} /></Stack>`),
+    },
+    {
+      check: "bindings-fit",
+      why: "a $path reaching a field the tool's shape does not expose",
+      wire: LYING,
+    },
+    {
+      check: "expressions-compute",
+      why: "a computed value over a field that is not there — a blank stat, not a crash",
+      wire: app(`<Stack><Text text={spend.nope * 2} /></Stack>`),
+    },
+    {
+      check: "query-inputs-literal",
+      why: "a query input is executed as literal JSON, so a binding inside it never resolves",
+      wire: `<App name="Spending"><Query id="spend" tool="${TOOL}" /><Query id="dep" tool="${TOOL}" input={{id: spend.total}} /><Stack><Text text={dep.total} /></Stack></App>`,
+    },
+    {
+      check: "no-string-interpolation",
+      why: "the wire has no string interpolation, so the braces render literally",
+      wire: app(`<Stack><Text text="Total: {spend.total}" /></Stack>`),
+    },
+  ];
+
+  for (const { check, why, wire } of cases) {
+    it(`${check} blocks the paint — ${why}`, async () => {
+      const logged = refusals();
+      const { emitted, save } = seam();
+
+      await save(HONEST);
+      expect(emitted).toHaveLength(1);
+      const lastGood = painted(emitted);
+
+      await save(wire);
+      // Nothing painted, and the last good view is untouched.
+      expect(emitted).toHaveLength(1);
+      expect(painted(emitted)).toEqual(lastGood);
+      // THIS check is why — not merely "something refused".
+      expect(logged.mock.calls.map(String).join("\n")).toContain(`[${check}]`);
+    });
+
+    it(`${check} paints without the floor — which is the hole`, async () => {
+      // The counter-proof, per check: the same wire, the same real commit path, no
+      // floor. It paints. Six of these seven compile with no issue at all, so the
+      // compiler was never going to catch them.
+      const { emitted, save } = seam({ withFloor: false });
+      await save(wire);
+      expect(emitted).toHaveLength(1);
+    });
+  }
 });

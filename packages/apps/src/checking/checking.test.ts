@@ -114,8 +114,8 @@ describe("checking layer", () => {
     expect(ran).toBe(2);
     // Flat, not nested: one array of findings, whatever each check returned.
     expect(findings).toEqual(expect.arrayContaining([
-      { severity: "warn", where: "one", message: "one ran" },
-      { severity: "warn", where: "two", message: "two ran" },
+      { severity: "warn", where: "one", message: "one ran", check: "one" },
+      { severity: "warn", where: "two", message: "two ran", check: "two" },
     ]));
     expect(findings.every((finding) => typeof finding.message === "string")).toBe(true);
   });
@@ -144,6 +144,7 @@ describe("checking layer", () => {
       severity: "block",
       where: 'node "n2"',
       message: 'Maple never shows a bare table for "list my invoices" — wrap it in a Card',
+      check: "maple-house-style",
     });
   });
 
@@ -162,6 +163,7 @@ describe("checking layer", () => {
       severity: "warn",
       where: "reviewer",
       message: 'the check "reviewer" failed to run (model call timed out), so whatever it would have found is missing from this report',
+      check: "reviewer",
     });
     // The rest of the layer still reported: a broken check costs its findings,
     // not the run.
@@ -171,6 +173,83 @@ describe("checking layer", () => {
   it("passes a clean app with no findings", async () => {
     const layer = createCheckingLayer({ deps: deps() });
     expect(await layer.run(inputFor(cleanApp))).toEqual([]);
+  });
+});
+
+/**
+ * Check PROVENANCE — architecture design §7's carve-out, "except host-check
+ * failures, which only the host can waive via its own policy config".
+ *
+ * `./review-failure-protocol.test.ts` recorded this as unrepresentable: "Finding
+ * carries no check provenance, so a host-check failure cannot be identified".
+ * `where` cannot stand in for it — it is the LOCUS (`node "n3" prop "rows"`), it is
+ * optional, and a host check is free to write whatever it likes there. So a
+ * built-in fact finding and a host's own were the same anonymous object.
+ *
+ * The layer stamps it, which is the one place that can: it is what invokes every
+ * check, so it is the only thing that knows the answer for all of them at once
+ * without each check being trusted to self-report honestly.
+ */
+describe("every finding says which check produced it", () => {
+  const hostCheck: Check = {
+    name: "maple-house-rules",
+    kind: "fact",
+    run: async () => [{ severity: "block", where: 'node "n2"', message: "no money figure without its account." }],
+  };
+
+  it("stamps a host check's own name, so §7's carve-out is representable", async () => {
+    const layer = createCheckingLayer({ deps: deps(), checks: [hostCheck] });
+    const findings = await layer.run(inputFor(cleanApp));
+    expect(findings).toEqual([{
+      severity: "block",
+      where: 'node "n2"',
+      message: "no money figure without its account.",
+      check: "maple-house-rules",
+    }]);
+  });
+
+  it("stamps the built-in that fired, so the two are now distinguishable", async () => {
+    const layer = createCheckingLayer({ deps: deps(), checks: [hostCheck] });
+    const findings = await layer.run(inputFor(
+      '<App name="Invoices"><Query id="invoices" tool="host_wireMoney"/><Stack><Table rows={invoices.data}/></Stack></App>',
+    ));
+    const byCheck = new Set(findings.map(({ check }) => check));
+    expect(byCheck).toContain("tools-exist");
+    expect(byCheck).toContain("maple-house-rules");
+    // The whole point: a waive point can now tell them apart.
+    expect(findings.filter(({ check }) => check === "maple-house-rules")).toHaveLength(1);
+  });
+
+  it("overrides a check that tries to claim someone else's name", async () => {
+    // A check is untrusted code. Provenance the layer did not assign is not
+    // provenance — it is a check attributing its own finding to a neighbour, which
+    // at a waive point is a privilege escalation.
+    const liar: Check = {
+      name: "liar",
+      kind: "fact",
+      run: async () => [
+        { severity: "block", message: "trust me", check: "document" } as never,
+      ],
+    };
+    const findings = await createCheckingLayer({ deps: deps(), checks: [liar] }).run(inputFor(cleanApp));
+    expect(findings).toEqual([{ severity: "block", message: "trust me", check: "liar" }]);
+  });
+
+  it("stamps a crash finding too — a check that died is still named", async () => {
+    const thrower: Check = {
+      name: "explodes",
+      kind: "fact",
+      run: async () => {
+        throw new Error("nope");
+      },
+    };
+    const findings = await createCheckingLayer({ deps: deps(), checks: [thrower] }).run(inputFor(cleanApp));
+    expect(findings).toEqual([{
+      severity: "warn",
+      where: "explodes",
+      message: 'the check "explodes" failed to run (nope), so whatever it would have found is missing from this report',
+      check: "explodes",
+    }]);
   });
 });
 
@@ -267,6 +346,7 @@ describe("built-in fact checks", () => {
       severity: "block",
       where: "document",
       message: 'must carry a non-empty name="..." attribute',
+      check: "document",
     });
   });
 });

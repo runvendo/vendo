@@ -279,7 +279,11 @@ export async function viewForWrite(
       if (blocking.length > 0) {
         console.error(
           `[vendo] ${appId} did not pass the checks floor; nothing painted and the last good view stays — `
-          + blocking.map(({ where, message }) => (where === undefined ? message : `${where} ${message}`)).join("; "),
+          + blocking.map(({ check, where, message }) => [
+            check === undefined ? undefined : `[${check}]`,
+            where,
+            message,
+          ].filter((part) => part !== undefined).join(" ")).join("; "),
         );
         return undefined;
       }
