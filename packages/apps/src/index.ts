@@ -48,16 +48,14 @@ export {
   type BuiltBoxEnv,
   type InferenceResolver,
 } from "./box-env.js";
-// A machine app's vendo.json schedules are doc triggers: the converter, its
-// id-prefix ownership rule, and the retired scheduler's collection (read once
-// at cutover, then gone).
-export {
-  LEGACY_SCHEDULE_STATE_COLLECTION,
-  MANIFEST_TRIGGER_PREFIX,
-  manifestTriggerId,
-  type AppMachineStatus,
-  type ManifestTriggerResult,
-  type ManifestTriggerSync,
+// A machine app's vendo.json schedules are doc triggers: the shapes
+// `AppsRuntime.machine`'s syncManifest and report answer with. The converter's
+// own constants stay internal to it — nothing outside needs them yet, and an
+// export is additive the day something does.
+export type {
+  AppMachineStatus,
+  ManifestTriggerResult,
+  ManifestTriggerSync,
 } from "./manifest-triggers.js";
 export {
   shareSnapshotSchema,

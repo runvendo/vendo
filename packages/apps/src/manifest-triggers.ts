@@ -36,12 +36,12 @@ import { listAllRecords, rowFromRecord } from "./persistence.js";
  * The accepted consequence: a person who hand-authors a trigger id starting
  * with `manifest_` has volunteered it to the converter.
  */
-export const MANIFEST_TRIGGER_PREFIX = "manifest_";
+const MANIFEST_TRIGGER_PREFIX = "manifest_";
 
 /** The retired second scheduler's per-app state cache. It is read exactly once
  *  per app — to carry `lastFiredAt` onto the new per-trigger cursor — and then
  *  deleted. Nothing writes it any more. */
-export const LEGACY_SCHEDULE_STATE_COLLECTION = "vendo_app_schedules";
+const LEGACY_SCHEDULE_STATE_COLLECTION = "vendo_app_schedules";
 
 /**
  * The automations engine's per-trigger schedule cursor, as the CUTOVER needs to
@@ -63,7 +63,7 @@ const SCHEDULE_CURSOR_COLLECTION = "automations:schedule";
 
 /** The trigger id a manifest `fn` converts to. `fn` admits `-` (it names a
  *  `POST /fn/<name>` route); a trigger id does not, so dashes fold to `_`. */
-export const manifestTriggerId = (fn: string): string =>
+const manifestTriggerId = (fn: string): string =>
   `${MANIFEST_TRIGGER_PREFIX}${fn.replace(/-/g, "_")}`;
 
 const isManifestTrigger = (trigger: Trigger): boolean =>
@@ -301,5 +301,3 @@ export const createManifestTriggers = (config: ManifestTriggerConfig) => {
     },
   };
 };
-
-export type ManifestTriggers = ReturnType<typeof createManifestTriggers>;
