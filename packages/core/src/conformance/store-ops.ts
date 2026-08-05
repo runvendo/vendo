@@ -465,6 +465,33 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         await assertThrowsCode(() => ops.workspace.undo("commit_absent"), "not-found", "undoing an unknown commit");
       }),
 
+      /** The reviewer-reproduced data-loss ordering: undoing an OLDER commit
+          must revert only that commit's own effect — a path a later commit has
+          since written keeps the later value. */
+      opsCase(opts, "workspace.undo of an older commit preserves later writes", async (ops) => {
+        const commitIds = async () => (await ops.workspace.history()).entries
+          .map((entry) => stringField(entry, "commitId", "workspace.history"));
+        const before = new Set(await commitIds());
+        await ops.workspace.commit([
+          { path: "undo_old.json", data: { v: "first" } },
+          { path: "undo_only.json", data: { v: "mine" } },
+        ]);
+        const added = (await commitIds()).filter((id) => !before.has(id));
+        assert(added.length === 1, `one commit should have been added to history, got ${added.length}`);
+        await ops.workspace.commit([{ path: "undo_old.json", data: { v: "second" } }]);
+        await ops.workspace.undo(added[0]!);
+        const files = await ops.workspace.read(["undo_old.json", "undo_only.json"]);
+        assertDeepEqual(
+          files["undo_old.json"],
+          { v: "second" },
+          "undoing the older commit discarded the later write to the same path",
+        );
+        assert(
+          files["undo_only.json"] === undefined,
+          "undo left behind a path only the undone commit wrote",
+        );
+      }),
+
       // =====================================================================
       // lifecycle
       // =====================================================================

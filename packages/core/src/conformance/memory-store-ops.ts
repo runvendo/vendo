@@ -70,7 +70,7 @@ export function memoryStoreOps(): StoreOps {
 
   // workspace
   type WsEntry = { path: string; data: unknown };
-  type WsCommit = { id: string; entries: WsEntry[]; before: Map<string, unknown> };
+  type WsCommit = { id: string; entries: WsEntry[] };
   const wsFiles = new Map<string, unknown>();
   const wsCommits: WsCommit[] = [];
   let wsCommitSeq = 0;
@@ -322,12 +322,8 @@ export function memoryStoreOps(): StoreOps {
         wsIdempotencyKeys.set(key, body);
       }
       wsCommitSeq += 1;
-      const before = new Map<string, unknown>();
-      for (const e of entries as WsEntry[]) {
-        before.set(e.path, wsFiles.get(e.path));
-        wsFiles.set(e.path, jsonCopy(e.data));
-      }
-      wsCommits.push({ id: String(wsCommitSeq), entries: entries as WsEntry[], before });
+      for (const e of entries as WsEntry[]) wsFiles.set(e.path, jsonCopy(e.data));
+      wsCommits.push({ id: String(wsCommitSeq), entries: entries as WsEntry[] });
     },
     async history(query) {
       const all = wsCommits.map((c) => ({ commitId: c.id, entries: c.entries }));
@@ -342,12 +338,13 @@ export function memoryStoreOps(): StoreOps {
     async undo(commitId) {
       const idx = wsCommits.findIndex((c) => c.id === commitId);
       if (idx === -1) throw new VendoError("not-found", `commit ${commitId} not found`);
-      const commit = wsCommits[idx]!;
-      for (const [path, prev] of commit.before) {
-        if (prev === undefined) wsFiles.delete(path);
-        else wsFiles.set(path, prev);
-      }
+      // Drop the commit and replay the retained ones, so undoing an older
+      // commit never clobbers a path a later commit has since written.
       wsCommits.splice(idx, 1);
+      wsFiles.clear();
+      for (const c of wsCommits) {
+        for (const e of c.entries) wsFiles.set(e.path, jsonCopy(e.data));
+      }
     },
   };
 
