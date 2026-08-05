@@ -57,15 +57,26 @@ const clientsShape: ShapeType = {
   items: { kind: "object", fields: { id: { kind: "string" }, name: { kind: "string" } } },
 };
 
+/** A REST-envelope tool: rows sit under "data", the top-level object's only
+ *  other field is "total" — the shape TOOL RESPONSE SHAPES already teaches. */
+const accountsShape: ShapeType = {
+  kind: "object",
+  fields: {
+    data: { kind: "array", items: { kind: "object", fields: { id: { kind: "string" }, balance: { kind: "number" } } } },
+    total: { kind: "number" },
+  },
+};
+
 const shapes: Record<string, ShapeType> = {
   invoices: invoicesShape,
   clients: clientsShape,
   metrics: { kind: "object", fields: { total_cents: { kind: "number" }, label: { kind: "string" } } },
   logs: { kind: "array", items: { kind: "json" } },
+  accounts: accountsShape,
 };
 
 const context: ExprCheckContext = {
-  queryNames: ["invoices", "clients", "metrics", "unsampled", "logs"],
+  queryNames: ["invoices", "clients", "metrics", "unsampled", "logs", "accounts"],
   shapeOf: (name) => shapes[name],
 };
 
@@ -266,6 +277,13 @@ describe("checkExpr", () => {
     expect(issue).toContain("client_name");
     expect(issue).toContain("string");
     expect(issue).toContain("amount_cents");
+  });
+
+  it("hints the .data envelope when the field really lives one level down", () => {
+    const [issue] = checkExpr('sum(accounts, "balance")', context);
+    expect(issue).toContain("balance");
+    expect(issue).toContain("accounts.data.balance");
+    expect(issue).toContain('"data" field');
   });
 
   it("reports every other slot whose type cannot compute", () => {

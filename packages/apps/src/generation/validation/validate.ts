@@ -36,6 +36,7 @@ import {
   type GeneratedAppDocument,
   type GenerationDependencies,
 } from "../engine.js";
+import { withoutPlanVocabulary } from "../skeleton.js";
 import { prepareIslands } from "./islands.js";
 import { smokeRenderIslands } from "./smoke-render.js";
 
@@ -60,19 +61,24 @@ export const validateCompiledCreate = async (
   } else if (name.length > APP_NAME_MAX_CHARS) {
     issues.push(`App name="${name}" is ${name.length} characters — name is the app's display title (at most ${APP_NAME_MAX_CHARS} characters); write a short human title, never the request echoed back`);
   }
+  // The direct path (the brain writing a whole app in one shot) has no fill
+  // worker and no spliceFragment to catch it copying its OWN plan syntax
+  // (skeleton.ts's withoutPlanVocabulary) — so the same defence runs here,
+  // on every node the compile produced, before any check reads them.
+  const tree = { ...compiled.tree, nodes: compiled.tree.nodes.map(withoutPlanVocabulary) };
   const prepared = await prepareIslands(compiled.components, deps.tools, deps.catalog.map(({ name: componentName }) => componentName), requestText);
   const components = Object.keys(prepared.components).length === 0 ? undefined : prepared.components;
   issues.push(...prepared.issues);
-  issues.push(...unknownToolIssues(compiled.tree, deps.tools).map(factIssueLine));
+  issues.push(...unknownToolIssues(tree, deps.tools).map(factIssueLine));
   issues.push(...compiled.bindingErrors.map((error) =>
     `binding ${error.path} on node "${error.nodeId}" prop "${error.prop}": ${error.message}${error.available === undefined ? "" : ` (available: ${error.available.join(", ")})`}`));
-  issues.push(...bindingKindIssues(compiled.tree, deps).map(factIssueLine));
-  issues.push(...kitSlotIssues(compiled.tree, deps).map(factIssueLine));
-  issues.push(...hostReshapeIssues(compiled.tree, deps).map(factIssueLine));
-  issues.push(...exprIssues(compiled.tree, deps).map(factIssueLine));
-  issues.push(...queryInputIssues(compiled.tree).map(factIssueLine));
-  issues.push(...interpolationIssues(compiled.tree).map(factIssueLine));
-  issues.push(...(await catalogIssues(compiled.tree, components, deps.catalog)).map(factIssueLine));
+  issues.push(...bindingKindIssues(tree, deps).map(factIssueLine));
+  issues.push(...kitSlotIssues(tree, deps).map(factIssueLine));
+  issues.push(...hostReshapeIssues(tree, deps).map(factIssueLine));
+  issues.push(...exprIssues(tree, deps).map(factIssueLine));
+  issues.push(...queryInputIssues(tree).map(factIssueLine));
+  issues.push(...interpolationIssues(tree).map(factIssueLine));
+  issues.push(...(await catalogIssues(tree, components, deps.catalog)).map(factIssueLine));
   if (issues.length > 0) return { issues };
   // The smoke-render gate (crash classes the 2026-07-21 gate shipped: React
   // #310 hooks-in-map, undefined names, unguarded-data throws). Runs LAST,
@@ -92,7 +98,7 @@ export const validateCompiledCreate = async (
     format: VENDO_APP_FORMAT,
     name,
     ui: "tree",
-    tree: asPayload(structuredClone(compiled.tree)),
+    tree: asPayload(structuredClone(tree)),
     ...(components === undefined ? {} : {
       components: structuredClone(components),
       // The compiler-stamped per-island tool manifest (least privilege: an
