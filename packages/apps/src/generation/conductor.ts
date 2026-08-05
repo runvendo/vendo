@@ -194,6 +194,17 @@ const fixInstruction = (findings: readonly Finding[]): string => [
   ...findings.map(({ where, message }) => (where === undefined ? `- ${message}` : `- ${where}: ${message}`)),
 ].join("\n");
 
+/** What the brain is told when a DIRECT answer failed to compile. There is no
+ *  valid tree yet, so there is nothing to hand back as an <Edit> target
+ *  (fixInstruction's job) — the brain gets the ask again, its own wire, and
+ *  exactly what was wrong with it, the same teaching-sentence discipline. */
+const directRewriteInstruction = (request: string, wire: string, issues: readonly string[]): string => [
+  `${request}`,
+  "Your last answer does not compile. Answer again from scratch — directly, or as a plan if that now fits better — fixing every problem below; do not repeat them.",
+  `WHAT YOU WROTE:\n${wire}`,
+  `WHAT WAS WRONG WITH IT:\n${issues.map((issue) => `- ${issue}`).join("\n")}`,
+].join("\n\n");
+
 /**
  * Run the checking layer and hand every BLOCKING finding back to the brain as
  * an instruction, up to {@link FIX_ROUNDS} times. Whatever survives is returned
@@ -383,14 +394,42 @@ export const conductCreate = async (
     return { kind: "cannot", reasons: outcome.reasons, session: turn.session };
   }
   if (outcome.kind === "direct") {
-    const built = await documentFromWire(outcome.wire, deps, input.prompt);
+    let wire = outcome.wire;
+    let built = await documentFromWire(wire, deps, input.prompt);
+    let session = turn.session;
+    // A direct answer that fails to compile used to be a single dead end —
+    // the one outcome in this module with no retry at all, so a model that
+    // reaches for a JS idiom the wire rejects (a method-call tool name,
+    // braces in text, an undeclared reference) failed the WHOLE build on the
+    // first try. This mirrors checkAndFix's bounded loop, for the case
+    // checkAndFix cannot help with: there is no valid tree yet to hand back
+    // as an <Edit> target.
+    for (let round = 0; built.document === undefined && round < FIX_ROUNDS; round += 1) {
+      const retry = await runBrainTurn({
+        instruction: directRewriteInstruction(input.prompt, wire, built.issues),
+        session,
+      }, deps);
+      session = retry.session;
+      if (retry.outcome?.kind === "cannot") return { kind: "cannot", reasons: retry.outcome.reasons, session };
+      if (retry.outcome?.kind === "plan") {
+        return buildPlan({
+          plan: retry.outcome.plan,
+          skeleton: skeletonFromPlan(retry.outcome.plan),
+          request: input.prompt,
+          session,
+        }, deps, options);
+      }
+      if (retry.outcome?.kind !== "direct") break;
+      wire = retry.outcome.wire;
+      built = await documentFromWire(wire, deps, input.prompt);
+    }
     if (built.document === undefined) {
-      return { kind: "failure", issues: [...turn.issues, ...built.issues], session: turn.session };
+      return { kind: "failure", issues: [...turn.issues, ...built.issues], session };
     }
     const checked = await checkAndFix({
       document: withId(built.document),
       request: input.prompt,
-      session: turn.session,
+      session,
     }, deps, checkingFor(deps, {}, options.checks), options);
     return {
       kind: "app",

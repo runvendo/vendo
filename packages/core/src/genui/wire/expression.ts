@@ -281,7 +281,7 @@ const lowerPath = (state: ParserState, node: ExprNode & { kind: "path" }): Json 
   return fail(
     state,
     "unknown-reference",
-    `"${node.text}" does not name a declared <Query> or state`,
+    `"${node.text}" does not name a declared <Query> or state; the queries are: ${[...state.queryNames].join(", ") || "(none declared)"} — there is no loop variable, so a fixed row reads by position off one of them (cities.0.temp)`,
   );
 };
 
@@ -344,7 +344,7 @@ const parseComputed = (state: ParserState): Json | Failed => {
   const unknown = exprPathHeads(node).filter((head) => !state.queryNames.has(head));
   if (unknown.length > 0) {
     for (const head of unknown) {
-      fail(state, "unknown-reference", `"${head}" does not name a declared <Query>`);
+      fail(state, "unknown-reference", `"${head}" does not name a declared <Query>; the queries are: ${[...state.queryNames].join(", ") || "(none declared)"}`);
     }
     return FAILED;
   }

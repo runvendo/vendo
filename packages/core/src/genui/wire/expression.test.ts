@@ -187,6 +187,11 @@ describe("parseExpression bindings", () => {
     expect(result.issues[0]?.message).toContain("mystery.total");
   });
 
+  it("lists the declared queries in an unknown-reference issue, so a retry can pick one instead of guessing again", () => {
+    const result = parse("mystery");
+    expect(result.issues[0]?.message).toContain("revenue, payments");
+  });
+
   it("compiles bindings nested inside arrays and objects", () => {
     expectValue("[revenue, state.tab]", [{ $path: "/revenue" }, { $state: "tab" }]);
     expectValue("{ points: revenue.total, active: state.tab }", {
