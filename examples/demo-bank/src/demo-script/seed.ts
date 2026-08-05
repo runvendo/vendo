@@ -16,6 +16,7 @@
 import type { AppDocument } from "@vendoai/core";
 import { mapleDemoUsers } from "@/server/users";
 import { vendo } from "@/vendo/server";
+import { seedConsoleData } from "./console-seed";
 import moneyHqFixture from "./fixtures/money-hq.json";
 import spendingFixture from "./fixtures/spending-breakdown.json";
 
@@ -91,4 +92,5 @@ export async function seedDemoScript(): Promise<void> {
       await apps.put({ id: doc.id, data: { subject: user.subject, enabled: false, doc } });
     }
   }
+  await seedConsoleData(vendo.store);
 }
