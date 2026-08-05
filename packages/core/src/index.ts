@@ -101,7 +101,8 @@ export type {
   TurnTools,
 } from "./harness.js";
 export type { CommitResult, WorkspaceFs } from "./workspace.js";
-export { WORKSPACE_INLINE_MAX_BYTES } from "./workspace.js";
+export { WORKSPACE_INLINE_MAX_BYTES, appRootPath } from "./workspace.js";
+export type { AppMount } from "./workspace.js";
 // `Seat` / `ResolvedModels` come from `./model-seats.js` through the star export
 // above. They were ALSO re-exported here from a second, lane-A copy in
 // `./models.ts` — four seats instead of five, non-generic, and typed against the

@@ -31,10 +31,12 @@ import {
   printWire,
   VendoError,
   WORKSPACE_INLINE_MAX_BYTES,
+  appRootPath,
   appSourceFileSchema,
   sha256Hex,
   type AppDocument,
   type AppId,
+  type AppMount,
   type AppSourceFile,
   type FilesAdapter,
   type RunContext,
@@ -58,11 +60,32 @@ export interface AppSourceSeam {
   requireOwned(appId: AppId, ctx: RunContext): Promise<AppDocument>;
   /** Land a mutated document. `AppsRuntime`'s own compare-and-swap update. */
   update(appId: AppId, mutate: (doc: AppDocument) => AppDocument, ctx: RunContext): Promise<AppDocument>;
+  /**
+   * The app row's OWNER — a person's subject, or an org id. It is what decides
+   * the app's ADDRESS (§9.7: owner and path prefix always travel together), and
+   * it is the one question a workspace cannot answer: an org app's editor can
+   * usually write their own `/user` mount too, so permission cannot tell the two
+   * addresses apart.
+   */
+  ownerOf(appId: AppId, ctx: RunContext): Promise<string>;
   /** The workspace's OWN blob seam, for source past {@link WORKSPACE_INLINE_MAX_BYTES}.
    *  Absent means inline-only, and an oversized file is refused loudly rather
    *  than dropped — a silently missing source file is a lost app. */
   blobs?: FilesAdapter;
 }
+
+/**
+ * The mount that HOLDS an app, from its owner (§9.7).
+ *
+ * An owner the caller holds a membership for is an ORG; anything else is a
+ * person's own subject. Never a guess: a personal app shared with this caller
+ * resolves to its OWNER's `/user` mount, which the caller then genuinely cannot
+ * commit to — an honest refusal instead of a write in the wrong place.
+ */
+export const appMountFor = (owner: string, ctx: RunContext): AppMount =>
+  (ctx.memberships ?? []).some((membership) => membership.org === owner)
+    ? { kind: "org", org: owner }
+    : { kind: "user", subject: owner };
 
 /** The app's blob namespace: keyed by app so erasing an app erases its source. */
 const blobKey = (appId: AppId, path: string): string => `apps/${appId}/${sha256Hex(path)}`;
@@ -87,22 +110,30 @@ export const invalidSourcePath = (path: string): string | null => {
 };
 
 /**
- * The app's directory in THIS caller's workspace, asked out loud.
+ * The app's directory: derived from OWNERSHIP, then permission-checked.
  *
- * The path layout is frozen (build contract §3.1) but which mount holds an app is
- * the workspace's answer, not ours: `canCommit` judges against live rows, and it
- * is already the one authority the materialization seam asks twice. Guessing here
- * would be a second answer to a question that has one.
+ * It used to take the first writable candidate, personal mount first. That is
+ * wrong for the case where both answers are yes — an org-owned app whose editor
+ * can also write their own `/user` mount. The projection landed in the personal
+ * mount, `commitApp` derived that same prefix, and every edit made under
+ * `/orgs/<org>/apps/<appId>` was filtered out and silently dropped. Permission
+ * cannot choose an address; only the owner can.
+ *
+ * `canCommit` still rules, but as the GATE it is rather than as the chooser it
+ * was: the address is a fact about the app, and whether this caller may write
+ * there is a separate question with an honest refusal for an answer.
  */
-const appDirectory = async (appId: AppId, workspace: WorkspaceFs, ctx: RunContext): Promise<string> => {
-  const candidates = [
-    `/user/apps/${appId}`,
-    ...(ctx.memberships ?? []).map((membership) => `/orgs/${membership.org}/apps/${appId}`),
-  ];
-  for (const directory of candidates) {
-    if (await workspace.canCommit(`${directory}/app.vendo`)) return directory;
+const appDirectory = async (
+  appId: AppId,
+  workspace: WorkspaceFs,
+  ctx: RunContext,
+  seam: AppSourceSeam,
+): Promise<string> => {
+  const directory = appRootPath(appMountFor(await seam.ownerOf(appId, ctx), ctx), appId);
+  if (!(await workspace.canCommit(`${directory}/app.vendo`))) {
+    throw new VendoError("forbidden", `this workspace cannot hold ${appId}'s files at ${directory}`);
   }
-  throw new VendoError("forbidden", `this workspace cannot hold ${appId}'s files`);
+  return directory;
 };
 
 const sourceText = async (file: AppSourceFile, seam: AppSourceSeam, path: string): Promise<string> => {
@@ -131,7 +162,7 @@ export async function checkoutApp(
   seam: AppSourceSeam,
 ): Promise<void> {
   const doc = await seam.requireOwned(appId, ctx);
-  const directory = await appDirectory(appId, workspace, ctx);
+  const directory = await appDirectory(appId, workspace, ctx, seam);
 
   const tree = treeOf(doc);
   if (tree !== undefined) {
@@ -166,7 +197,7 @@ export async function commitApp(
   ctx: RunContext,
   seam: AppSourceSeam,
 ): Promise<void> {
-  const directory = await appDirectory(appId, workspace, ctx);
+  const directory = await appDirectory(appId, workspace, ctx, seam);
   const prefix = `${directory}/`;
   const paths = changed
     .filter((path) => path.startsWith(prefix))

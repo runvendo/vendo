@@ -76,21 +76,26 @@ function memoryBlobs(): FilesAdapter & { keys(): string[] } {
  * binds in production. `@vendoai/apps` has no store dependency by design, which
  * is why the seam takes these in rather than importing them.
  */
-function seamOver(store: VendoStore, blobs?: FilesAdapter): AppSourceSeam {
+function seamOver(store: VendoStore, blobs?: FilesAdapter, owner = principal.subject): AppSourceSeam {
   const apps = store.records("vendo_apps");
-  const load = async (): Promise<AppDocument> => {
+  const row = async (): Promise<{ subject: string; doc: AppDocument }> => {
     const record = await apps.get(APP);
     if (record === null) throw new Error(`no row for ${APP}`);
-    return appDocumentSchema.parse((record.data as { doc: unknown }).doc);
+    const data = record.data as { subject: string; doc: unknown };
+    return { subject: data.subject, doc: appDocumentSchema.parse(data.doc) };
   };
   return {
-    requireOwned: load,
+    requireOwned: async () => (await row()).doc,
+    // The row's own subject — the authoritative owner, which is what decides the
+    // app's address. Read from the record rather than remembered, exactly as
+    // composition does.
+    ownerOf: async () => (await row()).subject,
     async update(_appId, mutate) {
-      const next = mutate(structuredClone(await load()));
+      const next = mutate(structuredClone((await row()).doc));
       await apps.put({
         id: APP,
-        data: { subject: principal.subject, enabled: false, doc: next },
-        refs: { subject: principal.subject },
+        data: { subject: owner, enabled: false, doc: next },
+        refs: { subject: owner },
       });
       return next;
     },
@@ -196,6 +201,53 @@ describe("app source: checkout and commit (contract §3.2)", () => {
     const second = await writing.commit();
     await commitApp(APP, [`/user/apps/${APP}/src/gone.ts`, ...(second.status === "ok" ? second.changed : [])], writing, ctx, seam);
     expect((await seam.requireOwned(APP, ctx)).source).toBeUndefined();
+  }, 60_000);
+
+  /**
+   * The AMBIGUOUS case, and the one that makes "first writable candidate" wrong:
+   * an ORG-OWNED app whose editor can also write their own `/user` mount. Both
+   * addresses answer `canCommit` yes, so permission cannot pick between them —
+   * only the app's OWNERSHIP can. Get it wrong and the projection lands in the
+   * caller's personal mount, `commitApp` derives that same wrong prefix, and
+   * every edit made under `/orgs/<org>/apps/<appId>` is filtered out and
+   * silently dropped.
+   */
+  it("materializes an ORG-owned app in its ORG mount, even when the personal mount is writable too", async () => {
+    const store = await tempStore();
+    const ORG = "maple";
+    const membership = { org: ORG, display: "Maple Bank", teams: ["support"], admin: true };
+    const orgCtx: RunContext = { ...ctx, memberships: [membership] };
+    // Owned by the ORG: the row's subject IS the org (build contract §9.7 —
+    // owner and path prefix always travel together).
+    await store.records("vendo_apps").put({
+      id: APP,
+      data: { subject: ORG, enabled: false, doc: { format: VENDO_APP_FORMAT, id: APP, name: "Team spending" } },
+      refs: { subject: ORG },
+    });
+    const seam = seamOver(store, undefined, ORG);
+
+    const workspace = await workspaceStore(store).open(principal, { memberships: [membership] });
+    // Both addresses are genuinely writable — this is what makes the case
+    // ambiguous rather than hypothetical.
+    expect(await workspace.canCommit(`/user/apps/${APP}/app.vendo`)).toBe(true);
+    expect(await workspace.canCommit(`/orgs/${ORG}/apps/${APP}/app.vendo`)).toBe(true);
+
+    // The harness edits the app where the app actually lives.
+    await workspace.writeFile(`/orgs/${ORG}/apps/${APP}/src/App.tsx`, "export const App = () => null;\n");
+    const result = await workspace.commit();
+    expect(result.status).toBe("ok");
+    await commitApp(APP, result.status === "ok" ? result.changed : [], workspace, orgCtx, seam);
+
+    // The org edit LANDED — the whole point. Keyed by its path inside the app
+    // directory, with no mount prefix left on it.
+    const stored = await seam.requireOwned(APP, orgCtx);
+    expect(Object.keys(stored.source ?? {})).toEqual(["src/App.tsx"]);
+
+    // And a fresh checkout puts it back at the ORG address, not the personal one.
+    const fresh = await workspaceStore(store).open(principal, { memberships: [membership] });
+    await checkoutApp(APP, fresh, orgCtx, seam);
+    expect(await fresh.readFile(`/orgs/${ORG}/apps/${APP}/src/App.tsx`)).toBe("export const App = () => null;\n");
+    await expect(fresh.readFile(`/user/apps/${APP}/src/App.tsx`)).rejects.toThrow();
   }, 60_000);
 
   it("refuses a source path that would escape the app's directory", async () => {

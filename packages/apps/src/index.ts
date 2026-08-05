@@ -146,6 +146,7 @@ export {
 // never a store, so composition binds the store side once and hands these to
 // whoever is materializing an app.
 export {
+  appMountFor,
   checkoutApp,
   commitApp,
   invalidSourcePath,
