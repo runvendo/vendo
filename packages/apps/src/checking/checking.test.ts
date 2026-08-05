@@ -138,7 +138,7 @@ describe("checking layer", () => {
     // Appended, never replacing: every built-in fact check is still registered.
     expect(layer.checks.map(({ name }) => name)).toEqual(expect.arrayContaining([
       "document", "tools-exist", "components-exist", "bindings-fit", "expressions-compute",
-      "query-inputs-literal", "no-string-interpolation", "maple-house-style",
+      "query-inputs-literal", "no-string-interpolation", "screen-types", "maple-house-style",
     ]));
     expect(findings).toContainEqual({
       severity: "block",
@@ -275,6 +275,20 @@ describe("built-in fact checks", () => {
     const finding = findings.find(({ where }) => where.includes('prop "text"'));
     expect(finding?.severity).toBe("block");
     expect(finding?.message).toContain("the real fields are: id, client, amountCents");
+  });
+
+  it("blocks a screen naming a component no vocabulary carries — the wired tsc floor", async () => {
+    // Prove-it-can-fail for the `screen-types` wiring: an unknown component is a
+    // block that carries the check's own name. Comment out the `screen-types`
+    // entry in `factChecks` and this finding vanishes.
+    const layer = createCheckingLayer({ deps: deps() });
+    const findings = await layer.run(inputFor(
+      '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack><MapleGhostCard valueCents={invoices.data}/></Stack></App>',
+    ));
+
+    const finding = findings.find(({ check }) => check === "screen-types");
+    expect(finding?.severity).toBe("block");
+    expect(finding?.message).toContain('references unknown component "MapleGhostCard"');
   });
 
   it("names the allowed props when a prewired component is given one it has not got", async () => {

@@ -20,6 +20,7 @@ import {
   checkBindingShapes,
   checkExpr,
   kitSpec,
+  printWire,
   shapeAtPointer,
   isExprBinding,
   isPathBinding,
@@ -34,6 +35,8 @@ import {
 import type { AppDocument } from "@vendoai/core";
 import { prewiredPropNames } from "../prewired-schema.js";
 import type { FloorDependencies, HostToolInfo } from "./deps.js";
+import { screenTypings } from "./screen-typings.js";
+import { screenTscFindings } from "./screen-tsc.js";
 import type { Check, Finding } from "./types.js";
 
 /** The app's name is its panel display title. Echoing the ask back ("Create a
@@ -414,7 +417,16 @@ export const unknownToolIssues = (tree: Tree, tools: readonly HostToolInfo[] | u
 
 /** Every `$path` binding resolved query → tool → response shape by the wire
  *  compiler's own checker. A miss carries the fields that ARE there, so the
- *  message can teach instead of only refusing. */
+ *  message can teach instead of only refusing.
+ *
+ *  KEPT despite the tsc floor: a `$path` with a NUMERIC index segment
+ *  (`/invoices/data/0/customer`) does not print as a bare reference — printWire
+ *  falls to a quoted `{ "$path": … }` object literal (identifier segments only,
+ *  print.ts), which tsc reads as a valid object and cannot walk. So field
+ *  existence UNDER an index is the one field-existence class the static half
+ *  cannot see; this check is its only reader. Identifier-path field existence
+ *  overlaps `screen-types` — both block, and `screen-types` runs last so its
+ *  message trails the targeted one. */
 const bindingShapeIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] => {
   if (deps.toolShapes === undefined) return [];
   return checkBindingShapes(tree.nodes, tree.queries ?? [], deps.toolShapes).map((error) => atProp(
@@ -476,6 +488,44 @@ const treeCheck = (
 });
 
 /**
+ * The checks floor's static half: the screen's own text, type-checked by `tsc`
+ * against the declarations the floor already holds (screen-typings.ts). One
+ * compiler answers "does this file name a surface it may, with props that exist,
+ * types that fit, and data fields the response really carries" — the question
+ * the bespoke component/binding walkers answer by hand. It degrades to silence
+ * when no compiler is reachable (screen-tsc.ts), so a missing toolchain never
+ * blocks a build.
+ *
+ * It FULLY replaces the type-mismatch binding walker (`bindingKindIssues` is
+ * dropped from the check list here) and OVERLAPS the component-existence, host-
+ * prop and field-existence walkers, which stay: the (quarantined) fill fix loop
+ * attributes findings by `node "id"` locus and tsc anchors on `<Component>`
+ * tags, and a numeric-index path (`data.0.field`) prints as an opaque `$path`
+ * literal tsc cannot walk. Those two are the subsumption's real edges; the
+ * bespoke walkers cover them until the quarantine sweep reconciles the loci.
+ *
+ * The screen text is RECONSTRUCTED from the tree with `printWire`: the tree
+ * round-trips to wire byte-identically (#808) and the wire is a strict TSX
+ * subset, so the reconstruction is exactly what tsc reads. Islands are printed
+ * OUT (`components: {}`): their source is React, checked by the smoke-render
+ * gate, not screen wire, and feeding it to tsc is a parse error. Their NAMES
+ * ride along as schema-less vocabulary — a generated node WITH a source is not
+ * misread as an unknown component, and one WITHOUT a source is still flagged,
+ * exactly as the `components-exist` generated branch does.
+ */
+const screenTypeFindings = (tree: Tree, document: AppDocument, deps: FloorDependencies): Finding[] => {
+  const queries = (tree.queries ?? []).map((query) => ({ name: query.name, tool: query.tool }));
+  const generated = Object.keys(document.components ?? {}).map((name) => ({ name, description: "generated component" }));
+  const typings = screenTypings({
+    catalog: [...deps.catalog, ...generated],
+    queries,
+    toolShapes: deps.toolShapes,
+  });
+  const screen = printWire({ tree, components: {}, name: document.name }, { includeIds: false });
+  return screenTscFindings({ screen, typings });
+};
+
+/**
  * The built-in fact checks, bound to the host surface they measure against.
  * Every finding is `block`: a fact is not a matter of taste.
  */
@@ -485,11 +535,22 @@ export const factChecks = (deps: FloorDependencies): Check[] => [
   treeCheck("components-exist", (tree, document) => catalogIssues(tree, document.components, deps.catalog)),
   treeCheck("bindings-fit", (tree) => [
     ...bindingShapeIssues(tree, deps),
-    ...bindingKindIssues(tree, deps),
     ...kitSlotIssues(tree, deps),
     ...hostReshapeIssues(tree, deps),
   ]),
   treeCheck("expressions-compute", (tree) => exprIssues(tree, deps)),
   treeCheck("query-inputs-literal", (tree) => queryInputIssues(tree)),
   treeCheck("no-string-interpolation", (tree) => interpolationIssues(tree)),
+  // The static half runs LAST: it is the broad compiler backstop, and on any
+  // overlap with a targeted bespoke check (a bad aggregate field name, an
+  // identifier-path field miss) the specific check's hand-tuned message should
+  // lead the flat-merged list. See `screenTypeFindings`.
+  {
+    name: "screen-types",
+    kind: "fact",
+    run: async ({ document }) => {
+      const tree = treeOf(document);
+      return tree === undefined ? [] : screenTypeFindings(tree, document, deps);
+    },
+  },
 ];
