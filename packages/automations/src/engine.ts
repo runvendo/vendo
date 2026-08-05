@@ -14,6 +14,7 @@ import {
   USE_SERVICE_TOOL,
   withResolvedRisk,
   webhookSubject,
+  withheldFromUnattended,
   triggerKindRefs,
   type AppDocument,
   type ApprovalRequest,
@@ -1722,7 +1723,8 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
 
   /** The tools a consent moment covers. Steps DECLARE their surface; an agentic
    *  run declares one too when it was authored with one (`run.tools`), and falls
-   *  back to every bound descriptor when it was not.
+   *  back to every bound descriptor THE LAW would still let it reach away when it
+   *  was not.
    *
    *  The connector dispatcher never enters as ITSELF, whichever kind of run this
    *  is: a tool-wide grant on it would be consent to the broker's whole catalog
@@ -1738,9 +1740,16 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     if (trigger.run.kind === "agentic") {
       const declared = trigger.run.tools;
       if (declared === undefined) {
-        return [...byName.keys()]
-          .filter((tool) => tool !== USE_SERVICE_TOOL)
-          .map((tool) => ({ tool }));
+        // The fallback is wide, but it is not DISHONEST: a tool §12 withholds
+        // from every unattended run can never be the thing this grant permits,
+        // so "allow this while you're away" is a question with no true answer.
+        // The predicate is core's own `withheldFromUnattended` — the SAME one
+        // `projectableForRun` filters the firing through — so the card and the
+        // run cannot disagree about what may never happen away.
+        return [...byName.values()]
+          .filter((descriptor) => descriptor.name !== USE_SERVICE_TOOL
+            && !withheldFromUnattended(descriptor))
+          .map(({ name }) => ({ tool: name }));
       }
       const items = new Map<string, ConsentItem>();
       for (const name of declared) {

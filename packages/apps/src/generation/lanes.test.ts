@@ -224,6 +224,22 @@ const NUDGE_PLAN = JSON.stringify({
   },
 });
 
+/** The agentic contract tells the planner to name its tools in the prompt, and a
+ *  real answer does. */
+const NAMED_TOOLS_PLAN = JSON.stringify({
+  name: "Invoice nudge triage",
+  resultsCollection: "nudges",
+  trigger: {
+    on: { kind: "schedule", every: "1d" },
+    run: {
+      kind: "agentic",
+      prompt: "Read the invoices with host_listInvoices, decide who deserves a gentle vs firm nudge, "
+        + `and publish the note with vendo_apps_data_put (appId "${APP_ID}", collection "nudges", id "latest").`,
+      budget: { maxToolCalls: 20 },
+    },
+  },
+});
+
 const pendingApproval = (): ApprovalRequest => ({
   id: "apr_email",
   call: { id: "call_1", tool: "host_send_email", args: {} },
@@ -284,6 +300,36 @@ describe("runServerLane — steps and agentic automations", () => {
     expect(landed[0]?.armTrigger).toBe(false);
     expect(result.automation?.pendingGrants?.[0]?.id).toBe("apr_email");
     expect(result.findings).toEqual([]);
+  });
+
+  it("lands an agentic automation carrying the tools its prompt named, and nothing wider", async () => {
+    // The consent card an agentic automation shows is `run.tools` when it has
+    // one, and EVERY bound descriptor when it does not — which is how "review
+    // the transactions and write a note" asked its owner for 31 standing
+    // permissions, "Send money" among them. Authoring is the only moment that
+    // knows: it wrote the prompt.
+    const result = await runServerLane(agenticPlan(), document(), serverDeps(scripted([], NAMED_TOOLS_PLAN), {
+      land: async () => undefined,
+      armAutomation: async () => ({ enabled: true, missing: [] }),
+    }));
+
+    const run = result.automation?.trigger.run;
+    if (run?.kind !== "agentic") throw new Error("the lane landed a non-agentic run");
+    expect(run.tools).toEqual(["host_listInvoices", "vendo_apps_data_put"]);
+  });
+
+  it("leaves the declaration OFF a plan whose prompt names no tool, rather than declaring wide", async () => {
+    // A declaration is what the plan actually implies; a guessed one would be a
+    // consent card for tools nobody authored. Absent is the honest answer, and
+    // the capture fallback (which withholds what can never run away) is what
+    // keeps the card honest from there.
+    const result = await runServerLane(agenticPlan(), document(), serverDeps(scripted([], NUDGE_PLAN), {
+      land: async () => undefined,
+    }));
+
+    const run = result.automation?.trigger.run;
+    if (run?.kind !== "agentic") throw new Error("the lane landed a non-agentic run");
+    expect(run.tools).toBeUndefined();
   });
 
   it("says out loud when the arming seam leaves the trigger disabled", async () => {

@@ -318,7 +318,13 @@ describe("enable capture — connector service actions", () => {
       // tool-wide grant on the dispatcher would be the whole catalog behind one
       // card, so it is not offered at all — those calls park at fire time.
       expect(tools).not.toContain("use_service_tool");
-      expect(tools).toContain("host_invoices_send");
+      // The fallback is still WIDE — every bound tool the run could really
+      // reach away is offered…
+      expect(tools).toContain("host_invoices_list");
+      // …and `host_invoices_send` is not one of them. It is `destructive`, so
+      // THE LAW refuses it away whatever this person answers: asking them to
+      // allow it while they are away is a question with no true answer.
+      expect(tools).not.toContain("host_invoices_send");
       expect(await stack.sql("SELECT id FROM vendo_grants WHERE tool = 'use_service_tool'")).toEqual([]);
     } finally {
       await stack.close();

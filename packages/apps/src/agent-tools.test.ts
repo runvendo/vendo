@@ -79,6 +79,11 @@ describe("apps agent tools", () => {
     // And the routing rule the merge exists for: `app` is how a caller aims at
     // one existing app, never a "new or change?" decision it has to make first.
     expect(make?.description).toMatch(/Pass `app` only to change one specific existing app/);
+    // An app holds a LIST of automations, and the planner has landed a second
+    // one beside the first since #818. The description never said so, so the
+    // model answered "I can't set two separate schedules on the same app" from
+    // prior belief — without ever calling the tool that would have done it.
+    expect(make?.description).toMatch(/hold SEVERAL automations/i);
   });
 
   /**

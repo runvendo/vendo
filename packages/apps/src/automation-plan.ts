@@ -120,6 +120,25 @@ const plannerTools = (tools: readonly HostToolInfo[]): HostToolInfo[] =>
     (!isVendoAppsTool(tool.name) || tool.name === RESULTS_TOOL)
     && !irreversible(tool));
 
+/**
+ * What an agentic plan says it will REACH — read back out of the prompt the
+ * planner just wrote.
+ *
+ * Authoring is the only moment that knows: it wrote the prompt, and the agentic
+ * contract tells it to name its tools from the TOOLS list. An exact name in free
+ * text is already how this file reads a prompt (the refusal scan below), so the
+ * names it mentions are the declaration, with no verb guessing anywhere.
+ *
+ * Without one, arm-time capture falls back to proposing EVERY bound descriptor,
+ * which is how "review the transactions and write a note" asked its owner for 31
+ * standing permissions behind a single button. Narrow by construction — only
+ * tools the planner could SEE ({@link plannerTools} withholds the irreversible
+ * ones) and only ones it named. Named nothing → no declaration at all, never a
+ * wide one.
+ */
+const declaredTools = (prompt: string, tools: readonly HostToolInfo[]): string[] =>
+  plannerTools(tools).map(({ name }) => name).filter((name) => prompt.includes(name));
+
 /** The refusal, in the person's words: why it will never happen away, and the
  *  version that CAN. It doubles as the repair instruction, because `issues` is
  *  exactly what the next attempt is asked to fix — so a request that is PARTLY
@@ -271,6 +290,8 @@ const validatePlan = (
     for (const tool of refused) {
       if (prompt.includes(tool)) issues.push(refusal("the agentic prompt", tool));
     }
+    const declared = declaredTools(prompt, input.tools);
+    if (declared.length > 0) trigger.run.tools = declared;
   }
   const resultsCollection = candidate.resultsCollection;
   if (resultsCollection !== undefined) {
