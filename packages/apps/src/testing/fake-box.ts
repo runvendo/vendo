@@ -1,6 +1,7 @@
 import type { SandboxAdapter, SandboxMachine } from "../sandbox.js";
 import type { BoxEditResult } from "../box-agent.js";
 import { BOX_CONTROL_PORT } from "../box-agent.js";
+import { inMemoryBoxFiles } from "./box-files.js";
 
 /**
  * execution-v2 Wave 3 test substrate — a fake sandbox that models a REAL v2
@@ -27,6 +28,9 @@ export interface FakeBoxState {
    * (path → HTML body). When present, the box "serves a real web app".
    */
   pages: Map<string, string>;
+  /** The box's disk, as the seam's `files` reads and writes it — the app's
+   *  SOURCE, distinct from the pages the box serves. */
+  files: Map<string, Uint8Array>;
 }
 
 /** The injectable in-box coding agent: mutates box state, returns a result. */
@@ -42,6 +46,7 @@ interface BoxSnapshot {
   manifest: FakeBoxState["manifest"];
   fns: Map<string, (args: unknown, env: Record<string, string>) => unknown>;
   pages: Map<string, string>;
+  files: Map<string, Uint8Array>;
   allowedDomains?: readonly string[];
 }
 
@@ -65,11 +70,16 @@ class FakeBoxMachine implements SandboxMachine {
   /** Task results by id (control-port task store). */
   private readonly tasks = new Map<string, { status: "running" | "done"; result?: BoxEditResult }>();
 
+  /** The seam's file operations (sandbox.ts), over the box's own disk. */
+  readonly files: SandboxMachine["files"];
+
   constructor(
     readonly state: FakeBoxState,
     readonly allowedDomains: readonly string[] | undefined,
     private readonly agent: FakeBoxAgent,
-  ) {}
+  ) {
+    this.files = inMemoryBoxFiles(state.files);
+  }
 
   private appPort(): number {
     const port = Number(this.state.env.PORT ?? 8080);
@@ -184,6 +194,7 @@ class FakeBoxMachine implements SandboxMachine {
       manifest: structuredClone(this.state.manifest),
       fns: new Map(this.state.fns),
       pages: new Map(this.state.pages),
+      files: new Map([...this.state.files].map(([path, bytes]) => [path, bytes.slice()])),
       ...(this.allowedDomains === undefined ? {} : { allowedDomains: [...this.allowedDomains] }),
     });
     return ref;
@@ -208,7 +219,7 @@ export const fakeBoxSandbox = (options: FakeBoxOptions = {}): FakeBoxAdapter => 
     machines,
     async create(spec) {
       return make(
-        { env: { ...spec.env }, manifest: {}, fns: new Map(), pages: new Map() },
+        { env: { ...spec.env }, manifest: {}, fns: new Map(), pages: new Map(), files: new Map() },
         spec.allowedDomains,
       );
     },
@@ -216,7 +227,13 @@ export const fakeBoxSandbox = (options: FakeBoxOptions = {}): FakeBoxAdapter => 
       const snap = snapshots.get(snapshotRef);
       if (snap === undefined) throw new Error(`unknown fake-box snapshot: ${snapshotRef}`);
       return make(
-        { env: { ...snap.env }, manifest: structuredClone(snap.manifest), fns: new Map(snap.fns), pages: new Map(snap.pages) },
+        {
+          env: { ...snap.env },
+          manifest: structuredClone(snap.manifest),
+          fns: new Map(snap.fns),
+          pages: new Map(snap.pages),
+          files: new Map([...snap.files].map(([path, bytes]) => [path, bytes.slice()])),
+        },
         policy === undefined ? snap.allowedDomains : policy.allowedDomains,
       );
     },

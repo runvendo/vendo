@@ -73,13 +73,12 @@ http.createServer((request, response) => {
 `;
 
 const bootstrap = async (machine: SandboxMachine): Promise<void> => {
-  // The ADAPTER-PRIVATE bootstrap surface (in production the in-box agent
-  // owns the inside of the box) — same shape the Lane A live test uses.
+  // Files ride the public seam; starting the app rides the ADAPTER-PRIVATE exec
+  // (in production the in-box agent does it) — same shape the Lane A test uses.
   const box = machine as unknown as {
     exec(cmd: string, opts?: { cwd?: string; timeoutMs?: number }): Promise<{ code: number; stdout: string; stderr: string }>;
-    files: { write(path: string, bytes: Uint8Array | string): Promise<void> };
   };
-  await box.files.write("/app/server.js", CONFORMANCE_SERVER_SOURCE);
+  await machine.files.write("/app/server.js", CONFORMANCE_SERVER_SOURCE);
   const started = await box.exec(
     "nohup node /app/server.js >/tmp/vendo-conformance.log 2>&1 &\necho $! >/tmp/vendo-conformance.pid",
     { cwd: "/app", timeoutMs: 15_000 },

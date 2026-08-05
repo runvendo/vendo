@@ -1,4 +1,5 @@
 import type { SandboxAdapter, SandboxMachine } from "../sandbox.js";
+import { inMemoryBoxFiles } from "./box-files.js";
 
 export interface MachineRequest {
   method: string;
@@ -132,6 +133,9 @@ export class FakeSandboxMachine implements SandboxMachine {
   readonly commands: FakeExecCall[] = [];
   readonly execResults: FakeExecResult[] = [];
   readonly fileContents: Map<string, Uint8Array>;
+  /** The seam's file operations (sandbox.ts), over this machine's contents.
+   *  Exec/screenshot/url/request/snapshot are lifecycle-guarded separately. */
+  readonly files: SandboxMachine["files"];
   readonly env: Record<string, string>;
   readonly port: number;
   /** v2 sleep flag; also true once destroyed. Writable for test scripting. */
@@ -152,6 +156,7 @@ export class FakeSandboxMachine implements SandboxMachine {
     this.env = Object.freeze({ ...env });
     this.port = parsePort(this.env);
     this.fileContents = new Map([...files].map(([path, bytes]) => [path, bytes.slice()]));
+    this.files = inMemoryBoxFiles(this.fileContents, (operation) => this.ensureRunning(operation));
     this.app = app;
   }
 
@@ -163,32 +168,6 @@ export class FakeSandboxMachine implements SandboxMachine {
     if (this.destroyed) throw new Error(`Fake sandbox machine ${this.id} is destroyed; cannot ${operation}`);
     if (this.stopped) throw new Error(`Fake sandbox machine ${this.id} is stopped (asleep); cannot ${operation}`);
   }
-
-  readonly files = {
-    // Reads stay available after stop/destroy on purpose: the fake doubles as
-    // a post-mortem probe for tests asserting what a torn-down machine held.
-    // Every OPERATION (write/list/exec/screenshot/url/request/snapshot) is
-    // lifecycle-guarded like a real provider.
-    read: async (path: string): Promise<Uint8Array> => {
-      const bytes = this.fileContents.get(path);
-      if (bytes === undefined) throw new Error(`Unknown fake sandbox file: ${path}`);
-      return bytes.slice();
-    },
-    write: async (path: string, bytes: Uint8Array | string): Promise<void> => {
-      this.ensureRunning("write a file");
-      this.fileContents.set(path, toBytes(bytes));
-    },
-    list: async (dir: string): Promise<string[]> => {
-      this.ensureRunning("list files");
-      const prefix = dir === "" || dir === "/" ? "" : `${dir.replace(/\/$/, "")}/`;
-      return [...new Set(
-        [...this.fileContents.keys()]
-          .filter((path) => path.startsWith(prefix))
-          .map((path) => path.slice(prefix.length).split("/")[0])
-          .filter((name): name is string => name !== undefined && name !== ""),
-      )].sort();
-    },
-  };
 
   async request(request: MachineRequest): Promise<{ status: number; headers: Record<string, string>; body: Uint8Array }> {
     this.ensureRunning("serve a request");

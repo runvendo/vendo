@@ -52,6 +52,14 @@ export interface SandboxMachineLike {
   id: string;
   request(req: { method: string; path: string; port?: number; headers?: Record<string, string>; body?: Uint8Array | string }):
     Promise<{ status: number; headers: Record<string, string>; body: Uint8Array }>;
+  /** The box's filesystem, as `SandboxMachine.files` defines it: read rejects
+   *  for a path the box does not hold, write replaces whole, list is one level
+   *  and names only. */
+  files: {
+    read(path: string): Promise<Uint8Array>;
+    write(path: string, bytes: Uint8Array | string): Promise<void>;
+    list(dir: string): Promise<string[]>;
+  };
   destroy(): Promise<void>;
 }
 

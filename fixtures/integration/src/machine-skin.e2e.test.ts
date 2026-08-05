@@ -110,6 +110,14 @@ function fakeBox(): { sandbox: SandboxAdapter; setEnv(env: Record<string, string
       const result = await handler();
       return { status: 200, headers, body: encoder.encode(JSON.stringify(result)) };
     },
+    // The skin journey is the fn/callback boundary, never the box's disk — the
+    // seam member is here so this double stays a whole SandboxMachine, and it
+    // fails loudly rather than answering a file it does not hold.
+    files: {
+      async read(path) { throw new Error(`the machine-skin box holds no files (${path})`); },
+      async write(path) { throw new Error(`the machine-skin box holds no files (${path})`); },
+      async list(dir) { throw new Error(`the machine-skin box holds no files (${dir})`); },
+    },
     async url(port?: number) { return `https://${port ?? 8080}-fake_box_machine.skin.test`; },
     async snapshot() { return "fake:machine-skin"; },
     async stop() { /* sleep */ },
