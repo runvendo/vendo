@@ -45,7 +45,6 @@ const PKG_DIR = "/opt/vendo-box/pkg";
 // removed again below — it is a build artifact, and .gitignore says so.
 process.chdir(here);
 const STAGED_RUNNER = "claude-turn.mjs";
-copyFileSync(path.join(here, "../dist/claude-turn.js"), path.join(here, STAGED_RUNNER));
 
 // ─── the app template, staged in for the same e2b reason ─────────────────────
 //
@@ -66,6 +65,10 @@ const cleanStaged = () => {
 };
 
 cleanStaged();
+// Stage the compiled turn runner AFTER cleanStaged() — it removes STAGED_RUNNER,
+// so staging it before the clean (as this script originally did) left the build
+// with no claude-turn.mjs to copy.
+copyFileSync(path.join(here, "../dist/claude-turn.js"), path.join(here, STAGED_RUNNER));
 const skipped = new Set(["node_modules", "dist", "package-lock.json"]);
 cpSync(SOURCE_TEMPLATE, stagedTemplate, {
   recursive: true,
