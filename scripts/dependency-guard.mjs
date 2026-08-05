@@ -70,6 +70,11 @@ const LAYERS = {
   // core's KnowledgeAdapter contract; core-only, like the other engine blocks
   "@vendoai/knowledge": ["@vendoai/core"],
   "@vendoai/automations": ["@vendoai/core", "@vendoai/apps"],
+  // the code-land runtime shim (blueprint §5.4): what a generated app imports
+  // inside its box — the Kit re-exported, the reshape/aggregate vocabulary
+  // delegated to core, and the guarded data/action hooks. core + ui only: it
+  // ships into a browser bundle, so it must never reach a server block.
+  "@vendoai/kit": ["@vendoai/core", "@vendoai/ui"],
   // the harness runtime (build contract 2026-07-30 §2): the second multi-block
   // package after the umbrella. It runs any Harness — building the Turn, mapping
   // the guard's outcomes, mirroring onto today's wire, and emitting hot-path
