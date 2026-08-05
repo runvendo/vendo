@@ -123,10 +123,10 @@ export interface RenderSeamOptions {
    *
    * INJECTED rather than imported. The floor's implementation needs a catalog,
    * tool shapes and a model, and pulling it in statically would put a pipeline
-   * body in `packages/harnesses`, which the layering forbids (the same rule
-   * `instant()`'s header stated). Composition builds it — `AppsRuntime.floor(ctx)`
-   * — which is also the only layer that HAS those things. The pure tree-assembly
-   * edge to `@vendoai/apps` that already exists is deliberately not widened.
+   * body in `packages/harnesses`, which the layering forbids. Composition builds
+   * it — `AppsRuntime.floor(ctx)` — which is also the only layer that HAS those
+   * things. The pure tree-assembly edge to `@vendoai/apps` that already exists is
+   * deliberately not widened.
    *
    * Unwired, the seam behaves exactly as it did before this option existed: a bare
    * `compileWire` and no checks. That is not a mode anyone should ship — it is

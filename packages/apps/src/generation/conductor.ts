@@ -1,4 +1,24 @@
 /**
+ * QUARANTINED (blueprint §14.2, 2026-08-05). Do not build on this file.
+ *
+ * The delete blocker named in §7.3 — "the floor's types must be freed first" — is
+ * GONE: `checking/` now owns `FloorDependencies` and imports nothing from this
+ * directory, and the checks it runs are reachable from the paint seam through
+ * `AppFloor`, for every author rather than only for apps this pipeline built. What
+ * keeps the file alive is its five `runtime.ts` call sites, the public re-export in
+ * `index.ts`, and the genui-bench vendo lane — all of which still work, unchanged.
+ *
+ * The replacement is the LEAN loop plus the floor at the seam (§4.1, §7.1): a
+ * builder writes `plan.vendo` / `app.vendo` with its own hands, the seam compiles
+ * in the production dialect and refuses to paint what does not pass, and
+ * `validate` is the review floor. Nothing new should route through the conductor's
+ * brain-turn / skeleton / fill / lanes / fix-round order.
+ *
+ * @deprecated Superseded by the lean loop and the checks floor at the paint seam.
+ *   Kept until that path is proven; its callers are frozen, not extended.
+ *
+ * ---
+ *
  * The conductor: one create, one edit, start to finish.
  *
  * The brain takes ONE turn, and what it answers decides everything after it.

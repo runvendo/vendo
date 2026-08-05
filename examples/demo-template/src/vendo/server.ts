@@ -2,7 +2,7 @@ import type { LanguageModelV3 } from "@ai-sdk/provider";
 import { wrapLanguageModel } from "ai";
 import type { ComponentCatalog } from "@vendoai/core";
 import { createStore } from "@vendoai/store";
-import { createVendo, instant, vendoModel } from "@vendoai/vendo/server";
+import { createVendo, vendoModel } from "@vendoai/vendo/server";
 import { getCapsGuard, spendMeteringMiddleware } from "@/server/caps";
 
 // PLUMBING — DO NOT MODIFY the model wrapping below per prospect. The spend
@@ -43,13 +43,6 @@ export const vendo = createVendo({
   // The `default` SEAT (build contract §4), not the deprecated top-level
   // `model:` — a seat is a job, and everything unset borrows this one.
   models: { default: model },
-  // Wave-2 live-proof seam (docs/verification/wave2-lane-f/). Unset — every
-  // shipped demo — leaves the slot empty, which since the wave-2 flip means the
-  // composed `vendo()` serves the chat route. `DEMO_HARNESS=instant` names the
-  // specialist. The template's catalog is EMPTY, so generation can only reach
-  // built-in kit components — which is what makes it the surface where the
-  // pipeline's own speed is measurable instead of a host catalog's strictness.
-  ...(process.env.DEMO_HARNESS === "instant" ? { harness: instant() } : {}),
   // No login wall: every visitor is anonymous. Returning null rides the
   // umbrella's per-client anonymous principal (a signed session cookie), so
   // visitors never share threads, grants, approvals, or apps.

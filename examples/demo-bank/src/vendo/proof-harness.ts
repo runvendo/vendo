@@ -1,11 +1,12 @@
 /**
- * The harness slot, named by env — lane F's `MAPLE_HARNESS=instant` switch
- * extended to the third harness.
+ * The harness slot, named by env.
  *
  *   unset               → slot empty; composition serves the default `vendo()`
- *   instant             → `harness: instant()`
  *   claude-code         → `harness: claudeCode()` on a real sandbox machine
  *   claude-code-local   → `harness: claudeCode({ machine: "local" })`
+ *
+ * `instant` was a fourth option and is gone with the harness itself
+ * (blueprint §14.1): two engines and no third.
  *
  * The shipped demo leaves it unset, so this file changes nothing about what a
  * visitor gets. It exists because measuring one harness column against another
@@ -16,14 +17,12 @@
  * and says so plainly if it is not installed.
  */
 import { claudeCode } from "@vendoai/harnesses/claude-code";
-import { instant } from "@vendoai/vendo/server";
 import type { createVendo } from "@vendoai/vendo/server";
 
 type HarnessSlot = Pick<Parameters<typeof createVendo>[0], "harness">;
 
 export function namedHarness(): HarnessSlot | Record<string, never> {
   switch (process.env.MAPLE_HARNESS) {
-    case "instant": return { harness: instant() };
     case "claude-code": return { harness: claudeCode() };
     case "claude-code-local": return { harness: claudeCode({ machine: "local" }) };
     default: return {};

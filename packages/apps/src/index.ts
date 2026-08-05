@@ -134,6 +134,11 @@ export { buildingAppsSkill } from "./skills/building-apps.js";
 // The generation seam for the genui-bench vendo lane: the SAME conductor
 // createApps() rides, driven directly against a host fixture with no store
 // behind it. Additive export — generation behavior is identical.
+//
+// QUARANTINED (blueprint §14.2) — see the header of `generation/conductor.ts`. The
+// export stays so the bench lane and the five `runtime.ts` call sites keep working;
+// it is frozen, not extended. New work uses the lean loop and the checks floor at
+// the paint seam.
 export {
   conductCreate,
   conductEdit,

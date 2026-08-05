@@ -58,7 +58,7 @@ export interface CreateVendoConfig {
   store?: VendoStore;
   files?: FilesAdapter;       // workspace file content; unset → blobs in the store, 5 MiB cap
   sandbox?: SandboxAdapter;
-  harness?: Harness<never>;   // WHO THINKS. unset → vendo(). also: instant(), claudeCode()
+  harness?: Harness<never>;   // WHO THINKS. unset → vendo(). also: claudeCode()
   knowledge?: KnowledgeAdapter; // unset → no vendo_knowledge_search tool
   connectors?: Connector[];
   connectorApps?: string[];   // toolkit scope for the auto-composed Cloud connector

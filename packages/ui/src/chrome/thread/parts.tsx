@@ -467,7 +467,7 @@ function ThreadAppCard({ appId, payload, restored, buildKey }: { appId: string; 
   }, [compact]);
   // V4 (spec §5) — the brain's plan-time display hint. It knows the shape
   // before the fill, so a "stage" view opens the workspace at BUILD START,
-  // where instant()'s skeleton is actually visible; absent hint keeps today's
+  // where the plan's skeleton is actually visible; absent hint keeps today's
   // inline card.
   const staged = (payload as { display?: unknown }).display === "stage";
   // Register the finished view with the workspace stage; a re-stream of the
