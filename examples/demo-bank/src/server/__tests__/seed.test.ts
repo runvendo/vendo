@@ -6,16 +6,16 @@ const anchor = new Date("2026-06-29T12:00:00-07:00")
 describe("buildSeed", () => {
   const data = buildSeed(anchor)
 
-  it("creates four accounts including checking and savings", () => {
+  it("creates seven accounts including checking and savings", () => {
     const kinds = data.accounts.map(a => a.kind)
     expect(kinds).toContain("checking")
     expect(kinds).toContain("savings")
-    expect(data.accounts.length).toBe(4)
+    expect(data.accounts.length).toBe(7)
   })
 
   it("generates a substantial, deterministic transaction history", () => {
     const a = buildSeed(anchor); const b = buildSeed(anchor)
-    expect(a.transactions.length).toBeGreaterThanOrEqual(120)
+    expect(a.transactions.length).toBeGreaterThanOrEqual(900)
     expect(a.transactions.map(t => t.id)).toEqual(b.transactions.map(t => t.id))
   })
 

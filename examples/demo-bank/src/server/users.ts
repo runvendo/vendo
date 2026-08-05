@@ -1,7 +1,7 @@
 /**
  * Maple's seeded demo identities — real Auth.js authentication with zero
- * external services. Two users are seeded so per-user isolation (threads,
- * grants, approvals) is demonstrable; both share the single demo password so
+ * external services. Four users are seeded so per-user isolation (threads,
+ * grants, approvals) is demonstrable; all share the single demo password so
  * one env knob (`MAPLE_DEMO_PASSWORD`) covers deployment.
  *
  * Everything here must stay edge-safe (Web Crypto + env only): the Next proxy
@@ -40,6 +40,16 @@ function seededIdentities(): MapleDemoUser[] {
       subject: "maple-mia",
       display: "Mia Nakamura",
       email: "mia@maple.com",
+    },
+    {
+      subject: "maple-sam",
+      display: "Sam Okafor",
+      email: "sam@maple.com",
+    },
+    {
+      subject: "maple-dana",
+      display: "Dana Whitfield",
+      email: "dana@maple.com",
     },
   ];
 }
