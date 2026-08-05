@@ -225,11 +225,16 @@ export const storeWireWorkspaceUndoRequestSchema = z.object({
 // lifecycle
 // ---------------------------------------------------------------------------
 
+/** Exactly ONE of subject/appId — an erase with no scope (or an ambiguous
+    both-set scope) is a destructive call with no target and must be rejected. */
 export const storeWireLifecycleEraseRequestSchema = z.object({
   target: z.object({
-    subject: z.string().optional(),
-    appId: z.string().optional(),
-  }).passthrough(),
+    subject: z.string().min(1).optional(),
+    appId: z.string().min(1).optional(),
+  }).passthrough().refine(
+    (t) => (t.subject === undefined) !== (t.appId === undefined),
+    { message: "erase target must set exactly one of subject or appId" },
+  ),
 }).passthrough();
 
 export const storeWireLifecycleAdoptRequestSchema = z.object({
