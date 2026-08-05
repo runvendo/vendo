@@ -145,6 +145,97 @@ describe("the freeze flag over the real store", () => {
     expect(frozenRow).not.toHaveProperty("risk");
   });
 
+  it("blocks at EXECUTE when the freeze lands after the check resolved to run — the tool never runs", async () => {
+    const sqlStore = await store();
+    // The check reads the freeze row at the top of the pipeline; the execute
+    // re-read reads it again right before dispatch. Serve the FIRST read as
+    // unfrozen (the check resolves to run) and every read after it as frozen —
+    // the freeze that landed while the grants/judge pipeline was awaiting.
+    let controlReads = 0;
+    const frozenAfterFirstRead = new Proxy(sqlStore, {
+      get(target, prop, receiver) {
+        if (prop !== "records") {
+          const value = Reflect.get(target, prop, receiver);
+          return typeof value === "function" ? value.bind(target) : value;
+        }
+        return (collection: string) => {
+          const inner = target.records(collection);
+          if (collection !== "guard:controls") return inner;
+          return new Proxy(inner, {
+            get(innerTarget, innerProp, innerReceiver) {
+              if (innerProp === "get") {
+                return async () => {
+                  controlReads += 1;
+                  return controlReads === 1
+                    ? null
+                    : {
+                        id: "freeze",
+                        data: { frozen: true, by: "ops_yousef", at: new Date().toISOString() },
+                      };
+                };
+              }
+              const value = Reflect.get(innerTarget, innerProp, innerReceiver);
+              return typeof value === "function" ? value.bind(innerTarget) : value;
+            },
+          });
+        };
+      },
+    });
+    const guard = createGuard({ store: frozenAfterFirstRead });
+    const tools = new FixtureTools();
+    const bound = guard.bind(tools);
+    const read = call("host_read", { value: 1 }, "call_race");
+
+    await expect(bound.execute(read, context())).resolves.toMatchObject({ status: "blocked" });
+    // The tool was never dispatched, and the freeze WAS re-read at execute.
+    expect(tools.executions).toHaveLength(0);
+    expect(controlReads).toBeGreaterThanOrEqual(2);
+  });
+
+  it("returns the frozen block even when the audit write FAILS — the block is the truth, the audit is best-effort", async () => {
+    const sqlStore = await store();
+    // Set the switch straight through the store (guard.freeze() would itself try
+    // to audit and reject); then make every vendo_audit write throw.
+    await freezeRow(sqlStore, true, "console");
+    const auditWriteFails = new Proxy(sqlStore, {
+      get(target, prop, receiver) {
+        if (prop !== "records") {
+          const value = Reflect.get(target, prop, receiver);
+          return typeof value === "function" ? value.bind(target) : value;
+        }
+        return (collection: string) => {
+          const inner = target.records(collection);
+          if (collection !== "vendo_audit") return inner;
+          return new Proxy(inner, {
+            get(innerTarget, innerProp, innerReceiver) {
+              if (innerProp === "put") {
+                return async () => {
+                  throw new Error("vendo_audit unavailable");
+                };
+              }
+              const value = Reflect.get(innerTarget, innerProp, innerReceiver);
+              return typeof value === "function" ? value.bind(innerTarget) : value;
+            },
+          });
+        };
+      },
+    });
+    const guard = createGuard({ store: auditWriteFails });
+    const tools = new FixtureTools();
+    const bound = guard.bind(tools);
+    const read = call("host_read", { value: 1 }, "call_audit_down");
+
+    // check() resolves to the block — it does not reject with the store error.
+    await expect(guard.check(read, descriptor("read"), context())).resolves.toEqual({
+      action: "block",
+      reason: "vendo is frozen — nothing runs until it is unfrozen",
+      decidedBy: "frozen",
+    });
+    // …and execute() blocks too, without dispatching the tool.
+    await expect(bound.execute(read, context())).resolves.toMatchObject({ status: "blocked" });
+    expect(tools.executions).toHaveLength(0);
+  });
+
   it("fails CLOSED on a control row that exists but does not parse, and audits it", async () => {
     const sqlStore = await store();
     const guard = createGuard({ store: sqlStore });
