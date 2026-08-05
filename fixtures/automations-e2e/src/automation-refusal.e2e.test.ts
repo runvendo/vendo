@@ -11,9 +11,15 @@
  * told nothing useful. Refusing at authoring time is the only place the answer
  * can still be a sentence about their request.
  *
- * `host_invoices_send` is the case that matters: whoever graded it said `write`,
- * and the mechanical name vote says `destructive`. A check that trusted the
- * declared label alone would wave it through.
+ * `host_invoices_send` is the case that matters, and it is graded `destructive`
+ * because THE DECLARED LABEL IS THE TRUTH. This test was first written against a
+ * `write`-declared send tool that core's `mechanicalRisk` name vote overruled;
+ * that vote was deleted repo-wide with two-vote grading (#791), and
+ * `packages/actions/src/sync/protocol-facts.test.ts` now forbids concluding
+ * anything from a tool's name. So a mislabelled tool is a grading problem
+ * (`vendo sync`, `.vendo/overrides.json`), not the planner's — and what the
+ * planner owes is exactly what is asserted below: a labelled-irreversible tool is
+ * never offered, and an ask that needs one comes back as a sentence.
  */
 import { planAutomation, type AutomationPlanInput, type HostToolInfo } from "@vendoai/apps";
 import { UNATTENDED_DESTRUCTIVE_REASON } from "@vendoai/core";
@@ -73,9 +79,8 @@ const scriptedModel = (respond: (prompt: string) => string): LanguageModel => {
 
 const tools: HostToolInfo[] = [
   { name: "host_invoices_list", description: "List invoices", risk: "read" },
-  // Declared `write`, mechanically destructive — the disagreement the law resolves
-  // against the tool.
-  { name: SEND_TOOL, description: "Send invoice", risk: "write" },
+  // Graded destructive by whoever owns the catalog — the one signal the law reads.
+  { name: SEND_TOOL, description: "Send invoice", risk: "destructive" },
   { name: "vendo_apps_data_put", description: "Publish app records", risk: "write" },
 ];
 
