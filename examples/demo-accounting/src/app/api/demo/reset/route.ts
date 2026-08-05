@@ -3,7 +3,7 @@ import { NextResponse } from "next/server"
 import { dashboardMetrics } from "@/server/documents"
 import { resetStore } from "@/server/store"
 import { cadenceDemoUsers } from "@/server/users"
-import { seedDemoScript } from "@/demo-script/seed"
+import { demoSeedStatus, seedDemoScript } from "@/demo-script/seed"
 import { pregenerateChips } from "@/vendo/chips-seed"
 import { sweepDemoConnections } from "@/vendo/reset-connections"
 import { vendo } from "@/vendo/server"
@@ -34,32 +34,26 @@ export async function POST() {
   // failure) and re-lands on the next reset or the lock holder's boot seed. A
   // seed failure is logged, never fatal to the reset itself.
   //
-  // EXPLICIT PENDING RESPONSE: when the seed falls through to the background, the
-  // reset is only PARTIALLY done — the scripted automations are not in the store
-  // yet. Reporting a flat success would make the panel claim "Seed restored" and
-  // refresh into an empty automations list. So the response carries `seedPending`
-  // (a sibling of the metrics `data`, which stays the exact DashboardMetrics
-  // shape the dashboard returns — the ENG-202 contract), and the client keeps its
-  // status honest and re-reads the panel until the background seed lands.
+  // EXPLICIT STATUS RESPONSE: when the seed falls through to the background,
+  // the reset is only PARTIALLY done — the scripted automations are not in the
+  // store yet — and a seed that REJECTED will never land them at all.
+  // Reporting a flat success either way would make the panel claim "Seed
+  // restored" over an empty automations list. So the response carries
+  // `seedStatus` ("restored" | "pending" | "failed" — the durable status the
+  // seed module tracks, also served by GET /api/demo/seed-status for pollers),
+  // a sibling of the metrics `data` (which stays the exact DashboardMetrics
+  // shape the dashboard returns — the ENG-202 contract). A pending client
+  // re-polls the durable status until the background seed settles; a failed
+  // one says so instead of claiming success.
   const SEED_BUDGET_MS = 3_000
   const seeded = seedDemoScript()
-  let seedDone = false
-  // One handler settles both concerns: mark completion and log any failure. Also
-  // prevents an unhandled rejection if the seed rejects after the race times out.
-  seeded.then(
-    () => {
-      seedDone = true
-    },
-    (error: unknown) => {
-      // A rejected seed is SETTLED, not pending: mark it done so the response
-      // never reports a failed seed as `seedPending`. Left false, the client
-      // would poll for ~6s and then claim success while the scripted
-      // automations are absent. The failure is logged (and re-lands on the next
-      // reset or the lock holder's boot seed); the reset itself still succeeds.
-      seedDone = true
-      console.error("[cadence] automation re-seed failed:", error)
-    },
-  )
+  // Log the failure and swallow the rejection (also after the race times out —
+  // an unhandled rejection must not surface later). The failed status itself
+  // is tracked durably by the seed module; it re-lands on the next reset or
+  // the lock holder's boot seed, and the reset itself still succeeds.
+  seeded.catch((error: unknown) => {
+    console.error("[cadence] automation re-seed failed:", error)
+  })
   let seedTimer: ReturnType<typeof setTimeout> | undefined
   await Promise.race([
     seeded.catch(() => undefined),
@@ -68,7 +62,6 @@ export async function POST() {
     }),
   ])
   if (seedTimer !== undefined) clearTimeout(seedTimer)
-  const seedPending = !seedDone
   // Chip cache repair, fire-and-forget (a reset must answer fast —
   // generation takes minutes). Idempotent: intact cached apps are skipped.
   pregenerateChips().catch((error: unknown) => {
@@ -76,5 +69,5 @@ export async function POST() {
   })
   // VENDO-MIGRATION: the v0 umbrella owns its persistent grants and threads;
   // the frozen wire has no demo-only reset operation.
-  return NextResponse.json({ data: dashboardMetrics(), seedPending })
+  return NextResponse.json({ data: dashboardMetrics(), seedStatus: demoSeedStatus() })
 }

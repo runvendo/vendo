@@ -21,6 +21,7 @@ const vendoDir = resolve(repoRoot, "examples/demo-accounting/.vendo");
  *  the same intent as the maple loader's host_auth/host_demo/host_voice filter. */
 const EXCLUDED_TOOLS = new Set([
   "host_createVoiceSession",
+  "host_getDemoSeedStatus",
   "host_listDemoChips",
   "host_resetDemo",
   "host_simulateClientUpload",

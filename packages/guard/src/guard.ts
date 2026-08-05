@@ -133,6 +133,11 @@ interface CompletedDecision {
   lawWithheld: boolean;
 }
 
+/** The block reason a standing human denial resolves to — shared by the live
+ *  gate (#checkWithMetadata) and the rehearsal card (#rehearsalWriteVerdict)
+ *  so the two surfaces can never phrase the same refusal differently. */
+const STANDING_DENIAL_REASON = "you denied this";
+
 interface AuditQueryFilter {
   principal?: Principal;
   appId?: AppId;
@@ -930,7 +935,7 @@ class GuardImplementation implements VendoGuard {
     }
 
     if (draft.action === "ask" && await this.#standingDenial(call, effectiveDescriptor, ctx)) {
-      draft = { action: "block", reason: "you denied this", decidedBy: "denied" };
+      draft = { action: "block", reason: STANDING_DENIAL_REASON, decidedBy: "denied" };
     }
 
     if (draft.action === "ask") {
@@ -1339,13 +1344,15 @@ class GuardImplementation implements VendoGuard {
     const writes = (this.#writeCounts.get(runKey)?.count ?? 0)
       + (this.#rehearsalWrites.get(runKey)?.count ?? 0);
     const callsTripped = this.#peekCallsTripped(awayCtx.principal.subject);
-    const { decision, chargeableWrite, lawWithheld } = await this.#automationVerdict(
+    const verdict = await this.#automationVerdict(
       piped,
       call,
       descriptor,
       awayCtx,
       { callsTripped, writes },
     );
+    let decision = verdict.decision;
+    let lawWithheld = verdict.lawWithheld;
 
     // Charge the per-firing simulated-write budget for EVERY would-run non-read
     // — `chargeableWrite` counts `ungraded` too (risk !== "read"), matching the
@@ -1356,12 +1363,30 @@ class GuardImplementation implements VendoGuard {
     // otherwise a rehearsal reports several such actions runnable past
     // maxWritesPerRun that the enabled run would park. Charged to #rehearsalWrites
     // only, never the shared live #writeCounts.
-    if (chargeableWrite) {
-      const entry = this.#rehearsalWrites.get(runKey);
-      this.#rehearsalWrites.set(runKey, {
-        count: (entry?.count ?? 0) + 1,
-        touchedAt: Date.now(),
-      });
+    if (verdict.chargeableWrite) {
+      // Re-read the tally AFTER the async verdict and re-check the cap before
+      // committing — the mirror of the live path's concurrent-cap re-check in
+      // #checkWithMetadata. `writes` was snapshotted BEFORE the await, so two
+      // concurrent simulated writes on the same runKey can both read a count
+      // under the cap, both await the verdict, and — without this — both
+      // charge, reporting more actions runnable than maxWritesPerRun. The
+      // re-read and the set below have no await between them, so they are
+      // atomic on this single-threaded loop: the loser resolves to the breaker
+      // would-ask card (identical to #automationVerdict deciding on the live
+      // count), charges nothing, and — as in the live path — the law flag is
+      // cleared alongside the reclassification, because an ask IS the law's
+      // replacement pattern.
+      const current = (this.#writeCounts.get(runKey)?.count ?? 0)
+        + (this.#rehearsalWrites.get(runKey)?.count ?? 0);
+      if (current >= this.#maxWritesPerRun) {
+        decision = { action: "ask", decidedBy: "breaker" };
+        lawWithheld = false;
+      } else {
+        this.#rehearsalWrites.set(runKey, {
+          count: (this.#rehearsalWrites.get(runKey)?.count ?? 0) + 1,
+          touchedAt: Date.now(),
+        });
+      }
     }
 
     // THE LAW: an unattended withheld-from-unattended "run" (destructive or
@@ -1374,6 +1399,13 @@ class GuardImplementation implements VendoGuard {
       return { wouldAsk: false, grantsMissing: [], wouldBlock: decision.reason };
     }
     if (decision.action === "ask") {
+      // The live gate converts an ask the user has ALREADY denied into a hard
+      // "you denied this" block (#checkWithMetadata) — resolved through the
+      // same #standingDenial, in the same away context, so the card can never
+      // under-sell that real block as a recoverable approval.
+      if (await this.#standingDenial(call, descriptor, awayCtx)) {
+        return { wouldAsk: false, grantsMissing: [], wouldBlock: STANDING_DENIAL_REASON };
+      }
       // Only a plain policy/default ask is grant-suppressible; a confirmEach,
       // breaker, or org ask can never be cleared by minting a grant, so those
       // mirror dryRun by staying out of grantsMissing.

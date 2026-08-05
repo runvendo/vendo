@@ -55,9 +55,18 @@ export function transferMoney(input: TransferMoneyInput = {}): Transaction {
   // (e.g. the "Friday savings sweep" moving 10% into "Maple Savings"), also
   // CREDIT that account so an internal transfer is net-worth-neutral and the
   // money genuinely lands in savings — not debited from checking into thin air.
-  // A person/payee recipient matches no account and behaves exactly as before.
+  // The recipient may carry the account's masked suffix — the assistant's
+  // scripted transfer sends "Maple Savings ··8820", and UI copy renders
+  // "Maple Savings ·· 8820" — so both masked spellings match alongside the
+  // bare name. A person/payee recipient matches no account and behaves
+  // exactly as before.
+  const recipientKey = recipient.toLowerCase()
   const destination = store.accounts.find(
-    (a) => a.id !== accountId && a.name.trim().toLowerCase() === recipient.toLowerCase(),
+    (a) =>
+      a.id !== accountId
+      && [a.name, `${a.name} ··${a.mask}`, `${a.name} ·· ${a.mask}`].some(
+        (name) => name.trim().toLowerCase() === recipientKey,
+      ),
   )
   if (destination) {
     destination.balance += amount

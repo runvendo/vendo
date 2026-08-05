@@ -81,8 +81,12 @@ function app(id: string, name: string, automation = false): AppDocument {
       // Schedule-driven so it is genuinely rehearsable: production's rehearse()
       // (07-automations §1) takes schedule + steps triggers only, so a
       // host-event fixture would let the rehearsal e2e specs pass against a
-      // shape the real engine rejects.
-      ? { trigger: { on: { kind: "schedule" as const, cron: "0 9 * * 1" }, run: { kind: "steps" as const, steps: [
+      // shape the real engine rejects. DAILY on purpose: the rehearse fixture
+      // below emits one firing per day of the window, and the real engine
+      // replays a schedule at its own cadence — a weekly cron here would
+      // advertise a timeline (windowDays daily firings) production could
+      // never return for this app.
+      ? { trigger: { on: { kind: "schedule" as const, cron: "0 9 * * *" }, run: { kind: "steps" as const, steps: [
           { id: "renewals", tool: "host_listRenewals" },
           { id: "notify", tool: "slack_SLACK_SEND_MESSAGE" },
         ] } } }
@@ -1126,7 +1130,9 @@ export async function createWireServer(options: WireServerOptions = {}) {
                 id: "renewals",
                 tool: "host_listRenewals",
                 status: "ok",
-                window: { from: new Date(firedAt - 2 * day).toISOString(), to: new Date(firedAt).toISOString() },
+                // The engine pins a firing's window back to the PREVIOUS firing
+                // — one day at this fixture's daily cadence.
+                window: { from: new Date(firedAt - day).toISOString(), to: new Date(firedAt).toISOString() },
                 evaluatedOn: "window",
                 result: { totalCents: northwind + contoso, breakdown: [
                   { label: "Northwind Traders", cents: northwind },

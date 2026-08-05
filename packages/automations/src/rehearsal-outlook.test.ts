@@ -272,6 +272,62 @@ describe("rehearsal outlook", () => {
     expect(outlook).toMatchObject({ readSteps: 1, historicalReads: 0 });
   });
 
+  it("drops the control when no selectable window contains a firing (one-shot `at` out of range)", async () => {
+    // 41 days before NOW: outside even the widest (30d) window, so every
+    // replay would be empty no matter which window the user picks — the
+    // outlook must not advertise an action that opens an empty report.
+    const stale = app("app_oneshot_stale", {
+      on: { kind: "schedule", at: "2026-06-01T09:00:00.000Z" },
+      run: { kind: "steps", steps: [{ id: "read", tool: ledgerTool.name }] },
+    });
+    expect((await outlookOf(stale, [ledgerTool])).supported).toBe(false);
+
+    // …and rehearse() really does replay nothing for it.
+    const store = memoryStoreAdapter();
+    await seedApp(store, stale);
+    const report = await engine(store, [ledgerTool]).rehearse(stale.id, ctx());
+    expect(report.firings).toHaveLength(0);
+
+    // A future instant can never have "would have fired" either.
+    const future = app("app_oneshot_future", {
+      on: { kind: "schedule", at: "2026-08-01T09:00:00.000Z" },
+      run: { kind: "steps", steps: [{ id: "read", tool: ledgerTool.name }] },
+    });
+    expect((await outlookOf(future, [ledgerTool])).supported).toBe(false);
+
+    // Inside the 30-day window the one-shot IS worth offering.
+    const recent = app("app_oneshot_recent", {
+      on: { kind: "schedule", at: "2026-07-01T09:00:00.000Z" },
+      run: { kind: "steps", steps: [{ id: "read", tool: ledgerTool.name }] },
+    });
+    expect((await outlookOf(recent, [ledgerTool])).supported).toBe(true);
+  });
+
+  it("classifies steps through the live risk classifier, so counts match what rehearse() replays", async () => {
+    // A classifier that reclassifies the statically-read ledger tool as a
+    // write (a connector or arg-sensitive grader). rehearse() would simulate
+    // that step, so the outlook must count it as an acting step — advertising
+    // a historical read here would promise a row the report never contains.
+    const store = memoryStoreAdapter();
+    const doc = app("app_reclassified", {
+      on: { kind: "schedule", cron: "0 17 * * 5" },
+      run: { kind: "steps", steps: [{ id: "ledger", tool: ledgerTool.name }] },
+    });
+    await seedApp(store, doc);
+    const automations = createAutomations({
+      apps: {
+        call: async () => ({ status: "ok", output: {} }),
+        agentToolRisk: async () => "write" as const,
+      } as never,
+      tools: registry([ledgerTool]),
+      guard: new GuardDouble(),
+      store,
+      now: () => NOW,
+    });
+    const outlook = (await automations.list(ctx())).find(row => row.app.id === doc.id)!.rehearsal!;
+    expect(outlook).toEqual({ supported: true, actingSteps: 1, readSteps: 0, historicalReads: 0 });
+  });
+
   it("marks an ENABLED automation unsupported — and rehearse() really does reject it", async () => {
     const doc = app("app_live", {
       on: { kind: "schedule", cron: "0 18 * * 5" },

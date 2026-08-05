@@ -25,7 +25,20 @@ function CadenceThread(props: VendoThreadProps) {
 
 async function resetDemo(): Promise<void> {
   try {
-    await fetch(withBasePath("/api/demo/reset"), { method: "POST" });
+    const res = await fetch(withBasePath("/api/demo/reset"), { method: "POST" });
+    let status = ((await res.json().catch(() => null)) as { seedStatus?: string } | null)?.seedStatus;
+    // The scripted-automation seed can outlive the reset response (contended
+    // PGlite writer lock). Reloading the instant the store is back would land
+    // on an automations panel the background seed has not repopulated yet, so
+    // wait — bounded — for the durable seed status to settle before
+    // navigating. The `finally` reload still happens either way.
+    for (let attempt = 0; status === "pending" && attempt < 5; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      const poll = await fetch(withBasePath("/api/demo/seed-status"))
+        .then((r) => r.json() as Promise<{ seedStatus?: string }>)
+        .catch(() => null);
+      status = poll?.seedStatus ?? status;
+    }
   } finally {
     window.location.href = withBasePath("/");
   }

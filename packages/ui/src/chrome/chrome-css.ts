@@ -1269,20 +1269,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 /* Children must never compress — without this a bounded box crushes the cards to
    fit instead of overflowing into the scroll (mirrors .fl-msglist > *). */
 .fl-auto-scroll > * { flex-shrink: 0; }
-.fl-slot-empty { border: 1.5px dashed var(--vendo-border-strong); border-radius: var(--vendo-radius-lg);
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px;
-  padding: 24px; cursor: pointer; background: var(--vendo-surface); color: var(--vendo-fg-muted);
-  width: 100%; transition: border-color .12s, color .12s; }
-.fl-slot-empty:hover { border-color: var(--vendo-accent); color: var(--vendo-fg); }
-/* Trust screen mounted as a docked side panel beside the page chrome (ENG-193
-   §3 Moment 12) — the accounting demo's own overlay, not a portal (unlike
-   VendoOverlay's Cmd+K palette, which escapes the host's stacking context
-   entirely and so needs the near-max z-index above); this only needs to sit
-   above the page it's mounted inside. */
-.fl-trust-overlay { position: fixed; inset: 0; z-index: 50; background: rgba(0, 0, 0, .28);
-  display: flex; justify-content: flex-end; }
-.fl-trust-overlay > div { width: min(420px, 92vw); height: 100%; background: var(--vendo-bg);
-  box-shadow: -8px 0 24px rgba(0, 0, 0, .12); }
 
 /* ---------- generative dashboard slot (vendo-slot) ---------- */
 .fl-slot { position: relative; width: 100%; min-height: var(--fl-slot-min-h, 370px);

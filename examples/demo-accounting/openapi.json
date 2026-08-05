@@ -458,7 +458,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "As-of instant (ISO 8601): return the checklist as it stood then. Only uploads are timestamped, so a document uploaded after this reads as missing; verified/rejected state is always the current one. Omit for live data."
+            "description": "As-of instant (ISO 8601): return the deadline list as it stood then — each client's document progress and missing kinds reflect only uploads at or before this instant. Only uploads are timestamped, so a document uploaded after this reads as missing; verified/rejected state is always the current one. Omit for live data."
           }
         ]
       }
@@ -530,11 +530,47 @@
                     "data": {
                       "$ref": "#/components/schemas/DashboardMetrics"
                     },
-                    "seedPending": {
-                      "type": "boolean",
-                      "description": "True when the scripted automations are still landing in the background (a contended PGlite writer lock): the store is restored but the automations panel may be momentarily empty. The client re-reads until they appear."
+                    "seedStatus": {
+                      "type": "string",
+                      "enum": [
+                        "restored",
+                        "pending",
+                        "failed"
+                      ],
+                      "description": "Durable status of the scripted-automation re-seed. \"pending\" means the seed is still landing in the background (a contended PGlite writer lock): the store is restored but the automations panel may be momentarily empty - poll GET /api/demo/seed-status until it settles. \"failed\" means the seed rejected and the panel will stay empty until the next reset."
                     }
                   }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/demo/seed-status": {
+      "get": {
+        "operationId": "getDemoSeedStatus",
+        "summary": "Demo control: durable status of the latest scripted-automation seed. The reset response answers within a bounded budget, so a contended seed can still be landing after reset returned; poll this until it reports restored or failed.",
+        "responses": {
+          "200": {
+            "description": "The latest seed attempt's status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "seedStatus": {
+                      "type": "string",
+                      "enum": [
+                        "restored",
+                        "pending",
+                        "failed"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "seedStatus"
+                  ]
                 }
               }
             }

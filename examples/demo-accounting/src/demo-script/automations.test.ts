@@ -17,7 +17,12 @@ const docs = () => cadenceDemoAutomations(SUBJECT)
 const byKey = (key: "digest" | "review" | "chase") =>
   docs().find(d => d.id === demoAppId(key, SUBJECT))!
 
-/** Host tool risk bands, mirrored from .vendo/tools.json. */
+/** Host tool risk bands. The real risk source is .vendo/overrides.json —
+ *  tools.json extracts every tool as "ungraded" — and it only grades
+ *  host_setDocumentStatus (write) and host_sendClientMessage (destructive).
+ *  The other three names are HAND-MAINTAINED approximations of what those
+ *  demo-control tools do, with no override backing them; keep both lists in
+ *  step with overrides.json when grading changes. */
 const WRITE_TOOLS = ["host_setDocumentStatus", "host_simulateClientUpload", "host_createVoiceSession"]
 const DESTRUCTIVE_TOOLS = ["host_sendClientMessage", "host_resetDemo"]
 

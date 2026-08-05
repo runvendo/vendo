@@ -172,6 +172,67 @@ describe("rehearsal venue at the guard choke point", () => {
     expect(await guard.approvals.pending(alice)).toHaveLength(0);
   });
 
+  it("CONCURRENT simulated writes never over-commit the per-firing budget", async () => {
+    // `writes` is snapshotted before an async verdict: two concurrent simulated
+    // writes on one runKey can both read a count under the cap. The re-check
+    // before the charge (the mirror of the live path's) makes exactly one take
+    // the last slot; the loser resolves to the breaker would-ask card instead
+    // of a second rosy "would run" past maxWritesPerRun.
+    const store = createMemoryStore();
+    const guard = createGuard({ store, policy: demoPolicy, breakers: { maxWritesPerRun: 1 } });
+    await seedGrant(store, { descriptor: descriptor("write"), source: "automation", appId: "app_1", duration: "standing" });
+    const tools = new FixtureTools();
+    const bound = guard.bind(tools);
+
+    const outcomes = await Promise.all([
+      bound.execute(call("host_write", { v: 0 }, "call_race0"), rehearsalCtx),
+      bound.execute(call("host_write", { v: 1 }, "call_race1"), rehearsalCtx),
+    ]);
+    const verdicts = outcomes.map(
+      (outcome) => (outcome as { output: { wouldAsk: boolean } }).output,
+    );
+    expect(verdicts.filter((v) => v.wouldAsk === false)).toHaveLength(1);
+    expect(verdicts.filter((v) => v.wouldAsk === true)).toHaveLength(1);
+    // Still peek-only: nothing executed, nothing parked, live budget untouched.
+    expect(tools.executions).toHaveLength(0);
+    expect(await guard.approvals.pending(alice)).toHaveLength(0);
+  });
+
+  it("a STANDING DENIAL reports wouldBlock ('you denied this'), never a recoverable would-ask", async () => {
+    // The live gate converts an ask the user already denied into a hard block.
+    // The card must say the same — reporting wouldAsk + a missing grant would
+    // under-sell a refusal the enabled automation actually makes outright.
+    const store = createMemoryStore();
+    const guard = createGuard({ store, policy: demoPolicy });
+    const tools = new FixtureTools();
+    const bound = guard.bind(tools);
+    const awayCtx = context({ venue: "automation", presence: "away", appId: "app_1" });
+
+    // Park the write on the LIVE away path (the context the rehearsal verdict
+    // resolves against), then the human denies it.
+    const parked = await bound.execute(call("host_write", { v: 1 }, "call_denied"), awayCtx);
+    expect(parked.status).toBe("pending-approval");
+    await guard.approvals.decide(
+      (parked as { approvalId: string }).approvalId,
+      { approve: false },
+      alice,
+    );
+    // Live control: the enabled automation refuses this exact call outright.
+    const live = await bound.execute(call("host_write", { v: 1 }, "call_denied"), awayCtx);
+    expect(live).toMatchObject({ status: "blocked", reason: "you denied this" });
+
+    // The rehearsal card for the same call agrees with the live gate.
+    const outcome = await bound.execute(call("host_write", { v: 1 }, "call_denied"), rehearsalCtx);
+    expect(outcome.status).toBe("ok");
+    expect((outcome as { output: unknown }).output).toMatchObject({
+      rehearsalSimulated: true,
+      wouldAsk: false,
+      grantsMissing: [],
+      wouldBlock: "you denied this",
+    });
+    expect(tools.executions).toHaveLength(0);
+  });
+
   it("a CHAT-source grant does NOT suppress the away verdict: the enabled automation still asks", async () => {
     const store = createMemoryStore();
     const guard = createGuard({ store, policy: demoPolicy });

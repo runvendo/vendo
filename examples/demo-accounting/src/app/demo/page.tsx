@@ -41,13 +41,38 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
   return <span className="mb-1 block text-[11px] font-medium text-ink-faint">{children}</span>
 }
 
+type SeedStatus = "restored" | "pending" | "failed"
+
+/** Bounded poll of the durable seed status: resolves the first terminal
+ *  status a re-read finds, or "pending" when the budget runs out with the
+ *  seed still landing. `mountedRef` aborts the wait for a surface that is
+ *  gone (resolving null so callers stop without touching state). */
+async function pollSeedStatus(
+  mountedRef: React.RefObject<boolean>,
+  attempts = 5,
+): Promise<SeedStatus | null> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 2_000))
+    if (!mountedRef.current) return null
+    try {
+      const res = await fetch(withBasePath("/api/demo/seed-status"))
+      const body = (await res.json()) as { seedStatus?: SeedStatus }
+      if (body.seedStatus === "restored" || body.seedStatus === "failed") return body.seedStatus
+    } catch {
+      // A transient fetch failure just spends the attempt; the loop re-asks.
+    }
+  }
+  return "pending"
+}
+
 function ResetSection() {
   const { mutate: globalMutate } = useSWRConfig()
   const [busy, setBusy] = useState(false)
   const [metrics, setMetrics] = useState<ResetMetrics | null>(null)
+  const [seedStatus, setSeedStatus] = useState<SeedStatus>("restored")
   const [error, setError] = useState<string | null>(null)
   // Guards the bounded poll below: navigating away mid-reset must stop the
-  // ~6s revalidation loop, or globalMutate(() => true) keeps firing SWR
+  // revalidation loop, or globalMutate(() => true) keeps firing SWR
   // revalidation of every cached key after this component is gone.
   const mountedRef = useRef(true)
   useEffect(() => {
@@ -63,24 +88,27 @@ function ResetSection() {
     try {
       const { ok, json } = await post("/api/demo/reset")
       if (!ok) throw new Error("Reset failed")
-      const envelope = json as { data: ResetMetrics; seedPending?: boolean }
+      const envelope = json as { data: ResetMetrics; seedStatus?: SeedStatus }
       if (!mountedRef.current) return
       await globalMutate(() => true) // every open SWR view re-reads the restored store
-      if (envelope.seedPending) {
-        // The reset response said the scripted automations are still landing in
-        // the background (a contended PGlite writer lock): the store is restored
-        // but the panel would be empty right now. Stay "resetting" and re-read a
-        // few times, bounded, so the automations panel is populated before we
-        // report success — insert-if-absent means a late re-read only gains rows.
-        for (let attempt = 0; attempt < 3; attempt += 1) {
-          await new Promise((resolve) => setTimeout(resolve, 2_000))
-          // Bail if the component unmounted while we waited — no revalidating
-          // cached keys for a surface that is gone.
-          if (!mountedRef.current) return
-          await globalMutate(() => true)
-        }
+      let status: SeedStatus = envelope.seedStatus ?? "restored"
+      if (status === "pending") {
+        // The reset response said the scripted automations are still landing
+        // in the background (a contended PGlite writer lock): the store is
+        // restored but the panel would be empty right now. Stay "resetting"
+        // and poll the durable seed status — a POSITIVE completion signal,
+        // not a timer — so "Seed restored" is only ever claimed once a
+        // re-read confirmed the seed settled; a budget that runs out keeps
+        // the honest pending state instead.
+        status = (await pollSeedStatus(mountedRef)) ?? "pending"
+        // Bail if the component unmounted while we waited — no revalidating
+        // cached keys for a surface that is gone.
+        if (!mountedRef.current) return
+        await globalMutate(() => true) // pick up whatever the seed landed
       }
+      if (!mountedRef.current) return
       setMetrics(envelope.data)
+      setSeedStatus(status)
     } catch (err) {
       if (!mountedRef.current) return
       setMetrics(null)
@@ -109,7 +137,21 @@ function ResetSection() {
         )}
         {metrics && (
           <div className="rounded-lg border border-line bg-surface px-4 py-3">
-            <p className="text-[11px] font-medium text-status-verified">Seed restored</p>
+            {/* The headline only claims "restored" once the durable seed status
+                confirmed it — a pending seed stays honestly pending, a failed
+                one says so rather than presenting an empty automations panel
+                as success. */}
+            {seedStatus === "restored" ? (
+              <p className="text-[11px] font-medium text-status-verified">Seed restored</p>
+            ) : seedStatus === "pending" ? (
+              <p className="text-[11px] font-medium text-ink-faint">
+                Store restored — scripted automations are still landing; reopen the panel in a moment.
+              </p>
+            ) : (
+              <p className="text-[11px] font-medium text-status-overdue">
+                Store restored, but re-seeding the scripted automations failed — check the server log, then reset again.
+              </p>
+            )}
             <dl className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1.5 text-[12px] tabular-nums">
               {(
                 [

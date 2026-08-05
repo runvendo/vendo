@@ -1845,16 +1845,43 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     await writeApp(found.record, found.row);
   };
 
+  /** The SAME per-call risk resolution rehearse() executes under: the live
+   *  classifier (config.apps.agentToolRisk) in the enabled automation's away
+   *  context, with the static descriptor as the conservative fallback on a
+   *  throw/miss — mirrors the guard's #effectiveDescriptor. Shared by
+   *  rehearseFiring and the list() outlook so the two cannot drift. */
+  const effectiveStepRisk = async (
+    call: ToolCall,
+    descriptor: ToolDescriptor,
+    awayCtx: RunContext,
+  ): Promise<RiskLabel> => {
+    try {
+      const risk = await config.apps.agentToolRisk(call, awayCtx);
+      if (risk === "read" || risk === "write" || risk === "destructive") return risk;
+    } catch {
+      // The static descriptor is the conservative fallback — mirrors the
+      // guard's #effectiveDescriptor on a classifier throw.
+    }
+    return descriptor.risk;
+  };
+
   /** Resolved with the SAME predicates rehearse() applies (the supported-shape
-   *  check below mirrors its two guards; acceptsDateBounds is literally the
-   *  function it calls), so the outlook can never promise what the report
-   *  would not show. An unknown or `fn:` tool counts as neither read nor
-   *  action: rehearsal skips app functions outright. */
-  const rehearsalOutlook = (
+   *  check below mirrors its guards; acceptsDateBounds is literally the
+   *  function it calls, and per-step risk goes through the same
+   *  effectiveStepRisk resolver rehearseFiring uses), so the outlook can never
+   *  promise what the report would not show. An unknown or `fn:` tool counts
+   *  as neither read nor action: rehearsal skips app functions outright.
+   *
+   *  KNOWN LIMIT: the outlook classifies each step with its DECLARED args
+   *  (the unevaluated expressions) — a firing's resolved args do not exist
+   *  before the replay — so a classifier that grades risk off argument VALUES
+   *  can still grade a specific firing differently than this projection. */
+  const rehearsalOutlook = async (
     doc: AppDocument,
     byName: Map<string, ToolDescriptor>,
     enabled: boolean,
-  ): RehearsalOutlook => {
+    ctx: RunContext,
+  ): Promise<RehearsalOutlook> => {
     const trigger = doc.trigger;
     const steps = trigger !== undefined && trigger.run.kind === "steps" ? trigger.run.steps : [];
     // rehearse() throws `unknown tool in automation` on any non-`fn:` step it
@@ -1864,6 +1891,22 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     const hasUnknownTool = steps.some(
       (step) => !step.tool.startsWith("fn:") && !byName.has(step.tool),
     );
+    // A schedule whose WIDEST selectable window contains no firing — a
+    // one-shot `at` in the future or further back than 30 days, an `every`
+    // longer than the window — replays an empty report no matter which window
+    // the user picks, so the control is dropped rather than advertised. An
+    // unparseable schedule counts as no firing: rehearse() would reject it in
+    // validateTrigger before replaying anything.
+    let windowHasFiring = false;
+    if (trigger !== undefined && trigger.on.kind === "schedule") {
+      const to = now();
+      const from = new Date(to.getTime() - Math.max(...REHEARSAL_WINDOW_DAYS) * 86_400_000);
+      try {
+        windowHasFiring = rehearsalFireTimes(trigger.on, from, to).times.length > 0;
+      } catch {
+        windowHasFiring = false;
+      }
+    }
     // ENABLED automations are rejected by rehearse() (below): the replay anchors
     // `schedule.every` at the window end, which only matches a DISABLED row (no
     // enable cursor) — rehearsal is the pre-enable confidence step. Drop the
@@ -1872,7 +1915,13 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       && trigger.on.kind === "schedule"
       && trigger.run.kind === "steps"
       && !hasUnknownTool
-      && !enabled;
+      && !enabled
+      && windowHasFiring;
+    // Classify against the enabled automation's away context, exactly as
+    // rehearseFiring does — never the static descriptor alone, or a classifier
+    // that reclassifies a tool would let this outlook advertise acting/read
+    // counts the replayed report will not contain.
+    const awayCtx: RunContext = { ...ctx, venue: "automation", presence: "away", appId: doc.id };
     let actingSteps = 0;
     let readSteps = 0;
     let historicalReads = 0;
@@ -1880,11 +1929,16 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       if (step.tool.startsWith("fn:")) continue;
       const descriptor = byName.get(step.tool);
       if (descriptor === undefined) continue;
-      if (descriptor.risk === "write" || descriptor.risk === "destructive") {
+      const risk = await effectiveStepRisk(
+        { id: id("call_outlook_"), tool: step.tool, args: step.args ?? {} },
+        descriptor,
+        awayCtx,
+      );
+      if (risk === "write" || risk === "destructive") {
         actingSteps += 1;
         continue;
       }
-      if (descriptor.risk !== "read") continue;
+      if (risk !== "read") continue;
       readSteps += 1;
       // Historical only when rehearse() will actually pin the window: it fills
       // `from`/`to` with `??=`, so a step that hard-codes BOTH bounds re-reads
@@ -1989,7 +2043,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       entries.push({
         app: row.doc,
         enabled: row.enabled,
-        rehearsal: rehearsalOutlook(row.doc, byName, row.enabled),
+        rehearsal: await rehearsalOutlook(row.doc, byName, row.enabled, ctx),
         sponsor: { subject: sponsor, ...(display === undefined ? {} : { display }) },
         ...(stopped === undefined ? {} : { stopped }),
         ...(editors === undefined ? {} : { editors }),
@@ -2431,20 +2485,13 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     // The guard classifies read-vs-simulate against the enabled automation's
     // away context (venue "automation", presence "away") via the SAME resolver
     // wired into createGuard's resolveRisk (apps.agentToolRisk). Resolve risk
-    // the same way here so date-bound pinning and the read/window row agree with
-    // what the guard actually did — never pin a call the guard treats as a write,
-    // and always pin a real read the guard executes.
+    // the same way here — through the shared effectiveStepRisk the list()
+    // outlook also uses — so date-bound pinning and the read/window row agree
+    // with what the guard actually did: never pin a call the guard treats as a
+    // write, and always pin a real read the guard executes.
     const awayCtx: RunContext = { ...rehearsalCtx, venue: "automation", presence: "away" };
-    const effectiveRisk = async (call: ToolCall, descriptor: ToolDescriptor): Promise<RiskLabel> => {
-      try {
-        const risk = await config.apps.agentToolRisk(call, awayCtx);
-        if (risk === "read" || risk === "write" || risk === "destructive") return risk;
-      } catch {
-        // The static descriptor is the conservative fallback — mirrors the
-        // guard's #effectiveDescriptor on a classifier throw.
-      }
-      return descriptor.risk;
-    };
+    const effectiveRisk = (call: ToolCall, descriptor: ToolDescriptor): Promise<RiskLabel> =>
+      effectiveStepRisk(call, descriptor, awayCtx);
 
     const rows: RehearsalStep[] = [];
     const outputs: Record<string, Json> = {};

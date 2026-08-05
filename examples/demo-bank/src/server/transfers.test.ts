@@ -49,6 +49,29 @@ describe("transferMoney", () => {
     expect(credit.id).not.toBe(txn.id)
   })
 
+  it("matches a masked recipient — the assistant's scripted transfer names 'Maple Savings ··8820'", () => {
+    const store = getStore()
+    const checking = store.accounts.find((a) => a.kind === "checking")!
+    const savings = store.accounts.find((a) => a.kind === "savings")!
+    expect(savings.mask).toBe("8820")
+
+    // Both masked spellings in the wild: the demo script's tight "··8820" and
+    // the UI copy's spaced "·· 8820". Each must credit savings — an exact-name
+    // comparison here once debited checking into thin air.
+    for (const recipientName of [`${savings.name} ··${savings.mask}`, `${savings.name} ·· ${savings.mask}`]) {
+      const checkingBefore = checking.balance
+      const savingsBefore = savings.balance
+
+      transferMoney({ amount: 20000, recipientName })
+
+      expect(checking.balance).toBe(checkingBefore - 20000)
+      expect(savings.balance).toBe(savingsBefore + 20000)
+      const credit = listTransactions({ accountId: savings.id, limit: 1 }).data[0]
+      expect(credit.amount).toBe(20000)
+      expect(credit.descriptor).toBe("INTERNAL XFER")
+    }
+  })
+
   it("leaves a non-own-account recipient a pure debit (no destination credit)", () => {
     const store = getStore()
     const otherBalancesBefore = store.accounts

@@ -30,6 +30,11 @@ export function demoAppId(
 const SWEEP_SPEND =
   "steps.week.data.data[amount < 0 and category != 'transfer' and category != 'income']";
 
+/** The sweep amount — 10% of the week's spending, in whole cents. One
+ *  expression shared by the step's guard and its `amount` arg, so the guard
+ *  can never pass a value the amount predicate rejects. */
+const SWEEP_AMOUNT = `$round($abs($sum(${SWEEP_SPEND}.amount)) * 0.1)`;
+
 function weeklySummaryDocument(id: string): AppDocument {
   return {
     format: "vendo/app@1",
@@ -112,11 +117,13 @@ function savingsSweepDocument(id: string): AppDocument {
           {
             id: "sweep",
             tool: "host_transferMoney",
-            // A week with no spending would resolve `amount` to nothing, and
-            // the tool requires a positive integer — skip the firing instead.
-            if: `$count(${SWEEP_SPEND}) > 0`,
+            // A week with no spending would resolve `amount` to nothing, and a
+            // week whose spending rounds 10% below one cent would resolve it
+            // to 0 — the tool requires a positive integer number of cents, so
+            // both skip the firing instead of erroring.
+            if: `$count(${SWEEP_SPEND}) > 0 and ${SWEEP_AMOUNT} >= 1`,
             args: {
-              amount: `$round($abs($sum(${SWEEP_SPEND}.amount)) * 0.1)`,
+              amount: SWEEP_AMOUNT,
               recipient_name: "'Maple Savings'",
               memo:
                 `'Auto-sweep: 10% of ' & $formatNumber($abs($sum(${SWEEP_SPEND}.amount)) / 100, '#,##0.00')`

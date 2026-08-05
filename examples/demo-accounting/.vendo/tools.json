@@ -26,7 +26,7 @@
         "method": "POST",
         "path": "/cadence/api/voice"
       },
-      "srcHash": "sha256:fa2689c1aa3a55288dd4a897413e5bea32e73ccdc6a1d9fff6bb105be8b6dfe2"
+      "srcHash": "sha256:29effa01006b4470f547300aab703daaef79ec5312e2eb87e4930ac3cf4b20ba"
     },
     {
       "name": "host_getClient",
@@ -129,7 +129,7 @@
         "method": "GET",
         "path": "/cadence/api/clients/{id}"
       },
-      "srcHash": "sha256:fa2689c1aa3a55288dd4a897413e5bea32e73ccdc6a1d9fff6bb105be8b6dfe2"
+      "srcHash": "sha256:29effa01006b4470f547300aab703daaef79ec5312e2eb87e4930ac3cf4b20ba"
     },
     {
       "name": "host_getDashboard",
@@ -191,7 +191,39 @@
         "method": "GET",
         "path": "/cadence/api/dashboard"
       },
-      "srcHash": "sha256:fa2689c1aa3a55288dd4a897413e5bea32e73ccdc6a1d9fff6bb105be8b6dfe2"
+      "srcHash": "sha256:29effa01006b4470f547300aab703daaef79ec5312e2eb87e4930ac3cf4b20ba"
+    },
+    {
+      "name": "host_getDemoSeedStatus",
+      "description": "Demo control: durable status of the latest scripted-automation seed. The reset response answers within a bounded budget, so a contended seed can still be landing after reset returned; poll this until it reports restored or failed.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "seedStatus": {
+            "type": "string",
+            "enum": [
+              "restored",
+              "pending",
+              "failed"
+            ]
+          }
+        },
+        "required": [
+          "seedStatus"
+        ]
+      },
+      "risk": "ungraded",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "getDemoSeedStatus",
+        "method": "GET",
+        "path": "/cadence/api/demo/seed-status"
+      },
+      "srcHash": "sha256:29effa01006b4470f547300aab703daaef79ec5312e2eb87e4930ac3cf4b20ba"
     },
     {
       "name": "host_listActivity",
@@ -256,7 +288,7 @@
         "method": "GET",
         "path": "/cadence/api/activity"
       },
-      "srcHash": "sha256:fa2689c1aa3a55288dd4a897413e5bea32e73ccdc6a1d9fff6bb105be8b6dfe2"
+      "srcHash": "sha256:29effa01006b4470f547300aab703daaef79ec5312e2eb87e4930ac3cf4b20ba"
     },
     {
       "name": "host_listClientDocuments",
@@ -339,7 +371,7 @@
         "method": "GET",
         "path": "/cadence/api/clients/{id}/documents"
       },
-      "srcHash": "sha256:fa2689c1aa3a55288dd4a897413e5bea32e73ccdc6a1d9fff6bb105be8b6dfe2"
+      "srcHash": "sha256:29effa01006b4470f547300aab703daaef79ec5312e2eb87e4930ac3cf4b20ba"
     },
     {
       "name": "host_listClientMessages",
@@ -400,7 +432,7 @@
         "method": "GET",
         "path": "/cadence/api/clients/{id}/messages"
       },
-      "srcHash": "sha256:fa2689c1aa3a55288dd4a897413e5bea32e73ccdc6a1d9fff6bb105be8b6dfe2"
+      "srcHash": "sha256:29effa01006b4470f547300aab703daaef79ec5312e2eb87e4930ac3cf4b20ba"
     },
     {
       "name": "host_listClients",
@@ -510,7 +542,7 @@
         "method": "GET",
         "path": "/cadence/api/clients"
       },
-      "srcHash": "sha256:fa2689c1aa3a55288dd4a897413e5bea32e73ccdc6a1d9fff6bb105be8b6dfe2"
+      "srcHash": "sha256:29effa01006b4470f547300aab703daaef79ec5312e2eb87e4930ac3cf4b20ba"
     },
     {
       "name": "host_listDeadlines",
@@ -524,7 +556,7 @@
           },
           "to": {
             "type": "string",
-            "description": "As-of instant (ISO 8601): return the checklist as it stood then. Only uploads are timestamped, so a document uploaded after this reads as missing; verified/rejected state is always the current one. Omit for live data."
+            "description": "As-of instant (ISO 8601): return the deadline list as it stood then — each client's document progress and missing kinds reflect only uploads at or before this instant. Only uploads are timestamped, so a document uploaded after this reads as missing; verified/rejected state is always the current one. Omit for live data."
           }
         }
       },
@@ -633,7 +665,7 @@
         "method": "GET",
         "path": "/cadence/api/deadlines"
       },
-      "srcHash": "sha256:fa2689c1aa3a55288dd4a897413e5bea32e73ccdc6a1d9fff6bb105be8b6dfe2"
+      "srcHash": "sha256:29effa01006b4470f547300aab703daaef79ec5312e2eb87e4930ac3cf4b20ba"
     },
     {
       "name": "host_listDemoChips",
@@ -680,7 +712,7 @@
         "method": "GET",
         "path": "/cadence/api/demo/chips"
       },
-      "srcHash": "sha256:fa2689c1aa3a55288dd4a897413e5bea32e73ccdc6a1d9fff6bb105be8b6dfe2"
+      "srcHash": "sha256:29effa01006b4470f547300aab703daaef79ec5312e2eb87e4930ac3cf4b20ba"
     },
     {
       "name": "host_resetDemo",
@@ -732,6 +764,15 @@
                 }
               }
             }
+          },
+          "seedStatus": {
+            "type": "string",
+            "enum": [
+              "restored",
+              "pending",
+              "failed"
+            ],
+            "description": "Durable status of the scripted-automation re-seed. \"pending\" means the seed is still landing in the background (a contended PGlite writer lock): the store is restored but the automations panel may be momentarily empty - poll GET /api/demo/seed-status until it settles. \"failed\" means the seed rejected and the panel will stay empty until the next reset."
           }
         }
       },
@@ -742,7 +783,7 @@
         "method": "POST",
         "path": "/cadence/api/demo/reset"
       },
-      "srcHash": "sha256:fa2689c1aa3a55288dd4a897413e5bea32e73ccdc6a1d9fff6bb105be8b6dfe2"
+      "srcHash": "sha256:29effa01006b4470f547300aab703daaef79ec5312e2eb87e4930ac3cf4b20ba"
     },
     {
       "name": "host_sendClientMessage",
@@ -817,7 +858,7 @@
         "method": "POST",
         "path": "/cadence/api/clients/{id}/messages"
       },
-      "srcHash": "sha256:fa2689c1aa3a55288dd4a897413e5bea32e73ccdc6a1d9fff6bb105be8b6dfe2"
+      "srcHash": "sha256:29effa01006b4470f547300aab703daaef79ec5312e2eb87e4930ac3cf4b20ba"
     },
     {
       "name": "host_setDocumentStatus",
@@ -920,7 +961,7 @@
         "method": "POST",
         "path": "/cadence/api/clients/{id}/documents/{docId}/status"
       },
-      "srcHash": "sha256:fa2689c1aa3a55288dd4a897413e5bea32e73ccdc6a1d9fff6bb105be8b6dfe2"
+      "srcHash": "sha256:29effa01006b4470f547300aab703daaef79ec5312e2eb87e4930ac3cf4b20ba"
     },
     {
       "name": "host_simulateClientUpload",
@@ -1052,7 +1093,7 @@
         "method": "POST",
         "path": "/cadence/api/demo/simulate/upload"
       },
-      "srcHash": "sha256:fa2689c1aa3a55288dd4a897413e5bea32e73ccdc6a1d9fff6bb105be8b6dfe2"
+      "srcHash": "sha256:29effa01006b4470f547300aab703daaef79ec5312e2eb87e4930ac3cf4b20ba"
     }
   ]
 }

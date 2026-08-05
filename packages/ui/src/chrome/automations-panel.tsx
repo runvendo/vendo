@@ -260,6 +260,7 @@ function RehearsalTimeline({
   return (
     <div
       className="fl-auto-flow"
+      role="group"
       aria-label={`Rehearsal for ${name}`}
       style={{ alignItems: "stretch", flexDirection: "column", gap: 10 }}
     >
@@ -314,8 +315,10 @@ function RehearsalTimeline({
             return (
               <article key={key}>
                 <div className="fl-act-row">
+                  {/* `skipped` keeps the bare (inherited-color) icon: a green
+                      tick beside a visible "skipped" verdict would contradict it. */}
                   <span
-                    className={`fl-act-ic ${firing.status === "error" ? "fl-act-x" : "fl-act-tick"}`}
+                    className={`fl-act-ic ${firing.status === "fired" ? "fl-act-tick" : firing.status === "error" ? "fl-act-x" : ""}`}
                     aria-hidden="true"
                   >
                     {firing.status === "fired" ? "✓" : firing.status === "skipped" ? "–" : "✕"}
