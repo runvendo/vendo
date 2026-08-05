@@ -81,7 +81,7 @@ const rewriteSegment = (
     // otherwise they are reshape ops or plain text and stay untouched.
     if (!tool.includes(".") && !knownTools.has(tool)) continue;
     const parenOpen = m.index + m[0].length - 1;
-    // A reshape pipe (`| format(...)`) is never a data source; skip if the
+    // A reshape call (`format(...)`) is never a data source; skip if the
     // token is immediately preceded by `|`.
     const before = seg.slice(0, m.index).replace(/\s+$/, "");
     if (before.endsWith("|")) continue;

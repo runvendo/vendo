@@ -1608,9 +1608,9 @@ const SHAPE_DATA: Record<string, Json> = {
 const SHAPE_WIRE = `<App name="Revenue by month">
   <Query id="revenue" tool="metrics_revenue"/>
   <Stack gap={14}>
-    <Text text="Shape-aware binding: reshape pipes, no code island" variant="heading"/>
-    <Stat label="Total revenue" value={revenue.rows | sum(revenue) | format(currency)}/>
-    <Table caption="Monthly revenue" rows={revenue.rows | format(revenue, currency) | rename(month, Month, revenue, Revenue)}/>
+    <Text text="Shape-aware binding: reshape calls, no code island" variant="heading"/>
+    <Stat label="Total revenue" value={sum(revenue.rows, "revenue")}/>
+    <Table caption="Monthly revenue" rows={rename(format(revenue.rows, "revenue", "currency"), "month", "Month", "revenue", "Revenue")}/>
   </Stack>
 </App>`;
 
@@ -1620,7 +1620,7 @@ const SHAPE_WIRE_BROKEN = `<App name="Revenue by month (mis-bound)">
   <Query id="revenue" tool="metrics_revenue"/>
   <Stack gap={14}>
     <Text text="Mis-bound reshape: contained at render, compile error with shape cards" variant="heading"/>
-    <Table caption="Broken binding" rows={revenue.rows | asPoints(period, amount)}/>
+    <Table caption="Broken binding" rows={asPoints(revenue.rows, "period", "amount")}/>
   </Stack>
 </App>`;
 

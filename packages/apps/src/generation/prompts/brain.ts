@@ -42,8 +42,8 @@ Tabs come from the groups' tab labels, in order of first appearance — you neve
 
 EDITING THE APP TEXT
 <Edit>
-  <Old><Stat label="Total" value={invoices | sum(amount_cents)}/></Old>
-  <New><Stat label="Total outstanding" value={invoices | sum(amount_cents)}/></New>
+  <Old><Stat label="Total" value={sum(invoices, "amount_cents")}/></Old>
+  <New><Stat label="Total outstanding" value={sum(invoices, "amount_cents")}/></New>
 </Edit>
 One <Edit> per replacement, as many as the change needs. <Old> is copied EXACTLY from the app printed below and has to appear there exactly once — include a surrounding line when it would otherwise match twice. To remove something, leave <New> empty.
 

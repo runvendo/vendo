@@ -161,9 +161,10 @@ Tell each worker:
   Text you write yourself is fine for labels and headings, never for data.
 - **Never do the arithmetic yourself, and never paste in a value you fetched.**
   Write the calculation and let it compute fresh on every render:
-  \`value={sum(transactions.amount_cents)}\`. Inside those braces: field paths,
-  numbers, \`+ - * / ( )\`, and \`sum\`, \`count\`, \`average\`, \`min\`, \`max\`,
-  \`difference\`, \`days_until\`, \`group_by\`. Nothing else.
+  \`value={sum(transactions, "amount_cents")}\`. Inside those braces: field paths,
+  numbers, quoted strings, \`+ - * / ( )\`, and \`sum\`, \`count\`, \`average\`,
+  \`min\`, \`max\`, \`difference\`, \`days_until\`, \`group_by\`. Nothing else. Every
+  aggregate names the field it reads, with the rows first.
 - **Never specify a font, a colour, or anything about the branding.** The
   components already carry this product's own look; anything you add fights it.
 - When a part's data is genuinely missing, let the component render its own empty
@@ -195,8 +196,8 @@ the same change is written as an edit block, under the same rule:
 
 \`\`\`
 <Edit>
-  <Old><Stat label="Total" value={sum(invoices.amount_cents)}/></Old>
-  <New><Stat label="Total outstanding" value={sum(invoices.amount_cents)}/></New>
+  <Old><Stat label="Total" value={sum(invoices, "amount_cents")}/></Old>
+  <New><Stat label="Total outstanding" value={sum(invoices, "amount_cents")}/></New>
 </Edit>
 \`\`\`
 

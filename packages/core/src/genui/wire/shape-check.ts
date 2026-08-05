@@ -72,7 +72,7 @@ const optionRequired = (component: string, prop: string): readonly string[] | nu
 
 /** The prewired props that render their bound value as TEXT (the display
  *  slots): an object or array landing in one renders raw JSON braces — the
- *  vendo-v2-cells class. Routed to scalar-field / `| template(...)` repair. */
+ *  vendo-v2-cells class. Routed to scalar-field / `template(...)` repair. */
 const DISPLAY_TEXT_PROPS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ["Text", new Set(["text"])],
   ["Stat", new Set(["value"])],
@@ -145,7 +145,7 @@ const displaySlotMiss = (shape: ShapeType, prop: string): MissReport | null => {
   if (shape.kind !== "object" && shape.kind !== "array") return null;
   const hint = shape.kind === "object"
     ? "bind ONE of its scalar fields instead (extend the binding path, e.g. .name)"
-    : "reduce it with an aggregate (| count(), | sum(field)) or bind a single row's scalar field";
+    : 'reduce it with an aggregate (count(rows), sum(rows, "field")) or bind a single row\'s scalar field';
   return {
     message: `this binds an ${shape.kind} into the "${prop}" display slot — it renders as raw JSON braces; ${hint}`,
     ...(shape.kind === "object" ? { available: Object.keys(shape.fields) } : {}),

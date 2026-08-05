@@ -31,7 +31,7 @@ const objSchema = (props: Record<string, unknown>, required: string[] = []) =>
 
 const placeInput = objSchema({
   props: { type: "object", description: "Literal prop values (strings/numbers/booleans/arrays), e.g. {label:\"Total\", format:\"money\"} or columns for a table.", additionalProperties: true },
-  bindings: { type: "object", description: "prop -> data reference string like \"invoicesList.data\" or \"invoicesList.totalCents\" (optionally with a | format(...) pipe). The referenced query must be declared via set_query.", additionalProperties: { type: "string" } },
+  bindings: { type: "object", description: "prop -> data reference string like \"invoicesList.data\" or \"invoicesList.totalCents\" (optionally wrapped in a format(...) call). The referenced query must be declared via set_query.", additionalProperties: { type: "string" } },
   actions: { type: "object", description: "prop -> host tool name for on* actions, e.g. {onClick:\"invoices.sendReminders\"}.", additionalProperties: { type: "string" } },
   actionPayloads: { type: "object", description: "prop -> data reference string for the action payload, e.g. {onClick:\"invoicesList.data.0.id\"}.", additionalProperties: { type: "string" } },
 });

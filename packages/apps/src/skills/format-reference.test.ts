@@ -73,10 +73,15 @@ describe("the reference only names things that exist", () => {
       .filter((op) => (RESHAPE_OPS as readonly string[]).includes(op));
 
     expect(documented).toContain("pick");
-    expect(documented).toContain("avg");
+    expect(documented).toContain("format");
     // Deprecated by the dialect retirement — parsed for stored apps, never taught.
     expect(VENDO_FORMAT_REFERENCE).not.toContain("asOptions");
     expect(VENDO_FORMAT_REFERENCE).not.toContain("currencyCents");
+    // v3 §5 (D1/D2): the aggregates retired from the reshape vocabulary with
+    // the pipe. The reference teaches ONE of each, in the call grammar.
+    expect(documented).not.toContain("avg");
+    expect(VENDO_FORMAT_REFERENCE).not.toContain("| avg");
+    expect(VENDO_FORMAT_REFERENCE).toContain('sum(rows, "field")');
   });
 
   it("teaches the plan's real element set and no invented one", () => {

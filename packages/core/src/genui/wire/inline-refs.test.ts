@@ -27,8 +27,8 @@ describe("expandInlineRefs", () => {
     expect(out).toContain("tools.clients.search({q:\"a\"})");
   });
 
-  it("does not touch reshape pipes like format(...)", () => {
-    const wire = `<App name="X"><Table rows={invoicesList.data | format(amountCents, currencyCents)} columns={["c"]}/></App>`;
+  it("does not touch reshape calls like format(...)", () => {
+    const wire = `<App name="X"><Table rows={format(invoicesList.data, "amountCents", "currencyCents")} columns={["c"]}/></App>`;
     const { minted } = expandInlineRefs(wire);
     expect(minted).toBe(0);
   });

@@ -131,7 +131,7 @@ export const computeWireMetrics = (
       if (field && (CENTS.test(field) || DATE.test(field)) && !hasReshape(props.value ?? props.text ?? props.label)) formatMiss++;
     }
     if (n.component === "DataTable" || n.component === "Table") {
-      // Fair to both dialects: a $reshape pipe on rows (`rows={x | format(...)}`)
+      // Fair to both dialects: a $reshape on rows (`rows={format(x, ...)}`)
       // formats in place, so only count column misses when there is none.
       if (!hasReshape(props.rows)) formatMiss += tableColumnFormatMisses(props.columns);
     }

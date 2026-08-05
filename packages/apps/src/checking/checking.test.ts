@@ -217,19 +217,19 @@ describe("built-in fact checks", () => {
   it("names the real fields when a computed value reaches a field the tool shape has not got", async () => {
     const layer = createCheckingLayer({ deps: deps() });
     const findings = await layer.run(inputFor(
-      '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack><Stat value={sum(invoices.data.amountCent)}/></Stack></App>',
+      '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack><Stat value={sum(invoices.data, "amountCent")}/></Stack></App>',
     ));
 
     const finding = findings.find(({ where }) => where.includes('prop "value"'));
     expect(finding?.severity).toBe("block");
-    expect(finding?.message).toContain("computes {sum(invoices.data.amountCent)}");
+    expect(finding?.message).toContain('computes {sum(invoices.data, "amountCent")}');
     expect(finding?.message).toContain("the real fields are: id, client, amountCents");
   });
 
   it("names the numeric fields when a computed value sums a string field", async () => {
     const layer = createCheckingLayer({ deps: deps() });
     const findings = await layer.run(inputFor(
-      '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack><Stat value={sum(invoices.data.client) / count(invoices.data)}/></Stack></App>',
+      '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack><Stat value={sum(invoices.data, "client") / count(invoices.data)}/></Stack></App>',
     ));
 
     const finding = findings.find(({ where }) => where.includes('prop "value"'));
@@ -245,7 +245,7 @@ describe("built-in fact checks", () => {
     const app = documentFrom(cleanApp);
     const tree = structuredClone(app.tree) as NonNullable<AppDocument["tree"]>;
     const table = tree.nodes.find((node) => node.component === "Table");
-    (table as { props?: Record<string, unknown> }).props = { rows: { $expr: "sum(invoices.data.amountCents) + * 2" } };
+    (table as { props?: Record<string, unknown> }).props = { rows: { $expr: 'sum(invoices.data, "amountCents") + * 2' } };
     const findings = await layer.run({ document: { ...app, tree }, request: "invoices" });
 
     const finding = findings.find(({ where }) => where.includes('prop "rows"'));
@@ -256,7 +256,7 @@ describe("built-in fact checks", () => {
   it("passes a computed value whose fields and types all check out", async () => {
     const layer = createCheckingLayer({ deps: deps() });
     const findings = await layer.run(inputFor(
-      '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack><Stat value={sum(invoices.data.amountCents) / count(invoices.data)}/></Stack></App>',
+      '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack><Stat value={sum(invoices.data, "amountCents") / count(invoices.data)}/></Stack></App>',
     ));
 
     expect(findings).toEqual([]);
