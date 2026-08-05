@@ -41,7 +41,7 @@ import {
   unusedModels,
   userMessage,
 } from "../test-doubles.test-util.js";
-import { claudeCode } from "./index.js";
+import { BEAT_PHASES, claudeCode } from "./index.js";
 import { disposeSessionMachines, type SandboxAdapterLike } from "./box.js";
 
 const encoder = new TextEncoder();
@@ -196,6 +196,25 @@ describe("beats reach the wire from inside the box (§3.4)", () => {
     expect(said).not.toMatch(/InvoiceTable|\.tsx|app\.vendo|vite|TodoWrite|Bash|claude-test|sess_wire/);
     // And no beat invents an app it was never told about.
     for (const beat of beats) expect(beat).not.toHaveProperty("appId");
+  });
+
+  /**
+   * The runtime half of the mirror seam. `BEAT_PHASES` is the COMPILE-TIME pin —
+   * keyed by core's union, valued as the loop's — and it is the only reason the
+   * duplicated union is safe. Its compile-time teeth were verified red in both
+   * directions; this holds its spelling at runtime, and holds the wire to it.
+   */
+  test("the phases on the wire are the pinned six, spelled the pinned way", async () => {
+    expect(Object.keys(BEAT_PHASES).sort()).toEqual([
+      "assembling", "building", "checking", "finishing", "planning", "understanding",
+    ]);
+    // The map is an identity: a typo on either side of a pair would mean the box
+    // emitted a phase string no receiver dispatches on.
+    for (const [core, loop] of Object.entries(BEAT_PHASES)) expect(loop).toBe(core);
+
+    const beats = await beatsOnTheWire([{ use: { name: "TodoWrite" } }, { use: { name: "Write" } }]);
+    expect(beats.length).toBeGreaterThan(0);
+    for (const beat of beats) expect(Object.keys(BEAT_PHASES)).toContain(beat["phase"]);
   });
 
   test("a beat is EPHEMERAL — the transcript never keeps one", async () => {

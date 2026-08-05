@@ -234,46 +234,42 @@ describe("a beat is our copy, never the model's", () => {
 });
 
 /**
- * THE MIRROR SEAM.
+ * THE MIRROR SEAM — and where its teeth actually are.
  *
- * `claude-turn.ts` imports NOTHING (its module header explains why: the emitted
- * `dist/claude-turn.js` is copied verbatim into a machine image, and a module that
- * named its dependencies was reachable from every composed host's build graph). So
- * `BeatPhase` is restated there structurally rather than imported from core.
+ * `claude-turn.ts` restates core's `BeatPhase` instead of importing it, because
+ * that file imports NOTHING (module header: the emitted `dist/claude-turn.js` is
+ * copied verbatim into a machine image).
  *
- * `claude-code/index.ts` yields these events straight into `HarnessEvent`, so
- * TypeScript already compares the two unions on every build — but it does it 200
- * lines away, as an inference failure nobody can read. These two records make the
- * drift fail HERE, by name, in both directions.
+ * The COMPILE-TIME half of that seam deliberately does not live here. Nothing in
+ * this repo typechecks a test file — `packages/apps/tsconfig.json` excludes
+ * `src/**` + `*.test.ts`, no package defines a `lint` script, and vitest is not
+ * run with `--typecheck` — so a type-level assertion in this file would be pure
+ * decoration. It lives in gated production code instead: `BEAT_PHASES` in
+ * `harnesses/src/claude-code/index.ts` fails when CORE gains a phase the mirror
+ * lacks, and the `yield` beside it fails in the other direction. Both were
+ * verified red by adding a seventh phase to each side in turn.
+ *
+ * What IS worth asserting here is the runtime fact: the phases this loop actually
+ * puts on the wire are members of the contract's six, spelled the contract's way.
  */
-describe("the phase union cannot drift from core's", () => {
-  /** Keyed by every member of CORE's union: a seventh phase in core leaves a
-   *  missing key here. Valued as the MIRROR's: a member core has and the mirror
-   *  lacks fails on the value. */
-  const MIRRORS_CORE: Record<ContractBeatPhase, BeatPhase> = {
-    understanding: "understanding",
-    planning: "planning",
-    assembling: "assembling",
-    building: "building",
-    checking: "checking",
-    finishing: "finishing",
-  };
+describe("every phase this loop emits is one of the contract's six", () => {
+  /** Spelled out as a value, following `harnesses/src/beats.test.ts`'s own
+   *  precedent, so a seventh cannot arrive without this line changing on purpose. */
+  const ARC: ContractBeatPhase[] = [
+    "understanding", "planning", "assembling", "building", "checking", "finishing",
+  ];
 
-  /** The other direction: a member the MIRROR has and core does not. */
-  const CORE_MIRRORS: Record<BeatPhase, ContractBeatPhase> = MIRRORS_CORE;
-
-  test("the six member strings are the same six, spelled the same way", () => {
-    expect(Object.keys(MIRRORS_CORE).sort()).toEqual([
-      "assembling", "building", "checking", "finishing", "planning", "understanding",
-    ]);
-    expect(Object.keys(CORE_MIRRORS).sort()).toEqual(Object.keys(MIRRORS_CORE).sort());
+  test("nothing outside the arc reaches the wire", async () => {
+    const events = await run([[{ use: { name: "TodoWrite" } }, { use: { name: "Write" } }]]);
+    const emitted = beats(events).map(([phase]) => phase);
+    expect(emitted.length).toBeGreaterThan(0);
+    for (const phase of emitted) expect(ARC).toContain(phase);
   });
 
-  test("every phase this loop emits is a member of the contract's six", async () => {
+  test("the beats arrive in the order the arc runs", async () => {
     const events = await run([[{ use: { name: "TodoWrite" } }, { use: { name: "Write" } }]]);
-    for (const [phase] of beats(events)) {
-      expect(Object.keys(MIRRORS_CORE)).toContain(phase);
-    }
+    const positions = beats(events).map(([phase]) => ARC.indexOf(phase as ContractBeatPhase));
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
   });
 });
 
