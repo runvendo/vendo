@@ -34,7 +34,6 @@ import { createHarnessTurns, type HarnessTurns } from "./harness-turn.js";
 // config listing, which is compiled against these very interfaces, can too).
 export type { HarnessTurns } from "./harness-turn.js";
 export type { AppsConfig } from "@vendoai/apps";
-import { createTurnCredentials, type TurnCredentials } from "./turn-credentials.js";
 import { warnDeprecatedConfigKeys } from "./config-keys.js";
 import { orgPolicyPath, orgPolicyResolver, workspacePolicySource } from "./org-policy.js";
 import { createPromoteApp } from "./promote-app.js";
@@ -98,7 +97,14 @@ import {
   knowledgeIndexResolver,
   type KnowledgeToolsOptions,
 } from "@vendoai/knowledge";
-import { createMcpDoor, type AppsPort, type HostOAuthAdapter, type McpDoor } from "@vendoai/mcp";
+import {
+  createMcpDoor,
+  createTurnCredentials,
+  type AppsPort,
+  type HostOAuthAdapter,
+  type McpDoor,
+  type TurnCredentials,
+} from "@vendoai/mcp";
 import {
   adoptEphemeralSubject,
   appAccess,

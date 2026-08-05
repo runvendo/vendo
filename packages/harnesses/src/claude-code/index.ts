@@ -287,7 +287,7 @@ const readState = (raw: string | undefined): ClaudeState => {
  * Not per turn, because the session's `mcpServers` headers are fixed when the
  * SDK session opens and a warm machine never reopens. That is safe because the
  * credential's AUTHORITY is per turn regardless: it resolves to the turn in
- * flight on this thread and to nothing between turns (`turn-credentials.ts`).
+ * flight on this thread and to nothing between turns (mcp/turn-credential.ts).
  * A machine that is not carrying a session is about to open a fresh one, so its
  * old credential is revoked here rather than left to the registry's idle sweep.
  */
