@@ -126,16 +126,19 @@ export interface McpDoorConfig {
    * mount so a composed door's card is correct before any traffic arrives. */
   mount?: string;
   /** 10-mcp §5 — the canonical PUBLIC base URL of the deployed host (e.g.
-   * `https://app.example.com`). Behind a reverse proxy (Railway, Fly, any TLS
-   * terminator) the request URL carries the proxy-INTERNAL origin, so deriving
-   * discovery metadata from it advertises unreachable endpoints and binds the
-   * RFC 8707 audience to the wrong resource. When set, the issuer, every
-   * advertised endpoint, the protected-resource `resource`, the 401 challenge's
-   * metadata URL, token audience validation, and the interactive consent URLs
-   * (form action, host-login returnTo) all use THIS origin; only the
-   * path still comes from the request (or `mount`). Only the URL's origin is
-   * used — a path on the base URL is ignored. Forwarded headers (X-Forwarded-*,
-   * Host) are attacker-controllable and are never consulted.
+   * `https://app.example.com`, or `https://app.example.com/maple` for a
+   * deployment mounted under a path prefix). Behind a reverse proxy (Railway,
+   * Fly, any TLS terminator) the request URL carries the proxy-INTERNAL
+   * origin — and a prefix the proxy strips — so deriving discovery metadata
+   * from it advertises unreachable endpoints and binds the RFC 8707 audience
+   * to the wrong resource. When set, the issuer, every advertised endpoint,
+   * the protected-resource `resource`, the 401 challenge's metadata URL, token
+   * audience validation, and the interactive consent URLs (form action,
+   * host-login returnTo) all live under THIS base — origin AND path; only the
+   * door-local path still comes from the request (or `mount`). A path on the
+   * base URL names the prefix the deployment is mounted under, normalized
+   * exactly like `mount`. Forwarded headers (X-Forwarded-*, Host) are
+   * attacker-controllable and are never consulted.
    * The umbrella defaults this from `VENDO_BASE_URL`. */
   baseUrl?: string;
   /** Trust access tokens from an external OAuth authorization server instead
@@ -256,6 +259,10 @@ class Door {
   /** The canonical public origin every advertised URL and audience check uses
    * when `baseUrl` is configured; undefined → derive from each request URL. */
   readonly #publicOrigin: string | undefined;
+  /** The path prefix the deployment is mounted under — the configured base
+   * URL's path, normalized exactly like `mount` (`""` when there is none).
+   * Advertised URLs carry it; door-local routing strips it. */
+  readonly #publicBasePath: string;
   #identity: Promise<HostIdentity> | undefined;
   readonly #shimHtml: string;
 
@@ -281,27 +288,36 @@ class Door {
       ? undefined
       : new OAuthServer({ ...config, oauth: outside });
     this.#remoteAs = config.remoteAs === undefined ? undefined : new RemoteAsVerifier(config.remoteAs);
-    this.#publicOrigin = config.baseUrl === undefined ? undefined : publicOriginOf(config.baseUrl);
+    const publicBase = config.baseUrl === undefined ? undefined : publicBaseOf(config.baseUrl);
+    this.#publicOrigin = publicBase?.origin;
+    this.#publicBasePath = publicBase?.path ?? "";
     this.#shimHtml = shimHtml(config.theme);
   }
 
   async handler(req: Request): Promise<Response> {
     // ENG-333: behind a reverse proxy the request URL carries the proxy-
-    // internal origin. Rebase the request onto the configured canonical base
-    // ONCE, up front, so everything derived from the request URL downstream —
-    // discovery metadata, issuer/endpoint URLs, resource identifiers and
-    // audience checks, consent form actions, host-login returnTo URLs — speaks
-    // the public origin. Only the origin moves; path, query, method, headers,
-    // and body are preserved. Unconfigured doors keep request-derived origins,
-    // and forwarded headers (X-Forwarded-*, Host) are never consulted either
-    // way: the operator-set base is the only trusted origin channel.
+    // internal origin — and when the deployment is mounted under a path
+    // prefix the proxy strips, a prefix-less path. Rebase the request onto
+    // the configured canonical base ONCE, up front, so everything derived
+    // from the request URL downstream — discovery metadata, issuer/endpoint
+    // URLs, resource identifiers and audience checks, consent form actions,
+    // host-login returnTo URLs — speaks the public origin AND the public
+    // prefix. Query, method, headers, and body are preserved. Unconfigured
+    // doors keep request-derived origins, and forwarded headers
+    // (X-Forwarded-*, Host) are never consulted either way: the operator-set
+    // base is the only trusted channel.
     const incoming = new URL(req.url);
-    if (this.#publicOrigin !== undefined && incoming.origin !== this.#publicOrigin) {
-      req = rebaseRequest(req, this.#publicOrigin, incoming);
+    if (this.#publicOrigin !== undefined) {
+      const publicPath = withPathPrefix(this.#publicBasePath, incoming.pathname);
+      if (incoming.origin !== this.#publicOrigin || publicPath !== incoming.pathname) {
+        req = rebaseRequest(req, this.#publicOrigin, publicPath, incoming);
+      }
     }
     const url = new URL(req.url);
-    const origin = url.origin;
-    const path = url.pathname;
+    // Every advertised URL builds from the full public base; routing below
+    // uses the DOOR-LOCAL path, with the public prefix stripped back off.
+    const base = url.origin + this.#publicBasePath;
+    const path = stripPathPrefix(this.#publicBasePath, url.pathname);
 
     // 10-mcp §3b — an INTERNAL door has no outside credential space, so none of
     // the routes below (which exist only to get an outsider one) are served.
@@ -311,17 +327,22 @@ class Door {
     const hostOAuth = this.#hostOAuth;
     if (oauth === undefined || hostOAuth === undefined) return this.#internalOnly(req, path);
 
+    // A well-known suffix is a mount, and it arrives in BOTH public spellings:
+    // prefix-including from a spec client's root-insertion (RFC 8414/9728
+    // derive the well-known URL from the FULL resource URI), prefix-less from
+    // the door's own prefix-local metadata URL. Strip the prefix so both name
+    // the same door-local mount — `base` puts it back exactly once.
     if (path.startsWith(PRM_PREFIX)) {
       if (req.method !== "GET") return notFound();
       return json(protectedResourceMetadata(
-        origin,
-        path.slice(PRM_PREFIX.length),
+        base,
+        stripPathPrefix(this.#publicBasePath, path.slice(PRM_PREFIX.length)),
         this.#config.remoteAs?.issuer,
       ));
     }
     if (path.startsWith(AS_PREFIX)) {
       if (req.method !== "GET" || this.#config.remoteAs !== undefined) return notFound();
-      return json(authorizationServerMetadata(origin, path.slice(AS_PREFIX.length)));
+      return json(authorizationServerMetadata(base, stripPathPrefix(this.#publicBasePath, path.slice(AS_PREFIX.length))));
     }
     if (path === SERVER_CARD_PATH || path === SERVER_CARD_ALIAS_PATH) {
       if (req.method !== "GET") return notFound();
@@ -336,10 +357,10 @@ class Door {
         version: identity.version,
         description: identity.description,
         protocol_versions: ["2025-11-25"],
-        transports: [{ type: "streamable-http", url: resourceUri(origin, mount) }],
+        transports: [{ type: "streamable-http", url: resourceUri(base, mount) }],
         authorization: {
           type: "oauth2",
-          resource_metadata: protectedResourceMetadataUrl(origin, mount),
+          resource_metadata: protectedResourceMetadataUrl(base, mount),
         },
       });
     }
@@ -349,7 +370,7 @@ class Door {
     if (endpoint.kind === "authorize") {
       return this.#config.remoteAs === undefined
         && (req.method === "GET" || (req.method === "POST" && oauth.hasPrebuiltConsent))
-        ? oauth.authorize(req, resourceUri(origin, mount))
+        ? oauth.authorize(req, resourceUri(base, mount))
         : notFound();
     }
     if (endpoint.kind === "token") {
@@ -374,7 +395,7 @@ class Door {
       return req.method === "GET"
         && this.#config.federation !== undefined
         && (hostOAuth.authorize !== undefined || hostOAuth.session !== undefined)
-        ? handleFederation(req, resourceUri(origin, mount), this.#config.federation.secret, hostOAuth)
+        ? handleFederation(req, resourceUri(base, mount), this.#config.federation.secret, hostOAuth)
         : notFound();
     }
     if (endpoint.kind === "connect") {
@@ -384,7 +405,7 @@ class Door {
       const identity = await this.#hostIdentity();
       return connectPage({
         productName: this.#config.productName ?? identity.name,
-        mcpUrl: resourceUri(origin, this.#config.mount ?? mount),
+        mcpUrl: resourceUri(base, this.#config.mount ?? mount),
         ...(this.#config.theme === undefined ? {} : { theme: this.#config.theme }),
       });
     }
@@ -416,8 +437,8 @@ class Door {
 
   async #handleMcp(req: Request, mount: string, oauth: OAuthServer): Promise<Response> {
     // handler() has already rebased req onto the canonical public base.
-    const origin = new URL(req.url).origin;
-    const resource = resourceUri(origin, mount);
+    const base = new URL(req.url).origin + this.#publicBasePath;
+    const resource = resourceUri(base, mount);
     await this.#sweepIdleSessions();
 
     // 10-mcp §3b, FIRST and separate: a turn credential is the host's own
@@ -433,7 +454,7 @@ class Door {
       ? await oauth.authenticate(req)
       : await this.#remoteAs.authenticate(req);
     if (!auth || (this.#remoteAs === undefined && !sameCanonicalUri(auth.grant.resource, resource))) {
-      return unauthorized(origin, mount, req.headers.has("authorization"));
+      return unauthorized(base, mount, req.headers.has("authorization"));
     }
 
     const requestedSessionId = req.headers.get("mcp-session-id") ?? undefined;
@@ -457,13 +478,13 @@ class Door {
     if (principal === null) {
       await this.#killSubject(auth.grant.subject);
       await oauth.auditRevoke(auth.grant.subject, auth.grant.clientId);
-      return unauthorized(origin, mount, true);
+      return unauthorized(base, mount, true);
     }
     // 10-mcp §2: anonymous/ephemeral principals are never served a session —
     // the door persists grants and audit and must have a durable subject.
     if (principal.ephemeral === true) {
       await this.#killSubject(auth.grant.subject);
-      return unauthorized(origin, mount, true);
+      return unauthorized(base, mount, true);
     }
     // Only authenticated traffic teaches the server card its mount — an
     // unauthenticated probe to an arbitrary path must not steer discovery. A
@@ -1041,10 +1062,31 @@ function normalizeMount(mount: string): string {
   return `/${mount.replace(/^\/+|\/+$/g, "")}`;
 }
 
-/** Reduce the configured base URL to its canonical origin, failing LOUD at
- * construction — a malformed base silently falling back to request-derived
- * origins would ship wrong discovery documents to every client. */
-function publicOriginOf(baseUrl: string): string {
+/** Whether `path` is `prefix` itself or lives under it, on a SEGMENT boundary —
+ *  `/maple/api` is under `/maple`, `/maplesyrup` is not. `""` holds everything. */
+function underPathPrefix(prefix: string, path: string): boolean {
+  return prefix === "" || path === prefix || path.startsWith(`${prefix}/`);
+}
+
+/** The public spelling of a path: prefixed exactly once. A path that already
+ *  carries the prefix (a prefix-preserving mount) is left alone. */
+function withPathPrefix(prefix: string, path: string): string {
+  return underPathPrefix(prefix, path) ? path : `${prefix}${path}`;
+}
+
+/** The door-local spelling of a path: the public prefix taken back off. A path
+ *  outside the prefix is left alone. */
+function stripPathPrefix(prefix: string, path: string): string {
+  if (prefix === "" || !underPathPrefix(prefix, path)) return path;
+  const stripped = path.slice(prefix.length);
+  return stripped === "" ? "/" : stripped;
+}
+
+/** Reduce the configured base URL to its canonical origin and mount-normalized
+ * path prefix, failing LOUD at construction — a malformed base silently falling
+ * back to request-derived origins would ship wrong discovery documents to every
+ * client. */
+function publicBaseOf(baseUrl: string): { origin: string; path: string } {
   let url: URL;
   try {
     url = new URL(baseUrl);
@@ -1057,14 +1099,14 @@ function publicOriginOf(baseUrl: string): string {
   if (url.username || url.password) {
     throw new TypeError("baseUrl cannot contain credentials");
   }
-  return url.origin;
+  return { origin: url.origin, path: normalizeMount(url.pathname) };
 }
 
-/** Move a request onto the canonical public origin, preserving everything
- * else. The shape production hosts proved as a workaround (runvendo/umami#1),
- * now owned by the door itself. */
-function rebaseRequest(req: Request, origin: string, incoming: URL): Request {
-  const url = new URL(`${incoming.pathname}${incoming.search}`, origin);
+/** Move a request onto the canonical public origin and path, preserving
+ * everything else. The shape production hosts proved as a workaround
+ * (runvendo/umami#1), now owned by the door itself. */
+function rebaseRequest(req: Request, origin: string, pathname: string, incoming: URL): Request {
+  const url = new URL(`${pathname}${incoming.search}`, origin);
   const init: RequestInit & { duplex?: "half" } = {
     method: req.method,
     headers: req.headers,
@@ -1074,16 +1116,23 @@ function rebaseRequest(req: Request, origin: string, incoming: URL): Request {
   return new Request(url, init);
 }
 
-function resourceUri(origin: string, mount: string): string {
-  return canonicalUri(`${origin}${normalizeMount(mount)}`);
+/** `base` is the full public base — origin plus the deployment's path prefix
+ *  (or just the origin when there is none); `mount` is the door-local mount. */
+function resourceUri(base: string, mount: string): string {
+  return canonicalUri(`${base}${normalizeMount(mount)}`);
 }
 
-function protectedResourceMetadataUrl(origin: string, mount: string): string {
-  return canonicalUri(origin) + PRM_PREFIX + normalizeMount(mount);
+/** Prefix-LOCAL, not RFC 9728 root-insertion: a prefixed deployment owns no
+ *  path outside its prefix, so a root well-known URL would never route to it.
+ *  This URL is advertised explicitly (401 challenge, server card), and the
+ *  door serves the root-insertion spelling too for clients that derive their
+ *  own (the well-known handlers strip the prefix from the mount suffix). */
+function protectedResourceMetadataUrl(base: string, mount: string): string {
+  return canonicalUri(base) + PRM_PREFIX + normalizeMount(mount);
 }
 
-function protectedResourceMetadata(origin: string, mount: string, remoteIssuer?: string) {
-  const resource = resourceUri(origin, mount);
+function protectedResourceMetadata(base: string, mount: string, remoteIssuer?: string) {
+  const resource = resourceUri(base, mount);
   return {
     resource,
     authorization_servers: [remoteIssuer ?? resource],
@@ -1091,8 +1140,8 @@ function protectedResourceMetadata(origin: string, mount: string, remoteIssuer?:
   };
 }
 
-function authorizationServerMetadata(origin: string, mount: string) {
-  const issuer = resourceUri(origin, mount);
+function authorizationServerMetadata(base: string, mount: string) {
+  const issuer = resourceUri(base, mount);
   return {
     issuer,
     authorization_endpoint: `${issuer}/authorize`,
@@ -1108,8 +1157,8 @@ function authorizationServerMetadata(origin: string, mount: string) {
   };
 }
 
-function unauthorized(origin: string, mount: string, tokenPresented: boolean): Response {
-  const resourceMetadata = protectedResourceMetadataUrl(origin, mount);
+function unauthorized(base: string, mount: string, tokenPresented: boolean): Response {
+  const resourceMetadata = protectedResourceMetadataUrl(base, mount);
   const challenge = `Bearer resource_metadata="${resourceMetadata}"${tokenPresented ? ', error="invalid_token"' : ""}`;
   return json({ error: { code: "unauthorized", message: "A valid bearer token is required" } }, 401, {
     "www-authenticate": challenge,
