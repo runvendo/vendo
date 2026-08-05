@@ -5,11 +5,13 @@
  */
 import type { SandboxAdapter, SandboxMachine } from "@vendoai/apps";
 import { e2bSandbox } from "@vendoai/apps/e2b";
+import { selectSandbox } from "@vendoai/apps/sandbox-ladder";
 import {
   VendoError,
   type FilesAdapter,
   type Harness,
   type PackSkill,
+  type ToolRegistry,
 } from "@vendoai/core";
 import { createGuard, type VendoGuard } from "@vendoai/guard";
 import { provideHarnessAdapters } from "@vendoai/harnesses";
@@ -46,6 +48,32 @@ export interface VendoAgent {
   readonly name: string;
   session(subject: string, options?: SessionOptions): Promise<AgentSession>;
 }
+
+/**
+ * What `agent()` composed, for the one consumer that composes AROUND it:
+ * `createVendo({ agent })`, where the embed adopts the agent's brain, its
+ * persistence and its venue instead of resolving a second set. Read through a
+ * WeakMap — the same shape `harnessAdapters()` uses — so the public agent
+ * object stays exactly `{ name, session }`.
+ */
+export interface AgentComposition {
+  harness: Harness<unknown>;
+  store: VendoStore;
+  files: FilesAdapter;
+  guard: VendoGuard;
+  /** Guard-bound already — the one choke point. */
+  tools: ToolRegistry;
+  skills: readonly PackSkill[];
+  /** Present only for a harness that thinks on a machine. */
+  sandbox?: SandboxAdapter;
+  instructions?: string;
+}
+
+const compositions = new WeakMap<VendoAgent, AgentComposition>();
+
+/** Undefined for anything this package did not build. */
+export const agentComposition = (agent: VendoAgent): AgentComposition | undefined =>
+  compositions.get(agent);
 
 /**
  * The Cloud rungs. Their concrete shapes live with the Cloud wiring (the
@@ -132,20 +160,19 @@ const defaultStore = (): VendoStore => {
   return createStore();
 };
 
+/** The ladder itself lives in @vendoai/apps (`selectSandbox`) — ONE
+ *  implementation, shared with the umbrella's composition seam. This function
+ *  is only what an EMPTY ladder means here: a harness that needs a machine and
+ *  has none is a boot error, not a turn that dies in front of a user. */
 const resolveSandbox = (explicit: SandboxAdapter | undefined): SandboxAdapter => {
-  if (explicit !== undefined) return explicit;
-  const e2bKey = process.env["E2B_API_KEY"];
-  if (e2bKey !== undefined && e2bKey !== "") return e2bSandbox({ apiKey: e2bKey });
-  const key = cloudKey();
-  if (key !== undefined) {
-    if (cloudAdapters.sandbox === undefined) {
-      throw new VendoError(
-        "not-implemented",
-        "A VENDO_API_KEY is set but this build has no Cloud sandbox rung wired. "
-        + "Pass `sandbox: e2b({ apiKey })` or set E2B_API_KEY.",
-      );
-    }
-    return cloudAdapters.sandbox(key);
+  const { adapter } = selectSandbox(explicit, cloudAdapters.sandbox);
+  if (adapter !== undefined) return adapter;
+  if (cloudKey() !== undefined) {
+    throw new VendoError(
+      "not-implemented",
+      "A VENDO_API_KEY is set but this build has no Cloud sandbox rung wired. "
+      + "Pass `sandbox: e2b({ apiKey })` or set E2B_API_KEY.",
+    );
   }
   throw new VendoError(
     "validation",
@@ -169,24 +196,24 @@ export function agent(config: AgentConfig): VendoAgent {
   const bound = guard.bind(tools);
   const skills: PackSkill[] = loadSkillFolders(config.skills);
 
-  const sandbox =
+  const resolved =
     config.harness.requires?.sandbox === true ? resolveSandbox(config.sandbox) : config.sandbox;
-  if (sandbox !== undefined) {
-    // One audit row per box boot: which egress skin this box was born with —
-    // written before the box exists, attributed to the agent itself.
-    const audited = withEgress(sandbox, config.egress, (domains) =>
-      guard.report({
-        id: `aud_${randomUUID()}`,
-        at: new Date().toISOString(),
-        kind: "policy-decision",
-        principal: { kind: "user", subject: `vendo:agent:${config.name}` },
-        venue: "chat",
-        presence: "away",
-        detail: { egress: domains === "all" ? "all" : [...domains] },
-      }),
-    );
-    provideHarnessAdapters(config.harness, { sandbox: audited });
-  }
+  // One audit row per box boot: which egress skin this box was born with —
+  // written before the box exists, attributed to the agent itself. Every
+  // consumer takes the AUDITED adapter, so a box booted by the embed carries
+  // the same skin and the same row as one booted by `session.stream`.
+  const sandbox = resolved === undefined ? undefined : withEgress(resolved, config.egress, (domains) =>
+    guard.report({
+      id: `aud_${randomUUID()}`,
+      at: new Date().toISOString(),
+      kind: "policy-decision",
+      principal: { kind: "user", subject: `vendo:agent:${config.name}` },
+      venue: "chat",
+      presence: "away",
+      detail: { egress: domains === "all" ? "all" : [...domains] },
+    }),
+  );
+  if (sandbox !== undefined) provideHarnessAdapters(config.harness, { sandbox });
 
   const deps = {
     name: config.name,
@@ -199,8 +226,10 @@ export function agent(config: AgentConfig): VendoAgent {
     ...(config.instructions === undefined ? {} : { instructions: config.instructions }),
   };
 
-  return {
+  const built: VendoAgent = {
     name: config.name,
     session: (subject, options) => createSession(deps, subject, options),
   };
+  compositions.set(built, { ...deps, ...(sandbox === undefined ? {} : { sandbox }) });
+  return built;
 }
