@@ -16,11 +16,12 @@
  */
 import {
   VENDO_MAKE_TOOL,
+  type BeatPhase,
   type Harness,
   type HarnessEvent,
   type Turn,
 } from "@vendoai/core";
-import type { ClaudeTurnEvent } from "@vendoai/apps/claude-turn";
+import type { BeatPhase as LoopBeatPhase, ClaudeTurnEvent } from "@vendoai/apps/claude-turn";
 import type { UIMessage } from "ai";
 import { z } from "zod";
 import { defineHarness } from "../define.js";
@@ -35,6 +36,32 @@ import { boxMachine, type SandboxAdapterLike } from "./box.js";
 export interface ClaudeCodeTurnOptions {
   maxTurns?: number;
 }
+
+/**
+ * The beat phase union is declared TWICE, and this is what makes that safe.
+ *
+ * Core owns `BeatPhase` (contract §3.4). `claude-turn.ts` restates it
+ * structurally because that file imports NOTHING — its module header explains
+ * why: the emitted `dist/claude-turn.js` is copied verbatim into a machine image,
+ * and a module that named its dependencies was reachable from every composed
+ * host's build graph.
+ *
+ * The `yield event` below already compares the two unions, but only in ONE
+ * direction: a mirror that is a SUBSET of core stays assignable, so a seventh
+ * phase added to core would leave the box silently unable to ever emit it, with
+ * nothing failing anywhere (verified: adding one to core left every typecheck
+ * green). This map closes that direction — its keys are required by CORE's union
+ * and its values are typed as the LOOP's, so drift either way fails here, by
+ * name, instead of as an inference error 200 lines down.
+ */
+export const BEAT_PHASES: Record<BeatPhase, LoopBeatPhase> = {
+  understanding: "understanding",
+  planning: "planning",
+  assembling: "assembling",
+  building: "building",
+  checking: "checking",
+  finishing: "finishing",
+};
 
 /** v1 options, exactly (design §3): nothing else until asked. */
 export interface ClaudeCodeOptions extends ClaudeCodeTurnOptions {

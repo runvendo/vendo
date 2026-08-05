@@ -99,9 +99,36 @@ const DISALLOWED_TOOLS = [
   "ScheduleWakeup",
 ];
 
+/**
+ * Where a beat sits in the arc of making something — a STRUCTURAL MIRROR of
+ * core's `BeatPhase` (contract §3.4), CLOSED at six.
+ *
+ * Restated rather than imported because this file imports nothing (module
+ * header). `claude-code/index.ts` yields these events straight into
+ * `HarnessEvent`, so the compiler already compares the two unions on every
+ * build — but 200 lines away, as an inference failure nobody can read.
+ * `claude-beats.test.ts` makes the drift fail by name, in both directions.
+ */
+export type BeatPhase =
+  | "understanding"
+  | "planning"
+  | "assembling"
+  | "building"
+  | "checking"
+  | "finishing";
+
 export type ClaudeTurnEvent =
   | { type: "text"; delta: string }
-  | { type: "status"; label: string }
+  /**
+   * A BEAT — consumer voice, ephemeral, screen only.
+   *
+   * `phase` and `appId` are ADDITIVE (§3.4): a status carrying nothing but a
+   * `label` puts the identical chunk on the wire it always did. `appId` stays
+   * unset here — this loop is never told which app it is building, and the
+   * contract makes the field optional precisely so a producer without one leaves
+   * it off instead of parsing an id out of a file path.
+   */
+  | { type: "status"; label: string; phase?: BeatPhase; appId?: string }
   | { type: "error"; message: string }
   | { type: "usage"; inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number; model?: string }
   /** Not a `HarnessEvent`: the native session ref the caller puts in `turn.state`. */
@@ -265,6 +292,30 @@ function messageInbox() {
  */
 const WRITING_TOOLS = "Write|Edit|MultiEdit|NotebookEdit|Bash";
 
+/** The same names, as a set — one list decides both the hook matcher above and
+ *  the building beat, so the two can never disagree about what a write is. */
+const WRITING_TOOL_NAMES = new Set(WRITING_TOOLS.split("|"));
+
+/**
+ * The task-list tool: the model writes its plan as todos and flips them as it
+ * goes, which is the one place this loop can watch PLANNING happen.
+ *
+ * Only THAT it was used is read. Its `activeForm` field is documented by the CLI
+ * as "the present continuous form shown during execution" and is a beat in all
+ * but name — and it is also the model's own untrusted text, free to say
+ * "Creating app/src/InvoiceTable.tsx". Admitting it would need a regex gate over
+ * model prose, which ruling 14 (`ui/src/consumer-voice.ts`) already tried and
+ * reversed: a regex set cannot be the authority for what a person may read. So
+ * the beats below are OUR fixed copy, and this loop holds no filename it could
+ * leak.
+ *
+ * A future SDK that RENAMES this tool makes the planning beat fall silent, which
+ * is the right failure — silence, never a lie about progress. The rename itself
+ * is already loud: `claude-turn.test.ts` fails on any tool name its ledger has
+ * not classified.
+ */
+const PLANNING_TOOL = "TodoWrite";
+
 /**
  * Open ONE live session for a whole conversation.
  *
@@ -294,6 +345,22 @@ export function createClaudeSession(input: ClaudeSessionInput): ClaudeSession {
 
   /** The open `Query`, once it exists — the only thing that can interrupt a turn. */
   let live: { interrupt?: () => Promise<unknown> } | undefined;
+
+  /**
+   * Which stages this turn has already narrated (§3.4: "one beat per real step").
+   *
+   * A phase is a STAGE, not a tick — the tenth file write is not news — so each
+   * fires once and the set clears at the turn boundary, letting turn 2 plan and
+   * build again. `understanding` rides the session's own `init`, which happens
+   * once per SESSION: turn 2 does not claim to be getting started, because it
+   * isn't.
+   */
+  const narrated = new Set<BeatPhase>();
+  const beat = (phase: BeatPhase, label: string): void => {
+    if (narrated.has(phase)) return;
+    narrated.add(phase);
+    input.emit({ type: "status", label, phase });
+  };
 
   const drain = (async () => {
     const options: Record<string, unknown> = {
@@ -375,6 +442,7 @@ export function createClaudeSession(input: ClaudeSessionInput): ClaudeSession {
         }
         const named = message["model"];
         if (typeof named === "string") model = named;
+        beat("understanding", "Getting started");
         continue;
       }
       if (type === "assistant") {
@@ -383,16 +451,25 @@ export function createClaudeSession(input: ClaudeSessionInput): ClaudeSession {
         // twice (measured live 2026-08-02, once `includePartialMessages` went on).
         // Whichever arrived first wins; the block is still the only source when
         // an SDK build streams nothing, so the fallback stays real.
-        if (streamed) {
-          streamed = false;
-          continue;
-        }
+        //
+        // The message is SCANNED either way, never skipped whole: a `tool_use`
+        // block rides in the SAME message as the sentence that introduced it, so
+        // skipping the duplicate prose also threw away every beat in any turn
+        // where the model spoke — which is every real turn.
         const content = (message["message"] as { content?: Array<Record<string, unknown>> } | undefined)?.content;
         for (const block of content ?? []) {
-          if (block["type"] === "text" && typeof block["text"] === "string" && block["text"] !== "") {
-            input.emit({ type: "text", delta: block["text"] });
+          if (block["type"] === "text") {
+            if (!streamed && typeof block["text"] === "string" && block["text"] !== "") {
+              input.emit({ type: "text", delta: block["text"] });
+            }
+          } else if (block["type"] === "tool_use" && typeof block["name"] === "string") {
+            // The tool's NAME and nothing else. Its inputs are the model's own
+            // text and can name a file (see {@link PLANNING_TOOL}).
+            if (block["name"] === PLANNING_TOOL) beat("planning", "Working out the steps");
+            else if (WRITING_TOOL_NAMES.has(block["name"])) beat("building", "Putting it together");
           }
         }
+        streamed = false;
         continue;
       }
       if (type === "stream_event") {
@@ -409,9 +486,14 @@ export function createClaudeSession(input: ClaudeSessionInput): ClaudeSession {
         const usage = usageEvent(message["usage"], model);
         if (usage !== undefined) input.emit(usage);
         if (message["subtype"] !== "success") {
-          // Consumer voice: no subtypes, no internals.
+          // Consumer voice: no subtypes, no internals. And no `finishing` beat —
+          // a beat that claimed progress in front of an error would be a lie.
           input.emit({ type: "error", message: "I couldn't finish that one." });
+        } else {
+          beat("finishing", "Finishing up");
         }
+        // The next turn narrates afresh, whichever way this one ended.
+        narrated.clear();
         // THE turn boundary. The input stream stays open; only this message's
         // caller is released.
         const settle = settleTurn;
