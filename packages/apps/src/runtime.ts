@@ -1617,9 +1617,12 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         // app. One door, checked, for every caller.
         const proxy = config.servedProxyPath;
         if (proxy === undefined) {
+          // Two ways to get here, so the sentence names both: no wire mounted at
+          // all, or a wire with no public origin to build an absolute URL from
+          // (the umbrella supplies this seam only once VENDO_BASE_URL is set).
           throw new VendoError(
             "not-implemented",
-            "this app is served by a machine, and serving it needs the wire's authenticated proxy — mount the Vendo wire (createVendo().handler) so /apps/:appId/serve/** is reachable",
+            "this app is served by a machine, and serving it needs the wire's authenticated proxy — mount the Vendo wire (createVendo().handler) so /apps/:appId/serve/** is reachable, and set VENDO_BASE_URL to this deployment's public origin so the app's URL can be absolute",
           );
         }
         // No wake here: the proxy wakes the machine on the first forwarded

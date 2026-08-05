@@ -155,7 +155,12 @@ describe("GET /apps/:id/open on a served (layer-3) app", () => {
       remains: the proxy URL has to be ABSOLUTE (an MCP client or a native app is
       not sitting on this origin), so a deployment that never named its own origin
       cannot answer a served app at all. It says which variable to set rather than
-      handing back a URL nobody can follow. */
+      handing back a URL nobody can follow.
+
+      The refusal now comes from the seam being ABSENT rather than from a callback
+      that exists and throws — the composition supplies `servedProxyPath` only once
+      it has an origin — so this is the apps block's `not-implemented`, and it names
+      both ways to get here (no wire, or no origin). */
   it("refuses when this deployment never named the origin it serves from", async () => {
     const vendo = await setup();
     vi.stubEnv("VENDO_BASE_URL", "");
@@ -172,10 +177,119 @@ describe("GET /apps/:id/open on a served (layer-3) app", () => {
 
     const response = await noOrigin.handler(wireRequest("/apps/app_served/open", ADA.subject));
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(501);
     const body = await response.json() as { error: { code: string; message: string } };
-    expect(body.error.code).toBe("validation");
+    expect(body.error.code).toBe("not-implemented");
     expect(body.error.message).toContain("VENDO_BASE_URL");
+    // No provider ingress URL is ever the fallback for a missing door.
+    expect(body.error.message).not.toContain("served_box");
+  });
+});
+
+/**
+ * The lane gate reads proxy AVAILABILITY, and availability has to mean "can
+ * actually produce a path" — not "a callback exists". `servedProxyPath` used to be
+ * supplied unconditionally and throw when used without `VENDO_BASE_URL`, so
+ * `config.servedProxyPath !== undefined` was true on a deployment that could never
+ * serve anything: the planner offered the served lane and the failure arrived at
+ * serve time, after a machine had been built and a surface flipped.
+ */
+describe("the served lane is offered only where it can actually serve", () => {
+  interface ModelCall {
+    prompt: Array<{ role: string; content: string | Array<{ type?: string; text?: string }> }>;
+  }
+
+  const promptText = (call: ModelCall): string => call.prompt
+    .map((message) => typeof message.content === "string"
+      ? message.content
+      : message.content.map((part) => part.text ?? "").join(""))
+    .join("\n");
+
+  /** Captures every prompt the brain is handed. The answer is deliberate junk —
+   *  this asserts what the host TOLD the brain, not what the brain did with it. */
+  const capturingModel = (captured: string[]): LanguageModel => ({
+    specificationVersion: "v2",
+    provider: "vendo-lane-gate-fixture",
+    modelId: "vendo-lane-gate-fixture-v1",
+    supportedUrls: {},
+    async doGenerate(call: ModelCall) {
+      captured.push(promptText(call));
+      return {
+        content: [{ type: "text" as const, text: "" }],
+        finishReason: "stop" as const,
+        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+      };
+    },
+    async doStream(call: ModelCall) {
+      captured.push(promptText(call));
+      return {
+        stream: new ReadableStream({
+          start(controller) {
+            controller.enqueue({ type: "stream-start", warnings: [] });
+            controller.enqueue({ type: "text-start", id: "text_1" });
+            controller.enqueue({ type: "text-delta", id: "text_1", delta: "" });
+            controller.enqueue({ type: "text-end", id: "text_1" });
+            controller.enqueue({
+              type: "finish",
+              finishReason: "stop",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            });
+            controller.close();
+          },
+        }),
+      };
+    },
+  } as unknown as LanguageModel);
+
+  /** Drive ONE real edit through the real composition and hand back everything the
+   *  brain was told. `baseUrl` undefined = this deployment never named its origin. */
+  const whatTheBrainWasTold = async (baseUrl: string | undefined): Promise<string> => {
+    vi.stubEnv("VENDO_BASE_URL", baseUrl ?? "");
+    const store = await tempStore("vendo-lane-gate-");
+    await store.ensureSchema();
+    const captured: string[] = [];
+    const vendo = createVendo({
+      model: capturingModel(captured),
+      principal: async () => ADA,
+      store,
+      // A sandbox AND machines on, so the only lane in question is the served one.
+      sandbox: servingSandbox(),
+      apps: { experimentalMachines: true },
+    });
+    const ctx = { principal: ADA, venue: "app" as const, presence: "present" as const, sessionId: "s_lane_gate" };
+    const imported = await vendo.apps.importApp({
+      format: VENDO_APP_FORMAT,
+      id: "app_replaced",
+      name: "Invoice board",
+      ui: "tree",
+      tree: {
+        formatVersion: "vendo-genui/v2",
+        root: "root",
+        nodes: [{ id: "root", component: "Stack", source: "prewired" }],
+      },
+    } as AppDocument, ctx);
+    // The junk answer fails the plan parse; the prompt was already captured.
+    await vendo.apps.edit(imported.id, "Give me a drag-and-drop kanban board", ctx)
+      .catch(() => undefined);
+    return captured.join("\n=== next call ===\n");
+  };
+
+  it("tells the planner it cannot serve web pages when this deployment has no origin", async () => {
+    const told = await whatTheBrainWasTold(undefined);
+
+    expect(told).toContain("WHAT THIS HOST CANNOT DO");
+    expect(told).toContain("cannot serve its own web pages");
+    // And NOT because machines look unavailable — that lane is open here.
+    expect(told).not.toContain("machines disabled");
+    expect(told).not.toContain("no sandbox configured");
+  });
+
+  it("says no such thing when the deployment has an origin — the lane is real", async () => {
+    // The control. Without it the assertion above would also pass on a host that
+    // simply says "cannot serve" to everyone.
+    const told = await whatTheBrainWasTold("http://wire.test");
+
+    expect(told).not.toContain("cannot serve its own web pages");
   });
 });
 

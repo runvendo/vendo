@@ -2244,23 +2244,22 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // wire owns its base path, so it is filled here and nowhere else; the apps
     // block never invents a URL for a door it does not mount.
     //
-    // ABSOLUTE, like the personal branch's provider URL: an MCP client (or
+    // ABSOLUTE, like the sandbox provider's URL this replaced: an MCP client (or
     // anything not already sitting on the host origin) cannot resolve a relative
-    // path. Serving an app means a machine, and machine provisioning already
-    // requires VENDO_BASE_URL (see machineEnv), so the origin is always there —
-    // and when it is not, the refusal names it rather than handing out a URL
-    // nobody can follow.
-    servedProxyPath: (appId: AppId) => {
-      if (configuredBaseUrl === undefined) {
-        throw new VendoError(
-          "validation",
-          "serving an app from its machine needs VENDO_BASE_URL — the app's URL has to be absolute "
-          + "for anything that is not already on this origin (an MCP client, a native app). Set it "
-          + "to this deployment's public origin and restart.",
-        );
-      }
-      return `${configuredBaseUrl.replace(/\/+$/, "")}${BASE_PATH}/apps/${encodeURIComponent(appId)}/serve/`;
-    },
+    // path. So this seam is supplied ONLY when the deployment has named an origin
+    // to build one from.
+    //
+    // Its ABSENCE is the answer, never a callback that exists and throws. The apps
+    // block tests availability by presence (`config.servedProxyPath !== undefined`)
+    // to shut the served lane, and a closure that always exists made that check a
+    // lie: a machines+sandbox host with no VENDO_BASE_URL was offered the served
+    // lane by the planner and only discovered the truth at serve time, after a box
+    // was built and a surface flipped. Availability now means "can actually produce
+    // a path", by construction.
+    ...(configuredBaseUrl === undefined ? {} : {
+      servedProxyPath: (appId: AppId) =>
+        `${configuredBaseUrl.replace(/\/+$/, "")}${BASE_PATH}/apps/${encodeURIComponent(appId)}/serve/`,
+    }),
     // execution-v2 Wave 9 — the layer-2 experimental opt-in, host-config only
     // (never an env var: enabling machine-backed execution is a deliberate
     // per-project decision). Layer 3 rides it — see the CreateVendoConfig note.
