@@ -113,7 +113,7 @@ const compilerOptions = (ts: typeof TS): TS.CompilerOptions => ({
 const buildProgram = (ts: typeof TS, input: ScreenTscInput): TS.Program => {
   const options = compilerOptions(ts);
   const files = new Map([[SCREEN_FILE, input.screen], [SCREEN_TYPINGS_FILE, input.typings]]);
-  const create = (name: string, text: string, version: TS.ScriptTarget): TS.SourceFile =>
+  const create = (name: string, text: string, version: TS.ScriptTarget | TS.CreateSourceFileOptions): TS.SourceFile =>
     ts.createSourceFile(name, text, version, true, name.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
   const host: TS.CompilerHost = {
     getSourceFile: (name, version) => {
