@@ -12,7 +12,8 @@
  * `packages/vendo/src/schedule-wire.test.ts`); real e2b appears only in the
  * opt-in `*.live.test.ts` suites.
  */
-import type { AppDocument, SandboxAdapter, SandboxMachine } from "@vendoai/apps";
+import type { SandboxAdapter, SandboxMachine } from "@vendoai/apps";
+import type { AppDocument } from "@vendoai/core";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createStack, ownerCtx, resetFixture, type Stack } from "./harness.js";
 import { ADA } from "./support.js";
@@ -41,6 +42,7 @@ function manifestBox(initial: Array<{ cron: string; fn: string }>) {
       }
       return { status: 404, headers: {}, body: new Uint8Array() };
     },
+    async url(port?: number) { return `https://${port ?? 8080}-fake_manifest_box.foldin.test`; },
     async snapshot() { return "fake:manifest-snap"; },
     async stop() { /* sleep */ },
     async destroy() { /* gone */ },

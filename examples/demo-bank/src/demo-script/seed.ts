@@ -13,7 +13,7 @@
  * Existing rows are left untouched (a user's recorded pins survive), so
  * seeding is safe to run on every boot.
  */
-import type { AppDocument } from "@vendoai/core";
+import { DEFAULT_TRIGGER_ID, type AppDocument } from "@vendoai/core";
 import { mapleDemoUsers } from "@/server/users";
 import { vendo } from "@/vendo/server";
 import moneyHqFixture from "./fixtures/money-hq.json";
@@ -31,7 +31,8 @@ function weeklySummaryDocument(id: string): AppDocument {
     name: "Weekly spending summary",
     description:
       "Every Friday at 5:00 PM, prepare a digest of that week's spending by category, drafted and ready for you to send.",
-    trigger: {
+    triggers: [{
+      id: DEFAULT_TRIGGER_ID,
       on: { kind: "schedule", cron: "0 17 * * 5" },
       // Steps run model: the capture surface stays exactly these host reads
       // (an agentic run would conservatively capture EVERY bound tool).
@@ -42,7 +43,7 @@ function weeklySummaryDocument(id: string): AppDocument {
           { id: "transactions", tool: "host_listTransactions" },
         ],
       },
-    },
+    }],
   };
 }
 
@@ -53,7 +54,8 @@ function lowBalanceAlertDocument(id: string): AppDocument {
     name: "Low balance alert",
     description:
       "Every morning at 8:00 AM, check Maple Checking and draft an alert if the balance is below $2,000, ready for you to send.",
-    trigger: {
+    triggers: [{
+      id: DEFAULT_TRIGGER_ID,
       on: { kind: "schedule", cron: "0 8 * * *" },
       // One host read keeps the standing-grant surface to a single consent
       // moment in the scripted beat (the email is the delivery story, exactly
@@ -62,7 +64,7 @@ function lowBalanceAlertDocument(id: string): AppDocument {
         kind: "steps",
         steps: [{ id: "balance", tool: "host_listAccounts" }],
       },
-    },
+    }],
   };
 }
 

@@ -46,7 +46,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BASE_PATH } from "@/lib/base-path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { UNATTENDED_DESTRUCTIVE_REASON } from "@vendoai/core";
+import { DEFAULT_TRIGGER_ID, UNATTENDED_DESTRUCTIVE_REASON } from "@vendoai/core";
 import type { AppDocument, Principal, Step, ToolDescriptor, ToolRegistry } from "@vendoai/core";
 import { createActions } from "@vendoai/actions";
 import { authJsPreset } from "@vendoai/actions/presets/auth-js";
@@ -222,10 +222,11 @@ function oneStepAutomation(id: string, name: string, step: Step): AppDocument {
     format: "vendo/app@1",
     id,
     name,
-    trigger: {
+    triggers: [{
+      id: DEFAULT_TRIGGER_ID,
       on: { kind: "host-event", event: "maple.payday" },
       run: { kind: "steps", steps: [step] },
-    },
+    }],
   };
 }
 
@@ -262,7 +263,7 @@ async function enableAndApprove(stack: Stack, subject: string, doc: AppDocument)
     data: { subject, enabled: false, doc },
     refs: { subject },
   });
-  const enabled = await stack.automations.enable(appId, ownerCtx(principal, appId));
+  const enabled = await stack.automations.enable(appId, DEFAULT_TRIGGER_ID, ownerCtx(principal, appId));
   expect(enabled.enabled).toBe(true);
   if (enabled.missing.length > 0) {
     await stack.guard.approvals.decide(
