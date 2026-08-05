@@ -59,6 +59,32 @@ describe("AutomationsPanel liveness", () => {
     expect(screen.getByText("Running")).toBeTruthy();
   });
 
+  // The kill switch used to live ONLY inside the expanded Run history, so the
+  // person watching the row say "running now" had no way to stop it without
+  // first guessing that a collapsed panel held the button. The trigger row is
+  // where the run is being watched, so that is where the stop belongs.
+  it("carries Stop on the trigger row itself, without Run history ever being opened", async () => {
+    // pollMs 0 on purpose: nothing here may be explained by a background
+    // re-fetch. The button and the settled row are the panel's own doing.
+    render(<VendoProvider client={client}><AutomationsPanel pollMs={0} /></VendoProvider>);
+
+    // Named for its trigger, the way the row's toggle is — two same-labelled
+    // controls on one page are two controls nobody can tell apart.
+    const stop = await screen.findByRole("button", { name: "Stop Invoice watcher — Invoice created" });
+    expect(screen.queryByRole("group", { name: /^Run history/ })).toBeNull();
+    expect(screen.getByText(/running now/)).toBeTruthy();
+
+    fireEvent.click(stop);
+
+    await waitFor(() => expect(wire.requests).toContainEqual(
+      expect.objectContaining({ method: "POST", path: "/runs/run_1/stop" }),
+    ));
+    // The row stops claiming a run it just killed, and the stop it offered goes
+    // with it.
+    await waitFor(() => expect(screen.queryByText(/running now/)).toBeNull());
+    expect(screen.queryByRole("button", { name: "Stop Invoice watcher — Invoice created" })).toBeNull();
+  });
+
   it("updates a completing run without a reload", async () => {
     wire.state.runs = [{
       id: "run_live",

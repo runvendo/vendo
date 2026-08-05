@@ -333,6 +333,26 @@ export function AutomationsPanel({ pollMs = AUTOMATIONS_POLL_MS }: AutomationsPa
     }
   };
 
+  /** The kill switch, from either place it is offered: the TRIGGER ROW (where a
+      live run is actually being watched) and the run's own history row. One
+      action, one busy key, so the two copies of the button can never disagree
+      about whether a stop is in flight.
+
+      Both stores of the row's runs settle here, because the row reads the
+      expanded history when it is open and the last-10 strip otherwise — settling
+      only one would leave the row still claiming a run it just killed. */
+  const stopRun = (key: string, runId: RunRecord["id"]) =>
+    during(`stop-${runId}`, async () => {
+      await automations.stopRun(runId);
+      const settled = (list: RunRecord[] | undefined): RunRecord[] =>
+        (list ?? []).map(item => item.id === runId ? { ...item, status: "stopped" } : item);
+      // Never REOPEN a history the person collapsed — `undefined` is what
+      // "collapsed" means to the row, so a stop from the trigger row above must
+      // not conjure an empty one ("No runs yet." under a row that has runs).
+      setRuns(current => current[key] === undefined ? current : { ...current, [key]: settled(current[key]) });
+      setRecent(current => ({ ...current, [key]: settled(current[key]) }));
+    });
+
   // Outstanding standing-grant asks per automation, derived from the PERSISTED
   // pending approvals (grant-set reload survival): the asks a page reload
   // re-fetches, never an enable() result held in component state.
@@ -608,6 +628,31 @@ export function AutomationsPanel({ pollMs = AUTOMATIONS_POLL_MS }: AutomationsPa
                           ? null
                           : <div className="fl-auto-sub" style={{ display: "block" }}>{runsAs}</div>}
                       </div>
+                      {/* The kill switch belongs where the run is being WATCHED.
+                          It used to exist only inside the expanded Run history,
+                          so the person reading "running now" on this row had to
+                          guess that a collapsed panel held the one button that
+                          could stop it. The history keeps its own copy — this is
+                          the same action, not a replacement. */}
+                      {runningRun ? (
+                        <button
+                          className="fl-btn fl-btn-ceremony"
+                          type="button"
+                          // Named for its TRIGGER, exactly as the toggle beside it
+                          // is and for the same reason: the history row's Stop is
+                          // a second control saying the same word on the same
+                          // page, and two controls nobody can tell apart is what
+                          // this name exists to prevent.
+                          aria-label={`Stop ${entry.app.name} — ${label.title}`}
+                          disabled={busy[`stop-${runningRun.id}`]}
+                          // The toggle holds the row's right edge with its own
+                          // `margin-left: auto`; the Stop takes that space over so
+                          // the pair sits together and the toggle — the row's
+                          // permanent control — never moves when a run starts.
+                          style={{ marginLeft: "auto" }}
+                          onClick={() => void stopRun(key, runningRun.id)}
+                        >Stop</button>
+                      ) : null}
                       <button
                         className="fl-auto-toggle"
                         type="button"
@@ -625,6 +670,8 @@ export function AutomationsPanel({ pollMs = AUTOMATIONS_POLL_MS }: AutomationsPa
                           // hairline track sat at ~1.4:1, so "off" read as "no
                           // control here". --vendo-indicator is the 3:1 derivation.
                           background: row.enabled ? "var(--vendo-accent)" : "var(--vendo-indicator)",
+                          // The Stop above takes the auto margin when it is there.
+                          ...(runningRun ? { marginLeft: 0 } : {}),
                           transform: row.enabled ? undefined : "rotate(180deg)",
                           transition: "background .2s ease, transform .2s cubic-bezier(.22,1,.36,1)",
                         }}
@@ -780,13 +827,12 @@ export function AutomationsPanel({ pollMs = AUTOMATIONS_POLL_MS }: AutomationsPa
                               <strong className="fl-act-lbl">{RUN_STATUS_LABEL[run.status]}</strong>
                               <time className="fl-act-sub" dateTime={run.startedAt}>{formatAuditTime(run.startedAt)}</time>
                               {run.status === "running" ? (
-                                <button className="fl-btn fl-btn-ceremony" type="button" onClick={() => void during(`stop-${run.id}`, async () => {
-                                  await automations.stopRun(run.id);
-                                  setRuns(current => ({
-                                    ...current,
-                                    [key]: (current[key] ?? []).map(item => item.id === run.id ? { ...item, status: "stopped" } : item),
-                                  }));
-                                })}>Stop</button>
+                                <button
+                                  className="fl-btn fl-btn-ceremony"
+                                  type="button"
+                                  disabled={busy[`stop-${run.id}`]}
+                                  onClick={() => void stopRun(key, run.id)}
+                                >Stop</button>
                               ) : null}
                               {runAsks.length > 0 ? (
                                 <button
