@@ -39,6 +39,7 @@ import {
   storeWireSessionRegisterRequestSchema,
   storeWireSessionStaleRequestSchema,
   storeWireSessionClaimRequestSchema,
+  type EraseTarget,
   type StoreWireStatus,
 } from "./index.js";
 
@@ -141,6 +142,14 @@ describe("vendo/store-wire@1", () => {
 
   it("parses lifecycle request DTOs", () => {
     expect(storeWireLifecycleEraseRequestSchema.parse({ target: { subject: "sub_1" } }).target.subject).toBe("sub_1");
+    expect(storeWireLifecycleEraseRequestSchema.parse({ target: { appId: "app_1" } }).target.appId).toBe("app_1");
+    // A destructive erase must name exactly one scope: no empty target...
+    expect(storeWireLifecycleEraseRequestSchema.safeParse({ target: {} }).success).toBe(false);
+    // ...and no ambiguous both-set target.
+    expect(storeWireLifecycleEraseRequestSchema.safeParse({
+      target: { subject: "sub_1", appId: "app_1" },
+    }).success).toBe(false);
+    expect(storeWireLifecycleEraseRequestSchema.safeParse({ target: { subject: "" } }).success).toBe(false);
     expect(storeWireLifecycleAdoptRequestSchema.parse({ from: "sub_anon", to: "sub_real" }).from).toBe("sub_anon");
     expect(storeWireLifecycleAdoptRequestSchema.safeParse({ from: "", to: "x" }).success).toBe(false);
     expect(storeWireLifecyclePromoteRequestSchema.parse({ appId: "app_1", orgId: "org_1" }).orgId).toBe("org_1");
@@ -148,6 +157,16 @@ describe("vendo/store-wire@1", () => {
     expect(storeWireSessionStaleRequestSchema.parse({ idleMs: 60000 }).idleMs).toBe(60000);
     expect(storeWireSessionStaleRequestSchema.safeParse({ idleMs: 0 }).success).toBe(false);
     expect(storeWireSessionClaimRequestSchema.parse({ subject: "sub_1", idleMs: 5000 }).subject).toBe("sub_1");
+  });
+
+  it("the erase target is a compile-time discriminated selector", () => {
+    const check = (target: EraseTarget) => target;
+    expect(check({ subject: "sub_1" }).subject).toBe("sub_1");
+    expect(check({ appId: "app_1" }).appId).toBe("app_1");
+    // @ts-expect-error a destructive erase must name a scope — {} is not a target
+    check({});
+    // @ts-expect-error exactly one scope: subject and appId cannot both be set
+    check({ subject: "sub_1", appId: "app_1" });
   });
 
   it("status doubles as the discovery handshake: format + ops count", () => {

@@ -265,7 +265,7 @@ order:
 2. `VENDO_API_KEY` — a Vendo Cloud dev key. When init finds no key, it offers
    `vendo login`: your browser opens on the approval page (a non-TTY caller
    gets the URL and pairing code printed instead), you approve the code, and
-   the minted metered dev-mode key is written to `.env.local` for you. You
+   the minted metered API key is written to `.env.local` for you. You
    never paste a key. (`vendo cloud login <email>` remains as an email-OTP
    fallback.)
    Model calls go through the Vendo Cloud model gateway (`vendo` by
