@@ -60,7 +60,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "ai": "6.0.28",
+    "ai": "6.0.242",
     "just-bash": "^3.1.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"

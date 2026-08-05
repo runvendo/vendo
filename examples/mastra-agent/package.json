@@ -12,7 +12,7 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@ai-sdk/react": "3.0.230",
+    "@ai-sdk/react": "3.0.244",
     "@mastra/ai-sdk": "^1.6.2",
     "@mastra/core": "1.51.0",
     "@mastra/duckdb": "^1.5.1",
@@ -23,7 +23,7 @@
     "@vendoai/core": "workspace:*",
     "@vendoai/ui": "workspace:*",
     "@vendoai/vendo": "workspace:*",
-    "ai": "6.0.230",
+    "ai": "6.0.242",
     "mastra": "^1.18.2",
     "next": "16.2.11",
     "react": "19.2.4",

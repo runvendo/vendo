@@ -26,7 +26,7 @@
     "@vendoai/store": "workspace:*",
     "@vendoai/ui": "workspace:*",
     "@vendoai/vendo": "workspace:*",
-    "ai": "6.0.28",
+    "ai": "6.0.242",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "e2b": "^2.32.0",

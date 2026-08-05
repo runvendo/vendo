@@ -19,7 +19,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "ai": "^6.0.0",
+    "ai": "6.0.242",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
   }

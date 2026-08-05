@@ -23,7 +23,7 @@
     "@vendoai/mcp": "workspace:*",
     "@vendoai/store": "workspace:*",
     "@vendoai/vendo": "workspace:*",
-    "ai": "^6.0.0",
+    "ai": "6.0.242",
     "fflate": "^0.8.2",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"

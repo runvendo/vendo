@@ -19,7 +19,7 @@
     "@remotion/cli": "4.0.499",
     "@vendoai/core": "workspace:*",
     "@vendoai/ui": "workspace:*",
-    "ai": "6.0.28",
+    "ai": "6.0.242",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "remotion": "4.0.499",
