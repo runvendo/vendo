@@ -172,6 +172,15 @@ interface InternalRunRecord extends RunRecord {
    *  to find the failed run's receipts in a different process. Internal, like
    *  `__event`: the public run record (07 §5) does not carry it. */
   __lineage?: RunId;
+  /** The trigger definition this run actually fired, kept so `runs.rerun` fires
+   *  THAT one rather than whatever the document says by then. A steps call id is
+   *  positional (see `runSteps`), which is only stable across a re-run if the
+   *  step list is — so an author inserting a step ahead of one that already
+   *  completed would renumber it, its receipt would never be found, and work
+   *  that had already landed would happen twice. Internal, like `__event`, and
+   *  optional for the same reason: a row written before this existed falls back
+   *  to the declared trigger, which is exactly the old behavior. */
+  __trigger?: Trigger;
 }
 
 const runStatusSchema = z.enum(["running", "ok", "error", "stopped"]);
@@ -215,6 +224,7 @@ const baseRunRecordSchema = z.object({
 const internalRunRecordSchema = baseRunRecordSchema.extend({
   __event: z.unknown().optional(),
   __lineage: z.string().optional(),
+  __trigger: z.unknown().optional(),
 });
 
 const runRowDataSchema = z.object({
@@ -301,7 +311,7 @@ const parseRunRecord = (record: VendoRecord): InternalRunRecord => {
 
 // Callers already validated the row via parseRunRecord; only the internal fields
 // need stripping.
-const publicRun = ({ __event: _, __lineage: __, ...record }: InternalRunRecord): RunRecord => record;
+const publicRun = ({ __event: _, __lineage: __, __trigger: ___, ...record }: InternalRunRecord): RunRecord => record;
 
 const triggerEvent = (source: TriggerSource): string | undefined =>
   source.kind === "host-event" || source.kind === "external" ? source.event : undefined;
@@ -1339,6 +1349,9 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       // What fired it, so `runs.rerun` can fire the same trigger on the same
       // event without the caller having to keep the payload.
       __event: clone(event),
+      // The definition that fired, so a re-run cannot be renumbered by an edit
+      // that landed after the failure.
+      __trigger: clone(trigger),
       ...(lineage === undefined ? {} : { __lineage: lineage }),
     };
     const agentController = trigger.run.kind === "agentic" ? new AbortController() : undefined;
@@ -2547,9 +2560,13 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     // The ROOT of the firing, so re-running a re-run keeps one lineage instead of
     // a chain: every run of this firing then shares one effect ledger, and the
     // second re-run still sees what the first already completed.
+    // The definition that FIRED, not the one declared now: `declared` above is
+    // what proves the trigger still exists and is armed, but firing an edited
+    // step list under the original lineage would move a completed call's
+    // positional id off its own receipt and run it a second time.
     const { runId: freshId, done } = launchRun(
       app.row,
-      declared,
+      run.__trigger ?? declared,
       run.trigger.kind,
       run.__event,
       (run.__lineage ?? run.id) as RunId,

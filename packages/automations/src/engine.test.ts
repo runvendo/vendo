@@ -869,6 +869,55 @@ describe("fail-loud consent and re-run", () => {
     expect(calls.at(-2)).toMatchObject({ tool: writeTool.name, args: { value: 4 } });
   });
 
+  it("re-runs the trigger that FIRED, so editing the steps cannot move a completed call's identity", async () => {
+    // The effect ledger tells "this call again" from "another call just like it"
+    // by call id, and a steps call id is positional. That is only stable if the
+    // re-run reads the same step list — so the re-run has to fire the definition
+    // that actually fired, not whatever the document says now. Otherwise
+    // inserting a step ahead of one that already completed renumbers it, its
+    // receipt is never found, and work that already landed happens twice.
+    const store = memoryStoreAdapter();
+    const guard = new GuardDouble();
+    const { tools, calls } = missingPermission(store);
+    const doc = twoStepApp("app_rerun_edited");
+    await seedApp(store, doc, "user_a", true);
+    const engine = createAutomations({ apps: appsDouble(), tools, guard, store, now: () => NOW });
+    const [runId] = await engine.emit("go", { value: 4 }, ctx().principal);
+
+    // Step 0 completed before step 1 asked for a permission nobody held.
+    const completed = calls.find((call) => call.tool === readTool.name);
+    expect(completed).toBeDefined();
+
+    await store.records("vendo_approvals").put({
+      id: "apr_miss_1",
+      data: {
+        ...((await store.records("vendo_approvals").get("apr_miss_1"))?.data as object),
+        status: "approved",
+        decidedAt: NOW.toISOString(),
+      },
+    });
+    guard.decide("apr_miss_1", true);
+    await flush();
+
+    // The author inserts a step AHEAD of the one that already ran, between the
+    // failure and the re-run.
+    await seedApp(store, app("app_rerun_edited", {
+      on: { kind: "host-event", event: "go" },
+      run: { kind: "steps", steps: [
+        { id: "inserted", tool: readTool.name },
+        { id: "read", tool: readTool.name },
+        { id: "write", tool: writeTool.name, args: { value: "event.value" } },
+        { id: "after", tool: readTool.name },
+      ] },
+    }), "user_a", true);
+
+    const before = calls.length;
+    await engine.runs.rerun(runId!, ctx());
+
+    const rerunIds = calls.slice(before).map((call) => call.id);
+    expect(rerunIds).toContain(completed!.id);
+  });
+
   it("refuses a re-run for a caller who cannot edit the app, and an unknown run", async () => {
     const store = memoryStoreAdapter();
     const guard = new GuardDouble();
