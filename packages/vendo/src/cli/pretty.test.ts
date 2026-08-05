@@ -113,7 +113,7 @@ describe("createPrettyOutput (visual system)", () => {
     const out = sink();
     const pretty = createPrettyOutput(out.write);
     pretty.log("\nVendo Cloud (optional): not configured. A key unlocks team sharing & org governance; hosted automations; the MCP broker.");
-    pretty.log("Run `vendo login` to claim a free dev-mode key; it lands in .env.local.");
+    pretty.log("Run `vendo login` to claim a free API key; it lands in .env.local.");
     const plain = out.plain();
     expect(plain).toContain("◆  Vendo Cloud");
     expect(plain).toContain("✦ team sharing & org governance");

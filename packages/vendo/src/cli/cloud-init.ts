@@ -226,7 +226,7 @@ async function cloudStep(options: CloudStepOptions, failure: { failedStep?: stri
   if (options.yes || options.byo === true || !laddersWantKey) {
     if (laddersWantKey) {
       if (options.byo === true) {
-        output.log("Run `vendo login` to claim a free dev-mode key; it lands in .env.local.");
+        output.log("Run `vendo login` to claim a free API key; it lands in .env.local.");
       } else {
         // --yes / agent-driven runs get the full auth.md pointer: the agent
         // can complete the whole key story in-band from these lines.
@@ -238,7 +238,7 @@ async function cloudStep(options: CloudStepOptions, failure: { failedStep?: stri
 
   const tty = options.isTty ?? (stdin.isTTY === true && stdout.isTTY === true);
   const confirm = options.confirm ?? askYesNo;
-  if (!(await confirm("Log in to Vendo Cloud now for a free dev-mode model key?", false))) {
+  if (!(await confirm("Log in to Vendo Cloud now for a free API key (starter model allowance included)?", false))) {
     if (tty) {
       output.log("Skipped — run `vendo login` any time; the key lands in .env.local.");
     } else {

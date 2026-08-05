@@ -110,7 +110,7 @@ export function toolingTelemetry(options: TelemetryOptions & {
     let env = options.env ?? process.env;
     // Cloud-lane key sourcing widens to the project's .env.local — exactly
     // where `vendo login` / cloud-init / --cloud-key land the key — because
-    // a dev-mode key almost never lives in the process env. Only
+    // a Cloud-minted key almost never lives in the process env. Only
     // VENDO_API_KEY widens: consent vars (DO_NOT_TRACK, CI, …) keep coming
     // from the caller's env untouched, and an explicit non-blank env value
     // always wins over .env.local (the same precedence init's credential

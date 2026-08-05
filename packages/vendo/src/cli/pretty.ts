@@ -199,7 +199,7 @@ export function createPrettyOutput(
       return;
     }
     if (/`?vendo (cloud )?login`?/.test(raw)) {
-      // The CTA: bright, factual, pointing at the free dev-mode key.
+      // The CTA: bright, factual, pointing at the free Cloud key.
       body(`${bold(brightCyan("→"))} ${raw.replace(/`?vendo (cloud )?login`?/g, (m) => bold(brightCyan(m.replaceAll("`", ""))))}`);
       return;
     }

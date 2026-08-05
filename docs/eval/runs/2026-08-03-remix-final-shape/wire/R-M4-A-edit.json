@@ -1,5 +1,0 @@
-{
-  "instruction": "add the bank's net worth card to this page, exactly as it is",
-  "ms": 10070,
-  "surfacedError": "wire did not parse to a complete <Edit> document; wire missing-edit: expected a single <Edit>...</Edit> document; wire malformed-expression: unexpected trailing content at index 21"
-}
