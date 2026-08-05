@@ -109,6 +109,41 @@ describe("parseKnowledgeWireError and the meter refusal", () => {
     expect(error.message).toContain("$5.20 of $5.00 used");
   });
 
+  // THE cross-repo seam. This object is the byte-for-byte 402 body the console
+  // emitter produces, copied from the recorded wire fixture
+  // `apps/console/fixtures/knowledge-wire/upsert.quota-exhausted.json` (which
+  // is itself recorded from `poolRefusalResponse`, never hand-written). Neither
+  // side stubs the other: the console's real emitter wrote it, and the real
+  // parser below reads it. If the console changes the envelope, this goes red.
+  const RECORDED_CONSOLE_402 = {
+    error: {
+      code: "meter-exhausted",
+      message:
+        "Meter exhausted: the $5.00 of usage included this billing period is used up ($5.20 used). The included usage resets 2026-08-01T00:00:00.000Z. Two exits: upgrade your plan (https://console.vendo.run/billing) or bring your own infrastructure (https://vendo.run/docs/byo).",
+    },
+    meter: "usage",
+    unit: "usd",
+    used: 5.2,
+    limit: 5,
+    resets_at: "2026-08-01T00:00:00.000Z",
+    reason: "allowance",
+    exits: {
+      upgrade_url: "https://console.vendo.run/billing",
+      byo_docs_url: "https://vendo.run/docs/byo",
+    },
+  };
+
+  it("renders the console's RECORDED 402 body as the crafted currency sentence", () => {
+    const error = parseKnowledgeWireError(402, RECORDED_CONSOLE_402);
+    expect(error.code).toBe("cloud-required");
+    expect(error.message).toBe(
+      "Vendo Cloud paused usage — the $5.00 included this billing period is used up " +
+        "($5.20 of $5.00 used; resets 2026-08-01). " +
+        "Upgrade your plan (https://console.vendo.run/billing) or bring your own " +
+        "infrastructure (https://vendo.run/docs/byo).",
+    );
+  });
+
   it("still maps a bare 402 to cloud-required", () => {
     expect(parseKnowledgeWireError(402, undefined).code).toBe("cloud-required");
     expect(parseKnowledgeWireError(402, undefined).message).toContain("HTTP 402");
