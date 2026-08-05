@@ -1028,12 +1028,24 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
    * enable() adopts into its set; a crash the other way round would leave a run
    * telling someone to grant something no surface can find.
    *
-   * ONE capture per thing-to-allow, though: when the person is already being
-   * asked exactly this — an arming ask for the same tool (and service action)
-   * that nobody has answered yet — the run adds nothing. Capturing a second row
-   * for the same question would count one permission as two on every surface
+   * ONE capture per thing-to-allow, though, and exactly one ASK: when the person
+   * is already being asked exactly this — an arming ask for the same tool (and
+   * service action) that nobody has answered yet — only one of the pair may stay
+   * open. Two rows for one question count one permission as two on every surface
    * that projects the outstanding asks, and settle as two grants for authority
    * the person allowed once.
+   *
+   * WHICH one survives is not a toss-up. The run's ask is raised inside the
+   * firing and carries `presence: "away"`, the `appId` and its run id; the
+   * arming ask is a present-time row with none of that. Away provenance is what
+   * every away-authority rule is enforced against, so the run's ask is the
+   * survivor and the arming ask is superseded — its capture moved onto the
+   * survivor (same grant set, so the question stays one question) and the ask
+   * itself closed with the same feature-detected `abandonApprovals` the chat
+   * door uses for an ask nobody needs answered. Order matters again here: the
+   * capture moves BEFORE the ask is closed, so the decision subscriber finds no
+   * capture and cannot mistake a supersede for a person's denial — which would
+   * disarm an automation nobody said no to.
    *
    * The two sentences part ways on purpose (§16 law 3): `summary` is rendered
    * verbatim to whoever owns the automation, so it says what happened and what
@@ -1057,40 +1069,41 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       const asked = forTrigger.find((capture) =>
         consentKey(capture.data) === consentKey({ tool: request.call.tool, ...(slug === undefined ? {} : { slug }) }));
       const live = asked === undefined ? false : await isPendingAsk(asked.id);
-      if (!live) {
-        // One grant set per (app, trigger), shared with arming: a person deciding
-        // this ask settles everything else outstanding for the same trigger.
-        await writeCapture(approvalId, {
-          appId: run.appId,
-          triggerId: run.triggerId,
-          subject: ctx.principal.subject,
-          tool: request.call.tool,
-          ...(slug === undefined ? {} : { slug }),
-          descriptorHash: descriptorHash(request.descriptor),
-          grantSetId: forTrigger[0]?.data.grantSetId ?? id("gset_"),
-        });
-        // A capture whose approval is already gone or decided is stale — the
-        // live ask above replaces it, so it must not keep a settled question
-        // open on the panel.
-        if (asked !== undefined) await config.store.records(CAPTURES).delete(asked.id);
-      } else if (asked !== undefined && asked.id !== approvalId) {
-        // Declining to capture the ask is not the same as closing it, and for a
-        // long time this branch did only the first. The older ask is the one
-        // every surface projects and the one Grant & re-run settles, so the ask
-        // the guard raised for this run is redundant the moment it is raised —
-        // but it was left `pending` in the approvals queue, where it kept
-        // "waiting on 1 permission" and a live Allow/Deny card on screen for a
-        // permission that had already been granted, kept the needs-you badge
-        // lit, and survived a reload. Nothing closed it but the hour-long TTL
-        // sweep, and every re-run added another.
+      // The run's own ask is ALWAYS the captured one — whether the arming ask it
+      // replaces was already decided (stale capture) or is still open (a live
+      // one being superseded). One grant set per (app, trigger), shared with
+      // arming: a person deciding this ask settles everything else outstanding
+      // for the same trigger.
+      await writeCapture(approvalId, {
+        appId: run.appId,
+        triggerId: run.triggerId,
+        subject: ctx.principal.subject,
+        tool: request.call.tool,
+        ...(slug === undefined ? {} : { slug }),
+        descriptorHash: descriptorHash(request.descriptor),
+        grantSetId: forTrigger[0]?.data.grantSetId ?? id("gset_"),
+      });
+      if (asked !== undefined && asked.id !== approvalId) {
+        // The capture moves off the ask being replaced BEFORE that ask is
+        // touched: a capture on a decided approval keeps a settled question open
+        // on the panel, and — when the ask below is closed — a capture still
+        // sitting here would make the decision subscriber read a supersede as a
+        // person's denial and disarm an automation nobody said no to.
+        await config.store.records(CAPTURES).delete(asked.id);
+        // A STILL-OPEN arming ask for this same thing is now redundant: the
+        // question is one question, and the run's ask is the one that carries
+        // where it was met (`presence: "away"`, the appId, the run id). Left
+        // pending it kept "waiting on 1 permission" and a live Allow/Deny card
+        // for a permission already granted, kept the needs-you badge lit, and
+        // survived a reload — nothing closed it but the hour-long TTL sweep.
         //
-        // `abandonApprovals` is the existing verb for exactly this: an ask
-        // nobody needs answered. It denies as `system`, which is explicitly NOT
-        // a standing no (the guard only enforces `deniedBy: "human"`), mints
-        // nothing, and is idempotent. Optional on the seam, so feature-detected
-        // the same way the harness runtime does it — a guard without it behaves
-        // exactly as before, with the TTL sweep as the backstop.
-        await config.guard.abandonApprovals?.([approvalId], ctx);
+        // `abandonApprovals` is the existing verb for an ask nobody needs
+        // answered. It denies as `system`, which is explicitly NOT a standing no
+        // (the guard only enforces `deniedBy: "human"`), mints nothing, and is
+        // idempotent. Optional on the seam, so feature-detected the same way the
+        // chat door does it — a guard without it keeps the pre-existing
+        // behaviour, with the TTL sweep as the backstop.
+        if (live) await config.guard.abandonApprovals?.([asked.id], ctx);
       }
     }
     const named = slug === undefined ? `use ${step.tool}` : serviceToolPhrase(slug);

@@ -750,19 +750,20 @@ describe("fail-loud consent and re-run", () => {
     expect((await engine.list(ctx()))[0]?.triggers[0]).toMatchObject({ pendingGrants: 1 });
   });
 
-  it("closes the redundant run-time ask when an arming ask is already asking it", async () => {
+  it("supersedes the arming ask with the away ask the run raised for the same permission", async () => {
     // The state a real deployment reaches constantly, and the one `seedApp`
     // cannot: the person armed the automation and left the consent card
     // undecided, so an arming ask for `write_data` is pending — and THEN the
     // schedule fired and the run met the same permission.
     //
-    // The engine correctly declines to capture a second row for one question
-    // (one thing to allow is one question). What it used to do with the ask the
-    // guard had just parked was NOTHING: no capture, no closure. So the panel
-    // kept "waiting on 1 permission" and a live Allow/Deny card for a permission
-    // that had already been granted, the needs-you badge stayed lit, and all of
-    // it survived a reload — until the hour-long TTL sweep. `abandonApprovals`
-    // is the existing verb for an ask nobody needs answered any more.
+    // One thing to allow is one question, so only one of the pair may stay
+    // pending. WHICH one is not a toss-up. The away ask is raised inside the run
+    // and carries `presence: "away"`, the `appId`, and its run id; the arming
+    // ask is a present-time chat-venue row with none of that. Keeping the
+    // arming one and closing the away one erases away provenance from the
+    // approvals record — the thing every away-authority rule is enforced
+    // against — so the away ask is the survivor and the arming ask is what
+    // gets superseded.
     const store = memoryStoreAdapter();
     const guard = new GuardDouble();
     guard.store = store;
@@ -773,7 +774,9 @@ describe("fail-loud consent and re-run", () => {
 
     const { missing } = await engine.enable(doc.id, "main", ctx());
     const armingWrite = missing.find((request) => request.call.tool === writeTool.name);
+    const armingRead = missing.find((request) => request.call.tool === readTool.name);
     expect(armingWrite).toBeDefined();
+    expect(armingRead).toBeDefined();
 
     const [runId] = await engine.emit("go", { value: 4 }, ctx().principal);
     await flush();
@@ -783,21 +786,40 @@ describe("fail-loud consent and re-run", () => {
       status: "error",
       error: { code: "needs-permission", tool: writeTool.name },
     });
-    // The guard's run-time ask is closed, and closed as `system` so it can never
-    // read as the person having said no to this tool.
-    expect(guard.abandoned).toEqual(["apr_miss_1"]);
+
+    // The AWAY ask survives, still pending, still answerable — it is the row a
+    // surface renders the failed run's card from, and the only one that says
+    // this permission was met while nobody was watching.
     expect(await store.records("vendo_approvals").get("apr_miss_1"))
-      .toMatchObject({ data: { status: "denied", deniedBy: "system" } });
-    // The ARMING ask is untouched: it is the one every surface projects and the
-    // one Grant & re-run settles. Closing the wrong one of the pair would take
-    // the person's only way to allow this off the screen.
-    expect(await store.records("vendo_approvals").get(armingWrite!.id))
       .toMatchObject({ data: { status: "pending" } });
-    // One question, counted once — and the standing grant is still unminted,
-    // because abandoning an ask grants nothing.
+    const away = (await store.records("vendo_approvals").get("apr_miss_1"))!.data as {
+      request: { ctx: { presence?: string; appId?: string; venue?: string } };
+    };
+    expect(away.request.ctx).toMatchObject({ presence: "away", venue: "automation", appId: doc.id });
+
+    // The redundant ARMING ask is the one closed, as `system` so it can never
+    // read as the person having said no to this tool.
+    expect(guard.abandoned).toEqual([armingWrite!.id]);
+    expect(await store.records("vendo_approvals").get(armingWrite!.id))
+      .toMatchObject({ data: { status: "denied", deniedBy: "system" } });
+
+    // The capture MOVED rather than being dropped or duplicated: the question is
+    // still outstanding, still in the same grant set, now keyed by the away ask.
+    // A capture left on the closed arming ask would keep a settled question open;
+    // no capture at all would orphan a pending ask no surface counts.
+    const moved = await store.records("automations:captures").get("apr_miss_1");
+    expect(moved?.data).toMatchObject({ appId: doc.id, triggerId: "main", tool: writeTool.name });
+    expect(await store.records("automations:captures").get(armingWrite!.id)).toBeNull();
+
+    // Still TWO questions outstanding (the untouched read ask + this one), never
+    // three and never one: the count must not double-count the pair or orphan it.
     expect((await engine.list(ctx()))[0]?.triggers[0]).toMatchObject({ pendingGrants: 2 });
-    expect(await store.records("automations:captures").get("apr_miss_1")).toBeNull();
+    expect(await store.records("vendo_approvals").get(armingRead!.id))
+      .toMatchObject({ data: { status: "pending" } });
+    // Superseding grants nothing, and the automation stays armed — a deny that
+    // disarmed here would switch off an automation nobody said no to.
     expect((await store.records("vendo_grants").list()).records).toHaveLength(0);
+    expect((await engine.list(ctx()))[0]?.triggers[0]).toMatchObject({ enabled: true });
   });
 
   it("mints the standing grant on approval and re-runs the automation fresh", async () => {
