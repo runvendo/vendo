@@ -44,6 +44,9 @@ generated UI in a sandboxed, brand-native surface.
 
 ## Rules
 
+- Use Yousef's Vendo Cloud account for any and all testing.
+- Vendo-facing API/SDK/CLI design additionally routes through the
+  **vendo-dx** skill (on top of api-design-dx).
 - Never commit to `main`; branch and open a PR.
 - UI-affecting changes are verified in a real browser with screenshots in the
   PR. Tests and typecheck alone don't count.
@@ -77,3 +80,15 @@ generated UI in a sandboxed, brand-native surface.
   full-stack suites in `packages/vendo` then miss their 30s budget on work
   that takes 5s alone. A timeout is a hang-detector; do not raise one to buy
   headroom the machine never had.
+- Turbo's bound is only the OUTER layer. Each package's vitest sizes its own
+  worker pool to the CPU count, so 4 packages at a time meant ~60 processes and
+  ~13GB on a 12-core laptop, and an OOM kill on a 15GB runner — the PGlite
+  suites (`store`, `guard`, the fixtures) boot an embedded Postgres per worker.
+  `VITEST_MIN_FORKS/MAX_FORKS` and `VITEST_MIN_THREADS/MAX_THREADS` in the root
+  `test` and `test:coverage` scripts cap the inner layer at 4 x 2 workers, which
+  is why CI runs those scripts instead of calling turbo itself. Set them in any
+  new script or workflow that runs the suite. The MIN half is not optional:
+  vitest 2.1 defaults `minThreads` to the CPU count independently of the max, so
+  a max-only cap makes Tinypool throw `minThreads and maxThreads must not
+  conflict` before a single test runs. `fileParallelism: false` still wins where
+  a package sets it, so the serial suites stay serial.

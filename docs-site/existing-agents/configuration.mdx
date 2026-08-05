@@ -46,7 +46,7 @@ explicit provider key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
   `VENDO_DEV_CREDENTIAL=vendo-cloud`. The gateway rides the stock
   `@ai-sdk/anthropic` provider, which Vendo ships (your app's own install
   wins when present).
-- No `VENDO_API_KEY` yet? `npx vendo login` mints a free metered dev key
+- No `VENDO_API_KEY` yet? `npx vendo login` mints a free metered API key
   straight into `.env.local`.
 - If your loop's model has no key on this machine, either set one or point
   your `model` at `vendoModel()` from `@vendoai/vendo/server` to ride the

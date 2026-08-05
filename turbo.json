@@ -2,9 +2,9 @@
   "$schema": "https://turbo.build/schema.json",
   "tasks": {
     "build": { "dependsOn": ["^build"], "outputs": ["dist/**", ".next/**", "!.next/cache/**"] },
-    "test": { "dependsOn": ["^build", "build"], "env": ["CI", "POSTGRES_URL"] },
-    "test:ui": { "dependsOn": ["^build", "build"], "env": ["CI"] },
-    "test:coverage": { "dependsOn": ["^build", "build"], "outputs": ["coverage/**"], "env": ["CI", "POSTGRES_URL"] },
+    "test": { "dependsOn": ["^build", "build"], "env": ["CI", "POSTGRES_URL", "VITEST_MIN_FORKS", "VITEST_MAX_FORKS", "VITEST_MIN_THREADS", "VITEST_MAX_THREADS"] },
+    "test:ui": { "dependsOn": ["^build", "build"], "env": ["CI", "VITEST_MIN_FORKS", "VITEST_MAX_FORKS", "VITEST_MIN_THREADS", "VITEST_MAX_THREADS"] },
+    "test:coverage": { "dependsOn": ["^build", "build"], "outputs": ["coverage/**"], "env": ["CI", "POSTGRES_URL", "VITEST_MIN_FORKS", "VITEST_MAX_FORKS", "VITEST_MIN_THREADS", "VITEST_MAX_THREADS"] },
     "conformance": { "dependsOn": ["^build", "build"], "env": ["CI", "POSTGRES_URL"] },
     "typecheck": { "dependsOn": ["^build"] },
     "lint": {}
