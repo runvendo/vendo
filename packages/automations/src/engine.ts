@@ -560,6 +560,53 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   };
 
   /**
+   * Move any pre-rekey schedule cursor onto its (app, trigger) key, and return the
+   * rows the tick should read for the keys that were missing.
+   *
+   * The cursor moved from the bare `appId` to `<appId>:<triggerId>` when an app
+   * became a LIST of triggers. `automations:schedule` is a GENERIC collection keyed
+   * by row id, and nothing rewrites generic row ids — the reserved store migrates
+   * itself through generated columns over reserved TABLES, which this is not — so
+   * the old row is invisible on every store, not just a host-supplied one.
+   *
+   * Invisible does not read as "overdue", which would be far worse: a cursor the
+   * tick cannot find is read as "start the clock now", deliberately, so a schedule
+   * discovered for the first time does not fire for every window since the epoch.
+   * Applied to a cursor that merely MOVED, that silently restarts a running
+   * automation's clock — it skips the firing it was due for and comes back up to
+   * one interval late, with nothing anywhere saying so.
+   *
+   * The state is carried VERBATIM (`lastFiredAt`, and `firedAt` for a one-shot
+   * `at:` schedule), because it is the automation's own history and rewriting it
+   * would either skip a window or replay one. Only trigger `main` is looked for:
+   * that is the id a pre-list document's one trigger normalizes to, so no other
+   * trigger can have a bare-id cursor. The old row is deleted once carried, so it
+   * can never be read again and dragged over a cursor that has since moved on; a
+   * row that will not parse is left exactly where it is, unreadable but not
+   * destroyed, and the tick treats it as the missing cursor it already was.
+   */
+  const migratePreRekeyCursors = async (
+    records: RecordStore,
+    missing: readonly string[],
+  ): Promise<VendoRecord[]> => {
+    const preRekeyIds = missing
+      .filter((key) => key.endsWith(`:${DEFAULT_TRIGGER_ID}`))
+      .map((key) => key.slice(0, -`:${DEFAULT_TRIGGER_ID}`.length));
+    if (preRekeyIds.length === 0) return [];
+    const carried: VendoRecord[] = [];
+    for (const record of await allRecords(records, { ids: preRekeyIds })) {
+      const parsed = scheduleSchema.safeParse(record.data);
+      if (!parsed.success) continue;
+      carried.push(await records.put({
+        id: triggerKey(record.id, DEFAULT_TRIGGER_ID),
+        data: { ...parsed.data },
+      }));
+      await records.delete(record.id);
+    }
+    return carried;
+  };
+
+  /**
    * The app rows that fire on this trigger kind, under EITHER ref spelling.
    *
    * An app has a LIST of triggers, so "which kind does this app fire on" is a SET
@@ -2049,12 +2096,21 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       .filter((trigger) => trigger.on.kind === "schedule")
       .map((trigger) => ({ row, trigger })));
     const scheduleRecords = config.store.records(SCHEDULE);
-    const cursorRecords = dueTriggers.length === 0
+    const cursorKeys = dueTriggers.map(({ row, trigger }) => triggerKey(row.doc.id, trigger.id));
+    const cursorRecords = cursorKeys.length === 0
       ? []
-      : await allRecords(scheduleRecords, {
-        ids: dueTriggers.map(({ row, trigger }) => triggerKey(row.doc.id, trigger.id)),
-      });
+      : await allRecords(scheduleRecords, { ids: cursorKeys });
     const cursorById = new Map(cursorRecords.map((record) => [record.id, record]));
+    // A key that MISSED is either a schedule nobody has ever ticked or one whose
+    // cursor predates the (app, trigger) rekey. The second is indistinguishable
+    // from the first here, and reading it as the first restarts a running
+    // automation's clock — so look for the old row before concluding anything.
+    for (const record of await migratePreRekeyCursors(
+      scheduleRecords,
+      cursorKeys.filter((key) => !cursorById.has(key)),
+    )) {
+      cursorById.set(record.id, record);
+    }
     const fired: FiredSchedule[] = [];
     for (const { row, trigger: declared } of dueTriggers) {
       const trigger = validateTrigger(declared);
