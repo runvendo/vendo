@@ -38,6 +38,7 @@
  *    "dev": "node ../../scripts/dev-with-port-fallback.mjs"
  *  The child inherits this cwd, so `next dev` resolves the right app. */
 import net from "node:net";
+import os from "node:os";
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 
@@ -143,11 +144,26 @@ function spawnNext(port, env) {
 // bind, and must never trigger a silent relaunch on a different port.
 const STOLEN_PORT_WINDOW_MS = 30_000;
 
+/** Conventional shell status for a signal death: 128 + the signal's number
+ *  (SIGINT → 130, SIGTERM → 143), so anything gating on our exit status never
+ *  sees an interrupted run as success. */
+function signalExitStatus(signal) {
+  return 128 + (os.constants.signals[signal] ?? 0);
+}
+
 // Forward termination so Ctrl-C tears the Next child down with us. `child` is
-// reassigned across relaunches, so the handlers close over the variable.
+// reassigned across relaunches, so the handlers close over the variable. With
+// no live child — while probing, or in the gap between relaunches — there is
+// nothing to forward to, so the signal stops the wrapper itself.
 let child = null;
 for (const signal of ["SIGINT", "SIGTERM"]) {
-  process.on(signal, () => child?.kill(signal));
+  process.on(signal, () => {
+    if (child && child.exitCode === null && child.signalCode === null) {
+      child.kill(signal);
+    } else {
+      process.exit(signalExitStatus(signal));
+    }
+  });
 }
 
 let searchFrom = START_PORT;
@@ -202,7 +218,10 @@ while (true) {
     continue;
   }
 
-  // Exit with whatever the child reported.
-  if (signal) process.kill(process.pid, signal);
+  // Exit with whatever the child reported. A signal death must propagate as
+  // the conventional 128+signal status — a re-raise here would be inert (our
+  // own handler for that signal is still registered), and falling through to
+  // `process.exit(code ?? 0)` would report an interrupted run as success.
+  if (signal) process.exit(signalExitStatus(signal));
   process.exit(code ?? 0);
 }
