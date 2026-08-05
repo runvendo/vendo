@@ -1,7 +1,0 @@
-GET /approvals over 60s — /attention-surfaces (center page + overlay launcher)
-surfaces mounted: 3 (launcher badge, waiting strip, rail needs-you) @ 5000ms each
-one poller costs:  ~13 requests
-three pollers cost: ~39 requests (the behaviour this round replaced)
-measured:           13 requests
-
-request offsets (ms): 291, 5288, 10291, 15296, 20300, 25304, 30307, 35311, 40315, 45319, 50321, 55323, 60327

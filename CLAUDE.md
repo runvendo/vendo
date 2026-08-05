@@ -44,6 +44,9 @@ generated UI in a sandboxed, brand-native surface.
 
 ## Rules
 
+- Use Yousef's Vendo Cloud account for any and all testing.
+- Vendo-facing API/SDK/CLI design additionally routes through the
+  **vendo-dx** skill (on top of api-design-dx).
 - Never commit to `main`; branch and open a PR.
 - UI-affecting changes are verified in a real browser with screenshots in the
   PR. Tests and typecheck alone don't count.
