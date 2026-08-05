@@ -170,10 +170,15 @@ export const wasSponsored = async (
   triggerId: string,
 ): Promise<boolean> => await records.get(triggerKey(appId, triggerId)) !== null;
 
-/** A sponsorship row as it was written before an app had a LIST of triggers:
- *  the same shape minus the trigger id, because there was only one trigger to
- *  name. It reads as `main`, the id read normalization gives that one trigger. */
-const preListSponsorshipSchema = sponsorshipSchema.extend({
+/** A sponsorship row as it may actually be found ON DISK, in either key era.
+ *
+ *  Before an app had a LIST of triggers the row carried no trigger id, because
+ *  there was only one trigger to name — so {@link sponsorshipSchema}, which is
+ *  the contract shape every WRITE must satisfy, rejects those rows outright. A
+ *  reader that used the strict schema therefore saw a pre-list row as no row at
+ *  all. Absent reads as `main`, the id read normalization gives that one
+ *  trigger. */
+export const storedSponsorshipSchema = sponsorshipSchema.extend({
   triggerId: z.string().default(DEFAULT_TRIGGER_ID),
 });
 
@@ -210,7 +215,7 @@ export const migratePreListSponsorship = async (
   let moved = false;
   const legacy = await sponsorships.get(appId);
   if (legacy !== null) {
-    const parsed = preListSponsorshipSchema.safeParse(legacy.data);
+    const parsed = storedSponsorshipSchema.safeParse(legacy.data);
     // An UNREADABLE row is left exactly where it is: it is already unreachable
     // (`readSponsorship` reads a corrupt row as no sponsorship), and deleting it
     // would destroy the only evidence of what it said.

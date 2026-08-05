@@ -47,6 +47,7 @@ import {
   SPONSORSHIPS,
   sponsorName,
   sponsorshipSchema,
+  storedSponsorshipSchema,
   triggerKey,
   triggerOf,
   triggersOf,
@@ -1856,14 +1857,41 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     await disarmTrigger(found.record, found.row, triggerId);
   };
 
-  /** Every sponsorship row for a set of (app, trigger) keys, in ONE query. */
-  const sponsorshipsFor = async (keys: string[]): Promise<Map<string, Sponsorship>> => {
+  /**
+   * Every sponsorship row for these apps' triggers, in ONE query — and the
+   * pre-list rekey, because the LIST is where a person reads who an automation
+   * runs as (§13) and whether it stopped (E8-F2). A row that is invisible here
+   * does not merely go missing: both sentences then answer with the app's OWNER,
+   * so an automation someone else took on reads as the reader's own, and a
+   * STOPPED one shows no stopped line and no way back to it.
+   *
+   * The batch is kept. Only a `main` key that MISSED can be pre-list, and those
+   * app ids are probed in one further batched read; a deployment with no pre-list
+   * rows never issues it. Migration itself stays where it belongs — the one door
+   * — so this consults `sponsorshipState` rather than repeating it.
+   */
+  const sponsorshipsFor = async (rows: readonly AppRow[]): Promise<Map<string, Sponsorship>> => {
+    const keys = rows.flatMap((row) =>
+      triggersOf(row.doc).map((trigger) => triggerKey(row.doc.id, trigger.id)));
     if (keys.length === 0) return new Map();
-    const rows = await allRecords(sponsorships(), { ids: keys });
     const byTrigger = new Map<string, Sponsorship>();
-    for (const record of rows) {
+    for (const record of await allRecords(sponsorships(), { ids: keys })) {
       const parsed = sponsorshipSchema.safeParse(record.data);
       if (parsed.success) byTrigger.set(triggerKey(parsed.data.appId, parsed.data.triggerId), parsed.data);
+    }
+    // Pair keys are `<appId>:<triggerId>` and app ids are `app_*`, so a bare app
+    // id can never collide with one: this probe reads the pre-list key and only
+    // the pre-list key.
+    const unresolved = new Map(rows
+      .filter((row) => triggersOf(row.doc).some((trigger) => trigger.id === DEFAULT_TRIGGER_ID))
+      .filter((row) => !byTrigger.has(triggerKey(row.doc.id, DEFAULT_TRIGGER_ID)))
+      .map((row) => [row.doc.id, row]));
+    if (unresolved.size === 0) return byTrigger;
+    for (const record of await allRecords(sponsorships(), { ids: [...unresolved.keys()] })) {
+      const row = unresolved.get(record.id);
+      if (row === undefined) continue;
+      const state = await sponsorshipState(row.doc, DEFAULT_TRIGGER_ID);
+      if (state.kind === "row") byTrigger.set(triggerKey(row.doc.id, DEFAULT_TRIGGER_ID), state.row);
     }
     return byTrigger;
   };
@@ -1901,9 +1929,13 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     // back to it at all.
     // Deduped: sponsorship is per (app, trigger), so sponsoring two triggers of
     // one app must still fetch that app once.
+    // Read with the ON-DISK schema, not the contract one: a pre-list row carries
+    // no trigger id, so the strict parse dropped it and the person an automation
+    // was handed to could not see it here at all. Its own rekey happens below, in
+    // `sponsorshipsFor`, once the app row it names has been fetched.
     const sponsoredElsewhere = [...new Set(
       (await allRecords(sponsorships(), { refs: { subject } }))
-        .map((record) => sponsorshipSchema.safeParse(record.data))
+        .map((record) => storedSponsorshipSchema.safeParse(record.data))
         .filter((parsed) => parsed.success)
         .map((parsed) => (parsed as { data: Sponsorship }).data.appId)
         .filter((appId) => !seen.has(appId)),
@@ -1929,9 +1961,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       outstanding.set(key, entry);
     }
     const automations = rows.filter((row) => triggersOf(row.doc).length > 0);
-    const keys = automations.flatMap((row) =>
-      triggersOf(row.doc).map((trigger) => triggerKey(row.doc.id, trigger.id)));
-    const sponsorRows = await sponsorshipsFor(keys);
+    const sponsorRows = await sponsorshipsFor(automations);
     const armed = await armedFor(automations);
     const entries: Awaited<ReturnType<AutomationsEngine["list"]>> = [];
     for (const row of automations) {
