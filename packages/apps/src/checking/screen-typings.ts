@@ -229,10 +229,10 @@ const FRAME_DECLARATIONS = [
 
 const aggregateDeclarations = (): string[] => {
   const buckets = EXPR_BUCKETS.map((bucket) => JSON.stringify(bucket)).join(" | ");
-  const lines = [
-    "interface VendoAggregate<Field extends string> { readonly __aggregatesField: Field }",
-    `type VendoBucket = ${buckets};`,
-  ];
+  // The bucket union is INLINED rather than aliased: a finding quotes the
+  // parameter type the compiler resolved, and an alias name teaches a model
+  // nothing where `"day" | "month" | "year"` teaches it the answer.
+  const lines = ["interface VendoAggregate<Field extends string> { readonly __aggregatesField: Field }"];
   for (const call of EXPR_CALLS) {
     const kind = AGGREGATE_FIELD_ARITY[call];
     if (kind === "rows-and-field") {
@@ -251,7 +251,7 @@ const aggregateDeclarations = (): string[] => {
       lines.push(`declare const ${call}: (...values: any[]) => number;`);
     } else {
       lines.push(`declare const ${call}: <Row, Field extends keyof Row & string>(`
-        + "rows: readonly Row[], field: keyof Row & string, bucket: VendoBucket,"
+        + `rows: readonly Row[], field: keyof Row & string, bucket: ${buckets},`
         + " aggregate: VendoAggregate<Field>"
         + ") => Array<{ bucket: string; value: number }>;");
     }
