@@ -106,7 +106,27 @@ function timeline(status: Transaction["status"], ts: string) {
   return [{ state: "Pending", at: ts }]
 }
 
-export function buildSeed(anchor: Date = new Date()): SeedData {
+export type MapleScenario = "low-balance"
+
+export const MAPLE_SCENARIOS: MapleScenario[] = ["low-balance"]
+
+/** Scenario balance overrides for the demo's reseed lever. "low-balance"
+ *  lands net worth at exactly $54,907.15 — just under the $55,000 watcher
+ *  threshold the meeting script uses — while checking and savings keep their
+ *  standard values (savings stays above $10,000 so the scripted
+ *  $10K savings→checking top-up is executable without overdraft). */
+const SCENARIO_BALANCES: Record<MapleScenario, Record<string, number>> = {
+  "low-balance": {
+    [JOINT]: 600000,
+    [INVEST]: 800000,
+    [BUSINESS]: 350000,
+    [MONEYMARKET]: 114200,
+  },
+}
+
+export function buildSeed(anchor: Date = new Date(), scenario?: MapleScenario): SeedData {
+  const balanceOf = (id: string, standard: number): number =>
+    scenario === undefined ? standard : SCENARIO_BALANCES[scenario][id] ?? standard
   const rand = mulberry32(20260629)
   const pick = <T,>(arr: T[]) => arr[Math.floor(rand() * arr.length)]
   const between = (min: number, max: number) => -(min + Math.floor(rand() * (max - min)))
@@ -327,20 +347,20 @@ export function buildSeed(anchor: Date = new Date()): SeedData {
   txns.sort((a, b) => +new Date(b.timestamp) - +new Date(a.timestamp))
 
   const accounts: Account[] = [
-    { id: CHECKING, name: "Maple Checking", kind: "checking", mask: "4471", balance: 941220,
-      accountNumber: "•••• •••• 4471", routingNumber: "•••••• 021", sparkline: spark(rand, 941220) },
-    { id: SAVINGS, name: "Maple Savings", kind: "savings", mask: "8820", balance: 2814135, apy: 4.25,
-      accountNumber: "•••• •••• 8820", routingNumber: "•••••• 021", sparkline: spark(rand, 2814135) },
-    { id: JOINT, name: "Maple Joint Savings", kind: "savings", mask: "6114", balance: 1523060, apy: 4.1,
-      accountNumber: "•••• •••• 6114", routingNumber: "•••••• 021", sparkline: spark(rand, 1523060) },
+    { id: CHECKING, name: "Maple Checking", kind: "checking", mask: "4471", balance: balanceOf(CHECKING, 941220),
+      accountNumber: "•••• •••• 4471", routingNumber: "•••••• 021", sparkline: spark(rand, balanceOf(CHECKING, 941220)) },
+    { id: SAVINGS, name: "Maple Savings", kind: "savings", mask: "8820", balance: balanceOf(SAVINGS, 2814135), apy: 4.25,
+      accountNumber: "•••• •••• 8820", routingNumber: "•••••• 021", sparkline: spark(rand, balanceOf(SAVINGS, 2814135)) },
+    { id: JOINT, name: "Maple Joint Savings", kind: "savings", mask: "6114", balance: balanceOf(JOINT, 1523060), apy: 4.1,
+      accountNumber: "•••• •••• 6114", routingNumber: "•••••• 021", sparkline: spark(rand, balanceOf(JOINT, 1523060)) },
     { id: CREDIT, name: "Maple Credit", kind: "credit", mask: "0934", balance: -128840, apy: 0,
       accountNumber: "•••• •••• 0934", sparkline: spark(rand, 128840) },
-    { id: INVEST, name: "Maple Invest", kind: "investing", mask: "5567", balance: 1864200,
-      accountNumber: "•••• •••• 5567", sparkline: spark(rand, 1864200) },
-    { id: BUSINESS, name: "Maple Business Checking", kind: "checking", mask: "3308", balance: 2247915,
-      accountNumber: "•••• •••• 3308", routingNumber: "•••••• 021", sparkline: spark(rand, 2247915) },
-    { id: MONEYMARKET, name: "Maple Money Market", kind: "savings", mask: "7702", balance: 5031240, apy: 4.6,
-      accountNumber: "•••• •••• 7702", routingNumber: "•••••• 021", sparkline: spark(rand, 5031240) },
+    { id: INVEST, name: "Maple Invest", kind: "investing", mask: "5567", balance: balanceOf(INVEST, 1864200),
+      accountNumber: "•••• •••• 5567", sparkline: spark(rand, balanceOf(INVEST, 1864200)) },
+    { id: BUSINESS, name: "Maple Business Checking", kind: "checking", mask: "3308", balance: balanceOf(BUSINESS, 2247915),
+      accountNumber: "•••• •••• 3308", routingNumber: "•••••• 021", sparkline: spark(rand, balanceOf(BUSINESS, 2247915)) },
+    { id: MONEYMARKET, name: "Maple Money Market", kind: "savings", mask: "7702", balance: balanceOf(MONEYMARKET, 5031240), apy: 4.6,
+      accountNumber: "•••• •••• 7702", routingNumber: "•••••• 021", sparkline: spark(rand, balanceOf(MONEYMARKET, 5031240)) },
   ]
 
   const cards: Card[] = [

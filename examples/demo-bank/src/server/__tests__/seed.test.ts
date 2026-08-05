@@ -43,3 +43,23 @@ describe("buildSeed", () => {
     expect(data.notifications.length).toBeGreaterThan(0)
   })
 })
+
+describe("buildSeed low-balance scenario", () => {
+  const data = buildSeed(anchor, "low-balance")
+
+  it("lands net worth exactly at $54,907.15 — below the $55,000 watcher threshold", () => {
+    const net = data.accounts.reduce((sum, a) => sum + a.balance, 0)
+    expect(net).toBe(5490715)
+  })
+
+  it("keeps all seven accounts and the checking/savings pins", () => {
+    expect(data.accounts).toHaveLength(7)
+    expect(data.accounts.find(a => a.id === "acc_checking")!.balance).toBe(941220)
+    expect(data.accounts.find(a => a.id === "acc_savings")!.balance).toBe(2814135)
+  })
+
+  it("keeps the DoorDash plant as the most recent transaction", () => {
+    const sorted = [...data.transactions].sort((x, y) => +new Date(y.timestamp) - +new Date(x.timestamp))
+    expect(sorted[0].merchant).toBe("DoorDash")
+  })
+})
