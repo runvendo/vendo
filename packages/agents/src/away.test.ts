@@ -108,6 +108,63 @@ describe("awayRunner", () => {
     expect(report.summary).toBe("Two invoices are outstanding.");
   });
 
+  // The run record's `summary` is contracted as a SUMMARY (07 §5 — "agentic:
+  // model-written"), and the automations panel prints it VERBATIM in a run row.
+  // An away turn's assistant message is the whole working narration, so a
+  // succeeded run used to render thousands of characters of "I'll gather all the
+  // data simultaneously… **Analysis notes:**" where a person expected a line.
+  describe("summary", () => {
+    /** The shape a real agentic turn leaves behind: a plan, its working notes,
+     *  then the account of what happened. Comfortably past any sane cap. */
+    const narration = (closing: string) => [
+      "I'll gather all the data simultaneously so nothing waits on anything else.",
+      `**Analysis notes:**\n${Array.from({ length: 40 }, (_, index) => `- Checked ledger page ${index + 1} for unpaid invoices and matched it against the payments feed.`).join("\n")}`,
+      "Cross-referencing the payment feed against the ledger to be sure nothing double-counts.",
+      closing,
+    ].join("\n\n");
+
+    const summaryOf = async (text: string): Promise<string> => {
+      const store = memoryStore();
+      const run = awayRunner(deps(store, defineHarness({
+        name: "narrator",
+        async *run() {
+          yield { type: "text" as const, delta: text };
+        },
+      })));
+      const report = await run({ prompt: "Check the invoices.", tools: taskRegistry() }, fireCtx());
+      return report.summary;
+    };
+
+    it("reports the section the model MARKED as its summary, not the narration around it", async () => {
+      const summary = await summaryOf(narration("**Summary:** 3 invoices are overdue; the digest went out."));
+
+      expect(summary).toBe("3 invoices are overdue; the digest went out.");
+    });
+
+    it("falls back to the model's closing paragraph when it marked no summary", async () => {
+      const summary = await summaryOf(narration("Nothing needed chasing — every invoice cleared on time."));
+
+      expect(summary).toBe("Nothing needed chasing — every invoice cleared on time.");
+    });
+
+    it("caps a closing paragraph that is itself a wall of text", async () => {
+      const wall = `In the end ${"the ledger and the payments feed agreed on every line item. ".repeat(30)}`;
+
+      const summary = await summaryOf(narration(wall));
+
+      // The contracted reading budget — a few sentences, not a transcript.
+      expect(summary.length).toBeLessThanOrEqual(400);
+      expect(summary.startsWith("In the end")).toBe(true);
+      expect(summary).not.toContain("Analysis notes");
+    });
+
+    it("leaves a reply that is already summary-sized exactly as the model wrote it", async () => {
+      const spoken = "Two invoices are overdue.\n\nBoth were chased; nothing else needed doing.";
+
+      expect(await summaryOf(spoken)).toBe(spoken);
+    });
+  });
+
   it("runs NON-interactively and preserves the firing ctx the engine built", async () => {
     const store = memoryStore();
     let seen: Turn | undefined;

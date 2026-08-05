@@ -13,7 +13,8 @@
  * The report is assembled from the three things the run really leaves behind: the
  * shipped tool bridge's own `onCall`/`gate` rails (the calls and the outcomes the
  * guard returned), the persisted assistant message (the summary, read back
- * through the real read path), and the harness's own `error` event.
+ * through the real read path and narrowed to the model's closing account), and
+ * the harness's own `error` event.
  */
 import {
   VendoError,
@@ -116,15 +117,75 @@ function watchForFailure(
   };
 }
 
+/**
+ * How much of the model's account the run record carries. `summary` is rendered
+ * VERBATIM in the automations panel's run row, so this is a reading budget — a
+ * few sentences someone takes in at a glance — not a storage limit.
+ */
+const SUMMARY_MAX_CHARS = 400;
+
+/**
+ * The label a model puts on its own closing account: "## Summary",
+ * "**Summary:**", "Final summary —". The heading marks, the emphasis and the
+ * punctuation after it are all part of the LABEL, never of the words it
+ * introduces.
+ */
+const SUMMARY_LABEL = /^[#*\s]*(?:final|closing)?\s*summary[:\-—*\s]*/i;
+
+/** Cut to the budget on a sentence boundary when there is one near it, so a
+ *  narrowed summary ends on a finished thought rather than mid-word. */
+function capped(text: string): string {
+  if (text.length <= SUMMARY_MAX_CHARS) return text;
+  const head = text.slice(0, SUMMARY_MAX_CHARS);
+  const sentenceEnd = Math.max(head.lastIndexOf(". "), head.lastIndexOf("! "), head.lastIndexOf("? "));
+  return sentenceEnd > SUMMARY_MAX_CHARS / 2
+    ? head.slice(0, sentenceEnd + 1)
+    : `${head.trimEnd()}…`;
+}
+
+/**
+ * The SUMMARY out of what the model said (01-core §13, 07-automations §5 —
+ * "agentic: model-written").
+ *
+ * An away turn's assistant message is the whole working narration: the plan it
+ * announced, every note it made on the way, and only then the account of what
+ * happened. Reporting all of it made a succeeded run render thousands of
+ * characters of "I'll gather all the data simultaneously… **Analysis notes:**"
+ * where the panel's run row promises a line.
+ *
+ * A reply already inside the budget IS the summary and is left exactly as
+ * written — narrowing a short answer would drop things it is the only record of.
+ * A longer one is narrowed to the model's own closing account: the section it
+ * MARKED as a summary if it wrote one, else its closing paragraph. Never a
+ * sentence of ours — the model's words, just the right ones.
+ */
+function conciseSummary(spoken: string): string {
+  if (spoken.length <= SUMMARY_MAX_CHARS) return spoken;
+  const blocks = spoken.split(/\n\s*\n/).map((block) => block.trim()).filter((block) => block !== "");
+  // The LAST label wins: a run that summarised twice ended on the later one.
+  let labelled = -1;
+  for (let index = blocks.length - 1; index >= 0; index -= 1) {
+    if (SUMMARY_LABEL.test(blocks[index]!)) {
+      labelled = index;
+      break;
+    }
+  }
+  const chosen = labelled === -1
+    ? blocks.at(-1)
+    // A label with nothing after it on its own line introduces the block BELOW it.
+    : blocks[labelled]!.replace(SUMMARY_LABEL, "").trim() || blocks[labelled + 1];
+  return capped((chosen ?? spoken).trim());
+}
+
 /** The assistant's own words for the turn, read back through the real read path. */
 function spokenSummary(messages: readonly UIMessage[]): string {
   const reply = [...messages].reverse().find((message) => message.role === "assistant");
   if (reply === undefined) return "";
-  return reply.parts
+  return conciseSummary(reply.parts
     .filter((part): part is { type: "text"; text: string } => part.type === "text")
     .map((part) => part.text)
     .join("")
-    .trim();
+    .trim());
 }
 
 /**
