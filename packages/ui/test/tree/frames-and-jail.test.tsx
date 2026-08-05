@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import type { ComponentType } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { VENDO_TREE_FORMAT, type ToolOutcome } from "@vendoai/core";
 import { AppFrame, PinMount, TreeView } from "../../src/tree/index.js";
 
@@ -65,7 +65,7 @@ describe("AppFrame", () => {
     expect(frame.style.height).toBe("");
   });
 
-  it("pings while the embed is on screen, at most once per interval (Wave 7 H2)", async () => {
+  it("pings on user activity, throttled to the keepalive interval (Wave 7 H2)", async () => {
     vi.useFakeTimers();
     try {
       const ping = vi.fn(async () => ({ state: "awake" as const }));
@@ -75,10 +75,38 @@ describe("AppFrame", () => {
           keepalive={{ ping, intervalMs: 1_000 }}
         />,
       );
+      // Idle: ticks pass with no activity → no ping. NOTHING KEEPS AN UNUSED
+      // MACHINE AWAKE — a sandbox machine is paid for by the second, so an
+      // embed nobody is using must be allowed to sleep. A tab left open is not
+      // use.
+      await vi.advanceTimersByTimeAsync(3_000);
+      expect(ping).not.toHaveBeenCalled();
+      // Host-page activity → one ping on the next tick, then throttled.
+      fireEvent.pointerDown(window);
       await vi.advanceTimersByTimeAsync(1_000);
       expect(ping).toHaveBeenCalledTimes(1);
       await vi.advanceTimersByTimeAsync(2_000);
-      expect(ping).toHaveBeenCalledTimes(3);
+      expect(ping).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("counts focus inside the cross-origin frame as activity (Wave 7 H2)", async () => {
+    vi.useFakeTimers();
+    try {
+      // Activity INSIDE the frame is invisible to the host page, so the frame
+      // holding focus is the only observable signal that someone is using it.
+      const ping = vi.fn(async () => ({ state: "awake" as const }));
+      render(
+        <AppFrame
+          surface={{ kind: "http", url: "https://machine.invalid/app" }}
+          keepalive={{ ping, intervalMs: 1_000 }}
+        />,
+      );
+      (screen.getByTitle("Vendo app") as HTMLIFrameElement).focus();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(ping).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }
@@ -97,6 +125,7 @@ describe("AppFrame", () => {
           keepalive={{ ping, intervalMs: 1_000 }}
         />,
       );
+      fireEvent.pointerDown(window);
       await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
       expect(ping).toHaveBeenCalledTimes(1);
       expect(screen.queryByLabelText("Vendo app resuming")).toBeNull();

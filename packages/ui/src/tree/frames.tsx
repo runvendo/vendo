@@ -9,7 +9,9 @@ import { Skeleton } from "./primitives.js";
 /**
  * Wave 7 H2 — the served-surface keepalive seam. An embedded served app dies
  * under the user when its machine idles out; `ping` (client.apps.pingMachine)
- * is the host-proxied signal that keeps it awake while the embed is on screen.
+ * is the host-proxied activity signal that keeps it awake. Activity is the gate,
+ * not the timer: a machine costs money by the second, so an embed nobody is
+ * using is allowed to sleep.
  *
  * That is the whole seam. A woken machine used to mint a new ingress URL, so the
  * frame also had to detect the wake and re-open for the fresh address; served-app
@@ -18,7 +20,7 @@ import { Skeleton } from "./primitives.js";
  */
 export interface AppFrameKeepalive {
   ping(): Promise<{ state: "awake" | "woke" }>;
-  /** Ping cadence (default 60s) — at most one ping per tick. */
+  /** Activity-check cadence (default 60s) — pings are at most one per tick. */
   intervalMs?: number;
 }
 
@@ -99,10 +101,22 @@ function HttpFrame({ url, keepalive }: { url: string; keepalive?: AppFrameKeepal
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   useEffect(() => {
     if (keepalive === undefined || typeof window === "undefined") return undefined;
+    let activity = false;
     let busy = false;
+    const mark = () => { activity = true; };
+    const events = ["pointerdown", "pointermove", "keydown", "wheel"] as const;
+    for (const name of events) window.addEventListener(name, mark, { passive: true });
     const tick = async () => {
-      // A hidden tab is nobody's embed: nothing holds an unseen machine awake.
       if (busy || document.visibilityState === "hidden") return;
+      // Activity INSIDE the cross-origin iframe is invisible to the host
+      // page; the frame holding focus is that activity's observable signal.
+      const active = activity || document.activeElement === frameRef.current;
+      activity = false;
+      // Nothing keeps an UNUSED machine awake. A sandbox machine is paid for by
+      // the second, so an embed nobody is using has to be allowed to sleep —
+      // a tab left open is not use, and pinging on the timer alone would keep
+      // every abandoned tab's machine warm forever.
+      if (!active) return;
       busy = true;
       try {
         // An unreachable ping is the machine's problem, not the frame's — the
@@ -113,7 +127,10 @@ function HttpFrame({ url, keepalive }: { url: string; keepalive?: AppFrameKeepal
       }
     };
     const timer = window.setInterval(() => { void tick(); }, keepalive.intervalMs ?? 60_000);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+      for (const name of events) window.removeEventListener(name, mark);
+    };
   }, [keepalive]);
   // The served app reports its own natural height; the frame fits it inside the
   // host's bounds. Same wire, same gate, same clamp as the jail (frame-resize.ts).
