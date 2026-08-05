@@ -1,6 +1,6 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
-import { cpSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -168,7 +168,71 @@ describe("box app template (the served-app warm start)", () => {
   });
 
   it("refuses to serve anything outside the build output", async () => {
-    const response = await fetch(`${base}/assets/../../../etc/passwd`);
+    // Encoded, because fetch normalizes a literal `../` away before it is sent:
+    // the raw pathname would never reach the server, so the guard is only really
+    // exercised by an escape the URL parser leaves intact.
+    const response = await fetch(`${base}/assets/%2e%2e%2f%2e%2e%2fpackage.json`);
     expect(response.status).toBe(404);
+  });
+});
+
+/**
+ * Contract §3.2 rebuildability, template half: an app provisioned fresh from the
+ * template plus `doc.source`, with the snapshot DELETED, must build and serve.
+ * Losing a snapshot must not lose an app, so source files and the template alone
+ * have to be sufficient — no build output, and no network.
+ */
+describe("box app template (a cold provision, no snapshot)", () => {
+  let child: ChildProcess;
+  let base: string;
+
+  beforeAll(async () => {
+    const appDir = provision();
+    // What a checkout writes: the app's OWN source, and nothing built.
+    writeFileSync(
+      path.join(appDir, "fns.js"),
+      'export const fns = { restored: async () => ({ from: "source" }) };\n',
+    );
+    expect(existsSync(path.join(appDir, "dist"))).toBe(false);
+
+    const port = await freePort();
+    base = `http://127.0.0.1:${port}`;
+    // No pre-build: `node server.js` IS the whole recovery, exactly as the
+    // supervisor runs the `.vendo/run` line. The registry points at a dead
+    // address so a build that tried to reach one would fail loudly rather than
+    // pass on this machine and break in the egress-denied box.
+    child = spawn("node", ["server.js"], {
+      cwd: appDir,
+      env: { ...process.env, PORT: String(port), npm_config_registry: "http://127.0.0.1:1", npm_config_offline: "true" },
+      stdio: "ignore",
+    });
+    const deadline = Date.now() + 120_000;
+    let up = false;
+    while (!up && Date.now() < deadline) {
+      up = await fetch(`${base}/`).then((response) => response.ok, () => false);
+      if (!up) await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    expect(up).toBe(true);
+  }, 300_000);
+
+  afterAll(() => {
+    child?.kill("SIGKILL");
+  });
+
+  it("builds itself from source alone and serves the app", async () => {
+    const response = await fetch(`${base}/`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/html");
+    expect(await response.text()).toMatch(/(?:src|href)="\.\/assets\//);
+  });
+
+  it("serves the restored app's own fns", async () => {
+    const response = await fetch(`${base}/fn/restored`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ args: {} }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ result: { from: "source" } });
   });
 });
