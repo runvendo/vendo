@@ -134,21 +134,34 @@ export async function createSession(
   const handlers = new Set<(req: ApprovalEvent) => void>();
   const decide = (request: ApprovalRequest, approve: boolean): Promise<void> =>
     deps.guard.approvals.decide([request.id], { approve }, principal);
+  // The guard is SHARED across every session on this agent, and it stamps each
+  // parked approval with the RunContext's sessionId — this thread. Only that
+  // conversation may see (or resolve, via the closures below) its approvals;
+  // an ownerless request matches no thread, so delivery fails closed.
   // Decisions re-dispatch through the guard's own `onApprovalDecision` subscribers.
-  deps.guard.onApprovalRequested((request) => {
+  const deliver = (request: ApprovalRequest): void => {
+    if (request.ctx.sessionId !== threadId) return;
     const event: ApprovalEvent = {
       request,
       approve: () => decide(request, true),
       deny: () => decide(request, false),
     };
     for (const handler of handlers) handler(event);
-  });
+  };
+  let unsubscribe: (() => void) | undefined;
 
   return {
     threadId,
     on(_event, handler) {
       handlers.add(handler);
-      return () => handlers.delete(handler);
+      unsubscribe ??= deps.guard.onApprovalRequested(deliver);
+      return () => {
+        handlers.delete(handler);
+        if (handlers.size === 0) {
+          unsubscribe?.();
+          unsubscribe = undefined;
+        }
+      };
     },
     async stream(message, streamOptions = {}) {
       const userMessage = asUserMessage(message);

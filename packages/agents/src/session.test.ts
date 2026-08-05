@@ -3,8 +3,8 @@
  * `createHarnessRuntime` — only the thinker is scripted, because the thinker
  * is deliberately not what is under test (CLAUDE.md: test the SEAM).
  */
-import type { ApprovalRequest, RunContext, Turn } from "@vendoai/core";
-import type { VendoGuard } from "@vendoai/guard";
+import { VendoError, type ApprovalRequest, type RunContext, type Turn } from "@vendoai/core";
+import { createGuard, type VendoGuard } from "@vendoai/guard";
 import { defineHarness } from "@vendoai/harnesses";
 import { createStore, threadMessageStore, threadStore } from "@vendoai/store";
 import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
@@ -176,10 +176,73 @@ describe("session", () => {
       events.push(req.request.id);
       void req.approve();
     });
-    const request = { id: "apr_1", call: { id: "c1", tool: "t", args: {} } } as unknown as ApprovalRequest;
+    // Delivery is scoped to the parking conversation, so the request must
+    // carry this session's own thread as its owner to be surfaced at all.
+    const request = {
+      id: "apr_1",
+      call: { id: "c1", tool: "t", args: {} },
+      ctx: { sessionId: session.threadId },
+    } as unknown as ApprovalRequest;
     requested?.(request);
     expect(events).toEqual(["apr_1"]);
     await Promise.resolve();
     expect(decisions).toEqual([[["apr_1"], { approve: true }, principal]]);
+  });
+
+  it("delivers an approval ONLY to the conversation that parked it, and a foreign session cannot decide it", async () => {
+    const store = memoryStore();
+    const guard = createGuard({ store, policy: "cautious" });
+    const writer = tool({
+      name: "writer",
+      risk: "write",
+      inputSchema: { type: "object" },
+      execute: () => ({ done: true }),
+    });
+    const caller = defineHarness({
+      name: "caller",
+      async *run(turn) {
+        await turn.tools.call("writer", {});
+        yield { type: "text" as const, delta: "wrote" };
+      },
+    });
+    const support = agent({ name: "support", harness: caller, store, guard, tools: [writer] });
+    const sessionA = await support.session("u_a");
+    const sessionB = await support.session("u_b");
+    // Same user as A, other conversation: scoping is per THREAD, not per subject.
+    const sessionA2 = await support.session("u_a");
+
+    const leaked: string[] = [];
+    sessionB.on("approval", (event) => leaked.push(`B:${event.request.id}`));
+    sessionA2.on("approval", (event) => leaked.push(`A2:${event.request.id}`));
+
+    const seen: ApprovalRequest[] = [];
+    let crossUserDecide: unknown = "not-attempted";
+    sessionA.on("approval", (event) => {
+      seen.push(event.request);
+      void (async () => {
+        // The other user's resolve path: deciding A's pending approval as u_b
+        // must reject before A's own approve lands.
+        try {
+          await guard.approvals.decide(
+            [event.request.id],
+            { approve: false },
+            { kind: "user", subject: "u_b" },
+          );
+          crossUserDecide = "allowed";
+        } catch (error) {
+          crossUserDecide = error;
+        }
+        await event.approve();
+      })();
+    });
+
+    const response = await sessionA.stream("write it");
+    await response.text();
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.ctx.principal.subject).toBe("u_a");
+    expect(leaked).toEqual([]);
+    expect(crossUserDecide).toBeInstanceOf(VendoError);
+    expect((crossUserDecide as VendoError).code).toBe("not-found");
   });
 });

@@ -1541,6 +1541,9 @@ class GuardImplementation implements VendoGuard {
         principal: cloneJson(ctx.principal),
         venue: ctx.venue,
         presence: ctx.presence,
+        // The owner identity the record below already keeps — ON the request
+        // too, so subscribers can scope delivery to the parking conversation.
+        sessionId: ctx.sessionId,
         ...(ctx.appId === undefined ? {} : { appId: ctx.appId }),
         ...(ctx.trigger === undefined ? {} : { trigger: cloneJson(ctx.trigger) }),
       },
