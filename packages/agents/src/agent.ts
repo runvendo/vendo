@@ -17,9 +17,10 @@ import { createGuard, type VendoGuard } from "@vendoai/guard";
 import { provideHarnessAdapters } from "@vendoai/harnesses";
 import { createStore, storeFiles, type VendoStore } from "@vendoai/store";
 import { randomUUID } from "node:crypto";
+import { resolveDoor, type DoorConfig } from "./door.js";
 import { withEgress, type EgressConfig } from "./egress.js";
 import type { McpServerConfig } from "./mcp.js";
-import { createSession, type AgentSession, type SessionOptions } from "./session.js";
+import { createSession, type AgentSession, type SessionDeps, type SessionOptions } from "./session.js";
 import { mergeSources, type ToolSource } from "./tools.js";
 import { loadSkillFolders } from "./skills.js";
 
@@ -40,6 +41,10 @@ export interface AgentConfig {
   store?: VendoStore;
   /** Unset + key → the ladder (E2B key, Cloud pool). */
   sandbox?: SandboxAdapter;
+  /** Where a thinker that runs outside this process dials back to reach your
+   *  tools; unset → `VENDO_BASE_URL`. Required by any harness that declares
+   *  `requires.toolDoor` — see {@link resolveDoor}. */
+  door?: DoorConfig;
   /** The host's prompt block. */
   instructions?: string;
 }
@@ -47,6 +52,14 @@ export interface AgentConfig {
 export interface VendoAgent {
   readonly name: string;
   session(subject: string, options?: SessionOptions): Promise<AgentSession>;
+  /**
+   * This agent's MCP door, present exactly when its harness thinks outside this
+   * process (`requires.toolDoor`). A library cannot add a route to the host's
+   * server, so MOUNT THIS at `DOOR_PATH` (`/api/vendo/mcp`) — it is where the
+   * box dials back to reach your tools, and it answers nothing but a live
+   * turn's own credential.
+   */
+  readonly door?: (request: Request) => Promise<Response>;
 }
 
 /**
@@ -213,7 +226,20 @@ export function agent(config: AgentConfig): VendoAgent {
       detail: { egress: domains === "all" ? "all" : [...domains] },
     }),
   );
-  if (sandbox !== undefined) provideHarnessAdapters(config.harness, { sandbox });
+  // A harness that thinks outside this process gets a REAL door or no boot.
+  // Both legs of `claudeCode()` declare it — a box and a local subprocess reach
+  // the host's tools over the same remote MCP — so this runs whether or not a
+  // sandbox resolved above.
+  const door = config.harness.requires?.toolDoor === true
+    ? resolveDoor(config.door, config.harness.name, { tools: bound, guard, store })
+    : undefined;
+  provideHarnessAdapters(config.harness, {
+    ...(sandbox === undefined ? {} : { sandbox }),
+    ...(door === undefined ? {} : { toolDoor: door.port }),
+  });
+  const liveTurn: SessionDeps["liveTurn"] = door === undefined
+    ? undefined
+    : ({ threadId, ctx, tools }) => door.publish(threadId, { ctx, tools });
 
   const deps = {
     name: config.name,
@@ -224,11 +250,16 @@ export function agent(config: AgentConfig): VendoAgent {
     tools: bound,
     skills,
     ...(config.instructions === undefined ? {} : { instructions: config.instructions }),
+    // The other half of the door: a credential the harness minted resolves to
+    // NOTHING until the turn it points at is published, so without this line a
+    // mounted door 401s every tool call the box makes.
+    ...(liveTurn === undefined ? {} : { liveTurn }),
   };
 
   const built: VendoAgent = {
     name: config.name,
     session: (subject, options) => createSession(deps, subject, options),
+    ...(door === undefined ? {} : { door: door.handler }),
   };
   compositions.set(built, { ...deps, ...(sandbox === undefined ? {} : { sandbox }) });
   return built;

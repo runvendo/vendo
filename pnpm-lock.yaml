@@ -1058,6 +1058,9 @@ importers:
       '@vendoai/knowledge':
         specifier: workspace:*
         version: link:../knowledge
+      '@vendoai/mcp':
+        specifier: workspace:*
+        version: link:../mcp
       '@vendoai/store':
         specifier: workspace:*
         version: link:../store

@@ -21,7 +21,7 @@ import {
   type ToolRegistry,
 } from "@vendoai/core";
 import type { VendoGuard } from "@vendoai/guard";
-import { createHarnessRuntime } from "@vendoai/harnesses";
+import { createHarnessRuntime, type HarnessRuntimeDeps } from "@vendoai/harnesses";
 import {
   harnessStateStore,
   threadMessageStore,
@@ -68,6 +68,11 @@ export interface SessionDeps {
   tools: ToolRegistry;
   skills: readonly PackSkill[];
   instructions?: string;
+  /** Publish the turn in flight to the agent's own MCP door (`door.ts`). A
+   *  harness that thinks outside this process mints a credential pointing at
+   *  "the turn now live on thread T"; without this the pointer resolves to
+   *  nothing and every tool call it makes is a 401. */
+  liveTurn?: HarnessRuntimeDeps["liveTurn"];
 }
 
 const toHeaderRecord = (
@@ -104,6 +109,7 @@ export async function createSession(
       skills: createTurnSkills(workspace),
       transcript,
       harnessState: harnessStateStore(deps.store),
+      ...(deps.liveTurn === undefined ? {} : { liveTurn: deps.liveTurn }),
     });
   // Opened at session start (the spec's "opens thread + workspace") and
   // reopened per turn below, so a turn always sees a fresh path index.

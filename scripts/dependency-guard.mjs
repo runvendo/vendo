@@ -82,6 +82,14 @@ const LAYERS = {
   // and MCP connectors (actions), knowledge, and the e2b sandbox adapter (apps)
   // — but it is NOT the umbrella: no @vendoai/vendo, ever (the spec's
   // dependency law; the embed consumes agents, never the reverse).
+  //
+  // mcp joined for the TOOL DOOR (Amendment 2, 2026-08-05): a harness declaring
+  // `requires.toolDoor` thinks outside this process and reaches the host's
+  // tools by dialling back, so the standalone runtime has to mount the door's
+  // SERVER half (`createMcpDoor({ internal: true })`) exactly as the umbrella
+  // does. mcp depends on core alone, so there is no cycle and the umbrella is
+  // not dragged in; the cost is that a standalone install now carries
+  // @modelcontextprotocol/sdk and jose, which is accepted.
   "@vendoai/agents": [
     "@vendoai/core",
     "@vendoai/actions",
@@ -89,6 +97,7 @@ const LAYERS = {
     "@vendoai/guard",
     "@vendoai/harnesses",
     "@vendoai/knowledge",
+    "@vendoai/mcp",
     "@vendoai/store",
   ],
   // the canonical umbrella is the only package allowed to depend on every block
