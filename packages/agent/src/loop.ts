@@ -16,6 +16,7 @@
  */
 import {
   ASK_USER_TOOL,
+  VendoError,
   VENDO_MAKE_TOOL,
   VENDO_APP_BUILD_FAILED_PREFIX,
   type TurnId,
@@ -33,11 +34,19 @@ import {
   type ToolSet,
   type UIMessage,
 } from "ai";
+import { failoverModel, type ResolvedModel } from "./failover.js";
 import type { ToolSearchSession } from "./tool-search.js";
 
 // AGENT-7: the default agent-loop step cap (unchanged from the previously
 // hardcoded value); hosts raise or lower it via context.maxSteps.
 export const DEFAULT_MAX_STEPS = 20;
+
+/** §4.1 item 3 — the per-turn provider retry budget, STATED. It used to be unset,
+ *  so the loop inherited whatever the SDK's default happened to be: a posture
+ *  nobody chose, that no reader of this file could see, and that a minor version
+ *  bump could change under us. The value matches the SDK's own default, so making
+ *  it explicit changed no behaviour — only who owns it. */
+export const DEFAULT_MAX_RETRIES = 2;
 
 // Anthropic prompt-caching breakpoint. providerOptions.anthropic is ignored by every
 // other provider (and by the test mocks), so marking breakpoints degrades to a no-op.
@@ -192,6 +201,11 @@ export async function turnModelMessages(
 
 export interface TurnLoopOptions {
   model: LanguageModel;
+  /** §4.1 item 3 — the rungs BELOW `model`, tried in order when a provider fails
+   *  before producing any output. Unset (the normal case) means no ladder is built
+   *  and the model reaches `streamText` exactly as it does today. See
+   *  {@link failoverModel} for why the boundary is the first byte. */
+  fallbacks?: readonly ResolvedModel[];
   system: string;
   messages: UIMessage[];
   /** Already built and guard-bound by the caller (buildAgentTools, or the
@@ -218,6 +232,9 @@ export interface TurnContext {
    *  tokenized (see {@link CHARS_PER_TOKEN}). */
   contextTokenBudget?: number;
   maxSteps?: number;
+  /** How many times the SDK re-issues a failed provider call. Defaults to
+   *  {@link DEFAULT_MAX_RETRIES}; 0 spends nothing. */
+  maxRetries?: number;
 }
 
 export interface TurnLoop {
@@ -231,6 +248,19 @@ export interface TurnLoop {
   stepLimitPart(): Promise<VendoStepLimitPart | undefined>;
 }
 
+/** The model `streamText` is handed: the one the caller named, or the ordered
+ *  ladder when it named more. Unset fallbacks build nothing at all, so a
+ *  single-model turn is byte-for-byte the call it was before failover existed. */
+function turnModel(options: TurnLoopOptions): LanguageModel {
+  const fallbacks = options.fallbacks ?? [];
+  if (fallbacks.length === 0) return options.model;
+  const primary = options.model;
+  if (typeof primary === "string" || primary.specificationVersion !== "v3") {
+    throw new VendoError("validation", "provider failover needs a resolved v3 model as the primary");
+  }
+  return failoverModel([primary, ...fallbacks]);
+}
+
 export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
   const maxSteps = options.context?.maxSteps ?? DEFAULT_MAX_STEPS;
   const modelMessages = await turnModelMessages(
@@ -241,11 +271,13 @@ export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
   );
   const { toolSearch } = options;
   const result = streamText({
-    model: options.model,
+    model: turnModel(options),
     messages: modelMessages,
     tools: options.tools,
     stopWhen: [stepCountIs(maxSteps), buildFailedStop, askedUserStop],
     maxOutputTokens: options.context?.maxOutputTokens,
+    // Stated rather than inherited — see DEFAULT_MAX_RETRIES.
+    maxRetries: options.context?.maxRetries ?? DEFAULT_MAX_RETRIES,
     // ENG-252 loadout: restrict what the model may pick to the current loadout.
     // `prepareStep` re-reads it each step so a tool loaded via
     // `vendo_tools_search` becomes callable on the very next step. This gates the
