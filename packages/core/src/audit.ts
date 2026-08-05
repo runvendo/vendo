@@ -24,7 +24,9 @@ export interface AuditEvent {
   tool?: string;
   /** The risk the guard actually gated on — the EFFECTIVE grade, after any
    *  `resolveRisk`, not the descriptor's static label. Absent on rows written
-   *  with no tool descriptor in hand. */
+   *  with no tool descriptor in hand, and on a control/frozen row: the freeze
+   *  short-circuit runs before risk resolution, so it has no effective grade to
+   *  report and omits the field rather than chip the declared label. */
   risk?: RiskLabel;
   inputPreview?: string;
   outcome?: ToolOutcome["status"];

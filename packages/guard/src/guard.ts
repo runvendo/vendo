@@ -766,8 +766,55 @@ class GuardImplementation implements VendoGuard {
   }
 
   async frozen(): Promise<boolean> {
-    const record = await this.#store.records(CONTROLS_COLLECTION).get(FREEZE_ROW);
-    return (record?.data as { frozen?: unknown } | null)?.frozen === true;
+    let record: VendoRecord | null;
+    try {
+      record = await this.#store.records(CONTROLS_COLLECTION).get(FREEZE_ROW);
+    } catch (error) {
+      // The kill switch could not even be READ (a store error). Fail CLOSED
+      // and contain the failure into a decision, exactly as every other error
+      // in the pipeline is contained — never let it escape check()/execute() as
+      // an unhandled rejection while the guard silently stops gating.
+      await this.#reportUnreadableControl(errorMessage(error));
+      return true;
+    }
+    // Absent row: the switch was never pulled — normal, unfrozen.
+    if (record === null) return false;
+    const frozen = (record.data as { frozen?: unknown }).frozen;
+    if (typeof frozen === "boolean") return frozen;
+    // A control row that EXISTS but does not parse is a kill switch we can no
+    // longer read. Fail CLOSED — treat it as frozen — rather than let a corrupt
+    // switch read as "run everything".
+    await this.#reportUnreadableControl();
+    return true;
+  }
+
+  /** The kill switch could not be read as a boolean — the row is corrupt, or
+   *  the store read itself threw. Either way the guard fails CLOSED; this leaves
+   *  a note saying why, best-effort, because an audit-write failure must not
+   *  turn a contained block back into an escaping exception. */
+  async #reportUnreadableControl(error?: string): Promise<void> {
+    try {
+      await this.report({
+        id: makeId("aud_"),
+        at: now(),
+        kind: "policy-decision",
+        principal: { kind: "org", subject: "system" },
+        venue: "chat",
+        presence: "present",
+        outcome: "blocked",
+        decidedBy: "frozen",
+        detail: {
+          reason: "frozen",
+          malformedControlRow: true,
+          ...(error === undefined ? {} : { error }),
+        },
+      });
+    } catch (reportError) {
+      console.error(
+        `[vendo] guard: the freeze control row is unreadable and the malformed-control audit note `
+        + `could not be written (${errorMessage(reportError)}). The guard is failing closed.`,
+      );
+    }
   }
 
   /** The switch is flipped BEFORE it is reported: an audit failure must never
@@ -833,14 +880,17 @@ class GuardImplementation implements VendoGuard {
     commitRun = true,
   ): Promise<CompletedDecision> {
     // Read before any other stage so a frozen guard spends nothing: no risk
-    // resolution (the risk chipped below is the DECLARED one), no breaker slot,
-    // no parked approval left for someone to answer later.
+    // resolution, no breaker slot, no parked approval left for someone to
+    // answer later. The freeze check deliberately runs BEFORE resolveRisk, so
+    // the only grade in hand here is the descriptor's DECLARED label — which
+    // `risk` (01-core §7) does not promise: it is the EFFECTIVE grade. Rather
+    // than chip a possibly-wrong label, the frozen row OMITS `risk` entirely
+    // (the console feed degrades cleanly to venue-led when risk is absent).
     if (await this.frozen()) {
       await this.report(
         eventFromContext(ctx, {
           kind: "policy-decision",
           tool: call.tool,
-          risk: descriptor.risk,
           inputPreview: inputPreview(call),
           outcome: "blocked",
           decidedBy: "frozen",
