@@ -101,6 +101,43 @@ describe("approval park and resume over the real SQL mapping", () => {
     unsubscribe();
   });
 
+  it("notifies onApprovalRequested with the parked request, after it persisted", async () => {
+    const sqlStore = await store();
+    const guard = createGuard(guardedConfig(sqlStore));
+    const destructive = descriptor("destructive");
+    const seen: Array<{ id: string; statusAtNotify?: string }> = [];
+    // Async on purpose: a returned thenable is awaited (as decision callbacks
+    // are), and the row the subscriber reads mid-callback proves the park
+    // persisted before it was announced.
+    const unsubscribe = guard.onApprovalRequested(async (request) => {
+      const row = await sqlStore.query<{ status: string }>(
+        "SELECT status FROM vendo_approvals WHERE id = $1",
+        [request.id],
+      );
+      seen.push({ id: request.id, statusAtNotify: row.rows[0]?.status });
+    });
+    guard.onApprovalRequested(() => {
+      throw new Error("a failing subscriber must not turn the ask into an error");
+    });
+
+    const decision = await guard.check(
+      call(destructive.name, { invoiceId: "inv_requested" }, "call_requested"),
+      destructive,
+      context(),
+    );
+    if (decision.action !== "ask") throw new Error("expected parked call");
+    expect(seen).toEqual([{ id: decision.approval.id, statusAtNotify: "pending" }]);
+
+    unsubscribe();
+    const second = await guard.check(
+      call(destructive.name, { invoiceId: "inv_requested_2" }, "call_requested_2"),
+      destructive,
+      context(),
+    );
+    expect(second.action).toBe("ask");
+    expect(seen).toHaveLength(1);
+  });
+
   it("never resumes a call whose tool or args differ from the approved request", async () => {
     const sqlStore = await store();
     const guard = createGuard({

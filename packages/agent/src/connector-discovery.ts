@@ -1,4 +1,4 @@
-import { VENDO_TOOL_TITLES, vendoAuthored, type Json, type RunContext, type ToolDescriptor, type ToolOutcome, type ToolRegistry } from "@vendoai/core";
+import { VENDO_TOOL_TITLES, type Json, type RunContext, type ToolDescriptor, type ToolOutcome, type ToolRegistry } from "@vendoai/core";
 
 /**
  * The connector-discovery tools, projected as ordinary tools on the one registry
@@ -88,12 +88,8 @@ export interface ConnectorDiscoveryPorts {
   list(ctx: RunContext): Promise<Json>;
 }
 
-/** Hand-written and reviewed in this repo, which is what `vendoAuthored`
- *  records: §12's second mechanical vote is for AI-ASSIGNED labels, and its
- *  verb-shape heuristic — calibrated for extracted `noun_verb` host names —
- *  fails these closed to `write`, which would make every catalog lookup a
- *  MUTATION downstream (see the same note in vendo-verbs.ts). */
-const DESCRIPTORS: ToolDescriptor[] = ([
+/** Hand-written and reviewed in this repo; the declared label is final. */
+const DESCRIPTORS: ToolDescriptor[] = [
   {
     name: "find_service_tools",
     title: VENDO_TOOL_TITLES.find_service_tools,
@@ -142,7 +138,7 @@ const DESCRIPTORS: ToolDescriptor[] = ([
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     risk: "read",
   },
-] satisfies ToolDescriptor[]).map((descriptor) => vendoAuthored(descriptor));
+];
 
 /** Which port each tool needs. A tool whose port is unset is never projected —
  *  the repo's "no adapter, no tool" rule, applied per tool rather than per

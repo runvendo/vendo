@@ -87,7 +87,9 @@ export const hostTools = [
     name: "host_invoices_send",
     description: "Send invoice",
     inputSchema: { type: "object" },
-    risk: "write",
+    // Sending reaches a human, so the dev labels it destructive — the label is
+    // final (two-vote grading removed), and THE LAW's away-run refusals rest on it.
+    risk: "destructive",
     binding: { kind: "route", method: "POST", path: "/api/invoices/{id}/send", argsIn: "body" },
   },
   {
@@ -191,8 +193,9 @@ export interface Stack {
 
 export interface StackOptions {
   runner?: AgentRunner;
-  /** Build the runner from the stack's own parts — the live leg builds
-   *  agent.asRunner() over the same guard + bound registry. Wins over runner. */
+  /** Build the runner from the stack's own parts — the live leg builds the
+   *  `@vendoai/agents` away runner over the same guard and store the engine got.
+   *  Wins over runner. */
   runnerFrom?: (parts: { guard: VendoGuard; bound: ToolRegistry; store: VendoStore }) => AgentRunner;
   now?: () => Date;
   policy?: PolicyConfig;

@@ -36,8 +36,7 @@ const assertedOrgs = (ctx: RunContext): string[] => {
  *  therefore never matched, and the ordinary case — an org that simply set no
  *  policy — took the FAILURE path: a warning and an audit row on every guarded
  *  call, with the throw skipping the cache so the TTL never engaged. Matching the
- *  prefix is exactly what `workspaceBash`'s REFUSAL regex does with these same
- *  errors.
+ *  message PREFIX is therefore the only classification that works on these.
  *
  *  ENOENT ALONE. `EACCES` and `EISDIR` used to be swept in here as if they were
  *  the same answer, and they are not: EACCES is "there is no mount at this path"

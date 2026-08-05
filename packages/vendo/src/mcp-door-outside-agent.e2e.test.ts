@@ -76,14 +76,16 @@ describe("the MCP door, as an OUTSIDE agent sees it — pinned before door-ctx",
       "search_components",
       "validate",
       "vendo_apps_call",
-      "vendo_apps_create",
       "vendo_apps_data_delete",
       "vendo_apps_data_list",
       "vendo_apps_data_put",
-      "vendo_apps_edit",
       "vendo_apps_list",
       "vendo_apps_open",
       "vendo_apps_rebase_pin",
+      // The one-tool contract's whole point for MCP: an outside agent asks for a
+      // screen through `vendo_make` and never has to decide "new or change?"
+      // first. Losing it from this list is losing the front door.
+      "vendo_make",
     ]);
   });
 

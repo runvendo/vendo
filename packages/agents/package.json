@@ -1,0 +1,72 @@
+{
+  "name": "@vendoai/agents",
+  "version": "0.7.0",
+  "description": "The standalone agent runtime: spawn a governed, harness-grade agent in any Node backend in a few lines.",
+  "keywords": [
+    "ai",
+    "agent",
+    "runtime",
+    "harness",
+    "guardrails",
+    "vendo"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/runvendo/vendo.git",
+    "directory": "packages/agents"
+  },
+  "homepage": "https://vendo.run",
+  "bugs": "https://github.com/runvendo/vendo/issues",
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./harnesses": {
+      "types": "./dist/harnesses.d.ts",
+      "default": "./dist/harnesses.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@vendoai/actions": "workspace:*",
+    "@vendoai/apps": "workspace:*",
+    "@vendoai/core": "workspace:*",
+    "@vendoai/guard": "workspace:*",
+    "@vendoai/harnesses": "workspace:*",
+    "@vendoai/knowledge": "workspace:*",
+    "@vendoai/mcp": "workspace:*",
+    "@vendoai/store": "workspace:*",
+    "zod": "^3.25.0"
+  },
+  "peerDependencies": {
+    "ai": ">=6.0.0 <7",
+    "zod": ">=3.25.0 <5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "ai": "6.0.28",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

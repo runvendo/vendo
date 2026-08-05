@@ -1,4 +1,5 @@
 import {
+  auditContext,
   VENDO_APP_BUILD_FAILED_PREFIX,
   VENDO_TREE_FORMAT,
   VendoError,
@@ -1145,7 +1146,11 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   const reportGuard = async (
     principalSubject: string,
     appId: AppId,
-    ctx: Pick<RunContext, "venue" | "presence"> & { trigger?: RunContext["trigger"] },
+    // Every field the ROW depends on is named here. It used to stop at
+    // venue/presence/trigger, and `turnId` survived only because every caller
+    // happens to hand over a whole ctx — so the first caller to pass a literal
+    // would have dropped it silently. Naming it makes that a typecheck failure.
+    ctx: Pick<RunContext, "venue" | "presence" | "trigger" | "turnId">,
     detail: Record<string, Json>,
   ): Promise<void> => {
     await config.guard.report(
@@ -1707,7 +1712,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       code: "edit-rejected",
       retryable,
       message: retryable
-        ? "Edit was not applied. Retry vendo_apps_edit on the same app with a narrower instruction; do not rebuild the app."
+        ? "Edit was not applied. Retry vendo_make with the same `app` and a narrower request; do not rebuild the app."
         : "Edit was not applied and cannot be retried until the reported blocker is resolved.",
     },
   });
@@ -1896,9 +1901,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       id: `aud_${globalThis.crypto.randomUUID()}`,
       at: new Date().toISOString(),
       kind: "share",
-      principal: ctx.principal,
-      venue: ctx.venue,
-      presence: ctx.presence,
+      ...auditContext(ctx),
       appId,
       detail,
     });

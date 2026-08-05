@@ -186,8 +186,8 @@ describe("activityDetail — the values are consumer copy too", () => {
   const preview = (tool: string, args: unknown) => activityDetail({ tool, inputPreview: `${tool} ${JSON.stringify(args)}` });
 
   it("drops an id-shaped value and keeps the words a person wrote", () => {
-    expect(preview("vendo_apps_edit", { appId: "app_9a3f2b1c", instruction: "add a chart" }))
-      .toBe("Instruction add a chart");
+    expect(preview("vendo_make", { app: "app_9a3f2b1c", request: "add a chart" }))
+      .toBe("Request add a chart");
   });
 
   it("says nothing at all when every value is an id", () => {

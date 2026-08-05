@@ -6,7 +6,7 @@ import { PGlite } from "@electric-sql/pglite";
 import fs from "node:fs";
 import { join, resolve } from "node:path";
 
-import { createPostgresDb, type Db, type StoreConfig } from "./db-postgres.js";
+import { createPostgresDb, type Db, type Query, type StoreConfig } from "./db-postgres.js";
 
 export type { Db, Query, StoreConfig } from "./db-postgres.js";
 
@@ -332,6 +332,19 @@ function createPgliteDb(dataDir: string): Db {
     // lock session — the ENG-351 dir lock already serializes processes.
     withSchemaLock(work) {
       return work(db.query.bind(db));
+    },
+    async transaction(work, opts) {
+      const active = await open();
+      // PGlite is single-connection; use its transaction method which
+      // serializes concurrent calls and handles BEGIN/COMMIT/ROLLBACK.
+      return active.transaction(async (tx) => {
+        const txQuery: Query = async (text, params = []) => {
+          const result = await tx.query<Record<string, unknown>>(text, params);
+          return { rows: result.rows as Record<string, unknown>[] };
+        };
+        if (opts?.beforeWork) await opts.beforeWork(txQuery);
+        return await work(txQuery);
+      });
     },
   };
   return db;

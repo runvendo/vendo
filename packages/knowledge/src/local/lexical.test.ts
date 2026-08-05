@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { KnowledgeContext, KnowledgeDoc } from "@vendoai/core";
 import { knowledgeAdapterConformance, memoryStoreAdapter, runConformance } from "@vendoai/core/conformance";
 import { KNOWLEDGE_CHUNKS_COLLECTION, KNOWLEDGE_DOCS_COLLECTION } from "../collections.js";
-import { lexicalKnowledge } from "./lexical.js";
+import { vendoKnowledge } from "./lexical.js";
 
 const ctx: KnowledgeContext = { principal: { kind: "user", subject: "user_lexical_test" } };
 
@@ -40,15 +40,15 @@ const CORPUS: KnowledgeDoc[] = [
 
 async function seeded() {
   const store = memoryStoreAdapter();
-  const adapter = lexicalKnowledge({ store });
+  const adapter = vendoKnowledge({ store });
   await adapter.upsert!(CORPUS);
   return { store, adapter };
 }
 
-describe("lexicalKnowledge — conformance", () => {
+describe("vendoKnowledge — conformance", () => {
   it("passes the KnowledgeAdapter conformance suite over the memory store", async () => {
     const report = await runConformance(knowledgeAdapterConformance({
-      makeAdapter: async () => ({ adapter: lexicalKnowledge({ store: memoryStoreAdapter() }) }),
+      makeAdapter: async () => ({ adapter: vendoKnowledge({ store: memoryStoreAdapter() }) }),
       posture: { fetch: true, write: true, visibility: "enforced" },
     }));
     expect(report.failures).toEqual([]);
@@ -56,7 +56,7 @@ describe("lexicalKnowledge — conformance", () => {
   });
 });
 
-describe("lexicalKnowledge — retrieval quality", () => {
+describe("vendoKnowledge — retrieval quality", () => {
   it("answers multi-word natural questions with ranked hits (not substring matching)", async () => {
     const { adapter } = await seeded();
     const result = await adapter.search({ text: "How long do refunds take?" }, ctx);
@@ -109,10 +109,10 @@ describe("lexicalKnowledge — retrieval quality", () => {
   });
 });
 
-describe("lexicalKnowledge — fetch, store rows, and lifecycle", () => {
+describe("vendoKnowledge — fetch, store rows, and lifecycle", () => {
   it("fetch joins the cited chunk with its structural neighbors", async () => {
     const store = memoryStoreAdapter();
-    const adapter = lexicalKnowledge({ store });
+    const adapter = vendoKnowledge({ store });
     const long = doc({
       id: "docs#long.md",
       title: "Long guide",
@@ -165,7 +165,7 @@ describe("lexicalKnowledge — fetch, store rows, and lifecycle", () => {
   });
 
   it("fails loudly when no store is bound instead of reading as an empty corpus", async () => {
-    const unbound = lexicalKnowledge();
+    const unbound = vendoKnowledge();
     await expect(unbound.search({ text: "anything" }, ctx)).rejects.toThrow(/no store bound/);
   });
 });

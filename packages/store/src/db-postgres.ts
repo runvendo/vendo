@@ -31,6 +31,14 @@ export interface Db {
       the advisory lock, and pulling `pg` into the shared modules would drag
       it into every entry's bundle graph. */
   withSchemaLock<T>(work: (query: Query) => Promise<T>): Promise<T>;
+  /** Run work inside a database transaction. The callback receives a
+   *  transaction-scoped query function; commit on success, rollback on throw.
+   *  Accepts an optional `beforeWork` hook that runs AFTER BEGIN but BEFORE the
+   *  callback — designed for SET LOCAL statements (RLS tenant context in task 12). */
+  transaction<T>(
+    work: (query: Query) => Promise<T>,
+    opts?: { beforeWork?: (query: Query) => Promise<void> },
+  ): Promise<T>;
 }
 
 const ADVISORY_LOCK_KEY = 7_461_001;
@@ -61,6 +69,26 @@ export function createPostgresDb(url: string): Db {
     },
     withSchemaLock(work) {
       return withAdvisoryLock(url, ADVISORY_LOCK_KEY, work);
+    },
+    async transaction(work, opts) {
+      if (closed) throw new Error("[vendo] store is closed");
+      const client = await pool.connect();
+      const txQuery: Query = async (text, params = []) => {
+        const result = await client.query(text, params);
+        return { rows: result.rows as Record<string, unknown>[] };
+      };
+      try {
+        await txQuery("BEGIN");
+        if (opts?.beforeWork) await opts.beforeWork(txQuery);
+        const result = await work(txQuery);
+        await txQuery("COMMIT");
+        return result;
+      } catch (error) {
+        await txQuery("ROLLBACK").catch(() => {});
+        throw error;
+      } finally {
+        client.release();
+      }
     },
   };
 }

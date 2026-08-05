@@ -95,7 +95,7 @@ describe("E5: an external pack installs with one config line", () => {
     expect(declared).toMatchObject({ name: "check_report", title: "Check a report", risk: "read" });
     // The app tools still arrived — apps() is a pack now, and adding one does
     // not displace another.
-    expect(descriptors.map(({ name }) => name)).toContain("vendo_apps_create");
+    expect(descriptors.map(({ name }) => name)).toContain("vendo_make");
 
     // Executed through the SAME guard-bound registry chat and the MCP door use.
     const outcome = await stack.vendo.guard.bind(stack.vendo.actions).execute(

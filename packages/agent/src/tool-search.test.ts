@@ -344,7 +344,7 @@ describe("find_tools meta-tool", () => {
 
 describe("seeded loadout (connection-scoped, spec 2026-07-20)", () => {
   const surface = [
-    descriptor("vendo_apps_create", "create an app"),
+    descriptor("vendo_make", "make the user a screen"),
     descriptor("aaa_JUNK", "alphabetically first junk"),
     descriptor("gmail_SEND", "send email", "write"),
     descriptor("host_list", "list things"),
@@ -356,7 +356,7 @@ describe("seeded loadout (connection-scoped, spec 2026-07-20)", () => {
       { search: async () => [], maxInitialTools: 2 },
       ["host_list", "gmail_SEND", "missing_TOOL"],
     );
-    expect([...loadout]).toEqual(["vendo_apps_create", "host_list", "gmail_SEND"]);
+    expect([...loadout]).toEqual(["vendo_make", "host_list", "gmail_SEND"]);
     expect(loadout.has("aaa_JUNK")).toBe(false);
   });
 
@@ -366,12 +366,12 @@ describe("seeded loadout (connection-scoped, spec 2026-07-20)", () => {
       { search: async () => [], loadout: ["aaa_JUNK"] },
       ["gmail_SEND"],
     );
-    expect([...loadout]).toEqual(["vendo_apps_create", "aaa_JUNK"]);
+    expect([...loadout]).toEqual(["vendo_make", "aaa_JUNK"]);
   });
 
   it("no seed provided: the existing fallback is untouched", () => {
     const loadout = computeInitialLoadout(surface, { search: async () => [], maxInitialTools: 1 });
-    expect(loadout.has("vendo_apps_create")).toBe(true);
+    expect(loadout.has("vendo_make")).toBe(true);
     expect(loadout.has("aaa_JUNK")).toBe(true); // risk/name fallback, as before
   });
 });

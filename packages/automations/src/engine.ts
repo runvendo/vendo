@@ -1,4 +1,5 @@
 import {
+  auditContext,
   VendoError,
   approvalRequestSchema,
   appDocumentSchema,
@@ -681,16 +682,51 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     });
   };
 
+  /**
+   * The service-action slugs THIS firing holds a live grant for.
+   *
+   * §12's projection withholds every `ungraded` tool from an unattended listing,
+   * and the connector dispatcher is `ungraded` by construction — so without this
+   * an agentic automation could never reach a connector at all, however
+   * explicitly a person had allowed one action. The projection puts the
+   * dispatcher back exactly when this is non-empty; the guard still decides each
+   * call. Read at FIRE time rather than carried from arming, so a revoked grant
+   * takes the door away on the next firing.
+   */
+  const grantedServiceSlugs = async (
+    subject: string,
+    appId: string,
+    triggerId: string,
+  ): Promise<string[]> => {
+    const records = await allRecords(config.store.records(GRANTS), {
+      refs: { subject, tool: USE_SERVICE_TOOL, app_id: appId },
+    });
+    const at = now().getTime();
+    const slugs = new Set<string>();
+    for (const record of records) {
+      const parsed = permissionGrantSchema.safeParse(record.data);
+      if (!parsed.success) continue;
+      const grant = parsed.data;
+      if (grant.scope.kind !== "service-tool") continue;
+      if (grant.subject !== subject || grant.appId !== appId) continue;
+      if ((grant.triggerId ?? DEFAULT_TRIGGER_ID) !== triggerId) continue;
+      if (grant.source !== "automation" || grant.duration !== "standing") continue;
+      if (grant.revokedAt !== undefined) continue;
+      if (grant.expiresAt !== undefined && Date.parse(grant.expiresAt) <= at) continue;
+      slugs.add(grant.scope.slug);
+    }
+    return [...slugs].sort();
+  };
+
   const audit = async (ctx: RunContext, status: string, extra: Record<string, Json> = {}): Promise<void> => {
     const event: AuditEvent = {
       id: id("aud_"),
       at: iso(),
       kind: "run",
-      principal: ctx.principal,
+      ...auditContext(ctx),
+      // An automation run is away by definition, whatever the ctx says.
       venue: "automation",
       presence: "away",
-      ...(ctx.appId === undefined ? {} : { appId: ctx.appId }),
-      ...(ctx.trigger === undefined ? {} : { trigger: ctx.trigger }),
       detail: { status, ...extra },
     };
     await config.guard.report(event);
@@ -1121,12 +1157,29 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       return;
     }
     try {
+      // At 2am the run sees the dispatcher, but caged: only the slugs this
+      // (app, trigger) was actually granted are worth offering it for, so the
+      // firing's own grants ride the ctx and §12's projection reads them. Every
+      // other withheld tool stays withheld, and which slug may RUN is still the
+      // guard's decision at call time.
+      const listingCtx: RunContext = {
+        ...ctx,
+        grantedServiceSlugs: await grantedServiceSlugs(
+          ctx.principal.subject,
+          run.appId,
+          run.triggerId,
+        ),
+      };
       const report = await config.runner({
         prompt: trigger.run.prompt,
+        // The whole registry, and §12's projection is what narrows it: an away ctx
+        // withholds every destructive AND every `ungraded` descriptor. The one
+        // exemption is the connector dispatcher, and only for a firing that holds
+        // a live per-slug service grant (`grantedServiceSlugs` above).
         tools: config.tools,
         budget: { maxToolCalls: trigger.run.budget?.maxToolCalls ?? 50 },
         abortSignal,
-      }, ctx);
+      }, listingCtx);
       // Cross-instance stops cannot reach this process's controller, so the persisted
       // terminal-row check remains the best-effort fallback for a late result.
       if (await finishStoppedIfNeeded(run)) return;
@@ -1578,24 +1631,46 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     return { missing, grantSetId };
   };
 
-  /** The tools a consent moment covers. Steps DECLARE their surface; without a
-   *  model seat, agentic capture conservatively exposes every bound descriptor
-   *  (PR flag, unchanged).
+  /** The tools a consent moment covers. Steps DECLARE their surface; an agentic
+   *  run declares one too when it was authored with one (`run.tools`), and falls
+   *  back to every bound descriptor when it was not.
    *
-   *  The connector dispatcher is the one tool that never enters as itself. A
-   *  steps run contributes one item per SERVICE ACTION it names; an agentic run
-   *  names none, so it contributes none — a tool-wide grant there would be
-   *  consent to the broker's whole catalog behind a single card. An agentic
-   *  connector call therefore parks at fire time like any ungranted away step,
-   *  and its approval accretes the per-slug grant. */
+   *  The connector dispatcher never enters as ITSELF, whichever kind of run this
+   *  is: a tool-wide grant on it would be consent to the broker's whole catalog
+   *  behind a single card. A steps run contributes one item per SERVICE ACTION it
+   *  names; an agentic run contributes one per service-action slug in its
+   *  declaration, which is exactly the same width. Anything either one reaches
+   *  beyond that parks at fire time like any ungranted away call, and its
+   *  approval accretes the per-slug grant. */
   const consentSurface = async (
     trigger: Trigger,
     byName: Map<string, ToolDescriptor>,
   ): Promise<ConsentItem[]> => {
-    if (trigger.run.kind !== "steps") {
-      return [...byName.keys()]
-        .filter((tool) => tool !== USE_SERVICE_TOOL)
-        .map((tool) => ({ tool }));
+    if (trigger.run.kind === "agentic") {
+      const declared = trigger.run.tools;
+      if (declared === undefined) {
+        return [...byName.keys()]
+          .filter((tool) => tool !== USE_SERVICE_TOOL)
+          .map((tool) => ({ tool }));
+      }
+      const items = new Map<string, ConsentItem>();
+      for (const name of declared) {
+        // Declaring the dispatcher BY NAME buys nothing on purpose: it is the one
+        // name whose tool-wide grant would be the broker's whole catalog behind a
+        // single card. Name the actions instead.
+        if (name === USE_SERVICE_TOOL) continue;
+        // A declared name is a HOST TOOL when the bound surface has one by that
+        // name, and a service action otherwise — the two namespaces are disjoint
+        // by construction (bound tools match `TOOL_NAME_PATTERN`; broker slugs are
+        // never bound). A name that is neither, on a deployment with no dispatcher
+        // bound, enters under its OWN name so capture refuses it by that name
+        // rather than as a nonsense slug.
+        const item: ConsentItem = byName.has(name) || !byName.has(USE_SERVICE_TOOL)
+          ? { tool: name }
+          : { tool: USE_SERVICE_TOOL, slug: name };
+        items.set(consentKey(item), item);
+      }
+      return [...items.values()];
     }
     const items = new Map<string, ConsentItem>();
     for (const tool of declaredSurface(trigger)) {

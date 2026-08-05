@@ -13,7 +13,7 @@ import {
   ingestSources,
   knowledgeConfigSchema,
   knowledgeSourceConfigSchema,
-  lexicalKnowledge,
+  vendoKnowledge,
   type KnowledgeConfig,
 } from "@vendoai/knowledge";
 import { createStore } from "@vendoai/store";
@@ -309,7 +309,7 @@ async function runSyncVerb(
 async function defaultSyncAdapter(dir: string): Promise<{ adapter: KnowledgeAdapter; close?: () => Promise<void> }> {
   const store = createStore({ dataDir: join(dir, ".vendo", "data") });
   await store.ensureSchema();
-  return { adapter: lexicalKnowledge({ store }), close: () => store.close() };
+  return { adapter: vendoKnowledge({ store }), close: () => store.close() };
 }
 
 export async function runKnowledge(args: string[], options: KnowledgeCliOptions = {}): Promise<number> {

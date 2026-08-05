@@ -200,7 +200,9 @@ async function harness(): Promise<{
         properties: { subject: { type: "string" }, body: { type: "string" } },
         required: ["subject", "body"],
       },
-      risk: "write",
+      // Messaging a human is destructive, and the dev's label is final (two-vote
+      // grading removed) — this label is what THE LAW's refusal below rests on.
+      risk: "destructive",
     },
   ];
   // The umbrella's composition dance: the registry the runtime executes

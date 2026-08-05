@@ -141,3 +141,14 @@ export {
   type ConductedResult,
   type ConductorOptions,
 } from "./generation/conductor.js";
+// Contract §3.2 — the checkout/commit seam. Public because the workspace half of
+// it lives outside this package: a sandboxed harness holds a `WorkspaceFs` and
+// never a store, so composition binds the store side once and hands these to
+// whoever is materializing an app.
+export {
+  appMountFor,
+  checkoutApp,
+  commitApp,
+  invalidSourcePath,
+  type AppSourceSeam,
+} from "./app-source.js";

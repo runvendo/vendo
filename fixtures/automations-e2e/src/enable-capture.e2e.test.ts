@@ -226,6 +226,80 @@ describe("enable capture — connector service actions", () => {
     }
   });
 
+  it("asks per SERVICE ACTION for an agentic run that declared its tools", async () => {
+    const stack = await createStack({ serviceTools: true });
+    try {
+      const appId = "app_service_agentic_declared";
+      await stack.putApp(ADA.subject, automationDoc({
+        id: appId,
+        name: "Morning digest",
+        trigger: {
+          on: { kind: "host-event", event: "agentic.declared" },
+          run: {
+            kind: "agentic",
+            prompt: "read the inbox, then set my status",
+            // A declaration mixes host tool names and service-action slugs: it is
+            // "what this run is expected to reach", not a step list.
+            tools: ["host_invoices_list", "GMAIL_FETCH_EMAILS", "SLACK_SET_STATUS"],
+          },
+        },
+      }));
+
+      const enabled = await stack.automations.enable(appId, "main", ownerCtx(ADA.subject, appId));
+      expect(enabled.enabled).toBe(true);
+
+      // Exactly the declaration, and nothing else — the every-bound-descriptor
+      // fallback is gone the moment an automation says what it needs.
+      expect(enabled.missing.map((request) => request.call.tool).sort())
+        .toEqual(["host_invoices_list", "use_service_tool", "use_service_tool"]);
+      const serviceAsks = enabled.missing.filter((request) => request.call.tool === "use_service_tool");
+      expect(serviceAsks.map((request) => (request.call.args as { slug?: string }).slug).sort())
+        .toEqual(["GMAIL_FETCH_EMAILS", "SLACK_SET_STATUS"]);
+      // A slug in a declaration asks in exactly the words a step's slug asks in.
+      expect(serviceAsks.map((request) => request.inputPreview)).toContain(
+        'Allow "Morning digest" to fetch emails in Gmail while you\'re away (standing, this app only)',
+      );
+
+      await approve(stack, enabled.missing);
+      const grants = await stack.sql<{ tool: string; scope: { kind: string; slug?: string } }>(
+        "SELECT tool, scope FROM vendo_grants WHERE subject = $1 ORDER BY tool, scope->>'slug'",
+        [ADA.subject],
+      );
+      expect(grants).toEqual([
+        { tool: "host_invoices_list", scope: { kind: "tool" } },
+        { tool: "use_service_tool", scope: { kind: "service-tool", slug: "GMAIL_FETCH_EMAILS" } },
+        { tool: "use_service_tool", scope: { kind: "service-tool", slug: "SLACK_SET_STATUS" } },
+      ]);
+      expect((await stack.automations.enable(appId, "main", ownerCtx(ADA.subject, appId))).missing).toEqual([]);
+    } finally {
+      await stack.close();
+    }
+  });
+
+  it("never grants the dispatcher tool-wide, even when a declaration names it", async () => {
+    const stack = await createStack({ serviceTools: true });
+    try {
+      const appId = "app_service_agentic_names_dispatcher";
+      await stack.putApp(ADA.subject, automationDoc({
+        id: appId,
+        trigger: {
+          on: { kind: "host-event", event: "agentic.dispatcher" },
+          // Naming the dispatcher buys nothing: a tool-wide grant on it would be
+          // consent to the broker's whole catalog behind one card.
+          run: { kind: "agentic", prompt: "do inbox things", tools: ["use_service_tool", "host_invoices_list"] },
+        },
+      }));
+
+      const enabled = await stack.automations.enable(appId, "main", ownerCtx(ADA.subject, appId));
+
+      expect(enabled.missing.map((request) => request.call.tool)).toEqual(["host_invoices_list"]);
+      await approve(stack, enabled.missing);
+      expect(await stack.sql("SELECT id FROM vendo_grants WHERE tool = 'use_service_tool'")).toEqual([]);
+    } finally {
+      await stack.close();
+    }
+  });
+
   it("never asks for the dispatcher itself on an agentic automation", async () => {
     const stack = await createStack({ serviceTools: true });
     try {
