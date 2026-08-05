@@ -17,6 +17,14 @@
  *  then launch `next dev -p <that exact port>` with `VENDO_BASE_URL` already
  *  set to the same port. No manual step, no drift, by construction.
  *
+ *  The probe releases its listener before Next binds, so a concurrent process
+ *  can still steal the port in that gap. Next refuses to relocate when `-p` is
+ *  explicit — it exits nonzero with EADDRINUSE within seconds — so we close
+ *  the race by retrying: when the child dies during the startup window and a
+ *  re-probe shows the port is now held by someone else, we relaunch on the
+ *  next free candidate with `VENDO_BASE_URL` re-derived to match. Retries are
+ *  bounded by the same 3000-3010 range; exhausting it stays a loud failure.
+ *
  *  Auto-sync applies when `VENDO_BASE_URL` is unset or points at localhost —
  *  the `.env.example` default is `http://localhost:3000`, which is exactly the
  *  value that must track the bound port. Only a NON-LOCAL origin (a Tailscale
@@ -50,8 +58,8 @@ function isPortFree(port) {
   });
 }
 
-async function firstFreePort() {
-  for (let port = START_PORT; port <= MAX_PORT; port++) {
+async function firstFreePort(from) {
+  for (let port = from; port <= MAX_PORT; port++) {
     if (await isPortFree(port)) return port;
   }
   return null;
@@ -110,58 +118,91 @@ const preserveOperatorUrl =
   && presetBaseUrl.length > 0
   && !isLocalOrigin(presetBaseUrl);
 
-const port = await firstFreePort();
-if (port === null) {
-  console.error(
-    `[dev] no free port in ${START_PORT}-${MAX_PORT}; free one (or stop whatever `
-      + `holds them) and retry. Refusing to launch to avoid a VENDO_BASE_URL that `
-      + `does not match the port Next binds.`,
-  );
-  process.exit(1);
-}
-
-const baseUrl = `http://localhost:${port}`;
-if (port !== START_PORT) {
-  console.log(
-    preserveOperatorUrl
-      ? `[dev] port ${START_PORT} busy, using ${port} — VENDO_BASE_URL left as `
-          + `operator-set ${presetBaseUrl} (not synced)`
-      : `[dev] port ${START_PORT} busy, using ${port} — VENDO_BASE_URL synced `
-          + `automatically to ${baseUrl}`,
-  );
-}
-
-// Only preserve a non-local operator origin (already in `process.env`, inherited
-// as-is); otherwise sync the port-matched localhost origin so it never drifts.
-const childEnv = preserveOperatorUrl
-  ? { ...process.env }
-  : { ...process.env, VENDO_BASE_URL: baseUrl };
-
 // Spawn Next's CLI entry directly through node (resolved from the demo's own
 // dependencies) so launching does not depend on PATH or a shell; fall back to
 // the `next` bin on PATH if the entry moves in a future Next release.
-let child;
-try {
-  const require = createRequire(`${process.cwd()}/package.json`);
-  const nextBin = require.resolve("next/dist/bin/next");
-  child = spawn(process.execPath, [nextBin, "dev", "-p", String(port)], {
-    stdio: "inherit",
-    env: childEnv,
-  });
-} catch {
-  child = spawn("next", ["dev", "-p", String(port)], {
-    stdio: "inherit",
-    env: childEnv,
-    shell: process.platform === "win32",
-  });
+function spawnNext(port, env) {
+  try {
+    const require = createRequire(`${process.cwd()}/package.json`);
+    const nextBin = require.resolve("next/dist/bin/next");
+    return spawn(process.execPath, [nextBin, "dev", "-p", String(port)], {
+      stdio: "inherit",
+      env,
+    });
+  } catch {
+    return spawn("next", ["dev", "-p", String(port)], {
+      stdio: "inherit",
+      env,
+      shell: process.platform === "win32",
+    });
+  }
 }
 
-// Forward termination so Ctrl-C tears the Next child down with us, and exit
-// with whatever the child reported.
+// Next binds its port before compiling anything, so an EADDRINUSE death lands
+// within seconds; a nonzero exit after this window is a real crash, not a lost
+// bind, and must never trigger a silent relaunch on a different port.
+const STOLEN_PORT_WINDOW_MS = 30_000;
+
+// Forward termination so Ctrl-C tears the Next child down with us. `child` is
+// reassigned across relaunches, so the handlers close over the variable.
+let child = null;
 for (const signal of ["SIGINT", "SIGTERM"]) {
-  process.on(signal, () => child.kill(signal));
+  process.on(signal, () => child?.kill(signal));
 }
-child.on("exit", (code, signal) => {
+
+let searchFrom = START_PORT;
+while (true) {
+  const port = await firstFreePort(searchFrom);
+  if (port === null) {
+    console.error(
+      `[dev] no free port in ${START_PORT}-${MAX_PORT}; free one (or stop whatever `
+        + `holds them) and retry. Refusing to launch to avoid a VENDO_BASE_URL that `
+        + `does not match the port Next binds.`,
+    );
+    process.exit(1);
+  }
+
+  const baseUrl = `http://localhost:${port}`;
+  if (port !== START_PORT) {
+    console.log(
+      preserveOperatorUrl
+        ? `[dev] port ${START_PORT} busy, using ${port} — VENDO_BASE_URL left as `
+            + `operator-set ${presetBaseUrl} (not synced)`
+        : `[dev] port ${START_PORT} busy, using ${port} — VENDO_BASE_URL synced `
+            + `automatically to ${baseUrl}`,
+    );
+  }
+
+  // Only preserve a non-local operator origin (already in `process.env`,
+  // inherited as-is); otherwise sync the port-matched localhost origin so it
+  // never drifts.
+  const childEnv = preserveOperatorUrl
+    ? { ...process.env }
+    : { ...process.env, VENDO_BASE_URL: baseUrl };
+
+  const startedAt = Date.now();
+  child = spawnNext(port, childEnv);
+  const { code, signal } = await new Promise((resolve) => {
+    child.on("exit", (code, signal) => resolve({ code, signal }));
+  });
+
+  // The probe released the port before Next bound it, so a concurrent process
+  // can steal it in the gap; Next then dies nonzero with EADDRINUSE right away
+  // (it never relocates when `-p` is explicit). If that early death coincides
+  // with the port now being held by someone else, the race fired — move on to
+  // the next candidate. A crash with the port free is a real failure to report.
+  const diedDuringStartup =
+    signal === null && code !== 0 && Date.now() - startedAt < STOLEN_PORT_WINDOW_MS;
+  if (diedDuringStartup && !(await isPortFree(port))) {
+    console.error(
+      `[dev] port ${port} was taken between our probe and Next binding it; `
+        + `retrying on the next free port`,
+    );
+    searchFrom = port + 1;
+    continue;
+  }
+
+  // Exit with whatever the child reported.
   if (signal) process.kill(process.pid, signal);
-  else process.exit(code ?? 0);
-});
+  process.exit(code ?? 0);
+}
