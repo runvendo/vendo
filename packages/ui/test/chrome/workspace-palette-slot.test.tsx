@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useLayoutEffect, useRef, useState } from "react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type OpenSurface, type VendoClient } from "../../src/index.js";
 import { VendoOverlay, VendoPage, VendoPalette, VendoSlot } from "../../src/chrome/index.js";
-import { getConversationCommands } from "../../src/chrome/overlay-registry.js";
+import { getConversationCommands, openVendoConversation } from "../../src/chrome/overlay-registry.js";
 import { createWireServer } from "../wire-server.js";
 
 describe("VendoPage, VendoPalette, and VendoSlot exports", () => {
@@ -99,6 +100,58 @@ describe("VendoPage, VendoPalette, and VendoSlot exports", () => {
     fireEvent.keyDown(reopenedComposer, { key: "k", metaKey: true });
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Vendo assistant" })).toBeNull());
     await waitFor(() => expect(document.activeElement).toBe(opener));
+  });
+
+  // A ⌘K that lands in the window between the overlay's hide-commit and the
+  // registry opener's re-register used to reach a closure holding a STALE `open`
+  // (still true), so the toggle "closed" an already-closed overlay and the
+  // dialog never came back — hit ⌘K right after the surface hides and the
+  // assistant stays dark.
+  //
+  // The window is real in production: the browser can dispatch a keydown after
+  // React commits the hide but before it flushes the (passive) re-register,
+  // which the scheduler defers to a later macrotask. A layout effect is that
+  // window made deterministic — it runs during the SAME commit, after render
+  // (so the opener's `openRef` already reads false) but before any passive
+  // effect (so the opener has not re-registered). `Racer` fires the racing ⌘K
+  // there on the hide transition. With the ref-read guard the toggle reopens;
+  // revert it to the stale `open` read and this goes red every run.
+  function Racer({ open }: { open: boolean }) {
+    const previous = useRef(open);
+    useLayoutEffect(() => {
+      if (previous.current && !open) fireEvent.keyDown(globalThis, { key: "k", metaKey: true });
+      previous.current = open;
+    }, [open]);
+    return null;
+  }
+
+  it("reopens on a ⌘K racing its own hide — no stale-closure toggle swallows it", async () => {
+    function Harness() {
+      const [open, setOpen] = useState(false);
+      return (
+        <VendoProvider client={client}>
+          <button type="button">Palette opener</button>
+          <VendoPalette />
+          <VendoOverlay launcher="none" onOpenChange={setOpen} />
+          <Racer open={open} />
+        </VendoProvider>
+      );
+    }
+    render(<Harness />);
+    await waitFor(() => expect(wire.requests.some(request => request.path === "/apps")).toBe(true));
+    const opener = screen.getByRole("button", { name: "Palette opener" });
+    opener.focus();
+    fireEvent.keyDown(globalThis, { key: "k", metaKey: true });
+    await screen.findByRole("dialog", { name: "Vendo assistant" });
+
+    // Close from a host affordance; the Racer's layout effect fires the racing
+    // ⌘K in the hide's own commit, before the opener re-registers.
+    await act(async () => {
+      openVendoConversation({ close: true });
+    });
+
+    // The racing toggle must have re-opened the surface, not swallowed itself.
+    await screen.findByRole("dialog", { name: "Vendo assistant" });
   });
 
   it("contains app mutation wire errors in an alert without an unhandled rejection", async () => {

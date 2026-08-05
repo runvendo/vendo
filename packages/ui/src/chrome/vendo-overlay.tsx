@@ -433,6 +433,12 @@ export function VendoOverlay({
   const portalRoot = useRef<HTMLDivElement>(null);
   const opener = useRef<HTMLElement | null>(null);
   const wasOpen = useRef(false);
+  // The registry opener effect only re-registers on a later passive flush, so a
+  // ⌘K landing between the hide-commit and that flush reached a closure with a
+  // stale `open` and toggled a closed overlay shut (the dialog never mounted).
+  // The ref always reads the committed value, independent of re-registration.
+  const openRef = useRef(open);
+  openRef.current = open;
 
   const setOpen = useCallback((next: boolean) => {
     if (next && !open && document.activeElement instanceof HTMLElement && document.activeElement !== document.body) {
@@ -506,12 +512,12 @@ export function VendoOverlay({
   useEffect(() => registerOverlayOpener(options => {
     // The one-surface ⌘K path: a toggle request closes an open overlay instead
     // of no-opping; every other affordance strictly opens.
-    if (options?.toggle === true && open) {
+    if (options?.toggle === true && openRef.current) {
       setOpen(false);
       return;
     }
     if (options?.close === true) {
-      if (open) setOpen(false);
+      if (openRef.current) setOpen(false);
       return;
     }
     setOpen(true);
@@ -530,7 +536,7 @@ export function VendoOverlay({
         { scope: prefillScope.current, defer: fresh },
       );
     }
-  }), [setOpen, open]);
+  }), [setOpen]);
 
   // LANE D (spec §2, §3, §4) — what the pill says while the user is elsewhere:
   // the live beat of a run that kept going after they left, the result toast

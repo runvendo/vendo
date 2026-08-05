@@ -210,9 +210,14 @@ describe("the transcript's beats", () => {
     ] as unknown as Thread["messages"][number]["parts"]);
     // The card is present and IS the step.
     expect(document.querySelector("[data-vendo-app-embed='app_renewals']")).toBeTruthy();
-    expect(document.querySelector(".fl-beatsummary")?.textContent).toBe("Did 1 thing");
+    const summary = document.querySelector(".fl-beatsummary");
+    expect(summary?.textContent).toBe("Did 1 thing");
     // Reopening the row still shows no beat for the build — not even folded away.
-    fireEvent.click(screen.getByRole("button", { expanded: false }));
+    // Click the summary row we just located: `getByRole("button", { expanded:
+    // false })` is ambiguous the moment the composer's "Connect tools" dock
+    // button (also aria-expanded=false, gated behind the connector-catalog
+    // fetch) has rendered — a genuine before/after-fetch race.
+    fireEvent.click(summary as HTMLElement);
     expect(document.querySelector("[data-vendo-tool='vendo_make']")).toBeNull();
     expect(screen.queryByText(/Make you a screen/)).toBeNull();
   });
