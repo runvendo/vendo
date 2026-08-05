@@ -31,6 +31,7 @@ export * from "./principal.js";
 export * from "./reshape.js";
 export * from "./product-slug.js";
 export * from "./run-context.js";
+export * from "./screen.js";
 export * from "./semantics.js";
 export * from "./shape.js";
 export * from "./sha256.js";
