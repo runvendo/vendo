@@ -19,9 +19,9 @@ depends on it). All other workspaces (`examples/*`, `fixtures/*`, `bench`,
 pnpm changeset          # interactive: pick the bump + write a summary
 ```
 
-Commit the generated `.changeset/*.md` file with your PR. CI runs
-`changeset status` as a **non-blocking warning** — a PR with no changeset still
-merges (the fleet auto-merges); the warning is just a reminder.
+Commit the generated `.changeset/*.md` file with your PR. Nothing enforces
+this — a PR with no changeset still merges (the fleet auto-merges); check
+`pnpm changeset status --since=origin/main` locally if unsure.
 
 ## Cutting a release (orchestrator only)
 

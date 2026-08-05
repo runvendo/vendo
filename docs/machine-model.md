@@ -116,7 +116,7 @@ leaves that fn's shape unknown and defensive.
 
 **2 to 3** is an honest UI rewrite in the same box, gated behind the
 experimental served-apps flag. The tree keeps serving until the new surface is
-verified live, then the surface flips. See [Served apps](./served-apps.md).
+verified live, then the surface flips.
 
 ## The skin of the box
 

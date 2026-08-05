@@ -163,8 +163,7 @@ jobs:
       # open/close, multi-turn persistence, concurrent surfaces, dark-brand)
       # plus the solidity axes it consolidates — long threads, scroll +
       # jump-to-latest, theme-token effectiveness / dark derivation, the bounded
-      # height chain — and the two feature-verification suites (affordances +
-      # voice). Scoped to this CI-hardened set on purpose: the axe / keyboard /
+      # height chain. Scoped to this CI-hardened set on purpose: the axe / keyboard /
       # screenshot / raw-interaction legacy specs stay the LOCAL pre-PR gate
       # (per the UI-LAW browser-verification step) because headless CI mis-
       # resolves :focus-visible outlines and light-dark(), which those specs
@@ -312,25 +311,3 @@ jobs:
             sleep 20
           done
           echo "::warning::npm bulk-advisory endpoint is broken (gzip without Content-Encoding, tracked 2026-07-26); audit is SKIPPED this run and gates again once the endpoint recovers"
-
-  # Reminder that a user-facing change should ship a changeset. NON-BLOCKING by
-  # design (the fleet auto-merges): this job is not a required check and its one
-  # meaningful step degrades to a GitHub warning annotation instead of failing.
-  changeset-status:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          fetch-depth: 0
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Changeset status (warn only)
-        run: |
-          git fetch --no-tags --depth=1 origin main || true
-          pnpm changeset status --since=origin/main \
-            || echo "::warning title=No changeset::This PR touches packages but has no changeset. If it should ship in a release, run \`pnpm changeset\`. (non-blocking)"
