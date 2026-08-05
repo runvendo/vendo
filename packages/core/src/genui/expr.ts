@@ -28,6 +28,13 @@
  */
 
 import type { Json } from "../ids.js";
+import {
+  isWireReshapeOp,
+  reduceNumeric,
+  WIRE_RESHAPE_OPS,
+  type NumericReduction,
+  type WireReshapeOp,
+} from "../reshape.js";
 import type { ShapeType } from "../shape.js";
 import { isPlainObject } from "./tree-node.js";
 
@@ -62,25 +69,39 @@ export const EXPR_BUCKETS = ["day", "month", "year"] as const;
 
 type ExprBucket = (typeof EXPR_BUCKETS)[number];
 
+/** v3 spec §5 (D2/D3) — every aggregate names its field explicitly, so the
+ *  field-taking aggregates are arity 2; `group_by` takes the rows it groups. */
 const ARITY: Record<ExprCall, number> = {
-  sum: 1,
+  sum: 2,
   count: 1,
-  average: 1,
-  min: 1,
-  max: 1,
+  average: 2,
+  min: 2,
+  max: 2,
   difference: 2,
   days_until: 1,
-  group_by: 3,
+  group_by: 4,
 };
 
-const COUNT_WORDS = ["no", "one", "two", "three"] as const;
+const COUNT_WORDS = ["no", "one", "two", "three", "four"] as const;
 
 const argumentCount = (count: number): string =>
   `${COUNT_WORDS[count] ?? count} argument${count === 1 ? "" : "s"}`;
 
-/** The calls that reduce numbers, and so may aggregate a `group_by` bucket. */
-const NUMERIC_AGGREGATES: ReadonlySet<string> = new Set(["sum", "average", "min", "max"]);
-const GROUPABLE: ReadonlySet<string> = new Set([...NUMERIC_AGGREGATES, "count"]);
+/**
+ * v3 spec §5 (D3) — the aggregates a `group_by` descriptor may name
+ * (`sum.of("amount_cents")`, `count.of()`). The one set: they are also exactly
+ * the calls that reduce a column of numbers, `count` included.
+ */
+export const AGGREGATE_DESCRIPTORS = ["sum", "average", "min", "max", "count"] as const;
+
+/** v3 spec §5 — a `<name>.of(...)` aggregate descriptor's name. */
+export type AggregateDescriptor = (typeof AGGREGATE_DESCRIPTORS)[number];
+
+const isAggregateDescriptor = (name: string): name is AggregateDescriptor =>
+  (AGGREGATE_DESCRIPTORS as readonly string[]).includes(name);
+
+/** The aggregates that read a field off the rows (everything but `count`). */
+const FIELD_AGGREGATES: ReadonlySet<string> = new Set(["sum", "average", "min", "max"]);
 
 const isExprCall = (name: string): name is ExprCall => (EXPR_CALLS as readonly string[]).includes(name);
 
@@ -92,7 +113,13 @@ export type ExprNode =
   | { kind: "path"; segments: readonly string[]; text: string }
   | { kind: "negate"; operand: ExprNode }
   | { kind: "binary"; op: "+" | "-" | "*" | "/"; left: ExprNode; right: ExprNode }
-  | { kind: "call"; name: ExprCall; args: readonly ExprNode[] };
+  | { kind: "call"; name: ExprCall; args: readonly ExprNode[] }
+  /** v3 §5 (D1) — a reshape written as a value-first call. Parsed here so the
+   *  dialect has ONE grammar, but it never evaluates: the wire compiler lowers
+   *  it onto its binding as `$reshape` (genui/wire/expression.ts). */
+  | { kind: "reshape"; op: WireReshapeOp; args: readonly ExprNode[] }
+  /** v3 §5 (D3) — `sum.of("amount_cents")`, `group_by`'s fourth argument. */
+  | { kind: "aggregate"; name: AggregateDescriptor; field: string | null };
 
 export type ExprParse =
   | { ok: true; node: ExprNode }
@@ -114,7 +141,10 @@ const IDENTIFIER_CHAR = /[A-Za-z0-9_]/;
 const DIGIT = /[0-9]/;
 /** JSON number grammar, matched sticky at the cursor (wire/expression.ts's). */
 const NUMBER_PATTERN = /-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/y;
-const PUNCTUATION: ReadonlySet<string> = new Set(["+", "-", "*", "/", "(", ")", ","]);
+/** The bracket/brace characters are tokenized but never parsed: they END an
+ *  expression, which is how {@link parseExprPrefix} finds the boundary of a
+ *  computed value sitting inside an array or object literal. */
+const PUNCTUATION: ReadonlySet<string> = new Set(["+", "-", "*", "/", "(", ")", ",", "[", "]", "{", "}"]);
 
 /** Reads a dotted field path as ONE token: a call name is a path of one
  *  segment, so the parser never has to re-join dots. */
@@ -131,7 +161,13 @@ const readPath = (source: string, start: number): { segments: string[]; end: num
   return { segments, end };
 };
 
-const tokenize = (source: string): { tokens: Token[] } | { issue: string } => {
+/**
+ * `stopOnUnknown` is the prefix mode: a character the grammar cannot contain
+ * ENDS the token run instead of failing the whole tokenize, so a computed value
+ * embedded in a larger literal (`[sum(q.rows, "x"), 5]`) can be read out of the
+ * middle of it. `end` is where scanning stopped.
+ */
+const tokenize = (source: string, stopOnUnknown = false): { tokens: Token[]; end: number } | { issue: string } => {
   const tokens: Token[] = [];
   let index = 0;
   while (index < source.length) {
@@ -173,9 +209,10 @@ const tokenize = (source: string): { tokens: Token[] } | { issue: string } => {
       index += 1;
       continue;
     }
+    if (stopOnUnknown) return { tokens, end: index };
     return { issue: `"${char}" is not something an expression can contain (position ${index + 1})` };
   }
-  return { tokens };
+  return { tokens, end: index };
 };
 
 /** Internal parse-failure sentinel — flows up the recursion instead of a throw
@@ -201,59 +238,130 @@ const isPunct = (token: Token | undefined, text: string): boolean =>
 const describeToken = (token: Token | undefined): string =>
   token === undefined ? "the end of the expression" : `"${token.text}"`;
 
-const parseGroupBy = (state: ParseState, args: readonly ExprNode[]): ExprNode | ParseFailed => {
-  const [key, bucket, aggregate] = args;
-  if (key?.kind !== "path") {
-    return failParse(state, "group_by() groups by a date field path, like group_by(invoices.due_date, \"month\", sum(invoices.amount_cents))");
-  }
-  if (bucket?.kind !== "string" || !(EXPR_BUCKETS as readonly string[]).includes(bucket.value)) {
-    return failParse(state, `group_by() buckets by ${EXPR_BUCKETS.join(", ")} — write one of them as a quoted second argument`);
-  }
-  if (aggregate?.kind !== "call" || !GROUPABLE.has(aggregate.name) || aggregate.args[0]?.kind !== "path") {
-    return failParse(state, `group_by()'s third argument aggregates each bucket, like sum(invoices.amount_cents) — one of ${[...GROUPABLE].join(", ")} over a field path`);
-  }
-  const collection = key.segments.slice(0, -1).join(".");
-  const aggregated = aggregate.args[0].segments;
-  const sameRows = aggregate.name === "count"
-    ? aggregated.join(".") === collection || aggregated.slice(0, -1).join(".") === collection
-    : aggregated.slice(0, -1).join(".") === collection;
-  if (!sameRows) {
-    return failParse(state, `group_by() aggregates the SAME rows it groups: ${aggregate.name}(${aggregate.args[0].text}) reads different rows than ${key.text}`);
-  }
-  return { kind: "call", name: "group_by", args };
-};
+const stringArg = (node: ExprNode | undefined): string | null =>
+  node?.kind === "string" ? node.value : null;
 
-const parseCall = (state: ParseState, nameToken: Token & { type: "path" }, depth: number): ExprNode | ParseFailed => {
-  const name = nameToken.text;
-  if (nameToken.segments.length !== 1 || !isExprCall(name)) {
-    return failParse(state, `"${name}" is not a function an expression can call — the functions are: ${EXPR_CALLS.join(", ")}`);
-  }
+/** The argument list after the call name. The cursor sits on "(". */
+const parseArgs = (state: ParseState, label: string, depth: number): ExprNode[] | ParseFailed => {
   state.index += 1; // consume "("
   const args: ExprNode[] = [];
   if (isPunct(state.tokens[state.index], ")")) {
     state.index += 1;
-  } else {
-    for (;;) {
-      const arg = parseSum(state, depth + 1);
-      if (arg === PARSE_FAILED) return PARSE_FAILED;
-      args.push(arg);
-      const next = state.tokens[state.index];
-      if (isPunct(next, ",")) {
-        state.index += 1;
-        continue;
-      }
-      if (isPunct(next, ")")) {
-        state.index += 1;
-        break;
-      }
-      return failParse(state, `the expression ends inside ${name}(…) where a "," or ")" was expected`);
-    }
+    return args;
   }
+  for (;;) {
+    const arg = parseSum(state, depth + 1);
+    if (arg === PARSE_FAILED) return PARSE_FAILED;
+    args.push(arg);
+    const next = state.tokens[state.index];
+    if (isPunct(next, ",")) {
+      state.index += 1;
+      continue;
+    }
+    if (isPunct(next, ")")) {
+      state.index += 1;
+      return args;
+    }
+    return failParse(state, `the expression ends inside ${label}(…) where a "," or ")" was expected`);
+  }
+};
+
+const notAFunction = (name: string): string =>
+  `"${name}" is not a function an expression can call — the functions are: ${EXPR_CALLS.join(", ")}`
+  + `; the reshapes are: ${WIRE_RESHAPE_OPS.join(", ")}`;
+
+/**
+ * v3 spec §5 (D3) — `group_by(rows, "issued_at", "month", sum.of("amount"))`.
+ * The rows are an ARGUMENT now, so the old "aggregates the same rows it
+ * groups" check is gone with the grammar that needed it: the key field, the
+ * bucket, and the aggregated field all read the rows named right there.
+ */
+const parseGroupBy = (state: ParseState, args: readonly ExprNode[]): ExprNode | ParseFailed => {
+  const [rows, key, bucket, aggregate] = args;
+  if (rows?.kind !== "path") {
+    return failParse(state, 'group_by() groups the rows you name, like group_by(invoices.data, "due_date", "month", sum.of("amount_cents"))');
+  }
+  if (stringArg(key) === null) {
+    return failParse(state, `group_by() reads its date field by name — write it as a quoted second argument, like group_by(${rows.text}, "due_date", "month", count.of())`);
+  }
+  const bucketName = stringArg(bucket);
+  if (bucketName === null || !(EXPR_BUCKETS as readonly string[]).includes(bucketName)) {
+    return failParse(state, `group_by() buckets by ${EXPR_BUCKETS.join(", ")} — write one of them as a quoted third argument`);
+  }
+  if (aggregate?.kind !== "aggregate") {
+    return failParse(state, `group_by()'s fourth argument aggregates each bucket: ${AGGREGATE_DESCRIPTORS.map((name) => (name === "count" ? "count.of()" : `${name}.of("field")`)).join(", ")}`);
+  }
+  return { kind: "call", name: "group_by", args };
+};
+
+/** v3 spec §5 (D3) — `sum.of("amount_cents")` / `count.of()`. */
+const parseDescriptor = (
+  state: ParseState,
+  nameToken: Token & { type: "path" },
+  depth: number,
+): ExprNode | ParseFailed => {
+  const name = nameToken.segments[0] as string;
+  if (!isAggregateDescriptor(name)) {
+    return failParse(state, `"${nameToken.text}" is not an aggregate — write one of ${AGGREGATE_DESCRIPTORS.join(", ")} followed by .of(...)`);
+  }
+  const args = parseArgs(state, nameToken.text, depth);
+  if (args === PARSE_FAILED) return PARSE_FAILED;
+  if (name === "count") {
+    if (args.length !== 0) {
+      return failParse(state, "count.of() counts the rows in each bucket, so it takes no field");
+    }
+    return { kind: "aggregate", name, field: null };
+  }
+  const field = args.length === 1 ? stringArg(args[0]) : null;
+  if (field === null) {
+    return failParse(state, `${name}.of() takes one quoted field name, like ${name}.of("amount_cents")`);
+  }
+  return { kind: "aggregate", name, field };
+};
+
+/** v3 spec §5 (D2) — every aggregate reads a path and names its field. */
+const checkedCall = (state: ParseState, name: ExprCall, args: readonly ExprNode[]): ExprNode | ParseFailed => {
+  if (name === "difference") return { kind: "call", name, args };
+  const rows = args[0];
+  if (rows?.kind !== "path") {
+    const example = name === "days_until"
+      ? "days_until(invoices.due_date)"
+      : name === "count" ? "count(invoices.data)" : `${name}(invoices.data, "amount_cents")`;
+    return failParse(state, `${name}() reads a field path, like ${example}`);
+  }
+  if (FIELD_AGGREGATES.has(name) && stringArg(args[1]) === null) {
+    return failParse(state, `${name}() names its field explicitly: ${name}(${rows.text}, "amount_cents")`);
+  }
+  return { kind: "call", name, args };
+};
+
+const parseCall = (state: ParseState, nameToken: Token & { type: "path" }, depth: number): ExprNode | ParseFailed => {
+  const segments = nameToken.segments;
+  if (segments.length === 2 && segments[1] === "of") return parseDescriptor(state, nameToken, depth);
+  const name = nameToken.text;
+  if (segments.length !== 1) return failParse(state, notAFunction(name));
+  // D1 — a reshape is a value-first call: the value, then quoted field names.
+  // Parsed here so the dialect has one grammar; the wire compiler lowers it
+  // onto its binding as `$reshape` and it never evaluates as an expression.
+  if (isWireReshapeOp(name)) {
+    const args = parseArgs(state, name, depth);
+    if (args === PARSE_FAILED) return PARSE_FAILED;
+    if (args.length < 2) {
+      return failParse(state, `${name}() takes the value first, then quoted field names — ${name}(query.rows, "field")`);
+    }
+    const bad = args.slice(1).find((arg) => arg.kind !== "string");
+    if (bad !== undefined) {
+      return failParse(state, `${name}()'s arguments after the value are quoted field names, not ${printExpr(bad)}`);
+    }
+    return { kind: "reshape", op: name, args };
+  }
+  if (!isExprCall(name)) return failParse(state, notAFunction(name));
+  const args = parseArgs(state, name, depth);
+  if (args === PARSE_FAILED) return PARSE_FAILED;
   if (args.length !== ARITY[name]) {
     return failParse(state, `${name}() takes ${argumentCount(ARITY[name])}, not ${args.length}`);
   }
-  if (name === "group_by") return parseGroupBy(state, args);
-  return { kind: "call", name, args };
+  return name === "group_by" ? parseGroupBy(state, args) : checkedCall(state, name, args);
 };
 
 const parsePrimary = (state: ParseState, depth: number): ExprNode | ParseFailed => {
@@ -341,6 +449,32 @@ export function parseExpr(source: string): ExprParse {
     return { ok: false, issue: `${describeToken(trailing)} trails the end of this expression (position ${trailing.at + 1})` };
   }
   return { ok: true, node };
+}
+
+/** {@link parseExprPrefix}'s result: the AST plus the offset just past the
+ *  text it consumed (relative to the ORIGINAL source, not the slice). */
+export type ExprPrefixParse =
+  | { ok: true; node: ExprNode; end: number }
+  | { ok: false; issue: string };
+
+/**
+ * v3 spec §5 — parse the expression that STARTS at `start` and stop where it
+ * ends, reporting how far it read. This is the wire's one classifier: the
+ * attribute grammar (genui/wire/expression.ts) hands every identifier-, digit-
+ * or paren-led value position here, at any depth, and decides what the value IS
+ * from the AST it gets back rather than by pre-scanning characters twice.
+ */
+export function parseExprPrefix(source: string, start = 0): ExprPrefixParse {
+  const slice = source.slice(start);
+  const tokenized = tokenize(slice, true);
+  if ("issue" in tokenized) return { ok: false, issue: tokenized.issue };
+  const state: ParseState = { tokens: tokenized.tokens, index: 0, issue: null };
+  const node = parseSum(state, 0);
+  if (node === PARSE_FAILED) {
+    return { ok: false, issue: state.issue ?? "this expression could not be read" };
+  }
+  const trailing = state.tokens[state.index];
+  return { ok: true, node, end: start + (trailing?.at ?? tokenized.end) };
 }
 
 /** The query names an expression reads — the compiler's unknown-reference gate. */
