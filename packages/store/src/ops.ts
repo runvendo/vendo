@@ -380,24 +380,27 @@ export function createStoreOps(
           replayed = await db.transaction(async (q) => {
             const tdb = txDb(q);
             const ledger = createRecordStore(tdb, WORKSPACE_COMMITS);
-            if (key !== undefined) {
-              const existing = await ledger.get(commitId);
-              if (existing !== null) {
-                return (existing.data as { body?: unknown }).body === body;
-              }
-            }
-            const txRows = workspaceRows(tdb, filesFor(tdb));
-            const created: string[] = [];
-            for (const staged of prepared) {
-              if (staged.write === "unchanged") continue;
-              if (staged.write.prior === undefined) created.push(staged.path);
-              await txRows.land(owner, staged.write, commitId);
-            }
-            await ledger.put({
+            const created = prepared
+              .filter((staged) => staged.write !== "unchanged" && staged.write.prior === undefined)
+              .map((staged) => staged.path);
+            // Claim the ledger row BEFORE touching any workspace row: the
+            // (collection, id) unique key is the serialization point, so of
+            // two same-key racers exactly one lands — the loser conflicts on
+            // the insert instead of applying a second, different mutation.
+            const claimed = await ledger.atomic!.insertIfAbsent({
               id: commitId,
               data: { body, entries: parsed as unknown as Json, created },
               refs: { subject: owner, ...(key === undefined ? {} : { key }) },
             });
+            if (claimed === null) {
+              const existing = await ledger.get(commitId);
+              return (existing?.data as { body?: unknown } | undefined)?.body === body;
+            }
+            const txRows = workspaceRows(tdb, filesFor(tdb));
+            for (const staged of prepared) {
+              if (staged.write === "unchanged") continue;
+              await txRows.land(owner, staged.write, commitId);
+            }
             return undefined;
           });
         } catch (error) {

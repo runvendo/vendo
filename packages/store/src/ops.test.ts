@@ -89,6 +89,37 @@ for (const backend of backends()) {
       }
     });
 
+    it("two concurrent commits racing one idempotency key: exactly one lands, the other conflicts", async () => {
+      const { made, ops } = await makeOps();
+      try {
+        // Same key, DIFFERENT bodies, fired together. The ledger claim (the
+        // unique (collection, id) insert BEFORE any row mutation) is the
+        // serialization point: the loser must conflict, never apply a second
+        // mutation while only one body stays recorded for the key.
+        const results = await Promise.allSettled([
+          ops.workspace.commit([{ path: "race.json", data: { v: "first" } }], { idempotencyKey: "idem_race" }),
+          ops.workspace.commit([{ path: "race.json", data: { v: "second" } }], { idempotencyKey: "idem_race" }),
+        ]);
+        expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+        const loser = results.find((r) => r.status === "rejected") as PromiseRejectedResult;
+        expect(loser.reason).toMatchObject({ code: "conflict" });
+        // Exactly one ledger row for the key, and the file holds the winner's
+        // body — the loser's mutation never touched the workspace.
+        const rows = await made.sql(
+          "SELECT data FROM vendo_records WHERE collection = $1 AND id = $2",
+          ["vendo_workspace_commits", "wsc_key_idem_race"],
+        );
+        expect(rows.length).toBe(1);
+        const winner = results[0]!.status === "fulfilled" ? { v: "first" } : { v: "second" };
+        expect((await ops.workspace.read(["race.json"]))["race.json"]).toEqual(winner);
+        const recorded = rows[0]!["data"];
+        const data = (typeof recorded === "string" ? JSON.parse(recorded) : recorded) as { body?: unknown };
+        expect(data.body).toBe(JSON.stringify([{ path: "race.json", data: winner }]));
+      } finally {
+        await made.cleanup();
+      }
+    });
+
     it("harness state is keyed by (appId, subject), so one subject's write leaves the others alone", async () => {
       const { made, ops } = await makeOps();
       try {
