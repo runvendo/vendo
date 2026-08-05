@@ -299,7 +299,7 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
   /** The scheduler's own refusal, written for whoever runs the deployment: it
    *  names a billing allowance and links a console. */
   const BLOCKED_REASON =
-    "blocked by allowance: Vendo Cloud paused automation runs — the allowance for this billing "
+    "blocked by allowance: Vendo Cloud paused usage — the $49.00 included this billing "
     + "period is used up (resets 2026-08-01). Upgrade your plan (https://console.vendo.run/billing) "
     + "or bring your own infrastructure (https://docs.vendo.run/byo).";
 
