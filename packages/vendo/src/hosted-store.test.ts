@@ -223,22 +223,24 @@ describe("hostedStore error mapping", () => {
     });
   });
 
-  it("renders the pricing-v3 meter-exhausted refusal as the crafted spec-§5 sentence", async () => {
+  it("renders the pool meter-exhausted refusal as the crafted dollar sentence", async () => {
+    // The console's real 402 body: one meter (`usage`), dollars, one limit.
     const store = adapterFor(respond("meter-exhausted", "meter exhausted", 402, {
-      meter: "storage_gb",
-      used: 12,
-      limit: 10,
+      meter: "usage",
+      unit: "usd",
+      used: 6.2,
+      limit: 5,
       resets_at: "2026-08-01T00:00:00.000Z",
       reason: "allowance",
       exits: { upgrade_url: "https://console.vendo.run/billing", byo_docs_url: "https://docs.vendo.run/byo" },
     }));
     await expect(store.records("invoices").put({ id: "r", data: {} })).rejects.toMatchObject({
       code: "cloud-required",
-      message: "Vendo Cloud paused storage — the allowance for this billing period is used up "
-        + "(12 of 10 used; resets 2026-08-01). "
+      message: "Vendo Cloud paused usage — the $5.00 included this billing period is used up "
+        + "($6.20 of $5.00 used; resets 2026-08-01). "
         + "Upgrade your plan (https://console.vendo.run/billing) "
         + "or bring your own infrastructure (https://docs.vendo.run/byo).",
-      detail: { meter: "storage_gb" },
+      detail: { meter: "usage", unit: "usd" },
     });
   });
 
