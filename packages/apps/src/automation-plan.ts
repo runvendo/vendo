@@ -34,17 +34,34 @@ export interface AutomationPlanInput {
    *  without them the model guesses output fields and the jsonata reads
    *  nothing (the live-gate "steps.unpaid.items" class). */
   toolShapes?: Readonly<Record<string, ShapeType>>;
+  /**
+   * The automations this app ALREADY runs — its trigger list as it stands.
+   *
+   * An app carries a list, so "check every morning too" adds an entry while
+   * "move the digest to 9am" changes one, and only something reading the request
+   * against the app's own list can tell those apart. This is what lets the plan
+   * answer with {@link AutomationPlan.replaces}; without it every re-plan of an
+   * existing automation would land beside itself as a duplicate.
+   */
+  existing?: readonly Trigger[];
 }
 
 export interface AutomationPlan {
-  /** Id-less: the ladder never authors a trigger id (an app it authors for
-   *  has exactly one), so {@link applyAutomationPlan} stamps `DEFAULT_TRIGGER_ID`
-   *  onto this at land time. */
+  /** Id-less: which ENTRY of the app's trigger list this lands on is the app's
+   *  business, not the planner's — {@link plannedTriggerId} decides it from the
+   *  list as it stands and the `name` below, and stamps it at land time. */
   trigger: Omit<Trigger, "id">;
+  /** The automation's own name, the way the person would say it out loud. It is
+   *  also its IDENTITY in the app's trigger list, so the same name said twice is
+   *  an edit of the same automation and a new one is a new entry. */
   name?: string;
   /** The app records collection the automation writes displayable results
    *  into (the store rows the tree queries via vendo_apps_data_list). */
   resultsCollection?: string;
+  /** The id of the EXISTING automation this plan is a new version of — set only
+   *  when the instruction changed one of {@link AutomationPlanInput.existing}
+   *  rather than asking for another. Absent means a new entry beside them. */
+  replaces?: string;
 }
 
 export type AutomationPlanResult =
@@ -56,9 +73,9 @@ const COLLECTION_NAME = /^[a-z][a-z0-9_-]{0,40}$/i;
 // n > 0, matching the automations engine's durationMs rule exactly — "0s"
 // would validate here and then never fire.
 const EVERY_DURATION = /^[1-9]\d*[smhd]$/;
-/** The ladder never asks the model for a trigger id (an app it plans for has
- *  exactly one trigger, stamped later by applyAutomationPlan), so a model reply
- *  that never mentions "id" still has to validate. */
+/** The ladder never asks the model for a trigger id (the entry it lands on is
+ *  derived from the app's own list at land time), so a model reply that never
+ *  mentions "id" still has to validate. */
 const planTriggerSchema = triggerSchema.omit({ id: true });
 
 /**
@@ -138,9 +155,31 @@ const agenticContract = (input: AutomationPlanInput): string => `RUN MODEL (this
 - NOTHING IRREVERSIBLE RUNS AWAY. The tools that send, message, pay or delete are not in the TOOLS list, so the prompt must not ask for them: Vendo does not do a thing it cannot take back while nobody is watching. Have the agent read, judge, and publish what it found; the person acts on it themselves, on demand.
 - RESULTS: when the app's board should show the outcome, the prompt must ALSO instruct the agent to persist the displayable result through tool "${RESULTS_TOOL}" with appId "${input.appId}", a stable collection, and id "latest" — and set the top-level "resultsCollection" to that collection name.`;
 
-const planContract = (input: AutomationPlanInput): string => `You are the Vendo automation planner. Return ONLY one JSON object — no prose, no markdown fences.
-Shape: {"name":"<short automation name>","trigger":{"on":<trigger source>,"run":<run model>},"resultsCollection":"<records collection>"?}
+/** One line per automation the app already runs. */
+const existingLine = ({ id, on, run }: Trigger): string => {
+  const when = on.kind === "schedule"
+    ? `schedule ${on.cron ?? on.every ?? on.at ?? "(unset)"}`
+    : on.kind === "host-event" ? `host-event ${on.event}` : `external ${on.connector}`;
+  return `- ${id}: ${when} — ${run.kind}`;
+};
 
+/** What this app already runs, and how to say "this is a new version of THAT
+ *  one". An app carries a LIST of automations, so a plan that cannot point at an
+ *  existing entry can only ever land beside it — which is how "move the digest to
+ *  9am" would become a second digest. */
+const existingSection = (input: AutomationPlanInput): string => {
+  const existing = input.existing ?? [];
+  if (existing.length === 0) return "";
+  return `
+THIS APP'S AUTOMATIONS ALREADY (its trigger list; an id is that automation's name inside this app):
+${existing.map(existingLine).join("\n")}
+When the INSTRUCTION changes one of THOSE rather than asking for another one, set "replaces" to its id and author the whole automation again as it should now be. Leave "replaces" out for a new automation — it lands beside them and none of them is touched.
+`;
+};
+
+const planContract = (input: AutomationPlanInput): string => `You are the Vendo automation planner. Return ONLY one JSON object — no prose, no markdown fences.
+Shape: {"name":"<short automation name>","trigger":{"on":<trigger source>,"run":<run model>},"resultsCollection":"<records collection>"?,"replaces":"<existing automation id>"?}
+${existingSection(input)}
 TRIGGER SOURCE "on" (exactly one form):
 - {"kind":"schedule","cron":"<5-field cron, UTC>"} for clock times (e.g. daily 8am = "0 8 * * *"),
 - {"kind":"schedule","every":"<n><s|m|h|d>"} for plain intervals,
@@ -203,7 +242,7 @@ const validatePlan = (
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
     return { issues: ["the response must be one JSON object"] };
   }
-  const candidate = parsed as { name?: unknown; trigger?: unknown; resultsCollection?: unknown };
+  const candidate = parsed as { name?: unknown; trigger?: unknown; resultsCollection?: unknown; replaces?: unknown };
   const issues: string[] = [];
   const triggerResult = planTriggerSchema.safeParse(candidate.trigger);
   if (!triggerResult.success) {
@@ -295,12 +334,22 @@ const validatePlan = (
   if (name !== undefined && (typeof name !== "string" || name.trim() === "" || name.length > 80)) {
     issues.push("name must be a non-empty string of at most 80 characters");
   }
+  // A reference to an automation this app does not have is repaired, never
+  // guessed at: dropping it would silently turn a change to one automation into
+  // a second automation beside it, which is the exact confusion `replaces`
+  // exists to end.
+  const replaces = candidate.replaces;
+  const held = (input.existing ?? []).map(({ id }) => id);
+  if (replaces !== undefined && (typeof replaces !== "string" || !held.includes(replaces))) {
+    issues.push(`"replaces" must name one of this app's own automations${held.length === 0 ? ", and this app has none" : `: ${held.join(", ")}`} — leave it out entirely when this is a new automation beside them`);
+  }
   if (issues.length > 0) return { issues };
   return {
     plan: {
       trigger,
       ...(typeof name === "string" ? { name: name.trim() } : {}),
       ...(typeof resultsCollection === "string" ? { resultsCollection } : {}),
+      ...(typeof replaces === "string" ? { replaces } : {}),
     },
     issues: [],
   };
