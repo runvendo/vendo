@@ -22,6 +22,15 @@ Node 22+, pnpm 11. The repo is a turbo monorepo: `packages/` are the published
 - UI-affecting changes need before/after screenshots in the PR.
 - Keep PRs focused; small is reviewable.
 
+## Releases
+
+Releases are tag-driven and CI-only: pushing a `v*` tag runs
+`.github/workflows/release.yml`, which publishes the lockstep `@vendoai/*`
+group to npm via OIDC trusted publishing — no npm tokens exist, in CI or
+anywhere else. Feature PRs include a changeset (`pnpm changeset`); the
+Version Packages PR accumulates the bumps between releases. Maintainers'
+full release runbook lives in the private repo.
+
 ## Reporting bugs / requesting features
 
 Use the issue templates. For security issues, see [SECURITY.md](./SECURITY.md)

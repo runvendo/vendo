@@ -1,8 +1,8 @@
 /**
  * The center's a11y, focus and containment contracts — in CI.
  *
- * These claims used to live in a one-shot proof script under
- * `docs/superpowers/evidence/.../postcheck-b/center.proof.spec.ts`, outside
+ * These claims used to live in a one-shot proof script filed as redesign
+ * evidence (`center.proof.spec.ts`, long since removed), outside
  * `playwright.config.ts`'s `testDir`. A spec that runs once and is then filed as
  * evidence cannot catch a regression; ruling 21 says a test that cannot fail is
  * not a test, and one that can never run again is worse. Lifted here verbatim in

@@ -1,9 +1,9 @@
 # The machine model
 
 How Vendo executes apps. Three layers, one new noun (the machine), one
-contract (the skin of the box). The decision record is
-`docs/superpowers/specs/2026-07-19-execution-v2-design.md`; this page describes
-what shipped.
+contract (the skin of the box). The decision record (the execution-v2 design,
+2026-07-19) lives in the private repo archive; this page describes what
+shipped.
 
 ## The three layers
 

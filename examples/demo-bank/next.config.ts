@@ -9,7 +9,7 @@ const nextConfig: NextConfig = {
   // binary) — keep it out of the Turbopack server bundle. PGlite's Emscripten
   // module breaks under Turbopack's production chunking ("f.instantiateWasm
   // is not a function"), so it stays external too — including @vendoai/store,
-  // which loads PGlite for the local default store (demo-template pattern).
+  // which loads PGlite for the local default store.
   serverExternalPackages: ["esbuild", "@electric-sql/pglite", "@vendoai/store"],
   // Test boots (away-drill e2e) get their own dist dir → own dev-server lock,
   // so they never fight a concurrent `pnpm dev`. Nested under .next so

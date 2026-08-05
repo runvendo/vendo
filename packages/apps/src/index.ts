@@ -93,7 +93,7 @@ export {
   type ShipDiffPin,
 } from "./ship-diff.js";
 // HostToolInfo is the tool slice GenerationDependencies (and external
-// harnesses like tools/genui-bench) speak.
+// harnesses) speak.
 export type { HostToolInfo } from "./generation/engine.js";
 // The checking layer's contract: the shape a host writes an AppsConfig.checks
 // entry in, and the finding shape every check reports (checking/types.ts).
@@ -133,12 +133,12 @@ export {
 // the runtime and `definePack` in scope.
 export { agentToolDescriptors } from "./agent-tools.js";
 export { buildingAppsSkill } from "./skills/building-apps.js";
-// The generation seam for the genui-bench vendo lane: the SAME conductor
+// The generation seam for external bench harnesses: the SAME conductor
 // createApps() rides, driven directly against a host fixture with no store
 // behind it. Additive export — generation behavior is identical.
 //
 // QUARANTINED (blueprint §14.2) — see the header of `generation/conductor.ts`. The
-// export stays so the bench lane and the five `runtime.ts` call sites keep working;
+// export stays so bench harnesses and the five `runtime.ts` call sites keep working;
 // it is frozen, not extended. New work uses the lean loop and the checks floor at
 // the paint seam.
 export {

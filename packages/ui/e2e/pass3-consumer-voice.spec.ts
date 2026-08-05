@@ -16,10 +16,10 @@ import { openScenario } from "./helpers.js";
  * POSITIVE CONTROL: the pre-fix string, asserted to FAIL that same audit. An
  * audit that cannot fail proves nothing.
  *
- * Screenshots land in docs/superpowers/evidence/2026-08-03-ui-redesign/pass3/.
+ * Screenshots land in e2e/test-results/pass3/ (gitignored).
  */
 
-const SHOTS = new URL("../../../docs/superpowers/evidence/2026-08-03-ui-redesign/pass3/", import.meta.url).pathname;
+const SHOTS = new URL("./test-results/pass3/", import.meta.url).pathname;
 
 /** The exact sentence demo-bank shipped for the MODEL, seen live on
  *  `standing-01-pending.png` during this wave. */

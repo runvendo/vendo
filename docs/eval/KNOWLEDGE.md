@@ -24,15 +24,16 @@ pointed at a deleted `docs-site/install.mdx`); slugs survive moves.
 
 ## What is frozen, and the per-PR carve-out
 
-The front door's frozen-set law ([GOLDEN.md](./GOLDEN.md)) exists to protect
+The front door's frozen-set law (the golden-set doctrine, maintained in the
+private repo) exists to protect
 model-judged numbers from tuning contamination. It applies to the
 **model-costed parts only**:
 
 - **Frozen (never tuned against, run nightly/on-demand):** LLM-judge answer
   metrics (faithfulness, citation correctness, completeness) and every
   live-engine run (cloud, and local/lexical once lane K7 lands). Do not quote
-  a fail from these legs in a fix PR without burning the item (GOLDEN.md
-  rule 4 applies).
+  a fail from these legs in a fix PR without burning the item to the DEV
+  list.
 - **Per-PR, strict, deterministic (the carve-out):** retrieval metrics against
   expected doc ids, refusal mechanics, schema validation, referential
   integrity, and judge plumbing exercised with scripted (canned) judgements.

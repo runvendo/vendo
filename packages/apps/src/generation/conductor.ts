@@ -5,8 +5,8 @@
  * GONE: `checking/` now owns `FloorDependencies` and imports nothing from this
  * directory, and the checks it runs are reachable from the paint seam through
  * `AppFloor`, for every author rather than only for apps this pipeline built. What
- * keeps the file alive is its five `runtime.ts` call sites, the public re-export in
- * `index.ts`, and the genui-bench vendo lane — all of which still work, unchanged.
+ * keeps the file alive is its five `runtime.ts` call sites and the public re-export
+ * in `index.ts` — all of which still work, unchanged.
  *
  * The replacement is the LEAN loop plus the floor at the seam (§4.1, §7.1): a
  * builder writes `plan.vendo` / `app.vendo` with its own hands, the seam compiles

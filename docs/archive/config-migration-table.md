@@ -1,8 +1,8 @@
 # `createVendo` — the 33 → 8 migration table
 
-**2026-08-01, wave 2 lane F.** Companion to
-`2026-07-30-embedded-agent-architecture-design.md` §10 (the target surface) and
-`2026-07-30-build-contract.md` §4/§5 (seats and packs).
+**2026-08-01, wave 2 lane F.** Companion to the embedded-agent architecture
+design §10 (the target surface) and the build contract §4/§5 (seats and
+packs); both design docs live in the private repo archive.
 
 The design promised a "29→6 migration table — every current `createVendoConfig`
 key gets a stated destination; no key vanishes silently". The interface actually

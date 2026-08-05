@@ -18,12 +18,11 @@ import { openScenario } from "./helpers.js";
  * absent from what the person reads, and the ISO instant is asserted to remain in
  * `<time dateTime>`, where machines read it.
  *
- * Screenshot lands in
- * docs/superpowers/evidence/2026-08-03-ui-redesign/final-cleanup/.
+ * Screenshot lands in e2e/test-results/final-cleanup/ (gitignored).
  */
 
 const SHOTS = new URL(
-  "../../../docs/superpowers/evidence/2026-08-03-ui-redesign/final-cleanup/",
+  "./test-results/final-cleanup/",
   import.meta.url,
 ).pathname;
 
