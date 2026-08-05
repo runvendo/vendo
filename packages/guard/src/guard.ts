@@ -963,6 +963,7 @@ class GuardImplementation implements VendoGuard {
           eventFromContext(ctx, {
             kind: "policy-decision",
             tool: call.tool,
+            risk: effectiveDescriptor.risk,
             inputPreview: approval.inputPreview,
             outcome: "pending-approval",
             decidedBy: "default",
@@ -1046,6 +1047,7 @@ class GuardImplementation implements VendoGuard {
         eventFromContext(ctx, {
           kind: "policy-decision",
           tool: call.tool,
+          risk: descriptor.risk,
           detail: { reason: "org-policy-unavailable", message: errorMessage(error) },
         }),
       );

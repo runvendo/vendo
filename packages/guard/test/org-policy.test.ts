@@ -148,8 +148,9 @@ describe("org policy — the strictness clamp", () => {
     await expect(guard.check(call(read.name, {}, "call_1"), read, context()))
       .resolves.toMatchObject({ action: "run", decidedBy: "default" });
     const { events } = await guard.audit.query({ kind: "policy-decision" });
-    expect(events.some((event: AuditEvent) =>
-      (event.detail as { reason?: string } | undefined)?.reason === "org-policy-unavailable")).toBe(true);
+    expect(events.find((event: AuditEvent) =>
+      (event.detail as { reason?: string } | undefined)?.reason === "org-policy-unavailable"))
+      .toMatchObject({ tool: read.name, risk: "read" });
   });
 
   /** F2 — an org "ask" has to be SATISFIABLE. The approval the clamp parks is
