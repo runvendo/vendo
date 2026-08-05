@@ -11,14 +11,14 @@
  * throws degrades to a `warn` naming it, so a broken check never takes the app
  * down with it.
  */
+import type { FloorDependencies } from "./deps.js";
 import { factChecks } from "./facts.js";
 import type { Check, CheckInput, CheckingLayer, Finding } from "./types.js";
-import type { GenerationDependencies } from "../generation/engine.js";
 
 export interface CheckingLayerOptions {
   /** The host surface the fact checks measure against (catalog, tools, tool
    *  shapes). */
-  deps: GenerationDependencies;
+  deps: FloorDependencies;
   /** Checks plugged in by packs (`Pack.checks`, build contract §5). APPENDED —
    *  they can add findings, never remove or replace a built-in. */
   checks?: readonly Check[];

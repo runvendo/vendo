@@ -19,6 +19,7 @@ import {
   type WireCompileResult,
 } from "@vendoai/core";
 import {
+  APP_NAME_MAX_CHARS,
   bindingKindIssues,
   catalogIssues,
   exprIssues,
@@ -30,7 +31,6 @@ import {
   unknownToolIssues,
 } from "../../checking/facts.js";
 import { pinComponentName } from "../../pins.js";
-import { APP_NAME_MAX_CHARS } from "../contracts/sections.js";
 import {
   asPayload,
   type GeneratedAppDocument,

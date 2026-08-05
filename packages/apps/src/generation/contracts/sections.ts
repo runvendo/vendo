@@ -52,14 +52,6 @@ export const composePromptSections = (sections: readonly GenerationPromptSection
   .filter((content) => content.length > 0)
   .join("\n\n");
 
-/** The app's name is its panel display title. Echoing the ask back ("Create a
- *  chat dashboard that displays the user's…") ships a truncated sentence as
- *  the title of every fresh install's first app, so the cap is a validation
- *  gate, not just prompt guidance: an over-long name routes to repair with
- *  the message below. Create-only — stored apps with long names keep editing
- *  fine (the edit path never re-validates the name). */
-export const APP_NAME_MAX_CHARS = 40;
-
 /**
  * The host's own facts, as prompt sections — shared by every actor that needs
  * them (the brain planning, the workers writing markup).

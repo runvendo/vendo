@@ -15,7 +15,7 @@ import {
 } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { createCheckingLayer } from "./layer.js";
-import type { GenerationDependencies, HostToolInfo } from "../generation/engine.js";
+import type { FloorDependencies, HostToolInfo } from "./deps.js";
 import { scriptedLanguageModel } from "../testing/scripted-model.js";
 
 const tools: HostToolInfo[] = [{
@@ -36,7 +36,7 @@ const toolShapes: Record<string, ShapeType> = {
 
 const catalog: NormalizedCatalog = [];
 
-const deps = (): GenerationDependencies => ({
+const deps = (): FloorDependencies => ({
   model: scriptedLanguageModel(() => '<App name="unused"/>'),
   catalog,
   tools,

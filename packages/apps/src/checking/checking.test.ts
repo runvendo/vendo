@@ -14,11 +14,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { createCheckingLayer } from "./layer.js";
 import type { Check, CheckInput } from "./types.js";
-import {
-  UNSTORED_APP_ID,
-  type GenerationDependencies,
-  type HostToolInfo,
-} from "../generation/engine.js";
+import type { FloorDependencies, HostToolInfo } from "./deps.js";
 import { scriptedLanguageModel } from "../testing/scripted-model.js";
 
 const tools: HostToolInfo[] = [
@@ -57,7 +53,7 @@ const toolShapes: Record<string, ShapeType> = {
 
 const catalog: NormalizedCatalog = [];
 
-const deps = (): GenerationDependencies => ({
+const deps = (): FloorDependencies => ({
   model: scriptedLanguageModel(() => "<App name=\"unused\"/>"),
   catalog,
   tools,
@@ -70,7 +66,7 @@ const documentFrom = (wire: string): AppDocument => {
   const compiled = compileWire(wire, { toolShapes });
   return {
     format: VENDO_APP_FORMAT,
-    id: UNSTORED_APP_ID,
+    id: "app_checking_test",
     name: compiled.name ?? "Untitled",
     ui: "tree",
     tree: compiled.tree as AppDocument["tree"],

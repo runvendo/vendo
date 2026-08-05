@@ -33,12 +33,20 @@ import {
 } from "@vendoai/core";
 import type { AppDocument } from "@vendoai/core";
 import { prewiredPropNames } from "../prewired-schema.js";
-import { APP_NAME_MAX_CHARS } from "../generation/contracts/sections.js";
-import type {
-  GenerationDependencies,
-  HostToolInfo,
-} from "../generation/engine.js";
+import type { FloorDependencies, HostToolInfo } from "./deps.js";
 import type { Check, Finding } from "./types.js";
+
+/** The app's name is its panel display title. Echoing the ask back ("Create a
+ *  chat dashboard that displays the user's…") ships a truncated sentence as
+ *  the title of every fresh install's first app, so the cap is a validation
+ *  gate, not just prompt guidance: an over-long name routes to repair with
+ *  the message below. Create-only — stored apps with long names keep editing
+ *  fine (the edit path never re-validates the name).
+ *
+ *  It lives HERE, with the check that enforces it, rather than with the prompt
+ *  sections that used to declare it: the floor must not import the generation
+ *  pipeline (§7.3). */
+export const APP_NAME_MAX_CHARS = 40;
 
 /** One fact issue, anchored: `where` is the locus, `message` continues the
  *  sentence from it. Read as one line (`node "n3" prop "rows" binds …`) they
@@ -91,7 +99,7 @@ const shapeSchemaMismatch = (shape: ShapeType, schema: Record<string, unknown>):
  *  `$path` prop on a host node can be kind-checked end to end. Existence is
  *  the wire compiler's shape check; this catches the type mismatches that
  *  render silently broken (empty chart, blank stat). */
-export const bindingKindIssues = (tree: Tree, deps: GenerationDependencies): FactIssue[] => {
+export const bindingKindIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] => {
   if (deps.toolShapes === undefined) return [];
   const issues: FactIssue[] = [];
   const queryTool = new Map((tree.queries ?? []).map((query) => [query.name, query.tool]));
@@ -126,7 +134,7 @@ export const bindingKindIssues = (tree: Tree, deps: GenerationDependencies): Fac
  *  binding — reject the reshape at compile. */
 const GENERIC_ITEM_RESHAPES = new Set(["asPoints", "asOptions"]);
 
-export const hostReshapeIssues = (tree: Tree, deps: GenerationDependencies): FactIssue[] => {
+export const hostReshapeIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] => {
   const issues: FactIssue[] = [];
   const hostSchemas = new Map(deps.catalog.map((component) => [component.name, component.propsJsonSchema]));
   for (const node of tree.nodes) {
@@ -186,7 +194,7 @@ const KIND_PROBES: Partial<Record<ShapeType["kind"], unknown>> = {
 
 const KIT_WIRE_SET: ReadonlySet<string> = new Set(KIT_WIRE_COMPONENT_NAMES);
 
-export const kitSlotIssues = (tree: Tree, deps: GenerationDependencies): FactIssue[] => {
+export const kitSlotIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] => {
   if (deps.toolShapes === undefined) return [];
   const issues: FactIssue[] = [];
   const queryTool = new Map((tree.queries ?? []).map((query) => [query.name, query.tool]));
@@ -221,7 +229,7 @@ export const kitSlotIssues = (tree: Tree, deps: GenerationDependencies): FactIss
  *  the expression parses, its field paths reach fields the tool shapes really
  *  expose, and every slot's type can compute (sum over a string cannot).
  *  Whether the number MEANS anything is the reviewer's judgement, not a fact. */
-export const exprIssues = (tree: Tree, deps: GenerationDependencies): FactIssue[] => {
+export const exprIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] => {
   const queryTool = new Map((tree.queries ?? []).map((query) => [query.name, query.tool]));
   const context = {
     queryNames: [...queryTool.keys()],
@@ -407,7 +415,7 @@ export const unknownToolIssues = (tree: Tree, tools: readonly HostToolInfo[] | u
 /** Every `$path` binding resolved query → tool → response shape by the wire
  *  compiler's own checker. A miss carries the fields that ARE there, so the
  *  message can teach instead of only refusing. */
-const bindingShapeIssues = (tree: Tree, deps: GenerationDependencies): FactIssue[] => {
+const bindingShapeIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] => {
   if (deps.toolShapes === undefined) return [];
   return checkBindingShapes(tree.nodes, tree.queries ?? [], deps.toolShapes).map((error) => atProp(
     error.nodeId,
@@ -471,7 +479,7 @@ const treeCheck = (
  * The built-in fact checks, bound to the host surface they measure against.
  * Every finding is `block`: a fact is not a matter of taste.
  */
-export const factChecks = (deps: GenerationDependencies): Check[] => [
+export const factChecks = (deps: FloorDependencies): Check[] => [
   { name: "document", kind: "fact", run: async ({ document }) => blocking(documentIssues(document)) },
   treeCheck("tools-exist", (tree) => unknownToolIssues(tree, deps.tools)),
   treeCheck("components-exist", (tree, document) => catalogIssues(tree, document.components, deps.catalog)),

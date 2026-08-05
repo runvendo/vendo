@@ -5,4 +5,4 @@
  * tests, and bench keep importing "./engine.js" unchanged.
  */
 export * from "./generation/engine.js";
-export { APP_NAME_MAX_CHARS } from "./generation/contracts/sections.js";
+export { APP_NAME_MAX_CHARS } from "./checking/facts.js";
