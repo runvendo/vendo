@@ -91,7 +91,13 @@ async function bundle(entry, outAs) {
     bundle: true,
     format: "esm",
     platform: "neutral",
-    conditions: ["workerd", "worker"],
+    // Wrangler's own default (getBuildConditions() in workers-sdk
+    // deployment-bundle/bundle.ts) is exactly these three. Dropping `browser`
+    // made the gate stricter than the runtime it claims to mirror, so a
+    // dependency could fail here while working on real Workers: @vercel/oidc
+    // 3.2.0 (reached through ai -> @ai-sdk/gateway) started requiring fs and
+    // path from its Node entry, and only the `browser` condition routes past it.
+    conditions: ["workerd", "worker", "browser"],
     mainFields: ["module", "main"],
     external: NODE_BUILTIN_EXTERNALS,
     // scripts/ is not a workspace package; the fixture's umbrella import
