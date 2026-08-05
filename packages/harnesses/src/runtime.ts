@@ -12,6 +12,7 @@ import {
   auditContext,
   mintTurnId,
   VendoError,
+  withSseKeepalive,
   type ApprovalId,
   type AuditEvent,
   type Json,
@@ -517,7 +518,11 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
         }
       })();
 
-      return createUIMessageStreamResponse({ stream: toClient });
+      // A harness turn can be quiet for a long time — a provider call before
+      // the first token, a slow tool. The keepalive puts a first frame on the
+      // wire at once and punctuates the silence, without touching the message
+      // sequence (SSE comment frames; see core/sse-keepalive.ts).
+      return withSseKeepalive(createUIMessageStreamResponse({ stream: toClient }));
     },
   };
 }

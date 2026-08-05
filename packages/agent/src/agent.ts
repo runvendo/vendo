@@ -2,6 +2,7 @@ import {
   VendoError,
   mintTurnId,
   toVendoWirePart,
+  withSseKeepalive,
   type AgentRunner,
   type ApprovalId,
   type Guard,
@@ -618,7 +619,10 @@ export function createAgent(config: AgentConfig): VendoAgent {
           return message;
         },
       });
-      const response = createUIMessageStreamResponse({ stream });
+      // Same keepalive the harness path gets: a first frame before the provider
+      // has said anything, then one per interval of silence. SSE comment frames,
+      // so the client's message sequence is untouched (core/sse-keepalive.ts).
+      const response = withSseKeepalive(createUIMessageStreamResponse({ stream }));
       // ENG-211: a caller may begin without an id, in which case resolve()
       // mints one. Return the effective id on every turn so fetch clients can
       // adopt it without changing the ai-SDK SSE part contract.
