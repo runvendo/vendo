@@ -179,6 +179,10 @@ export interface VendoClient {
     }): Promise<{ runs: RunRecord[]; cursor?: string }>;
     get(id: RunId): Promise<RunRecord>;
     stop(id: RunId): Promise<void>;
+    /** POST /runs/:id/rerun — run it again: a FRESH run of the same automation
+     *  on the same triggering event. The remedy a failed run leaves behind (07
+     *  §1 `runs.rerun`); answers with the new run's id. */
+    rerun(id: RunId): Promise<RunId>;
   };
 
   activity: {

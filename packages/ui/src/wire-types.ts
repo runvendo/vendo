@@ -226,8 +226,10 @@ export interface ConnectableToolkit {
   description?: string;
 }
 
-/** 07-automations §5 */
-export type RunStatus = "running" | "ok" | "error" | "stopped" | "pending-approval";
+/** 07-automations §5. No waiting state: a run that meets a permission nobody
+ *  granted fails LOUDLY (`error`, code `needs-permission`) and the person grants
+ *  it and runs it again. */
+export type RunStatus = "running" | "ok" | "error" | "stopped";
 
 /** 07-automations §5 — what `/runs` routes return. */
 export interface RunRecord {
@@ -242,7 +244,9 @@ export interface RunRecord {
   finishedAt?: IsoDateTime;
   steps: Array<{ id: string; tool: string; outcome: ToolOutcome["status"]; at: IsoDateTime; detail?: string }>;
   summary?: string;
-  error?: { code: string; message: string };
+  /** `needs-permission` is the code a surface acts on: `tool`/`slug` name what
+   *  the run needed, so the row can offer Grant & re-run. */
+  error?: { code: string; message: string; tool?: string; slug?: string };
 }
 
 /** 07-automations §1 — what `POST /automations/:id/dry-run` returns. */
