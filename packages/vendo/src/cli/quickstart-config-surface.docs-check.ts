@@ -92,6 +92,7 @@ export interface CreateVendoConfig {
   approvals?: { parkedCallTtlMs?: number };
   apps?: {
     experimentalMachines?: boolean;
+    experimentalScreenAgent?: boolean; // route vendo_make through the cheap screen agent first
     review?: {                // review-kind remixes: who may review (queue/reject/approve)
       reviewer?(ctx: RunContext): boolean | Promise<boolean>;
     };
