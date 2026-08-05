@@ -684,6 +684,9 @@ importers:
       '@vendoai/agent':
         specifier: workspace:*
         version: link:../../packages/agent
+      '@vendoai/agents':
+        specifier: workspace:*
+        version: link:../../packages/agents
       '@vendoai/apps':
         specifier: workspace:*
         version: link:../../packages/apps
@@ -696,6 +699,9 @@ importers:
       '@vendoai/guard':
         specifier: workspace:*
         version: link:../../packages/guard
+      '@vendoai/harnesses':
+        specifier: workspace:*
+        version: link:../../packages/harnesses
       '@vendoai/store':
         specifier: workspace:*
         version: link:../../packages/store

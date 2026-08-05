@@ -51,6 +51,7 @@ import {
 import { selectSandbox } from "@vendoai/apps/sandbox-ladder";
 import {
   agentComposition,
+  awayRunner,
   provideCloudAdapters,
   type AgentComposition,
   type VendoAgent as ComposedAgent,
@@ -2969,7 +2970,26 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     tools: boundTools,
     guard,
     store,
-    runner: agent.asRunner(),
+    // An agentic firing is ONE non-interactive harness run on the deployment's
+    // own brain — the same runtime, the same guard-bound choke point and the same
+    // durable workspace a chat turn gets, with `interactive: false` and the
+    // engine's fire-time ctx. The runner takes NO tool surface here: the engine
+    // hands each run its own (`tools` above, projected for the firing ctx), which
+    // is what keeps THE LAW's unattended filter in charge of what a model sees.
+    runner: awayRunner({
+      harness,
+      store,
+      files,
+      guard,
+      skills: packs.skills,
+      models: inference.seats,
+      // The SAME brief a chat turn thinks on, assembled for the FIRING ctx — so
+      // the venue gate and the guard's directions are the away run's too, and the
+      // deployment does not have two agents wearing one name. No discovery
+      // section: an away run gets no discovery rails, and promising `find_tools`
+      // would name a tool that is not on its listing.
+      system: (ctx) => assembleSystemPrompt(guard, ctx, system, true, false),
+    }),
     resolveRisk,
     // Build contract §9.3 — the fire-time sponsorship gate and the adoption
     // card ask `can(editor)` through this seam. Unwired it would silently fall

@@ -193,8 +193,9 @@ export interface Stack {
 
 export interface StackOptions {
   runner?: AgentRunner;
-  /** Build the runner from the stack's own parts — the live leg builds
-   *  agent.asRunner() over the same guard + bound registry. Wins over runner. */
+  /** Build the runner from the stack's own parts — the live leg builds the
+   *  `@vendoai/agents` away runner over the same guard and store the engine got.
+   *  Wins over runner. */
   runnerFrom?: (parts: { guard: VendoGuard; bound: ToolRegistry; store: VendoStore }) => AgentRunner;
   now?: () => Date;
   policy?: PolicyConfig;

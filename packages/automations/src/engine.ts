@@ -1052,6 +1052,12 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     try {
       const report = await config.runner({
         prompt: trigger.run.prompt,
+        // The whole registry, and §12's projection is what narrows it: an away ctx
+        // withholds every destructive AND every `ungraded` descriptor, and the
+        // connector dispatcher is `ungraded` by construction (one tool name for a
+        // whole catalog). So an unattended run is never SHOWN the dispatcher at
+        // all — strictly stronger than gating it on a per-trigger service grant,
+        // and one rule instead of two that could disagree.
         tools: config.tools,
         budget: { maxToolCalls: trigger.run.budget?.maxToolCalls ?? 50 },
         abortSignal,
@@ -1753,24 +1759,46 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     return { missing, grantSetId };
   };
 
-  /** The tools a consent moment covers. Steps DECLARE their surface; without a
-   *  model seat, agentic capture conservatively exposes every bound descriptor
-   *  (PR flag, unchanged).
+  /** The tools a consent moment covers. Steps DECLARE their surface; an agentic
+   *  run declares one too when it was authored with one (`run.tools`), and falls
+   *  back to every bound descriptor when it was not.
    *
-   *  The connector dispatcher is the one tool that never enters as itself. A
-   *  steps run contributes one item per SERVICE ACTION it names; an agentic run
-   *  names none, so it contributes none — a tool-wide grant there would be
-   *  consent to the broker's whole catalog behind a single card. An agentic
-   *  connector call therefore parks at fire time like any ungranted away step,
-   *  and its approval accretes the per-slug grant. */
+   *  The connector dispatcher never enters as ITSELF, whichever kind of run this
+   *  is: a tool-wide grant on it would be consent to the broker's whole catalog
+   *  behind a single card. A steps run contributes one item per SERVICE ACTION it
+   *  names; an agentic run contributes one per service-action slug in its
+   *  declaration, which is exactly the same width. Anything either one reaches
+   *  beyond that parks at fire time like any ungranted away call, and its
+   *  approval accretes the per-slug grant. */
   const consentSurface = async (
     trigger: Trigger,
     byName: Map<string, ToolDescriptor>,
   ): Promise<ConsentItem[]> => {
-    if (trigger.run.kind !== "steps") {
-      return [...byName.keys()]
-        .filter((tool) => tool !== USE_SERVICE_TOOL)
-        .map((tool) => ({ tool }));
+    if (trigger.run.kind === "agentic") {
+      const declared = trigger.run.tools;
+      if (declared === undefined) {
+        return [...byName.keys()]
+          .filter((tool) => tool !== USE_SERVICE_TOOL)
+          .map((tool) => ({ tool }));
+      }
+      const items = new Map<string, ConsentItem>();
+      for (const name of declared) {
+        // Declaring the dispatcher BY NAME buys nothing on purpose: it is the one
+        // name whose tool-wide grant would be the broker's whole catalog behind a
+        // single card. Name the actions instead.
+        if (name === USE_SERVICE_TOOL) continue;
+        // A declared name is a HOST TOOL when the bound surface has one by that
+        // name, and a service action otherwise — the two namespaces are disjoint
+        // by construction (bound tools match `TOOL_NAME_PATTERN`; broker slugs are
+        // never bound). A name that is neither, on a deployment with no dispatcher
+        // bound, enters under its OWN name so capture refuses it by that name
+        // rather than as a nonsense slug.
+        const item: ConsentItem = byName.has(name) || !byName.has(USE_SERVICE_TOOL)
+          ? { tool: name }
+          : { tool: USE_SERVICE_TOOL, slug: name };
+        items.set(consentKey(item), item);
+      }
+      return [...items.values()];
     }
     const items = new Map<string, ConsentItem>();
     for (const tool of declaredSurface(trigger)) {

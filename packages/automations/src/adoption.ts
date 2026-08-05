@@ -1,9 +1,8 @@
-import {
-  resolvedRisk,
-  type AppDocument,
-  type RiskLabel,
-  type ToolDescriptor,
-  type Trigger,
+import type {
+  AppDocument,
+  RiskLabel,
+  ToolDescriptor,
+  Trigger,
 } from "@vendoai/core";
 import type { Sponsorship } from "./sponsorship.js";
 

@@ -17,6 +17,7 @@ export {
   type PostgresOptions,
   type VendoAgent,
 } from "./agent.js";
+export { awayRunner, type AwayRunnerDeps } from "./away.js";
 export { DOOR_PATH, type DoorConfig } from "./door.js";
 export type { AgentSession, ApprovalEvent, SessionOptions } from "./session.js";
 export { api, tool, type ApiOptions, type HostTool, type ToolConfig, type ToolSource } from "./tools.js";

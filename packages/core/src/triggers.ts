@@ -77,7 +77,23 @@ export const stepSchema = z.object({
 
 /** 01-core §11 */
 export type RunModel =
-  | { kind: "agentic"; prompt: string; budget?: { maxToolCalls?: number } }
+  | {
+    kind: "agentic";
+    prompt: string;
+    budget?: { maxToolCalls?: number };
+    /**
+     * What this run is EXPECTED to reach — tool names and/or service-action
+     * slugs — authored alongside the automation.
+     *
+     * Best-effort by nature: a judgment call cannot promise its own tool list
+     * the way steps do, so this is a declaration of intent, never an authority
+     * boundary. It is what the owner is asked to allow at arm time; the guard
+     * still decides every call, and a call outside the declaration parks like
+     * any ungranted away call. Absent, arm-time capture falls back to proposing
+     * every bound descriptor, as it always has.
+     */
+    tools?: string[];
+  }
   | { kind: "steps"; steps: Step[] };
 
 /** 01-core §11 */
@@ -86,6 +102,7 @@ export const runModelSchema = z.discriminatedUnion("kind", [
     kind: z.literal("agentic"),
     prompt: z.string(),
     budget: z.object({ maxToolCalls: z.number().optional() }).passthrough().optional(),
+    tools: z.array(z.string()).optional(),
   }).passthrough(),
   z.object({
     kind: z.literal("steps"),
