@@ -11,6 +11,7 @@
     "validate": "node scripts/validate.mjs"
   },
   "dependencies": {
+    "@vendoai/core": "workspace:*",
     "@vendoai/kit": "workspace:*",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

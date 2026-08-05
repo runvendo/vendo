@@ -1,14 +1,19 @@
+import { devPortFrom } from "@vendoai/core";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
 import { RUNTIME_TOKEN, injectRuntimeConfig, readRuntimeConfig } from "./provision.mjs";
 
 /**
- * The dev server's FIXED port — Track D's live preview reaches it at
- * `SandboxMachine.url(VENDO_DEV_PORT)`. Three ports exist in a box and no more:
- * `$PORT` (8080) is the served app, 8811 is the harness control port, and this
- * is the dev server. Nothing else may claim it.
+ * The dev server's port — DECLARED by the host at box create, never discovered.
+ * Track D's live preview reaches it at `SandboxMachine.url(devPort)`, and that
+ * URL is minted before the dev server has necessarily booted, so this side and
+ * the host side read the SAME constant from `@vendoai/core` (`VENDO_DEV_PORT`,
+ * carried in `VENDO_DEV_PORT_ENV`). A second literal here is how the two drift.
+ *
+ * Three ports exist in a box and no more: `$PORT` (8080) is the served app,
+ * 8811 is the harness control port, this is the dev server.
  */
-export const VENDO_DEV_PORT = 5173;
+const devPort = devPortFrom(process.env);
 
 /** The dev server is a server too, so it owes the page the same provision data
  *  `server.js` splices in — otherwise the live preview is the one surface that
@@ -30,7 +35,7 @@ export default defineConfig({
   // on the host origin. Every asset URL must resolve against the page.
   base: "./",
   server: {
-    port: VENDO_DEV_PORT,
+    port: devPort,
     // Fail loudly rather than drift to 5174 — Track D's preview URL is built
     // from this number, and a silently-moved dev server is an invisible 404.
     strictPort: true,

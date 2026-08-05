@@ -35,7 +35,7 @@
  * resumes on the same session) and worse for cost (a parked write holds a
  * sandbox for up to 90s). Recorded in the lane's close note as a deviation.
  */
-import { VendoError } from "@vendoai/core";
+import { VENDO_DEV_PORT, VENDO_DEV_PORT_ENV, VendoError } from "@vendoai/core";
 import type { CheckoutFile, SyncFile, TreeState } from "../materialize.js";
 import { emptyTree } from "../materialize.js";
 import type { SessionMachine, SessionMessage } from "./machine.js";
@@ -190,7 +190,16 @@ export async function boxMachine(options: BoxMachineOptions): Promise<SessionMac
     const token = mintToken();
     const machine = await options.sandbox.create({
       ...(template === undefined ? {} : { template }),
-      env: { ...options.env, VENDO_BOX_TOKEN: token, VENDO_WORKSPACE_ROOT: "/workspace" },
+      env: {
+        ...options.env,
+        VENDO_BOX_TOKEN: token,
+        VENDO_WORKSPACE_ROOT: "/workspace",
+        // The dev port is DECLARED here, at create, from the same core constant
+        // the template's vite config resolves. A preview URL is minted from it
+        // before the dev server has necessarily booted, so it can never be
+        // discovered post-boot — and a second literal is how the two drift.
+        [VENDO_DEV_PORT_ENV]: String(VENDO_DEV_PORT),
+      },
       allowedDomains: [...options.allowedDomains],
     });
     if (!await hello(machine, token)) {

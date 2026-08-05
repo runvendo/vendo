@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { devPortFrom, VENDO_APP_PORT, VENDO_DEV_PORT, VENDO_DEV_PORT_ENV } from "@vendoai/core";
 
 /**
  * The universal box app template must satisfy the skin contract ON ITS OWN: a
@@ -234,5 +235,70 @@ describe("box app template (a cold provision, no snapshot)", () => {
     });
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ result: { from: "source" } });
+  });
+});
+
+/**
+ * The DECLARED dev-port contract (Track D's live preview).
+ *
+ * The preview URL is minted from a number — `SandboxMachine.url(port)` — before
+ * the dev server has necessarily booted, so the port can never be discovered
+ * post-boot. Two independent halves have to agree: the HOST, which sets
+ * `VENDO_DEV_PORT` into the box at create, and the TEMPLATE, which binds the
+ * socket.
+ *
+ * This BOOTS THE REAL DEV SERVER with a host-declared port and fetches it. An
+ * earlier version of this test imported the vite config and fell back to
+ * `devPortFrom` when the import failed — which compared core to core and stayed
+ * green with the constant deliberately drifted. Nothing here may resolve the
+ * expected port the same way the subject does.
+ */
+describe("the dev port is declared by the host, and the template binds it", () => {
+  let dev: ChildProcess | undefined;
+
+  afterAll(() => {
+    dev?.kill("SIGKILL");
+  });
+
+  it("binds the port the host declared, not a compiled-in default", async () => {
+    const appDir = provision();
+    // Deliberately NOT the default: a template that ignores the declared value
+    // and binds its own literal fails here.
+    const declared = await freePort();
+    expect(declared).not.toBe(VENDO_DEV_PORT);
+
+    dev = spawn("npm", ["run", "dev", "--silent"], {
+      cwd: appDir,
+      env: { ...process.env, [VENDO_DEV_PORT_ENV]: String(declared) },
+      stdio: "ignore",
+    });
+
+    // Inner budget stays well inside this test's own timeout: the timeout is the
+    // hang detector, a tighter inner budget is a second, invisible speed limit.
+    const deadline = Date.now() + 120_000;
+    let served = false;
+    while (!served && Date.now() < deadline) {
+      served = await fetch(`http://127.0.0.1:${declared}/`).then((r) => r.ok, () => false);
+      if (!served) await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    expect(served, `the dev server never answered on the declared port ${declared}`).toBe(true);
+
+    // And it did NOT also grab the default — strictPort means one socket, the
+    // declared one, or a loud failure.
+    const alsoDefault = await fetch(`http://127.0.0.1:${VENDO_DEV_PORT}/`).then((r) => r.ok, () => false);
+    expect(alsoDefault).toBe(false);
+  }, 300_000);
+
+  it("resolves nonsense to the declared default rather than binding NaN", () => {
+    expect(devPortFrom({ [VENDO_DEV_PORT_ENV]: "6100" })).toBe(6100);
+    for (const bad of ["", "   ", "nope", "0", "70000", "5173.5"]) {
+      expect(devPortFrom({ [VENDO_DEV_PORT_ENV]: bad })).toBe(VENDO_DEV_PORT);
+    }
+    expect(devPortFrom({})).toBe(VENDO_DEV_PORT);
+  });
+
+  it("the three box ports are distinct", () => {
+    // 8811 is the harness control port; the contract says three, all distinct.
+    expect(new Set([VENDO_APP_PORT, VENDO_DEV_PORT, 8811]).size).toBe(3);
   });
 });
