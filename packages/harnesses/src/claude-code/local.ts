@@ -208,6 +208,13 @@ export async function localMachine(options: LocalMachineOptions): Promise<Sessio
 
     tree: held.tree,
 
+    // Loopback, because on this path the machine IS the host: a dev server the
+    // session starts binds here, and the browser asking for the preview is on
+    // the same box by definition (that is what `machine: "local"` means).
+    async url(port: number) {
+      return `http://127.0.0.1:${port}`;
+    },
+
     async materialize(files) {
       for (const file of files) {
         const target = toDisk(root, file.path);

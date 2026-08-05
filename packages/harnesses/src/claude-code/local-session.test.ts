@@ -56,4 +56,18 @@ describe("machine: \"local\" — one session, many turns", () => {
 
     await disposeLocalSessions();
   });
+
+  test("a dev server on this machine is reachable at loopback (blueprint §10.2)", async () => {
+    // The seam has to answer on BOTH legs or it is not a seam: a box points at
+    // the provider's per-port ingress, a local machine at the loopback address
+    // the browser and the dev server already share.
+    const machine = await localMachine({
+      threadId: `thr_local_${Math.random().toString(36).slice(2)}`,
+      env: {},
+      openSession: sessionDouble().factory as never,
+    });
+    expect(await machine.url(5173)).toBe("http://127.0.0.1:5173");
+
+    await disposeLocalSessions();
+  });
 });

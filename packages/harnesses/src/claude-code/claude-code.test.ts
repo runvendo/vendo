@@ -172,6 +172,10 @@ function makeBox(
   };
 
   box.destroy = async () => { box.destroyed = true; };
+  // ⚠️ TEST EDIT — the widened `SandboxMachineLike` requires it. Shaped like
+  // e2b's per-port public hostname (`https://<host-for-port>`), which is the
+  // provider behaviour the shared adapter conformance suite certifies.
+  box.url = async (port?: number) => `https://${box.id}-${port ?? 8080}.fake-provider.test`;
   box.request = async (req) => {
     if (box.destroyed) throw new VendoError("not-found", "machine is gone");
     const payload = req.body === undefined
@@ -706,6 +710,17 @@ describe("one box per conversation, destroyed when it goes idle (design §9)", (
     await machine.send({ prompt: "p", emit: () => undefined });
     // Three times the idle budget later, the box is still there.
     expect(sandbox.boxes[0]!.destroyed).toBe(false);
+  });
+});
+
+describe("the build's own dev server is reachable from the browser (blueprint §10.2)", () => {
+  test("the box hands out its provider ingress URL for a port its own traffic never uses", async () => {
+    // A coded build's preview is the TEMPLATE's dev server, on a second listener
+    // in the same box. `request()` already reaches any port from the HOST side;
+    // this is the browser→box side, which the session seam could not express.
+    const sandbox = fakeSandbox(async () => undefined);
+    const machine = await boxMachine({ sandbox, threadId: "thr_preview", env: {}, allowedDomains: [] });
+    expect(await machine.url(5173)).toBe("https://box_0-5173.fake-provider.test");
   });
 });
 

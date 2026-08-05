@@ -60,6 +60,10 @@ export interface SandboxMachineLike {
     write(path: string, bytes: Uint8Array | string): Promise<void>;
     list(dir: string): Promise<string[]>;
   };
+  /** The machine's PUBLIC ingress URL for a port — the browser→box path, which
+   *  `request()` (host→box) cannot stand in for. Declared exactly as
+   *  `SandboxMachine.url` so a real adapter still satisfies this narrowing. */
+  url(port?: number): Promise<string>;
   destroy(): Promise<void>;
 }
 
@@ -247,6 +251,10 @@ export async function boxMachine(options: BoxMachineOptions): Promise<SessionMac
     pluginPath: "/workspace/host",
 
     tree: box.tree,
+
+    async url(port: number) {
+      return await box.machine.url(port);
+    },
 
     async materialize(files: readonly CheckoutFile[]) {
       // Chunked by COUNT, which bounds the typical upload body — not a hard

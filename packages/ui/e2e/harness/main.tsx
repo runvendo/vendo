@@ -1368,6 +1368,26 @@ function AppFrameResizeScenario() {
   );
 }
 
+/**
+ * Blueprint §10.2 point 2 — a coded build's live preview IS the template's own
+ * dev server, rendered by the EXISTING http surface. No new frame, no new panel:
+ * the only thing that changes is which URL the surface carries.
+ *
+ * The spec boots a real Vite dev server on a port it reserves at run time and
+ * passes the URL in the location hash (the same handoff `/live-stage` uses for
+ * its ephemeral secret), because a port baked in here would collide with every
+ * parallel lane.
+ */
+function DevServerPreviewScenario() {
+  const url = decodeURIComponent(globalThis.location.hash.slice(1));
+  return (
+    <section aria-label="Live dev server preview">
+      <h2>Dev server preview</h2>
+      <AppFrame surface={{ kind: "http", url }} />
+    </section>
+  );
+}
+
 const baseClient = createVendoClient({ baseUrl: "/api/vendo" });
 const unconfiguredClient = createVendoClient({ baseUrl: "/api/vendo", headers: { "x-vendo-force-posture": "unconfigured" } });
 
@@ -2227,6 +2247,7 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/slot-fallback": return { title: "Slot pin fallback", content: <SlotFallbackScenario />, ownProvider: true };
     case "/appframe": return { title: "App execution planes", content: <AppFrameScenario /> };
     case "/appframe-resize": return { title: "App frame resize — the host's bounds win", content: <AppFrameResizeScenario /> };
+    case "/appframe-devserver": return { title: "Live dev-server preview (HMR)", content: <DevServerPreviewScenario /> };
     case "/byo-embed-app": return { title: "BYO chat — inline generated app", content: <ByoEmbedScenario appId="app_island" title="Weather dashboard" />, ownProvider: true };
     case "/byo-embed-building": return { title: "BYO chat — app mid-build", content: <ByoEmbedScenario appId="app_building_lands" title="Trip planner" />, ownProvider: true };
     // §16 law 3 — the embed's terminal build failure. The wire fixture serves
