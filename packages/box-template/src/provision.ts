@@ -1,5 +1,5 @@
 import { applyThemeVars, defaultVendoTheme, resolveTheme, themeCssVariables } from "@vendoai/kit";
-import type { VendoAppContextValue } from "@vendoai/kit";
+import type { VendoAppProviderProps } from "@vendoai/kit";
 
 /**
  * The page half of the provision contract (the disk half is ../provision.mjs).
@@ -48,11 +48,20 @@ const fromQuery = (): unknown => {
 };
 
 /**
- * Apply the host's brand to this document and return what identifies this app.
+ * Apply the host's brand to this document and return the provider props the
+ * served URL cannot supply.
+ *
  * Every token mapping is `themeCssVariables`' — the ONE flattening the chrome,
  * the jail and the Kit's own tokens already share. There is no second token set.
+ *
+ * The address is deliberately almost always EMPTY. `VendoAppProvider` derives
+ * `{baseUrl, appId}` from its own served path (`/apps/<id>/serve/...`), which is
+ * the shipped shape for a shared app and survives a host that mounts the wire
+ * under a base path. Only the personal branch is served from a provider URL
+ * whose path carries neither half — and that is the one case the box is told its
+ * own id at provision. So this returns an override, never a default.
  */
-export function applyProvisionedBrand(): VendoAppContextValue {
+export function applyProvisionedBrand(): VendoAppProviderProps {
   const runtime = injected();
   const override = fromQuery() ?? runtime.theme;
   applyThemeVars(themeCssVariables(resolveTheme(defaultVendoTheme, isObject(override) ? override : undefined)));
