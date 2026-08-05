@@ -84,6 +84,12 @@ describe("apps agent tools", () => {
     // model answered "I can't set two separate schedules on the same app" from
     // prior belief — without ever calling the tool that would have done it.
     expect(make?.description).toMatch(/hold SEVERAL automations/i);
+    // Both doors that aim at an existing app say the same thing about the aim:
+    // the id, or the name the person said. A model that only knows the name
+    // reached for open() first and gave up there.
+    expect(make?.description).toMatch(/its id, or its name/i);
+    const open = descriptors.find(({ name }) => name === "vendo_apps_open");
+    expect(open?.description).toMatch(/name/i);
   });
 
   /**
@@ -215,6 +221,52 @@ describe("apps agent tools", () => {
     if (outcome.status !== "error") return;
     expect(outcome.error.code).toBe("validation");
     expect(outcome.error.message).toContain("Tool-built dashboard");
+    expect(outcome.error.message).toContain(first.id);
+    expect(outcome.error.message).toContain(second.id);
+  });
+
+  it("OPENS by name too — the door a model reaches for first when it holds no id", async () => {
+    // The walk: asked for "my transactions app", the model's first move was
+    // `vendo_apps_open`, which took a raw id. It burned its attempts there and
+    // concluded the app did not exist, while an exact name match sat in the
+    // caller's own list. Both doors take the same aim or neither does.
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools: hostTools,
+      catalog: [],
+      model: scriptedLanguageModel(generated),
+    });
+    const created = await runtime.create({ prompt: "Build a dashboard" }, ctx);
+
+    await expect(runtime.agentTools().execute({
+      id: "call_open_by_name",
+      tool: "vendo_apps_open",
+      args: { appId: "tool-BUILT dashboard" },
+    }, ctx)).resolves.toMatchObject({ status: "ok", output: { kind: "tree" } });
+    expect(created.name).toBe("Tool-built dashboard");
+  });
+
+  it("asks which one when the name it was asked to open matches two apps", async () => {
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools: hostTools,
+      catalog: [],
+      model: scriptedLanguageModel(generated),
+    });
+    const first = await runtime.create({ prompt: "Build a dashboard" }, ctx);
+    const second = await runtime.create({ prompt: "Build another dashboard" }, ctx);
+
+    const outcome = await runtime.agentTools().execute({
+      id: "call_open_ambiguous",
+      tool: "vendo_apps_open",
+      args: { appId: "Tool-built dashboard" },
+    }, ctx);
+
+    expect(outcome.status).toBe("error");
+    if (outcome.status !== "error") return;
+    expect(outcome.error.code).toBe("validation");
     expect(outcome.error.message).toContain(first.id);
     expect(outcome.error.message).toContain(second.id);
   });

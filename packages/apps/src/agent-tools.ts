@@ -77,11 +77,17 @@ const descriptors = [
   },
   {
     name: "vendo_apps_open",
-    description: "Open the latest serving surface for a Vendo app.",
+    description: "Open the latest serving surface for a Vendo app. `appId` is the app's id, or its name exactly as the user said it, resolved against their own apps (if two share that name you are told both, so ask which one they mean).",
     inputSchema: {
       $schema: DRAFT_2020_12,
       type: "object",
-      properties: { appId: { type: "string", minLength: 1 } },
+      properties: {
+        appId: {
+          type: "string",
+          minLength: 1,
+          description: "The app's id, or its name as the user says it.",
+        },
+      },
       required: ["appId"],
       additionalProperties: false,
     },
@@ -376,7 +382,11 @@ export const createAgentTools = (
       }
       if (call.tool === "vendo_apps_open") {
         const args = input(call.args, ["appId"]);
-        return { status: "ok", output: await runtime.open(args.appId as string, ctx) as unknown as Json };
+        // The same aim as `vendo_make`'s `app`, because this is the door a model
+        // holding only a name reaches for FIRST — and it used to answer
+        // "no such app" while that app sat in the caller's own list.
+        const appId = await resolveAppRef(runtime, args.appId as string, ctx);
+        return { status: "ok", output: await runtime.open(appId, ctx) as unknown as Json };
       }
       if (call.tool === "vendo_apps_data_list") {
         const args = input(call.args, ["appId", "collection"], ["refs", "limit", "cursor"]);
