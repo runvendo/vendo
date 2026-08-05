@@ -5,6 +5,7 @@
  */
 import type { SandboxAdapter, SandboxMachine } from "@vendoai/apps";
 import { e2bSandbox } from "@vendoai/apps/e2b";
+import { selectSandbox } from "@vendoai/apps/sandbox-ladder";
 import {
   VendoError,
   type FilesAdapter,
@@ -132,20 +133,19 @@ const defaultStore = (): VendoStore => {
   return createStore();
 };
 
+/** The ladder itself lives in @vendoai/apps (`selectSandbox`) — ONE
+ *  implementation, shared with the umbrella's composition seam. This function
+ *  is only what an EMPTY ladder means here: a harness that needs a machine and
+ *  has none is a boot error, not a turn that dies in front of a user. */
 const resolveSandbox = (explicit: SandboxAdapter | undefined): SandboxAdapter => {
-  if (explicit !== undefined) return explicit;
-  const e2bKey = process.env["E2B_API_KEY"];
-  if (e2bKey !== undefined && e2bKey !== "") return e2bSandbox({ apiKey: e2bKey });
-  const key = cloudKey();
-  if (key !== undefined) {
-    if (cloudAdapters.sandbox === undefined) {
-      throw new VendoError(
-        "not-implemented",
-        "A VENDO_API_KEY is set but this build has no Cloud sandbox rung wired. "
-        + "Pass `sandbox: e2b({ apiKey })` or set E2B_API_KEY.",
-      );
-    }
-    return cloudAdapters.sandbox(key);
+  const { adapter } = selectSandbox(explicit, cloudAdapters.sandbox);
+  if (adapter !== undefined) return adapter;
+  if (cloudKey() !== undefined) {
+    throw new VendoError(
+      "not-implemented",
+      "A VENDO_API_KEY is set but this build has no Cloud sandbox rung wired. "
+      + "Pass `sandbox: e2b({ apiKey })` or set E2B_API_KEY.",
+    );
   }
   throw new VendoError(
     "validation",

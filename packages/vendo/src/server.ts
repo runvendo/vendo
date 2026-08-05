@@ -49,7 +49,7 @@ import {
   type PinBaseline,
   type SandboxAdapter,
 } from "@vendoai/apps";
-import { e2bInstalled, e2bSandbox } from "@vendoai/apps/e2b";
+import { selectSandbox } from "@vendoai/apps/sandbox-ladder";
 import {
   createAutomations,
   type AutomationsEngine,
@@ -679,67 +679,6 @@ function cloudKeyOptions(): { apiKey: string; baseUrl?: string } | undefined {
   if (apiKey === undefined) return undefined;
   const baseUrl = environment("VENDO_CLOUD_URL");
   return { apiKey, ...(baseUrl === undefined ? {} : { baseUrl }) };
-}
-
-/** Sandbox leg of the ADAPTER RULE (see the block comment at
-    selectConnections below): explicit adapter → BYO sandbox env (e2b) →
-    VENDO_API_KEY defaults the Cloud managed pool → the dark venue.
-    The Cloud slot fills ONLY when the host passed no sandbox and no BYO
-    sandbox env is present, so setting a Vendo key never shadows an existing
-    provider account. (The v1 Modal adapter is retired with the execution-v2
-    seam; Modal can return behind the same seam later.) */
-function selectSandbox(configured: SandboxAdapter | undefined): {
-  adapter: SandboxAdapter | undefined;
-  venue: SandboxVenue;
-} {
-  if (configured !== undefined) return { adapter: configured, venue: "custom" };
-
-  // An env key only lights a venue when its optional SDK is actually
-  // installed; otherwise /status would report a venue whose first
-  // create() dies on a missing module. Half a BYO sandbox is a MISCONFIG,
-  // not a fallback: silently riding Cloud (or going dark) hides the missing
-  // install until the first server-app build fails somewhere else entirely.
-  // Trimmed, because a whitespace-only value is not a key: environment() only
-  // treats "" as unset, but doctor's E-LIVE-007 check trims before deciding one
-  // is present — and after the throw above, disagreeing with doctor about
-  // whether the operator set a key means one of them is lying to the operator.
-  const e2bKey = environment("E2B_API_KEY")?.trim();
-  const e2bApiKey = e2bKey === "" ? undefined : e2bKey;
-  if (e2bApiKey !== undefined) {
-    if (!e2bInstalled()) {
-      throw new VendoError(
-        "validation",
-        "E2B_API_KEY is set but the e2b package is not installed — install e2b, or unset E2B_API_KEY to use another sandbox",
-      );
-    }
-    // Wave 4 — operator knob for the provider machine lifetime. The default
-    // 5-minute TTL kills a box mid-way through a long in-box agent build
-    // (the box agent loop runs for minutes). Explicit VENDO_E2B_TIMEOUT_MS
-    // wins; otherwise a raised box-edit budget implies a matching machine
-    // lifetime (budget + 5-minute slack), so the two knobs cannot silently
-    // disagree.
-    const configured = Number(environment("VENDO_E2B_TIMEOUT_MS"));
-    const editBudget = Number(environment("VENDO_BOX_EDIT_TIMEOUT_MS"));
-    const timeoutMs = Number.isFinite(configured) && configured > 0
-      ? configured
-      : Number.isFinite(editBudget) && editBudget > 0
-        ? editBudget + 5 * 60_000
-        : undefined;
-    return {
-      adapter: e2bSandbox({
-        apiKey: e2bApiKey,
-        ...(timeoutMs === undefined ? {} : { timeoutMs }),
-      }),
-      venue: "e2b",
-    };
-  }
-
-  const cloud = cloudKeyOptions();
-  if (cloud !== undefined) {
-    return { adapter: cloudSandbox(cloud), venue: "cloud" };
-  }
-
-  return { adapter: undefined, venue: false };
 }
 
 /** ADAPTER RULE, connectors seam: which Connector[] feeds the actions
@@ -1581,7 +1520,12 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ),
     config.files,
   );
-  const sandbox = selectSandbox(config.sandbox);
+  // The sandbox seam, resolved by THE ladder — the one in @vendoai/apps that
+  // `agent()` calls too (explicit → E2B_API_KEY → the Cloud rung → nothing).
+  // "Nothing" is this deployment's dark venue: server apps answer
+  // sandbox-unavailable and assertHarnessComposable below refuses a harness
+  // that needed a machine.
+  const sandbox = selectSandbox(config.sandbox, cloudSandbox);
   // Secrets, selected by the adapter rule at this composition seam
   // (selectSecrets above): explicit provider → env chained over the
   // VENDO_API_KEY Cloud provider → env alone. Consumed by machine env
