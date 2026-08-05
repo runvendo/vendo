@@ -12,12 +12,29 @@
  * one rule — a settle is unseen until somebody says it was seen — and the
  * overlay marks results seen the moment the panel is open.
  */
+import type { BeatPhase } from "@vendoai/core";
 import { isToolUIPart, type UIMessage } from "ai";
 import { appTitle } from "./thread/message-data.js";
+
+/**
+ * §3.4 — one BEAT: the transient `data-vendo-status` channel's payload, after
+ * the receiver has decided it is words a person may read. `phase` and `appId`
+ * are present exactly when the harness sent usable ones (the receiver never
+ * invents either).
+ */
+export interface VendoBeat {
+  label: string;
+  phase?: BeatPhase;
+  appId?: string;
+}
 
 /** The live step of a running turn, for the pill's label + ring. */
 export interface RunActivity {
   running: boolean;
+  /** §3.4 — the RUNNING turn's beats, oldest first. Ephemeral by the same rule
+      as everything else here: nothing is running, so there is nothing to
+      narrate, so the list is empty. */
+  beats: readonly VendoBeat[];
   /** RAW tool name of the live step — the reader humanizes it (`toolTitle`). */
   tool?: string;
   /** Tool steps of the live turn that have settled, and how many it started.
@@ -45,6 +62,9 @@ export interface ThreadRunSnapshot {
   threadId?: string;
   status: "submitted" | "streaming" | "ready" | "error";
   messages: UIMessage[];
+  /** Omitted by a surface that narrates no beats — the same shape `threadId`
+      has, and the same meaning as an empty list. */
+  beats?: readonly VendoBeat[];
 }
 
 interface Derived extends RunActivity {
@@ -54,7 +74,8 @@ interface Derived extends RunActivity {
   status: ThreadRunSnapshot["status"];
 }
 
-const IDLE: RunActivity = { running: false, done: 0, total: 0 };
+const NO_BEATS: readonly VendoBeat[] = [];
+const IDLE: RunActivity = { running: false, done: 0, total: 0, beats: NO_BEATS };
 
 const surfaces = new Map<symbol, Derived>();
 const listeners = new Set<() => void>();
@@ -119,6 +140,7 @@ function derive(snapshot: ThreadRunSnapshot): Derived {
     ...(tool === undefined ? {} : { tool }),
     done,
     total: parts.length,
+    beats: snapshot.beats ?? NO_BEATS,
     ...(snapshot.threadId === undefined ? {} : { threadId: snapshot.threadId }),
     waiting,
     status: snapshot.status,
@@ -153,11 +175,19 @@ function recompute(): void {
   const live = [...surfaces.values()].find(surface => surface.running);
   const next: RunActivity = live === undefined
     ? IDLE
-    : { running: true, ...(live.tool === undefined ? {} : { tool: live.tool }), done: live.done, total: live.total };
+    : {
+      running: true,
+      ...(live.tool === undefined ? {} : { tool: live.tool }),
+      done: live.done,
+      total: live.total,
+      beats: live.beats,
+    };
   const changed = next.running !== activity.running
     || next.tool !== activity.tool
     || next.done !== activity.done
-    || next.total !== activity.total;
+    || next.total !== activity.total
+    // The publisher hands over a stable array until a beat actually arrives.
+    || next.beats !== activity.beats;
   if (changed) activity = next;
 }
 

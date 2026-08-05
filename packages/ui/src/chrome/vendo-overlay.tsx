@@ -1,16 +1,18 @@
 import type { UIPayload } from "@vendoai/core";
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type ComponentType, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type ComponentType, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useVendoContext, useVendoDiscoverability, useVendoTheme } from "../context.js";
 import { useMobileTakeover } from "../hooks/use-mobile-takeover.js";
 import { themeCssVariables } from "../theme.js";
 import { PayloadView } from "../tree/renderer.js";
+import { BeatRail } from "./build-beat.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { hasSeen, markSeen, type VendoDiscoverability, type VendoGreeting } from "./discoverability.js";
 import { inertBehind } from "./inert-behind.js";
 import { LauncherFace, LauncherToast, useLauncherStatus } from "./launcher-status.js";
 import { deliverPrefill, PrefillScopeContext, registerOverlayOpener } from "./overlay-registry.js";
 import { usePinAction } from "./pin-ceremony.js";
+import { IDLE_RUN_ACTIVITY, runActivity, subscribeRunActivity } from "./run-activity.js";
 import {
   escapeIntent,
   expandedStageRect,
@@ -231,6 +233,11 @@ export function VendoOverlay({
   const [splitState, dispatchSplit] = useReducer(splitViewReducer, initialSplitViewState);
   const expanded = splitState.expanded && !takeover.active;
   const featured = featuredEmbed(splitState);
+  // §3.4 + §10.2 — the running turn's beats, for the stage's rail. The thread
+  // lives in the OTHER pane's React tree, so this rides the run-activity store
+  // the launcher pill already reads — the one channel for what a surface
+  // outside the conversation may know about a turn inside it.
+  const beats = useSyncExternalStore(subscribeRunActivity, runActivity, () => IDLE_RUN_ACTIVITY).beats;
   // The collapse ANIMATES: like the connect tray's exit walk, the stage stays
   // mounted through expanded → collapsing → collapsed so the featured app
   // doesn't blink out before the panes finish sliding. Render-phase state
@@ -655,7 +662,8 @@ export function VendoOverlay({
           <div className="fl-split">
             <div className="fl-split-stage" key="stage" {...(expanded ? {} : { "aria-hidden": true })}>
               {stagePhase !== "collapsed" ? (
-                featured ? (
+                <>
+                {featured ? (
                   <div className="fl-stage" key={featured.appId}>
                     <div className="fl-stage-bar">
                       <span className="fl-appcard-dot" aria-hidden="true" />
@@ -697,7 +705,12 @@ export function VendoOverlay({
                     <p>Views you build land here.</p>
                     <p>Ask for a view in the conversation and it renders large on this stage.</p>
                   </div>
-                )
+                )}
+                {/* The build's own progress, under whatever the stage is
+                    showing: the empty stage while the first view is still
+                    being made, the view itself once it lands. */}
+                <BeatRail beats={beats} />
+                </>
               ) : null}
             </div>
             <div className="fl-split-rail" key="rail">
