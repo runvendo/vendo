@@ -153,7 +153,12 @@ export function VendoThread({
     restoredIdsRef.current.ids = new Set(thread.messages.map(message => message.id));
   }
   const isRestored = (id: string) => restoredIdsRef.current.ids.has(id);
-  const composerApi = useComposer({ busy, sendMessage: message => thread.sendMessage(message) });
+  const composerApi = useComposer({
+    busy,
+    sendMessage: message => thread.sendMessage(message),
+    // §10.2 — a message typed mid-turn is offered to that turn before it queues.
+    ...(thread.steer === undefined ? {} : { steer: thread.steer }),
+  });
   const { setDraft, setQueued, textareaRef, send } = composerApi;
   const risks = useMemo(() => riskByCall(thread.messages), [thread.messages]);
   const guardApprovals = useMemo(() => approvalByCall(thread.messages), [thread.messages]);

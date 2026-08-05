@@ -243,6 +243,10 @@ export async function boxMachine(options: BoxMachineOptions): Promise<SessionMac
     return (typeof json === "object" && json !== null ? json : {}) as Record<string, unknown>;
   };
 
+  /** The message this box is answering, for as long as it is answering it — the
+   *  only thing a steer can be addressed to. */
+  let inFlight: string | undefined;
+
   return {
     // A warm box carries BOTH the materialized files and the live session.
     carriesSession: box.warm,
@@ -301,35 +305,51 @@ export async function boxMachine(options: BoxMachineOptions): Promise<SessionMac
       // neither re-materializes nor re-seeds.
       box.warm = true;
       const messageId = String(started["messageId"] ?? "");
+      // Addressable from here until the poll loop lets go: a steer names the
+      // MESSAGE, and only the one being answered can take it.
+      inFlight = messageId;
       const deadline = Date.now() + MESSAGE_BUDGET_MS;
       let cursor = 0;
 
-      for (;;) {
-        if (message.signal?.aborted === true) {
-          // Interrupt the TURN, not the conversation.
-          await request(`/session/${messageId}/interrupt`, {}).catch(() => undefined);
-          return;
-        }
-        if (Date.now() > deadline) {
-          await request(`/session/${messageId}/interrupt`, {}).catch(() => undefined);
-          throw new VendoError("sandbox-unavailable", "the box message outran its budget");
-        }
-        const polled = await request(`/session/${messageId}/poll`, { cursor, waitMs: POLL_WAIT_MS });
-        for (const event of Array.isArray(polled["events"]) ? polled["events"] : []) {
-          const named = event as { type?: unknown; path?: unknown };
-          // `wrote` is the native PostToolUse hook coming home. It is NOT a
-          // HarnessEvent — it is the signal that replaced the 1.2s file-watch
-          // timer, so it goes to the hot-sync callback and never to the user.
-          if (named.type === "wrote") {
-            message.onFileWritten?.(typeof named.path === "string" ? named.path : undefined);
-            continue;
+      try {
+        for (;;) {
+          if (message.signal?.aborted === true) {
+            // Interrupt the TURN, not the conversation.
+            await request(`/session/${messageId}/interrupt`, {}).catch(() => undefined);
+            return;
           }
-          message.emit(event as never);
-        }
-        cursor = typeof polled["cursor"] === "number" ? polled["cursor"] : cursor;
+          if (Date.now() > deadline) {
+            await request(`/session/${messageId}/interrupt`, {}).catch(() => undefined);
+            throw new VendoError("sandbox-unavailable", "the box message outran its budget");
+          }
+          const polled = await request(`/session/${messageId}/poll`, { cursor, waitMs: POLL_WAIT_MS });
+          for (const event of Array.isArray(polled["events"]) ? polled["events"] : []) {
+            const named = event as { type?: unknown; path?: unknown };
+            // `wrote` is the native PostToolUse hook coming home. It is NOT a
+            // HarnessEvent — it is the signal that replaced the 1.2s file-watch
+            // timer, so it goes to the hot-sync callback and never to the user.
+            if (named.type === "wrote") {
+              message.onFileWritten?.(typeof named.path === "string" ? named.path : undefined);
+              continue;
+            }
+            message.emit(event as never);
+          }
+          cursor = typeof polled["cursor"] === "number" ? polled["cursor"] : cursor;
 
-        if (polled["done"] === true) return;
+          if (polled["done"] === true) return;
+        }
+      } finally {
+        inFlight = undefined;
       }
+    },
+
+    async steer(prompt: string) {
+      if (inFlight === undefined) return false;
+      // The box answers whether the words LANDED. A box that has gone away
+      // answers nothing, which is the same fact from the user's side: their
+      // message did not reach this build, so the host's queue keeps it.
+      const answer = await request(`/session/${inFlight}/steer`, { prompt }).catch(() => undefined);
+      return answer?.["landed"] === true;
     },
 
     async release() {

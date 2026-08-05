@@ -20,17 +20,33 @@ import type { ClaudeTurnEvent } from "@vendoai/apps/claude-turn";
  *  `send()` through them — exactly what the real SDK session does. */
 function sessionDouble() {
   const opens: Array<Record<string, unknown>> = [];
+  /** ⚠️ TEST EDIT — every word the session was STEERED with, in order. */
+  const steers: string[] = [];
+  let inFlight = false;
   const factory = (input: Record<string, unknown>) => {
     opens.push(input);
     return {
       async send(prompt: string) {
-        (input["emit"] as (event: ClaudeTurnEvent) => void)({ type: "text", delta: `re: ${prompt}` });
+        inFlight = true;
+        try {
+          (input["emit"] as (event: ClaudeTurnEvent) => void)({ type: "text", delta: `re: ${prompt}` });
+        } finally {
+          inFlight = false;
+        }
+      },
+      // ⚠️ TEST EDIT — `steer` joined the `ClaudeSession` port. The real one
+      // refuses with no turn in flight (nobody would settle the extra result);
+      // the double keeps that rule, because it is the rule under test.
+      steer(prompt: string) {
+        if (!inFlight) return false;
+        steers.push(prompt);
+        return true;
       },
       async interrupt() { /* nothing to stop in a double */ },
       async end() { /* nothing to close */ },
     };
   };
-  return { factory, opens };
+  return { factory, opens, steers };
 }
 
 describe("machine: \"local\" — one session, many turns", () => {
@@ -67,6 +83,32 @@ describe("machine: \"local\" — one session, many turns", () => {
       openSession: sessionDouble().factory as never,
     });
     expect(await machine.url(5173)).toBe("http://127.0.0.1:5173");
+
+    await disposeLocalSessions();
+  });
+
+  test("a steer reaches the live session with no hop, and only while a turn runs", async () => {
+    // The seam's OTHER half. `SessionMachine.steer` exists in two homes — an HTTP
+    // call to the box door, and this: straight into the session in this process.
+    // A seam with one implementation is a seam that lies, so both are driven.
+    const double = sessionDouble();
+    const threadId = `thr_local_steer_${Math.random().toString(36).slice(2)}`;
+    const machine = await localMachine({ threadId, env: {}, openSession: double.factory as never });
+
+    // No session yet: nothing to steer.
+    await expect(machine.steer("too early")).resolves.toBe(false);
+
+    let steering: Promise<boolean> | undefined;
+    await machine.send({
+      prompt: "build me a workbench",
+      // Inside the turn — the only window a steer can land in.
+      emit: () => { steering ??= machine.steer("group by client instead"); },
+    });
+
+    await expect(steering).resolves.toBe(true);
+    expect(double.steers).toEqual(["group by client instead"]);
+    // The turn is over; the same words now belong to the next turn instead.
+    await expect(machine.steer("too late")).resolves.toBe(false);
 
     await disposeLocalSessions();
   });

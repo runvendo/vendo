@@ -1,6 +1,6 @@
 import { VendoError, withSseKeepalive } from "@vendoai/core";
 import { UI_MESSAGE_STREAM_HEADERS } from "ai";
-import { registerActiveTurn, touchActiveTurn, trackTurnResponse } from "../turn-liveness.js";
+import { registerActiveTurn, steerActiveTurn, touchActiveTurn, trackTurnResponse } from "../turn-liveness.js";
 import { recordResumableTurn, resumableTurnStream } from "../turn-resume.js";
 import { json, requestJson, route, string, type RouteEntry } from "./shared.js";
 
@@ -86,6 +86,29 @@ export const threadRoutes: RouteEntry[] = [
     const ctx = await context("chat");
     const id = string(params["id"], "thread id");
     return json({ active: touchActiveTurn(id, ctx.principal.subject) });
+  }),
+  // §10.2 — mid-build steering. Modelled on the beat above and scoped the same
+  // way: it can only reach the caller's OWN turn in flight, and an unknown or
+  // foreign id answers `landed: false`, which is also what an idle thread
+  // answers (no oracle). The answer is the ONLY signal the client needs — there
+  // is no capability to ask about and nothing to validate up front.
+  //
+  // Independent of stream-resume above: a steer INJECTS input into the running
+  // turn via the registry, while resume REPLAYS the recorded byte stream — so a
+  // client that rejoins through `GET /threads/:id/stream` sees the steered
+  // output for free, because it flows through the same recorded Response.
+  route("POST", "/threads/:id/steer", async ({ request, context, params }) => {
+    const ctx = await context("chat");
+    const id = string(params["id"], "thread id");
+    const body = await requestJson(request);
+    return json({
+      landed: await steerActiveTurn(
+        id,
+        ctx.principal.subject,
+        string(body["text"], "text"),
+        string(body["messageId"], "messageId"),
+      ),
+    });
   }),
   route("GET", "/threads", async ({ deps, context }) => {
     return json(await deps.agent.threads.list(await context("chat")));

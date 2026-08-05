@@ -9,7 +9,7 @@ import {
   type ToolUIPart,
   type UIMessage,
 } from "ai";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVendoContext } from "../context.js";
 import { publishThreadRun, retireThreadRun, type VendoBeat } from "../chrome/run-activity.js";
 
@@ -264,6 +264,43 @@ export function useVendoThread(threadId?: string) {
     publishThreadRun(runKey, { threadId: effectiveThreadId, status: chat.status, messages: chat.messages, beats });
   }, [runKey, effectiveThreadId, chat.status, chat.messages, beats]);
 
+  // §10.2 — offer the user's words to the turn already running. The route's own
+  // answer is the ONLY signal: there is no capability to ask about and nothing to
+  // validate up front, so `false` (a turn that ended, a thread with none in
+  // flight, a wire without the route) simply means the caller keeps the message.
+  //
+  // On a landing the words become a normal user turn HERE too, under the id the
+  // server persisted them with — one row, one bubble, and a reload that reads
+  // back exactly what the live screen showed.
+  const steer = useCallback(async (text: string): Promise<boolean> => {
+    const id = activeThreadIdRef.current;
+    if (id === undefined) return false;
+    const messageId = globalThis.crypto.randomUUID();
+    const base = client.baseUrl.replace(/\/$/, "");
+    const landed = await globalThis
+      .fetch(`${base}/threads/${encodeURIComponent(id)}/steer`, {
+        method: "POST",
+        headers: { ...client.headers, "content-type": "application/json" },
+        body: JSON.stringify({ text, messageId }),
+      })
+      .then(response => (response.ok ? response.json() as Promise<{ landed?: boolean }> : undefined))
+      .catch(() => undefined);
+    if (landed?.landed !== true) return false;
+    chat.setMessages(current => {
+      // BEFORE this turn's reply, which is where the server puts it: the runtime
+      // appends to the turn's own message list and the stream adds the reply
+      // last, so live order and persisted order agree and a reload never jumps.
+      const at = current.at(-1)?.role === "assistant" ? current.length - 1 : current.length;
+      return [
+        ...current.slice(0, at),
+        { id: messageId, role: "user", parts: [{ type: "text", text }] },
+        ...current.slice(at),
+      ];
+    });
+    return true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setMessages is stable; the ref carries the live thread id
+  }, [client]);
+
   const approvals = useMemo<VendoThreadApproval[]>(
     () => {
       const pending: VendoThreadApproval[] = [];
@@ -285,6 +322,8 @@ export function useVendoThread(threadId?: string) {
     /** §3.4 — the running turn's beats, oldest first; empty once it settles. */
     beats,
     sendMessage: chat.sendMessage,
+    /** §10.2 — hand words to the turn in flight; answers whether they landed. */
+    steer,
     status: chat.status,
     error: chat.error,
     approvals,

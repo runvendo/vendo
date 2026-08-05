@@ -92,6 +92,26 @@ export interface Turn<Options = unknown> {
    * Opaque to adapters.
    */
   readonly turnId: TurnId;
+  /**
+   * Amendment 2026-08-05: register the one thing that takes the user's words
+   * MID-TURN — the second and last piece of inbound control on a turn, beside
+   * `signal`.
+   *
+   * Inbound, so it is deliberately NOT a `HarnessEvent`: that union is closed and
+   * describes what a harness SAYS. A steer is what a harness is TOLD, and folding
+   * the two together would be a second event vocabulary.
+   *
+   * Optional, so every harness and every driver that predates steering is
+   * unchanged by construction. Registering is the harness declaring "I can fold a
+   * message into the turn I am already running"; the handler then answers whether
+   * this particular message LANDED, because a harness that can steer in general
+   * still cannot when the thing it drives has just finished. A `false` — or never
+   * registering at all — is what tells the caller to keep the message for the next
+   * turn, and it is why nothing here needs a capability protocol.
+   *
+   * At most one handler: a turn has one thinker.
+   */
+  readonly onSteer?: (handler: (text: string) => Promise<boolean>) => void;
 }
 
 /** Build contract §1.1 */

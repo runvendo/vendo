@@ -145,7 +145,18 @@ export interface HarnessRuntimeDeps {
    * without a credential the harness minted, and the credential's whole
    * authority is the window between this call and its disposer.
    */
-  liveTurn?: (published: { threadId: ThreadId; ctx: RunContext; tools: TurnTools }) => () => void;
+  liveTurn?: (published: {
+    threadId: ThreadId;
+    ctx: RunContext;
+    tools: TurnTools;
+    /**
+     * Hand the user's words to THIS turn while it runs (§10.2), and answer
+     * whether they landed. Published here rather than through a second hook
+     * because "the turn now in flight, reachable by the process's own doors" is
+     * exactly what this hook already means.
+     */
+    steer: (text: string, messageId: string) => Promise<boolean>;
+  }) => () => void;
 }
 
 export interface TurnRunInput<Options = unknown> {
@@ -309,6 +320,32 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
        *  second ask deserves the save the first one got. */
       const checkpointed = new Set<string>();
 
+      /** The harness's mid-turn ear, if it registered one (§1 `Turn.onSteer`). */
+      let steerHandler: ((text: string) => Promise<boolean>) | undefined;
+      /**
+       * The user's words, mid-turn.
+       *
+       * Appending to the CANONICAL array is the whole mechanism, and it is load
+       * bearing. `persistTurn` writes one row per message at ITS INDEX in this
+       * array; a side-channel write straight to the store cannot know that index,
+       * so it lands at the seq the ASSISTANT message will claim — and `seq` is the
+       * transcript's only ordering authority (store `schema.ts`: one index, no
+       * tiebreak). Measured: two rows at one seq, so the user's steer and the
+       * reply it caused have no defined order. Joining the turn's own list instead
+       * means the existing turn-end pass persists it, once, in place.
+       *
+       * BEFORE the assistant's reply, never after: the reply is appended by the
+       * stream at finish, so the transcript reads ask · ask again · answer — and
+       * the live client can match that order exactly.
+       */
+      const steer = async (text: string, messageId: string): Promise<boolean> => {
+        // Not registering IS the answer. No capability protocol, nothing to ask.
+        if (steerHandler === undefined) return false;
+        if (!await steerHandler(text)) return false;
+        messages.push({ id: messageId, role: "user", parts: [{ type: "text", text }] });
+        return true;
+      };
+
       const stream = createUIMessageStream<UIMessage>({
         originalMessages: messages,
         generateId: () => assistantMessageId,
@@ -409,6 +446,9 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
             ...(input.system === undefined ? {} : { system: input.system }),
             threadId: input.threadId,
             turnId,
+            // §1 amendment 2026-08-05: inbound control, and the only one beside
+            // `signal`. At most one handler — a turn has one thinker.
+            onSteer: (handler) => { steerHandler = handler; },
           };
 
           // Published for the process's own doors (the MCP door's turn
@@ -418,6 +458,7 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
             threadId: input.threadId,
             ctx,
             tools: turn.tools,
+            steer,
           });
 
           try {

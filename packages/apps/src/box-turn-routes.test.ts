@@ -38,7 +38,22 @@ const scripted = (body: (input: Any, prompt: string) => Promise<void>) => {
   const factory = (input: Any) => {
     opens.push(input);
     return {
-      async send(prompt: string) { await body(input, prompt); },
+      async send(prompt: string) {
+        input.__inFlight = true;
+        try {
+          await body(input, prompt);
+        } finally {
+          input.__inFlight = false;
+        }
+      },
+      // ⚠️ TEST EDIT — the double must speak the whole `ClaudeSession` port, and
+      // `steer` joined it. It records what it was handed and, like the real
+      // session, refuses when no turn is in flight.
+      steer(prompt: string) {
+        if (input.__inFlight !== true) return false;
+        (input.__steers ??= []).push(prompt);
+        return true;
+      },
       async interrupt() { input.__interrupted = true; },
       async end() { input.__ended = true; },
     };
@@ -327,6 +342,59 @@ describe("one live session, many messages", () => {
     expect(door.__opens[0].__interrupted).toBe(true);
     // The session was never ended — only the turn was cut short.
     expect(door.__opens[0].__ended).toBeUndefined();
+  });
+
+  test("a steer reaches the session answering the message RIGHT NOW", async () => {
+    const root = newRoot();
+    let release: (() => void) | undefined;
+    const door = routes(root, async () => {
+      await new Promise<void>((resolve) => { release = resolve; });
+    });
+    const { body } = await send(door, "build me a workbench");
+
+    const steered = await door.handle("POST", `/session/${body.messageId}/steer`, auth, {
+      prompt: "group by client instead",
+    });
+    expect(steered.status).toBe(200);
+    expect(steered.body).toEqual({ landed: true });
+    expect(door.__opens[0].__steers).toEqual(["group by client instead"]);
+    // Steering never cancels: the turn is still the same turn.
+    expect(door.__opens[0].__interrupted).toBeUndefined();
+
+    release?.();
+    await door.messagePromise(body.messageId);
+  });
+
+  test("a steer at a message that already FINISHED does not land", async () => {
+    const root = newRoot();
+    const door = routes(root, async () => undefined);
+    const { body } = await send(door, "go");
+    await door.messagePromise(body.messageId);
+
+    const steered = await door.handle("POST", `/session/${body.messageId}/steer`, auth, { prompt: "too late" });
+    expect(steered.status).toBe(200);
+    expect(steered.body).toEqual({ landed: false });
+    expect(door.__opens[0].__steers).toBeUndefined();
+  });
+
+  test("a steer at an unknown message is a 404, and a blank one is a 400", async () => {
+    const root = newRoot();
+    let release: (() => void) | undefined;
+    const door = routes(root, async () => {
+      await new Promise<void>((resolve) => { release = resolve; });
+    });
+    const { body } = await send(door, "go");
+
+    expect((await door.handle("POST", "/session/msg_nope/steer", auth, { prompt: "hi" })).status).toBe(404);
+    expect((await door.handle("POST", `/session/${body.messageId}/steer`, auth, { prompt: "   " })).status).toBe(400);
+
+    release?.();
+    await door.messagePromise(body.messageId);
+  });
+
+  test("a steer without the machine token is closed, like every other /session route", async () => {
+    const door = routes(newRoot());
+    expect((await door.handle("POST", "/session/msg_1/steer", {}, { prompt: "hi" })).status).toBe(401);
   });
 });
 

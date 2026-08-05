@@ -548,6 +548,10 @@ export function claudeCode(
         // rather than saying "all" is what stops the MACHINE's own skills (an
         // operator's ~/.claude/skills, on the local path) from joining the set.
         const skillNames = (await turn.skills.list().catch(() => [])).map((skill) => skill.name);
+        // Mid-build steering (§10.2). Registered BEFORE the send so nothing typed
+        // early is lost, and it is the machine's own answer that travels back —
+        // this harness decides nothing about whether the words fit.
+        turn.onSteer?.((text) => machine.steer(text));
         const running = machine.send({
           prompt: promptFor(turn.messages, sessionId !== undefined),
           // The host's composed brief, WHOLE and ALONE: what the box thinks with
