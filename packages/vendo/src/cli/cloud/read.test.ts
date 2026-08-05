@@ -39,6 +39,20 @@ describe("cloud organization reads", () => {
     expect(fetcher.mock.calls[2]?.[0]).toBe("/api/v1/projects/proj_only/usage?days=30");
   });
 
+  // Pins the dollar fields the usage route now returns. runUsage hands the
+  // response straight to printJson, so nothing here transforms them — this
+  // test exists so a future refactor cannot silently drop them.
+  it("prints the dollar figures the usage route returns", async () => {
+    const messages = output();
+    const fetcher = vi.fn().mockResolvedValue({
+      days: [{ day: "2026-08-04", requests: 2, usd: 4 }],
+      totalUsd: 4,
+    });
+    expect(await runUsage(["--project", "p1"], { output: messages.sink, fetcher })).toBe(0);
+    expect(messages.logs.join("\n")).toContain('"usd": 4');
+    expect(messages.logs.join("\n")).toContain('"totalUsd": 4');
+  });
+
   it("returns a clear error when a project cannot be inferred", async () => {
     const messages = output();
     const fetcher = vi.fn()
