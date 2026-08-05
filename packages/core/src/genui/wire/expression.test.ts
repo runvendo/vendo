@@ -293,18 +293,17 @@ describe("parseExpression totality", () => {
   });
 });
 
-/** v2 spec §3 — the reshape pipe grammar (wave 3 replaces wave 1's
- *  reshape-unsupported swallow with the real vocabulary). */
-describe("parseExpression reshape pipes", () => {
-  it("compiles the spec's pipe to a $reshape chain on the binding", () => {
-    expectValue("revenue | asPoints(month, revenue)", {
+/** v3 spec §5 (D1) — the reshape grammar: a value-first nested call. */
+describe("parseExpression reshape calls", () => {
+  it("compiles the spec's reshape call to a $reshape chain on the binding", () => {
+    expectValue('asPoints(revenue, "month", "revenue")', {
       $path: "/revenue",
       $reshape: [{ op: "asPoints", args: ["month", "revenue"] }],
     });
   });
 
-  it("chains pipes left to right, on dotted paths too", () => {
-    expectValue("revenue.rows | pick(month, revenue) | rename(month, label)", {
+  it("nests calls innermost-first, on dotted paths too", () => {
+    expectValue('rename(pick(revenue.rows, "month", "revenue"), "month", "label")', {
       $path: "/revenue/rows",
       $reshape: [
         { op: "pick", args: ["month", "revenue"] },
@@ -313,45 +312,54 @@ describe("parseExpression reshape pipes", () => {
     });
   });
 
-  it("pipes are legal nested inside arrays and objects, and on state references", () => {
-    expectValue("[revenue | count(), 5]", [
-      { $path: "/revenue", $reshape: [{ op: "count", args: [] }] },
+  it("reshape calls are legal nested inside arrays and objects, and on state references", () => {
+    expectValue('[pick(revenue, "month"), 5]', [
+      { $path: "/revenue", $reshape: [{ op: "pick", args: ["month"] }] },
       5,
     ]);
-    expectValue("{ total: revenue | sum(revenue) }", {
-      total: { $path: "/revenue", $reshape: [{ op: "sum", args: ["revenue"] }] },
+    expectValue('{ total: pick(revenue, "total") }', {
+      total: { $path: "/revenue", $reshape: [{ op: "pick", args: ["total"] }] },
     });
-    expectValue("state.rate | format(percent)", {
+    expectValue('format(state.rate, "percent")', {
       $state: "rate",
       $reshape: [{ op: "format", args: ["percent"] }],
     });
   });
 
-  it("accepts quoted-string args and trailing commas", () => {
-    expectValue("revenue | pick(\"weird field\", month,)", {
+  it("tolerates a trailing comma in the argument list", () => {
+    expectValue('pick(revenue, "weird field", "month",)', {
       $path: "/revenue",
       $reshape: [{ op: "pick", args: ["weird field", "month"] }],
     });
   });
 
-  it("drops unknown ops, bad arity, bad format kinds, and over-long chains as invalid-reshape", () => {
-    expectDropped("revenue | eval(x)", "invalid-reshape");
-    expectDropped("revenue | asPoints(month)", "invalid-reshape");
-    expectDropped("revenue | format(month, loud)", "invalid-reshape");
-    expectDropped(`revenue${" | count()".repeat(9)}`, "invalid-reshape");
+  it("drops bad arity, bad format kinds, and over-long chains as invalid-reshape", () => {
+    expectDropped('asPoints(revenue, "month")', "invalid-reshape");
+    expectDropped('format(revenue, "month", "loud")', "invalid-reshape");
+    let chain = "revenue";
+    for (let step = 0; step < 9; step += 1) chain = `pick(${chain}, "month")`;
+    expectDropped(chain, "invalid-reshape");
   });
 
-  it("drops malformed pipe syntax as invalid-reshape", () => {
-    expectDropped("revenue |", "invalid-reshape");
-    expectDropped("revenue | asPoints(month revenue)", "invalid-reshape");
-    expectDropped("revenue | asPoints(month", "invalid-reshape");
-    expectDropped("revenue | count", "invalid-reshape");
-    expectDropped("revenue | pick(5)", "invalid-reshape");
+  it("drops a reshape over anything that is not a query or state binding", () => {
+    expectDropped('pick(5, "month")', "invalid-reshape");
+    expectDropped('pick(sum(revenue, "total"), "month")', "invalid-reshape");
   });
 
-  it("a pipe after a non-binding value stays malformed-expression", () => {
-    expectDropped("5 | count()", "malformed-expression");
-    expectDropped("true | count()", "malformed-expression");
+  it("an unknown function name is one malformed-expression, reshape or not", () => {
+    // The call vocabulary is CLOSED and the compiler produces data only: no
+    // wire text is ever executed, so "eval" here is just a name it refuses.
+    expectDropped('eval(revenue, "x")', "malformed-expression");
+    expectDropped('pick(revenue, 5)', "malformed-expression");
+    expectDropped("pick(revenue)", "malformed-expression");
+    expectDropped("asPoints(month revenue)", "malformed-expression");
+  });
+
+  it("names the retired pipe grammar instead of blaming trailing content", () => {
+    const result = parse("revenue.rows | count()");
+    expect(result.dropped).toBe(true);
+    expect(result.issues[0]?.code).toBe("malformed-expression");
+    expect(result.issues[0]?.message).toContain("reshape pipes are gone");
   });
 });
 
@@ -365,30 +373,42 @@ describe("numeric path segments", () => {
 
 describe("computed values ($expr)", () => {
   it("compiles an attribute carrying an operator or a known call to { $expr }", () => {
-    expectValue("sum(revenue.amount_cents) / count(payments)", {
-      $expr: "sum(revenue.amount_cents) / count(payments)",
+    expectValue('sum(revenue.rows, "amount_cents") / count(payments)', {
+      $expr: 'sum(revenue.rows, "amount_cents") / count(payments)',
     });
     expectValue("count(payments)", { $expr: "count(payments)" });
     expectValue("revenue.total / 100", { $expr: "revenue.total / 100" });
     expectValue("(revenue.total - 500) * 2", { $expr: "(revenue.total - 500) * 2" });
     expectValue("days_until(revenue.due)", { $expr: "days_until(revenue.due)" });
-    expectValue('group_by(payments.paid_at, "month", sum(payments.amount))', {
-      $expr: 'group_by(payments.paid_at, "month", sum(payments.amount))',
+    expectValue('group_by(payments.rows, "paid_at", "month", sum.of("amount"))', {
+      $expr: 'group_by(payments.rows, "paid_at", "month", sum.of("amount"))',
+    });
+    expectValue('group_by(payments.rows, "paid_at", "year", count.of())', {
+      $expr: 'group_by(payments.rows, "paid_at", "year", count.of())',
     });
     expectValue("-revenue.total + 1", { $expr: "-revenue.total + 1" });
     // A bare subtraction is infix even with whitespace around the operator.
     expectValue("revenue.total - 500", { $expr: "revenue.total - 500" });
-    expectValue("sum(revenue.rows) - 1", { $expr: "sum(revenue.rows) - 1" });
+    expectValue('sum(revenue.rows, "amount") - 1', { $expr: 'sum(revenue.rows, "amount") - 1' });
     expectValue("difference(revenue.total, payments.total)", {
       $expr: "difference(revenue.total, payments.total)",
     });
   });
 
+  it("compiles an aggregate call nested inside a literal (one grammar, every depth)", () => {
+    expectValue("[count(revenue.rows), 5]", [{ $expr: "count(revenue.rows)" }, 5]);
+    expectValue('{ total: sum(revenue.rows, "amount") }', {
+      total: { $expr: 'sum(revenue.rows, "amount")' },
+    });
+  });
+
+  it("keeps the source VERBATIM, interior spacing included, so the printer can re-emit it", () => {
+    expectValue('sum( revenue.rows , "amount" )', { $expr: 'sum( revenue.rows , "amount" )' });
+  });
+
   it("leaves every non-computed value on the binding/literal grammar", () => {
-    // The tell: no infix operator and no expression call.
     expectValue("revenue.total", { $path: "/revenue/total" });
     expectValue("state.note", { $state: "note" });
-    expectValue("revenue.rows | count()", { $path: "/revenue/rows", $reshape: [{ op: "count", args: [] }] });
     expectValue("-2", -2);
     expectValue("2.5E-2", 0.025);
     expectValue('"a / b"', "a / b");
@@ -398,37 +418,44 @@ describe("computed values ($expr)", () => {
   });
 
   it("drops a computed value whose expression does not parse or names no query", () => {
-    expectDropped("sum(revenue.total) + * 2", "malformed-expression");
+    expectDropped('sum(revenue.total, "x") + * 2', "malformed-expression");
     expectDropped("total(revenue.total) + 1", "malformed-expression");
-    expectDropped("sum(ghost.total) / count(payments)", "unknown-reference");
+    expectDropped('sum(ghost.rows, "total") / count(payments)', "unknown-reference");
+  });
+
+  it("requires the explicit field an aggregate reads (D2)", () => {
+    expectDropped("sum(revenue.rows)", "malformed-expression");
+    expectDropped("average(revenue.rows)", "malformed-expression");
+    expectDropped("sum(revenue.rows, total)", "malformed-expression");
+  });
+
+  it("requires group_by's rows argument and its aggregate descriptor (D3)", () => {
+    expectDropped('group_by(payments.paid_at, "month", sum.of("amount"))', "malformed-expression");
+    expectDropped('group_by(payments.rows, "paid_at", "month", sum(payments.rows, "amount"))', "malformed-expression");
+    expectDropped('group_by(payments.rows, "paid_at", "week", count.of())', "malformed-expression");
+    expectDropped('group_by(payments.rows, "paid_at", "month", count.of("amount"))', "malformed-expression");
   });
 });
 
 /**
- * Two grammars answer "compute a value" — a computed expression and a reshape
- * pipe — and a model that mixes them used to be told its CALL was an unknown
- * `<Query>`, which sent it renaming queries instead of dropping the pipe.
+ * The old grammar had TWO answers to "compute a value" — a computed expression
+ * and a reshape pipe — and mixing them told the model its CALL was an unknown
+ * `<Query>`, which sent it renaming queries. With one call grammar the mistake
+ * is structural instead of lexical: a reshape whose value is a computed
+ * expression has nothing to reshape, and says exactly that.
  */
-describe("parseExpression — an expression with a pipe bolted on", () => {
-  it("says which grammar was mixed, naming the call that already computes", () => {
-    const result = parse('sum(revenue.total) | format("money")');
+describe("parseExpression — a reshape wrapped around a computed value", () => {
+  it("says a reshape needs a binding, not a computed value", () => {
+    const result = parse('format(sum(revenue.rows, "amount"), "money")');
     expect(result.dropped).toBe(true);
-    expect(result.issues.map((issue) => issue.code)).toEqual(["malformed-expression"]);
+    expect(result.issues.map((issue) => issue.code)).toEqual(["invalid-reshape"]);
     const message = result.issues[0]?.message ?? "";
-    expect(message).toContain("mixes the pipe grammar into a computed expression");
-    expect(message).toContain("sum(...)");
+    expect(message).toContain("format() reshapes a query or state binding");
     // The old message blamed the wrong thing entirely.
     expect(message).not.toContain("does not name a declared");
   });
 
-  it("still accepts the legitimate reshape pipe, whose stages ARE calls", () => {
-    expectValue("revenue.rows | count()", {
-      $path: "/revenue/rows",
-      $reshape: [{ op: "count", args: [] }],
-    });
-  });
-
   it("leaves a plain computed expression alone", () => {
-    expectValue("sum(revenue.total)", { $expr: "sum(revenue.total)" });
+    expectValue('sum(revenue.rows, "total")', { $expr: 'sum(revenue.rows, "total")' });
   });
 });

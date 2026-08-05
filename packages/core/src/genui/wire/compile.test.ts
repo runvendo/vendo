@@ -807,14 +807,14 @@ describe("compileWire full-spec-example gate (spec §2)", () => {
     expect(result.complete).toBe(true);
   };
 
-  it("compiles the spec example (reshape pipe dropped) with zero issues", () => {
+  it("compiles the spec example with no reshape and zero issues", () => {
     const result = compile(specWire("revenue"));
     expectSpecTree(result);
     expect(result.issues).toEqual([]);
   });
 
-  it("compiles the spec example WITH the pipe to a $reshape binding, zero issues (v2 spec §3)", () => {
-    const result = compile(specWire("revenue | asPoints(month, revenue)"));
+  it("compiles the spec example WITH a reshape call to a $reshape binding, zero issues (v3 spec §5)", () => {
+    const result = compile(specWire('asPoints(revenue, "month", "revenue")'));
     expect(result.issues).toEqual([]);
     const chart = result.tree.nodes.find((node) => node.id === "linechart-1");
     expect(chart?.props?.points).toEqual({
@@ -1013,7 +1013,7 @@ describe("compileWire shape check (v2 spec §3)", () => {
 </App>`;
 
   it("a valid binding with a valid reshape produces no errors", () => {
-    const result = compile(chartWire("revenue.rows | asPoints(month, revenue)"), shapes);
+    const result = compile(chartWire('asPoints(revenue.rows, "month", "revenue")'), shapes);
     expect(result.issues).toEqual([]);
     expect(result.bindingErrors).toEqual([]);
   });
@@ -1036,7 +1036,7 @@ describe("compileWire shape check (v2 spec §3)", () => {
   });
 
   it("a reshape referencing absent fields fails with missing/available for repair", () => {
-    const result = compile(chartWire("revenue.rows | asPoints(period, revenue)"), shapes);
+    const result = compile(chartWire('asPoints(revenue.rows, "period", "revenue")'), shapes);
     expect(codes(result)).toEqual(["shape-mismatch"]);
     const error = result.bindingErrors[0];
     expect(error?.missing).toEqual(["period"]);
@@ -1044,8 +1044,8 @@ describe("compileWire shape check (v2 spec §3)", () => {
     expect(error?.path).toBe("/revenue/rows");
   });
 
-  it("a reshape op incompatible with the known shape fails (aggregate over a string field)", () => {
-    const result = compile(chartWire("revenue.rows | sum(month)"), shapes);
+  it("a reshape op incompatible with the known shape fails (currency format over a string field)", () => {
+    const result = compile(chartWire('format(revenue.rows, "month", "currency")'), shapes);
     expect(codes(result)).toEqual(["shape-mismatch"]);
     expect(result.bindingErrors[0]?.message).toContain("month");
   });
@@ -1064,7 +1064,7 @@ describe("compileWire shape check (v2 spec §3)", () => {
 </App>`, shapes);
     expect(unknownTool.bindingErrors).toEqual([]);
 
-    const jsonRegion = compile(chartWire("revenue.rows | pick(anything)"), {
+    const jsonRegion = compile(chartWire('pick(revenue.rows, "anything")'), {
       toolShapes: { "metrics.revenue": { kind: "json" } },
     });
     expect(jsonRegion.bindingErrors).toEqual([]);
@@ -1138,7 +1138,7 @@ describe("compileWire prewired option projection (v2 spec §3)", () => {
   });
 
   it("the deprecated asOptions projection STILL compiles (stored apps; staged retirement)", () => {
-    const result = compile(selectWire("accts.data | asOptions(id, name)"), shapes);
+    const result = compile(selectWire('asOptions(accts.data, "id", "name")'), shapes);
     expect(result.issues).toEqual([]);
     expect(result.bindingErrors).toEqual([]);
   });
@@ -1263,7 +1263,7 @@ describe("compileWire display-slot object check (raw-braces class)", () => {
 
   it("the deprecated template projection STILL clears the error (stored apps; staged retirement)", () => {
     const result = compile(tableWire(
-      'rows={dl.data | template(progress, "{progress.received} of {progress.total}") | template(assignedTo, "{assignedTo.name}")}',
+      'rows={template(template(dl.data, "progress", "{progress.received} of {progress.total}"), "assignedTo", "{assignedTo.name}")}',
     ), shapes);
     expect(result.issues).toEqual([]);
     expect(result.bindingErrors).toEqual([]);
@@ -1287,8 +1287,8 @@ describe("compileWire display-slot object check (raw-braces class)", () => {
 <App name="D">
   <Query id="dl" tool="host_listDeadlines"/>
   <Stat label="Next" value={dl.nearest.name}/>
-  <Text text={dl.nearest | template("{name} — {dueDate}")}/>
-  <Badge label={dl.data | count()}/>
+  <Text text={template(dl.nearest, "{name} — {dueDate}")}/>
+  <Badge label={count(dl.data)}/>
 </App>`, shapes);
     expect(result.issues).toEqual([]);
     expect(result.bindingErrors).toEqual([]);

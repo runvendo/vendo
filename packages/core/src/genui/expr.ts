@@ -266,7 +266,10 @@ const parseArgs = (state: ParseState, label: string, depth: number): ExprNode[] 
     const next = state.tokens[state.index];
     if (isPunct(next, ",")) {
       state.index += 1;
-      continue;
+      // A trailing comma is tolerated, as in the array/object literal grammar.
+      if (!isPunct(state.tokens[state.index], ")")) continue;
+      state.index += 1;
+      return args;
     }
     if (isPunct(next, ")")) {
       state.index += 1;

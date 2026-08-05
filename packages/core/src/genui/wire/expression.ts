@@ -438,7 +438,11 @@ const parseExpressionUnsafe = (source: string, context: ExpressionContext): Expr
   }
   skipWhitespace(state);
   if (state.index < source.length) {
-    malformed(state, `unexpected trailing content at index ${state.index}`);
+    // A leftover `|` is the retired pipe grammar (v3 §5 D1). Say so, or the
+    // model reads "trailing content" and has no idea what to write instead.
+    malformed(state, state.source.startsWith("|", state.index)
+      ? `reshape pipes are gone: write the value first, as a call — pick(query.rows, "field") instead of query.rows | pick(field) (at index ${state.index})`
+      : `unexpected trailing content at index ${state.index}`);
     return { dropped: true, issues: state.issues };
   }
   return { value, dropped: false, issues: state.issues };
