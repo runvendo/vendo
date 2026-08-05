@@ -1,0 +1,24 @@
+=== boot cadence arm B at 2026-07-26T02:05:46.369Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3300
+- Network:       http://10.0.0.188:3300
+✓ Ready in 428ms
+
+=== create H19 arm B start ===
+
+=== create H19 arm B end ===
+
+=== create H20 arm B start ===
+
+=== create H20 arm B end ===
+[vendo] app build failed (app_423dac1b-0975-4008-aaf4-bae55654dd3a): generation failed
+  - island "CompassClientPage" renders <CadenceStatusBadge>, <CadenceDocProgress> — host catalog and prewired components exist only in the host page and can never load inside an island. Compose them in the TREE, or use the ambient Kit inside the island (Stack, Row, Grid, Surface, Divider, Text, Money, DateTime, Percent, Num, EnumBadge, DataTable, CardList, Stat, Badge, LineChart, BarChart, DonutChart, Sparkline, Progress, Input, Select, DatePicker, Textarea, Checkbox, Button, Form, Disclaimer, Tabs, Callout, Accordion).
+  - island "CompassClientPage" computes displayed values from the hand-typed constant 1000 — a constant feeding displayed math is invented data (law 1): derive it from a tool result, or render an honest <Disclaimer/> that the rate/value isn't available on this host.
+  - island "CompassClientPage" computes displayed values from the hand-typed constant 60 — a constant feeding displayed math is invented data (law 1): derive it from a tool result, or render an honest <Disclaimer/> that the rate/value isn't available on this host.
+  - island "CompassClientPage" computes displayed values from the hand-typed constant 24 — a constant feeding displayed math is invented data (law 1): derive it from a tool result, or render an honest <Disclaimer/> that the rate/value isn't available on this host.
+  - island "CompassClientHub" crashed when rendered against stubbed tool results: The "id" argument must be of type string. Received type number (429302) — the component must render without throwing for any tool data it can receive: guard undefined/empty results before .map/.reduce and render a loading or empty state instead of crashing.
+[vendo] app build failed (app_7843cd21-24f9-4903-8980-c9095f222007): generation failed
+  - island "TomasWorkboard" renders <Skeleton> — host catalog and prewired components exist only in the host page and can never load inside an island. Compose them in the TREE, or use the ambient Kit inside the island (Stack, Row, Grid, Surface, Divider, Text, Money, DateTime, Percent, Num, EnumBadge, DataTable, CardList, Stat, Badge, LineChart, BarChart, DonutChart, Sparkline, Progress, Input, Select, DatePicker, Textarea, Checkbox, Button, Form, Disclaimer, Tabs, Callout, Accordion).
+  - island "TomasWorkboard" computes displayed values from the hand-typed constant 1000 — a constant feeding displayed math is invented data (law 1): derive it from a tool result, or render an honest <Disclaimer/> that the rate/value isn't available on this host.
+  - island "TomasWorkboard" computes displayed values from the hand-typed constant 60 — a constant feeding displayed math is invented data (law 1): derive it from a tool result, or render an honest <Disclaimer/> that the rate/value isn't available on this host.
+  - island "TomasWorkboard" computes displayed values from the hand-typed constant 24 — a constant feeding displayed math is invented data (law 1): derive it from a tool result, or render an honest <Disclaimer/> that the rate/value isn't available on this host.

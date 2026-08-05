@@ -1,0 +1,27 @@
+=== boot maple arm B at 2026-07-25T23:57:41.983Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3100
+- Network:       http://10.0.0.188:3100
+✓ Ready in 187ms
+
+=== create H5 arm B start ===
+
+=== create H5 arm B end ===
+[vendo] app build failed (app_827b8c60-f87c-4c66-9311-dddfa14b84e8): generation failed
+  - wire unknown-reference: "accounts.data.2.balance" does not name a declared <Query> or state
+  - wire unknown-reference: "cards.data.0.network" does not name a declared <Query> or state
+  - wire unknown-reference: "cards.data.0.mask" does not name a declared <Query> or state
+  - wire unknown-reference: "accounts.data.2.sparkline" does not name a declared <Query> or state
+  - wire unknown-reference: "spending.data" does not name a declared <Query> or state
+  - wire unknown-reference: "accounts.data.2.id" does not name a declared <Query> or state
+  - wire unknown-reference: "cards.data.0.id" does not name a declared <Query> or state
+  - node "maplesparkline-1" props invalid for host component "MapleSparkline" at props.data: Required
+  - node "maplespendingdonut-1" props invalid for host component "MapleSpendingDonut" at props.slices: Required
+  - node "recentcreditcharges-1" references unknown component "RecentCreditCharges"
+  - wire malformed-expression: expected ':' after object key "accounts" at index 14
+  - node "text-4" prop "text" embeds a binding inside a string — string interpolation is unsupported; bind the prop to a single {reference} or split the text into separate Text nodes
+  - wire unknown-reference: "cards.data.0.type" does not name a declared <Query> or state
+  - wire unknown-reference: "cards.data.0.frozen" does not name a declared <Query> or state
+  - wire unknown-reference: "accounts.data.0.balance" does not name a declared <Query> or state
+  - wire unknown-reference: "accounts.data.0.sparkline" does not name a declared <Query> or state
+  - wire unknown-reference: "cards.data.0.spendLimit" does not name a declared <Query> or state

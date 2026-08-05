@@ -1,0 +1,16 @@
+=== boot maple arm C at 2026-07-26T00:04:31.827Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3100
+- Network:       http://10.0.0.188:3100
+✓ Ready in 487ms
+
+=== create H7 arm C start ===
+
+=== create H7 arm C end ===
+[vendo pipeline] {"stage":"repair","rounds":2,"repaired":false,"noValidFix":0,"ms":3262}
+[vendo] app build failed (app_2fdedaef-889b-4215-a84b-6e03935e01c7): quota exhausted
+  - wire shape-mismatch: node "stat-1" prop "value" (/hostListScheduledPayments/data/length): "length" indexes into an array in the tool's response shape (expected a numeric index)
+  - binding /hostListScheduledPayments/data/length on node "stat-1" prop "value": "length" indexes into an array in the tool's response shape (expected a numeric index)
+  - wire shape-mismatch: node "stat-1" prop "value" (/hostListScheduledPayments/data): this binds an array into the "value" display slot — it renders as raw JSON braces; reduce it with an aggregate (| count(), | sum(field)) or bind a single row's scalar field
+  - binding /hostListScheduledPayments/data on node "stat-1" prop "value": this binds an array into the "value" display slot — it renders as raw JSON braces; reduce it with an aggregate (| count(), | sum(field)) or bind a single row's scalar field
+  - island "OutflowSummary" crashed when rendered against stubbed tool results: The "id" argument must be of type string. Received type number (429302) — the component must render without throwing for any tool data it can receive: guard undefined/empty results before .map/.reduce and render a loading or empty state instead of crashing.

@@ -1,0 +1,25 @@
+=== boot maple arm A at 2026-07-25T23:59:39.190Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3100
+- Network:       http://10.0.0.188:3100
+✓ Ready in 300ms
+
+=== create H5 arm A start ===
+
+=== create H5 arm A end ===
+[vendo] app build failed (app_4c15683b-a98a-47fc-8257-b894cec7c26f): generation failed
+  - wire unknown-reference: "accounts.data.2.balance" does not name a declared <Query> or state
+  - wire unknown-reference: "cards.data.0.network" does not name a declared <Query> or state
+  - wire unknown-reference: "cards.data.0.mask" does not name a declared <Query> or state
+  - wire unknown-reference: "accounts.data.2.sparkline" does not name a declared <Query> or state
+  - wire unknown-reference: "spending.data" does not name a declared <Query> or state
+  - wire unknown-reference: "cards.data.0.id" does not name a declared <Query> or state
+  - node "maplesparkline-1" props invalid for host component "MapleSparkline" at props.data: Required
+  - node "maplespendingdonut-1" props invalid for host component "MapleSpendingDonut" at props.slices: Required
+  - node "cardtransactionsloader-1" references unknown component "CardTransactionsLoader"
+  - wire unknown-reference: "cards.data.0.type" does not name a declared <Query> or state
+  - wire unknown-reference: "accounts.data.0.balance" does not name a declared <Query> or state
+  - wire unknown-reference: "accounts.data.0.sparkline" does not name a declared <Query> or state
+  - node "cardtransactions-1" references unknown component "CardTransactions"
+  - island "CreditCardDetail" must be plain TSX with an `export default` component — no braces, template literals, or fences around the source
+  - tree root "root" renders an empty layout; keep at least one attached, visible node

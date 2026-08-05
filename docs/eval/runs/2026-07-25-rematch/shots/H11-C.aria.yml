@@ -1,0 +1,101 @@
+- complementary:
+  - text: Maple
+  - navigation:
+    - link "Home":
+      - /url: /
+    - link "Accounts":
+      - /url: /accounts
+    - link "Transactions":
+      - /url: /transactions
+    - link "Cards":
+      - /url: /cards
+    - link "Payments":
+      - /url: /payments
+    - link "Insights":
+      - /url: /insights
+    - link "Ask Maple":
+      - /url: /vendo
+    - link "Apps":
+      - /url: /vendo/apps
+    - link "Activity":
+      - /url: /activity
+    - link "Settings":
+      - /url: /settings
+  - button "YH Yousef Helal Personal"
+- banner:
+  - heading "Apps" [level=1]
+  - button "Search… ⌘K"
+  - button "Send"
+  - button "Request"
+  - button "Move money"
+  - button "Notifications"
+- main:
+  - heading "Apps" [level=1]
+  - paragraph: Personal apps built with Vendo, running on Maple.
+  - form "Create app":
+    - textbox "Describe a new app"
+    - button "Create" [disabled]
+  - list "Your apps":
+    - listitem:
+      - button "Your cards"
+      - button "Remove Your cards": ×
+    - listitem:
+      - button "Credit card rewards & redemption"
+      - button "Remove Credit card rewards & redemption": ×
+    - listitem:
+      - button "Credit card rewards & redemption"
+      - button "Remove Credit card rewards & redemption": ×
+    - listitem:
+      - button "Credit score"
+      - button "Remove Credit score": ×
+    - listitem:
+      - button "Credit score"
+      - button "Remove Credit score": ×
+    - listitem:
+      - button "Credit score"
+      - button "Remove Credit score": ×
+    - listitem:
+      - button "Card freeze & suspicious activity"
+      - button "Remove Card freeze & suspicious activity": ×
+    - listitem:
+      - button "Upcoming outflows — next 2 weeks"
+      - button "Remove Upcoming outflows — next 2 weeks": ×
+    - listitem:
+      - button "Upcoming outflows — next 2 weeks"
+      - button "Remove Upcoming outflows — next 2 weeks": ×
+    - listitem:
+      - button "August rent payment"
+      - button "Remove August rent payment": ×
+    - listitem:
+      - button "Food & Coffee — July 2026"
+      - button "Remove Food & Coffee — July 2026": ×
+    - listitem:
+      - button "Food & coffee this month"
+      - button "Remove Food & coffee this month": ×
+    - listitem:
+      - button "July 2026 financial snapshot"
+      - button "Remove July 2026 financial snapshot": ×
+    - listitem:
+      - button "July 2026 financial snapshot"
+      - button "Remove July 2026 financial snapshot": ×
+    - listitem:
+      - button "Spending breakdown this month"
+      - button "Remove Spending breakdown this month": ×
+    - listitem:
+      - button "Transfer money"
+      - button "Remove Transfer money": ×
+    - listitem:
+      - button "Recent transactions"
+      - button "Remove Recent transactions": ×
+  - note: Rewards points not available No tool on this host exposes credit card rewards points balances, redemption history, or redemption options. The cards tool provides card details (type, network, spend limit, frozen status) but does not include any rewards or points data.
+  - status: About this view Your cards and recent card transactions are shown below — but rewards points require a connection to your card issuer's rewards program, which this host does not provide.
+  - article: 4471 Physical Network visa Spend limit $5,000.00 Exp month 8 Exp year 28
+  - article: 0934 Virtual Network visa Spend limit $2,500.00 Exp month 3 Exp year 27
+  - form "Edit app":
+    - textbox "Ask Vendo to change this app (e.g. “Remix the net worth card”)"
+    - button "Edit" [disabled]
+    - button "Refresh"
+  - heading "Ship review" [level=3]
+  - button "Load ship-diff"
+  - paragraph: The reviewable delta between captured host source and what this app ships.
+- alert

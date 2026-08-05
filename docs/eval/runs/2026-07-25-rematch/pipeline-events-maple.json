@@ -1,0 +1,564 @@
+[
+ {
+  "id": "H1",
+  "arm": "A",
+  "appId": "app_683018c3-4a79-46f4-9b48-81d356cde027",
+  "name": "July 2026 financial snapshot",
+  "timing_s": "10.7",
+  "pipeline": [],
+  "refusal": ""
+ },
+ {
+  "id": "H1",
+  "arm": "C",
+  "appId": "UNKNOWN",
+  "name": "?",
+  "timing_s": "51.8",
+  "pipeline": [],
+  "refusal": "generation failed | island \"BudgetProgress\" crashed when rendered against stubbed tool results: The \"id\" argument must be of type string. Received type number (429302) \u2014 the component must render without throwing for any tool data it can receive: guard undefined/empty results before .map/.reduce and render a loading or empty state instead of crashing."
+ },
+ {
+  "id": "H1",
+  "arm": "B",
+  "appId": "app_4aa5c662-5a16-4ede-8079-d1fca7931994",
+  "name": "July 2026 financial snapshot",
+  "timing_s": "14.0",
+  "pipeline": [],
+  "refusal": ""
+ },
+ {
+  "id": "H2",
+  "arm": "B",
+  "appId": "app_9ebbf6c5-e7e4-4519-82fe-ea7962618785",
+  "name": "Food & coffee this month",
+  "timing_s": "11.1",
+  "pipeline": [
+   {
+    "stage": "data-verify",
+    "applied": true,
+    "ms": 1342
+   },
+   {
+    "stage": "data-verify",
+    "applied": true,
+    "ms": 1806
+   }
+  ],
+  "refusal": ""
+ },
+ {
+  "id": "H2",
+  "arm": "A",
+  "appId": "app_e994613f-5fc8-4938-888b-6edf029aa989",
+  "name": "Food & Coffee \u2014 July 2026",
+  "timing_s": "9.1",
+  "pipeline": [],
+  "refusal": ""
+ },
+ {
+  "id": "H2",
+  "arm": "C",
+  "appId": "UNKNOWN",
+  "name": "?",
+  "timing_s": "76.1",
+  "pipeline": [],
+  "refusal": "generation failed | island \"FoodCoffeeSummary\" crashed when rendered against stubbed tool results: The \"id\" argument must be of type string. Received type number (429302) \u2014 the component must render without throwing for any tool data it can receive: guard undefined/empty results before .map/.reduce and render a loading or empty state instead of crashing."
+ },
+ {
+  "id": "H3",
+  "arm": "A",
+  "appId": "UNKNOWN",
+  "name": "?",
+  "timing_s": "35.6",
+  "pipeline": [],
+  "refusal": "generation failed | island \"RecurringTotal\" computes displayed values from the hand-typed constant 12 \u2014 a constant feeding displayed math is invented data (law 1): derive it from a tool result, or render an honest <Disclaimer/> that the rate/value isn't available on this host. ;; island \"RecurringTotal\" computes displayed values from the hand-typed constant 4.33 \u2014 a constant feeding displayed math is invented data (law 1): derive it from a tool result, or render an honest <Disclaimer/> that the rate/value isn't available on this host. ;; island \"RecurringSummary\" computes displayed values from"
+ },
+ {
+  "id": "H3",
+  "arm": "C",
+  "appId": "UNKNOWN",
+  "name": "?",
+  "timing_s": "49.8",
+  "pipeline": [],
+  "refusal": "generation failed | island \"RecurringSummary\" computes displayed values from the hand-typed constant 12 \u2014 a constant feeding displayed math is invented data (law 1): derive it from a tool result, or render an honest <Disclaimer/> that the rate/value isn't available on this host. ;; island \"RecurringSummary\" computes displayed values from the hand-typed constant 52 \u2014 a constant feeding displayed math is invented data (law 1): derive it from a tool result, or render an honest <Disclaimer/> that the rate/value isn't available on this host. ;; island \"RecurringSummary\" computes displayed values fr"
+ },
+ {
+  "id": "H3",
+  "arm": "B",
+  "appId": "UNKNOWN",
+  "name": "?",
+  "timing_s": "33.2",
+  "pipeline": [],
+  "refusal": ""
+ },
+ {
+  "id": "H4",
+  "arm": "B",
+  "appId": "app_0e518b4d-8e01-443a-87ce-9b7a22690cfb",
+  "name": "August rent payment",
+  "timing_s": "12.2",
+  "pipeline": [
+   {
+    "stage": "repair",
+    "rounds": 1,
+    "repaired": false,
+    "noValidFix": 0,
+    "ms": 1118
+   },
+   {
+    "stage": "repair",
+    "rounds": 1,
+    "repaired": true,
+    "noValidFix": 0,
+    "ms": 2006
+   },
+   {
+    "stage": "data-verify",
+    "applied": false,
+    "ms": 1246
+   }
+  ],
+  "refusal": "generation failed | island \"RecurringTotal\" computes displayed values from the hand-typed constant 12 \u2014 a constant feeding displayed math is invented data (law 1): derive it from a tool result, or render an honest <Disclaimer/> that the rate/value isn't available on this host. ;; island \"RecurringTotal\" computes displayed values from the hand-typed constant 3 \u2014 a constant feeding displayed math is invented data (law 1): derive it from a tool result, or render an honest <Disclaimer/> that the rate/value isn't available on this host. ;; island \"RecurringTotal\" computes displayed values from the "
+ },
+ {
+  "id": "H4",
+  "arm": "C",
+  "appId": "UNKNOWN",
+  "name": "?",
+  "timing_s": "85.3",
+  "pipeline": [],
+  "refusal": "generation failed | island \"RentPayPanel\" crashed when rendered against stubbed tool results: The \"id\" argument must be of type string. Received type number (429302) \u2014 the component must render without throwing for any tool data it can receive: guard undefined/empty results before .map/.reduce and render a loading or empty state instead of crashing."
+ },
+ {
+  "id": "H4",
+  "arm": "A",
+  "appId": "UNKNOWN",
+  "name": "?",
+  "timing_s": "8.3",
+  "pipeline": [
+   {
+    "stage": "repair",
+    "rounds": 1,
+    "repaired": true,
+    "noValidFix": 1,
+    "ms": 1080
+   }
+  ],
+  "refusal": "nothing in this request could be built with this host's tools \u2014 every part needed data or actions no registered tool provides, so the app would only show \"not available\" notices. Ask for something the host's tools can serve, or register a tool that covers this request. | nothing in this request could be built with this host's tools \u2014 every part needed data or actions no registered tool provides, so the app would only show \"not available\" notices. Ask for something the host's tools can serve, or register a tool that covers this request."
+ },
+ {
+  "id": "H5",
+  "arm": "B",
+  "appId": "UNKNOWN",
+  "name": "?",
+  "timing_s": "41.8",
+  "pipeline": [],
+  "refusal": "generation failed | wire unknown-reference: \"accounts.data.2.balance\" does not name a declared <Query> or state ;; wire unknown-reference: \"cards.data.0.network\" does not name a declared <Query> or state ;; wire unknown-reference: \"cards.data.0.mask\" does not name a declared <Query> or state ;; wire unknown-reference: \"accounts.data.2.sparkline\" does not name a declared <Query> or state ;; wire unknown-reference: \"spending.data\" does not name a declared <Query> or state ;; wire unknown-reference: \"accounts.data.2.id\" does not name a declared <Query> or state ;; wire unknown-reference: \"cards.d"
+ },
+ {
+  "id": "H5",
+  "arm": "C",
+  "appId": "UNKNOWN",
+  "name": "?",
+  "timing_s": "49.3",
+  "pipeline": [],
+  "refusal": "generation failed | wire unknown-reference: \"host_listCards\" does not name a declared <Query> or state ;; query \"cardTxns\" (tool \"host_listCardTransactions\") embeds a binding in its input \u2014 query inputs must be LITERAL JSON the tool can execute directly; another query's result can never feed a query input. Use a literal value (or drop the optional input), or build the dependent lookup inside an <Island> with ambient tools. ;; island \"CreditCardDetail\" crashed when rendered against stubbed tool results: The \"id\" argument must be of type string. Received type number (429302) \u2014 the component must"
+ },
+ {
+  "id": "H5",
+  "arm": "A",
+  "appId": "UNKNOWN",
+  "name": "?",
+  "timing_s": "55.6",
+  "pipeline": [],
+  "refusal": "generation failed | wire unknown-reference: \"accounts.data.2.balance\" does not name a declared <Query> or state ;; wire unknown-reference: \"cards.data.0.network\" does not name a declared <Query> or state ;; wire unknown-reference: \"cards.data.0.mask\" does not name a declared <Query> or state ;; wire unknown-reference: \"accounts.data.2.sparkline\" does not name a declared <Query> or state ;; wire unknown-reference: \"spending.data\" does not name a declared <Query> or state ;; wire unknown-reference: \"cards.data.0.id\" does not name a declared <Query> or state ;; node \"maplesparkline-1\" props inval"
+ },
+ {
+  "id": "H6",
+  "arm": "C",
+  "appId": "UNKNOWN",
+  "name": "?",
+  "timing_s": "67.6",
+  "pipeline": [
+   {
+    "stage": "repair",
+    "rounds": 2,
+    "repaired": false,
+    "noValidFix": 0,
+    "ms": 17294
+   }
+  ],
+  "refusal": "generation failed | wire shape-mismatch: node \"stat-1\" prop \"value\" (/hostListGoals/data/length): \"length\" indexes into an array in the tool's response shape (expected a numeric index) ;; binding /hostListGoals/data/length on node \"stat-1\" prop \"value\": \"length\" indexes into an array in the tool's response shape (expected a numeric index) ;; wire shape-mismatch: node \"stat-1\" prop \"value\" (/hostListGoals/data): this binds an array into the \"value\" display slot \u2014 it renders as raw JSON braces; reduce it with an aggregate (| count(), | sum(field)) or bind a single row's scalar field ;; binding /"
+ },
+ {
+  "id": "H6",
+  "arm": "B",
+  "appId": "UNKNOWN",
+  "name": "?",
+  "timing_s": "62.1",
+  "pipeline": [],
+  "refusal": "generation failed | wire nested-query: <Query> belongs at App level; the query was still hoisted ;; island \"GoalsProgress\" crashed when rendered against stubbed tool results: The \"id\" argument must be of type string. Received type number (429302) \u2014 the component must render without throwing for any tool data it can receive: guard undefined/empty results before .map/.reduce and render a loading or empty state instead of crashing."
+ },
+ {
+  "id": "H6",
+  "arm": "A",
+  "appId": "UNKNOWN",
+  "name": "?",
+  "timing_s": "40.0",
+  "pipeline": [],
+  "refusal": "generation failed | node \"goalsprogress-1\" references unknown component \"GoalsProgress\" ;; node \"goalprogresslist-1\" references unknown component \"GoalProgressList\" ;; island \"GoalProgressSection\" renders <Skeleton> \u2014 host catalog and prewired components exist only in the host page and can never load inside an island. Compose them in the TREE, or use the ambient Kit inside the island (Stack, Row, Grid, Surface, Divider, Text, Money, DateTime, Percent, Num, EnumBadge, DataTable, CardList, Stat, Badge, LineChart, BarChart, DonutChart, Sparkline, Progress, Input, Select, DatePicker, Textarea, Che"
+ },
+ {
+  "id": "H7",
+  "arm": "C",
+  "appId": "UNKNOWN",
+  "name": "?",
+  "timing_s": "71.5",
+  "pipeline": [
+   {
+    "stage": "repair",
+    "rounds": 2,
+    "repaired": false,
+    "noValidFix": 0,
+    "ms": 3262
+   }
+  ],
+  "refusal": "quota exhausted | wire shape-mismatch: node \"stat-1\" prop \"value\" (/hostListScheduledPayments/data/length): \"length\" indexes into an array in the tool's response shape (expected a numeric index) ;; binding /hostListScheduledPayments/data/length on node \"stat-1\" prop \"value\": \"length\" indexes into an array in the tool's response shape (expected a numeric index) ;; wire shape-mismatch: node \"stat-1\" prop \"value\" (/hostListScheduledPayments/data): this binds an array into the \"value\" display slot \u2014 it renders as raw JSON braces; reduce it with an aggregate (| count(), | sum(field)) or bind a sing"
+ },
+ {
+  "id": "H7",
+  "arm": "B",
+  "appId": "app_3c65c0dd-7149-46af-ad63-620955511f90",
+  "name": "Upcoming outflows \u2014 next 2 weeks",
+  "timing_s": "11.6",
+  "pipeline": [
+   {
+    "stage": "data-verify",
+    "applied": false,
+    "ms": 1121
+   }
+  ],
+  "refusal": ""
+ },
+ {
+  "id": "H7",
+  "arm": "A",
+  "appId": "app_8c370698-832c-4290-909e-c0628d55bff2",
+  "name": "Upcoming outflows \u2014 next 2 weeks",
+  "timing_s": "10.4",
+  "pipeline": [],
+  "refusal": ""
+ },
+ {
+  "id": "H8",
+  "arm": "C",
+  "appId": "UNKNOWN",
+  "name": "?",
+  "timing_s": "99.1",
+  "pipeline": [],
+  "refusal": "generation failed | island \"LunchOrderPanel\" crashed when rendered against stubbed tool results: The \"id\" argument must be of type string. Received type number (429302) \u2014 the component must render without throwing for any tool data it can receive: guard undefined/empty results before .map/.reduce and render a loading or empty state instead of crashing."
+ },
+ {
+  "id": "H8",
+  "arm": "A",
+  "appId": "UNKNOWN",
+  "name": "?",
+  "timing_s": "89.5",
+  "pipeline": [],
+  "refusal": "generation failed | wire nested-query: <Query> belongs at App level; the query was still hoisted ;; island \"RecentMerchantOrder\" crashed when rendered against stubbed tool results: The \"id\" argument must be of type string. Received type number (429302) \u2014 the component must render without throwing for any tool data it can receive: guard undefined/empty results before .map/.reduce and render a loading or empty state instead of crashing. ;; island \"RecentMerchantOrder\" must be plain TSX with an `export default` component \u2014 no braces, template literals, or fences around the source"
+ },
+ {
+  "id": "H8",
+  "arm": "B",
+  "appId": "UNKNOWN",
+  "name": "?",
+  "timing_s": "92.9",
+  "pipeline": [],
+  "refusal": "generation failed | wire unknown-reference: \"txns.data.data\" does not name a declared <Query> or state ;; wire unknown-reference: \"profile.data.name\" does not name a declared <Query> or state ;; node \"pastmerchantorder-1\" references unknown component \"PastMerchantOrder\" ;; island \"LunchOrderPicker\" must be plain TSX with an `export default` component \u2014 no braces, template literals, or fences around the source ;; island \"LunchOrderPicker\" crashed when rendered against stubbed tool results: The \"id\" argument must be of type string. Received type number (429302) \u2014 the component must render withou"
+ },
+ {
+  "id": "H9",
+  "arm": "C",
+  "appId": "UNKNOWN",
+  "name": "?",
+  "timing_s": "94.8",
+  "pipeline": [],
+  "refusal": "generation failed | island \"CardFreezePanel\" crashed when rendered against stubbed tool results: The \"id\" argument must be of type string. Received type number (429302) \u2014 the component must render without throwing for any tool data it can receive: guard undefined/empty results before .map/.reduce and render a loading or empty state instead of crashing. ;; island \"SuspiciousPanel\" crashed when rendered against stubbed tool results: The \"id\" argument must be of type string. Received type number (429302) \u2014 the component must render without throwing for any tool data it can receive: guard undefine"
+ },
+ {
+  "id": "H9",
+  "arm": "B",
+  "appId": "app_1ae1f0e8-6973-4589-aa90-cd24c8e8a95d",
+  "name": "Card freeze & suspicious activity",
+  "timing_s": "57.6",
+  "pipeline": [
+   {
+    "stage": "repair",
+    "rounds": 1,
+    "repaired": false,
+    "noValidFix": 1,
+    "ms": 1943
+   },
+   {
+    "stage": "data-verify",
+    "applied": false,
+    "ms": 3064
+   }
+  ],
+  "refusal": ""
+ },
+ {
+  "id": "H9",
+  "arm": "A",
+  "appId": "UNKNOWN",
+  "name": "?",
+  "timing_s": "62.7",
+  "pipeline": [],
+  "refusal": "generation failed | wire unknown-reference: \"cards.data\" does not name a declared <Query> or state ;; wire unknown-reference: \"txns.data.data\" does not name a declared <Query> or state ;; node \"freezecardpanel-1\" references unknown component \"FreezeCardPanel\" ;; node \"freezecardisland-1\" references unknown component \"FreezeCardIsland\" ;; island \"FreezeCardPanel\" renders <Skeleton> \u2014 host catalog and prewired components exist only in the host page and can never load inside an island. Compose them in the TREE, or use the ambient Kit inside the island (Stack, Row, Grid, Surface, Divider, Text, Mo"
+ },
+ {
+  "id": "H10",
+  "arm": "C",
+  "appId": "app_95f47509-e43a-40f4-86a8-6ad215729de3",
+  "name": "Credit score",
+  "timing_s": "10.8",
+  "pipeline": [
+   {
+    "stage": "repair",
+    "rounds": 1,
+    "repaired": true,
+    "noValidFix": 3,
+    "ms": 1822
+   },
+   {
+    "stage": "data-verify",
+    "applied": false,
+    "ms": 1290
+   }
+  ],
+  "refusal": ""
+ },
+ {
+  "id": "H10",
+  "arm": "A",
+  "appId": "app_26d2fecf-2f4b-4748-9553-f197fbf3aa7f",
+  "name": "Credit score",
+  "timing_s": "14.7",
+  "pipeline": [
+   {
+    "stage": "repair",
+    "rounds": 2,
+    "repaired": true,
+    "noValidFix": 2,
+    "ms": 4248
+   }
+  ],
+  "refusal": ""
+ },
+ {
+  "id": "H10",
+  "arm": "B",
+  "appId": "app_ff518077-82e0-46d7-8892-592880cb9642",
+  "name": "Credit score",
+  "timing_s": "10.8",
+  "pipeline": [],
+  "refusal": ""
+ },
+ {
+  "id": "H11",
+  "arm": "B",
+  "appId": "app_79a1dd10-5d9b-41ff-8834-49d40d93fcef",
+  "name": "Credit card rewards & redemption",
+  "timing_s": "16.8",
+  "pipeline": [
+   {
+    "stage": "data-verify",
+    "applied": true,
+    "ms": 1001
+   },
+   {
+    "stage": "data-verify",
+    "applied": false,
+    "ms": 1835
+   }
+  ],
+  "refusal": ""
+ },
+ {
+  "id": "H11",
+  "arm": "A",
+  "appId": "app_5c10e3c6-74ec-4b21-8f52-db8ccffda96c",
+  "name": "Credit card rewards & redemption",
+  "timing_s": "16.8",
+  "pipeline": [],
+  "refusal": ""
+ },
+ {
+  "id": "H11",
+  "arm": "C",
+  "appId": "app_3fedbebc-4020-44c1-821d-218ef74ee19d",
+  "name": "Your cards",
+  "timing_s": "7.2",
+  "pipeline": [],
+  "refusal": ""
+ },
+ {
+  "id": "H12",
+  "arm": "C",
+  "appId": "UNKNOWN",
+  "name": "?",
+  "timing_s": "101.0",
+  "pipeline": [
+   {
+    "stage": "data-verify",
+    "applied": true,
+    "ms": 875
+   }
+  ],
+  "refusal": "generation failed | island \"EntertainmentBudgetTracker\" computes displayed values from the hand-typed constant BUDGET_CENTS = 20000 \u2014 a constant feeding displayed math is invented data (law 1): derive it from a tool result, or render an honest <Disclaimer/> that the rate/value isn't available on this host. ;; island \"EntertainmentBudgetTracker\" computes displayed values from the hand-typed constant 26 \u2014 a constant feeding displayed math is invented data (law 1): derive it from a tool result, or render an honest <Disclaimer/> that the rate/value isn't available on this host. ;; island \"Entertai"
+ },
+ {
+  "id": "H12",
+  "arm": "A",
+  "appId": "UNKNOWN",
+  "name": "?",
+  "timing_s": "82.4",
+  "pipeline": [],
+  "refusal": "generation failed | island \"BudgetSetterPanel\" crashed when rendered against stubbed tool results: The \"id\" argument must be of type string. Received type number (429302) \u2014 the component must render without throwing for any tool data it can receive: guard undefined/empty results before .map/.reduce and render a loading or empty state instead of crashing. ;; island \"BudgetSetterPanel\" must be plain TSX with an `export default` component \u2014 no braces, template literals, or fences around the source ;; tree root \"root\" renders an empty layout; keep at least one attached, visible node ;; island \"Bud"
+ },
+ {
+  "id": "H12",
+  "arm": "B",
+  "appId": "app_51ca3a3f-0962-48f8-a813-253beec5a067",
+  "name": "Entertainment budget tracker",
+  "timing_s": "16.7",
+  "pipeline": [
+   {
+    "stage": "repair",
+    "rounds": 1,
+    "repaired": true,
+    "noValidFix": 2,
+    "ms": 4608
+   },
+   {
+    "stage": "data-verify",
+    "applied": false,
+    "ms": 1181
+   }
+  ],
+  "refusal": ""
+ },
+ {
+  "id": "H13",
+  "arm": "C",
+  "appId": "app_79ef55b9-01a3-4d0b-8e10-e54968897789",
+  "name": "July 2026 \u2014 Accountant summary",
+  "timing_s": "18.2",
+  "pipeline": [
+   {
+    "stage": "data-verify",
+    "applied": true,
+    "ms": 1383
+   }
+  ],
+  "refusal": ""
+ },
+ {
+  "id": "H13",
+  "arm": "B",
+  "appId": "app_32d5182f-7b58-4880-871f-23b8c990ed97",
+  "name": "Month-end summary \u2014 July 2026",
+  "timing_s": "20.2",
+  "pipeline": [
+   {
+    "stage": "data-verify",
+    "applied": true,
+    "ms": 1997
+   }
+  ],
+  "refusal": ""
+ },
+ {
+  "id": "H13",
+  "arm": "A",
+  "appId": "app_25f94cf2-fa34-4cd0-b959-919dfbfcee40",
+  "name": "Month-end summary \u2014 July 2026",
+  "timing_s": "17.3",
+  "pipeline": [],
+  "refusal": ""
+ },
+ {
+  "id": "H14",
+  "arm": "C",
+  "appId": "UNKNOWN",
+  "name": "?",
+  "timing_s": "98.9",
+  "pipeline": [
+   {
+    "stage": "repair",
+    "rounds": 1,
+    "repaired": false,
+    "noValidFix": 2,
+    "ms": 1557
+   }
+  ],
+  "refusal": "quota exhausted | island \"AccountComparison\" crashed when rendered against stubbed tool results: The \"id\" argument must be of type string. Received type number (429302) \u2014 the component must render without throwing for any tool data it can receive: guard undefined/empty results before .map/.reduce and render a loading or empty state instead of crashing. ;; island \"AccountComparison\" computes displayed values from the hand-typed constant NEED = 200000 \u2014 a constant feeding displayed math is invented data (law 1): derive it from a tool result, or render an honest <Disclaimer/> that the rate/value "
+ },
+ {
+  "id": "H14",
+  "arm": "B",
+  "appId": "UNKNOWN",
+  "name": "?",
+  "timing_s": "52.6",
+  "pipeline": [],
+  "refusal": "generation failed | island \"AccountCompare\" renders <MapleSparkline> \u2014 host catalog and prewired components exist only in the host page and can never load inside an island. Compose them in the TREE, or use the ambient Kit inside the island (Stack, Row, Grid, Surface, Divider, Text, Money, DateTime, Percent, Num, EnumBadge, DataTable, CardList, Stat, Badge, LineChart, BarChart, DonutChart, Sparkline, Progress, Input, Select, DatePicker, Textarea, Checkbox, Button, Form, Disclaimer, Tabs, Callout, Accordion). ;; island \"AccountCompare\" computes displayed values from the hand-typed constant NEED "
+ },
+ {
+  "id": "H14",
+  "arm": "A",
+  "appId": "UNKNOWN",
+  "name": "?",
+  "timing_s": "130.5",
+  "pipeline": [],
+  "refusal": "generation failed | island \"FundingComparison\" computes displayed values from the hand-typed constant NEED = 200000 \u2014 a constant feeding displayed math is invented data (law 1): derive it from a tool result, or render an honest <Disclaimer/> that the rate/value isn't available on this host. ;; island \"FundingComparison\" crashed when rendered against stubbed tool results: The \"id\" argument must be of type string. Received type number (429302) \u2014 the component must render without throwing for any tool data it can receive: guard undefined/empty results before .map/.reduce and render a loading or e"
+ },
+ {
+  "id": "H15",
+  "arm": "B",
+  "appId": "app_5f3cee31-29e3-47b8-8542-5b448065447d",
+  "name": "Paycheck timeline 2026",
+  "timing_s": "8.1",
+  "pipeline": [
+   {
+    "stage": "data-verify",
+    "applied": false,
+    "ms": 1238
+   }
+  ],
+  "refusal": ""
+ },
+ {
+  "id": "H15",
+  "arm": "C",
+  "appId": "app_b69670be-6543-46b3-bc22-0f9aa4120ab9",
+  "name": "Paycheck timeline 2026",
+  "timing_s": "8.0",
+  "pipeline": [
+   {
+    "stage": "data-verify",
+    "applied": false,
+    "ms": 1181
+   }
+  ],
+  "refusal": ""
+ },
+ {
+  "id": "H15",
+  "arm": "A",
+  "appId": "app_2c724c04-ca48-41fc-8f83-3c599e073377",
+  "name": "Income timeline 2026",
+  "timing_s": "8.1",
+  "pipeline": [],
+  "refusal": ""
+ }
+]

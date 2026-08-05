@@ -1,0 +1,14 @@
+=== boot cadence arm A at 2026-07-26T04:20:25.110Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3300
+- Network:       http://10.0.0.188:3300
+✓ Ready in 212ms
+
+=== create H26 arm A start ===
+
+=== create H26 arm A end ===
+[vendo] app build failed (app_10c7b3f1-de84-47d9-a332-ce6b41395873): generation failed
+  - island "BookReviewCalls" renders <Skeleton> — host catalog and prewired components exist only in the host page and can never load inside an island. Compose them in the TREE, or use the ambient Kit inside the island (Stack, Row, Grid, Surface, Divider, Text, Money, DateTime, Percent, Num, EnumBadge, DataTable, CardList, Stat, Badge, LineChart, BarChart, DonutChart, Sparkline, Progress, Input, Select, DatePicker, Textarea, Checkbox, Button, Form, Disclaimer, Tabs, Callout, Accordion).
+  - wire unknown-reference: "host_listClients" does not name a declared <Query> or state
+  - island "BookReviewCalls" is not valid TSX: Transform failed with 1 error:
+  - wire nested-query: <Query> belongs at App level; the query was still hoisted

@@ -1,0 +1,294 @@
+- complementary:
+  - link "Cadence dashboard":
+    - /url: /
+    - text: cadence .
+  - navigation "Main":
+    - list:
+      - listitem:
+        - link "Dashboard":
+          - /url: /
+      - listitem:
+        - link "Vendo":
+          - /url: /assistant
+    - paragraph: Workspace
+    - list:
+      - listitem:
+        - link "Clients":
+          - /url: /clients
+      - listitem:
+        - link "Work":
+          - /url: /work
+      - listitem:
+        - link "Calendar":
+          - /url: /calendar
+      - listitem:
+        - link "Inbox":
+          - /url: /inbox
+    - paragraph: Firm
+    - list:
+      - listitem:
+        - link "Team":
+          - /url: /team
+      - listitem:
+        - link "Integrations":
+          - /url: /integrations
+      - listitem:
+        - link "Settings":
+          - /url: /settings
+  - paragraph: Hartwell & Associates
+  - paragraph: Tax season 2026
+- banner:
+  - search:
+    - searchbox "Search"
+    - text: ⌘K
+  - text: Hartwell & Associates
+  - button "Notifications"
+  - button "MA Maya Alvarez"
+- main:
+  - main "Vendo workspace":
+    - tablist "Workspace sections":
+      - tab "Chat"
+      - tab "Apps" [selected]
+      - tab "Automations"
+      - tab "Accounts"
+      - tab "Activity"
+    - tabpanel "Apps":
+      - form "Create app":
+        - text: Describe a new app
+        - textbox "Describe a new app"
+        - button "Create" [disabled]
+      - article:
+        - strong: E-filed return status
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Partners' meeting — weekly recap
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Tax season at a glance
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - region "Open app":
+        - heading "E-filed return status" [level=3]
+        - text: Document collection and filing progress for all active clients this season
+        - article:
+          - paragraph: Clients missing documents
+          - text: 8 Clients with outstanding documents
+          - paragraph: of 12 active clients need chasing
+        - article "Documents collected":
+          - text: Documents collected
+          - strong: "38"
+        - article "Documents outstanding":
+          - text: Documents outstanding
+          - strong: "21"
+        - article "Nearest filing deadline":
+          - text: Nearest filing deadline
+          - strong: Jul 27, 2026
+        - heading "Return status by client" [level=3]
+        - searchbox "Search table"
+        - combobox "Filter by Status":
+          - option "All Status" [selected]
+          - option "complete"
+          - option "missing_docs"
+        - combobox "Filter by Entity type":
+          - option "All Entity type" [selected]
+          - option "c_corp"
+          - option "individual"
+          - option "partnership"
+          - option "s_corp"
+          - option "sole_prop"
+        - combobox "Filter by Assigned to":
+          - option "All Assigned to" [selected]
+          - option "Daniel Hartwell"
+          - option "Maya Alvarez"
+          - option "Priya Natarajan"
+          - option "Tomas Okafor"
+        - table:
+          - rowgroup:
+            - row "Client Contact Entity type Filing deadline ▲ Docs received Docs total Status Assigned to":
+              - columnheader "Client"
+              - columnheader "Contact"
+              - columnheader "Entity type"
+              - columnheader "Filing deadline ▲"
+              - columnheader "Docs received"
+              - columnheader "Docs total"
+              - columnheader "Status"
+              - columnheader "Assigned to"
+          - rowgroup:
+            - row "Blue Bottle Coffee Marisol Rivera s_corp Jul 27, 2026 3 6 missing_docs Maya Alvarez":
+              - cell "Blue Bottle Coffee"
+              - cell "Marisol Rivera"
+              - cell "s_corp"
+              - cell "Jul 27, 2026"
+              - cell "3"
+              - cell "6"
+              - cell "missing_docs"
+              - cell "Maya Alvarez"
+            - row "Linear Wei Chen sole_prop Jul 28, 2026 3 5 missing_docs Maya Alvarez":
+              - cell "Linear"
+              - cell "Wei Chen"
+              - cell "sole_prop"
+              - cell "Jul 28, 2026"
+              - cell "3"
+              - cell "5"
+              - cell "missing_docs"
+              - cell "Maya Alvarez"
+            - row "Sweetgreen Antonio Delgado partnership Aug 15, 2026 4 6 missing_docs Maya Alvarez":
+              - cell "Sweetgreen"
+              - cell "Antonio Delgado"
+              - cell "partnership"
+              - cell "Aug 15, 2026"
+              - cell "4"
+              - cell "6"
+              - cell "missing_docs"
+              - cell "Maya Alvarez"
+            - row "Equinox Dana Kowalski s_corp Aug 19, 2026 3 5 missing_docs Priya Natarajan":
+              - cell "Equinox"
+              - cell "Dana Kowalski"
+              - cell "s_corp"
+              - cell "Aug 19, 2026"
+              - cell "3"
+              - cell "5"
+              - cell "missing_docs"
+              - cell "Priya Natarajan"
+            - row "TaskRabbit Greg Foster sole_prop Aug 23, 2026 1 4 missing_docs Tomas Okafor":
+              - cell "TaskRabbit"
+              - cell "Greg Foster"
+              - cell "sole_prop"
+              - cell "Aug 23, 2026"
+              - cell "1"
+              - cell "4"
+              - cell "missing_docs"
+              - cell "Tomas Okafor"
+            - row "Anjali Patel Anjali Patel individual Aug 27, 2026 2 4 missing_docs Maya Alvarez":
+              - cell "Anjali Patel"
+              - cell "Anjali Patel"
+              - cell "individual"
+              - cell "Aug 27, 2026"
+              - cell "2"
+              - cell "4"
+              - cell "missing_docs"
+              - cell "Maya Alvarez"
+            - row "Compass Susan Kim partnership Sep 1, 2026 2 5 missing_docs Priya Natarajan":
+              - cell "Compass"
+              - cell "Susan Kim"
+              - cell "partnership"
+              - cell "Sep 1, 2026"
+              - cell "2"
+              - cell "5"
+              - cell "missing_docs"
+              - cell "Priya Natarajan"
+            - row "Jiffy Lube Luis Cortez sole_prop Sep 6, 2026 1 5 missing_docs Tomas Okafor":
+              - cell "Jiffy Lube"
+              - cell "Luis Cortez"
+              - cell "sole_prop"
+              - cell "Sep 6, 2026"
+              - cell "1"
+              - cell "5"
+              - cell "missing_docs"
+              - cell "Tomas Okafor"
+            - row "Banfield Pet Hospital Emily Rhodes c_corp Sep 12, 2026 6 6 complete Priya Natarajan":
+              - cell "Banfield Pet Hospital"
+              - cell "Emily Rhodes"
+              - cell "c_corp"
+              - cell "Sep 12, 2026"
+              - cell "6"
+              - cell "6"
+              - cell "complete"
+              - cell "Priya Natarajan"
+            - row "Figma Jonah Whitfield sole_prop Sep 18, 2026 4 4 complete Daniel Hartwell":
+              - cell "Figma"
+              - cell "Jonah Whitfield"
+              - cell "sole_prop"
+              - cell "Sep 18, 2026"
+              - cell "4"
+              - cell "4"
+              - cell "complete"
+              - cell "Daniel Hartwell"
+            - row "LegalZoom Alice Mercer partnership Sep 25, 2026 5 5 complete Daniel Hartwell":
+              - cell "LegalZoom"
+              - cell "Alice Mercer"
+              - cell "partnership"
+              - cell "Sep 25, 2026"
+              - cell "5"
+              - cell "5"
+              - cell "complete"
+              - cell "Daniel Hartwell"
+            - row "Grant Ellison Grant Ellison individual Oct 3, 2026 4 4 complete Maya Alvarez":
+              - cell "Grant Ellison"
+              - cell "Grant Ellison"
+              - cell "individual"
+              - cell "Oct 3, 2026"
+              - cell "4"
+              - cell "4"
+              - cell "complete"
+              - cell "Maya Alvarez"
+        - heading "Clients at deadline risk" [level=3]
+        - text: Clients with missing documents ordered by soonest filing deadline
+        - article: Blue Bottle Coffee Missing docs Contact Marisol Rivera Entity type s_corp Filing deadline Jul 27, 2026 Docs received 3 Docs required 6 Assigned to Maya Alvarez
+        - article: Linear Missing docs Contact Wei Chen Entity type sole_prop Filing deadline Jul 28, 2026 Docs received 3 Docs required 5 Assigned to Maya Alvarez
+        - article: Sweetgreen Missing docs Contact Antonio Delgado Entity type partnership Filing deadline Aug 15, 2026 Docs received 4 Docs required 6 Assigned to Maya Alvarez
+        - article: Equinox Missing docs Contact Dana Kowalski Entity type s_corp Filing deadline Aug 19, 2026 Docs received 3 Docs required 5 Assigned to Priya Natarajan
+        - article: TaskRabbit Missing docs Contact Greg Foster Entity type sole_prop Filing deadline Aug 23, 2026 Docs received 1 Docs required 4 Assigned to Tomas Okafor
+        - article: Anjali Patel Missing docs Contact Anjali Patel Entity type individual Filing deadline Aug 27, 2026 Docs received 2 Docs required 4 Assigned to Maya Alvarez
+        - article: Compass Missing docs Contact Susan Kim Entity type partnership Filing deadline Sep 1, 2026 Docs received 2 Docs required 5 Assigned to Priya Natarajan
+        - article: Jiffy Lube Missing docs Contact Luis Cortez Entity type sole_prop Filing deadline Sep 6, 2026 Docs received 1 Docs required 5 Assigned to Tomas Okafor
+        - article: Banfield Pet Hospital Complete Contact Emily Rhodes Entity type c_corp Filing deadline Sep 12, 2026 Docs received 6 Docs required 6 Assigned to Priya Natarajan
+        - article: Figma Complete Contact Jonah Whitfield Entity type sole_prop Filing deadline Sep 18, 2026 Docs received 4 Docs required 4 Assigned to Daniel Hartwell
+        - article: LegalZoom Complete Contact Alice Mercer Entity type partnership Filing deadline Sep 25, 2026 Docs received 5 Docs required 5 Assigned to Daniel Hartwell
+        - article: Grant Ellison Complete Contact Grant Ellison Entity type individual Filing deadline Oct 3, 2026 Docs received 4 Docs required 4 Assigned to Maya Alvarez
+        - heading "Recent filing activity" [level=3]
+        - table:
+          - rowgroup:
+            - row "Activity Type When ▲":
+              - columnheader "Activity"
+              - columnheader "Type"
+              - columnheader "When ▲"
+          - rowgroup:
+            - row "Final document verified for Banfield Pet Hospital; checklist complete document_verified Jul 15, 2026":
+              - cell "Final document verified for Banfield Pet Hospital; checklist complete"
+              - cell "document_verified"
+              - cell "Jul 15, 2026"
+            - 'row "Bank statements rejected for Jiffy Lube: personal account uploaded instead of business document_rejected Jul 17, 2026"':
+              - 'cell "Bank statements rejected for Jiffy Lube: personal account uploaded instead of business"'
+              - cell "document_rejected"
+              - cell "Jul 17, 2026"
+            - row "Prior-year return verified for Compass document_verified Jul 21, 2026":
+              - cell "Prior-year return verified for Compass"
+              - cell "document_verified"
+              - cell "Jul 21, 2026"
+            - row "Luis Cortez re-uploaded Receipts (shop-receipts-2025-resubmitted.pdf) upload_received Jul 21, 2026":
+              - cell "Luis Cortez re-uploaded Receipts (shop-receipts-2025-resubmitted.pdf)"
+              - cell "upload_received"
+              - cell "Jul 21, 2026"
+            - row "Marisol Rivera uploaded Bank statements (boa-business-statements-jan-jun.pdf) upload_received Jul 22, 2026":
+              - cell "Marisol Rivera uploaded Bank statements (boa-business-statements-jan-jun.pdf)"
+              - cell "upload_received"
+              - cell "Jul 22, 2026"
+            - row "Marisol Rivera uploaded Payroll summary (gusto-payroll-summary-2025.pdf) upload_received Jul 23, 2026":
+              - cell "Marisol Rivera uploaded Payroll summary (gusto-payroll-summary-2025.pdf)"
+              - cell "upload_received"
+              - cell "Jul 23, 2026"
+            - row "Dana Kowalski uploaded Receipts (equipment-receipts-2025.pdf) upload_received Jul 23, 2026":
+              - cell "Dana Kowalski uploaded Receipts (equipment-receipts-2025.pdf)"
+              - cell "upload_received"
+              - cell "Jul 23, 2026"
+            - row "Antonio Delgado uploaded Payroll summary (adp-payroll-summary-q1-q2.pdf) upload_received Jul 24, 2026":
+              - cell "Antonio Delgado uploaded Payroll summary (adp-payroll-summary-q1-q2.pdf)"
+              - cell "upload_received"
+              - cell "Jul 24, 2026"
+            - row "Marisol Rivera replied about the outstanding 1099-NECs message_sent Jul 24, 2026":
+              - cell "Marisol Rivera replied about the outstanding 1099-NECs"
+              - cell "message_sent"
+              - cell "Jul 24, 2026"
+            - row "Blue Bottle Coffee filing deadline is 2 days out with 3 documents missing deadline_approaching Jul 25, 2026":
+              - cell "Blue Bottle Coffee filing deadline is 2 days out with 3 documents missing"
+              - cell "deadline_approaching"
+              - cell "Jul 25, 2026"
+        - status: About this view Cadence tracks document collection and filing deadlines. Direct IRS e-file acknowledgement status (accepted, rejected, pending) is not available through this host — contact your e-file software or the IRS e-Services portal for transmission confirmations.
+- button "AI agent"
+- alert

@@ -1,0 +1,192 @@
+- complementary:
+  - text: Maple
+  - navigation:
+    - link "Home":
+      - /url: /
+    - link "Accounts":
+      - /url: /accounts
+    - link "Transactions":
+      - /url: /transactions
+    - link "Cards":
+      - /url: /cards
+    - link "Payments":
+      - /url: /payments
+    - link "Insights":
+      - /url: /insights
+    - link "Ask Maple":
+      - /url: /vendo
+    - link "Apps":
+      - /url: /vendo/apps
+    - link "Activity":
+      - /url: /activity
+    - link "Settings":
+      - /url: /settings
+  - button "YH Yousef Helal Personal"
+- banner:
+  - heading "Apps" [level=1]
+  - button "Search… ⌘K"
+  - button "Send"
+  - button "Request"
+  - button "Move money"
+  - button "Notifications"
+- main:
+  - heading "Apps" [level=1]
+  - paragraph: Personal apps built with Vendo, running on Maple.
+  - form "Create app":
+    - textbox "Describe a new app"
+    - button "Create" [disabled]
+  - list "Your apps":
+    - listitem:
+      - button "Credit card rewards & redemption"
+      - button "Remove Credit card rewards & redemption": ×
+    - listitem:
+      - button "Credit card rewards & redemption"
+      - button "Remove Credit card rewards & redemption": ×
+    - listitem:
+      - button "Credit score"
+      - button "Remove Credit score": ×
+    - listitem:
+      - button "Credit score"
+      - button "Remove Credit score": ×
+    - listitem:
+      - button "Credit score"
+      - button "Remove Credit score": ×
+    - listitem:
+      - button "Card freeze & suspicious activity"
+      - button "Remove Card freeze & suspicious activity": ×
+    - listitem:
+      - button "Upcoming outflows — next 2 weeks"
+      - button "Remove Upcoming outflows — next 2 weeks": ×
+    - listitem:
+      - button "Upcoming outflows — next 2 weeks"
+      - button "Remove Upcoming outflows — next 2 weeks": ×
+    - listitem:
+      - button "August rent payment"
+      - button "Remove August rent payment": ×
+    - listitem:
+      - button "Food & Coffee — July 2026"
+      - button "Remove Food & Coffee — July 2026": ×
+    - listitem:
+      - button "Food & coffee this month"
+      - button "Remove Food & coffee this month": ×
+    - listitem:
+      - button "July 2026 financial snapshot"
+      - button "Remove July 2026 financial snapshot": ×
+    - listitem:
+      - button "July 2026 financial snapshot"
+      - button "Remove July 2026 financial snapshot": ×
+    - listitem:
+      - button "Spending breakdown this month"
+      - button "Remove Spending breakdown this month": ×
+    - listitem:
+      - button "Transfer money"
+      - button "Remove Transfer money": ×
+    - listitem:
+      - button "Recent transactions"
+      - button "Remove Recent transactions": ×
+  - heading "Your Cards" [level=3]
+  - table:
+    - rowgroup:
+      - row "Network Card Type Spend Limit":
+        - columnheader "Network"
+        - columnheader "Card"
+        - columnheader "Type"
+        - columnheader "Spend Limit"
+    - rowgroup:
+      - row "visa 4471 physical $5,000.00":
+        - cell "visa"
+        - cell "4471"
+        - cell "physical"
+        - cell "$5,000.00"
+      - row "visa 0934 virtual $2,500.00":
+        - cell "visa"
+        - cell "0934"
+        - cell "virtual"
+        - cell "$2,500.00"
+  - status: About rewards points Maple tracks your card activity and balances in real time. Rewards points balances and redemption options are managed directly by your card network (Visa, Mastercard, Amex, etc.) and are not exposed through this host's data — so live point totals cannot be shown here.
+  - heading "How to Redeem Your Rewards" [level=3]
+  - article: Statement Credit Log in to your card issuer's portal and apply points as a credit against your balance. Most issuers value points at 1 cent each for this option.
+  - article: Travel Booking Redeem through your issuer's travel portal for flights, hotels, and car rentals — often at a higher value per point (1.25–1.5 cents).
+  - article: Gift Cards Exchange points for gift cards at popular retailers. Value varies by issuer and retailer.
+  - article: Cash Back / Direct Deposit Some issuers let you deposit rewards directly to a linked bank account. Check your card's rewards program for eligibility.
+  - article: Transfer to Partners Premium cards often allow point transfers to airline and hotel loyalty programs, where value can exceed 2 cents per point.
+  - heading "Recent Card Spending" [level=3]
+  - text: Spending activity that may be earning you rewards
+  - searchbox "Search table"
+  - combobox "Filter by Category":
+    - option "All Category" [selected]
+    - option "coffee"
+    - option "dining"
+    - option "groceries"
+    - option "shopping"
+    - option "transport"
+  - table:
+    - rowgroup:
+      - row "Merchant Category Amount Date":
+        - columnheader "Merchant"
+        - columnheader "Category"
+        - columnheader "Amount"
+        - columnheader "Date"
+    - rowgroup:
+      - row "DoorDash dining -$87.00 Jul 25, 2026":
+        - cell "DoorDash"
+        - cell "dining"
+        - cell "-$87.00"
+        - cell "Jul 25, 2026"
+      - row "Tartine Bakery dining -$39.39 Jul 24, 2026":
+        - cell "Tartine Bakery"
+        - cell "dining"
+        - cell "-$39.39"
+        - cell "Jul 24, 2026"
+      - row "Whole Foods Market groceries -$52.18 Jul 24, 2026":
+        - cell "Whole Foods Market"
+        - cell "groceries"
+        - cell "-$52.18"
+        - cell "Jul 24, 2026"
+      - row "Apple Store shopping -$200.04 Jul 24, 2026":
+        - cell "Apple Store"
+        - cell "shopping"
+        - cell "-$200.04"
+        - cell "Jul 24, 2026"
+      - row "United Airlines transport -$418.00 Jul 24, 2026":
+        - cell "United Airlines"
+        - cell "transport"
+        - cell "-$418.00"
+        - cell "Jul 24, 2026"
+      - row "Tartine Bakery dining -$16.21 Jul 23, 2026":
+        - cell "Tartine Bakery"
+        - cell "dining"
+        - cell "-$16.21"
+        - cell "Jul 23, 2026"
+      - row "Lyft transport -$23.40 Jul 21, 2026":
+        - cell "Lyft"
+        - cell "transport"
+        - cell "-$23.40"
+        - cell "Jul 21, 2026"
+      - row "Uber Eats dining -$34.60 Jul 21, 2026":
+        - cell "Uber Eats"
+        - cell "dining"
+        - cell "-$34.60"
+        - cell "Jul 21, 2026"
+      - row "Shell transport -$66.17 Jul 20, 2026":
+        - cell "Shell"
+        - cell "transport"
+        - cell "-$66.17"
+        - cell "Jul 20, 2026"
+      - row "Apple Store shopping -$71.25 Jul 20, 2026":
+        - cell "Apple Store"
+        - cell "shopping"
+        - cell "-$71.25"
+        - cell "Jul 20, 2026"
+  - text: Page 1 of 2
+  - button "Previous" [disabled]
+  - button "Next"
+  - note "Node render error": "Node \"callout-2\" could not render: Cannot destructure property 'accent' of '_t[e]' as it is undefined."
+  - form "Edit app":
+    - textbox "Ask Vendo to change this app (e.g. “Remix the net worth card”)"
+    - button "Edit" [disabled]
+    - button "Refresh"
+  - heading "Ship review" [level=3]
+  - button "Load ship-diff"
+  - paragraph: The reviewable delta between captured host source and what this app ships.
+- alert

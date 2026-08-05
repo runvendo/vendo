@@ -1,0 +1,1740 @@
+[
+  {
+    "format": "vendo/app@1",
+    "id": "app_2abe08ba-9ca0-45df-ba06-03938f9ccbec",
+    "name": "E-filed return status",
+    "ui": "tree",
+    "tree": {
+      "formatVersion": "vendo-genui/v2",
+      "root": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "source": "prewired",
+          "children": [
+            "stack-1"
+          ],
+          "component": "Stack"
+        },
+        {
+          "id": "stack-1",
+          "props": {
+            "gap": 6
+          },
+          "source": "prewired",
+          "children": [
+            "stack-2",
+            "cadencemissingdocshero-1",
+            "grid-1",
+            "surface-4",
+            "surface-5",
+            "callout-1"
+          ],
+          "component": "Stack"
+        },
+        {
+          "id": "stack-2",
+          "props": {
+            "gap": 1
+          },
+          "source": "prewired",
+          "children": [
+            "text-1",
+            "text-2"
+          ],
+          "component": "Stack"
+        },
+        {
+          "id": "text-1",
+          "props": {
+            "text": "E-filed return status",
+            "variant": "heading"
+          },
+          "source": "prewired",
+          "component": "Text"
+        },
+        {
+          "id": "text-2",
+          "props": {
+            "text": "Document collection and filing readiness for all active clients this season",
+            "variant": "caption"
+          },
+          "source": "prewired",
+          "component": "Text"
+        },
+        {
+          "id": "cadencemissingdocshero-1",
+          "props": {
+            "badgeLabel": "Clients awaiting documents",
+            "clientCount": {
+              "$path": "/hostGetDashboard/data/clientsTotal"
+            },
+            "missingCount": {
+              "$path": "/hostGetDashboard/data/clientsMissingDocs"
+            }
+          },
+          "source": "host",
+          "component": "CadenceMissingDocsHero"
+        },
+        {
+          "id": "grid-1",
+          "props": {
+            "columns": 3
+          },
+          "source": "prewired",
+          "children": [
+            "surface-1",
+            "surface-2",
+            "surface-3"
+          ],
+          "component": "Grid"
+        },
+        {
+          "id": "surface-1",
+          "source": "prewired",
+          "children": [
+            "stat-1"
+          ],
+          "component": "Surface"
+        },
+        {
+          "id": "stat-1",
+          "props": {
+            "label": "Documents collected",
+            "value": {
+              "$path": "/hostGetDashboard/data/documentsReceived"
+            },
+            "format": "number"
+          },
+          "source": "prewired",
+          "component": "Stat"
+        },
+        {
+          "id": "surface-2",
+          "source": "prewired",
+          "children": [
+            "stat-2"
+          ],
+          "component": "Surface"
+        },
+        {
+          "id": "stat-2",
+          "props": {
+            "tone": "danger",
+            "label": "Documents outstanding",
+            "value": {
+              "$path": "/hostGetDashboard/data/documentsOutstanding"
+            },
+            "format": "number"
+          },
+          "source": "prewired",
+          "component": "Stat"
+        },
+        {
+          "id": "surface-3",
+          "source": "prewired",
+          "children": [
+            "stat-3"
+          ],
+          "component": "Surface"
+        },
+        {
+          "id": "stat-3",
+          "props": {
+            "label": "Nearest filing deadline",
+            "value": {
+              "$path": "/hostGetDashboard/data/nearestDeadline"
+            },
+            "format": "date"
+          },
+          "source": "prewired",
+          "component": "Stat"
+        },
+        {
+          "id": "surface-4",
+          "source": "prewired",
+          "children": [
+            "stack-3"
+          ],
+          "component": "Surface"
+        },
+        {
+          "id": "stack-3",
+          "props": {
+            "gap": 3
+          },
+          "source": "prewired",
+          "children": [
+            "text-3",
+            "datatable-1"
+          ],
+          "component": "Stack"
+        },
+        {
+          "id": "text-3",
+          "props": {
+            "text": "Client filing readiness",
+            "variant": "heading"
+          },
+          "source": "prewired",
+          "component": "Text"
+        },
+        {
+          "id": "datatable-1",
+          "props": {
+            "rows": {
+              "$path": "/hostListDeadlines/data"
+            },
+            "sortBy": "filingDeadline asc",
+            "columns": [
+              {
+                "key": "businessName",
+                "label": "Client"
+              },
+              {
+                "key": "contactName",
+                "label": "Contact"
+              },
+              {
+                "key": "entityType",
+                "label": "Entity type"
+              },
+              {
+                "key": "filingDeadline",
+                "label": "Filing deadline",
+                "format": "date"
+              },
+              {
+                "key": "progress.received",
+                "label": "Docs received"
+              },
+              {
+                "key": "progress.total",
+                "label": "Docs total"
+              },
+              {
+                "key": "status",
+                "label": "Status",
+                "format": "enum"
+              },
+              {
+                "key": "assignee.name",
+                "label": "Assigned to"
+              }
+            ],
+            "paginate": 15,
+            "emptyState": "No clients on record — add clients to track their filing status.",
+            "searchable": true,
+            "filterableBy": [
+              "status",
+              "entityType",
+              "assignee.name"
+            ]
+          },
+          "source": "prewired",
+          "component": "DataTable"
+        },
+        {
+          "id": "surface-5",
+          "source": "prewired",
+          "children": [
+            "stack-4"
+          ],
+          "component": "Surface"
+        },
+        {
+          "id": "stack-4",
+          "props": {
+            "gap": 3
+          },
+          "source": "prewired",
+          "children": [
+            "text-4",
+            "datatable-2"
+          ],
+          "component": "Stack"
+        },
+        {
+          "id": "text-4",
+          "props": {
+            "text": "Recent filing activity",
+            "variant": "heading"
+          },
+          "source": "prewired",
+          "component": "Text"
+        },
+        {
+          "id": "datatable-2",
+          "props": {
+            "rows": {
+              "$path": "/hostListActivity/data"
+            },
+            "sortBy": "at desc",
+            "columns": [
+              {
+                "key": "at",
+                "label": "When",
+                "format": "date"
+              },
+              {
+                "key": "type",
+                "label": "Event",
+                "format": "enum"
+              },
+              {
+                "key": "summary",
+                "label": "Summary"
+              }
+            ],
+            "emptyState": "No recent activity recorded."
+          },
+          "source": "prewired",
+          "component": "DataTable"
+        },
+        {
+          "id": "callout-1",
+          "props": {
+            "tone": "warning",
+            "title": "IRS e-file status not available"
+          },
+          "source": "prewired",
+          "children": [
+            "text-5"
+          ],
+          "component": "Callout"
+        },
+        {
+          "id": "text-5",
+          "props": {
+            "text": "This host does not have a direct connection to the IRS e-file system. The view above reflects your firm's internal document collection and filing readiness. For live IRS acknowledgement status (accepted, rejected, pending), check your tax software's e-file dashboard directly."
+          },
+          "source": "prewired",
+          "component": "Text"
+        }
+      ],
+      "queries": [
+        {
+          "name": "hostGetDashboard",
+          "tool": "host_getDashboard",
+          "input": {}
+        },
+        {
+          "name": "hostListDeadlines",
+          "tool": "host_listDeadlines",
+          "input": {}
+        },
+        {
+          "name": "hostListActivity",
+          "tool": "host_listActivity",
+          "input": {
+            "limit": 20
+          }
+        }
+      ]
+    }
+  },
+  {
+    "format": "vendo/app@1",
+    "id": "app_0e4b7982-1d40-45a4-8578-998d39885bd6",
+    "name": "E-filed return status",
+    "ui": "tree",
+    "tree": {
+      "formatVersion": "vendo-genui/v2",
+      "root": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "source": "prewired",
+          "children": [
+            "stack-1"
+          ],
+          "component": "Stack"
+        },
+        {
+          "id": "stack-1",
+          "props": {
+            "gap": 4
+          },
+          "source": "prewired",
+          "children": [
+            "surface-1",
+            "cadencemissingdocshero-1",
+            "grid-1",
+            "surface-5",
+            "surface-6",
+            "surface-7",
+            "callout-1"
+          ],
+          "component": "Stack"
+        },
+        {
+          "id": "surface-1",
+          "source": "prewired",
+          "children": [
+            "stack-2"
+          ],
+          "component": "Surface"
+        },
+        {
+          "id": "stack-2",
+          "props": {
+            "gap": 1
+          },
+          "source": "prewired",
+          "children": [
+            "text-1",
+            "text-3"
+          ],
+          "component": "Stack"
+        },
+        {
+          "id": "text-1",
+          "props": {
+            "variant": "heading"
+          },
+          "source": "prewired",
+          "children": [
+            "text-2"
+          ],
+          "component": "Text"
+        },
+        {
+          "id": "text-2",
+          "props": {
+            "text": "E-filed return status"
+          },
+          "source": "prewired",
+          "component": "Text"
+        },
+        {
+          "id": "text-3",
+          "props": {
+            "variant": "caption"
+          },
+          "source": "prewired",
+          "children": [
+            "text-4"
+          ],
+          "component": "Text"
+        },
+        {
+          "id": "text-4",
+          "props": {
+            "text": "Document collection and filing progress for all active clients this season"
+          },
+          "source": "prewired",
+          "component": "Text"
+        },
+        {
+          "id": "cadencemissingdocshero-1",
+          "props": {
+            "badgeLabel": "Clients with outstanding documents",
+            "clientCount": {
+              "$path": "/hostGetDashboard/data/clientsTotal"
+            },
+            "missingCount": {
+              "$path": "/hostGetDashboard/data/clientsMissingDocs"
+            }
+          },
+          "source": "host",
+          "component": "CadenceMissingDocsHero"
+        },
+        {
+          "id": "grid-1",
+          "props": {
+            "columns": 3
+          },
+          "source": "prewired",
+          "children": [
+            "surface-2",
+            "surface-3",
+            "surface-4"
+          ],
+          "component": "Grid"
+        },
+        {
+          "id": "surface-2",
+          "source": "prewired",
+          "children": [
+            "stat-1"
+          ],
+          "component": "Surface"
+        },
+        {
+          "id": "stat-1",
+          "props": {
+            "label": "Documents collected",
+            "value": {
+              "$path": "/hostGetDashboard/data/documentsReceived"
+            },
+            "format": "number"
+          },
+          "source": "prewired",
+          "component": "Stat"
+        },
+        {
+          "id": "surface-3",
+          "source": "prewired",
+          "children": [
+            "stat-2"
+          ],
+          "component": "Surface"
+        },
+        {
+          "id": "stat-2",
+          "props": {
+            "tone": "danger",
+            "label": "Documents outstanding",
+            "value": {
+              "$path": "/hostGetDashboard/data/documentsOutstanding"
+            },
+            "format": "number"
+          },
+          "source": "prewired",
+          "component": "Stat"
+        },
+        {
+          "id": "surface-4",
+          "source": "prewired",
+          "children": [
+            "stat-3"
+          ],
+          "component": "Surface"
+        },
+        {
+          "id": "stat-3",
+          "props": {
+            "label": "Nearest filing deadline",
+            "value": {
+              "$path": "/hostGetDashboard/data/nearestDeadline"
+            },
+            "format": "date"
+          },
+          "source": "prewired",
+          "component": "Stat"
+        },
+        {
+          "id": "surface-5",
+          "source": "prewired",
+          "children": [
+            "stack-3"
+          ],
+          "component": "Surface"
+        },
+        {
+          "id": "stack-3",
+          "props": {
+            "gap": 3
+          },
+          "source": "prewired",
+          "children": [
+            "text-5",
+            "datatable-1"
+          ],
+          "component": "Stack"
+        },
+        {
+          "id": "text-5",
+          "props": {
+            "variant": "heading"
+          },
+          "source": "prewired",
+          "children": [
+            "text-6"
+          ],
+          "component": "Text"
+        },
+        {
+          "id": "text-6",
+          "props": {
+            "text": "Return status by client"
+          },
+          "source": "prewired",
+          "component": "Text"
+        },
+        {
+          "id": "datatable-1",
+          "props": {
+            "rows": {
+              "$path": "/hostListDeadlines/data"
+            },
+            "sortBy": "filingDeadline asc",
+            "columns": [
+              {
+                "key": "businessName",
+                "label": "Client"
+              },
+              {
+                "key": "contactName",
+                "label": "Contact"
+              },
+              {
+                "key": "entityType",
+                "label": "Entity type",
+                "format": "enum"
+              },
+              {
+                "key": "filingDeadline",
+                "label": "Filing deadline",
+                "format": "date"
+              },
+              {
+                "key": "progress.received",
+                "label": "Docs received"
+              },
+              {
+                "key": "progress.total",
+                "label": "Docs total"
+              },
+              {
+                "key": "status",
+                "label": "Status",
+                "format": "enum"
+              },
+              {
+                "key": "assignee.name",
+                "label": "Assigned to"
+              }
+            ],
+            "paginate": 15,
+            "emptyState": "No clients found — add clients to track their filing status.",
+            "searchable": true,
+            "filterableBy": [
+              "status",
+              "entityType",
+              "assignee.name"
+            ]
+          },
+          "source": "prewired",
+          "component": "DataTable"
+        },
+        {
+          "id": "surface-6",
+          "source": "prewired",
+          "children": [
+            "stack-4"
+          ],
+          "component": "Surface"
+        },
+        {
+          "id": "stack-4",
+          "props": {
+            "gap": 3
+          },
+          "source": "prewired",
+          "children": [
+            "text-7",
+            "text-9",
+            "cardlist-1"
+          ],
+          "component": "Stack"
+        },
+        {
+          "id": "text-7",
+          "props": {
+            "variant": "heading"
+          },
+          "source": "prewired",
+          "children": [
+            "text-8"
+          ],
+          "component": "Text"
+        },
+        {
+          "id": "text-8",
+          "props": {
+            "text": "Clients at deadline risk"
+          },
+          "source": "prewired",
+          "component": "Text"
+        },
+        {
+          "id": "text-9",
+          "props": {
+            "variant": "caption"
+          },
+          "source": "prewired",
+          "children": [
+            "text-10"
+          ],
+          "component": "Text"
+        },
+        {
+          "id": "text-10",
+          "props": {
+            "text": "Clients with missing documents ordered by soonest filing deadline"
+          },
+          "source": "prewired",
+          "component": "Text"
+        },
+        {
+          "id": "cardlist-1",
+          "props": {
+            "items": {
+              "$path": "/hostListDeadlines/data"
+            },
+            "fields": [
+              {
+                "key": "contactName",
+                "label": "Contact"
+              },
+              {
+                "key": "entityType",
+                "label": "Entity type"
+              },
+              {
+                "key": "filingDeadline",
+                "label": "Filing deadline",
+                "format": "date"
+              },
+              {
+                "key": "progress.received",
+                "label": "Docs received"
+              },
+              {
+                "key": "progress.total",
+                "label": "Docs required"
+              },
+              {
+                "key": "assignee.name",
+                "label": "Assigned to"
+              }
+            ],
+            "badgeField": "status",
+            "emptyState": "No clients with missing documents — all returns are ready to file.",
+            "titleField": "businessName"
+          },
+          "source": "prewired",
+          "component": "CardList"
+        },
+        {
+          "id": "surface-7",
+          "source": "prewired",
+          "children": [
+            "stack-5"
+          ],
+          "component": "Surface"
+        },
+        {
+          "id": "stack-5",
+          "props": {
+            "gap": 3
+          },
+          "source": "prewired",
+          "children": [
+            "text-11",
+            "datatable-2"
+          ],
+          "component": "Stack"
+        },
+        {
+          "id": "text-11",
+          "props": {
+            "variant": "heading"
+          },
+          "source": "prewired",
+          "children": [
+            "text-12"
+          ],
+          "component": "Text"
+        },
+        {
+          "id": "text-12",
+          "props": {
+            "text": "Recent filing activity"
+          },
+          "source": "prewired",
+          "component": "Text"
+        },
+        {
+          "id": "datatable-2",
+          "props": {
+            "rows": {
+              "$path": "/hostListActivity/data"
+            },
+            "sortBy": "at asc",
+            "columns": [
+              {
+                "key": "summary",
+                "label": "Activity"
+              },
+              {
+                "key": "type",
+                "label": "Type",
+                "format": "enum"
+              },
+              {
+                "key": "at",
+                "label": "When",
+                "format": "date"
+              }
+            ],
+            "emptyState": "No recent activity recorded."
+          },
+          "source": "prewired",
+          "component": "DataTable"
+        },
+        {
+          "id": "callout-1",
+          "props": {
+            "tone": "info",
+            "title": "About this view"
+          },
+          "source": "prewired",
+          "children": [
+            "text-13"
+          ],
+          "component": "Callout"
+        },
+        {
+          "id": "text-13",
+          "props": {
+            "text": "Cadence tracks document collection and filing deadlines. Direct IRS e-file acknowledgement status (accepted, rejected, pending) is not available through this host — contact your e-file software or the IRS e-Services portal for transmission confirmations."
+          },
+          "source": "prewired",
+          "component": "Text"
+        }
+      ],
+      "queries": [
+        {
+          "name": "hostGetDashboard",
+          "tool": "host_getDashboard",
+          "input": {}
+        },
+        {
+          "name": "hostListDeadlines",
+          "tool": "host_listDeadlines",
+          "input": {}
+        },
+        {
+          "name": "hostListActivity",
+          "tool": "host_listActivity",
+          "input": {
+            "limit": 20
+          }
+        }
+      ]
+    }
+  },
+  {
+    "format": "vendo/app@1",
+    "id": "app_81014981-626c-491c-a496-6555fe8e85ba",
+    "name": "Partners' meeting — weekly recap",
+    "ui": "tree",
+    "tree": {
+      "formatVersion": "vendo-genui/v2",
+      "root": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "source": "prewired",
+          "children": [
+            "stack-1"
+          ],
+          "component": "Stack"
+        },
+        {
+          "id": "stack-1",
+          "props": {
+            "gap": 6
+          },
+          "source": "prewired",
+          "children": [
+            "surface-1",
+            "cadencemissingdocshero-1",
+            "grid-1",
+            "surface-2",
+            "surface-3",
+            "surface-4"
+          ],
+          "component": "Stack"
+        },
+        {
+          "id": "surface-1",
+          "source": "prewired",
+          "children": [
+            "stack-2"
+          ],
+          "component": "Surface"
+        },
+        {
+          "id": "stack-2",
+          "props": {
+            "gap": 2
+          },
+          "source": "prewired",
+          "children": [
+            "text-1",
+            "text-2"
+          ],
+          "component": "Stack"
+        },
+        {
+          "id": "text-1",
+          "props": {
+            "text": "Partners' meeting — weekly recap",
+            "variant": "heading"
+          },
+          "source": "prewired",
+          "component": "Text"
+        },
+        {
+          "id": "text-2",
+          "props": {
+            "text": "Firm-wide activity for the current filing season, week of 2026-07-20 through 2026-07-26",
+            "variant": "caption"
+          },
+          "source": "prewired",
+          "component": "Text"
+        },
+        {
+          "id": "cadencemissingdocshero-1",
+          "props": {
+            "badgeLabel": "Clients need chasing",
+            "clientCount": {
+              "$path": "/hostGetDashboard/data/clientsTotal"
+            },
+            "missingCount": {
+              "$path": "/hostGetDashboard/data/clientsMissingDocs"
+            }
+          },
+          "source": "host",
+          "component": "CadenceMissingDocsHero"
+        },
+        {
+          "id": "grid-1",
+          "props": {
+            "columns": 4
+          },
+          "source": "prewired",
+          "children": [
+            "card-1",
+            "card-2",
+            "card-3",
+            "card-4"
+          ],
+          "component": "Grid"
+        },
+        {
+          "id": "card-1",
+          "props": {
+            "title": "Documents received"
+          },
+          "source": "prewired",
+          "children": [
+            "stat-1"
+          ],
+          "component": "Card"
+        },
+        {
+          "id": "stat-1",
+          "props": {
+            "label": "Received",
+            "value": {
+              "$path": "/hostGetDashboard/data/documentsReceived"
+            },
+            "format": "number"
+          },
+          "source": "prewired",
+          "component": "Stat"
+        },
+        {
+          "id": "card-2",
+          "props": {
+            "title": "Documents outstanding"
+          },
+          "source": "prewired",
+          "children": [
+            "stat-2"
+          ],
+          "component": "Card"
+        },
+        {
+          "id": "stat-2",
+          "props": {
+            "tone": "danger",
+            "label": "Outstanding",
+            "value": {
+              "$path": "/hostGetDashboard/data/documentsOutstanding"
+            },
+            "format": "number"
+          },
+          "source": "prewired",
+          "component": "Stat"
+        },
+        {
+          "id": "card-3",
+          "props": {
+            "title": "Total documents"
+          },
+          "source": "prewired",
+          "children": [
+            "stat-3"
+          ],
+          "component": "Card"
+        },
+        {
+          "id": "stat-3",
+          "props": {
+            "label": "Total",
+            "value": {
+              "$path": "/hostGetDashboard/data/documentsTotal"
+            },
+            "format": "number"
+          },
+          "source": "prewired",
+          "component": "Stat"
+        },
+        {
+          "id": "card-4",
+          "props": {
+            "title": "Nearest filing deadline"
+          },
+          "source": "prewired",
+          "children": [
+            "stat-4",
+            "datetime-1"
+          ],
+          "component": "Card"
+        },
+        {
+          "id": "stat-4",
+          "props": {
+            "label": "Client",
+            "value": {
+              "$path": "/hostGetDashboard/data/nearestDeadlineClient/businessName"
+            }
+          },
+          "source": "prewired",
+          "component": "Stat"
+        },
+        {
+          "id": "datetime-1",
+          "props": {
+            "mode": "date",
+            "value": {
+              "$path": "/hostGetDashboard/data/nearestDeadlineClient/filingDeadline"
+            }
+          },
+          "source": "prewired",
+          "component": "DateTime"
+        },
+        {
+          "id": "surface-2",
+          "source": "prewired",
+          "children": [
+            "stack-3"
+          ],
+          "component": "Surface"
+        },
+        {
+          "id": "stack-3",
+          "props": {
+            "gap": 3
+          },
+          "source": "prewired",
+          "children": [
+            "text-3",
+            "datatable-1"
+          ],
+          "component": "Stack"
+        },
+        {
+          "id": "text-3",
+          "props": {
+            "text": "Activity this week",
+            "variant": "heading"
+          },
+          "source": "prewired",
+          "component": "Text"
+        },
+        {
+          "id": "datatable-1",
+          "props": {
+            "rows": {
+              "$path": "/hostListActivity/data"
+            },
+            "sortBy": "at desc",
+            "columns": [
+              {
+                "key": "at",
+                "label": "When",
+                "format": "date"
+              },
+              {
+                "key": "type",
+                "label": "Event"
+              },
+              {
+                "key": "summary",
+                "label": "Summary"
+              }
+            ],
+            "emptyState": "No activity recorded this week — all quiet.",
+            "searchable": true
+          },
+          "source": "prewired",
+          "component": "DataTable"
+        },
+        {
+          "id": "surface-3",
+          "source": "prewired",
+          "children": [
+            "stack-4"
+          ],
+          "component": "Surface"
+        },
+        {
+          "id": "stack-4",
+          "props": {
+            "gap": 3
+          },
+          "source": "prewired",
+          "children": [
+            "text-4",
+            "datatable-2"
+          ],
+          "component": "Stack"
+        },
+        {
+          "id": "text-4",
+          "props": {
+            "text": "Clients at risk — deadline order",
+            "variant": "heading"
+          },
+          "source": "prewired",
+          "component": "Text"
+        },
+        {
+          "id": "datatable-2",
+          "props": {
+            "rows": {
+              "$path": "/hostListDeadlines/data"
+            },
+            "sortBy": "filingDeadline asc",
+            "columns": [
+              {
+                "key": "businessName",
+                "label": "Client"
+              },
+              {
+                "key": "contactName",
+                "label": "Contact"
+              },
+              {
+                "key": "entityType",
+                "label": "Entity"
+              },
+              {
+                "key": "filingDeadline",
+                "label": "Filing deadline",
+                "format": "date"
+              },
+              {
+                "key": "progress.received",
+                "label": "Received"
+              },
+              {
+                "key": "progress.total",
+                "label": "Total"
+              },
+              {
+                "key": "status",
+                "label": "Status"
+              },
+              {
+                "key": "assignee.name",
+                "label": "Assigned to"
+              }
+            ],
+            "emptyState": "No clients with outstanding deadlines — all filings are on track.",
+            "searchable": true,
+            "filterableBy": [
+              "status",
+              "assignee.name",
+              "entityType"
+            ]
+          },
+          "source": "prewired",
+          "component": "DataTable"
+        },
+        {
+          "id": "surface-4",
+          "source": "prewired",
+          "children": [
+            "stack-5"
+          ],
+          "component": "Surface"
+        },
+        {
+          "id": "stack-5",
+          "props": {
+            "gap": 3
+          },
+          "source": "prewired",
+          "children": [
+            "text-5",
+            "datatable-3"
+          ],
+          "component": "Stack"
+        },
+        {
+          "id": "text-5",
+          "props": {
+            "text": "All clients — document progress",
+            "variant": "heading"
+          },
+          "source": "prewired",
+          "component": "Text"
+        },
+        {
+          "id": "datatable-3",
+          "props": {
+            "rows": {
+              "$path": "/hostListClients/data"
+            },
+            "sortBy": "filingDeadline asc",
+            "columns": [
+              {
+                "key": "businessName",
+                "label": "Client"
+              },
+              {
+                "key": "contactName",
+                "label": "Contact"
+              },
+              {
+                "key": "entityType",
+                "label": "Entity"
+              },
+              {
+                "key": "filingDeadline",
+                "label": "Deadline",
+                "format": "date"
+              },
+              {
+                "key": "progress.received",
+                "label": "Docs received"
+              },
+              {
+                "key": "progress.total",
+                "label": "Docs total"
+              },
+              {
+                "key": "status",
+                "label": "Status"
+              },
+              {
+                "key": "assignee.name",
+                "label": "Assigned to"
+              }
+            ],
+            "emptyState": "No clients with missing documents — collection is complete.",
+            "searchable": true,
+            "filterableBy": [
+              "status",
+              "assignee.name",
+              "entityType"
+            ]
+          },
+          "source": "prewired",
+          "component": "DataTable"
+        }
+      ],
+      "queries": [
+        {
+          "name": "hostGetDashboard",
+          "tool": "host_getDashboard",
+          "input": {}
+        },
+        {
+          "name": "hostListActivity",
+          "tool": "host_listActivity",
+          "input": {
+            "limit": 50
+          }
+        },
+        {
+          "name": "hostListDeadlines",
+          "tool": "host_listDeadlines",
+          "input": {}
+        },
+        {
+          "name": "hostListClients",
+          "tool": "host_listClients",
+          "input": {
+            "filter": "missing_docs"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "format": "vendo/app@1",
+    "id": "app_eeb54979-108e-4458-b419-4af0657c8e09",
+    "name": "Tax season at a glance",
+    "ui": "tree",
+    "tree": {
+      "formatVersion": "vendo-genui/v2",
+      "root": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "source": "prewired",
+          "children": [
+            "stack-1"
+          ],
+          "component": "Stack"
+        },
+        {
+          "id": "stack-1",
+          "props": {
+            "gap": 6
+          },
+          "source": "prewired",
+          "children": [
+            "stack-2",
+            "cadencemissingdocshero-1",
+            "grid-1",
+            "surface-5",
+            "grid-2"
+          ],
+          "component": "Stack"
+        },
+        {
+          "id": "stack-2",
+          "props": {
+            "gap": 1
+          },
+          "source": "prewired",
+          "children": [
+            "text-1",
+            "text-3"
+          ],
+          "component": "Stack"
+        },
+        {
+          "id": "text-1",
+          "props": {
+            "variant": "heading"
+          },
+          "source": "prewired",
+          "children": [
+            "text-2"
+          ],
+          "component": "Text"
+        },
+        {
+          "id": "text-2",
+          "props": {
+            "text": "Tax season at a glance"
+          },
+          "source": "prewired",
+          "component": "Text"
+        },
+        {
+          "id": "text-3",
+          "props": {
+            "variant": "caption"
+          },
+          "source": "prewired",
+          "children": [
+            "text-4"
+          ],
+          "component": "Text"
+        },
+        {
+          "id": "text-4",
+          "props": {
+            "text": "Firm-wide document collection progress for the current filing season"
+          },
+          "source": "prewired",
+          "component": "Text"
+        },
+        {
+          "id": "cadencemissingdocshero-1",
+          "props": {
+            "badgeLabel": "Need chasing",
+            "clientCount": {
+              "$path": "/hostGetDashboard/data/clientsTotal"
+            },
+            "missingCount": {
+              "$path": "/hostGetDashboard/data/clientsMissingDocs"
+            }
+          },
+          "source": "host",
+          "component": "CadenceMissingDocsHero"
+        },
+        {
+          "id": "grid-1",
+          "props": {
+            "columns": 4
+          },
+          "source": "prewired",
+          "children": [
+            "surface-1",
+            "surface-2",
+            "surface-3",
+            "surface-4"
+          ],
+          "component": "Grid"
+        },
+        {
+          "id": "surface-1",
+          "source": "prewired",
+          "children": [
+            "stat-1"
+          ],
+          "component": "Surface"
+        },
+        {
+          "id": "stat-1",
+          "props": {
+            "label": "Documents received",
+            "value": {
+              "$path": "/hostGetDashboard/data/documentsReceived"
+            },
+            "format": "number"
+          },
+          "source": "prewired",
+          "component": "Stat"
+        },
+        {
+          "id": "surface-2",
+          "source": "prewired",
+          "children": [
+            "stat-2"
+          ],
+          "component": "Surface"
+        },
+        {
+          "id": "stat-2",
+          "props": {
+            "tone": "danger",
+            "label": "Documents outstanding",
+            "value": {
+              "$path": "/hostGetDashboard/data/documentsOutstanding"
+            },
+            "format": "number"
+          },
+          "source": "prewired",
+          "component": "Stat"
+        },
+        {
+          "id": "surface-3",
+          "source": "prewired",
+          "children": [
+            "stat-3"
+          ],
+          "component": "Surface"
+        },
+        {
+          "id": "stat-3",
+          "props": {
+            "label": "Total documents",
+            "value": {
+              "$path": "/hostGetDashboard/data/documentsTotal"
+            },
+            "format": "number"
+          },
+          "source": "prewired",
+          "component": "Stat"
+        },
+        {
+          "id": "surface-4",
+          "source": "prewired",
+          "children": [
+            "stat-4"
+          ],
+          "component": "Surface"
+        },
+        {
+          "id": "stat-4",
+          "props": {
+            "label": "Nearest filing deadline",
+            "value": {
+              "$path": "/hostGetDashboard/data/nearestDeadline"
+            },
+            "format": "date"
+          },
+          "source": "prewired",
+          "component": "Stat"
+        },
+        {
+          "id": "surface-5",
+          "source": "prewired",
+          "children": [
+            "stack-3"
+          ],
+          "component": "Surface"
+        },
+        {
+          "id": "stack-3",
+          "props": {
+            "gap": 3
+          },
+          "source": "prewired",
+          "children": [
+            "text-5",
+            "datatable-1"
+          ],
+          "component": "Stack"
+        },
+        {
+          "id": "text-5",
+          "props": {
+            "variant": "heading"
+          },
+          "source": "prewired",
+          "children": [
+            "text-6"
+          ],
+          "component": "Text"
+        },
+        {
+          "id": "text-6",
+          "props": {
+            "text": "Collection progress by client"
+          },
+          "source": "prewired",
+          "component": "Text"
+        },
+        {
+          "id": "datatable-1",
+          "props": {
+            "rows": {
+              "$path": "/hostListClients/data"
+            },
+            "sortBy": "filingDeadline asc",
+            "columns": [
+              {
+                "key": "businessName",
+                "label": "Client"
+              },
+              {
+                "key": "contactName",
+                "label": "Contact"
+              },
+              {
+                "key": "entityType",
+                "label": "Entity"
+              },
+              {
+                "key": "assignee.name",
+                "label": "Assigned to"
+              },
+              {
+                "key": "progress.received",
+                "label": "Received"
+              },
+              {
+                "key": "progress.total",
+                "label": "Total"
+              },
+              {
+                "key": "filingDeadline",
+                "label": "Filing deadline",
+                "format": "date"
+              },
+              {
+                "key": "status",
+                "label": "Status",
+                "format": "enum"
+              }
+            ],
+            "paginate": 10,
+            "emptyState": "All clients are fully collected — nothing to chase.",
+            "searchable": true,
+            "filterableBy": [
+              "status",
+              "assignee.name",
+              "entityType"
+            ]
+          },
+          "source": "prewired",
+          "component": "DataTable"
+        },
+        {
+          "id": "grid-2",
+          "props": {
+            "columns": 2
+          },
+          "source": "prewired",
+          "children": [
+            "surface-6",
+            "surface-7"
+          ],
+          "component": "Grid"
+        },
+        {
+          "id": "surface-6",
+          "source": "prewired",
+          "children": [
+            "stack-4"
+          ],
+          "component": "Surface"
+        },
+        {
+          "id": "stack-4",
+          "props": {
+            "gap": 3
+          },
+          "source": "prewired",
+          "children": [
+            "text-7",
+            "datatable-2"
+          ],
+          "component": "Stack"
+        },
+        {
+          "id": "text-7",
+          "props": {
+            "variant": "heading"
+          },
+          "source": "prewired",
+          "children": [
+            "text-8"
+          ],
+          "component": "Text"
+        },
+        {
+          "id": "text-8",
+          "props": {
+            "text": "Deadline risk"
+          },
+          "source": "prewired",
+          "component": "Text"
+        },
+        {
+          "id": "datatable-2",
+          "props": {
+            "rows": {
+              "$path": "/hostListDeadlines/data"
+            },
+            "limit": 8,
+            "sortBy": "filingDeadline asc",
+            "columns": [
+              {
+                "key": "businessName",
+                "label": "Client"
+              },
+              {
+                "key": "filingDeadline",
+                "label": "Deadline",
+                "format": "date"
+              },
+              {
+                "key": "progress.received",
+                "label": "Received"
+              },
+              {
+                "key": "progress.total",
+                "label": "Total"
+              },
+              {
+                "key": "status",
+                "label": "Status",
+                "format": "enum"
+              }
+            ],
+            "emptyState": "No clients at deadline risk — all documents are in."
+          },
+          "source": "prewired",
+          "component": "DataTable"
+        },
+        {
+          "id": "surface-7",
+          "source": "prewired",
+          "children": [
+            "stack-5"
+          ],
+          "component": "Surface"
+        },
+        {
+          "id": "stack-5",
+          "props": {
+            "gap": 3
+          },
+          "source": "prewired",
+          "children": [
+            "text-9",
+            "datatable-3"
+          ],
+          "component": "Stack"
+        },
+        {
+          "id": "text-9",
+          "props": {
+            "variant": "heading"
+          },
+          "source": "prewired",
+          "children": [
+            "text-10"
+          ],
+          "component": "Text"
+        },
+        {
+          "id": "text-10",
+          "props": {
+            "text": "Recent activity"
+          },
+          "source": "prewired",
+          "component": "Text"
+        },
+        {
+          "id": "datatable-3",
+          "props": {
+            "rows": {
+              "$path": "/hostListActivity/data"
+            },
+            "limit": 12,
+            "sortBy": "at desc",
+            "columns": [
+              {
+                "key": "summary",
+                "label": "Event"
+              },
+              {
+                "key": "type",
+                "label": "Type",
+                "format": "enum"
+              },
+              {
+                "key": "at",
+                "label": "When",
+                "format": "date"
+              }
+            ],
+            "emptyState": "No activity recorded yet this season."
+          },
+          "source": "prewired",
+          "component": "DataTable"
+        }
+      ],
+      "queries": [
+        {
+          "name": "hostGetDashboard",
+          "tool": "host_getDashboard",
+          "input": {}
+        },
+        {
+          "name": "hostListClients",
+          "tool": "host_listClients",
+          "input": {}
+        },
+        {
+          "name": "hostListDeadlines",
+          "tool": "host_listDeadlines",
+          "input": {}
+        },
+        {
+          "name": "hostListActivity",
+          "tool": "host_listActivity",
+          "input": {
+            "limit": 12
+          }
+        }
+      ]
+    }
+  }
+]

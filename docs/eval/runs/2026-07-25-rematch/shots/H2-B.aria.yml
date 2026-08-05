@@ -1,0 +1,193 @@
+- complementary:
+  - text: Maple
+  - navigation:
+    - link "Home":
+      - /url: /
+    - link "Accounts":
+      - /url: /accounts
+    - link "Transactions":
+      - /url: /transactions
+    - link "Cards":
+      - /url: /cards
+    - link "Payments":
+      - /url: /payments
+    - link "Insights":
+      - /url: /insights
+    - link "Ask Maple":
+      - /url: /vendo
+    - link "Apps":
+      - /url: /vendo/apps
+    - link "Activity":
+      - /url: /activity
+    - link "Settings":
+      - /url: /settings
+  - button "YH Yousef Helal Personal"
+- banner:
+  - heading "Apps" [level=1]
+  - button "Search… ⌘K"
+  - button "Send"
+  - button "Request"
+  - button "Move money"
+  - button "Notifications"
+- main:
+  - heading "Apps" [level=1]
+  - paragraph: Personal apps built with Vendo, running on Maple.
+  - form "Create app":
+    - textbox "Describe a new app"
+    - button "Create" [disabled]
+  - list "Your apps":
+    - listitem:
+      - button "Food & coffee this month"
+      - button "Remove Food & coffee this month": ×
+    - listitem:
+      - button "July 2026 financial snapshot"
+      - button "Remove July 2026 financial snapshot": ×
+    - listitem:
+      - button "July 2026 financial snapshot"
+      - button "Remove July 2026 financial snapshot": ×
+    - listitem:
+      - button "Spending breakdown this month"
+      - button "Remove Spending breakdown this month": ×
+    - listitem:
+      - button "Transfer money"
+      - button "Remove Transfer money": ×
+    - listitem:
+      - button "Recent transactions"
+      - button "Remove Recent transactions": ×
+  - article "Dining":
+    - text: Dining
+    - strong: $2,850.00
+  - article "Groceries":
+    - text: Groceries
+    - strong: $617.49
+  - article "Coffee":
+    - text: Coffee
+    - strong: $591.81
+  - searchbox "Search table"
+  - table "Dining transactions — July 2026":
+    - caption: Dining transactions — July 2026
+    - rowgroup:
+      - row "Merchant Date ▼ Amount Status":
+        - columnheader "Merchant"
+        - columnheader "Date ▼"
+        - columnheader "Amount"
+        - columnheader "Status"
+    - rowgroup:
+      - row "Tartine Bakery Jul 23, 2026 -$16.21 posted":
+        - cell "Tartine Bakery"
+        - cell "Jul 23, 2026"
+        - cell "-$16.21"
+        - cell "posted"
+      - row "Uber Eats Jul 21, 2026 -$34.60 posted":
+        - cell "Uber Eats"
+        - cell "Jul 21, 2026"
+        - cell "-$34.60"
+        - cell "posted"
+      - row "Taco Bell Jul 13, 2026 -$18.20 posted":
+        - cell "Taco Bell"
+        - cell "Jul 13, 2026"
+        - cell "-$18.20"
+        - cell "posted"
+      - row "DoorDash Jul 7, 2026 -$41.30 posted":
+        - cell "DoorDash"
+        - cell "Jul 7, 2026"
+        - cell "-$41.30"
+        - cell "posted"
+      - row "Chipotle Jul 6, 2026 -$19.14 posted":
+        - cell "Chipotle"
+        - cell "Jul 6, 2026"
+        - cell "-$19.14"
+        - cell "posted"
+      - row "Tartine Bakery Jul 5, 2026 -$45.61 posted":
+        - cell "Tartine Bakery"
+        - cell "Jul 5, 2026"
+        - cell "-$45.61"
+        - cell "posted"
+      - row "Tartine Bakery Jul 2, 2026 -$17.18 posted":
+        - cell "Tartine Bakery"
+        - cell "Jul 2, 2026"
+        - cell "-$17.18"
+        - cell "posted"
+  - searchbox "Search table"
+  - table "Grocery transactions — July 2026":
+    - caption: Grocery transactions — July 2026
+    - rowgroup:
+      - row "Merchant Date ▼ Amount Status":
+        - columnheader "Merchant"
+        - columnheader "Date ▼"
+        - columnheader "Amount"
+        - columnheader "Status"
+    - rowgroup:
+      - row "Trader Joe's Jul 14, 2026 -$27.20 posted":
+        - cell "Trader Joe's"
+        - cell "Jul 14, 2026"
+        - cell "-$27.20"
+        - cell "posted"
+      - row "Whole Foods Market Jul 9, 2026 -$47.23 posted":
+        - cell "Whole Foods Market"
+        - cell "Jul 9, 2026"
+        - cell "-$47.23"
+        - cell "posted"
+      - row "Trader Joe's Jul 6, 2026 -$22.14 posted":
+        - cell "Trader Joe's"
+        - cell "Jul 6, 2026"
+        - cell "-$22.14"
+        - cell "posted"
+      - row "Whole Foods Market Jul 1, 2026 -$27.34 posted":
+        - cell "Whole Foods Market"
+        - cell "Jul 1, 2026"
+        - cell "-$27.34"
+        - cell "posted"
+  - searchbox "Search table"
+  - table "Coffee transactions — July 2026":
+    - caption: Coffee transactions — July 2026
+    - rowgroup:
+      - row "Merchant Date ▼ Amount Status":
+        - columnheader "Merchant"
+        - columnheader "Date ▼"
+        - columnheader "Amount"
+        - columnheader "Status"
+    - rowgroup:
+      - row "Blue Bottle Coffee Jul 18, 2026 -$8.10 posted":
+        - cell "Blue Bottle Coffee"
+        - cell "Jul 18, 2026"
+        - cell "-$8.10"
+        - cell "posted"
+      - row "Sightglass Coffee Jul 16, 2026 -$5.37 posted":
+        - cell "Sightglass Coffee"
+        - cell "Jul 16, 2026"
+        - cell "-$5.37"
+        - cell "posted"
+      - row "Blue Bottle Coffee Jul 13, 2026 -$10.75 posted":
+        - cell "Blue Bottle Coffee"
+        - cell "Jul 13, 2026"
+        - cell "-$10.75"
+        - cell "posted"
+      - row "Philz Coffee Jul 10, 2026 -$5.86 posted":
+        - cell "Philz Coffee"
+        - cell "Jul 10, 2026"
+        - cell "-$5.86"
+        - cell "posted"
+      - row "Philz Coffee Jul 4, 2026 -$14.83 posted":
+        - cell "Philz Coffee"
+        - cell "Jul 4, 2026"
+        - cell "-$14.83"
+        - cell "posted"
+      - row "Blue Bottle Coffee Jul 3, 2026 -$6.25 posted":
+        - cell "Blue Bottle Coffee"
+        - cell "Jul 3, 2026"
+        - cell "-$6.25"
+        - cell "posted"
+      - row "Blue Bottle Coffee Jul 3, 2026 -$12.97 posted":
+        - cell "Blue Bottle Coffee"
+        - cell "Jul 3, 2026"
+        - cell "-$12.97"
+        - cell "posted"
+  - form "Edit app":
+    - textbox "Ask Vendo to change this app (e.g. “Remix the net worth card”)"
+    - button "Edit" [disabled]
+    - button "Refresh"
+  - heading "Ship review" [level=3]
+  - button "Load ship-diff"
+  - paragraph: The reviewable delta between captured host source and what this app ships.
+- alert

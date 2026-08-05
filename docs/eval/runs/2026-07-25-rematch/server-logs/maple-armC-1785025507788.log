@@ -1,0 +1,10 @@
+=== boot maple arm C at 2026-07-26T00:25:07.789Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3100
+- Network:       http://10.0.0.188:3100
+✓ Ready in 96ms
+
+=== create H13 arm C start ===
+
+=== create H13 arm C end ===
+[vendo pipeline] {"stage":"data-verify","applied":true,"ms":1383}

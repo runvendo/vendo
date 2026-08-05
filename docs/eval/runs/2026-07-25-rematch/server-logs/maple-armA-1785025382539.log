@@ -1,0 +1,14 @@
+=== boot maple arm A at 2026-07-26T00:23:02.539Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3100
+- Network:       http://10.0.0.188:3100
+✓ Ready in 208ms
+
+=== create H12 arm A start ===
+
+=== create H12 arm A end ===
+[vendo] app build failed (app_ed5f46f8-0165-4b54-b1b3-2577e855be3a): generation failed
+  - island "BudgetSetterPanel" crashed when rendered against stubbed tool results: The "id" argument must be of type string. Received type number (429302) — the component must render without throwing for any tool data it can receive: guard undefined/empty results before .map/.reduce and render a loading or empty state instead of crashing.
+  - island "BudgetSetterPanel" must be plain TSX with an `export default` component — no braces, template literals, or fences around the source
+  - tree root "root" renders an empty layout; keep at least one attached, visible node
+  - island "BudgetSetterPanel" renders <Skeleton> — host catalog and prewired components exist only in the host page and can never load inside an island. Compose them in the TREE, or use the ambient Kit inside the island (Stack, Row, Grid, Surface, Divider, Text, Money, DateTime, Percent, Num, EnumBadge, DataTable, CardList, Stat, Badge, LineChart, BarChart, DonutChart, Sparkline, Progress, Input, Select, DatePicker, Textarea, Checkbox, Button, Form, Disclaimer, Tabs, Callout, Accordion).

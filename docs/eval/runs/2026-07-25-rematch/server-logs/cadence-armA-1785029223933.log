@@ -1,0 +1,14 @@
+=== boot cadence arm A at 2026-07-26T01:27:03.933Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3300
+- Network:       http://10.0.0.188:3300
+✓ Ready in 128ms
+
+=== create H18 arm A start ===
+
+=== create H18 arm A end ===
+[vendo] app build failed (app_0abadec7-9105-4df3-8c5f-c2bc59dc184b): generation failed
+  - island "SweetgreenDocReview" renders <CadenceStatusBadge>, <Skeleton> — host catalog and prewired components exist only in the host page and can never load inside an island. Compose them in the TREE, or use the ambient Kit inside the island (Stack, Row, Grid, Surface, Divider, Text, Money, DateTime, Percent, Num, EnumBadge, DataTable, CardList, Stat, Badge, LineChart, BarChart, DonutChart, Sparkline, Progress, Input, Select, DatePicker, Textarea, Checkbox, Button, Form, Disclaimer, Tabs, Callout, Accordion).
+  - wire unknown-reference: "host_getClient" does not name a declared <Query> or state
+  - island "SweetgreenDocReview" must be plain TSX with an `export default` component — no braces, template literals, or fences around the source
+  - wire nested-query: <Query> belongs at App level; the query was still hoisted

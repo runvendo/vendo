@@ -1,0 +1,13 @@
+=== boot maple arm C at 2026-07-25T23:58:36.860Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3100
+- Network:       http://10.0.0.188:3100
+✓ Ready in 164ms
+
+=== create H5 arm C start ===
+
+=== create H5 arm C end ===
+[vendo] app build failed (app_a5d7a0e5-c289-46a3-8c7a-4b05ee5877d9): generation failed
+  - wire unknown-reference: "host_listCards" does not name a declared <Query> or state
+  - query "cardTxns" (tool "host_listCardTransactions") embeds a binding in its input — query inputs must be LITERAL JSON the tool can execute directly; another query's result can never feed a query input. Use a literal value (or drop the optional input), or build the dependent lookup inside an <Island> with ambient tools.
+  - island "CreditCardDetail" crashed when rendered against stubbed tool results: The "id" argument must be of type string. Received type number (429302) — the component must render without throwing for any tool data it can receive: guard undefined/empty results before .map/.reduce and render a loading or empty state instead of crashing.

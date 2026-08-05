@@ -1,0 +1,14 @@
+=== boot cadence arm C at 2026-07-26T03:21:02.692Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3300
+- Network:       http://10.0.0.188:3300
+✓ Ready in 218ms
+
+=== create H23 arm C start ===
+
+=== create H23 arm C end ===
+[vendo] app build failed (app_647c0d87-e46c-4de1-9a9d-d3b381cda22d): generation failed
+  - island "ActivityFeed" crashed when rendered against stubbed tool results: The "id" argument must be of type string. Received type number (429302) — the component must render without throwing for any tool data it can receive: guard undefined/empty results before .map/.reduce and render a loading or empty state instead of crashing.
+  - island "ProgressByClient" crashed when rendered against stubbed tool results: The "id" argument must be of type string. Received type number (429302) — the component must render without throwing for any tool data it can receive: guard undefined/empty results before .map/.reduce and render a loading or empty state instead of crashing.
+  - island "ActivityFeed" computes displayed values from the hand-typed constant 3600000 — a constant feeding displayed math is invented data (law 1): derive it from a tool result, or render an honest <Disclaimer/> that the rate/value isn't available on this host.
+  - island "ActivityFeed" computes displayed values from the hand-typed constant 24 — a constant feeding displayed math is invented data (law 1): derive it from a tool result, or render an honest <Disclaimer/> that the rate/value isn't available on this host.

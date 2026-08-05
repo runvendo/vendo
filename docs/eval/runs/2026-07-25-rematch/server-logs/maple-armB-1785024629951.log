@@ -1,0 +1,15 @@
+=== boot maple arm B at 2026-07-26T00:10:29.952Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3100
+- Network:       http://10.0.0.188:3100
+✓ Ready in 178ms
+
+=== create H8 arm B start ===
+
+=== create H8 arm B end ===
+[vendo] app build failed (app_9403a916-5e3e-471a-9f55-b51027f58e42): generation failed
+  - wire unknown-reference: "txns.data.data" does not name a declared <Query> or state
+  - wire unknown-reference: "profile.data.name" does not name a declared <Query> or state
+  - node "pastmerchantorder-1" references unknown component "PastMerchantOrder"
+  - island "LunchOrderPicker" must be plain TSX with an `export default` component — no braces, template literals, or fences around the source
+  - island "LunchOrderPicker" crashed when rendered against stubbed tool results: The "id" argument must be of type string. Received type number (429302) — the component must render without throwing for any tool data it can receive: guard undefined/empty results before .map/.reduce and render a loading or empty state instead of crashing.

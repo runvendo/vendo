@@ -1,0 +1,13 @@
+=== boot maple arm B at 2026-07-26T00:28:33.285Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3100
+- Network:       http://10.0.0.188:3100
+✓ Ready in 80ms
+
+=== create H14 arm B start ===
+
+=== create H14 arm B end ===
+[vendo] app build failed (app_ac6c770a-8541-4c8b-9e75-273a126cd398): generation failed
+  - island "AccountCompare" renders <MapleSparkline> — host catalog and prewired components exist only in the host page and can never load inside an island. Compose them in the TREE, or use the ambient Kit inside the island (Stack, Row, Grid, Surface, Divider, Text, Money, DateTime, Percent, Num, EnumBadge, DataTable, CardList, Stat, Badge, LineChart, BarChart, DonutChart, Sparkline, Progress, Input, Select, DatePicker, Textarea, Checkbox, Button, Form, Disclaimer, Tabs, Callout, Accordion).
+  - island "AccountCompare" computes displayed values from the hand-typed constant NEED = 200000 — a constant feeding displayed math is invented data (law 1): derive it from a tool result, or render an honest <Disclaimer/> that the rate/value isn't available on this host.
+  - model generation failed: Cannot connect to API: other side closed

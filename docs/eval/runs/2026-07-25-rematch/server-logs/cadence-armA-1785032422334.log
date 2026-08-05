@@ -1,0 +1,13 @@
+=== boot cadence arm A at 2026-07-26T02:20:22.334Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3300
+- Network:       http://10.0.0.188:3300
+✓ Ready in 431ms
+
+=== create H20 arm A start ===
+
+=== create H20 arm A end ===
+[vendo] app build failed (app_1da9ddf6-2b56-4a0c-89c8-f54c35e80fa5): generation failed
+  - node "tomasworkisland-1" references unknown component "TomasWorkIsland"
+  - island "TomasWorkSummary" must be plain TSX with an `export default` component — no braces, template literals, or fences around the source
+  - island "TomasWorkSummary" renders <CadenceStatusBadge> — host catalog and prewired components exist only in the host page and can never load inside an island. Compose them in the TREE, or use the ambient Kit inside the island (Stack, Row, Grid, Surface, Divider, Text, Money, DateTime, Percent, Num, EnumBadge, DataTable, CardList, Stat, Badge, LineChart, BarChart, DonutChart, Sparkline, Progress, Input, Select, DatePicker, Textarea, Checkbox, Button, Form, Disclaimer, Tabs, Callout, Accordion).
