@@ -22,6 +22,7 @@ import {
   type AgentRunner,
   type AgentRunReport,
   type FilesAdapter,
+  type Guard,
   type Harness,
   type HarnessEvent,
   type PackSkill,
@@ -32,7 +33,6 @@ import {
   type ToolOutcome,
   type Turn,
 } from "@vendoai/core";
-import type { Guard } from "@vendoai/core";
 import { createHarnessRuntime, type HarnessRuntimeDeps } from "@vendoai/harnesses";
 import { storeFiles, threadMessageStore, threadStore, workspaceStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel, UIMessage } from "ai";
@@ -96,26 +96,28 @@ function fallbackSummary(status: AgentRunReport["status"], calls: readonly Recor
  * keyed on the object its own factory closed over, never on the value handed to
  * the runtime.
  */
-const watchForFailure = (
+function watchForFailure(
   harness: Harness<unknown>,
   onFailure: (message?: string) => void,
-): Harness<unknown> => ({
-  ...harness,
-  async *run(turn: Turn<unknown>): AsyncGenerator<HarnessEvent, void, void> {
-    try {
-      for await (const event of harness.run(turn)) {
-        if (event.type === "error") onFailure(event.message);
-        yield event;
+): Harness<unknown> {
+  return {
+    ...harness,
+    async *run(turn: Turn<unknown>): AsyncGenerator<HarnessEvent, void, void> {
+      try {
+        for await (const event of harness.run(turn)) {
+          if (event.type === "error") onFailure(event.message);
+          yield event;
+        }
+      } catch (error) {
+        onFailure();
+        throw error;
       }
-    } catch (error) {
-      onFailure();
-      throw error;
-    }
-  },
-});
+    },
+  };
+}
 
 /** The assistant's own words for the turn, read back through the real read path. */
-const spokenSummary = (messages: readonly UIMessage[]): string => {
+function spokenSummary(messages: readonly UIMessage[]): string {
   const reply = [...messages].reverse().find((message) => message.role === "assistant");
   if (reply === undefined) return "";
   return reply.parts
@@ -123,7 +125,7 @@ const spokenSummary = (messages: readonly UIMessage[]): string => {
     .map((part) => part.text)
     .join("")
     .trim();
-};
+}
 
 /**
  * 01-core §13 — one non-interactive harness run per call.
@@ -133,9 +135,6 @@ const spokenSummary = (messages: readonly UIMessage[]): string => {
  * straight in.
  */
 export function awayRunner(deps: AwayRunnerDeps): AgentRunner {
-  const transcript = (): ReturnType<typeof threadMessageStore<UIMessage>> =>
-    threadMessageStore<UIMessage>(deps.store);
-
   return async (task, ctx) => {
     const cap = task.budget?.maxToolCalls ?? DEFAULT_MAX_TOOL_CALLS;
     if (!Number.isInteger(cap) || cap < 1) {
@@ -160,9 +159,12 @@ export function awayRunner(deps: AwayRunnerDeps): AgentRunner {
     };
     let startedCalls = 0;
     let budgetRefused = false;
-    let failure: { message?: string } | undefined;
+    let failed = false;
+    /** The harness's own sentence for the failure, when it gave one. */
+    let failureMessage: string | undefined;
 
     await deps.store.ensureSchema();
+    const transcript = threadMessageStore<UIMessage>(deps.store);
     const threadId = `thr_${randomUUID()}` as ThreadId;
     await threadStore(deps.store).put(principal, { id: threadId, messages: [] });
     // The SPONSOR's durable workspace, with the same `/host/skills` projection and
@@ -181,7 +183,7 @@ export function awayRunner(deps: AwayRunnerDeps): AgentRunner {
       tools: task.tools,
       guard: deps.guard,
       skills: createTurnSkills(workspace),
-      transcript: transcript(),
+      transcript,
       // `harnessState` is left unset on purpose — the runtime's per-run memory is
       // the whole truth for a fresh thread, so there is nothing to carry and
       // nothing to write.
@@ -232,7 +234,8 @@ export function awayRunner(deps: AwayRunnerDeps): AgentRunner {
     try {
       const response = await runtime.run({
         harness: watchForFailure(deps.harness, (message) => {
-          failure = message === undefined ? {} : { message };
+          failed = true;
+          failureMessage = message;
         }),
         threadId,
         messages: [message],
@@ -247,32 +250,21 @@ export function awayRunner(deps: AwayRunnerDeps): AgentRunner {
       // and writes its audit row, and it only fires on consumption.
       await response.text();
     } catch {
-      failure ??= {};
+      failed = true;
     }
 
     const stopped = task.abortSignal?.aborted === true || budgetRefused;
     const status: AgentRunReport["status"] = stopped
       ? "stopped"
-      : failure === undefined ? "ok" : "error";
-    const spoken = failure?.message ?? spokenSummary(await readTurn(transcript(), principal, threadId));
+      : failed ? "error" : "ok";
+    // A summary is worth a lost turn, never a lost run: an unreadable transcript
+    // falls back to the counted sentence rather than failing a finished run.
+    const spoken = failureMessage
+      ?? spokenSummary(await transcript.list(principal, threadId).catch(() => []));
     return {
       status,
       summary: spoken === "" ? fallbackSummary(status, recorded) : spoken,
       toolCalls: recorded,
     };
   };
-}
-
-/** A summary is worth a lost turn, never a lost run: an unreadable transcript
- *  falls back to the counted one below rather than failing a finished run. */
-async function readTurn(
-  transcript: ReturnType<typeof threadMessageStore<UIMessage>>,
-  principal: RunContext["principal"],
-  threadId: ThreadId,
-): Promise<UIMessage[]> {
-  try {
-    return await transcript.list(principal, threadId);
-  } catch {
-    return [];
-  }
 }

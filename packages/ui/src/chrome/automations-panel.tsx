@@ -15,7 +15,7 @@ import { formatAuditTime } from "./activity-semantics.js";
 import { automationFlow, sponsorLabel, triggerLabel } from "./automation-card.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { developmentMode } from "./dev-mode.js";
-import { GrantSetCard } from "./grant-set-card.js";
+import { GrantSetCard, type GrantSetPermission } from "./grant-set-card.js";
 
 const ENABLE_CELEBRATION_MS = 3_100;
 const REDUCED_ENABLE_CELEBRATION_MS = 900;
@@ -42,7 +42,23 @@ const RUN_STATUS_ROLLUP: Record<RunStatus, string> = {
 const needsPermission = (run: RunRecord): boolean =>
   run.status === "error" && run.error?.code === "needs-permission";
 
-/** "8 ok · 1 failed · 1 waiting" — text rollup so colour is never the only
+/** The consent rows for a set of pending asks. One mapping for both cards the
+    panel shows (arming, and the failed run's) so a permission reads the same in
+    either place. A connector ask is FOR its service action, not for the
+    dispatcher — two service actions are otherwise the same row twice. */
+function grantSetPermissions(asks: readonly ApprovalRequest[]): GrantSetPermission[] {
+  return asks.map(ask => {
+    const slug = serviceToolSlug(ask.call);
+    return {
+      approvalId: ask.id,
+      tool: ask.call.tool,
+      ...(slug === undefined ? {} : { slug }),
+      risk: ask.descriptor.risk,
+    };
+  });
+}
+
+/** "8 ok · 1 failed · 1 stopped" — text rollup so colour is never the only
     signal on the strip. Statuses appear in a fixed order, zero-counts drop. */
 function runRollup(runs: RunRecord[]): string {
   const counts = new Map<RunStatus, number>();
@@ -130,6 +146,13 @@ function nextRunLabel(trigger: Trigger | undefined, lastStartedAt: string | unde
 /** The identity of a panel ROW: one trigger of one app. An automation is an app
     with a LIST of triggers, so nothing in this panel is keyed by app alone. */
 const rowKey = (appId: AppId, triggerId: string): string => `${appId}:${triggerId}`;
+
+/** The host's theme setting, or the OS's — one spelling for both the celebration's
+    duration and the animations it gates. */
+const prefersReducedMotion = (motion: "full" | "reduced"): boolean =>
+  motion === "reduced"
+  || (typeof window !== "undefined" && typeof window.matchMedia === "function"
+    && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
 
 /** 08-ui §4; 07-automations §5 — controls, grant capture, previews, history, kill switch.
     The trigger/flow labels (triggerLabel, automationFlow) moved to
@@ -228,12 +251,10 @@ export function AutomationsPanel() {
   const celebrateEnable = (key: string) => {
     const existing = enableTimers.current.get(key);
     if (existing !== undefined) window.clearTimeout(existing);
-    const reduced = theme.motion === "reduced"
-      || (typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
     setJustEnabled(current => ({ ...current, [key]: true }));
     enableTimers.current.set(key, window.setTimeout(
       () => clearEnableCelebration(key),
-      reduced ? REDUCED_ENABLE_CELEBRATION_MS : ENABLE_CELEBRATION_MS,
+      prefersReducedMotion(theme.motion) ? REDUCED_ENABLE_CELEBRATION_MS : ENABLE_CELEBRATION_MS,
     ));
   };
 
@@ -325,10 +346,10 @@ export function AutomationsPanel() {
   const asksForRun = (appId: AppId, run: RunRecord): ApprovalRequest[] => {
     const wanted = run.error;
     if (wanted === undefined) return [];
-    const matching = (pendingByApp.get(appId) ?? [])
+    return (pendingByApp.get(appId) ?? [])
       .filter(ask => ask.call.tool === wanted.tool && serviceToolSlug(ask.call) === wanted.slug)
-      .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
-    return matching.length === 0 ? [] : [matching[0]!];
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+      .slice(0, 1);
   };
 
   /** Grant & re-run — allow what the run needed, then run the automation again
@@ -354,9 +375,7 @@ export function AutomationsPanel() {
 
   // Evaluated once per render (not once per automation): matchMedia is cheap but
   // querying it inside the list map was needless repeated work.
-  const reduced = theme.motion === "reduced"
-    || (typeof window !== "undefined" && typeof window.matchMedia === "function"
-      && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  const reduced = prefersReducedMotion(theme.motion);
 
   return (
     <ChromeRoot>
@@ -366,6 +385,15 @@ export function AutomationsPanel() {
         {automations.automations.length === 0 ? <p className="fl-auto-sub" style={{ margin: 0 }}>No automations yet.</p> : null}
         {automations.automations.map(entry => {
           const appId = entry.app.id;
+          // WHICH row shows the app's pending set card. The persisted queue names
+          // the APP, not the trigger, so the trigger the engine says is waiting
+          // owns them, and when nothing claims them the FIRST row does. That
+          // fallback is not a nicety — a payload from before `pendingGrants`
+          // existed carries no claim at all, and a card nobody renders is a person
+          // left holding an approval the automation never hears the answer to.
+          // With one trigger (the ordinary case) both branches are the same row.
+          const claimantId = (entry.triggers.find(candidate => (candidate.pendingGrants ?? 0) > 0)
+            ?? entry.triggers[0])?.trigger.id;
           return (
             <article className="fl-automation" key={appId}>
               {/* The app is the GROUP header: it names the thing, and its
@@ -391,23 +419,13 @@ export function AutomationsPanel() {
                 const key = rowKey(appId, trigger.id);
                 const label = triggerLabel(trigger);
                 const rowRuns = runs[key];
+                const plan = plans[key];
                 const flow = automationFlow(trigger);
                 const runsAs = sponsorLabel(row.sponsor, entry.editors);
                 // The set-card rows come from the persisted pending queue; the
                 // count prefers the engine's own projection (they agree modulo
                 // poll skew).
-                //
-                // The queue names the APP, not the trigger, so which row shows
-                // the card is decided here: the trigger the engine says is
-                // waiting owns them, and when nothing claims them the FIRST row
-                // does. That fallback is not a nicety — a payload from before
-                // `pendingGrants` existed carries no claim at all, and a card
-                // nobody renders is a person left holding an approval the
-                // automation never hears the answer to. With one trigger (the
-                // ordinary case) both branches are the same row.
-                const claimant = entry.triggers.find(candidate => (candidate.pendingGrants ?? 0) > 0)
-                  ?? entry.triggers[0];
-                const pendingAsks = claimant?.trigger.id === trigger.id
+                const pendingAsks = claimantId === trigger.id
                   ? pendingByApp.get(appId) ?? []
                   : [];
                 const waitingOn = row.pendingGrants ?? pendingAsks.length;
@@ -418,7 +436,7 @@ export function AutomationsPanel() {
                 // it comes back: the person is never left with a card nobody
                 // renders.
                 const claimedByRuns = new Set(
-                  (runs[key] ?? [])
+                  (rowRuns ?? [])
                     .filter(needsPermission)
                     .flatMap(run => asksForRun(appId, run).map(ask => ask.id)),
                 );
@@ -432,7 +450,7 @@ export function AutomationsPanel() {
                 // and takes over the state line; otherwise the enabled line carries
                 // the next-run countdown when it can be computed honestly. The
                 // expanded history is fresher than the strip when both exist.
-                const known = runs[key] ?? recent[key];
+                const known = rowRuns ?? recent[key];
                 const runningRun = known?.find(run => run.status === "running");
                 // "step N/M": M = the plan's step count, N = the step in flight
                 // (recorded steps + 1). Plans without steps just say "running now".
@@ -647,18 +665,7 @@ export function AutomationsPanel() {
                     {armingAsks.length > 0 ? (
                       <GrantSetCard
                         name={entry.app.name}
-                        permissions={armingAsks.map(ask => {
-                          // A connector ask is FOR its service action, not for the
-                          // dispatcher — two service actions are otherwise the same
-                          // row twice.
-                          const slug = serviceToolSlug(ask.call);
-                          return {
-                            approvalId: ask.id,
-                            tool: ask.call.tool,
-                            ...(slug === undefined ? {} : { slug }),
-                            risk: ask.descriptor.risk,
-                          };
-                        })}
+                        permissions={grantSetPermissions(armingAsks)}
                         state="parked"
                         onDecide={async approve => {
                           await decideSet(appId, trigger.id, armingAsks, row.grantSetId, approve);
@@ -667,7 +674,7 @@ export function AutomationsPanel() {
                       />
                     ) : null}
 
-                    {plans[key] ? (
+                    {plan ? (
                       <div
                         className="fl-auto-flow"
                         // role="group": a bare <div> may not carry aria-label
@@ -678,7 +685,7 @@ export function AutomationsPanel() {
                       >
                         <strong className="fl-auto-title">Dry-run plan</strong>
                         <ol style={{ alignItems: "stretch", display: "flex", listStyle: "none", margin: 0, padding: 0 }}>
-                          {plans[key]!.steps.map((step, index) => (
+                          {plan.steps.map((step, index) => (
                             <li key={step.id} style={{ alignItems: "center", display: "flex", flex: 1 }}>
                               {index > 0 ? <span className="fl-auto-arrow" aria-hidden="true" /> : null}
                               <span className="fl-auto-node" style={{ flex: 1 }}>
@@ -691,7 +698,7 @@ export function AutomationsPanel() {
                             </li>
                           ))}
                         </ol>
-                        <div className="fl-auto-sub">Missing grants: {plans[key]!.grantsMissing.length ? plans[key]!.grantsMissing.join(", ") : "none"}</div>
+                        <div className="fl-auto-sub">Missing grants: {plan.grantsMissing.length ? plan.grantsMissing.join(", ") : "none"}</div>
                       </div>
                     ) : null}
 
@@ -764,15 +771,7 @@ export function AutomationsPanel() {
                             {runAsks.length > 0 ? (
                               <GrantSetCard
                                 name={entry.app.name}
-                                permissions={runAsks.map(ask => {
-                                  const slug = serviceToolSlug(ask.call);
-                                  return {
-                                    approvalId: ask.id,
-                                    tool: ask.call.tool,
-                                    ...(slug === undefined ? {} : { slug }),
-                                    risk: ask.descriptor.risk,
-                                  };
-                                })}
+                                permissions={grantSetPermissions(runAsks)}
                                 state="parked"
                                 onDecide={approve =>
                                   grantAndRerun(appId, trigger.id, key, run, runAsks, row.grantSetId, approve)}

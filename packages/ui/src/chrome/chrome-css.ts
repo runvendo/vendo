@@ -1626,7 +1626,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 .fl-auto-runs-lbl { font-size: 11px; color: var(--vendo-fg-muted); margin-right: 6px; white-space: nowrap; }
 .fl-auto-runs-dot { width: 14px; height: 7px; border-radius: 3px; background: var(--vendo-ok);
   opacity: .85; animation: fl-auto-runs-pop .3s var(--vendo-motion-easing) both; cursor: default; }
-.fl-auto-runs-dot[data-status="pending-approval"] { background: var(--vendo-warn-tint); }
 .fl-auto-runs-dot[data-status="error"] { background: var(--vendo-danger); }
 .fl-auto-runs-dot[data-status="stopped"] { background: var(--vendo-border-strong); }
 .fl-auto-runs-dot[data-status="running"] { background: var(--vendo-accent); }
