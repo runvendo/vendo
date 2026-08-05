@@ -78,8 +78,10 @@ export const UNATTENDED_DESTRUCTIVE_REASON =
  *  The venue is deliberately NOT part of this. `venue` says which door a
  *  request came through; `presence` says whether a human is behind it, and only
  *  the second question is the law's. The two come apart in both directions:
- *   - `{ venue: "app", presence: "away" }` is a real unattended firing — that is
- *     the shape a scheduled app fn fires with (`apps/src/schedules.ts`), so a
+ *   - `{ venue: "automation", presence: "away" }` is a real unattended firing —
+ *     the shape every schedule fires with, including a machine app's own
+ *     `vendo.json` schedules once they are folded into its document triggers
+ *     (`apps/src/manifest-triggers.ts` → `automations/src/engine.ts`), so a
  *     venue-based predicate would let every schedule out from under the law.
  *   - `{ venue: "automation", presence: "present" }` is a CEREMONY, not a run:
  *     the enable/capture flow and the "allow this while you're away" approval

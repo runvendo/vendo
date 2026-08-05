@@ -7,9 +7,9 @@ import { openScenario } from "./helpers.js";
  * The final cleanup, in a real browser — an automation's run-history row.
  *
  * The row printed the RunStatus SLUG and the raw ISO instant at the automation's
- * owner ("error", "pending-approval", "2026-07-11T12:00:00.000Z") while the
- * helpers that turn both into human words already sat in the same file. Spec §16
- * law 3 and the automations design's consumer-voice run history.
+ * owner ("error", "2026-07-11T12:00:00.000Z") while the helpers that turn both
+ * into human words already sat in the same file. Spec §16 law 3 and the
+ * automations design's consumer-voice run history.
  *
  * HONEST LIMIT, asserted below: the consumer-voice vocabulary does NOT flag a
  * status slug or an ISO instant — "error" is a real English word and the instant
@@ -30,8 +30,10 @@ const SHOTS = new URL(
 const STARTED_AT = "2026-07-11T12:00:00.000Z";
 const HUMAN_TIME = "Jul 11, 2026, 12:00 PM";
 
-/** Two runs whose slugs are the ones a person must never be shown: the refused
- *  unattended run, and the run parked behind a decision. */
+/** Two runs whose machine values are the ones a person must never be shown: the
+ *  refused unattended run, and the run that stopped loudly on a permission
+ *  nobody had allowed yet (there is no parked run any more — a missing
+ *  permission ends the run and the person runs it again). */
 const RUNS = [
   {
     id: "run_blocked",
@@ -44,12 +46,15 @@ const RUNS = [
     error: { code: "meter-exhausted", message: "blocked by allowance: the allowance for this billing period is used up." },
   },
   {
-    id: "run_parked",
+    id: "run_needs_permission",
     appId: "app_auto",
     trigger: { kind: "schedule" },
-    status: "pending-approval",
+    status: "error",
     startedAt: STARTED_AT,
+    finishedAt: "2026-07-11T12:00:03.000Z",
     steps: [],
+    summary: "stopped at notify: it needs a permission nobody has allowed yet — allow it and run this again",
+    error: { code: "needs-permission", message: "needs permission to use host_notify", tool: "host_notify" },
   },
 ];
 
@@ -76,13 +81,12 @@ test("a run-history row names its state and its time in the owner's words", asyn
   await expect(history).toBeVisible();
 
   // The words the owner reads.
-  await expect(history.locator(".fl-act-lbl")).toHaveText(["Failed", "Waiting on approval"]);
+  await expect(history.locator(".fl-act-lbl")).toHaveText(["Failed", "Failed"]);
   await expect(history.locator(".fl-act-sub").first()).toHaveText(HUMAN_TIME);
 
-  // The machine values the row used to print, now absent from the page's text.
+  // The machine value the row used to print, now absent from the page's text.
   const rendered = await history.innerText();
   expect(rendered).not.toContain(STARTED_AT);
-  expect(rendered).not.toContain("pending-approval");
 
   // …and still present where a machine reads them.
   await expect(history.locator("time").first()).toHaveAttribute("datetime", STARTED_AT);

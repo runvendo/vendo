@@ -36,7 +36,7 @@ export const automationRoutes: RouteEntry[] = [
 export const runRoutes: RouteEntry[] = [
   route("GET", "/runs", async ({ url, deps, context }) => {
     const status = url.searchParams.get("status") ?? undefined;
-    const allowed: RunStatus[] = ["running", "ok", "error", "stopped", "pending-approval"];
+    const allowed: RunStatus[] = ["running", "ok", "error", "stopped"];
     if (status !== undefined && !allowed.includes(status as RunStatus)) {
       throw new VendoError("validation", "run status is invalid");
     }
@@ -61,6 +61,11 @@ export const runRoutes: RouteEntry[] = [
     if (request.method === "POST" && segments[2] === "stop" && segments.length === 3) {
       await deps.automations.runs.stop(runId, ctx);
       return json({});
+    }
+    // The remedy behind a fail-loud run: a FRESH run of the same trigger on the
+    // same event, so the door hands back the new run's id.
+    if (request.method === "POST" && segments[2] === "rerun" && segments.length === 3) {
+      return json({ runId: await deps.automations.runs.rerun(runId, ctx) });
     }
     return undefined;
   }),

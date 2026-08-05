@@ -118,6 +118,10 @@ export type {
 // function of the public AppPlan, so demo/harness surfaces can render a plan's
 // skeleton without booting the engine.
 export { skeletonFromPlan, type Skeleton } from "./generation/skeleton.js";
+// The automation planner, exported for the same reason as the skeleton above: it
+// is one model call over public inputs, so a harness can author (and prove the
+// refusal of) an automation plan without booting the generation pipeline.
+export { planAutomation, type AutomationPlan, type AutomationPlanInput } from "./automation-plan.js";
 // The model-capability rule (model-params.ts): which Claude ids still accept
 // sampling params, and the output cap for ids a sampling-era provider registry
 // does not know. Exported for the umbrella's model ladder — its lazy wrapper

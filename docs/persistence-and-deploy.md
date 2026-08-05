@@ -131,9 +131,10 @@ via the box's `/box/rows` callback surface (rows land in `vendo_records`
 under `app:<appId>:box:<collection>`) or a guarded host tool. The machine's
 disk is scratch: caches, working files, build artifacts. Snapshots are not a
 database; a provider sweep can cost scratch state written since the last
-snapshot, and durable rows are what survive by design. Schedule last-fired
-state is host-cached in the `vendo_app_schedules` record collection so a tick
-never wakes a sleeping machine just to check due-ness.
+snapshot, and durable rows are what survive by design. A machine app's
+`vendo.json` schedules are folded into its document triggers at manifest sync,
+so the automations engine's per-trigger schedule cursor is what keeps a tick
+from waking a sleeping machine just to check due-ness.
 
 ## Host events and webhooks
 
