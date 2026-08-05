@@ -11,6 +11,11 @@
       "title": "Check your Maple sign-in",
       "description": "Reads whether you are signed in to Maple."
     },
+    "host_proof_list": {
+      "disabled": true,
+      "title": "Read Maple's own records",
+      "description": "Reads Maple's internal record of what happened in this workspace."
+    },
     "host_demo_chips_list": {
       "title": "List Maple's suggestions",
       "description": "Reads the suggestions Maple offers you to try."
