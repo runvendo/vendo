@@ -51,6 +51,12 @@ import {
 } from "@vendoai/apps";
 import { selectSandbox } from "@vendoai/apps/sandbox-ladder";
 import {
+  agentComposition,
+  provideCloudAdapters,
+  type AgentComposition,
+  type VendoAgent as ComposedAgent,
+} from "@vendoai/agents";
+import {
   createAutomations,
   type AutomationsEngine,
 } from "@vendoai/automations";
@@ -183,6 +189,19 @@ import { cloudSandbox } from "./sandbox.js";
 // adapters: a host can pass it explicitly via createVendo({ sandbox }) with
 // its own options instead of relying on the VENDO_API_KEY default.
 export { cloudSandbox, type CloudSandboxOptions } from "./sandbox.js";
+// The standalone agent runtime leaves its Cloud rungs as a seam because their
+// implementations ship here (it may not import the umbrella). Registered at
+// IMPORT time, not at compose: `agent()` resolves its own slots at
+// CONSTRUCTION, which is before createVendo ever runs. Pure closure
+// assignment, no I/O — safe at module scope under workerd (portability gate).
+//
+// The store rung stays deliberately unfilled: tenant-store access is under
+// redesign (2026-08-04 hold), and the HTTP hosted store cannot serve a harness
+// transcript or a workspace (storeServesHarnessTurns below), so filling it
+// would hand back a store the agent's own sessions cannot use. A
+// VENDO_API_KEY-only `agent()` therefore still fails loudly, naming
+// `store: postgres(url)`, instead of composing something broken.
+provideCloudAdapters({ sandbox: cloudSandbox });
 import { cloudApps } from "./cloud-apps.js";
 import { cloudMcpTenant } from "./cloud-mcp.js";
 import { selectMcpBroker } from "./mcp-broker-select.js";
@@ -310,8 +329,70 @@ export interface Vendo {
 // the documented `serverActions` config key, so a host must be able to name it
 // without adding a direct @vendoai/actions dependency.
 export type { CatalogFile, ExtractedTool, OverridesFile, ServerActionHandler } from "@vendoai/actions";
+// The second arm of the `agent:` key — what `agent()` from @vendoai/agents
+// returns — named from here for the same reason as ServerActionHandler: a host
+// must be able to name what it passes without adding a direct dependency on the
+// block the value came from.
+export type { VendoAgent as ComposedAgent } from "@vendoai/agents";
 export type { VendoTheme } from "@vendoai/core";
 export type { PolicyFile } from "@vendoai/guard";
+
+/** 03-agent — chat context controls, the non-agent arm of `createVendo({ agent })`.
+    All optional. `toolOutputCap` defaults to DEFAULT_TOOL_OUTPUT_CAP so one huge
+    host-tool response can't blow the context; pass 0 to disable. `historyWindow`
+    bounds messages re-sent per turn (default: full). */
+export interface AgentOptions {
+  /** Host voice and standing guidance, appended to the agent's system
+      prompt every turn (03 §3 `instructions`) — tone, formatting, what to
+      emphasize. Policy belongs in guard directions, not here. */
+  instructions?: string;
+  toolOutputCap?: number;
+  maxOutputTokens?: number;
+  historyWindow?: number;
+  /** ENG-252 — cap on the uncurated initial tool loadout; the rest stay
+      discoverable via `find_tools`. Defaults to the agent block's
+      DEFAULT_MAX_INITIAL_TOOLS. */
+  maxInitialTools?: number;
+  /** ENG-252 — explicit curated initial loadout by tool name. When set,
+      exactly these host tools (that exist and are enabled) start active —
+      the cap is not applied; the rest stay discoverable via
+      `find_tools`. Vendo's own `vendo_*` tools are always active. */
+  loadout?: string[];
+  /** AGENT-7: agent-loop step cap per turn (default 20). Exhaustion streams a
+      renderable `data-vendo-step-limit` part instead of ending silently. */
+  maxSteps?: number;
+}
+
+/** The slots a composed agent brings, and therefore the keys that may not also
+    be passed at the top level. Kept beside the adoption in `adoptAgent` so the
+    error can never drift from what is actually taken. */
+const AGENT_OWNED_KEYS = ["harness", "store", "files", "sandbox"] as const;
+
+/** `agent()` returns `{ name, session }`; the chat-knobs arm has no `session`. */
+const isComposedAgent = (agent: AgentOptions | ComposedAgent | undefined): agent is ComposedAgent =>
+  typeof (agent as ComposedAgent | undefined)?.session === "function";
+
+/** The seam: read what `agent()` composed, and refuse a config that fills any
+    of the same slots twice. Runs before anything is constructed, so a miswired
+    config leaks no resources. */
+function adoptAgent(config: CreateVendoConfig): AgentComposition | undefined {
+  if (!isComposedAgent(config.agent)) return undefined;
+  const composed = agentComposition(config.agent);
+  if (composed === undefined) {
+    throw new VendoError(
+      "validation",
+      "createVendo({ agent }) was handed an object with a session() method that `agent()` from @vendoai/agents did not build — pass the value that `agent({ … })` returned, or the chat-context knobs object.",
+    );
+  }
+  const conflicts = AGENT_OWNED_KEYS.filter((key) => config[key] !== undefined);
+  if (conflicts.length > 0) {
+    throw new VendoError(
+      "validation",
+      `createVendo({ agent }) already brings ${conflicts.map((key) => `\`${key}\``).join(", ")} from the agent it was built with; remove ${conflicts.length === 1 ? "it" : "them"} from createVendo, or move ${conflicts.length === 1 ? "it" : "them"} into agent({ … }) — one slot, one owner.`,
+    );
+  }
+  return composed;
+}
 
 export interface CreateVendoConfig {
   /** @deprecated Superseded by `models.agent` (models spec 2026-07-22);
@@ -496,30 +577,22 @@ export interface CreateVendoConfig {
       `actAs`/`principal` (the door is agnostic; the umbrella owns the shape).
       REQUIRED when `mcp` is true: the door cannot mint principals without it. */
   oauth?: HostOAuthAdapter;
-  /** 03-agent — chat context controls. All optional. `toolOutputCap` defaults to
-      DEFAULT_TOOL_OUTPUT_CAP so one huge host-tool response can't blow the context;
-      pass 0 to disable. `historyWindow` bounds messages re-sent per turn (default: full). */
-  agent?: {
-    /** Host voice and standing guidance, appended to the agent's system
-        prompt every turn (03 §3 `instructions`) — tone, formatting, what to
-        emphasize. Policy belongs in guard directions, not here. */
-    instructions?: string;
-    toolOutputCap?: number;
-    maxOutputTokens?: number;
-    historyWindow?: number;
-    /** ENG-252 — cap on the uncurated initial tool loadout; the rest stay
-        discoverable via `find_tools`. Defaults to the agent block's
-        DEFAULT_MAX_INITIAL_TOOLS. */
-    maxInitialTools?: number;
-    /** ENG-252 — explicit curated initial loadout by tool name. When set,
-        exactly these host tools (that exist and are enabled) start active —
-        the cap is not applied; the rest stay discoverable via
-        `find_tools`. Vendo's own `vendo_*` tools are always active. */
-    loadout?: string[];
-    /** AGENT-7: agent-loop step cap per turn (default 20). Exhaustion streams a
-        renderable `data-vendo-step-limit` part instead of ending silently. */
-    maxSteps?: number;
-  };
+  /** EITHER the chat-context knobs ({@link AgentOptions}) OR a whole agent
+      built by `agent()` from `@vendoai/agents` — the seam the agents-v0 spec
+      names ("Vendo's embed consumes it across a real seam").
+
+      Handed an agent, this deployment ADOPTS what that agent already composed:
+      its harness (who thinks), its store and blob adapter (where the
+      transcript and the workspace live), its sandbox (with the agent-level
+      egress skin and its boot audit row), and its `instructions`. Passing any
+      of those a second time at the top level is a conflict and throws at
+      construction rather than letting one side silently lose.
+
+      What stays this deployment's: the guard (the embed's choke point carries
+      org policy and app-tool risk grading a standalone agent has no notion of)
+      and the host tool surface (`.vendo/tools.json`). The agent's own guard and
+      tools keep serving its own `session()` calls. */
+  agent?: AgentOptions | ComposedAgent;
   /** 02-store §4 (kill-list B3) — ephemeral (anonymous) session lifecycle.
       Anonymous visitors get a TTL-based session on disk: every request touches
       it; an idle session is swept — its rows erased from the store and its
@@ -1471,6 +1544,16 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       );
     }
   }
+  // agents-v0 §Product — the embed's seam onto @vendoai/agents. Checked here,
+  // beside the auth mixing check and for the same reason: a slot filled twice
+  // is a wiring mistake the host hears about before anything is constructed.
+  const composed = adoptAgent(config);
+  // Whichever arm of `agent:` this is, the chat knobs read from ONE place. A
+  // composed agent carries only `instructions`; the rest are the embed's own
+  // context controls, which a standalone agent has no equivalent of.
+  const agentOptions: AgentOptions = composed === undefined
+    ? (config.agent as AgentOptions | undefined) ?? {}
+    : composed.instructions === undefined ? {} : { instructions: composed.instructions };
   // The three seams the identity story fills: from the preset, from the
   // per-seam trio, or — with neither `auth` nor `principal` — the anonymous
   // default resolver (every session ephemeral, 00 conventions "identity
@@ -1513,19 +1596,19 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // zero window it produces (every touch rides the wire) is merely
   // conservative, never wrong.
   const { store, sessions: sessionOps, files } = selectStore(
-    config.store,
+    composed?.store ?? config.store,
     Math.min(
       Math.floor(sessionsConfig.sweepIntervalMs / 2),
       Math.floor(sessionsConfig.ttlMs / 4),
     ),
-    config.files,
+    composed?.files ?? config.files,
   );
   // The sandbox seam, resolved by THE ladder — the one in @vendoai/apps that
   // `agent()` calls too (explicit → E2B_API_KEY → the Cloud rung → nothing).
   // "Nothing" is this deployment's dark venue: server apps answer
   // sandbox-unavailable and assertHarnessComposable below refuses a harness
   // that needed a machine.
-  const sandbox = selectSandbox(config.sandbox, cloudSandbox);
+  const sandbox = selectSandbox(composed?.sandbox ?? config.sandbox, cloudSandbox);
   // Secrets, selected by the adapter rule at this composition seam
   // (selectSecrets above): explicit provider → env chained over the
   // VENDO_API_KEY Cloud provider → env alone. Consumed by machine env
@@ -2307,7 +2390,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // discovery registry — which bounds its own search under it rather than being
   // cut by it (the cap slices serialized JSON, so a search that reaches it loses
   // a schema mid-object).
-  const toolOutputCap = config.agent?.toolOutputCap ?? DEFAULT_TOOL_OUTPUT_CAP;
+  const toolOutputCap = agentOptions.toolOutputCap ?? DEFAULT_TOOL_OUTPUT_CAP;
   // The connector-discovery tools (design 2026-08-03), on the SAME registry, each
   // only as far as an adapter backs it — the "no adapter, no tool" rule knowledge
   // follows below, applied per tool rather than per registry.
@@ -2432,7 +2515,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ? resolveBrief()
     : () => resolveBrief(configCloud);
   const promptCatalog = catalogThemeSummary(catalog, theme);
-  const hostInstructions = config.agent?.instructions?.trim();
+  const hostInstructions = agentOptions.instructions?.trim();
   const system = product !== undefined || hostInstructions || promptCatalog !== undefined || knowledgeIndex !== undefined
     ? {
         ...(product === undefined ? {} : { product }),
@@ -2478,8 +2561,8 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       const menu = await agentMenu();
       return menu === undefined ? undefined : [...menu];
     },
-    ...(config.agent?.maxInitialTools === undefined ? {} : { maxInitialTools: config.agent.maxInitialTools }),
-    ...(config.agent?.loadout === undefined ? {} : { loadout: config.agent.loadout }),
+    ...(agentOptions.maxInitialTools === undefined ? {} : { maxInitialTools: agentOptions.maxInitialTools }),
+    ...(agentOptions.loadout === undefined ? {} : { loadout: agentOptions.loadout }),
   };
   const agent = createAgent({
     model: inference.agent.model,
@@ -2489,9 +2572,9 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ...(system === undefined ? {} : { system }),
     context: {
       toolOutputCap,
-      ...(config.agent?.maxOutputTokens === undefined ? {} : { maxOutputTokens: config.agent.maxOutputTokens }),
-      ...(config.agent?.historyWindow === undefined ? {} : { historyWindow: config.agent.historyWindow }),
-      ...(config.agent?.maxSteps === undefined ? {} : { maxSteps: config.agent.maxSteps }),
+      ...(agentOptions.maxOutputTokens === undefined ? {} : { maxOutputTokens: agentOptions.maxOutputTokens }),
+      ...(agentOptions.historyWindow === undefined ? {} : { historyWindow: agentOptions.historyWindow }),
+      ...(agentOptions.maxSteps === undefined ? {} : { maxSteps: agentOptions.maxSteps }),
     },
     capabilityMiss,
     toolSearch,
@@ -2518,7 +2601,9 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // live on and has none is a wiring mistake the host hears about here, not a turn
   // that dies in front of a user. Checked against the resolved harness because a
   // default is still a choice that has to hold.
-  const harness = (config.harness ?? vendo({ onHire: reportHire })) as Harness;
+  // A composed agent IS a harness choice (its brain, with its knobs already
+  // bound and its sandbox already injected), so it takes the same slot.
+  const harness = (composed?.harness ?? config.harness ?? vendo({ onHire: reportHire })) as Harness;
   assertHarnessComposable(harness, sandbox.adapter === undefined ? {} : { sandbox: sandbox.adapter });
   // The harness runtime, wired to everything a turn needs: the store handle (its
   // transcript and its workspace), the ONE guard-bound registry, the merged pack

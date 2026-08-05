@@ -1438,6 +1438,9 @@ importers:
       '@vendoai/agent':
         specifier: workspace:*
         version: link:../agent
+      '@vendoai/agents':
+        specifier: workspace:*
+        version: link:../agents
       '@vendoai/apps':
         specifier: workspace:*
         version: link:../apps

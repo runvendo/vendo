@@ -6,9 +6,11 @@
  */
 export {
   agent,
+  agentComposition,
   e2b,
   postgres,
   provideCloudAdapters,
+  type AgentComposition,
   type AgentConfig,
   type CloudAdapters,
   type E2bOptions,
