@@ -233,11 +233,6 @@ export function VendoOverlay({
   const [splitState, dispatchSplit] = useReducer(splitViewReducer, initialSplitViewState);
   const expanded = splitState.expanded && !takeover.active;
   const featured = featuredEmbed(splitState);
-  // §3.4 + §10.2 — the running turn's beats, for the stage's rail. The thread
-  // lives in the OTHER pane's React tree, so this rides the run-activity store
-  // the launcher pill already reads — the one channel for what a surface
-  // outside the conversation may know about a turn inside it.
-  const beats = useSyncExternalStore(subscribeRunActivity, runActivity, () => IDLE_RUN_ACTIVITY).beats;
   // The collapse ANIMATES: like the connect tray's exit walk, the stage stays
   // mounted through expanded → collapsing → collapsed so the featured app
   // doesn't blink out before the panes finish sliding. Render-phase state
@@ -544,6 +539,24 @@ export function VendoOverlay({
   // results. The panel's own thread id scopes the toast to runs this panel can
   // actually show.
   const [panelThreadId, setPanelThreadId] = useState<string>();
+  // §3.4 + §10.2 — the running turn's beats, for the stage's rail. The thread
+  // lives in the OTHER pane's React tree, so this rides the run-activity store
+  // the launcher pill already reads — the one channel for what a surface
+  // outside the conversation may know about a turn inside it.
+  //
+  // SCOPED, because that store answers for whichever surface is running and a
+  // host may mount several (`/concurrent` mounts an embedded thread beside this
+  // overlay): unscoped, an idle workspace narrated somebody else's build.
+  //
+  // Stricter than the toast's rule two lines below, deliberately. A toast is news
+  // the user might otherwise miss, so it fails toward SHOWING and lets an
+  // unidentified run through; a rail claims "this is what YOUR workspace is
+  // doing", so it fails toward SILENCE — an unidentifiable turn narrates nowhere
+  // rather than in the wrong panel.
+  const activity = useSyncExternalStore(subscribeRunActivity, runActivity, () => IDLE_RUN_ACTIVITY);
+  const beats = activity.threadId !== undefined && activity.threadId === panelThreadId
+    ? activity.beats
+    : IDLE_RUN_ACTIVITY.beats;
   const status = useLauncherStatus({
     open,
     ...(panelThreadId === undefined ? {} : { threadId: panelThreadId }),

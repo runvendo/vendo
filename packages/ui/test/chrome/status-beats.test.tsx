@@ -163,4 +163,58 @@ describe("the status channel reaches the screen", () => {
     // Ephemeral on screen too: the settled turn leaves the stage clean.
     await waitFor(() => expect(rail()).toBeNull());
   });
+
+  /**
+   * P1 (bot review on #796) — SCOPE. The run store narrates whichever surface is
+   * RUNNING, globally (`recompute`: `find(surface => surface.running)`), so a
+   * stage that reads it unscoped narrates a conversation it is not showing.
+   *
+   * This is not hypothetical: the shipped `/concurrent` harness scenario mounts
+   * an embedded `VendoThread` beside this very overlay, so ONE running turn plus
+   * one expanded workspace is enough. It is also the third instance of this
+   * codebase's singleton-vs-scoped mistake — `PrefillScopeContext` exists because
+   * prompts went "to whichever composer registered last", and `publishThreadRun`
+   * carries a comment about one settle being announced twice.
+   */
+  it("a stage narrates its OWN conversation, never whichever surface happens to be running", { timeout: 30_000 }, async () => {
+    render(
+      <VendoProvider client={client}>
+        <VendoThread threadId="thr_1" />
+        <VendoOverlay defaultOpen />
+      </VendoProvider>,
+    );
+    expect(await screen.findByText("Existing thread")).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: "Expand workspace" }));
+    const panel = screen.getByRole("dialog", { name: "Vendo assistant" });
+    const composerIn = (inside: boolean) => screen.getAllByRole("textbox", { name: "Message" })
+      .find(box => panel.contains(box) === inside)!;
+
+    // The EMBEDDED thread runs the build. The overlay's workspace is open on a
+    // different, brand-new, never-run conversation.
+    const outside = composerIn(false);
+    fireEvent.change(outside, { target: { value: "[beats] build it" } });
+    fireEvent.keyDown(outside, { key: "Enter" });
+
+    // Positive anchor FIRST: the beats really are live on the running surface,
+    // so the absence asserted next cannot pass vacuously.
+    await waitFor(() => expect(document.querySelector(".fl-ribbon--working")?.textContent)
+      .toContain("Adding drag and drop"));
+    // …and they do not leak onto a stage that is showing someone else.
+    expect(panel.querySelector(".fl-beatrail")).toBeNull();
+
+    await act(async () => release());
+    await waitFor(() => expect(document.querySelector(".fl-ribbon--working")).toBeNull());
+
+    // The same stage DOES narrate its own conversation — the scope is a filter,
+    // not a mute.
+    wire.state.threadReplyGate = new Promise<void>(resolve => { release = resolve; });
+    const inside = composerIn(true);
+    fireEvent.change(inside, { target: { value: "[beats] build mine" } });
+    fireEvent.keyDown(inside, { key: "Enter" });
+
+    await waitFor(() => expect(panel.querySelectorAll(".fl-beatrail .fl-beat")).toHaveLength(4));
+    expect(panel.querySelector(".fl-beatrail")?.textContent).toContain("Adding drag and drop");
+    await act(async () => release());
+    await waitFor(() => expect(panel.querySelector(".fl-beatrail")).toBeNull());
+  });
 });

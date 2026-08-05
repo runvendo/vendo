@@ -31,6 +31,11 @@ export interface VendoBeat {
 /** The live step of a running turn, for the pill's label + ring. */
 export interface RunActivity {
   running: boolean;
+  /** WHICH conversation is running. A host may mount several thread surfaces at
+      once (the `/concurrent` scenario mounts an embedded thread beside an
+      overlay) and this store answers for whichever one is running — so any
+      surface that narrates a run has to check the run is one it is showing. */
+  threadId?: string;
   /** §3.4 — the RUNNING turn's beats, oldest first. Ephemeral by the same rule
       as everything else here: nothing is running, so there is nothing to
       narrate, so the list is empty. */
@@ -178,11 +183,13 @@ function recompute(): void {
     : {
       running: true,
       ...(live.tool === undefined ? {} : { tool: live.tool }),
+      ...(live.threadId === undefined ? {} : { threadId: live.threadId }),
       done: live.done,
       total: live.total,
       beats: live.beats,
     };
   const changed = next.running !== activity.running
+    || next.threadId !== activity.threadId
     || next.tool !== activity.tool
     || next.done !== activity.done
     || next.total !== activity.total
