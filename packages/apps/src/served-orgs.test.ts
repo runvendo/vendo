@@ -60,7 +60,6 @@ const setup = async (over: Partial<AppsConfig> = {}, guard = guardFixture()): Pr
     appAccess: storeAccessFixture(store),
     multiParty: true,
     experimentalMachines: true,
-    experimentalServedApps: true,
     machine: { sandbox },
     // The wire fills this with its own base path; the runtime never invents it.
     servedProxyPath: (appId) => `/api/vendo/apps/${appId}/serve/`,
@@ -133,15 +132,46 @@ describe("§9.8 — open() routes ORG-owned served apps through the proxy", () =
     expect((opened as { url: string }).url).not.toMatch(/^https?:\/\//);
   });
 
-  it("leaves a PERSONAL served app on the provider URL, unchanged", async () => {
+  /** The owner's OWN app used to keep the provider's raw ingress URL, on the
+      reasoning that a capability URL is fine for the person who owns the thing.
+      It is not: that URL carries no per-request check, so anyone it is pasted to
+      — a shared screen, a copied link, a log line, a bug report — reaches the
+      box. Every served app is answered with this deployment's proxy now, which
+      re-checks `can(viewer)` against live rows on every request. */
+  it("routes a PERSONAL served app through the proxy too — an owner's own app is not a bearer URL", async () => {
     const { runtime, store, seed } = await setup();
     await seed("app_own_served", "dana");
 
     const opened = await runtime.open("app_own_served", ctx("dana"));
-    expect(opened).toMatchObject({ kind: "http" });
-    // Today's behaviour: the machine's own ingress URL, not a host path.
-    expect((opened as { url: string }).url).toMatch(/^https?:\/\//);
-    expect((opened as { url: string }).url).not.toContain("/serve/");
+    expect(opened).toEqual({
+      kind: "http",
+      url: "/api/vendo/apps/app_own_served/serve/",
+    });
+    // And specifically NOT the sandbox provider's public ingress URL.
+    expect((opened as { url: string }).url).not.toMatch(/^https?:\/\//);
+    // The owner's own app is reachable through that very door.
+    expect((await runtime.serve("app_own_served", { method: "GET", path: "/" }, ctx("dana"))).status).toBe(200);
+    // A stranger with no grant is not, on the same door.
+    await expect(runtime.serve("app_own_served", { method: "GET", path: "/" }, ctx("mal")))
+      .rejects.toMatchObject({ code: "not-found" });
+  });
+});
+
+describe("§9.8 — editing a served app is a permission question first", () => {
+  /** `edit()` on a served app carried the served flag's refusal in front of
+      everything else. With the flag gone, the refusal that must still come
+      first is PERMISSION: a viewer hears "you can't change the team's copy" —
+      the sentence the fork offer renders from — and no in-box agent is ever
+      woken on their behalf. */
+  it("refuses a VIEWER's edit before any machine is touched", async () => {
+    const { runtime, store, seed, sandbox } = await setup();
+    await seed("app_viewer_edit", "acme");
+    await seedGrantRows(store, "app_viewer_edit", { "user:kim": "viewer" });
+    const before = sandbox.machines.length;
+
+    await expect(runtime.edit("app_viewer_edit", "make the header blue", ctx("kim", ["acme"])))
+      .rejects.toMatchObject({ code: "forbidden" });
+    expect(sandbox.machines.length).toBe(before);
   });
 });
 

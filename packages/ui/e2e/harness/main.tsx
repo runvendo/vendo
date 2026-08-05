@@ -1337,6 +1337,57 @@ function AppFrameScenario() {
   );
 }
 
+/**
+ * The frame resize protocol, host half. The served-app fixture reports its own
+ * natural height over the jail's exact message shape; each section is a host
+ * that configured its slot differently, and the frame fits the report INSIDE
+ * that slot — never outside it.
+ */
+function AppFrameResizeScenario() {
+  return (
+    // A column, not the appframe grid: grid rows stretch every section to the
+    // tallest one in the row, which would hide whether a frame grew or a row did.
+    <div className="appframe-column">
+      <section aria-label="Reported height honoured">
+        <h2>Reports 640px, host allows it</h2>
+        <AppFrame surface={{ kind: "http", url: "/resize-target.html?h=640" }} />
+      </section>
+      <section
+        aria-label="Host max height wins"
+        // The host's ceiling for this slot. The app is twice as tall as this.
+        style={{ "--vendo-app-frame-max-height": "420px" } as CSSProperties}
+      >
+        <h2>Reports 1600px, host caps at 420px</h2>
+        <AppFrame surface={{ kind: "http", url: "/resize-target.html?h=1600" }} />
+      </section>
+      <section aria-label="Host min height wins">
+        <h2>Reports 80px, host reserves 320px</h2>
+        <AppFrame surface={{ kind: "http", url: "/resize-target.html?h=80" }} />
+      </section>
+    </div>
+  );
+}
+
+/**
+ * Blueprint §10.2 point 2 — a coded build's live preview IS the template's own
+ * dev server, rendered by the EXISTING http surface. No new frame, no new panel:
+ * the only thing that changes is which URL the surface carries.
+ *
+ * The spec boots a real Vite dev server on a port it reserves at run time and
+ * passes the URL in the location hash (the same handoff `/live-stage` uses for
+ * its ephemeral secret), because a port baked in here would collide with every
+ * parallel lane.
+ */
+function DevServerPreviewScenario() {
+  const url = decodeURIComponent(globalThis.location.hash.slice(1));
+  return (
+    <section aria-label="Live dev server preview">
+      <h2>Dev server preview</h2>
+      <AppFrame surface={{ kind: "http", url }} />
+    </section>
+  );
+}
+
 const baseClient = createVendoClient({ baseUrl: "/api/vendo" });
 const unconfiguredClient = createVendoClient({ baseUrl: "/api/vendo", headers: { "x-vendo-force-posture": "unconfigured" } });
 
@@ -1511,6 +1562,29 @@ function SlotFallbackScenario() {
   );
 }
 
+/** §10.1 — the pin round trip, end to end, on a host with NO slot: the page's
+ *  Apps shelf is behind the assistant, a build settles in the conversation, its
+ *  pin invites (the nudge), and taking it dismisses the panel and lands the
+ *  ceremony in the shelf. The `onPin` write is the HOST's, so the recorder below
+ *  is the only honest proof that it fired. */
+function PinShelfScenario() {
+  const [pinned, setPinned] = useState<string[]>([]);
+  return (
+    <VendoProvider
+      client={baseClient}
+      components={components}
+      theme={mapleTheme}
+      onPin={app => setPinned(current => [...current, app.appId])}
+    >
+      <VendoPage />
+      <VendoOverlay />
+      <p data-testid="pin-recorder" style={{ position: "fixed", left: 10, bottom: 10, margin: 0, fontSize: 11, color: "#8a8b92" }}>
+        pinned: {pinned.length === 0 ? "none" : pinned.join(",")}
+      </p>
+    </VendoProvider>
+  );
+}
+
 /** A stored tree rendered beside the freshly compiled wire (v1 is gone;
  *  stored documents all carry the current format). */
 const storedTree: UIPayload = {
@@ -1608,9 +1682,9 @@ const SHAPE_DATA: Record<string, Json> = {
 const SHAPE_WIRE = `<App name="Revenue by month">
   <Query id="revenue" tool="metrics_revenue"/>
   <Stack gap={14}>
-    <Text text="Shape-aware binding: reshape pipes, no code island" variant="heading"/>
-    <Stat label="Total revenue" value={revenue.rows | sum(revenue) | format(currency)}/>
-    <Table caption="Monthly revenue" rows={revenue.rows | format(revenue, currency) | rename(month, Month, revenue, Revenue)}/>
+    <Text text="Shape-aware binding: reshape calls, no code island" variant="heading"/>
+    <Stat label="Total revenue" value={sum(revenue.rows, "revenue")}/>
+    <Table caption="Monthly revenue" rows={rename(format(revenue.rows, "revenue", "currency"), "month", "Month", "revenue", "Revenue")}/>
   </Stack>
 </App>`;
 
@@ -1620,7 +1694,7 @@ const SHAPE_WIRE_BROKEN = `<App name="Revenue by month (mis-bound)">
   <Query id="revenue" tool="metrics_revenue"/>
   <Stack gap={14}>
     <Text text="Mis-bound reshape: contained at render, compile error with shape cards" variant="heading"/>
-    <Table caption="Broken binding" rows={revenue.rows | asPoints(period, amount)}/>
+    <Table caption="Broken binding" rows={asPoints(revenue.rows, "period", "amount")}/>
   </Stack>
 </App>`;
 
@@ -2122,7 +2196,7 @@ function ByoEmbedScenario({ appId, title }: { appId: string; title: string }) {
       <div style={{ maxWidth: 640, margin: "0 auto", fontFamily: "Georgia, serif", display: "grid", gap: 12 }}>
         <p style={{ margin: 0 }}>User: make me a dashboard comparing the weather in three cities</p>
         <p style={{ margin: 0 }}>AI: building it now — it will appear below.</p>
-        <VendoToolResult output={{ kind: "vendo/app-ref@1", appId, title }} />
+        <VendoToolResult output={{ kind: "vendo/app-ref@1", appId, title, status: "building" }} />
         <p style={{ margin: 0 }} data-testid="after-embed">AI: let me know if you want more cities.</p>
       </div>
     </VendoProvider>
@@ -2194,7 +2268,10 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/slot-empty-dark": return { title: "Inline slot — empty CTA (dark)", theme: darkTheme, content: <><VendoSlot id="hero" /><VendoPalette /><VendoOverlay launcher="none" /></> };
     case "/slot-pinned": return { title: "Inline slot — pinned component", theme: mapleTheme, content: <VendoSlot id="hero" pin={{ payload: pinnedViewTree }}><section aria-label="Original host component"><h2>Original host hero</h2></section></VendoSlot> };
     case "/slot-fallback": return { title: "Slot pin fallback", content: <SlotFallbackScenario />, ownProvider: true };
+    case "/pin-shelf": return { title: "Pin — nudge, ceremony, Apps shelf", content: <PinShelfScenario />, ownProvider: true };
     case "/appframe": return { title: "App execution planes", content: <AppFrameScenario /> };
+    case "/appframe-resize": return { title: "App frame resize — the host's bounds win", content: <AppFrameResizeScenario /> };
+    case "/appframe-devserver": return { title: "Live dev-server preview (HMR)", content: <DevServerPreviewScenario /> };
     case "/byo-embed-app": return { title: "BYO chat — inline generated app", content: <ByoEmbedScenario appId="app_island" title="Weather dashboard" />, ownProvider: true };
     case "/byo-embed-building": return { title: "BYO chat — app mid-build", content: <ByoEmbedScenario appId="app_building_lands" title="Trip planner" />, ownProvider: true };
     // §16 law 3 — the embed's terminal build failure. The wire fixture serves

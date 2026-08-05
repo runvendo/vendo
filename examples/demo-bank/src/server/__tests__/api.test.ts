@@ -22,9 +22,9 @@ describe("api", () => {
     const res = await getTxn(new Request("http://x"), { params: Promise.resolve({ id: "nope" }) })
     expect(res.status).toBe(404)
   })
-  it("GET /api/accounts returns four accounts", async () => {
+  it("GET /api/accounts returns seven accounts", async () => {
     const res = await getAccounts()
     const body = await res.json()
-    expect(body.data.length).toBe(4)
+    expect(body.data.length).toBe(7)
   })
 })

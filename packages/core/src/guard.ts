@@ -8,11 +8,13 @@ import type { ToolCall, ToolDescriptor } from "./tools.js";
 
 /** 01-core §6. `"org"` (build contract §9.10) is the org-admin policy layer's
  *  strictness clamp: it appears on `ask` and `block` only, because org policy
- *  TIGHTENS and never loosens — no run is ever decided BY it. */
+ *  TIGHTENS and never loosens — no run is ever decided BY it. `"frozen"` is the
+ *  guard's emergency stop, and blocks only: it refuses rather than parking,
+ *  because there is nothing for anyone to answer. */
 export type GuardDecision =
   | { action: "run"; decidedBy: "grant" | "rule" | "judge" | "default"; grantId?: GrantId }
   | { action: "ask"; approval: ApprovalRequest; decidedBy: "confirmEach" | "rule" | "judge" | "breaker" | "default" | "org" }
-  | { action: "block"; reason: string; decidedBy: "rule" | "judge" | "breaker" | "denied" | "org" };
+  | { action: "block"; reason: string; decidedBy: "rule" | "judge" | "breaker" | "denied" | "org" | "frozen" };
 
 /** 01-core §6 */
 export const guardDecisionSchema = z.discriminatedUnion("action", [
@@ -29,7 +31,7 @@ export const guardDecisionSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("block"),
     reason: z.string(),
-    decidedBy: z.enum(["rule", "judge", "breaker", "denied", "org"]),
+    decidedBy: z.enum(["rule", "judge", "breaker", "denied", "org", "frozen"]),
   }).passthrough(),
 ]) satisfies z.ZodType<GuardDecision>;
 

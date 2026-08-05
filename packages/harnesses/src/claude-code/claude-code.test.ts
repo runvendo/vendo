@@ -73,6 +73,13 @@ interface FakeBox extends SandboxMachineLike {
   destroyed: boolean;
   /** How many messages this box's live session has answered. */
   messages: number;
+  /** ⚠️ TEST EDIT — every word the live session was STEERED with, in order.
+   *  The real session pushes these into its open SDK input stream; this is the
+   *  only place a test can see that they arrived. */
+  steers: string[];
+  /** ⚠️ TEST EDIT — did the live session get INTERRUPTED? Stop reaches it
+   *  through the door, so this is where the whole chain becomes observable. */
+  interrupted: boolean;
   env: Record<string, string>;
 }
 
@@ -116,7 +123,11 @@ function makeBox(
     env,
     destroyed: false,
     messages: 0,
+    steers: [],
+    interrupted: false,
   } as FakeBox;
+  /** Is the doubled session inside a `send()` right now? */
+  let inFlight = false;
 
   const routes = createSessionRoutes({
     root,
@@ -132,9 +143,19 @@ function makeBox(
       systemPrompt?: string;
       toolDoor?: { url: string; token: string };
     }) => ({
+      // ⚠️ TEST EDIT — the double speaks the whole `ClaudeSession` port now that
+      // `steer` joined it, and mirrors the real session's refusal when no turn is
+      // in flight (there would be nobody for the extra `result` to settle).
+      steer(prompt: string) {
+        if (box.messages === 0 || inFlight === false) return false;
+        box.steers.push(prompt);
+        return true;
+      },
       async send(prompt: string) {
         box.messages += 1;
-        await script({
+        inFlight = true;
+        try {
+          await script({
           prompt,
           ...(input.toolDoor === undefined ? {} : { toolDoor: input.toolDoor }),
           emit: input.emit,
@@ -160,10 +181,16 @@ function makeBox(
               return undefined;
             }
           },
-          ...(input.resume === undefined ? {} : { resume: input.resume }),
-        });
+            ...(input.resume === undefined ? {} : { resume: input.resume }),
+          });
+        } finally {
+          inFlight = false;
+        }
       },
-      async interrupt() { /* the turn is cut short; the session lives */ },
+      async interrupt() {
+        // ⚠️ TEST EDIT — the turn is cut short; the session lives.
+        box.interrupted = true;
+      },
       async end() { /* the box is going away */ },
     }),
   }) as {
@@ -172,6 +199,10 @@ function makeBox(
   };
 
   box.destroy = async () => { box.destroyed = true; };
+  // ⚠️ TEST EDIT — the widened `SandboxMachineLike` requires it. Shaped like
+  // e2b's per-port public hostname (`https://<host-for-port>`), which is the
+  // provider behaviour the shared adapter conformance suite certifies.
+  box.url = async (port?: number) => `https://${box.id}-${port ?? 8080}.fake-provider.test`;
   box.request = async (req) => {
     if (box.destroyed) throw new VendoError("not-found", "machine is gone");
     const payload = req.body === undefined
@@ -706,6 +737,17 @@ describe("one box per conversation, destroyed when it goes idle (design §9)", (
     await machine.send({ prompt: "p", emit: () => undefined });
     // Three times the idle budget later, the box is still there.
     expect(sandbox.boxes[0]!.destroyed).toBe(false);
+  });
+});
+
+describe("the build's own dev server is reachable from the browser (blueprint §10.2)", () => {
+  test("the box hands out its provider ingress URL for a port its own traffic never uses", async () => {
+    // A coded build's preview is the TEMPLATE's dev server, on a second listener
+    // in the same box. `request()` already reaches any port from the HOST side;
+    // this is the browser→box side, which the session seam could not express.
+    const sandbox = fakeSandbox(async () => undefined);
+    const machine = await boxMachine({ sandbox, threadId: "thr_preview", env: {}, allowedDomains: [] });
+    expect(await machine.url(5173)).toBe("https://box_0-5173.fake-provider.test");
   });
 });
 
@@ -1300,5 +1342,184 @@ describe("a turn on a real box wire", () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ type: "error" });
     expect(JSON.stringify(events[0])).not.toMatch(/sandbox|adapter|undefined/i);
+  });
+});
+
+describe("mid-build steering — the user's words into the turn already in flight (§10.2)", () => {
+  test("the words reach the SESSION answering this message, over the real door", async () => {
+    // The whole chain, no stub on either side: the harness registers a steer
+    // handler on the turn, the runtime calls it, `boxMachine` posts
+    // /session/<in-flight>/steer to the REAL box door, and the door hands it to
+    // the live session — which is the fake box's scripted stand-in for the SDK.
+    let release: (() => void) | undefined;
+    const sandbox = fakeSandbox(async (box) => {
+      box.emit({ type: "text", delta: "building it" });
+      await new Promise<void>((resolve) => { release = resolve; });
+      box.emit({ type: "text", delta: "Got it — regrouping by client." });
+    });
+    const { turn } = makeTurn({ threadId: "thr_steer_box" });
+    let handOver: ((text: string) => Promise<boolean>) | undefined;
+    (turn as unknown as { onSteer: unknown }).onSteer = (handler: (text: string) => Promise<boolean>) => {
+      handOver = handler;
+    };
+
+    const events: HarnessEvent[] = [];
+    const running = (async () => {
+      for await (const event of claudeCode({ sandbox }).run(turn as never)) events.push(event);
+    })();
+
+    // Wait for the build to be under way, then steer it.
+    await vi.waitFor(() => expect(events).toContainEqual({ type: "text", delta: "building it" }));
+    expect(handOver).toBeDefined();
+    await expect(handOver!("group by client instead")).resolves.toBe(true);
+
+    release?.();
+    await running;
+
+    expect(sandbox.boxes[0]!.steers).toEqual(["group by client instead"]);
+    expect(events).toContainEqual({ type: "text", delta: "Got it — regrouping by client." });
+    // ONE box, ONE message: a steer is never a second send.
+    expect(sandbox.boxes).toHaveLength(1);
+    expect(sandbox.boxes[0]!.messages).toBe(1);
+  });
+
+  test("a steer with nothing in flight does not land", async () => {
+    const sandbox = fakeSandbox(async () => undefined);
+    const { turn } = makeTurn({ threadId: "thr_steer_idle" });
+    let handOver: ((text: string) => Promise<boolean>) | undefined;
+    (turn as unknown as { onSteer: unknown }).onSteer = (handler: (text: string) => Promise<boolean>) => {
+      handOver = handler;
+    };
+    await drain(claudeCode({ sandbox }), turn);
+    // The turn is over; the machine has no message to fold words into.
+    await expect(handOver!("too late")).resolves.toBe(false);
+  });
+
+  test("a harness turn whose runtime offers no steering channel still runs", async () => {
+    // `onSteer` is OPTIONAL by construction: every harness and every driver that
+    // predates steering is unchanged.
+    const sandbox = fakeSandbox(async (box) => { box.emit({ type: "text", delta: "hi" }); });
+    expect(await drain(claudeCode({ sandbox }), makeTurn({ threadId: "thr_no_steer" }).turn))
+      .toContainEqual({ type: "text", delta: "hi" });
+  });
+});
+
+describe("stop is still the only thing that cancels — steering never does", () => {
+  test("an aborted turn reaches ClaudeSession.interrupt() through the door, unchanged", async () => {
+    // `interrupt()` is NOT unused and never was: Stop → `thread.stop()` → the
+    // request abort → `turn.signal`, which the poll loop turns into
+    // POST /session/<id>/interrupt, which the door hands to the live session.
+    // This pins that chain so steering cannot quietly become the stop path.
+    const abort = new AbortController();
+    let release: (() => void) | undefined;
+    const sandbox = fakeSandbox(async (box) => {
+      box.emit({ type: "text", delta: "building it" });
+      // A real build is not silent, and that matters here: the poll loop checks
+      // the abort at the TOP of each pass, and the door holds a poll open for up
+      // to POLL_WAIT_MS when it has nothing to say. A talking box returns each
+      // poll promptly, which is what lets Stop land promptly. (A SILENT box waits
+      // out the poll window — real, pre-existing, and not this lane's to change.)
+      const beat = setInterval(() => box.emit({ type: "text", delta: "." }), 20);
+      try {
+        await new Promise<void>((resolve) => { release = resolve; });
+      } finally {
+        clearInterval(beat);
+      }
+    });
+    const { turn } = makeTurn({ threadId: "thr_stop" });
+    (turn as unknown as { signal: AbortSignal }).signal = abort.signal;
+
+    const events: HarnessEvent[] = [];
+    const running = (async () => {
+      for await (const event of claudeCode({ sandbox }).run(turn as never)) events.push(event);
+    })();
+    await vi.waitFor(() => expect(events).toContainEqual({ type: "text", delta: "building it" }));
+
+    abort.abort();
+    await vi.waitFor(() => expect(sandbox.boxes[0]!.interrupted).toBe(true));
+    release?.();
+    await running;
+  });
+
+  test("a steer never interrupts — the turn it joined keeps running", async () => {
+    let release: (() => void) | undefined;
+    const sandbox = fakeSandbox(async (box) => {
+      box.emit({ type: "text", delta: "building it" });
+      await new Promise<void>((resolve) => { release = resolve; });
+    });
+    const { turn } = makeTurn({ threadId: "thr_steer_no_stop" });
+    let handOver: ((text: string) => Promise<boolean>) | undefined;
+    (turn as unknown as { onSteer: unknown }).onSteer = (handler: (text: string) => Promise<boolean>) => {
+      handOver = handler;
+    };
+
+    const events: HarnessEvent[] = [];
+    const running = (async () => {
+      for await (const event of claudeCode({ sandbox }).run(turn as never)) events.push(event);
+    })();
+    await vi.waitFor(() => expect(events).toContainEqual({ type: "text", delta: "building it" }));
+    await handOver!("group by client instead");
+
+    expect(sandbox.boxes[0]!.interrupted).toBe(false);
+    release?.();
+    await running;
+    expect(sandbox.boxes[0]!.interrupted).toBe(false);
+  });
+});
+
+/**
+ * §4.4's loadout, items 2 and 3: the builder's two REFERENCES, on disk, where the
+ * `building-apps` skill tells it to look.
+ *
+ * Both already exist and are already generated — `hostComponentFiles(catalog)`
+ * writes `/host/components/<Name>.md` and `buildingAppsSkill.files` carries
+ * `references/format.md`, which is `kitPrompt()`'s output, not a hand-written
+ * second copy. What nothing proved is the HOP: that the projection composition
+ * assembles actually reaches the machine's disk, at a path the skill's own
+ * workspace-relative instructions resolve against.
+ *
+ * That is precisely the producer/consumer seam this repo shipped four times green
+ * and dead, so it is tested through the REAL box door with nothing stubbed on
+ * either side: a real checkout, a real materialize, a real in-box walk.
+ */
+describe("the builder's references reach the box's disk (§4.4 loadout)", () => {
+  /** Exactly what `hostSkillFiles` + `hostComponentFiles` project, in shape. */
+  const HOST_FILES = {
+    "/host/components/DataTable.md": "# DataTable\n\nRows of things.\n\n## Props\n\n```json\n{}\n```\n",
+    "/host/skills/building-apps/SKILL.md": "---\nname: building-apps\ndescription: Build an app.\n---\n\nbody\n",
+    "/host/skills/building-apps/references/format.md": "# The .vendo format\n\n<App>…</App>\n",
+  };
+
+  test("the component reference and the format reference are both readable in the box", async () => {
+    const seen: Record<string, string | undefined> = {};
+    const sandbox = fakeSandbox(async (box) => {
+      // The skill body sends the builder to `host/components/` and
+      // `host/skills/building-apps/references/format.md`, RELATIVE to its cwd.
+      // The box's cwd is the workspace root, so these are the resolved paths.
+      for (const path of Object.keys(HOST_FILES)) seen[path] = box.read(path);
+    });
+    const { turn } = makeTurn({ files: { ...HOST_FILES, "/user/apps/app_1/app.vendo": "<App/>" } });
+    await drain(claudeCode({ sandbox }), turn);
+
+    expect(seen).toEqual(HOST_FILES);
+  });
+
+  // "the references are never carried home" is NOT tested here on purpose:
+  // `/user/scratch never leaves the box, and /host is never written back` above
+  // already pins it through the same real door, and a second copy of it would be
+  // a test that has to be kept in step with nothing.
+
+  test("the /host mount IS the SDK plugin root — one skills mechanism, not two", async () => {
+    let pluginRoot: string | undefined;
+    const sandbox = fakeSandbox(async (box) => { pluginRoot = box.read("/host/skills/building-apps/SKILL.md"); });
+    const { turn } = makeTurn({
+      files: HOST_FILES,
+      skills: [{ name: "building-apps", description: "Build an app." }],
+    });
+    await drain(claudeCode({ sandbox }), turn);
+
+    // The plugin path the driver hands the SDK and the mount the skill file lands
+    // on are the same directory, which is why no projection or copy exists.
+    expect(pluginRoot).toBe(HOST_FILES["/host/skills/building-apps/SKILL.md"]);
   });
 });

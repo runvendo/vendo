@@ -1,5 +1,6 @@
 import { VendoError } from "@vendoai/core";
 import type { SandboxAdapter, SandboxMachine } from "../sandbox.js";
+import { inMemoryBoxFiles } from "./box-files.js";
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -19,6 +20,7 @@ interface FakeStatefulSnapshot {
   allowedDomains?: readonly string[];
   template?: string;
   state: ReadonlyMap<string, string>;
+  files: ReadonlyMap<string, Uint8Array>;
 }
 
 /**
@@ -35,6 +37,10 @@ export class FakeStatefulMachine implements SandboxMachine {
   reaped = false;
   readonly env: Readonly<Record<string, string>>;
   readonly state: Map<string, string>;
+  /** The box's disk, beside its key-value state: a snapshot/resume cycle
+   *  carries both, so a lifecycle test can prove the app's SOURCE survived. */
+  readonly fileContents: Map<string, Uint8Array>;
+  readonly files: SandboxMachine["files"];
 
   constructor(
     readonly id: string,
@@ -42,10 +48,13 @@ export class FakeStatefulMachine implements SandboxMachine {
     readonly allowedDomains: readonly string[] | undefined,
     readonly template: string | undefined,
     state: ReadonlyMap<string, string>,
+    files: ReadonlyMap<string, Uint8Array>,
     private readonly saveSnapshot: (machine: FakeStatefulMachine) => string,
   ) {
     this.env = Object.freeze({ ...env });
     this.state = new Map(state);
+    this.fileContents = new Map([...files].map(([path, bytes]) => [path, bytes.slice()]));
+    this.files = inMemoryBoxFiles(this.fileContents);
   }
 
   async request(req: {
@@ -124,6 +133,7 @@ export const fakeStatefulSandbox = (): FakeStatefulSandbox => {
       ...(machine.allowedDomains === undefined ? {} : { allowedDomains: Object.freeze([...machine.allowedDomains]) }),
       ...(machine.template === undefined ? {} : { template: machine.template }),
       state: new Map(machine.state),
+      files: new Map([...machine.fileContents].map(([path, bytes]) => [path, bytes.slice()])),
     }));
     return ref;
   };
@@ -133,6 +143,7 @@ export const fakeStatefulSandbox = (): FakeStatefulSandbox => {
     allowedDomains: readonly string[] | undefined,
     template: string | undefined,
     state: ReadonlyMap<string, string>,
+    files: ReadonlyMap<string, Uint8Array>,
   ): FakeStatefulMachine => {
     const machine = new FakeStatefulMachine(
       `fake-machine-${nextMachine++}`,
@@ -140,6 +151,7 @@ export const fakeStatefulSandbox = (): FakeStatefulSandbox => {
       allowedDomains === undefined ? undefined : Object.freeze([...allowedDomains]),
       template,
       state,
+      files,
       saveSnapshot,
     );
     machines.push(machine);
@@ -154,7 +166,7 @@ export const fakeStatefulSandbox = (): FakeStatefulSandbox => {
     resumes: 0,
     async create(spec) {
       adapter.creates += 1;
-      return boot(spec.env, spec.allowedDomains, spec.template, new Map());
+      return boot(spec.env, spec.allowedDomains, spec.template, new Map(), new Map());
     },
     async resume(snapshotRef, policy) {
       adapter.resumes += 1;
@@ -162,7 +174,7 @@ export const fakeStatefulSandbox = (): FakeStatefulSandbox => {
       if (snapshot === undefined) throw new Error(`unknown fake stateful snapshot: ${snapshotRef}`);
       // Lane E — a passed policy replaces the snapshot-time allowlist (seam rule).
       const allowedDomains = policy === undefined ? snapshot.allowedDomains : policy.allowedDomains;
-      return boot({ ...snapshot.env }, allowedDomains, snapshot.template, snapshot.state);
+      return boot({ ...snapshot.env }, allowedDomains, snapshot.template, snapshot.state, snapshot.files);
     },
     async destroy(snapshotRef) {
       destroyed.push(snapshotRef);

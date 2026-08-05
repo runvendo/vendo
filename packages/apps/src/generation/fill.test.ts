@@ -69,7 +69,7 @@ const TWO_GROUPS = plan([
   },
 ], [INVOICE_QUERY]);
 
-const METRIC = '<MetricCard label="Outstanding" value={invoices | sum(amountCents)}/>';
+const METRIC = '<MetricCard label="Outstanding" value={sum(invoices, "amountCents")}/>';
 const TABLE = '<Table columns={["id", "client"]} rows={invoices}/>';
 
 /** The fragment each group's worker writes, chosen by the purpose in its own

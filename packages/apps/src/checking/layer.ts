@@ -11,14 +11,14 @@
  * throws degrades to a `warn` naming it, so a broken check never takes the app
  * down with it.
  */
+import type { FloorDependencies } from "./deps.js";
 import { factChecks } from "./facts.js";
 import type { Check, CheckInput, CheckingLayer, Finding } from "./types.js";
-import type { GenerationDependencies } from "../generation/engine.js";
 
 export interface CheckingLayerOptions {
   /** The host surface the fact checks measure against (catalog, tools, tool
    *  shapes). */
-  deps: GenerationDependencies;
+  deps: FloorDependencies;
   /** Checks plugged in by packs (`Pack.checks`, build contract §5). APPENDED —
    *  they can add findings, never remove or replace a built-in. */
   checks?: readonly Check[];
@@ -46,7 +46,13 @@ const isFinding = (value: unknown): value is Finding => {
   return where === undefined || typeof where === "string";
 };
 
-const warnAbout = (check: Check, message: string): Finding => ({
+/** Stamp the check that produced a finding, OVERRIDING anything it wrote there.
+ *  This is the one place that knows the answer for every check at once, and a
+ *  check is untrusted code: self-assigned provenance is a finding attributing
+ *  itself to a neighbour, which at a waive point is a privilege escalation. */
+const from = (check: Check, finding: Finding): Finding => ({ ...finding, check: check.name });
+
+const warnAbout = (check: Check, message: string): Finding => from(check, {
   severity: "warn",
   where: check.name,
   message,
@@ -76,7 +82,7 @@ const findingsOf = (check: Check, reported: unknown): Finding[] => {
   if (!Array.isArray(reported)) {
     return [warnAbout(check, `the check "${check.name}" did not report a list of findings, so whatever it would have found is missing from this report`)];
   }
-  const findings = reported.filter(isFinding);
+  const findings = reported.filter(isFinding).map((finding) => from(check, finding));
   const dropped = reported.length - findings.length;
   return dropped === 0
     ? findings

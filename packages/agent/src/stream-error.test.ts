@@ -56,9 +56,10 @@ describe("mid-stream turn errors", () => {
       statusCode: 402,
       responseBody: JSON.stringify({
         code: "meter-exhausted",
-        meter: "ai_tokens",
-        used: 1_204_000,
-        limit: 1_000_000,
+        meter: "usage",
+        unit: "usd",
+        used: 5.2,
+        limit: 5,
         resets_at: "2026-08-01T00:00:00.000Z",
         reason: "allowance",
         exits: { upgrade_url: "https://console.vendo.run/billing", byo_docs_url: "https://docs.vendo.run/byo" },
@@ -66,8 +67,8 @@ describe("mid-stream turn errors", () => {
     }));
     const errorPart = parts.find((part) => part.type === "error");
     expect(errorPart?.errorText).toBe(
-      "Vendo: Vendo Cloud paused AI tokens — the allowance for this billing period is used up "
-      + "(1,204,000 of 1,000,000 used; resets 2026-08-01). "
+      "Vendo: Vendo Cloud paused usage — the $5.00 included this billing period is used up "
+      + "($5.20 of $5.00 used; resets 2026-08-01). "
       + "Upgrade your plan (https://console.vendo.run/billing) "
       + "or bring your own infrastructure (https://docs.vendo.run/byo). (cloud-required)",
     );

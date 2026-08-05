@@ -42,6 +42,15 @@ function manifestBox(initial: Array<{ cron: string; fn: string }>) {
       }
       return { status: 404, headers: {}, body: new Uint8Array() };
     },
+    // The fold-in journey is the manifest and the fn door, never the box's
+    // disk — the seam member is here so this double stays a whole
+    // SandboxMachine, and it fails loudly rather than answering a file it does
+    // not hold.
+    files: {
+      async read(path) { throw new Error(`the manifest box holds no files (${path})`); },
+      async write(path) { throw new Error(`the manifest box holds no files (${path})`); },
+      async list(dir) { throw new Error(`the manifest box holds no files (${dir})`); },
+    },
     async url(port?: number) { return `https://${port ?? 8080}-fake_manifest_box.foldin.test`; },
     async snapshot() { return "fake:manifest-snap"; },
     async stop() { /* sleep */ },

@@ -51,8 +51,8 @@ export function OpenApp({ appId, name, onClose }: { appId: string; name?: string
   const { app, surface, error, isLoading, refresh } = useApp(appId);
   // Wave 7 H2 — same keepalive as VendoSlot's MountedApp (see frames.tsx).
   const keepalive = useMemo(
-    () => ({ ping: () => client.apps.pingMachine(appId), reopen: refresh }),
-    [appId, client, refresh],
+    () => ({ ping: () => client.apps.pingMachine(appId) }),
+    [appId, client],
   );
   const body = surface
     ? (

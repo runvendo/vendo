@@ -39,7 +39,7 @@ describe("tool-pack contract", () => {
   });
 
   it("pins vendo_delegate's plain-data result: report summary plus produced refs", () => {
-    const appRef: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_x", title: "Dashboard" };
+    const appRef: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_x", title: "Dashboard", status: "building" };
     const approvalRef: VendoApprovalRef = {
       kind: "vendo/approval-ref@1",
       approvalId: "apr_x",

@@ -316,6 +316,53 @@ describe("vendo_create_app", () => {
     const { byName } = await pack({ implementations: hostTools() });
     expect(byName.has(VENDO_CREATE_APP_TOOL)).toBe(false);
   });
+
+  // runvendo/flowlet#822 defect 2: the fast ref wins the race against the
+  // build's real outcome on essentially every generation that streams any
+  // content before failing (the common case for a wire-validation failure).
+  // A calling model narrated three fabricated successes off an envelope that
+  // carried only an appId and a title — nothing distinguishing "accepted,
+  // outcome unknown" from "done". The envelope must say so itself, in a field
+  // a model cannot skim past, on BOTH the fast path and the (rarer) case
+  // where the build's own success outruns the stream.
+  it("the fast-path ref is machine-readable as still-building, not a finished resource", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const implementations = {
+      ...hostTools(),
+      [VENDO_MAKE_TOOL]: makeTool({ appId: "app_fast", name: "Weather dashboard", gate }),
+    };
+    const { byName } = await pack({ implementations });
+    const output = await byName.get(VENDO_CREATE_APP_TOOL)!.execute(
+      { prompt: "Compare weather in 3 cities" },
+      { ctx: ctx() },
+    );
+    const envelope = vendoAppRefSchema.parse(output);
+    expect(envelope.status).toBe("building");
+    release();
+  });
+
+  it("without a streamed view part, the ref built from the finished receipt is STILL marked building — this tool never tells the model a build is done", async () => {
+    const implementations = {
+      ...hostTools(),
+      [VENDO_MAKE_TOOL]: makeTool({ appId: "app_done", name: "Trip planner", stream: false }),
+    };
+    const { byName } = await pack({ implementations });
+    const output = await byName.get(VENDO_CREATE_APP_TOOL)!.execute(
+      { prompt: "plan my trip" },
+      { ctx: ctx() },
+    );
+    expect(vendoAppRefSchema.parse(output).status).toBe("building");
+  });
+
+  it("the tool description forbids narrating a build as done or inventing its contents", async () => {
+    const { byName } = await pack({
+      implementations: { ...hostTools(), [VENDO_MAKE_TOOL]: makeTool({ appId: "app_x", name: "x" }) },
+    });
+    const description = byName.get(VENDO_CREATE_APP_TOOL)!.description;
+    expect(description).toContain("building");
+    expect(description).toMatch(/never describe|never say it is created/i);
+  });
 });
 
 describe("vendo_delegate", () => {
@@ -358,6 +405,45 @@ describe("vendo_delegate", () => {
       { ctx: ctx() },
     ) as { status: string; refs: unknown[] };
     expect(output.status).toBe("error");
+    expect(output.refs).toEqual([]);
+  });
+
+  // runvendo/flowlet#822 defect 2, generalized: `vendo_make` answers a failed
+  // EDIT with an ok outcome whose MakeReceipt carries status:"failed" and a
+  // speakable `say` (agent-tools.ts's vendo_make handler) — a soft failure,
+  // never a throw, by design. Ref capture must not launder that failure into
+  // a bare {kind, appId, title} ref: an appId and a title are indistinguishable
+  // from a completed edit, so the delegate's caller would read this as one
+  // more successful change.
+  it("never turns a failed EDIT's receipt into a success-shaped ref", async () => {
+    const implementations = {
+      ...hostTools(),
+      [VENDO_MAKE_TOOL]: {
+        descriptor: makeTool({ appId: "app_edit", name: "Report app" }).descriptor,
+        execute: () => ({
+          id: "app_edit",
+          title: "Report app",
+          status: "failed",
+          say: "I couldn't make that change to Report app.",
+        } as unknown as Json),
+      },
+    };
+    const runner: AgentRunner = async (task, runCtx) => {
+      const outcome = await task.tools.execute(
+        { id: "call_edit", tool: VENDO_MAKE_TOOL, args: { request: "add a column", app: "app_edit" } },
+        runCtx,
+      );
+      expect(outcome.status).toBe("ok");
+      return { status: "ok", summary: "Couldn't make that change to Report app.", toolCalls: [] };
+    };
+    const { byName } = await pack({ implementations, runner });
+    const output = await byName.get(VENDO_DELEGATE_TOOL)!.execute(
+      { task: "add a column to the report" },
+      { ctx: ctx() },
+    ) as { status: string; refs: unknown[] };
+    expect(output.status).toBe("ok");
+    // No ref at all beats a false one: refs are read as "this exists and is
+    // fine", and a failed edit is neither.
     expect(output.refs).toEqual([]);
   });
 });

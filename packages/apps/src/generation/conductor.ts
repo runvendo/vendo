@@ -1,4 +1,24 @@
 /**
+ * QUARANTINED (blueprint §14.2, 2026-08-05). Do not build on this file.
+ *
+ * The delete blocker named in §7.3 — "the floor's types must be freed first" — is
+ * GONE: `checking/` now owns `FloorDependencies` and imports nothing from this
+ * directory, and the checks it runs are reachable from the paint seam through
+ * `AppFloor`, for every author rather than only for apps this pipeline built. What
+ * keeps the file alive is its five `runtime.ts` call sites, the public re-export in
+ * `index.ts`, and the genui-bench vendo lane — all of which still work, unchanged.
+ *
+ * The replacement is the LEAN loop plus the floor at the seam (§4.1, §7.1): a
+ * builder writes `plan.vendo` / `app.vendo` with its own hands, the seam compiles
+ * in the production dialect and refuses to paint what does not pass, and
+ * `validate` is the review floor. Nothing new should route through the conductor's
+ * brain-turn / skeleton / fill / lanes / fix-round order.
+ *
+ * @deprecated Superseded by the lean loop and the checks floor at the paint seam.
+ *   Kept until that path is proven; its callers are frozen, not extended.
+ *
+ * ---
+ *
  * The conductor: one create, one edit, start to finish.
  *
  * The brain takes ONE turn, and what it answers decides everything after it.
@@ -29,6 +49,7 @@ import {
   type TextEdit,
   type Tree,
 } from "@vendoai/core";
+import { bindingKindCheck } from "../checking/facts.js";
 import { createCheckingLayer, judgmentRules } from "../checking/layer.js";
 import { reviewerCheck } from "../checking/reviewer.js";
 import type { Check, CheckingLayer, Finding } from "../checking/types.js";
@@ -38,7 +59,7 @@ import { fillPlan, type FillOptions } from "./fill.js";
 import { runIslandLane } from "./lanes.js";
 import { growSkeleton, skeletonFromPlan, type Skeleton } from "./skeleton.js";
 import { documentFromEdit, validateCompiledCreate } from "./validation/validate.js";
-import { wireCompileOptionsFor } from "./wire-options.js";
+import { wireCompileOptionsFor } from "../wire-options.js";
 
 /**
  * Fix-it turns one app gets after the checking layer blocks it. Two, for the
@@ -94,11 +115,8 @@ export interface ConductedFailure {
 
 export type ConductedResult = ConductedApp | ConductedRefusal | ConductedFailure;
 
-const hostComponentNames = (deps: GenerationDependencies): string[] =>
-  deps.catalog.map(({ name }) => name);
-
 const compileOptionsFor = (deps: GenerationDependencies): Parameters<typeof compileWire>[1] =>
-  wireCompileOptionsFor(deps, hostComponentNames(deps));
+  wireCompileOptionsFor(deps);
 
 /** The checking layer for ONE generation run: the built-in fact checks, the AI
  *  reviewer bound to the data this app's queries actually returned, and the
@@ -116,7 +134,10 @@ const checkingFor = (
   // with, so the rubric the reviewer reads and `layer.rubric` can never diverge.
   return createCheckingLayer({
     deps,
-    checks: [reviewerCheck(deps, samples, judgmentRules(plugged)), ...plugged],
+    // The generate path's type check is the cheap, node-anchored structural one
+    // (§7.1) — the fix-loop can act on its loci, and the compiler static half is
+    // reserved for the paint/validate gates off this synchronous latency budget.
+    checks: [bindingKindCheck(deps), reviewerCheck(deps, samples, judgmentRules(plugged)), ...plugged],
   });
 };
 
@@ -172,6 +193,17 @@ const fixInstruction = (findings: readonly Finding[]): string => [
   "These things are wrong with the app as it stands. Fix each one with an <Edit> over the app text printed above, and change nothing else.",
   ...findings.map(({ where, message }) => (where === undefined ? `- ${message}` : `- ${where}: ${message}`)),
 ].join("\n");
+
+/** What the brain is told when a DIRECT answer failed to compile. There is no
+ *  valid tree yet, so there is nothing to hand back as an <Edit> target
+ *  (fixInstruction's job) — the brain gets the ask again, its own wire, and
+ *  exactly what was wrong with it, the same teaching-sentence discipline. */
+const directRewriteInstruction = (request: string, wire: string, issues: readonly string[]): string => [
+  `${request}`,
+  "Your last answer does not compile. Answer again from scratch — directly, or as a plan if that now fits better — fixing every problem below; do not repeat them.",
+  `WHAT YOU WROTE:\n${wire}`,
+  `WHAT WAS WRONG WITH IT:\n${issues.map((issue) => `- ${issue}`).join("\n")}`,
+].join("\n\n");
 
 /**
  * Run the checking layer and hand every BLOCKING finding back to the brain as
@@ -362,14 +394,42 @@ export const conductCreate = async (
     return { kind: "cannot", reasons: outcome.reasons, session: turn.session };
   }
   if (outcome.kind === "direct") {
-    const built = await documentFromWire(outcome.wire, deps, input.prompt);
+    let wire = outcome.wire;
+    let built = await documentFromWire(wire, deps, input.prompt);
+    let session = turn.session;
+    // A direct answer that fails to compile used to be a single dead end —
+    // the one outcome in this module with no retry at all, so a model that
+    // reaches for a JS idiom the wire rejects (a method-call tool name,
+    // braces in text, an undeclared reference) failed the WHOLE build on the
+    // first try. This mirrors checkAndFix's bounded loop, for the case
+    // checkAndFix cannot help with: there is no valid tree yet to hand back
+    // as an <Edit> target.
+    for (let round = 0; built.document === undefined && round < FIX_ROUNDS; round += 1) {
+      const retry = await runBrainTurn({
+        instruction: directRewriteInstruction(input.prompt, wire, built.issues),
+        session,
+      }, deps);
+      session = retry.session;
+      if (retry.outcome?.kind === "cannot") return { kind: "cannot", reasons: retry.outcome.reasons, session };
+      if (retry.outcome?.kind === "plan") {
+        return buildPlan({
+          plan: retry.outcome.plan,
+          skeleton: skeletonFromPlan(retry.outcome.plan),
+          request: input.prompt,
+          session,
+        }, deps, options);
+      }
+      if (retry.outcome?.kind !== "direct") break;
+      wire = retry.outcome.wire;
+      built = await documentFromWire(wire, deps, input.prompt);
+    }
     if (built.document === undefined) {
-      return { kind: "failure", issues: [...turn.issues, ...built.issues], session: turn.session };
+      return { kind: "failure", issues: [...turn.issues, ...built.issues], session };
     }
     const checked = await checkAndFix({
       document: withId(built.document),
       request: input.prompt,
-      session: turn.session,
+      session,
     }, deps, checkingFor(deps, {}, options.checks), options);
     return {
       kind: "app",

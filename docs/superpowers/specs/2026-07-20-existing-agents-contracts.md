@@ -23,7 +23,7 @@ the agent consumes it like any tool output, no embed).
 export const VENDO_APP_REF_KIND = "vendo/app-ref@1";
 export const VENDO_APPROVAL_REF_KIND = "vendo/approval-ref@1";
 
-interface VendoAppRef      { kind: "vendo/app-ref@1";      appId: AppId;           title: string }
+interface VendoAppRef      { kind: "vendo/app-ref@1";      appId: AppId;           title: string; status: "building" }
 interface VendoApprovalRef { kind: "vendo/approval-ref@1"; approvalId: ApprovalId; summary: string }
 type VendoToolEnvelope = VendoAppRef | VendoApprovalRef;
 ```
@@ -39,6 +39,12 @@ type VendoToolEnvelope = VendoAppRef | VendoApprovalRef;
   (the embed's chrome while the build streams). `summary` is one human-readable
   line describing what is waiting (Lane A derives it from the tool descriptor +
   input preview, same vocabulary as `ApprovalRequest.inputPreview`).
+- `status` on `VendoAppRef` is always the literal `"building"` — additive
+  field (runvendo/flowlet#822 defect 2), machine-readable so a calling model
+  cannot mistake the fast-return ref for a finished, describable app even if
+  it skims past the tool description. A terminally failed build is never
+  wrapped in this envelope at all — the tool's plain output (a `MakeReceipt`,
+  or an error outcome) carries the failure instead.
 
 ## 2. Public tool-pack API (`@vendoai/agent` types, umbrella subpaths)
 

@@ -298,6 +298,11 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
       }
     },
     url: (port) => raw.url(port),
+    files: {
+      read: (path) => raw.files.read(path),
+      write: (path, bytes) => raw.files.write(path, bytes),
+      list: (dir) => raw.files.list(dir),
+    },
     snapshot: () => raw.snapshot(),
     stop: () => raw.stop(),
     destroy: () => raw.destroy(),

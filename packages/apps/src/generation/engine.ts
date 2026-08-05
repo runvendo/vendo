@@ -11,26 +11,21 @@
  */
 import {
   type AppDocument,
-  type NormalizedCatalog,
   type PlanDisplay,
-  type ShapeType,
   type ToolSemantics,
   type Tree,
   type TreeNode,
   type VendoTheme,
 } from "@vendoai/core";
 import type { LanguageModel, ModelMessage } from "ai";
+import type { FloorDependencies } from "../checking/deps.js";
 import { modelCallParams } from "../model-params.js";
 import { hasDefaultExport, pinComponentName, pinForkSource, type PinBaseline } from "../pins.js";
 
-/** The slice of a tool descriptor generation needs: prompt context and the
- *  query-tool existence check. */
-export interface HostToolInfo {
-  name: string;
-  description: string;
-  risk: string;
-  inputSchema?: Record<string, unknown>;
-}
+/** The floor owns the tool slice now (`../checking/deps.ts`) so it can outlive
+ *  this pipeline; re-exported here because every generation module already
+ *  imports it from this file. */
+export type { HostToolInfo } from "../checking/deps.js";
 
 /** A tree on its way to the screen: the skeleton the moment a plan lands, then
  *  the same tree again with each group's contents spliced in. */
@@ -44,22 +39,22 @@ export interface GeneratedPartial {
   display?: PlanDisplay;
 }
 
-export interface GenerationDependencies {
+/**
+ * Everything a generation needs — the floor's four fields plus the pipeline's
+ * own. It EXTENDS {@link FloorDependencies} rather than restating it, so the
+ * assignability the conductor's checking layer relies on is declared instead of
+ * left to structural luck.
+ */
+export interface GenerationDependencies extends FloorDependencies {
+  /** Narrowed to REQUIRED: the floor can run its deterministic half without a
+   *  model, but a generation cannot happen without one. */
   model: LanguageModel;
-  /** The composition-normalized catalog (01 §14): propsJsonSchema is derived. */
-  catalog: NormalizedCatalog;
   theme?: VendoTheme;
   /** Host design rules for the generation prompt. The function form is resolved
    *  ONCE per generation (see {@link snapshotDesignRules}), so the prompts
    *  within one create never mix rule sets. */
   designRules?: string | (() => string | undefined);
   pinBaselines?: readonly PinBaseline[];
-  /** Shape-card outputs keyed by tool; when present, compiles type-check
-   *  bindings and the fact checks surface shape mismatches. */
-  toolShapes?: Readonly<Record<string, ShapeType>>;
-  /** The host tools a query may name. Without the list the model invents tool
-   *  names; with it, a query naming anything else is a fact finding. */
-  tools?: readonly HostToolInfo[];
   /** Per-tool field semantics from `.vendo/semantics.json`: annotated shape
    *  cards and Kit format defaults. Keyed by tool name. */
   semantics?: Readonly<Record<string, ToolSemantics>>;

@@ -23,8 +23,11 @@ The **compiler** (deterministic, total, ~1ms) parses the JSX-like wire into the 
 
 This is why the format change is low-risk: renderer, jail, guard, `fn:` machinery, and the `formatVersion` dispatch (`packages/core/src/app-document.ts`) are reused. Only the wire encoder/decoder is new.
 
-## 2. The wire format (JSX-like markup)
-Same runtime semantics as v1's tree; different surface syntax. Illustrative:
+## 2. The wire format (a strict TSX subset)
+Same runtime semantics as v1's tree; different surface syntax. Since the v3
+dialect amendment (§5 D1–D6) the surface is a strict subset of valid TSX,
+still compiled as **pure data** — no evaluator, no `eval`, no bundler ever
+touches a `.vendo` file. Illustrative:
 
 ```
 <App name="Cash Overview">
@@ -33,7 +36,7 @@ Same runtime semantics as v1's tree; different surface syntax. Illustrative:
   <Stack gap={16}>
     <PageHeader title="Cash Overview" subtitle="…"/>
     <Grid cols={3}>
-      <LineChart title="Revenue" points={revenue | asPoints(month, revenue)}/>
+      <LineChart title="Revenue" points={asPoints(revenue, "month", "revenue")}/>
       <DataTable rows={payments} columns={[…]}/>
     </Grid>
   </Stack>
@@ -46,6 +49,7 @@ Rules:
 - **Components** resolve, in order: host catalog → prewired primitives → local `<Island>` generated components. Host brand wins.
 - **Bindings** reference declared `<Query>`/state by name (`points={revenue}`); the compiler converts to canonical `$path`/`$state` bindings. `<Query>` lines come first so data fetching (through the guarded host tools) starts while the rest streams.
 - **Actions** are attributes naming a host tool or an `fn:` reference; parsed to the canonical guard-checked dispatch. Unchanged security semantics.
+- **Comments** are JSX comments (`{/* … */}`) and are skipped. **Braces in text position are refused** (`<Text>Total: {q.f}</Text>`) — a value reaches the screen through a binding, never through interpolation.
 - **Code islands**: `<Island name="…">` holds **raw TSX** (no JSON escaping — the v1 pain), compiled + sandboxed exactly like today's `components` map. Client-side, jailed, no authority. (Distinct from server `fn:` code, which is rungs 2–4.)
 - **`fn:` references** work identically to v1 — a tree that names `fn:foo` targets the app's machine (rungs 2–3). No change to the server contract.
 
@@ -54,11 +58,23 @@ The compiler enforces the pinned limits (nodes, components, island bytes) from c
 ## 3. Shape-aware binding (the correctness feature — new in v2)
 The benchmark proved the model mis-binds because it never sees the data shape. v2 fixes this structurally:
 - **At generation time, the engine gives the model the real (or sampled) response shape of each host tool / `fn:`** — field names, types, nesting — as part of the catalog/tool context (a "shape card" per tool, derived at `vendo sync` or from a live/recorded sample; values hashed away, only shapes kept).
-- **The wire format supports a bounded reshape** in bindings (`revenue | asPoints(month, revenue)` — a small, pure, non-Turing projection vocabulary: field-rename, pick, map, format, aggregate) so the model can adapt `{month, revenue}` → `{label, value}` without a code island.
+- **The wire format supports a bounded reshape** in bindings (`asPoints(revenue, "month", "revenue")` — a small, pure, non-Turing projection vocabulary: field-rename, pick, map, format) so the model can adapt `{month, revenue}` → `{label, value}` without a code island.
 - **The compiler type-checks bindings against the shape card**: a component bound to fields that don't exist in the tool's response shape is a compile error routed to per-binding repair — the broken chart becomes an unshippable state, caught before the user sees it.
 - Where no shape is known, the type is `Json`, the projection must be defensive, and the region renders a contained data-shape notice rather than a broken render.
 
 This is the single highest-value correctness change; it must ship with the format, not after.
+
+**v3 amendment (D1/D2/D3) — one call grammar.** A reshape is a value-first
+nested call (`rename(pick(q.rows, "a"), "a", "b")`), every aggregate names its
+field (`sum(q.rows, "amount_cents")`), and `group_by` takes the rows it groups
+plus a descriptor (`group_by(q.rows, "issued_at", "month", sum.of("amount"))`).
+The two aggregate vocabularies the pipe grammar needed collapse into one: the
+surviving names are `sum, count, average, min, max, difference, days_until,
+group_by`, and `avg` retires with the pipe. `RESHAPE_OPS` stays frozen as a
+registry, but only `pick, rename, asPoints, asOptions, format, template` are
+writable on the wire; a stored document's aggregate step still compiles and
+renders. The printer prints a chain inside-out under the same byte-identical
+round-trip law (§5).
 
 ## 4. The generation pipeline (tier0-wired)
 Implemented behind the existing `GenerationEngine` seam in `@vendoai/apps` (the `create`/`edit` entry; replaces `modelEngine` internals, not the seam).

@@ -19,7 +19,7 @@ export const mapleChips: TryThisChip[] = [
   { key: "subs", prompt: "Build me a subscriptions tracker" },
   { key: "dining", prompt: "Where did my dining budget go?" },
   { key: "bills", prompt: "What bills hit next week?" },
-  { key: "goal", prompt: "Track my Lisbon savings goal" },
+  { key: "goal", prompt: "Track my Japan trip savings goal" },
   { key: "cards", prompt: "Break down my card spend" },
 ];
 

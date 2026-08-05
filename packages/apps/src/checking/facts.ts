@@ -20,6 +20,7 @@ import {
   checkBindingShapes,
   checkExpr,
   kitSpec,
+  printWire,
   shapeAtPointer,
   isExprBinding,
   isPathBinding,
@@ -33,12 +34,22 @@ import {
 } from "@vendoai/core";
 import type { AppDocument } from "@vendoai/core";
 import { prewiredPropNames } from "../prewired-schema.js";
-import { APP_NAME_MAX_CHARS } from "../generation/contracts/sections.js";
-import type {
-  GenerationDependencies,
-  HostToolInfo,
-} from "../generation/engine.js";
+import type { FloorDependencies, HostToolInfo } from "./deps.js";
+import { screenTypings } from "./screen-typings.js";
+import { screenTscFindings } from "./screen-tsc.js";
 import type { Check, Finding } from "./types.js";
+
+/** The app's name is its panel display title. Echoing the ask back ("Create a
+ *  chat dashboard that displays the user's…") ships a truncated sentence as
+ *  the title of every fresh install's first app, so the cap is a validation
+ *  gate, not just prompt guidance: an over-long name routes to repair with
+ *  the message below. Create-only — stored apps with long names keep editing
+ *  fine (the edit path never re-validates the name).
+ *
+ *  It lives HERE, with the check that enforces it, rather than with the prompt
+ *  sections that used to declare it: the floor must not import the generation
+ *  pipeline (§7.3). */
+export const APP_NAME_MAX_CHARS = 40;
 
 /** One fact issue, anchored: `where` is the locus, `message` continues the
  *  sentence from it. Read as one line (`node "n3" prop "rows" binds …`) they
@@ -91,7 +102,7 @@ const shapeSchemaMismatch = (shape: ShapeType, schema: Record<string, unknown>):
  *  `$path` prop on a host node can be kind-checked end to end. Existence is
  *  the wire compiler's shape check; this catches the type mismatches that
  *  render silently broken (empty chart, blank stat). */
-export const bindingKindIssues = (tree: Tree, deps: GenerationDependencies): FactIssue[] => {
+export const bindingKindIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] => {
   if (deps.toolShapes === undefined) return [];
   const issues: FactIssue[] = [];
   const queryTool = new Map((tree.queries ?? []).map((query) => [query.name, query.tool]));
@@ -126,7 +137,7 @@ export const bindingKindIssues = (tree: Tree, deps: GenerationDependencies): Fac
  *  binding — reject the reshape at compile. */
 const GENERIC_ITEM_RESHAPES = new Set(["asPoints", "asOptions"]);
 
-export const hostReshapeIssues = (tree: Tree, deps: GenerationDependencies): FactIssue[] => {
+export const hostReshapeIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] => {
   const issues: FactIssue[] = [];
   const hostSchemas = new Map(deps.catalog.map((component) => [component.name, component.propsJsonSchema]));
   for (const node of tree.nodes) {
@@ -186,7 +197,7 @@ const KIND_PROBES: Partial<Record<ShapeType["kind"], unknown>> = {
 
 const KIT_WIRE_SET: ReadonlySet<string> = new Set(KIT_WIRE_COMPONENT_NAMES);
 
-export const kitSlotIssues = (tree: Tree, deps: GenerationDependencies): FactIssue[] => {
+export const kitSlotIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] => {
   if (deps.toolShapes === undefined) return [];
   const issues: FactIssue[] = [];
   const queryTool = new Map((tree.queries ?? []).map((query) => [query.name, query.tool]));
@@ -221,7 +232,7 @@ export const kitSlotIssues = (tree: Tree, deps: GenerationDependencies): FactIss
  *  the expression parses, its field paths reach fields the tool shapes really
  *  expose, and every slot's type can compute (sum over a string cannot).
  *  Whether the number MEANS anything is the reviewer's judgement, not a fact. */
-export const exprIssues = (tree: Tree, deps: GenerationDependencies): FactIssue[] => {
+export const exprIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] => {
   const queryTool = new Map((tree.queries ?? []).map((query) => [query.name, query.tool]));
   const context = {
     queryNames: [...queryTool.keys()],
@@ -406,8 +417,17 @@ export const unknownToolIssues = (tree: Tree, tools: readonly HostToolInfo[] | u
 
 /** Every `$path` binding resolved query → tool → response shape by the wire
  *  compiler's own checker. A miss carries the fields that ARE there, so the
- *  message can teach instead of only refusing. */
-const bindingShapeIssues = (tree: Tree, deps: GenerationDependencies): FactIssue[] => {
+ *  message can teach instead of only refusing.
+ *
+ *  KEPT despite the tsc floor: a `$path` with a NUMERIC index segment
+ *  (`/invoices/data/0/customer`) does not print as a bare reference — printWire
+ *  falls to a quoted `{ "$path": … }` object literal (identifier segments only,
+ *  print.ts), which tsc reads as a valid object and cannot walk. So field
+ *  existence UNDER an index is the one field-existence class the static half
+ *  cannot see; this check is its only reader. Identifier-path field existence
+ *  overlaps `screen-types` — both block, and `screen-types` runs last so its
+ *  message trails the targeted one. */
+const bindingShapeIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] => {
   if (deps.toolShapes === undefined) return [];
   return checkBindingShapes(tree.nodes, tree.queries ?? [], deps.toolShapes).map((error) => atProp(
     error.nodeId,
@@ -468,16 +488,53 @@ const treeCheck = (
 });
 
 /**
+ * The checks floor's static half: the screen's own text, type-checked by `tsc`
+ * against the declarations the floor already holds (screen-typings.ts). One
+ * compiler answers "does this file name a surface it may, with props that exist,
+ * types that fit, and data fields the response really carries" — the question
+ * the bespoke component/binding walkers answer by hand. It degrades to silence
+ * when no compiler is reachable (screen-tsc.ts), so a missing toolchain never
+ * blocks a build.
+ *
+ * It FULLY replaces the type-mismatch binding walker (`bindingKindIssues` is
+ * dropped from the check list here) and OVERLAPS the component-existence, host-
+ * prop and field-existence walkers, which stay: the (quarantined) fill fix loop
+ * attributes findings by `node "id"` locus and tsc anchors on `<Component>`
+ * tags, and a numeric-index path (`data.0.field`) prints as an opaque `$path`
+ * literal tsc cannot walk. Those two are the subsumption's real edges; the
+ * bespoke walkers cover them until the quarantine sweep reconciles the loci.
+ *
+ * The screen text is RECONSTRUCTED from the tree with `printWire`: the tree
+ * round-trips to wire byte-identically (#808) and the wire is a strict TSX
+ * subset, so the reconstruction is exactly what tsc reads. Islands are printed
+ * OUT (`components: {}`): their source is React, checked by the smoke-render
+ * gate, not screen wire, and feeding it to tsc is a parse error. Their NAMES
+ * ride along as schema-less vocabulary — a generated node WITH a source is not
+ * misread as an unknown component, and one WITHOUT a source is still flagged,
+ * exactly as the `components-exist` generated branch does.
+ */
+const screenTypeFindings = (tree: Tree, document: AppDocument, deps: FloorDependencies): Finding[] => {
+  const queries = (tree.queries ?? []).map((query) => ({ name: query.name, tool: query.tool }));
+  const generated = Object.keys(document.components ?? {}).map((name) => ({ name, description: "generated component" }));
+  const typings = screenTypings({
+    catalog: [...deps.catalog, ...generated],
+    queries,
+    toolShapes: deps.toolShapes,
+  });
+  const screen = printWire({ tree, components: {}, name: document.name }, { includeIds: false });
+  return screenTscFindings({ screen, typings });
+};
+
+/**
  * The built-in fact checks, bound to the host surface they measure against.
  * Every finding is `block`: a fact is not a matter of taste.
  */
-export const factChecks = (deps: GenerationDependencies): Check[] => [
+export const factChecks = (deps: FloorDependencies): Check[] => [
   { name: "document", kind: "fact", run: async ({ document }) => blocking(documentIssues(document)) },
   treeCheck("tools-exist", (tree) => unknownToolIssues(tree, deps.tools)),
   treeCheck("components-exist", (tree, document) => catalogIssues(tree, document.components, deps.catalog)),
   treeCheck("bindings-fit", (tree) => [
     ...bindingShapeIssues(tree, deps),
-    ...bindingKindIssues(tree, deps),
     ...kitSlotIssues(tree, deps),
     ...hostReshapeIssues(tree, deps),
   ]),
@@ -485,3 +542,35 @@ export const factChecks = (deps: GenerationDependencies): Check[] => [
   treeCheck("query-inputs-literal", (tree) => queryInputIssues(tree)),
   treeCheck("no-string-interpolation", (tree) => interpolationIssues(tree)),
 ];
+
+/**
+ * The cheap structural type-mismatch check — a binding's shape KIND against the
+ * host prop's declared type (`shapeSchemaMismatch`). It is node-anchored, so the
+ * conductor's fix-loop can act on it; the compiler static half's findings are
+ * tag-anchored and it cannot.
+ *
+ * It is NOT in `factChecks`. It runs on the GENERATE path (conductor, fill),
+ * where a synchronous, fix-loop-consumable type check is what the loop needs and
+ * a compiler program would blow the create latency budget (`gen-scripted:create`,
+ * measured: the tsc pass alone is ~3ms of a ~4ms create). At the floor and the
+ * validate door the compiler static half (`screenTypesCheck`) covers this class
+ * and more, so neither path runs both — one type check each, the right one.
+ */
+export const bindingKindCheck = (deps: FloorDependencies): Check =>
+  treeCheck("bindings-fit-kind", (tree) => bindingKindIssues(tree, deps));
+
+/**
+ * The compiler static half (§7.1 + Track A): a `tsc` program over the printed
+ * screen + generated typings. It spins a compiler, so it runs ONLY where a bad
+ * screen is blocked from a user and the cost is affordable — the paint-seam floor
+ * and the validate door — never inside the synchronous scripted-create loop the
+ * perf gate guards. Degrades to silence when no compiler is available.
+ */
+export const screenTypesCheck = (deps: FloorDependencies): Check => ({
+  name: "screen-types",
+  kind: "fact",
+  run: async ({ document }) => {
+    const tree = treeOf(document);
+    return tree === undefined ? [] : screenTypeFindings(tree, document, deps);
+  },
+});

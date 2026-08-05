@@ -11,10 +11,10 @@ import {
 afterEach(() => vi.unstubAllEnvs())
 
 describe("Maple seeded demo users", () => {
-  it("seeds two users so per-user isolation is demonstrable", () => {
+  it("seeds four users so per-user isolation is demonstrable", () => {
     const users = mapleDemoUsers()
-    expect(users.map(({ subject }) => subject)).toEqual(["vendo-demo", "maple-mia"])
-    expect(new Set(users.map(({ email }) => email)).size).toBe(2)
+    expect(users.map(({ subject }) => subject)).toEqual(["vendo-demo", "maple-mia", "maple-sam", "maple-dana"])
+    expect(new Set(users.map(({ email }) => email)).size).toBe(4)
   })
 
   it("has no switchable roster when password login is unconfigured", () => {
@@ -24,7 +24,7 @@ describe("Maple seeded demo users", () => {
     vi.stubEnv("NODE_ENV", "production")
     expect(mapleDemoUsers()).toEqual([])
     vi.stubEnv("MAPLE_DEMO_PASSWORD", "set-in-production")
-    expect(mapleDemoUsers().map(({ subject }) => subject)).toEqual(["vendo-demo", "maple-mia"])
+    expect(mapleDemoUsers().map(({ subject }) => subject)).toEqual(["vendo-demo", "maple-mia", "maple-sam", "maple-dana"])
   })
 
   it("authenticates both seeded users case-insensitively and rejects bad passwords", async () => {

@@ -44,6 +44,10 @@
       "types": "./dist/kit/index.d.ts",
       "default": "./dist/kit/index.js"
     },
+    "./client": {
+      "types": "./dist/client-impl.d.ts",
+      "default": "./dist/client-impl.js"
+    },
     "./voice": {
       "types": "./dist/voice/index.d.ts",
       "default": "./dist/voice/index.js"

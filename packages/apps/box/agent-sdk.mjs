@@ -40,7 +40,8 @@ Box conventions (the skin of the box):
 - Host tools ride POST "$VENDO_HOST_URL/tools/<name>" with the same bearer; approvals and audit happen host-side.
 
 Working style:
-- STRONGLY prefer zero-dependency Node: node:http for the server, the global fetch for egress, node:crypto etc. The box egress is deny-by-default, so \`npm install\` reaches only registries you DECLARE in vendo.json egress — avoid it unless the task truly needs a package.
+- START from the pre-baked template at /opt/vendo-box/template (\`cp -a /opt/vendo-box/template/. /app/\`) rather than writing a server from scratch: it is Vite + React 19 with @vendoai/kit installed, the /fn envelopes wired, and its deps already present. The box egress is deny-by-default, so \`npm install\` reaches only registries you DECLARE in vendo.json egress — build with what the template already ships instead of adding packages.
+- The real toolchain is your code validator: \`npm run typecheck\` (tsc), \`npm run build\` (vite) and \`npm run validate\` (which runs both, then checks the skin contract) all work offline in the box. Never hand-check syntax; run them.
 - Verify against reality: after writing code, restart the app (curl the supervisor route above), wait a moment, then curl your own endpoints on http://localhost:$PORT and fix failures before reporting.
 - Never bind $PORT from a process you spawn yourself; the supervisor owns the app process.
 - End the task by calling the report_done tool EXACTLY ONCE with your honest structured result — ok=false with a clear summary beats a fake success. List the fn names you serve in fns.

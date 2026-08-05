@@ -597,9 +597,13 @@ describe("amended public export surface — root utilities and /conformance inve
       "memoryAppAccess",
       "memoryKnowledgeAdapter",
       "memoryStoreAdapter",
+      "memoryStoreOps",
       "runConformance",
       "secretsProviderConformance",
       "storeAdapterConformance",
+      // Store design v1: the 32-op / 7-family StoreOps contract, mounted by the
+      // local backend and the cloud client so neither can drift from it.
+      "storeOpsConformance",
       "toolRegistryConformance",
     ]);
   });

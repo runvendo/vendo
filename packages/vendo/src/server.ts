@@ -17,16 +17,13 @@ import { assembleSystemPrompt } from "@vendoai/agent/internal";
 // Architecture §3 — the harness runtime and the default thinker. `vendo()` is
 // composed HERE (not by the host) when `harness:` is unset; its prompt and
 // descriptor catalog reach it on the turn, never at construction.
-import { assertHarnessComposable, reportHire, vendo } from "@vendoai/harnesses";
+import { assertHarnessComposable, reportHire, screenAssembler, vendo } from "@vendoai/harnesses";
 // …and re-exported, because §10's one-line opt-in is `harness: vendo()`. Without
 // this, naming the default harness costs a SECOND direct dependency on
 // `@vendoai/harnesses` — a documented one-liner that does not compile from the
 // package the host installed. Alias it at the import when your own composed
 // value is called `vendo` (`import { vendo as vendoHarness }`).
 export { vendo, type VendoHarnessDeps, type VendoHarnessOptions } from "@vendoai/harnesses";
-// The specialist, same reason: `harness: instant()` has to compile from the one
-// package the host installed (architecture §6).
-export { instant, type InstantHarnessDeps, type InstantHarnessOptions } from "@vendoai/harnesses";
 import { createHarnessTurns, type HarnessTurns } from "./harness-turn.js";
 // Both types already sit in the PUBLIC signatures below — `apps:` is typed off
 // `AppsConfig`, `Vendo.harness` is a `HarnessTurns` — so a host reads them
@@ -34,6 +31,7 @@ import { createHarnessTurns, type HarnessTurns } from "./harness-turn.js";
 // config listing, which is compiled against these very interfaces, can too).
 export type { HarnessTurns } from "./harness-turn.js";
 export type { AppsConfig } from "@vendoai/apps";
+import { registerTurnSteer } from "./turn-liveness.js";
 import { warnDeprecatedConfigKeys } from "./config-keys.js";
 import { orgPolicyPath, orgPolicyResolver, workspacePolicySource } from "./org-policy.js";
 import { createPromoteApp } from "./promote-app.js";
@@ -629,15 +627,26 @@ export interface CreateVendoConfig {
       ladder's last rung) and machine provisioning refuse with a typed
       VendoError naming this flag until the host enables it; steps/agentic
       automations (the ladder's first two rungs) never need it, and apps that
-      already carry a machine keep every runtime path. `experimentalServedApps`
-      is the layer-3 opt-in on top: a machine may serve the app surface itself
-      (the host embeds its URL in a sandboxed iframe) — it REQUIRES
-      `experimentalMachines` (layer 3 is served by a layer-2 machine). OFF by
-      default — layer-3 generation, the 2→3 surface flip, and open() on a
-      served app all refuse with a typed VendoError naming the flag. */
+      already carry a machine keep every runtime path.
+
+      A layer-3 SERVED app — the machine serving the app surface itself, embedded
+      in a sandboxed iframe — needs no second flag: it is a narrowing of layer 2,
+      reachable only where there is a machine to serve it and a mounted wire to
+      serve it THROUGH (`createVendo().handler`, which answers
+      /apps/:appId/serve/**). A deployment missing either hears it as a plain
+      "cannot" in the plan rather than as a flag. */
   apps?: {
-    experimentalServedApps?: boolean;
     experimentalMachines?: boolean;
+    /** UI-generation blueprint §4.2 — route every `vendo_make` request through
+        the cheap screen agent before the conductor: a small assembly loadout, the
+        host's declared result shapes, a tight step budget, and one `escalate`
+        door that hands the ask on with its plan already painted as the first
+        skeleton. OFF until the six-type proof matrix is walked, because it
+        changes which engine answers every screen ask; the conductor is untouched
+        and is what an escalation, an unserved ask, or an unavailable assembler
+        falls through to. Host config only, like the two flags above — choosing
+        the engine that answers your users is not an env-var decision. */
+    experimentalScreenAgent?: boolean;
     /** Remix review (round-2 hardening 2026-08-02) — the host's reviewer
         assertion for the review-kind remix lifecycle: whether THIS caller may
         read the full review queue, reject, and approve review-kind remixes.
@@ -2218,6 +2227,14 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // which run after createVendo returns, so the closure reference is safe —
   // same pattern as the connections loadout seed).
   let automationsForArming: AutomationsEngine | undefined;
+  // The screen agent's workspace door, filled with the harness turns composed
+  // BELOW — the same late binding as `automationsForArming`, and safe for the
+  // same reason: assembly only happens inside a request, which runs after
+  // createVendo returns. It is the PUBLIC door (`harnessTurns.workspace`) rather
+  // than a second `workspaceStore` call, so a screen agent writes through the
+  // exact mount set — `/host` projection and asserted orgs included — that a
+  // harness turn's own hands write through.
+  let harnessTurnsForScreens: HarnessTurns | undefined;
   // Build contract §9.3 — ONE `can()` over the host's store, held by the apps
   // runtime and the automations engine alike, so one rule answers both sides.
   const access = appAccess(store);
@@ -2228,6 +2245,10 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     model: inference.agent.model,
     catalog,
     pinBaselines,
+    // Contract §3.2 — the SAME `FilesAdapter` the workspace rows spill to (one
+    // `selectFiles` answer, above), so an app's source past the inline cap uses the
+    // spill that already exists instead of inventing a second one.
+    files,
     // Build contract §9 — the multi-party half. `can()` over whatever store the
     // host wired (OSS, unconditional); `multiParty` is the Cloud gate on the
     // three writes that create sharing; `promoteApp` is the store's sanctioned
@@ -2277,27 +2298,56 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // wire owns its base path, so it is filled here and nowhere else; the apps
     // block never invents a URL for a door it does not mount.
     //
-    // ABSOLUTE, like the personal branch's provider URL: an MCP client (or
+    // ABSOLUTE, like the sandbox provider's URL this replaced: an MCP client (or
     // anything not already sitting on the host origin) cannot resolve a relative
-    // path. Serving an app means a machine, and machine provisioning already
-    // requires VENDO_BASE_URL (see machineEnv), so the origin is always there —
-    // and when it is not, the refusal names it rather than handing out a URL
-    // nobody can follow.
-    servedProxyPath: (appId: AppId) => {
-      if (configuredBaseUrl === undefined) {
-        throw new VendoError(
-          "validation",
-          "serving a team app needs VENDO_BASE_URL — the app's URL has to be absolute for anything "
-          + "that is not already on this origin (an MCP client, a native app). Set it to this "
-          + "deployment's public origin and restart.",
-        );
-      }
-      return `${configuredBaseUrl.replace(/\/+$/, "")}${BASE_PATH}/apps/${encodeURIComponent(appId)}/serve/`;
-    },
-    // execution-v2 Waves 4+9 — the layer-2/3 experimental opt-ins, host-config
-    // only (never an env var: enabling machine-backed execution or a surface
-    // that runs generated web apps is a deliberate per-project decision).
-    ...(config.apps?.experimentalServedApps === undefined ? {} : { experimentalServedApps: config.apps.experimentalServedApps }),
+    // path. So this seam is supplied ONLY when the deployment has named an origin
+    // to build one from.
+    //
+    // Its ABSENCE is the answer, never a callback that exists and throws. The apps
+    // block tests availability by presence (`config.servedProxyPath !== undefined`)
+    // to shut the served lane, and a closure that always exists made that check a
+    // lie: a machines+sandbox host with no VENDO_BASE_URL was offered the served
+    // lane by the planner and only discovered the truth at serve time, after a box
+    // was built and a surface flipped. Availability now means "can actually produce
+    // a path", by construction.
+    ...(configuredBaseUrl === undefined ? {} : {
+      servedProxyPath: (appId: AppId) =>
+        `${configuredBaseUrl.replace(/\/+$/, "")}${BASE_PATH}/apps/${encodeURIComponent(appId)}/serve/`,
+    }),
+    // THE SEAM (blueprint §1 point 2) — the screen agent in front of the
+    // conductor. Filled HERE and nowhere else: the agent is a lean loop in
+    // @vendoai/harnesses, the front door is in @vendoai/apps, and apps depends on
+    // core alone — so composition, the one place that already holds the seats, the
+    // guard-bound registry, the store and the seam, is what joins them.
+    ...(config.apps?.experimentalScreenAgent !== true ? {} : {
+      screen: screenAssembler({
+        // The SAME seats every other thinker runs on.
+        models: inference.seats,
+        // The SAME guard-bound registry. There is no second choke point.
+        tools: boundTools,
+        workspace: async (screenCtx) => {
+          if (harnessTurnsForScreens === undefined) {
+            throw new VendoError("not-implemented", "the harness turn door is not composed yet");
+          }
+          return await harnessTurnsForScreens.workspace(
+            screenCtx.principal,
+            screenCtx.memberships === undefined ? undefined : { memberships: screenCtx.memberships },
+          );
+        },
+        // §1.6's app half, the SAME one the harness turns pass the seam below:
+        // the row that makes a written file an app, and the queries that put real
+        // data behind its bindings.
+        render: (screenCtx) => ({ authoredApp: (input) => apps.authored(input, screenCtx) }),
+        // `system` is deliberately unset. The screen agent's brief is the shipped
+        // `building-apps` skill plus the host's own tool shapes, and the
+        // deployment prompt's job — voice, venue gate, guard directions, the
+        // discovery rail — belongs to the thinker talking to the PERSON. This loop
+        // talks to nobody: the front door speaks its one-line receipt.
+      }),
+    }),
+    // execution-v2 Wave 9 — the layer-2 experimental opt-in, host-config only
+    // (never an env var: enabling machine-backed execution is a deliberate
+    // per-project decision). Layer 3 rides it — see the CreateVendoConfig note.
     ...(config.apps?.experimentalMachines === undefined ? {} : { experimentalMachines: config.apps.experimentalMachines }),
     // Round-2 hardening — the host's reviewer assertion for the review-kind
     // remix lifecycle, threaded verbatim (see the CreateVendoConfig comment).
@@ -2610,7 +2660,21 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // default is still a choice that has to hold.
   // A composed agent IS a harness choice (its brain, with its knobs already
   // bound and its sandbox already injected), so it takes the same slot.
-  const harness = (composed?.harness ?? config.harness ?? vendo({ onHire: reportHire })) as Harness;
+  //
+  // The host's `agent:` context knobs reach BOTH thinkers. They used to reach
+  // `createAgent` only, so on the default (harness) route a configured history
+  // window or step cap was silently ignored — the same deployment, two answers,
+  // depending on which door happened to serve. A composed harness already
+  // carries its own bound knobs, so only the default construction takes them.
+  const harness = (composed?.harness ?? config.harness ?? vendo({
+    onHire: reportHire,
+    // `agentOptions` is the ONE place the chat knobs are read from (see its
+    // definition): it already normalizes both arms of `agent:`, so a composed
+    // agent contributes nothing here and cannot double-bind its own knobs.
+    ...(agentOptions.maxSteps === undefined ? {} : { maxSteps: agentOptions.maxSteps }),
+    ...(agentOptions.historyWindow === undefined ? {} : { historyWindow: agentOptions.historyWindow }),
+    ...(agentOptions.maxOutputTokens === undefined ? {} : { maxOutputTokens: agentOptions.maxOutputTokens }),
+  })) as Harness;
   assertHarnessComposable(harness, sandbox.adapter === undefined ? {} : { sandbox: sandbox.adapter });
   // The harness runtime, wired to everything a turn needs: the store handle (its
   // transcript and its workspace), the ONE guard-bound registry, the merged pack
@@ -2671,7 +2735,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ?? configuredBaseUrl
     ?? (harness.requires?.sandbox === true ? undefined : learnedLoopbackOrigin);
 
-  const harnessTurns = createHarnessTurns({
+  const harnessTurns: HarnessTurns = createHarnessTurns({
     harness: harness as Harness<never>,
     // The composed sandbox adapter, threaded through so a spawned harness's
     // machine slot is filled by the SAME adapter the boot gate approved.
@@ -2716,17 +2780,40 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // not on its listing.
     connectorDiscovery: serviceCatalog,
     bridge: () => ({ toolOutputCap, preflight: (call, ctx) => connectGate.check(call, ctx) }),
-    // §1.6's app half. Without it a files-first app (D4) is a PICTURE of an app: no
-    // store row, so it never lists and `vendo_apps_open` masks it as not-found, and
-    // no query data, so every value renders "—" with the real host data one call away.
-    render: (ctx) => ({ authoredApp: (input) => apps.authored(input, ctx) }),
+    // §1.6's app half, and — contract §3.2 — the app's SOURCE half beside it, on
+    // the SAME interception point. Without `authoredApp` a files-first app (D4) is a
+    // PICTURE of an app: no store row, so it never lists and `vendo_apps_open` masks
+    // it as not-found, and no query data, so every value renders "—" with the real
+    // host data one call away. Without `commitSource` the app's CODE has no home but
+    // the sandbox snapshot behind `machine.snapshotRef` — lose the snapshot and the
+    // customer's app is gone, because the store never had it.
+    // §7.1's floor half rides the same seam: the production compile dialect and
+    // the deterministic fact checks, on every commit, for every author. Without it
+    // the seam compiled with NO options — a lying binding was invisible and an
+    // inline tool reference lost its binding silently — and nothing checked a
+    // harness's own writes at all.
+    render: (ctx) => ({
+      authoredApp: (input) => apps.authored(input, ctx),
+      commitSource: (input) => apps.commitSource(input, ctx),
+      floor: apps.floor(ctx),
+    }),
     // Build contract §9.1/§9.7 — the same host org query the wire resolves per
     // request, so a harness turn's façade mounts the team's files too.
     ...(membershipsSeam === undefined ? {} : { memberships: membershipsSeam }),
     // Every turn, published for the door's turn credential. Publishing is not a
     // grant: without a credential minted from inside the turn there is nothing
     // to resolve, and the credential's authority window IS this publication.
-    liveTurn: ({ threadId, ctx, tools }) => turnCredentials.publish(threadId, { ctx, tools }),
+    // The steer sink rides the same publication for the same reason: both are
+    // "reach the turn in flight from this process's own doors", and both die with
+    // the turn.
+    liveTurn: ({ threadId, ctx, tools, steer }) => {
+      const unpublish = turnCredentials.publish(threadId, { ctx, tools });
+      const unregister = registerTurnSteer({ threadId, subject: ctx.principal.subject, steer });
+      return () => {
+        unregister();
+        unpublish();
+      };
+    },
     // The other half, for a harness whose thinker is not in this process: where
     // the door is, and how to mint one conversation's credential for it. `url`
     // is undefined when nothing this harness may dial exists — a machine cannot
@@ -2758,6 +2845,8 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       ? {}
       : { scripted: createTourScript({ tours: config.tours, apps }) }),
   });
+  // The screen agent's workspace door is now real (see the declaration above).
+  harnessTurnsForScreens = harnessTurns;
   /**
    * THE harness door — one object, served two ways.
    *

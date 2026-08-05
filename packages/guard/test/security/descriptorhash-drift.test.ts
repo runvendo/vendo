@@ -95,6 +95,7 @@ describe("loud grant invalidation", () => {
       outcome: "pending-approval",
       decidedBy: "default",
       tool: current.name,
+      risk: "destructive",
       detail: {
         reason: "grant-invalidated",
         grantIds: [grant.id],

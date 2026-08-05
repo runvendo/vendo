@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vendo app</title>
+<!-- Provision data, spliced in by whichever server serves this page (server.js
+     in production, the dev server's plugin for the live preview). Read at
+     RUNTIME on purpose: which app this is and whose brand it wears are per-box
+     facts, and a Vite build would freeze them into the template. -->
+<script id="vendo-runtime" type="application/json">__VENDO_RUNTIME__</script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; }
+  /* The Kit's own tokens (packages/ui/src/kit/tokens.ts) already carry porcelain
+     defaults, so an unthemed app is readable rather than unstyled. */
+  body {
+    background: var(--vendo-color-background, #f7f7f8);
+    color: var(--vendo-color-text, #1a1a1e);
+    font-family: var(--vendo-font-family, system-ui, sans-serif);
+    font-size: var(--vendo-font-size, 15px);
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="module" src="/src/main.tsx"></script>
+</body>
+</html>

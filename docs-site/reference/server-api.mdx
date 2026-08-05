@@ -35,7 +35,7 @@ export function createVendo(config: {
   // and `.vendo/` (written by `vendo init`) supplies the rest.
   auth?: HostAuthPreset;                      // one preset fills principal + actAs + oauth; see /connect/act-as-presets
   tools?: ExtractedTool[];                    // host-tool declarations in memory; else `.vendo/tools.json`
-  harness?: Harness;                          // WHO THINKS. default: vendo(); also instant(), or your own
+  harness?: Harness;                          // WHO THINKS. default: vendo(); also claudeCode(), or your own
   packs?: PackProvider[];                     // where capability comes from. default: [apps()]
   models?: {                                  // the seats. each: a model-name string or an ai-SDK model
     default?: LanguageModel | string;         // the thinker; every unset seat borrows this

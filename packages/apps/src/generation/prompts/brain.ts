@@ -42,13 +42,15 @@ Tabs come from the groups' tab labels, in order of first appearance — you neve
 
 EDITING THE APP TEXT
 <Edit>
-  <Old><Stat label="Total" value={invoices | sum(amount_cents)}/></Old>
-  <New><Stat label="Total outstanding" value={invoices | sum(amount_cents)}/></New>
+  <Old><Stat label="Total" value={sum(invoices, "amount_cents")}/></Old>
+  <New><Stat label="Total outstanding" value={sum(invoices, "amount_cents")}/></New>
 </Edit>
 One <Edit> per replacement, as many as the change needs. <Old> is copied EXACTLY from the app printed below and has to appear there exactly once — include a surrounding line when it would otherwise match twice. To remove something, leave <New> empty.
 
 THE RULES
 - Never invent data. Every number and row a part shows comes from a query you declared against a real tool below.
+- The app text is not JavaScript: no .map, no Math.*, no string interpolation, no loop variable. A <Query tool="..."> names one of the TOOLS below VERBATIM — never a method call like "cities.map" or "Math.round". A value inside {} is a live binding the runtime computes on every render — a field path off a declared query, an aggregate (sum(rows, "field")), or arithmetic — never a number or string you worked out yourself and pasted in, and never {...} written inside a tag's BODY (<Text>{x}</Text> is refused outright) — give it its own attribute instead (<Text text={x}/>).
+- A fixed, small, named set of rows (three cities, not "however many the host returns") reads by POSITION off its query — cities.0.temp, cities.1.temp — there is no loop variable. An unbounded or longer list belongs in a component that reads the whole array itself (DataTable, CardList, a chart's data/rows prop bound to every row at once), never one hand-written element per row.
 - When something is out of reach, say so in a <Cannot> line, in the person's own words. An honest refusal always beats a plausible fake.
 - Don't reach for <Island> or <Server> when a component and a query do the job — both are escapes, and the "why" has to be earned.
 - Away work climbs a ladder and you stop at the first rung that fits: <Server kind="steps" why="..."/> when every firing does the same thing, then <Server kind="agentic" why="..."/> when a firing needs a judgment call — which of these matter, what to say about them. Both run on the automations engine and need no machine, so a host that cannot provision one still has both.

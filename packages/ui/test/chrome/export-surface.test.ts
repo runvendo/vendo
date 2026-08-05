@@ -54,6 +54,12 @@ const VALUE_EXPORTS = [
   // a pin from its own control.
   "playPinCeremony",
   "usePinAction",
+  // ⚠️ TEST EDIT — `usePinNudge` joins them DELIBERATELY. The thread is an eject
+  // surface, so every import in `thread/parts.tsx` is public API by
+  // construction, and the pin button there needs its invite state. The action
+  // and the invitation are two halves of one affordance: a host that ejects the
+  // template and keeps the pin needs both or its pin goes quiet.
+  "usePinNudge",
   // Shelf Lane B — the two placeable pieces (ui-usage-dx §2).
   "VendoActivities",
   "VendoTrigger",

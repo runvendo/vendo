@@ -266,7 +266,11 @@ export async function readSse(response: Response): Promise<{
 }> {
   const raw = await response.text();
   expect(raw.endsWith("\n\n")).toBe(true);
-  const blocks = raw.slice(0, -2).split("\n\n");
+  // The wire carries SSE keepalive COMMENT frames now (core/sse-keepalive.ts) —
+  // transport framing the SSE grammar ignores, so a real client never sees them.
+  // Dropped here for the same reason: they are not part of the message sequence
+  // these suites assert on. Every remaining block must still be a lone data frame.
+  const blocks = raw.slice(0, -2).split("\n\n").filter((block) => !block.startsWith(":"));
   expect(blocks.length).toBeGreaterThan(0);
   expect(blocks.every((block) => block.startsWith("data: ") && !block.includes("\n"))).toBe(true);
   const rawFrames = blocks.map((block) => `${block}\n\n`);

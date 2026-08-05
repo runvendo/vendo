@@ -30,9 +30,12 @@ export const dragHasFiles = (event: React.DragEvent) =>
 /** All composer state and send/queue mechanics, lifted to the thread level so
     the draft (and queued slot) survive the landing ↔ transcript flip. The
     Composer component below is the matching presentation. */
-export function useComposer({ busy, sendMessage }: {
+export function useComposer({ busy, sendMessage, steer }: {
   busy: boolean;
   sendMessage: (message: OutgoingMessage) => unknown;
+  /** §10.2 — offer words to the turn in flight; answers whether they landed.
+      Absent for surfaces whose transport cannot steer (a scripted replay). */
+  steer?: (text: string) => Promise<boolean>;
 }) {
   const [draft, setDraft] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -127,7 +130,10 @@ export function useComposer({ busy, sendMessage }: {
   // pill) and auto-sends the instant the turn finishes. A single slot — a second
   // send while one is parked replaces it — because there is only ever one "next"
   // turn. Stop stays the explicit interrupt; queueing never cancels the stream.
-  const [queued, setQueued] = useState<{ text: string; files: File[]; context?: string } | null>(null);
+  // `landed` (§10.2): the running turn TOOK this message, so it is already in the
+  // transcript as the user's own turn and the busy-edge flush below must not send
+  // it a second time. The slot stays visible as a receipt, not a queue.
+  const [queued, setQueued] = useState<{ text: string; files: File[]; context?: string; landed?: true } | null>(null);
   const [attachError, setAttachError] = useState<string>();
   // The grounding a prefill handed over (an app id behind a ✦ remix): held in a
   // ref, not state, because it must never influence a render — it rides the
@@ -195,6 +201,14 @@ export function useComposer({ busy, sendMessage }: {
     if (fileRef.current) fileRef.current.value = "";
     if (busy) {
       setQueued({ text, files: pending, ...(context === undefined ? {} : { context }) });
+      // §10.2 — then OFFER it to the turn that is running. Words only: an
+      // attachment or a grounding marker cannot ride a steer, so those keep the
+      // turn-end flush. A `false` (or no steer at all) changes nothing.
+      if (steer !== undefined && text !== "" && pending.length === 0 && context === undefined) {
+        void steer(text).then(landed => {
+          if (landed) setQueued(current => (current?.text === text ? { ...current, landed: true } : current));
+        });
+      }
       return;
     }
     dispatch(text, pending, context);
@@ -246,7 +260,9 @@ export function useComposer({ busy, sendMessage }: {
     if (wasBusyRef.current && !busy && queued) {
       const pending = queued;
       setQueued(null);
-      dispatch(pending.text, pending.files, pending.context);
+      // A message the turn already took is IN that turn. Flushing it here would
+      // be the same words twice — once inside the build, once after it.
+      if (!pending.landed) dispatch(pending.text, pending.files, pending.context);
     }
     wasBusyRef.current = busy;
     // dispatch is recreated each render but closes only over stable setters and
@@ -338,15 +354,26 @@ export function Composer({ composer, busy, status, errorMessage, onStop, onVoice
     >
       {attachError ? <div className="fl-att-error" role="alert">{attachError}</div> : null}
       {queued ? (
+        // §10.2 — one element, two fates. The copy says what happened to the
+        // MESSAGE and never anything about the result: a steer is words
+        // delivered, and the build's own reply is the only thing entitled to
+        // describe the build.
         <div className="fl-queued" role="status" aria-live="polite">
-          <span className="fl-queued-tag">Queued</span>
+          <span className="fl-queued-tag">{queued.landed ? "Sent" : "Queued"}</span>
           <span className="fl-queued-text">{queued.text || `${queued.files.length} attachment(s)`}</span>
-          <span className="fl-queued-hint">sends when the reply finishes</span>
+          <span className="fl-queued-hint">
+            {queued.landed ? "added to the reply in progress" : "sends when the reply finishes"}
+          </span>
           {/* Lane pick 2B — Send now: stop the stream; the ENG-215 busy-edge
               flush then dispatches this queued slot immediately. One code
-              path for both the polite wait and the deliberate interrupt. */}
-          <button type="button" className="fl-queued-now" onClick={onStop}>Send now</button>
-          <button type="button" className="fl-att-rm fl-queued-rm" aria-label="Cancel queued message" onClick={() => setQueued(null)}>×</button>
+              path for both the polite wait and the deliberate interrupt.
+              A message already delivered has nothing left to send. */}
+          {queued.landed ? null : (
+            <button type="button" className="fl-queued-now" onClick={onStop}>Send now</button>
+          )}
+          <button type="button" className="fl-att-rm fl-queued-rm"
+            aria-label={queued.landed ? "Dismiss" : "Cancel queued message"}
+            onClick={() => setQueued(null)}>×</button>
         </div>
       ) : null}
       {files.length > 0 ? (

@@ -153,7 +153,12 @@ export function VendoThread({
     restoredIdsRef.current.ids = new Set(thread.messages.map(message => message.id));
   }
   const isRestored = (id: string) => restoredIdsRef.current.ids.has(id);
-  const composerApi = useComposer({ busy, sendMessage: message => thread.sendMessage(message) });
+  const composerApi = useComposer({
+    busy,
+    sendMessage: message => thread.sendMessage(message),
+    // §10.2 — a message typed mid-turn is offered to that turn before it queues.
+    ...(thread.steer === undefined ? {} : { steer: thread.steer }),
+  });
   const { setDraft, setQueued, textareaRef, send } = composerApi;
   const risks = useMemo(() => riskByCall(thread.messages), [thread.messages]);
   const guardApprovals = useMemo(() => approvalByCall(thread.messages), [thread.messages]);
@@ -357,7 +362,14 @@ export function VendoThread({
     && lastPart.text.trim().length > 0;
   const quietBusy = busy && liveToolPart === undefined
     && !textActivelyStreaming && !caretShowing && !working;
-  const ribbon = quietBusy ? <WorkingRibbon /> : null;
+  // §3.4 — the ribbon has always taken a `label` and nobody ever passed one, so
+  // every busy gap said "Working" while the harness was already narrating the
+  // real step on the status channel. The latest beat is that step; "Working" is
+  // the floor for a harness that says nothing.
+  const latestBeat = thread.beats.at(-1);
+  const ribbon = quietBusy
+    ? <WorkingRibbon {...(latestBeat === undefined ? {} : { label: latestBeat.label })} />
+    : null;
 
   // Lane pick 2E — the WHOLE thread surface is the drop target (the composer
   // bar no longer owns drag): a huge, overshoot-proof zone with a centered

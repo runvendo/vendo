@@ -3,9 +3,11 @@
  * (docs/superpowers/specs/2026-07-19-execution-v2-design.md).
  *
  * The whole public contract between Vendo and a sandbox provider. The coding
- * agent lives INSIDE the box (Wave 3), so outside-the-box exec/files dropped
- * out of this seam; a provider adapter may keep them adapter-private for
- * bootstrap and diagnostics. The v1 seam this replaces is archived in
+ * agent lives INSIDE the box (Wave 3), so outside-the-box `exec` dropped out of
+ * this seam; a provider adapter may keep it adapter-private for bootstrap and
+ * diagnostics. `files` came BACK: a built app's source has to leave the box,
+ * and every adapter had grown its own private copy of the same three
+ * operations. The v1 seam this replaces is archived in
  * docs/archive/contracts/06-apps.md §3-4.
  */
 export interface SandboxAdapter {
@@ -89,6 +91,39 @@ export interface SandboxMachine {
    * provider's business (e.g. e2b's per-port public hostname).
    */
   url(port?: number): Promise<string>;
+
+  /**
+   * The box's filesystem — the seam a built app's SOURCE crosses. The in-box
+   * agent owns the inside of the box, but the bytes it produces have to come
+   * back out: this is what §3.2's commit reads a built app's source through,
+   * and what puts scaffolding in before the agent starts. Three operations,
+   * identical for every provider — it used to be adapter-private, which meant
+   * five private spellings (or absences) of the same thing.
+   *
+   * - `read` REJECTS for a path the box does not hold. It never answers empty
+   *   bytes: a silently empty source file is a lost app.
+   * - `write` creates or REPLACES the whole file, and creates the directories
+   *   on the way to it. It never appends.
+   * - `list` is ONE level and names only — the entry names directly in `dir`,
+   *   a subdirectory as its own name, never a path and never recursive. It
+   *   REJECTS for a directory the box does not hold, exactly as `read` does:
+   *   answering `[]` there lets a mistyped source directory read as an app
+   *   with no files. `"/"` is the one directory that always exists, so it
+   *   answers the box's top-level names and never rejects.
+   *
+   * Box content is UNTRUSTED. A compromised or merely buggy in-box agent
+   * controls every path and every byte crossing this seam, so `read` hands
+   * bytes back UNCHANGED — no text decode, no BOM strip, no line-ending
+   * normalization — and the layer above verifies them against the hash in the
+   * app's row. Confining which paths may become an app's source is that layer's
+   * job too (`app-source.ts`), not this one's: a box's own filesystem is not
+   * partitioned, and the bootstrap legitimately writes outside the app root.
+   */
+  files: {
+    read(path: string): Promise<Uint8Array>;
+    write(path: string, bytes: Uint8Array | string): Promise<void>;
+    list(dir: string): Promise<string[]>;
+  };
 
   /** Persist the machine's current state; the ref restores it via SandboxAdapter.resume. */
   snapshot(): Promise<string>;

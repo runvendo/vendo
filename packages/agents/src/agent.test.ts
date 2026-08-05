@@ -62,6 +62,9 @@ const fakeGuard = (): VendoGuard & { reports: AuditEvent[]; bound: ToolRegistry[
       return tools;
     },
     approvals: { pending: async () => [], decide: async () => {}, revoke: async () => {} },
+    freeze: async () => {},
+    unfreeze: async () => {},
+    frozen: async () => false,
     grants: { list: async () => [], revoke: async () => {} },
     audit: { query: async () => ({ events: [] }), export: async function* () {} },
     status: () => ({ posture: "unconfigured" }),

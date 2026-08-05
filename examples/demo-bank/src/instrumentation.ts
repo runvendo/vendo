@@ -7,6 +7,10 @@ export async function register() {
   // .vendo/data (the away-drill test boots one beside a running dev server)
   // would otherwise hang its whole boot polling for the lock.
   if (process.env.NEXT_RUNTIME === "nodejs") {
+    // Boot seeding calls host_* tools before any request has taught the wire
+    // its own origin, so an unset VENDO_BASE_URL (the local-dev posture) makes
+    // every route-bound call fail. Prime the loopback origin first.
+    process.env.VENDO_BASE_URL ??= `http://localhost:${process.env.PORT ?? 3000}`;
     const { seedDemoScript } = await import("@/demo-script/seed");
     const { pregenerateChips } = await import("@/vendo/chips-seed");
     // Chips ride AFTER the fixture seed on the same fire-and-forget chain —

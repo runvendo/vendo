@@ -99,6 +99,13 @@ describe("approval park and resume over the real SQL mapping", () => {
     });
     expect(tools.executions).toHaveLength(1);
     unsubscribe();
+
+    // The console's feed chips each row by the risk the guard gated on.
+    const events = (await guard.audit.query({ principal: alice, limit: 50 })).events;
+    expect(events.find((event) => event.kind === "approval" && event.outcome === "pending-approval"))
+      .toMatchObject({ tool: "host_destructive", risk: "destructive" });
+    expect(events.find((event) => event.kind === "tool-call" && event.outcome === "ok"))
+      .toMatchObject({ tool: "host_destructive", risk: "destructive" });
   });
 
   it("notifies onApprovalRequested with the parked request, after it persisted", async () => {

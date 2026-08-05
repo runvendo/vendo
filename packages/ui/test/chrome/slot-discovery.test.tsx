@@ -49,14 +49,18 @@ describe("Slot pin self-discovery (useSlotApp + VendoSlot)", () => {
     return <output>{isLoading ? "loading" : appId ?? "none"}</output>;
   }
 
-  it("resolves the latest app pinned to the slot", async () => {
-    vi.spyOn(client.apps, "list").mockResolvedValue([
-      pinnedApp(),
-      pinnedApp({ id: "app_2", name: "Newer remix" }),
+  // ⚠️ TEST EDIT (D5) — this case used a HAND-ORDERED `client.apps.list` mock, so
+  // it could not express the order the wire actually returns and `.at(-1)` (the
+  // OLDEST match) passed as "latest wins" for two months. It now goes over the
+  // real wire, whose /apps mirrors `runtime.list()`: newest first.
+  it("resolves the LATEST app placed in the slot, over the wire's real newest-first order", async () => {
+    wire.state.apps.push(
+      pinnedApp({ id: "app_older", name: "First remix" }),
+      pinnedApp({ id: "app_newer", name: "Newer remix" }),
       pinnedApp({ id: "app_other", placements: ["sidebar"] }),
-    ]);
+    );
     render(<VendoProvider client={client}><Probe slot="hero" /></VendoProvider>);
-    await waitFor(() => expect(screen.getByRole("status").textContent).toBe("app_2"));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toBe("app_newer"));
   });
 
   it("reports no app when nothing is placed in the slot", async () => {

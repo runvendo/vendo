@@ -295,6 +295,9 @@ describe("headless hooks", () => {
       .toEqual([
         expect.objectContaining({ path: "/threads" }),
         expect.objectContaining({ path: "/threads/thr_1" }),
+        // No resume probe: thr_1 ends on a COMPLETED assistant reply, so there
+        // is nothing in flight to rejoin. Resume fires only for a transcript
+        // that ends on the user's turn (see the resume-probe test below).
       ]);
 
     await act(() => result.current.sendMessage({ text: "Send the email" }));

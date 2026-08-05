@@ -8,7 +8,9 @@ import { defineOwn, isPlainObject } from "./genui/tree-node.js";
  * language that lets the model adapt `{ month, revenue }` to
  * `{ label, value }` WITHOUT a code island. Exactly the spec's families:
  * pick, field-rename, map (asPoints/asOptions), format, template (bounded
- * object→string interpolation for display slots), and aggregates.
+ * object→string interpolation for display slots), and aggregates — the last
+ * of which the WIRE no longer writes (v3 §5 D2: an aggregate is an expression
+ * call; see {@link WIRE_RESHAPE_OPS}).
  *
  * Three consumers share this module:
  * - `validateTree` gates the canonical form via {@link findInvalidReshape}
@@ -36,15 +38,41 @@ export const RESHAPE_OPS = [
   "asOptions", // @deprecated (W5a) — Kit Select/MultiSelect read raw rows via labelField/valueField
   "format",
   "template", // @deprecated (W5a) — Kit DataTable/CardList dot-path column keys reach nested scalars
-  "sum",
-  "avg",
-  "min",
-  "max",
-  "count",
+  "sum", // stored documents only — see WIRE_RESHAPE_OPS
+  "min", // stored documents only
+  "max", // stored documents only
+  "count", // stored documents only
 ] as const;
 
 /** v2 spec §3 */
 export type ReshapeOp = (typeof RESHAPE_OPS)[number];
+
+/**
+ * v3 spec §5 (D1/D2) — the ops the WIRE dialect can write, as a value-first
+ * nested call (`pick(revenue.rows, "month")`). The aggregates left this set
+ * with the pipe: an aggregate is an expression call now (genui/expr.ts's
+ * `sum(rows, "field")`), so exactly ONE `sum` is reachable from the dialect.
+ * `sum`/`min`/`max`/`count` stay in {@link RESHAPE_OPS} because STORED
+ * documents still carry them — the same staged retirement as
+ * {@link DEPRECATED_RESHAPE_OPS}; the printer refuses to print them as a
+ * chain call, so the round-trip law never sees one.
+ */
+export const WIRE_RESHAPE_OPS = [
+  "pick",
+  "rename",
+  "asPoints",
+  "asOptions",
+  "format",
+  "template",
+] as const satisfies readonly ReshapeOp[];
+
+/** v3 spec §5 — a reshape op the wire dialect can write. */
+export type WireReshapeOp = (typeof WIRE_RESHAPE_OPS)[number];
+
+const WIRE_OP_SET: ReadonlySet<string> = new Set(WIRE_RESHAPE_OPS);
+
+/** v3 spec §5 — is this op writable as a wire chain call? */
+export const isWireReshapeOp = (op: string): op is WireReshapeOp => WIRE_OP_SET.has(op);
 
 /**
  * W5a (v3 spec §Dialect retirement) — STAGED retirement. These ops keep
@@ -85,13 +113,31 @@ const OP_ARITY: Record<ReshapeOp, readonly [number, number]> = {
   format: [1, 2],
   template: [1, 2],
   sum: [1, 1],
-  avg: [1, 1],
   min: [1, 1],
   max: [1, 1],
   count: [0, 0],
 };
 
-const AGGREGATE_OPS: ReadonlySet<ReshapeOp> = new Set(["sum", "avg", "min", "max"]);
+const AGGREGATE_OPS: ReadonlySet<ReshapeOp> = new Set(["sum", "min", "max"]);
+
+/** The reductions {@link reduceNumeric} performs — the union of the stored
+ *  `$reshape` aggregates and the `$expr` aggregate calls. */
+export type NumericReduction = "sum" | "average" | "min" | "max";
+
+/**
+ * The ONE numeric reduce in the codebase (blueprint §5.4: never two
+ * implementations of `sum`). Both aggregate surfaces call it: the `$expr`
+ * aggregates (genui/expr.ts) and the stored-document `$reshape` aggregates
+ * below. `null` means "no values to reduce" — the callers differ on what that
+ * means (`$expr` reports an issue, `$reshape` yields null), and `sum` of
+ * nothing is 0 for both.
+ */
+export const reduceNumeric = (call: NumericReduction, numbers: readonly number[]): number | null => {
+  if (call === "sum") return numbers.reduce((total, value) => total + value, 0);
+  if (numbers.length === 0) return null;
+  if (call === "average") return numbers.reduce((total, value) => total + value, 0) / numbers.length;
+  return call === "min" ? Math.min(...numbers) : Math.max(...numbers);
+};
 
 /** template's placeholder grammar: `{field}` or `{field.nested.path}` —
  *  identifier segments only (the wire's identifier grammar), resolved within
@@ -295,11 +341,7 @@ const applyAggregate = (op: ReshapeOp, rows: readonly Record<string, unknown>[],
   if (rows.length > 0 && values.length === 0) {
     return mismatch(`field "${field}" is absent from the rows`);
   }
-  if (op === "sum") return { ok: true, value: values.reduce((total, value) => total + value, 0) };
-  if (values.length === 0) return { ok: true, value: null };
-  if (op === "avg") return { ok: true, value: values.reduce((total, value) => total + value, 0) / values.length };
-  if (op === "min") return { ok: true, value: Math.min(...values) };
-  return { ok: true, value: Math.max(...values) };
+  return { ok: true, value: reduceNumeric(op as NumericReduction, values) };
 };
 
 const applyStep = (value: Json, step: ReshapeStep): ReshapeResult => {

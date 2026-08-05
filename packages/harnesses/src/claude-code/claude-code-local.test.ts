@@ -32,6 +32,9 @@ vi.mock("./local.js", () => ({
     carriesSession: false,
     pluginPath: "/tmp/vendo-local-double/host",
     tree: emptyTree(),
+    // ⚠️ TEST EDIT — the widened `SessionMachine` requires it. Same loopback
+    // answer the real local machine gives.
+    async url(port: number) { return `http://127.0.0.1:${port}`; },
     async materialize() {},
     async collect() { return []; },
     async send(message: SessionMessage) { sent.push(message); },

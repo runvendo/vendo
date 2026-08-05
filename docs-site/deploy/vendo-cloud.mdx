@@ -142,13 +142,46 @@ console and the hosted trigger registers itself. Host-event automations
 (`on: { kind: "host-event", ... }`) still fire in your own process, since
 they react to events your process emits.
 
+## Pricing
+
+A plan's price is the amount of usage it includes. On a paid plan, your bill for
+a period is whichever is larger — the plan price or your usage. Free never
+bills: it stops when the $5 it includes is spent.
+
+| Plan | Price | Includes |
+| --- | --- | --- |
+| Free | $0 | $5 of usage / month |
+| Pro | $49 / month | $49 of usage / month |
+| Teams | $499 / month | $499 of usage / month |
+| Enterprise | Custom | Committed usage |
+
+Usage is metered org-wide across every project, at four published rates — AI,
+sandbox, storage, and automation runs — that are identical on every plan,
+including Free. The AI rate prints in three model tiers.
+
+| Rate | Price |
+| --- | --- |
+| AI tier `vendo-fast` | $1.15 / M input tokens · $5.75 / M output tokens |
+| AI tier `vendo` | $2.30 / M input tokens · $11.50 / M output tokens |
+| AI tier `vendo-strong` | $5.75 / M input tokens · $28.75 / M output tokens |
+| Sandbox | $0.01 per minute of wall-clock run time |
+| Storage | $0.25 per GB-month |
+| Automation runs | $3 per 1,000 runs |
+
+Free hard-stops at $5 — a clear error naming the reset date, never a charge. Paid
+plans continue past their included dollars at the same rates under an
+organization spend cap that defaults to twice the plan price; owners are emailed
+at 50%, 90%, and 100% of it. Every rate has a bring-your-own path: your own model
+key, sandbox account, Postgres, or infrastructure means that rate never fires and
+reads $0.
+
 ## Error handling
 
 Cloud calls surface the shared error taxonomy (see
 [Troubleshooting](/deploy/troubleshooting)):
 
 - `cloud-required` (HTTP 402): no `VENDO_API_KEY`, the key is invalid, or the
-  operation's meter is exhausted.
+  organization has used up the dollars its plan includes.
 - `validation`, `not-found`, `conflict`, `blocked`: propagated from the hosted
   API with the same codes the wire uses.
 
@@ -193,7 +226,7 @@ Reach for it when you want app machines without an E2B account. You normally
 never construct it: with `VENDO_API_KEY` set, `createVendo` fills the unset
 sandbox slot with it automatically. An explicitly passed `sandbox:` adapter,
 or `E2B_API_KEY` with the `e2b` package installed, always wins over that
-default. Usage meters as `sandbox_minutes`.
+default. Sandbox time bills at $0.01 per minute of wall-clock run time.
 
 To construct it explicitly (the adapter itself never reads the environment):
 
@@ -220,7 +253,7 @@ Machines boot from Cloud's own pooled base image (Node plus the in-box agent);
 enforced HTTP(S)-only: raw TCP is severed even to allowlisted hosts, so a
 direct database connection from the box never works while the HTTPS store
 callback does. Errors map to the shared taxonomy: invalid or revoked keys
-(HTTP 401) and exhausted meters (HTTP 402) surface as `cloud-required`,
+(HTTP 401) and used-up included usage (HTTP 402) surface as `cloud-required`,
 console outages as `sandbox-unavailable`; with no key and no adapter at all
 the sandbox slot is simply unconfigured, so machine paths fail with
 `sandbox-unavailable`. See [Server API](/reference/server-api) for the

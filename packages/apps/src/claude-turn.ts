@@ -99,9 +99,38 @@ const DISALLOWED_TOOLS = [
   "ScheduleWakeup",
 ];
 
+/**
+ * Where a beat sits in the arc of making something — a STRUCTURAL MIRROR of
+ * core's `BeatPhase` (contract §3.4), CLOSED at six.
+ *
+ * Restated rather than imported because this file imports nothing (module
+ * header). `claude-code/index.ts` yields these events straight into
+ * `HarnessEvent`, so the compiler already compares the two unions — but in ONE
+ * direction only, and 200 lines away as an inference failure nobody can read.
+ * `BEAT_PHASES` there closes the other direction and names the drift; it is in
+ * production code rather than a test because nothing in this repo typechecks a
+ * test file.
+ */
+export type BeatPhase =
+  | "understanding"
+  | "planning"
+  | "assembling"
+  | "building"
+  | "checking"
+  | "finishing";
+
 export type ClaudeTurnEvent =
   | { type: "text"; delta: string }
-  | { type: "status"; label: string }
+  /**
+   * A BEAT — consumer voice, ephemeral, screen only.
+   *
+   * `phase` and `appId` are ADDITIVE (§3.4): a status carrying nothing but a
+   * `label` puts the identical chunk on the wire it always did. `appId` stays
+   * unset here — this loop is never told which app it is building, and the
+   * contract makes the field optional precisely so a producer without one leaves
+   * it off instead of parsing an id out of a file path.
+   */
+  | { type: "status"; label: string; phase?: BeatPhase; appId?: string }
   | { type: "error"; message: string }
   | { type: "usage"; inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number; model?: string }
   /** Not a `HarnessEvent`: the native session ref the caller puts in `turn.state`. */
@@ -180,6 +209,16 @@ export interface ClaudeSessionInput {
 export interface ClaudeSession {
   /** Push one user message in and settle when THAT message's turn is done. */
   send(prompt: string): Promise<void>;
+  /**
+   * Hand the user's words to the turn ALREADY in flight — mid-build steering.
+   *
+   * Same session, same turn, same `send()` still awaiting: the SDK hands the
+   * message to the model at its next step boundary, which is why nothing here
+   * queues. Answers whether the words landed; `false` when no turn is in flight,
+   * because then there would be nobody for the extra `result` to settle and the
+   * caller's own next `send()` is the right home for the message.
+   */
+  steer(prompt: string): boolean;
   /**
    * Stop the turn in flight WITHOUT ending the conversation — the user hit stop,
    * they did not close the tab. A live session makes this distinction real:
@@ -265,6 +304,30 @@ function messageInbox() {
  */
 const WRITING_TOOLS = "Write|Edit|MultiEdit|NotebookEdit|Bash";
 
+/** The same names, as a set — one list decides both the hook matcher above and
+ *  the building beat, so the two can never disagree about what a write is. */
+const WRITING_TOOL_NAMES = new Set(WRITING_TOOLS.split("|"));
+
+/**
+ * The task-list tool: the model writes its plan as todos and flips them as it
+ * goes, which is the one place this loop can watch PLANNING happen.
+ *
+ * Only THAT it was used is read. Its `activeForm` field is documented by the CLI
+ * as "the present continuous form shown during execution" and is a beat in all
+ * but name — and it is also the model's own untrusted text, free to say
+ * "Creating app/src/InvoiceTable.tsx". Admitting it would need a regex gate over
+ * model prose, which ruling 14 (`ui/src/consumer-voice.ts`) already tried and
+ * reversed: a regex set cannot be the authority for what a person may read. So
+ * the beats below are OUR fixed copy, and this loop holds no filename it could
+ * leak.
+ *
+ * A future SDK that RENAMES this tool makes the planning beat fall silent, which
+ * is the right failure — silence, never a lie about progress. The rename itself
+ * is already loud: `claude-turn.test.ts` fails on any tool name its ledger has
+ * not classified.
+ */
+const PLANNING_TOOL = "TodoWrite";
+
 /**
  * Open ONE live session for a whole conversation.
  *
@@ -280,6 +343,18 @@ export function createClaudeSession(input: ClaudeSessionInput): ClaudeSession {
   let model: string | undefined = input.model;
   /** Settles the `send()` whose turn is currently in flight. */
   let settleTurn: ((error?: unknown) => void) | undefined;
+  /**
+   * How many `result` messages belong to STEERS rather than to the `send()` now
+   * waiting.
+   *
+   * MEASURED HAZARD. Every user message the SDK answers produces its own
+   * `result`, and `send()` settles on the next one it sees. So a steer that only
+   * pushed would resolve the original `send()` at the FIRST result: the box door
+   * marks the message done, the harness's poll loop returns, the turn ends on the
+   * wire — and the steer's own output is pushed into a state nobody polls. N
+   * steers add exactly N results, so counting them is the whole fix.
+   */
+  let steeredResults = 0;
   /** A session that died. Every later `send()` fails with it rather than hanging. */
   let fatal: unknown;
 
@@ -294,6 +369,22 @@ export function createClaudeSession(input: ClaudeSessionInput): ClaudeSession {
 
   /** The open `Query`, once it exists — the only thing that can interrupt a turn. */
   let live: { interrupt?: () => Promise<unknown> } | undefined;
+
+  /**
+   * Which stages this turn has already narrated (§3.4: "one beat per real step").
+   *
+   * A phase is a STAGE, not a tick — the tenth file write is not news — so each
+   * fires once and the set clears at the turn boundary, letting turn 2 plan and
+   * build again. `understanding` rides the session's own `init`, which happens
+   * once per SESSION: turn 2 does not claim to be getting started, because it
+   * isn't.
+   */
+  const narrated = new Set<BeatPhase>();
+  const beat = (phase: BeatPhase, label: string): void => {
+    if (narrated.has(phase)) return;
+    narrated.add(phase);
+    input.emit({ type: "status", label, phase });
+  };
 
   const drain = (async () => {
     const options: Record<string, unknown> = {
@@ -375,6 +466,7 @@ export function createClaudeSession(input: ClaudeSessionInput): ClaudeSession {
         }
         const named = message["model"];
         if (typeof named === "string") model = named;
+        beat("understanding", "Getting started");
         continue;
       }
       if (type === "assistant") {
@@ -383,16 +475,25 @@ export function createClaudeSession(input: ClaudeSessionInput): ClaudeSession {
         // twice (measured live 2026-08-02, once `includePartialMessages` went on).
         // Whichever arrived first wins; the block is still the only source when
         // an SDK build streams nothing, so the fallback stays real.
-        if (streamed) {
-          streamed = false;
-          continue;
-        }
+        //
+        // The message is SCANNED either way, never skipped whole: a `tool_use`
+        // block rides in the SAME message as the sentence that introduced it, so
+        // skipping the duplicate prose also threw away every beat in any turn
+        // where the model spoke — which is every real turn.
         const content = (message["message"] as { content?: Array<Record<string, unknown>> } | undefined)?.content;
         for (const block of content ?? []) {
-          if (block["type"] === "text" && typeof block["text"] === "string" && block["text"] !== "") {
-            input.emit({ type: "text", delta: block["text"] });
+          if (block["type"] === "text") {
+            if (!streamed && typeof block["text"] === "string" && block["text"] !== "") {
+              input.emit({ type: "text", delta: block["text"] });
+            }
+          } else if (block["type"] === "tool_use" && typeof block["name"] === "string") {
+            // The tool's NAME and nothing else. Its inputs are the model's own
+            // text and can name a file (see {@link PLANNING_TOOL}).
+            if (block["name"] === PLANNING_TOOL) beat("planning", "Working out the steps");
+            else if (WRITING_TOOL_NAMES.has(block["name"])) beat("building", "Putting it together");
           }
         }
+        streamed = false;
         continue;
       }
       if (type === "stream_event") {
@@ -409,8 +510,27 @@ export function createClaudeSession(input: ClaudeSessionInput): ClaudeSession {
         const usage = usageEvent(message["usage"], model);
         if (usage !== undefined) input.emit(usage);
         if (message["subtype"] !== "success") {
-          // Consumer voice: no subtypes, no internals.
+          // Consumer voice: no subtypes, no internals. And no `finishing` beat —
+          // a beat that claimed progress in front of an error would be a lie.
           input.emit({ type: "error", message: "I couldn't finish that one." });
+        } else if (steeredResults === 0) {
+          // Only the FINAL result finishes. A steered result is an INTERMEDIATE
+          // boundary — the turn continues (that is the whole point of the
+          // counter) — so "Finishing up" here would claim the build is done
+          // while the correction's rework is still ahead (§3.4, no progress-lie).
+          beat("finishing", "Finishing up");
+        }
+        // Narration resets on EVERY result, steered ones included: the next turn
+        // narrates afresh, and a steered correction carries THIS turn on, so it
+        // must be free to re-narrate the phases the first pass already showed
+        // (the mockup's "Regrouping by client"). Cleared BEFORE the steer skip,
+        // or the rework's build/plan beats would stay suppressed and the turn
+        // would fall silent during the one moment steering exists to show.
+        narrated.clear();
+        if (steeredResults > 0) {
+          // A steered message's own boundary. The turn continues.
+          steeredResults -= 1;
+          continue;
         }
         // THE turn boundary. The input stream stays open; only this message's
         // caller is released.
@@ -447,7 +567,17 @@ export function createClaudeSession(input: ClaudeSessionInput): ClaudeSession {
       queue = next.catch(() => undefined);
       return next;
     },
+    steer(prompt) {
+      if (settleTurn === undefined) return false;
+      steeredResults += 1;
+      inbox.push({ type: "user", message: { role: "user", content: prompt }, parent_tool_use_id: null });
+      return true;
+    },
     async interrupt() {
+      // An interrupted session stops reading its input, so the results the
+      // steers were counting on may never arrive. Left counted, the caller's
+      // promise would hang to the message budget instead of ending on stop.
+      steeredResults = 0;
       // Only meaningful in streaming-input mode, which is the only mode we use.
       // A session too young to have opened its query has nothing to stop.
       await live?.interrupt?.().catch(() => undefined);

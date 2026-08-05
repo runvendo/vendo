@@ -33,6 +33,7 @@ import {
   WORKSPACE_INLINE_MAX_BYTES,
   appRootPath,
   appSourceFileSchema,
+  safeErrorMessage,
   sha256Hex,
   type AppDocument,
   type AppId,
@@ -235,8 +236,10 @@ export async function checkoutApp(
  * instead of it. Paths outside this app, and the two hot files, are ignored: they
  * belong to someone else.
  *
- * A path in `changed` that no longer reads is a deletion, and drops out of
- * `source`. Nothing else about the document is touched.
+ * A path in `changed` that no longer EXISTS is a deletion, and drops out of
+ * `source`. A path that is still there and merely would not READ is a fault, and
+ * keeps its stored entry — stale beats gone. Nothing else about the document is
+ * touched.
  */
 export async function commitApp(
   appId: AppId,
@@ -259,7 +262,27 @@ export async function commitApp(
     let text: string;
     try {
       text = await workspace.readFile(`${prefix}${path}`);
-    } catch {
+    } catch (error) {
+      // "Would not read" is not "was deleted" (coordinator ruling 2026-08-05, once
+      // this seam had a real caller). For a spilled file the read-back is a LIVE
+      // FETCH from the files adapter, so a blob store having a bad minute used to
+      // look exactly like a deletion and the entry was dropped — a lost source file,
+      // which is the one outcome "the row is the truth" cannot survive.
+      //
+      // `exists()` is the discriminator, and the thrown error deliberately is not:
+      // the façade raises the same POSIX-shaped `ENOENT` for a deleted row as for a
+      // row whose bytes have gone missing, and carries no code to switch on.
+      // `exists()` answers from the row index and never touches the blob.
+      //
+      // Per PATH, not per commit: the other files in this commit still land, because
+      // getting source into the store is the whole point.
+      if (await workspace.exists(`${prefix}${path}`)) {
+        console.error(
+          `[vendo] source file "${path}" of ${appId} is still there but would not read back;`
+          + ` its stored entry is KEPT rather than dropped — ${safeErrorMessage(error)}`,
+        );
+        continue;
+      }
       removed.push(path);
       continue;
     }

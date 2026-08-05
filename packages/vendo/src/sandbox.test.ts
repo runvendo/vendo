@@ -198,10 +198,14 @@ function fakeConsole(options: { mintUrl?: (id: string) => string } = {}) {
         machine.files.set(url.searchParams.get("path") ?? "", recorded.bytes ?? new Uint8Array());
         return json({ ok: true });
       case "GET /files/list": {
+        // `${dir}/` assumed dir never ends in one, so the root asked for "//"
+        // and matched nothing — a mock arithmetic bug, not console semantics:
+        // no filesystem or route treats "//" as the root.
         const dir = url.searchParams.get("dir") ?? "";
+        const inside = dir.endsWith("/") ? dir : `${dir}/`;
         const entries = [...machine.files.keys()]
-          .filter((filePath) => filePath.startsWith(`${dir}/`))
-          .map((filePath) => filePath.slice(dir.length + 1));
+          .filter((filePath) => filePath.startsWith(inside))
+          .map((filePath) => filePath.slice(inside.length));
         return json({ entries });
       }
       default:
@@ -555,13 +559,15 @@ describe("cloudSandbox", () => {
       .rejects.toMatchObject({ code: "cloud-required" });
   });
 
-  it("renders the pricing-v3 meter-exhausted refusal as the crafted spec-§5 sentence", async () => {
+  it("renders the pool meter-exhausted refusal as the crafted dollar sentence", async () => {
+    // The console's real 402 body: one meter (`usage`), dollars, one limit.
     const refused = vi.fn(async () => Response.json(
       {
         error: { code: "meter-exhausted", message: "meter exhausted" },
-        meter: "sandbox_minutes",
-        used: 5_400,
-        limit: 5_000,
+        meter: "usage",
+        unit: "usd",
+        used: 54,
+        limit: 49,
         resets_at: "2026-08-01T00:00:00.000Z",
         reason: "allowance",
         exits: { upgrade_url: "https://console.vendo.run/billing", byo_docs_url: "https://docs.vendo.run/byo" },
@@ -571,11 +577,11 @@ describe("cloudSandbox", () => {
     const adapter = cloudSandbox({ apiKey: "vnd_secret", baseUrl: "https://cloud.test", fetch: refused as unknown as typeof fetch });
     await expect(adapter.create({ env: {} })).rejects.toMatchObject({
       code: "cloud-required",
-      message: "Vendo Cloud paused sandbox minutes — the allowance for this billing period is used up "
-        + "(5,400 of 5,000 used; resets 2026-08-01). "
+      message: "Vendo Cloud paused usage — the $49.00 included this billing period is used up "
+        + "($54.00 of $49.00 used; resets 2026-08-01). "
         + "Upgrade your plan (https://console.vendo.run/billing) "
         + "or bring your own infrastructure (https://docs.vendo.run/byo).",
-      detail: { meter: "sandbox_minutes", used: 5_400, limit: 5_000 },
+      detail: { meter: "usage", unit: "usd", used: 54, limit: 49 },
     });
   });
 
@@ -660,17 +666,13 @@ describe("cloudSandbox", () => {
       .rejects.toMatchObject({ code: "sandbox-unavailable", message: expect.stringContaining("502") });
   });
 
-  it("keeps the adapter-private exec/files bootstrap surface on the console wire", async () => {
-    // NOT part of the public seam — the in-box agent owns the inside of the
-    // box; the live conformance lane uses these to install its test app.
+  it("puts the seam's files and the adapter-private exec on the console wire", async () => {
+    // `files` is the public seam (apps/sandbox.ts); `exec` is NOT — the in-box
+    // agent owns the inside of the box, and the live conformance lane uses
+    // exec only to start its test app.
     const console_ = fakeConsole();
     const machine = await adapterFor(console_).create({ env: {} }) as SandboxMachine & {
       exec(cmd: string, opts?: { cwd?: string; timeoutMs?: number }): Promise<{ code: number; stdout: string; stderr: string }>;
-      files: {
-        read(path: string): Promise<Uint8Array>;
-        write(path: string, bytes: Uint8Array | string): Promise<void>;
-        list(dir: string): Promise<string[]>;
-      };
     };
     expect(await machine.exec("pwd", { cwd: "/app", timeoutMs: 9_000 })).toMatchObject({ code: 0 });
     expect(console_.requests.at(-1)).toMatchObject({

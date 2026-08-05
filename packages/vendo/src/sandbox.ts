@@ -157,9 +157,11 @@ const isGone = (error: unknown): boolean =>
  * - `spec.template` is dropped from the wire: the create route takes none —
  *   the pooled base image (Node + the in-box agent) is Cloud's own.
  *
- * The machine object also carries adapter-private exec/files/url used for
- * live-lane bootstrap and diagnostics — NOT part of the public seam (the
- * in-box agent owns the inside of the box). */
+ * `files` is part of the public seam (apps/sandbox.ts), and the console's
+ * list route may answer any depth — the adapter folds it to the seam's one
+ * level. The machine object also carries adapter-private exec used for
+ * live-lane bootstrap and diagnostics — NOT part of the seam (the in-box agent
+ * owns the inside of the box). */
 export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
   const base = (options.baseUrl ?? "https://console.vendo.run").replace(/\/$/, "");
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -306,22 +308,6 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
           .then(remove);
         await destroying;
       },
-      // ——— adapter-private below this line (live-lane bootstrap + diagnostics) ———
-      async exec(cmd: string, execOptions?: { cwd?: string; timeoutMs?: number }) {
-        const payload = await sendJson(`${prefix}/exec`, "POST", {
-          cmd,
-          ...(execOptions?.cwd === undefined ? {} : { cwd: execOptions.cwd }),
-          ...(execOptions?.timeoutMs === undefined ? {} : { timeout_ms: execOptions.timeoutMs }),
-        }) as { code?: unknown; stdout?: unknown; stderr?: unknown };
-        if (typeof payload.code !== "number") {
-          throw new VendoError("sandbox-unavailable", "Vendo Cloud sandbox returned an invalid exec response");
-        }
-        return {
-          code: payload.code,
-          stdout: typeof payload.stdout === "string" ? payload.stdout : "",
-          stderr: typeof payload.stderr === "string" ? payload.stderr : "",
-        };
-      },
       files: {
         async read(path: string) {
           const response = await send(`${prefix}/files?path=${encodeURIComponent(path)}`);
@@ -336,9 +322,29 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
         },
         async list(dir: string) {
           const payload = await sendJson(`${prefix}/files/list?dir=${encodeURIComponent(dir)}`, "GET") as { entries?: unknown };
-          return Array.isArray(payload.entries)
+          const entries = Array.isArray(payload.entries)
             ? payload.entries.filter((entry): entry is string => typeof entry === "string")
             : [];
+          // The seam's list is ONE level and names only; the console answers
+          // whatever depth it answers, so fold the depth away here — strip the
+          // listed directory back off an absolute answer, keep the first
+          // segment, and a deep answer collapses onto its top-level names.
+          const inside = dir.endsWith("/") ? dir : `${dir}/`;
+          const names = [...new Set(entries.map((entry) => {
+            const relative = entry.startsWith(inside) ? entry.slice(inside.length) : entry;
+            return relative.split("/")[0] ?? "";
+          }).filter((name) => name !== ""))];
+          // The seam rejects for a directory the box does not hold. The console
+          // route answers an empty list for BOTH an absent directory and an
+          // empty one, so this reports the absent case — loud in the safe
+          // direction, where answering `[]` would let a mistyped source
+          // directory read as an app with no files. Narrows to the real
+          // not-found when the console's list route grows one. The ROOT is the
+          // exception: it exists on every box, with files or without.
+          if (names.length === 0 && dir !== "" && dir !== "/") {
+            throw new VendoError("not-found", `Vendo Cloud sandbox holds no directory ${dir}`);
+          }
+          return names;
         },
       },
       async url(port?: number) {
@@ -358,6 +364,22 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
           ? `${target}-${ingress.host}`
           : `${suffixed[1]}-${target}-m${suffixed[2]}`;
         return ingress.origin;
+      },
+      // ——— adapter-private below this line (live-lane bootstrap + diagnostics) ———
+      async exec(cmd: string, execOptions?: { cwd?: string; timeoutMs?: number }) {
+        const payload = await sendJson(`${prefix}/exec`, "POST", {
+          cmd,
+          ...(execOptions?.cwd === undefined ? {} : { cwd: execOptions.cwd }),
+          ...(execOptions?.timeoutMs === undefined ? {} : { timeout_ms: execOptions.timeoutMs }),
+        }) as { code?: unknown; stdout?: unknown; stderr?: unknown };
+        if (typeof payload.code !== "number") {
+          throw new VendoError("sandbox-unavailable", "Vendo Cloud sandbox returned an invalid exec response");
+        }
+        return {
+          code: payload.code,
+          stdout: typeof payload.stdout === "string" ? payload.stdout : "",
+          stderr: typeof payload.stderr === "string" ? payload.stderr : "",
+        };
       },
     } satisfies SandboxMachine & Record<string, unknown> as SandboxMachine;
   };

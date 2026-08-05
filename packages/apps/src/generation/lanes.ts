@@ -44,7 +44,7 @@ import { composePromptSections, hostToolSections, islandContract } from "./contr
 import { askModel, type GeneratedAppDocument, type GenerationDependencies } from "./engine.js";
 import { prepareIslands } from "./validation/islands.js";
 import { smokeRenderIslands } from "./validation/smoke-render.js";
-import { wireCompileOptionsFor } from "./wire-options.js";
+import { wireCompileOptionsFor } from "../wire-options.js";
 
 /** What a lane leaves behind. `document` is byte-identical to the input when
  *  the lane failed honestly — a lane never ships half of itself. */
@@ -63,10 +63,14 @@ const warn = (where: string, message: string): Finding => ({ severity: "warn", w
  *  lanes never import the runtime). */
 export interface LaneGateConfig {
   experimentalMachines?: boolean;
-  experimentalServedApps?: boolean;
   /** The machine seams. No sandbox adapter → nothing can be provisioned at
    *  all, flag or no flag. */
   machine?: { sandbox?: unknown };
+  /** Build contract §9.8 — the authenticated door a served app is answered on.
+   *  Unset means this deployment has no way to serve one, so the served lane is
+   *  shut: the alternative is a box built, a surface flipped, and an app no
+   *  caller can open. */
+  servedProxyPath?: unknown;
 }
 
 export interface LaneGates {
@@ -103,9 +107,11 @@ const AUTOMATIONS_NEED_NO_MACHINE = 'Scheduled or triggered work still runs on t
 export const laneGates = (config: LaneGateConfig): LaneGates => {
   const sandbox = config.machine?.sandbox !== undefined;
   const box = sandbox && config.experimentalMachines === true;
-  // Layer 3 is a machine surface, so served implies box (createApps refuses the
-  // other combination outright).
-  const served = box && config.experimentalServedApps === true;
+  // Layer 3 is a machine surface served through an authenticated door, so served
+  // is a NARROWING of box: no box can never be served, and a box with no door to
+  // serve through cannot either. Stated as the shape of the expression rather
+  // than as two flags that have to agree with each other.
+  const served = box && config.servedProxyPath !== undefined;
   const cannot: string[] = [];
   if (!sandbox) {
     cannot.push(`This host has no sandbox configured, so no machine can be provisioned: custom server code is out of reach. ${AUTOMATIONS_NEED_NO_MACHINE}`);
@@ -187,7 +193,7 @@ const islandSourceFrom = (text: string, name: string, deps: IslandLaneDeps): str
   const wire = start !== -1 && close > start
     ? markup.slice(start, close + "</App>".length)
     : `<App name="__island_lane__">${markup}</App>`;
-  const compiled = compileWire(wire, wireCompileOptionsFor(deps, hostComponentNames(deps)));
+  const compiled = compileWire(wire, wireCompileOptionsFor(deps));
   const source = compiled.components[name];
   return typeof source === "string" && source.trim() !== "" ? source : undefined;
 };

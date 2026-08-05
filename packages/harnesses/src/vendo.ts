@@ -18,7 +18,7 @@
  */
 import { z } from "zod";
 import { modelToolDescription, type Harness, type HarnessEvent, type Json, type ToolDescriptor, type Turn } from "@vendoai/core";
-import { startTurn, wireErrorMessage } from "@vendoai/agent/internal";
+import { startTurn, wireErrorMessage, type TurnContext } from "@vendoai/agent/internal";
 import { reportHire } from "./runtime.js";
 import { jsonSchema, stepCountIs, streamText, tool, type LanguageModel, type ToolSet } from "ai";
 import { defineHarness } from "./define.js";
@@ -38,12 +38,27 @@ const optionsSchema = z.object({
   /** Overrides the `default` seat for this turn only. */
   model: z.unknown().optional(),
   maxSteps: z.number().int().positive().optional(),
+  historyWindow: z.number().int().positive().optional(),
+  contextTokenBudget: z.number().int().positive().optional(),
+  maxOutputTokens: z.number().int().positive().optional(),
 });
 
 export interface VendoHarnessOptions {
   model?: LanguageModel;
   maxSteps?: number;
+  /** The shipped loop's context knobs, per turn. They were declared on the loop
+   *  and on `createAgent` but not here, and this file passed `maxSteps` alone —
+   *  so a deployment on the default harness (which is every deployment whose
+   *  store can serve harness turns) could not reach the history window or the
+   *  token budget at all. */
+  historyWindow?: number;
+  contextTokenBudget?: number;
+  maxOutputTokens?: number;
 }
+
+/** The knobs a per-turn option may override, and the deployment defaults they
+ *  override. One list, so a new knob cannot reach one half and not the other. */
+const CONTEXT_KNOBS = ["maxSteps", "historyWindow", "contextTokenBudget", "maxOutputTokens"] as const;
 
 export interface VendoHarnessDeps {
   /**
@@ -56,6 +71,12 @@ export interface VendoHarnessDeps {
    */
   system?: string | (() => string | undefined | Promise<string | undefined>);
   maxSteps?: number;
+  /** The deployment's defaults for the loop's context knobs; a per-turn option of
+   *  the same name wins. `maxSteps` stays above for back-compat and reads the
+   *  same either way. */
+  historyWindow?: number;
+  contextTokenBudget?: number;
+  maxOutputTokens?: number;
   /**
    * Called once per hired specialist. Defaults to the runtime's own
    * {@link reportHire}, which writes the audit row and the transcript receipt — a
@@ -175,6 +196,11 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
       if (model === undefined) {
         throw new Error("vendo() thinks with `turn.models.default`, and this turn carries no default seat");
       }
+      const context: TurnContext = {};
+      for (const knob of CONTEXT_KNOBS) {
+        const value = turn.options?.[knob] ?? deps[knob];
+        if (value !== undefined) context[knob] = value;
+      }
       const system =
         (typeof deps.system === "function" ? await deps.system() : deps.system)
         ?? turn.system
@@ -240,6 +266,9 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
           messages: [...turn.messages],
           tools: residentTools,
           signal: turn.signal,
+          // §3.5 — the runtime already minted it and put it on the Turn, so
+          // passing it is simply true.
+          turnId: turn.turnId,
           // The loadout, in the shipped loop's own vocabulary: `prepareStep`
           // re-reads this each step and restricts what the model may PICK, so a
           // tool the runtime equipped mid-turn is choosable on the next step and a
@@ -250,9 +279,11 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
             activeToolNames: () => [...equipped, HIRE_SUBAGENT],
             attach: () => {},
           },
-          ...(turn.options?.maxSteps ?? deps.maxSteps) === undefined
-            ? {}
-            : { context: { maxSteps: turn.options?.maxSteps ?? deps.maxSteps } },
+          // The WHOLE context, not just `maxSteps`. Passing one knob is what made
+          // every other knob unreachable from `vendo()` — the loop declared them,
+          // `createAgent` passed them, and this caller silently dropped them, so
+          // the two thinkers disagreed about a host's own configuration.
+          ...(Object.keys(context).length === 0 ? {} : { context }),
         });
       } catch (error) {
         yield { type: "error", message: wireErrorMessage(error), code: "model" };

@@ -1,6 +1,8 @@
 import {
   VendoError,
+  mintTurnId,
   toVendoWirePart,
+  withSseKeepalive,
   type AgentRunner,
   type ApprovalId,
   type Guard,
@@ -17,10 +19,12 @@ import {
   createUIMessageStreamResponse,
   isToolUIPart,
   type LanguageModel,
+  type StopCondition,
+  type ToolSet,
   type UIMessage,
   type UIMessageStreamWriter,
 } from "ai";
-import { startTurn } from "./loop.js";
+import { startTurn, type Supervise, type TurnContext } from "./loop.js";
 import { wireErrorMessage } from "./wire-error.js";
 import { assembleSystemPrompt } from "./prompt.js";
 import { createRunner } from "./runner.js";
@@ -100,17 +104,20 @@ interface AgentConfig {
     knowledge?: string | (() => string | undefined | Promise<string | undefined>);
     instructions?: string;
   };
-  context?: {
-    maxOutputTokens?: number;
-    toolOutputCap?: number;
-    /** Bound the messages re-sent to the model per turn to the last N (whole messages,
-     *  so tool-call/result pairing inside a message is never split). Undefined → send the
-     *  full thread (current behavior). Persistence and the streamed thread are unaffected. */
-    historyWindow?: number;
-    /** AGENT-7: the agent-loop step cap (default 20). Exhausting it is VISIBLE:
-     *  the stream carries a `data-vendo-step-limit` part the client can render. */
-    maxSteps?: number;
-  };
+  /** The turn loop's own knobs (ONE shape, shared with the harness caller — see
+   *  {@link TurnContext}) plus the one this door owns: `toolOutputCap` truncates a
+   *  host tool's result before it reaches the model, which happens in the tool
+   *  bridge here rather than in the loop. */
+  context?: TurnContext & { toolOutputCap?: number };
+  /** §4.1 item 4 — extra stop conditions for every turn, composed with the loop's
+   *  own three. `tokenBudgetStop(n)` is the shipped one; a host closes over whose
+   *  ceiling it is, because neither this door nor the loop has any business
+   *  knowing. Unset changes nothing. */
+  stopWhen?: readonly StopCondition<ToolSet>[];
+  /** §4.1 item 6 — a verdict on every final answer, shipped as a no-op (unset =
+   *  approved). Lives here rather than on the harness because the frozen signature
+   *  takes a `RunContext` and a `Turn` deliberately carries none. */
+  supervise?: Supervise;
   capabilityMiss?: CapabilityMissConfig;
   /** ENG-252: enable the `find_tools` meta-tool and runtime loadout.
    *  When set, the model starts with a bounded initial loadout and discovers the
@@ -186,6 +193,10 @@ function validateConfig(config: AgentConfig): void {
   }
   if (historyWindow !== undefined && (!Number.isInteger(historyWindow) || historyWindow < 1)) {
     throw new VendoError("validation", "historyWindow must be a positive integer");
+  }
+  const { contextTokenBudget } = config.context ?? {};
+  if (contextTokenBudget !== undefined && (!Number.isInteger(contextTokenBudget) || contextTokenBudget < 1)) {
+    throw new VendoError("validation", "contextTokenBudget must be a positive integer");
   }
   const { maxSteps } = config.context ?? {};
   if (maxSteps !== undefined && (!Number.isInteger(maxSteps) || maxSteps < 1)) {
@@ -392,7 +403,18 @@ export function createAgent(config: AgentConfig): VendoAgent {
   return {
     async stream(input) {
       validateMessage(input?.message);
-      const thread = await threads.resolve(input.threadId, input.ctx);
+      // §3.5 — the turn's identity, minted HERE because here is where a turn
+      // begins on this route. The harness runtime mints for its own route; this
+      // one had no mint at all, so every deployment whose store cannot serve
+      // harness turns (a host's non-SQL adapter, the Cloud hosted store — see
+      // `storeServesHarnessTurns`) produced audit rows that named no turn. It
+      // rides the CTX rather than a second parameter, so every guarded call and
+      // every audit row below joins for free. An id the caller already minted
+      // WINS: the id belongs to the turn, and a second one would split its rows.
+      const ctx: RunContext = input.ctx.turnId === undefined
+        ? { ...input.ctx, turnId: mintTurnId() }
+        : input.ctx;
+      const thread = await threads.resolve(input.threadId, ctx);
       validateUpsert(thread.messages, input.message);
       if (input.message.role === "user"
         && !thread.messages.some((message) => message.id === input.message.id)) {
@@ -403,7 +425,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
         const approvalIds = guardApprovalIds(thread.messages, abandonedCalls);
         if (approvalIds.length > 0 && config.guard.abandonApprovals !== undefined) {
           try {
-            await config.guard.abandonApprovals(approvalIds, input.ctx);
+            await config.guard.abandonApprovals(approvalIds, ctx);
           } catch {
             // The thread already reflects abandonment; queue cleanup retries
             // implicitly on the next abandoned turn.
@@ -414,7 +436,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
       clearFailedTurnRecord(thread.messages);
       const system = await assembleSystemPrompt(
         config.guard,
-        input.ctx,
+        ctx,
         config.system,
         config.capabilityMiss !== undefined,
         // This thinker is `vendo()`'s loadout path: its meta-tool is find_tools.
@@ -450,7 +472,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
           const play = await config.scripted?.({
             message: input.message,
             messages: thread.messages,
-            ctx: input.ctx,
+            ctx: ctx,
           });
           if (play !== undefined) {
             await play({ writer, ...(input.signal === undefined ? {} : { signal: input.signal }) });
@@ -460,7 +482,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
             ? undefined
             : createCapabilityMissDetector({
                 config: config.capabilityMiss,
-                ctx: input.ctx,
+                ctx: ctx,
                 threadId: thread.id,
                 intent: latestUserIntent(thread.messages),
               });
@@ -471,7 +493,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
           let seedNames: string[] | undefined;
           if (config.toolSearch?.seed !== undefined) {
             try {
-              seedNames = await config.toolSearch.seed(input.ctx);
+              seedNames = await config.toolSearch.seed(ctx);
             } catch {
               seedNames = undefined;
             }
@@ -482,7 +504,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
           let menuNames: readonly string[] | undefined;
           if (config.toolSearch?.menu !== undefined) {
             try {
-              menuNames = await config.toolSearch.menu(input.ctx);
+              menuNames = await config.toolSearch.menu(ctx);
             } catch {
               menuNames = undefined;
             }
@@ -490,7 +512,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
           const bridgeOptions = {
             registry: config.tools,
             guard: config.guard,
-            ctx: input.ctx,
+            ctx: ctx,
             writer,
             toolOutputCap: config.context?.toolOutputCap,
             ...(missDetector === undefined ? {} : { onCall: missDetector.onCall }),
@@ -505,10 +527,10 @@ export function createAgent(config: AgentConfig): VendoAgent {
             : createToolSearchSession({
                 config: config.toolSearch,
                 // Per-subject connection state annotates search results.
-                ctx: input.ctx,
+                ctx: ctx,
                 // THE LAW's projection (design §12): an unattended turn is
                 // never even offered a destructive or external tool.
-                descriptors: await config.tools.descriptors(input.ctx),
+                descriptors: await config.tools.descriptors(ctx),
                 loaded: loadedFor(thread.id),
                 ...(seedNames === undefined ? {} : { seedNames }),
                 ...(menuNames === undefined ? {} : { menuNames }),
@@ -517,7 +539,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
                 // active names each step, so they are callable next step.
                 // Search must not be a way back to a withheld tool, so the
                 // same projection applies to what it can resolve.
-                resolve: async (names) => (await config.tools.descriptors(input.ctx)).filter((d) => names.includes(d.name)),
+                resolve: async (names) => (await config.tools.descriptors(ctx)).filter((d) => names.includes(d.name)),
                 materialize: (descriptor) => addAgentTool(tools, descriptor, bridgeOptions),
               });
           toolSearch?.attach(tools);
@@ -530,8 +552,11 @@ export function createAgent(config: AgentConfig): VendoAgent {
             system,
             messages: thread.messages,
             tools,
+            ...(ctx.turnId === undefined ? {} : { turnId: ctx.turnId }),
             ...(input.signal === undefined ? {} : { signal: input.signal }),
             ...(config.context === undefined ? {} : { context: config.context }),
+            ...(config.stopWhen === undefined ? {} : { stopWhen: config.stopWhen }),
+            ...(config.supervise === undefined ? {} : { supervision: { ctx, supervise: config.supervise } }),
             ...(toolSearch === undefined ? {} : { toolSearch }),
           });
           // self-serve P: the ai-SDK `error` chunk is TRANSIENT — it sets the
@@ -564,9 +589,23 @@ export function createAgent(config: AgentConfig): VendoAgent {
           // not because the model finished — stream a renderable notice.
           const stepLimit = await loop.stepLimitPart();
           if (stepLimit !== undefined) writer.write(toVendoWirePart(stepLimit) as never);
+          // §4.1 item 6 — a withheld answer is a turn failure, so it travels the
+          // failure path this turn already has: the same `error` chunk the client
+          // renders and the same recorded notice a reload reads. Nothing new.
+          const refusal = await loop.supervisorRefusal();
+          if (refusal !== undefined) {
+            const message = wireErrorMessage(refusal);
+            // Recorded BEFORE the chunk, and in that order for the same reason
+            // the tap above records before it enqueues: writing an `error` chunk
+            // re-enters the stream's own onError with its own `new Error(text)`,
+            // which this gate can only render generically. The once-guard keeps
+            // whichever message got there first, so the crafted one has to.
+            recordTurnError(message, (part) => writer.write(part as never));
+            writer.write({ type: "error", errorText: message } as never);
+          }
         },
         onFinish: async ({ messages }) => {
-          await persistFinishedTurn(threads, thread, messages, input.ctx);
+          await persistFinishedTurn(threads, thread, messages, ctx);
         },
         onError: (error) => {
           const message = wireErrorMessage(error);
@@ -580,7 +619,10 @@ export function createAgent(config: AgentConfig): VendoAgent {
           return message;
         },
       });
-      const response = createUIMessageStreamResponse({ stream });
+      // Same keepalive the harness path gets: a first frame before the provider
+      // has said anything, then one per interval of silence. SSE comment frames,
+      // so the client's message sequence is untouched (core/sse-keepalive.ts).
+      const response = withSseKeepalive(createUIMessageStreamResponse({ stream }));
       // ENG-211: a caller may begin without an id, in which case resolve()
       // mints one. Return the effective id on every turn so fetch clients can
       // adopt it without changing the ai-SDK SSE part contract.

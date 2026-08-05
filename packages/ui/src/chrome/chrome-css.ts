@@ -1855,6 +1855,23 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 @media (prefers-reduced-motion: no-preference) {
   .fl-appcard-bar[data-state="ready"] .fl-barpin { animation: fl-fade-in .3s ease both; }
 }
+/* The pin nudge (founder mockup, 2026-08-04). A settled build INVITES the pin
+   with a slow ring at the edge of vision — never a toast, never an action, and
+   never while the build is still running (§8 gives a build one moving thing).
+   Taken, it resolves to the settled accent state. Reduced motion keeps the
+   accent and drops the ring: the colour alone is the invitation. */
+.fl-barpin[data-vendo-pin] { color: var(--vendo-accent); }
+.fl-barpin[data-vendo-pin="pinned"] { background: var(--vendo-accent-soft); }
+@media (prefers-reduced-motion: no-preference) {
+  .fl-barpin[data-vendo-pin="invite"] { animation: fl-pin-nudge 2.4s var(--vendo-ease) infinite; }
+  /* The card's pin also fades in with its bar (rule above); naming both keeps
+     the entrance, which a bare nudge would silently replace. */
+  .fl-appcard-bar[data-state="ready"] .fl-barpin[data-vendo-pin="invite"] {
+    animation: fl-fade-in .3s ease both, fl-pin-nudge 2.4s var(--vendo-ease) infinite; }
+}
+@keyframes fl-pin-nudge {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--vendo-accent) 26%, transparent); }
+  45% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--vendo-accent) 10%, transparent); } }
 
 /* 2B — Send now on the queued pill. */
 .fl-queued-now { flex-shrink: 0; border: 0; background: none; cursor: pointer; padding: 3px 6px;
@@ -2216,6 +2233,27 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
    reopening one mounts its whole checklist in a single commit — N fade-ins at
    once is the opposite of calm. */
 .fl-no-entrance .fl-beat { animation: none; }
+
+/* ---------- the workspace beat rail (§3.4 + §10.2) ----------
+   A heavy build is watched as an accumulating vertical list of the SAME beat
+   line the transcript uses, on the existing split-view stage. Sits under
+   whatever the stage is showing, above the pane's bottom edge. */
+.fl-beatrail { flex: none; padding: 14px 18px 16px; border-top: 1px solid var(--vendo-border); }
+.fl-beatrail-head { margin: 0 0 10px; font: 600 11px/1 var(--vendo-font); letter-spacing: .055em;
+  text-transform: uppercase; color: var(--vendo-fg-muted); }
+.fl-beats { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+/* The caption is the point of the rail: watching is optional. */
+.fl-beatrail-cap { margin: 12px 0 0; max-width: 42ch;
+  font: 400 11.5px/1.45 var(--vendo-font); color: var(--vendo-fg-muted); }
+/* The rail's own register — the mockup's 6px pip. In the TRANSCRIPT the orb is
+   a static position marker (§8 build calm, where the card is the step and the
+   boot hairline is the one moving thing); a rail with no card and no hairline
+   has nothing else to say "still going", so here the pip carries the pulse. */
+.fl-beatrail .fl-beat-orb { width: 6px; height: 6px; background: var(--vendo-accent); }
+@media (prefers-reduced-motion: no-preference) {
+  .fl-beatrail .fl-beat-working .fl-beat-orb { animation: fl-beat-pip 1.5s var(--vendo-ease) infinite; }
+}
+@keyframes fl-beat-pip { 50% { opacity: .35; transform: scale(.82); } }
 
 /* ================== LANE B — card-shell surfaces (spec §16, §4) ==================
    Nothing here dresses or undresses a card: it sizes the shell inside each

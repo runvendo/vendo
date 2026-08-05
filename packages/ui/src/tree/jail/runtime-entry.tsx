@@ -14,14 +14,13 @@ import { clsx } from "clsx";
 import * as tailwindMerge from "tailwind-merge";
 import { zodShim } from "./zod-shim.js";
 import { ISLAND_AMBIENT_NAMES, jailPackageUrl, type IslandResolvableModule } from "@vendoai/core";
-import { normalizeViewportBlockCss } from "./viewport-css.js";
+import { applyThemeVars, postToHost, startFrameProtocol } from "../../embedded-runtime.js";
 import {
   Accordion, Badge, BarChart, Button, Callout, CardList, Checkbox, DataTable,
   DatePicker, DateTime, Disclaimer, Divider, DonutChart, EnumBadge, Form, Grid,
   Input, LineChart, Money, Num, Percent, Progress, Row, Select, Sparkline,
   Stack, Stat, Surface, Tabs, Text, Textarea,
-  applyFormat, formatDateTime, formatMoney, formatNum, formatPercent,
-  setKitIntl, type KitIntl,
+  fmt, setKitIntl, type KitIntl,
 } from "../../kit/index.js";
 
 declare global {
@@ -136,7 +135,7 @@ const pendingActions = new Map<string, {
   reject(error: Error): void;
 }>();
 
-const post = (message: Record<string, unknown>) => parent.postMessage({ vendo: true, ...message }, "*");
+const post = postToHost;
 
 /**
  * W4b §2 — the ambient `tools` API. `tools.a.b(args)` posts a `tool-call`
@@ -175,14 +174,6 @@ const makeToolsAmbient = (path: readonly string[]): unknown =>
  * imports. The name list is pinned to `ISLAND_AMBIENT_NAMES` in @vendoai/core
  * (shared with the engine's prompt + strip pass) by the typed record below.
  */
-const fmt = {
-  money: formatMoney,
-  percent: formatPercent,
-  num: formatNum,
-  dateTime: formatDateTime,
-  format: applyFormat,
-};
-
 const AMBIENT_SCOPE: Record<(typeof ISLAND_AMBIENT_NAMES)[number], unknown> = {
   React,
   ReactDOM: { createPortal, flushSync },
@@ -559,21 +550,6 @@ async function renderComponent(
   return mount.hasChildNodes() ? "ready" : "empty";
 }
 
-/** Host brand tokens: only --vendo-* custom properties may cross into the jail,
-    so generated code styled with the theme variables matches the host (06 §5). */
-function applyThemeVars(vars: unknown): void {
-  if (typeof vars !== "object" || vars === null) return;
-  const rootStyle = document.documentElement.style;
-  for (const [key, value] of Object.entries(vars as Record<string, unknown>)) {
-    if (typeof value === "string" && /^--vendo-[a-z0-9-]+$/.test(key)) {
-      rootStyle.setProperty(key, value);
-    }
-  }
-  document.body.style.fontFamily = "var(--vendo-font-family, system-ui, sans-serif)";
-  document.body.style.color = "var(--vendo-color-text, #16161a)";
-  document.body.style.fontSize = "var(--vendo-font-size, 15px)";
-}
-
 /** Captured host CSS arrives verbatim, `@import` lines included (a Tailwind v4
  *  root ships `@import "tailwindcss"`). The jail CSP has no style network
  *  source, so every `@import` is a guaranteed-refused fetch that logs a CSP
@@ -714,65 +690,7 @@ window.addEventListener("message", (event) => {
   }
 });
 
-const VIEWPORT_BLOCK_UNIT = /(?:d|s|l)?v(?:h|b)(?![a-z])/iu;
-const VIEWPORT_BLOCK_PROPERTIES = ["height", "min-height", "block-size", "min-block-size"] as const;
-
-let lastReportedHeight: number | undefined;
-let mutationObserver: MutationObserver | undefined;
-
-function contentHeight(): number {
-  const elements = [mount, ...mount.querySelectorAll<HTMLElement>("[style]")];
-
-  // A generated root commonly uses min-height:100vh. Inside an auto-sized
-  // iframe, that makes its "content" depend on the previous host height. An
-  // auto-height surface has no independent block viewport, so normalize
-  // viewport-relative block constraints to their content-sized forms —
-  // inline styles here, and the same constraint arriving in a <style> tag
-  // (generated islands ship those too) via the stylesheet-text arm below.
-  for (const element of elements) {
-    for (const property of VIEWPORT_BLOCK_PROPERTIES) {
-      const value = element.style.getPropertyValue(property);
-      if (!VIEWPORT_BLOCK_UNIT.test(value)) continue;
-      element.style.setProperty(property, property.startsWith("min-") ? "0" : "auto", "important");
-    }
-  }
-  for (const sheet of document.querySelectorAll("style")) {
-    const css = sheet.textContent ?? "";
-    const normalized = normalizeViewportBlockCss(css);
-    if (normalized !== css) sheet.textContent = normalized;
-  }
-
-  const height = Math.ceil(Math.max(mount.getBoundingClientRect().height, mount.scrollHeight));
-  // Attribute observation catches state-driven constraint changes. Discard
-  // the normalization mutations themselves so they cannot loop.
-  mutationObserver?.takeRecords();
-  return height;
-}
-
-function reportContentHeight(): void {
-  const height = contentHeight();
-  if (height === lastReportedHeight) return;
-  lastReportedHeight = height;
-  post({ kind: "resize", height });
-}
-
-if (typeof ResizeObserver !== "undefined") {
-  const observer = new ResizeObserver(reportContentHeight);
-  // The mount changes for content growth; observing viewport-owned html/body
-  // would reintroduce the host/frame feedback path.
-  observer.observe(mount);
-}
-
-if (typeof MutationObserver !== "undefined") {
-  mutationObserver = new MutationObserver(reportContentHeight);
-  // React can add a new viewport constraint without changing the current box,
-  // so also react to render mutations and normalize before measuring.
-  mutationObserver.observe(mount, {
-    attributes: true,
-    characterData: true,
-    childList: true,
-    subtree: true,
-  });
-}
-
-post({ kind: "booted" });
+// The frame protocol's inner half lives in ../../embedded-runtime.ts — ONE
+// implementation shared with the box app template (blueprint §12.3). The jail
+// is one embedded surface among two; it does not own the protocol.
+startFrameProtocol(mount, post);

@@ -32,8 +32,8 @@ const MODEL_INSTRUCTION =
 const ROUTE_FALLBACK = "POST /api/demo/pin";
 
 /** The scheduler's own refusal, as the run-history row used to print it. */
-const RUN_FAILURE_WIRE = "meter-exhausted: blocked by allowance: Vendo Cloud paused automation"
-  + " runs — the allowance for this billing period is used up (resets 2026-08-01)."
+const RUN_FAILURE_WIRE = "meter-exhausted: blocked by allowance: Vendo Cloud paused usage"
+  + " — the $49.00 included this billing period is used up (resets 2026-08-01)."
   + " Upgrade your plan (https://console.vendo.run/billing).";
 
 /** The card's ask, applied to the WIRE's own pending approval so the queue row
@@ -61,7 +61,7 @@ const FAILED_RUN = {
   steps: [],
   error: {
     code: "meter-exhausted",
-    message: "blocked by allowance: Vendo Cloud paused automation runs — the allowance for this"
+    message: "blocked by allowance: Vendo Cloud paused usage — the $49.00 included this"
       + " billing period is used up (resets 2026-08-01). Upgrade your plan"
       + " (https://console.vendo.run/billing) or bring your own infrastructure"
       + " (https://docs.vendo.run/byo).",

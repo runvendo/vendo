@@ -8,17 +8,12 @@
  *  classified into `placements` by the server's read path, so they arrive
  *  here already split. */
 import type { AppDocument, AppId } from "@vendoai/core";
-import { useCallback, useEffect } from "react";
+import { useCallback } from "react";
 import { useVendoContext } from "../context.js";
-import { onPinAnnounced } from "../pin-events.js";
+import { useRefreshOnPin } from "./use-pin-refresh.js";
 import { type PollOptions, useResource } from "./use-resource.js";
 
 const DEFAULT_POLL_MS = 5000;
-
-/** A second read as the pin ceremony's ghost lands (~480ms). The host's write
- *  is fire-and-forget when `onPin` returns void, so the read on the pin itself
- *  can beat it to the server; this covers that without waiting for the poll. */
-const PIN_SETTLE_MS = 500;
 
 const NO_APPS: AppDocument[] = [];
 
@@ -45,24 +40,15 @@ export function useSlotApp(slotId: string, options: PollOptions & {
   // A pin is a HOST write, so nothing here can see it — the slot used to sit
   // empty for up to a poll tick after the user asked for the app. The pin
   // announces itself instead; the poll stays as the floor.
-  useEffect(() => {
-    if (!enabled) return;
-    const settles = new Set<ReturnType<typeof setTimeout>>();
-    const stop = onPinAnnounced(() => {
-      void refresh();
-      const settle = setTimeout(() => {
-        settles.delete(settle);
-        void refresh();
-      }, PIN_SETTLE_MS);
-      settles.add(settle);
-    });
-    return () => {
-      stop();
-      for (const settle of settles) clearTimeout(settle);
-    };
-  }, [enabled, refresh]);
-  // Latest placement wins — matching the "the newest remix takes the slot"
-  // semantics the demos established (hero-slot took `.at(-1)`).
-  const appId = data.filter(app => app.placements?.includes(slotId)).at(-1)?.id;
+  useRefreshOnPin(refresh, enabled);
+  // Latest placement wins ("the newest remix takes the slot"), and the wire
+  // lists apps NEWEST FIRST — `runtime.list()` sorts createdAt descending, and
+  // an AppDocument carries no timestamp, so list order is the only newness
+  // signal here. This read was `.at(-1)`, which is the OLDEST placed app: the
+  // exact opposite of its own comment. Two things hid it — the reference host
+  // strips the slot off every other app the subject owns, so only one ever
+  // carries a placement, and the test mocked `apps.list` with a hand-ordered
+  // array instead of the wire's real order.
+  const appId = data.find(app => app.placements?.includes(slotId))?.id;
   return { appId, error, isLoading, refresh };
 }

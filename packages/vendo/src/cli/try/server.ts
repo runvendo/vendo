@@ -5,6 +5,7 @@ import { dirname, join, resolve, sep } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { toolsFileSchema, type ExtractedTool } from "@vendoai/actions";
+import { DEFAULT_SSE_KEEPALIVE_INTERVAL_MS, startSseKeepalive } from "@vendoai/core";
 import { createStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { DevModelController } from "../../dev-creds/model.js";
@@ -93,7 +94,6 @@ export function createTryEventBus(): TryEventBus {
 /** The wire mount and the boot object the surface app reads off `window`. */
 const API_BASE = "/api/vendo";
 const TRY_BOOT = JSON.stringify({ profileUrl: "/profile.json", eventsUrl: "/events", apiBase: API_BASE });
-const DEFAULT_HEARTBEAT_INTERVAL_MS = 15_000;
 
 export interface StartTryServerOptions {
   /** The Task-2 profile root (`assembleTryProfile` boots from it) — also the
@@ -326,7 +326,7 @@ type MountState = { vendo: Vendo } | { error: string };
 
 export async function startTryServer(options: StartTryServerOptions): Promise<TryServer> {
   const bus = options.events ?? createTryEventBus();
-  const heartbeatIntervalMs = options.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
+  const heartbeatIntervalMs = options.heartbeatIntervalMs ?? DEFAULT_SSE_KEEPALIVE_INTERVAL_MS;
   const model = await resolveTryModel(options);
   const liveChat = options.capabilities?.liveChat ?? model !== null;
   // refine (Task 11) = (model resolved) AND (tools.json present), decided once
@@ -556,10 +556,11 @@ export async function startTryServer(options: StartTryServerOptions): Promise<Tr
     // heartbeat (an idle stream would otherwise sit head-less for 15s).
     response.flushHeaders();
     let unsubscribe: () => void = () => undefined;
+    let stopKeepalive: () => void = () => undefined;
     let closed = false;
     const teardown = (): void => {
       closed = true;
-      clearInterval(heartbeat);
+      stopKeepalive();
       unsubscribe();
       sseClients.delete(response);
     };
@@ -573,14 +574,18 @@ export async function startTryServer(options: StartTryServerOptions): Promise<Tr
         teardown();
       }
     };
-    const heartbeat = setInterval(() => {
-      try {
-        response.write(": heartbeat\n\n");
-      } catch {
-        teardown();
-      }
-    }, heartbeatIntervalMs);
-    heartbeat.unref();
+    // The SAME keepalive policy the production wire uses (core/sse-keepalive.ts):
+    // one comment frame now, then one per interval of silence.
+    stopKeepalive = startSseKeepalive({
+      intervalMs: heartbeatIntervalMs,
+      write: (frame) => {
+        try {
+          response.write(frame);
+        } catch {
+          teardown();
+        }
+      },
+    });
     // Latest-known state first: a late subscriber paints current progress
     // immediately instead of waiting for the next emission.
     for (const event of bus.replay()) send(event);

@@ -30,20 +30,36 @@ export const readName = (state: CompileState): string => {
   return state.source.slice(start, state.index);
 };
 
-/** Skips an HTML comment at the cursor (which sits on a "<"). Models narrate
- *  with comments despite instructions; a total compiler skips them. Returns
- *  "not-comment" (cursor unmoved) when the next character is not "!";
- *  "skipped" after advancing past a full comment or a non-comment "<!" run;
- *  "eof" for an unterminated (or prefix-truncated) comment — stream
- *  truncation, with the cursor left AT EOF so prefixes stay monotonic (D6).
- *  Shared by parseChildren and prescanDeclarations, whose cursors must move
- *  identically — a hand-mirrored drift once lost declarations after a
- *  comment (Devin, PR #381). */
-export const skipComment = (state: CompileState): "skipped" | "eof" | "not-comment" => {
-  if (state.source[state.index + 1] !== "!") return "not-comment";
-  const opener = state.source.slice(state.index, state.index + 4);
-  if (opener === "<!--") {
-    const close = state.source.indexOf("-->", state.index + 4);
+/**
+ * v3 spec §5 (D4/D5) — handles a brace run in CHILD position, where the cursor
+ * sits on a `{` or `}` that {@link collectText} stopped at.
+ *
+ * `{/* … *␘/}` is a JSX comment and is SKIPPED: models narrate with comments
+ * despite instructions, and a total compiler drops them. Any other brace run is
+ * D5's forbidden interpolation — `{revenue.total}` in text renders literally,
+ * which is the raw-braces class — so it records `braces-in-text` and skips the
+ * balanced run. Returns "not-comment" (cursor unmoved) when the cursor is not
+ * on a brace; "eof" for an unterminated comment or run, with the cursor left AT
+ * EOF so prefixes stay monotonic (D6).
+ *
+ * The D5 check lives HERE rather than in appendTextChild because a text run must
+ * never be retracted by a longer prefix: collectText stops before the brace, so
+ * the text ahead of it is already a settled node and the node count cannot fall.
+ *
+ * Shared by parseChildren and prescanDeclarations (and the plan dialect's two),
+ * whose cursors must move identically — a hand-mirrored drift once lost
+ * declarations after a comment (Devin, PR #381).
+ */
+export const skipCommentOrBraces = (state: CompileState): "skipped" | "eof" | "not-comment" => {
+  const char = state.source[state.index];
+  if (char === "}") {
+    issue(state, "braces-in-text", 'a "}" in text is not part of the dialect; it was skipped');
+    state.index += 1;
+    return "skipped";
+  }
+  if (char !== "{") return "not-comment";
+  if (state.source.startsWith("{/*", state.index)) {
+    const close = state.source.indexOf("*/}", state.index + 3);
     if (close === -1) {
       state.index = state.source.length;
       return "eof";
@@ -51,12 +67,12 @@ export const skipComment = (state: CompileState): "skipped" | "eof" | "not-comme
     state.index = close + 3;
     return "skipped";
   }
-  if ("<!--".startsWith(opener)) {
-    state.index = state.source.length;
-    return "eof";
-  }
-  state.index += 2; // "<!" that is not a comment is dropped (totality)
-  return "skipped";
+  issue(
+    state,
+    "braces-in-text",
+    'braces in text are not interpolation — bind the value instead, e.g. <Text text={query.field}/>; the run was skipped',
+  );
+  return skipBraceBlock(state) === FAILED ? "eof" : "skipped";
 };
 
 /** Scans a close tag at the cursor (which sits on "</"): reads the name,
@@ -188,18 +204,23 @@ export const skipElement = (state: CompileState, tag: string): void => {
 };
 
 /** Consumes text up to the next plausible tag start (`<` followed by a name
- *  character or `/`) or EOF, returning the raw run. A `<` that is the LAST
- *  character also stops the run: on a streaming prefix it may become a tag
- *  once more input arrives, so treating it as text would mint a phantom Text
- *  node that a longer prefix takes back (the D6 monotonicity property test
- *  caught exactly that). The caller (compile.ts) turns non-whitespace runs
- *  into Text nodes (D3); whitespace-only runs are ignored silently. */
+ *  character or `/`), the next brace, or EOF, returning the raw run. A `<` that
+ *  is the LAST character also stops the run: on a streaming prefix it may become
+ *  a tag once more input arrives, so treating it as text would mint a phantom
+ *  Text node that a longer prefix takes back (the D6 monotonicity property test
+ *  caught exactly that). Braces stop the run for the same reason (v3 §5 D4/D5):
+ *  the run BEFORE a brace is a settled node whatever follows the brace turns out
+ *  to be — see {@link skipCommentOrBraces}. The caller (compile.ts) turns
+ *  non-whitespace runs into Text nodes (D3); whitespace-only runs are ignored
+ *  silently. */
 export const collectText = (state: CompileState): string => {
   const start = state.index;
   while (state.index < state.source.length) {
-    if (state.source[state.index] === "<") {
+    const char = state.source[state.index] as string;
+    if (char === "{" || char === "}") break;
+    if (char === "<") {
       const next = state.source[state.index + 1];
-      if (next === undefined || next === "/" || next === "!" || NAME_CHAR.test(next)) break;
+      if (next === undefined || next === "/" || NAME_CHAR.test(next)) break;
     }
     state.index += 1;
   }

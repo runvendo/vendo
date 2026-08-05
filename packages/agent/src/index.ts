@@ -1,4 +1,7 @@
 export { createAgent } from "./agent.js";
+// §4.1 item 4 — the shipped per-tenant token ceiling, for `createAgent`'s
+// `stopWhen`. Public because the ceiling belongs to whoever is being metered.
+export { tokenBudgetStop } from "./loop.js";
 export type { ScriptedTurn, VendoAgent } from "./agent.js";
 export type { CapabilityMissConfig } from "./capability-miss.js";
 export {

@@ -113,13 +113,21 @@ The [app machine environment](/reference/environment-variables#app-machine-envir
 lists the exact variables injected into the box and the `/box` callback
 routes.
 
-### Layer 3 flag and venues
+### Layer 3 reachability and venues
 
-The host enables served apps per project with
-`createVendo({ apps: { experimentalServedApps: true, experimentalMachines: true } })`;
-served apps require machines. With the flags off, layer-3 generation, the
-surface flip, and opening a served app all refuse with a typed
-`not-implemented` error naming the flag.
+Layer 3 has no flag of its own: it is a narrowing of layer 2, so
+`createVendo({ apps: { experimentalMachines: true } })` is the only opt-in. What
+it additionally needs is a door to be served THROUGH — the mounted wire
+(`createVendo().handler`, which answers `/apps/:appId/serve/**`) plus a
+`VENDO_BASE_URL` to make that URL absolute. A deployment missing either is told
+so before it plans: the layer-3 lane is shut, and "this host cannot serve its own
+web pages for an app" arrives as a plain `<Cannot>` line in the plan instead of a
+build that runs and then fails.
+
+**Every** served app — the owner's own included — is opened at that authenticated
+proxy URL, never at the sandbox provider's public ingress. The proxy re-checks
+`can(viewer)` against live rows on every request, so a revoke bites the next one,
+and it wakes the machine only after that check passes.
 
 Layer 3 works on both venues: BYO e2b (`E2B_API_KEY` or an explicit
 `e2bSandbox`) and the Vendo Cloud hosted sandbox. Cloud ingress is a
