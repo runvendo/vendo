@@ -1,7 +1,9 @@
 import {
   describeShapeWithSemantics,
   isVendoAppsTool,
+  mechanicalRisk,
   triggerSchema,
+  UNATTENDED_DESTRUCTIVE_REASON,
   type ShapeType,
   type Trigger,
 } from "@vendoai/core";
@@ -55,14 +57,54 @@ const COLLECTION_NAME = /^[a-z][a-z0-9_-]{0,40}$/i;
 // would validate here and then never fire.
 const EVERY_DURATION = /^[1-9]\d*[smhd]$/;
 
+/**
+ * §12's law at authoring time: is this a thing Vendo will not do while nobody is
+ * watching?
+ *
+ * The name vote is core's `mechanicalRisk`, never a second copy of the verb list
+ * (`DESTRUCTIVE_VERBS` documents what the second copy cost). It is also the half
+ * that matters: `host_invoices_send` arrives declared `write`, the vote calls it
+ * destructive, and §12 resolves that disagreement against the tool. A check on
+ * `risk` alone would offer it to the planner.
+ *
+ * {@link HostToolInfo} carries neither `bindingRisk` nor the Vendo-authored
+ * brand, so this can only ever under-report against the guard's own
+ * `resolvedRisk`: a DELETE-bound tool with an innocent name still reaches the
+ * planner, and the arm-time projection refuses it there instead. Same direction
+ * as the guard, one vote short of it.
+ */
+const irreversible = (tool: HostToolInfo): boolean =>
+  tool.risk === "destructive"
+  || mechanicalRisk({
+    name: tool.name,
+    description: tool.description,
+    inputSchema: {},
+    risk: "ungraded",
+  }) === "destructive";
+
 /** The planning surface: host + connected tools, plus ONLY the results-publish
  *  tool from the apps family — an automation's job is host effects and one
  *  published result, never app lifecycle operations (and live data comes from
  *  host tools, not from reading app data collections). Through the predicate,
  *  not the prefix: `vendo_make` sits outside `vendo_apps_`, and a plan able to
- *  call it could have every firing build itself another app. */
+ *  call it could have every firing build itself another app.
+ *
+ *  Irreversible tools are withheld here for the reason `projectableForRun`
+ *  withholds them from the run itself: a tool the model cannot see is a tool it
+ *  cannot be talked into using, while one it can see but is refused becomes
+ *  something it works around. {@link refusal} is the defence in depth behind
+ *  this filter. */
 const plannerTools = (tools: readonly HostToolInfo[]): HostToolInfo[] =>
-  tools.filter((tool) => !isVendoAppsTool(tool.name) || tool.name === RESULTS_TOOL);
+  tools.filter((tool) =>
+    (!isVendoAppsTool(tool.name) || tool.name === RESULTS_TOOL)
+    && !irreversible(tool));
+
+/** The refusal, in the person's words: why it will never happen away, and the
+ *  version that CAN. It doubles as the repair instruction, because `issues` is
+ *  exactly what the next attempt is asked to fix — so a request that is PARTLY
+ *  away-safe comes back as the read-and-publish half rather than as nothing. */
+const refusal = (where: string, tool: string): string =>
+  `${where} uses "${tool}". ${UNATTENDED_DESTRUCTIVE_REASON} Author the part that can run away — read the live data and publish the result to the board — and leave "${tool}" out; the person does that themselves, on demand, from the app.`;
 
 const toolLine = (
   { name, description, risk, inputSchema }: HostToolInfo,
@@ -78,16 +120,18 @@ const toolLine = (
 const stepsContract = (input: AutomationPlanInput): string => `RUN MODEL (this instruction is DETERMINISTIC tool work):
 "run" is {"kind":"steps","steps":[{"id":"<bare identifier>","tool":"<tool name>","args":{...}?,"if":"<jsonata>"?,"forEach":"<jsonata>"?}, ...]}.
 - Every step's "tool" MUST be a name from the TOOLS list; anything else is invalid. Steps run in order.
-- Choose tools that FULFILL the instruction: read live data with the host/connected READ tools (live data NEVER comes from "${RESULTS_TOOL}"-style app collections), and perform each requested effect (email, message, notify, create) with a matching tool from the list when one exists. When no tool can perform a requested effect, skip that effect — the published result still lands on the board.
+- Choose tools that FULFILL the instruction: read live data with the host/connected READ tools (live data NEVER comes from "${RESULTS_TOOL}"-style app collections), and make the changes it asks for with the write tools in the list.
+- NOTHING IRREVERSIBLE RUNS AWAY. Sending, messaging, paying and deleting are not in the TOOLS list and never will be: Vendo does not do a thing it cannot take back while nobody is watching. Author the part that CAN run unattended — read, decide, publish the result — and leave the irreversible part out. The person does that part themselves, on demand, from the app.
 - EVERY value inside "args" is a JSON STRING containing a JSONATA expression evaluated against {event, steps, item} — never a bare number, boolean, object, or array. A prior step's output is "steps.<stepId>...". A literal string is single-quoted INSIDE the string ("'like this'"); a literal number is written as its expression ("20"); an object is built in jsonata ("{\\"count\\": $count(steps.rows.items)}").
 - "if" skips the step unless the jsonata expression is truthy. "forEach" is a jsonata expression producing an array; the step runs once per element with that element bound to item (max 1000).
 - RESULTS: the app's board reads STORE ROWS, not run logs. The LAST step MUST persist the displayable result through tool "${RESULTS_TOOL}" with args {"appId":"'${input.appId}'","collection":"'<collection>'","id":"'latest'","data":"<jsonata for the displayable result>"} — and set the top-level "resultsCollection" to that collection name.
 EXAMPLE (shape only — use the real tools and the real request):
-{"name":"Morning digest","trigger":{"on":{"kind":"schedule","cron":"0 8 * * *"},"run":{"kind":"steps","steps":[{"id":"rows","tool":"host_list_things"},{"id":"notify","tool":"host_send_message","args":{"subject":"'Daily digest'","body":"$string($count(steps.rows.items)) & ' items today'"}},{"id":"publish","tool":"${RESULTS_TOOL}","args":{"appId":"'${input.appId}'","collection":"'digest'","id":"'latest'","data":"steps.rows"}}]}},"resultsCollection":"digest"}`;
+{"name":"Morning digest","trigger":{"on":{"kind":"schedule","cron":"0 8 * * *"},"run":{"kind":"steps","steps":[{"id":"rows","tool":"host_list_things"},{"id":"summary","tool":"host_things_summarize","args":{"count":"$count(steps.rows.items)"}},{"id":"publish","tool":"${RESULTS_TOOL}","args":{"appId":"'${input.appId}'","collection":"'digest'","id":"'latest'","data":"steps.rows"}}]}},"resultsCollection":"digest"}`;
 
 const agenticContract = (input: AutomationPlanInput): string => `RUN MODEL (this instruction needs PER-RUN JUDGMENT):
 "run" is {"kind":"agentic","prompt":"<the instructions an away agent follows on every firing>","budget":{"maxToolCalls":<n>}?}.
 - The prompt must be self-contained (the agent sees only it plus the tools), name the tools to use from the TOOLS list, and state the judgment to exercise each run.
+- NOTHING IRREVERSIBLE RUNS AWAY. The tools that send, message, pay or delete are not in the TOOLS list, so the prompt must not ask for them: Vendo does not do a thing it cannot take back while nobody is watching. Have the agent read, judge, and publish what it found; the person acts on it themselves, on demand.
 - RESULTS: when the app's board should show the outcome, the prompt must ALSO instruct the agent to persist the displayable result through tool "${RESULTS_TOOL}" with appId "${input.appId}", a stable collection, and id "latest" — and set the top-level "resultsCollection" to that collection name.`;
 
 const planContract = (input: AutomationPlanInput): string => `You are the Vendo automation planner. Return ONLY one JSON object — no prose, no markdown fences.
@@ -174,6 +218,20 @@ const validatePlan = (
   if (trigger.run.kind !== input.mode) {
     issues.push(`run.kind must be "${input.mode}" for this instruction`);
   }
+  // The tools §12 will never run away are already absent from the planner's
+  // TOOLS list, so this is the defence in depth: refuse the plan HERE instead of
+  // letting it validate, land, and then die on the tick as "unknown tool in
+  // automation", which tells the person nothing about their own request.
+  const refused = new Set(input.tools.filter(irreversible).map(({ name }) => name));
+  if (trigger.run.kind === "agentic") {
+    // An agentic prompt has no tool field; the contract tells it to name its
+    // tools, so an exact name in the prompt is the declaration — no verb
+    // guessing at free text.
+    const { prompt } = trigger.run;
+    for (const tool of refused) {
+      if (prompt.includes(tool)) issues.push(refusal("the agentic prompt", tool));
+    }
+  }
   const resultsCollection = candidate.resultsCollection;
   if (resultsCollection !== undefined) {
     if (typeof resultsCollection !== "string" || !COLLECTION_NAME.test(resultsCollection) || resultsCollection === "state") {
@@ -198,7 +256,9 @@ const validatePlan = (
         issues.push(`step ids must be unique bare identifiers ([A-Za-z_][A-Za-z0-9_]*) — "${step.id}" is not`);
       }
       seen.add(step.id);
-      if (!known.has(step.tool)) {
+      if (refused.has(step.tool)) {
+        issues.push(refusal(`step "${step.id}"`, step.tool));
+      } else if (!known.has(step.tool)) {
         issues.push(`step "${step.id}" names unknown tool "${step.tool}"; the available tools are: ${[...known].join(", ") || "(none)"}`);
       }
       // Law 1 for automations: a published result must be BUILT from a PRIOR
