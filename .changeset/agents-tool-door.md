@@ -15,9 +15,12 @@ is itself gated on a door existing.
 
 `agent()` gains one optional key, **`door: { baseUrl }`** — the publicly
 reachable origin the thinker dials back to. Unset it falls back to
-`VENDO_BASE_URL`; an explicit value always wins. A harness that declares
-`requires.toolDoor` and resolves neither is now a BOOT error naming both ways
-out, never a turn that dies in front of a user.
+`VENDO_BASE_URL`; an explicit value always wins. A `machine: "local"` thinker
+that resolves neither gets a loopback listener this package serves itself — a
+subprocess can always dial 127.0.0.1, so zero-config development loses
+nothing. A SANDBOXED harness that resolves neither is a BOOT error naming both
+ways out, never a turn that dies in front of a user: loopback is not reachable
+from a box.
 
 A library cannot add a route to the host's server, so the door's fetch handler
 comes back out: mount `agent.door` at the exported `DOOR_PATH`

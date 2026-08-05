@@ -172,11 +172,28 @@ describe("the door ladder", () => {
     expect(harnessAdapters(harness).toolDoor?.url).toBe(DOOR_URL);
   });
 
-  it("neither is a BOOT error naming both ways out — never a turn that dies in front of a user", () => {
-    expect(() => agent({ name: "support", harness: claudeCode({ machine: "local" }), store: memoryStore() }))
+  it("a SANDBOXED harness with neither is a BOOT error naming both ways out — never a turn that dies in front of a user", () => {
+    const { adapter } = fakeSandbox(async () => {});
+    expect(() => agent({ name: "support", harness: claudeCode(), store: memoryStore(), sandbox: adapter }))
       .toThrow(/door: \{ baseUrl/);
-    expect(() => agent({ name: "support", harness: claudeCode({ machine: "local" }), store: memoryStore() }))
+    expect(() => agent({ name: "support", harness: claudeCode(), store: memoryStore(), sandbox: adapter }))
       .toThrow(/VENDO_BASE_URL/);
+  });
+
+  it("machine \"local\" with neither serves its own door on loopback — a subprocess can always dial 127.0.0.1", async () => {
+    const harness = claudeCode({ machine: "local" });
+    const support = agent({ name: "support", harness, store: memoryStore(), tools: [refund] });
+    // `session()` awaits the bind, so by the time any turn reads the URL it is real.
+    await support.session("u_42");
+    const url = harnessAdapters(harness).toolDoor?.url;
+    expect(url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/api\/vendo\/mcp$/);
+    // A REAL listener answers, and it is the INTERNAL door: no credential, no way in.
+    const answer = await fetch(url!, {
+      method: "POST",
+      headers: { accept: "application/json, text/event-stream", "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+    });
+    expect(answer.status).toBe(401);
   });
 
   it("mounts on the BOXED leg too — `requires.sandbox` is not what decides this", () => {

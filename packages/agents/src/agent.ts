@@ -231,7 +231,11 @@ export function agent(config: AgentConfig): VendoAgent {
   // the host's tools over the same remote MCP — so this runs whether or not a
   // sandbox resolved above.
   const door = config.harness.requires?.toolDoor === true
-    ? resolveDoor(config.door, config.harness.name, { tools: bound, guard, store })
+    ? resolveDoor(
+      config.door,
+      { name: config.harness.name, sandboxed: config.harness.requires?.sandbox === true },
+      { tools: bound, guard, store },
+    )
     : undefined;
   provideHarnessAdapters(config.harness, {
     ...(sandbox === undefined ? {} : { sandbox }),
@@ -254,6 +258,7 @@ export function agent(config: AgentConfig): VendoAgent {
     // NOTHING until the turn it points at is published, so without this line a
     // mounted door 401s every tool call the box makes.
     ...(liveTurn === undefined ? {} : { liveTurn }),
+    ...(door?.ready === undefined ? {} : { doorReady: door.ready }),
   };
 
   const built: VendoAgent = {

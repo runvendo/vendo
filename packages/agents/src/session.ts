@@ -73,6 +73,9 @@ export interface SessionDeps {
    *  "the turn now live on thread T"; without this the pointer resolves to
    *  nothing and every tool call it makes is a 401. */
   liveTurn?: HarnessRuntimeDeps["liveTurn"];
+  /** A loopback door still binding its port. Awaited here, once, so no turn
+   *  can ever read the door's URL mid-bind. */
+  doorReady?: Promise<void>;
 }
 
 const toHeaderRecord = (
@@ -97,6 +100,7 @@ export async function createSession(
   const requestHeaders = toHeaderRecord(options.headers);
 
   await deps.store.ensureSchema();
+  await deps.doorReady;
   const threadId = `thr_${randomUUID()}` as ThreadId;
   await threadStore(deps.store).put(principal, { id: threadId, messages: [] });
 

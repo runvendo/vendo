@@ -50,9 +50,12 @@ dialling back to an MCP door this package mounts for it. That needs two things
 from you:
 
 - **an origin it can reach.** `door: { baseUrl }`, or `VENDO_BASE_URL`; explicit
-  always wins. Setting neither is a boot error, not a quiet degrade — without an
-  origin the model keeps its own workspace hands and loses every one of your
-  tools, and it would answer politely while doing nothing.
+  always wins. A `machine: "local"` thinker needs neither: it falls back to a
+  loopback listener this package serves itself, since a subprocess can always
+  dial 127.0.0.1. For a SANDBOXED harness, setting neither is a boot error, not
+  a quiet degrade — without an origin the model keeps its own workspace hands
+  and loses every one of your tools, and it would answer politely while doing
+  nothing.
 - **a route.** Mount `support.door` at `DOOR_PATH` (exported; `/api/vendo/mcp`), the same
   mount `createVendo` uses. The handler serves nothing but a live turn's own
   credential: no OAuth surface, no discovery, no listing for anyone else. The
