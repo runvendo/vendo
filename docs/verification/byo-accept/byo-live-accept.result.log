@@ -1,0 +1,23 @@
+[byo] door host listening on :8788, public origin https://peaceful-bachelor-african-planned.trycloudflare.com
+[byo] tunnel reachable from the public internet
+
+[byo] session one: thr_90d6e91a-4162-4a5f-a095-6e9652f178c7
+[byo] box booted: i3viq20uuk4qgcqnay0ye
+[vendo] mcp door: could not read a product name from /home/ubuntu/orca/workspaces/vendo/p10-accept/docs/verification/byo-accept/package.json (ENOENT: no such file or directory, open '/home/ubuntu/orca/workspaces/vendo/p10-accept/docs/verification/byo-accept/package.json'); the server card and the connect page will say "vendo". Set `name` in the host's package.json or run the door from the host's package root.
+PASS · 1 · a real e2b box booted for the turn — box id(s): ["i3viq20uuk4qgcqnay0ye"]
+PASS · 2 · the model thought, and answered with the host's data — model said: "I'll check the outstanding invoices for you.There is 1 outstanding invoice with ID `inv_7781` for $42.10."
+PASS · 2 · the read executed on the HOST (through the door) — ["maple_invoices_list"]
+[byo] approval parked: apr_e2f5f3ca-e52a-43c7-9f22-010101752919 (tool maple_invoice_pay)
+[byo] approval tapped: approve
+PASS · 4 · the guarded call PARKED mid-turn (approval raised before the turn ended) — approval apr_e2f5f3ca-e52a-43c7-9f22-010101752919
+PASS · 4 · the tap RESUMED the turn: the host executed after approval — held parked 3028ms, then executed: true
+PASS · 4 · the resumed turn finished — model said: "DONE."
+
+[byo] session two: thr_843e12c1-7faa-4292-a035-350cd8121018
+[byo] box booted: ixdty0a2i309i3vuh4ch3
+PASS · 5 · a file written in session one was read back in session two — sessions thr_90d6e91a-4162-4a5f-a095-6e9652f178c7 → thr_843e12c1-7faa-4292-a035-350cd8121018, session two said: "BYO-P10-8823"
+PASS · 3 · audit rows for this run are in the BYO Postgres — vendo_audit rows for user_byo_p10_r2: 8
+PASS · 4 · the audit row shows the approved execution — [{"outcome":"ok","decidedBy":"grant"}]
+
+[byo] 9/9 checks passed
+[byo] boxes: ["i3viq20uuk4qgcqnay0ye","ixdty0a2i309i3vuh4ch3"]
