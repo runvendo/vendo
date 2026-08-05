@@ -130,7 +130,9 @@ const printAttribute = (name: string, value: unknown, queryNames: ReadonlySet<st
 
 /** A Text node prints as a bare text child only when the wave-1 text rule
  *  would mint it back identically: prewired, `{ text }` alone, childless,
- *  already trimmed, non-empty, and free of `<`. */
+ *  already trimmed, non-empty, and free of `<` — and free of braces, which
+ *  recompile as D5's `braces-in-text` instead of text (v3 §5). Such text falls
+ *  to the explicit `<Text text="..."/>` form, which round-trips. */
 const printableAsBareText = (node: TreeNode): string | null => {
   if (node.component !== "Text" || node.source !== "prewired") return null;
   if (node.children !== undefined && node.children.length > 0) return null;
@@ -139,7 +141,7 @@ const printableAsBareText = (node: TreeNode): string | null => {
   if (keys.length !== 1 || keys[0] !== "text") return null;
   const text = props.text;
   if (typeof text !== "string" || text.length === 0) return null;
-  if (text !== text.trim() || text.includes("<")) return null;
+  if (text !== text.trim() || /[<{}]/.test(text)) return null;
   return text;
 };
 

@@ -114,6 +114,29 @@ describe("printWire forms", () => {
     expect(recompiled.tree).toStrictEqual(tree);
   });
 
+  it("prints text carrying braces as an explicit Text element (D5's inverse)", () => {
+    // Bare text would recompile as `braces-in-text` and vanish, so the printer
+    // must fall to the attribute form — the two halves of D5 in lockstep.
+    const result = compileWire("<App><Card/></App>");
+    const tree = structuredClone(result.tree);
+    tree.nodes.push({ id: "text-1", component: "Text", source: "prewired", props: { text: "Total: {q.f}" } });
+    (tree.nodes[0] as { children?: string[] }).children = ["card-1", "text-1"];
+    const printed = printWire({ ...result, tree }, { includeIds: false });
+    expect(printed).toContain('<Text text="Total: {q.f}"/>');
+    const recompiled = compileWire(printed);
+    expect(recompiled.issues).toEqual([]);
+    expect(recompiled.tree).toStrictEqual(tree);
+  });
+
+  it("prints no comments back, because compiler output carries none (D4)", () => {
+    const wire = '<App name="C">{/* a note */}<Card/>{/* another */}</App>';
+    const compiled = compileWire(wire, OPTIONS);
+    expect(compiled.issues).toEqual([]);
+    const printed = printWire(compiled, { includeIds: false });
+    expect(printed).not.toContain("/*");
+    expect(compileWire(printed, OPTIONS).tree).toStrictEqual(compiled.tree);
+  });
+
   it("prints a binding it cannot express as a reference via the object fallback", () => {
     const base = compileWire('<App><Query id="q" tool="t"/><Card v={q.rows}/></App>');
     const tree = structuredClone(base.tree);

@@ -65,6 +65,11 @@ export const WIRE_ISSUE_CODES = [
   "malformed-close-tag",
   /** Text child contains a lone surrogate (ill-formed UTF-16); text skipped. */
   "malformed-text",
+  /** v3 §5 (D5) — braces in text position are not interpolation; the run was
+   *  skipped. A value reaches text through a binding (`<Text text={q.f}/>`);
+   *  `{q.f}` written between tags renders literally, which is the raw-braces
+   *  class. `{/* … *␘/}` is the one legal brace run in text (a comment, D4). */
+  "braces-in-text",
   // — truncation & closing (compile.ts, scan.ts)
   /** Mismatched close tag implicitly closed the elements above its match. */
   "unclosed-element",

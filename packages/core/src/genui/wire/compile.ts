@@ -41,7 +41,7 @@ import type { WireIssue } from "./expression.js";
 import { checkBindingShapes, mirrorBindingIssues, type BindingShapeError } from "./shape-check.js";
 import { expandInlineRefs } from "./inline-refs.js";
 import { admitIslandSource, claimNodeSlot, claimQuerySlot } from "./limits.js";
-import { collectText, NAME_CHAR, readName, scanCloseTag, scanTagEnd, skipComment, skipElement, skipWhitespace } from "./scan.js";
+import { collectText, NAME_CHAR, readName, scanCloseTag, scanTagEnd, skipCommentOrBraces, skipElement, skipWhitespace } from "./scan.js";
 import { FAILED, issue, isWellFormedUtf16, type CompileState, type Frame } from "./state.js";
 
 /** v2 spec §2 / plan D3 — compiler options. `hostComponents` (the host
@@ -351,10 +351,10 @@ export const parseChildren = (state: CompileState, frames: Frame[], rootLabel = 
   while (state.index < state.source.length) {
     appendTextChild(state, frames, collectText(state));
     if (state.index >= state.source.length) break;
-    // Comment skipping and close-tag scanning share scan.ts's skipComment /
+    // Comment skipping and close-tag scanning share scan.ts's skipCommentOrBraces /
     // scanCloseTag with the pre-scan, so both cursors move identically by
     // construction.
-    const comment = skipComment(state);
+    const comment = skipCommentOrBraces(state);
     if (comment === "eof") break;
     if (comment === "skipped") continue;
     // The cursor sits on a "<" that plausibly starts a tag.
@@ -434,8 +434,8 @@ export const prescanDeclarations = (wire: string, rootTag = "App"): { queryNames
     if (state.index >= state.source.length) break;
     // Comments and close tags move through the same scan.ts helpers as
     // parseChildren, so the pre-scan cursor mirrors the main pass by
-    // construction (see skipComment/scanCloseTag).
-    const comment = skipComment(state);
+    // construction (see skipCommentOrBraces/scanCloseTag).
+    const comment = skipCommentOrBraces(state);
     if (comment === "eof") break;
     if (comment === "skipped") continue;
     if (state.source[state.index + 1] === "/") {

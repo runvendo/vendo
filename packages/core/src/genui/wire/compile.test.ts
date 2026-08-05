@@ -1321,27 +1321,57 @@ describe("compileWire shape check pointer misses", () => {
   });
 });
 
+/** v3 spec §5 (D4) — comments are JSX comments; the HTML form is gone. */
 describe("compileWire comments", () => {
-  it("skips HTML comments between elements and inside text", () => {
-    const result = compile('<App name="C"><!-- Header --><Text text="hi"/><!-- KPI Row --><Card/></App>');
+  it("skips JSX comments between elements and inside text", () => {
+    const result = compile('<App name="C">{/* Header */}<Text text="hi"/>{/* KPI Row */}<Card/></App>');
     expect(result.tree.nodes.map((node) => node.component)).toEqual(["Stack", "Text", "Card"]);
     expect(result.issues).toEqual([]);
     expect(result.complete).toBe(true);
   });
 
+  it("keeps the text on either side of a comment", () => {
+    const result = compile('<App name="C"><Card>before {/* aside */} after</Card></App>');
+    expect(result.tree.nodes.filter((node) => node.component === "Text").map((node) => node.props?.text))
+      .toEqual(["before", "after"]);
+    expect(result.issues).toEqual([]);
+  });
+
   it("treats an unterminated comment as truncation, not content", () => {
-    const result = compileWire('<App name="C"><Text text="hi"/><!-- dangling', undefined);
+    const result = compileWire('<App name="C"><Text text="hi"/>{/* dangling', undefined);
     expect(result.tree.nodes.map((node) => node.component)).toEqual(["Stack", "Text"]);
     expect(result.complete).toBe(false);
+  });
+});
+
+/** v3 spec §5 (D5) — braces in text position are not interpolation. */
+describe("compileWire braces in text", () => {
+  it("blocks a brace run in text and skips it, keeping the surrounding text", () => {
+    const result = compile('<App name="C"><Card>Total: {revenue.total} today</Card></App>');
+    expect(result.issues.map((issue) => issue.code)).toEqual(["braces-in-text"]);
+    expect(result.tree.nodes.filter((node) => node.component === "Text").map((node) => node.props?.text))
+      .toEqual(["Total:", "today"]);
+  });
+
+  it("blocks a stray closing brace too", () => {
+    const result = compile("<App name=\"C\"><Card>a } b</Card></App>");
+    expect(result.issues.map((issue) => issue.code)).toEqual(["braces-in-text"]);
+  });
+
+  it("leaves braces inside attribute values and island source alone", () => {
+    const result = compile('<App name="C"><Query id="q" tool="t"/><Text text={q.total}/>'
+      + '<Island name="N">export default function N() { return <p>{"{}"}</p>; }</Island></App>');
+    expect(result.issues).toEqual([]);
+    expect(result.components.N).toContain("{}");
   });
 });
 
 describe("compileWire comments before declarations", () => {
   it("still pre-scans queries and islands declared after a comment (Devin, PR #381)", () => {
     const wire = [
-      '<App name="C"><!-- data -->',
+      '<App name="C">{/* data */}',
       '<Query id="metric" tool="host_metric"/>',
-      "<!-- widgets --><Note/>",
+      "{/* widgets */}<Note/>",
       '<Card value={metric.total}/>',
       '<Island name="Note">export default function Note() { return <p>n</p>; }</Island></App>',
     ].join("");
