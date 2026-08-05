@@ -1,5 +1,6 @@
 /**
- * `$expr` — the COMPUTED binding value: `{ $expr: "sum(invoices.amount_cents) / count(clients)" }`.
+ * `$expr` — the COMPUTED binding value:
+ * `{ $expr: "sum(invoices.data, \"amount_cents\") / count(clients.data)" }`.
  *
  * A computed value is evaluated LIVE at bind resolution in the renderer — the
  * same place `$path` resolves — and re-evaluated whenever the query data
@@ -17,10 +18,19 @@
  *                          carry, types that cannot compute). The apps fact
  *                          check (checking/facts.ts) speaks these.
  *
- * Grammar: field paths (`invoices.amount_cents`), numbers, `+ - * / ( )`, and
- * the closed call list {@link EXPR_CALLS}. A field name against a list of rows
- * reads the COLUMN (`invoices.amount_cents` is every row's cents), which is
- * what the aggregates consume.
+ * Grammar (v3 §5 — a strict TSX subset): field paths (`invoices.data`),
+ * numbers, quoted strings, `+ - * / ( )`, the closed call list
+ * {@link EXPR_CALLS}, and the reshape calls of {@link WIRE_RESHAPE_OPS}. This
+ * module is the ONE parser for everything a `{...}` attribute computes: the
+ * wire's attribute grammar hands it every identifier-led value position
+ * ({@link parseExprPrefix}) and decides what the value is from the AST, so
+ * there is no second character-level classifier to disagree with it. Reshape
+ * calls parse here but never evaluate — the wire compiler lowers them onto
+ * their binding as `$reshape`.
+ *
+ * Every aggregate names its field explicitly (`sum(invoices.data,
+ * "amount_cents")`, D2) and reads it as a COLUMN off the rows — the same walk a
+ * dotted path takes.
  *
  * Data that has not arrived is not a problem: it resolves to `undefined` and
  * flows through arithmetic as `undefined` — the same discipline as `$reshape`
@@ -490,7 +500,7 @@ export function exprPathHeads(node: ExprNode): string[] {
     else if (current.kind === "binary") {
       walk(current.left);
       walk(current.right);
-    } else if (current.kind === "call") current.args.forEach(walk);
+    } else if (current.kind === "call" || current.kind === "reshape") current.args.forEach(walk);
   };
   walk(node);
   return heads;
@@ -503,8 +513,21 @@ const printExpr = (node: ExprNode): string => {
   if (node.kind === "path") return node.text;
   if (node.kind === "negate") return `-${printExpr(node.operand)}`;
   if (node.kind === "call") return `${node.name}(${node.args.map(printExpr).join(", ")})`;
+  if (node.kind === "reshape") return `${node.op}(${node.args.map(printExpr).join(", ")})`;
+  if (node.kind === "aggregate") return `${node.name}.of(${node.field === null ? "" : `"${node.field}"`})`;
   return `${printExpr(node.left)} ${node.op} ${printExpr(node.right)}`;
 };
+
+/** A reshape or an aggregate descriptor reached a place that COMPUTES. Both are
+ *  grammar members that only mean something structurally: a reshape lowers onto
+ *  a query binding, a descriptor is group_by's fourth argument. One sentence,
+ *  shared by evaluation and the fact check, so the model reads the same
+ *  correction either way — this is the old "never mix the two grammars" rule,
+ *  now a property of the AST instead of a second character scan. */
+const misplacedNode = (node: ExprNode & { kind: "reshape" | "aggregate" }): string =>
+  node.kind === "reshape"
+    ? `${node.op}() reshapes a query binding — bind the query and reshape it there (${node.op}(query.rows, "field")), not inside a computed value`
+    : `${node.name}.of() only appears as group_by()'s fourth argument`;
 
 // ── evaluation ──────────────────────────────────────────────────────────────
 
@@ -626,10 +649,8 @@ const numbersOf = (state: EvalState, value: unknown, call: string, label: string
 };
 
 const reduceNumbers = (state: EvalState, numbers: readonly number[], call: string, label: string): number | EvalFailed => {
-  if (call === "sum") return numbers.reduce((total, value) => total + value, 0);
-  if (numbers.length === 0) return failEval(state, `${call}() has no values to work with in ${label}`);
-  if (call === "average") return numbers.reduce((total, value) => total + value, 0) / numbers.length;
-  return call === "min" ? Math.min(...numbers) : Math.max(...numbers);
+  const reduced = reduceNumeric(call as NumericReduction, numbers);
+  return reduced === null ? failEval(state, `${call}() has no values to work with in ${label}`) : reduced;
 };
 
 const DAY_MS = 86_400_000;
@@ -659,48 +680,49 @@ const bucketKey = (value: unknown, bucket: ExprBucket): string | null => {
   return bucket === "year" ? iso.slice(0, 4) : bucket === "month" ? iso.slice(0, 7) : iso.slice(0, 10);
 };
 
+/** v3 spec §5 (D3) — `group_by(rows, "keyField", bucket, aggregate.of("field"))`.
+ *  The rows come from the first argument, so nothing has to be inferred from
+ *  where the key field happens to live. */
 const evaluateGroupBy = (state: EvalState, args: readonly ExprNode[]): unknown | EvalFailed => {
-  const key = args[0] as ExprNode & { kind: "path" };
-  const bucket = (args[1] as ExprNode & { kind: "string" }).value as ExprBucket;
-  const aggregate = args[2] as ExprNode & { kind: "call" };
-  const valuePath = aggregate.args[0] as ExprNode & { kind: "path" };
-  const collection = key.segments.slice(0, -1);
-  const keyField = key.segments[key.segments.length - 1] as string;
-  const valueField = valuePath.segments[valuePath.segments.length - 1] as string;
+  const rowsPath = args[0] as ExprNode & { kind: "path" };
+  const keyField = (args[1] as ExprNode & { kind: "string" }).value;
+  const bucket = (args[2] as ExprNode & { kind: "string" }).value as ExprBucket;
+  const aggregate = args[3] as ExprNode & { kind: "aggregate" };
+  const valueField = aggregate.field;
 
-  const resolved = resolveSegments(state, collection);
+  const resolved = resolveSegments(state, rowsPath.segments);
   if (resolved === EVAL_FAILED) return EVAL_FAILED;
   if (resolved === undefined) return undefined;
   if (!Array.isArray(resolved)) {
-    return failEval(state, `group_by() groups a list of rows, but "${collection.join(".")}" is ${describeValue(resolved)}`);
+    return failEval(state, `group_by() groups a list of rows, but "${rowsPath.text}" is ${describeValue(resolved)}`);
   }
   const rows = resolved.filter(isPlainObject);
   if (rows.length === 0) {
     if (resolved.length === 0) return [];
-    return failEval(state, `group_by() groups a list of rows, but "${collection.join(".")}" holds ${describeValue(resolved[0])}`);
+    return failEval(state, `group_by() groups a list of rows, but "${rowsPath.text}" holds ${describeValue(resolved[0])}`);
   }
-  if (aggregate.name !== "count"
-    && !rows.some((row) => Object.prototype.hasOwnProperty.call(row, valueField))) {
-    return failEval(state, `"${valueField}" is absent from the rows of "${collection.join(".")}" — the fields they carry are: ${fieldsOf(rows)}`);
+  if (valueField !== null && !rows.some((row) => Object.prototype.hasOwnProperty.call(row, valueField))) {
+    return failEval(state, `"${valueField}" is absent from the rows of "${rowsPath.text}" — the fields they carry are: ${fieldsOf(rows)}`);
   }
   const groups = new Map<string, unknown[]>();
   for (const row of rows) {
     if (!Object.prototype.hasOwnProperty.call(row, keyField)) {
-      return failEval(state, `group_by() reads "${keyField}" from each row of "${collection.join(".")}" — the fields they carry are: ${fieldsOf(rows)}`);
+      return failEval(state, `group_by() reads "${keyField}" from each row of "${rowsPath.text}" — the fields they carry are: ${fieldsOf(rows)}`);
     }
     const groupKey = bucketKey(row[keyField], bucket);
     if (groupKey === null) {
       return failEval(state, `group_by() buckets by date, and ${describeValue(row[keyField])} in "${keyField}" is not an ISO date`);
     }
     const existing = groups.get(groupKey);
-    if (existing === undefined) groups.set(groupKey, [row[valueField]]);
-    else existing.push(row[valueField]);
+    const item = valueField === null ? null : row[valueField];
+    if (existing === undefined) groups.set(groupKey, [item]);
+    else existing.push(item);
   }
   const buckets = [...groups.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-  const label = `"${collection.join(".")}.${valueField}"`;
+  const label = `"${rowsPath.text}.${valueField ?? keyField}"`;
   const points: Array<{ key: string; value: number }> = [];
   for (const [groupKey, values] of buckets) {
-    if (aggregate.name === "count") {
+    if (valueField === null) {
       points.push({ key: groupKey, value: values.length });
       continue;
     }
@@ -715,29 +737,37 @@ const evaluateGroupBy = (state: EvalState, args: readonly ExprNode[]): unknown |
 
 const evaluateCall = (state: EvalState, node: ExprNode & { kind: "call" }): unknown | EvalFailed => {
   if (node.name === "group_by") return evaluateGroupBy(state, node.args);
-  const label = printExpr(node.args[0] as ExprNode);
-  const first = evaluate(state, node.args[0] as ExprNode);
-  if (first === EVAL_FAILED) return EVAL_FAILED;
-  if (first === undefined) return undefined;
-  if (node.name === "count") {
-    if (Array.isArray(first)) return first.length;
-    const listFields = isPlainObject(first)
-      ? Object.entries(first).filter(([, value]) => Array.isArray(value)).map(([field]) => field)
-      : [];
-    const hint = listFields.length > 0 ? ` — name the list (e.g. ${label}.${listFields[0]})` : "";
-    return failEval(state, `count() counts a list, but ${label} is ${describeValue(first)}${hint}`);
-  }
-  if (node.name === "days_until") return daysUntil(state, first, label);
   if (node.name === "difference") {
+    const first = evaluate(state, node.args[0] as ExprNode);
+    if (first === EVAL_FAILED) return EVAL_FAILED;
     const second = evaluate(state, node.args[1] as ExprNode);
     if (second === EVAL_FAILED) return EVAL_FAILED;
-    if (second === undefined) return undefined;
-    const left = asNumber(state, first, label);
+    if (first === undefined || second === undefined) return undefined;
+    const left = asNumber(state, first, printExpr(node.args[0] as ExprNode));
     if (left === EVAL_FAILED) return EVAL_FAILED;
     const right = asNumber(state, second, printExpr(node.args[1] as ExprNode));
     return right === EVAL_FAILED ? EVAL_FAILED : left - right;
   }
-  const numbers = numbersOf(state, first, node.name, label);
+  // D2 — every other call reads a path (the parser guarantees it), and the
+  // field-taking aggregates name their field: `sum(rows, "cents")` reads the
+  // rows' "cents" COLUMN, the same walk a dotted path takes.
+  const rowsPath = node.args[0] as ExprNode & { kind: "path" };
+  const field = FIELD_AGGREGATES.has(node.name) ? (node.args[1] as ExprNode & { kind: "string" }).value : null;
+  const segments = field === null ? rowsPath.segments : [...rowsPath.segments, ...field.split(".")];
+  const label = field === null ? rowsPath.text : `${rowsPath.text}.${field}`;
+  const value = resolveSegments(state, segments);
+  if (value === EVAL_FAILED) return EVAL_FAILED;
+  if (value === undefined) return undefined;
+  if (node.name === "count") {
+    if (Array.isArray(value)) return value.length;
+    const listFields = isPlainObject(value)
+      ? Object.entries(value).filter(([, item]) => Array.isArray(item)).map(([name]) => name)
+      : [];
+    const hint = listFields.length > 0 ? ` — name the list (e.g. ${label}.${listFields[0]})` : "";
+    return failEval(state, `count() counts a list, but ${label} is ${describeValue(value)}${hint}`);
+  }
+  if (node.name === "days_until") return daysUntil(state, value, label);
+  const numbers = numbersOf(state, value, node.name, label);
   if (numbers === EVAL_FAILED) return EVAL_FAILED;
   return reduceNumbers(state, numbers, node.name, label);
 };
@@ -747,6 +777,7 @@ function evaluate(state: EvalState, node: ExprNode): unknown | EvalFailed {
   if (node.kind === "string") return node.value;
   if (node.kind === "path") return resolveSegments(state, node.segments);
   if (node.kind === "call") return evaluateCall(state, node);
+  if (node.kind === "reshape" || node.kind === "aggregate") return failEval(state, misplacedNode(node));
   if (node.kind === "negate") {
     const operand = evaluate(state, node.operand);
     if (operand === EVAL_FAILED) return EVAL_FAILED;
@@ -868,8 +899,20 @@ const shapeOfNode = (state: CheckState, node: ExprNode): ShapeType => {
     requireNumeric(state, node.right, "arithmetic");
     return { kind: "number" };
   }
+  if (node.kind === "reshape" || node.kind === "aggregate") {
+    state.issues.push(misplacedNode(node));
+    return UNKNOWN;
+  }
   return callShape(state, node);
 };
+
+/** The path a field-taking aggregate really reads: the rows plus the named
+ *  field, since a field name against rows reads the column (D2). */
+const fieldPath = (rows: ExprNode & { kind: "path" }, field: string): ExprNode & { kind: "path" } => ({
+  kind: "path",
+  segments: [...rows.segments, ...field.split(".")],
+  text: `${rows.text}.${field}`,
+});
 
 const pathShape = (state: CheckState, node: ExprNode & { kind: "path" }): { shape: ShapeType; container?: Record<string, ShapeType> } => {
   const head = node.segments[0] as string;
@@ -918,31 +961,41 @@ const requireNumeric = (state: CheckState, node: ExprNode, call: string): void =
 
 const callShape = (state: CheckState, node: ExprNode & { kind: "call" }): ShapeType => {
   const first = node.args[0] as ExprNode;
+  if (node.name === "difference") {
+    requireNumeric(state, first, node.name);
+    requireNumeric(state, node.args[1] as ExprNode, node.name);
+    return { kind: "number" };
+  }
+  const rows = first as ExprNode & { kind: "path" };
   if (node.name === "group_by") {
-    const key = node.args[0] as ExprNode & { kind: "path" };
+    const keyField = (node.args[1] as ExprNode & { kind: "string" }).value;
+    const key = fieldPath(rows, keyField);
     const keyShape = columnItems(pathShape(state, key).shape);
     if (keyShape.kind !== "json" && keyShape.kind !== "string") {
       state.issues.push(`group_by() buckets by date, but ${key.text} is a ${keyShape.kind} field — group by an ISO date field`);
     }
-    callShape(state, node.args[2] as ExprNode & { kind: "call" });
+    const descriptor = node.args[3] as ExprNode & { kind: "aggregate" };
+    if (descriptor.field !== null) {
+      requireNumeric(state, fieldPath(rows, descriptor.field), descriptor.name);
+    }
     return { kind: "array", items: { kind: "object", fields: { key: { kind: "string" }, value: { kind: "number" } } } };
   }
   if (node.name === "count") {
-    const shape = shapeOfNode(state, first);
+    const shape = pathShape(state, rows).shape;
     if (shape.kind !== "json" && shape.kind !== "array") {
-      state.issues.push(`count() counts a list, but ${printExpr(first)} is ${shape.kind === "object" ? "an object" : `a ${shape.kind}`}`);
+      state.issues.push(`count() counts a list, but ${rows.text} is ${shape.kind === "object" ? "an object" : `a ${shape.kind}`}`);
     }
     return { kind: "number" };
   }
   if (node.name === "days_until") {
-    const shape = columnItems(shapeOfNode(state, first));
+    const shape = columnItems(pathShape(state, rows).shape);
     if (shape.kind !== "json" && shape.kind !== "string") {
-      state.issues.push(`days_until() reads an ISO date string, but ${printExpr(first)} is a ${shape.kind} field`);
+      state.issues.push(`days_until() reads an ISO date string, but ${rows.text} is a ${shape.kind} field`);
     }
     return { kind: "number" };
   }
-  requireNumeric(state, first, node.name);
-  if (node.name === "difference") requireNumeric(state, node.args[1] as ExprNode, node.name);
+  // D2 — the aggregate's field is explicit, so the checked path is rows.field.
+  requireNumeric(state, fieldPath(rows, (node.args[1] as ExprNode & { kind: "string" }).value), node.name);
   return { kind: "number" };
 };
 

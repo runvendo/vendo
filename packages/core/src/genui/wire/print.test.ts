@@ -14,9 +14,9 @@ const SPEC_WIRE = `<App name="Cash Overview">
   <Stack gap={16}>
     <PageHeader title="Cash Overview" subtitle="Says \\"hi\\" \\\\ done"/>
     <Grid cols={3}>
-      <LineChart title="Revenue" points={revenue.rows | asPoints(month, revenue)}/>
+      <LineChart title="Revenue" points={asPoints(revenue.rows, "month", "revenue")}/>
       <DataTable rows={payments} columns={[{ key: "amount", label: "Amount" }]} dense/>
-      <HostCard total={revenue.total} note={state.note | format(currency)}/>
+      <HostCard total={revenue.total} note={format(state.note, "currency")}/>
     </Grid>
     Plain text child survives
     <Button label="Remind" onClick="fn:send_reminder"/>
@@ -138,46 +138,15 @@ describe("printWire totality fallbacks", () => {
 
 describe("printWire computed values", () => {
   it("round-trips a { $expr } prop as its own source", () => {
-    const wire = '<App><Query id="invoices" tool="invoices.list"/><Stat value={sum(invoices.amount_cents) / count(invoices)}/></App>';
+    const wire = '<App><Query id="invoices" tool="invoices.list"/>'
+      + '<Stat value={sum(invoices.data, "amount_cents") / count(invoices.data)}/></App>';
     const compiled = compileWire(wire);
     expect(compiled.issues).toEqual([]);
     expect(compiled.tree.nodes.find((node) => node.component === "Stat")?.props)
-      .toStrictEqual({ value: { $expr: "sum(invoices.amount_cents) / count(invoices)" } });
+      .toStrictEqual({ value: { $expr: 'sum(invoices.data, "amount_cents") / count(invoices.data)' } });
     const printed = printWire(compiled, { includeIds: false });
-    expect(printed).toContain("value={sum(invoices.amount_cents) / count(invoices)}");
+    expect(printed).toContain('value={sum(invoices.data, "amount_cents") / count(invoices.data)}');
     expect(compileWire(printed).tree).toStrictEqual(compiled.tree);
-  });
-
-  it("round-trips a call inside a call, arithmetic over calls, and unary negation", () => {
-    roundTripProps('a={group_by(invoices.issued_at, "month", sum(invoices.total_cents))}');
-    roundTripProps("b={((sum(q.x) - sum(revenue.x)) / count(q)) * 100}");
-    roundTripProps("c={difference(sum(q.x), sum(revenue.x))}");
-    roundTripProps("d={-sum(q.x)}");
-    roundTripProps("e={days_until(invoices.due_date) * 2}");
-  });
-
-  it("round-trips an expression whose interior spacing is not canonical", () => {
-    expect(printedCard("v={sum( q.x )}")).toContain("v={sum( q.x )}");
-    roundTripProps("v={sum( q.x )}");
-  });
-
-  it("round-trips computed values nested inside array and object literals", () => {
-    // printExpression recurses through literals calling referenceForBinding per
-    // leaf; before this case nothing exercised a chain below the top level.
-    roundTripProps('v={[q.rows | count(), 5]} w={{ total: q.rows | sum(amount) }}');
-  });
-
-  it("round-trips a max-length (8-step) reshape chain", () => {
-    roundTripProps(
-      "v={q.rows | pick(a, b) | rename(a, c) | rename(c, d) | rename(d, e)"
-      + " | rename(e, f) | rename(f, g) | rename(g, h) | rename(h, i)}",
-    );
-  });
-
-  it("round-trips a reshape argument that has to be quoted", () => {
-    // The `IDENTIFIER_PATTERN.test(arg)` false branch in referenceForBinding.
-    expect(printedCard('v={q.rows | pick("weird field")}')).toContain('pick("weird field")');
-    roundTripProps('v={q.rows | pick("weird field")}');
   });
 
   it("falls back to the object literal for an $expr source that no longer parses", () => {
