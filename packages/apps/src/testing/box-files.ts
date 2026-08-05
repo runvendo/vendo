@@ -28,7 +28,13 @@ export const inMemoryBoxFiles = (
   },
   list: async (dir: string): Promise<string[]> => {
     guard("list files");
-    const prefix = dir === "" || dir === "/" ? "" : `${dir.replace(/\/$/, "")}/`;
+    // Box paths are ABSOLUTE, so the root's prefix is "/" — not "". An empty
+    // prefix slices nothing off, leaving `/app/a.txt`.split("/")[0] === "",
+    // which the empty-name filter below then drops: the root of a box full of
+    // files listed as empty. Both spellings of root collapse onto this one
+    // branch, so they cannot answer differently.
+    const root = dir === "" || dir === "/";
+    const prefix = root ? "/" : `${dir.replace(/\/$/, "")}/`;
     const names = [...new Set(
       [...contents.keys()]
         .filter((path) => path.startsWith(prefix))
@@ -37,8 +43,9 @@ export const inMemoryBoxFiles = (
     )].sort();
     // A flat map cannot hold an EMPTY directory, so "nothing under this
     // prefix" is exactly "no such directory" — and the seam says that
-    // rejects, like a real provider's lstat does.
-    if (names.length === 0 && prefix !== "") {
+    // rejects, like a real provider's lstat does. The ROOT is the exception:
+    // it exists on every box, with files or without.
+    if (names.length === 0 && !root) {
       throw new Error(`Unknown fake sandbox directory: ${dir}`);
     }
     return names;

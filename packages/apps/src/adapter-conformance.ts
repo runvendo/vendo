@@ -283,6 +283,16 @@ export const sandboxAdapterConformance = (
       // directory`; both in-memory fakes used to answer `[]` instead, which is
       // how a mistyped source directory reads as "this app has no files".
       await expect(machine.files.list(`${dir}/nope`)).rejects.toThrow();
+
+      // The ROOT is a directory like any other, and it EXISTS on every box —
+      // it must never answer empty on a box that demonstrably holds files.
+      // An in-memory impl that treats the root prefix as "" instead of "/"
+      // slices nothing off an absolute path and drops every name as blank.
+      // Asserted by containment, not equality: a real box's root also holds
+      // bin, etc, home…
+      const rootNames = await machine.files.list("/");
+      expect(rootNames).toContain("tmp");
+      expect(rootNames.filter((name) => name === "" || name.includes("/"))).toEqual([]);
     }, TEST_TIMEOUT_MS);
 
     it("exposes a public ingress URL, defaulting to the app's $PORT", async () => {

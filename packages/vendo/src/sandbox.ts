@@ -339,8 +339,9 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
           // empty one, so this reports the absent case — loud in the safe
           // direction, where answering `[]` would let a mistyped source
           // directory read as an app with no files. Narrows to the real
-          // not-found when the console's list route grows one.
-          if (names.length === 0) {
+          // not-found when the console's list route grows one. The ROOT is the
+          // exception: it exists on every box, with files or without.
+          if (names.length === 0 && dir !== "" && dir !== "/") {
             throw new VendoError("not-found", `Vendo Cloud sandbox holds no directory ${dir}`);
           }
           return names;

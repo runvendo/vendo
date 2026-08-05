@@ -108,7 +108,8 @@ export interface SandboxMachine {
    *   a subdirectory as its own name, never a path and never recursive. It
    *   REJECTS for a directory the box does not hold, exactly as `read` does:
    *   answering `[]` there lets a mistyped source directory read as an app
-   *   with no files.
+   *   with no files. `"/"` is the one directory that always exists, so it
+   *   answers the box's top-level names and never rejects.
    *
    * Box content is UNTRUSTED. A compromised or merely buggy in-box agent
    * controls every path and every byte crossing this seam, so `read` hands

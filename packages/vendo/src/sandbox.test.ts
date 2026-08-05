@@ -198,10 +198,14 @@ function fakeConsole(options: { mintUrl?: (id: string) => string } = {}) {
         machine.files.set(url.searchParams.get("path") ?? "", recorded.bytes ?? new Uint8Array());
         return json({ ok: true });
       case "GET /files/list": {
+        // `${dir}/` assumed dir never ends in one, so the root asked for "//"
+        // and matched nothing — a mock arithmetic bug, not console semantics:
+        // no filesystem or route treats "//" as the root.
         const dir = url.searchParams.get("dir") ?? "";
+        const inside = dir.endsWith("/") ? dir : `${dir}/`;
         const entries = [...machine.files.keys()]
-          .filter((filePath) => filePath.startsWith(`${dir}/`))
-          .map((filePath) => filePath.slice(dir.length + 1));
+          .filter((filePath) => filePath.startsWith(inside))
+          .map((filePath) => filePath.slice(inside.length));
         return json({ entries });
       }
       default:

@@ -32,7 +32,15 @@ it in one leg that every adapter runs, so no provider can drift. Verified live
 against a real e2b sandbox, including a payload of NULs, bare CRs and invalid
 UTF-8.
 
-Two disagreements the promotion exposed, both invisible while `files` was
+The consolidation paid for itself immediately: a review found that the
+in-memory `list` treated the root's prefix as `""` rather than `"/"`, so it
+sliced nothing off an absolute path and dropped every name as blank — `list("/")`
+answered `[]` on a box full of files. Before `inMemoryBoxFiles` that line existed
+in every fake that had a `list` and would have been a separate fix in each. It
+was one fix in one file, and the conformance suite now pins the root case for
+every implementation.
+
+Two further disagreements the promotion exposed, both invisible while `files` was
 private: the Vendo Cloud list route answers deeper than one level, so the Cloud
 adapter folds the depth away at the seam; and a missing directory rejected on
 real e2b (`[not_found] lstat …`) while both in-memory fakes answered `[]`,
