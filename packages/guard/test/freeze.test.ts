@@ -85,8 +85,11 @@ describe("the freeze flag over the real store", () => {
     expect(events.find((event) => event.tool === "host_write")).toMatchObject({
       outcome: "blocked",
       decidedBy: "frozen",
+      risk: "write",
       principal: { subject: alice.subject },
     });
+    // A control event has no descriptor in hand, so it carries no risk chip.
+    expect(flips.every((event) => event.risk === undefined)).toBe(true);
   });
 
   it("obeys a flag row written straight through the store, as the console writes it", async () => {

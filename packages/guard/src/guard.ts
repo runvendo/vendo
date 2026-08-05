@@ -633,6 +633,7 @@ class GuardImplementation implements VendoGuard {
             eventFromContext(ctx, {
               kind: "policy-decision",
               tool: call.tool,
+              risk: completed.descriptor.risk,
               inputPreview: preview,
               outcome: refused.status,
               decidedBy: "rule",
@@ -747,6 +748,7 @@ class GuardImplementation implements VendoGuard {
           eventFromContext(ctx, {
             kind: "tool-call",
             tool: call.tool,
+            risk: completed.descriptor.risk,
             inputPreview: preview,
             outcome: outcome.status,
             decidedBy: decision.decidedBy,
@@ -842,6 +844,9 @@ class GuardImplementation implements VendoGuard {
         eventFromContext(ctx, {
           kind: "policy-decision",
           tool: call.tool,
+          // Declared, not effective: the freeze answers before the risk
+          // resolver is ever consulted.
+          risk: descriptor.risk,
           inputPreview: inputPreview(call),
           outcome: "blocked",
           decidedBy: "frozen",
@@ -975,6 +980,7 @@ class GuardImplementation implements VendoGuard {
         eventFromContext(ctx, {
           kind: "approval",
           tool: call.tool,
+          risk: effectiveDescriptor.risk,
           inputPreview: approval.inputPreview,
           outcome: "pending-approval",
           decidedBy: decision.decidedBy,
@@ -995,6 +1001,7 @@ class GuardImplementation implements VendoGuard {
         eventFromContext(ctx, {
           kind: "policy-decision",
           tool: call.tool,
+          risk: effectiveDescriptor.risk,
           inputPreview: inputPreview(call),
           outcome: "blocked",
           decidedBy: draft.decidedBy,
