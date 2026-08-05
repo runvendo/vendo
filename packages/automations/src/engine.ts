@@ -134,6 +134,8 @@ const captureSchema = z.object({
   grantSetId: z.string().optional(),
 });
 
+type Capture = z.infer<typeof captureSchema>;
+
 const scheduleSchema = z.object({ lastFiredAt: z.string(), firedAt: z.string().optional() });
 const webhookSchema = z.object({ secret: z.string() });
 
@@ -141,6 +143,15 @@ interface AppRow {
   subject: string;
   enabled: boolean;
   doc: AppDocument;
+}
+
+/** One (app, trigger) a tick claimed the cursor for, and the schedule event it
+ *  fires with. */
+interface FiredSchedule {
+  row: AppRow;
+  trigger: Trigger;
+  scheduledFor: string;
+  firedAt: string;
 }
 
 interface InternalRunRecord extends RunRecord {
@@ -200,15 +211,6 @@ const internalRunRecordSchema = baseRunRecordSchema.extend({
   __lineage: z.string().optional(),
 });
 
-interface RunRowData {
-  appId: string;
-  trigger: RunRecord["trigger"];
-  status: RunStatus;
-  record: InternalRunRecord;
-  startedAt: string;
-  finishedAt?: string;
-}
-
 const runRowDataSchema = z.object({
   appId: z.string(),
   trigger: baseRunRecordSchema.shape.trigger,
@@ -257,13 +259,6 @@ const stopFor = (
 const IDENTITY_UNAVAILABLE = (name: string): string =>
   `stopped: ${name} could not check who it runs as — nothing ran, and it will try again on its next trigger`;
 
-/** Captures are a GENERIC collection, and the 02-store §5 erase cascade finds
- *  generic rows by their refs — so an unref'd capture outlives both the person
- *  who was asked and the app that asked. (Approvals need none: `vendo_approvals`
- *  is reserved, derives its own refs, and is erased by its subject column.) */
-const captureRefs = (subject: string, appId: string, triggerId: string): Record<string, string> =>
-  ({ subject, app_id: appId, trigger_id: triggerId });
-
 const clone = <T>(value: T): T => globalThis.structuredClone(value);
 const id = (prefix: string): string => `${prefix}${globalThis.crypto.randomUUID()}`;
 const message = (error: unknown): string => error instanceof Error ? error.message : String(error);
@@ -289,13 +284,16 @@ const parseAppRow = (record: VendoRecord): AppRow => {
   return result.data;
 };
 
-const parseRunRow = (record: VendoRecord): RunRowData => {
+/** The run the row carries. The wrapper columns beside it (`appId`, `status`,
+ *  `startedAt`) are validated by the same parse and then never read: they are
+ *  the store's own projection of the record, and the record is the run. */
+const parseRunRecord = (record: VendoRecord): InternalRunRecord => {
   const result = runRowDataSchema.safeParse(record.data);
   if (!result.success) throw new VendoError("validation", `invalid run row ${record.id}: ${result.error.issues[0]?.message ?? "invalid"}`);
-  return result.data as unknown as RunRowData;
+  return result.data.record as unknown as InternalRunRecord;
 };
 
-// Callers already validated the row via parseRunRow; only the internal fields
+// Callers already validated the row via parseRunRecord; only the internal fields
 // need stripping.
 const publicRun = ({ __event: _, __lineage: __, ...record }: InternalRunRecord): RunRecord => record;
 
@@ -511,11 +509,6 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   const active = new Set<string>();
   const inFlightDeliveries = new Set<string>();
   const abortControllers = new Map<string, AbortController>();
-  // Minted on first claim, not at construction: Workers forbids generating
-  // random values in global scope, and createVendo composes this engine at
-  // module init in the edge wiring.
-  let engineInstanceId: string | undefined;
-  const instanceId = (): string => (engineInstanceId ??= globalThis.crypto.randomUUID());
   let tickTail: Promise<void> = Promise.resolve();
   // Absent localTriggerKinds → every kind fires locally (today's behavior, unchanged).
   const firesLocally = (kind: "schedule" | "external"): boolean =>
@@ -548,6 +541,15 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     return found;
   };
 
+  /** The named trigger of an app, validated — the door every per-trigger
+   *  ceremony (enable, adopt, dryRun) goes through. A trigger id the document
+   *  does not declare is a caller's mistake, not an empty answer. */
+  const declaredTrigger = (doc: AppDocument, triggerId: string): Trigger => {
+    const declared = triggerOf(doc, triggerId);
+    if (declared === undefined) throw new VendoError("validation", `app has no trigger "${triggerId}"`);
+    return validateTrigger(declared);
+  };
+
   const writeApp = async (record: VendoRecord, row: AppRow): Promise<void> => {
     // The per-kind trigger refs let the tick/emit fetch apps by trigger kind (the reserved store
     // derives them from columns and ignores caller refs; a generic StoreAdapter honors what we
@@ -560,24 +562,10 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     });
   };
 
-  /** Is this ONE trigger armed? Both facts have to say yes: the app-level
-   *  `enabled` the apps runtime owns (a trigger edit disarms the whole app
-   *  there) and this trigger's own armed row. */
-  const armedRow = (appId: string, triggerId: string): Promise<VendoRecord | null> =>
-    config.store.records(ARMED).get(triggerKey(appId, triggerId));
-
   const setArmed = async (appId: string, triggerId: string, armed: boolean): Promise<void> => {
     const id = triggerKey(appId, triggerId);
     if (armed) await config.store.records(ARMED).put({ id, data: { appId, triggerId }, refs: { app_id: appId } });
     else await config.store.records(ARMED).delete(id);
-  };
-
-  /** Which of these (app, trigger) keys are armed, in ONE query — the batched
-   *  shape the tick needs so per-trigger arming is not an N+1 get. */
-  const armedKeys = async (keys: string[]): Promise<Set<string>> => {
-    if (keys.length === 0) return new Set();
-    const rows = await allRecords(config.store.records(ARMED), { ids: keys });
-    return new Set(rows.map((record) => record.id));
   };
 
   /**
@@ -608,9 +596,14 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
    * and idempotent (the row it writes is what makes the next read skip this).
    */
   const armedFor = async (rows: readonly AppRow[]): Promise<Set<string>> => {
-    const armed = await armedKeys(rows.flatMap(
+    // ONE query for every (app, trigger) key, so per-trigger arming is not an
+    // N+1 get on the tick's path.
+    const keys = rows.flatMap(
       (row) => triggersOf(row.doc).map((trigger) => triggerKey(row.doc.id, trigger.id)),
-    ));
+    );
+    const armed = new Set<string>(keys.length === 0
+      ? []
+      : (await allRecords(config.store.records(ARMED), { ids: keys })).map((record) => record.id));
     for (const row of rows) {
       if (!row.enabled) continue;
       const triggers = triggersOf(row.doc);
@@ -646,8 +639,43 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   // dropped here. Both callers — enable and dryRun — are PRESENT-time
   // ceremonies, so nothing is withheld: the owner must still see and grant
   // everything the automation declares, and dryRun must still explain it.
-  const descriptors = async (ctx?: RunContext): Promise<Map<string, ToolDescriptor>> =>
+  const descriptors = async (ctx: RunContext): Promise<Map<string, ToolDescriptor>> =>
     new Map((await config.tools.descriptors(ctx)).map((descriptor) => [descriptor.name, descriptor]));
+
+  /**
+   * Every LIVE standing grant this (app, trigger) holds for the subject — the one
+   * place the three fire-time questions below are asked from, so they cannot
+   * answer differently about the same row.
+   *
+   * A grant minted while arming ONE trigger never authorizes another: the person
+   * was shown that trigger's steps and consented to those. Rows minted before an
+   * app had a trigger list carry no triggerId and stay valid for the trigger they
+   * were minted for, which read-time normalization names `main`.
+   */
+  const liveAutomationGrants = async (
+    subject: string,
+    appId: string,
+    triggerId: string,
+    tool?: string,
+  ): Promise<PermissionGrant[]> => {
+    const records = await allRecords(config.store.records(GRANTS), {
+      refs: { subject, app_id: appId, ...(tool === undefined ? {} : { tool }) },
+    });
+    const at = now().getTime();
+    const grants: PermissionGrant[] = [];
+    for (const record of records) {
+      const parsed = permissionGrantSchema.safeParse(record.data);
+      if (!parsed.success) continue;
+      const grant = parsed.data;
+      if (grant.subject !== subject || grant.appId !== appId) continue;
+      if ((grant.triggerId ?? DEFAULT_TRIGGER_ID) !== triggerId) continue;
+      if (grant.source !== "automation" || grant.duration !== "standing") continue;
+      if (grant.revokedAt !== undefined) continue;
+      if (grant.expiresAt !== undefined && Date.parse(grant.expiresAt) <= at) continue;
+      grants.push(grant);
+    }
+    return grants;
+  };
 
   const liveGrant = async (
     subject: string,
@@ -655,32 +683,11 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     triggerId: string,
     descriptor: ToolDescriptor,
     slug?: string,
-  ): Promise<boolean> => {
-    const records = await allRecords(config.store.records(GRANTS), {
-      refs: { subject, tool: descriptor.name, app_id: appId },
-    });
-    const at = now().getTime();
-    return records.some((record) => {
-      const parsed = permissionGrantSchema.safeParse(record.data);
-      if (!parsed.success) return false;
-      const grant = parsed.data;
-      return grant.subject === subject
-        && grant.tool === descriptor.name
-        && grant.descriptorHash === descriptorHash(descriptor)
-        && grant.appId === appId
-        // A grant minted while arming ONE trigger never authorizes another: the
-        // person was shown that trigger's steps and consented to those. Rows
-        // minted before an app had a trigger list carry no triggerId and stay
-        // valid for the trigger they were minted for, which read-time
-        // normalization names `main`.
-        && (grant.triggerId ?? DEFAULT_TRIGGER_ID) === triggerId
-        && grant.source === "automation"
-        && grant.duration === "standing"
-        && scopeCovers(grant.scope, slug)
-        && grant.revokedAt === undefined
-        && (grant.expiresAt === undefined || Date.parse(grant.expiresAt) > at);
-    });
-  };
+  ): Promise<boolean> =>
+    (await liveAutomationGrants(subject, appId, triggerId, descriptor.name)).some((grant) =>
+      grant.tool === descriptor.name
+      && grant.descriptorHash === descriptorHash(descriptor)
+      && scopeCovers(grant.scope, slug));
 
   /**
    * The service-action slugs THIS firing holds a live grant for.
@@ -698,24 +705,9 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     appId: string,
     triggerId: string,
   ): Promise<string[]> => {
-    const records = await allRecords(config.store.records(GRANTS), {
-      refs: { subject, tool: USE_SERVICE_TOOL, app_id: appId },
-    });
-    const at = now().getTime();
-    const slugs = new Set<string>();
-    for (const record of records) {
-      const parsed = permissionGrantSchema.safeParse(record.data);
-      if (!parsed.success) continue;
-      const grant = parsed.data;
-      if (grant.scope.kind !== "service-tool") continue;
-      if (grant.subject !== subject || grant.appId !== appId) continue;
-      if ((grant.triggerId ?? DEFAULT_TRIGGER_ID) !== triggerId) continue;
-      if (grant.source !== "automation" || grant.duration !== "standing") continue;
-      if (grant.revokedAt !== undefined) continue;
-      if (grant.expiresAt !== undefined && Date.parse(grant.expiresAt) <= at) continue;
-      slugs.add(grant.scope.slug);
-    }
-    return [...slugs].sort();
+    const grants = await liveAutomationGrants(subject, appId, triggerId, USE_SERVICE_TOOL);
+    const slugs = grants.flatMap((grant) => grant.scope.kind === "service-tool" ? [grant.scope.slug] : []);
+    return [...new Set(slugs)].sort();
   };
 
   const audit = async (ctx: RunContext, status: string, extra: Record<string, Json> = {}): Promise<void> => {
@@ -735,7 +727,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   const writeRun = async (record: InternalRunRecord): Promise<boolean> => {
     const stored = await config.store.records(RUNS).get(record.id);
     if (stored !== null) {
-      const current = parseRunRow(stored).record;
+      const current = parseRunRecord(stored);
       if (terminalStatus(current.status)) {
         syncRun(record, current);
         return false;
@@ -909,6 +901,20 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     if (await writeRun(run)) await audit(ctx, status);
   };
 
+  /** A capture row, keyed by the approval it is the ask for. Captures are a
+   *  GENERIC collection and the 02-store §5 erase cascade finds generic rows by
+   *  their refs, so the refs are derived HERE rather than at each writer: an
+   *  unref'd capture outlives both the person who was asked and the app that
+   *  asked. (Approvals need none: `vendo_approvals` is reserved, derives its own
+   *  refs, and is erased by its subject column.) */
+  const writeCapture = async (approvalId: string, capture: Capture): Promise<void> => {
+    await config.store.records(CAPTURES).put({
+      id: approvalId,
+      data: { ...capture },
+      refs: { subject: capture.subject, app_id: capture.appId, trigger_id: capture.triggerId },
+    });
+  };
+
   /** Is this approval still an open question? A capture whose approval is gone
    *  or already decided is stale, and stale asks are not what a person is
    *  waiting on. */
@@ -963,18 +969,14 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       if (!live) {
         // One grant set per (app, trigger), shared with arming: a person deciding
         // this ask settles everything else outstanding for the same trigger.
-        await config.store.records(CAPTURES).put({
-          id: approvalId,
-          data: {
-            appId: run.appId,
-            triggerId: run.triggerId,
-            subject: ctx.principal.subject,
-            tool: request.call.tool,
-            ...(slug === undefined ? {} : { slug }),
-            descriptorHash: descriptorHash(request.descriptor),
-            grantSetId: forTrigger[0]?.data.grantSetId ?? id("gset_"),
-          },
-          refs: captureRefs(ctx.principal.subject, run.appId, run.triggerId),
+        await writeCapture(approvalId, {
+          appId: run.appId,
+          triggerId: run.triggerId,
+          subject: ctx.principal.subject,
+          tool: request.call.tool,
+          ...(slug === undefined ? {} : { slug }),
+          descriptorHash: descriptorHash(request.descriptor),
+          grantSetId: forTrigger[0]?.data.grantSetId ?? id("gset_"),
         });
         // A capture whose approval is already gone or decided is stale — the
         // live ask above replaces it, so it must not keep a settled question
@@ -999,12 +1001,13 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   };
 
   const appendOutcome = (run: InternalRunRecord, step: Step, outcome: ToolOutcome): void => {
+    const detail = outcomeDetail(outcome);
     run.steps.push({
       id: step.id,
       tool: step.tool,
       outcome: outcome.status,
       at: iso(),
-      ...(outcomeDetail(outcome) === undefined ? {} : { detail: outcomeDetail(outcome) }),
+      ...(detail === undefined ? {} : { detail }),
     });
   };
 
@@ -1025,7 +1028,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     }
     const stored = await config.store.records(RUNS).get(run.id);
     if (stored !== null) {
-      const current = parseRunRow(stored).record;
+      const current = parseRunRecord(stored);
       if (terminalStatus(current.status)) {
         syncRun(run, current);
         return true;
@@ -1046,37 +1049,32 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     await terminal(run, ctx, "error", `stopped at ${step.id}: ${message(error)}`, failed.error);
   };
 
+  /** A steps run, always from the top. There is no mid-run resume: a run that
+   *  meets a permission it does not hold fails LOUDLY and `runs.rerun` starts a
+   *  FRESH run of the same firing (07 §5), so the only state carried between
+   *  steps is the outputs they have produced. */
   const continueSteps = async (
     app: AppRow,
     trigger: Trigger,
     run: InternalRunRecord,
     ctx: RunContext,
-    state: {
-      stepIndex: number;
-      event: Json;
-      stepOutputs: Record<string, Json>;
-      iterationItems?: Json[];
-      iterationOutputs?: Json[];
-      forEachIndex?: number;
-    },
+    event: Json,
   ): Promise<void> => {
     if (trigger.run.kind !== "steps") throw new VendoError("validation", "steps run expected");
     const steps = trigger.run.steps;
-    for (let stepIndex = state.stepIndex; stepIndex < steps.length; stepIndex += 1) {
+    const stepOutputs: Record<string, Json> = {};
+    for (let stepIndex = 0; stepIndex < steps.length; stepIndex += 1) {
       if (await finishStoppedIfNeeded(run)) return;
       const step = steps[stepIndex] as Step;
-      let items: Json[] | undefined = stepIndex === state.stepIndex ? state.iterationItems : undefined;
-      let outputs: Json[] = stepIndex === state.stepIndex ? state.iterationOutputs ?? [] : [];
-      let iterationStart = stepIndex === state.stepIndex ? state.forEachIndex ?? 0 : 0;
+      let items: Json[] | undefined;
+      const outputs: Json[] = [];
       try {
-        if (items === undefined) {
-          if (step.if !== undefined && !await evaluate(step.if, { event: state.event, steps: state.stepOutputs, item: undefined })) {
-            continue;
-          }
-          if (step.forEach !== undefined) {
-            const evaluated = await evaluate(step.forEach, { event: state.event, steps: state.stepOutputs, item: undefined });
-            items = validateForEachItems(step, evaluated);
-          }
+        if (step.if !== undefined && !await evaluate(step.if, { event, steps: stepOutputs, item: undefined })) {
+          continue;
+        }
+        if (step.forEach !== undefined) {
+          const evaluated = await evaluate(step.forEach, { event, steps: stepOutputs, item: undefined });
+          items = validateForEachItems(step, evaluated);
         }
       } catch (error) {
         await failStep(run, ctx, step, error);
@@ -1086,12 +1084,11 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       const iterations: Array<{ item?: Json; index?: number }> = items === undefined
         ? [{}]
         : items.map((item, index) => ({ item, index }));
-      for (let index = iterationStart; index < iterations.length; index += 1) {
+      for (const iteration of iterations) {
         if (await finishStoppedIfNeeded(run)) return;
-        const iteration = iterations[index] as { item?: Json; index?: number };
         let args: Record<string, Json>;
         try {
-          args = await stepArgs(step, state.event, state.stepOutputs, iteration.item);
+          args = await stepArgs(step, event, stepOutputs, iteration.item);
         } catch (error) {
           await failStep(run, ctx, step, error);
           return;
@@ -1127,13 +1124,10 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
           await terminal(run, ctx, "error", `stopped at ${step.id}: ${error.message}`, error);
           return;
         }
-        if (items === undefined) state.stepOutputs[step.id] = outcome.output;
+        if (items === undefined) stepOutputs[step.id] = outcome.output;
         else outputs.push(outcome.output);
       }
-      if (items !== undefined) state.stepOutputs[step.id] = outputs;
-      state.iterationItems = undefined;
-      state.iterationOutputs = undefined;
-      state.forEachIndex = undefined;
+      if (items !== undefined) stepOutputs[step.id] = outputs;
     }
     const okCount = run.steps.filter((entry) => entry.outcome === "ok").length;
     await terminal(run, ctx, "ok", `${okCount} ${okCount === 1 ? "step" : "steps"} ok`);
@@ -1210,17 +1204,14 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   ): { runId: RunId; done: Promise<void> } => {
     const trigger = validateTrigger(declared);
     const runId = id("run_");
-    const startedAt = iso();
+    const eventName = triggerEvent(trigger.on);
     const record: InternalRunRecord = {
       id: runId,
       appId: app.doc.id,
       triggerId: trigger.id,
-      trigger: {
-        kind,
-        ...(triggerEvent(trigger.on) === undefined ? {} : { event: triggerEvent(trigger.on) }),
-      },
+      trigger: { kind, ...(eventName === undefined ? {} : { event: eventName }) },
       status: "running",
-      startedAt,
+      startedAt: iso(),
       steps: [],
       // What fired it, so `runs.rerun` can fire the same trigger on the same
       // event without the caller having to keep the payload.
@@ -1281,7 +1272,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
         active.add(runId);
         try {
           if (trigger.run.kind === "steps") {
-            await continueSteps(app, trigger, record, ctx, { stepIndex: 0, event, stepOutputs: {} });
+            await continueSteps(app, trigger, record, ctx, event);
           } else {
             await runAgentic(trigger, record, ctx, agentController!.signal);
           }
@@ -1317,9 +1308,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   // one hung/slow run cannot block other tenants or overrun the tick interval. All runIds are
   // returned regardless of whether their run finished within the timeout (a timed-out run keeps
   // running detached and persists its own terminal state).
-  const runFiredSchedules = async (
-    fired: Array<{ row: AppRow; trigger: Trigger; scheduledFor: string; firedAt: string }>,
-  ): Promise<RunId[]> => {
+  const runFiredSchedules = async (fired: readonly FiredSchedule[]): Promise<RunId[]> => {
     const concurrency = Math.max(1, Math.floor(config.tickConcurrency ?? 4));
     const timeoutMs = config.runTimeoutMs;
     const ids: Array<RunId | undefined> = new Array(fired.length);
@@ -1329,7 +1318,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
         const index = next;
         next += 1;
         if (index >= fired.length) return;
-        const entry = fired[index] as { row: AppRow; trigger: Trigger; scheduledFor: string; firedAt: string };
+        const entry = fired[index] as FiredSchedule;
         let launched: { runId: RunId; done: Promise<void> };
         try {
           launched = launchRun(entry.row, entry.trigger, "schedule", {
@@ -1429,23 +1418,8 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     subject: string,
     appId: string,
     triggerId: string,
-  ): Promise<boolean> => {
-    const records = await allRecords(config.store.records(GRANTS), { refs: { subject, app_id: appId } });
-    const at = now().getTime();
-    return records.some((record) => {
-      const result = permissionGrantSchema.safeParse(record.data);
-      if (!result.success) return false;
-      const grant = result.data;
-      return grant.subject === subject
-        && grant.appId === appId
-        && (grant.triggerId ?? DEFAULT_TRIGGER_ID) === triggerId
-        && grant.source === "automation"
-        && grant.duration === "standing"
-        && grant.scope.kind !== "exact"
-        && grant.revokedAt === undefined
-        && (grant.expiresAt === undefined || Date.parse(grant.expiresAt) > at);
-    });
-  };
+  ): Promise<boolean> =>
+    (await liveAutomationGrants(subject, appId, triggerId)).some((grant) => grant.scope.kind !== "exact");
 
   const handleDecision = async (approvalId: string, approved: boolean): Promise<void> => {
     const capture = await config.store.records(CAPTURES).get(approvalId);
@@ -1500,7 +1474,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       // trigger would inherit authority nobody consented to for it.
       const runId = data.request.ctx.trigger?.runId;
       const runRow = runId === undefined ? null : await config.store.records(RUNS).get(runId);
-      const triggerId = runRow === null ? undefined : parseRunRow(runRow).record.triggerId;
+      const triggerId = runRow === null ? undefined : parseRunRecord(runRow).triggerId;
       if (await spendApproval(approval)) await mintGrant(data.request, triggerId);
     }
   };
@@ -1515,9 +1489,9 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
    *  grant sets. Captures are engine-owned and deleted on decision, so
    *  "capture exists" ≈ "ask is pending"; volume stays tiny (undecided asks
    *  only), so an unindexed scan is fine on every adapter. */
-  const pendingCaptures = async (subject: string): Promise<Array<{ id: string; data: z.infer<typeof captureSchema> }>> => {
+  const pendingCaptures = async (subject: string): Promise<Array<{ id: string; data: Capture }>> => {
     const records = await allRecords(config.store.records(CAPTURES));
-    const captures: Array<{ id: string; data: z.infer<typeof captureSchema> }> = [];
+    const captures: Array<{ id: string; data: Capture }> = [];
     for (const record of records) {
       const parsed = captureSchema.safeParse(record.data);
       if (parsed.success && parsed.data.subject === subject) captures.push({ id: record.id, data: parsed.data });
@@ -1534,13 +1508,14 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
    *  capture under a different subject. */
   const captureGrants = async (
     doc: AppDocument,
-    triggerId: string,
-    surface: readonly ConsentItem[],
+    trigger: Trigger,
     byName: Map<string, ToolDescriptor>,
     ctx: RunContext,
   ): Promise<{ missing: ApprovalRequest[]; grantSetId: string }> => {
     const appId = doc.id;
+    const triggerId = trigger.id;
     const subject = ctx.principal.subject;
+    const surface = await consentSurface(trigger, byName);
     // One grant SET per TRIGGER: re-enables reuse that trigger's still-pending
     // asks (and their set id) instead of minting duplicates for the same
     // (appId, triggerId, tool); a fresh set id is minted only when nothing is
@@ -1580,11 +1555,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
           // Adopt pre-set rows (and any stray sibling) into THE app's set so
           // one decision can settle everything outstanding.
           if (pending.data.grantSetId !== grantSetId) {
-            await config.store.records(CAPTURES).put({
-              id: pending.id,
-              data: { ...pending.data, grantSetId },
-              refs: captureRefs(pending.data.subject, pending.data.appId, pending.data.triggerId),
-            });
+            await writeCapture(pending.id, { ...pending.data, grantSetId });
           }
           missing.push(clone(parsed.data.request));
           continue;
@@ -1613,18 +1584,14 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
         id: request.id,
         data: { request, status: "pending", sessionId: ctx.sessionId },
       });
-      await config.store.records(CAPTURES).put({
-        id: request.id,
-        data: {
-          appId,
-          triggerId,
-          subject,
-          tool,
-          ...(slug === undefined ? {} : { slug }),
-          descriptorHash: descriptorHash(descriptor),
-          grantSetId,
-        },
-        refs: captureRefs(subject, appId, triggerId),
+      await writeCapture(request.id, {
+        appId,
+        triggerId,
+        subject,
+        tool,
+        ...(slug === undefined ? {} : { slug }),
+        descriptorHash: descriptorHash(descriptor),
+        grantSetId,
       });
       missing.push(request);
     }
@@ -1687,11 +1654,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
 
   const enable: AutomationsEngine["enable"] = async (appId, triggerId, ctx) => {
     const found = await editableApp(appId, ctx);
-    const declared = triggerOf(found.row.doc, triggerId);
-    if (declared === undefined) {
-      throw new VendoError("validation", `app has no trigger "${triggerId}"`);
-    }
-    const trigger = validateTrigger(declared);
+    const trigger = declaredTrigger(found.row.doc, triggerId);
     // fn: steps run in the APP's own sandbox machine (packages/apps/src/fn.ts
     // POSTs /fn/<name> to it), not in this process — so when some other
     // authority fires this trigger, that authority is the one that has to wake
@@ -1707,12 +1670,10 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
         + "explicit local `store:` to createVendo to keep this composition firing its own schedule and external triggers.",
       );
     }
-    const byName = await descriptors(ctx);
     const { missing, grantSetId } = await captureGrants(
       found.row.doc,
-      trigger.id,
-      await consentSurface(trigger, byName),
-      byName,
+      trigger,
+      await descriptors(ctx),
       ctx,
     );
     // §9.9 — enabling is what names the sponsor: the person arming an
@@ -1835,8 +1796,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     const sponsoredElsewhere = [...new Set(
       (await allRecords(sponsorships(), { refs: { subject } }))
         .map((record) => storedSponsorshipSchema.safeParse(record.data))
-        .filter((parsed) => parsed.success)
-        .map((parsed) => (parsed as { data: Sponsorship }).data.appId)
+        .flatMap((parsed) => parsed.success ? [parsed.data.appId] : [])
         .filter((appId) => !seen.has(appId)),
     )];
     for (const record of sponsoredElsewhere.length === 0
@@ -1978,12 +1938,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       return adoptionCard(
         found.row.doc,
         trigger,
-        {
-          triggerId: trigger.id,
-          reason: waiting.reason,
-          ...(waiting.sponsor === undefined ? {} : { sponsor: waiting.sponsor }),
-          ...(waiting.stoppedAt === undefined ? {} : { stoppedAt: waiting.stoppedAt }),
-        },
+        { triggerId: trigger.id, ...waiting },
         await descriptors(ctx),
       );
     }
@@ -1998,18 +1953,14 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     const claimable = state.kind === "erased"
       || (state.kind === "row" && state.row.status === "invalidated");
     if (!claimable) return { adopted: false, missing: [], reason: "already-adopted" };
-    const declared = triggerOf(found.row.doc, triggerId);
-    if (declared === undefined) throw new VendoError("validation", `app has no trigger "${triggerId}"`);
-    const trigger = validateTrigger(declared);
-    const byName = await descriptors(ctx);
+    const trigger = declaredTrigger(found.row.doc, triggerId);
     // Approvals stay strictly SELF-SUBJECT: the adopter approves the
     // automation's reads and writes as themselves, through the existing
     // approvals door, and the grant set is minted under their subject.
     const { missing, grantSetId } = await captureGrants(
       found.row.doc,
-      trigger.id,
-      await consentSurface(trigger, byName),
-      byName,
+      trigger,
+      await descriptors(ctx),
       ctx,
     );
     const swapped = await claimSponsorship(sponsorships(), {
@@ -2032,9 +1983,8 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
 
   const runTick: AutomationsEngine["tick"] = async (providedNow) => {
     // Cloud (or whatever other authority) already fires schedule automations for this
-    // deployment — firing them here too would double-run them. The tick used to
-    // sweep decided approvals back into parked runs before this line; nothing
-    // waits on a decision any more, so a tick is only ever a firing path.
+    // deployment — firing them here too would double-run them. Nothing waits on a
+    // decision any more, so a tick is only ever a firing path.
     if (!firesLocally("schedule")) return [];
     const at = providedNow ?? now();
     const atIso = at.toISOString();
@@ -2059,7 +2009,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
         ids: dueTriggers.map(({ row, trigger }) => triggerKey(row.doc.id, trigger.id)),
       });
     const cursorById = new Map(cursorRecords.map((record) => [record.id, record]));
-    const fired: Array<{ row: AppRow; trigger: Trigger; scheduledFor: string; firedAt: string }> = [];
+    const fired: FiredSchedule[] = [];
     for (const { row, trigger: declared } of dueTriggers) {
       const trigger = validateTrigger(declared);
       if (trigger.on.kind !== "schedule") continue;
@@ -2240,10 +2190,9 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     // a signature that verifies for one says nothing about a sibling's.
     const verified: Array<{ row: AppRow; trigger: Trigger }> = [];
     for (const row of rows) {
-      for (const declared of armedTriggers(row, armed)) {
-        const trigger = declared.on;
-        if (trigger.kind !== "external" || trigger.connector !== source) continue;
-        const secretRecord = await config.store.records(WEBHOOK).get(triggerKey(row.doc.id, declared.id));
+      for (const trigger of armedTriggers(row, armed)) {
+        if (trigger.on.kind !== "external" || trigger.on.connector !== source) continue;
+        const secretRecord = await config.store.records(WEBHOOK).get(triggerKey(row.doc.id, trigger.id));
         if (secretRecord === null) continue;
         const secret = webhookSchema.safeParse(secretRecord.data);
         if (!secret.success) continue;
@@ -2254,7 +2203,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
             break;
           }
         }
-        if (matched) verified.push({ row, trigger: declared });
+        if (matched) verified.push({ row, trigger });
       }
     }
     if (verified.length === 0) return await rejectWebhook(source, "webhook signature verification failed");
@@ -2307,9 +2256,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
 
   const dryRun: AutomationsEngine["dryRun"] = async (appId, triggerId, ctx, event) => {
     const found = await editableApp(appId, ctx);
-    const declared = triggerOf(found.row.doc, triggerId);
-    if (declared === undefined) throw new VendoError("validation", `app has no trigger "${triggerId}"`);
-    const trigger = validateTrigger(declared);
+    const trigger = declaredTrigger(found.row.doc, triggerId);
     const byName = await descriptors(ctx);
     const plan: RunPlan = { steps: [], grantsMissing: [] };
     const add = async (stepId: string, tool: string): Promise<void> => {
@@ -2361,7 +2308,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   const runsGet: AutomationsEngine["runs"]["get"] = async (runId, ctx) => {
     const stored = await config.store.records(RUNS).get(runId);
     if (stored === null) return null;
-    const run = parseRunRow(stored).record;
+    const run = parseRunRecord(stored);
     // §8 editor = edit: the person the automation RUNS AS sees its history, not
     // only the app's owner. Ownership-only when no access seam is configured.
     return await editableAppOrNull(run.appId, ctx) === null ? null : publicRun(run);
@@ -2392,7 +2339,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
         ...(cursor === undefined ? {} : { cursor }),
       });
       for (const stored of page.records) {
-        const run = parseRunRow(stored).record;
+        const run = parseRunRecord(stored);
         // The trigger filter is applied HERE rather than as a store ref: runs are
         // indexed by app and status, and a run row's trigger id lives inside its
         // record. The page walk below already tolerates an under-filled page.
@@ -2413,7 +2360,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   const runsStop: AutomationsEngine["runs"]["stop"] = async (runId, ctx) => {
     const stored = await config.store.records(RUNS).get(runId);
     if (stored === null) throw new VendoError("not-found", `run not found: ${runId}`);
-    const run = parseRunRow(stored).record;
+    const run = parseRunRecord(stored);
     const app = await editableAppOrNull(run.appId, ctx);
     if (app === null) throw new VendoError("not-found", `run not found: ${runId}`);
     if (run.status !== "running") {
@@ -2441,7 +2388,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   const runsRerun: AutomationsEngine["runs"]["rerun"] = async (runId, ctx) => {
     const stored = await config.store.records(RUNS).get(runId);
     if (stored === null) throw new VendoError("not-found", `run not found: ${runId}`);
-    const run = parseRunRow(stored).record;
+    const run = parseRunRecord(stored);
     const app = await editableAppOrNull(run.appId, ctx);
     if (app === null) throw new VendoError("not-found", `run not found: ${runId}`);
     const declared = triggerOf(app.row.doc, run.triggerId);

@@ -64,10 +64,9 @@ const needFor = (
  *  run declares no steps, so it lists the tools adoption would actually grant:
  *  whatever the registry binds for it. */
 const adoptionNeeds = (
-  trigger: Trigger | undefined,
+  trigger: Trigger,
   descriptors: Map<string, ToolDescriptor>,
 ): AdoptionNeed[] => {
-  if (trigger === undefined) return [];
   if (trigger.run.kind !== "steps") {
     return [...descriptors.values()].map((descriptor) => needFor(descriptor.name, descriptors));
   }
@@ -78,7 +77,7 @@ const adoptionNeeds = (
 
 export const adoptionCard = (
   doc: AppDocument,
-  trigger: Trigger | undefined,
+  trigger: Trigger,
   stopped: {
     triggerId: string;
     reason: NonNullable<Sponsorship["reason"]>;
