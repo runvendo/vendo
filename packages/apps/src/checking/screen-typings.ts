@@ -339,7 +339,12 @@ export function screenTypings(input: ScreenTypingsInput): string {
 
   lines.push(...aggregateDeclarations(), ...reshapeDeclarations());
   // `$state` is a live binding kind (core `isStateBinding`) whose values are
-  // written at runtime, so the screen may read anything off it.
-  lines.push("declare const state: Record<string, any>;");
+  // written at runtime. The dialect settled (#808) that it is EXACTLY one
+  // segment — `state.<key>`, never `state.<key>.<deeper>`, no aggregates on it,
+  // none inside `$expr`. `unknown` is the shim that enforces that: `state.foo`
+  // reads any value, but `state.foo.bar` needs a narrow the wire cannot write,
+  // so the deeper access is a type error — the compiler would silently drop it
+  // at runtime, so the screen must not name it.
+  lines.push("declare const state: Record<string, unknown>;");
   return `${lines.join("\n")}\n`;
 }

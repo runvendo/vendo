@@ -112,6 +112,16 @@ describe("screenTscFindings", () => {
     expect(check('<App name="x"><MapleFreeform whateverTheModelGuessed={invoices.data}/></App>;')).toEqual([]);
   });
 
+  it("reads one segment off $state, never a deeper path — the settled single-segment rule (#808)", () => {
+    // `state.<key>` reads any runtime value and is fine; `state.<key>.<deeper>`
+    // is a type error the `Record<string, unknown>` shim enforces, because the
+    // renderer would silently drop the deeper access.
+    expect(check('<App name="x"><Stat label="a" value={state.total}/></App>;')).toEqual([]);
+    const deep = check('<App name="x"><Stat label="a" value={state.total.cents}/></App>;');
+    expect(deep.length).toBeGreaterThan(0);
+    expect(deep.every((finding) => finding.severity === "block")).toBe(true);
+  });
+
   it("reports a syntax error once, plainly, instead of a cascade of type noise", () => {
     const findings = check('<App name="x"><Stack gap={12}></App>;');
     expect(findings.length).toBeGreaterThan(0);
