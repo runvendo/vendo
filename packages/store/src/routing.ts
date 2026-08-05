@@ -140,7 +140,7 @@ function auditRecord(event: AuditEvent): VendoRecord {
   };
 }
 
-function threadRecord(row: ThreadRow): VendoRecord {
+export function threadRecord(row: ThreadRow): VendoRecord {
   const data: ThreadData = {
     subject: row.subject,
     messages: row.messages,
