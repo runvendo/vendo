@@ -9,7 +9,7 @@
  * bump — the only supported consumer is another `@vendoai/*` block.
  */
 export { startTurn, providerHistory, turnModelMessages, DEFAULT_MAX_STEPS } from "./loop.js";
-export type { TurnLoop, TurnLoopOptions } from "./loop.js";
+export type { TurnContext, TurnLoop, TurnLoopOptions } from "./loop.js";
 export { wireErrorMessage } from "./wire-error.js";
 export { addAgentTool, buildAgentTools, guardedCall, previewApproval } from "./tools.js";
 export type { ToolBridgeOptions } from "./tools.js";

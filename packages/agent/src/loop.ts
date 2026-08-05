@@ -24,6 +24,7 @@ import {
 import {
   convertToModelMessages,
   isToolUIPart,
+  pruneMessages,
   stepCountIs,
   streamText,
   type LanguageModel,
@@ -102,21 +103,80 @@ export function providerHistory(messages: UIMessage[]): UIMessage[] {
 }
 
 /**
+ * Prompt tokens per character. An ESTIMATE, deliberately: there is no tokenizer
+ * in this repo and adding one buys accuracy the budget does not need — a
+ * per-provider vocabulary is megabytes, is wrong for every model it was not
+ * built for, and would have to load before the first turn. Four characters per
+ * token is within a few percent of every BPE tokenizer on English prose and
+ * JSON, and both directions of error are cheap: under-shedding is caught by the
+ * provider's own context limit, over-shedding costs one extra old message.
+ */
+const CHARS_PER_TOKEN = 4;
+
+/** The estimate, over the wire form the provider is actually billed for. */
+function estimateTokens(messages: readonly ModelMessage[]): number {
+  return Math.ceil(JSON.stringify(messages).length / CHARS_PER_TOKEN);
+}
+
+/**
+ * Shed a turn's history to a token budget, CHEAPEST LOSS FIRST:
+ *
+ *   1. reasoning — never re-read by the model after the step that produced it;
+ *   2. old tool payloads — a result the conversation has already summarised, and
+ *      the newest exchange keeps its own;
+ *   3. the oldest messages — the only band that loses something a later turn may
+ *      refer to, so it is the last resort.
+ *
+ * `pruneMessages` (shipped in `ai`) does bands 1 and 2, and it drops a tool call
+ * together with its result, so the prompt stays well-formed however much it
+ * sheds. The ask always survives: a turn with no user message is not a cheaper
+ * turn, it is a broken one.
+ */
+function shedToBudget(
+  messages: readonly ModelMessage[],
+  system: string,
+  budget: number,
+): ModelMessage[] {
+  // The system prompt is part of the same window and is not sheddable, so it is
+  // charged against the budget rather than ignored by it.
+  const overhead = estimateTokens([{ role: "system", content: system }]);
+  const fits = (candidate: readonly ModelMessage[]): boolean =>
+    estimateTokens(candidate) + overhead <= budget;
+  if (fits(messages)) return [...messages];
+  let shed = pruneMessages({
+    messages: [...messages],
+    reasoning: "before-last-message",
+    emptyMessages: "remove",
+  });
+  if (fits(shed)) return shed;
+  shed = pruneMessages({ messages: shed, toolCalls: "before-last-message", emptyMessages: "remove" });
+  if (fits(shed)) return shed;
+  while (shed.length > 1 && !fits(shed)) shed = shed.slice(1);
+  return shed;
+}
+
+/**
  * The provider messages for one turn: the system prompt, the optionally windowed
- * history, and the cache breakpoints that keep a growing thread from re-billing.
+ * and budgeted history, and the cache breakpoints that keep a growing thread from
+ * re-billing.
  */
 export async function turnModelMessages(
   messages: UIMessage[],
   system: string,
   historyWindow: number | undefined,
+  tokenBudget?: number,
 ): Promise<ModelMessage[]> {
   // History windowing: bound what is re-sent per turn to the last N whole messages.
   // Slicing whole UIMessages keeps each turn's tool-call/result pairing intact.
   const history = historyWindow !== undefined && messages.length > historyWindow
     ? messages.slice(-historyWindow)
     : messages;
-  const converted = (await convertToModelMessages(providerHistory(history)))
+  let converted = (await convertToModelMessages(providerHistory(history)))
     .filter((message) => message.content.length > 0);
+  // Budgeting runs on the CONVERTED form because that is the form the provider
+  // bills, and it runs before the breakpoints below because shedding changes
+  // which message is the stable prefix's last one.
+  if (tokenBudget !== undefined) converted = shedToBudget(converted, system, tokenBudget);
   // Cache the stable history prefix (everything but the final message) alongside the
   // static system prompt below, so Anthropic re-reads the cached prefix instead of
   // re-billing the whole growing thread each turn.
@@ -142,12 +202,22 @@ export interface TurnLoopOptions {
    *  name it. Optional only because a caller may drive the loop outside a
    *  composed turn; every composed caller mints one. */
   turnId?: TurnId;
-  context?: {
-    maxOutputTokens?: number;
-    historyWindow?: number;
-    maxSteps?: number;
-  };
+  context?: TurnContext;
   toolSearch?: ToolSearchSession;
+}
+
+/** The per-turn knobs, one shape both callers pass so neither can carry half of
+ *  them (`vendo()` used to pass `maxSteps` alone, which made every other knob
+ *  structurally unreachable from the default harness). */
+export interface TurnContext {
+  maxOutputTokens?: number;
+  /** Bound the messages re-sent per turn to the last N whole messages. */
+  historyWindow?: number;
+  /** §4.1 item 2 — bound the PROMPT instead of the message count: reasoning and
+   *  old tool payloads are shed before any message is dropped. Estimated, not
+   *  tokenized (see {@link CHARS_PER_TOKEN}). */
+  contextTokenBudget?: number;
+  maxSteps?: number;
 }
 
 export interface TurnLoop {
@@ -167,6 +237,7 @@ export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
     options.messages,
     options.system,
     options.context?.historyWindow,
+    options.context?.contextTokenBudget,
   );
   const { toolSearch } = options;
   const result = streamText({

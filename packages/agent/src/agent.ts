@@ -21,7 +21,7 @@ import {
   type UIMessage,
   type UIMessageStreamWriter,
 } from "ai";
-import { startTurn } from "./loop.js";
+import { startTurn, type TurnContext } from "./loop.js";
 import { wireErrorMessage } from "./wire-error.js";
 import { assembleSystemPrompt } from "./prompt.js";
 import { createRunner } from "./runner.js";
@@ -101,17 +101,11 @@ interface AgentConfig {
     knowledge?: string | (() => string | undefined | Promise<string | undefined>);
     instructions?: string;
   };
-  context?: {
-    maxOutputTokens?: number;
-    toolOutputCap?: number;
-    /** Bound the messages re-sent to the model per turn to the last N (whole messages,
-     *  so tool-call/result pairing inside a message is never split). Undefined → send the
-     *  full thread (current behavior). Persistence and the streamed thread are unaffected. */
-    historyWindow?: number;
-    /** AGENT-7: the agent-loop step cap (default 20). Exhausting it is VISIBLE:
-     *  the stream carries a `data-vendo-step-limit` part the client can render. */
-    maxSteps?: number;
-  };
+  /** The turn loop's own knobs (ONE shape, shared with the harness caller — see
+   *  {@link TurnContext}) plus the one this door owns: `toolOutputCap` truncates a
+   *  host tool's result before it reaches the model, which happens in the tool
+   *  bridge here rather than in the loop. */
+  context?: TurnContext & { toolOutputCap?: number };
   capabilityMiss?: CapabilityMissConfig;
   /** ENG-252: enable the `find_tools` meta-tool and runtime loadout.
    *  When set, the model starts with a bounded initial loadout and discovers the
@@ -187,6 +181,10 @@ function validateConfig(config: AgentConfig): void {
   }
   if (historyWindow !== undefined && (!Number.isInteger(historyWindow) || historyWindow < 1)) {
     throw new VendoError("validation", "historyWindow must be a positive integer");
+  }
+  const { contextTokenBudget } = config.context ?? {};
+  if (contextTokenBudget !== undefined && (!Number.isInteger(contextTokenBudget) || contextTokenBudget < 1)) {
+    throw new VendoError("validation", "contextTokenBudget must be a positive integer");
   }
   const { maxSteps } = config.context ?? {};
   if (maxSteps !== undefined && (!Number.isInteger(maxSteps) || maxSteps < 1)) {

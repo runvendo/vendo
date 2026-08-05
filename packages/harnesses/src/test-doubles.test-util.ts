@@ -292,16 +292,24 @@ export function toolCallTurn(toolName: string, input: unknown, toolCallId = "cal
   ];
 }
 
-export type ScriptedModel = LanguageModel & { toolNamesPerCall: string[][]; calls: number };
+export type ScriptedModel = LanguageModel & {
+  toolNamesPerCall: string[][];
+  /** What each call actually SENT — the only place a suite can prove what the
+   *  loop's history assembly did or did not include. */
+  prompts: unknown[];
+  calls: number;
+};
 
 /** A model that replays scripted provider chunks — so the harness's loop, not a
  *  real model, is what the suite measures. */
 export function scriptedModel(turns: StreamPart[][]): ScriptedModel {
   const remaining = turns.map((turn) => [...turn]);
   const toolNamesPerCall: string[][] = [];
+  const prompts: unknown[] = [];
   const model = new MockLanguageModelV3({
     doStream: async (request) => {
       toolNamesPerCall.push((request.tools ?? []).map((tool) => tool.name));
+      prompts.push(structuredClone(request.prompt));
       (model as ScriptedModel).calls += 1;
       const chunks = remaining.shift();
       if (chunks === undefined) throw new Error("scripted model exhausted");
@@ -309,6 +317,7 @@ export function scriptedModel(turns: StreamPart[][]): ScriptedModel {
     },
   }) as unknown as ScriptedModel;
   model.toolNamesPerCall = toolNamesPerCall;
+  model.prompts = prompts;
   model.calls = 0;
   return model;
 }

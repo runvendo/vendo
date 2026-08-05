@@ -38,6 +38,8 @@ async function drive(options: {
   signal?: AbortSignal;
   skills?: ReturnType<typeof testSkills>;
   messages?: Turn["messages"];
+  /** The per-turn options a caller sent — `optionsSchema`'s parsed shape. */
+  options?: Record<string, unknown>;
 }) {
   const guard = options.guard ?? testGuard();
   const registry = boundRegistry(
@@ -59,7 +61,7 @@ async function drive(options: {
     workspace: testWorkspace(),
     models: options.models,
     state: { get: () => undefined, set: () => undefined, clear: () => undefined },
-    options: {},
+    options: options.options ?? {},
     signal: options.signal ?? new AbortController().signal,
     interactive: options.interactive ?? true,
   };
@@ -363,6 +365,46 @@ describe("vendo() — subagent hiring (build-list item 4)", () => {
     // Turn 1 = resident (has the hiring tool), turn 2 = subagent (must not).
     expect(model.toolNamesPerCall[0]).toContain("hire_subagent");
     expect(model.toolNamesPerCall[1]).not.toContain("hire_subagent");
+  });
+});
+
+describe("vendo() passes the WHOLE context to the shipped loop", () => {
+  // The bug this pins: this caller used to build `context` only when a `maxSteps`
+  // existed and to put only `maxSteps` in it. The loop declared a history window
+  // and `createAgent` passed one, so a host who set one got it on one route and
+  // silently not on the other — and the default route is this one.
+  const OLDEST = "the oldest question";
+  const NEWEST = "the newest question";
+  const twoTurns = (): Turn["messages"] => [
+    userMessage("m1", OLDEST),
+    userMessage("m2", NEWEST),
+  ];
+
+  it("honours a history window set as a deployment default", async () => {
+    const model = scriptedModel([textTurn("ok")]);
+    await drive({ harness: vendo({ historyWindow: 1 }), models: seats(model), messages: twoTurns() });
+    const sent = JSON.stringify(model.prompts[0]);
+    expect(sent).toContain(NEWEST);
+    expect(sent).not.toContain(OLDEST);
+  });
+
+  it("honours a token budget, and a per-turn option beats the default", async () => {
+    const model = scriptedModel([textTurn("ok")]);
+    await drive({
+      harness: vendo({ contextTokenBudget: 100_000 }),
+      models: seats(model),
+      messages: twoTurns(),
+      options: { contextTokenBudget: 10 },
+    });
+    const sent = JSON.stringify(model.prompts[0]);
+    expect(sent).toContain(NEWEST);
+    expect(sent).not.toContain(OLDEST);
+  });
+
+  it("sends the whole thread when nothing is configured", async () => {
+    const model = scriptedModel([textTurn("ok")]);
+    await drive({ harness: vendo(), models: seats(model), messages: twoTurns() });
+    expect(JSON.stringify(model.prompts[0])).toContain(OLDEST);
   });
 });
 
