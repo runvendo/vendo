@@ -222,7 +222,15 @@ export function useVendoThread(threadId?: string) {
             return;
           }
           return client.threads.get(threadId).then(thread => {
-            if (active) chat.setMessages(thread.messages);
+            if (!active) return;
+            chat.setMessages(thread.messages);
+            // Stream resume (blueprint §4.1 item 5). The transcript has no row
+            // for a turn that is still streaming, so a reload mid-turn would
+            // otherwise paint the user's question and nothing else, forever.
+            // AFTER setMessages, never before: the SDK builds the resumed
+            // message on top of whatever the last message is, so the transcript
+            // has to have landed first. Nothing in flight → 204 → no-op.
+            chat.resumeStream();
           });
         })
         .catch(() => undefined);
@@ -230,7 +238,7 @@ export function useVendoThread(threadId?: string) {
     return () => {
       active = false;
     };
-  }, [client, threadId, chat.setMessages]);
+  }, [client, threadId, chat.setMessages, chat.resumeStream]);
 
   // LANE D (spec §2) — surfaces OUTSIDE the conversation (the launcher pill,
   // the badge) must be able to narrate a run whose state lives in here: the
@@ -270,6 +278,10 @@ export function useVendoThread(threadId?: string) {
     approvals,
     addToolApprovalResponse: chat.addToolApprovalResponse,
     stop: chat.stop,
+    // Rejoin a turn still streaming on the server (`GET /threads/:id/stream`).
+    // Called for you on mount; exposed for a surface that reconnects on its own
+    // (a tab waking from background, a socket the browser dropped).
+    resumeStream: chat.resumeStream,
     // ENG-215 — edit last message: the composer truncates the transcript to
     // before the edited user turn, then re-sends the amended text as a fresh
     // turn (never duplicating what the user originally sent).

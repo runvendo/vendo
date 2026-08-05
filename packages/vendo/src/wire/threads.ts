@@ -1,5 +1,7 @@
-import { VendoError } from "@vendoai/core";
+import { VendoError, withSseKeepalive } from "@vendoai/core";
+import { UI_MESSAGE_STREAM_HEADERS } from "ai";
 import { registerActiveTurn, touchActiveTurn, trackTurnResponse } from "../turn-liveness.js";
+import { recordResumableTurn, resumableTurnStream } from "../turn-resume.js";
 import { json, requestJson, route, string, type RouteEntry } from "./shared.js";
 
 /** The effective thread id the agent stamps on every turn response (03 §1). */
@@ -46,7 +48,30 @@ export const threadRoutes: RouteEntry[] = [
       subject: ctx.principal.subject,
       abort: () => turnAbort.abort(),
     });
-    return trackTurnResponse(turn, unregister);
+    // Stream resume (blueprint §4.1 item 5): the turn's bytes are recorded so a
+    // client whose connection died can rejoin through `GET /threads/:id/stream`.
+    // Recorded HERE because this is the one place both engines' turns converge
+    // and the turn's identity (thread + subject) already exists.
+    return recordResumableTurn(trackTurnResponse(turn, unregister), {
+      threadId,
+      subject: ctx.principal.subject,
+    });
+  }),
+  // The SERVER half of `ChatTransport.reconnectToStream` (ai@6): the URL, the
+  // method and the 204 are the SDK's, not ours. 204 = nothing in flight, so the
+  // client goes back to ready on its persisted transcript.
+  route("GET", "/threads/:id/stream", async ({ context, params }) => {
+    const ctx = await context("chat");
+    const id = string(params["id"], "thread id");
+    const replay = resumableTurnStream({ threadId: id, subject: ctx.principal.subject });
+    if (replay === null) return new Response(null, { status: 204 });
+    const response = withSseKeepalive(new Response(replay, { headers: UI_MESSAGE_STREAM_HEADERS }));
+    // The resumed consumer takes over the turn's liveness beat: the panel's
+    // `withTurnHeartbeat` arms itself off this header, so a turn whose first
+    // client vanished is kept alive by the one that rejoined instead of being
+    // idle-aborted out from under it.
+    response.headers.set(THREAD_ID_HEADER, id);
+    return response;
   }),
   // ENG-353 — turn-liveness beat. Principal-scoped: it refreshes only the
   // caller's own in-flight turns, and unknown/foreign ids answer
