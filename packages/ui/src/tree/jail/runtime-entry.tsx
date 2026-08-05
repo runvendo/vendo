@@ -20,8 +20,7 @@ import {
   DatePicker, DateTime, Disclaimer, Divider, DonutChart, EnumBadge, Form, Grid,
   Input, LineChart, Money, Num, Percent, Progress, Row, Select, Sparkline,
   Stack, Stat, Surface, Tabs, Text, Textarea,
-  applyFormat, formatDateTime, formatMoney, formatNum, formatPercent,
-  setKitIntl, type KitIntl,
+  fmt, setKitIntl, type KitIntl,
 } from "../../kit/index.js";
 
 declare global {
@@ -175,14 +174,6 @@ const makeToolsAmbient = (path: readonly string[]): unknown =>
  * imports. The name list is pinned to `ISLAND_AMBIENT_NAMES` in @vendoai/core
  * (shared with the engine's prompt + strip pass) by the typed record below.
  */
-const fmt = {
-  money: formatMoney,
-  percent: formatPercent,
-  num: formatNum,
-  dateTime: formatDateTime,
-  format: applyFormat,
-};
-
 const AMBIENT_SCOPE: Record<(typeof ISLAND_AMBIENT_NAMES)[number], unknown> = {
   React,
   ReactDOM: { createPortal, flushSync },
