@@ -16,7 +16,6 @@ import {
   type AppId,
   type AppPlan,
   type Guard,
-  type Membership,
   type Principal,
   type IsoDateTime,
   type Json,
@@ -112,11 +111,10 @@ import {
   unapprovedEgress,
 } from "./egress-approval.js";
 import {
-  createScheduleEngine,
-  type AppScheduleState,
-  type AppScheduleStatus,
-  type ScheduleTickReport,
-} from "./schedules.js";
+  createManifestTriggers,
+  type AppMachineStatus,
+  type ManifestTriggerSync,
+} from "./manifest-triggers.js";
 import { createSecretExposure, type SecretExposureGrant } from "./secret-exposure.js";
 import { computeShipDiff, type ShipDiff } from "./ship-diff.js";
 import { appVersionHash } from "./version-hash.js";
@@ -180,9 +178,6 @@ export interface AppsConfig {
    */
   appAccess?: AppAccess;
   multiParty?: boolean;
-  /** Build contract §9.1 — the host's org query, forwarded to the schedule
-   *  engine so an unattended fire asserts the same orgs a request does. */
-  memberships?: (principal: Principal) => Promise<Membership[]>;
   /**
    * Build contract §9.5 — promote's ROW half. A promote crosses subjects, which
    * 02-store §2 otherwise forbids, and it moves the app's workspace documents
@@ -906,21 +901,19 @@ export interface AppsRuntime {
      * shared is theirs to send, and it grants no more than seeing the app does.
      */
     ping(appId: AppId, ctx: RunContext): Promise<{ state: "awake" | "woke" }>;
-  };
-  /**
-   * execution-v2 Wave 2 Lane D — additive BYO schedule-execution surface (same
-   * additive precedent as `machine`/`box`). `tick` is what the host's
-   * authenticated scheduler endpoint calls on every external-cron hit: it
-   * fires due `vendo.json` schedules exactly once per cron window (see
-   * schedules.ts for the store-claimed idempotency rule). `sync` is the
-   * editor-scoped manifest re-read (the Wave-3 in-box agent's edit-complete
-   * hook — re-reading a shared app's manifest is part of editing it);
-   * `report` feeds the doctor's machine/schedule reporting.
-   */
-  schedules: {
-    tick(at?: Date): Promise<ScheduleTickReport>;
-    sync(appId: AppId, ctx: RunContext): Promise<AppScheduleState>;
-    report(): Promise<AppScheduleStatus[]>;
+    /**
+     * Re-read the box's `vendo.json` and fold its `schedules` into the app's
+     * doc triggers (manifest-triggers.ts): each declaration becomes a schedule
+     * trigger running `fn:<name>`, armed through the arming seam and fired by
+     * the automations tick — the ONE scheduler. Editor-scoped, like every other
+     * edit: re-reading a shared app's manifest is part of editing it. Called
+     * automatically after a box server-edit; exposed because a manifest edited
+     * inside the box (an agent session, a layer-3 app) has no other way in.
+     */
+    syncManifest(appId: AppId, ctx: RunContext): Promise<ManifestTriggerSync>;
+    /** Dev-only reporting for the doctor: which apps carry a machine, whether
+     *  they are awake, and what their manifests schedule. */
+    report(): Promise<AppMachineStatus[]>;
   };
   /**
    * ENG-345 — additive guarded per-secret in-sandbox exposure surface (same
@@ -1610,15 +1603,11 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   // every other ref on the existing caller. Queries hit this at open(),
   // actions at call().
   const fnCaller = createFnCaller({ wake: (app) => lifecycle.wake(app) });
-  const scheduleEngine = createScheduleEngine({
+  const manifestTriggers = createManifestTriggers({
     store: config.store,
     lifecycle,
-    callFn: fnCaller.callFn,
-    audit: (event) => config.guard.report(event),
-    // Build contract §9.1 — an unattended fire asserts the SAME orgs a request
-    // does, or `can()` would answer differently attended and unattended (a
-    // promoted app would be invisible to its own schedule).
-    ...(config.memberships === undefined ? {} : { memberships: config.memberships }),
+    updateDocument: (appId, mutate) => updateAppRow(apps, appId, mutate),
+    ...(config.armAutomation === undefined ? {} : { armAutomation: config.armAutomation }),
   });
   const caller = fnCaller.wrap(createAppCaller(config.tools, {
     // W0 — remember every mutating in-app action the guard parks, so the
@@ -2041,7 +2030,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   const editServerViaBox = async (
     app: AppDocument,
     instruction: string,
-    _ctx: RunContext,
+    ctx: RunContext,
     options: { served?: boolean } = {},
   ): Promise<{ ok: true; result: BoxEditResult; doc: AppDocument; servedOk: boolean } | { ok: false; result: BoxEditResult }> => {
     const machine = await lifecycle.wake(app);
@@ -2076,9 +2065,14 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         && contentType.includes("text/html")
         && root.body.length > 0;
     }
-    // Sync schedule state while the box is awake and its egress declaration is
-    // not yet on the doc (so this wake's allowlist still passes).
-    await scheduleEngine.syncManifest(app).catch(() => undefined);
+    // Fold the manifest's schedules into doc triggers while the box is awake and
+    // its egress declaration is not yet on the doc (so this wake's allowlist
+    // still passes). Best-effort — a manifest the converter cannot honor must
+    // not roll back an edit that already succeeded inside the box — but never
+    // SILENT: the reason is the only thing that says why nothing is scheduled.
+    await manifestTriggers.sync(app, ctx).catch((error: unknown) => {
+      console.warn(`[vendo] vendo.json schedules for ${app.id} were not folded into triggers: ${safeErrorMessage(error)}`);
+    });
     // Sync the egress DECLARATION (mirrors vendo.json) onto the doc; the
     // owner-approval grant is a separate, guard-gated step (Lane E).
     let egressDecl: string[] = [];
@@ -2736,7 +2730,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // graduated tree's fn: refs would fail a machine-cleared re-validation
       // and otherwise strand the provider snapshot.
       await lifecycle.destroyResources(app);
-      await scheduleEngine.clearForApp(appId);
+      await manifestTriggers.clearLegacyState(appId);
       await data.clear(app, ctx.principal.subject, await history.documents(appId));
       await history.clear(appId);
       await inClientApprovals.clear(appId);
@@ -3652,20 +3646,16 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       async destroy(appId, ctx) {
         const app = await requireOwned(appId, ctx, "owner");
         const cleared = await lifecycle.destroyMachine(app);
-        // De-graduation retires the cached schedule state with the machine.
-        await scheduleEngine.clearForApp(appId);
+        // De-graduation retires the retired scheduler's leftover row too.
+        await manifestTriggers.clearLegacyState(appId);
         if (app.machine !== undefined) await reportLifecycle("machine-destroy", appId, ctx);
         return cleared;
       },
-    },
-
-    schedules: {
-      tick: (at) => scheduleEngine.tick(at),
-      async sync(appId, ctx) {
+      async syncManifest(appId, ctx) {
         const app = await requireOwned(appId, ctx);
-        return scheduleEngine.syncManifest(app);
+        return await manifestTriggers.sync(app, ctx);
       },
-      report: () => scheduleEngine.report(),
+      report: () => manifestTriggers.report(),
     },
 
     secrets: {

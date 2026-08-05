@@ -2197,14 +2197,14 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // Build contract §9 — the multi-party half. `can()` over whatever store the
     // host wired (OSS, unconditional); `multiParty` is the Cloud gate on the
     // three writes that create sharing; `promoteApp` is the store's sanctioned
-    // cross-subject door; `memberships` lets an unattended schedule fire assert
-    // the same orgs a request does.
+    // cross-subject door. (§9.1's `memberships` left this seam with the
+    // machine-app scheduler: the ONE unattended firing path is the automations
+    // engine, which is handed the same seam below.)
     appAccess: access,
     multiParty,
     // §9.5's order and its rollback rule live in promote-app.ts, where the
     // failure interleavings are testable; the getters keep `dbFor` lazy.
     ...(promoteRows === undefined ? {} : { promoteApp: createPromoteApp(promoteRows) }),
-    ...(membershipsSeam === undefined ? {} : { memberships: membershipsSeam }),
     // Build contract §9.9 — sponsorship's two halves, composed HERE because
     // they cross the apps↔automations line and neither block may reach into
     // the other. Both ride the same late binding as `armAutomation` above

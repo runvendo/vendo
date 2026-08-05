@@ -761,7 +761,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
             appId?: string;
             name?: string;
             awake?: boolean;
-            schedules?: Array<{ cron?: string; fn?: string; lastFiredAt?: string; lastStatus?: string }>;
+            schedules?: Array<{ cron?: string; fn?: string }>;
           }>;
         };
         const machines = Array.isArray(body.machines) ? body.machines : [];
@@ -771,10 +771,11 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
         for (const machine of machines) {
           note(`  ${machine.appId ?? "?"} (${machine.name ?? "unnamed"}): ${machine.awake === true ? "awake" : "asleep"}`);
           for (const schedule of machine.schedules ?? []) {
-            const lastFired = schedule.lastFiredAt === undefined
-              ? "never fired"
-              : `last fired ${schedule.lastFiredAt}${schedule.lastStatus === "error" ? " (error)" : ""}`;
-            note(`    ${schedule.cron ?? "?"} -> POST /fn/${schedule.fn ?? "?"} — ${lastFired}`);
+            // Declaration only. A vendo.json schedule is a doc trigger now, so
+            // when it last ran is in the automation's run records — printing
+            // "never fired" from a payload that no longer carries last-fired
+            // state would be a doctor telling you something untrue.
+            note(`    ${schedule.cron ?? "?"} -> POST /fn/${schedule.fn ?? "?"}`);
           }
         }
         const declaresSchedules = machines.some((machine) => (machine.schedules?.length ?? 0) > 0);

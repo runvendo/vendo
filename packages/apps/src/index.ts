@@ -48,9 +48,17 @@ export {
   type BuiltBoxEnv,
   type InferenceResolver,
 } from "./box-env.js";
-// execution-v2 Lane D — the BYO schedule engine's state collection (the wire
-// tests pin its name).
-export { SCHEDULE_STATE_COLLECTION } from "./schedules.js";
+// A machine app's vendo.json schedules are doc triggers: the converter, its
+// id-prefix ownership rule, and the retired scheduler's collection (read once
+// at cutover, then gone).
+export {
+  LEGACY_SCHEDULE_STATE_COLLECTION,
+  MANIFEST_TRIGGER_PREFIX,
+  manifestTriggerId,
+  type AppMachineStatus,
+  type ManifestTriggerResult,
+  type ManifestTriggerSync,
+} from "./manifest-triggers.js";
 export {
   shareSnapshotSchema,
   publishRecordSchema,
