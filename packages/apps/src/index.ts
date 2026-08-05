@@ -92,17 +92,9 @@ export {
   type ShipDiffGenerated,
   type ShipDiffPin,
 } from "./ship-diff.js";
-// The bench host surface (tools/genui-bench): the demo-bank catalog/tool/shape
-// loaders the live harnesses already share, exported because the exports map
-// closes deep imports. Data-only helpers — no engine behavior rides on them.
-// HostToolInfo is the tool slice those loaders (and GenerationDependencies)
-// speak.
+// HostToolInfo is the tool slice GenerationDependencies (and external
+// harnesses like tools/genui-bench) speak.
 export type { HostToolInfo } from "./generation/engine.js";
-export {
-  demoBankToolShapes,
-  loadDemoBankCatalog,
-  loadDemoBankTools,
-} from "./bench/demo-bank-surface.js";
 // The checking layer's contract: the shape a host writes an AppsConfig.checks
 // entry in, and the finding shape every check reports (checking/types.ts).
 export type {

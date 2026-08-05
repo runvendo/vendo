@@ -248,10 +248,6 @@ export interface AppsConfig {
   /** The fast fill tier: `model` is the no-think switch (a thinking-disabled
    *  model instance) the group workers run on while the brain keeps `model`. */
   fill?: GenerationDependencies["fill"];
-  /** Groups filled at the same time. Two by default — the point is parallelism,
-   *  but every worker is a model call against the same key and a burst of them
-   *  is what trips a provider's rate limit mid-build. */
-  fillConcurrency?: number;
   /** The island smoke-render gate (on unless explicitly `false`): every
    *  generated island renders once headless before it can reach a screen. */
   pipeline?: GenerationDependencies["pipeline"];
@@ -1072,7 +1068,6 @@ const conductorOptions = (
   config: AppsConfig,
   runQuery: ConductorOptions["runQuery"],
 ): ConductorOptions => ({
-  ...(config.fillConcurrency === undefined ? {} : { fillConcurrency: config.fillConcurrency }),
   ...(config.checks === undefined ? {} : { checks: config.checks }),
   ...(runQuery === undefined ? {} : { runQuery }),
 });

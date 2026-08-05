@@ -18,17 +18,14 @@ anywhere else are not quality numbers.
 | **Golden set + rules + PASS bar + run ledger** | [`GOLDEN.md`](./GOLDEN.md) | The frozen prompts (30 + F-set), the never-tune rules, every official score |
 | **Remix eval (fork/pin/ship-diff/drift)** | [`REMIX.md`](./REMIX.md) | The frozen 12 remix scenarios + PASS bar + ledger (baseline 2/12, 2026-07-21) |
 | **Knowledge eval (retrieval/answers/refusals)** | [`KNOWLEDGE.md`](./KNOWLEDGE.md) | Golden + refusal sets, per-engine bars, per-PR offline gate; judge legs nightly (`pnpm corpus knowledge-eval`) |
-| **Bench harness** | `packages/apps/src/bench/` | Rerunnable format/pipeline experiments against the REAL compiler (metrics, LLM-judge rubric, dev prompts, fixtures). `ANTHROPIC_API_KEY` + `pnpm --filter @vendoai/apps exec vitest run src/bench/<exp>.bench.test.ts` |
-| **Measurement verdicts** | `docs/verification/w1-bench/VERDICTS.md` | Decided: inline refs ADOPT; builder-calls, fetch-then-generate, CFG-JSX DEFER (with numbers + revisit conditions) |
-| **CFG grammar + GPU protocol** | `docs/verification/w1-bench/wire-subset.lark` | Ready-to-run owned-serving experiment (~1 GPU-day) |
-| **Latest gate evidence** | `docs/verification/final-gate/` | 2026-07-20 run: per-prompt rows + 64 screenshots (18/30, 8/10) |
-| **Baseline evidence** | branches `vendo-heldout-maple`/`-cadence`, `vendo-gate-*` | The 11/30 run + raw gate branches |
-| **Historical dev-set evidence** | `docs/verification/vendo-v2-*` | The pre-freeze iteration record (contaminated; never a quality number) |
+| **Measurement verdicts** | git history (formerly `docs/verification/w1-bench/`, scrubbed in #782) | Decided: inline refs ADOPT; builder-calls, fetch-then-generate, CFG-JSX DEFER |
+| **Gate + baseline evidence** | branches `vendo-heldout-maple`/`-cadence`, `vendo-gate-*`; scrubbed `docs/verification/` dirs live in git history | The 11/30 baseline, the 2026-07-20 gate run (18/30, 8/10), and the pre-freeze dev-set record (contaminated; never a quality number) |
 
 ## Conventions going forward
 
 - **Future gate runs land in `docs/eval/runs/<YYYY-MM-DD>/`** (README + screenshots per
-  half), not new ad-hoc `docs/verification/` dirs.
+  half; the directory is gitignored — runs stay local or on evidence branches), not new
+  ad-hoc `docs/verification/` dirs.
 - **Fresh sets are authored blind before each gate, run once, then frozen** as a new
   tranche in GOLDEN.md with their baseline. Never reuse a fresh set as fresh.
 - **Prompts discussed in fix PRs are burned** to the DEV list (GOLDEN.md rule 4).

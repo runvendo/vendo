@@ -663,8 +663,6 @@ export interface CreateVendoConfig {
     /** The island smoke-render gate: every generated island renders once in a
         headless DOM before it can reach a screen. ON unless explicitly false. */
     pipeline?: AppsConfig["pipeline"];
-    /** Groups filled at the same time during app generation (default 2). */
-    fillConcurrency?: AppsConfig["fillConcurrency"];
     /** The host's own checks over a generated app: each one reports findings
         (`block` stops the app shipping as-is, `warn` rides along) the same way
         the built-in fact checks and the AI reviewer do. APPENDED to the
@@ -2367,7 +2365,6 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // single-lane `disabled` switch has nothing left to disable.
     ...(inference.paint?.model === undefined ? {} : { fill: { model: inference.paint.model } }),
     ...(config.apps?.pipeline === undefined ? {} : { pipeline: config.apps.pipeline }),
-    ...(config.apps?.fillConcurrency === undefined ? {} : { fillConcurrency: config.apps.fillConcurrency }),
     // The floor's plugged checks: the host's own, then every pack's. Appended,
     // never replacing — and a pack's judgment rules ride along here too, which
     // the floor splits out into the reviewer's rubric rather than running.

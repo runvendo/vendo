@@ -97,20 +97,6 @@ jobs:
           # (AI-scored) runs on the mini only.
           pnpm corpus run "${repos[@]}" --layer 1 --json --strict
 
-      - name: Diagnose scorecard artifact path
-        if: always()
-        run: |
-          echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
-          echo "PWD=$(pwd)"
-          node -e '
-            const path = require("path");
-            const { fileURLToPath } = require("url");
-            const runContextUrl = "file://" + path.resolve("corpus/harness/src/run-context.ts");
-            const corpusRoot = path.resolve(fileURLToPath(new URL("../../", runContextUrl)));
-            console.log("resolved corpusRoot (writeScorecardArtifacts target):", corpusRoot);
-          '
-          ls -laR corpus/.repos/.logs 2>&1 || echo "corpus/.repos/.logs does not exist"
-
       - name: Publish scorecard to job summary
         if: always()
         run: |

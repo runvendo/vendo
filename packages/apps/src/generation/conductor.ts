@@ -75,8 +75,6 @@ export interface ConductorOptions {
    *  READ-risk tools only — the plan is a proposal, and a proposal must not
    *  have side effects. Absent → workers fill without example rows. */
   runQuery?: FillOptions["runQuery"];
-  /** Groups filled at the same time (`AppsConfig.fillConcurrency`). */
-  fillConcurrency?: number;
   /** The host's own checks (`AppsConfig.checks`), APPENDED to the built-in fact
    *  checks and the reviewer — a host adds findings, never removes one. */
   checks?: readonly Check[];
@@ -333,7 +331,6 @@ const growAndFill = async (
   const filled = await fillPlan(plan, skeleton, deps, {
     groups: readyGroups(plan),
     ...(Object.keys(islandLane.components).length === 0 ? {} : { components: islandLane.components }),
-    ...(options.fillConcurrency === undefined ? {} : { concurrency: options.fillConcurrency }),
     ...(options.runQuery === undefined ? {} : { runQuery: options.runQuery }),
   });
 
@@ -597,7 +594,6 @@ export const fillAfterServer = async (
   }, deps, {
     groups: waiting,
     serverInterface: { queries, samples },
-    ...(options.fillConcurrency === undefined ? {} : { concurrency: options.fillConcurrency }),
   });
   return { document: filled.document, findings: filled.findings };
 };

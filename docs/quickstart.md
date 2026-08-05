@@ -505,7 +505,6 @@ export interface CreateVendoConfig {
       reviewer?(ctx: RunContext): boolean | Promise<boolean>;
     };
     pipeline?: AppsConfig["pipeline"];                 // { smokeRender } — the island render gate
-    fillConcurrency?: AppsConfig["fillConcurrency"];   // groups filled at once (default 2)
     checks?: AppsConfig["checks"];                     // the host's own checks, appended to the built-ins
     designRules?: string;
   };

@@ -116,21 +116,3 @@ export type { AppMount } from "./workspace.js";
 // missing `verifier` and `Turn.models` could not describe the verifier seat.
 // Lane A's own file said "if lane D's version differs, lane D's wins"; it does,
 // so the copy is gone and there is one definition.
-
-// Deprecated aliases from the pre-de-versioning naming (0.4.x). Remove next minor.
-/** @deprecated Use compileWire. */
-export { compileWire as compileWireV2 } from "./genui/wire/compile.js";
-/** @deprecated Use printWire. */
-export { printWire as printWireV2 } from "./genui/wire/print.js";
-/** @deprecated Use validateTree. */
-export { validateTree as validateTreeV2 } from "./genui/tree.js";
-/** @deprecated Use VENDO_TREE_FORMAT. */
-export { VENDO_TREE_FORMAT as VENDO_TREE_FORMAT_V2 } from "./formats.js";
-/** @deprecated Use treeSchema. */
-export { treeSchema as treeV2Schema } from "./genui/tree.js";
-/** @deprecated Use treeQuerySchema. */
-export { treeQuerySchema as treeQueryV2Schema } from "./genui/tree.js";
-/** @deprecated Use Tree. */
-export type { Tree as TreeV2 } from "./genui/tree.js";
-/** @deprecated Use TreeQuery. */
-export type { TreeQuery as TreeQueryV2 } from "./genui/tree.js";
