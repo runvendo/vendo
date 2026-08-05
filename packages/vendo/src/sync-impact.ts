@@ -1,5 +1,12 @@
-import { VENDO_TREE_FORMAT, type AppDocument, type PermissionGrant, type VendoRecord } from "@vendoai/core";
+import {
+  appDocumentSchema,
+  VENDO_TREE_FORMAT,
+  type AppDocument,
+  type PermissionGrant,
+  type VendoRecord,
+} from "@vendoai/core";
 import type { VendoStore } from "@vendoai/store";
+import { z } from "zod";
 
 export interface ToolImpact {
   tool: string;
@@ -8,10 +15,19 @@ export interface ToolImpact {
   grants: number;
 }
 
-interface StoredApp {
-  enabled: boolean;
-  doc: AppDocument;
-}
+/** The app row as this reader takes it OFF the store.
+ *
+ *  `doc` goes through `appDocumentSchema`, not a cast, because that schema is
+ *  where a pre-list document's single `trigger` becomes the one-item `triggers`
+ *  list every reader below expects. Casting the raw row left `doc.triggers`
+ *  undefined on every automation armed before the list shipped, so `vendo sync`
+ *  told those deployments that changing a tool would affect NO automations —
+ *  which reads as "nothing to worry about" and is the one wrong answer that
+ *  costs something. Mirrors `appRowSchema` in the automations engine. */
+const storedAppSchema = z.object({
+  enabled: z.boolean(),
+  doc: appDocumentSchema,
+});
 
 async function allRecords(store: VendoStore, collection: string): Promise<VendoRecord[]> {
   const records: VendoRecord[] = [];
@@ -68,7 +84,13 @@ export async function computeImpact(store: VendoStore, tools: string[]): Promise
     allRecords(store, "vendo_apps"),
     allRecords(store, "vendo_grants"),
   ]);
-  const apps = appRecords.map((record) => record.data as unknown as StoredApp).filter((app) => app.enabled);
+  // A row that will not parse is skipped rather than thrown on: `sync` is
+  // advisory and read-only, and one unreadable row must not take the whole
+  // impact report — including every other row's warning — down with it.
+  const apps = appRecords.flatMap((record) => {
+    const parsed = storedAppSchema.safeParse(record.data);
+    return parsed.success ? [parsed.data] : [];
+  }).filter((app) => app.enabled);
   const now = new Date().toISOString();
   const grants = grantRecords
     .map((record) => record.data as unknown as PermissionGrant)

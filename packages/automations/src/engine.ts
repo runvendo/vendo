@@ -86,6 +86,11 @@ const DELIVERIES = "automations:deliveries";
  * existing app-level disarm keeps working untouched and turning one trigger off
  * never reaches another.
  */
+/** The app row's trigger-kind ref BEFORE the trigger list: one key holding one
+ *  kind. Kept only so the queries below can still find a row nobody has
+ *  rewritten yet — nothing writes it any more. */
+const PRE_LIST_TRIGGER_KIND_REF = "trigger_kind";
+
 const ARMED = "automations:armed";
 const WEBHOOK_MAX_BYTES = 1024 * 1024;
 const FOREACH_MAX_ITEMS = 1000;
@@ -552,6 +557,53 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       data: row,
       refs: { subject: row.subject, ...triggerKindRefs(row.doc.triggers) },
     });
+  };
+
+  /**
+   * The app rows that fire on this trigger kind, under EITHER ref spelling.
+   *
+   * An app has a LIST of triggers, so "which kind does this app fire on" is a SET
+   * and a ref is matched by equality — which is why one `trigger_kind: "<kind>"`
+   * ref became one key per kind. The RESERVED store re-derives its refs from
+   * generated columns over the document, so it migrated every existing row the
+   * moment the column existed. A host-supplied adapter does not: 01-core §12 says
+   * a generic adapter stores the refs it is GIVEN, so its pre-list rows still
+   * carry the old key and nothing rewrites them. Asking only the new key took
+   * every automation armed before the rename dark on BYO storage — no error, no
+   * run row, no audit event, which is the one failure mode an automation may
+   * never have.
+   *
+   * So both are asked and the rows are deduped by id. The old-key query ages out
+   * on its own rather than needing a sweep: `writeApp` re-derives refs from the
+   * document, so the first arm, disarm or edit moves that row onto the new keys.
+   */
+  const appsFiringOn = async (
+    kind: TriggerSource["kind"],
+    refs: Record<string, string> = {},
+  ): Promise<VendoRecord[]> => {
+    const records = config.store.records(APPS);
+    // A store that VALIDATES its ref keys refuses the pre-list one — and that is
+    // exactly the store which cannot be holding rows written under it, because it
+    // DERIVES app refs from the document instead of storing what it was handed.
+    // So a validation refusal here honestly means "no pre-list rows". Any other
+    // failure still propagates: swallowing a dead connection would turn an outage
+    // into "nothing is due", which is the silence this whole function exists to
+    // end.
+    const preListRows = async (): Promise<VendoRecord[]> => {
+      try {
+        return await allRecords(records, { refs: { ...refs, [PRE_LIST_TRIGGER_KIND_REF]: kind } });
+      } catch (error) {
+        if (error instanceof VendoError && error.code === "validation") return [];
+        throw error;
+      }
+    };
+    const [current, preList] = await Promise.all([
+      allRecords(records, { refs: { ...refs, [triggerKindRefKey(kind)]: TRIGGER_KIND_REF_PRESENT } }),
+      preListRows(),
+    ]);
+    const byId = new Map(current.map((record) => [record.id, record]));
+    for (const record of preList) if (!byId.has(record.id)) byId.set(record.id, record);
+    return [...byId.values()];
   };
 
   const setArmed = async (appId: string, triggerId: string, armed: boolean): Promise<void> => {
@@ -1988,9 +2040,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     // app for every subject, then batch every schedule cursor in one query (was an N+1 get).
     // Still ONE ref query with a trigger LIST: the ref says "this app has a schedule trigger
     // somewhere in its list", and the loop below picks out which ones.
-    const appRecords = await allRecords(config.store.records(APPS), {
-      refs: { [triggerKindRefKey("schedule")]: TRIGGER_KIND_REF_PRESENT },
-    });
+    const appRecords = await appsFiringOn("schedule");
     const rows = appRecords.map(parseAppRow);
     const armed = await armedFor(rows);
     // Every armed schedule trigger, as (app, trigger) pairs — the unit that fires,
@@ -2095,9 +2145,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     const ids: string[] = [];
     // Indexed refs per owner (never a scan): the emitter, then each asserted org.
     for (const subject of [principal.subject, ...orgs]) {
-      const records = await allRecords(config.store.records(APPS), {
-        refs: { subject, [triggerKindRefKey("host-event")]: TRIGGER_KIND_REF_PRESENT },
-      });
+      const records = await appsFiringOn("host-event", { subject });
       const rows = records.map(parseAppRow).filter((row) => row.subject === subject);
       const armed = await armedFor(rows);
       for (const row of rows) {
