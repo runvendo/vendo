@@ -95,6 +95,13 @@ export interface StoreAdapter {
 
 import type { StoreWireStatus } from "./store-wire.js";
 
+/** The scope of a destructive erase: exactly ONE of subject or appId.
+    A union (not two optionals) so `erase({})` and a both-set target are
+    compile errors — an erase can never run without a data scope. */
+export type EraseTarget =
+  | { subject: string; appId?: never }
+  | { appId: string; subject?: never };
+
 /** The typed contract for all 32 store operations across 7 families.
     Lean by design — this is the CONTRACT interface, not the implementation. */
 export interface StoreOps {
@@ -134,7 +141,7 @@ export interface StoreOps {
     undo(commitId: string): Promise<void>;
   };
   lifecycle: {
-    erase(target: { subject?: string; appId?: string }): Promise<unknown>;
+    erase(target: EraseTarget): Promise<unknown>;
     adopt(from: string, to: string): Promise<unknown>;
     promote(appId: string, orgId: string): Promise<void>;
     sessionRegister(subject: string, now?: number): Promise<void>;
