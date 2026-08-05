@@ -39,6 +39,9 @@ const ABOVE_OVERLAY = "2147483002";
 /** A slot is often a short banner while the source card is a tall panel; fitting
  *  both axes would shrink the ghost to an unreadable speck. */
 const MIN_GHOST_SCALE = 0.34;
+/** The destinations that are OURS rather than the host's page — the Apps shelf,
+ *  live or day-zero. They are themed, so the ring lands in the accent. */
+const OUR_CHROME = ".fl-shelf";
 
 export interface PinCeremonyOptions {
   /** The app being pinned — its in-thread card is the ghost's source. */
@@ -81,17 +84,31 @@ function destinationOf(slot: string | undefined): Element | null {
   // pinned app shows up, so it is where the pin lands. The day-zero ghost shelf
   // is the last resort: it advertises what to build and holds no apps.
   return named
-    ?? document.querySelector(".fl-shelf:not(.fl-shelf--ghost)")
-    ?? document.querySelector(".fl-shelf");
+    ?? document.querySelector(`${OUR_CHROME}:not(.fl-shelf--ghost)`)
+    ?? document.querySelector(OUR_CHROME);
+}
+
+/** The ring's ink.
+ *
+ *  A HOST slot lends its own `color`, and that is the point: a pin lands in the
+ *  host's page and should look like it belongs to it.
+ *
+ *  OUR OWN chrome must not, and this is where borrowing it went wrong: the
+ *  shelf's `color` is body text, so the payoff of the whole ceremony drew a
+ *  near-black rectangle around the shelf — a debug outline. Our surfaces are
+ *  themed, so they have an accent to land in. */
+function inkOf(destination: Element, style: CSSStyleDeclaration): string {
+  if (!destination.matches(OUR_CHROME)) return style.color;
+  return style.getPropertyValue("--vendo-accent").trim() || style.color;
 }
 
 /** The settle pulse: a ring drawn OVER the destination, never a style written
- *  onto it — this module animates surfaces it does not own. Its ink is the
- *  destination's own colour, because a pin lands in the host's page. */
+ *  onto it — this module animates surfaces it does not own. */
 function pulse(destination: Element): void {
   const box = boxOf(destination);
   if (box === null) return;
   const style = getComputedStyle(destination);
+  const ink = inkOf(destination, style);
   const ring = document.createElement("div");
   ring.setAttribute("data-vendo-pin-ring", "");
   ring.setAttribute("aria-hidden", "true");
@@ -102,7 +119,7 @@ function pulse(destination: Element): void {
     width: `${box.width}px`,
     height: `${box.height}px`,
     borderRadius: style.borderRadius,
-    boxShadow: `0 0 0 1.5px ${style.color}, 0 12px 40px -14px ${style.color}`,
+    boxShadow: `0 0 0 1.5px ${ink}, 0 12px 40px -14px ${ink}`,
     pointerEvents: "none",
     zIndex: ABOVE_OVERLAY,
   });

@@ -146,11 +146,10 @@ test("a settled build invites the pin, and the pin lands in the Apps shelf", asy
 
   // The host's write fired…
   await expect(page.getByTestId("pin-recorder")).toHaveText(`pinned: ${BUILT_APP}`);
-  // …and the shelf reads the pinned app back over the wire.
-  await page.reload();
-  await page.getByRole("button", { name: "New chat" }).click();
-  await expect(page.getByRole("region", { name: "Your apps" })
-    .getByRole("button", { name: "Open Where my money goes" })).toBeVisible();
+  // …and the shelf holds the app WITHOUT a refresh. This used to need a reload,
+  // which meant the flight above landed in a shelf that did not have the app in
+  // it — the ceremony asserting something untrue.
+  await expect(shelf.getByRole("button", { name: "Open Where my money goes" })).toBeVisible();
   await page.screenshot({ path: screenshotPath("pin-shelf-holds-app") });
 });
 

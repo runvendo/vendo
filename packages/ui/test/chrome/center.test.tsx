@@ -24,6 +24,7 @@ import { VendoProvider, type VendoClient } from "../../src/index.js";
 import { VendoPage } from "../../src/chrome/index.js";
 import { markSeen } from "../../src/chrome/discoverability.js";
 import { publishThreadRun, resetRunActivity } from "../../src/chrome/run-activity.js";
+import { announcePin } from "../../src/pin-events.js";
 import type { ThreadSummary } from "../../src/wire-types.js";
 
 const DAY_MS = 86_400_000;
@@ -83,7 +84,12 @@ function stubClient(over: {
       async delete() { return undefined; },
     },
     apps: {
-      async list() { return apps; },
+      // ⚠️ FIXTURE EDIT — a COPY, which is the only thing a real client can
+      // return: every read parses fresh JSON. Handing back the same array twice
+      // made a re-read invisible to React (`setData` bails on Object.is), so a
+      // test could not tell "the surface never re-read" from "the surface
+      // re-read and nothing changed".
+      async list() { return [...apps]; },
       async get(id: string) {
         log.push(`get:${id}`);
         return apps.find(app => app.id === id) ?? apps[0]!;
@@ -424,6 +430,21 @@ describe("the home shelf", () => {
     const reachable = [...shelf.querySelectorAll<HTMLElement>("button,input,select,textarea,a[href],[tabindex]")]
       .filter(node => node.closest("[inert]") === null);
     expect(reachable.map(node => node.getAttribute("aria-label"))).toEqual(["Open Invoices"]);
+  });
+
+  it("a pin appears in the shelf on its own — the ceremony flies the ghost INTO it", async () => {
+    // The pin ceremony's fallback destination is this shelf, so a shelf that
+    // only catches up on the next refresh makes the animation assert something
+    // untrue: the ghost lands in a shelf without the app in it.
+    const apps = [appDoc("app_1", "Invoices")];
+    mount(stubClient({ apps }));
+    await screen.findByRole("region", { name: "Your apps" });
+    expect(screen.queryByRole("button", { name: "Open Spending board" })).toBeNull();
+    // `onPin` is the HOST's write, so no read here can see it happen — the pin
+    // bus is the only signal, exactly as slot discovery already rides it.
+    apps.push(appDoc("app_smoke", "Spending board"));
+    act(() => announcePin("app_smoke"));
+    expect(await screen.findByRole("button", { name: "Open Spending board" })).toBeTruthy();
   });
 
   it("once an app exists the ghosts are gone and the shelf is live", async () => {

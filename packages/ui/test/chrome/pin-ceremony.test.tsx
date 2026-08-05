@@ -235,6 +235,36 @@ describe("the pin ceremony (Keystone graduates B8)", () => {
     expect(flight()!.keyframes[1]!.transform).toBe("translate(-360px, 480px) scale(0.5)");
   });
 
+  it("inks the ring with the ACCENT when it lands in our own chrome", async () => {
+    const { panel } = stage();
+    document.querySelector("[data-vendo-slot]")!.remove();
+    stubRects([
+      { selector: "[data-vendo-app-embed]", rect: { left: 400, top: 120, width: 600, height: 400 } },
+      { selector: ".fl-shelf", rect: { left: 40, top: 600, width: 300, height: 200 } },
+    ]);
+    const section = shelf();
+    section.style.color = "rgb(20, 21, 26)";
+    section.style.setProperty("--vendo-accent", "rgb(10, 125, 85)");
+    playPinCeremony({ appId: "app_1", slot: "hero", dismiss: () => panel.remove() });
+
+    await flushFrames();
+    flight()!.animation.onfinish!();
+    // The shelf's `color` is body text, so borrowing it drew a near-black box
+    // around the whole shelf — a debug outline where the payoff should be.
+    expect(ring()!.getAttribute("style")).toContain("rgb(10, 125, 85)");
+    expect(ring()!.getAttribute("style")).not.toContain("rgb(20, 21, 26)");
+  });
+
+  it("a HOST slot still lends the ring its own ink — a pin lands in the host's page", async () => {
+    stage();
+    (document.querySelector("[data-vendo-slot]") as HTMLElement).style.color = "rgb(180, 40, 40)";
+    playPinCeremony({ appId: "app_1", slot: "hero" });
+
+    await flushFrames();
+    flight()!.animation.onfinish!();
+    expect(ring()!.getAttribute("style")).toContain("rgb(180, 40, 40)");
+  });
+
   it("dismisses and strands nothing when the destination is not mounted", async () => {
     const { panel } = stage();
     document.querySelector("[data-vendo-slot]")!.remove();
