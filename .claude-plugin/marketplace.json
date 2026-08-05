@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json.schemastore.org/claude-marketplace.json",
+  "name": "vendo",
+  "description": "The Vendo plugin: Claude Code acts through a Vendo-equipped product's own API, as the signed-in user.",
+  "owner": { "name": "Vendo", "url": "https://vendo.run" },
+  "plugins": [
+    {
+      "name": "vendo",
+      "source": "./examples/claude-code-plugin",
+      "description": "Connect Claude Code to a product running Vendo: guarded host tools, and `vendo_make` for putting a screen in front of the user."
+    }
+  ]
+}

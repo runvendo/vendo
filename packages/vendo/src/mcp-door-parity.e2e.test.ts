@@ -36,10 +36,12 @@
  * `mcp-door-outside-agent.e2e.test.ts`.
  */
 import type { ExtractedTool } from "@vendoai/actions";
-import { afterEach, describe, expect, it } from "vitest";
+import { VENDO_MAKE_TOOL, VENDO_TOOL_TITLES, makeReceiptSchema } from "@vendoai/core";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   MOUNT,
   READ_TOOL,
+  SCREEN_TITLE,
   SUBJECT,
   WRITE_TOOL,
   type DoorSession,
@@ -50,12 +52,16 @@ import {
   runCleanups,
   runHarnessTurn,
   runUnattendedTurn,
+  screenModel,
   shapeOf,
   tapWhenItAppears,
   toolRows,
 } from "./mcp-door.test-util.js";
 
-afterEach(runCleanups);
+afterEach(async () => {
+  vi.unstubAllEnvs();
+  await runCleanups();
+});
 
 describe("parity gate — the MCP door vs the in-process projection", () => {
   it("a READ the policy runs: the two paths produce the IDENTICAL audit row and the IDENTICAL mirror", async () => {
@@ -300,6 +306,152 @@ describe("parity gate — the MCP door vs the in-process projection", () => {
     // is where §12 withholds, and the curated loadout decides the rest.
     expect(listed).toContain(READ_TOOL);
   }, 30_000);
+
+  /**
+   * §9.1 + §3.1 — `vendo_make` through the door, on ZERO door code.
+   *
+   * The door's whole claim for the front door is that there is nothing to build:
+   * `turnTools` projects `turn.tools.list()` verbatim, fresh per `tools/list`, so
+   * the tool appears the moment it exists in the turn. That claim is only worth
+   * anything if it is measured on the tool the product now leads with — the
+   * schema, the title and the risk annotation the wire actually carries, not the
+   * descriptor the registry holds.
+   *
+   * The annotation is the part a projection is most likely to lose: `risk: "read"`
+   * becomes `readOnlyHint: true`, which is what a foreign client reads to decide
+   * whether to ask its own user first. A door that dropped it would silently turn
+   * "make me a screen" into a confirm-first tool in every outside agent.
+   */
+  it("§9.1 — `vendo_make` reaches the wire listing with its schema, title and read annotation intact", async () => {
+    let listed: Awaited<ReturnType<DoorSession["listTools"]>> = [];
+    const host = await composedHostOverDoor(async (door) => {
+      listed = await door.listTools();
+    });
+    await runHarnessTurn(host.vendo, "thr_make_list", "what can you do");
+
+    const make = listed.find((tool) => tool.name === VENDO_MAKE_TOOL);
+    expect(make, "the front door must cross the MCP wire").toBeDefined();
+    // The three-param surface, verbatim — `additionalProperties: false` included,
+    // which is what makes it a promise rather than a suggestion.
+    expect(make!.inputSchema).toMatchObject({
+      type: "object",
+      properties: {
+        request: { type: "string", minLength: 1 },
+        app: { type: "string", minLength: 1 },
+        context: { type: "string", minLength: 1 },
+      },
+      required: ["request"],
+      additionalProperties: false,
+    });
+    expect(make).toMatchObject({
+      title: VENDO_TOOL_TITLES[VENDO_MAKE_TOOL],
+      annotations: { title: VENDO_TOOL_TITLES[VENDO_MAKE_TOOL], readOnlyHint: true, destructiveHint: false },
+    });
+    // The rename is only real if the old two names are unreachable HERE too — a
+    // door still offering them is a second front door for every outside agent.
+    const names = listed.map((tool) => tool.name);
+    expect(names).not.toContain("vendo_apps_create");
+    expect(names).not.toContain("vendo_apps_edit");
+  }, 30_000);
+
+  it("§3.1 — a `vendo_make` call through the door answers a RECEIPT, leaves the identical audit row, and carries the turn id", async () => {
+    // LEG A — in process. A real model, so this is the receipt path rather than
+    // the no-model failure path, and a leak would have something to leak.
+    let inResult: unknown;
+    const inHost = await composedHost(async (call) => {
+      inResult = await call(VENDO_MAKE_TOOL, { request: "my spending this month" });
+    }, screenModel());
+    const fromTurn = await rowsAddedBy(inHost.store, VENDO_MAKE_TOOL, async () => {
+      await runHarnessTurn(inHost.vendo, "thr_make", "show me my spending");
+    });
+    expect(inHost.observed).toEqual([`${VENDO_MAKE_TOOL}:ok`]);
+    const inReceipt = makeReceiptSchema.parse((inResult as { output: unknown }).output);
+    expect(inReceipt.title).toBe(SCREEN_TITLE);
+
+    // LEG B — the same ask, through the door, on a minted turn credential.
+    let doorSaid = "";
+    const doorHost = await composedHostOverDoor(async (door) => {
+      const answered = await door.callTool(VENDO_MAKE_TOOL, { request: "my spending this month" });
+      expect(answered.isError, answered.text).toBeFalsy();
+      doorSaid = answered.text;
+    }, undefined, screenModel());
+    const fromDoor = await rowsAddedBy(doorHost.store, VENDO_MAKE_TOOL, async () => {
+      await runHarnessTurn(doorHost.vendo, "thr_make", "show me my spending");
+    });
+
+    // The RECEIPT crossed the wire, and only the receipt. The door serializes a
+    // tool's output as text, so the four fields are read back out of it — and the
+    // app DOCUMENT's fields are the ones asserted absent, because a projection
+    // that handed the model a tree is the §3.1 law being broken.
+    const doorReceipt = makeReceiptSchema.parse(JSON.parse(doorSaid));
+    expect(Object.keys(doorReceipt).sort()).toEqual(["id", "say", "status", "title"]);
+    expect(doorReceipt.title).toBe(inReceipt.title);
+    expect(doorReceipt.status).toBe(inReceipt.status);
+    expect(doorReceipt.say).toBe(inReceipt.say);
+    for (const leaked of ["\"tree\"", "\"components\"", "\"componentTools\"", "\"machine\"", "\"snapshotRef\""]) {
+      expect(doorSaid, `${leaked} reached the outside agent`).not.toContain(leaked);
+    }
+
+    // The LEDGER read the two legs identically — same five contract fields.
+    const expected = {
+      outcome: "ok",
+      decidedBy: "rule",
+      presence: "present",
+      venue: "chat",
+      subject: SUBJECT,
+    };
+    expect(shapeOf(fromTurn[0])).toEqual(expected);
+    expect(shapeOf(fromDoor[0])).toEqual(expected);
+
+    // §3.5 — and the row joins to the turn it came out of, through the door as in
+    // process. Without this a `vendo_make` billed to a tenant cannot be traced to
+    // the exchange that asked for it.
+    expect(doorHost.turnIds[0]).toMatch(/^trn_[0-9a-f]{32}$/);
+    expect(fromDoor[0]!.turnId).toBe(doorHost.turnIds[0]);
+    expect(fromTurn[0]!.turnId).toBe(inHost.turnIds[0]);
+  }, 40_000);
+
+  /**
+   * §9.1 — `mode: "local"` IS the self-hosted path, and it is byte-identical.
+   *
+   * `selectMcpBroker`'s hostname rules are pinned exhaustively and purely in
+   * `mcp-broker-select.test.ts`. What that cannot say is whether the door a
+   * self-hoster actually gets differs from the one they got before the broker
+   * existed — the failure this guards is a key silently changing the front door's
+   * shape for a deployment the broker cannot even reach.
+   *
+   * So the same composition is booted twice — once with no key at all, once with
+   * a key AND a private base URL — and the `vendo_make` entry the wire carries is
+   * compared as SERIALIZED BYTES. Same door, same listing, key or no key.
+   */
+  it("§9.1 — no key and key-plus-private-host both keep the LOCAL door, and its `vendo_make` listing byte-for-byte", async () => {
+    const localArm = async (): Promise<{ selection: unknown; make: string }> => {
+      let listed: Awaited<ReturnType<DoorSession["listTools"]>> = [];
+      const host = await composedHostOverDoor(async (door) => {
+        listed = await door.listTools();
+      });
+      await runHarnessTurn(host.vendo, "thr_local_arm", "what can you do");
+      const doctor = await host.vendo.handler(new Request("https://host.test/api/vendo/doctor/mcp"));
+      return {
+        selection: ((await doctor.json()) as { selection: unknown }).selection,
+        make: JSON.stringify(listed.find((tool) => tool.name === VENDO_MAKE_TOOL)),
+      };
+    };
+
+    const noKey = await localArm();
+    expect(noKey.selection).toBe("local");
+
+    // A Cloud key present, but the deployment is a private host the broker cannot
+    // forward a visitor to — the frozen localhost rule. The broker default is
+    // SKIPPED, silently, and today's door stands.
+    vi.stubEnv("VENDO_API_KEY", "vnd_parity_local_arm");
+    vi.stubEnv("VENDO_BASE_URL", "https://app.internal.local");
+    const privateHost = await localArm();
+    expect(privateHost.selection).toBe("local");
+
+    expect(noKey.make).toContain(VENDO_MAKE_TOOL);
+    expect(privateHost.make).toBe(noKey.make);
+  }, 40_000);
 
   it("a credential is dead the moment its turn ends — a door call between turns is a 401", async () => {
     let stolen: string | undefined;

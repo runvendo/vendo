@@ -13,7 +13,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtractedTool } from "@vendoai/actions";
-import type { AuditEvent, Principal, ToolDescriptor, ToolRegistry } from "@vendoai/core";
+import type { AuditEvent, Principal, ToolDescriptor, ToolRegistry, ToolResult } from "@vendoai/core";
 import { defineHarness, harnessAdapters } from "@vendoai/harnesses";
 import { createStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
@@ -82,6 +82,7 @@ export interface Row {
   decidedBy?: string;
   venue?: string;
   presence?: string;
+  turnId?: string;
   principal?: { subject?: string };
 }
 
@@ -131,30 +132,82 @@ export interface ComposedHost {
   vendo: Vendo;
   store: VendoStore;
   observed: string[];
+  /** The `turn.turnId` of every turn the probe harness ran, in order — the join
+   *  key contract §3.5 puts on audit rows, read from the harness that owned it. */
+  turnIds: string[];
 }
+
+/**
+ * A model that answers every generation prompt with one valid screen, so a
+ * `vendo_make` call reaches a REAL receipt instead of the no-model failure path.
+ *
+ * Local rather than `@vendoai/apps`' `scriptedLanguageModel` because `testing/`
+ * is not on that package's exports map; same shape as the other fixture doubles
+ * in this package (`inclient.fixture.test.ts`, `pins.fixture.test.ts`).
+ */
+export const SCREEN_TITLE = "Spending this month";
+const SCREEN = `<App name="${SCREEN_TITLE}"><Text text="Ready"/><Disclaimer reason="Fixture app."/></App>`;
+
+export const screenModel = (): LanguageModel => {
+  const answer = {
+    content: [{ type: "text" as const, text: SCREEN }],
+    finishReason: "stop" as const,
+    usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+  };
+  return {
+    specificationVersion: "v2",
+    provider: "vendo-parity-screen",
+    modelId: "vendo-parity-screen-v1",
+    supportedUrls: {},
+    async doGenerate() {
+      return answer;
+    },
+    async doStream() {
+      return {
+        stream: new ReadableStream({
+          start(controller) {
+            controller.enqueue({ type: "stream-start", warnings: [] });
+            controller.enqueue({ type: "text-start", id: "text_1" });
+            controller.enqueue({ type: "text-delta", id: "text_1", delta: SCREEN });
+            controller.enqueue({ type: "text-end", id: "text_1" });
+            controller.enqueue({
+              type: "finish",
+              finishReason: "stop",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            });
+            controller.close();
+          },
+        }),
+      };
+    },
+  } as unknown as LanguageModel;
+};
 
 /**
  * ONE composed host serving BOTH doors: a `claudeCode()`-shaped harness turn on
  * the chat wire, and the MCP door at its canonical mount.
  */
 export async function composedHost(
-  script: (call: (tool: string, args: unknown) => Promise<string>) => Promise<void>,
+  script: (call: (tool: string, args: unknown) => Promise<ToolResult>) => Promise<void>,
+  model?: LanguageModel,
 ): Promise<ComposedHost> {
   const store = await tempStore();
   const observed: string[] = [];
+  const turnIds: string[] = [];
   const harness = defineHarness({
     name: "parity-probe",
     async *run(turn) {
+      turnIds.push(turn.turnId);
       await script(async (tool, args) => {
         const result = await turn.tools.call(tool, args as never);
         observed.push(`${tool}:${result.status}`);
-        return result.status;
+        return result;
       });
       yield { type: "text", delta: "done" };
     },
   });
   const vendo = createVendo({
-    model: {} as LanguageModel,
+    model: model ?? ({} as LanguageModel),
     principal: async () => principal,
     store,
     policy: "cautious",
@@ -171,7 +224,7 @@ export async function composedHost(
   } as Parameters<typeof createVendo>[0]);
   vendo.actions.add(hostTools());
   await store.ensureSchema();
-  return { vendo, store, observed };
+  return { vendo, store, observed, turnIds };
 }
 
 /**
@@ -189,13 +242,16 @@ export async function composedHostOverDoor(
    *  the two registry tools — the only way to drive the extraction → registry →
    *  door plumbing from here. Left out, the host is exactly what it always was. */
   extracted?: ExtractedTool[],
+  model?: LanguageModel,
 ): Promise<ComposedHost> {
   const store = await tempStore();
   const observed: string[] = [];
+  const turnIds: string[] = [];
   let composed: Vendo;
   const harness = defineHarness({
     name: "door-probe",
     async *run(turn) {
+      turnIds.push(turn.turnId);
       const port = harnessAdapters(harness).toolDoor;
       if (port === undefined) throw new Error("composition did not provide a tool door");
       const mint = (): string | undefined => port.mint(turn.threadId as string);
@@ -208,7 +264,7 @@ export async function composedHostOverDoor(
     },
   });
   composed = createVendo({
-    model: {} as LanguageModel,
+    model: model ?? ({} as LanguageModel),
     principal: async () => principal,
     store,
     policy: "cautious",
@@ -226,7 +282,7 @@ export async function composedHostOverDoor(
   } as Parameters<typeof createVendo>[0]);
   composed.actions.add(hostTools());
   await store.ensureSchema();
-  return { vendo: composed, store, observed };
+  return { vendo: composed, store, observed, turnIds };
 }
 
 /** The chat wire's own turn — the in-process path. Returns the raw UI-message
