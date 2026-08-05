@@ -297,6 +297,9 @@ export type ScriptedModel = LanguageModel & {
   /** What each call actually SENT — the only place a suite can prove what the
    *  loop's history assembly did or did not include. */
   prompts: unknown[];
+  /** The system message of each call, so a suite can assert on the BRIEF a loop
+   *  assembled without reaching into the loop to get it. */
+  systemPrompts: string[];
   calls: number;
 };
 
@@ -306,10 +309,13 @@ export function scriptedModel(turns: StreamPart[][]): ScriptedModel {
   const remaining = turns.map((turn) => [...turn]);
   const toolNamesPerCall: string[][] = [];
   const prompts: unknown[] = [];
+  const systemPrompts: string[] = [];
   const model = new MockLanguageModelV3({
     doStream: async (request) => {
       toolNamesPerCall.push((request.tools ?? []).map((tool) => tool.name));
       prompts.push(structuredClone(request.prompt));
+      const system = request.prompt.find((message) => message.role === "system");
+      systemPrompts.push(typeof system?.content === "string" ? system.content : "");
       (model as ScriptedModel).calls += 1;
       const chunks = remaining.shift();
       if (chunks === undefined) throw new Error("scripted model exhausted");
@@ -318,6 +324,7 @@ export function scriptedModel(turns: StreamPart[][]): ScriptedModel {
   }) as unknown as ScriptedModel;
   model.toolNamesPerCall = toolNamesPerCall;
   model.prompts = prompts;
+  model.systemPrompts = systemPrompts;
   model.calls = 0;
   return model;
 }
