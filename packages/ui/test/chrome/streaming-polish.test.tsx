@@ -55,7 +55,7 @@ describe("streaming polish: caret + liveness (ENG-217)", () => {
     // The turn is live and has produced nothing: liveness shows.
     await waitFor(() => expect(view.container.querySelector(".fl-typing, .fl-thinking")).toBeTruthy());
     // …and NOTHING that reads as a view being built. A prose-only turn never
-    // calls vendo_apps_create, so a document-shaped skeleton card here is a
+    // calls vendo_make, so a document-shaped skeleton card here is a
     // promise the turn may never keep (live demo, 2026-07-28).
     expect(view.container.querySelector(".fl-skeleton")).toBeNull();
     expect(view.container.querySelector(".fl-generating")).toBeNull();

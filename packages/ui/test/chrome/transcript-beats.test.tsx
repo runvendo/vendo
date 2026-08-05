@@ -197,11 +197,14 @@ describe("the transcript's beats", () => {
     await mount([
       {
         type: "dynamic-tool",
-        toolName: "vendo_apps_create",
+        toolName: "vendo_make",
         toolCallId: "call_build",
         state: "output-available",
-        input: { appId: "app_renewals" },
-        output: { kind: "tree", appId: "app_renewals", payload },
+        input: { request: "which renewals are coming up" },
+        // The settled call answers with a RECEIPT — words only, no tree. The
+        // screen it is about arrives on the view channel beside it, which is
+        // what makes this call the card's own step.
+        output: { id: "app_renewals", title: "Renewals radar", status: "ready", say: "Renewals radar is on your screen." },
       },
       { type: "data-vendo-view", data: { appId: "app_renewals", payload } },
     ] as unknown as Thread["messages"][number]["parts"]);
@@ -210,8 +213,8 @@ describe("the transcript's beats", () => {
     expect(document.querySelector(".fl-beatsummary")?.textContent).toBe("Did 1 thing");
     // Reopening the row still shows no beat for the build — not even folded away.
     fireEvent.click(screen.getByRole("button", { expanded: false }));
-    expect(document.querySelector("[data-vendo-tool='vendo_apps_create']")).toBeNull();
-    expect(screen.queryByText(/Build an app/)).toBeNull();
+    expect(document.querySelector("[data-vendo-tool='vendo_make']")).toBeNull();
+    expect(screen.queryByText(/Make you a screen/)).toBeNull();
   });
 
   // A refused ask settles with a ✕ too, and it never poses as pending work —
@@ -441,7 +444,7 @@ describe("the V4 display hint", () => {
 /** Spec §8 (build calm + D1) and §15 over the BUILD WINDOW, not just the
  *  settled state — the two states the wave E2E caught wrong:
  *
- *  · MID-BUILD the step narrated TWICE (a "Build an app…" beat AND the card's
+ *  · MID-BUILD the step narrated TWICE (a "Make you a screen…" beat AND the card's
  *    own "Building your view…" bar), because the beat suppression only fired
  *    once the finished view part existed while the card goes up at build START.
  *  · A FAILED build left the card sweeping its hairline over a skeleton on a
@@ -466,7 +469,7 @@ describe("a build in flight, and a build that dies", () => {
     },
   });
 
-  /** The turn as it stands mid-build: one settled host read, the create call
+  /** The turn as it stands mid-build: one settled host read, the make call
       still working, and the skeleton the card is showing for it. */
   const midBuild = (display?: "stage"): UIMessage => ({
     id: "msg_build",
@@ -475,16 +478,16 @@ describe("a build in flight, and a build that dies", () => {
       doneTool("call_read", { transactions: new Array(6).fill({}) }),
       {
         type: "dynamic-tool",
-        toolName: "vendo_apps_create",
+        toolName: "vendo_make",
         toolCallId: "call_build",
         state: "input-available",
-        input: { prompt: "where did my money go" },
+        input: { request: "where did my money go" },
       },
       forming(display),
     ] as unknown as UIMessage["parts"],
   });
 
-  /** The same turn after the build failed: the create call errored, the last
+  /** The same turn after the build failed: the make call errored, the last
       view part ever emitted is still the streaming skeleton, and the runtime's
       build-failed part plus the agent's own prose close the turn. */
   const deadBuild = (display?: "stage"): UIMessage => ({
@@ -494,10 +497,10 @@ describe("a build in flight, and a build that dies", () => {
       doneTool("call_read", { transactions: new Array(6).fill({}) }),
       {
         type: "dynamic-tool",
-        toolName: "vendo_apps_create",
+        toolName: "vendo_make",
         toolCallId: "call_build",
         state: "output-error",
-        input: { prompt: "where did my money go" },
+        input: { request: "where did my money go" },
         errorText: "app build failed: generation failed",
       },
       forming(display),
@@ -550,8 +553,8 @@ describe("a build in flight, and a build that dies", () => {
     expect(bar?.getAttribute("data-state")).toBe("building");
     expect(bar?.querySelector(".fl-boot-building")?.textContent).toContain("Building your view");
     // The build's beat must not exist DURING the build (the double-narration bug).
-    expect(document.querySelector("[data-vendo-tool='vendo_apps_create']")).toBeNull();
-    expect(screen.queryByText(/Build an app/)).toBeNull();
+    expect(document.querySelector("[data-vendo-tool='vendo_make']")).toBeNull();
+    expect(screen.queryByText(/Make you a screen/)).toBeNull();
     // Exactly one beat in the turn, and it belongs to the host read.
     const beats = document.querySelectorAll(".fl-beat");
     expect(beats).toHaveLength(1);
@@ -567,11 +570,11 @@ describe("a build in flight, and a build that dies", () => {
     expect(document.querySelector(".fl-boot-hairline")).toBeNull();
     expect(document.querySelector("[data-vendo-app-embed]")).toBeNull();
     expect(screen.queryByText(/Building your view/)).toBeNull();
-    // ⚠️ TEST EDIT (M20): this asserted the failed CREATE's own ✕ beat, which
+    // ⚠️ TEST EDIT (M20): this asserted the failed BUILD's own ✕ beat, which
     // sat directly above the build-failed block's ✕ — one failure, two identical
     // ✕ lines in the same vocabulary. §15 wants the ✕ in the record, and the
     // block IS that record (it also says what the failure means for the reader).
-    expect(document.querySelector("[data-vendo-tool='vendo_apps_create']")).toBeNull();
+    expect(document.querySelector("[data-vendo-tool='vendo_make']")).toBeNull();
     const failures = [...document.querySelectorAll(".fl-beat-error")];
     expect(failures).toHaveLength(1);
     expect(failures[0]?.closest("[data-vendo-build-failed]")).toBeTruthy();

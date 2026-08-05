@@ -72,7 +72,7 @@ const DETAIL_CAP = 120;
  * CR-2 — a VALUE has to be consumer-safe too.
  *
  * THE DEFECT: `fieldRows` humanizes the LABELS and passes the values through
- * verbatim, so the real audit shape of `vendo_apps_edit` rendered on a person's
+ * verbatim, so the real audit shape of an app change rendered on a person's
  * own activity rail as "App id app_9a3f2b1c · Instruction add a chart". An id is
  * exactly what the humanization of this row exists to keep out; humanizing only
  * half of each pair let it back in through the other half.

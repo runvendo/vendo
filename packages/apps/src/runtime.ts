@@ -1707,7 +1707,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       code: "edit-rejected",
       retryable,
       message: retryable
-        ? "Edit was not applied. Retry vendo_apps_edit on the same app with a narrower instruction; do not rebuild the app."
+        ? "Edit was not applied. Retry vendo_make with the same `app` and a narrower request; do not rebuild the app."
         : "Edit was not applied and cannot be retried until the reported blocker is resolved.",
     },
   });

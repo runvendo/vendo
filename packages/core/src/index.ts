@@ -21,6 +21,7 @@ export * from "./island-derived-values.js";
 export * from "./jail-modules.js";
 export * from "./jcs.js";
 export * from "./knowledge.js";
+export * from "./make-receipt.js";
 export * from "./knowledge-wire.js";
 export * from "./meter-exhausted.js";
 export * from "./model-seats.js";

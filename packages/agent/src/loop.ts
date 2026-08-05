@@ -14,7 +14,7 @@
  * merges `result.toUIMessageStream()`; the harness reads `result.fullStream` and
  * yields events. Everything before that fork is identical.
  */
-import { ASK_USER_TOOL, VENDO_APPS_CREATE_TOOL, VENDO_APP_BUILD_FAILED_PREFIX, type VendoStepLimitPart } from "@vendoai/core";
+import { ASK_USER_TOOL, VENDO_MAKE_TOOL, VENDO_APP_BUILD_FAILED_PREFIX, type VendoStepLimitPart } from "@vendoai/core";
 import {
   convertToModelMessages,
   isToolUIPart,
@@ -46,7 +46,7 @@ const CACHE_BREAKPOINT = { anthropic: { cacheControl: { type: "ephemeral" } } } 
 const buildFailedStop: StopCondition<ToolSet> = ({ steps }) => {
   const last = steps.at(-1);
   return last !== undefined && last.toolResults.some((result) => {
-    if (result.toolName !== VENDO_APPS_CREATE_TOOL) return false;
+    if (result.toolName !== VENDO_MAKE_TOOL) return false;
     // Scoped to the runtime's build-failed class (the canned prefix): a cheap
     // create error (input validation, feature-flag refusal) costs seconds,
     // stays model-visible, and the loop may recover from it.

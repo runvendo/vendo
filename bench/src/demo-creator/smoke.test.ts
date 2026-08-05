@@ -177,8 +177,8 @@ describe("readHostToolTraffic — did the demo's own API answer its own agent?",
   // a turn that only built a view has NOT shown the demo's API answering.
   it("ignores tools that are not the demo's own", () => {
     const stream = sse(
-      { type: "tool-input-start", toolCallId: "c1", toolName: "vendo_apps_create" },
-      { type: "tool-output-available", toolCallId: "c1", output: { status: "ok", output: { appId: "app_1" } } },
+      { type: "tool-input-start", toolCallId: "c1", toolName: "vendo_make" },
+      { type: "tool-output-available", toolCallId: "c1", output: { status: "ok", output: { id: "app_1", title: "Spending", status: "ready", say: "It's on your screen." } } },
     );
     expect(readHostToolTraffic(stream, hostTools)).toEqual({ answered: false });
   });

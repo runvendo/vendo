@@ -1,9 +1,10 @@
 import {
-  VENDO_APPS_CREATE_TOOL,
   VENDO_APPROVAL_REF_KIND,
   VENDO_APP_REF_KIND,
+  VENDO_MAKE_TOOL,
   VENDO_VIEW_STREAM,
   canonicalJson,
+  makeReceiptSchema,
   type AgentRunner,
   type Json,
   type RunContext,
@@ -102,16 +103,10 @@ function titleFromPrompt(prompt: unknown): string {
   return collapsed.length > TITLE_CAP ? `${collapsed.slice(0, TITLE_CAP - 1)}…` : collapsed;
 }
 
-function appRefFromDocument(output: unknown, fallbackTitle: string): VendoAppRef | null {
-  const document = typeof output === "object" && output !== null
-    ? output as { id?: unknown; name?: unknown }
-    : undefined;
-  if (typeof document?.id !== "string" || !document.id.startsWith("app_")) return null;
-  return {
-    kind: VENDO_APP_REF_KIND,
-    appId: document.id,
-    title: typeof document.name === "string" && document.name.length > 0 ? document.name : fallbackTitle,
-  };
+function appRefFromReceipt(output: unknown, fallbackTitle: string): VendoAppRef | null {
+  const receipt = makeReceiptSchema.safeParse(output);
+  if (!receipt.success) return null;
+  return { kind: VENDO_APP_REF_KIND, appId: receipt.data.id, title: receipt.data.title || fallbackTitle };
 }
 
 async function guardedExecute(
@@ -164,20 +159,20 @@ function wrapHostTool(registry: ToolRegistry, descriptor: ToolDescriptor): Vendo
 function createAppTool(registry: ToolRegistry, descriptor: ToolDescriptor): VendoPackTool {
   return {
     name: VENDO_CREATE_APP_TOOL,
-    description: "Create a Vendo app (generated UI) from a natural-language prompt. Returns fast with a vendo/app-ref@1 envelope meaning the build was ACCEPTED and is still streaming — the app is NOT built yet. Do not tell the user the app is created/ready/done; the embed shows live build progress and the final result (including any build failure) itself, so never wait for or report on build completion.",
+    description: "Make the user a Vendo screen (generated UI) from a plain-language request. Returns fast with a vendo/app-ref@1 envelope meaning the work was ACCEPTED and is still streaming — it is NOT finished yet. Do not tell the user it is created/ready/done; the embed shows live progress and the final result (including any failure) itself, so never wait for or report on completion.",
     inputSchema: {
       $schema: DRAFT_2020_12,
       type: "object",
-      properties: { prompt: { type: "string", minLength: 1 } },
-      required: ["prompt"],
+      properties: { request: { type: "string", minLength: 1 } },
+      required: ["request"],
       additionalProperties: false,
     },
     async execute(input, options) {
-      const args = input as { prompt?: unknown };
-      const fallbackTitle = titleFromPrompt(args?.prompt);
+      const args = input as { request?: unknown };
+      const fallbackTitle = titleFromPrompt(args?.request);
       const call: VendoViewStreamingToolCall = {
         id: options.callId ?? mintCallId(),
-        tool: VENDO_APPS_CREATE_TOOL,
+        tool: VENDO_MAKE_TOOL,
         args: input,
       };
       let resolveFast!: (ref: VendoAppRef) => void;
@@ -192,7 +187,7 @@ function createAppTool(registry: ToolRegistry, descriptor: ToolDescriptor): Vend
       });
       const settled = guardedExecute(registry, call, options.ctx).then((outcome) => {
         if (outcome.status === "ok") {
-          return appRefFromDocument(outcome.output, fallbackTitle) ?? outcome.output;
+          return appRefFromReceipt(outcome.output, fallbackTitle) ?? outcome.output;
         }
         return mapOutcome(outcome, descriptor, input);
       });
@@ -235,8 +230,8 @@ function delegateTool(registry: ToolRegistry, runner: AgentRunner): VendoPackToo
         descriptors: (ctx) => registry.descriptors(ctx),
         async execute(call, runCtx) {
           const outcome = await registry.execute(call, runCtx);
-          if (call.tool === VENDO_APPS_CREATE_TOOL && outcome.status === "ok") {
-            const ref = appRefFromDocument(outcome.output, titleFromPrompt((call.args as { prompt?: unknown })?.prompt));
+          if (call.tool === VENDO_MAKE_TOOL && outcome.status === "ok") {
+            const ref = appRefFromReceipt(outcome.output, titleFromPrompt((call.args as { request?: unknown })?.request));
             if (ref !== null) refs.push(ref);
           } else if (outcome.status === "pending-approval") {
             const descriptor = (await descriptorsByName.catch(() => undefined))?.get(call.tool)
@@ -283,9 +278,9 @@ export async function buildVendoToolPack(options: VendoToolPackCoreOptions): Pro
   }
   // Built-ins land last: a host tool whose namespaced name collides with one
   // can never shadow the pack's own doors.
-  const appsCreate = descriptors.find((descriptor) => descriptor.name === VENDO_APPS_CREATE_TOOL);
-  if (appsCreate !== undefined) {
-    byName.set(VENDO_CREATE_APP_TOOL, createAppTool(options.registry, appsCreate));
+  const makeTool = descriptors.find((descriptor) => descriptor.name === VENDO_MAKE_TOOL);
+  if (makeTool !== undefined) {
+    byName.set(VENDO_CREATE_APP_TOOL, createAppTool(options.registry, makeTool));
   }
   byName.set(VENDO_DELEGATE_TOOL, delegateTool(options.registry, options.runner));
   const included = applyFilter([...byName.keys()], options);
