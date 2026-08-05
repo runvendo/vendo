@@ -232,13 +232,17 @@ export function useVendoThread(threadId?: string) {
           return client.threads.get(threadId).then(thread => {
             if (!active) return;
             chat.setMessages(thread.messages);
-            // Stream resume (blueprint §4.1 item 5). The transcript has no row
-            // for a turn that is still streaming, so a reload mid-turn would
-            // otherwise paint the user's question and nothing else, forever.
-            // AFTER setMessages, never before: the SDK builds the resumed
-            // message on top of whatever the last message is, so the transcript
-            // has to have landed first. Nothing in flight → 204 → no-op.
-            chat.resumeStream();
+            // Stream resume (blueprint §4.1 item 5). A turn still streaming has
+            // no persisted assistant row yet, so its transcript ends on the
+            // user's message — and a reload mid-turn would otherwise paint that
+            // question and nothing else, forever. Resume ONLY then: a transcript
+            // that already ends in an assistant reply is a completed turn, and
+            // asking the SDK to resume onto it makes it treat that finished
+            // message as the in-flight one and repaint it empty. AFTER
+            // setMessages, never before: the SDK resumes onto the last message,
+            // so the transcript has to have landed first. Nothing in flight on
+            // the server → 204 → no-op.
+            if (thread.messages.at(-1)?.role === "user") chat.resumeStream();
           });
         })
         .catch(() => undefined);

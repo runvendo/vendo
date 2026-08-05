@@ -38,8 +38,17 @@ describe("a wire without the resume route", () => {
   }
 
   it("opens the thread ready, with its transcript, instead of erroring on a resume it cannot do", async () => {
+    // A transcript that ends on the user's turn — the mid-turn-reload shape,
+    // the one case the hook actually probes the server to resume. The fixture
+    // wire has no resume route, so the probe is refused.
+    const existing = wire.state.threads.get("thr_1")!;
+    wire.state.threads.set("thr_1", {
+      ...existing,
+      messages: [...existing.messages, { id: "msg_asking", role: "user", parts: [{ type: "text", text: "Mid-turn question" }] }],
+    });
+
     const { result } = renderHook(() => useVendoThread("thr_1"), { wrapper });
-    await waitFor(() => expect(result.current.messages[0]?.id).toBe("msg_existing"));
+    await waitFor(() => expect(result.current.messages.at(-1)?.id).toBe("msg_asking"));
 
     // The ask really happened — otherwise this test proves nothing about how a
     // refused ask is handled.
@@ -52,5 +61,6 @@ describe("a wire without the resume route", () => {
     await waitFor(() => expect(result.current.status).toBe("ready"));
     expect(result.current.error).toBeUndefined();
     expect(result.current.messages[0]?.id).toBe("msg_existing");
+    expect(result.current.messages.at(-1)?.id).toBe("msg_asking");
   });
 });
