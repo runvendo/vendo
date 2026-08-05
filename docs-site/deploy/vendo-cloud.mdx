@@ -144,8 +144,9 @@ they react to events your process emits.
 
 ## Pricing
 
-A plan's price is the amount of usage it includes, and your bill for a period is
-whichever is larger — the plan price or your usage.
+A plan's price is the amount of usage it includes. On a paid plan, your bill for
+a period is whichever is larger — the plan price or your usage. Free never
+bills: it stops when the $5 it includes is spent.
 
 | Plan | Price | Includes |
 | --- | --- | --- |
@@ -154,14 +155,15 @@ whichever is larger — the plan price or your usage.
 | Teams | $499 / month | $499 of usage / month |
 | Enterprise | Custom | Committed usage |
 
-Usage is metered org-wide across every project, at four published rates that are
-identical on every plan, including Free.
+Usage is metered org-wide across every project, at four published rates — AI,
+sandbox, storage, and automation runs — that are identical on every plan,
+including Free. The AI rate prints in three model tiers.
 
 | Rate | Price |
 | --- | --- |
-| `vendo-fast` | $1.15 / M input tokens · $5.75 / M output tokens |
-| `vendo` | $2.30 / M input tokens · $11.50 / M output tokens |
-| `vendo-strong` | $5.75 / M input tokens · $28.75 / M output tokens |
+| AI tier `vendo-fast` | $1.15 / M input tokens · $5.75 / M output tokens |
+| AI tier `vendo` | $2.30 / M input tokens · $11.50 / M output tokens |
+| AI tier `vendo-strong` | $5.75 / M input tokens · $28.75 / M output tokens |
 | Sandbox | $0.01 per minute of wall-clock run time |
 | Storage | $0.25 per GB-month |
 | Automation runs | $3 per 1,000 runs |
