@@ -22,6 +22,12 @@
  * names exactly the paths that reached the store. Hooking the write instead would
  * emit views for content that never landed, and would miss the sandbox sync-back
  * path, which commits without ever calling `writeFile` on this façade.
+ *
+ * That last clause is why the app's own SOURCE is persisted from here too
+ * (contract §2.2/§3.2, the `commitSource` seam): a builder working inside a box
+ * reaches the store through this same `commit()`, so this is the one place that
+ * sees its files at all. Before it, an app's code lived only in the sandbox
+ * snapshot behind `machine.snapshotRef` — lose the snapshot, lose the app.
  */
 import {
   compilePlan,
@@ -48,12 +54,23 @@ import { assembleTree, stripServerAuthoritativeFields } from "@vendoai/apps/inte
 /** §1.6 — the two files that sync mid-turn. Everything else waits for turn end. */
 export const HOT_PATH_FILES = ["app.vendo", "plan.vendo"] as const;
 
-/** §3.1, frozen: `/user/apps/<appId>/app.vendo` and — since wave 3 (§9.7) —
- *  `/orgs/<orgId>/apps/<appId>/app.vendo`. `appId` is the store's app id
- *  verbatim in BOTH, which is exactly why one regex can read either: a path's
- *  meaning never depends on who wrote it, so a promoted app's hot paths must
- *  keep painting the skeleton mid-turn like a personal one's. */
-const HOT_PATH = /^\/(?:user|orgs\/[^/]+)\/apps\/(app_[^/]+)\/(app\.vendo|plan\.vendo)$/;
+/** §3.1, frozen: `/user/apps/<appId>/**` and — since wave 3 (§9.7) —
+ *  `/orgs/<orgId>/apps/<appId>/**`. `appId` is the store's app id verbatim in
+ *  BOTH, which is exactly why one regex can read either: a path's meaning never
+ *  depends on who wrote it, so a promoted app's hot paths must keep painting the
+ *  skeleton mid-turn like a personal one's.
+ *
+ *  ONE regex for the whole layout, with the file left as a tail: the hot paths and
+ *  the source tree are the same two addresses with different names hanging off
+ *  them, and two regexes would be two answers to "which app is this?". */
+const APP_PATH = /^\/(?:user|orgs\/[^/]+)\/apps\/(app_[^/]+)\/(.+)$/;
+
+/** The appId a write ANYWHERE inside an app's directory belongs to, hot path or
+ *  not — what source persistence asks of a commit's changed list. */
+const appPathAppId = (path: string): AppId | undefined => {
+  const match = APP_PATH.exec(path);
+  return match === null ? undefined : (match[1] as AppId);
+};
 
 /**
  * §3.5's hot paths as WATCH SHAPES — what a machine's mid-turn collect asks for,
@@ -71,16 +88,15 @@ const HOT_PATH = /^\/(?:user|orgs\/[^/]+)\/apps\/(app_[^/]+)\/(app\.vendo|plan\.
 export const HOT_PATH_WATCH: readonly string[] = ["/user/apps/*", "/orgs/*/apps/*"]
   .flatMap((prefix) => HOT_PATH_FILES.map((name) => `${prefix}/${name}`));
 
+const hotPathFile = (path: string): (typeof HOT_PATH_FILES)[number] | undefined => {
+  const tail = APP_PATH.exec(path)?.[2];
+  return HOT_PATH_FILES.find((name) => name === tail);
+};
+
 /** The appId a hot-path write belongs to, or undefined if this is not one. */
 export function hotPathAppId(path: string): AppId | undefined {
-  const match = HOT_PATH.exec(path);
-  return match === null ? undefined : (match[1] as AppId);
+  return hotPathFile(path) === undefined ? undefined : appPathAppId(path);
 }
-
-const hotPathFile = (path: string): (typeof HOT_PATH_FILES)[number] | undefined => {
-  const match = HOT_PATH.exec(path);
-  return match === null ? undefined : (match[2] as (typeof HOT_PATH_FILES)[number]);
-};
 
 /**
  * Did this content parse into something worth putting on screen?
@@ -124,6 +140,34 @@ export interface RenderSeamOptions {
     data: Record<string, Json>;
     dataUnavailable?: boolean;
   } | undefined>;
+  /**
+   * Contract §2.2/§3.2 — persist the app's own SOURCE for a commit that landed.
+   *
+   * The same interception point as a view, for the same reason plus one: the
+   * sandbox sync-back path (`materialize.ts`) commits without ever calling
+   * `writeFile` on this façade, so a builder working inside a box reaches the
+   * store HERE and nowhere else. Hooking the write instead would persist content
+   * that never landed and miss the box entirely.
+   *
+   * `changed` is `CommitResult.changed` verbatim — the paths that actually reached
+   * the store. Called once per APP the commit touched, because `commitApp` is
+   * per-app and one commit can carry several; it does its own prefix filtering, so
+   * the whole list rides every call. `workspace` is the real façade underneath this
+   * wrapper, which is what the diff reads the landed bytes back through.
+   *
+   * Composition injects `AppsRuntime.commitSource` (see `packages/vendo/server.ts`),
+   * which binds `commitApp` to the app row's ownership, its compare-and-swap
+   * update, and the deployment's files adapter for blob spill.
+   *
+   * UNWIRED, source is not persisted: `machine.snapshotRef` stays the only home an
+   * app's code has, which is exactly today's behaviour — so no host regresses, and
+   * no host is protected either.
+   */
+  commitSource?: (input: {
+    appId: AppId;
+    changed: readonly string[];
+    workspace: WorkspaceFs;
+  }) => Promise<void>;
   /** The turn this seam is painting inside, stamped on every view it emits so a
    *  screen joins back to the exchange that made it. Absent outside a turn. */
   turnId?: TurnId;
@@ -291,6 +335,37 @@ export function wrapWorkspaceForRender(workspace: WorkspaceFs, options: RenderSe
     }
   };
 
+  /**
+   * Land the source of every app this commit touched — AFTER the views, for two
+   * reasons. §1.6 is a promise about seconds, and — the load-bearing one — an
+   * `app.vendo` commit is the moment a files-first app BECOMES an app: the
+   * `authoredApp` seam above is what upserts its row. Running source persistence
+   * first would look for a row that does not exist yet.
+   *
+   * It can never fail the commit either, for the same reason a view cannot. But
+   * unlike a view, a silently dropped source file is a LOST APP — the snapshot
+   * being the only other home is the whole problem this closes — so the failure is
+   * LOUD, in the same voice as the runtime's own commit failure.
+   */
+  const persistSource = async (changed: readonly string[]): Promise<void> => {
+    if (options.commitSource === undefined) return;
+    const apps = new Set<AppId>();
+    for (const path of changed) {
+      const appId = appPathAppId(path);
+      if (appId !== undefined) apps.add(appId);
+    }
+    for (const appId of apps) {
+      try {
+        await options.commitSource({ appId, changed, workspace });
+      } catch (error) {
+        console.error("[vendo] render seam: source did not reach the store", {
+          appId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  };
+
   return new Proxy(workspace, {
     // `receiver` is deliberately NOT forwarded to Reflect.get: a method read off
     // the proxy and then called would run with `this` === proxy, and any real
@@ -330,6 +405,7 @@ export function wrapWorkspaceForRender(workspace: WorkspaceFs, options: RenderSe
         for (const { path, appId } of plans) {
           if (!painted.has(appId)) await emitFor(path);
         }
+        await persistSource(result.changed);
         return result;
       };
     },

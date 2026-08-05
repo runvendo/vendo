@@ -2194,6 +2194,10 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     model: inference.agent.model,
     catalog,
     pinBaselines,
+    // Contract §3.2 — the SAME `FilesAdapter` the workspace rows spill to (one
+    // `selectFiles` answer, above), so an app's source past the inline cap uses the
+    // spill that already exists instead of inventing a second one.
+    files,
     // Build contract §9 — the multi-party half. `can()` over whatever store the
     // host wired (OSS, unconditional); `multiParty` is the Cloud gate on the
     // three writes that create sharing; `promoteApp` is the store's sanctioned
@@ -2680,10 +2684,17 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // not on its listing.
     connectorDiscovery: serviceCatalog,
     bridge: () => ({ toolOutputCap, preflight: (call, ctx) => connectGate.check(call, ctx) }),
-    // §1.6's app half. Without it a files-first app (D4) is a PICTURE of an app: no
-    // store row, so it never lists and `vendo_apps_open` masks it as not-found, and
-    // no query data, so every value renders "—" with the real host data one call away.
-    render: (ctx) => ({ authoredApp: (input) => apps.authored(input, ctx) }),
+    // §1.6's app half, and — contract §3.2 — the app's SOURCE half beside it, on
+    // the SAME interception point. Without `authoredApp` a files-first app (D4) is a
+    // PICTURE of an app: no store row, so it never lists and `vendo_apps_open` masks
+    // it as not-found, and no query data, so every value renders "—" with the real
+    // host data one call away. Without `commitSource` the app's CODE has no home but
+    // the sandbox snapshot behind `machine.snapshotRef` — lose the snapshot and the
+    // customer's app is gone, because the store never had it.
+    render: (ctx) => ({
+      authoredApp: (input) => apps.authored(input, ctx),
+      commitSource: (input) => apps.commitSource(input, ctx),
+    }),
     // Build contract §9.1/§9.7 — the same host org query the wire resolves per
     // request, so a harness turn's façade mounts the team's files too.
     ...(membershipsSeam === undefined ? {} : { memberships: membershipsSeam }),

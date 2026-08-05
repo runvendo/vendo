@@ -16,6 +16,7 @@ import {
   type AppGrantRecord,
   type AppId,
   type AppPlan,
+  type FilesAdapter,
   type Guard,
   type Membership,
   type Principal,
@@ -42,10 +43,12 @@ import {
   type VendoTheme,
   type VendoRecord,
   type WireCompileResult,
+  type WorkspaceFs,
 } from "@vendoai/core";
 import type { LanguageModel } from "ai";
 import { createAgentTools } from "./agent-tools.js";
 import { createAppData } from "./app-data.js";
+import { commitApp } from "./app-source.js";
 import { appLifecycleEvent } from "./audit.js";
 import { createAppCaller } from "./call.js";
 import { createParkedActions } from "./parked-action.js";
@@ -242,6 +245,16 @@ export interface AppsConfig {
    * first away run's ungranted step parks the normal approval card.
    */
   armAutomation?: (appId: AppId, ctx: RunContext) => Promise<{ enabled: boolean; missing: ApprovalRequest[] }>;
+  /**
+   * Contract §3.2 — the workspace's OWN blob seam, for source past
+   * {@link WORKSPACE_INLINE_MAX_BYTES}. The SAME `FilesAdapter` the workspace rows
+   * spill to (the umbrella's `selectFiles`), never a second spill mechanism: a
+   * source file and a workspace file are the same bytes in two projections.
+   *
+   * Unset, `commitSource` is inline-only and an oversized file is refused LOUDLY
+   * rather than dropped — a silently missing source file is a lost app.
+   */
+  files?: FilesAdapter;
   model?: LanguageModel;
   /** The fast fill tier: `model` is the no-think switch (a thinking-disabled
    *  model instance) the group workers run on while the brain keeps `model`. */
@@ -689,6 +702,29 @@ export interface AppsRuntime {
     input: { appId: AppId; compiled: WireCompileResult },
     ctx: RunContext,
   ): Promise<AuthoredAppResult>;
+  /**
+   * Contract §3.2/§2.2 — the app's own SOURCE, landed in its row.
+   *
+   * The sibling of {@link AppsRuntime.authored}, on the same interception point and
+   * with the same one caller: the render seam's `commit()` proxy. `changed` is
+   * `CommitResult.changed` verbatim, and this is the store half of it —
+   * `commitApp` diffs the paths inside THIS app's directory back into
+   * `doc.source`, leaving everything else in the document (`trigger` above all)
+   * untouched. A commit is not a generation.
+   *
+   * This exists because `machine.snapshotRef` was an app's only home: the box's
+   * writes reach the store through the workspace façade and nowhere else, so this
+   * is where the row becomes the truth. Without it, losing a snapshot loses the
+   * customer's app.
+   *
+   * `workspace` is passed in rather than held: this block never owns a workspace
+   * (§3.5 — a sandboxed harness holds a workspace and never a store), and the
+   * caller is the one with the façade whose commit just landed.
+   */
+  commitSource(
+    input: { appId: AppId; changed: readonly string[]; workspace: WorkspaceFs },
+    ctx: RunContext,
+  ): Promise<void>;
   /** Speed lane — best-effort page-open warm-up of the generation model(s)
    *  (full + paint), so the first create reuses a live connection. Safe to
    *  call on surface mount; never throws. */
@@ -2698,6 +2734,26 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       queries.update(asTree(document.tree));
       const data = await queries.complete();
       return { data, ...(queries.dataUnavailable() ? { dataUnavailable: true as const } : {}) };
+    },
+
+    async commitSource(input, ctx) {
+      await commitApp(input.appId, input.changed, input.workspace, ctx, {
+        requireOwned,
+        update: (appId, mutate) => updateAppDocument(appId, mutate),
+        // §9.7 — the app's ADDRESS comes from its OWNER, and the row's subject is
+        // the authoritative answer (§9.5: a promoted app's row subject IS the org
+        // id, verbatim). Read here, never remembered: permission cannot choose an
+        // address, because an org app's editor can usually write their own `/user`
+        // mount too.
+        ownerOf: async (appId) => {
+          const subject = (await apps.get(appId))?.refs?.subject;
+          if (subject === undefined) {
+            throw new VendoError("not-found", `${appId} has no row to hold its source`);
+          }
+          return subject;
+        },
+        ...(config.files === undefined ? {} : { blobs: config.files }),
+      });
     },
 
     async get(appId, ctx) {
