@@ -105,9 +105,11 @@ const DISALLOWED_TOOLS = [
  *
  * Restated rather than imported because this file imports nothing (module
  * header). `claude-code/index.ts` yields these events straight into
- * `HarnessEvent`, so the compiler already compares the two unions on every
- * build — but 200 lines away, as an inference failure nobody can read.
- * `claude-beats.test.ts` makes the drift fail by name, in both directions.
+ * `HarnessEvent`, so the compiler already compares the two unions — but in ONE
+ * direction only, and 200 lines away as an inference failure nobody can read.
+ * `BEAT_PHASES` there closes the other direction and names the drift; it is in
+ * production code rather than a test because nothing in this repo typechecks a
+ * test file.
  */
 export type BeatPhase =
   | "understanding"

@@ -226,6 +226,41 @@ describe("a beat is our copy, never the model's", () => {
     }
   });
 
+  /**
+   * THE OTHER HALF OF THE COPY LAW: a beat says what the builder is DOING, never
+   * what the result LOOKS like.
+   *
+   * The builder cannot see what it is building — it is writing files inside a box,
+   * and nothing has been rendered when any of these fire. So an appearance claim
+   * is not merely off-tone, it is a claim about something that does not exist yet.
+   * Only the receipt's `say` line speaks for the result.
+   *
+   * This is the same failure Track C hit live: an agent given a short prompt
+   * narrated UI it had never seen. A model writing its own todos will cheerfully
+   * author "Build beautiful spending dashboard", which is exactly why that text is
+   * not the beat source.
+   */
+  test("no beat claims what the result looks like", async () => {
+    const events = await run([[
+      { say: "I'll build a beautiful, clean spending dashboard with charts.", stream: true,
+        use: { name: "TodoWrite", input: { todos: [{
+          content: "Build beautiful spending dashboard with a clean summary table",
+          status: "in_progress",
+          activeForm: "Building a beautiful dashboard that looks great with charts",
+        }] } } },
+      { use: { name: "Write" } },
+    ]]);
+    const said = beats(events).map(([, label]) => label);
+    // Appearance vocabulary, and the shapes of a rendered thing. A TEST oracle,
+    // never a runtime gate (ruling 14) — the emitter's copy is fixed, so this
+    // guards the next person who edits it.
+    const APPEARANCE = /beautiful|clean|great|nice|polished|looks?\b|chart|graph|table|dashboard|screen|layout|colou?r|styl|design|pretty|slick|modern/i;
+    for (const label of said) expect(label, `beat claims an appearance: "${label}"`).not.toMatch(APPEARANCE);
+    // And nothing asserts the visual is DONE — `finishing` is a stage, not a verdict.
+    for (const label of said) expect(label).not.toMatch(/ready|done\b|finished\b|complete/i);
+    expect(said).toEqual(["Getting started", "Working out the steps", "Putting it together", "Finishing up"]);
+  });
+
   test("a beat stays OFF the transcript vocabulary — it is a status, never text", async () => {
     const events = await run([[{ use: { name: "Write" } }]]);
     const spoken = events.filter((event) => event.type === "text");
