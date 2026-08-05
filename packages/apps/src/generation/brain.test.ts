@@ -92,6 +92,17 @@ describe("the brain", () => {
     expect(prompt).toContain("there is no loop variable");
   });
 
+  it("teaches that a direct answer is exactly one root <App> element, naming the wire's own rule and error text", async () => {
+    let prompt = "";
+    await runBrainTurn({ instruction: "show my outstanding total" }, depsWith((call) => {
+      prompt = promptText(call);
+      return TINY_APP;
+    }));
+
+    expect(prompt).toContain("exactly ONE <App");
+    expect(prompt).toContain('"expected a single <App ...>...</App> element."');
+  });
+
   it("plans a normal ask, read through compilePlan", async () => {
     const result = await runBrainTurn({ instruction: "an invoices workspace" }, depsWith(PLAN));
 

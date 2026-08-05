@@ -31,6 +31,13 @@ const promptText = (call: ScriptedModelCall): string => call.prompt.map((message
 const BROKEN = '<App name="Weather"><Query id="citiesMap" tool="cities.map"/><Text text="Paris"/></App>';
 const FIXED = '<App name="Weather"><Query id="cities" tool="host_listCities"/><Text text={cities.0.name}/></App>';
 
+// Not wrapped in a single root <App>: the tag opening the answer reads as
+// "<App" by naive substring search (so the brain's own extraction still
+// treats it as a direct answer) but is really a different, longer tag name —
+// the same mismatch a model produces when it answers with a root element
+// that merely STARTS WITH "App" instead of writing the literal wrapper.
+const UNWRAPPED = '<Applet name="Weather"><Text text="Paris"/></Applet>\n</App>';
+
 describe("conductCreate — the direct outcome's fix-it loop", () => {
   it("retries a direct answer that fails to compile, feeding back exactly what was wrong, and ships the fixed one", async () => {
     const prompts: string[] = [];
@@ -45,6 +52,19 @@ describe("conductCreate — the direct outcome's fix-it loop", () => {
     expect(prompts[1]).toContain("does not compile");
     expect(prompts[1]).toContain(BROKEN);
     expect(prompts[1]).toContain('unknown tool "cities.map"');
+    expect(result.kind).toBe("app");
+  });
+
+  it("retries a direct answer that is not wrapped in a single root <App>, naming the rule in the fed-back instruction", async () => {
+    const prompts: string[] = [];
+    const result = await conductCreate({ prompt: "weather dashboard" }, depsWith((call) => {
+      prompts.push(promptText(call));
+      return prompts.length === 1 ? UNWRAPPED : FIXED;
+    }));
+
+    expect(prompts.length).toBeGreaterThanOrEqual(2);
+    expect(prompts[1]).toContain("does not compile");
+    expect(prompts[1]).toContain('expected a single <App ...>...</App> element');
     expect(result.kind).toBe("app");
   });
 

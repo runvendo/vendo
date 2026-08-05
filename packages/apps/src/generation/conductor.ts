@@ -200,7 +200,7 @@ const fixInstruction = (findings: readonly Finding[]): string => [
  *  exactly what was wrong with it, the same teaching-sentence discipline. */
 const directRewriteInstruction = (request: string, wire: string, issues: readonly string[]): string => [
   `${request}`,
-  "Your last answer does not compile. Answer again from scratch — directly, or as a plan if that now fits better — fixing every problem below; do not repeat them.",
+  "Your last answer does not compile. Answer again from scratch — directly, or as a plan if that now fits better — fixing every problem below; do not repeat them. If you answer directly, your ENTIRE answer is exactly ONE <App name=\"...\">…</App> element wrapping everything — nothing before it, nothing after it, and never a second <App>.",
   `WHAT YOU WROTE:\n${wire}`,
   `WHAT WAS WRONG WITH IT:\n${issues.map((issue) => `- ${issue}`).join("\n")}`,
 ].join("\n\n");
