@@ -416,6 +416,16 @@ type StoreWireOp = keyof typeof STORE_WIRE_PATHS;
  * already did it"; a fresh key per attempt would double-apply the write. */
 const newIdempotencyKey = (): string => `idm_${globalThis.crypto.randomUUID()}`;
 
+/** Blob bytes are base64 on the wire (storeWireBlobsPutRequestSchema) —
+ * Buffer-free so the client stays runnable on edge runtimes. */
+const bytesToBase64 = (bytes: Uint8Array): string => {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+};
+
+const base64ToBytes = (value: string): Uint8Array => Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
+
 /** `AbortSignal.timeout` rejects with a DOMException named TimeoutError (a
  * caller-side abort surfaces as AbortError): no answer came back, so the
  * mutation may or may not have landed — exactly the Idempotency-Key's case. */
@@ -443,19 +453,14 @@ const raiseWireError = async (response: Response): Promise<never> => {
  * cursors passed through untouched (the server paginates, never the client),
  * and ONE Idempotency-Key per logical mutation, replayed verbatim on a retry.
  *
- * Routes are the console's REAL doors (vendo-web apps/console/lib/api/
- * store-handlers.ts + store-doors.ts), not an idealized map. Transcripts,
- * harness, workspace, `lifecycle.promote` and `/status` already answer at
- * their STORE_WIRE_PATHS path. The other four families do not, and the client
- * matches the mount rather than inventing a route it does not serve:
- *
- *   - records ride a PER-COLLECTION door, `/records/{collection}/{method}`,
- *     with the two atomic verbs under `atomic/…`;
- *   - blobs are REST bytes (PUT/GET/DELETE on `/blobs/{ns}/{key…}`, list on
- *     `/blobs/{ns}?prefix=`), never base64 JSON;
- *   - erase keeps `/erase`, and adopt + the session verbs keep `/sessions/*`
- *     — T5's own note: they "keep their existing doors until the cloud client
- *     moves them".
+ * Records and blobs speak the EXPORTED contract: STORE_WIRE_PATHS routes with
+ * the storeWire*RequestSchema bodies — collection/namespace/key ride the JSON
+ * body and blob bytes are base64 on the wire — so any conforming Store Wire v1
+ * service (the console's wire mount, a BYO httpStore) accepts them verbatim.
+ * Transcripts, harness, workspace, `lifecycle.promote` and `/status` answer at
+ * their STORE_WIRE_PATHS path too. Erase keeps `/erase`, and adopt + the
+ * session verbs keep `/sessions/*` — T5's own note: they "keep their existing
+ * doors until the cloud client moves them".
  */
 export function hostedStoreOps(options: HostedStoreOptions): StoreOps {
   const base = (options.baseUrl ?? "https://console.vendo.run").replace(/\/$/, "");
@@ -537,31 +542,33 @@ export function hostedStoreOps(options: HostedStoreOptions): StoreOps {
   return {
     records: {
       async get(collection, id) {
-        return nullableRecordOf(await post("records.get", `${recordsPath(collection)}/get`, { id }));
+        return nullableRecordOf(await post("records.get", P["records.get"], { collection, id }));
       },
       async put(collection, record) {
-        return recordOf(await mutate("records.put", `${recordsPath(collection)}/put`, { record }));
+        return recordOf(await mutate("records.put", P["records.put"], { collection, record }));
       },
       async delete(collection, id) {
-        await mutate("records.delete", `${recordsPath(collection)}/delete`, { id });
+        await mutate("records.delete", P["records.delete"], { collection, id });
       },
       async list(collection, query) {
-        return listOf(await post("records.list", `${recordsPath(collection)}/list`, { query: query ?? {} }));
+        return listOf(await post("records.list", P["records.list"], { collection, query: query ?? {} }));
       },
       async claim(collection, expected, replacement) {
-        return claimedOf(await mutate("records.claim", `${recordsPath(collection)}/claim`, {
+        return claimedOf(await mutate("records.claim", P["records.claim"], {
+          collection,
           expected,
           ...(replacement === undefined ? {} : { replacement }),
         }));
       },
       async insertIfAbsent(collection, record) {
         return nullableRecordOf(
-          await mutate("records.insertIfAbsent", `${recordsPath(collection)}/atomic/insert-if-absent`, { record }),
+          await mutate("records.insertIfAbsent", P["records.insertIfAbsent"], { collection, record }),
         );
       },
       async compareAndSwap(collection, record, expectedRevision) {
         return nullableRecordOf(
-          await mutate("records.compareAndSwap", `${recordsPath(collection)}/atomic/compare-and-swap`, {
+          await mutate("records.compareAndSwap", P["records.compareAndSwap"], {
+            collection,
             record,
             expectedRevision,
           }),
@@ -570,43 +577,46 @@ export function hostedStoreOps(options: HostedStoreOptions): StoreOps {
     },
     blobs: {
       async put(namespace, key, bytes, meta) {
-        await call("blobs.put", blobKeyPath(namespace, key), {
-          method: "PUT",
-          headers: {
-            "idempotency-key": newIdempotencyKey(),
-            ...(meta?.contentType === undefined ? {} : { "content-type": meta.contentType }),
-          },
-          body: toArrayBuffer(bytes),
+        await mutate("blobs.put", P["blobs.put"], {
+          namespace,
+          key,
+          bytes: bytesToBase64(bytes),
+          ...(meta?.contentType === undefined ? {} : { contentType: meta.contentType }),
         });
       },
       async get(namespace, key) {
-        let response: Response;
+        let payload: unknown;
         try {
-          response = await call("blobs.get", blobKeyPath(namespace, key));
+          payload = await post("blobs.get", P["blobs.get"], { namespace, key });
         } catch (error) {
-          // A missing blob is null at the seam (01-core §12) — but ONLY the
-          // console's ENVELOPED not-found says "missing blob". A bare 404 has
-          // already degraded to not-implemented and stays loud: a misdeployed
-          // base URL must not read as an empty blob store forever.
+          // A missing blob is null at the seam (01-core §12), whether the
+          // service answers `{blob: null}` or an ENVELOPED not-found. A bare
+          // 404 has already degraded to not-implemented and stays loud: a
+          // misdeployed base URL must not read as an empty blob store forever.
           if (error instanceof VendoError && error.code === "not-found") return null;
           throw error;
         }
-        const contentType = response.headers.get("content-type");
+        const blob = field<Record<string, unknown> | null>(
+          payload,
+          "blob",
+          "invalid blob",
+          (value) => value === null || (typeof value === "object" && value !== null && typeof (value as { bytes?: unknown }).bytes === "string"),
+        );
+        if (blob === null) return null;
         return {
-          bytes: new Uint8Array(await response.arrayBuffer()),
-          ...(contentType === null ? {} : { contentType }),
+          bytes: base64ToBytes(blob["bytes"] as string),
+          ...(typeof blob["contentType"] === "string" ? { contentType: blob["contentType"] } : {}),
         };
       },
       async delete(namespace, key) {
-        await call("blobs.delete", blobKeyPath(namespace, key), {
-          method: "DELETE",
-          headers: { "idempotency-key": newIdempotencyKey() },
-        });
+        await mutate("blobs.delete", P["blobs.delete"], { namespace, key });
       },
       async list(namespace, prefix) {
-        const query = prefix === undefined || prefix === "" ? "" : `?prefix=${encodeURIComponent(prefix)}`;
         return field<string[]>(
-          await get("blobs.list", `${blobsPath(namespace)}${query}`),
+          await post("blobs.list", P["blobs.list"], {
+            namespace,
+            ...(prefix === undefined || prefix === "" ? {} : { prefix }),
+          }),
           "keys",
           "invalid blob list",
           (value) => Array.isArray(value) && value.every((key) => typeof key === "string"),

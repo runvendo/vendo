@@ -2,7 +2,21 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { STORE_WIRE_PATHS, type StoreAdapter } from "@vendoai/core";
+import {
+  STORE_WIRE_PATHS,
+  storeWireBlobsDeleteRequestSchema,
+  storeWireBlobsGetRequestSchema,
+  storeWireBlobsListRequestSchema,
+  storeWireBlobsPutRequestSchema,
+  storeWireRecordsClaimRequestSchema,
+  storeWireRecordsCompareAndSwapRequestSchema,
+  storeWireRecordsDeleteRequestSchema,
+  storeWireRecordsGetRequestSchema,
+  storeWireRecordsInsertIfAbsentRequestSchema,
+  storeWireRecordsListRequestSchema,
+  storeWireRecordsPutRequestSchema,
+  type StoreAdapter,
+} from "@vendoai/core";
 import { storeAdapterConformance } from "@vendoai/core/conformance";
 import { createStore, secretStore, storeSecrets, type VendoStore } from "@vendoai/store";
 import { hostedStore, hostedStoreOps } from "./hosted-store.js";
@@ -497,7 +511,8 @@ describe("demo-host journey through the store seam", () => {
 // hostedStoreOps — the 32-op client over `vendo/store-wire@1`.
 //
 // Unit tests over an injected fake fetch: they pin the route, the request body
-// and the response decoding for every op against the console's REAL doors
+// and the response decoding for every op — records and blobs against the
+// EXPORTED store-wire v1 contract, the rest against the console's doors
 // (vendo-web apps/console/lib/api/store-handlers.ts + store-doors.ts). A fake
 // fetch proves only that the client talks to ITSELF — the real proof is this
 // same client run against those handlers over real HTTP, with no mock on
@@ -515,24 +530,24 @@ const wireRecord = {
   revision: "1",
 };
 
-/** The console door each named op actually knocks on, for the arguments
- * `driveEveryOp` uses (collection "invoices", blob namespace "uploads", key
- * "a.png"). Transcripts, harness, workspace, lifecycle.promote and /status
- * answer at their STORE_WIRE_PATHS path; records ride a per-collection door,
- * blobs are REST bytes, and erase + the session verbs keep the console's own
- * routes. `keyed` marks the 20 mutations that carry an Idempotency-Key. */
+/** The door each named op knocks on. Records and blobs speak the EXPORTED
+ * store-wire v1 contract (STORE_WIRE_PATHS, collection/namespace/key on the
+ * body, blob bytes base64); transcripts, harness, workspace,
+ * lifecycle.promote and /status answer at their STORE_WIRE_PATHS path too;
+ * erase + the session verbs keep the console's own routes. `keyed` marks the
+ * 20 mutations that carry an Idempotency-Key. */
 const DOORS: Record<string, { method: string; path: string; keyed?: true }> = {
-  "records.get": { method: "POST", path: "/records/invoices/get" },
-  "records.put": { method: "POST", path: "/records/invoices/put", keyed: true },
-  "records.delete": { method: "POST", path: "/records/invoices/delete", keyed: true },
-  "records.list": { method: "POST", path: "/records/invoices/list" },
-  "records.claim": { method: "POST", path: "/records/invoices/claim", keyed: true },
-  "records.insertIfAbsent": { method: "POST", path: "/records/invoices/atomic/insert-if-absent", keyed: true },
-  "records.compareAndSwap": { method: "POST", path: "/records/invoices/atomic/compare-and-swap", keyed: true },
-  "blobs.put": { method: "PUT", path: "/blobs/uploads/a.png", keyed: true },
-  "blobs.get": { method: "GET", path: "/blobs/uploads/a.png" },
-  "blobs.delete": { method: "DELETE", path: "/blobs/uploads/a.png", keyed: true },
-  "blobs.list": { method: "GET", path: "/blobs/uploads" },
+  "records.get": { method: "POST", path: P["records.get"] },
+  "records.put": { method: "POST", path: P["records.put"], keyed: true },
+  "records.delete": { method: "POST", path: P["records.delete"], keyed: true },
+  "records.list": { method: "POST", path: P["records.list"] },
+  "records.claim": { method: "POST", path: P["records.claim"], keyed: true },
+  "records.insertIfAbsent": { method: "POST", path: P["records.insertIfAbsent"], keyed: true },
+  "records.compareAndSwap": { method: "POST", path: P["records.compareAndSwap"], keyed: true },
+  "blobs.put": { method: "POST", path: P["blobs.put"], keyed: true },
+  "blobs.get": { method: "POST", path: P["blobs.get"] },
+  "blobs.delete": { method: "POST", path: P["blobs.delete"], keyed: true },
+  "blobs.list": { method: "POST", path: P["blobs.list"] },
   "transcripts.putThread": { method: "POST", path: P["transcripts.putThread"], keyed: true },
   "transcripts.getThread": { method: "POST", path: P["transcripts.getThread"] },
   "transcripts.listThreads": { method: "POST", path: P["transcripts.listThreads"] },
@@ -566,8 +581,7 @@ interface WireCall {
 }
 
 /** A mount that answers the canned body for each op's `METHOD path` route and
- * records what the client sent. A Uint8Array answer comes back as raw bytes —
- * the blob doors are REST, not JSON. */
+ * records what the client sent. */
 const wireFake = (bodies: Record<string, unknown> = {}) => {
   const calls: WireCall[] = [];
   const fetchImpl = (async (url: string, init: RequestInit = {}) => {
@@ -580,13 +594,7 @@ const wireFake = (bodies: Record<string, unknown> = {}) => {
       idempotencyKey: new Headers(init.headers).get("idempotency-key"),
       body: typeof init.body === "string" ? JSON.parse(init.body) as unknown : undefined,
     });
-    const canned = bodies[`${method} ${path}`];
-    if (canned instanceof Uint8Array) {
-      return new Response(canned.slice().buffer as ArrayBuffer, {
-        headers: { "content-type": "text/plain" },
-      });
-    }
-    return Response.json(canned ?? {});
+    return Response.json(bodies[`${method} ${path}`] ?? {});
   }) as unknown as typeof fetch;
   return {
     calls,
@@ -604,7 +612,7 @@ const ALL_BODIES: Record<string, unknown> = {
   [door("records.insertIfAbsent")]: { record: wireRecord },
   [door("records.compareAndSwap")]: { record: null },
   [door("blobs.put")]: { ok: true },
-  [door("blobs.get")]: encoder.encode("blob bytes"),
+  [door("blobs.get")]: { blob: { bytes: btoa("blob bytes"), contentType: "text/plain" } },
   [door("blobs.delete")]: { ok: true },
   [door("blobs.list")]: { keys: ["images/a.png"] },
   [door("transcripts.putThread")]: { record: wireRecord },
@@ -685,82 +693,100 @@ describe("hostedStoreOps — the 32-op wire client", () => {
     expect(new Set(keys).size).toBe(20);
   });
 
-  it("records: seven ops on the per-collection door, records/cursor decoded", async () => {
-    const { calls, ops } = wireFake({
-      ...ALL_BODIES,
-      "POST /records/app%3Aapp_1%3Aorders/get": { record: null },
-    });
+  it("records: seven ops on the wire door, collection on the body, records/cursor decoded", async () => {
+    const { calls, ops } = wireFake(ALL_BODIES);
 
     expect(await ops.records.get("invoices", "inv_1")).toMatchObject({ id: "inv_1", data: { total: 5 } });
-    expect(calls[0]).toMatchObject({ path: "/records/invoices/get", body: { id: "inv_1" } });
+    expect(calls[0]).toMatchObject({ path: P["records.get"], body: { collection: "invoices", id: "inv_1" } });
 
     expect(await ops.records.put("invoices", { id: "inv_1", data: { total: 5 } })).toMatchObject({ id: "inv_1" });
-    expect(calls[1]!.body).toEqual({ record: { id: "inv_1", data: { total: 5 } } });
+    expect(calls[1]!.body).toEqual({ collection: "invoices", record: { id: "inv_1", data: { total: 5 } } });
 
     await ops.records.delete("invoices", "inv_1");
-    expect(calls[2]!.body).toEqual({ id: "inv_1" });
+    expect(calls[2]!.body).toEqual({ collection: "invoices", id: "inv_1" });
 
     expect(await ops.records.list("invoices", { refs: { owner: "user_a" }, limit: 10 })).toEqual({
       records: [expect.objectContaining({ id: "inv_1" })],
       cursor: "cur_records",
     });
-    expect(calls[3]!.body).toEqual({ query: { refs: { owner: "user_a" }, limit: 10 } });
-    // The console's list door reads `body.query ?? {}`; an unqueried list still
-    // sends the object so the door never sees a bare body.
+    expect(calls[3]!.body).toEqual({ collection: "invoices", query: { refs: { owner: "user_a" }, limit: 10 } });
+    // An unqueried list still sends a query object, so a door reading
+    // `body.query ?? {}` never sees a bare body.
     await ops.records.list("invoices");
-    expect(calls[4]!.body).toEqual({ query: {} });
+    expect(calls[4]!.body).toEqual({ collection: "invoices", query: {} });
 
     expect(await ops.records.claim("invoices", { id: "inv_1", data: { total: 5 } }, { data: { total: 6 } })).toBe(true);
     expect(calls[5]!.body).toEqual({
+      collection: "invoices",
       expected: { id: "inv_1", data: { total: 5 } },
       replacement: { data: { total: 6 } },
     });
 
     expect(await ops.records.insertIfAbsent("invoices", { id: "inv_2", data: {} })).toMatchObject({ id: "inv_1" });
     expect(calls[6]).toMatchObject({
-      path: "/records/invoices/atomic/insert-if-absent",
-      body: { record: { id: "inv_2", data: {} } },
+      path: P["records.insertIfAbsent"],
+      body: { collection: "invoices", record: { id: "inv_2", data: {} } },
     });
 
     // A lost compare-and-swap is null at the seam, not an error.
     expect(await ops.records.compareAndSwap("invoices", { id: "inv_2", data: {} }, "1")).toBeNull();
     expect(calls[7]).toMatchObject({
-      path: "/records/invoices/atomic/compare-and-swap",
-      body: { record: { id: "inv_2", data: {} }, expectedRevision: "1" },
+      path: P["records.compareAndSwap"],
+      body: { collection: "invoices", record: { id: "inv_2", data: {} }, expectedRevision: "1" },
     });
 
-    // The collection is URL-encoded into the path, never assumed path-safe.
+    // The collection rides the body VERBATIM — no path encoding to get wrong.
     await ops.records.get("app:app_1:orders", "o_1");
-    expect(calls[8]!.path).toBe("/records/app%3Aapp_1%3Aorders/get");
+    expect(calls[8]).toMatchObject({
+      path: P["records.get"],
+      body: { collection: "app:app_1:orders", id: "o_1" },
+    });
   });
 
-  it("blobs: raw bytes over the REST door, key segments encoded", async () => {
+  it("blobs: JSON POST on the wire door, bytes base64 on the body", async () => {
     const bytes = new Uint8Array([0, 1, 2, 255]);
-    const { calls, ops } = wireFake({
-      ...ALL_BODIES,
-      "GET /blobs/uploads/images/a.png": encoder.encode("blob bytes"),
-      "GET /blobs/uploads?prefix=images%2F": { keys: ["images/a.png"] },
-    });
+    const { calls, ops } = wireFake(ALL_BODIES);
 
     await ops.blobs.put("uploads", "images/a.png", bytes, { contentType: "image/png" });
-    expect(calls[0]).toMatchObject({ method: "PUT", path: "/blobs/uploads/images/a.png" });
+    expect(calls[0]).toMatchObject({ method: "POST", path: P["blobs.put"] });
+    expect(calls[0]!.body).toEqual({
+      namespace: "uploads",
+      key: "images/a.png",
+      bytes: btoa(String.fromCharCode(0, 1, 2, 255)),
+      contentType: "image/png",
+    });
     expect(calls[0]!.idempotencyKey).toEqual(expect.stringMatching(/^idm_/));
 
     expect(await ops.blobs.get("uploads", "images/a.png")).toEqual({
       bytes: encoder.encode("blob bytes"),
       contentType: "text/plain",
     });
-    expect(calls[1]).toMatchObject({ method: "GET", path: "/blobs/uploads/images/a.png" });
+    expect(calls[1]).toMatchObject({
+      method: "POST",
+      path: P["blobs.get"],
+      body: { namespace: "uploads", key: "images/a.png" },
+    });
 
     await ops.blobs.delete("uploads", "images/a.png");
-    expect(calls[2]).toMatchObject({ method: "DELETE", path: "/blobs/uploads/images/a.png" });
+    expect(calls[2]).toMatchObject({
+      method: "POST",
+      path: P["blobs.delete"],
+      body: { namespace: "uploads", key: "images/a.png" },
+    });
+    expect(calls[2]!.idempotencyKey).toEqual(expect.stringMatching(/^idm_/));
 
     expect(await ops.blobs.list("uploads", "images/")).toEqual(["images/a.png"]);
-    expect(calls[3]).toMatchObject({ method: "GET", path: "/blobs/uploads?prefix=images%2F" });
+    expect(calls[3]).toMatchObject({
+      method: "POST",
+      path: P["blobs.list"],
+      body: { namespace: "uploads", prefix: "images/" },
+    });
 
-    // A missing blob is the console's ENVELOPED not-found, and is null at the
-    // seam; a bare 404 stays loud (it degrades to not-implemented).
-    const absent = hostedStoreOps({
+    // A missing blob is null at the seam — `{blob: null}` on a 2xx or the
+    // ENVELOPED not-found; a bare 404 stays loud (degrades to not-implemented).
+    const absent = wireFake({ ...ALL_BODIES, [door("blobs.get")]: { blob: null } });
+    expect(await absent.ops.blobs.get("uploads", "gone.png")).toBeNull();
+    const envelopedMiss = hostedStoreOps({
       apiKey: "vnd_secret",
       baseUrl: "https://cloud.test",
       fetch: (async () => Response.json(
@@ -768,13 +794,48 @@ describe("hostedStoreOps — the 32-op wire client", () => {
         { status: 404 },
       )) as unknown as typeof fetch,
     });
-    expect(await absent.blobs.get("uploads", "gone.png")).toBeNull();
+    expect(await envelopedMiss.blobs.get("uploads", "gone.png")).toBeNull();
     const bare = hostedStoreOps({
       apiKey: "vnd_secret",
       baseUrl: "https://cloud.test",
       fetch: (async () => new Response("<html>nginx</html>", { status: 404 })) as unknown as typeof fetch,
     });
     await expect(bare.blobs.get("uploads", "gone.png")).rejects.toMatchObject({ code: "not-implemented" });
+  });
+
+  it("records and blobs requests validate against the EXPORTED store-wire v1 request schemas", async () => {
+    const { calls, ops } = wireFake(ALL_BODIES);
+    await ops.records.get("invoices", "inv_1");
+    await ops.records.put("invoices", { id: "inv_1", data: { total: 5 } });
+    await ops.records.delete("invoices", "inv_1");
+    await ops.records.list("invoices", { limit: 10 });
+    await ops.records.claim("invoices", { id: "inv_1", data: { total: 5 } }, { data: { total: 6 } });
+    await ops.records.insertIfAbsent("invoices", { id: "inv_2", data: {} });
+    await ops.records.compareAndSwap("invoices", { id: "inv_2", data: {} }, "1");
+    await ops.blobs.put("uploads", "a.bin", new Uint8Array([7]), { contentType: "application/octet-stream" });
+    await ops.blobs.get("uploads", "a.bin");
+    await ops.blobs.delete("uploads", "a.bin");
+    await ops.blobs.list("uploads", "a");
+
+    const CONTRACT: [keyof typeof P, { safeParse(value: unknown): { success: boolean } }][] = [
+      ["records.get", storeWireRecordsGetRequestSchema],
+      ["records.put", storeWireRecordsPutRequestSchema],
+      ["records.delete", storeWireRecordsDeleteRequestSchema],
+      ["records.list", storeWireRecordsListRequestSchema],
+      ["records.claim", storeWireRecordsClaimRequestSchema],
+      ["records.insertIfAbsent", storeWireRecordsInsertIfAbsentRequestSchema],
+      ["records.compareAndSwap", storeWireRecordsCompareAndSwapRequestSchema],
+      ["blobs.put", storeWireBlobsPutRequestSchema],
+      ["blobs.get", storeWireBlobsGetRequestSchema],
+      ["blobs.delete", storeWireBlobsDeleteRequestSchema],
+      ["blobs.list", storeWireBlobsListRequestSchema],
+    ];
+    expect(calls).toHaveLength(CONTRACT.length);
+    for (const [index, [op, schema]] of CONTRACT.entries()) {
+      const call = calls[index]!;
+      expect(`${call.method} ${call.path}`).toBe(`POST ${P[op]}`);
+      expect(schema.safeParse(call.body).success).toBe(true);
+    }
   });
 
   it("transcripts: six ops over thread ids and message payloads", async () => {
@@ -887,7 +948,7 @@ describe("hostedStoreOps — the 32-op wire client", () => {
       records: [],
       cursor: "opaque||server||cursor",
     });
-    expect(calls[0]!.body).toEqual({ query: { cursor: "opaque||prev", limit: 1000 } });
+    expect(calls[0]!.body).toEqual({ collection: "invoices", query: { cursor: "opaque||prev", limit: 1000 } });
     // No cursor from the server means the page is the last one.
     expect(await ops.workspace.history({ cursor: "opaque||prev" })).toEqual({ entries: [] });
     expect(calls[1]!.body).toEqual({ cursor: "opaque||prev" });
@@ -1028,6 +1089,7 @@ describe("hostedStoreOps — the 32-op wire client", () => {
     await expect(answering({ claimed: "yes" }).records.claim("invoices", { id: "r", data: {} }))
       .rejects.toThrow(/invalid claim/);
     await expect(answering({ keys: [1] }).blobs.list("uploads")).rejects.toThrow(/invalid blob list/);
+    await expect(answering({ blob: {} }).blobs.get("uploads", "a.png")).rejects.toThrow(/invalid blob/);
     await expect(answering({}).harness.get("app_1", "sub_1")).rejects.toThrow(/invalid harness state/);
     await expect(answering({}).workspace.index()).rejects.toThrow(/invalid entries/);
     await expect(answering({ files: [] }).workspace.read(["/a.md"])).rejects.toThrow(/invalid workspace read/);
@@ -1048,19 +1110,21 @@ describe("hostedStore keeps its StoreAdapter surface and gains the op surface", 
       "blobs", "harness", "lifecycle", "records", "status", "transcripts", "workspace",
     ]);
 
-    // The op surface rides the SAME mount, key, identity headers and doors as
-    // the StoreAdapter surface — a record written through one is readable
-    // through the other, which is what "one home, two surfaces" has to mean.
+    // The op surface rides the SAME mount, key and identity headers as the
+    // StoreAdapter surface, over its own wire doors — a record written through
+    // one is readable through the other, which is what "one home, two
+    // surfaces" has to mean.
     await store.ops.records.put("invoices", { id: "inv_1", data: { total: 5 } });
     expect(console_.requests.at(-1)).toMatchObject({
-      url: "https://cloud.test/api/v1/store/records/invoices/put",
+      url: "https://cloud.test/api/v1/store/records/put",
       authorization: "Bearer vnd_secret",
     });
     expect(await store.records("invoices").get("inv_1")).toMatchObject({ id: "inv_1", data: { total: 5 } });
     await store.ops.records.delete("invoices", "inv_1");
     expect(await store.ops.records.get("invoices", "inv_1")).toBeNull();
 
-    // Blobs too: REST bytes, both surfaces on the same key.
+    // Blobs too: base64 JSON on the ops wire, REST bytes on the adapter, both
+    // surfaces on the same key.
     await store.ops.blobs.put("uploads", "images/a.png", new Uint8Array([7]), { contentType: "image/png" });
     expect(await store.blobs("uploads").get("images/a.png")).toMatchObject({ contentType: "image/png" });
     expect(await store.ops.blobs.list("uploads", "images/")).toEqual(["images/a.png"]);
