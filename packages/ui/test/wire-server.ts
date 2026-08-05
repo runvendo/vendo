@@ -351,6 +351,18 @@ export async function createWireServer(options: WireServerOptions = {}) {
     streamFailureText: undefined as string | undefined,
     posture: "rules" as "unconfigured" | "rules" | "judge" | "rules+judge",
     threadReplyGate: undefined as Promise<void> | undefined,
+    /** ⚠️ TEST EDIT (infrastructure) — threads whose turn TAKES a mid-build
+     *  steer, opted in by a `[steerable]` marker on the turn's own prompt (the
+     *  house pattern for every other fixture behaviour). Opt-in matters: without
+     *  it every suite written against the turn-end flush would change meaning. */
+    steerableThreads: new Set<string>(),
+    /** ⚠️ TEST EDIT (infrastructure) — threads whose in-flight `[stream-long]`
+     *  turn should emit a FRESH `building` beat, because a steer just landed on
+     *  them. This models what a real box does — the steered rework hits a Write
+     *  tool and `beat("building")` fires into the OPEN turn stream — so the
+     *  browser can show the build visibly change course. The fixture cannot
+     *  re-plan; it can only faithfully mirror the causal chain steer → new beat. */
+    steerBeats: new Set<string>(),
     // ENG-217 — optional pacing gates for the canned turn so specs can observe
     // exact streaming moments: before ANY chunk (generating skeleton), after
     // text-start but before the first delta (lone caret on an empty streamed
@@ -426,6 +438,16 @@ export async function createWireServer(options: WireServerOptions = {}) {
         const sentText = input.message.parts
           .map(part => (part.type === "text" ? part.text : ""))
           .join(" ");
+        // ⚠️ TEST EDIT (infrastructure) — §10.2. A turn whose prompt carries
+        // `[steerable]` is one this fixture's "box" can take a mid-build message
+        // into. Opt-in per turn, like every other marker here, so the suites
+        // written against the turn-end flush keep meaning what they meant.
+        //
+        // The LATEST turn on a thread decides, which is why the else-branch is
+        // not optional: steerability belongs to a turn, not to a conversation, so
+        // a plain turn after a steerable one must not inherit it.
+        if (sentText.includes("[steerable]")) state.steerableThreads.add(threadId);
+        else state.steerableThreads.delete(threadId);
         if (state.streamFailures > 0) {
           state.streamFailures -= 1;
           const failingChunks = createUIMessageStream<UIMessage>({
@@ -797,6 +819,15 @@ export async function createWireServer(options: WireServerOptions = {}) {
                   id: "text_long",
                   delta: `Streamed paragraph ${index + 1}: the long answer keeps arriving so the list keeps growing while the reader watches.\n\n`,
                 });
+                // A steer landed mid-build: emit ONE fresh `building` beat into
+                // this open stream, exactly as a real box's steered rework would.
+                if (state.steerBeats.delete(threadId)) {
+                  writer.write({
+                    type: "data-vendo-status",
+                    data: { label: "Regrouping by client", phase: "building" },
+                    transient: true,
+                  } as UIMessageChunk);
+                }
                 await new Promise(resolve => setTimeout(resolve, 80));
               }
               writer.write({ type: "text-delta", id: "text_long", delta: "Long turn complete." });
@@ -867,6 +898,30 @@ export async function createWireServer(options: WireServerOptions = {}) {
         json(response, summaries);
         return;
       }
+      // ⚠️ TEST EDIT (infrastructure) — §10.2 mid-build steering. Mirrors the real
+      // route: it answers whether the words LANDED, and on a landing it appends
+      // them to the thread as a normal user turn under the id the client minted,
+      // so a reload reads the same transcript the live screen showed.
+      const steerMatch = method === "POST" ? url.pathname.match(/^\/threads\/([^/]+)\/steer$/) : null;
+      if (steerMatch) {
+        const id = decodeURIComponent(steerMatch[1] ?? "");
+        const body = parsedBody as { text?: string; messageId?: string };
+        if (!state.steerableThreads.has(id)
+          || typeof body?.text !== "string" || typeof body?.messageId !== "string") {
+          json(response, { landed: false });
+          return;
+        }
+        // Landing is the TURN's answer, so it does not depend on a stored row —
+        // some browser scenarios hold their thread client-side only. Where a row
+        // does exist it gains the message, which is what a reload reads back.
+        state.threads.get(id)?.messages
+          .push({ id: body.messageId, role: "user", parts: [{ type: "text", text: body.text }] });
+        // Tell an in-flight `[stream-long]` turn to narrate its course-change.
+        state.steerBeats.add(id);
+        json(response, { landed: true });
+        return;
+      }
+
       const threadMatch = url.pathname.match(/^\/threads\/([^/]+)$/);
       if (threadMatch) {
         const id = decodeURIComponent(threadMatch[1] ?? "");

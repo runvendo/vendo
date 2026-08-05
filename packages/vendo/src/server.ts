@@ -34,6 +34,7 @@ import { createHarnessTurns, type HarnessTurns } from "./harness-turn.js";
 // config listing, which is compiled against these very interfaces, can too).
 export type { HarnessTurns } from "./harness-turn.js";
 export type { AppsConfig } from "@vendoai/apps";
+import { registerTurnSteer } from "./turn-liveness.js";
 import { warnDeprecatedConfigKeys } from "./config-keys.js";
 import { orgPolicyPath, orgPolicyResolver, workspacePolicySource } from "./org-policy.js";
 import { createPromoteApp } from "./promote-app.js";
@@ -2798,7 +2799,17 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // Every turn, published for the door's turn credential. Publishing is not a
     // grant: without a credential minted from inside the turn there is nothing
     // to resolve, and the credential's authority window IS this publication.
-    liveTurn: ({ threadId, ctx, tools }) => turnCredentials.publish(threadId, { ctx, tools }),
+    // The steer sink rides the same publication for the same reason: both are
+    // "reach the turn in flight from this process's own doors", and both die with
+    // the turn.
+    liveTurn: ({ threadId, ctx, tools, steer }) => {
+      const unpublish = turnCredentials.publish(threadId, { ctx, tools });
+      const unregister = registerTurnSteer({ threadId, subject: ctx.principal.subject, steer });
+      return () => {
+        unregister();
+        unpublish();
+      };
+    },
     // The other half, for a harness whose thinker is not in this process: where
     // the door is, and how to mint one conversation's credential for it. `url`
     // is undefined when nothing this harness may dial exists — a machine cannot

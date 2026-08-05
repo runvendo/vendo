@@ -124,6 +124,17 @@ export interface SessionMachine {
   /** Push one user message into the live session and settle when its turn ends. */
   send(message: SessionMessage): Promise<void>;
   /**
+   * Hand the user's words to the message this machine is answering RIGHT NOW —
+   * mid-build steering (§10.2). Not a second `send()`: the same turn, the same
+   * session, the same `send()` still awaiting.
+   *
+   * Answers whether the words LANDED. `false` when nothing is in flight, which is
+   * a fact the caller acts on (its own queue is the fallback) rather than a
+   * failure — so this never throws for the ordinary race of a user typing as a
+   * turn ends.
+   */
+  steer(prompt: string): Promise<boolean>;
+  /**
    * The turn is over. Local keeps its session for the next turn; the sandbox path
    * keeps the box warm on an idle timer and destroys it when that expires.
    */

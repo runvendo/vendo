@@ -847,6 +847,18 @@ type ShapeWalk =
 const numericFields = (fields: Record<string, ShapeType>): string[] =>
   Object.entries(fields).filter(([, field]) => field.kind === "number").map(([name]) => name);
 
+/** A field missing at the top level is often sitting one envelope down: many
+ *  host tools wrap their rows as `{ data: [...] }` (the REST convention
+ *  TOOL RESPONSE SHAPES already teaches). When the object's own "data" field
+ *  — or its array items — really carries the field the model reached for,
+ *  say so by name instead of leaving it to guess from the sibling list. */
+const envelopeField = (fields: Record<string, ShapeType>, head: string): string | undefined => {
+  const envelope = fields["data"];
+  if (envelope === undefined) return undefined;
+  const inner = envelope.kind === "array" ? envelope.items : envelope;
+  return inner.kind === "object" && inner.fields[head] !== undefined ? "data" : undefined;
+};
+
 const walkShape = (
   shape: ShapeType,
   segments: readonly string[],
@@ -862,7 +874,11 @@ const walkShape = (
   if (shape.kind === "object") {
     const field = shape.fields[head];
     if (field === undefined) {
-      return { ok: false, issue: `"${head}" is absent from ${at} — the real fields are: ${Object.keys(shape.fields).join(", ")}` };
+      const envelope = envelopeField(shape.fields, head);
+      const hint = envelope === undefined
+        ? ""
+        : ` — this tool wraps its rows in a "${envelope}" field, so read ${[...consumed, envelope, head].join(".")} instead`;
+      return { ok: false, issue: `"${head}" is absent from ${at} — the real fields are: ${Object.keys(shape.fields).join(", ")}${hint}` };
     }
     return walkShape(field, rest, [...consumed, head], shape.fields);
   }

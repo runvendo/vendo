@@ -246,20 +246,39 @@ const subtree = (byId: ReadonlyMap<string, TreeNode>, roots: readonly string[]):
 };
 
 /**
- * `query` and `purpose` are the PLAN's vocabulary for describing a leaf, not
- * props any component takes — and a worker reading its own group's leaf list
- * routinely copies them onto the element it writes. The renderer drops them and
- * the checks report them, which is just noise about something no one can act on,
- * so they come off here.
+ * `<Leaf component="...">` and `<Group>` are the PLAN's own wrapper tags, and
+ * `query`/`purpose` are the PLAN's vocabulary for describing a leaf — none of
+ * it is real component markup, but a worker reading its own group's leaf list
+ * (or the brain writing a whole app in one shot) routinely copies the plan's
+ * syntax onto the element it writes instead of the real thing the plan asked
+ * for. The renderer drops what it does not recognise and the checks report
+ * the rest as an unknown component, which is just noise about something no
+ * one can act on, so both come off here: a `<Leaf component="Stat">` becomes
+ * the `Stat` it names, a `<Group>` becomes the `Stack` it always meant, and
+ * `query`/`purpose`/the now-consumed `component` come off every node's props.
  *
- * Only on nodes the worker itself invented: a `source: "host"` node names a real
- * host component, and a host is entitled to declare a prop called whatever it
- * likes — silently deleting one would be the worse bug.
+ * Only on nodes the worker itself invented: a `source: "host"` node names a
+ * real host component, and a host is entitled to declare a prop — or a
+ * component — called whatever it likes; silently rewriting one would be the
+ * worse bug.
  */
-const withoutPlanVocabulary = (node: TreeNode): TreeNode["props"] => {
-  if (node.source === "host" || node.props === undefined) return node.props;
-  const { query: _query, purpose: _purpose, ...props } = node.props as Record<string, unknown>;
-  return props as TreeNode["props"];
+export const withoutPlanVocabulary = (node: TreeNode): TreeNode => {
+  if (node.source === "host") return node;
+  const props = node.props as Record<string, unknown> | undefined;
+  const renamed = node.component === "Leaf" && typeof props?.component === "string"
+    ? props.component
+    : node.component === "Group"
+      ? "Stack"
+      : undefined;
+  if (props === undefined) {
+    return renamed === undefined ? node : { ...node, component: renamed };
+  }
+  const { query: _query, purpose: _purpose, component: _component, ...rest } = props;
+  return {
+    ...node,
+    ...(renamed === undefined ? {} : { component: renamed }),
+    props: rest as TreeNode["props"],
+  };
 };
 
 /**
@@ -279,7 +298,7 @@ export const spliceFragment = (tree: Tree, slotNodeId: string, fragment: Tree): 
   if (slot === undefined) return tree;
   const stale = subtree(byId, slot.children ?? []);
   const namespaced = (id: string): string => `${slotNodeId}-${id}`;
-  const landing = fragment.nodes.filter((node) => node.id !== fragment.root);
+  const landing = fragment.nodes.filter((node) => node.id !== fragment.root).map(withoutPlanVocabulary);
   const nodes = tree.nodes.flatMap((node) => {
     if (stale.has(node.id)) return [];
     if (node.id !== slotNodeId) return [node];
@@ -291,7 +310,6 @@ export const spliceFragment = (tree: Tree, slotNodeId: string, fragment: Tree): 
         ...child,
         id: namespaced(child.id),
         ...(child.children === undefined ? {} : { children: child.children.map(namespaced) }),
-        ...(child.props === undefined ? {} : { props: withoutPlanVocabulary(child) }),
       })),
     ];
   });

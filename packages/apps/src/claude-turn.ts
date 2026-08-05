@@ -210,6 +210,16 @@ export interface ClaudeSession {
   /** Push one user message in and settle when THAT message's turn is done. */
   send(prompt: string): Promise<void>;
   /**
+   * Hand the user's words to the turn ALREADY in flight — mid-build steering.
+   *
+   * Same session, same turn, same `send()` still awaiting: the SDK hands the
+   * message to the model at its next step boundary, which is why nothing here
+   * queues. Answers whether the words landed; `false` when no turn is in flight,
+   * because then there would be nobody for the extra `result` to settle and the
+   * caller's own next `send()` is the right home for the message.
+   */
+  steer(prompt: string): boolean;
+  /**
    * Stop the turn in flight WITHOUT ending the conversation — the user hit stop,
    * they did not close the tab. A live session makes this distinction real:
    * aborting the whole session would throw away everything it remembers.
@@ -333,6 +343,18 @@ export function createClaudeSession(input: ClaudeSessionInput): ClaudeSession {
   let model: string | undefined = input.model;
   /** Settles the `send()` whose turn is currently in flight. */
   let settleTurn: ((error?: unknown) => void) | undefined;
+  /**
+   * How many `result` messages belong to STEERS rather than to the `send()` now
+   * waiting.
+   *
+   * MEASURED HAZARD. Every user message the SDK answers produces its own
+   * `result`, and `send()` settles on the next one it sees. So a steer that only
+   * pushed would resolve the original `send()` at the FIRST result: the box door
+   * marks the message done, the harness's poll loop returns, the turn ends on the
+   * wire — and the steer's own output is pushed into a state nobody polls. N
+   * steers add exactly N results, so counting them is the whole fix.
+   */
+  let steeredResults = 0;
   /** A session that died. Every later `send()` fails with it rather than hanging. */
   let fatal: unknown;
 
@@ -491,11 +513,25 @@ export function createClaudeSession(input: ClaudeSessionInput): ClaudeSession {
           // Consumer voice: no subtypes, no internals. And no `finishing` beat —
           // a beat that claimed progress in front of an error would be a lie.
           input.emit({ type: "error", message: "I couldn't finish that one." });
-        } else {
+        } else if (steeredResults === 0) {
+          // Only the FINAL result finishes. A steered result is an INTERMEDIATE
+          // boundary — the turn continues (that is the whole point of the
+          // counter) — so "Finishing up" here would claim the build is done
+          // while the correction's rework is still ahead (§3.4, no progress-lie).
           beat("finishing", "Finishing up");
         }
-        // The next turn narrates afresh, whichever way this one ended.
+        // Narration resets on EVERY result, steered ones included: the next turn
+        // narrates afresh, and a steered correction carries THIS turn on, so it
+        // must be free to re-narrate the phases the first pass already showed
+        // (the mockup's "Regrouping by client"). Cleared BEFORE the steer skip,
+        // or the rework's build/plan beats would stay suppressed and the turn
+        // would fall silent during the one moment steering exists to show.
         narrated.clear();
+        if (steeredResults > 0) {
+          // A steered message's own boundary. The turn continues.
+          steeredResults -= 1;
+          continue;
+        }
         // THE turn boundary. The input stream stays open; only this message's
         // caller is released.
         const settle = settleTurn;
@@ -531,7 +567,17 @@ export function createClaudeSession(input: ClaudeSessionInput): ClaudeSession {
       queue = next.catch(() => undefined);
       return next;
     },
+    steer(prompt) {
+      if (settleTurn === undefined) return false;
+      steeredResults += 1;
+      inbox.push({ type: "user", message: { role: "user", content: prompt }, parent_tool_use_id: null });
+      return true;
+    },
     async interrupt() {
+      // An interrupted session stops reading its input, so the results the
+      // steers were counting on may never arrive. Left counted, the caller's
+      // promise would hang to the message budget instead of ending on stop.
+      steeredResults = 0;
       // Only meaningful in streaming-input mode, which is the only mode we use.
       // A session too young to have opened its query has nothing to stop.
       await live?.interrupt?.().catch(() => undefined);

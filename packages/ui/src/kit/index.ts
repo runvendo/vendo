@@ -14,6 +14,7 @@
 
 // Semantics
 export * from "./format.js";
+export * from "./state.js";
 export * from "./tokens.js";
 
 // Schema + registry + generated prompt
@@ -56,3 +57,9 @@ export { Disclaimer, type DisclaimerProps } from "./forms/disclaimer.js";
 export { Tabs, type TabsProps, type TabItem } from "./feedback/tabs.js";
 export { Callout, type CalloutProps, type CalloutTone } from "./feedback/callout.js";
 export { Accordion, type AccordionProps, type AccordionItem } from "./feedback/accordion.js";
+
+// The theme the Kit's tokens read, and the embedded-surface runtime that applies
+// it — reachable from a generated app's box, where `@vendoai/ui`'s root barrel
+// (the client, the surfaces, the voice stage) is not what an app should import.
+export { defaultVendoTheme, resolveTheme, themeCssVariables } from "../theme.js";
+export { applyThemeVars, postToHost, startFrameProtocol } from "../embedded-runtime.js";

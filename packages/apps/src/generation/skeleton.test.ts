@@ -8,9 +8,9 @@
  * PREFIX of the plan must mint the same ids as the skeleton of the whole plan,
  * so a plan arriving group by group makes the UI GROW instead of re-mounting.
  */
-import { validateTree, type AppPlan } from "@vendoai/core";
+import { VENDO_TREE_FORMAT, validateTree, type AppPlan, type Tree } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
-import { growSkeleton, skeletonFromPlan } from "./skeleton.js";
+import { growSkeleton, skeletonFromPlan, spliceFragment } from "./skeleton.js";
 
 const plan = (groups: AppPlan["groups"], extra: Partial<AppPlan> = {}): AppPlan => ({
   name: "Invoices",
@@ -210,5 +210,82 @@ describe("growSkeleton", () => {
       { name: "invoices", tool: "host_listInvoices", input: {} },
       { name: "payments", tool: "host_listPayments", input: {} },
     ]);
+  });
+});
+
+describe("spliceFragment", () => {
+  const base: Tree = {
+    formatVersion: VENDO_TREE_FORMAT,
+    root: "app",
+    nodes: [
+      { id: "app", component: "Stack", source: "prewired", children: ["slot"] },
+      { id: "slot", component: "Stack", source: "prewired", children: [] },
+    ],
+  };
+
+  it("strips the plan's query/purpose vocabulary off a worker-written node's props", () => {
+    const fragment: Tree = {
+      formatVersion: VENDO_TREE_FORMAT,
+      root: "root",
+      nodes: [
+        { id: "root", component: "Stack", source: "generated", children: ["stat-1"] },
+        {
+          id: "stat-1",
+          component: "Stat",
+          source: "generated",
+          props: { label: "Total", value: 5, query: "invoices", purpose: "the total" },
+        },
+      ],
+    };
+    const spliced = spliceFragment(base, "slot", fragment);
+    expect(spliced.nodes.find((node) => node.id === "slot-stat-1")?.props).toEqual({ label: "Total", value: 5 });
+  });
+
+  it("resolves a worker's <Leaf component=...> copy-paste to the real component it names", () => {
+    const fragment: Tree = {
+      formatVersion: VENDO_TREE_FORMAT,
+      root: "root",
+      nodes: [
+        { id: "root", component: "Stack", source: "generated", children: ["leaf-1"] },
+        {
+          id: "leaf-1",
+          component: "Leaf",
+          source: "generated",
+          props: { component: "Stat", query: "invoices", purpose: "the total", label: "Total" },
+        },
+      ],
+    };
+    const spliced = spliceFragment(base, "slot", fragment);
+    const leaf = spliced.nodes.find((node) => node.id === "slot-leaf-1");
+    expect(leaf?.component).toBe("Stat");
+    expect(leaf?.props).toEqual({ label: "Total" });
+  });
+
+  it("resolves a worker's <Group> copy-paste to the Stack it always meant", () => {
+    const fragment: Tree = {
+      formatVersion: VENDO_TREE_FORMAT,
+      root: "root",
+      nodes: [
+        { id: "root", component: "Stack", source: "generated", children: ["group-1"] },
+        { id: "group-1", component: "Group", source: "generated", children: [] },
+      ],
+    };
+    const spliced = spliceFragment(base, "slot", fragment);
+    expect(spliced.nodes.find((node) => node.id === "slot-group-1")?.component).toBe("Stack");
+  });
+
+  it("never touches a host node's props or component name — a host may call either whatever it likes", () => {
+    const fragment: Tree = {
+      formatVersion: VENDO_TREE_FORMAT,
+      root: "root",
+      nodes: [
+        { id: "root", component: "Stack", source: "generated", children: ["host-1"] },
+        { id: "host-1", component: "Leaf", source: "host", props: { query: "kept", purpose: "kept", component: "kept" } },
+      ],
+    };
+    const spliced = spliceFragment(base, "slot", fragment);
+    const hostNode = spliced.nodes.find((node) => node.id === "slot-host-1");
+    expect(hostNode?.component).toBe("Leaf");
+    expect(hostNode?.props).toEqual({ query: "kept", purpose: "kept", component: "kept" });
   });
 });

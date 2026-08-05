@@ -2046,11 +2046,12 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
    *  surface flip. */
   const servedAppContractPrompt = (): string => [
     "THIS TASK BUILDS THE APP SURFACE ITSELF (layer 3):",
-    "- START WARM: a served-app scaffold is pre-baked at /opt/vendo-box/scaffold (zero-dep Node server with the /fn envelopes, vendo.json serving, a themed entry page, and the .vendo/run entry already wired and tested). Your FIRST action: run exactly `cp -a /opt/vendo-box/scaffold/. /app/` (one command; it copies .vendo/run too — no ls, no second cp), then go straight to editing fns.js + index.html (touch server.js only for extra routes). Only if that cp fails (older box) build from scratch.",
-    "- Serve a REAL web app on the non-/fn paths of $PORT. GET / is the entry page and must answer 200 with text/html. Any framework or plain HTML+JS; keep it self-contained (no CDN dependencies unless their domains are declared egress).",
-    "- Keep every POST /fn/<name> endpoint working beside the pages; the page's own JavaScript may call relative /fn/<name> endpoints for data and actions.",
-    "- The page may read the OPTIONAL `vendoTheme` query param (JSON host theme tokens: colors/typography/radius/density) to match the host brand. Ignore it if absent.",
-    "- Verify by curling your own pages (GET / and every route you serve) until they answer 200 with the real content, then report servesUi: true.",
+    "- START WARM: the universal app template is pre-baked at /opt/vendo-box/template — Vite + React 19 with @vendoai/kit (the whole Kit) already installed, the /fn envelopes and vendo.json serving already wired, and the .vendo/run entry already written. Your FIRST action: run exactly `cp -a /opt/vendo-box/template/. /app/` (one command; it copies .vendo/run and the node_modules link too — no ls, no second cp), then go straight to editing src/App.tsx and fns.js. Only if that cp fails (older box) build from scratch.",
+    "- Write real TypeScript and React — the full language, no restricted subset. `npm run typecheck` (tsc), `npm run build` (vite) and the dev server's own errors are your code validators, and all three run here in the box. Import components from \"@vendoai/kit\", never from a CDN.",
+    "- src/App.tsx is the app. src/main.tsx is the wiring (brand, provider, frame protocol) and you should not need to touch it. fns.js holds your POST /fn/<name> handlers; the page reaches them with `callFn` from src/fn.ts.",
+    "- Serve a REAL web app on the non-/fn paths of $PORT. GET / is the entry page and must answer 200 with text/html; `node server.js` already does that from the Vite build. Keep it self-contained — the box's egress is deny-by-default, so a CDN reference is a guaranteed failed fetch.",
+    "- The host's brand is applied for you (the `vendoTheme` query param and the provisioned .vendo/host/theme.json both flow through src/provision.ts onto the --vendo-* CSS variables the Kit reads). Style with those variables, never with hardcoded brand colors.",
+    "- Before you report done: run `npm run validate`. Exit 0 means shippable; any other exit prints its findings on stdout and you fix them first. Then curl GET / until it answers 200 with the real content and report servesUi: true.",
   ].join("\n");
 
   /**
@@ -3205,7 +3206,22 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // A host-tool ref goes straight to the guard-bound registry; an fn: ref
       // settles as a contained not-implemented outcome until the in-runtime
       // fn path lands (see call.ts).
-      return caller.call(app, ref, args, ctx);
+      //
+      // A READ takes the QUERY arm. This is the only door a code-land app has
+      // (@vendoai/kit's useToolQuery), so sending every call through the action
+      // arm gave a read a random uuid per invocation — and the guard's approved
+      // replay PINS the call id (05 §2), so an ungraded read that parked could
+      // never be satisfied: approve, refetch, new id, park again, forever.
+      // `callQuery` derives the id from (app, tool, args), which is exactly a
+      // query's identity. The discriminator is the tool's own authored risk
+      // grade, the server's existing classification of what a call does;
+      // everything else keeps the action arm, because two identical mutations
+      // are two separate acts and each has to earn its own approval.
+      const descriptor = (await config.tools.descriptors(ctx).catch(() => []))
+        .find((candidate) => candidate.name === ref);
+      return descriptor?.risk === "read"
+        ? caller.callQuery(app, ref, args, ctx)
+        : caller.call(app, ref, args, ctx);
     },
 
     async exportApp(appId, ctx) {
