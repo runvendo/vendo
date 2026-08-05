@@ -85,3 +85,38 @@ describe("vendo/knowledge-wire@1", () => {
     expect(parseKnowledgeWireError(501, undefined).code).toBe("not-implemented");
   });
 });
+
+describe("parseKnowledgeWireError and the meter refusal", () => {
+  it("carries the crafted dollar sentence out of a pool 402", () => {
+    const error = parseKnowledgeWireError(402, {
+      error: {
+        code: "meter-exhausted",
+        message: "ignored — the formatter re-renders it",
+      },
+      meter: "usage",
+      unit: "usd",
+      used: 5.2,
+      limit: 5,
+      resets_at: "2026-09-04T00:00:00.000Z",
+      reason: "allowance",
+      exits: {
+        upgrade_url: "https://console.vendo.run/billing",
+        byo_docs_url: "https://docs.vendo.run/deploy/vendo-cloud",
+      },
+    });
+    expect(error.code).toBe("cloud-required");
+    expect(error.message).toContain("Vendo Cloud paused usage");
+    expect(error.message).toContain("$5.20 of $5.00 used");
+  });
+
+  it("still maps a bare 402 to cloud-required", () => {
+    expect(parseKnowledgeWireError(402, undefined).code).toBe("cloud-required");
+    expect(parseKnowledgeWireError(402, undefined).message).toContain("HTTP 402");
+  });
+
+  it("still prefers an enveloped wire-legal code over the status", () => {
+    expect(
+      parseKnowledgeWireError(402, { error: { code: "validation", message: "nope" } }).code,
+    ).toBe("validation");
+  });
+});
