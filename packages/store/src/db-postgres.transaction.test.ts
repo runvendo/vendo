@@ -104,4 +104,18 @@ describe("createPostgresDb transaction lifecycle", () => {
     expect(lastClient().calls).toEqual(["BEGIN", "ROLLBACK"]);
     expect(lastClient().released).toBe(1);
   });
+
+  it("rejects after close() without acquiring a client or running work", async () => {
+    const db = createPostgresDb("postgres://never-connected");
+    await db.close();
+    const before = state.clients.length;
+    let workRan = false;
+    await expect(
+      db.transaction(async () => {
+        workRan = true;
+      }),
+    ).rejects.toThrow("[vendo] store is closed");
+    expect(workRan).toBe(false);
+    expect(state.clients.length).toBe(before);
+  });
 });

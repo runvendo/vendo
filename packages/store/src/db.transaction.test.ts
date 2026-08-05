@@ -113,4 +113,18 @@ describe.each(engines)("Db.transaction() on $name", ({ makeDb }) => {
     const result = await db.query("SELECT val FROM tx_test WHERE id = $1", ["e"]);
     expect(result.rows).toHaveLength(0);
   });
+
+  it("rejects after close() without running work", async () => {
+    // Fresh handle: the shared `db` is torn down in afterEach, which still
+    // needs to query it.
+    const fresh = makeDb();
+    await fresh.close();
+    let workRan = false;
+    await expect(
+      fresh.transaction(async () => {
+        workRan = true;
+      }),
+    ).rejects.toThrow("[vendo] store is closed");
+    expect(workRan).toBe(false);
+  });
 });
