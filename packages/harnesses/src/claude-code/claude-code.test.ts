@@ -1466,3 +1466,60 @@ describe("stop is still the only thing that cancels — steering never does", ()
     expect(sandbox.boxes[0]!.interrupted).toBe(false);
   });
 });
+
+/**
+ * §4.4's loadout, items 2 and 3: the builder's two REFERENCES, on disk, where the
+ * `building-apps` skill tells it to look.
+ *
+ * Both already exist and are already generated — `hostComponentFiles(catalog)`
+ * writes `/host/components/<Name>.md` and `buildingAppsSkill.files` carries
+ * `references/format.md`, which is `kitPrompt()`'s output, not a hand-written
+ * second copy. What nothing proved is the HOP: that the projection composition
+ * assembles actually reaches the machine's disk, at a path the skill's own
+ * workspace-relative instructions resolve against.
+ *
+ * That is precisely the producer/consumer seam this repo shipped four times green
+ * and dead, so it is tested through the REAL box door with nothing stubbed on
+ * either side: a real checkout, a real materialize, a real in-box walk.
+ */
+describe("the builder's references reach the box's disk (§4.4 loadout)", () => {
+  /** Exactly what `hostSkillFiles` + `hostComponentFiles` project, in shape. */
+  const HOST_FILES = {
+    "/host/components/DataTable.md": "# DataTable\n\nRows of things.\n\n## Props\n\n```json\n{}\n```\n",
+    "/host/skills/building-apps/SKILL.md": "---\nname: building-apps\ndescription: Build an app.\n---\n\nbody\n",
+    "/host/skills/building-apps/references/format.md": "# The .vendo format\n\n<App>…</App>\n",
+  };
+
+  test("the component reference and the format reference are both readable in the box", async () => {
+    const seen: Record<string, string | undefined> = {};
+    const sandbox = fakeSandbox(async (box) => {
+      // The skill body sends the builder to `host/components/` and
+      // `host/skills/building-apps/references/format.md`, RELATIVE to its cwd.
+      // The box's cwd is the workspace root, so these are the resolved paths.
+      for (const path of Object.keys(HOST_FILES)) seen[path] = box.read(path);
+    });
+    const { turn } = makeTurn({ files: { ...HOST_FILES, "/user/apps/app_1/app.vendo": "<App/>" } });
+    await drain(claudeCode({ sandbox }), turn);
+
+    expect(seen).toEqual(HOST_FILES);
+  });
+
+  // "the references are never carried home" is NOT tested here on purpose:
+  // `/user/scratch never leaves the box, and /host is never written back` above
+  // already pins it through the same real door, and a second copy of it would be
+  // a test that has to be kept in step with nothing.
+
+  test("the /host mount IS the SDK plugin root — one skills mechanism, not two", async () => {
+    let pluginRoot: string | undefined;
+    const sandbox = fakeSandbox(async (box) => { pluginRoot = box.read("/host/skills/building-apps/SKILL.md"); });
+    const { turn } = makeTurn({
+      files: HOST_FILES,
+      skills: [{ name: "building-apps", description: "Build an app." }],
+    });
+    await drain(claudeCode({ sandbox }), turn);
+
+    // The plugin path the driver hands the SDK and the mount the skill file lands
+    // on are the same directory, which is why no projection or copy exists.
+    expect(pluginRoot).toBe(HOST_FILES["/host/skills/building-apps/SKILL.md"]);
+  });
+});
