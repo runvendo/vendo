@@ -86,7 +86,8 @@ import type { Finding } from "./checking/types.js";
 // The `validate` verb IS the shipped floor plus the shipped create validation,
 // called rather than re-derived — so the verb and generation can never disagree
 // about whether a document is sound.
-import { createCheckingLayer } from "./checking/layer.js";
+import { createCheckingLayer, judgmentRules } from "./checking/layer.js";
+import { reviewerCheck } from "./checking/reviewer.js";
 import { validateCompiledCreate } from "./generation/validation/validate.js";
 import { wireCompileOptionsFor } from "./wire-options.js";
 import type { BrainTurn } from "./generation/brain.js";
@@ -3031,13 +3032,30 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // Editor-scoped, like edit itself: checking the shape of an app you may
       // change is part of changing it, and a mere viewer is masked as ever.
       const document = await requireOwned(input.appId, ctx);
-      // The SAME floor create and edit run, with the host's and every pack's
-      // plugged checks. `request` is empty because a verb call carries no user
-      // text — the checks that read it treat that as "no carve-out", which is the
-      // conservative direction.
+      // The SAME floor create and edit run — the seven fact checks, the host's and
+      // every pack's plugged checks, AND the AI reviewer. The reviewer was the
+      // piece this door was missing: without it `validate` could not see invented
+      // data, dishonest tool use, dead controls or dropped work, and could not
+      // apply a single one of the host's own judgment RULES, which are not code and
+      // which the reviewer is the only thing that can read. The skill teaches
+      // "validate after every edit — faster and surer than re-reading your own
+      // work", so half a checker answering "ok" was the worst lie available here.
+      //
+      // Composed exactly as `conductor.ts`'s `checkingFor` composes it, including
+      // deriving the rubric with the same function the layer exposes it with, so the
+      // rubric the reviewer reads and `layer.rubric` cannot diverge. Fail-open is
+      // unchanged: silence, a refusal and a failed request all mean no findings.
+      // No `samples` — a verb call has run no queries, so there is no resolved data
+      // to check literals against, and the reviewer's prompt simply omits that
+      // section rather than pretending to have it.
+      //
+      // `request` is empty because a verb call carries no user text — the checks
+      // that read it treat that as "no carve-out", which is the conservative
+      // direction.
+      const plugged = config.checks ?? [];
       const findings = await createCheckingLayer({
         deps,
-        ...(config.checks === undefined ? {} : { checks: config.checks }),
+        checks: [reviewerCheck(deps, undefined, judgmentRules(plugged)), ...plugged],
       }).run({ document, request: "" });
       return { ok: !findings.some(({ severity }) => severity === "block"), findings };
     },
