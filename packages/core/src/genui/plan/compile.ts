@@ -534,7 +534,8 @@ const compilePlanUnsafe = (text: string, facts: PlanFacts): PlanCompileResult =>
     );
   }
   if (!head.selfClosing) compilePlanChildren(plan, appPlan);
-  if (appPlan.groups.length === 0 && appPlan.cannot.length === 0) {
+  const servedByBox = appPlan.server?.kind === "box" && appPlan.server.served === true;
+  if (appPlan.groups.length === 0 && appPlan.cannot.length === 0 && !servedByBox) {
     plan.issues.push(
       "this plan says nothing: it needs at least one <Group> of leaves, or a <Cannot> line explaining honestly why the ask cannot be built here.",
     );
