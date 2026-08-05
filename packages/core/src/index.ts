@@ -1,6 +1,7 @@
 /** @vendoai/core — the shapes everything speaks (docs/archive/contracts/01-core.md). */
 export * from "./app-access.js";
 export * from "./app-document.js";
+export * from "./app-floor.js";
 export * from "./audit.js";
 export * from "./build-deadlines.js";
 export * from "./catalog.js";

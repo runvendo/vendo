@@ -42,7 +42,7 @@ import { composePromptSections, hostToolSections, islandContract } from "./contr
 import { askModel, type GeneratedAppDocument, type GenerationDependencies } from "./engine.js";
 import { prepareIslands } from "./validation/islands.js";
 import { smokeRenderIslands } from "./validation/smoke-render.js";
-import { wireCompileOptionsFor } from "./wire-options.js";
+import { wireCompileOptionsFor } from "../wire-options.js";
 
 /** What a lane leaves behind. `document` is byte-identical to the input when
  *  the lane failed honestly — a lane never ships half of itself. */
@@ -179,7 +179,7 @@ const islandSourceFrom = (text: string, name: string, deps: IslandLaneDeps): str
   const wire = start !== -1 && close > start
     ? markup.slice(start, close + "</App>".length)
     : `<App name="__island_lane__">${markup}</App>`;
-  const compiled = compileWire(wire, wireCompileOptionsFor(deps, hostComponentNames(deps)));
+  const compiled = compileWire(wire, wireCompileOptionsFor(deps));
   const source = compiled.components[name];
   return typeof source === "string" && source.trim() !== "" ? source : undefined;
 };

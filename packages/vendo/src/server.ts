@@ -24,9 +24,6 @@ import { assertHarnessComposable, reportHire, screenAssembler, vendo } from "@ve
 // package the host installed. Alias it at the import when your own composed
 // value is called `vendo` (`import { vendo as vendoHarness }`).
 export { vendo, type VendoHarnessDeps, type VendoHarnessOptions } from "@vendoai/harnesses";
-// The specialist, same reason: `harness: instant()` has to compile from the one
-// package the host installed (architecture §6).
-export { instant, type InstantHarnessDeps, type InstantHarnessOptions } from "@vendoai/harnesses";
 import { createHarnessTurns, type HarnessTurns } from "./harness-turn.js";
 // Both types already sit in the PUBLIC signatures below — `apps:` is typed off
 // `AppsConfig`, `Vendo.harness` is a `HarnessTurns` — so a host reads them
@@ -2789,9 +2786,15 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // host data one call away. Without `commitSource` the app's CODE has no home but
     // the sandbox snapshot behind `machine.snapshotRef` — lose the snapshot and the
     // customer's app is gone, because the store never had it.
+    // §7.1's floor half rides the same seam: the production compile dialect and
+    // the deterministic fact checks, on every commit, for every author. Without it
+    // the seam compiled with NO options — a lying binding was invisible and an
+    // inline tool reference lost its binding silently — and nothing checked a
+    // harness's own writes at all.
     render: (ctx) => ({
       authoredApp: (input) => apps.authored(input, ctx),
       commitSource: (input) => apps.commitSource(input, ctx),
+      floor: apps.floor(ctx),
     }),
     // Build contract §9.1/§9.7 — the same host org query the wire resolves per
     // request, so a harness turn's façade mounts the team's files too.

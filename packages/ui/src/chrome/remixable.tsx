@@ -109,7 +109,15 @@ const NO_APPS: AppDocument[] = [];
 /** Fork discovery: the user's fork for this slot is the app whose `pins` name
  *  it (provenance — the 2026-08-02 pins/placements split). An in-place fork
  *  needs no placement: its location IS the wrapper it replaced, so this reads
- *  pins, never placements. Latest wins, like slot discovery. */
+ *  pins, never placements.
+ *
+ *  The OLDEST matching row wins, and deliberately: `.at(-1)` over a newest-first
+ *  list is the same winner the SERVER's fork-pin dedupe converges on (runtime.ts
+ *  — "the OLDEST matching row, so every dedupe path converges"). Newest-wins
+ *  here would put the wrapper and the server on different apps whenever a slot
+ *  somehow carries two. (This comment used to say "latest wins, like slot
+ *  discovery"; slot discovery genuinely meant latest and was reading the oldest
+ *  — see use-slot-app.ts. Here the code was right and the comment was wrong.) */
 function useRemixFork(slot: string | null) {
   const { client } = useVendoContext();
   const list = useCallback(

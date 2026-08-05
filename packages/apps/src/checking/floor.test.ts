@@ -15,7 +15,7 @@ import {
 } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { createCheckingLayer } from "./layer.js";
-import type { GenerationDependencies, HostToolInfo } from "../generation/engine.js";
+import type { FloorDependencies, HostToolInfo } from "./deps.js";
 import { scriptedLanguageModel } from "../testing/scripted-model.js";
 
 const tools: HostToolInfo[] = [{
@@ -36,7 +36,7 @@ const toolShapes: Record<string, ShapeType> = {
 
 const catalog: NormalizedCatalog = [];
 
-const deps = (): GenerationDependencies => ({
+const deps = (): FloorDependencies => ({
   model: scriptedLanguageModel(() => '<App name="unused"/>'),
   catalog,
   tools,
@@ -137,6 +137,7 @@ describe("the floor holds regardless of the builder", () => {
       severity: "block",
       where: 'query "invoices"',
       message: 'names unknown tool "host_wireMoney"; the host tools are: host_listInvoices',
+      check: "tools-exist",
     });
   });
 
@@ -157,6 +158,7 @@ describe("the floor holds regardless of the builder", () => {
       severity: "block",
       where: 'node "n2"',
       message: "Maple never shows a bare table — wrap it in a Card",
+      check: "maple-house-style",
     });
   });
 
@@ -166,7 +168,8 @@ describe("the floor holds regardless of the builder", () => {
       checks: [factCheck("whole-app", () => [{ severity: "warn", message: "this app feels thin" }])],
     });
 
-    expect(await layer.run(inputFor(GOOD))).toEqual([{ severity: "warn", message: "this app feels thin" }]);
+    expect(await layer.run(inputFor(GOOD)))
+      .toEqual([{ severity: "warn", message: "this app feels thin", check: "whole-app" }]);
   });
 });
 
@@ -186,6 +189,7 @@ describe("a check with no kind is a FACT check and still fires (F1)", () => {
       severity: "block",
       where: "document",
       message: "the legacy check fired",
+      check: "legacy-host-check",
     });
   });
 
@@ -205,6 +209,7 @@ describe("a check returning garbage costs its findings, never the build (F9)", (
       severity: "warn",
       where: "sloppy",
       message: 'the check "sloppy" did not report a list of findings, so whatever it would have found is missing from this report',
+      check: "sloppy",
     }]);
   });
 
@@ -225,11 +230,12 @@ describe("a check returning garbage costs its findings, never the build (F9)", (
 
     const findings = await createCheckingLayer({ deps: deps(), checks: [mixed] }).run(inputFor(GOOD));
 
-    expect(findings).toContainEqual({ severity: "block", where: "document", message: "a real finding" });
+    expect(findings).toContainEqual({ severity: "block", where: "document", message: "a real finding", check: "sloppy" });
     expect(findings).toContainEqual({
       severity: "warn",
       where: "sloppy",
       message: 'the check "sloppy" reported 2 findings in a shape this floor cannot read, so whatever they said is missing from this report',
+      check: "sloppy",
     });
   });
 
@@ -239,7 +245,7 @@ describe("a check returning garbage costs its findings, never the build (F9)", (
     const extra = returning([{ severity: "warn", where: "document", message: "m", hint: { code: 7 } }]);
 
     expect(await createCheckingLayer({ deps: deps(), checks: [extra] }).run(inputFor(GOOD)))
-      .toEqual([{ severity: "warn", where: "document", message: "m", hint: { code: 7 } }]);
+      .toEqual([{ severity: "warn", where: "document", message: "m", hint: { code: 7 }, check: "sloppy" }]);
   });
 
   it("never lets a malformed entry reach a consumer that reads severity", async () => {
@@ -265,6 +271,7 @@ describe("a broken check costs its findings, never the build", () => {
       severity: "warn",
       where: "flaky",
       message: 'the check "flaky" failed to run (model call timed out), so whatever it would have found is missing from this report',
+      check: "flaky",
     }]);
     expect(findings.filter(({ severity }) => severity === "block")).toEqual([]);
   });
@@ -280,7 +287,7 @@ describe("a broken check costs its findings, never the build", () => {
 
     const findings = await layer.run(inputFor(GOOD));
 
-    expect(findings).toContainEqual({ severity: "block", where: "document", message: "still reported" });
+    expect(findings).toContainEqual({ severity: "block", where: "document", message: "still reported", check: "solid" });
     expect(findings.some(({ where }) => where === "flaky")).toBe(true);
   });
 });

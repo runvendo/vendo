@@ -10,11 +10,11 @@
  * does not throw in the first place).
  */
 import { printWire, type AppDocument, type AppPlan } from "@vendoai/core";
+import type { FloorDependencies } from "./deps.js";
 import { treeOf } from "./facts.js";
+import { REPORT_FINDINGS_DESCRIPTION, REVIEWER_SYSTEM } from "./reviewer-prompt.js";
+import { strictToolCall } from "./strict-tool-call.js";
 import type { Check, Finding } from "./types.js";
-import { REPORT_FINDINGS_DESCRIPTION, REVIEWER_SYSTEM } from "../generation/prompts/reviewer.js";
-import { strictToolCall } from "../generation/strict-tool-call.js";
-import type { GenerationDependencies } from "../generation/engine.js";
 
 export const REVIEWER_CHECK_NAME = "reviewer";
 
@@ -130,11 +130,11 @@ const sampleLines = (samples: Readonly<Record<string, unknown>>): string => {
  *
  * One line per rule, never concatenated: a joined blob reads as a single garbled
  * rule. They are appended rather than woven in, so a host rule can add a reason
- * to reject but can never soften the four the reviewer already applies.
+ * to reject but can never soften the five the reviewer already applies.
  */
 const rubricSection = (rubric: readonly string[]): string => (rubric.length === 0 ? "" : `
 
-ALSO REJECT anything that breaks one of these rules, which this product's owner set. Judge them exactly like the four above, and quote the rule you applied in your message:
+ALSO REJECT anything that breaks one of these rules, which this product's owner set. Judge them exactly like the five above, and quote the rule you applied in your message:
 ${rubric.map((rule) => `- ${rule}`).join("\n")}`);
 
 /**
@@ -143,7 +143,7 @@ ${rubric.map((rule) => `- ${rule}`).join("\n")}`);
  * floor collected from the host and every pack.
  */
 export const reviewerCheck = (
-  deps: GenerationDependencies,
+  deps: FloorDependencies,
   samples?: Readonly<Record<string, unknown>>,
   rubric: readonly string[] = [],
 ): Check => ({

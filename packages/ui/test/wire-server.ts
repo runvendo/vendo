@@ -1083,7 +1083,14 @@ export async function createWireServer(options: WireServerOptions = {}) {
           componentName,
         });
       }
-      if (url.pathname === "/apps" && method === "GET") return json(response, state.apps);
+      // ⚠️ FIXTURE EDIT (D5) — NEWEST FIRST, which is what the real wire returns.
+      // `runtime.list()` sorts createdAt DESCENDING (packages/apps/src/runtime.ts,
+      // pinned by its "newest-first list" case in lifecycle.test.ts) and
+      // AppDocument carries no timestamp at all — so list ORDER is the only
+      // newness signal a client has. This fixture served insertion order, the
+      // exact opposite, which is how `.at(-1)` shipped in use-slot-app.ts under a
+      // "latest placement wins" comment while it resolved the OLDEST placed app.
+      if (url.pathname === "/apps" && method === "GET") return json(response, [...state.apps].reverse());
       if (url.pathname === "/apps" && method === "POST") {
         const prompt = (parsedBody as { prompt: string }).prompt;
         const created = app(`app_${state.apps.length + 1}`, prompt);

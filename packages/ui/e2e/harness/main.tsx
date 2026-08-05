@@ -1562,6 +1562,29 @@ function SlotFallbackScenario() {
   );
 }
 
+/** §10.1 — the pin round trip, end to end, on a host with NO slot: the page's
+ *  Apps shelf is behind the assistant, a build settles in the conversation, its
+ *  pin invites (the nudge), and taking it dismisses the panel and lands the
+ *  ceremony in the shelf. The `onPin` write is the HOST's, so the recorder below
+ *  is the only honest proof that it fired. */
+function PinShelfScenario() {
+  const [pinned, setPinned] = useState<string[]>([]);
+  return (
+    <VendoProvider
+      client={baseClient}
+      components={components}
+      theme={mapleTheme}
+      onPin={app => setPinned(current => [...current, app.appId])}
+    >
+      <VendoPage />
+      <VendoOverlay />
+      <p data-testid="pin-recorder" style={{ position: "fixed", left: 10, bottom: 10, margin: 0, fontSize: 11, color: "#8a8b92" }}>
+        pinned: {pinned.length === 0 ? "none" : pinned.join(",")}
+      </p>
+    </VendoProvider>
+  );
+}
+
 /** A stored tree rendered beside the freshly compiled wire (v1 is gone;
  *  stored documents all carry the current format). */
 const storedTree: UIPayload = {
@@ -2245,6 +2268,7 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/slot-empty-dark": return { title: "Inline slot — empty CTA (dark)", theme: darkTheme, content: <><VendoSlot id="hero" /><VendoPalette /><VendoOverlay launcher="none" /></> };
     case "/slot-pinned": return { title: "Inline slot — pinned component", theme: mapleTheme, content: <VendoSlot id="hero" pin={{ payload: pinnedViewTree }}><section aria-label="Original host component"><h2>Original host hero</h2></section></VendoSlot> };
     case "/slot-fallback": return { title: "Slot pin fallback", content: <SlotFallbackScenario />, ownProvider: true };
+    case "/pin-shelf": return { title: "Pin — nudge, ceremony, Apps shelf", content: <PinShelfScenario />, ownProvider: true };
     case "/appframe": return { title: "App execution planes", content: <AppFrameScenario /> };
     case "/appframe-resize": return { title: "App frame resize — the host's bounds win", content: <AppFrameResizeScenario /> };
     case "/appframe-devserver": return { title: "Live dev-server preview (HMR)", content: <DevServerPreviewScenario /> };

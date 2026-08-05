@@ -11,7 +11,7 @@ import { hasSeen, markSeen, type VendoDiscoverability, type VendoGreeting } from
 import { inertBehind } from "./inert-behind.js";
 import { LauncherFace, LauncherToast, useLauncherStatus } from "./launcher-status.js";
 import { deliverPrefill, PrefillScopeContext, registerOverlayOpener } from "./overlay-registry.js";
-import { usePinAction } from "./pin-ceremony.js";
+import { usePinAction, usePinNudge } from "./pin-ceremony.js";
 import { IDLE_RUN_ACTIVITY, runActivity, subscribeRunActivity } from "./run-activity.js";
 import {
   escapeIntent,
@@ -233,6 +233,9 @@ export function VendoOverlay({
   const [splitState, dispatchSplit] = useReducer(splitViewReducer, initialSplitViewState);
   const expanded = splitState.expanded && !takeover.active;
   const featured = featuredEmbed(splitState);
+  // The workspace IS the mockup's pin: one app on the stage at a time, so its
+  // pin invites until the user takes it (§10.1 — the user pins, never the agent).
+  const stageNudge = usePinNudge(featured?.appId ?? "", featured !== undefined);
   // The collapse ANIMATES: like the connect tray's exit walk, the stage stays
   // mounted through expanded → collapsing → collapsed so the featured app
   // doesn't blink out before the panes finish sliding. Render-phase state
@@ -695,6 +698,7 @@ export function VendoOverlay({
                         <button
                           type="button"
                           className="fl-barpin fl-stage-pin"
+                          {...(stageNudge === undefined ? {} : { "data-vendo-pin": stageNudge })}
                           onClick={() => {
                             pin({ appId: featured.appId, payload: featured.payload });
                             dispatchSplit({ type: "collapse" });

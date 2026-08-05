@@ -12,13 +12,10 @@ import {
   type ShapeType,
 } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
+import { screenTypesCheck } from "./facts.js";
 import { createCheckingLayer } from "./layer.js";
 import type { Check, CheckInput } from "./types.js";
-import {
-  UNSTORED_APP_ID,
-  type GenerationDependencies,
-  type HostToolInfo,
-} from "../generation/engine.js";
+import type { FloorDependencies, HostToolInfo } from "./deps.js";
 import { scriptedLanguageModel } from "../testing/scripted-model.js";
 
 const tools: HostToolInfo[] = [
@@ -57,7 +54,7 @@ const toolShapes: Record<string, ShapeType> = {
 
 const catalog: NormalizedCatalog = [];
 
-const deps = (): GenerationDependencies => ({
+const deps = (): FloorDependencies => ({
   model: scriptedLanguageModel(() => "<App name=\"unused\"/>"),
   catalog,
   tools,
@@ -70,7 +67,7 @@ const documentFrom = (wire: string): AppDocument => {
   const compiled = compileWire(wire, { toolShapes });
   return {
     format: VENDO_APP_FORMAT,
-    id: UNSTORED_APP_ID,
+    id: "app_checking_test",
     name: compiled.name ?? "Untitled",
     ui: "tree",
     tree: compiled.tree as AppDocument["tree"],
@@ -118,8 +115,8 @@ describe("checking layer", () => {
     expect(ran).toBe(2);
     // Flat, not nested: one array of findings, whatever each check returned.
     expect(findings).toEqual(expect.arrayContaining([
-      { severity: "warn", where: "one", message: "one ran" },
-      { severity: "warn", where: "two", message: "two ran" },
+      { severity: "warn", where: "one", message: "one ran", check: "one" },
+      { severity: "warn", where: "two", message: "two ran", check: "two" },
     ]));
     expect(findings.every((finding) => typeof finding.message === "string")).toBe(true);
   });
@@ -140,6 +137,8 @@ describe("checking layer", () => {
 
     expect(layer.checks.map(({ name }) => name)).toContain("maple-house-style");
     // Appended, never replacing: every built-in fact check is still registered.
+    // `screen-types` (the tsc static half) is NOT a built-in factCheck — it is
+    // added only at the floor and the validate door, off the create hot path.
     expect(layer.checks.map(({ name }) => name)).toEqual(expect.arrayContaining([
       "document", "tools-exist", "components-exist", "bindings-fit", "expressions-compute",
       "query-inputs-literal", "no-string-interpolation", "maple-house-style",
@@ -148,6 +147,7 @@ describe("checking layer", () => {
       severity: "block",
       where: 'node "n2"',
       message: 'Maple never shows a bare table for "list my invoices" — wrap it in a Card',
+      check: "maple-house-style",
     });
   });
 
@@ -166,6 +166,7 @@ describe("checking layer", () => {
       severity: "warn",
       where: "reviewer",
       message: 'the check "reviewer" failed to run (model call timed out), so whatever it would have found is missing from this report',
+      check: "reviewer",
     });
     // The rest of the layer still reported: a broken check costs its findings,
     // not the run.
@@ -175,6 +176,83 @@ describe("checking layer", () => {
   it("passes a clean app with no findings", async () => {
     const layer = createCheckingLayer({ deps: deps() });
     expect(await layer.run(inputFor(cleanApp))).toEqual([]);
+  });
+});
+
+/**
+ * Check PROVENANCE — architecture design §7's carve-out, "except host-check
+ * failures, which only the host can waive via its own policy config".
+ *
+ * `./review-failure-protocol.test.ts` recorded this as unrepresentable: "Finding
+ * carries no check provenance, so a host-check failure cannot be identified".
+ * `where` cannot stand in for it — it is the LOCUS (`node "n3" prop "rows"`), it is
+ * optional, and a host check is free to write whatever it likes there. So a
+ * built-in fact finding and a host's own were the same anonymous object.
+ *
+ * The layer stamps it, which is the one place that can: it is what invokes every
+ * check, so it is the only thing that knows the answer for all of them at once
+ * without each check being trusted to self-report honestly.
+ */
+describe("every finding says which check produced it", () => {
+  const hostCheck: Check = {
+    name: "maple-house-rules",
+    kind: "fact",
+    run: async () => [{ severity: "block", where: 'node "n2"', message: "no money figure without its account." }],
+  };
+
+  it("stamps a host check's own name, so §7's carve-out is representable", async () => {
+    const layer = createCheckingLayer({ deps: deps(), checks: [hostCheck] });
+    const findings = await layer.run(inputFor(cleanApp));
+    expect(findings).toEqual([{
+      severity: "block",
+      where: 'node "n2"',
+      message: "no money figure without its account.",
+      check: "maple-house-rules",
+    }]);
+  });
+
+  it("stamps the built-in that fired, so the two are now distinguishable", async () => {
+    const layer = createCheckingLayer({ deps: deps(), checks: [hostCheck] });
+    const findings = await layer.run(inputFor(
+      '<App name="Invoices"><Query id="invoices" tool="host_wireMoney"/><Stack><Table rows={invoices.data}/></Stack></App>',
+    ));
+    const byCheck = new Set(findings.map(({ check }) => check));
+    expect(byCheck).toContain("tools-exist");
+    expect(byCheck).toContain("maple-house-rules");
+    // The whole point: a waive point can now tell them apart.
+    expect(findings.filter(({ check }) => check === "maple-house-rules")).toHaveLength(1);
+  });
+
+  it("overrides a check that tries to claim someone else's name", async () => {
+    // A check is untrusted code. Provenance the layer did not assign is not
+    // provenance — it is a check attributing its own finding to a neighbour, which
+    // at a waive point is a privilege escalation.
+    const liar: Check = {
+      name: "liar",
+      kind: "fact",
+      run: async () => [
+        { severity: "block", message: "trust me", check: "document" } as never,
+      ],
+    };
+    const findings = await createCheckingLayer({ deps: deps(), checks: [liar] }).run(inputFor(cleanApp));
+    expect(findings).toEqual([{ severity: "block", message: "trust me", check: "liar" }]);
+  });
+
+  it("stamps a crash finding too — a check that died is still named", async () => {
+    const thrower: Check = {
+      name: "explodes",
+      kind: "fact",
+      run: async () => {
+        throw new Error("nope");
+      },
+    };
+    const findings = await createCheckingLayer({ deps: deps(), checks: [thrower] }).run(inputFor(cleanApp));
+    expect(findings).toEqual([{
+      severity: "warn",
+      where: "explodes",
+      message: 'the check "explodes" failed to run (nope), so whatever it would have found is missing from this report',
+      check: "explodes",
+    }]);
   });
 });
 
@@ -200,6 +278,22 @@ describe("built-in fact checks", () => {
     const finding = findings.find(({ where }) => where.includes('prop "text"'));
     expect(finding?.severity).toBe("block");
     expect(finding?.message).toContain("the real fields are: id, client, amountCents");
+  });
+
+  it("blocks a screen naming a component no vocabulary carries — the wired tsc floor", async () => {
+    // Prove-it-can-fail for the `screen-types` wiring: an unknown component is a
+    // block that carries the check's own name. `screen-types` is the compiler
+    // static half — composed at the floor and the validate door (never in the
+    // create hot path), so the layer is built the way those gates build it. Drop
+    // `screenTypesCheck` from this layer and the finding vanishes.
+    const layer = createCheckingLayer({ deps: deps(), checks: [screenTypesCheck(deps())] });
+    const findings = await layer.run(inputFor(
+      '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack><MapleGhostCard valueCents={invoices.data}/></Stack></App>',
+    ));
+
+    const finding = findings.find(({ check }) => check === "screen-types");
+    expect(finding?.severity).toBe("block");
+    expect(finding?.message).toContain('references unknown component "MapleGhostCard"');
   });
 
   it("names the allowed props when a prewired component is given one it has not got", async () => {
@@ -271,6 +365,7 @@ describe("built-in fact checks", () => {
       severity: "block",
       where: "document",
       message: 'must carry a non-empty name="..." attribute',
+      check: "document",
     });
   });
 });

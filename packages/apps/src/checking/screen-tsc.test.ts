@@ -1,0 +1,161 @@
+/**
+ * The static half's own contract: real compiler diagnostics, translated into
+ * findings a model can act on — and total silence when there is no compiler.
+ */
+import type { JsonSchema, NormalizedCatalog, ShapeType } from "@vendoai/core";
+import { describe, expect, it } from "vitest";
+import { screenTypings } from "./screen-typings.js";
+import { screenTscFindings, __setCompilerForTests } from "./screen-tsc.js";
+
+const invoicesShape: ShapeType = {
+  kind: "object",
+  fields: {
+    data: {
+      kind: "array",
+      items: {
+        kind: "object",
+        fields: { id: { kind: "string" }, amount_cents: { kind: "number" }, issued_at: { kind: "string" } },
+      },
+    },
+    total_cents: { kind: "number" },
+  },
+};
+
+const netWorthSchema: JsonSchema = {
+  type: "object",
+  properties: {
+    valueCents: { type: "number" },
+    series: { type: "array", items: { type: "number" } },
+  },
+  required: ["valueCents", "series"],
+  additionalProperties: false,
+};
+
+const catalog: NormalizedCatalog = [
+  { name: "MapleNetWorthCard", description: "Net worth", propsJsonSchema: netWorthSchema },
+  { name: "MapleFreeform", description: "no schema" },
+];
+
+const typings = screenTypings({
+  catalog,
+  queries: [{ name: "invoices", tool: "maple_invoices_list" }],
+  toolShapes: { maple_invoices_list: invoicesShape },
+});
+
+const check = (screen: string) => screenTscFindings({ screen, typings });
+
+describe("screenTscFindings", () => {
+  it("says nothing about a clean screen", () => {
+    expect(check(`<App name="Overdue invoices">
+  <Query id="invoices" tool="maple_invoices_list"/>
+  <Stack gap={12}>
+    <Stat label="Total" value={sum(invoices.data, "amount_cents")} format="money"/>
+    <MapleNetWorthCard valueCents={invoices.total_cents} series={[1, 2, 3]}/>
+    <DataTable rows={invoices.data} columns={[{ key: "amount_cents", format: "money" }]}/>
+  </Stack>
+</App>;
+`)).toEqual([]);
+  });
+
+  it("names an unknown component in the floor's voice, never a TS code", () => {
+    const findings = check('<App name="x"><MapleGhostCard valueCents={1}/></App>;');
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.severity).toBe("block");
+    expect(findings[0]?.where).toBe("<MapleGhostCard>");
+    expect(findings[0]?.message).toContain('references unknown component "MapleGhostCard"');
+    expect(findings[0]?.message).not.toMatch(/TS\d|error TS/u);
+  });
+
+  it("names an unknown prop and lists the ones the component really reads", () => {
+    const findings = check('<App name="x"><Table data={invoices.data}/></App>;');
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.where).toBe('<Table> prop "data"');
+    expect(findings[0]?.message).toContain('sets unknown prop "data"');
+    expect(findings[0]?.message).toContain("rows");
+  });
+
+  it("names a missing required prop", () => {
+    const findings = check('<App name="x"><MapleNetWorthCard series={[1]}/></App>;');
+    expect(findings.map((finding) => finding.message).join(" ")).toContain('is missing required prop "valueCents"');
+  });
+
+  it("names a prop type mismatch in plain language", () => {
+    const findings = check('<App name="x"><MapleNetWorthCard valueCents={invoices.data} series={[1]}/></App>;');
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.where).toBe('<MapleNetWorthCard> prop "valueCents"');
+    expect(findings[0]?.message).toContain("takes number");
+    expect(findings[0]?.message).toContain("bind a value whose type matches the prop");
+  });
+
+  it("names a field the tool's response shape does not carry, with the real fields", () => {
+    const findings = check('<App name="x"><Stat label="a" value={invoices.totalCents}/></App>;');
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.message).toContain('reads field "totalCents"');
+    expect(findings[0]?.message).toContain("the real fields are: data, total_cents");
+  });
+
+  it("names a wrong aggregate field, with the fields the rows really carry", () => {
+    const findings = check('<App name="x"><Stat label="a" value={sum(invoices.data, "amount_centz")}/></App>;');
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.message).toContain('sum() does not accept "amount_centz" as its 2nd argument');
+    expect(findings[0]?.message).toContain("amount_cents");
+  });
+
+  it("names a wrong group_by bucket and a wrong grouped-aggregate field", () => {
+    const bucket = check('<App name="x"><Stat label="a" value={count(group_by(invoices.data, "issued_at", "week", sum.of("amount_cents")))}/></App>;');
+    expect(bucket.map((finding) => finding.message).join(" ")).toContain('"day" | "month" | "year"');
+    const field = check('<App name="x"><Stat label="a" value={count(group_by(invoices.data, "issued_at", "month", sum.of("nope")))}/></App>;');
+    expect(field.map((finding) => finding.message).join(" ")).toContain("amount_cents");
+  });
+
+  it("stays quiet on a schema-less catalog entry — 01-core §14 is permissive", () => {
+    expect(check('<App name="x"><MapleFreeform whateverTheModelGuessed={invoices.data}/></App>;')).toEqual([]);
+  });
+
+  it("reads one segment off $state, never a deeper path — the settled single-segment rule (#808)", () => {
+    // `state.<key>` reads any runtime value and is fine; `state.<key>.<deeper>`
+    // is a type error the `Record<string, unknown>` shim enforces, because the
+    // renderer would silently drop the deeper access.
+    expect(check('<App name="x"><Stat label="a" value={state.total}/></App>;')).toEqual([]);
+    const deep = check('<App name="x"><Stat label="a" value={state.total.cents}/></App>;');
+    expect(deep.length).toBeGreaterThan(0);
+    expect(deep.every((finding) => finding.severity === "block")).toBe(true);
+  });
+
+  it("reports a syntax error once, plainly, instead of a cascade of type noise", () => {
+    const findings = check('<App name="x"><Stack gap={12}></App>;');
+    expect(findings.length).toBeGreaterThan(0);
+    expect(findings.every((finding) => finding.severity === "block")).toBe(true);
+    expect(findings.map((finding) => finding.message).join(" ")).toContain("does not parse");
+  });
+
+  it("never throws, whatever the screen text is", () => {
+    for (const screen of ["", "((((", " \t\n ", "<".repeat(500), "}{"]) {
+      expect(() => check(screen)).not.toThrow();
+    }
+  });
+
+  it("skips silently when no compiler can be loaded — a check never fails a build", () => {
+    const restore = __setCompilerForTests(null);
+    try {
+      expect(check('<App name="x"><MapleGhostCard/></App>;')).toEqual([]);
+    } finally {
+      restore();
+    }
+  });
+
+  it("skips silently when the host compiler predates the API the check calls", () => {
+    const restore = __setCompilerForTests({ version: "4.7.4" } as never);
+    try {
+      expect(check('<App name="x"><MapleGhostCard/></App>;')).toEqual([]);
+    } finally {
+      restore();
+    }
+  });
+
+  it("anchors a finding on the line when there is no enclosing element", () => {
+    const findings = check("{ sum(nothingDeclared, \"x\") };");
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.where).toBe("line 1");
+  });
+});

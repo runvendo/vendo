@@ -36,7 +36,9 @@ import {
   screenDescriptionSchema,
   vendoViewPartSchema,
   vendoViewStreamId,
+  type AppFloor,
   type AppId,
+  type Finding,
   type CommitResult,
   type Json,
   type Tree,
@@ -115,6 +117,25 @@ export interface RenderSeamOptions {
   /** Write the part on the stable per-app stream id, so successive views
    *  reconcile in place instead of stacking. */
   emit: (streamId: string, part: VendoViewPart) => void;
+  /**
+   * The checks floor (§7.1) — the production compile dialect, and the
+   * deterministic fact checks over what it compiled.
+   *
+   * INJECTED rather than imported. The floor's implementation needs a catalog,
+   * tool shapes and a model, and pulling it in statically would put a pipeline
+   * body in `packages/harnesses`, which the layering forbids. Composition builds
+   * it — `AppsRuntime.floor(ctx)` — which is also the only layer that HAS those
+   * things. The pure tree-assembly edge to `@vendoai/apps` that already exists is
+   * deliberately not widened.
+   *
+   * Unwired, the seam behaves exactly as it did before this option existed: a bare
+   * `compileWire` and no checks. That is not a mode anyone should ship — it is
+   * what made every files-first paint speak a different dialect than the
+   * conductor, so an inline tool reference silently lost its binding and
+   * `bindingErrors` was `[]` by construction — but a `WorkspaceFs` wrapped
+   * outside composition still has to work.
+   */
+  floor?: AppFloor;
   /**
    * The live tool/component names, for the plan compiler's fact check. Facts only
    * shape `issues` — never whether a plan parses — so omitting them costs the
@@ -218,13 +239,55 @@ export async function viewForWrite(
     // compileWire is TOTAL and valid-while-partial: every prefix of a wire
     // compiles, which is what makes a mid-generation save renderable. Only a
     // `compile-failed` issue means it truly did not parse.
-    const compiled = compileWire(content);
+    //
+    // Through the FLOOR, so this compile speaks the production dialect — the same
+    // one `conductor.ts`, `fill.ts` and `lanes.ts` speak. Bare, an inline tool
+    // reference does not expand (its binding is dropped and its query never
+    // minted, and the tree still has children, so the seam paints an app with a
+    // blank value) and `bindingErrors` is `[]` by construction.
+    const compiled = options.floor === undefined
+      ? compileWire(content)
+      : await options.floor.compile(content);
     // `missing-app` means there was no `<App>` document to read at all, and
     // `compile-failed` means the compiler itself gave up: both are "unparseable".
     if (compiled.issues.some((issue) => issue.code === "compile-failed" || issue.code === "missing-app")) {
       return undefined;
     }
     if (!renders(compiled.tree)) return undefined;
+    // The floor, on EVERY commit, for every author — our loop, Claude Code, a
+    // human with an editor (§7.1). A `block` means this must not reach a screen,
+    // and it says so the only way this seam knows how to: it emits nothing, and
+    // the last good view stays. No new failure channel; the brokenness reaches the
+    // author through `validate`, exactly like content that does not compile.
+    if (options.floor !== undefined) {
+      let findings: readonly Finding[] = [];
+      try {
+        findings = await options.floor.check({ appId, compiled });
+      } catch (error) {
+        // A floor that could not RUN is not a finding. The layer already decided
+        // this question for the checks it runs — one that throws degrades to a
+        // `warn` naming it, "so a broken check never takes the app down with it" —
+        // and the same reasoning holds one level up: refusing every paint because
+        // the host's tool probe failed would blank the pane for the whole turn,
+        // which is what §1.6's skeleton exists to prevent. Loud for the operator,
+        // silent for the user.
+        console.error(
+          `[vendo] the checks floor could not run for ${appId}, so this paint was not checked — ${safeErrorMessage(error)}`,
+        );
+      }
+      const blocking = findings.filter((finding) => finding.severity === "block");
+      if (blocking.length > 0) {
+        console.error(
+          `[vendo] ${appId} did not pass the checks floor; nothing painted and the last good view stays — `
+          + blocking.map(({ check, where, message }) => [
+            check === undefined ? undefined : `[${check}]`,
+            where,
+            message,
+          ].filter((part) => part !== undefined).join(" ")).join("; "),
+        );
+        return undefined;
+      }
+    }
     compiledApp = compiled;
     payload = stripServerAuthoritativeFields(
       assembleTree({ tree: compiled.tree, components: compiled.components }),

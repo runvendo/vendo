@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useApps } from "../hooks/use-apps.js";
 import { useMobileTakeover } from "../hooks/use-mobile-takeover.js";
+import { useRefreshOnPin } from "../hooks/use-pin-refresh.js";
 import { useThreads } from "../hooks/use-threads.js";
 import { ActivityPanel } from "./activity-panel.js";
 import { AutomationsPanel } from "./automations-panel.js";
@@ -143,6 +144,10 @@ export function VendoPage({ thread }: VendoPageProps = {}) {
   const station = view === "apps" ? "apps" : view === "chat" && home ? "home" : "elsewhere";
   const arrivedAt = useRef(station);
   const refreshApps = appsApi.refresh;
+  // The pin ceremony flies its ghost INTO the shelf below, so the shelf cannot
+  // wait for the next arrival at this door: the flight would land in a shelf
+  // that does not have the app in it yet. Same bus slot discovery rides.
+  useRefreshOnPin(refreshApps);
   useEffect(() => {
     // useResource already fetched on mount; only transitions refresh.
     if (station !== arrivedAt.current && station !== "elsewhere") void refreshApps();

@@ -74,6 +74,22 @@ export interface Finding {
    *  judging the whole app may honestly have no locus to name. */
   where?: string;
   message: string;
+  /**
+   * WHICH check produced this — its `Check.name`.
+   *
+   * Not the same thing as `where`, which is the locus inside the app and is a
+   * check's own free text. Without this, a built-in fact finding and a host's own
+   * plugged check were the same anonymous object, so architecture design §7's
+   * carve-out — "except host-check failures, which only the host can waive via its
+   * own policy config" — was not merely unimplemented but unrepresentable.
+   *
+   * The checking layer stamps it, and OVERRIDES whatever a check wrote here: a
+   * check is untrusted code, and provenance it assigned to itself is a finding
+   * attributing itself to a neighbour, which at a waive point is an escalation.
+   * Optional only because a `Finding` is also authored by hand in places that never
+   * pass through the layer.
+   */
+  check?: string;
 }
 
 export interface CheckInput {
