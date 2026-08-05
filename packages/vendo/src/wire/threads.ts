@@ -52,10 +52,16 @@ export const threadRoutes: RouteEntry[] = [
     // client whose connection died can rejoin through `GET /threads/:id/stream`.
     // Recorded HERE because this is the one place both engines' turns converge
     // and the turn's identity (thread + subject) already exists.
-    return recordResumableTurn(trackTurnResponse(turn, unregister), {
-      threadId,
-      subject: ctx.principal.subject,
-    });
+    //
+    // Recorder INSIDE, liveness OUTSIDE, and the order is load-bearing: ENG-353's
+    // registration must end when THIS CLIENT stops reading, not when the turn's
+    // bytes run out. The recorder drains its own branch, so the turn still
+    // completes for a reader who left — but the watchdog keeps watching a turn
+    // whose client is merely slow.
+    return trackTurnResponse(
+      recordResumableTurn(turn, { threadId, subject: ctx.principal.subject }),
+      unregister,
+    );
   }),
   // The SERVER half of `ChatTransport.reconnectToStream` (ai@6): the URL, the
   // method and the 204 are the SDK's, not ours. 204 = nothing in flight, so the
