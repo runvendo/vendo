@@ -1,15 +1,36 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createDb, type Db } from "./db.js";
 
-describe("Db.transaction()", () => {
+interface Engine {
+  name: "pglite" | "postgres";
+  makeDb(): Db;
+}
+
+const url = process.env.POSTGRES_URL;
+const engines: Engine[] = [
+  { name: "pglite", makeDb: () => createDb({ dataDir: `memory://tx-test-${Date.now()}` }) },
+];
+if (url) {
+  engines.push({ name: "postgres", makeDb: () => createDb({ url }) });
+} else {
+  console.info("POSTGRES_URL not set — postgres leg skipped");
+}
+
+// The pg engine owns its own transaction lifecycle (dedicated pool client,
+// BEGIN/COMMIT/ROLLBACK, release) separate from PGlite's, so the same
+// assertions run on both; db-postgres.transaction.test.ts covers the pg
+// client wiring without a server.
+describe.each(engines)("Db.transaction() on $name", ({ makeDb }) => {
   let db: Db;
 
   beforeEach(async () => {
-    db = createDb({ dataDir: `memory://tx-test-${Date.now()}` });
-    await db.query("CREATE TABLE IF NOT EXISTS tx_test (id text PRIMARY KEY, val text)");
+    db = makeDb();
+    await db.query("DROP TABLE IF EXISTS tx_test");
+    await db.query("CREATE TABLE tx_test (id text PRIMARY KEY, val text)");
   });
 
   afterEach(async () => {
+    await db.query("DROP TABLE IF EXISTS tx_test");
     await db.close();
   });
 
@@ -56,6 +77,24 @@ describe("Db.transaction()", () => {
     expect(order).toEqual(["beforeWork", "work"]);
     const result = await db.query("SELECT val FROM tx_test WHERE id = $1", ["d"]);
     expect(result.rows[0]?.val).toBe("4");
+  });
+
+  it("beforeWork runs inside the transaction — SET LOCAL is visible to work", async () => {
+    // SET LOCAL only takes effect inside an open transaction, so work seeing
+    // the value proves beforeWork ran after BEGIN (the RLS tenant-context
+    // pattern this hook exists for).
+    const seen = await db.transaction(
+      async (query) => {
+        const result = await query("SELECT current_setting('vendo.tenant', true) AS tenant");
+        return result.rows[0]?.tenant;
+      },
+      {
+        beforeWork: async (query) => {
+          await query("SET LOCAL vendo.tenant = 'tenant_1'");
+        },
+      },
+    );
+    expect(seen).toBe("tenant_1");
   });
 
   it("rolls back if beforeWork throws", async () => {
