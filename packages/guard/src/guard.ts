@@ -66,15 +66,12 @@ const APPROVALS_COLLECTION = "vendo_approvals";
  *  window properly needs guarded writes on `vendo_approvals`; not chased here. */
 const APPROVAL_CLAIMS_COLLECTION = "guard:approval-claims";
 const AUDIT_COLLECTION = "vendo_audit";
-/** The emergency stop lives in ONE guard-owned row: `freeze` in a generic
- *  collection, `{ frozen, by, at }`. `freeze()`/`unfreeze()` write it and the
- *  console writes the same row directly, because a kill switch has to be
- *  flippable from outside the process it stops. `#checkWithMetadata` reads it
- *  before anything else, so while it is set NOTHING runs — declared reads,
- *  standing grants and approved replays included. */
+/** The emergency stop is a ROW (`freeze`, `{ frozen, by, at }`) and not a config
+ *  field: the moment you need a kill switch is the moment you cannot redeploy to
+ *  get one, so the console flips this row directly and a guard in another
+ *  process obeys it on its next check. */
 const CONTROLS_COLLECTION = "guard:controls";
 const FREEZE_ROW = "freeze";
-const FROZEN_REASON = "vendo is frozen — nothing runs until it is unfrozen";
 /** Build contract §7 — the effect ledger: one row per completed mutating call,
  *  keyed by (run, tool, exact input). It is what makes fail-and-re-run correct:
  *  a re-run of a run that already sent the payment must not send it again. */
@@ -774,8 +771,7 @@ class GuardImplementation implements VendoGuard {
   }
 
   /** The switch is flipped BEFORE it is reported: an audit failure must never
-   *  leave the caller believing a freeze did not land. Both directions are
-   *  idempotent, so a retry only writes a second line. */
+   *  leave the caller believing a freeze did not land. */
   async #setFrozen(frozen: boolean, by: string): Promise<void> {
     await this.#store.records(CONTROLS_COLLECTION).put({
       id: FREEZE_ROW,
@@ -836,26 +832,22 @@ class GuardImplementation implements VendoGuard {
     ctx: RunContext,
     commitRun = true,
   ): Promise<CompletedDecision> {
-    // The kill switch, read before any other stage: a frozen guard says no to
-    // every call and spends nothing — no risk resolution, no breaker slot, no
-    // parked approval to answer later.
+    // Read before any other stage so a frozen guard spends nothing: no risk
+    // resolution (the risk chipped below is the DECLARED one), no breaker slot,
+    // no parked approval left for someone to answer later.
     if (await this.frozen()) {
       await this.report(
         eventFromContext(ctx, {
           kind: "policy-decision",
           tool: call.tool,
-          // Declared, not effective: the freeze answers before the risk
-          // resolver is ever consulted.
           risk: descriptor.risk,
           inputPreview: inputPreview(call),
           outcome: "blocked",
           decidedBy: "frozen",
         }),
       );
-      return {
-        decision: { action: "block", reason: FROZEN_REASON, decidedBy: "frozen" },
-        descriptor,
-      };
+      const reason = "vendo is frozen — nothing runs until it is unfrozen";
+      return { decision: { action: "block", reason, decidedBy: "frozen" }, descriptor };
     }
 
     const effectiveDescriptor = await this.#effectiveDescriptor(call, descriptor, ctx);

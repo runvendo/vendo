@@ -9,8 +9,8 @@ import type { ToolCall, ToolDescriptor } from "./tools.js";
 /** 01-core §6. `"org"` (build contract §9.10) is the org-admin policy layer's
  *  strictness clamp: it appears on `ask` and `block` only, because org policy
  *  TIGHTENS and never loosens — no run is ever decided BY it. `"frozen"` is the
- *  guard's emergency stop, and blocks only: a freeze can never let a call
- *  through, and it refuses rather than parking (there is nothing to answer). */
+ *  guard's emergency stop, and blocks only: it refuses rather than parking,
+ *  because there is nothing for anyone to answer. */
 export type GuardDecision =
   | { action: "run"; decidedBy: "grant" | "rule" | "judge" | "default"; grantId?: GrantId }
   | { action: "ask"; approval: ApprovalRequest; decidedBy: "confirmEach" | "rule" | "judge" | "breaker" | "default" | "org" }
