@@ -90,6 +90,23 @@ const askedUserStop: StopCondition<ToolSet> = ({ steps }) => {
   });
 };
 
+/**
+ * §4.1 item 4 — a token ceiling for one turn, as one more StopCondition. The
+ * caller closes over whose ceiling it is (a tenant, a seat, a plan), because the
+ * loop has no business knowing.
+ *
+ * A StopCondition is consulted AFTER a step, so crossing the ceiling always costs
+ * the step that crossed it. That is what makes this a budget rather than a hard
+ * cap, and it is the only honest shape available: token spend is not knowable
+ * until the provider reports it.
+ */
+export function tokenBudgetStop(maxTotalTokens: number): StopCondition<ToolSet> {
+  return ({ steps }) => steps.reduce((spent, step) => {
+    const { totalTokens, inputTokens, outputTokens } = step.usage;
+    return spent + (totalTokens ?? (inputTokens ?? 0) + (outputTokens ?? 0));
+  }, 0) >= maxTotalTokens;
+}
+
 /** An approval the conversation abandoned reaches the PROVIDER as a denied tool
  *  call, not as our internal `approval-responded` state. */
 export function providerHistory(messages: UIMessage[]): UIMessage[] {
@@ -217,6 +234,11 @@ export interface TurnLoopOptions {
    *  composed turn; every composed caller mints one. */
   turnId?: TurnId;
   context?: TurnContext;
+  /** Extra stop conditions, COMPOSED with the loop's own three rather than
+   *  replacing them. The array used to be a literal, so a caller who needed a
+   *  fourth condition had nowhere to put it and would have had to grow a second
+   *  stop mechanism beside this one. */
+  stopWhen?: readonly StopCondition<ToolSet>[];
   toolSearch?: ToolSearchSession;
 }
 
@@ -274,7 +296,7 @@ export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
     model: turnModel(options),
     messages: modelMessages,
     tools: options.tools,
-    stopWhen: [stepCountIs(maxSteps), buildFailedStop, askedUserStop],
+    stopWhen: [stepCountIs(maxSteps), buildFailedStop, askedUserStop, ...(options.stopWhen ?? [])],
     maxOutputTokens: options.context?.maxOutputTokens,
     // Stated rather than inherited — see DEFAULT_MAX_RETRIES.
     maxRetries: options.context?.maxRetries ?? DEFAULT_MAX_RETRIES,

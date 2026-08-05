@@ -18,6 +18,8 @@ import {
   createUIMessageStreamResponse,
   isToolUIPart,
   type LanguageModel,
+  type StopCondition,
+  type ToolSet,
   type UIMessage,
   type UIMessageStreamWriter,
 } from "ai";
@@ -106,6 +108,11 @@ interface AgentConfig {
    *  host tool's result before it reaches the model, which happens in the tool
    *  bridge here rather than in the loop. */
   context?: TurnContext & { toolOutputCap?: number };
+  /** §4.1 item 4 — extra stop conditions for every turn, composed with the loop's
+   *  own three. `tokenBudgetStop(n)` is the shipped one; a host closes over whose
+   *  ceiling it is, because neither this door nor the loop has any business
+   *  knowing. Unset changes nothing. */
+  stopWhen?: readonly StopCondition<ToolSet>[];
   capabilityMiss?: CapabilityMissConfig;
   /** ENG-252: enable the `find_tools` meta-tool and runtime loadout.
    *  When set, the model starts with a bounded initial loadout and discovers the
@@ -543,6 +550,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
             ...(ctx.turnId === undefined ? {} : { turnId: ctx.turnId }),
             ...(input.signal === undefined ? {} : { signal: input.signal }),
             ...(config.context === undefined ? {} : { context: config.context }),
+            ...(config.stopWhen === undefined ? {} : { stopWhen: config.stopWhen }),
             ...(toolSearch === undefined ? {} : { toolSearch }),
           });
           // self-serve P: the ai-SDK `error` chunk is TRANSIENT — it sets the
