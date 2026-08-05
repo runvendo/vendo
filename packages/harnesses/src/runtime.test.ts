@@ -5,7 +5,7 @@
  * frozen routing table. Harness adapters contain no persistence and no wire code.
  */
 import { defineHarness } from "./define.js";
-import type { Harness, HarnessEvent, ThreadId, Turn } from "@vendoai/core";
+import { SSE_KEEPALIVE_FRAME, type Harness, type HarnessEvent, type ThreadId, type Turn } from "@vendoai/core";
 import type { UIMessage } from "ai";
 import { describe, expect, it, vi } from "vitest";
 import { createHarnessRuntime, type TurnRunInput } from "./runtime.js";
@@ -183,8 +183,10 @@ describe("turn assembly", () => {
     const f = fixture();
     // Empty but well-formed is the established behaviour (today's agent closes
     // the same way on a pre-turn abort): the terminator is what a client needs.
+    // The keepalive rides in front of it (core/sse-keepalive.ts) — an SSE comment
+    // frame, so "empty" now means "one frame of nothing, then the terminator".
     const raw = await (await f.runRaw(scripted([]))).text();
-    expect(raw).toBe("data: [DONE]\n\n");
+    expect(raw).toBe(`${SSE_KEEPALIVE_FRAME}data: [DONE]\n\n`);
   });
 });
 
