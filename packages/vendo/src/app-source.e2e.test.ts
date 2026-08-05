@@ -298,6 +298,57 @@ describe("app source: checkout and commit (contract §3.2)", () => {
     await expect(three.readFile(`/user/apps/${APP}/src/App.tsx`)).rejects.toThrow();
   }, 60_000);
 
+  /**
+   * The frozen layout has no way to spell ANOTHER person's personal mount:
+   * `/user` is always the caller's own. So resolving a foreign personal app to
+   * `/user/apps/<appId>` points at the CALLER's rows while the row it writes back
+   * to is someone else's — a caller could stage files in their own workspace and
+   * land them on another person's app. `commitApp` is the sharp end: it never
+   * calls `requireOwned`, so `canCommit` on a subjectless path was its only gate,
+   * and that gate answers about the caller's own mount.
+   */
+  it("refuses a personal app owned by someone else — both checkout and commit", async () => {
+    const store = await tempStore();
+    const STRANGER = "user_stranger";
+    await store.records("vendo_apps").put({
+      id: APP,
+      data: {
+        subject: STRANGER,
+        enabled: false,
+        doc: {
+          format: VENDO_APP_FORMAT,
+          id: APP,
+          name: "Their private app",
+          source: { "src/Theirs.tsx": { hash: contentHashOf("theirs\n"), bytes: 7, text: "theirs\n" } },
+        },
+      },
+      refs: { subject: STRANGER },
+    });
+    const seam = seamOver(store, undefined, STRANGER);
+
+    const workspace = await openWorkspace(store);
+    // The caller can write their own `/user` mount — which is exactly why
+    // permission cannot be the thing that refuses this.
+    expect(await workspace.canCommit(`/user/apps/${APP}/app.vendo`)).toBe(true);
+
+    await expect(checkoutApp(APP, workspace, ctx, seam)).rejects.toThrow(/another person/);
+    // Nothing of theirs was materialized into this caller's workspace.
+    await expect(workspace.readFile(`/user/apps/${APP}/src/Theirs.tsx`)).rejects.toThrow();
+
+    // And the commit half refuses on its own, not because checkout happened to
+    // run first: a caller who stages a file at that path directly cannot land it.
+    await workspace.writeFile(`/user/apps/${APP}/src/Mine.tsx`, "mine\n");
+    const result = await workspace.commit();
+    expect(result.status).toBe("ok");
+    await expect(
+      commitApp(APP, result.status === "ok" ? result.changed : [], workspace, ctx, seam),
+    ).rejects.toThrow(/another person/);
+
+    // Their document is untouched — the whole point.
+    const theirs = await seam.requireOwned(APP, ctx);
+    expect(Object.keys(theirs.source ?? {})).toEqual(["src/Theirs.tsx"]);
+  }, 60_000);
+
   it("refuses a source path that would escape the app's directory", async () => {
     const store = await tempStore();
     await seedApp(store);

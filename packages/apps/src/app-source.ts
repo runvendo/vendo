@@ -129,7 +129,23 @@ const appDirectory = async (
   ctx: RunContext,
   seam: AppSourceSeam,
 ): Promise<string> => {
-  const directory = appRootPath(appMountFor(await seam.ownerOf(appId, ctx), ctx), appId);
+  const mount = appMountFor(await seam.ownerOf(appId, ctx), ctx);
+  // The frozen §3.1 layout has no way to spell ANOTHER person's personal mount:
+  // `/user` is always the caller's own, and `appRootPath` drops the subject
+  // because there is no `/user/<subject>/` to put it in. So a foreign personal
+  // app resolved to a path pointing at the CALLER's rows while `commitApp` wrote
+  // back to someone else's row — a caller could stage files in their own
+  // workspace and land them on another person's app. `canCommit` cannot catch it,
+  // because the answer it gives is about the caller's own mount.
+  //
+  // Refused outright rather than given invented subject-qualified user-mount
+  // semantics: an app that is not yours is not yours to check out, and cross-user
+  // personal sharing is not something this builds. Team apps go through the org
+  // mount, where the org IS in the path and org authorization decides.
+  if (mount.kind === "user" && mount.subject !== ctx.principal.subject) {
+    throw new VendoError("forbidden", `${appId} lives in another person's workspace`);
+  }
+  const directory = appRootPath(mount, appId);
   if (!(await workspace.canCommit(`${directory}/app.vendo`))) {
     throw new VendoError("forbidden", `this workspace cannot hold ${appId}'s files at ${directory}`);
   }
