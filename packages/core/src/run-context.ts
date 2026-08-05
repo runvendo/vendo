@@ -74,6 +74,15 @@ export interface RunContext {
   actor?: Principal;
   grant?: PermissionGrant;
   mcpConsent?: McpConsent;
+  /** The per-slug service actions THIS firing already holds a live grant for.
+   *
+   *  Resolved per run by whoever fires it (the automations engine reads the
+   *  (app, trigger)'s own grants), never stored on the ctx by a caller who could
+   *  widen it: it is read by §12's projection to decide whether the connector
+   *  dispatcher is on this run's listing at all. Absent ⇒ none ⇒ the dispatcher
+   *  is withheld, so it fails closed. It does not authorize anything — the guard
+   *  still decides every call — it only says which door is worth showing. */
+  grantedServiceSlugs?: readonly string[];
   /** Build contract §9.1 — the orgs/teams the host asserted for this principal.
       Absent ⇒ nothing asserted ⇒ `can()` degenerates to ownership. */
   memberships?: Membership[];
@@ -117,6 +126,7 @@ export const runContextSchema = z.object({
   actor: principalSchema.optional(),
   grant: permissionGrantSchema.optional(),
   mcpConsent: mcpConsentSchema.optional(),
+  grantedServiceSlugs: z.array(z.string()).optional(),
   memberships: z.array(membershipSchema).optional(),
   user: z.record(z.unknown()).optional(),
   context: z.record(z.unknown()).optional(),

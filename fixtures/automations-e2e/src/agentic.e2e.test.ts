@@ -276,21 +276,27 @@ describe("the away runner on a real automation", () => {
 });
 
 /**
- * The caged dispatcher, as the shipped law actually cages it.
+ * The caged dispatcher: at 2am the run sees it, and only granted actions execute.
  *
  * `use_service_tool` is a whole third-party catalog behind one tool name, so its
  * descriptor is `ungraded` — and §12's projection withholds every `ungraded`
  * descriptor from an unattended run exactly as it withholds destructive ones
- * (`withheldFromUnattended`, core grant-sets.ts). So an away run is never SHOWN
- * the dispatcher AT ALL, whatever it was granted: strictly stronger than gating
- * visibility on a per-trigger service grant, and ONE rule rather than two that
- * could disagree. These pin it, and pin the two laws that hold underneath it.
+ * (`withheldFromUnattended`, core grant-sets.ts). Applied to the dispatcher with
+ * no exception, that did not cage an agentic automation's connector access, it
+ * REMOVED it: no unattended run could reach a connector at all, however
+ * explicitly a person had allowed one particular action.
  *
- * THE PINNED LAWS, restated for an agentic run: an unattended run can never CALL
- * an ungranted slug, and a destructive-graded slug never executes away — granted
- * or not. They are asserted against `execute` directly (defence in depth), which
- * is the only way a call could arrive at all now that the dispatcher is not on the
- * away listing.
+ * So the projection has exactly one exemption, and these pin its edges: the
+ * dispatcher is on an unattended listing IFF the firing (app, trigger) holds at
+ * least one live per-slug service grant (`isGrantedDispatcher`, core
+ * grant-sets.ts; the slugs are read at fire time by the engine). One tool name,
+ * not a risk level — every other `ungraded` tool stays withheld — and
+ * `destructive` has no exemption at all.
+ *
+ * THE PINNED LAWS, restated for an agentic run, and untouched by any of that
+ * because they are CALL-time: an unattended run can never call an ungranted slug,
+ * and a destructive-graded slug never executes away — granted or not. Being shown
+ * the door is not being through it.
  */
 describe("agentic runs and the connector dispatcher", () => {
   beforeEach(resetFixture);
@@ -321,7 +327,7 @@ describe("agentic runs and the connector dispatcher", () => {
     },
   });
 
-  it("never puts the dispatcher on an away run's listing — not even for a trigger that holds a service grant", async () => {
+  it("shows the dispatcher to a trigger that holds a service grant, and withholds it from one that does not", async () => {
     const seen = { tools: [] as string[][] };
     const stack = await createStack({ serviceTools: true, runner: dispatchingRunner(seen) });
     try {
@@ -338,14 +344,22 @@ describe("agentic runs and the connector dispatcher", () => {
 
       await stack.automations.emit(`${ungranted}.fire`, {}, ADA);
       await stack.automations.emit(`${granted}.fire`, {}, ADA);
-
       expect(seen.tools).toHaveLength(2);
+      const [withoutGrant, withGrant] = seen.tools as [string[], string[]];
+
+      // …so at 2am the run SEES the dispatcher — caged, not absent. Withholding
+      // it outright left an agentic automation unable to reach a connector at
+      // all, however explicitly it had been allowed one.
+      expect(withGrant).toContain(USE_SERVICE_TOOL);
+      // A trigger nobody granted a service action keeps the old answer: the
+      // dispatcher is an `ungraded` tool, and nothing has said it may run one.
+      expect(withoutGrant).not.toContain(USE_SERVICE_TOOL);
+
       for (const surface of seen.tools) {
-        // …and the dispatcher is still not offered. So is every other `ungraded`
-        // and destructive tool: an away listing is reads and graded writes only.
-        expect(surface).not.toContain(USE_SERVICE_TOOL);
+        // The cage is exactly one door wide. Destructive stays withheld on BOTH
+        // surfaces — a service grant buys the dispatcher, never the law.
         expect(surface).not.toContain("host_invoices_send");
-        // Caging is not a lockdown — the graded surface is all there.
+        // And caging is not a lockdown: the graded surface is all there.
         expect(surface).toContain("host_invoices_list");
         expect(surface).toContain("host_invoices_create");
       }
@@ -354,7 +368,7 @@ describe("agentic runs and the connector dispatcher", () => {
     }
   });
 
-  it("runs a granted slug that reaches execute anyway — the grant is real, the listing is what is withheld", async () => {
+  it("runs the granted slug the dispatcher was shown for", async () => {
     const seen = { tools: [] as string[][] };
     const stack = await createStack({
       serviceTools: true,

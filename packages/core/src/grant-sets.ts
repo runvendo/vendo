@@ -1,7 +1,7 @@
 import { canonicalJson } from "./jcs.js";
 import { sha256Hex } from "./sha256.js";
 import type { Json } from "./ids.js";
-import type { ToolDescriptor } from "./tools.js";
+import { USE_SERVICE_TOOL, type ToolDescriptor } from "./tools.js";
 import type { RunContext } from "./run-context.js";
 
 /** Build contract §7 — a grant set is per person, bound to an app's INTENT
@@ -111,10 +111,42 @@ export function isUnattended(ctx: Pick<RunContext, "presence">): boolean {
  */
 export function projectableForRun(
   descriptors: readonly ToolDescriptor[],
-  ctx: Pick<RunContext, "venue" | "presence">,
+  ctx: Pick<RunContext, "venue" | "presence" | "grantedServiceSlugs">,
 ): ToolDescriptor[] {
   if (!isUnattended(ctx)) return [...descriptors];
-  return descriptors.filter((descriptor) => !withheldFromUnattended(descriptor));
+  return descriptors.filter(
+    (descriptor) => !withheldFromUnattended(descriptor) || isGrantedDispatcher(descriptor, ctx),
+  );
+}
+
+/**
+ * The ONE exemption from the ungraded half of the law: the connector dispatcher,
+ * for a firing that already holds at least one live per-slug service grant.
+ *
+ * `use_service_tool` is `ungraded` because one tool name stands in for a whole
+ * third-party catalog — the descriptor genuinely cannot say what a call does, and
+ * the per-slug grade arrives at call time. Withholding it outright therefore did
+ * not cage an agentic automation's connector access, it removed it: no unattended
+ * run could reach a connector at all, however explicitly a person had allowed one
+ * particular action. That is not what anybody consented to when they allowed it.
+ *
+ * So visibility follows the grant, and nothing else does. The exemption:
+ *  - is one tool name, not a risk level — every OTHER ungraded tool stays
+ *    withheld, because nothing has said what those do either;
+ *  - never reaches `destructive`, which is checked first and has no exemption at
+ *    all, so a dispatcher someone graded destructive stays invisible;
+ *  - decides only what the model is OFFERED. Which slug may actually run is
+ *    still the guard's call at call time — an ungranted slug is refused and a
+ *    destructive-graded slug is refused away, both unchanged. Being shown the
+ *    door is not being through it.
+ */
+function isGrantedDispatcher(
+  descriptor: ToolDescriptor,
+  ctx: Pick<RunContext, "grantedServiceSlugs">,
+): boolean {
+  return descriptor.name === USE_SERVICE_TOOL
+    && descriptor.risk === "ungraded"
+    && (ctx.grantedServiceSlugs?.length ?? 0) > 0;
 }
 
 /**
