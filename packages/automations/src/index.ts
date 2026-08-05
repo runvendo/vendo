@@ -93,8 +93,12 @@ export interface AutomationsConfig {
   memberships?: (principal: Principal) => Promise<Membership[]>;
 }
 
-/** 07 §5 */
-export type RunStatus = "running" | "ok" | "error" | "stopped" | "pending-approval";
+/** 07 §5. There is no waiting state: a run that meets a permission it does not
+ *  hold fails LOUDLY (`error`, code `needs-permission`) and the person grants it
+ *  and re-runs. A run that could be resumed later was a run nobody could see the
+ *  end of — it held an approval open, an identity open, and an intent open across
+ *  an unbounded gap. */
+export type RunStatus = "running" | "ok" | "error" | "stopped";
 
 /** 07 §5 */
 export interface RunRecord {
@@ -111,7 +115,11 @@ export interface RunRecord {
   steps: Array<{ id: string; tool: string; outcome: ToolOutcome["status"]; at: IsoDateTime; detail?: string }>;
   /** Agentic: model-written; steps: generated. */
   summary?: string;
-  error?: { code: string; message: string };
+  /** `code: "needs-permission"` is the one a surface acts on: the run met a
+   *  permission nobody had granted, the ask is pending, and `tool`/`slug` name
+   *  exactly what it needed — so the row can offer Grant & re-run instead of
+   *  making the person go looking. */
+  error?: { code: string; message: string; tool?: string; slug?: string };
 }
 
 /** 07 §5 */
@@ -182,6 +190,12 @@ export interface AutomationsEngine {
     ): Promise<{ runs: RunRecord[]; cursor?: string }>;
     /** Kill switch: best-effort cancel, marks "stopped". */
     stop(id: RunId, ctx: RunContext): Promise<void>;
+    /** Run it again — the remedy for a run that failed. A FRESH run of the same
+     *  (app, trigger) on the same triggering event, against LIVE data: no
+     *  replay, no restored mid-run state, nothing resumed. Gated like `stop`
+     *  (anyone who can edit the app), and refused when its trigger is not armed.
+     *  Returns the new run's id. */
+    rerun(id: RunId, ctx: RunContext): Promise<RunId>;
   };
   /** Preview: what ONE trigger would run, nothing executes. */
   dryRun(appId: AppId, triggerId: string, ctx: RunContext, event?: Json): Promise<RunPlan>;

@@ -1,5 +1,5 @@
 /** Fetch/SSE bindings for the public wire route table (08-ui §2, 09-vendo §3). */
-import { VendoError, type VendoErrorCode } from "@vendoai/core";
+import { VendoError, type RunId, type VendoErrorCode } from "@vendoai/core";
 import type { VendoClient, VendoClientConfig } from "./client.js";
 import type { ConnectableToolkit, ConnectionAccount } from "./wire-types.js";
 
@@ -247,6 +247,7 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
       },
       get: id => readJson(`/runs/${idPath(id)}`),
       stop: id => json(`/runs/${idPath(id)}/stop`, "POST"),
+      rerun: async id => (await json<{ runId: RunId }>(`/runs/${idPath(id)}/rerun`, "POST")).runId,
     },
     activity: {
       list: params => {

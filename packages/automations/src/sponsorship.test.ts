@@ -297,13 +297,16 @@ describe("sponsorship — the fire-time gate", () => {
   });
 });
 
-/** F1 (verifier repro) — a run that PARKED on an approval resumes later, from a
- *  different door (the guard's decision callback), and re-reads the app document
- *  it never re-checked. The gate has to run again there or a third party can
- *  edit the doc while the run is parked and have the sponsor's identity execute
- *  the edited call. */
-describe("sponsorship — the resume gate", () => {
-  const parkOnce = (store: StoreAdapter) => (call: ToolCall, index: number): ToolOutcome | undefined => {
+/** F1 (verifier repro), re-run half — a run that met a missing permission fails
+ *  loudly, and the remedy is a FRESH run through `runs.rerun`. That is a second
+ *  firing through a different door, so the fire-time gate has to run again there
+ *  too: a third party editing the document between the failure and the re-run
+ *  must never get the sponsor's identity to execute the edited call.
+ *
+ *  (The parked-resume door this used to guard is gone — nothing executes after
+ *  the ask any more, which is the structural half of the same protection.) */
+describe("sponsorship — the re-run gate", () => {
+  const missOnce = (store: StoreAdapter) => (call: ToolCall, index: number): ToolOutcome | undefined => {
     if (index !== 0) return undefined;
     void store.records("vendo_approvals").put({
       id: "apr_parked",
@@ -333,91 +336,109 @@ describe("sponsorship — the resume gate", () => {
     }],
   });
 
-  it("resumes an approved parked call when the document is untouched", async () => {
+  /** The ask a PERSON answers for this tool: the outstanding capture the panel
+   *  renders. (The guard also raises its own away row at the miss; when an
+   *  arming ask for the same permission is still open, that one is the live
+   *  question and the engine captures no second one.) */
+  const liveAsk = async (store: StoreAdapter): Promise<string> => {
+    const captures = await store.records("automations:captures").list();
+    const ask = captures.records.find((record) =>
+      (record.data as { tool: string }).tool === writeTool.name);
+    if (ask === undefined) throw new Error("no outstanding ask for the write tool");
+    return ask.id;
+  };
+
+  it("re-runs the whole automation as its sponsor once the permission is granted", async () => {
     const store = memoryStoreAdapter();
-    const app = oneWriteStep("app_resume_ok", "inv_42");
-    const { engine, guard, calls } = harness({ store }, parkOnce(store));
+    const app = oneWriteStep("app_rerun_ok", "inv_42");
+    const { engine, guard, calls } = harness({ store }, missOnce(store));
     await seedApp(store, app);
     await engine.enable(app.id, "main", ctx());
     const [runId] = await engine.emit("go", {}, ctx().principal);
-    expect(await engine.runs.get(runId!, ctx())).toMatchObject({ status: "pending-approval" });
+    // The miss is LOUD and terminal — nothing waits on the decision.
+    expect(await engine.runs.get(runId!, ctx())).toMatchObject({
+      status: "error",
+      error: { code: "needs-permission", tool: writeTool.name },
+    });
 
-    guard.decide("apr_parked", true);
+    guard.decide(await liveAsk(store), true);
     await flush();
+    // The decision alone runs nothing: the failed run stays failed.
+    expect(calls).toHaveLength(1);
+    expect(await engine.runs.get(runId!, ctx())).toMatchObject({ status: "error" });
 
-    // The exact parked call replays — resume semantics are untouched.
+    const rerunId = await engine.runs.rerun(runId!, ctx());
+
     expect(calls).toHaveLength(2);
     expect(calls[1]?.call.args).toEqual({ invoice: "inv_42" });
     expect(calls[1]?.ctx.principal.subject).toBe("user_dana");
-    expect(await engine.runs.get(runId!, ctx())).toMatchObject({ status: "ok" });
+    expect(await engine.runs.get(rerunId, ctx())).toMatchObject({ status: "ok" });
   });
 
-  /** N1 (verifier variant D) — the gate checks the CURRENT state, which an
-   *  adoption between park and resume satisfies perfectly: the sponsorship is
-   *  active, the intent matches, the new sponsor can edit. But the parked
-   *  approval belongs to the PREVIOUS era: resuming it would execute a call the
-   *  new sponsor never saw under their identity, and mint the grant under the
-   *  old sponsor. A run may only be resumed by the person who was asked. */
-  it("refuses to resume a parked approval from a previous sponsor's era", async () => {
+  /** N1 (verifier variant D) — the fresh run is fired under the CURRENT
+   *  sponsorship, which is what makes a hand-over between the failure and the
+   *  re-run safe: it runs as whoever holds the automation now, on the intent they
+   *  hold, and the previous sponsor's ask grants them nothing. */
+  it("re-runs as the new sponsor after the automation changes hands, granting the old one nothing", async () => {
     const store = memoryStoreAdapter();
-    const app = oneWriteStep("app_resume_adopted", "inv_42");
+    const app = oneWriteStep("app_rerun_adopted", "inv_42");
     const { engine, guard, calls } = harness(
       { store, appAccess: appAccessStub(["user_dana", "user_omar"]) },
-      parkOnce(store),
+      missOnce(store),
     );
     await seedApp(store, app);
     await engine.enable(app.id, "main", ctx("user_dana", "Dana"));
     const [runId] = await engine.emit("go", {}, ctx().principal);
-    expect(await engine.runs.get(runId!, ctx())).toMatchObject({ status: "pending-approval" });
+    expect(await engine.runs.get(runId!, ctx())).toMatchObject({ status: "error" });
 
-    // The automation changes hands while the run sits parked: someone else edits
-    // it, and a different editor adopts it — so by the time the approval is
-    // decided, the automation runs as Omar.
+    // Dana's outstanding ask, before anything changes hands.
+    const danasAsk = await liveAsk(store);
+    // The automation changes hands after the failure: someone else edits it, and
+    // a different editor adopts it — so it now runs as Omar.
     await engine.onDocumentEdit(app, app, "user_omar");
     expect((await engine.adopt(app.id, "main", ctx("user_omar", "Omar"))).adopted).toBe(true);
 
-    guard.decide("apr_parked", true);
+    guard.decide(danasAsk, true);
     await flush();
+    // Dana's ask minted Dana's grant, not Omar's…
+    expect((await store.records("vendo_grants").list()).records.map((record) =>
+      (record.data as { subject: string }).subject)).toEqual(["user_dana"]);
 
-    // Never resumed…
-    expect(calls).toHaveLength(1);
-    const run = await engine.runs.get(runId!, ctx());
-    expect(run?.status).toBe("error");
-    expect(run?.summary).toMatch(/run it again/i);
-    expect(guard.audit.some((event) =>
-      (event.detail as { status?: string }).status === "sponsorship-changed")).toBe(true);
-    // …and never minted: the parked approval was Dana's, and nothing about
-    // Omar's adoption grants Dana anything.
-    expect((await store.records("vendo_grants").list()).records).toEqual([]);
-    expect(await store.records("automations:parked").get("apr_parked")).toBeNull();
+    const rerunId = await engine.runs.rerun(runId!, ctx("user_omar", "Omar"));
+
+    // …and the fresh run acts as OMAR, so it is HIS authority the guard weighs,
+    // never the identity of the person who was asked before he took it on.
+    // (What that authority answers is the real guard's business — the e2e proves
+    // an unheld permission fails loud there; this double always says run.)
+    expect(calls[1]?.ctx.principal.subject).toBe("user_omar");
+    expect(await engine.runs.get(rerunId, ctx("user_omar"))).toMatchObject({ appId: app.id, triggerId: "main" });
   });
 
-  it("refuses to resume once a third party has edited the document", async () => {
+  it("refuses the re-run once a third party has edited the document", async () => {
     const store = memoryStoreAdapter();
-    const app = oneWriteStep("app_resume_evil", "inv_42");
-    const { engine, guard, calls } = harness({ store }, parkOnce(store));
+    const app = oneWriteStep("app_rerun_evil", "inv_42");
+    const { engine, guard, calls } = harness({ store }, missOnce(store));
     await seedApp(store, app);
     await engine.enable(app.id, "main", ctx());
     const [runId] = await engine.emit("go", {}, ctx().principal);
 
-    // Somebody else rewrites the automation while the run sits parked.
+    // Somebody else rewrites the automation between the failure and the re-run.
     const edited = oneWriteStep(app.id, "inv_EVIL");
     await seedApp(store, edited);
     await engine.onDocumentEdit(app, edited, "user_omar");
 
     guard.decide("apr_parked", true);
     await flush();
+    const rerunId = await engine.runs.rerun(runId!, ctx());
 
-    // Nothing executed a second time — not the parked call, and certainly not
-    // the edited one — and the run is a loud terminal failure, not a stranded
-    // "running" row.
+    // Nothing executed a second time — not the original call, and certainly not
+    // the edited one — and the fresh run is a loud terminal failure.
     expect(calls).toHaveLength(1);
-    const run = await engine.runs.get(runId!, ctx());
+    const run = await engine.runs.get(rerunId, ctx());
     expect(run?.status).toBe("error");
     expect(run?.summary).toMatch(/stopped/i);
     expect(guard.audit.some((event) =>
       (event.detail as { status?: string }).status === "sponsorship-invalidated")).toBe(true);
-    expect(await store.records("automations:parked").get("apr_parked")).toBeNull();
   });
 });
 
@@ -589,11 +610,11 @@ describe("sponsorship — a broken identity seam", () => {
       && (event.detail as { detail?: string }).detail === "host directory is down")).toBe(true);
   });
 
-  it("terminates a claimed RESUME loudly rather than stranding it in \"running\"", async () => {
+  it("terminates a RE-RUN loudly rather than stranding it in \"running\"", async () => {
     const store = memoryStoreAdapter();
     const app: AppDocument = {
       format: VENDO_APP_FORMAT,
-      id: "app_seam_resume",
+      id: "app_seam_rerun",
       name: "Weekly invoice sweep",
       triggers: [{
         id: "main",
@@ -627,12 +648,16 @@ describe("sponsorship — a broken identity seam", () => {
     await engine.enable(app.id, "main", ctx());
     const [runId] = await engine.emit("go", {}, ctx().principal);
 
+    // The host's directory dies between the failure and the re-run: the fresh
+    // run cannot check who it runs as, so it must land a loud terminal row of
+    // its own rather than sit in "running" forever (F10, the re-run half).
     breakSeam = true;
     guard.decide("apr_seam", true);
     await flush();
+    const rerunId = await engine.runs.rerun(runId!, ctx());
 
     expect(calls).toHaveLength(1);
-    expect(await engine.runs.get(runId!, ctx())).toMatchObject({ status: "error" });
+    expect(await engine.runs.get(rerunId, ctx())).toMatchObject({ status: "error" });
     expect(guard.audit.some((event) =>
       (event.detail as { status?: string }).status === "sponsorship-check-failed")).toBe(true);
   });

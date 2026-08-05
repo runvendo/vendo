@@ -27,22 +27,27 @@ const RUN_STATUS_LABEL: Record<RunStatus, string> = {
   error: "Failed",
   running: "Running",
   stopped: "Stopped",
-  "pending-approval": "Waiting on approval",
 };
 const RUN_STATUS_ROLLUP: Record<RunStatus, string> = {
   ok: "ok",
   error: "failed",
   running: "running",
   stopped: "stopped",
-  "pending-approval": "waiting",
 };
+
+/** A run that stopped because it met a permission nobody had allowed. It is a
+    FAILED run like any other — no waiting state exists — but it is the one
+    failure the person can fix from here: allow what it needed, and run it
+    again. */
+const needsPermission = (run: RunRecord): boolean =>
+  run.status === "error" && run.error?.code === "needs-permission";
 
 /** "8 ok · 1 failed · 1 waiting" — text rollup so colour is never the only
     signal on the strip. Statuses appear in a fixed order, zero-counts drop. */
 function runRollup(runs: RunRecord[]): string {
   const counts = new Map<RunStatus, number>();
   for (const run of runs) counts.set(run.status, (counts.get(run.status) ?? 0) + 1);
-  const order: RunStatus[] = ["ok", "error", "pending-approval", "running", "stopped"];
+  const order: RunStatus[] = ["ok", "error", "running", "stopped"];
   return order
     .filter(status => counts.has(status))
     .map(status => `${counts.get(status)} ${RUN_STATUS_ROLLUP[status]}`)
@@ -309,6 +314,44 @@ export function AutomationsPanel() {
     }
   };
 
+  /** The pending asks for exactly what a failed run needed — matched on the
+      THING being allowed (the tool, or the connector's service action), because
+      that is what the run names and what a grant is scoped to.
+      One row per thing: the same permission can be outstanding twice (an arming
+      ask nobody answered, plus the one the guard raised when the run met it),
+      and a person is being asked ONE question. The OLDEST is the one to settle —
+      it is the ask the engine is projecting as outstanding, so answering it is
+      what clears "waiting on 1 permission"; the duplicate expires unanswered. */
+  const asksForRun = (appId: AppId, run: RunRecord): ApprovalRequest[] => {
+    const wanted = run.error;
+    if (wanted === undefined) return [];
+    const matching = (pendingByApp.get(appId) ?? [])
+      .filter(ask => ask.call.tool === wanted.tool && serviceToolSlug(ask.call) === wanted.slug)
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+    return matching.length === 0 ? [] : [matching[0]!];
+  };
+
+  /** Grant & re-run — allow what the run needed, then run the automation again
+      (a fresh run on the same event; nothing is resumed). Deny settles the ask
+      and runs nothing. */
+  const grantAndRerun = async (
+    appId: AppId,
+    triggerId: string,
+    key: string,
+    run: RunRecord,
+    asks: ApprovalRequest[],
+    grantSetId: string | undefined,
+    approve: boolean,
+  ) => {
+    await decideSet(appId, triggerId, asks, grantSetId, approve);
+    if (!approve) return;
+    await automations.rerun(run.id);
+    // The history the person is looking at must show the new attempt, not the
+    // list from before they tapped.
+    const result = await automations.runs({ appId, triggerId });
+    setRuns(current => ({ ...current, [key]: result.runs }));
+  };
+
   // Evaluated once per render (not once per automation): matchMedia is cheap but
   // querying it inside the list map was needless repeated work.
   const reduced = theme.motion === "reduced"
@@ -368,6 +411,20 @@ export function AutomationsPanel() {
                   ? pendingByApp.get(appId) ?? []
                   : [];
                 const waitingOn = row.pendingGrants ?? pendingAsks.length;
+                // ONE question, ONE card. A failed run in the open history shows
+                // the ask that stopped it — with the re-run action, which is the
+                // whole reason to answer it there — so the arming card above must
+                // not ask the same thing a second time. Collapse the history and
+                // it comes back: the person is never left with a card nobody
+                // renders.
+                const claimedByRuns = new Set(
+                  (runs[key] ?? [])
+                    .filter(needsPermission)
+                    .flatMap(run => asksForRun(appId, run).map(ask => ask.id)),
+                );
+                const armingAsks = claimedByRuns.size === 0
+                  ? pendingAsks
+                  : pendingAsks.filter(ask => !claimedByRuns.has(ask.id));
                 const celebrating = justEnabled[key] === true;
                 // Oldest → newest left-to-right, so the strip reads like a timeline.
                 const strip = recent[key]?.slice().reverse();
@@ -587,10 +644,10 @@ export function AutomationsPanel() {
                       >Run history</button>
                     </div>
 
-                    {pendingAsks.length > 0 ? (
+                    {armingAsks.length > 0 ? (
                       <GrantSetCard
                         name={entry.app.name}
-                        permissions={pendingAsks.map(ask => {
+                        permissions={armingAsks.map(ask => {
                           // A connector ask is FOR its service action, not for the
                           // dispatcher — two service actions are otherwise the same
                           // row twice.
@@ -604,7 +661,7 @@ export function AutomationsPanel() {
                         })}
                         state="parked"
                         onDecide={async approve => {
-                          await decideSet(appId, trigger.id, pendingAsks, row.grantSetId, approve);
+                          await decideSet(appId, trigger.id, armingAsks, row.grantSetId, approve);
                           if (approve) celebrateEnable(key);
                         }}
                       />
@@ -640,7 +697,11 @@ export function AutomationsPanel() {
 
                     {rowRuns !== undefined ? (
                       <div className="fl-act-body" role="group" aria-label={`Run history for ${entry.app.name} — ${label.title}`}>
-                        {rowRuns.length === 0 ? <p className="fl-act-row">No runs yet.</p> : rowRuns.map(run => (
+                        {rowRuns.length === 0 ? <p className="fl-act-row">No runs yet.</p> : rowRuns.map(run => {
+                          // The asks this run is waiting on someone to allow —
+                          // and therefore whether it can be re-run from here.
+                          const runAsks = needsPermission(run) ? asksForRun(appId, run) : [];
+                          return (
                           <article key={run.id}>
                             <div className="fl-act-row">
                               <span className={`fl-act-ic ${run.status === "error" ? "fl-act-x" : "fl-act-tick"}`} aria-hidden="true">
@@ -657,6 +718,15 @@ export function AutomationsPanel() {
                                   }));
                                 })}>Stop</button>
                               ) : null}
+                              {runAsks.length > 0 ? (
+                                <button
+                                  className="fl-btn fl-btn-primary"
+                                  type="button"
+                                  disabled={busy[`rerun-${run.id}`]}
+                                  onClick={() => void during(`rerun-${run.id}`, () =>
+                                    grantAndRerun(appId, trigger.id, key, run, runAsks, row.grantSetId, true))}
+                                >Grant &amp; re-run</button>
+                              ) : null}
                             </div>
                             {run.summary ? <p className="fl-act-peek">{run.summary}</p> : null}
                             {/* Ruling 11 — a failed UNATTENDED run tells its owner what
@@ -668,16 +738,49 @@ export function AutomationsPanel() {
                                 uses. */}
                             {run.error ? (
                               <>
-                                <p role="alert" className="fl-error">
-                                  {`This run didn’t finish — nothing in your account was changed.`}
-                                </p>
+                                {/* A run that stopped for a missing permission
+                                    needs no sentence of ours: its own summary
+                                    already says what it needed and what to do,
+                                    and the card below is the doing. The generic
+                                    line would also be WRONG here twice over — the
+                                    steps before the miss really did run, and once
+                                    the permission is allowed a "hasn't been
+                                    allowed" line becomes a stale claim on a row
+                                    that never changes. */}
+                                {needsPermission(run) ? null : (
+                                  <p role="alert" className="fl-error">
+                                    {`This run didn’t finish — nothing in your account was changed.`}
+                                  </p>
+                                )}
                                 {developmentMode()
                                   ? <p className="fl-act-sub">{`${run.error.code}: ${run.error.message}`}</p>
                                   : null}
                               </>
                             ) : null}
+                            {/* The consent card the person answers, right where
+                                the failure is: the SAME card the arming ceremony
+                                uses, so one permission reads one way everywhere.
+                                Allowing it re-runs the automation. */}
+                            {runAsks.length > 0 ? (
+                              <GrantSetCard
+                                name={entry.app.name}
+                                permissions={runAsks.map(ask => {
+                                  const slug = serviceToolSlug(ask.call);
+                                  return {
+                                    approvalId: ask.id,
+                                    tool: ask.call.tool,
+                                    ...(slug === undefined ? {} : { slug }),
+                                    risk: ask.descriptor.risk,
+                                  };
+                                })}
+                                state="parked"
+                                onDecide={approve =>
+                                  grantAndRerun(appId, trigger.id, key, run, runAsks, row.grantSetId, approve)}
+                              />
+                            ) : null}
                           </article>
-                        ))}
+                          );
+                        })}
                       </div>
                     ) : null}
                   </section>

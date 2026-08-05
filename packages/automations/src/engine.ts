@@ -70,8 +70,6 @@ const RUNS_PAGE_LIMIT = 50;
 const GRANTS = "vendo_grants";
 const APPROVALS = "vendo_approvals";
 const CAPTURES = "automations:captures";
-const PARKED = "automations:parked";
-const RESUME_CLAIMS = "automations:resume-claims";
 const SCHEDULE = "automations:schedule";
 const WEBHOOK = "automations:webhook";
 const DELIVERIES = "automations:deliveries";
@@ -89,7 +87,6 @@ const DELIVERIES = "automations:deliveries";
  */
 const ARMED = "automations:armed";
 const WEBHOOK_MAX_BYTES = 1024 * 1024;
-const RESUME_MAX_BYTES = 512 * 1024;
 const FOREACH_MAX_ITEMS = 1000;
 
 const appRowSchema = z.object({
@@ -136,7 +133,6 @@ const captureSchema = z.object({
   grantSetId: z.string().optional(),
 });
 
-const parkedSchema = z.object({ runId: z.string() });
 const scheduleSchema = z.object({ lastFiredAt: z.string(), firedAt: z.string().optional() });
 const webhookSchema = z.object({ secret: z.string() });
 
@@ -146,35 +142,30 @@ interface AppRow {
   doc: AppDocument;
 }
 
-interface ResumeState {
-  stepIndex: number;
-  forEachIndex?: number;
-  event: Json;
-  stepOutputs: Record<string, Json>;
-  call: ToolCall;
-  approvalId: string;
-  iterationItems?: Json[];
-  iterationOutputs?: Json[];
-  claimedBy?: string;
-}
-
 interface InternalRunRecord extends RunRecord {
-  __resume?: ResumeState;
+  /** The event that fired this run, kept so `runs.rerun` can fire the SAME
+   *  trigger on the SAME event. Internal: it is the host's own payload, and the
+   *  public run record (07 §5) does not carry it. */
+  __event?: Json;
+  /** The FIRING this run belongs to: the id of its first run. A re-run inherits
+   *  it, so a chain of re-runs shares ONE root rather than each pointing at its
+   *  predecessor. Absent on a run that is nobody's re-run, which then IS its own
+   *  root — persisted rather than derived, because the guard's effect ledger has
+   *  to find the failed run's receipts in a different process. Internal, like
+   *  `__event`: the public run record (07 §5) does not carry it. */
+  __lineage?: RunId;
 }
 
-const resumeSchema = z.object({
-  stepIndex: z.number().int().nonnegative(),
-  forEachIndex: z.number().int().nonnegative().optional(),
-  event: z.unknown(),
-  stepOutputs: z.record(z.unknown()),
-  call: z.object({ id: z.string(), tool: z.string(), args: z.unknown() }),
-  approvalId: z.string(),
-  iterationItems: z.array(z.unknown()).optional(),
-  iterationOutputs: z.array(z.unknown()).optional(),
-  claimedBy: z.string().optional(),
-});
+const runStatusSchema = z.enum(["running", "ok", "error", "stopped"]);
 
-const runStatusSchema = z.enum(["running", "ok", "error", "stopped", "pending-approval"]);
+/** The same statuses, plus the one that used to exist. A run row written while
+ *  parking existed can never resume now, and a strict parse would make ONE such
+ *  row throw for every `runs.list` of its app — so it reads back as the loud
+ *  failure it effectively is. Read-only: nothing writes this value any more. */
+const storedRunStatusSchema = z.union([
+  runStatusSchema,
+  z.literal("pending-approval").transform((): z.infer<typeof runStatusSchema> => "error"),
+]);
 
 const baseRunRecordSchema = z.object({
   id: z.string(),
@@ -184,7 +175,7 @@ const baseRunRecordSchema = z.object({
     kind: z.enum(["schedule", "host-event", "external"]),
     event: z.string().optional(),
   }),
-  status: runStatusSchema,
+  status: storedRunStatusSchema,
   startedAt: z.string(),
   finishedAt: z.string().optional(),
   steps: z.array(z.object({
@@ -195,10 +186,18 @@ const baseRunRecordSchema = z.object({
     detail: z.string().optional(),
   })),
   summary: z.string().optional(),
-  error: z.object({ code: z.string(), message: z.string() }).optional(),
+  error: z.object({
+    code: z.string(),
+    message: z.string(),
+    tool: z.string().optional(),
+    slug: z.string().optional(),
+  }).optional(),
 });
 
-const internalRunRecordSchema = baseRunRecordSchema.extend({ __resume: resumeSchema.optional() });
+const internalRunRecordSchema = baseRunRecordSchema.extend({
+  __event: z.unknown().optional(),
+  __lineage: z.string().optional(),
+});
 
 interface RunRowData {
   appId: string;
@@ -212,7 +211,7 @@ interface RunRowData {
 const runRowDataSchema = z.object({
   appId: z.string(),
   trigger: baseRunRecordSchema.shape.trigger,
-  status: runStatusSchema,
+  status: storedRunStatusSchema,
   record: internalRunRecordSchema,
   startedAt: z.string(),
   finishedAt: z.string().optional(),
@@ -257,24 +256,12 @@ const stopFor = (
 const IDENTITY_UNAVAILABLE = (name: string): string =>
   `stopped: ${name} could not check who it runs as — nothing ran, and it will try again on its next trigger`;
 
-const IDENTITY_UNAVAILABLE_RESUME =
-  "stopped: this run could not check who it runs as — nothing further ran; run it again to continue";
-
 /** Captures are a GENERIC collection, and the 02-store §5 erase cascade finds
  *  generic rows by their refs — so an unref'd capture outlives both the person
  *  who was asked and the app that asked. (Approvals need none: `vendo_approvals`
  *  is reserved, derives its own refs, and is erased by its subject column.) */
 const captureRefs = (subject: string, appId: string, triggerId: string): Record<string, string> =>
   ({ subject, app_id: appId, trigger_id: triggerId });
-
-/** §9.9 — what a run says when the automation changed hands while it waited. The
- *  automation itself is fine; it is this RUN that belongs to a sponsor who no
- *  longer holds it, and re-running is the whole remedy. Anonymous for the same
- *  durability reason as {@link SPONSORSHIP_STOP}: it is persisted on a run row
- *  no subject erase can reach. */
-const SPONSOR_CHANGED =
-  "stopped: this run was waiting with the access of the person who used to run it,"
-  + " which has changed — run it again to continue";
 
 const clone = <T>(value: T): T => globalThis.structuredClone(value);
 const id = (prefix: string): string => `${prefix}${globalThis.crypto.randomUUID()}`;
@@ -307,8 +294,9 @@ const parseRunRow = (record: VendoRecord): RunRowData => {
   return result.data as unknown as RunRowData;
 };
 
-// Callers already validated the row via parseRunRow; only __resume needs stripping.
-const publicRun = ({ __resume: _, ...record }: InternalRunRecord): RunRecord => record;
+// Callers already validated the row via parseRunRow; only the internal fields
+// need stripping.
+const publicRun = ({ __event: _, __lineage: __, ...record }: InternalRunRecord): RunRecord => record;
 
 const triggerEvent = (source: TriggerSource): string | undefined =>
   source.kind === "host-event" || source.kind === "external" ? source.event : undefined;
@@ -503,7 +491,6 @@ const terminalStatus = (status: RunStatus): status is Extract<RunStatus, "ok" | 
   status === "ok" || status === "error" || status === "stopped";
 
 const syncRun = (target: InternalRunRecord, source: InternalRunRecord): void => {
-  delete target.__resume;
   delete target.finishedAt;
   delete target.summary;
   delete target.error;
@@ -521,7 +508,6 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   const iso = (): string => now().toISOString();
   const stopped = new Set<string>();
   const active = new Set<string>();
-  const resuming = new Set<string>();
   const inFlightDeliveries = new Set<string>();
   const abortControllers = new Map<string, AbortController>();
   // Minted on first claim, not at construction: Workers forbids generating
@@ -794,8 +780,16 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     // The firing trigger's own id rides here because the guard's away-grant
     // lookup matches on (app, trigger): without it a grant minted while arming
     // one trigger would authorize every sibling trigger's away calls, which is
-    // the arm-time rule this run is supposed to be living under.
-    trigger: { runId: run.id, kind: run.trigger.kind, id: run.triggerId },
+    // the arm-time rule this run is supposed to be living under. `lineageId` is
+    // the FIRING, not just the run: the guard's effect ledger keys receipts on
+    // it, so a re-run can see what the run it re-runs already completed. A run
+    // that is nobody's re-run is its own root.
+    trigger: {
+      runId: run.id,
+      kind: run.trigger.kind,
+      id: run.triggerId,
+      lineageId: run.__lineage ?? run.id,
+    },
   });
 
   /** §9.9 — the run's identity is its SPONSOR: an automation always runs as a
@@ -869,9 +863,8 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     ctx: RunContext,
     status: Extract<RunStatus, "ok" | "error" | "stopped">,
     summary: string,
-    error?: { code: string; message: string },
+    error?: NonNullable<RunRecord["error"]>,
   ): Promise<void> => {
-    delete run.__resume;
     run.status = status;
     run.finishedAt = iso();
     run.summary = summary;
@@ -880,27 +873,93 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     if (await writeRun(run)) await audit(ctx, status);
   };
 
-  const park = async (
+  /** Is this approval still an open question? A capture whose approval is gone
+   *  or already decided is stale, and stale asks are not what a person is
+   *  waiting on. */
+  const isPendingAsk = async (approvalId: string): Promise<boolean> => {
+    const approval = await config.store.records(APPROVALS).get(approvalId);
+    if (approval === null) return false;
+    const parsed = approvalRowSchema.safeParse(approval.data);
+    return parsed.success && parsed.data.status === "pending" && parsed.data.voidedAt === undefined;
+  };
+
+  /**
+   * A step met a permission nobody has granted. The run ends HERE, loudly.
+   *
+   * Two things happen, and the order matters: the ask the guard just raised is
+   * written as a CAPTURE first — the same row arming writes, so `handleDecision`
+   * mints the standing grant through the one path both doors already share, and
+   * the surfaces that project "waiting on N permissions" count this ask too —
+   * and only then does the run land on its terminal error row. A crash between
+   * the two leaves a capture whose approval is still pending, which the next
+   * enable() adopts into its set; a crash the other way round would leave a run
+   * telling someone to grant something no surface can find.
+   *
+   * ONE capture per thing-to-allow, though: when the person is already being
+   * asked exactly this — an arming ask for the same tool (and service action)
+   * that nobody has answered yet — the run adds nothing. Capturing a second row
+   * for the same question would count one permission as two on every surface
+   * that projects the outstanding asks, and settle as two grants for authority
+   * the person allowed once.
+   *
+   * The two sentences part ways on purpose (§16 law 3): `summary` is rendered
+   * verbatim to whoever owns the automation, so it says what happened and what
+   * to do; `error.message` names the TOOL, which is a developer's word, and
+   * rides the dev-mode rail — with `tool`/`slug` beside it so a surface can
+   * offer Grant & re-run without parsing a sentence.
+   */
+  const needsPermission = async (
     run: InternalRunRecord,
     ctx: RunContext,
-    state: ResumeState,
+    step: Step,
+    approvalId: string,
   ): Promise<void> => {
-    if (new TextEncoder().encode(JSON.stringify(state)).byteLength > RESUME_MAX_BYTES) {
-      await terminal(
-        run,
-        ctx,
-        "error",
-        `stopped at ${run.steps.at(-1)?.id ?? "step"}: persisted resume state exceeds 512 KiB`,
-        { code: "validation", message: "persisted resume state exceeds 512 KiB" },
-      );
-      return;
+    const approval = await config.store.records(APPROVALS).get(approvalId);
+    const parsed = approval === null ? undefined : approvalRowSchema.safeParse(approval.data);
+    const request = parsed?.success === true ? parsed.data.request : undefined;
+    const slug = request === undefined ? undefined : serviceToolSlug(request.call);
+    if (request !== undefined) {
+      const forTrigger = (await pendingCaptures(ctx.principal.subject))
+        .filter((capture) => capture.data.appId === run.appId && capture.data.triggerId === run.triggerId);
+      const asked = forTrigger.find((capture) =>
+        consentKey(capture.data) === consentKey({ tool: request.call.tool, ...(slug === undefined ? {} : { slug }) }));
+      const live = asked === undefined ? false : await isPendingAsk(asked.id);
+      if (!live) {
+        // One grant set per (app, trigger), shared with arming: a person deciding
+        // this ask settles everything else outstanding for the same trigger.
+        await config.store.records(CAPTURES).put({
+          id: approvalId,
+          data: {
+            appId: run.appId,
+            triggerId: run.triggerId,
+            subject: ctx.principal.subject,
+            tool: request.call.tool,
+            ...(slug === undefined ? {} : { slug }),
+            descriptorHash: descriptorHash(request.descriptor),
+            grantSetId: forTrigger[0]?.data.grantSetId ?? id("gset_"),
+          },
+          refs: captureRefs(ctx.principal.subject, run.appId, run.triggerId),
+        });
+        // A capture whose approval is already gone or decided is stale — the
+        // live ask above replaces it, so it must not keep a settled question
+        // open on the panel.
+        if (asked !== undefined) await config.store.records(CAPTURES).delete(asked.id);
+      }
     }
-    run.status = "pending-approval";
-    run.summary = `stopped at ${run.steps.at(-1)?.id ?? "step"}: approval required`;
-    run.__resume = clone(state);
-    if (!await writeRun(run)) return;
-    await config.store.records(PARKED).put({ id: state.approvalId, data: { runId: run.id } });
-    await audit(ctx, "pending-approval");
+    const named = slug === undefined ? `use ${step.tool}` : serviceToolPhrase(slug);
+    await terminal(
+      run,
+      ctx,
+      "error",
+      `stopped at ${step.id}: it needs a permission nobody has allowed yet`
+      + " — allow it and run this again",
+      {
+        code: "needs-permission",
+        message: `needs permission to ${named}`,
+        tool: step.tool,
+        ...(slug === undefined ? {} : { slug }),
+      },
+    );
   };
 
   const appendOutcome = (run: InternalRunRecord, step: Step, outcome: ToolOutcome): void => {
@@ -1001,19 +1060,30 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
           await failStep(run, ctx, step, error);
           return;
         }
-        const call: ToolCall = { id: id("call_"), tool: step.tool, args };
+        // Derived, not random: the guard's effect ledger tells "this call again"
+        // apart from "another call just like it" by CALL ID, so the same step of
+        // the same firing has to present the same id every time it runs. A random
+        // id made a re-run look like a second, separately-intended call, and the
+        // receipt for work that had already landed was never consulted.
+        //
+        // Positional, not by step id: nothing validates that step ids are unique
+        // within a list, and two steps sharing one would then share a call id —
+        // turning a document's own sloppiness into a SKIPPED mutation. The index
+        // is unique by construction and just as stable across a re-run, since the
+        // re-run reads the same step list. The id rides along so the value is
+        // still readable in a log, and the iteration index is in it because one
+        // forEach step is many calls that are genuinely different ones.
+        const call: ToolCall = {
+          id: `call_${run.__lineage ?? run.id}_${stepIndex}_${step.id}`
+            + (iteration.index === undefined ? "" : `_${iteration.index}`),
+          tool: step.tool,
+          args,
+        };
         const outcome = await executeCall(app.doc.id, step, call, ctx);
         if (await finishStoppedIfNeeded(run)) return;
         appendOutcome(run, step, outcome);
         if (outcome.status === "pending-approval") {
-          await park(run, ctx, {
-            stepIndex,
-            ...(items === undefined ? {} : { forEachIndex: index, iterationItems: items, iterationOutputs: outputs }),
-            event: state.event,
-            stepOutputs: state.stepOutputs,
-            call,
-            approvalId: outcome.approvalId,
-          });
+          await needsPermission(run, ctx, step, outcome.approvalId);
           return;
         }
         if (outcome.status !== "ok") {
@@ -1082,6 +1152,8 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     declared: Trigger,
     kind: TriggerSource["kind"],
     event: Json,
+    /** The firing this run continues, when it is a re-run of one. */
+    lineage?: RunId,
   ): { runId: RunId; done: Promise<void> } => {
     const trigger = validateTrigger(declared);
     const runId = id("run_");
@@ -1097,6 +1169,10 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       status: "running",
       startedAt,
       steps: [],
+      // What fired it, so `runs.rerun` can fire the same trigger on the same
+      // event without the caller having to keep the payload.
+      __event: clone(event),
+      ...(lineage === undefined ? {} : { __lineage: lineage }),
     };
     const agentController = trigger.run.kind === "agentic" ? new AbortController() : undefined;
     if (agentController !== undefined) abortControllers.set(runId, agentController);
@@ -1292,256 +1368,6 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     return true;
   };
 
-  const resumeRun = async (approvalId: string, approved: boolean): Promise<void> => {
-    const dropPark = (): Promise<void> => config.store.records(PARKED).delete(approvalId);
-    const parkedRecord = await config.store.records(PARKED).get(approvalId);
-    if (parkedRecord === null) return;
-    const { runId } = parkedSchema.parse(parkedRecord.data);
-    if (resuming.has(runId)) return;
-    resuming.add(runId);
-    try {
-      const stored = await config.store.records(RUNS).get(runId);
-      if (stored === null) {
-        await dropPark();
-        return;
-      }
-      const run = parseRunRow(stored).record;
-      if (run.status !== "pending-approval" || run.__resume?.approvalId !== approvalId) {
-        if (run.status === "running" && run.__resume?.approvalId === approvalId && run.__resume.claimedBy !== undefined) {
-          return;
-        }
-        await dropPark();
-        return;
-      }
-      const approval = await config.store.records(APPROVALS).get(approvalId);
-      if (approval === null) return;
-      const approvalData = approvalRowSchema.parse(approval.data);
-
-      const claimedBy = `${instanceId()}:${globalThis.crypto.randomUUID()}`;
-      const claims = config.store.records(RESUME_CLAIMS);
-      const atomicClaim = claims.atomic === undefined
-        ? undefined
-        : await claims.atomic.insertIfAbsent({
-          id: approvalId,
-          data: { runId, claimedBy, claimedAt: iso() },
-        });
-      if (claims.atomic !== undefined && atomicClaim === null) return;
-
-      run.status = "running";
-      delete run.summary;
-      run.__resume.claimedBy = claimedBy;
-      if (!await writeRun(run)) return;
-      if (claims.atomic === undefined) {
-        // Optional-capability fallback: preserve the prior single-instance behavior.
-        // The unique write/read narrows, but cannot close, a cross-process race.
-        const claimedRecord = await config.store.records(RUNS).get(runId);
-        if (claimedRecord === null) return;
-        const claimedRun = parseRunRow(claimedRecord).record;
-        if (claimedRun.status !== "running" || claimedRun.__resume?.claimedBy !== claimedBy) return;
-        syncRun(run, claimedRun);
-      }
-
-      const appFound = await appRecord(run.appId);
-      if (appFound === null) {
-        // The app is gone, so there is no sponsorship left to resolve and no
-        // seam worth asking — the approval's own subject is the honest voice for
-        // this terminal row, and it cannot throw.
-        const ctx = baseRunContext(run, approvalData.request.ctx.principal.subject);
-        await terminal(run, ctx, "stopped", "app deleted before resume");
-        await dropPark();
-        return;
-      }
-      // The run is already CLAIMED ("running"), so an identity seam that throws
-      // here must not strand it: land the loud terminal row under the row
-      // subject instead (F10, the resume half).
-      let ctx: RunContext;
-      try {
-        ctx = await runContext(appFound.row.doc, run, appFound.row.subject);
-      } catch (error) {
-        const fallback = baseRunContext(run, appFound.row.subject);
-        // F10 again, the resume half: the raw throw is the audit row's, and the
-        // consumer reads a sentence about their automation.
-        await audit(fallback, "sponsorship-check-failed", {
-          summary: IDENTITY_UNAVAILABLE_RESUME,
-          detail: message(error),
-        });
-        await terminal(run, fallback, "error", IDENTITY_UNAVAILABLE_RESUME, {
-          code: "error",
-          message: IDENTITY_UNAVAILABLE_RESUME,
-        });
-        await dropPark();
-        return;
-      }
-      const declaredTrigger = triggerOf(appFound.row.doc, run.triggerId);
-      if (declaredTrigger === undefined || !await isArmed(appFound.row, run.triggerId)) {
-        await terminal(run, ctx, "stopped", "automation disabled before resume");
-        await dropPark();
-        return;
-      }
-      if (await finishStoppedIfNeeded(run)) {
-        await dropPark();
-        return;
-      }
-      await audit(ctx, "running");
-      if (!approved) {
-        const state = run.__resume;
-        const pending = [...run.steps].reverse().find(
-          (entry) => entry.outcome === "pending-approval" && entry.detail === approvalId,
-        );
-        if (pending !== undefined) {
-          pending.outcome = "blocked";
-          pending.detail = "user declined approval";
-          pending.at = iso();
-        }
-        const declinedStepId = state !== undefined && declaredTrigger.run.kind === "steps"
-          ? declaredTrigger.run.steps[state.stepIndex]?.id ?? "step"
-          : "step";
-        await terminal(run, ctx, "error", `stopped at ${declinedStepId}: user declined`, {
-          code: "blocked",
-          message: "the user declined the approval",
-        });
-        await dropPark();
-        return;
-      }
-      const state = run.__resume as ResumeState;
-      // The run is claimed (status "running", claimedBy persisted) from here on: a throw
-      // escaping this section would strand it in "running" forever (re-entry short-circuits
-      // on the claim and sweepParked only scans "pending-approval"), so any resume failure
-      // must land the run on a terminal row instead.
-      let trigger: Trigger;
-      let step: Step;
-      let outcome: ToolOutcome;
-      // Hoisted so the catch can take the grant back too: a throw between the
-      // mint and the dispatch would otherwise strand exactly the standing
-      // authority this section exists to keep from outliving its yes.
-      let armed: string | undefined;
-      try {
-        // §9.9 — the fire-time gate AGAIN, here, because a resume is a second
-        // firing through a different door: the run parked, time passed, and the
-        // document it is about to act on is re-read from the store. Without this
-        // a third party could edit the automation while the run sat parked and
-        // have the SPONSOR's identity execute the edited call on approval
-        // (proved: inv_42 → inv_EVIL as user_dana). A throw from the seams lands
-        // on the catch below, which is why it sits inside this block.
-        const refusal = await sponsorshipRefusal(appFound.row, declaredTrigger, ctx);
-        if (refusal !== undefined) {
-          await audit(ctx, "sponsorship-invalidated", { reason: refusal.reason, summary: refusal.summary });
-          await terminal(run, ctx, "error", refusal.summary, { code: "blocked", message: refusal.summary });
-          await dropPark();
-          return;
-        }
-        // …and the gate above is not enough on its own, because it asks about
-        // the automation NOW while this run belongs to an earlier era. An
-        // adoption completing between park and resume satisfies every current
-        // check — active sponsorship, matching intent, an editor who can edit —
-        // yet the parked approval belongs to the sponsor who is gone: resuming it
-        // would execute a call the new sponsor never saw under THEIR identity,
-        // against an intent that may no longer contain that step, and mint the
-        // grant under the OLD sponsor. A run may only be resumed by the very
-        // person who was asked, so a changed hand ends it: nothing runs, nothing
-        // is granted, and the automation simply runs again from the top.
-        const parked = approvalData.request.ctx.principal;
-        if (parked.subject !== ctx.principal.subject) {
-          await audit(ctx, "sponsorship-changed", { parked: parked.subject, summary: SPONSOR_CHANGED });
-          await terminal(run, ctx, "error", SPONSOR_CHANGED, { code: "blocked", message: SPONSOR_CHANGED });
-          await dropPark();
-          return;
-        }
-        trigger = validateTrigger(declaredTrigger);
-        if (trigger.run.kind !== "steps") throw new VendoError("validation", "parked agentic run is invalid");
-        const parkedStep = trigger.run.steps[state.stepIndex];
-        if (parkedStep === undefined) throw new VendoError("validation", "parked step is missing");
-        step = parkedStep;
-        // This path cannot call `spendApproval`: the REPLAY below is the spend,
-        // on the same `consumed:<id>` transition, and one approval cannot be
-        // spent twice (a pre-spend makes the guard refuse its own replay and the
-        // step re-parks forever — verified against the confirmEach resume case).
-        // The grant must also exist BEFORE the dispatch: an away call acts as the
-        // user only through captured authority (05 §6). So the grant is minted
-        // first and TAKEN BACK when the replay did not win — the receipt is the
-        // arbiter, which is the only thing that can tell "the person revoked it
-        // mid-resume" from "we read the row a moment too early". Deleted rather
-        // than tombstoned with a `revokedAt`, symmetric with the mint (which
-        // writes no audit event either): a revoked-grant row for authority the
-        // person never actually held would read as history that did not happen.
-        //
-        // KNOWN LIMIT — this holds for every outcome the process lives through,
-        // including a throw, but NOT for a crash between the mint and the
-        // take-back: a kill there leaves the grant behind, and nothing sweeps it.
-        // It is visible in `grants.list`, pinned to this tool's `descriptorHash`,
-        // app-bound and away-only, and the person can revoke it. Closing it needs
-        // the mint and the delete in one transaction, which the store's
-        // record-at-a-time seam does not offer.
-        armed = await mintGrant(approvalData.request, run.triggerId);
-        outcome = await executeCall(run.appId, step, state.call, ctx);
-        if (outcome.status === "pending-approval" || outcome.status === "blocked") {
-          await config.store.records(GRANTS).delete(armed);
-        }
-      } catch (error) {
-        // Same law as a refused replay: the yes was never spent, so it leaves no
-        // standing authority. Best-effort — a failed delete must not replace the
-        // real failure below with its own.
-        if (armed !== undefined) {
-          await config.store.records(GRANTS).delete(armed).catch(() => undefined);
-        }
-        await terminal(run, ctx, "error", `stopped at resume: ${message(error)}`, {
-          code: "validation",
-          message: message(error),
-        });
-        await dropPark();
-        return;
-      }
-      if (await finishStoppedIfNeeded(run)) {
-        await dropPark();
-        return;
-      }
-      const pending = [...run.steps].reverse().find(
-        (entry) => entry.outcome === "pending-approval" && entry.detail === approvalId,
-      );
-      if (pending !== undefined) {
-        pending.outcome = outcome.status;
-        // An explicit undefined property is not JSON — drop the key instead.
-        const detail = outcomeDetail(outcome);
-        if (detail === undefined) delete pending.detail;
-        else pending.detail = detail;
-        pending.at = iso();
-      } else appendOutcome(run, step, outcome);
-      if (outcome.status === "pending-approval") {
-        state.approvalId = outcome.approvalId;
-        delete state.claimedBy;
-        await dropPark();
-        await park(run, ctx, state);
-        return;
-      }
-      if (outcome.status !== "ok") {
-        const error = errorForOutcome(outcome);
-        await terminal(run, ctx, "error", `stopped at ${step.id}: ${error.message}`, error);
-        await dropPark();
-        return;
-      }
-      if (state.iterationItems === undefined) state.stepOutputs[step.id] = outcome.output;
-      else (state.iterationOutputs ??= []).push(outcome.output);
-      delete run.__resume;
-      if (!await writeRun(run)) {
-        await dropPark();
-        return;
-      }
-      await dropPark();
-      await continueSteps(appFound.row, trigger, run, ctx, {
-        stepIndex: state.iterationItems === undefined ? state.stepIndex + 1 : state.stepIndex,
-        event: state.event,
-        stepOutputs: state.stepOutputs,
-        ...(state.iterationItems === undefined ? {} : {
-          iterationItems: state.iterationItems,
-          iterationOutputs: state.iterationOutputs,
-          forEachIndex: (state.forEachIndex ?? 0) + 1,
-        }),
-      });
-    } finally {
-      resuming.delete(runId);
-    }
-  };
-
   /** Whether the TRIGGER holds ANY live automation-source standing grant — the
    *  evidence a consent moment granted it something. Per trigger, because the
    *  deny path below disarms exactly the trigger the person said no to, and a
@@ -1585,8 +1411,8 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
         // but disarms ONLY a consent moment that ended with NOTHING granted:
         // no capture asks left pending for the trigger and no live
         // automation-source grant held. A partially granted automation stays
-        // armed — its ungranted steps park at fire time (05 §6, J5), exactly
-        // the pre-set behavior. Scoped to the TRIGGER: saying no to one
+        // armed — its ungranted steps FAIL LOUD at fire time (05 §6, J5) and
+        // ask again there. Scoped to the TRIGGER: saying no to one
         // trigger's ask must never disarm a sibling that is running fine.
         const outstanding = (await pendingCaptures(parsed.subject)).some((candidate) =>
           candidate.data.appId === parsed.appId && candidate.data.triggerId === parsed.triggerId);
@@ -1599,10 +1425,6 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       }
       return;
     }
-    if (await config.store.records(PARKED).get(approvalId) !== null) {
-      await resumeRun(approvalId, approved);
-      return;
-    }
     const approval = await config.store.records(APPROVALS).get(approvalId);
     if (approval === null || !approved) return;
     const data = approvalRowSchema.parse(approval.data);
@@ -1612,9 +1434,11 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       && data.request.ctx.venue === "automation"
       && data.request.ctx.appId !== undefined
     ) {
-      // AgentRunReport has no continuation token in v0. Approval arms the
-      // app-bound authority for the next agentic firing instead of replaying
-      // and duplicating the completed prefix of an agent run.
+      // An away approval nothing captured — an AGENTIC run's own ask (a steps
+      // run writes a capture at the miss, so it never reaches here). Approval
+      // arms the app-bound authority for the next firing; it does not resume
+      // anything, which is now the law everywhere rather than an agentic
+      // exception: the failed run stays failed, and the remedy is `runs.rerun`.
       //
       // The trigger comes from the RUN this approval was raised inside: an away
       // approval carries its run id on the context (`trigger.runId`), and the
@@ -2131,25 +1955,11 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     return { adopted: true, missing, ...(missing.length === 0 ? {} : { grantSetId }) };
   };
 
-  const sweepParked = async (): Promise<void> => {
-    const runs = await allRecords(config.store.records(RUNS), { refs: { status: "pending-approval" } });
-    for (const record of runs) {
-      const run = parseRunRow(record).record;
-      const approvalId = run.__resume?.approvalId;
-      if (approvalId === undefined) continue;
-      const approval = await config.store.records(APPROVALS).get(approvalId);
-      if (approval === null) continue;
-      const decision = approvalRowSchema.safeParse(approval.data);
-      if (!decision.success || decision.data.status === "pending") continue;
-      await resumeRun(approvalId, decision.data.status === "approved");
-    }
-  };
-
   const runTick: AutomationsEngine["tick"] = async (providedNow) => {
-    await sweepParked();
     // Cloud (or whatever other authority) already fires schedule automations for this
-    // deployment — firing them here too would double-run them. Approval resumption
-    // (sweepParked, above) is not a firing path, so it stays unconditional.
+    // deployment — firing them here too would double-run them. The tick used to
+    // sweep decided approvals back into parked runs before this line; nothing
+    // waits on a decision any more, so a tick is only ever a firing path.
     if (!firesLocally("schedule")) return [];
     const at = providedNow ?? now();
     const atIso = at.toISOString();
@@ -2531,16 +2341,59 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     const run = parseRunRow(stored).record;
     const app = await editableAppOrNull(run.appId, ctx);
     if (app === null) throw new VendoError("not-found", `run not found: ${runId}`);
-    if (run.status !== "running" && run.status !== "pending-approval") {
+    if (run.status !== "running") {
       throw new VendoError("conflict", `run cannot be stopped from status ${run.status}`);
     }
     stopped.add(runId);
     abortControllers.get(runId)?.abort();
-    const parkedApprovalId = run.__resume?.approvalId;
     const runCtx = await runContext(app.row.doc, run, app.row.subject);
     await terminal(run, runCtx, "stopped", "stopped by user");
-    if (parkedApprovalId !== undefined) await config.store.records(PARKED).delete(parkedApprovalId);
     if (!active.has(runId)) stopped.delete(runId);
+  };
+
+  /** Run it again. The remedy a fail-loud run leaves behind: whoever granted the
+   *  missing permission taps this and the automation fires again from the top,
+   *  on the same event, against LIVE data.
+   *
+   *  It is a FRESH run and not a continuation on purpose — nothing mid-run is
+   *  restored, nothing is replayed. Safety for the work the first attempt did
+   *  land is the guard's effect ledger's job (build contract §7), not a
+   *  bookkeeping layer here.
+   *
+   *  Gated exactly like `stop`: anyone who can edit the app, existence-masked
+   *  for anyone who cannot. A trigger nobody has armed is refused rather than
+   *  fired — "run it again" may not be a way to run something switched off. */
+  const runsRerun: AutomationsEngine["runs"]["rerun"] = async (runId, ctx) => {
+    const stored = await config.store.records(RUNS).get(runId);
+    if (stored === null) throw new VendoError("not-found", `run not found: ${runId}`);
+    const run = parseRunRow(stored).record;
+    const app = await editableAppOrNull(run.appId, ctx);
+    if (app === null) throw new VendoError("not-found", `run not found: ${runId}`);
+    const declared = triggerOf(app.row.doc, run.triggerId);
+    if (declared === undefined) {
+      throw new VendoError("conflict", `app has no trigger "${run.triggerId}" any more`);
+    }
+    if (!await isArmed(app.row, run.triggerId)) {
+      throw new VendoError("conflict", "this automation is off — turn it on to run it again");
+    }
+    // A run row from before the event was persisted has nothing to re-fire.
+    // Refused rather than fired on an invented empty event: the steps' own
+    // JSONata reads `event.*`, so an empty payload is a different run.
+    if (run.__event === undefined) {
+      throw new VendoError("conflict", "this run is from before re-runs were possible");
+    }
+    // The ROOT of the firing, so re-running a re-run keeps one lineage instead of
+    // a chain: every run of this firing then shares one effect ledger, and the
+    // second re-run still sees what the first already completed.
+    const { runId: freshId, done } = launchRun(
+      app.row,
+      declared,
+      run.trigger.kind,
+      run.__event,
+      (run.__lineage ?? run.id) as RunId,
+    );
+    await done;
+    return freshId;
   };
 
   return {
@@ -2551,7 +2404,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     start,
     emit,
     webhook,
-    runs: { get: runsGet, list: runsList, stop: runsStop },
+    runs: { get: runsGet, list: runsList, stop: runsStop, rerun: runsRerun },
     dryRun,
     onDocumentEdit,
     adoption,

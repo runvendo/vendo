@@ -179,9 +179,16 @@ function exactInputHash(args: unknown): string {
  *
  *  Scoping is load-bearing in both directions: narrower (per call id) would never
  *  dedupe a re-run at all, and broader (per subject) would make a daily
- *  automation fire once and then never again. */
+ *  automation fire once and then never again.
+ *
+ *  The run component is the FIRING (`lineageId`), falling back to the run itself.
+ *  "Fail loudly, then run it again" does not resume a run — it starts a fresh one
+ *  of the same trigger on the same event — so a receipt written under the failed
+ *  run's id was invisible to the very re-run it existed to protect, and work that
+ *  had already landed happened twice. A ctx that names no lineage behaves exactly
+ *  as before. */
 function effectBaseKey(ctx: RunContext, call: ToolCall): string | undefined {
-  const runId = ctx.trigger?.runId;
+  const runId = ctx.trigger?.lineageId ?? ctx.trigger?.runId;
   if (runId === undefined) return undefined;
   return canonicalJson([runId, call.tool, exactInputHash(call.args)]);
 }

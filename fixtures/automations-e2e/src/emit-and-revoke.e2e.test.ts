@@ -1,8 +1,9 @@
 /** 07 §2 host-event scoping and 07 §3 revocation:
  *  - emit fires only the EMITTING principal's automations, even when a second
  *    principal has an enabled automation on the identical event name.
- *  - revoking a captured grant disarms nothing; the next away run simply parks
- *    pending-approval (the guard binding, not a cached decision, gates the run).
+ *  - revoking a captured grant disarms nothing; the next away run simply fails
+ *    LOUDLY and asks again (the guard binding, not a cached decision, gates the
+ *    run).
  */
 import { beforeEach, describe, expect, it } from "vitest";
 import { automationDoc, createStack, ownerCtx, resetFixture } from "./harness.js";
@@ -52,8 +53,8 @@ describe("host-event scoping and grant revocation", () => {
   // (design §12) refuses a destructive or external action in an unattended run
   // outright, so the "first run succeeds on its captured grant" premise this
   // scenario needs is only reachable for a legal write. The law's own refusal is
-  // proven in park-resume.e2e.test.ts.
-  it("parks the next run after its standing grant is revoked", async () => {
+  // proven in redteam/away-authority.e2e.test.ts.
+  it("fails the next run loud with needs-permission after its standing grant is revoked", async () => {
     const stack = await createStack();
     try {
       const appId = "app_revoke_park";
@@ -85,14 +86,17 @@ describe("host-event scoping and grant revocation", () => {
         [grant.id],
       ))[0]?.revoked_at).toBeTruthy();
 
-      // Next run parks — revocation disarmed nothing, the run just asks again.
-      // A parked run never executed the tool: the send outcome is the
-      // pending-approval the guard returned in place of running it.
+      // The next run FAILS LOUD — revocation disarmed nothing, the run just asks
+      // again. It never executed the tool: the step outcome is the
+      // pending-approval the guard returned in place of running it, and the run
+      // itself is terminal with the permission it needed named on it.
       const second = await stack.automations.emit("invoice.autosend", { id: "inv_0003" }, ADA);
       const secondId = second[0];
       if (!secondId) throw new Error("second emit did not return a run id");
       const secondRun = await stack.automations.runs.get(secondId, ctx);
-      expect(secondRun?.status).toBe("pending-approval");
+      expect(secondRun?.status).toBe("error");
+      expect(secondRun?.error).toMatchObject({ code: "needs-permission", tool: "host_invoices_update" });
+      expect(secondRun?.finishedAt).toBeTruthy();
       expect(secondRun?.steps.at(-1)).toMatchObject({ tool: "host_invoices_update", outcome: "pending-approval" });
       const away = (await stack.guard.approvals.pending(ADA)).find((request) =>
         request.call.tool === "host_invoices_update"
@@ -100,6 +104,19 @@ describe("host-event scoping and grant revocation", () => {
         && request.ctx.appId === appId
       );
       expect(away).toBeDefined();
+      // With no arming ask left open for this permission, the miss captured the
+      // live one itself — so the panel can offer Grant & re-run from the run row.
+      const captures = await stack.sql<{ id: string; data: unknown }>(
+        "SELECT id, data FROM vendo_records WHERE collection = 'automations:captures'",
+      );
+      expect(captures.map(({ id }) => id)).toEqual([away!.id]);
+      expect(captures[0]?.data).toMatchObject({
+        appId,
+        triggerId: "main",
+        subject: ADA.subject,
+        tool: "host_invoices_update",
+      });
+      expect((await stack.automations.list(ctx))[0]?.triggers[0]).toMatchObject({ pendingGrants: 1 });
     } finally {
       await stack.close();
     }
