@@ -14,6 +14,7 @@
 
 // Semantics
 export * from "./format.js";
+export * from "./state.js";
 export * from "./tokens.js";
 
 // Schema + registry + generated prompt
