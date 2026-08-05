@@ -103,10 +103,24 @@ function titleFromPrompt(prompt: unknown): string {
   return collapsed.length > TITLE_CAP ? `${collapsed.slice(0, TITLE_CAP - 1)}…` : collapsed;
 }
 
+/**
+ * A `MakeReceipt` carries its own honest status (`"ready" | "building" |
+ * "failed"`, `packages/core/src/make-receipt.ts`) and a speakable `say` line
+ * — exactly the two fields a failed edit needs to be reported as failed. A
+ * failed receipt must NEVER become a ref: the ref schema has no room for
+ * failure (runvendo/flowlet#822 defect 2, generalized) — an id and a title
+ * are the whole shape of "this exists and is fine". Returning null here lets
+ * the caller fall back to the receipt itself, `status` and `say` intact.
+ */
 function appRefFromReceipt(output: unknown, fallbackTitle: string): VendoAppRef | null {
   const receipt = makeReceiptSchema.safeParse(output);
-  if (!receipt.success) return null;
-  return { kind: VENDO_APP_REF_KIND, appId: receipt.data.id, title: receipt.data.title || fallbackTitle };
+  if (!receipt.success || receipt.data.status === "failed") return null;
+  return {
+    kind: VENDO_APP_REF_KIND,
+    appId: receipt.data.id,
+    title: receipt.data.title || fallbackTitle,
+    status: "building",
+  };
 }
 
 async function guardedExecute(
@@ -159,7 +173,7 @@ function wrapHostTool(registry: ToolRegistry, descriptor: ToolDescriptor): Vendo
 function createAppTool(registry: ToolRegistry, descriptor: ToolDescriptor): VendoPackTool {
   return {
     name: VENDO_CREATE_APP_TOOL,
-    description: "Create a Vendo app (generated UI) from a natural-language prompt. Returns fast with a vendo/app-ref@1 envelope meaning the build was ACCEPTED and is still streaming — the app is NOT built yet. Do not tell the user the app is created/ready/done; the embed shows live build progress and the final result (including any build failure) itself, so never wait for or report on build completion.",
+    description: "Create a Vendo app (generated UI) from a natural-language prompt. Returns fast with a vendo/app-ref@1 envelope carrying status \"building\" — the build was only ACCEPTED and is still streaming; you have not seen its contents and do not know yet whether it will succeed. Say only that you're building it (present tense, no specifics) and stop there. Never say it is created/ready/done, and never describe, list, or invent anything it will contain (no tables, no numbers, no chart data) — the embed shows real build progress and the true final result, including a build failure, and it will contradict anything you claim. If the build later fails, you will not be told in this reply; do not assume or claim success in a later turn either — check with the user or a read tool before describing this app again.",
     inputSchema: {
       $schema: DRAFT_2020_12,
       type: "object",
@@ -186,7 +200,7 @@ function createAppTool(registry: ToolRegistry, descriptor: ToolDescriptor): Vend
         value: (update: { id: string; part: { appId?: unknown } }) => {
           const appId = update?.part?.appId;
           if (typeof appId === "string" && appId.startsWith("app_")) {
-            resolveFast({ kind: VENDO_APP_REF_KIND, appId, title: fallbackTitle });
+            resolveFast({ kind: VENDO_APP_REF_KIND, appId, title: fallbackTitle, status: "building" });
           }
         },
       });

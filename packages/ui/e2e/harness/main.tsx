@@ -2196,7 +2196,7 @@ function ByoEmbedScenario({ appId, title }: { appId: string; title: string }) {
       <div style={{ maxWidth: 640, margin: "0 auto", fontFamily: "Georgia, serif", display: "grid", gap: 12 }}>
         <p style={{ margin: 0 }}>User: make me a dashboard comparing the weather in three cities</p>
         <p style={{ margin: 0 }}>AI: building it now — it will appear below.</p>
-        <VendoToolResult output={{ kind: "vendo/app-ref@1", appId, title }} />
+        <VendoToolResult output={{ kind: "vendo/app-ref@1", appId, title, status: "building" }} />
         <p style={{ margin: 0 }} data-testid="after-embed">AI: let me know if you want more cities.</p>
       </div>
     </VendoProvider>

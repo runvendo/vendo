@@ -15,6 +15,7 @@ const appRef: VendoAppRef = {
   kind: "vendo/app-ref@1",
   appId: "app_dash",
   title: "Weather dashboard",
+  status: "building",
 };
 
 const approvalRef: VendoApprovalRef = {
