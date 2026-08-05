@@ -39,6 +39,7 @@ import {
   type TreeQuery,
   type WireCompileResult,
 } from "@vendoai/core";
+import { bindingKindCheck } from "../checking/facts.js";
 import { createCheckingLayer } from "../checking/layer.js";
 import type { Finding } from "../checking/types.js";
 import { readEdits } from "./brain.js";
@@ -237,7 +238,7 @@ export const fillPlan = async (
   const { results: queryResults, findings: queryFindings } = await runPlanQueries(plan, deps, options);
   const findings: Finding[] = [...queryFindings];
   const compileOptions = wireCompileOptionsFor(deps);
-  const checking = createCheckingLayer({ deps });
+  const checking = createCheckingLayer({ deps, checks: [bindingKindCheck(deps)] });
   // The slot map is in plan order (skeleton.ts's Skeleton contract), so the
   // worker for plan.groups[i] splices into the i-th slot.
   const slots = Object.values(skeleton.slots);

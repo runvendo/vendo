@@ -49,6 +49,7 @@ import {
   type TextEdit,
   type Tree,
 } from "@vendoai/core";
+import { bindingKindCheck } from "../checking/facts.js";
 import { createCheckingLayer, judgmentRules } from "../checking/layer.js";
 import { reviewerCheck } from "../checking/reviewer.js";
 import type { Check, CheckingLayer, Finding } from "../checking/types.js";
@@ -133,7 +134,10 @@ const checkingFor = (
   // with, so the rubric the reviewer reads and `layer.rubric` can never diverge.
   return createCheckingLayer({
     deps,
-    checks: [reviewerCheck(deps, samples, judgmentRules(plugged)), ...plugged],
+    // The generate path's type check is the cheap, node-anchored structural one
+    // (§7.1) — the fix-loop can act on its loci, and the compiler static half is
+    // reserved for the paint/validate gates off this synchronous latency budget.
+    checks: [bindingKindCheck(deps), reviewerCheck(deps, samples, judgmentRules(plugged)), ...plugged],
   });
 };
 

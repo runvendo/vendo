@@ -541,16 +541,36 @@ export const factChecks = (deps: FloorDependencies): Check[] => [
   treeCheck("expressions-compute", (tree) => exprIssues(tree, deps)),
   treeCheck("query-inputs-literal", (tree) => queryInputIssues(tree)),
   treeCheck("no-string-interpolation", (tree) => interpolationIssues(tree)),
-  // The static half runs LAST: it is the broad compiler backstop, and on any
-  // overlap with a targeted bespoke check (a bad aggregate field name, an
-  // identifier-path field miss) the specific check's hand-tuned message should
-  // lead the flat-merged list. See `screenTypeFindings`.
-  {
-    name: "screen-types",
-    kind: "fact",
-    run: async ({ document }) => {
-      const tree = treeOf(document);
-      return tree === undefined ? [] : screenTypeFindings(tree, document, deps);
-    },
-  },
 ];
+
+/**
+ * The cheap structural type-mismatch check — a binding's shape KIND against the
+ * host prop's declared type (`shapeSchemaMismatch`). It is node-anchored, so the
+ * conductor's fix-loop can act on it; the compiler static half's findings are
+ * tag-anchored and it cannot.
+ *
+ * It is NOT in `factChecks`. It runs on the GENERATE path (conductor, fill),
+ * where a synchronous, fix-loop-consumable type check is what the loop needs and
+ * a compiler program would blow the create latency budget (`gen-scripted:create`,
+ * measured: the tsc pass alone is ~3ms of a ~4ms create). At the floor and the
+ * validate door the compiler static half (`screenTypesCheck`) covers this class
+ * and more, so neither path runs both — one type check each, the right one.
+ */
+export const bindingKindCheck = (deps: FloorDependencies): Check =>
+  treeCheck("bindings-fit-kind", (tree) => bindingKindIssues(tree, deps));
+
+/**
+ * The compiler static half (§7.1 + Track A): a `tsc` program over the printed
+ * screen + generated typings. It spins a compiler, so it runs ONLY where a bad
+ * screen is blocked from a user and the cost is affordable — the paint-seam floor
+ * and the validate door — never inside the synchronous scripted-create loop the
+ * perf gate guards. Degrades to silence when no compiler is available.
+ */
+export const screenTypesCheck = (deps: FloorDependencies): Check => ({
+  name: "screen-types",
+  kind: "fact",
+  run: async ({ document }) => {
+    const tree = treeOf(document);
+    return tree === undefined ? [] : screenTypeFindings(tree, document, deps);
+  },
+});

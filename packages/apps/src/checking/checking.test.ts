@@ -12,6 +12,7 @@ import {
   type ShapeType,
 } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
+import { screenTypesCheck } from "./facts.js";
 import { createCheckingLayer } from "./layer.js";
 import type { Check, CheckInput } from "./types.js";
 import type { FloorDependencies, HostToolInfo } from "./deps.js";
@@ -136,9 +137,11 @@ describe("checking layer", () => {
 
     expect(layer.checks.map(({ name }) => name)).toContain("maple-house-style");
     // Appended, never replacing: every built-in fact check is still registered.
+    // `screen-types` (the tsc static half) is NOT a built-in factCheck — it is
+    // added only at the floor and the validate door, off the create hot path.
     expect(layer.checks.map(({ name }) => name)).toEqual(expect.arrayContaining([
       "document", "tools-exist", "components-exist", "bindings-fit", "expressions-compute",
-      "query-inputs-literal", "no-string-interpolation", "screen-types", "maple-house-style",
+      "query-inputs-literal", "no-string-interpolation", "maple-house-style",
     ]));
     expect(findings).toContainEqual({
       severity: "block",
@@ -279,9 +282,11 @@ describe("built-in fact checks", () => {
 
   it("blocks a screen naming a component no vocabulary carries — the wired tsc floor", async () => {
     // Prove-it-can-fail for the `screen-types` wiring: an unknown component is a
-    // block that carries the check's own name. Comment out the `screen-types`
-    // entry in `factChecks` and this finding vanishes.
-    const layer = createCheckingLayer({ deps: deps() });
+    // block that carries the check's own name. `screen-types` is the compiler
+    // static half — composed at the floor and the validate door (never in the
+    // create hot path), so the layer is built the way those gates build it. Drop
+    // `screenTypesCheck` from this layer and the finding vanishes.
+    const layer = createCheckingLayer({ deps: deps(), checks: [screenTypesCheck(deps())] });
     const findings = await layer.run(inputFor(
       '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack><MapleGhostCard valueCents={invoices.data}/></Stack></App>',
     ));

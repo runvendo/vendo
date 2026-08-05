@@ -86,6 +86,7 @@ import type { Finding } from "./checking/types.js";
 // The `validate` verb IS the shipped floor plus the shipped create validation,
 // called rather than re-derived — so the verb and generation can never disagree
 // about whether a document is sound.
+import { screenTypesCheck } from "./checking/facts.js";
 import { createCheckingLayer, judgmentRules } from "./checking/layer.js";
 import { reviewerCheck } from "./checking/reviewer.js";
 import { validateCompiledCreate } from "./generation/validation/validate.js";
@@ -3055,7 +3056,9 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       const plugged = config.checks ?? [];
       const findings = await createCheckingLayer({
         deps,
-        checks: [reviewerCheck(deps, undefined, judgmentRules(plugged)), ...plugged],
+        // The thorough door: the compiler static half AND the reviewer. Off the
+        // scripted-create hot path, so the tsc pass is affordable here (§7.1).
+        checks: [screenTypesCheck(deps), reviewerCheck(deps, undefined, judgmentRules(plugged)), ...plugged],
       }).run({ document, request: "" });
       return { ok: !findings.some(({ severity }) => severity === "block"), findings };
     },

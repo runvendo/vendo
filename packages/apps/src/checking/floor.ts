@@ -29,6 +29,7 @@ import {
 } from "@vendoai/core";
 import { wireCompileOptionsFor } from "../wire-options.js";
 import type { FloorDependencies } from "./deps.js";
+import { screenTypesCheck } from "./facts.js";
 import { createCheckingLayer } from "./layer.js";
 
 /** A compiled wire result as the document the checks read. The checks take a whole
@@ -68,9 +69,14 @@ export const createAppFloor = ({ deps, checks }: AppFloorOptions): AppFloor => {
       return compileWire(text, wireCompileOptionsFor(await once()));
     },
     async check({ appId, compiled }) {
+      const resolved = await once();
+      // The compiler static half runs HERE — the paint gate blocks a bad screen
+      // from a user, and this ms is off the synchronous create latency budget
+      // (§7.1). The generate path uses the cheap node-anchored `bindingKindCheck`
+      // instead; neither path runs both.
       const layer = createCheckingLayer({
-        deps: await once(),
-        ...(checks === undefined ? {} : { checks }),
+        deps: resolved,
+        checks: [screenTypesCheck(resolved), ...(checks ?? [])],
       });
       // `request: ""` for the same reason `validate` passes it: a file write
       // carries no user text, and the checks that read it treat absence as "no
