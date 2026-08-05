@@ -78,7 +78,31 @@ class GuardDouble implements Guard {
   /** The optional spend seam (05 §2 amendment), scripted. Left unset by default
    *  so every existing case still exercises the pre-seam fallback path. */
   spendApproval?: (id: ApprovalId) => Promise<"spent" | "already-spent" | "taken-back">;
+  /** Ids passed to {@link abandonApprovals}, in order. */
+  readonly abandoned: ApprovalId[] = [];
+  /** The store this double writes abandonment through, so a test can read the
+   *  approval row back and see the ask actually closed rather than trusting that
+   *  the seam was called. Set by the tests that exercise abandonment. */
+  store?: StoreAdapter;
   private readonly callbacks = new Set<(id: ApprovalId, approved: boolean) => void>();
+
+  /** AGENT-6, the real guard's contract in miniature: deny as `system` (never a
+   *  standing no), idempotent, mint nothing, then fire the decision callbacks
+   *  the same way an explicit denial does. */
+  async abandonApprovals(ids: ApprovalId[]): Promise<void> {
+    for (const id of ids) {
+      this.abandoned.push(id);
+      const record = await this.store?.records("vendo_approvals").get(id);
+      if (record == null) continue;
+      const data = record.data as Record<string, unknown>;
+      if (data.status !== "pending") continue;
+      await this.store!.records("vendo_approvals").put({
+        id,
+        data: { ...data, status: "denied", deniedBy: "system" },
+      });
+      for (const callback of this.callbacks) callback(id, false);
+    }
+  }
 
   async check(): Promise<{ action: "run"; decidedBy: "default" }> {
     return { action: "run", decidedBy: "default" };
@@ -724,6 +748,56 @@ describe("fail-loud consent and re-run", () => {
     expect((capture?.data as { grantSetId?: string }).grantSetId).toMatch(/^gset_/);
     // The projection a surface renders "waiting on 1 permission" from.
     expect((await engine.list(ctx()))[0]?.triggers[0]).toMatchObject({ pendingGrants: 1 });
+  });
+
+  it("closes the redundant run-time ask when an arming ask is already asking it", async () => {
+    // The state a real deployment reaches constantly, and the one `seedApp`
+    // cannot: the person armed the automation and left the consent card
+    // undecided, so an arming ask for `write_data` is pending — and THEN the
+    // schedule fired and the run met the same permission.
+    //
+    // The engine correctly declines to capture a second row for one question
+    // (one thing to allow is one question). What it used to do with the ask the
+    // guard had just parked was NOTHING: no capture, no closure. So the panel
+    // kept "waiting on 1 permission" and a live Allow/Deny card for a permission
+    // that had already been granted, the needs-you badge stayed lit, and all of
+    // it survived a reload — until the hour-long TTL sweep. `abandonApprovals`
+    // is the existing verb for an ask nobody needs answered any more.
+    const store = memoryStoreAdapter();
+    const guard = new GuardDouble();
+    guard.store = store;
+    const { tools } = missingPermission(store);
+    const doc = twoStepApp("app_orphan");
+    await seedApp(store, doc, "user_a");
+    const engine = createAutomations({ apps: appsDouble(), tools, guard, store, now: () => NOW });
+
+    const { missing } = await engine.enable(doc.id, "main", ctx());
+    const armingWrite = missing.find((request) => request.call.tool === writeTool.name);
+    expect(armingWrite).toBeDefined();
+
+    const [runId] = await engine.emit("go", { value: 4 }, ctx().principal);
+    await flush();
+
+    // The run still fails loudly for the right reason — that part was never wrong.
+    expect(await engine.runs.get(runId!, ctx())).toMatchObject({
+      status: "error",
+      error: { code: "needs-permission", tool: writeTool.name },
+    });
+    // The guard's run-time ask is closed, and closed as `system` so it can never
+    // read as the person having said no to this tool.
+    expect(guard.abandoned).toEqual(["apr_miss_1"]);
+    expect(await store.records("vendo_approvals").get("apr_miss_1"))
+      .toMatchObject({ data: { status: "denied", deniedBy: "system" } });
+    // The ARMING ask is untouched: it is the one every surface projects and the
+    // one Grant & re-run settles. Closing the wrong one of the pair would take
+    // the person's only way to allow this off the screen.
+    expect(await store.records("vendo_approvals").get(armingWrite!.id))
+      .toMatchObject({ data: { status: "pending" } });
+    // One question, counted once — and the standing grant is still unminted,
+    // because abandoning an ask grants nothing.
+    expect((await engine.list(ctx()))[0]?.triggers[0]).toMatchObject({ pendingGrants: 2 });
+    expect(await store.records("automations:captures").get("apr_miss_1")).toBeNull();
+    expect((await store.records("vendo_grants").list()).records).toHaveLength(0);
   });
 
   it("mints the standing grant on approval and re-runs the automation fresh", async () => {

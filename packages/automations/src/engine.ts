@@ -1073,6 +1073,24 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
         // live ask above replaces it, so it must not keep a settled question
         // open on the panel.
         if (asked !== undefined) await config.store.records(CAPTURES).delete(asked.id);
+      } else if (asked !== undefined && asked.id !== approvalId) {
+        // Declining to capture the ask is not the same as closing it, and for a
+        // long time this branch did only the first. The older ask is the one
+        // every surface projects and the one Grant & re-run settles, so the ask
+        // the guard raised for this run is redundant the moment it is raised —
+        // but it was left `pending` in the approvals queue, where it kept
+        // "waiting on 1 permission" and a live Allow/Deny card on screen for a
+        // permission that had already been granted, kept the needs-you badge
+        // lit, and survived a reload. Nothing closed it but the hour-long TTL
+        // sweep, and every re-run added another.
+        //
+        // `abandonApprovals` is the existing verb for exactly this: an ask
+        // nobody needs answered. It denies as `system`, which is explicitly NOT
+        // a standing no (the guard only enforces `deniedBy: "human"`), mints
+        // nothing, and is idempotent. Optional on the seam, so feature-detected
+        // the same way the harness runtime does it — a guard without it behaves
+        // exactly as before, with the TTL sweep as the backstop.
+        await config.guard.abandonApprovals?.([approvalId], ctx);
       }
     }
     const named = slug === undefined ? `use ${step.tool}` : serviceToolPhrase(slug);
