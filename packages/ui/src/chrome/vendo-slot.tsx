@@ -78,12 +78,11 @@ function SlotLoadFailed({ reason, onRetry }: { reason: Error; onRetry(): void })
 function MountedApp({ appId }: { appId: string }) {
   const { client, components } = useVendoContext();
   const { surface, error, isLoading, refresh } = useApp(appId);
-  // Wave 7 H2 — the served-surface keepalive: user activity pings the machine
-  // (host-proxied) so an embedded served app doesn't idle out under the user;
-  // a "woke" ping re-opens for the fresh machine URL.
+  // Wave 7 H2 — the served-surface keepalive: an on-screen embed pings the
+  // machine (host-proxied) so a served app doesn't idle out under the user.
   const keepalive = useMemo(
-    () => ({ ping: () => client.apps.pingMachine(appId), reopen: refresh }),
-    [appId, client, refresh],
+    () => ({ ping: () => client.apps.pingMachine(appId) }),
+    [appId, client],
   );
   if (!surface) {
     if (error && !isLoading) return <SlotLoadFailed reason={error} onRetry={() => void refresh()} />;

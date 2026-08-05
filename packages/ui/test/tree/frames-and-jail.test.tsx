@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import type { ComponentType } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { VENDO_TREE_FORMAT, type ToolOutcome } from "@vendoai/core";
 import { AppFrame, PinMount, TreeView } from "../../src/tree/index.js";
 
@@ -32,65 +32,76 @@ describe("AppFrame", () => {
     expect(same.getAttribute("sandbox")).not.toContain("allow-same-origin");
   });
 
-  it("pings on user activity, throttled to the keepalive interval (Wave 7 H2)", async () => {
+  it("fits the served app's reported height, inside the host's bounds", () => {
+    // ONE resize protocol: the served app reports the same `{vendo, kind, height}`
+    // the jail runtime does, and the http frame honours it through the same
+    // shared gate/clamp (tree/frame-resize.ts).
+    render(<AppFrame surface={{ kind: "http", url: "https://machine.invalid/app" }} />);
+    const frame = screen.getByTitle("Vendo app") as HTMLIFrameElement;
+
+    window.dispatchEvent(new MessageEvent("message", {
+      source: frame.contentWindow,
+      data: { vendo: true, kind: "resize", height: 640 },
+    }));
+    expect(frame.style.height).toBe("640px");
+
+    // The host's slot is a constraint the app lives inside, never overrides.
+    frame.style.maxHeight = "420px";
+    window.dispatchEvent(new MessageEvent("message", {
+      source: frame.contentWindow,
+      data: { vendo: true, kind: "resize", height: 3_000 },
+    }));
+    expect(frame.style.height).toBe("420px");
+  });
+
+  it("ignores a resize from any window other than the app's own frame", () => {
+    render(<AppFrame surface={{ kind: "http", url: "https://machine.invalid/app" }} />);
+    const frame = screen.getByTitle("Vendo app") as HTMLIFrameElement;
+
+    window.dispatchEvent(new MessageEvent("message", {
+      source: window,
+      data: { vendo: true, kind: "resize", height: 2_000 },
+    }));
+    expect(frame.style.height).toBe("");
+  });
+
+  it("pings while the embed is on screen, at most once per interval (Wave 7 H2)", async () => {
     vi.useFakeTimers();
     try {
       const ping = vi.fn(async () => ({ state: "awake" as const }));
-      const reopen = vi.fn(async () => undefined);
       render(
         <AppFrame
           surface={{ kind: "http", url: "https://machine.invalid/app" }}
-          keepalive={{ ping, reopen, intervalMs: 1_000 }}
+          keepalive={{ ping, intervalMs: 1_000 }}
         />,
       );
-      // Idle: ticks pass with no activity → no ping (nothing keeps an unused
-      // machine awake).
-      await vi.advanceTimersByTimeAsync(3_000);
-      expect(ping).not.toHaveBeenCalled();
-      // Host-page activity → one ping on the next tick, then throttled.
-      fireEvent.pointerDown(window);
       await vi.advanceTimersByTimeAsync(1_000);
       expect(ping).toHaveBeenCalledTimes(1);
       await vi.advanceTimersByTimeAsync(2_000);
-      expect(ping).toHaveBeenCalledTimes(1);
-      expect(reopen).not.toHaveBeenCalled();
+      expect(ping).toHaveBeenCalledTimes(3);
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("a woke ping shows the resuming cover and re-opens the surface once (Wave 7 H2)", async () => {
+  it("a woke ping is not the frame's problem: no cover, no re-open (URLs are stable)", async () => {
     vi.useFakeTimers();
     try {
+      // The machine slept and woke. With a stable proxy URL the frame's address
+      // never changed, so there is nothing to re-open and nothing to cover — the
+      // live embed stays under the user.
       const ping = vi.fn(async () => ({ state: "woke" as const }));
-      let resolveReopen = () => undefined as void;
-      const reopen = vi.fn(() => new Promise<void>((resolve) => { resolveReopen = () => resolve(); }));
-      const { rerender } = render(
+      render(
         <AppFrame
           surface={{ kind: "http", url: "https://machine.invalid/app" }}
-          keepalive={{ ping, reopen, intervalMs: 1_000 }}
+          keepalive={{ ping, intervalMs: 1_000 }}
         />,
       );
-      fireEvent.pointerDown(window);
       await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
-      expect(reopen).toHaveBeenCalledTimes(1);
-      // While the re-open is in flight, the EXISTING wake/loading state
-      // replaces the stale iframe — no dead embed under the user.
-      expect(screen.getByLabelText("Vendo app resuming")).toBeTruthy();
-      expect(screen.queryByTitle("Vendo app")).toBeNull();
-      // The re-open lands a fresh surface URL; the frame comes back on it.
-      await act(async () => {
-        resolveReopen();
-        await vi.advanceTimersByTimeAsync(0);
-      });
-      rerender(
-        <AppFrame
-          surface={{ kind: "http", url: "https://machine.invalid/app2" }}
-          keepalive={{ ping, reopen, intervalMs: 1_000 }}
-        />,
-      );
+      expect(ping).toHaveBeenCalledTimes(1);
+      expect(screen.queryByLabelText("Vendo app resuming")).toBeNull();
       const frame = screen.getByTitle("Vendo app") as HTMLIFrameElement;
-      expect(frame.src).toBe("https://machine.invalid/app2");
+      expect(frame.src).toBe("https://machine.invalid/app");
     } finally {
       vi.useRealTimers();
     }
@@ -292,19 +303,27 @@ describe("generated component jail structure", () => {
 
     window.dispatchEvent(new MessageEvent("message", {
       source: iframe.contentWindow,
-      data: { kind: "resize", height: 1_400 },
+      data: { vendo: true, kind: "resize", height: 1_400 },
     }));
     expect(iframe.style.height).toBe("1400px");
 
     window.dispatchEvent(new MessageEvent("message", {
       source: iframe.contentWindow,
-      data: { kind: "resize", height: 280 },
+      data: { vendo: true, kind: "resize", height: 280 },
     }));
     expect(iframe.style.height).toBe("280px");
 
     window.dispatchEvent(new MessageEvent("message", {
       source: iframe.contentWindow,
-      data: { kind: "resize", height: 10_000 },
+      data: { vendo: true, kind: "resize", height: 10_000 },
+    }));
+    expect(iframe.style.height).toBe("8192px");
+
+    // Same protocol, same identity gate as the served app's http frame: only the
+    // frame we rendered may resize it (see tree/frame-resize.ts).
+    window.dispatchEvent(new MessageEvent("message", {
+      source: window,
+      data: { vendo: true, kind: "resize", height: 4_000 },
     }));
     expect(iframe.style.height).toBe("8192px");
   });
