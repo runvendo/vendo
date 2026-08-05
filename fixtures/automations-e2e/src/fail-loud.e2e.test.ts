@@ -172,19 +172,17 @@ describe("fail-loud consent and Grant & re-run", () => {
       // The work the run existed to do actually happened, on live data.
       expect((await fixtureInvoices()).find(({ id }) => id === "inv_0003")?.memo)
         .toBe(`${setup.memo}-swept`);
-      // KNOWN GAP, pinned deliberately — a re-run REPEATS a mutating effect the
-      // failed run already completed. The design says "the effect ledger is what
-      // makes re-runs safe", so this should be 1. It is 2, and measured twice:
-      // the ledger key is
-      // `sha256([runId, tool, exactInput], ordinal)` (guard.ts effectBaseKey /
-      // effectKeyOf), so a fresh run id misses the receipt — and making the
-      // re-run inherit the failed run's id does NOT help either, because
-      // `#effectOrdinal` (guard.ts) assigns a fresh ordinal per CALL id inside
-      // one guard instance. Ledger-safe re-runs therefore need a change in
-      // @vendoai/guard, which this slice does not own. Pinned as-is so the day
-      // that changes, this expectation flips to 1 deliberately rather than
-      // silently.
-      expect((await fixtureInvoices()).filter(({ memo }) => memo === setup.memo)).toHaveLength(2);
+      // The whole point of "fail loudly and run it again": the re-run does the
+      // work that was MISSED without repeating the work that already LANDED. The
+      // `log` step's invoice was created by the failed run, so exactly one exists
+      // — the guard replayed its receipt instead of creating a second.
+      //
+      // Two things make that receipt findable, and both are per FIRING rather
+      // than per run: the re-run inherits the failed run's effect LINEAGE (the
+      // ledger's run component), and the step's call id is derived from that
+      // lineage plus the step's own id, so the same step of the same firing is
+      // the same effect however many times it is re-run and in whatever process.
+      expect((await fixtureInvoices()).filter(({ memo }) => memo === setup.memo)).toHaveLength(1);
 
       // The grant is STANDING: the next scheduled firing needs no person at all.
       const nextIds = await setup.stack.automations.emit("invoice.loud", { id: "inv_0004" }, ADA);

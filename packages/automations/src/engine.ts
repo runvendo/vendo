@@ -145,6 +145,13 @@ interface InternalRunRecord extends RunRecord {
    *  trigger on the SAME event. Internal: it is the host's own payload, and the
    *  public run record (07 §5) does not carry it. */
   __event?: Json;
+  /** The FIRING this run belongs to: the id of its first run. A re-run inherits
+   *  it, so a chain of re-runs shares ONE root rather than each pointing at its
+   *  predecessor. Absent on a run that is nobody's re-run, which then IS its own
+   *  root — persisted rather than derived, because the guard's effect ledger has
+   *  to find the failed run's receipts in a different process. Internal, like
+   *  `__event`: the public run record (07 §5) does not carry it. */
+  __lineage?: RunId;
 }
 
 const runStatusSchema = z.enum(["running", "ok", "error", "stopped"]);
@@ -185,7 +192,10 @@ const baseRunRecordSchema = z.object({
   }).optional(),
 });
 
-const internalRunRecordSchema = baseRunRecordSchema.extend({ __event: z.unknown().optional() });
+const internalRunRecordSchema = baseRunRecordSchema.extend({
+  __event: z.unknown().optional(),
+  __lineage: z.string().optional(),
+});
 
 interface RunRowData {
   appId: string;
@@ -282,8 +292,9 @@ const parseRunRow = (record: VendoRecord): RunRowData => {
   return result.data as unknown as RunRowData;
 };
 
-// Callers already validated the row via parseRunRow; only __event needs stripping.
-const publicRun = ({ __event: _, ...record }: InternalRunRecord): RunRecord => record;
+// Callers already validated the row via parseRunRow; only the internal fields
+// need stripping.
+const publicRun = ({ __event: _, __lineage: __, ...record }: InternalRunRecord): RunRecord => record;
 
 const triggerEvent = (source: TriggerSource): string | undefined =>
   source.kind === "host-event" || source.kind === "external" ? source.event : undefined;
@@ -722,7 +733,10 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     presence: "away",
     sessionId: `sess_${run.id}`,
     appId: run.appId,
-    trigger: { runId: run.id, kind: run.trigger.kind },
+    // The FIRING, not just the run: the guard's effect ledger keys receipts on
+    // this, so a re-run can see what the run it re-runs already completed. A run
+    // that is nobody's re-run is its own root.
+    trigger: { runId: run.id, kind: run.trigger.kind, lineageId: run.__lineage ?? run.id },
   });
 
   /** §9.9 — the run's identity is its SPONSOR: an automation always runs as a
@@ -989,7 +1003,25 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
           await failStep(run, ctx, step, error);
           return;
         }
-        const call: ToolCall = { id: id("call_"), tool: step.tool, args };
+        // Derived, not random: the guard's effect ledger tells "this call again"
+        // apart from "another call just like it" by CALL ID, so the same step of
+        // the same firing has to present the same id every time it runs. A random
+        // id made a re-run look like a second, separately-intended call, and the
+        // receipt for work that had already landed was never consulted.
+        //
+        // Positional, not by step id: nothing validates that step ids are unique
+        // within a list, and two steps sharing one would then share a call id —
+        // turning a document's own sloppiness into a SKIPPED mutation. The index
+        // is unique by construction and just as stable across a re-run, since the
+        // re-run reads the same step list. The id rides along so the value is
+        // still readable in a log, and the iteration index is in it because one
+        // forEach step is many calls that are genuinely different ones.
+        const call: ToolCall = {
+          id: `call_${run.__lineage ?? run.id}_${stepIndex}_${step.id}`
+            + (iteration.index === undefined ? "" : `_${iteration.index}`),
+          tool: step.tool,
+          args,
+        };
         const outcome = await executeCall(app.doc.id, step, call, ctx);
         if (await finishStoppedIfNeeded(run)) return;
         appendOutcome(run, step, outcome);
@@ -1063,6 +1095,8 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     declared: Trigger,
     kind: TriggerSource["kind"],
     event: Json,
+    /** The firing this run continues, when it is a re-run of one. */
+    lineage?: RunId,
   ): { runId: RunId; done: Promise<void> } => {
     const trigger = validateTrigger(declared);
     const runId = id("run_");
@@ -1081,6 +1115,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       // What fired it, so `runs.rerun` can fire the same trigger on the same
       // event without the caller having to keep the payload.
       __event: clone(event),
+      ...(lineage === undefined ? {} : { __lineage: lineage }),
     };
     const agentController = trigger.run.kind === "agentic" ? new AbortController() : undefined;
     if (agentController !== undefined) abortControllers.set(runId, agentController);
@@ -2255,7 +2290,16 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     if (run.__event === undefined) {
       throw new VendoError("conflict", "this run is from before re-runs were possible");
     }
-    const { runId: freshId, done } = launchRun(app.row, declared, run.trigger.kind, run.__event);
+    // The ROOT of the firing, so re-running a re-run keeps one lineage instead of
+    // a chain: every run of this firing then shares one effect ledger, and the
+    // second re-run still sees what the first already completed.
+    const { runId: freshId, done } = launchRun(
+      app.row,
+      declared,
+      run.trigger.kind,
+      run.__event,
+      (run.__lineage ?? run.id) as RunId,
+    );
     await done;
     return freshId;
   };
