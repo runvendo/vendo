@@ -105,6 +105,11 @@ const LAYERS = {
     "@vendoai/mcp",
     "@vendoai/store",
   ],
+  // the universal box app template (blueprint §11): what every generated app is
+  // built FROM inside its box, baked once per Vendo release. Private, never
+  // published, and deliberately reaches ONLY the code-land shim — an app in a
+  // box must never be able to import a server block.
+  "@vendoai/box-template": ["@vendoai/kit"],
   // the canonical umbrella is the only package allowed to depend on every block
   "@vendoai/vendo": "*",
   // the unscoped compatibility package is a thin alias of the canonical umbrella
