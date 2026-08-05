@@ -225,8 +225,6 @@ jobs:
           e2e/extreme-content.spec.ts
           e2e/theme.spec.ts
           e2e/height-chain.spec.ts
-          e2e/verification-eng225.spec.ts
-          e2e/verification-eng229.spec.ts
           e2e/pass3-consumer-voice.spec.ts
           e2e/wave3-consumer-voice.spec.ts
           e2e/run-history-voice.spec.ts

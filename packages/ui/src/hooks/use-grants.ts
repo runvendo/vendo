@@ -5,9 +5,7 @@ import { useVendoContext } from "../context.js";
 import { type PollOptions, useResource } from "./use-resource.js";
 
 export function useGrants(options?: PollOptions): {
-  /** Back-compat alias for `data` (contract §3). */
   grants: PermissionGrant[];
-  data: PermissionGrant[];
   error: Error | undefined;
   isLoading: boolean;
   refresh(): Promise<void>;
@@ -25,5 +23,5 @@ export function useGrants(options?: PollOptions): {
     [client, refresh],
   );
 
-  return { grants: data, data, error, isLoading, refresh, revoke };
+  return { grants: data, error, isLoading, refresh, revoke };
 }

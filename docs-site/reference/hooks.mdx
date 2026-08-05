@@ -1,7 +1,7 @@
 ---
 title: "Headless hooks"
 sidebarTitle: "Hooks"
-description: "React hooks from @vendoai/ui: the shared { data, error, isLoading, refresh } read shape, opt-in polling, and the per-hook write callbacks for threads, apps, approvals, grants, and connections."
+description: "React hooks from @vendoai/ui: the shared read shape (a named collection plus error, isLoading, refresh), opt-in polling, and the per-hook write callbacks for threads, apps, approvals, grants, and connections."
 ---
 
 `@vendoai/ui` exposes headless React hooks that read from the same wire the
@@ -16,15 +16,17 @@ import { useThreads, useApprovals, useVendoThread } from "@vendoai/ui";
 
 ## The shared read shape
 
-The collection hooks all return the same four fields, so you can render
+The collection hooks all return the same read fields, so you can render
 loading, error, and empty states with one pattern across the whole surface.
+Each hook names its collection after what it holds — `threads`, `apps`,
+`pending`, `grants`, `connections`, `automations`, `events`.
 
 ```ts
-// The shape every collection hook spreads. The type itself is internal —
-// name it through the hook (ReturnType<typeof useApprovals>) rather than
-// importing it.
+// The shape every collection hook spreads, shown for useThreads. The type
+// itself is internal — name it through the hook
+// (ReturnType<typeof useThreads>) rather than importing it.
 {
-  data: T;                       // seeded, never undefined: [] before the first read lands
+  threads: ThreadSummary[];      // seeded, never undefined: [] before the first read lands
   error: Error | undefined;      // last fetch error, or undefined when the read succeeded
   isLoading: boolean;            // true only on the first load; refresh does not flip it
   refresh: () => Promise<void>;  // re-fetch on demand; resolves after the read settles
@@ -33,12 +35,12 @@ loading, error, and empty states with one pattern across the whole surface.
 
 Two details matter when you write against it:
 
-- **`data` is seeded, not `undefined`.** A collection hook starts at `[]`, so
-  `data.length === 0` means "empty *or* not loaded yet" — read `isLoading` to
-  tell those apart. `useApp` is the exception: it returns a single document,
-  so its `data` is `AppDocument | undefined`.
+- **The collection is seeded, not `undefined`.** A collection hook starts at
+  `[]`, so `threads.length === 0` means "empty *or* not loaded yet" — read
+  `isLoading` to tell those apart. `useApp` is the exception: it returns a
+  single document, so its `app` is `AppDocument | undefined`.
 - **`error` is `undefined`, not `null`,** when the read succeeded. A failed
-  read keeps the last good `data`, so you can render a retry affordance
+  read keeps the last good collection, so you can render a retry affordance
   without blanking the surface.
 
 `isLoading` is `true` only for the first fetch. Subsequent `refresh()` calls
@@ -49,25 +51,21 @@ first mount does not flash on every update.
 
 | Hook | Returns | Polling |
 | --- | --- | --- |
-| `useThreads(options?)` | `threads` / `data`: `ThreadSummary[]`, plus `get(id)` and `remove(id)` | `pollMs` |
-| `useApp(appId)` | `app` / `data`: `AppDocument \| undefined`, `surface`, plus `call(ref, args)`, `edit(instruction)`, `history` | — |
-| `useApps(options?)` | `apps` / `data`: `AppDocument[]`, plus `create`, `remove`, `fork`, `exportApp`, `importApp` | `pollMs` |
-| `useApprovals(options?)` | `pending` / `data`: `ApprovalRequest[]`, plus `decide(ids, decision, options?)` | `pollMs` |
-| `useGrants(options?)` | `grants` / `data`: `PermissionGrant[]`, plus `revoke(id)` | `pollMs` |
-| `useConnections(options?)` | `connections` / `data`: `ConnectionAccount[]`, plus `disconnect(id, connector?)` | `pollMs` |
+| `useThreads(options?)` | `threads`: `ThreadSummary[]`, plus `get(id)` and `remove(id)` | `pollMs` |
+| `useApp(appId)` | `app`: `AppDocument \| undefined`, `surface`, plus `call(ref, args)`, `edit(instruction)`, `history` | — |
+| `useApps(options?)` | `apps`: `AppDocument[]`, plus `create`, `remove`, `fork`, `exportApp`, `importApp` | `pollMs` |
+| `useApprovals(options?)` | `pending`: `ApprovalRequest[]`, plus `decide(ids, decision, options?)` | `pollMs` |
+| `useGrants(options?)` | `grants`: `PermissionGrant[]`, plus `revoke(id)` | `pollMs` |
+| `useConnections(options?)` | `connections`: `ConnectionAccount[]`, plus `disconnect(id, connector?)` | `pollMs` |
 | `useConnectorCatalog()` | `{ options, resolved, explicit, failed, retry }` — the connect dock's effective catalog | — |
-| `useAutomations(options?)` | `automations` / `data`: `AutomationEntry[]`, plus `enable`, `disable`, `runs`, `dryRun`, `stopRun` | `pollMs` |
-| `useActivity(options?)` | `events` / `data`: `AuditEvent[]`, plus `hasMore` and `loadMore()` | `pollMs` |
+| `useAutomations(options?)` | `automations`: `AutomationEntry[]`, plus `enable`, `disable`, `runs`, `dryRun`, `stopRun` | `pollMs` |
+| `useActivity(options?)` | `events`: `AuditEvent[]`, plus `hasMore` and `loadMore()` | `pollMs` |
 | `useSlotApp(slotId, options?)` | `{ appId, error, isLoading, refresh }` — the app currently placed in a slot | on by default |
 | `useVendoStatus()` | `{ posture, connected }` | — |
 | `useVendoThread(threadId?)` | the streaming conversation — see [Threads](#threads) | — |
 | `useVendoOverlay(options?)` | `VendoOverlayController` — see [Overlay control](#overlay-control-usevendooverlay) | — |
 | `useMobileTakeover()` | `{ active, keyboardInset, style }` — the full-bleed mobile breakpoint | — |
 | `useApprovalSheetPresentation()` | `boolean` — whether an in-thread consent presents as the bottom sheet | — |
-
-Each collection hook also exposes a named alias for `data` (`threads`,
-`apps`, `pending`, `grants`, `connections`, `automations`, `events`); the two
-are the same value.
 
 **There is no generic `execute` callback.** Hooks that write name their
 verbs: `decide`, `revoke`, `disconnect`, `enable`, `disable`, `create`,
@@ -90,12 +88,12 @@ never stacks overlapping requests.
 import { useApprovals } from "@vendoai/ui";
 
 export function ApprovalBadge() {
-  const { data, error, isLoading, refresh } = useApprovals({ pollMs: 5_000 });
+  const { pending, error, isLoading, refresh } = useApprovals({ pollMs: 5_000 });
 
   if (isLoading) return <span aria-hidden />;
   if (error) return <button onClick={refresh}>Retry</button>;
 
-  return data.length > 0 ? <span>{data.length} to review</span> : null;
+  return pending.length > 0 ? <span>{pending.length} to review</span> : null;
 }
 ```
 
@@ -125,15 +123,15 @@ chrome.
 import { useThreads } from "@vendoai/ui";
 
 export function ThreadList({ onSelect }: { onSelect: (id: string) => void }) {
-  const { data, error, isLoading, refresh } = useThreads();
+  const { threads, error, isLoading, refresh } = useThreads();
 
   if (isLoading) return <p>Loading…</p>;
   if (error) return <button onClick={refresh}>Retry</button>;
-  if (data.length === 0) return <p>No conversations yet.</p>;
+  if (threads.length === 0) return <p>No conversations yet.</p>;
 
   return (
     <ul>
-      {data.map((thread) => (
+      {threads.map((thread) => (
         <li key={thread.id}>
           <button onClick={() => onSelect(thread.id)}>{thread.title}</button>
         </li>
@@ -212,7 +210,7 @@ wire without hand-rolling calls to `/apps/:id/export` and `/apps/import`.
 import { useApps } from "@vendoai/ui";
 
 export function AppsDrawer() {
-  const { data, error, isLoading, refresh, exportApp, importApp } = useApps();
+  const { apps, error, isLoading, refresh, exportApp, importApp } = useApps();
 
   async function onExport(id: string) {
     const bytes = await exportApp(id);

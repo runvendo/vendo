@@ -433,23 +433,24 @@ describe("ENG-219 — consistent { data, error, isLoading, refresh } + polling +
     return <VendoProvider client={client}>{children}</VendoProvider>;
   }
 
-  it("exposes data, error, isLoading, and refresh on every data hook", () => {
-    const hooks = [
-      () => useApps(),
-      () => useApprovals(),
-      () => useGrants(),
-      () => useActivity(),
-      () => useConnections(),
-      () => useAutomations(),
-      () => useApp("app_1"),
-      () => useThreads(),
+  it("exposes the named collection, error, isLoading, and refresh on every data hook", () => {
+    const hooks: Array<[() => unknown, string]> = [
+      [() => useApps(), "apps"],
+      [() => useApprovals(), "pending"],
+      [() => useGrants(), "grants"],
+      [() => useActivity(), "events"],
+      [() => useConnections(), "connections"],
+      [() => useAutomations(), "automations"],
+      [() => useApp("app_1"), "app"],
+      [() => useThreads(), "threads"],
     ];
-    for (const hook of hooks) {
+    for (const [hook, named] of hooks) {
       const { result, unmount } = renderHook(hook, { wrapper });
-      expect(result.current).toHaveProperty("data");
-      expect(result.current).toHaveProperty("error");
-      expect(result.current.isLoading).toBe(true);
-      expect(typeof result.current.refresh).toBe("function");
+      const current = result.current as { isLoading: boolean; refresh: unknown };
+      expect(current).toHaveProperty(named);
+      expect(current).toHaveProperty("error");
+      expect(current.isLoading).toBe(true);
+      expect(typeof current.refresh).toBe("function");
       unmount();
     }
   });
@@ -469,47 +470,45 @@ describe("ENG-219 — consistent { data, error, isLoading, refresh } + polling +
     wire.state.failures.push({ method: "GET", path: "/grants", code: "boom", message: "kaboom", status: 500 });
     const { result } = renderHook(() => useGrants(), { wrapper });
     await waitFor(() => expect(result.current.error).toBeInstanceOf(Error));
-    expect(result.current.data).toEqual([]);
     expect(result.current.grants).toEqual([]);
     expect(result.current.isLoading).toBe(false);
   });
 
   it("clears a prior error and finishes loading on a successful first fetch", async () => {
     const { result } = renderHook(() => useApps(), { wrapper });
-    await waitFor(() => expect(result.current.data).toHaveLength(2));
+    await waitFor(() => expect(result.current.apps).toHaveLength(2));
     expect(result.current.error).toBeUndefined();
     expect(result.current.isLoading).toBe(false);
-    expect(result.current.apps).toEqual(result.current.data);
   });
 
   it("refresh re-fetches the collection", async () => {
     const { result } = renderHook(() => useApps(), { wrapper });
-    await waitFor(() => expect(result.current.data).toHaveLength(2));
+    await waitFor(() => expect(result.current.apps).toHaveLength(2));
     wire.state.apps.push(extraApp);
     await act(() => result.current.refresh());
-    expect(result.current.data).toHaveLength(3);
+    expect(result.current.apps).toHaveLength(3);
   });
 
   it("re-fetches on the opt-in polling interval without a remount", async () => {
     const { result } = renderHook(() => useApprovals({ pollMs: 25 }), { wrapper });
-    await waitFor(() => expect(result.current.data).toHaveLength(1));
+    await waitFor(() => expect(result.current.pending).toHaveLength(1));
     // A new pending approval appears server-side after the initial fetch.
     wire.state.approvals.push({ ...wire.state.approvals[0]!, id: "apr_2" });
-    await waitFor(() => expect(result.current.data).toHaveLength(2));
+    await waitFor(() => expect(result.current.pending).toHaveLength(2));
   });
 
   it("lists, gets, and deletes threads headlessly", async () => {
     const { result } = renderHook(() => useThreads(), { wrapper });
-    await waitFor(() => expect(result.current.data.map(thread => thread.id)).toEqual(["thr_1"]));
+    await waitFor(() => expect(result.current.threads.map(thread => thread.id)).toEqual(["thr_1"]));
     await expect(result.current.get("thr_1")).resolves.toMatchObject({ id: "thr_1" });
     await act(() => result.current.remove("thr_1"));
-    expect(result.current.data).toEqual([]);
+    expect(result.current.threads).toEqual([]);
     expect(wire.requests).toContainEqual(expect.objectContaining({ method: "DELETE", path: "/threads/thr_1" }));
   });
 
   it("exposes app export and import via the hook", async () => {
     const { result } = renderHook(() => useApps(), { wrapper });
-    await waitFor(() => expect(result.current.data).toHaveLength(2));
+    await waitFor(() => expect(result.current.apps).toHaveLength(2));
 
     const bytes = await result.current.exportApp("app_1");
     expect(Array.from(bytes)).toEqual([0, 1, 255]);
@@ -519,6 +518,6 @@ describe("ENG-219 — consistent { data, error, isLoading, refresh } + polling +
       imported = await result.current.importApp(new Uint8Array([9, 9]));
     });
     expect(imported).toMatchObject({ id: "app_imported" });
-    expect(result.current.data).toHaveLength(3);
+    expect(result.current.apps).toHaveLength(3);
   });
 });

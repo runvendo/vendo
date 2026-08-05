@@ -15,9 +15,7 @@ import { type PollOptions } from "./use-resource.js";
 const loadingSnapshot = () => APPROVALS_LOADING;
 
 export function useApprovals(options?: PollOptions): {
-  /** Back-compat alias for `data` (contract §3). */
   pending: ApprovalRequest[];
-  data: ApprovalRequest[];
   error: Error | undefined;
   isLoading: boolean;
   refresh(): Promise<void>;
@@ -41,7 +39,7 @@ export function useApprovals(options?: PollOptions): {
     [client, refresh],
   );
 
-  return { pending: data, data, error, isLoading, refresh, decide };
+  return { pending: data, error, isLoading, refresh, decide };
 }
 
 const NO_RESULT = (): RunResult | undefined => undefined;

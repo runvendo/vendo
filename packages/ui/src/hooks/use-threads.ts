@@ -7,9 +7,7 @@ import { type PollOptions, useResource } from "./use-resource.js";
 import type { Thread, ThreadSummary } from "../wire-types.js";
 
 export function useThreads(options?: PollOptions): {
-  /** Back-compat-shaped alias for `data` (matches the other collection hooks). */
   threads: ThreadSummary[];
-  data: ThreadSummary[];
   error: Error | undefined;
   isLoading: boolean;
   refresh(): Promise<void>;
@@ -29,5 +27,5 @@ export function useThreads(options?: PollOptions): {
     [client, refresh],
   );
 
-  return { threads: data, data, error, isLoading, refresh, get, remove };
+  return { threads: data, error, isLoading, refresh, get, remove };
 }

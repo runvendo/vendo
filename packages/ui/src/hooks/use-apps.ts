@@ -5,9 +5,7 @@ import { useVendoContext } from "../context.js";
 import { type PollOptions, useResource } from "./use-resource.js";
 
 export function useApps(options?: PollOptions): {
-  /** Back-compat alias for `data` (contract §3). */
   apps: AppDocument[];
-  data: AppDocument[];
   error: Error | undefined;
   isLoading: boolean;
   refresh(): Promise<void>;
@@ -54,5 +52,5 @@ export function useApps(options?: PollOptions): {
     [client, refresh],
   );
 
-  return { apps: data, data, error, isLoading, refresh, create, remove, fork, exportApp, importApp };
+  return { apps: data, error, isLoading, refresh, create, remove, fork, exportApp, importApp };
 }
