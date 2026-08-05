@@ -36,7 +36,7 @@ import {
 import { Cron } from "croner";
 import jsonata from "jsonata";
 import { z } from "zod";
-import { adoptionCard, type AdoptionCard } from "./adoption.js";
+import { adoptionCard, type AdoptionCard, type ConsentItem } from "./adoption.js";
 import {
   claimSponsorship,
   currentIntentHash,
@@ -350,14 +350,6 @@ const stepArgs = async (
   }
   return args;
 };
-
-/** One thing a person is asked to allow at arm time. A host tool is named by
- *  its tool; the connector dispatcher is named by the SERVICE ACTION it will
- *  call, because its tool name is not its action (01-core §5 `service-tool`). */
-interface ConsentItem {
-  tool: string;
-  slug?: string;
-}
 
 /** The identity of a consent item — what "already asked for this" means, and
  *  therefore what two different service actions must NOT collapse into. */
@@ -1935,11 +1927,15 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     for (const trigger of triggersOf(found.row.doc)) {
       const waiting = await waitingFor(found.row.doc, trigger.id);
       if (waiting === undefined) continue;
+      // The card says exactly what adopting will grant, because it is derived
+      // from the surface `adopt()` captures from — not from a second guess at it.
+      const byName = await descriptors(ctx);
       return adoptionCard(
         found.row.doc,
         trigger,
         { triggerId: trigger.id, ...waiting },
-        await descriptors(ctx),
+        byName,
+        await consentSurface(trigger, byName),
       );
     }
     return undefined;

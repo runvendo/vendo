@@ -6,6 +6,17 @@ import type {
 } from "@vendoai/core";
 import type { Sponsorship } from "./sponsorship.js";
 
+/** One thing a person is asked to allow for a trigger. A host tool is named by
+ *  its tool; the connector dispatcher is named by the SERVICE ACTION it will
+ *  call, because its tool name is not its action (01-core §5 `service-tool`).
+ *
+ *  Lives here because this IS the consent surface: the engine captures grants
+ *  from it and the adoption card lists it, and those two may not disagree. */
+export interface ConsentItem {
+  tool: string;
+  slug?: string;
+}
+
 /** One read or write the stopped automation performs, as the card says it.
  *
  *  Design §12: consent surfaces are the one carve-out from the voice law —
@@ -60,15 +71,23 @@ const needFor = (
 
 /** Every read and write the automation will make, in the order it makes them.
  *  Steps list one entry PER STEP — two calls to the same tool are two lines,
- *  because that is what §12 means by never summarizing a compound. An agentic
- *  run declares no steps, so it lists the tools adoption would actually grant:
- *  whatever the registry binds for it. */
+ *  because that is what §12 means by never summarizing a compound.
+ *
+ *  An agentic run declares no steps, so the card lists its CONSENT SURFACE: the
+ *  same items `adopt()` captures grants from, so the card cannot promise a
+ *  narrower or wider authority than adoption actually mints. That surface is the
+ *  authored `run.tools` declaration when there is one and every bound descriptor
+ *  when there is not — the card follows it either way rather than deciding for
+ *  itself. A service action rides as the dispatcher plus its slug, the shape a
+ *  steps run's own declared dispatch already takes. */
 const adoptionNeeds = (
   trigger: Trigger,
   descriptors: Map<string, ToolDescriptor>,
+  surface: readonly ConsentItem[],
 ): AdoptionNeed[] => {
   if (trigger.run.kind !== "steps") {
-    return [...descriptors.values()].map((descriptor) => needFor(descriptor.name, descriptors));
+    return surface.map((item) =>
+      needFor(item.tool, descriptors, item.slug === undefined ? undefined : { slug: item.slug }));
   }
   return trigger.run.steps
     .filter((step) => !step.tool.startsWith("fn:"))
@@ -86,6 +105,9 @@ export const adoptionCard = (
     stoppedAt?: string;
   },
   descriptors: Map<string, ToolDescriptor>,
+  /** What adopting this trigger will actually grant — the engine's own consent
+   *  surface for it, so the card and the minted grants are one derivation. */
+  surface: readonly ConsentItem[],
 ): AdoptionCard => ({
   appId: doc.id,
   triggerId: stopped.triggerId,
@@ -93,5 +115,5 @@ export const adoptionCard = (
   ...(stopped.sponsor === undefined ? {} : { sponsor: stopped.sponsor }),
   reason: stopped.reason,
   ...(stopped.stoppedAt === undefined ? {} : { stoppedAt: stopped.stoppedAt }),
-  needs: adoptionNeeds(trigger, descriptors),
+  needs: adoptionNeeds(trigger, descriptors, surface),
 });
