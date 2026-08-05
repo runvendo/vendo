@@ -881,6 +881,15 @@ class GuardImplementation implements VendoGuard {
       { callsTripped, writes },
     );
     let draft = verdict.decision;
+    // `lawWithheld` is a run-only flag (§12 refusal), computed by the verdict
+    // against the snapshot count while the decision was still "run". The
+    // concurrent-cap re-check below can flip that same run to a breaker `ask`,
+    // and an `ask` parks the call and shows a person the real arguments — which
+    // IS the law's replacement pattern (see bind()). So when the re-check
+    // reclassifies, the flag is cleared alongside the decision; otherwise a
+    // concurrent-cap hit on an unattended withheld write would be refused by
+    // bind()'s law branch before it could reach the ask/park branch.
+    let lawWithheld = verdict.lawWithheld;
     if (verdict.chargeableWrite && commitRun) {
       // Re-read the counter AFTER the async verdict and re-check the cap before
       // committing. `writes` was snapshotted BEFORE the await, so two concurrent
@@ -895,6 +904,7 @@ class GuardImplementation implements VendoGuard {
       const current = this.#writeCounts.get(runKey)?.count ?? 0;
       if (current >= this.#maxWritesPerRun) {
         draft = { action: "ask", decidedBy: "breaker" };
+        lawWithheld = false;
       } else {
         // Uncommitted preview: the run is real, but the SPEND is not — the
         // moments-later real check (execute, commitRun=true) does this once.
@@ -965,7 +975,7 @@ class GuardImplementation implements VendoGuard {
       return {
         decision,
         descriptor: effectiveDescriptor,
-        lawWithheld: verdict.lawWithheld,
+        lawWithheld,
         ...(metadata.rationale === undefined ? {} : { rationale: metadata.rationale }),
       };
     }
@@ -988,7 +998,7 @@ class GuardImplementation implements VendoGuard {
     return {
       decision: draft,
       descriptor: effectiveDescriptor,
-      lawWithheld: verdict.lawWithheld,
+      lawWithheld,
       ...(metadata.rationale === undefined ? {} : { rationale: metadata.rationale }),
     };
   }
