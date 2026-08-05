@@ -23,7 +23,7 @@ import {
   type UIMessage,
   type UIMessageStreamWriter,
 } from "ai";
-import { startTurn, type TurnContext } from "./loop.js";
+import { startTurn, type Supervise, type TurnContext } from "./loop.js";
 import { wireErrorMessage } from "./wire-error.js";
 import { assembleSystemPrompt } from "./prompt.js";
 import { createRunner } from "./runner.js";
@@ -113,6 +113,10 @@ interface AgentConfig {
    *  ceiling it is, because neither this door nor the loop has any business
    *  knowing. Unset changes nothing. */
   stopWhen?: readonly StopCondition<ToolSet>[];
+  /** §4.1 item 6 — a verdict on every final answer, shipped as a no-op (unset =
+   *  approved). Lives here rather than on the harness because the frozen signature
+   *  takes a `RunContext` and a `Turn` deliberately carries none. */
+  supervise?: Supervise;
   capabilityMiss?: CapabilityMissConfig;
   /** ENG-252: enable the `find_tools` meta-tool and runtime loadout.
    *  When set, the model starts with a bounded initial loadout and discovers the
@@ -551,6 +555,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
             ...(input.signal === undefined ? {} : { signal: input.signal }),
             ...(config.context === undefined ? {} : { context: config.context }),
             ...(config.stopWhen === undefined ? {} : { stopWhen: config.stopWhen }),
+            ...(config.supervise === undefined ? {} : { supervision: { ctx, supervise: config.supervise } }),
             ...(toolSearch === undefined ? {} : { toolSearch }),
           });
           // self-serve P: the ai-SDK `error` chunk is TRANSIENT — it sets the
@@ -583,6 +588,20 @@ export function createAgent(config: AgentConfig): VendoAgent {
           // not because the model finished — stream a renderable notice.
           const stepLimit = await loop.stepLimitPart();
           if (stepLimit !== undefined) writer.write(toVendoWirePart(stepLimit) as never);
+          // §4.1 item 6 — a withheld answer is a turn failure, so it travels the
+          // failure path this turn already has: the same `error` chunk the client
+          // renders and the same recorded notice a reload reads. Nothing new.
+          const refusal = await loop.supervisorRefusal();
+          if (refusal !== undefined) {
+            const message = wireErrorMessage(refusal);
+            // Recorded BEFORE the chunk, and in that order for the same reason
+            // the tap above records before it enqueues: writing an `error` chunk
+            // re-enters the stream's own onError with its own `new Error(text)`,
+            // which this gate can only render generically. The once-guard keeps
+            // whichever message got there first, so the crafted one has to.
+            recordTurnError(message, (part) => writer.write(part as never));
+            writer.write({ type: "error", errorText: message } as never);
+          }
         },
         onFinish: async ({ messages }) => {
           await persistFinishedTurn(threads, thread, messages, ctx);
