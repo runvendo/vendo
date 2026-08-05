@@ -57,8 +57,15 @@ describe("useToolAction — the write, over the same door", () => {
     mount(open, <Screen />);
     await settled();
     await press("pay");
-    const write = open.calls.find((call) => call.ref === "host_payBill");
-    expect(write).toEqual({
+    // The write is fire-and-forget (`onClick={() => void pay.run(...)}`), and the
+    // door records a call only when its HTTP server has RECEIVED the POST — a
+    // macrotask past what `act(click)` flushes. Asserting on `open.calls`
+    // synchronously races that receipt (green on fast loopback, red under a
+    // slower CI scheduler). Wait for the POST to land, then assert its shape.
+    await waitFor(() => {
+      expect(open.calls.find((call) => call.ref === "host_payBill")).toBeDefined();
+    });
+    expect(open.calls.find((call) => call.ref === "host_payBill")).toEqual({
       appId: "app_1",
       ref: "host_payBill",
       args: { billId: "b_1" },
