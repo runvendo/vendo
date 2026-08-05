@@ -900,12 +900,14 @@ describe("createMcpDoor configured canonical base URL (ENG-333)", () => {
     expect(await prm.json()).toMatchObject({ resource: BASE });
   });
 
-  it("uses only the origin of a base URL that carries a path", async () => {
+  it("folds a path on the base URL into the advertised resource", async () => {
     const harness = makeHarness({ baseUrl: "https://product.example/some/app/path" });
     const prm = await harness.door.handler(new Request(
       "http://door.internal:8787/.well-known/oauth-protected-resource/api/vendo/mcp",
     ));
-    expect(await prm.json()).toMatchObject({ resource: BASE });
+    expect(await prm.json()).toMatchObject({
+      resource: "https://product.example/some/app/path/api/vendo/mcp",
+    });
   });
 
   it("advertises the external issuer alongside the public resource under remoteAs", async () => {
@@ -927,6 +929,140 @@ describe("createMcpDoor configured canonical base URL (ENG-333)", () => {
     for (const baseUrl of ["not a url", "ftp://product.example", "https://user:secret@product.example"]) {
       expect(() => makeHarness({ baseUrl }), baseUrl).toThrow(TypeError);
     }
+  });
+});
+
+describe("createMcpDoor mounted under a path prefix", () => {
+  // A self-hosted deployment living under `https://product.example/maple`. The
+  // reverse proxy strips `/maple` before the request reaches the process, so
+  // the door sees only the door-local path — the base URL's path is the one
+  // channel that can carry the prefix.
+  const PREFIXED_BASE_URL = "https://product.example/maple";
+  const PREFIXED_RESOURCE = "https://product.example/maple/api/vendo/mcp";
+  const STRIPPED_MOUNT = "http://door.internal:8787/api/vendo/mcp";
+
+  it("advertises OAuth endpoints under the same prefix the door is mounted on", async () => {
+    const harness = makeHarness({ baseUrl: PREFIXED_BASE_URL });
+    const as = await harness.door.handler(new Request(
+      "http://door.internal:8787/.well-known/oauth-authorization-server/api/vendo/mcp",
+    ));
+    expect(await as.json()).toMatchObject({
+      issuer: PREFIXED_RESOURCE,
+      authorization_endpoint: `${PREFIXED_RESOURCE}/authorize`,
+      token_endpoint: `${PREFIXED_RESOURCE}/token`,
+      revocation_endpoint: `${PREFIXED_RESOURCE}/revoke`,
+      registration_endpoint: `${PREFIXED_RESOURCE}/register`,
+    });
+  });
+
+  it("advertises the prefixed resource in the protected-resource metadata", async () => {
+    const harness = makeHarness({ baseUrl: PREFIXED_BASE_URL });
+    const prm = await harness.door.handler(new Request(
+      "http://door.internal:8787/.well-known/oauth-protected-resource/api/vendo/mcp",
+    ));
+    expect(await prm.json()).toEqual({
+      resource: PREFIXED_RESOURCE,
+      authorization_servers: [PREFIXED_RESOURCE],
+      bearer_methods_supported: ["header"],
+    });
+  });
+
+  it("names a prefix-local metadata URL in the 401 challenge", async () => {
+    const harness = makeHarness({ baseUrl: PREFIXED_BASE_URL });
+    const challenge = await harness.door.handler(new Request(STRIPPED_MOUNT, { method: "POST" }));
+    expect(challenge.status).toBe(401);
+    // Prefix-local, not RFC 9728 root-insertion: the deployment only owns
+    // paths under `/maple`, so a root well-known URL would never route to it.
+    expect(challenge.headers.get("www-authenticate")).toBe(
+      'Bearer resource_metadata="https://product.example/maple/.well-known/oauth-protected-resource/api/vendo/mcp"',
+    );
+  });
+
+  it("advertises the prefixed transport URL on the server card", async () => {
+    const harness = makeHarness({ baseUrl: PREFIXED_BASE_URL, mount: "/api/vendo/mcp" });
+    const card = await harness.door.handler(new Request(
+      "http://door.internal:8787/.well-known/mcp/server-card.json",
+    ));
+    expect(await card.json()).toMatchObject({
+      transports: [{ type: "streamable-http", url: PREFIXED_RESOURCE }],
+      authorization: {
+        type: "oauth2",
+        resource_metadata: "https://product.example/maple/.well-known/oauth-protected-resource/api/vendo/mcp",
+      },
+    });
+  });
+
+  it("answers discovery whose mount suffix already carries the prefix, without doubling it", async () => {
+    // RFC 8414/9728 root-insertion: a spec client derives the well-known URL
+    // from the FULL resource URI, so the suffix arrives prefix-INCLUDING.
+    const harness = makeHarness({ baseUrl: PREFIXED_BASE_URL });
+    const prm = await harness.door.handler(new Request(
+      "http://door.internal:8787/.well-known/oauth-protected-resource/maple/api/vendo/mcp",
+    ));
+    expect(await prm.json()).toMatchObject({ resource: PREFIXED_RESOURCE });
+  });
+
+  it("serves a request that still carries the public prefix identically", async () => {
+    // A prefix-PRESERVING mount (no stripping proxy) reaches the same door.
+    const harness = makeHarness({ baseUrl: PREFIXED_BASE_URL });
+    const challenge = await harness.door.handler(new Request(
+      "http://door.internal:8787/maple/api/vendo/mcp",
+      { method: "POST" },
+    ));
+    expect(challenge.status).toBe(401);
+    expect(challenge.headers.get("www-authenticate")).toBe(
+      'Bearer resource_metadata="https://product.example/maple/.well-known/oauth-protected-resource/api/vendo/mcp"',
+    );
+  });
+
+  it("keeps the consent flow under the prefix", async () => {
+    const returnTos: string[] = [];
+    const harness = makeHarness({
+      baseUrl: PREFIXED_BASE_URL,
+      oauth: {
+        async session(_req, ctx) {
+          returnTos.push(ctx.returnTo);
+          return { subject: "user_1" };
+        },
+        async principal(subject) { return { kind: "user", subject }; },
+      },
+    });
+    const registration = await register(harness.door, {}, STRIPPED_MOUNT);
+    const page = await authorize(
+      harness.door,
+      registration.body.client_id,
+      { resource: PREFIXED_RESOURCE },
+      STRIPPED_MOUNT,
+    );
+    const html = await page.text();
+    // The user's browser reaches the door THROUGH the prefix; a form action or
+    // returnTo without it lands on the host's own 404 page.
+    expect(htmlAttribute(html, "form", "action")).toContain(`${PREFIXED_RESOURCE}/authorize?`);
+    expect(returnTos[0]).toContain(`${PREFIXED_RESOURCE}/authorize?`);
+  });
+
+  it("binds the whole OAuth flow and RFC 8707 audience to the prefixed resource", async () => {
+    const harness = makeHarness({ baseUrl: PREFIXED_BASE_URL });
+    const registration = await register(harness.door, {}, STRIPPED_MOUNT);
+    const auth = await authorize(
+      harness.door,
+      registration.body.client_id,
+      { resource: PREFIXED_RESOURCE },
+      STRIPPED_MOUNT,
+    );
+    const code = new URL(auth.headers.get("location")!).searchParams.get("code")!;
+    const exchanged = await exchange(harness.door, {
+      code,
+      client_id: registration.body.client_id,
+      code_verifier: VERIFIER,
+      resource: PREFIXED_RESOURCE,
+    }, STRIPPED_MOUNT);
+    expect(exchanged.status).toBe(200);
+    const tokens = await exchanged.json() as TokenResponse;
+
+    const response = await harness.door.handler(mcpRequest(tokens.access_token, undefined, STRIPPED_MOUNT));
+    expect(response.status).toBe(200);
+    expect(harness.principalSubjects).toEqual(["user_1"]);
   });
 });
 

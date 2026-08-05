@@ -55,12 +55,14 @@ describe("cloud client", () => {
     }));
   });
 
-  it("prints a meter-exhausted 402 as the one crafted refusal sentence (pricing v3 §5)", async () => {
+  it("prints a meter-exhausted 402 as the one crafted refusal sentence", async () => {
+    // The console's real 402 body: one meter (`usage`), dollars, one limit.
     const fetchImpl = vi.fn().mockResolvedValue(Response.json({
       error: { code: "meter-exhausted", message: "meter exhausted" },
-      meter: "automation_runs",
-      used: 1_050,
-      limit: 1_000,
+      meter: "usage",
+      unit: "usd",
+      used: 105,
+      limit: 100,
       resets_at: "2026-08-01T00:00:00.000Z",
       reason: "allowance",
       exits: { upgrade_url: "https://console.vendo.run/billing", byo_docs_url: "https://docs.vendo.run/byo" },
@@ -73,8 +75,8 @@ describe("cloud client", () => {
     })).rejects.toMatchObject<Partial<CloudError>>({
       name: "CloudError",
       code: "meter-exhausted",
-      message: "Vendo Cloud paused automation runs — the allowance for this billing period is used up "
-        + "(1,050 of 1,000 used; resets 2026-08-01). "
+      message: "Vendo Cloud paused usage — the $100.00 included this billing period is used up "
+        + "($105.00 of $100.00 used; resets 2026-08-01). "
         + "Upgrade your plan (https://console.vendo.run/billing) "
         + "or bring your own infrastructure (https://docs.vendo.run/byo).",
       status: 402,

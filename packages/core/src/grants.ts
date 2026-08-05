@@ -137,6 +137,11 @@ export interface ApprovalRequest {
     principal: Principal;
     venue: RunContext["venue"];
     presence: RunContext["presence"];
+    /** The conversation that parked it (`RunContext.sessionId`) — the identity
+     *  approval delivery is scoped by. Optional only because rows persisted
+     *  before it existed can't carry it; every new park writes it, and
+     *  scoped consumers fail closed on its absence. */
+    sessionId?: string;
     appId?: AppId;
     trigger?: TriggerRef;
   };
@@ -157,6 +162,7 @@ export const approvalRequestSchema = z.object({
     principal: principalSchema,
     venue: z.enum(["chat", "app", "automation", "mcp"]),
     presence: z.enum(["present", "away"]),
+    sessionId: z.string().optional(),
     appId: appIdSchema.optional(),
     trigger: triggerRefSchema.optional(),
   }).passthrough(),

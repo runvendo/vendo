@@ -107,6 +107,11 @@ export interface Judge {
 export interface VendoGuard extends Guard {
   bind(tools: ToolRegistry): ToolRegistry;
 
+  /** The park-side mirror of `onApprovalDecision`: fires when a check parks an
+   *  approval, with the persisted request. Optional on core's Guard (existing
+   *  implementations predate it); always present here. */
+  onApprovalRequested(cb: (request: ApprovalRequest) => void): () => void;
+
   approvals: {
     pending(principal: Principal): Promise<ApprovalRequest[]>;
     decide(
@@ -126,6 +131,13 @@ export interface VendoGuard extends Guard {
    *  idempotent abandon path) so away/automation/stranded approvals self-heal.
    *  Optional: the umbrella feature-detects it. Returns the count swept. */
   sweepExpiredApprovals?(ttlMs: number, at?: number): Promise<number>;
+
+  /** The emergency stop, read first on every check: while it is set every call
+   *  is blocked, declared reads and calls a standing grant would authorize
+   *  included. `by` names who flipped it and lands on the audit trail. */
+  freeze(by: string): Promise<void>;
+  unfreeze(by: string): Promise<void>;
+  frozen(): Promise<boolean>;
 
   grants: {
     list(principal: Principal): Promise<PermissionGrant[]>;

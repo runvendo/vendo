@@ -2218,6 +2218,27 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
    once is the opposite of calm. */
 .fl-no-entrance .fl-beat { animation: none; }
 
+/* ---------- the workspace beat rail (§3.4 + §10.2) ----------
+   A heavy build is watched as an accumulating vertical list of the SAME beat
+   line the transcript uses, on the existing split-view stage. Sits under
+   whatever the stage is showing, above the pane's bottom edge. */
+.fl-beatrail { flex: none; padding: 14px 18px 16px; border-top: 1px solid var(--vendo-border); }
+.fl-beatrail-head { margin: 0 0 10px; font: 600 11px/1 var(--vendo-font); letter-spacing: .055em;
+  text-transform: uppercase; color: var(--vendo-fg-muted); }
+.fl-beats { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+/* The caption is the point of the rail: watching is optional. */
+.fl-beatrail-cap { margin: 12px 0 0; max-width: 42ch;
+  font: 400 11.5px/1.45 var(--vendo-font); color: var(--vendo-fg-muted); }
+/* The rail's own register — the mockup's 6px pip. In the TRANSCRIPT the orb is
+   a static position marker (§8 build calm, where the card is the step and the
+   boot hairline is the one moving thing); a rail with no card and no hairline
+   has nothing else to say "still going", so here the pip carries the pulse. */
+.fl-beatrail .fl-beat-orb { width: 6px; height: 6px; background: var(--vendo-accent); }
+@media (prefers-reduced-motion: no-preference) {
+  .fl-beatrail .fl-beat-working .fl-beat-orb { animation: fl-beat-pip 1.5s var(--vendo-ease) infinite; }
+}
+@keyframes fl-beat-pip { 50% { opacity: .35; transform: scale(.82); } }
+
 /* ================== LANE B — card-shell surfaces (spec §16, §4) ==================
    Nothing here dresses or undresses a card: it sizes the shell inside each
    ancestor (law 1) and styles the two containers the shell lives in. */

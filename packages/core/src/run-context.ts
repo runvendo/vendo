@@ -1,6 +1,7 @@
 import { z } from "zod";
+import type { UIMessage } from "ai";
 import { permissionGrantSchema, type PermissionGrant } from "./grants.js";
-import { appIdSchema, turnIdSchema, type AppId, type TurnId } from "./ids.js";
+import { appIdSchema, turnIdSchema, type AppId, type Json, type TurnId } from "./ids.js";
 import { principalSchema, type Principal } from "./principal.js";
 import { triggerRefSchema, type TriggerRef } from "./triggers.js";
 
@@ -76,6 +77,22 @@ export interface RunContext {
   /** Build contract §9.1 — the orgs/teams the host asserted for this principal.
       Absent ⇒ nothing asserted ⇒ `can()` degenerates to ownership. */
   memberships?: Membership[];
+  /** Agents spec (2026-08-04): the host's asserted profile of the present user
+      (name, plan, role, …). Server-trust and MODEL-VISIBLE — prompt assembly's
+      `[User]` block reads it — so data only, never functions or secrets. */
+  user?: Record<string, Json>;
+  /** Agents spec (2026-08-04): the host's own bag for guards and tools, never
+      the model. Functions are allowed and callable at check time; only plain
+      data survives into anything persisted (the frozen approval snapshot is an
+      explicit projection — `ApprovalRequest["ctx"]` — so nothing here rides
+      into it unless that projection names it). */
+  context?: Record<string, unknown>;
+  /** Agents spec (2026-08-04): the turn's canonical transcript, for guards and
+      judges that weigh a call against what the user actually asked. An accessor,
+      not a copy — attached by whoever resolves the thread (the harness runtime),
+      absent on a ctx built before any thread exists. In-process only; it never
+      serializes. */
+  messages?: () => readonly UIMessage[];
   /**
    * The turn this run belongs to. Carried HERE rather than passed beside the ctx
    * because the ctx is what already reaches every audit mint, every guarded
@@ -101,5 +118,10 @@ export const runContextSchema = z.object({
   grant: permissionGrantSchema.optional(),
   mcpConsent: mcpConsentSchema.optional(),
   memberships: z.array(membershipSchema).optional(),
+  user: z.record(z.unknown()).optional(),
+  context: z.record(z.unknown()).optional(),
+  // `messages` is deliberately not named here: it is function-valued and
+  // in-process only, so no wire shape exists for it (`.passthrough()` keeps it
+  // on a ctx that already carries one).
   turnId: turnIdSchema.optional(),
 }).passthrough() satisfies z.ZodType<RunContext>;

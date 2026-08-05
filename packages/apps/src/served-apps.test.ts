@@ -78,55 +78,92 @@ const servedAppsBrain = (call: { prompt: Array<{ content: string | Array<{ text?
 </Plan>`;
 };
 
+const PROXY_PATH = (appId: string): string => `/api/vendo/apps/${appId}/serve/`;
+
 const setup = (options: {
   agent?: FakeBoxAgent;
-  experimentalServedApps?: boolean;
   theme?: VendoTheme;
   edit?: string;
+  /** Compose WITHOUT the wire's authenticated served door (an unmounted wire). */
+  proxy?: boolean;
+  /** Compose with layer 2 switched off (the default for a real host). */
+  machines?: boolean;
+  /** Re-compose over an existing world, to say the same store two ways. */
+  store?: ReturnType<typeof memoryStore>;
+  sandbox?: ReturnType<typeof fakeBoxSandbox>;
 } = {}) => {
-  const store = memoryStore();
+  const store = options.store ?? memoryStore();
   const guard = guardFixture();
-  const sandbox = fakeBoxSandbox({ agent: options.agent ?? kanbanAgent });
+  const sandbox = options.sandbox ?? fakeBoxSandbox({ agent: options.agent ?? kanbanAgent });
   const runtime = createApps({
     store,
     guard,
     tools,
     catalog: [],
     model: scriptedLanguageModel(options.edit ?? servedAppsBrain),
-    // Wave 9 — served apps (layer 3) require machines (layer 2); every setup
-    // here exercises box machinery, so the machines flag is always on.
-    experimentalMachines: true,
-    ...(options.experimentalServedApps === undefined ? {} : { experimentalServedApps: options.experimentalServedApps }),
+    // A served (layer-3) surface is served BY a layer-2 machine, so every setup
+    // here has machines on unless it is specifically saying what happens without.
+    ...(options.machines === false ? {} : { experimentalMachines: true }),
     ...(options.theme === undefined ? {} : { theme: options.theme }),
     machine: { sandbox, buildEnv: () => ({ PORT: "8080" }), implicitDomains: ["host.vendo.test"], boxEditPollMs: 5 },
+    // The wire fills this with its own base path; the runtime never invents it.
+    // EVERY served app is answered with it now, the owner's own included.
+    ...(options.proxy === false ? {} : { servedProxyPath: PROXY_PATH }),
   });
   return { store, guard, sandbox, runtime };
 };
 
-const expectServedAppsRefusal = async (run: () => Promise<unknown>): Promise<void> => {
-  const error = await run().then(() => undefined, (thrown: unknown) => thrown);
-  expect(error).toBeInstanceOf(VendoError);
-  expect((error as VendoError).code).toBe("not-implemented");
-  expect((error as VendoError).message).toContain("experimentalServedApps");
-};
-
-describe("experimental flag OFF (the default)", () => {
+describe("a served app needs a machine, and a door to serve it through", () => {
   // The pre-emptive typed refusal on create and edit is GONE with the regex
   // judge that guessed a layer-3 ask from the instruction text
   // (`instructionRequiresServedApp`). A lane this host does not have is now
   // stated to the brain as fact before it plans, and the ask comes back as an
   // honest <Cannot> the person reads — covered by build-failure.test.ts.
 
-  it("refuses open() on a served app that exists from elsewhere", async () => {
+  /** This used to be the served flag's refusal. The flag is gone, and the
+      condition it was standing in front of is the real one: a served document
+      with no machine has no surface anywhere. */
+  it("refuses open() on a served app that has no machine, saying its surface is gone", async () => {
     const { store, runtime } = setup();
     await seedAppRow(store, treeApp({ ui: "http", tree: undefined }), "user_ada");
-    await expectServedAppsRefusal(() => runtime.open("app_served", ctx()));
+
+    const error = await runtime.open("app_served", ctx()).then(() => undefined, (thrown: unknown) => thrown);
+    expect(error).toBeInstanceOf(VendoError);
+    expect((error as VendoError).code).toBe("validation");
+    expect((error as VendoError).message).toContain("has no machine");
   });
 
-  it("blocks the surface flip even when the box self-declares a served app (de-graduation guard)", async () => {
-    // A layer-2 instruction whose box work sneaks in servesUi: the flag is
-    // off, so the flip is refused — loudly, in the result issues — and the
-    // tree keeps serving.
+  /** The backstop for a served row that arrives from somewhere else — an
+      import, or a deployment that dropped its wire after building the app. The
+      lane gate stops one from ever being BUILT here (lanes.test.ts); if one
+      exists anyway, the answer is a refusal naming the fix, never the sandbox
+      provider's unchecked URL. */
+  it("refuses a served app it has no authenticated door for, and names the wire", async () => {
+    const { store, sandbox, runtime } = setup({ proxy: false });
+    const box = await sandbox.create({ env: {}, template: "node" });
+    const snapshotRef = await box.snapshot();
+    const machinesBefore = sandbox.machines.length;
+    await seedAppRow(store, treeApp({
+      ui: "http",
+      tree: undefined,
+      machine: { snapshotRef, provisionedAt: "2026-08-01T00:00:00.000Z" },
+    }), "user_ada");
+
+    const error = await runtime.open("app_served", ctx()).then(() => undefined, (thrown: unknown) => thrown);
+    expect(error).toBeInstanceOf(VendoError);
+    expect((error as VendoError).code).toBe("not-implemented");
+    expect((error as VendoError).message).toContain("mount the Vendo wire");
+    // No provider URL leaked out of the refusal, and no machine was spent.
+    expect((error as VendoError).message).not.toContain("fake-box.test");
+    expect(sandbox.machines.length).toBe(machinesBefore);
+  });
+
+  it("blocks the surface flip when the box self-declares a served app the plan never asked for (de-graduation guard)", async () => {
+    // A layer-2 instruction whose box work sneaks in servesUi. The plan asked
+    // for a layer-2 box, so the flip is refused — loudly, in the result issues —
+    // and the tree keeps serving. This is the whole safety net now that no flag
+    // stands in front of it: a box must never replace a tree the person did not
+    // ask to lose.
     const { store, runtime } = setup({ agent: kanbanAgent });
     await seedAppRow(store, treeApp(), "user_ada");
     // Wave 9 — a box-rung instruction (custom logic): schedule-y phrasing now
@@ -134,16 +171,16 @@ describe("experimental flag OFF (the default)", () => {
     const result = await runtime.edit("app_served", "Reconcile my invoices with custom matching logic and store the results", ctx());
     expect(result.app.ui).toBe("tree");
     expect(result.app.tree).toBeDefined();
-    expect(result.issues?.some((issue) => issue.includes("experimentalServedApps"))).toBe(true);
+    expect(result.issues?.some((issue) => issue.includes("plan never asked for one"))).toBe(true);
     // open() still serves the tree.
     const surface = await runtime.open("app_served", ctx());
     expect(surface.kind).toBe("tree");
   });
 });
 
-describe("experimental flag ON: graduation 2→3", () => {
+describe("graduation 2→3", () => {
   it("flips the surface only after the box serves a verified web app (tree gone, rung 3)", async () => {
-    const { store, runtime } = setup({ experimentalServedApps: true });
+    const { store, runtime } = setup();
     await seedAppRow(store, treeApp(), "user_ada");
 
     const result = await runtime.edit("app_served", LAYER3_INSTRUCTION, ctx());
@@ -161,7 +198,6 @@ describe("experimental flag ON: graduation 2→3", () => {
 
   it("keeps the tree serving when the box edit fails (no flip, rollback)", async () => {
     const { store, runtime } = setup({
-      experimentalServedApps: true,
       agent: () => ({ ok: false, summary: "could not build the app", filesChanged: [], testsRun: 0 }),
     });
     await seedAppRow(store, treeApp(), "user_ada");
@@ -179,7 +215,6 @@ describe("experimental flag ON: graduation 2→3", () => {
     // servesUi without an actual page: the host's own GET / verification
     // refuses the flip; the box work (machine, fns) still lands.
     const { store, runtime } = setup({
-      experimentalServedApps: true,
       agent: ({ box }) => {
         box.fns.set("listInvoices", () => ({ invoices: [] }));
         return { ok: true, summary: "claims a web app", filesChanged: [], testsRun: 0, fns: ["listInvoices"], servesUi: true };
@@ -195,31 +230,36 @@ describe("experimental flag ON: graduation 2→3", () => {
   });
 });
 
-describe("experimental flag ON: serving + wake-on-open", () => {
+describe("serving through the door + the keepalive ride", () => {
   const flipped = async (options: Parameters<typeof setup>[0] = {}) => {
-    const world = setup({ experimentalServedApps: true, ...options });
+    const world = setup(options);
     await seedAppRow(world.store, treeApp(), "user_ada");
     const result = await world.runtime.edit("app_served", LAYER3_INSTRUCTION, ctx());
     expect(result.app.ui).toBe("http");
     return world;
   };
 
-  it("open() wakes the sleeping machine and returns the box's public ingress URL", async () => {
+  it("open() hands back this deployment's proxy URL, never the box's public ingress", async () => {
     const { sandbox, runtime } = await flipped();
-    // The 2→3 edit ends asleep (snapshot); open() must wake a fresh machine.
+    // The 2→3 edit ends asleep (snapshot). open() no longer wakes anything: the
+    // URL it hands out is the proxy, and the proxy wakes the machine on the
+    // first forwarded request — after it has re-checked access. An owner opening
+    // their own app therefore costs no machine either.
     const machinesBefore = sandbox.machines.length;
 
     const surface = await runtime.open("app_served", ctx());
 
     expect(surface.kind).toBe("http");
     if (surface.kind !== "http") throw new Error("unreachable");
-    expect(surface.url).toMatch(/^https:\/\/8080-box-\d+\.fake-box\.test\/?$/);
+    expect(surface.url).toBe("/api/vendo/apps/app_served/serve/");
+    expect(surface.url).not.toMatch(/fake-box\.test/);
+    expect(sandbox.machines.length).toBe(machinesBefore);
+
+    // The door that URL names is the one that wakes the box and serves the page.
+    const page = await runtime.serve("app_served", { method: "GET", path: "/" }, ctx());
+    expect(page.status).toBe(200);
+    expect(new TextDecoder().decode(page.body)).toContain("Kanban");
     expect(sandbox.machines.length).toBeGreaterThan(machinesBefore);
-    // The wake resumed the snapshot: the served page is really there.
-    const woken = sandbox.machines.at(-1);
-    const page = await woken?.request({ method: "GET", path: "/" });
-    expect(page?.status).toBe(200);
-    expect(new TextDecoder().decode(page?.body)).toContain("Kanban");
   });
 
   it("hands the host theme to the served app as a query param it MAY consume", async () => {
@@ -238,7 +278,10 @@ describe("experimental flag ON: serving + wake-on-open", () => {
     const surface = await runtime.open("app_served", ctx());
 
     if (surface.kind !== "http") throw new Error("expected an http surface");
-    const url = new URL(surface.url);
+    // The proxy forwards the query string into the box, so the brand handoff
+    // survives the flip to a checked door.
+    const url = new URL(surface.url, "http://host.test");
+    expect(url.pathname).toBe("/api/vendo/apps/app_served/serve/");
     const handed = url.searchParams.get("vendoTheme");
     expect(handed).not.toBeNull();
     expect(JSON.parse(handed as string)).toEqual(theme);
@@ -249,7 +292,9 @@ describe("experimental flag ON: serving + wake-on-open", () => {
     // the idle-tracked machine wrapper, which is the activity signal that
     // re-arms the idle timer (and rides any provider TTL extension).
     const { sandbox, runtime } = await flipped();
-    await runtime.open("app_served", ctx());
+    // open() hands out the proxy URL and wakes nothing; the machine comes awake
+    // on the first request through that door, which is what this ping follows.
+    await runtime.serve("app_served", { method: "GET", path: "/" }, ctx());
     const machinesBefore = sandbox.machines.length;
 
     const pinged = await runtime.machine.ping("app_served", ctx());
@@ -278,7 +323,7 @@ describe("experimental flag ON: serving + wake-on-open", () => {
   });
 
   it("ping refuses an app that has no machine", async () => {
-    const world = setup({ experimentalServedApps: true });
+    const world = setup();
     await seedAppRow(world.store, treeApp(), "user_ada");
     const error = await world.runtime.machine.ping("app_served", ctx()).then(() => undefined, (thrown: unknown) => thrown);
     expect(error).toBeInstanceOf(VendoError);
@@ -300,6 +345,23 @@ describe("experimental flag ON: serving + wake-on-open", () => {
     expect(result.failure).toBeUndefined();
     expect(result.app.ui).toBe("http");
     expect(sandbox.machines.length).toBeGreaterThan(machinesBefore);
+  });
+
+  /** `edit()` on a served app used to carry its own served-flag refusal. What
+      replaces it is the rule open.ts already states for layer 2: an
+      already-provisioned machine is NEVER gated — only new graduation and
+      provisioning are. A person whose app is already served keeps being able to
+      change it when the host turns layer 2 off; they just cannot get a NEW one. */
+  it("keeps editing a served app whose machine already exists, even with layer 2 switched off", async () => {
+    const world = await flipped();
+    // The SAME store and sandbox, said a second way: layer 2 off.
+    const off = setup({ store: world.store, sandbox: world.sandbox, machines: false });
+
+    const result = await off.runtime.edit("app_served", "Make the board header blue", ctx());
+
+    expect(result.failure).toBeUndefined();
+    expect(result.app.ui).toBe("http");
+    expect(result.app.machine).toBeDefined();
   });
 
   it("keeps version history at its 50 cap — the box path prunes like every other write", async () => {

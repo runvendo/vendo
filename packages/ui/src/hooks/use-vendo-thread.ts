@@ -1,5 +1,5 @@
 /** ai-SDK v6-compatible conversation transport (08-ui §3, 03-agent §4). */
-import { riskLabelSchema, withTurnHeartbeat, type VendoApprovalPart } from "@vendoai/core";
+import { riskLabelSchema, withTurnHeartbeat, type BeatPhase, type VendoApprovalPart } from "@vendoai/core";
 import { useChat } from "@ai-sdk/react";
 import {
   DefaultChatTransport,
@@ -11,7 +11,7 @@ import {
 } from "ai";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useVendoContext } from "../context.js";
-import { publishThreadRun, retireThreadRun } from "../chrome/run-activity.js";
+import { publishThreadRun, retireThreadRun, type VendoBeat } from "../chrome/run-activity.js";
 
 export type VendoThreadApproval = ToolUIPart | DynamicToolUIPart | VendoApprovalPart;
 
@@ -57,6 +57,62 @@ function recordStream(response: Response): void {
     });
   void pump().catch(() => undefined);
 }
+
+/**
+ * §3.4's status channel, RECEIVED.
+ *
+ * The part name is written out rather than imported: `VENDO_STATUS_PART` lives
+ * in @vendoai/harnesses, and @vendoai/ui may depend on core alone
+ * (scripts/dependency-guard.mjs). The producer pins the same literal on the
+ * wire in packages/harnesses/src/runtime.test.ts.
+ *
+ * THE CHANNEL IS `onData`, NOT A `parts.tsx` BRANCH. A transient data chunk is
+ * handed to `onData` and `break`s before the SDK pushes anything into
+ * `state.message.parts` (ai@6.0.28, dist/index.mjs ~5140) — which is exactly
+ * what §3.4 asks for: a beat in `parts` would be persisted history, and beats
+ * are ephemeral by construction.
+ */
+const VENDO_STATUS_PART = "data-vendo-status";
+
+/** The six, as a runtime set. A `Record<BeatPhase, …>` so the build breaks if
+    §3.4's closed union ever gains or loses a member. */
+const BEAT_PHASES: Record<BeatPhase, true> = {
+  understanding: true,
+  planning: true,
+  assembling: true,
+  building: true,
+  checking: true,
+  finishing: true,
+};
+
+/**
+ * A beat is words on a screen, so the LABEL is the whole requirement — a chunk
+ * without one is simply not a beat. `phase` and `appId` are dropped when
+ * unusable rather than repaired: a seventh phase, or a phase for a beat that
+ * carried none, would make the receiver the author of a fact the harness never
+ * sent.
+ *
+ * The label itself is NOT rewritten. Ruling 14 (consumer-voice.ts) settled that
+ * a regex set may not be the runtime authority for what a person may read — as
+ * a gate it deleted good host copy while admitting raw JSON. The beat text rules
+ * bind the PRODUCER; here the label is passed through as sent.
+ */
+function vendoBeat(chunk: { type: string; data?: unknown }): VendoBeat | undefined {
+  if (chunk.type !== VENDO_STATUS_PART) return undefined;
+  if (typeof chunk.data !== "object" || chunk.data === null) return undefined;
+  const candidate = chunk.data as { label?: unknown; phase?: unknown; appId?: unknown };
+  if (typeof candidate.label !== "string" || candidate.label.trim().length === 0) return undefined;
+  return {
+    label: candidate.label,
+    ...(typeof candidate.phase === "string" && Object.hasOwn(BEAT_PHASES, candidate.phase)
+      ? { phase: candidate.phase as BeatPhase }
+      : {}),
+    ...(typeof candidate.appId === "string" ? { appId: candidate.appId } : {}),
+  };
+}
+
+/** Stable identity so an idle turn never re-renders a beat reader. */
+const NO_BEATS: readonly VendoBeat[] = [];
 
 function vendoApproval(part: UIMessage["parts"][number]): VendoApprovalPart | undefined {
   if (part.type !== "data-vendo-approval") return undefined;
@@ -130,6 +186,7 @@ export function useVendoThread(threadId?: string) {
       }),
     [client, transportOverride],
   );
+  const [beats, setBeats] = useState<readonly VendoBeat[]>(NO_BEATS);
   const chat = useChat<UIMessage>({
     ...(threadId === undefined ? {} : { id: threadId }),
     messages: [],
@@ -137,7 +194,19 @@ export function useVendoThread(threadId?: string) {
     // Approval decisions resume the parked turn server-side (03 §4): once every
     // requested approval has a response, send the updated messages back.
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
+    onData: chunk => {
+      const beat = vendoBeat(chunk);
+      if (beat !== undefined) setBeats(current => [...current, beat]);
+    },
   });
+  const running = chat.status === "submitted" || chat.status === "streaming";
+  // Beats belong to the RUNNING turn: clearing on the settle (rather than on the
+  // next turn's start) is one rule that answers both halves of §3.4's ephemeral
+  // law — a finished turn narrates nothing, and the next turn therefore starts
+  // empty without a reset that could race the first beat off the wire.
+  useEffect(() => {
+    if (!running) setBeats(NO_BEATS);
+  }, [running]);
 
   useEffect(() => {
     let active = true;
@@ -172,8 +241,8 @@ export function useVendoThread(threadId?: string) {
   const runKey = useRef(Symbol("vendo-run")).current;
   useEffect(() => () => retireThreadRun(runKey), [runKey]);
   useEffect(() => {
-    publishThreadRun(runKey, { threadId: effectiveThreadId, status: chat.status, messages: chat.messages });
-  }, [runKey, effectiveThreadId, chat.status, chat.messages]);
+    publishThreadRun(runKey, { threadId: effectiveThreadId, status: chat.status, messages: chat.messages, beats });
+  }, [runKey, effectiveThreadId, chat.status, chat.messages, beats]);
 
   const approvals = useMemo<VendoThreadApproval[]>(
     () => {
@@ -193,6 +262,8 @@ export function useVendoThread(threadId?: string) {
   return {
     threadId: effectiveThreadId,
     messages: chat.messages,
+    /** §3.4 — the running turn's beats, oldest first; empty once it settles. */
+    beats,
     sendMessage: chat.sendMessage,
     status: chat.status,
     error: chat.error,

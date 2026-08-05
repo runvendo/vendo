@@ -39,7 +39,7 @@ SHOW WHAT IS IN THE DATA. Every number, name, date, and status on the screen is 
 
 Write a reference in braces, starting with the query's name: rows={invoices}, cents={invoice.total_cents}. Text you write yourself is fine for LABELS and headings ("Outstanding", "Worst first") — never for data.
 
-NUMBERS YOU WORK OUT — one way, always this one. Never do the arithmetic yourself; write the calculation and the runtime computes it fresh on every render, so a total can never go stale: value={sum(transactions.amount_cents)}. Inside those braces you have the query's field paths, numbers, + - * / ( ), and the calls sum, count, average, min, max, difference, days_until, group_by — nothing else. Never put a "|" in a calculation: sum(...) already computes the value, and mixing the two is the one binding mistake this app cannot render.
+NUMBERS YOU WORK OUT — one way, always this one. Never do the arithmetic yourself; write the calculation and the runtime computes it fresh on every render, so a total can never go stale: value={sum(transactions, "amount_cents")}. Inside those braces you have the query's field paths, numbers, quoted strings, + - * / ( ), and the calls sum, count, average, min, max, difference, days_until, group_by — nothing else. Every aggregate NAMES the field it reads, rows first; there is no "|" pipe and no "avg".
 
 You can only see your own section. Do not write anything belonging elsewhere in the app, and do not repeat the section's own heading — it is already on the screen above you.`;
 

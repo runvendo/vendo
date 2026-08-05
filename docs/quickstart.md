@@ -270,7 +270,7 @@ order:
    fallback.)
    Model calls go through the Vendo Cloud model gateway (`vendo` by
    default — pin another id with `VENDO_MODEL` or `models.default`, served via
-   `@ai-sdk/anthropic`) and meter your dev-mode runs allowance.
+   `@ai-sdk/anthropic`) and draw down the usage your plan includes.
 3. Nothing available: chat fails honestly, with exact instructions in the
    server log.
 
@@ -408,7 +408,7 @@ Cloud defaults:
   instead of local PGlite. Pass `store: createStore(...)` to keep data local;
 - the knowledge slot becomes the Cloud knowledge engine when you passed no
   `knowledge`, and the agent gets its `vendo_knowledge_search` tool over the
-  corpus you connected in the console. Pass `knowledge: lexicalKnowledge()` (or
+  corpus you connected in the console. Pass `knowledge: vendoKnowledge()` (or
   any adapter) to keep retrieval yours — see [knowledge](./knowledge.md).
 
 An explicitly passed adapter or BYO key always wins over these defaults.
@@ -446,8 +446,8 @@ import type {
   VendoAgent, VendoGuard, VendoStore, VendoTheme,
 } from "@vendoai/vendo";
 import type {
-  AppsConfig, ConnectionsService, HarnessTurns, HostAuthPreset, ModelsConfig,
-  PackContext, ServerActionHandler, TourEntry,
+  AgentOptions, AppsConfig, ComposedAgent, ConnectionsService, HarnessTurns,
+  HostAuthPreset, ModelsConfig, PackContext, ServerActionHandler, TourEntry,
 } from "@vendoai/vendo/server";
 import type { LanguageModel } from "ai";
 
@@ -495,19 +495,10 @@ export interface CreateVendoConfig {
     federation?: { secret: string };
   };
   oauth?: HostOAuthAdapter;   // escape hatch; required when `mcp` is true and `auth` is absent
-  agent?: {
-    instructions?: string;
-    toolOutputCap?: number;
-    maxOutputTokens?: number;
-    historyWindow?: number;
-    maxInitialTools?: number;
-    loadout?: string[];
-    maxSteps?: number;
-  };
+  agent?: AgentOptions | ComposedAgent; // the chat knobs, OR a whole agent() from @vendoai/agents
   sessions?: { ttlMs?: number; sweepIntervalMs?: number; now?: () => number };
   approvals?: { parkedCallTtlMs?: number };
   apps?: {
-    experimentalServedApps?: boolean;
     experimentalMachines?: boolean;
     review?: {                // review-kind remixes: who may review (queue/reject/approve)
       reviewer?(ctx: RunContext): boolean | Promise<boolean>;

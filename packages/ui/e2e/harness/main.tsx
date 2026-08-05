@@ -1337,6 +1337,37 @@ function AppFrameScenario() {
   );
 }
 
+/**
+ * The frame resize protocol, host half. The served-app fixture reports its own
+ * natural height over the jail's exact message shape; each section is a host
+ * that configured its slot differently, and the frame fits the report INSIDE
+ * that slot — never outside it.
+ */
+function AppFrameResizeScenario() {
+  return (
+    // A column, not the appframe grid: grid rows stretch every section to the
+    // tallest one in the row, which would hide whether a frame grew or a row did.
+    <div className="appframe-column">
+      <section aria-label="Reported height honoured">
+        <h2>Reports 640px, host allows it</h2>
+        <AppFrame surface={{ kind: "http", url: "/resize-target.html?h=640" }} />
+      </section>
+      <section
+        aria-label="Host max height wins"
+        // The host's ceiling for this slot. The app is twice as tall as this.
+        style={{ "--vendo-app-frame-max-height": "420px" } as CSSProperties}
+      >
+        <h2>Reports 1600px, host caps at 420px</h2>
+        <AppFrame surface={{ kind: "http", url: "/resize-target.html?h=1600" }} />
+      </section>
+      <section aria-label="Host min height wins">
+        <h2>Reports 80px, host reserves 320px</h2>
+        <AppFrame surface={{ kind: "http", url: "/resize-target.html?h=80" }} />
+      </section>
+    </div>
+  );
+}
+
 const baseClient = createVendoClient({ baseUrl: "/api/vendo" });
 const unconfiguredClient = createVendoClient({ baseUrl: "/api/vendo", headers: { "x-vendo-force-posture": "unconfigured" } });
 
@@ -1608,9 +1639,9 @@ const SHAPE_DATA: Record<string, Json> = {
 const SHAPE_WIRE = `<App name="Revenue by month">
   <Query id="revenue" tool="metrics_revenue"/>
   <Stack gap={14}>
-    <Text text="Shape-aware binding: reshape pipes, no code island" variant="heading"/>
-    <Stat label="Total revenue" value={revenue.rows | sum(revenue) | format(currency)}/>
-    <Table caption="Monthly revenue" rows={revenue.rows | format(revenue, currency) | rename(month, Month, revenue, Revenue)}/>
+    <Text text="Shape-aware binding: reshape calls, no code island" variant="heading"/>
+    <Stat label="Total revenue" value={sum(revenue.rows, "revenue")}/>
+    <Table caption="Monthly revenue" rows={rename(format(revenue.rows, "revenue", "currency"), "month", "Month", "revenue", "Revenue")}/>
   </Stack>
 </App>`;
 
@@ -1620,7 +1651,7 @@ const SHAPE_WIRE_BROKEN = `<App name="Revenue by month (mis-bound)">
   <Query id="revenue" tool="metrics_revenue"/>
   <Stack gap={14}>
     <Text text="Mis-bound reshape: contained at render, compile error with shape cards" variant="heading"/>
-    <Table caption="Broken binding" rows={revenue.rows | asPoints(period, amount)}/>
+    <Table caption="Broken binding" rows={asPoints(revenue.rows, "period", "amount")}/>
   </Stack>
 </App>`;
 
@@ -2195,6 +2226,7 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/slot-pinned": return { title: "Inline slot — pinned component", theme: mapleTheme, content: <VendoSlot id="hero" pin={{ payload: pinnedViewTree }}><section aria-label="Original host component"><h2>Original host hero</h2></section></VendoSlot> };
     case "/slot-fallback": return { title: "Slot pin fallback", content: <SlotFallbackScenario />, ownProvider: true };
     case "/appframe": return { title: "App execution planes", content: <AppFrameScenario /> };
+    case "/appframe-resize": return { title: "App frame resize — the host's bounds win", content: <AppFrameResizeScenario /> };
     case "/byo-embed-app": return { title: "BYO chat — inline generated app", content: <ByoEmbedScenario appId="app_island" title="Weather dashboard" />, ownProvider: true };
     case "/byo-embed-building": return { title: "BYO chat — app mid-build", content: <ByoEmbedScenario appId="app_building_lands" title="Trip planner" />, ownProvider: true };
     // §16 law 3 — the embed's terminal build failure. The wire fixture serves

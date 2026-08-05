@@ -276,27 +276,18 @@ const attachPinFurnishings = (
  * machine (wake-on-open) and resolves its public ingress URL for $PORT.
  */
 export interface ServedSurface {
-  enabled: boolean;
-  /** Build contract §9.8 — takes the ctx because an ORG-owned served app is
-      answered with an authenticated PROXY url (checked per request) while a
-      personal one keeps the provider's own ingress url. The runtime decides;
-      this seam only hands it what it needs to. */
-  urlFor(app: AppDocument, ctx: RunContext): Promise<string>;
+  /** Build contract §9.8 — EVERY served app is answered with this deployment's
+      authenticated proxy url, re-checked per request. It takes no ctx because
+      there is nothing left to decide per caller: a second answer for a second
+      kind of caller is exactly the door that leaked. */
+  urlFor(app: AppDocument): Promise<string>;
 }
 
-/** Wave 4 — the one refusal for every layer-3 path while the flag is off. */
-export const servedAppsDisabledError = (): VendoError => new VendoError(
-  "not-implemented",
-  "served (layer-3) app surfaces are experimental and disabled for this project — enable them with createVendo({ apps: { experimentalServedApps: true } }) (AppsConfig.experimentalServedApps) to let a machine serve the app surface",
-  { experiment: "servedApps", flag: "experimentalServedApps" },
-);
-
-/** Wave 9 — the one refusal for NEW layer-2 box work while machines are off
- *  (same house pattern as {@link servedAppsDisabledError}). The escalation
- *  ladder only lands here when no automation can express the request, so the
- *  message says exactly that instead of silently degrading to a broken
- *  automation. Already-provisioned machines are never gated by this — only
- *  new graduation/provisioning is. */
+/** Wave 9 — the one refusal for NEW layer-2 box work while machines are off.
+ *  The escalation ladder only lands here when no automation can express the
+ *  request, so the message says exactly that instead of silently degrading to a
+ *  broken automation. Already-provisioned machines are never gated by this —
+ *  only new graduation/provisioning is. */
 export const machinesDisabledError = (): VendoError => new VendoError(
   "not-implemented",
   "this request needs custom server code (a box machine), and machine-backed (layer-2) execution is experimental and disabled for this project — enable it with createVendo({ apps: { experimentalMachines: true } }) (AppsConfig.experimentalMachines); scheduled/triggered work that tools can express rides the automations engine without it",
@@ -323,8 +314,8 @@ const additionalVenueState = async (
 export const createAppOpener = (
   caller: AppCaller,
   pinBaselines: readonly PinBaseline[] = [],
-  inClientVenue?: (app: AppDocument) => Promise<InClientVenueState | undefined>,
-  served?: ServedSurface,
+  inClientVenue: ((app: AppDocument) => Promise<InClientVenueState | undefined>) | undefined,
+  served: ServedSurface,
   /**
    * Build contract §9.9 — the ADDITIVE venue-state slot, ctx-aware because the
    * states that ride it are per-caller (lane H's adoption card is served only
@@ -349,13 +340,6 @@ export const createAppOpener = (
     };
   }
   if (app.ui === "http") {
-    // execution-v2 Wave 4 — the layer-3 served surface, host-gated behind the
-    // experimental flag: opening a served app while the flag is off refuses
-    // with the SAME typed error as generation (a served app that exists from
-    // elsewhere is refused too, not just new builds).
-    if (served === undefined || !served.enabled) {
-      throw servedAppsDisabledError();
-    }
     // A served document without a machine has NO surface anywhere (a v1-era
     // import or a de-graduated doc): say so instead of a confusing wake error.
     if (app.machine === undefined) {
@@ -364,10 +348,12 @@ export const createAppOpener = (
         "this served app has no machine — its surface is gone; re-graduate it with an edit or re-create the app",
       );
     }
-    // Wake-on-open: a sleeping machine resumes here (the accepted wake
-    // latency; the host shows its ordinary loading state — no v1 cover or
-    // screenshot machinery).
-    return { kind: "http", url: await served.urlFor(app, ctx) };
+    // No wake on open: the URL is this deployment's proxy, and the proxy wakes
+    // the machine on the first forwarded request — after it has re-checked
+    // access. The host shows its ordinary loading state for that wake latency
+    // (no v1 cover or screenshot machinery); the embed's keepalive ping is what
+    // notices a machine that went back to sleep.
+    return { kind: "http", url: await served.urlFor(app) };
   }
 
   if (app.tree === undefined) {

@@ -116,7 +116,7 @@ describe("it carries the v2 pattern", () => {
 
   it("teaches never inventing data and never doing the arithmetic itself", () => {
     expect(body).toMatch(/Never do the arithmetic yourself/i);
-    expect(body).toContain("sum(transactions.amount_cents)");
+    expect(body).toContain('sum(transactions, "amount_cents")');
     expect(body).toMatch(/made-up figure/i);
   });
 

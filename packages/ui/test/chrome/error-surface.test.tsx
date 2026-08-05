@@ -53,13 +53,13 @@ describe("the turn-error gate (C4)", () => {
   });
 
   it("keeps the ONE crafted sentence that is consumer copy — the meter refusal", () => {
-    const meter = "Vendo: Vendo Cloud paused AI tokens — the allowance for this billing period is used up "
-      + "(1,204,000 of 1,000,000 used; resets 2026-08-01). "
+    const meter = "Vendo: Vendo Cloud paused usage — the $5.00 included this billing period is used up "
+      + "($5.00 of $5.00 used; resets 2026-08-01). "
       + "Upgrade your plan (https://console.vendo.run/billing) "
       + "or bring your own infrastructure (https://docs.vendo.run/byo). (cloud-required)";
     expect(turnErrorSentence(meter)).toBe(
-      "Vendo Cloud paused AI tokens — the allowance for this billing period is used up "
-      + "(1,204,000 of 1,000,000 used; resets 2026-08-01). "
+      "Vendo Cloud paused usage — the $5.00 included this billing period is used up "
+      + "($5.00 of $5.00 used; resets 2026-08-01). "
       + "Upgrade your plan (https://console.vendo.run/billing) "
       + "or bring your own infrastructure (https://docs.vendo.run/byo).",
     );
@@ -131,8 +131,8 @@ describe("visible error surface + retry (ENG-214)", () => {
     // Vendo-detail rail as any safe stream error, and the turn ends (Retry).
     wire.state.streamFailures = 1;
     wire.state.streamFailureText =
-      "Vendo: Vendo Cloud paused AI tokens — the allowance for this billing period is used up "
-      + "(1,204,000 of 1,000,000 used; resets 2026-08-01). "
+      "Vendo: Vendo Cloud paused usage — the $5.00 included this billing period is used up "
+      + "($5.00 of $5.00 used; resets 2026-08-01). "
       + "Upgrade your plan (https://console.vendo.run/billing) "
       + "or bring your own infrastructure (https://docs.vendo.run/byo). (cloud-required)";
     render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
@@ -141,7 +141,7 @@ describe("visible error surface + retry (ENG-214)", () => {
     sendFromComposer("Hello");
     const banner = (await screen.findByText(/Something went wrong/)).closest(".fl-error");
     expect(banner?.textContent).toContain("Something went wrong");
-    expect(banner?.textContent).toContain("Vendo Cloud paused AI tokens");
+    expect(banner?.textContent).toContain("Vendo Cloud paused usage");
     expect(banner?.textContent).toContain("resets 2026-08-01");
     expect(banner?.textContent).toContain("Upgrade your plan (https://console.vendo.run/billing)");
     expect(banner?.textContent).toContain("bring your own infrastructure (https://docs.vendo.run/byo)");

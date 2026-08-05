@@ -155,9 +155,9 @@ describe("J5: away capture, park, resume, revoke through the composed wire", () 
 
     // First run: the standing grant does NOT authorize the away send. THE LAW
     // (§12) "refuses a standing grant, rule, judge, or default authorizing an
-    // irreversible action with nobody watching" — and `host_invoices_send`
-    // resolves destructive on the second mechanical vote whatever its declared
-    // label. So the run is BLOCKED over a live grant, and the host is untouched.
+    // irreversible action with nobody watching" — and `host_invoices_send` is
+    // declared destructive (the dev's label is final; two-vote grading removed).
+    // So the run is BLOCKED over a live grant, and the host is untouched.
     const [firstRun] = await stack.vendo.emit("j5.revoke", { id: "inv_0003" }, ADA);
     const blocked = await waitForRunStatus(stack, firstRun!, ADA, "error");
     expect(blocked.steps.at(-1)).toMatchObject({ tool: SEND, outcome: "blocked" });

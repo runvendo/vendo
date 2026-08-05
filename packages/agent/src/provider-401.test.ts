@@ -65,9 +65,11 @@ describe("a provider 401 at the wire gate", () => {
   it("still renders the pricing sentence for a 401 that carries the meter refusal", async () => {
     // The refusal BODY is self-identifying (pricing v3 §5), so this one needs
     // no guess about origin: the structured fields are the source of truth.
-    const errorText = await errorFrameFor(unauthorized({ code: "meter-exhausted", meter: "ai_tokens" }));
+    const errorText = await errorFrameFor(
+      unauthorized({ code: "meter-exhausted", meter: "usage", unit: "usd" }),
+    );
     expect(errorText).toBe(
-      "Vendo: Vendo Cloud paused AI tokens — the allowance for this billing period is used up. "
+      "Vendo: Vendo Cloud paused usage — the allowance for this billing period is used up. "
       + "Upgrade your plan or bring your own infrastructure. (cloud-required)",
     );
   });

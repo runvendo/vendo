@@ -599,6 +599,68 @@ export async function createWireServer(options: WireServerOptions = {}) {
           await sendFetchResponse(settledGapResponse, response);
           return;
         }
+        if (sentText.includes("[beats]")) {
+          // §3.4 — the STATUS channel: transient `data-vendo-status` chunks, the
+          // exact shape `writeStatus` (packages/harnesses/src/wire.ts) puts on
+          // the wire. Written here as the literal part name because @vendoai/ui
+          // may depend on core only (scripts/dependency-guard.mjs), so the
+          // producer's constant cannot be imported; the producer side pins the
+          // same literal in packages/harnesses/src/runtime.test.ts.
+          //
+          // The script is the settled-gap shape (prose, then a call that
+          // settles, then the busy gap) with beats riding through it: two
+          // carrying phase/appId, two bare, and malformed chunks interleaved —
+          // a beat channel that has to survive junk without a receiver-side
+          // schema is the whole point of validating on arrival.
+          const beat = (data: unknown) => ({ type: "data-vendo-status", data, transient: true });
+          const beatChunks = createUIMessageStream<UIMessage>({
+            originalMessages: [input.message],
+            generateId: () => "msg_assistant_beats",
+            execute: async ({ writer }) => {
+              writer.write({ type: "text-start", id: "text_plan" });
+              writer.write({ type: "text-delta", id: "text_plan", delta: "Here is the plan — building your workbench now." });
+              writer.write({ type: "text-end", id: "text_plan" });
+              writer.write(beat({ label: "Reading what you asked for", phase: "understanding", appId: "app_1" }) as UIMessageChunk);
+              writer.write({
+                type: "tool-input-available",
+                toolCallId: "call_beats",
+                toolName: "host_list_transactions",
+                input: {},
+                dynamic: true,
+              });
+              writer.write({
+                type: "tool-output-available",
+                toolCallId: "call_beats",
+                output: { rows: [] },
+                dynamic: true,
+              } as UIMessageChunk);
+              writer.write(beat({ label: "Laying out the matching table", phase: "assembling" }) as UIMessageChunk);
+              // Bare label — the shape a harness that says nothing else emits.
+              writer.write(beat({ label: "Wiring up your transactions" }) as UIMessageChunk);
+              // Malformed: an empty label, a non-string label, no data at all.
+              writer.write(beat({ label: "   " }) as UIMessageChunk);
+              writer.write(beat({ label: 7 }) as UIMessageChunk);
+              writer.write(beat(null) as UIMessageChunk);
+              // A real label carrying junk in the optional fields: the beat
+              // still renders, the two unusable fields simply do not.
+              writer.write(beat({ label: "Adding drag and drop", phase: "polishing", appId: 42 }) as UIMessageChunk);
+              // Last chunk before the gap is junk, so the ribbon's "latest
+              // beat" can never be a malformed one.
+              writer.write(beat({ label: "" }) as UIMessageChunk);
+              // The gate is the unit suite's deterministic release. A browser has
+              // no way to resolve one, so the harness gets a real-timer hold
+              // instead — long enough to read the live frame and photograph it.
+              await (state.threadReplyGate ?? new Promise(resolve => setTimeout(resolve, 6_000)));
+              writer.write({ type: "text-start", id: "text_done" });
+              writer.write({ type: "text-delta", id: "text_done", delta: "All done." });
+              writer.write({ type: "text-end", id: "text_done" });
+            },
+          });
+          const beatsResponse = createUIMessageStreamResponse({ stream: beatChunks });
+          beatsResponse.headers.set("x-vendo-thread-id", threadId);
+          await sendFetchResponse(beatsResponse, response);
+          return;
+        }
         if (sentText.includes("[smoke-build]")) {
           // The smoke pack's one scripted turn (checklist 11): two tool steps
           // that settle into beats, then an app BUILD that holds the floor —

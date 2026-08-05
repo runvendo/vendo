@@ -337,9 +337,9 @@ describe("the tool surface it asks for (design §D2/§D4)", () => {
 });
 
 describe("options — declared, then overridable per turn", () => {
-  test("only the model knobs are per-turn overridable", () => {
+  test("only `maxTurns` is per-turn overridable — model and effort are construction-time (agents spec 2026-08-04 cut)", () => {
     const shape = (claudeCode().optionsSchema as never as { shape: Record<string, unknown> }).shape;
-    expect(Object.keys(shape).sort()).toEqual(["effort", "maxTurns", "model"]);
+    expect(Object.keys(shape).sort()).toEqual(["maxTurns"]);
   });
 
   test("m1 · `machine` is construction-time only — a per-turn option cannot move the SDK onto the host", async () => {
@@ -388,12 +388,94 @@ describe("E7 · the credential law — build list item 8", () => {
       ANTHROPIC_BASE_URL: undefined,
       VENDO_INFERENCE_KEY: undefined,
       VENDO_INFERENCE_URL: undefined,
+      VENDO_API_KEY: undefined,
       E2B_API_KEY: "e2b-should-never-travel",
     }, inferenceEnv);
     expect(Object.keys(env).sort()).toEqual([
       "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
       "DISABLE_AUTOUPDATER",
     ]);
+  });
+
+  test("VENDO_API_KEY is the third rung — the box thinks through the Vendo Cloud gateway", () => {
+    const env = withEnv({
+      ANTHROPIC_API_KEY: undefined,
+      ANTHROPIC_BASE_URL: undefined,
+      VENDO_INFERENCE_KEY: undefined,
+      VENDO_INFERENCE_URL: undefined,
+      VENDO_API_KEY: "vnd-key",
+      VENDO_CLOUD_URL: undefined,
+    }, inferenceEnv);
+    expect(env["ANTHROPIC_API_KEY"]).toBe("vnd-key");
+    // `<console>/api/v1`, through the same trim as every other rung's URL: the
+    // SDK re-appends the /v1.
+    expect(env["ANTHROPIC_BASE_URL"]).toBe("https://console.vendo.run/api");
+    // The gateway serves the vendo model FAMILY as literal ids and would
+    // grace-remap the SDK's raw claude-* default, so the default is pinned —
+    // env only, which an explicit `options.model` on the session payload beats.
+    expect(env["ANTHROPIC_MODEL"]).toBe("vendo");
+  });
+
+  test("VENDO_CLOUD_URL overrides the console base on the Cloud rung", () => {
+    const env = withEnv({
+      ANTHROPIC_API_KEY: undefined,
+      ANTHROPIC_BASE_URL: undefined,
+      VENDO_INFERENCE_KEY: undefined,
+      VENDO_INFERENCE_URL: undefined,
+      VENDO_API_KEY: "vnd-key",
+      VENDO_CLOUD_URL: "https://cloud.example/",
+    }, inferenceEnv);
+    expect(env["ANTHROPIC_BASE_URL"]).toBe("https://cloud.example/api");
+  });
+
+  test("the Cloud rung yields to every higher rung — and an empty string counts as absent", () => {
+    // An explicit Anthropic key wins; no gateway pin rides along.
+    const anthropic = withEnv({
+      ANTHROPIC_API_KEY: "sk-test",
+      ANTHROPIC_BASE_URL: undefined,
+      VENDO_INFERENCE_KEY: undefined,
+      VENDO_INFERENCE_URL: undefined,
+      VENDO_API_KEY: "vnd-key",
+    }, inferenceEnv);
+    expect(anthropic["ANTHROPIC_API_KEY"]).toBe("sk-test");
+    expect(anthropic["ANTHROPIC_MODEL"]).toBeUndefined();
+
+    // So does a pre-resolved VENDO_INFERENCE_* gateway.
+    const preResolved = withEnv({
+      ANTHROPIC_API_KEY: undefined,
+      ANTHROPIC_BASE_URL: undefined,
+      VENDO_INFERENCE_KEY: "gw-key",
+      VENDO_INFERENCE_URL: "https://console.vendo.run/api/v1",
+      VENDO_API_KEY: "vnd-key",
+    }, inferenceEnv);
+    expect(preResolved["ANTHROPIC_API_KEY"]).toBe("gw-key");
+    expect(preResolved["ANTHROPIC_MODEL"]).toBeUndefined();
+
+    // A bare BYO endpoint (URL, no key — mTLS/proxy auth) is an own credential
+    // too: routing it through Vendo's gateway would silently rebill the org.
+    const byoEndpoint = withEnv({
+      ANTHROPIC_API_KEY: undefined,
+      ANTHROPIC_BASE_URL: "https://gateway.example",
+      VENDO_INFERENCE_KEY: undefined,
+      VENDO_INFERENCE_URL: undefined,
+      VENDO_API_KEY: "vnd-key",
+    }, inferenceEnv);
+    expect(byoEndpoint["ANTHROPIC_API_KEY"]).toBeUndefined();
+    expect(byoEndpoint["ANTHROPIC_MODEL"]).toBeUndefined();
+    expect(byoEndpoint["ANTHROPIC_BASE_URL"]).toBe("https://gateway.example");
+
+    // "" is absent, exactly as the higher rungs already treat it.
+    const blanks = withEnv({
+      ANTHROPIC_API_KEY: "",
+      ANTHROPIC_BASE_URL: "",
+      VENDO_INFERENCE_KEY: "",
+      VENDO_INFERENCE_URL: "",
+      VENDO_API_KEY: "vnd-key",
+      VENDO_CLOUD_URL: "",
+    }, inferenceEnv);
+    expect(blanks["ANTHROPIC_API_KEY"]).toBe("vnd-key");
+    expect(blanks["ANTHROPIC_BASE_URL"]).toBe("https://console.vendo.run/api");
+    expect(blanks["ANTHROPIC_MODEL"]).toBe("vendo");
   });
 });
 
@@ -407,6 +489,7 @@ describe("the box's egress allowlist — what the provider is asked to filter", 
     ANTHROPIC_BASE_URL: undefined,
     VENDO_INFERENCE_KEY: undefined,
     VENDO_INFERENCE_URL: undefined,
+    VENDO_API_KEY: undefined,
   };
   const DOOR = "https://app.example.com/api/vendo/mcp";
 
@@ -466,6 +549,38 @@ describe("the box's egress allowlist — what the provider is asked to filter", 
     (turn as unknown as { options: unknown }).options = { egress: ["evil.example.net"] };
     await withEnvAsync(NO_INFERENCE, async () => { await drain(claudeCode({ sandbox }), turn); });
     expect(sandbox.specs[0]?.allowedDomains).toEqual(["api.anthropic.com"]);
+  });
+
+  test("the Cloud rung's gateway host rides the allowlist, read off the env the box is handed", async () => {
+    const sandbox = fakeSandbox(async () => undefined);
+    const harness = claudeCode({ sandbox });
+    provideHarnessAdapters(harness, {
+      toolDoor: { url: DOOR, mint: () => "vtk_3", revoke: () => undefined },
+    });
+    await withEnvAsync({ ...NO_INFERENCE, VENDO_API_KEY: "vnd-key", VENDO_CLOUD_URL: undefined }, async () => {
+      await drain(harness, makeTurn({ threadId: "thr_egress_cloud" }).turn);
+    });
+    // The gateway host and the door — NOT api.anthropic.com, which this box
+    // never dials.
+    expect(sandbox.specs[0]?.allowedDomains).toEqual(["console.vendo.run", "app.example.com"]);
+  });
+});
+
+describe("`template` — which image the conversation box boots from", () => {
+  test("construction-time option reaches sandbox.create", async () => {
+    const sandbox = fakeSandbox(async () => undefined);
+    await withEnvAsync({ VENDO_BOX_TEMPLATE: undefined }, async () => {
+      await drain(claudeCode({ sandbox, template: "tpl_convo" }), makeTurn({ threadId: "thr_template" }).turn);
+    });
+    expect(sandbox.specs[0]?.template).toBe("tpl_convo");
+  });
+
+  test("unset falls back to VENDO_BOX_TEMPLATE, like every box", async () => {
+    const sandbox = fakeSandbox(async () => undefined);
+    await withEnvAsync({ VENDO_BOX_TEMPLATE: "tpl_env" }, async () => {
+      await drain(claudeCode({ sandbox }), makeTurn({ threadId: "thr_template_env" }).turn);
+    });
+    expect(sandbox.specs[0]?.template).toBe("tpl_env");
   });
 });
 
@@ -820,21 +935,17 @@ describe("a turn on a real box wire", () => {
     });
   });
 
-  test("D2 · Turn.system reaches the box WHOLE, with the embedding note after it", async () => {
+  test("D2 · Turn.system reaches the box WHOLE and ALONE — nothing appended after it", async () => {
     // The D2 plumbing question, measured rather than read: the composed brief
     // (which carries "Never claim a tool ran unless its result confirms that it
     // did") is what `vendo()` thinks with, and it must be what the box thinks
-    // with too. It is — so D2's invented automation is not a dropped brief.
+    // with too. EXACTLY: the hard-coded embedding briefing this harness used to
+    // append after the host's prompt is gone — that voice belongs to the host's
+    // prompt seam, which a trailing append could never be overridden through.
     let brief: string | undefined;
     const sandbox = fakeSandbox(async (box) => { brief = box.systemPrompt; });
     await drain(claudeCode({ sandbox }), makeTurn().turn);
-    expect(brief).toContain("PRODUCT BRIEF");
-    // Ours first, the embedding note after — never the other way round, and
-    // never instead. The note is now a few lines, not the old wall: Claude Code
-    // already knows how to work in a directory, so all we add is the EMBEDDING.
-    expect(brief?.startsWith("PRODUCT BRIEF")).toBe(true);
-    expect(brief).toContain("embedded in this product");
-    expect(brief).toContain("app.vendo");
+    expect(brief).toBe("PRODUCT BRIEF");
   });
 
   test("NO tool listing travels to the box any more — the door lists live, so nothing can go stale", async () => {

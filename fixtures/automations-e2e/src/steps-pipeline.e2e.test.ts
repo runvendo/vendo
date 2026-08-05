@@ -250,7 +250,10 @@ describe("deterministic steps pipelines", () => {
           on: { kind: "host-event", event: "invoice.policy" },
           run: {
             kind: "steps",
-            steps: [{ id: "blocked", tool: "host_invoices_send", args: { id: "'inv_0003'" } }],
+            // A declared WRITE, so the block rule above is what stops it — the
+            // send tool is declared destructive now and would be refused by THE
+            // LAW before any policy rule got a say.
+            steps: [{ id: "blocked", tool: "host_invoices_update", args: { id: "'inv_0003'" } }],
           },
         },
       }));

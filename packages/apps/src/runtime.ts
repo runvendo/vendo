@@ -101,7 +101,7 @@ import {
   type BoxEditResult,
 } from "./box-agent.js";
 import { parseVendoManifest } from "./manifest.js";
-import { createAppOpener, createProgressiveQueryResolver, machinesDisabledError, servedAppsDisabledError, stripServerAuthoritativeFields } from "./open.js";
+import { createAppOpener, createProgressiveQueryResolver, machinesDisabledError, stripServerAuthoritativeFields } from "./open.js";
 import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, listAllRecords, nextEnvStaleAt, rowFromRecord, sessionOf, updateAppRow, withoutSession, type AppRecordWrite } from "./persistence.js";
 import { classifyLegacyPlacements, detectPinDrift, hasDefaultExport, pinComponentName, pinForkSource, type InClientApproval, type PinBaseline, type PinDrift } from "./pins.js";
 import { createReviewLifecycle, type RemixRejection, type ReviewQueueEntry } from "./review.js";
@@ -157,17 +157,6 @@ export interface AppsConfig {
     boxEditPollMs?: number;
     boxEditTimeoutMs?: number;
   };
-  /**
-   * execution-v2 Wave 4 — the layer-3 (machine serves the app surface)
-   * experimental opt-in. OFF by default: layer-3 generation, the 2→3 surface
-   * flip, and open() on a served app all refuse with a typed VendoError naming
-   * this flag. The host enables it per project
-   * (`createVendo({ apps: { experimentalServedApps: true } })`).
-   * Layer 3 is a machine surface, so this flag REQUIRES
-   * {@link AppsConfig.experimentalMachines}; createApps refuses the
-   * combination `experimentalServedApps` without `experimentalMachines`.
-   */
-  experimentalServedApps?: boolean;
   /**
    * Build contract §9.2–§9.6 — the multi-party half. `appAccess` is `can()`
    * over whatever store the host wired (the umbrella composes it at the
@@ -1119,15 +1108,6 @@ const touchedPinSlots = (previous: AppDocument, next: AppDocument): string[] => 
 
 /** 06-apps §1 — construct the app lifecycle, generation, execution, and interchange surface. */
 export const createApps = (config: AppsConfig): AppsRuntime => {
-  // Wave 9 — the experimental-flag relationship: a served (layer-3) surface
-  // lives in a machine, so layer 3 cannot be enabled without layer 2. Refuse
-  // the combination at composition time, loudly, instead of at first use.
-  if (config.experimentalServedApps === true && config.experimentalMachines !== true) {
-    throw new VendoError(
-      "validation",
-      "experimentalServedApps requires experimentalMachines: a served (layer-3) app surface is served BY a machine, so enable both — createVendo({ apps: { experimentalServedApps: true, experimentalMachines: true } })",
-    );
-  }
   const apps = config.store.records("vendo_apps");
   const data = createAppData(config.store);
   const history = createAppHistory(config.store);
@@ -1230,24 +1210,6 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     const record = await apps.get(appId);
     if (record === null || !(await holds(appId, ctx, level, record))) return null;
     return classifyLegacyPlacements(documentFromRecord(record), config.pinBaselines);
-  };
-
-  /** Build contract §9.5/§9.8 — must this app be served through the proxy
-      rather than handed the provider's URL? The question is the one `can()`
-      answers, not a second opinion: the caller reaches the app, and the app is
-      not their own (§9.5 — a promoted app's row subject IS the org id).
-      Matching the subject against ASSERTED MEMBERSHIPS instead missed the
-      caller `can()` admits on a bare `user:` grant with no membership, which is
-      precisely what "share with one person" writes: that viewer passed `open()`
-      and received the provider's raw ingress URL — a bearer-by-obscurity
-      capability with no per-request check, which is what this proxy exists to
-      prevent. Their own app is the ONLY thing that keeps the provider URL. */
-  const servedThroughProxy = async (appId: AppId, ctx: RunContext): Promise<boolean> => {
-    const record = await apps.get(appId);
-    const subject = record?.refs?.subject;
-    return subject !== undefined
-      && subject !== ctx.principal.subject
-      && await holds(appId, ctx, "viewer", record);
   };
 
   /** Build contract §9.6 — the ONE Cloud gate on this block. Sharing is
@@ -1641,46 +1603,39 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     // lifecycle, the provider's public ingress URL for $PORT, and the theming
     // handoff (host theme tokens as a query param the served app MAY consume).
     {
-      enabled: config.experimentalServedApps === true,
-      urlFor: async (app, ctx) => {
-        // Build contract §9.8 — an ORG-owned served app is a WIRE DOOR, not a
-        // snapshot handed to viewers: the registered URL is this deployment's
-        // proxy, which re-checks `can(viewer)` against live rows on every
-        // request. Personal served apps keep the provider URL exactly as before.
-        if (await servedThroughProxy(app.id, ctx)) {
-          const proxy = config.servedProxyPath;
-          if (proxy === undefined) {
-            throw new VendoError(
-              "not-implemented",
-              "this org app is served by a machine, and serving it needs the wire's authenticated proxy — mount the Vendo wire (createVendo().handler) so /apps/:appId/serve/** is reachable",
-            );
-          }
-          // No wake here: the proxy wakes the machine on the first forwarded
-          // request, AFTER it has re-checked access. Waking first would spend a
-          // machine on a caller the very next check might refuse.
-          //
-          // Theme parity with the personal branch below: the served app MAY
-          // consume the host's tokens, and the proxy forwards the query string
-          // into the box, so a shared app renders in the host's brand exactly
-          // as the owner's own copy does.
-          const orgTheme = resolveProvider(config.theme);
-          return orgTheme === undefined
-            ? proxy(app.id)
-            : `${proxy(app.id)}?vendoTheme=${encodeURIComponent(JSON.stringify(orgTheme))}`;
+      urlFor: async (app) => {
+        // Build contract §9.8 — a served app is a WIRE DOOR, never a snapshot
+        // handed out: the registered URL is this deployment's proxy, which
+        // re-checks `can(viewer)` against live rows on every request.
+        //
+        // The OWNER is no exception, and used to be. Their own app was answered
+        // with the sandbox provider's raw public ingress URL, on the reasoning
+        // that a capability URL is harmless for the person who owns the thing.
+        // It is not: that URL carries no per-request check, so it keeps working
+        // for anyone it reaches — a shared screen, a copied link, a log line, a
+        // pasted bug report — and it outlives the grant, the revoke, and the
+        // app. One door, checked, for every caller.
+        const proxy = config.servedProxyPath;
+        if (proxy === undefined) {
+          // Two ways to get here, so the sentence names both: no wire mounted at
+          // all, or a wire with no public origin to build an absolute URL from
+          // (the umbrella supplies this seam only once VENDO_BASE_URL is set).
+          throw new VendoError(
+            "not-implemented",
+            "this app is served by a machine, and serving it needs the wire's authenticated proxy — mount the Vendo wire (createVendo().handler) so /apps/:appId/serve/** is reachable, and set VENDO_BASE_URL to this deployment's public origin so the app's URL can be absolute",
+          );
         }
-        const machine = await lifecycle.wake(app);
-        // Absorb the fresh-boot 502 race server-side so the iframe's first
-        // paint is the app, not a provider error (the wake latency is the
-        // accepted loading state — no v1 cover machinery).
-        await requestAppWithBootRetry(machine, { method: "GET", path: "/" }).catch(() => undefined);
-        const url = new URL(await machine.url());
-        // Resolve the theme provider (cse lane 3) before serializing it into the
-        // served-app URL — config.theme may now be a value OR a lazy provider.
-        const resolvedTheme = resolveProvider(config.theme);
-        if (resolvedTheme !== undefined) {
-          url.searchParams.set("vendoTheme", JSON.stringify(resolvedTheme));
-        }
-        return url.toString();
+        // No wake here: the proxy wakes the machine on the first forwarded
+        // request, AFTER it has re-checked access. Waking first would spend a
+        // machine on a caller the very next check might refuse.
+        //
+        // The served app MAY consume the host's tokens, and the proxy forwards
+        // the query string into the box, so it renders in the host's brand —
+        // the same handoff the provider-URL branch used to do inline.
+        const theme = resolveProvider(config.theme);
+        return theme === undefined
+          ? proxy(app.id)
+          : `${proxy(app.id)}?vendoTheme=${encodeURIComponent(JSON.stringify(theme))}`;
       },
     },
     // §9.9 — the additive, ctx-aware venue-state slot lane H's adoption card
@@ -2254,9 +2209,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       return { document, findings, failed: findings.map(({ message }) => message) };
     }
     if (lane.server !== undefined && (wantsServed || lane.server.servesUi === true)) {
-      if (config.experimentalServedApps !== true) {
-        issues.push("the box declared a served web app, but experimentalServedApps is disabled — the surface flip was refused and the tree keeps serving (enable createVendo({ apps: { experimentalServedApps: true } }))");
-      } else if (!wantsServed) {
+      if (!wantsServed) {
         issues.push("the box declared a served web app, but this app's plan never asked for one — the surface flip was refused and the tree keeps serving");
       } else if (lane.server.servesUi === true && lane.server.servedOk === true) {
         const base = await requireOwned(appId, ctx);
@@ -3006,7 +2959,6 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // to the in-box agent instead, through the same conversation the person is
       // already having with the app.
       if (previous.ui === "http" && previous.machine !== undefined) {
-        if (config.experimentalServedApps !== true) throw servedAppsDisabledError();
         const box = await editServerViaBox(previous, instruction, ctx, { served: true });
         if (!box.ok) {
           return failedEdit(previous, instruction, [

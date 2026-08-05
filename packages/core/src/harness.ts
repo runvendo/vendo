@@ -15,7 +15,7 @@ import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { LanguageModel, UIMessage } from "ai";
 import type { AppId, Json, TurnId } from "./ids.js";
 import type { JsonSchema } from "./ids.js";
-import type { ResolvedModels } from "./model-seats.js";
+import type { SeatModels } from "./model-seats.js";
 import type { RiskLabel } from "./tools.js";
 import type { WorkspaceFs } from "./workspace.js";
 
@@ -52,11 +52,12 @@ export interface Turn<Options = unknown> {
   readonly skills: TurnSkills;
   /** §3; the harness's file hands. */
   readonly workspace: WorkspaceFs;
-  /** §4 — `Readonly<Record<Seat, LanguageModel>>`, exactly as the contract writes
-   *  it. `ResolvedModels` itself is generic so `@vendoai/store` can speak seats
-   *  without an `ai` dependency; a `Turn` is handed to an in-process harness that
-   *  passes the seat straight to `streamText`, so here the model type is named. */
-  readonly models: ResolvedModels<LanguageModel>;
+  /** §4, relaxed (agents spec 2026-08-04): the seats this turn was handed — any
+   *  subset, because a seat is required only where a harness actually reads it.
+   *  `SeatModels` itself is generic so `@vendoai/store` can speak seats without
+   *  an `ai` dependency; a `Turn` is handed to an in-process harness that passes
+   *  the seat straight to `streamText`, so here the model type is named. */
+  readonly models: SeatModels<LanguageModel>;
   /** §1.3 */
   readonly state: TurnState;
   /** Parsed by optionsSchema, incl. per-turn overrides. */

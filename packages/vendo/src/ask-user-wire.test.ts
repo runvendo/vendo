@@ -12,7 +12,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ASK_USER_TOOL, resolvedRisk, type Principal, type RunContext } from "@vendoai/core";
+import { ASK_USER_TOOL, type Principal, type RunContext } from "@vendoai/core";
 import { createStore, type VendoStore } from "@vendoai/store";
 import { defineHarness } from "@vendoai/harnesses";
 import type { LanguageModel } from "ai";
@@ -77,20 +77,15 @@ describe("ask_user is the one door, on the one registry", () => {
     expect(names).toContain(ASK_USER_TOOL);
   });
 
-  it("is a read on BOTH votes, so no host policy can card a question", async () => {
-    // The declared label was already `read`. The trap was the second mechanical
-    // vote: `ask_user` is `verb_noun`, so its trailing token is the noun `user`,
-    // the read short-circuit missed it, and the fail-closed default called it a
-    // `write`. `resolvedRisk` takes the RISKIER of the two — so a host policy
-    // matching `{ risk: "write" }` would have raised a consent card to ask a
-    // question, and the guard would have written it an effect-ledger row. §12:
-    // reads are silent, always.
+  it("is a read, so no host policy can card a question", async () => {
+    // The hand-written `read` label is final (two-vote grading removed), so a
+    // host policy matching `{ risk: "write" }` never cards a question and the
+    // guard writes it no effect-ledger row. §12: reads are silent, always.
     const { vendo } = await compose();
     const descriptor = (await vendo.guardedTools.descriptors(chat()))
       .find((entry) => entry.name === ASK_USER_TOOL);
 
     expect(descriptor?.risk).toBe("read");
-    expect(descriptor === undefined ? undefined : resolvedRisk(descriptor)).toBe("read");
   });
 
   it("never reaches a person when nobody is present", async () => {

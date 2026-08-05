@@ -20,6 +20,7 @@ import type {
   Principal,
   ResolvedModels,
   RunContext,
+  SeatModels,
   SkillListing,
   ThreadId,
   ToolDescriptor,
@@ -257,15 +258,11 @@ export function testTranscript() {
   };
 }
 
-/** A `ResolvedModels` whose seats are never actually called — for the runtime
- *  suites, where the harness under test is scripted rather than a real loop. */
-export function unusedModels(): ResolvedModels {
-  const unreachable = new Proxy({}, {
-    get() {
-      throw new Error("the model seat was not expected to be used by this test");
-    },
-  });
-  return { default: unreachable, reviewer: unreachable, judge: unreachable, fill: unreachable } as ResolvedModels;
+/** No seats at all — for the runtime suites, where the harness under test is
+ *  scripted rather than a real loop. Honest now that `Turn.models` is a subset
+ *  (`SeatModels`): a harness that DOES read a seat names the gap itself. */
+export function unusedModels(): SeatModels<LanguageModel> {
+  return {};
 }
 
 type StreamPart = Awaited<ReturnType<MockLanguageModelV3["doStream"]>>["stream"] extends ReadableStream<
@@ -317,8 +314,8 @@ export function scriptedModel(turns: StreamPart[][]): ScriptedModel {
 }
 
 /** `ResolvedModels` whose every seat is one scripted model. */
-export function seats(model: LanguageModel): ResolvedModels {
-  return { default: model, reviewer: model, judge: model, fill: model };
+export function seats(model: LanguageModel): ResolvedModels<LanguageModel> {
+  return { default: model, reviewer: model, judge: model, fill: model, verifier: model };
 }
 
 export async function readSse(response: Response): Promise<Array<Record<string, unknown>>> {

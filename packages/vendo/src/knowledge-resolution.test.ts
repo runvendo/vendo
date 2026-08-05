@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { KnowledgeAdapter, KnowledgeDoc, Principal, RunContext, ToolOutcome } from "@vendoai/core";
-import { httpKnowledge, lexicalKnowledge } from "@vendoai/knowledge";
+import { httpKnowledge, vendoKnowledge } from "@vendoai/knowledge";
 import { createStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
@@ -215,31 +215,31 @@ describe("knowledge resolution matrix (ENG-368) — which engine composes, and d
     expect(wire.cloud[0]?.authorization).toBe("Bearer vnd_key_only");
   });
 
-  it("zero-config lexicalKnowledge() WITH a key: the local engine serves over the composed store", async () => {
+  it("zero-config vendoKnowledge() WITH a key: the local engine serves over the composed store", async () => {
     const wire = wireRouter();
     vi.stubGlobal("fetch", wire.fetch);
     withKey();
     const store = await tempStore();
     await store.ensureSchema();
-    await lexicalKnowledge({ store }).upsert!([doc("docs#composed-store.md")]);
+    await vendoKnowledge({ store }).upsert!([doc("docs#composed-store.md")]);
 
     // No store plumbing anywhere in the host's config — exactly what
     // docs/knowledge.md promises.
-    const vendo = await compose({ store, knowledge: lexicalKnowledge() });
+    const vendo = await compose({ store, knowledge: vendoKnowledge() });
 
     expect(servingEngine(await search(vendo, "transfers settle business day"))).toBe("docs#composed-store.md");
     expect(wire.cloud).toEqual([]);
   });
 
-  it("lexicalKnowledge({ store }): the host's own knowledge database is never re-pointed at the composed one", async () => {
+  it("vendoKnowledge({ store }): the host's own knowledge database is never re-pointed at the composed one", async () => {
     const composed = await tempStore();
     const elsewhere = await tempStore();
     await composed.ensureSchema();
     await elsewhere.ensureSchema();
-    await lexicalKnowledge({ store: composed }).upsert!([doc("docs#composed-store.md")]);
-    await lexicalKnowledge({ store: elsewhere }).upsert!([doc("docs#other-database.md")]);
+    await vendoKnowledge({ store: composed }).upsert!([doc("docs#composed-store.md")]);
+    await vendoKnowledge({ store: elsewhere }).upsert!([doc("docs#other-database.md")]);
 
-    const vendo = await compose({ store: composed, knowledge: lexicalKnowledge({ store: elsewhere }) });
+    const vendo = await compose({ store: composed, knowledge: vendoKnowledge({ store: elsewhere }) });
 
     expect(servingEngine(await search(vendo, "transfers settle business day"))).toBe("docs#other-database.md");
     // Two real PGlite databases, both seeded through the ingestion pipeline —

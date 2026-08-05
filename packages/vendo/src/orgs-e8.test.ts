@@ -466,9 +466,10 @@ describe("E8 — §9.8: the served-app proxy is a wire door", () => {
     expect((await call(vendo, kim, "GET", "/apps/app_served_revoke/serve/")).status).toBe(404);
   });
 
-  it("leaves the PERSONAL served path untouched — no proxy route claims it", async () => {
-    // A personal served app is still reached the old way; the proxy route only
-    // ever answers for callers, and its access check is the same `can(viewer)`.
+  it("admits the OWNER on the same proxy route every other caller uses", async () => {
+    // There is no second path for a personal served app any more: the owner goes
+    // through the very door a granted viewer does, and the check is the same
+    // `can(viewer)` — it just always says yes for the person who owns the row.
     await seedApp(store, { ...seeded("app_served_own", "Mine"), ui: "http" }, "dana");
     const own = await call(vendo, dana, "GET", "/apps/app_served_own/serve/");
     // Dana owns it, so the door admits her (and the absent machine is what
@@ -478,11 +479,11 @@ describe("E8 — §9.8: the served-app proxy is a wire door", () => {
   });
 });
 
-describe("E8 — §9.8: open() hands an org served app a RESOLVABLE url", () => {
-  it("is absolute, like the personal branch's provider url", async () => {
+describe("E8 — §9.8: open() hands a served app a RESOLVABLE url", () => {
+  it("is absolute, so a caller off this origin can follow it", async () => {
     // An MCP client (or anything that is not a browser sitting on the host
-    // origin) cannot resolve a relative path. The personal branch has always
-    // handed back an absolute provider URL; the org branch must match.
+    // origin) cannot resolve a relative path. The provider URL this replaced was
+    // absolute, so the proxy URL that answers for every served app must be too.
     const store = await tempStore();
     vi.stubEnv("VENDO_BASE_URL", "https://maple.test");
     vi.stubEnv("VENDO_API_KEY", "vnd_e8_key");
@@ -492,7 +493,7 @@ describe("E8 — §9.8: open() hands an org served app a RESOLVABLE url", () => 
         principal: async () => acting,
         memberships: async (principal) => memberships[principal.subject] ?? [],
       },
-      apps: { experimentalMachines: true, experimentalServedApps: true },
+      apps: { experimentalMachines: true },
     });
     vendo.actions.add(tools);
     await store.ensureSchema();

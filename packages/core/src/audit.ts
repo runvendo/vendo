@@ -4,7 +4,7 @@ import { principalSchema, type Principal } from "./principal.js";
 import type { RunContext } from "./run-context.js";
 import { triggerRefSchema, type TriggerRef } from "./triggers.js";
 import type { GuardDecision } from "./guard.js";
-import type { ToolOutcome } from "./tools.js";
+import { riskLabelSchema, type RiskLabel, type ToolOutcome } from "./tools.js";
 
 /** 01-core §7 */
 export interface AuditEvent {
@@ -22,6 +22,12 @@ export interface AuditEvent {
    *  (a webhook, a schedule fire, an org-policy load). */
   turnId?: TurnId;
   tool?: string;
+  /** The risk the guard actually gated on — the EFFECTIVE grade, after any
+   *  `resolveRisk`, not the descriptor's static label. Absent on rows written
+   *  with no tool descriptor in hand, and on a control/frozen row: the freeze
+   *  short-circuit runs before risk resolution, so it has no effective grade to
+   *  report and omits the field rather than chip the declared label. */
+  risk?: RiskLabel;
   inputPreview?: string;
   outcome?: ToolOutcome["status"];
   decidedBy?: GuardDecision["decidedBy"];
@@ -65,8 +71,9 @@ export const auditEventSchema = z.object({
   trigger: triggerRefSchema.optional(),
   turnId: turnIdSchema.optional(),
   tool: z.string().optional(),
+  risk: riskLabelSchema.optional(),
   inputPreview: z.string().optional(),
   outcome: z.enum(["ok", "error", "pending-approval", "blocked", "connect-required"]).optional(),
-  decidedBy: z.enum(["grant", "rule", "judge", "default", "confirmEach", "breaker", "denied", "org"]).optional(),
+  decidedBy: z.enum(["grant", "rule", "judge", "default", "confirmEach", "breaker", "denied", "org", "frozen"]).optional(),
   detail: z.unknown().optional(),
 }).passthrough() satisfies z.ZodType<AuditEvent>;

@@ -691,6 +691,19 @@ one organization on the account, one project in the organization. Run
 `vendo cloud help` for the full list. See
 [Vendo Cloud](/deploy/vendo-cloud) for setup, keys, and sharing.
 
+`vendo cloud usage [--project <id>] [--days <n>]` — per-day usage for a project:
+request count and dollars at the published rates, plus the period total.
+
+```json
+{
+  "days": [{ "day": "2026-08-04", "requests": 128, "usd": 4.02 }],
+  "totalUsd": 23.41
+}
+```
+
+The rates behind those dollars are in
+[Vendo Cloud › Pricing](/deploy/vendo-cloud#pricing).
+
 ## Telemetry opt-out
 
 Set `VENDO_TELEMETRY_DISABLED=1` or set `"optedOut": true` in

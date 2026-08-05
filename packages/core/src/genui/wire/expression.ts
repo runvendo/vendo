@@ -8,15 +8,19 @@
  * exported from the package root; the parser itself stays internal.
  *
  * The grammar is JSON5-lite: JSON literals, single- OR double-quoted strings,
- * arrays/objects with trailing commas and bare object keys, plus bare dotted
- * identifier paths in value position that compile to bindings. The parser is
- * total — malformed input yields `dropped: true` with issues, never a throw.
+ * arrays/objects with trailing commas and bare object keys, plus — at EVERY
+ * value position, literals included — the computed sub-language of
+ * genui/expr.ts: dotted paths that compile to bindings, value-first reshape
+ * calls that compile onto them as `$reshape` (v3 §5 D1), and arithmetic or
+ * aggregate calls that compile to `{ $expr }`. This module owns literals and
+ * lowering; expr.ts owns the one computed grammar and where it ends. The parser
+ * is total — malformed input yields `dropped: true` with issues, never a throw.
  */
 
 import { safeErrorMessage } from "../../errors.js";
 import type { Json } from "../../ids.js";
 import { findInvalidReshapeSteps, type ReshapeStep } from "../../reshape.js";
-import { EXPR_CALLS, exprPathHeads, parseExpr, type ExprBinding } from "../expr.js";
+import { exprPathHeads, parseExprPrefix, type ExprBinding, type ExprNode } from "../expr.js";
 import { defineOwn, isPathBinding, isStateBinding, type PathBinding, type StateBinding } from "../tree-node.js";
 import { isWellFormedUtf16 } from "./state.js";
 
@@ -33,8 +37,9 @@ export const WIRE_ISSUE_CODES = [
   "unknown-reference",
   /** `state.<a>.<b>` — state bindings take exactly one key; attribute dropped. */
   "state-depth-unsupported",
-  /** `|` reshape pipe violates the bounded vocabulary (unknown op, arity,
-   *  arg kind, chain cap, malformed call syntax); attribute dropped. */
+  /** A reshape call violates the bounded vocabulary (unknown op, arity, arg
+   *  kind, chain cap, or a value that is not a query/state binding); attribute
+   *  dropped. */
   "invalid-reshape",
   // — attribute layer (attributes.ts)
   /** Attribute syntax error (bad char, single-quoted string, missing value, ill-formed UTF-16); attribute dropped or char skipped. */
@@ -60,6 +65,11 @@ export const WIRE_ISSUE_CODES = [
   "malformed-close-tag",
   /** Text child contains a lone surrogate (ill-formed UTF-16); text skipped. */
   "malformed-text",
+  /** v3 §5 (D5) — braces in text position are not interpolation; the run was
+   *  skipped. A value reaches text through a binding (`<Text text={q.f}/>`);
+   *  `{q.f}` written between tags renders literally, which is the raw-braces
+   *  class. `{/* … *␘/}` is the one legal brace run in text (a comment, D4). */
+  "braces-in-text",
   // — truncation & closing (compile.ts, scan.ts)
   /** Mismatched close tag implicitly closed the elements above its match. */
   "unclosed-element",
@@ -164,8 +174,6 @@ interface ParserState {
 const WHITESPACE = /\s/;
 const IDENTIFIER_START = /[A-Za-z_]/;
 const IDENTIFIER_CHAR = /[A-Za-z0-9_]/;
-/** JSON number grammar, matched sticky at the cursor. */
-const NUMBER_PATTERN = /-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/y;
 
 const skipWhitespace = (state: ParserState): void => {
   while (state.index < state.source.length && WHITESPACE.test(state.source[state.index] as string)) {
@@ -180,23 +188,6 @@ const fail = (state: ParserState, code: WireIssueCode, message: string): Failed 
 
 const malformed = (state: ParserState, message: string): Failed =>
   fail(state, "malformed-expression", message);
-
-const parseNumber = (state: ParserState): number | Failed => {
-  NUMBER_PATTERN.lastIndex = state.index;
-  const match = NUMBER_PATTERN.exec(state.source);
-  if (match === null) {
-    return malformed(state, `invalid number at index ${state.index}`);
-  }
-  state.index = NUMBER_PATTERN.lastIndex;
-  const value = Number(match[0]);
-  // A grammar-valid literal like 1e999 overflows to ±Infinity, which is not
-  // JSON: canonicalJson (jcs.ts) throws on non-finite numbers, so letting it
-  // through would un-drop the totality guarantee one layer up.
-  if (!Number.isFinite(value)) {
-    return malformed(state, `number literal "${match[0]}" overflows to a non-finite value`);
-  }
-  return value;
-};
 
 const HEX_ESCAPE = /^[0-9a-fA-F]{4}$/;
 
@@ -244,14 +235,6 @@ const parseString = (state: ParserState): string | Failed => {
 
 const DIGIT = /[0-9]/;
 
-const parseNumericSegment = (state: ParserState): string | Failed => {
-  const start = state.index;
-  while (state.index < state.source.length && DIGIT.test(state.source[state.index] as string)) {
-    state.index += 1;
-  }
-  return state.source.slice(start, state.index);
-};
-
 const parseIdentifier = (state: ParserState): string | Failed => {
   const start = state.index;
   if (start >= state.source.length || !IDENTIFIER_START.test(state.source[start] as string)) {
@@ -265,27 +248,16 @@ const parseIdentifier = (state: ParserState): string | Failed => {
 };
 
 /**
- * A bare dotted identifier path in value position: `true`/`false`/`null`
- * keywords (which always win over a same-named query), `state.<key>` →
- * StateBinding, `<queryName>[.<seg>...]` → PathBinding with a JSON Pointer,
- * anything else → `unknown-reference` (the containing attribute value is
- * dropped — the simplest total rule).
+ * A dotted path lowers to a binding: `true`/`false`/`null` keywords (which
+ * always win over a same-named query), `state.<key>` → StateBinding,
+ * `<queryName>[.<seg>...]` → PathBinding with a JSON Pointer, anything else →
+ * `unknown-reference` (the containing attribute value is dropped — the
+ * simplest total rule). Array elements address by dot-numeric segment
+ * (`{accounts.data.0.field}` → `/accounts/data/0/field`).
  */
-const parseReference = (state: ParserState): Json | Failed => {
-  const first = parseIdentifier(state);
-  if (first === FAILED) return FAILED;
-  const segments = [first];
-  while (state.source[state.index] === ".") {
-    state.index += 1;
-    // Array elements address by dot-numeric segment ({accounts.data.0.field}
-    // → /accounts/data/0/field); the first segment stays an identifier (the
-    // query name).
-    const segment = DIGIT.test(state.source[state.index] ?? "")
-      ? parseNumericSegment(state)
-      : parseIdentifier(state);
-    if (segment === FAILED) return FAILED;
-    segments.push(segment);
-  }
+const lowerPath = (state: ParserState, node: ExprNode & { kind: "path" }): Json | Failed => {
+  const { segments } = node;
+  const first = segments[0] as string;
   if (segments.length === 1) {
     if (first === "true") return true;
     if (first === "false") return false;
@@ -296,7 +268,7 @@ const parseReference = (state: ParserState): Json | Failed => {
       return fail(
         state,
         "state-depth-unsupported",
-        `state bindings take exactly one key (state.<key>); got "${segments.join(".")}"`,
+        `state bindings take exactly one key (state.<key>); got "${node.text}"`,
       );
     }
     const binding: StateBinding = { $state: segments[1] as string };
@@ -309,95 +281,75 @@ const parseReference = (state: ParserState): Json | Failed => {
   return fail(
     state,
     "unknown-reference",
-    `"${segments.join(".")}" does not name a declared <Query> or state`,
+    `"${node.text}" does not name a declared <Query> or state`,
   );
 };
 
-/** v2 spec §3 — one `op(arg, ...)` pipe segment. Args are bare identifiers
- *  or quoted strings; trailing commas are tolerated (same as arrays). All
- *  syntax failures are `invalid-reshape` (the attribute drops). */
-const parsePipeStep = (state: ParserState): ReshapeStep | Failed => {
-  skipWhitespace(state);
-  if (state.index >= state.source.length || !IDENTIFIER_START.test(state.source[state.index] as string)) {
-    return fail(state, "invalid-reshape", `expected a reshape op after "|" at index ${state.index}`);
-  }
-  const op = parseIdentifier(state);
-  if (op === FAILED) return FAILED;
-  skipWhitespace(state);
-  if (state.source[state.index] !== "(") {
-    return fail(state, "invalid-reshape", `reshape op "${op}" needs an argument list: ${op}(...)`);
-  }
-  state.index += 1;
-  const args: string[] = [];
-  for (;;) {
-    skipWhitespace(state);
-    if (state.index >= state.source.length) {
-      return fail(state, "invalid-reshape", `unterminated reshape call "${op}(" (expected ')')`);
-    }
-    const char = state.source[state.index] as string;
-    if (char === ")") {
-      state.index += 1;
-      break;
-    }
-    if (char === '"' || char === "'") {
-      const text = parseString(state);
-      if (text === FAILED) return FAILED;
-      args.push(text);
-    } else if (IDENTIFIER_START.test(char)) {
-      const identifier = parseIdentifier(state);
-      if (identifier === FAILED) return FAILED;
-      args.push(identifier);
-    } else {
-      return fail(state, "invalid-reshape", `unexpected character "${char}" in reshape args at index ${state.index}`);
-    }
-    skipWhitespace(state);
-    const next = state.source[state.index];
-    if (next === ",") {
-      state.index += 1;
-      continue;
-    }
-    if (next === ")") {
-      state.index += 1;
-      break;
-    }
-    return fail(state, "invalid-reshape", `expected ',' or ')' in reshape args at index ${state.index}`);
-  }
-  // The step's op is validated as a chain by findInvalidReshapeSteps at the
-  // pipe-chain level; the cast just carries the parsed surface form there.
-  return { op, args } as ReshapeStep;
+/**
+ * v3 spec §5 (D1) — a reshape call lowers ONTO the binding it wraps: the
+ * innermost value is the base reference and each enclosing call appends one
+ * `$reshape` step, so `rename(pick(q.rows, "a"), "a", "b")` compiles to the
+ * canonical `[pick, rename]` chain. The chain is validated against the closed
+ * vocabulary (findInvalidReshapeSteps — unknown op, arity, format kinds, the
+ * 8-step cap) exactly as the pipe form was.
+ */
+const lowerReshape = (state: ParserState, node: ExprNode & { kind: "reshape" }): Json | Failed => {
+  const inner = node.args[0] as ExprNode;
+  const notABinding = (): Failed => fail(
+    state,
+    "invalid-reshape",
+    `${node.op}() reshapes a query or state binding — write the binding first, e.g. ${node.op}(query.rows, "field")`,
+  );
+  if (inner.kind !== "path" && inner.kind !== "reshape") return notABinding();
+  const base = inner.kind === "path" ? lowerPath(state, inner) : lowerReshape(state, inner);
+  if (base === FAILED) return FAILED;
+  if (!isPathBinding(base) && !isStateBinding(base)) return notABinding();
+  const args = node.args.slice(1).map((arg) => (arg as ExprNode & { kind: "string" }).value);
+  const steps: ReshapeStep[] = [...(base.$reshape ?? []), { op: node.op, args }];
+  const violation = findInvalidReshapeSteps(steps);
+  if (violation !== null) return fail(state, "invalid-reshape", violation);
+  (base as PathBinding | StateBinding).$reshape = steps;
+  return base;
 };
 
 /**
- * v2 spec §3 — an optional `| op(...) | op2(...)` chain after a reference.
- * Legal only on query/state bindings (a pipe after a literal is malformed);
- * the parsed chain is validated against the closed vocabulary
- * (findInvalidReshapeSteps — unknown op, arity, format kinds, chain cap) and
- * compiles onto the binding as canonical `$reshape` steps.
+ * THE classifier (v3 spec §5). Every identifier-, digit-, `-`- or `(`-led value
+ * position — at any depth, inside array and object literals included — is
+ * parsed ONCE by the expression grammar (genui/expr.ts), and what the value IS
+ * follows from the AST it returns: a number literal, a binding, a binding
+ * carrying a reshape chain, or a computed `{ $expr }` whose source is kept
+ * VERBATIM so the printer re-emits exactly what the model wrote. Evaluation
+ * happens at bind resolution in the renderer, never here.
+ *
+ * This replaces the pair of character-level pre-scans the pipe grammar needed
+ * (`looksComputed` / `pipedExpressionHead`): with one grammar there is one
+ * classifier, so the two can no longer disagree about which grammar a value is
+ * written in.
  */
-const parsePipes = (state: ParserState, base: Json): Json | Failed => {
-  const beforePipe = state.index;
-  skipWhitespace(state);
-  if (state.source[state.index] !== "|") {
-    state.index = beforePipe;
-    return base;
+const parseComputed = (state: ParserState): Json | Failed => {
+  const start = state.index;
+  const parsed = parseExprPrefix(state.source, start);
+  if (!parsed.ok) return malformed(state, parsed.issue);
+  state.index = parsed.end;
+  const { node } = parsed;
+  if (node.kind === "number") return node.value;
+  // A negated literal is still a literal (`-0` and `-2.5` stay numbers).
+  if (node.kind === "negate" && node.operand.kind === "number") return -node.operand.value;
+  if (node.kind === "string") return node.value;
+  if (node.kind === "path") return lowerPath(state, node);
+  if (node.kind === "reshape") return lowerReshape(state, node);
+  if (node.kind === "aggregate") {
+    return malformed(state, `${node.name}.of() only appears as group_by()'s fourth argument`);
   }
-  if (!isPathBinding(base) && !isStateBinding(base)) {
-    return malformed(state, `reshape pipes apply to query/state bindings only (at index ${state.index})`);
+  const unknown = exprPathHeads(node).filter((head) => !state.queryNames.has(head));
+  if (unknown.length > 0) {
+    for (const head of unknown) {
+      fail(state, "unknown-reference", `"${head}" does not name a declared <Query>`);
+    }
+    return FAILED;
   }
-  const steps: ReshapeStep[] = [];
-  while (state.source[state.index] === "|") {
-    state.index += 1;
-    const step = parsePipeStep(state);
-    if (step === FAILED) return FAILED;
-    steps.push(step);
-    skipWhitespace(state);
-  }
-  const violation = findInvalidReshapeSteps(steps);
-  if (violation !== null) {
-    return fail(state, "invalid-reshape", violation);
-  }
-  (base as PathBinding | StateBinding).$reshape = steps;
-  return base;
+  const binding: ExprBinding = { $expr: state.source.slice(start, parsed.end).trimEnd() };
+  return binding as unknown as Json;
 };
 
 const parseArray = (state: ParserState): Json[] | Failed => {
@@ -477,136 +429,13 @@ const parseValue = (state: ParserState): Json | Failed => {
   if (char === '"' || char === "'") return parseString(state);
   if (char === "[") return parseArray(state);
   if (char === "{") return parseObject(state);
-  if (char === "-" || (char >= "0" && char <= "9")) return parseNumber(state);
-  if (IDENTIFIER_START.test(char)) {
-    const reference = parseReference(state);
-    if (reference === FAILED) return FAILED;
-    return parsePipes(state, reference);
+  if (!IDENTIFIER_START.test(char) && !DIGIT.test(char) && char !== "-" && char !== "(") {
+    return malformed(state, `unexpected character "${char}" at index ${state.index}`);
   }
-  return malformed(state, `unexpected character "${char}" at index ${state.index}`);
-};
-
-const EXPR_CALL_NAMES: ReadonlySet<string> = new Set(EXPR_CALLS);
-
-/**
- * The brace-expression tell (genui/expr.ts): one attribute value grammar
- * decides between a BINDING and a COMPUTED value. `{...}` is computed when it
- * carries an infix arithmetic operator or calls one of the expression
- * functions — `{sum(invoices.amount_cents) / count(clients)}` — and is the
- * JSON5-lite literal/`$path` grammar otherwise. Two things are decisive the
- * other way: a `|` reshape pipe (`{accounts.rows | count()}` is a binding with
- * a reshape chain) and a `[`/`{` literal, which no computation contains.
- */
-const looksComputed = (source: string): boolean => {
-  let computed = false;
-  /** Whether the cursor follows a complete value — the infix/prefix tell for
-   *  `-` (a leading `-` is a negative literal, not an operator). */
-  let sawValue = false;
-  let index = 0;
-  while (index < source.length) {
-    const char = source[index] as string;
-    if (char === "|" || char === "[" || char === "{") return false;
-    if (char === '"' || char === "'") {
-      const end = source.indexOf(char, index + 1);
-      if (end === -1) return computed;
-      index = end + 1;
-      sawValue = true;
-      continue;
-    }
-    if (IDENTIFIER_START.test(char)) {
-      let end = index + 1;
-      while (end < source.length && (IDENTIFIER_CHAR.test(source[end] as string) || source[end] === ".")) end += 1;
-      if (EXPR_CALL_NAMES.has(source.slice(index, end)) && source[end] === "(") computed = true;
-      index = end;
-      sawValue = true;
-      continue;
-    }
-    if (DIGIT.test(char) || (char === "-" && !sawValue)) {
-      NUMBER_PATTERN.lastIndex = index;
-      if (NUMBER_PATTERN.exec(source) !== null) {
-        index = NUMBER_PATTERN.lastIndex;
-        sawValue = true;
-        continue;
-      }
-    }
-    if (char === "+" || char === "*" || char === "/" || (char === "-" && sawValue)) {
-      computed = true;
-      index += 1;
-      continue;
-    }
-    if (WHITESPACE.test(char)) {
-      index += 1;
-      continue;
-    }
-    // ")" closes a value; "(" and "," open a fresh one.
-    sawValue = char === ")";
-    index += 1;
-  }
-  return computed;
-};
-
-/** A computed attribute value compiles to `{ $expr }` with its source kept
- *  verbatim; evaluation happens at bind resolution in the renderer, never
- *  here. Unknown heads drop the attribute like any other unknown reference. */
-const parseComputed = (source: string, context: ExpressionContext): ExpressionResult => {
-  const expr = source.trim();
-  const parsed = parseExpr(expr);
-  if (!parsed.ok) {
-    return { dropped: true, issues: [{ code: "malformed-expression", message: parsed.issue }] };
-  }
-  const unknown = exprPathHeads(parsed.node).filter((head) => !context.queryNames.has(head));
-  if (unknown.length > 0) {
-    return {
-      dropped: true,
-      issues: unknown.map((head) => ({
-        code: "unknown-reference" as const,
-        message: `"${head}" does not name a declared <Query>`,
-      })),
-    };
-  }
-  const binding: ExprBinding = { $expr: expr };
-  return { value: binding as unknown as Json, dropped: false, issues: [] };
-};
-
-/**
- * The one mistake worth its own sentence: an expression with a reshape pipe
- * bolted onto it (`{sum(txns.cents) | format("money")}`). Two grammars answer
- * "compute a value" and mixing them silently falls through to the REFERENCE
- * parser, which then reports the call name as an unknown `<Query>` — a message
- * about the wrong thing entirely, and the model duly renames its query instead
- * of dropping the pipe.
- *
- * Detected as: a call name at the HEAD, before the first pipe. A pipe whose
- * STAGES are calls is the legitimate reshape form (`{accounts.rows | count()}`)
- * and must keep parsing exactly as it does today.
- */
-const pipedExpressionHead = (source: string): string | undefined => {
-  const pipe = source.indexOf("|");
-  if (pipe === -1) return undefined;
-  const head = source.slice(0, pipe);
-  for (let index = 0; index < head.length; index += 1) {
-    if (!IDENTIFIER_START.test(head[index] as string)) continue;
-    let end = index + 1;
-    while (end < head.length && IDENTIFIER_CHAR.test(head[end] as string)) end += 1;
-    const name = head.slice(index, end);
-    if (EXPR_CALL_NAMES.has(name) && head[end] === "(") return name;
-    index = end - 1;
-  }
-  return undefined;
+  return parseComputed(state);
 };
 
 const parseExpressionUnsafe = (source: string, context: ExpressionContext): ExpressionResult => {
-  if (looksComputed(source)) return parseComputed(source, context);
-  const piped = pipedExpressionHead(source);
-  if (piped !== undefined) {
-    return {
-      dropped: true,
-      issues: [{
-        code: "malformed-expression",
-        message: `this mixes the pipe grammar into a computed expression: "${piped}(...)" already computes the value, so drop the "|" and everything after it — write ${piped}(query.field) with no pipe.`,
-      }],
-    };
-  }
   const state: ParserState = { source, index: 0, issues: [], queryNames: context.queryNames };
   const value = parseValue(state);
   if (value === FAILED) {
@@ -614,10 +443,11 @@ const parseExpressionUnsafe = (source: string, context: ExpressionContext): Expr
   }
   skipWhitespace(state);
   if (state.index < source.length) {
-    // A pipe reaching here followed a non-reference value (parsePipes handles
-    // pipes after references, nested included); it is malformed like any
-    // other trailing content.
-    malformed(state, `unexpected trailing content at index ${state.index}`);
+    // A leftover `|` is the retired pipe grammar (v3 §5 D1). Say so, or the
+    // model reads "trailing content" and has no idea what to write instead.
+    malformed(state, state.source.startsWith("|", state.index)
+      ? `reshape pipes are gone: write the value first, as a call — pick(query.rows, "field") instead of query.rows | pick(field) (at index ${state.index})`
+      : `unexpected trailing content at index ${state.index}`);
     return { dropped: true, issues: state.issues };
   }
   return { value, dropped: false, issues: state.issues };

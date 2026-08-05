@@ -238,9 +238,17 @@ async function routeAsk(
       : "Prefer \"act\" over \"cannot\": only answer \"cannot\" when nothing above can serve the request.",
   ].join("\n\n");
 
+  // Seats are required only where a harness reads them (contract §4, relaxed),
+  // and the triage step IS this harness — so a turn without its `fill` seat is
+  // the caller's composition bug, thrown before the forgiving try below could
+  // read it as a router that merely failed to decide.
+  const router = turn.models.fill;
+  if (router === undefined) {
+    throw new Error("instant() routes with `turn.models.fill`, and this turn carries no fill seat");
+  }
   try {
     const result = streamText({
-      model: turn.models.fill,
+      model: router,
       system,
       prompt: latestAsk(turn),
       tools: {
@@ -422,6 +430,11 @@ async function* act(
   void
 > {
   const model = turn.options?.model ?? turn.models.default;
+  // Same rule as the router's `fill`: this branch reads `default`, so a turn
+  // without it is a composition bug, not a turn to limp through.
+  if (model === undefined) {
+    throw new Error("instant() acts with `turn.models.default`, and this turn carries no default seat");
+  }
   const system =
     (typeof deps.system === "function" ? await deps.system() : deps.system)
     ?? turn.system

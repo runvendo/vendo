@@ -79,6 +79,88 @@ export function fakeConsole() {
       }
       const rest = segments.slice(3);
 
+      // Store Wire v1 records door (STORE_WIRE_PATHS): one route per op, the
+      // collection rides the body. The per-collection legacy door below keeps
+      // serving the StoreAdapter surface over the same in-memory state.
+      if (rest[0] === "records" && rest.length === 2 && request.method === "POST") {
+        const body = recorded.json as Record<string, unknown>;
+        const records = adapter.records(body.collection as string);
+        switch (rest[1]) {
+          case "get":
+            return json({ record: await records.get(body.id as string) });
+          case "put":
+            return json({ record: await records.put(body.record as never) });
+          case "delete":
+            await records.delete(body.id as string);
+            return json({ ok: true });
+          case "list":
+            return json(await records.list((body.query ?? {}) as never));
+          case "claim": {
+            const expected = body.expected as { id: string; data: unknown; refs?: Record<string, string> };
+            const current = await records.get(expected.id);
+            if (current === null || !sameValue(current, expected)) return json({ claimed: false });
+            const replacement = body.replacement as { data: unknown; refs?: Record<string, string> } | undefined;
+            if (replacement === undefined) {
+              await records.delete(expected.id);
+            } else {
+              await records.put({
+                id: expected.id,
+                data: replacement.data as never,
+                ...(replacement.refs === undefined ? {} : { refs: replacement.refs }),
+              });
+            }
+            return json({ claimed: true });
+          }
+          case "insertIfAbsent":
+            return json({ record: await records.atomic!.insertIfAbsent(body.record as never) });
+          case "compareAndSwap":
+            return json({
+              record: await records.atomic!.compareAndSwap(
+                body.record as never,
+                body.expectedRevision as string,
+              ),
+            });
+          default:
+            return envelope("not-found", `unknown records op: ${rest[1]}`);
+        }
+      }
+
+      // Store Wire v1 blobs door: JSON POST, bytes base64 on the wire.
+      if (rest[0] === "blobs" && rest.length === 2 && request.method === "POST") {
+        const body = recorded.json as Record<string, unknown>;
+        const blobs = adapter.blobs(body.namespace as string);
+        switch (rest[1]) {
+          case "put": {
+            const contentType = body.contentType as string | undefined;
+            await blobs.put(
+              body.key as string,
+              Uint8Array.from(atob(body.bytes as string), (char) => char.charCodeAt(0)),
+              contentType === undefined ? undefined : { contentType },
+            );
+            return json({ ok: true });
+          }
+          case "get": {
+            const blob = await blobs.get(body.key as string);
+            if (blob === null) return json({ blob: null });
+            let binary = "";
+            for (const byte of blob.bytes) binary += String.fromCharCode(byte);
+            return json({
+              blob: {
+                bytes: btoa(binary),
+                ...(blob.contentType === undefined ? {} : { contentType: blob.contentType }),
+              },
+            });
+          }
+          case "delete":
+            await blobs.delete(body.key as string);
+            return json({ ok: true });
+          case "list":
+            return json({ keys: await blobs.list((body.prefix as string | undefined) ?? "") });
+          default:
+            return envelope("not-found", `unknown blobs op: ${rest[1]}`);
+        }
+      }
+
       if (rest[0] === "records" && request.method === "POST") {
         const collection = rest[1]!;
         const method = rest.slice(2).join("/");

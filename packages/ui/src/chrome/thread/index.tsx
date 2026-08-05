@@ -357,7 +357,14 @@ export function VendoThread({
     && lastPart.text.trim().length > 0;
   const quietBusy = busy && liveToolPart === undefined
     && !textActivelyStreaming && !caretShowing && !working;
-  const ribbon = quietBusy ? <WorkingRibbon /> : null;
+  // §3.4 — the ribbon has always taken a `label` and nobody ever passed one, so
+  // every busy gap said "Working" while the harness was already narrating the
+  // real step on the status channel. The latest beat is that step; "Working" is
+  // the floor for a harness that says nothing.
+  const latestBeat = thread.beats.at(-1);
+  const ribbon = quietBusy
+    ? <WorkingRibbon {...(latestBeat === undefined ? {} : { label: latestBeat.label })} />
+    : null;
 
   // Lane pick 2E — the WHOLE thread surface is the drop target (the composer
   // bar no longer owns drag): a huge, overshoot-proof zone with a centered

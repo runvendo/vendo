@@ -3,9 +3,7 @@ import {
   canonicalJson,
   descriptorHash,
   isUnattended,
-  mechanicalRisk,
   projectableForRun,
-  resolvedRisk,
   serviceToolSlug,
   withheldFromUnattended,
   withResolvedRisk,
@@ -68,6 +66,15 @@ const APPROVALS_COLLECTION = "vendo_approvals";
  *  window properly needs guarded writes on `vendo_approvals`; not chased here. */
 const APPROVAL_CLAIMS_COLLECTION = "guard:approval-claims";
 const AUDIT_COLLECTION = "vendo_audit";
+/** The emergency stop is a ROW (`freeze`, `{ frozen, by, at }`) and not a config
+ *  field: the moment you need a kill switch is the moment you cannot redeploy to
+ *  get one, so the console flips this row directly and a guard in another
+ *  process obeys it on its next check. */
+const CONTROLS_COLLECTION = "guard:controls";
+const FREEZE_ROW = "freeze";
+/** The block a frozen guard returns — the same words at the check and at the
+ *  execute re-read, so the two agree. */
+const FROZEN_REASON = "vendo is frozen — nothing runs until it is unfrozen";
 /** Build contract §7 — the effect ledger: one row per completed mutating call,
  *  keyed by (run, tool, exact input). It is what makes fail-and-re-run correct:
  *  a re-run of a run that already sent the payment must not send it again. */
@@ -367,6 +374,7 @@ class GuardImplementation implements VendoGuard {
   readonly #writeCounts = new Map<string, { count: number; touchedAt: number }>();
   #lastSweepAt = 0;
   readonly #approvalCallbacks = new Set<(id: ApprovalId, approved: boolean) => void>();
+  readonly #approvalRequestedCallbacks = new Set<(request: ApprovalRequest) => void>();
 
   readonly approvals = {
     pending: (principal: Principal): Promise<ApprovalRequest[]> =>
@@ -458,6 +466,13 @@ class GuardImplementation implements VendoGuard {
     this.#approvalCallbacks.add(cb);
     return () => {
       this.#approvalCallbacks.delete(cb);
+    };
+  }
+
+  onApprovalRequested(cb: (request: ApprovalRequest) => void): () => void {
+    this.#approvalRequestedCallbacks.add(cb);
+    return () => {
+      this.#approvalRequestedCallbacks.delete(cb);
     };
   }
 
@@ -618,13 +633,13 @@ class GuardImplementation implements VendoGuard {
             eventFromContext(ctx, {
               kind: "policy-decision",
               tool: call.tool,
+              risk: completed.descriptor.risk,
               inputPreview: preview,
               outcome: refused.status,
               decidedBy: "rule",
               detail: {
                 reason: "unattended-destructive",
                 declaredRisk: completed.descriptor.risk,
-                mechanicalRisk: mechanicalRisk(completed.descriptor),
               },
             }),
           );
@@ -632,6 +647,13 @@ class GuardImplementation implements VendoGuard {
         }
 
         if (decision.action === "block") {
+          // A frozen block already audited itself best-effort inside the check.
+          // Return it here rather than fall through to the generic tool-call
+          // audit below: that write also targets vendo_audit, and an audit that
+          // is momentarily down must never turn the freeze into an error.
+          if (decision.decidedBy === "frozen") {
+            return { status: "blocked", reason: decision.reason };
+          }
           outcome = { status: "blocked", reason: decision.reason };
         } else if (decision.action === "ask") {
           outcome = {
@@ -639,6 +661,18 @@ class GuardImplementation implements VendoGuard {
             approvalId: decision.approval.id,
           };
         } else {
+          // Kill-switch re-read (freeze check-to-execute gap): #checkWithMetadata
+          // read the freeze row at the TOP, before the grants/judge pipeline's
+          // awaits (the judge alone can run up to 15s). A freeze that lands during
+          // that window — or between the check returning "run" and this dispatch —
+          // leaves a stale "run" that would otherwise touch the registry. Re-read
+          // here, immediately before running the tool, so a frozen guard can never
+          // execute, even off a check that predated the freeze. Best-effort audit
+          // (an audit failure must not turn the freeze into an error).
+          if (await this.frozen()) {
+            await this.#reportFrozenBlock(ctx, call);
+            return { status: "blocked", reason: FROZEN_REASON };
+          }
           const grant = await this.#grantForExecution(decision, call, completed.descriptor, ctx);
           // CORE-2: `grant` is a first-class RunContext field — no cast needed.
           const executeCtx = grant === undefined ? ctx : { ...ctx, grant };
@@ -648,11 +682,11 @@ class GuardImplementation implements VendoGuard {
           // touched, because that is the only point where skipping is both safe
           // (authority was still checked) and effective (the effect is avoided).
           //
-          // `resolvedRisk`, not the declared label: gating on what the model said
-          // left the most dangerous class — a destructive tool mislabelled
-          // `read` — with no ledger protection at all.
-          const resolved = resolvedRisk(completed.descriptor);
-          const mutating = resolved === "write" || resolved === "destructive";
+          // The DECLARED label decides — the dev's label is final (two-vote
+          // grading removed), so a declared `read` is silent and takes no
+          // receipt.
+          const risk = completed.descriptor.risk;
+          const mutating = risk === "write" || risk === "destructive";
           const base = mutating ? effectBaseKey(ctx, call) : undefined;
           const key = base === undefined ? undefined : effectKeyOf(base, this.#effectOrdinal(base, call.id));
           const recorded = key === undefined ? undefined : await this.#recordedEffect(key);
@@ -733,6 +767,7 @@ class GuardImplementation implements VendoGuard {
           eventFromContext(ctx, {
             kind: "tool-call",
             tool: call.tool,
+            risk: completed.descriptor.risk,
             inputPreview: preview,
             outcome: outcome.status,
             decidedBy: decision.decidedBy,
@@ -742,6 +777,108 @@ class GuardImplementation implements VendoGuard {
         return outcome;
       },
     };
+  }
+
+  async freeze(by: string): Promise<void> {
+    await this.#setFrozen(true, by);
+  }
+
+  async unfreeze(by: string): Promise<void> {
+    await this.#setFrozen(false, by);
+  }
+
+  async frozen(): Promise<boolean> {
+    let record: VendoRecord | null;
+    try {
+      record = await this.#store.records(CONTROLS_COLLECTION).get(FREEZE_ROW);
+    } catch (error) {
+      // The kill switch could not even be READ (a store error). Fail CLOSED
+      // and contain the failure into a decision, exactly as every other error
+      // in the pipeline is contained — never let it escape check()/execute() as
+      // an unhandled rejection while the guard silently stops gating.
+      await this.#reportUnreadableControl(errorMessage(error));
+      return true;
+    }
+    // Absent row: the switch was never pulled — normal, unfrozen.
+    if (record === null) return false;
+    const frozen = (record.data as { frozen?: unknown }).frozen;
+    if (typeof frozen === "boolean") return frozen;
+    // A control row that EXISTS but does not parse is a kill switch we can no
+    // longer read. Fail CLOSED — treat it as frozen — rather than let a corrupt
+    // switch read as "run everything".
+    await this.#reportUnreadableControl();
+    return true;
+  }
+
+  /** The kill switch could not be read as a boolean — the row is corrupt, or
+   *  the store read itself threw. Either way the guard fails CLOSED; this leaves
+   *  a note saying why, best-effort, because an audit-write failure must not
+   *  turn a contained block back into an escaping exception. */
+  async #reportUnreadableControl(error?: string): Promise<void> {
+    try {
+      await this.report({
+        id: makeId("aud_"),
+        at: now(),
+        kind: "policy-decision",
+        principal: { kind: "org", subject: "system" },
+        venue: "chat",
+        presence: "present",
+        outcome: "blocked",
+        decidedBy: "frozen",
+        detail: {
+          reason: "frozen",
+          malformedControlRow: true,
+          ...(error === undefined ? {} : { error }),
+        },
+      });
+    } catch (reportError) {
+      console.error(
+        `[vendo] guard: the freeze control row is unreadable and the malformed-control audit note `
+        + `could not be written (${errorMessage(reportError)}). The guard is failing closed.`,
+      );
+    }
+  }
+
+  /** Audit a frozen-path block, best-effort. The block itself is already the
+   *  decision; a `vendo_audit` write failure here must never propagate and turn
+   *  the freeze into an error — swallow it (with a note) and let the caller
+   *  return the block. */
+  async #reportFrozenBlock(ctx: RunContext, call: ToolCall): Promise<void> {
+    try {
+      await this.report(
+        eventFromContext(ctx, {
+          kind: "policy-decision",
+          tool: call.tool,
+          inputPreview: inputPreview(call),
+          outcome: "blocked",
+          decidedBy: "frozen",
+        }),
+      );
+    } catch (error) {
+      console.error(
+        `[vendo] guard: ${call.tool} was blocked by the freeze, but the audit row could not be `
+        + `written (${errorMessage(error)}). The block still stands.`,
+      );
+    }
+  }
+
+  /** The switch is flipped BEFORE it is reported: an audit failure must never
+   *  leave the caller believing a freeze did not land. */
+  async #setFrozen(frozen: boolean, by: string): Promise<void> {
+    await this.#store.records(CONTROLS_COLLECTION).put({
+      id: FREEZE_ROW,
+      data: { frozen, by, at: now() },
+    });
+    await this.report({
+      id: makeId("aud_"),
+      at: now(),
+      kind: "policy-decision",
+      principal: { kind: "user", subject: by },
+      venue: "chat",
+      presence: "present",
+      decidedBy: "frozen",
+      detail: { reason: frozen ? "frozen" : "unfrozen" },
+    });
   }
 
   status(): { posture: "unconfigured" | "rules" | "judge" | "rules+judge" } {
@@ -787,6 +924,22 @@ class GuardImplementation implements VendoGuard {
     ctx: RunContext,
     commitRun = true,
   ): Promise<CompletedDecision> {
+    // Read before any other stage so a frozen guard spends nothing: no risk
+    // resolution, no breaker slot, no parked approval left for someone to
+    // answer later. The freeze check deliberately runs BEFORE resolveRisk, so
+    // the only grade in hand here is the descriptor's DECLARED label — which
+    // `risk` (01-core §7) does not promise: it is the EFFECTIVE grade. Rather
+    // than chip a possibly-wrong label, the frozen row OMITS `risk` entirely
+    // (the console feed degrades cleanly to venue-led when risk is absent).
+    if (await this.frozen()) {
+      // The block is the truth; the audit is best-effort. A `vendo_audit` that
+      // is momentarily unavailable must never turn a freeze into an error (or,
+      // worse, an un-block) — swallow the write failure and still return the
+      // block.
+      await this.#reportFrozenBlock(ctx, call);
+      return { decision: { action: "block", reason: FROZEN_REASON, decidedBy: "frozen" }, descriptor };
+    }
+
     const effectiveDescriptor = await this.#effectiveDescriptor(call, descriptor, ctx);
     const callsTripped = commitRun
       ? this.#recordCall(ctx.principal.subject)
@@ -892,6 +1045,7 @@ class GuardImplementation implements VendoGuard {
           eventFromContext(ctx, {
             kind: "policy-decision",
             tool: call.tool,
+            risk: effectiveDescriptor.risk,
             inputPreview: approval.inputPreview,
             outcome: "pending-approval",
             decidedBy: "default",
@@ -909,6 +1063,7 @@ class GuardImplementation implements VendoGuard {
         eventFromContext(ctx, {
           kind: "approval",
           tool: call.tool,
+          risk: effectiveDescriptor.risk,
           inputPreview: approval.inputPreview,
           outcome: "pending-approval",
           decidedBy: decision.decidedBy,
@@ -929,6 +1084,7 @@ class GuardImplementation implements VendoGuard {
         eventFromContext(ctx, {
           kind: "policy-decision",
           tool: call.tool,
+          risk: effectiveDescriptor.risk,
           inputPreview: inputPreview(call),
           outcome: "blocked",
           decidedBy: draft.decidedBy,
@@ -973,6 +1129,7 @@ class GuardImplementation implements VendoGuard {
         eventFromContext(ctx, {
           kind: "policy-decision",
           tool: call.tool,
+          risk: descriptor.risk,
           detail: { reason: "org-policy-unavailable", message: errorMessage(error) },
         }),
       );
@@ -1536,6 +1693,9 @@ class GuardImplementation implements VendoGuard {
         principal: cloneJson(ctx.principal),
         venue: ctx.venue,
         presence: ctx.presence,
+        // The owner identity the record below already keeps — ON the request
+        // too, so subscribers can scope delivery to the parking conversation.
+        sessionId: ctx.sessionId,
         ...(ctx.appId === undefined ? {} : { appId: ctx.appId }),
         ...(ctx.trigger === undefined ? {} : { trigger: cloneJson(ctx.trigger) }),
       },
@@ -1547,6 +1707,17 @@ class GuardImplementation implements VendoGuard {
       sessionId: ctx.sessionId,
     };
     await this.#store.records(APPROVALS_COLLECTION).put({ id: request.id, data, refs: approvalRefs(data) });
+    // Subscribers see the park only after it persisted, and a returned
+    // thenable is awaited (as decision callbacks are) so check() resolves
+    // only after notification work lands. A subscriber failure never turns a
+    // successfully parked ask into an error.
+    for (const callback of this.#approvalRequestedCallbacks) {
+      try {
+        await (callback(request) as void | Promise<void>);
+      } catch {
+        // The approval row is the truth; notification is best-effort.
+      }
+    }
     return request;
   }
 

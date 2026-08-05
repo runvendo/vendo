@@ -128,9 +128,8 @@ export type GradedRiskLabel = "read" | "write" | "destructive";
 /** Design §4 — the one question door, any seat.
  *
  *  The name lives in core because two sides read it and a security-relevant
- *  name with two definitions drifts silently (the lesson `DESTRUCTIVE_VERBS`
- *  records): the registry that implements it, and the loop that ends a turn on
- *  it. */
+ *  name with two definitions drifts silently: the registry that implements it,
+ *  and the loop that ends a turn on it. */
 export const ASK_USER_TOOL = "ask_user";
 
 /** The connector dispatcher (connector-discovery design 2026-08-03) — the one
@@ -143,48 +142,6 @@ export const ASK_USER_TOOL = "ask_user";
  *  keyed on the slug (see {@link GrantScope}'s `service-tool`) — a rule three
  *  packages read and none of them may spell differently. */
 export const USE_SERVICE_TOOL = "use_service_tool";
-
-/**
- * Design §12 / build contract §8 (clarification 2026-07-31) — WHO wrote this
- * tool's `risk` label, as a mark the tool itself carries.
- *
- * The second mechanical vote exists to catch an extractor or a connector
- * mislabelling someone ELSE's API: eligibility "never rests on the *AI-assigned*
- * risk label alone". A Vendo-authored tool's label was hand-written and reviewed
- * in this repo, so there is no second author to disagree with — and the vote,
- * calibrated for extracted `noun_verb` host names, only guesses wrong about
- * names it was never calibrated for (`ask_user`, `validate`,
- * `search_components` all voted `write` because their trailing token is a noun).
- *
- * It is a SYMBOL rather than a field, because that is what makes it unforgeable
- * by data: JSON carries no symbols, so nothing arriving as data — `.vendo/tools.json`,
- * a connector catalog, an override, the wire — can claim Vendo provenance, and
- * every laundering path (zod's key rebuild, `structuredClone`, `descriptorOf`'s
- * field whitelist, the descriptorHash preimage) drops it. Losing it therefore
- * fails CLOSED, back to the mechanical vote. `Symbol.for` is deliberate: a
- * bundler that ends up with two copies of this module must still agree on the
- * brand, or the same descriptor would read as Vendo-authored in one and not the
- * other. Enumerable (plain assignment) so an honest `{ ...descriptor }` copy —
- * the guard's dynamic-risk path makes one — keeps it.
- *
- * It is not a defence against a host who imports this function and marks their
- * own registry: a host owns their deployment and their policy already. The
- * threat it answers is a label nobody in this repo wrote.
- */
-const VENDO_AUTHORED: unique symbol = Symbol.for("vendoai.tool.authored");
-
-/** Mark a descriptor as carrying a hand-written, in-repo `risk` label. Only
- *  Vendo's own tool definitions call this — the vendo verbs and `ask_user`. */
-export function vendoAuthored<T extends ToolDescriptor>(descriptor: T): T {
-  return { ...descriptor, [VENDO_AUTHORED]: true };
-}
-
-/** Whether this descriptor's `risk` was written in this repo (`resolvedRisk`
- *  is the one reader that matters — it is where the two votes combine). */
-export function isVendoAuthored(descriptor: ToolDescriptor): boolean {
-  return (descriptor as { [VENDO_AUTHORED]?: unknown })[VENDO_AUTHORED] === true;
-}
-
 
 /** 01-core §4 */
 export const gradedRiskLabelSchema = z.enum(["read", "write", "destructive"]) satisfies z.ZodType<GradedRiskLabel>;
@@ -220,32 +177,6 @@ export interface ToolDescriptor {
    *  `name`. Sync's AI enrichment proposes it; `.vendo/overrides.json`
    *  corrects it. */
   title?: string;
-  /**
-   * Design §12's second mechanical vote, METHOD axis: the risk this tool's
-   * EXECUTION SHAPE implies on its own — a DELETE route, a tRPC/GraphQL
-   * mutation, a server action — read without its name and without its declared
-   * `risk`.
-   *
-   * DERIVED wherever a binding exists: the actions registry computes it from
-   * `binding` while minting the descriptor (`descriptorOf`), so nothing a host
-   * authors in `.vendo/tools.json` or `overrides.json` — the files that can LOWER
-   * a declared `risk`, which is what the vote is the backstop for — decides it. A
-   * source with no binding at all (a connector, an MCP server, a hand-written
-   * `actions.add` registry) may state it, and that is safe for the reason below.
-   *
-   * It is a distilled label rather than the raw HTTP method for two reasons: a
-   * connector, an MCP server, or a workspace tool has no method at all, and —
-   * the reason it matters — there is deliberately NO `"read"` value, so nothing
-   * that arrives as data can use this field to make a tool look SAFER than its
-   * name. Absent means "no mutating evidence", which is exactly how the vote
-   * behaved before the field existed, so the only direction it can move a
-   * verdict is up.
-   *
-   * It is not in the {@link descriptorHash} preimage: it is a restatement of the
-   * binding, not something a person approved on a card, and hashing it would
-   * invalidate every grant minted before it existed.
-   */
-  bindingRisk?: "write" | "destructive";
   /** The connectable toolkit this tool belongs to (04-actions §3), present
    *  only on connector tools whose usefulness is gated by a per-user connected
    *  account (e.g. Composio's gmail/slack). Composition seams read it to skip
@@ -265,10 +196,6 @@ export const toolDescriptorSchema = z.object({
   risk: riskLabelSchema,
   confirmEach: z.boolean().optional(),
   title: z.string().optional(),
-  // Declared so the only values that can travel are the two that ESCALATE. A
-  // source that sends anything else — `"read"` above all — fails validation
-  // loudly instead of passing through unchecked.
-  bindingRisk: z.enum(["write", "destructive"]).optional(),
   toolkit: z.string().optional(),
 }).passthrough() satisfies z.ZodType<ToolDescriptor>;
 
@@ -307,7 +234,6 @@ export type RiskResolver = (
 export function withResolvedRisk(descriptor: ToolDescriptor, resolved: unknown): ToolDescriptor {
   const parsed = riskLabelSchema.safeParse(resolved);
   if (!parsed.success) return descriptor;
-  // `{ ...descriptor }` keeps the enumerable VENDO_AUTHORED symbol on purpose.
   return parsed.data === descriptor.risk ? descriptor : { ...descriptor, risk: parsed.data };
 }
 

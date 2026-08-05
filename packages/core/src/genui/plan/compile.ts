@@ -34,7 +34,7 @@ import { defineOwn, isPlainObject } from "../tree-node.js";
 import { QUERY_NAME_PATTERN } from "../tree.js";
 import { parseAttributes, type ParsedAttributes } from "../wire/attributes.js";
 import { makeState, opensRoot, prescanDeclarations } from "../wire/compile.js";
-import { collectText, readName, scanCloseTag, skipComment, skipElement, skipWhitespace } from "../wire/scan.js";
+import { collectText, readName, scanCloseTag, skipCommentOrBraces, skipElement, skipWhitespace } from "../wire/scan.js";
 import { FAILED, type CompileState, type Failed } from "../wire/state.js";
 import type { AppPlan, PlanGroup, PlanLeaf, PlanQuery, PlanServer } from "./types.js";
 
@@ -259,7 +259,7 @@ const compileGroupChildren = (plan: PlanState, group: PlanGroup): number => {
       );
     }
     if (state.index >= state.source.length) return dropped;
-    const comment = skipComment(state);
+    const comment = skipCommentOrBraces(state);
     if (comment === "eof") return dropped;
     if (comment === "skipped") continue;
     if (state.source[state.index + 1] === "/") {
@@ -440,7 +440,7 @@ const compilePlanChildren = (plan: PlanState, appPlan: AppPlan): void => {
       );
     }
     if (state.index >= state.source.length) break;
-    const comment = skipComment(state);
+    const comment = skipCommentOrBraces(state);
     if (comment === "eof") break;
     if (comment === "skipped") continue;
     if (state.source[state.index + 1] === "/") {

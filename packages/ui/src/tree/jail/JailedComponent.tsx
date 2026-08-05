@@ -9,9 +9,8 @@ import {
 import { useVendoIntl } from "../../context.js";
 import { ContainedNotice } from "../notice.js";
 import { FormingSkeleton } from "../forming-skeleton.js";
+import { applyFrameResize, FRAME_MAX_HEIGHT_CSS, isFromFrame } from "../frame-resize.js";
 import { JAIL_RUNTIME_SOURCE } from "./runtime-bundle.gen.js";
-
-const MAX_JAIL_HEIGHT = 8_192;
 
 /**
  * The jail is TWO nested frames, and the nesting is the security boundary.
@@ -267,7 +266,7 @@ export function JailedComponent({
       }, "*");
     };
     const handleMessage = (event: MessageEvent) => {
-      if (event.source !== iframe.contentWindow) return;
+      if (!isFromFrame(iframe, event)) return;
       const message = event.data as Record<string, unknown> | undefined;
       if (!message) return;
 
@@ -358,8 +357,9 @@ export function JailedComponent({
         setError(typeof message.message === "string" ? message.message : "generated component failed");
       } else if (message.kind === "empty") {
         setError("generated component rendered no content");
-      } else if (message.kind === "resize" && typeof message.height === "number" && Number.isFinite(message.height)) {
-        iframe.style.height = `${Math.min(MAX_JAIL_HEIGHT, Math.max(1, message.height))}px`;
+      } else {
+        // The frame resize protocol, shared with the served app's http frame.
+        applyFrameResize(iframe, event);
       }
     };
 
@@ -404,6 +404,9 @@ export function JailedComponent({
   const style: CSSProperties = {
     width: "100%",
     minHeight: "var(--vendo-jail-min-height, 16px)",
+    // The host's ceiling. Taller generated content scrolls inside this frame
+    // instead of pushing the host's layout (06-apps §9 — the host's bounds win).
+    maxHeight: FRAME_MAX_HEIGHT_CSS,
     border: 0,
     background: "transparent",
   };

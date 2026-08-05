@@ -555,13 +555,15 @@ describe("cloudSandbox", () => {
       .rejects.toMatchObject({ code: "cloud-required" });
   });
 
-  it("renders the pricing-v3 meter-exhausted refusal as the crafted spec-§5 sentence", async () => {
+  it("renders the pool meter-exhausted refusal as the crafted dollar sentence", async () => {
+    // The console's real 402 body: one meter (`usage`), dollars, one limit.
     const refused = vi.fn(async () => Response.json(
       {
         error: { code: "meter-exhausted", message: "meter exhausted" },
-        meter: "sandbox_minutes",
-        used: 5_400,
-        limit: 5_000,
+        meter: "usage",
+        unit: "usd",
+        used: 54,
+        limit: 49,
         resets_at: "2026-08-01T00:00:00.000Z",
         reason: "allowance",
         exits: { upgrade_url: "https://console.vendo.run/billing", byo_docs_url: "https://docs.vendo.run/byo" },
@@ -571,11 +573,11 @@ describe("cloudSandbox", () => {
     const adapter = cloudSandbox({ apiKey: "vnd_secret", baseUrl: "https://cloud.test", fetch: refused as unknown as typeof fetch });
     await expect(adapter.create({ env: {} })).rejects.toMatchObject({
       code: "cloud-required",
-      message: "Vendo Cloud paused sandbox minutes — the allowance for this billing period is used up "
-        + "(5,400 of 5,000 used; resets 2026-08-01). "
+      message: "Vendo Cloud paused usage — the $49.00 included this billing period is used up "
+        + "($54.00 of $49.00 used; resets 2026-08-01). "
         + "Upgrade your plan (https://console.vendo.run/billing) "
         + "or bring your own infrastructure (https://docs.vendo.run/byo).",
-      detail: { meter: "sandbox_minutes", used: 5_400, limit: 5_000 },
+      detail: { meter: "usage", unit: "usd", used: 54, limit: 49 },
     });
   });
 

@@ -6,6 +6,7 @@ import { useVendoContext } from "../context.js";
 import { developmentMode } from "./dev-mode.js";
 import { memberSchema } from "./field-rows.js";
 import { argValue, humanizeToolName, toolTitle, type ToolMeta } from "./humanize.js";
+import type { VendoBeat } from "./run-activity.js";
 
 /**
  * The thread's in-progress presentation speaks in the product's voice: each
@@ -403,6 +404,74 @@ export function WorkingRibbon({ label = "Working" }: { label?: string }) {
   );
 }
 
+/** How a beat's mark reads: in flight, settled, failed, or refused. */
+type BeatMark = "working" | "done" | "error" | "declined";
+
+/**
+ * The ONE beat line — its mark and its words, nothing else.
+ *
+ * Extracted so the accumulating workspace rail and the transcript's per-tool
+ * beat are literally the same line. A second beat visual would be a second
+ * vocabulary for the same idea, and the two would drift on the first change.
+ */
+function BeatLine({ mark, label }: { mark: BeatMark; label: string }) {
+  return (
+    <>
+      {mark === "error" || mark === "declined" ? (
+        // Same glyph, different register: the error beat is danger-colored
+        // (.fl-beat-error), a decline quiets to muted like any settled line.
+        <span className={`fl-beat-ic${mark === "error" ? " fl-beat-x" : ""}`} aria-hidden="true">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+            <path d="M18 6 6 18M6 6l12 12" />
+          </svg>
+        </span>
+      ) : mark === "done" ? (
+        <BeatTick />
+      ) : (
+        <span className="fl-beat-orb" aria-hidden="true" />
+      )}
+      <span className="fl-beat-label">{label}</span>
+    </>
+  );
+}
+
+/**
+ * §3.4 + §10.2 — the accumulating rail a heavy build is watched through, on the
+ * EXISTING split-view stage. Quiet dot→tick lines in a vertical list, never a
+ * spinner: the newest beat is the live one, everything above it has settled.
+ *
+ * It is NOT a live region. The between-steps ribbon beside the composer already
+ * announces the latest beat, and the transcript's own beats have never
+ * announced — two live regions saying the same words is the duplication the
+ * ribbon/card ruling (D1) exists to prevent.
+ *
+ * `phase` and `appId` ride as machine affordances only. A phase is a slug, and
+ * a slug is not something a person reads (the same answer `data-vendo-tool`
+ * gives for a raw tool name); the label already carries the words.
+ */
+export function BeatRail({ beats }: { beats: readonly VendoBeat[] }) {
+  if (beats.length === 0) return null;
+  const active = beats.length - 1;
+  return (
+    <div className="fl-beatrail">
+      <p className="fl-beatrail-head">Building</p>
+      <ol className="fl-beats">
+        {beats.map((beat, index) => (
+          <li
+            key={`${index}:${beat.label}`}
+            className={`fl-beat ${index === active ? "fl-beat-working" : "fl-beat-done"}`}
+            {...(beat.phase === undefined ? {} : { "data-vendo-phase": beat.phase })}
+            {...(beat.appId === undefined ? {} : { "data-vendo-app": beat.appId })}
+          >
+            <BeatLine mark={index === active ? "working" : "done"} label={beat.label} />
+          </li>
+        ))}
+      </ol>
+      <p className="fl-beatrail-cap">You can close this and keep working. It carries on in the background.</p>
+    </div>
+  );
+}
+
 /** The settled tick — shared by a done beat and the turn's summary row. */
 function BeatTick() {
   return (
@@ -484,7 +553,10 @@ export function BuildBeat({
   const declined = part.state === "output-denied";
   const label = toolTitle(name, tools[name]);
   const result = done ? toolResultSummary(part.output) : undefined;
-  const state = error ? "fl-beat-error" : done || declined ? "fl-beat-done" : "fl-beat-working";
+  const mark: BeatMark = error ? "error" : declined ? "declined" : done ? "done" : "working";
+  const state = mark === "error" ? "fl-beat-error"
+    : mark === "done" || mark === "declined" ? "fl-beat-done"
+    : "fl-beat-working";
   return (
     <div
       className={`fl-beat ${state}`}
@@ -492,26 +564,14 @@ export function BuildBeat({
       data-vendo-tool={name}
       {...(developmentMode() ? { title: name } : {})}
     >
-      {error || declined ? (
-        // Same glyph, different register: the error beat is danger-colored
-        // (.fl-beat-error), a decline quiets to muted like any settled line.
-        <span className={`fl-beat-ic${error ? " fl-beat-x" : ""}`} aria-hidden="true">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-            <path d="M18 6 6 18M6 6l12 12" />
-          </svg>
-        </span>
-      ) : done ? (
-        <BeatTick />
-      ) : (
-        <span className="fl-beat-orb" aria-hidden="true" />
-      )}
-      <span className="fl-beat-label">
-        {waiting ? `${label} — waiting for your approval`
+      <BeatLine
+        mark={mark}
+        label={waiting ? `${label} — waiting for your approval`
           : error ? `${label} — couldn't finish`
           : declined ? `${label} — you declined it`
           : done ? label
           : `${label}…`}
-      </span>
+      />
       {result ? <span className="fl-beat-result">· {result}</span> : null}
       {/* M30 — `aria-label` on a plain <span> is ignored by screen readers, so a
           collapsed run announced only "×3". A role makes the label the element's

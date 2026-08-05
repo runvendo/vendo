@@ -67,17 +67,17 @@ const exactKey = (text: string): string =>
  * term/title lookup over glossary/api docs where empty means not-found.
  * Scores are engine-relative and zero-match queries return zero hits.
  *
- * Zero-config: `knowledge: lexicalKnowledge()` — createVendo injects the
+ * Zero-config: `knowledge: vendoKnowledge()` — createVendo injects the
  * composed store (server wiring, ENG-360). Pass `{ store }` to keep the
  * knowledge tables in a different database (BYO rule); until a store is
  * bound, operations fail loudly rather than pretending to be an empty corpus.
  */
-export function lexicalKnowledge(options: { store?: StoreAdapter } = {}): KnowledgeAdapter {
+export function vendoKnowledge(options: { store?: StoreAdapter } = {}): KnowledgeAdapter {
   const store = (): StoreAdapter => {
     if (options.store === undefined) {
       throw new VendoError(
         "validation",
-        "lexicalKnowledge() has no store bound — pass lexicalKnowledge({ store }) or wire it through createVendo, which injects the composed store",
+        "vendoKnowledge() has no store bound — pass vendoKnowledge({ store }) or wire it through createVendo, which injects the composed store",
       );
     }
     return options.store;
@@ -231,17 +231,17 @@ export function lexicalKnowledge(options: { store?: StoreAdapter } = {}): Knowle
 }
 
 /** Engines built with no store of their own — the zero-config
-    `lexicalKnowledge()` form. A WeakSet rather than a marker property so what
+    `vendoKnowledge()` form. A WeakSet rather than a marker property so what
     the host holds stays exactly a `KnowledgeAdapter`. */
 const storeless = new WeakSet<KnowledgeAdapter>();
 
 /** The composition seam's half of zero-config local knowledge (server.ts
-    `selectKnowledge`): hand a store-less `lexicalKnowledge()` the store
+    `selectKnowledge`): hand a store-less `vendoKnowledge()` the store
     createVendo composed. Everything else — an engine the host gave its own
     store, a cloud/BYO/custom adapter — passes through untouched, so this can
     sit unconditionally on the explicit-adapter rung. Hosts never call it;
-    it is how `knowledge: lexicalKnowledge()` gets the store the docs promise
+    it is how `knowledge: vendoKnowledge()` gets the store the docs promise
     without any host plumbing. */
 export function bindKnowledgeStore(adapter: KnowledgeAdapter, store: StoreAdapter): KnowledgeAdapter {
-  return storeless.has(adapter) ? lexicalKnowledge({ store }) : adapter;
+  return storeless.has(adapter) ? vendoKnowledge({ store }) : adapter;
 }
