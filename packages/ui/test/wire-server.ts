@@ -647,7 +647,10 @@ export async function createWireServer(options: WireServerOptions = {}) {
               // Last chunk before the gap is junk, so the ribbon's "latest
               // beat" can never be a malformed one.
               writer.write(beat({ label: "" }) as UIMessageChunk);
-              await state.threadReplyGate;
+              // The gate is the unit suite's deterministic release. A browser has
+              // no way to resolve one, so the harness gets a real-timer hold
+              // instead — long enough to read the live frame and photograph it.
+              await (state.threadReplyGate ?? new Promise(resolve => setTimeout(resolve, 6_000)));
               writer.write({ type: "text-start", id: "text_done" });
               writer.write({ type: "text-delta", id: "text_done", delta: "All done." });
               writer.write({ type: "text-end", id: "text_done" });
