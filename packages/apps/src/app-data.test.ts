@@ -182,10 +182,11 @@ describe("app data persistence", () => {
       },
       server: "e2b:snap_x91",
       // The format spec's {schedule: "mon 9:00"} is illustrative; core's {on, run} Trigger wins.
-      trigger: {
+      triggers: [{
+        id: "main",
         on: { kind: "schedule", cron: "0 9 * * 1" },
         run: { kind: "steps", steps: [{ id: "chase", tool: "fn:chase", args: { invoice: "event" } }] },
-      },
+      }],
       egress: ["api.stripe.com"],
       secrets: ["STRIPE_KEY"],
       pins: [{ slot: "invoice-card", base: "sha256:ab12" }],

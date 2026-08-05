@@ -12,6 +12,7 @@ import {
 
 const intent: AppIntent = {
   name: "Weekly invoice digest",
+  triggerId: "main",
   tools: ["maple_invoices_list", "maple_email_draft"],
   trigger: { kind: "schedule", cron: "0 9 * * 1" },
   runBody: "Summarise last week's invoices and draft an email.",
@@ -37,6 +38,13 @@ describe("intentHash (build contract §7)", () => {
     expect(intentHash({ ...intent, tools: [...intent.tools, "maple_payments_send"] })).not.toBe(base);
     expect(intentHash({ ...intent, runBody: "Do something else entirely." })).not.toBe(base);
     expect(intentHash({ ...intent, trigger: { kind: "schedule", cron: "0 9 * * 2" } })).not.toBe(base);
+  });
+
+  it("is PER TRIGGER — two triggers of one app never share an intent", () => {
+    // An app has a list of triggers and each is consented to on its own. Two
+    // triggers that happen to declare identical tools and an identical run must
+    // still hash apart, or one trigger's sponsorship would validate the other's.
+    expect(intentHash({ ...intent, triggerId: "nightly" })).not.toBe(intentHash(intent));
   });
 
   it("ignores everything outside the four components — an unrelated edit keeps consent valid", () => {

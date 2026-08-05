@@ -59,7 +59,7 @@ describe("scripted agentic runs", () => {
       const appId = "app_agentic_scripted";
       const ctx = ownerCtx(ADA.subject, appId);
       await stack.putApp(ADA.subject, automationDoc({ id: appId, trigger: agenticTrigger() }));
-      const enabled = await stack.automations.enable(appId, ctx);
+      const enabled = await stack.automations.enable(appId, "main", ctx);
       expect(enabled.enabled).toBe(true);
       await approve(stack, enabled.missing.filter((request) => request.call.tool === "host_invoices_list"));
 
@@ -104,7 +104,7 @@ describe("scripted agentic runs", () => {
       for (const [appId, budget] of [["app_agentic_default", undefined], ["app_agentic_custom", 7]] as const) {
         const ctx = ownerCtx(ADA.subject, appId);
         await stack.putApp(ADA.subject, automationDoc({ id: appId, trigger: agenticTrigger(budget) }));
-        const enabled = await stack.automations.enable(appId, ctx);
+        const enabled = await stack.automations.enable(appId, "main", ctx);
         await approve(stack, enabled.missing);
       }
       await stack.automations.emit("agent.rounds", {}, ADA);
@@ -121,7 +121,7 @@ describe("scripted agentic runs", () => {
       const appId = "app_agentic_unavailable";
       const ctx = ownerCtx(ADA.subject, appId);
       await stack.putApp(ADA.subject, automationDoc({ id: appId, trigger: agenticTrigger() }));
-      const enabled = await stack.automations.enable(appId, ctx);
+      const enabled = await stack.automations.enable(appId, "main", ctx);
       expect(enabled.enabled).toBe(true);
       await approve(stack, enabled.missing);
       const ids = await stack.automations.emit("agent.rounds", {}, ADA);

@@ -218,7 +218,7 @@ export function AdoptionVenueCard({ card }: { card: AdoptionVenue }) {
       card={card}
       state={state}
       onAdopt={async () => {
-        const result = await client.automations.adopt(card.appId);
+        const result = await client.automations.adopt(card.appId, card.triggerId);
         // A lost race is not an error to swallow: the person who tapped is told
         // that somebody else got there first, which is what actually happened.
         // Raised WITH its code so the card's own copy names it — the card owns

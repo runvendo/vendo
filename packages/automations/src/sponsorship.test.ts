@@ -1,6 +1,7 @@
 import {
   VENDO_APP_FORMAT,
   intentHash,
+  triggerKindRefs,
   type AppDocument,
   type ApprovalId,
   type AuditEvent,
@@ -16,7 +17,7 @@ import { memoryStoreAdapter } from "@vendoai/core/conformance";
 import type { AppsRuntime } from "@vendoai/apps";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createAutomations, type AutomationsConfig, type AutomationsEngine } from "./index.js";
-import { appIntentOf, SPONSORED, SPONSORSHIPS, type Sponsorship } from "./sponsorship.js";
+import { appIntentOf, SPONSORED, SPONSORSHIPS, triggerKey, type Sponsorship } from "./sponsorship.js";
 
 /** Contract §9.9 — sponsorship: an automation always runs as a named person.
  *  Every gate below is a red-green pair: the same fire is shown RUNNING while
@@ -50,7 +51,8 @@ const doc = (id: string, name = "Weekly invoice sweep"): AppDocument => ({
   format: VENDO_APP_FORMAT,
   id,
   name,
-  trigger: {
+  triggers: [{
+    id: "main",
     on: { kind: "host-event", event: "go" },
     run: {
       kind: "steps",
@@ -59,7 +61,7 @@ const doc = (id: string, name = "Weekly invoice sweep"): AppDocument => ({
         { id: "write", tool: writeTool.name, args: { invoice: "'inv_42'" } },
       ],
     },
-  },
+  }],
 });
 
 const seedApp = async (
@@ -71,7 +73,7 @@ const seedApp = async (
   await store.records("vendo_apps").put({
     id: document.id,
     data: { subject, enabled, doc: document },
-    refs: { subject, ...(document.trigger === undefined ? {} : { trigger_kind: document.trigger.on.kind }) },
+    refs: { subject, ...triggerKindRefs(document.triggers) },
   });
 };
 
@@ -132,11 +134,11 @@ const harness = (
   return { store, guard, engine, calls };
 };
 
-const sponsorshipRow = async (store: StoreAdapter, appId: string): Promise<Sponsorship | undefined> =>
-  (await store.records(SPONSORSHIPS).get(appId))?.data as Sponsorship | undefined;
+const sponsorshipRow = async (store: StoreAdapter, appId: string, triggerId = "main"): Promise<Sponsorship | undefined> =>
+  (await store.records(SPONSORSHIPS).get(triggerKey(appId, triggerId)))?.data as Sponsorship | undefined;
 
 const setSponsorship = async (store: StoreAdapter, row: Sponsorship): Promise<void> => {
-  await store.records(SPONSORSHIPS).put({ id: row.appId, data: row, refs: { subject: row.sponsor } });
+  await store.records(SPONSORSHIPS).put({ id: triggerKey(row.appId, row.triggerId), data: row, refs: { subject: row.sponsor } });
 };
 
 /** `can(editor)` as lane G freezes it (§9.3), stubbed: editor for the listed
@@ -164,13 +166,13 @@ describe("sponsorship — minted at enable", () => {
     const { engine } = harness({ store });
 
     expect(await sponsorshipRow(store, app.id)).toBeUndefined();
-    await engine.enable(app.id, ctx());
+    await engine.enable(app.id, "main", ctx());
 
     expect(await sponsorshipRow(store, app.id)).toMatchObject({
       appId: app.id,
       sponsor: "user_dana",
       status: "active",
-      intentHash: intentHash(appIntentOf(app)),
+      intentHash: intentHash(appIntentOf(app, app.triggers?.[0])),
     });
   });
 
@@ -178,9 +180,9 @@ describe("sponsorship — minted at enable", () => {
     const app = doc("app_erasable");
     await seedApp(store, app, "user_dana", false);
     const { engine } = harness({ store });
-    await engine.enable(app.id, ctx());
+    await engine.enable(app.id, "main", ctx());
 
-    expect((await store.records(SPONSORSHIPS).get(app.id))?.refs)
+    expect((await store.records(SPONSORSHIPS).get(triggerKey(app.id, "main")))?.refs)
       .toEqual({ subject: "user_dana", app_id: app.id });
   });
 
@@ -189,14 +191,14 @@ describe("sponsorship — minted at enable", () => {
     await seedApp(store, app, "user_dana", false);
     const { engine } = harness({ store });
     await setSponsorship(store, {
-      appId: app.id, sponsor: "user_gone", intentHash: "sha256:stale",
+      appId: app.id, triggerId: "main", sponsor: "user_gone", intentHash: "sha256:stale",
       status: "invalidated", reason: "departure", invalidatedAt: NOW.toISOString(),
     });
 
-    await engine.enable(app.id, ctx());
+    await engine.enable(app.id, "main", ctx());
 
     expect(await sponsorshipRow(store, app.id)).toMatchObject({
-      sponsor: "user_dana", status: "active", intentHash: intentHash(appIntentOf(app)),
+      sponsor: "user_dana", status: "active", intentHash: intentHash(appIntentOf(app, app.triggers?.[0])),
     });
     expect(await sponsorshipRow(store, app.id)).not.toHaveProperty("reason");
   });
@@ -208,7 +210,7 @@ describe("sponsorship — the fire-time gate", () => {
     const app = doc("app_gate");
     const green = harness();
     await seedApp(green.store, app);
-    await green.engine.enable(app.id, ctx());
+    await green.engine.enable(app.id, "main", ctx());
     await green.engine.emit("go", {}, ctx().principal);
     expect(green.calls.map(({ call }) => call.tool)).toEqual([readTool.name, writeTool.name]);
     expect(green.calls[0]?.ctx.principal.subject).toBe("user_dana");
@@ -217,7 +219,7 @@ describe("sponsorship — the fire-time gate", () => {
     // any tool call at all.
     const stopped = harness();
     await seedApp(stopped.store, app);
-    await stopped.engine.enable(app.id, ctx());
+    await stopped.engine.enable(app.id, "main", ctx());
     await stopped.engine.onDocumentEdit(app, doc(app.id, "Weekly sweep (edited)"), "user_omar");
     const runIds = await stopped.engine.emit("go", {}, ctx().principal);
 
@@ -237,7 +239,7 @@ describe("sponsorship — the fire-time gate", () => {
     const editors = new Set(["user_dana"]);
     const { store, engine, calls } = harness({ appAccess: appAccessStub(editors) });
     await seedApp(store, app, "maple");
-    await engine.enable(app.id, ctx());
+    await engine.enable(app.id, "main", ctx());
 
     // RED half: while Dana can still edit it, the fire runs as Dana.
     await engine.emit("go", {}, { kind: "user", subject: "maple" });
@@ -259,7 +261,7 @@ describe("sponsorship — the fire-time gate", () => {
     const app = doc("app_drifted");
     const { store, engine, calls } = harness();
     await seedApp(store, app);
-    await engine.enable(app.id, ctx());
+    await engine.enable(app.id, "main", ctx());
     // An edit that never reached the hook (a direct row write, or a hook not
     // yet wired) must still fail closed at fire time.
     await seedApp(store, doc(app.id, "Renamed behind the engine's back"));
@@ -280,7 +282,7 @@ describe("sponsorship — the fire-time gate", () => {
       },
     });
     await seedApp(store, app);
-    await engine.enable(app.id, ctx());
+    await engine.enable(app.id, "main", ctx());
     await engine.emit("go", {}, ctx().principal);
 
     // The FIRE's check — `enable` also asks `can(editor)`, but that one has a
@@ -324,10 +326,11 @@ describe("sponsorship — the resume gate", () => {
     format: VENDO_APP_FORMAT,
     id,
     name: "Weekly invoice sweep",
-    trigger: {
+    triggers: [{
+      id: "main",
       on: { kind: "host-event", event: "go" },
       run: { kind: "steps", steps: [{ id: "write", tool: writeTool.name, args: { invoice: `'${invoice}'` } }] },
-    },
+    }],
   });
 
   it("resumes an approved parked call when the document is untouched", async () => {
@@ -335,7 +338,7 @@ describe("sponsorship — the resume gate", () => {
     const app = oneWriteStep("app_resume_ok", "inv_42");
     const { engine, guard, calls } = harness({ store }, parkOnce(store));
     await seedApp(store, app);
-    await engine.enable(app.id, ctx());
+    await engine.enable(app.id, "main", ctx());
     const [runId] = await engine.emit("go", {}, ctx().principal);
     expect(await engine.runs.get(runId!, ctx())).toMatchObject({ status: "pending-approval" });
 
@@ -363,7 +366,7 @@ describe("sponsorship — the resume gate", () => {
       parkOnce(store),
     );
     await seedApp(store, app);
-    await engine.enable(app.id, ctx("user_dana", "Dana"));
+    await engine.enable(app.id, "main", ctx("user_dana", "Dana"));
     const [runId] = await engine.emit("go", {}, ctx().principal);
     expect(await engine.runs.get(runId!, ctx())).toMatchObject({ status: "pending-approval" });
 
@@ -371,7 +374,7 @@ describe("sponsorship — the resume gate", () => {
     // it, and a different editor adopts it — so by the time the approval is
     // decided, the automation runs as Omar.
     await engine.onDocumentEdit(app, app, "user_omar");
-    expect((await engine.adopt(app.id, ctx("user_omar", "Omar"))).adopted).toBe(true);
+    expect((await engine.adopt(app.id, "main", ctx("user_omar", "Omar"))).adopted).toBe(true);
 
     guard.decide("apr_parked", true);
     await flush();
@@ -394,7 +397,7 @@ describe("sponsorship — the resume gate", () => {
     const app = oneWriteStep("app_resume_evil", "inv_42");
     const { engine, guard, calls } = harness({ store }, parkOnce(store));
     await seedApp(store, app);
-    await engine.enable(app.id, ctx());
+    await engine.enable(app.id, "main", ctx());
     const [runId] = await engine.emit("go", {}, ctx().principal);
 
     // Somebody else rewrites the automation while the run sits parked.
@@ -423,7 +426,7 @@ describe("sponsorship — invalidation on a third party's edit", () => {
     const app = doc("app_edits");
     const { store, engine } = harness();
     await seedApp(store, app);
-    await engine.enable(app.id, ctx());
+    await engine.enable(app.id, "main", ctx());
 
     const renamed = doc(app.id, "Sponsor's own rename");
     await engine.onDocumentEdit(app, renamed, "user_dana");
@@ -433,7 +436,7 @@ describe("sponsorship — invalidation on a third party's edit", () => {
       // The sponsor's own edit re-binds the intent instead of stranding it:
       // otherwise the fire-time hash check would stop the automation for an
       // edit its own sponsor made.
-      intentHash: intentHash(appIntentOf(renamed)),
+      intentHash: intentHash(appIntentOf(renamed, renamed.triggers?.[0])),
     });
 
     await engine.onDocumentEdit(renamed, doc(app.id, "Someone else's rename"), "user_omar");
@@ -444,7 +447,7 @@ describe("sponsorship — invalidation on a third party's edit", () => {
     const app = doc("app_idempotent");
     const { store, engine } = harness();
     await seedApp(store, app);
-    await engine.enable(app.id, ctx());
+    await engine.enable(app.id, "main", ctx());
     await engine.onDocumentEdit(app, app, "user_omar");
     const first = await sponsorshipRow(store, app.id);
 
@@ -463,16 +466,16 @@ describe("sponsorship — an erased sponsor", () => {
   /** What `eraseStore.bySubject` does to the row: it matches generic records on
    *  `refs @> {subject}`. The row's refs are asserted separately. */
   const eraseSponsorRow = async (store: StoreAdapter, appId: string): Promise<void> => {
-    await store.records(SPONSORSHIPS).delete(appId);
+    await store.records(SPONSORSHIPS).delete(triggerKey(appId, "main"));
   };
 
   it("carries no subject data on the era marker, so a subject erase cannot collect it", async () => {
     const app = doc("app_era");
     const { store, engine } = harness();
     await seedApp(store, app);
-    await engine.enable(app.id, ctx());
+    await engine.enable(app.id, "main", ctx());
 
-    const marker = await store.records(SPONSORED).get(app.id);
+    const marker = await store.records(SPONSORED).get(triggerKey(app.id, "main"));
     expect(marker?.refs).toEqual({ app_id: app.id });
     expect(JSON.stringify(marker?.data)).not.toContain("user_dana");
   });
@@ -481,7 +484,7 @@ describe("sponsorship — an erased sponsor", () => {
     const app = doc("app_erased_sponsor");
     const { store, engine, calls } = harness({ appAccess: appAccessStub(["user_dana", "user_omar"]) });
     await seedApp(store, app);
-    await engine.enable(app.id, ctx("user_dana", "Dana"));
+    await engine.enable(app.id, "main", ctx("user_dana", "Dana"));
     await eraseSponsorRow(store, app.id);
 
     await engine.emit("go", {}, ctx().principal);
@@ -498,9 +501,9 @@ describe("sponsorship — an erased sponsor", () => {
     const app = doc("app_legacy");
     const { store, engine, calls } = harness();
     await seedApp(store, app);
-    await engine.enable(app.id, ctx());
+    await engine.enable(app.id, "main", ctx());
     await eraseSponsorRow(store, app.id);
-    await store.records(SPONSORED).delete(app.id);
+    await store.records(SPONSORED).delete(triggerKey(app.id, "main"));
 
     await engine.emit("go", {}, ctx().principal);
 
@@ -521,7 +524,7 @@ describe("sponsorship — consumer-voice names", () => {
     const app = doc("app_named");
     const { store, engine } = harness();
     await seedApp(store, app);
-    await engine.enable(app.id, ctx("user_dana", "Dana"));
+    await engine.enable(app.id, "main", ctx("user_dana", "Dana"));
     expect(await sponsorshipRow(store, app.id)).toMatchObject({ display: "Dana" });
 
     await engine.onDocumentEdit(app, app, "user_omar");
@@ -538,7 +541,7 @@ describe("sponsorship — consumer-voice names", () => {
     const app = doc("app_unnamed");
     const { store, engine } = harness();
     await seedApp(store, app);
-    await engine.enable(app.id, ctx());
+    await engine.enable(app.id, "main", ctx());
     await engine.onDocumentEdit(app, app, "user_omar");
     const card = await engine.adoption(app.id, ctx());
 
@@ -557,10 +560,11 @@ describe("sponsorship — a broken identity seam", () => {
     format: VENDO_APP_FORMAT,
     id,
     name: "Weekly invoice sweep",
-    trigger: {
+    triggers: [{
+      id: "main",
       on: { kind: "schedule", every: "1h" },
       run: { kind: "steps", steps: [{ id: "read", tool: readTool.name }] },
-    },
+    }],
   });
 
   it("leaves a loud failure artifact when the memberships callback throws on a scheduled fire", async () => {
@@ -569,7 +573,7 @@ describe("sponsorship — a broken identity seam", () => {
       memberships: async () => { throw new Error("host directory is down"); },
     });
     await seedApp(store, app);
-    await engine.enable(app.id, ctx());
+    await engine.enable(app.id, "main", ctx());
 
     const [runId] = await engine.tick(new Date(NOW.getTime() + 2 * 3_600_000));
 
@@ -591,10 +595,11 @@ describe("sponsorship — a broken identity seam", () => {
       format: VENDO_APP_FORMAT,
       id: "app_seam_resume",
       name: "Weekly invoice sweep",
-      trigger: {
+      triggers: [{
+        id: "main",
         on: { kind: "host-event", event: "go" },
         run: { kind: "steps", steps: [{ id: "write", tool: writeTool.name, args: { invoice: "'inv_42'" } }] },
-      },
+      }],
     };
     let breakSeam = false;
     const { engine, guard, calls } = harness(
@@ -619,7 +624,7 @@ describe("sponsorship — a broken identity seam", () => {
       },
     );
     await seedApp(store, app);
-    await engine.enable(app.id, ctx());
+    await engine.enable(app.id, "main", ctx());
     const [runId] = await engine.emit("go", {}, ctx().principal);
 
     breakSeam = true;
@@ -636,7 +641,7 @@ describe("sponsorship — a broken identity seam", () => {
     const app = scheduled("app_seam_ok");
     const { store, engine, calls } = harness({ memberships: async () => [{ org: "maple" }] });
     await seedApp(store, app);
-    await engine.enable(app.id, ctx());
+    await engine.enable(app.id, "main", ctx());
 
     const [runId] = await engine.tick(new Date(NOW.getTime() + 2 * 3_600_000));
 
@@ -653,12 +658,12 @@ describe("sponsorship — consent rows join the erase cascade", () => {
     const app = doc("app_refs");
     const { store, engine } = harness();
     await seedApp(store, app, "user_dana", false);
-    const { missing } = await engine.enable(app.id, ctx());
+    const { missing } = await engine.enable(app.id, "main", ctx());
 
     expect(missing).not.toHaveLength(0);
     for (const request of missing) {
       expect((await store.records("automations:captures").get(request.id))?.refs)
-        .toEqual({ subject: "user_dana", app_id: app.id });
+        .toEqual({ subject: "user_dana", app_id: app.id, trigger_id: "main" });
     }
   });
 
@@ -670,7 +675,7 @@ describe("sponsorship — consent rows join the erase cascade", () => {
     const app = doc("app_refs_reserved");
     const { store, engine, guard } = harness();
     await seedApp(store, app, "user_dana", false);
-    const { missing } = await engine.enable(app.id, ctx());
+    const { missing } = await engine.enable(app.id, "main", ctx());
     expect((await store.records("vendo_approvals").get(missing[0]!.id))?.refs)
       .toMatchObject({ subject: "user_dana" });
 
@@ -688,7 +693,7 @@ describe("sponsorship — the adoption card", () => {
     const app = doc("app_card");
     const { store, engine } = harness({ appAccess: appAccessStub(["user_dana", "user_omar"]) });
     await seedApp(store, app);
-    await engine.enable(app.id, ctx());
+    await engine.enable(app.id, "main", ctx());
 
     // Nothing to adopt while the sponsorship holds.
     expect(await engine.adoption(app.id, ctx("user_omar"))).toBeUndefined();
@@ -724,16 +729,16 @@ describe("sponsorship — adoption", () => {
     const app = doc("app_adopt");
     const { store, guard, engine, calls } = harness({ appAccess: appAccessStub(["user_dana", "user_omar"]) });
     await seedApp(store, app);
-    await engine.enable(app.id, ctx());
+    await engine.enable(app.id, "main", ctx());
     await engine.onDocumentEdit(app, app, "user_omar");
 
-    const adopted = await engine.adopt(app.id, ctx("user_omar"));
+    const adopted = await engine.adopt(app.id, "main", ctx("user_omar"));
 
     expect(adopted.adopted).toBe(true);
     expect(adopted.missing.map((request) => request.call.tool)).toEqual([readTool.name, writeTool.name]);
     expect(adopted.missing.every((request) => request.ctx.principal.subject === "user_omar")).toBe(true);
     expect(await sponsorshipRow(store, app.id)).toMatchObject({
-      sponsor: "user_omar", status: "active", intentHash: intentHash(appIntentOf(app)),
+      sponsor: "user_omar", status: "active", intentHash: intentHash(appIntentOf(app, app.triggers?.[0])),
     });
 
     for (const request of adopted.missing) guard.decide(request.id, true);
@@ -750,11 +755,11 @@ describe("sponsorship — adoption", () => {
     const app = doc("app_race");
     const { store, engine } = harness({ appAccess: appAccessStub(["user_dana", "user_omar", "user_zoe"]) });
     await seedApp(store, app);
-    await engine.enable(app.id, ctx());
+    await engine.enable(app.id, "main", ctx());
     await engine.onDocumentEdit(app, app, "user_omar");
 
-    expect((await engine.adopt(app.id, ctx("user_omar"))).adopted).toBe(true);
-    const loser = await engine.adopt(app.id, ctx("user_zoe"));
+    expect((await engine.adopt(app.id, "main", ctx("user_omar"))).adopted).toBe(true);
+    const loser = await engine.adopt(app.id, "main", ctx("user_zoe"));
 
     expect(loser).toMatchObject({ adopted: false, reason: "already-adopted" });
     expect(await sponsorshipRow(store, app.id)).toMatchObject({ sponsor: "user_omar" });
@@ -764,10 +769,10 @@ describe("sponsorship — adoption", () => {
     const app = doc("app_adopt_denied");
     const { store, engine } = harness({ appAccess: appAccessStub(["user_dana"]) });
     await seedApp(store, app);
-    await engine.enable(app.id, ctx());
+    await engine.enable(app.id, "main", ctx());
     await engine.onDocumentEdit(app, app, "user_omar");
 
-    await expect(engine.adopt(app.id, ctx("user_stranger"))).rejects.toThrow(/not found/i);
+    await expect(engine.adopt(app.id, "main", ctx("user_stranger"))).rejects.toThrow(/not found/i);
   });
 });
 
@@ -779,9 +784,9 @@ describe("sponsorship — an editor's doors", () => {
     const app = doc("app_editor_doors");
     const bench = harness({ appAccess: appAccessStub(["user_dana", "user_omar"]) });
     await seedApp(bench.store, app);
-    await bench.engine.enable(app.id, ctx("user_dana", "Dana"));
+    await bench.engine.enable(app.id, "main", ctx("user_dana", "Dana"));
     await bench.engine.onDocumentEdit(app, app, "user_omar");
-    await bench.engine.adopt(app.id, ctx("user_omar", "Omar"));
+    await bench.engine.adopt(app.id, "main", ctx("user_omar", "Omar"));
     return { ...bench, app };
   };
 
@@ -791,7 +796,7 @@ describe("sponsorship — an editor's doors", () => {
     const [entry] = await engine.list(ctx("user_omar", "Omar"));
 
     expect(entry?.app.id).toBe(app.id);
-    expect(entry?.sponsor).toEqual({ subject: "user_omar", display: "Omar" });
+    expect(entry?.triggers[0]?.sponsor).toEqual({ subject: "user_omar", display: "Omar" });
   });
 
   it("names the sponsor to the OWNER too, from the row rather than the caller", async () => {
@@ -799,7 +804,7 @@ describe("sponsorship — an editor's doors", () => {
 
     const [entry] = await engine.list(ctx("user_dana", "Dana"));
 
-    expect(entry?.sponsor).toEqual({ subject: "user_omar", display: "Omar" });
+    expect(entry?.triggers[0]?.sponsor).toEqual({ subject: "user_omar", display: "Omar" });
   });
 
   it("lets an editor see, dry-run, stop and disable it — and a stranger none of that", async () => {
@@ -809,15 +814,15 @@ describe("sponsorship — an editor's doors", () => {
     const editor = ctx("user_omar", "Omar");
     expect(await engine.runs.get(runId!, editor)).toMatchObject({ id: runId });
     expect((await engine.runs.list({ appId: app.id }, editor)).runs).toHaveLength(1);
-    expect((await engine.dryRun(app.id, editor)).steps).toHaveLength(2);
-    await engine.disable(app.id, editor);
+    expect((await engine.dryRun(app.id, "main", editor)).steps).toHaveLength(2);
+    await engine.disable(app.id, "main", editor);
     expect((await store.records("vendo_apps").get(app.id))?.data).toMatchObject({ enabled: false });
 
     const stranger = ctx("user_zoe");
     expect(await engine.runs.get(runId!, stranger)).toBeNull();
     expect((await engine.runs.list({ appId: app.id }, stranger)).runs).toEqual([]);
-    await expect(engine.dryRun(app.id, stranger)).rejects.toThrow(/not found/i);
-    await expect(engine.disable(app.id, stranger)).rejects.toThrow(/not found/i);
+    await expect(engine.dryRun(app.id, "main", stranger)).rejects.toThrow(/not found/i);
+    await expect(engine.disable(app.id, "main", stranger)).rejects.toThrow(/not found/i);
     expect(await engine.list(stranger)).toEqual([]);
   });
 
@@ -841,12 +846,12 @@ describe("sponsorship — the window label", () => {
     const app = doc("app_label");
     const { store, engine } = harness({ appAccess: appAccessStub(["user_dana", "user_omar"]) });
     await seedApp(store, app);
-    await engine.enable(app.id, ctx("user_dana", "Dana"));
+    await engine.enable(app.id, "main", ctx("user_dana", "Dana"));
 
     const [entry] = await engine.list(ctx("user_dana", "Dana"));
 
     expect(entry).toMatchObject({
-      sponsor: { subject: "user_dana", display: "Dana" },
+      triggers: [{ sponsor: { subject: "user_dana", display: "Dana" } }],
       editors: 2,
     });
   });
@@ -855,11 +860,11 @@ describe("sponsorship — the window label", () => {
     const app = doc("app_label_solo");
     const { store, engine } = harness();
     await seedApp(store, app);
-    await engine.enable(app.id, ctx());
+    await engine.enable(app.id, "main", ctx());
 
     const [entry] = await engine.list(ctx());
 
-    expect(entry?.sponsor).toEqual({ subject: "user_dana" });
+    expect(entry?.triggers[0]?.sponsor).toEqual({ subject: "user_dana" });
     expect(entry).not.toHaveProperty("editors");
   });
 });
@@ -891,7 +896,7 @@ describe("sponsorship — what the stopped run row is allowed to say", () => {
     const app = doc(id);
     const h = harness({ appAccess: appAccessStub(editors) });
     await seedApp(h.store, app, "maple");
-    await h.engine.enable(app.id, ctx("user_dana", "Dana"));
+    await h.engine.enable(app.id, "main", ctx("user_dana", "Dana"));
     return { ...h, app };
   };
 
@@ -936,7 +941,7 @@ describe("sponsorship — what the stopped run row is allowed to say", () => {
       memberships: async () => { throw new Error(raw); },
     });
     await seedApp(store, app);
-    await engine.enable(app.id, ctx("user_dana", "Dana"));
+    await engine.enable(app.id, "main", ctx("user_dana", "Dana"));
 
     const [runId] = await engine.emit("go", {}, ctx().principal);
 
@@ -971,9 +976,9 @@ describe("sponsorship — an automation the caller can edit is an automation the
 
     const listed = await engine.list(withOrg("user_kim"));
     expect(listed.map((entry) => entry.app.id)).toEqual([app.id]);
-    expect(listed[0]?.enabled).toBe(false);
+    expect(listed[0]?.triggers[0]?.enabled).toBe(false);
     // ...and the promise is keepable: she can arm it from there.
-    expect((await engine.enable(app.id, withOrg("user_kim"))).enabled).toBe(true);
+    expect((await engine.enable(app.id, "main", withOrg("user_kim"))).enabled).toBe(true);
 
     // Someone who asserts no membership and holds no grant still sees nothing.
     expect(await engine.list(ctx("user_mal"))).toEqual([]);
@@ -988,9 +993,10 @@ describe("sponsorship — an automation the caller can edit is an automation the
     await seedApp(store, app, "user_owner");
     await setSponsorship(store, {
       appId: app.id,
+      triggerId: "main",
       sponsor: "user_dana",
       display: "Dana",
-      intentHash: intentHash(appIntentOf(app)),
+      intentHash: intentHash(appIntentOf(app, app.triggers?.[0])),
       status: "invalidated",
       reason: "edit",
       invalidatedAt: NOW.toISOString(),
@@ -999,8 +1005,8 @@ describe("sponsorship — an automation the caller can edit is an automation the
     const listed = await engine.list(ctx("user_dana"));
 
     expect(listed.map((entry) => entry.app.id)).toEqual([app.id]);
-    expect(listed[0]?.stopped).toMatchObject({ reason: "edit" });
-    expect(listed[0]?.stopped?.summary).toMatch(/anyone who can edit this app can take it on/);
+    expect(listed[0]?.triggers[0]?.stopped).toMatchObject({ reason: "edit" });
+    expect(listed[0]?.triggers[0]?.stopped?.summary).toMatch(/anyone who can edit this app can take it on/);
   });
 });
 
@@ -1029,7 +1035,7 @@ describe("sponsorship — a member's event fires the org's automation", () => {
         : [{ org: "maple", display: "Maple Bank" }],
     });
     await seedApp(h.store, app, "maple", false);
-    await h.engine.enable(app.id, ctx("user_dana", "Dana"));
+    await h.engine.enable(app.id, "main", ctx("user_dana", "Dana"));
     return { ...h, app };
   };
 

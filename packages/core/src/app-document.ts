@@ -6,7 +6,7 @@ import { VENDO_APP_FORMAT, VENDO_TREE_FORMAT } from "./formats.js";
 import { appIdSchema, isoDateTimeSchema, type AppId, type IsoDateTime } from "./ids.js";
 import { TOOL_NAME_PATTERN } from "./tools.js";
 import { validateTree } from "./genui/tree.js";
-import { triggerSchema, type Trigger } from "./triggers.js";
+import { DEFAULT_TRIGGER_ID, triggerSchema, type Trigger } from "./triggers.js";
 import { uiPayloadSchema, type TreeNode, type UIPayload } from "./genui/tree-node.js";
 
 /** 01-core §9 */
@@ -107,7 +107,12 @@ export interface AppDocument {
   storage?: Record<string, StorageDecl>;
   server?: string;
   machine?: AppMachine;
-  trigger?: Trigger;
+  /** An automation is an app with a LIST of triggers, each keyed by its own
+   *  `id`. Documents stored before the list existed carry a single `trigger`
+   *  object; {@link appDocumentSchema} normalizes those on READ into a
+   *  one-element list under {@link DEFAULT_TRIGGER_ID}, so an old row loads and
+   *  fires unchanged. Writes always write `triggers`. */
+  triggers?: Trigger[];
   egress?: string[];
   /**
    * execution-v2 Lane E — the outbound domains the OWNER has approved for this
@@ -147,7 +152,7 @@ export interface AppDocument {
  * is the normative gate. A `parse()` alone can accept a semantically invalid
  * document.
  */
-export const appDocumentSchema = z.object({
+const appDocumentShapeSchema = z.object({
   format: z.literal(VENDO_APP_FORMAT),
   id: appIdSchema,
   name: z.string(),
@@ -159,7 +164,7 @@ export const appDocumentSchema = z.object({
   storage: z.record(storageDeclSchema).optional(),
   server: z.string().optional(),
   machine: appMachineSchema.optional(),
-  trigger: triggerSchema.optional(),
+  triggers: z.array(triggerSchema).optional(),
   egress: z.array(z.string()).optional(),
   egressApproved: z.array(z.string()).optional(),
   secrets: z.array(z.string()).optional(),
@@ -168,6 +173,33 @@ export const appDocumentSchema = z.object({
   forkedFrom: appIdSchema.optional(),
   buildFailed: appBuildFailureSchema.optional(),
 }).passthrough() satisfies z.ZodType<AppDocument>;
+
+/**
+ * READ-TIME normalization of the pre-list document shape: a stored `trigger`
+ * object becomes the one-element `triggers` list it always meant, under
+ * {@link DEFAULT_TRIGGER_ID}.
+ *
+ * It runs before validation rather than after, so the legacy object is checked
+ * by the SAME `triggerSchema` the new shape is — including the required `id`,
+ * which no stored document has. The legacy key is dropped so a normalized
+ * document never carries both, and a document that already has `triggers` is
+ * left alone: writes always write the list, so re-reading one is the common case
+ * and must not pay for the old one.
+ */
+const normalizeTriggers = (input: unknown): unknown => {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) return input;
+  const doc = input as Record<string, unknown>;
+  const legacy = doc["trigger"];
+  if (doc["triggers"] !== undefined || typeof legacy !== "object" || legacy === null || Array.isArray(legacy)) {
+    return input;
+  }
+  const { trigger: _dropped, ...rest } = doc;
+  return { ...rest, triggers: [{ id: DEFAULT_TRIGGER_ID, ...legacy as Record<string, unknown> }] };
+};
+
+/** 01-core §9 — see {@link appDocumentShapeSchema} for the shape and
+ *  {@link normalizeTriggers} for the one thing this door does beyond parsing. */
+export const appDocumentSchema = z.preprocess(normalizeTriggers, appDocumentShapeSchema);
 
 type AppDocumentValidation =
   | { ok: true; app: AppDocument }
@@ -261,8 +293,17 @@ const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
     }
   }
 
-  if (app.trigger?.run.kind === "steps") {
-    for (const step of app.trigger.run.steps) {
+  // A trigger id is what everything per-trigger is keyed by (grants, sponsorship,
+  // schedule cursors, runs), so two triggers sharing one would silently share all
+  // of it. The grammar is the schema's; uniqueness is cross-field and lives here.
+  const triggerIds = new Set<string>();
+  for (const trigger of app.triggers ?? []) {
+    if (triggerIds.has(trigger.id)) {
+      return fail("validation", `duplicate trigger id "${trigger.id}"`);
+    }
+    triggerIds.add(trigger.id);
+    if (trigger.run.kind !== "steps") continue;
+    for (const step of trigger.run.steps) {
       if (step.tool.startsWith("fn:")) {
         fnReferences.push(step.tool);
       } else if (!TOOL_NAME_PATTERN.test(step.tool)) {

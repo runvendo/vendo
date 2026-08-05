@@ -108,7 +108,7 @@ export function AppTile({ app, onOpen, children }: {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
                 <path d="m13 2-9 12h8l-1 8 9-12h-8l1-8Z" />
               </svg>
-              {app.trigger === undefined ? "No view" : "Runs in the background"}
+              {(app.triggers ?? []).length === 0 ? "No view" : "Runs in the background"}
             </span>
           )
           : <TilePreview appId={app.id} />}

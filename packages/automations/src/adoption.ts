@@ -3,6 +3,7 @@ import {
   type AppDocument,
   type RiskLabel,
   type ToolDescriptor,
+  type Trigger,
 } from "@vendoai/core";
 import type { Sponsorship } from "./sponsorship.js";
 
@@ -27,6 +28,10 @@ export interface AdoptionNeed {
  *  the next editor+ to open it may adopt. */
 export interface AdoptionCard {
   appId: string;
+  /** WHICH trigger of the app stopped. Sponsorship is per (app, trigger), so a
+   *  card is about one trigger and `adopt` needs to be told which one to take
+   *  on — an app's other triggers may still be running perfectly well. */
+  triggerId: string;
   /** The automation's user-visible name. */
   automation: string;
   /** The person it can no longer run as, named as they asserted themselves.
@@ -62,10 +67,9 @@ const needFor = (
  *  run declares no steps, so it lists the tools adoption would actually grant:
  *  whatever the registry binds for it. */
 const adoptionNeeds = (
-  doc: AppDocument,
+  trigger: Trigger | undefined,
   descriptors: Map<string, ToolDescriptor>,
 ): AdoptionNeed[] => {
-  const trigger = doc.trigger;
   if (trigger === undefined) return [];
   if (trigger.run.kind !== "steps") {
     return [...descriptors.values()].map((descriptor) => needFor(descriptor.name, descriptors));
@@ -77,7 +81,9 @@ const adoptionNeeds = (
 
 export const adoptionCard = (
   doc: AppDocument,
+  trigger: Trigger | undefined,
   stopped: {
+    triggerId: string;
     reason: NonNullable<Sponsorship["reason"]>;
     /** The sponsor's name; omitted once their data is erased. */
     sponsor?: string;
@@ -86,9 +92,10 @@ export const adoptionCard = (
   descriptors: Map<string, ToolDescriptor>,
 ): AdoptionCard => ({
   appId: doc.id,
+  triggerId: stopped.triggerId,
   automation: doc.name,
   ...(stopped.sponsor === undefined ? {} : { sponsor: stopped.sponsor }),
   reason: stopped.reason,
   ...(stopped.stoppedAt === undefined ? {} : { stoppedAt: stopped.stoppedAt }),
-  needs: adoptionNeeds(doc, descriptors),
+  needs: adoptionNeeds(trigger, descriptors),
 });

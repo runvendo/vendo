@@ -240,7 +240,7 @@ export interface AppsConfig {
    * runtime arms the stored row directly and grant capture stays lazy: the
    * first away run's ungranted step parks the normal approval card.
    */
-  armAutomation?: (appId: AppId, ctx: RunContext) => Promise<{ enabled: boolean; missing: ApprovalRequest[] }>;
+  armAutomation?: (appId: AppId, triggerId: string, ctx: RunContext) => Promise<{ enabled: boolean; missing: ApprovalRequest[] }>;
   model?: LanguageModel;
   /** The fast fill tier: `model` is the no-think switch (a thinking-disabled
    *  model instance) the group workers run on while the brain keeps `model`. */
@@ -1829,7 +1829,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     try {
       const wasEnabled = await assertCurrent();
       // A changed trigger must be re-armed — enable() re-captures and re-mints trigger state.
-      const enabled = options.armTrigger === true && app.trigger !== undefined
+      const enabled = options.armTrigger === true && (app.triggers ?? []).length > 0
         ? true
         : enabledAfterDocumentEdit(previous, app, wasEnabled);
       appRow = appRecordInput(app, rowSubject, enabled, session ?? sessionOf(previous));
@@ -2964,8 +2964,8 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
 
     async schedule(appId, cron, ctx) {
       const previous = await requireOwned(appId, ctx);
-      const trigger = previous.trigger;
-      if (trigger === undefined || trigger.on.kind !== "schedule") {
+      const trigger = (previous.triggers ?? []).find((candidate) => candidate.on.kind === "schedule");
+      if (trigger === undefined) {
         throw new VendoError(
           "validation",
           `app ${appId} has no schedule to change. Ask for the automation itself first — a schedule needs `
@@ -2979,14 +2979,15 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // knows the parser.
       await updateAppDocument(appId, (document) => ({
         ...document,
-        trigger: { ...trigger, on: { kind: "schedule", cron } },
+        triggers: (document.triggers ?? []).map((candidate) =>
+          candidate.id === trigger.id ? { ...candidate, on: { kind: "schedule" as const, cron } } : candidate),
       }));
       if (config.armAutomation === undefined) {
         // No automations engine composed: the cron is stored, and saying it is
         // armed would be a lie.
         return { appId, cron, enabled: false, missing: 0 };
       }
-      const armed = await config.armAutomation(appId, ctx);
+      const armed = await config.armAutomation(appId, trigger.id, ctx);
       return { appId, cron, enabled: armed.enabled, missing: armed.missing.length };
     },
 

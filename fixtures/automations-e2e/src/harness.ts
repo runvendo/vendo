@@ -272,16 +272,23 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
   };
 }
 
+/** An automation document. `trigger` is the one-trigger shorthand every suite
+ *  here uses — it lands as the single `main` trigger, which is exactly what a
+ *  pre-list document normalizes to. Pass `triggers` when the suite is ABOUT
+ *  having more than one. */
 export function automationDoc(input: {
   id: AppId;
   name?: string;
-  trigger: Trigger;
+  trigger?: Omit<Trigger, "id">;
+  triggers?: Trigger[];
 }): AppDocument {
+  const triggers = input.triggers
+    ?? (input.trigger === undefined ? [] : [{ id: "main", ...input.trigger }]);
   return {
     format: "vendo/app@1",
     id: input.id,
     name: input.name ?? input.id,
-    trigger: input.trigger,
+    triggers,
   };
 }
 

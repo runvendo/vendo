@@ -60,9 +60,10 @@ export async function approve(
 export async function enableAndApprove(
   stack: Stack,
   appId: AppId,
-  ctx: Parameters<Stack["automations"]["enable"]>[1],
+  ctx: Parameters<Stack["automations"]["enable"]>[2],
+  triggerId = "main",
 ): Promise<ApprovalRequest[]> {
-  const enabled = await stack.automations.enable(appId, ctx);
+  const enabled = await stack.automations.enable(appId, triggerId, ctx);
   await approve(stack, enabled.missing, ctx.principal);
   return enabled.missing;
 }

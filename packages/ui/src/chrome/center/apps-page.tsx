@@ -263,7 +263,7 @@ export function AppsPage({ api, opened, onOpened }: AppsPageProps) {
                 namesPeople={namesPeople}
                 // §9.5 — an app that declares a trigger loses it in the move;
                 // the dialog says so before and after.
-                automation={app.trigger !== undefined}
+                automation={(app.triggers ?? []).length > 0}
                 onClose={() => setSharing(undefined)}
               />
             ) : null}

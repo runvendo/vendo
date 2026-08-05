@@ -60,7 +60,7 @@ describe("away runs hold only app-bound automation grants", () => {
           },
         }),
       );
-      await stack.automations.enable(appId, ownerCtx(ADA.subject, appId));
+      await stack.automations.enable(appId, "main", ownerCtx(ADA.subject, appId));
 
       const [runId] = await stack.automations.emit("chatgrant.away", { id: "inv_0003" }, ADA);
       const run = await stack.automations.runs.get(runId!, ownerCtx(ADA.subject, appId));
@@ -265,7 +265,7 @@ describe("away runs reach a connector only through a granted service action", ()
       // with the second still pending — armed, and ungranted for that slug.
       // Both slugs grade `read`, so the two calls carry the SAME descriptor
       // hash: the only thing that can refuse the second one is its slug.
-      const enabled = await stack.automations.enable(appId, ownerCtx(ADA.subject, appId));
+      const enabled = await stack.automations.enable(appId, "main", ownerCtx(ADA.subject, appId));
       const fetchAsk = enabled.missing.find(
         (request) => (request.call.args as { slug?: string }).slug === "GMAIL_FETCH_EMAILS",
       );

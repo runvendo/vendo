@@ -15,25 +15,33 @@ export interface GrantSet {
   createdAt: string;
 }
 
-/** The four things a person actually consented to. Anything outside these is
- *  cosmetic: re-asking on a cosmetic change is how people are trained to tap
- *  through cards without reading them. */
+/** The things a person actually consented to, for ONE trigger of an app.
+ *  Anything outside these is cosmetic: re-asking on a cosmetic change is how
+ *  people are trained to tap through cards without reading them.
+ *
+ *  An automation is an app with a LIST of triggers, so the intent is per
+ *  trigger: `triggerId` names which one, and `tools`/`trigger`/`runBody`
+ *  describe only THAT trigger. Editing one trigger therefore leaves the other
+ *  triggers' consent intact, and two triggers that declare identical work still
+ *  hash apart — one trigger's sponsorship can never validate another's. */
 export interface AppIntent {
   name: string;
+  triggerId: string;
   tools: readonly string[];
   trigger: Json;
   runBody: string;
 }
 
 /** Build contract §7 — sha256 over the RFC 8785 canonical form of
- *  `{ tools (sorted), trigger, runBody, name }`. Tools are sorted so that
- *  reordering a declaration is not mistaken for changing it. */
+ *  `{ tools (sorted), trigger, runBody, name, triggerId }`. Tools are sorted so
+ *  that reordering a declaration is not mistaken for changing it. */
 export function intentHash(intent: AppIntent): string {
   const preimage = {
     name: intent.name,
     runBody: intent.runBody,
     tools: [...intent.tools].sort(),
     trigger: intent.trigger,
+    triggerId: intent.triggerId,
   };
   return `sha256:${sha256Hex(canonicalJson(preimage))}`;
 }

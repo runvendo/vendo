@@ -200,15 +200,17 @@ export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
     },
 
     automations: {
-      list: async () => state.automations.map((entry) => ({ ...entry })),
-      enable: async (id) => {
+      list: async () => state.automations.map((entry) => ({ ...entry, triggers: entry.triggers.map((t) => ({ ...t })) })),
+      enable: async (id, triggerId) => {
         const entry = state.automations.find((candidate) => candidate.app.id === id);
-        if (entry) entry.enabled = true;
+        const trigger = entry?.triggers.find((candidate) => candidate.trigger.id === triggerId);
+        if (trigger) trigger.enabled = true;
         return { enabled: true, missing: [] };
       },
-      disable: async (id) => {
+      disable: async (id, triggerId) => {
         const entry = state.automations.find((candidate) => candidate.app.id === id);
-        if (entry) entry.enabled = false;
+        const trigger = entry?.triggers.find((candidate) => candidate.trigger.id === triggerId);
+        if (trigger) trigger.enabled = false;
       },
       dryRun: async () => ({
         steps: [

@@ -120,7 +120,8 @@ describe("lane-cards picks", () => {
   });
 
   it("7-A: a running run swaps the state line to step N/M and puts the runner on the arrow", async () => {
-    wire.state.automations[0]!.app.trigger = {
+    wire.state.automations[0]!.triggers[0]!.trigger = {
+      id: "main",
       on: { kind: "host-event", event: "invoice.created" },
       run: { kind: "steps", steps: [{ id: "load", tool: "host_invoices_list" }, { id: "send", tool: "host_email_send" }] },
     };
@@ -138,8 +139,9 @@ describe("lane-cards picks", () => {
   });
 
   it("7-A: an enabled schedule carries the next-run countdown in the state line", async () => {
-    wire.state.automations[0]!.enabled = true;
-    wire.state.automations[0]!.app.trigger = {
+    wire.state.automations[0]!.triggers[0]!.enabled = true;
+    wire.state.automations[0]!.triggers[0]!.trigger = {
+      id: "main",
       on: { kind: "schedule", every: "6h" },
       run: { kind: "steps", steps: [{ id: "load", tool: "host_invoices_list" }] },
     };

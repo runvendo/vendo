@@ -5,6 +5,7 @@ import {
   type UIMessageChunk,
 } from "ai";
 import {
+  DEFAULT_TRIGGER_ID,
   sha256Hex,
   type AppDocument,
   type ApprovalRequest,
@@ -78,7 +79,13 @@ function app(id: string, name: string, automation = false): AppDocument {
       nodes: [{ id: "root", component: "Text", props: { text: `${name} app surface` } }],
     },
     ...(automation
-      ? { trigger: { on: { kind: "host-event" as const, event: "invoice.created" }, run: { kind: "steps" as const, steps: [] } } }
+      ? {
+        triggers: [{
+          id: DEFAULT_TRIGGER_ID,
+          on: { kind: "host-event" as const, event: "invoice.created" },
+          run: { kind: "steps" as const, steps: [] },
+        }],
+      }
       : {}),
   };
 }
@@ -312,7 +319,9 @@ export async function createWireServer(options: WireServerOptions = {}) {
       { toolkit: "gmail", connector: "composio" },
       { toolkit: "slack", connector: "composio" },
     ],
-    automations: [{ app: automationApp, enabled: false }] satisfies AutomationEntry[],
+    automations: [
+      { app: automationApp, triggers: [{ trigger: automationApp.triggers![0]!, enabled: false }] },
+    ] satisfies AutomationEntry[],
     runs: [run()],
     events: [audit("aud_1"), audit("aud_2"), audit("aud_3"), appEditAudit()],
     threads: new Map<string, Thread>([
@@ -844,7 +853,7 @@ export async function createWireServer(options: WireServerOptions = {}) {
               !ids.includes(item.id) && item.ctx.venue === "automation" && item.ctx.appId === appId);
             if (remaining) continue;
             const entry = state.automations.find(item => item.app.id === appId);
-            if (entry) entry.enabled = false;
+            if (entry) for (const row of entry.triggers) row.enabled = false;
           }
         }
         state.approvals = state.approvals.filter(item => !ids.includes(item.id));
@@ -1071,27 +1080,37 @@ export async function createWireServer(options: WireServerOptions = {}) {
       if (method === "GET" && url.pathname === "/automations") {
         if (state.legacyAutomationsPayload) return json(response, state.automations);
         // The engine's pending-captures projection: an entry with undecided
-        // standing asks carries pendingGrants + the set id (reload survival).
+        // standing asks carries pendingGrants + the set id (reload survival),
+        // landed on the ONE trigger actually waiting (the fixture's automation
+        // apps carry exactly one trigger, so that is always the first).
         return json(response, state.automations.map(entry => {
           const pending = state.approvals.filter(item =>
             item.ctx.venue === "automation" && item.ctx.appId === entry.app.id).length;
-          return pending === 0 ? entry : { ...entry, pendingGrants: pending, grantSetId: GRANT_SET_ID };
+          if (pending === 0) return entry;
+          return {
+            ...entry,
+            triggers: entry.triggers.map((row, index) =>
+              index === 0 ? { ...row, pendingGrants: pending, grantSetId: GRANT_SET_ID } : row),
+          };
         }));
       }
-      const automationMatch = url.pathname.match(/^\/automations\/([^/]+)\/(enable|disable|dry-run)$/);
+      const automationMatch = url.pathname.match(/^\/automations\/([^/]+)\/(enable|disable|dry-run)\/([^/]+)$/);
       if (method === "POST" && automationMatch) {
         const id = decodeURIComponent(automationMatch[1] ?? "");
+        const triggerId = decodeURIComponent(automationMatch[3] ?? "");
         const entry = state.automations.find(item => item.app.id === id);
         if (!entry) return wireError(response, "not-found", "Automation not found", 404);
+        const row = entry.triggers.find(item => item.trigger.id === triggerId);
+        if (!row) return wireError(response, "not-found", "Trigger not found", 404);
         const action = automationMatch[2];
         if (action === "enable") {
-          entry.enabled = true;
+          row.enabled = true;
           const missing = mintGrantSet(state.approvals);
           if (state.legacyAutomationsPayload) return json(response, { enabled: true, missing });
           return json(response, { enabled: true, missing, grantSetId: GRANT_SET_ID });
         }
         if (action === "disable") {
-          entry.enabled = false;
+          row.enabled = false;
           return empty(response);
         }
         return json(response, { steps: [{ id: "step_1", tool: "host_invoices_list", wouldAsk: false }], grantsMissing: [] });

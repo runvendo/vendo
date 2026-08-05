@@ -1,7 +1,15 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { VENDO_APP_FORMAT, type AppDocument, type Principal } from "@vendoai/core";
+import {
+  DEFAULT_TRIGGER_ID,
+  TRIGGER_KIND_REF_PRESENT,
+  VENDO_APP_FORMAT,
+  triggerKindRefKey,
+  type AppDocument,
+  type Principal,
+} from "@vendoai/core";
+import { triggerKey } from "@vendoai/automations";
 import { createStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -33,24 +41,24 @@ const scheduleApp = (id: string): AppDocument => ({
   format: VENDO_APP_FORMAT,
   id,
   name: id,
-  trigger: { on: { kind: "schedule", every: "15m" }, run: { kind: "steps", steps: [] } },
+  triggers: [{ id: DEFAULT_TRIGGER_ID, on: { kind: "schedule", every: "15m" }, run: { kind: "steps", steps: [] } }],
 });
 
 const hostEventApp = (id: string): AppDocument => ({
   format: VENDO_APP_FORMAT,
   id,
   name: id,
-  trigger: { on: { kind: "host-event", event: "go" }, run: { kind: "steps", steps: [] } },
+  triggers: [{ id: DEFAULT_TRIGGER_ID, on: { kind: "host-event", event: "go" }, run: { kind: "steps", steps: [] } }],
 });
 
 async function seedDueSchedule(store: VendoStore, doc: AppDocument): Promise<void> {
   await store.records("vendo_apps").put({
     id: doc.id,
     data: { subject: principal.subject, enabled: true, doc },
-    refs: { subject: principal.subject, trigger_kind: "schedule" },
+    refs: { subject: principal.subject, [triggerKindRefKey("schedule")]: TRIGGER_KIND_REF_PRESENT },
   });
   await store.records("automations:schedule").put({
-    id: doc.id,
+    id: triggerKey(doc.id, DEFAULT_TRIGGER_ID),
     data: { lastFiredAt: new Date(Date.now() - 20 * 60_000).toISOString() },
   });
 }
@@ -59,7 +67,7 @@ async function seedHostEventApp(store: VendoStore, doc: AppDocument): Promise<vo
   await store.records("vendo_apps").put({
     id: doc.id,
     data: { subject: principal.subject, enabled: true, doc },
-    refs: { subject: principal.subject, trigger_kind: "host-event" },
+    refs: { subject: principal.subject, [triggerKindRefKey("host-event")]: TRIGGER_KIND_REF_PRESENT },
   });
 }
 

@@ -21,6 +21,7 @@ import type {
   StoreAdapter,
   ToolOutcome,
   ToolRegistry,
+  Trigger,
   TriggerSource,
 } from "@vendoai/core";
 import type { AppsRuntime } from "@vendoai/apps";
@@ -29,7 +30,7 @@ import { createAutomationsEngine } from "./engine.js";
 import type { AdoptionCard } from "./adoption.js";
 
 export type { AdoptionCard, AdoptionNeed } from "./adoption.js";
-export { appIntentOf, SPONSORSHIPS, type Sponsorship } from "./sponsorship.js";
+export { appIntentOf, SPONSORSHIPS, triggerKey, type Sponsorship } from "./sponsorship.js";
 
 /** Build contract §9.3's `can()`, as much of it as the engine needs — taken as
  *  config so this package never reaches sideways into the store. Lane G's
@@ -99,6 +100,9 @@ export type RunStatus = "running" | "ok" | "error" | "stopped" | "pending-approv
 export interface RunRecord {
   id: RunId;
   appId: AppId;
+  /** WHICH trigger of the app fired this run. An app has a list of them, so the
+   *  app id alone no longer says what ran. */
+  triggerId: string;
   trigger: { kind: TriggerSource["kind"]; event?: string };
   status: RunStatus;
   startedAt: IsoDateTime;
@@ -118,32 +122,43 @@ export interface RunPlan {
 
 /** 07 §1 */
 export interface AutomationsEngine {
-  /** Arm/disarm an app's trigger. Enabling runs the grant-capture flow (07 §3).
-   *  `grantSetId` (additive — 07 §1 amendment parked) names the ONE grant set
-   *  the `missing` asks belong to, so a single decision can settle them all;
-   *  present exactly when `missing` is non-empty. */
-  enable(appId: AppId, ctx: RunContext): Promise<{ enabled: boolean; missing: ApprovalRequest[]; grantSetId?: string }>;
-  disable(appId: AppId, ctx: RunContext): Promise<void>;
-  /** The user's apps with a trigger. `pendingGrants`/`grantSetId` (additive —
-   *  07 §1 amendment parked) project the app's still-undecided standing-grant
-   *  asks, so surfaces can show "waiting on N permissions" after a reload
-   *  instead of trusting an enable() result held in memory. */
+  /** Arm/disarm ONE trigger of an app. Enabling runs the grant-capture flow
+   *  (07 §3) for that trigger alone. `grantSetId` (additive — 07 §1 amendment
+   *  parked) names the ONE grant set the `missing` asks belong to, so a single
+   *  decision can settle them all; present exactly when `missing` is non-empty. */
+  enable(
+    appId: AppId,
+    triggerId: string,
+    ctx: RunContext,
+  ): Promise<{ enabled: boolean; missing: ApprovalRequest[]; grantSetId?: string }>;
+  disable(appId: AppId, triggerId: string, ctx: RunContext): Promise<void>;
+  /** The user's apps that have triggers, each with its trigger LIST. Everything
+   *  a person decides — armed, who it runs as, whether it stopped, what it is
+   *  still waiting to be allowed — is per trigger, because that is the unit they
+   *  arm. Only `editors` is per app: app access is not a per-trigger fact. */
   list(ctx: RunContext): Promise<Array<{
     app: AppDocument;
-    enabled: boolean;
-    pendingGrants?: number;
-    grantSetId?: string;
-    /** §13 — who the automation runs as, for its window label ("runs with
-     *  Dana's access"). `display` rides the sponsorship row, captured from the
-     *  sponsor's own Principal when they took the automation on, so it reads the
-     *  same for everyone: Vendo still holds no directory and invents no name. */
-    sponsor?: { subject: string; display?: string };
-    /** §9.9 — set exactly while the automation is STOPPED and waiting to be
-     *  adopted. `summary` is the same consumer sentence the adoption card and
-     *  the stopped run row carry, so the list is a route back to a paused
-     *  automation instead of the one place it vanished from (E8-F2). It never
-     *  names the sponsor: this string is read by anyone who can edit the app. */
-    stopped?: { reason: "edit" | "departure" | "grants"; summary: string };
+    triggers: Array<{
+      trigger: Trigger;
+      enabled: boolean;
+      /** `pendingGrants`/`grantSetId` (additive — 07 §1 amendment parked) project
+       *  this trigger's still-undecided standing-grant asks, so surfaces can show
+       *  "waiting on N permissions" after a reload instead of trusting an
+       *  enable() result held in memory. */
+      pendingGrants?: number;
+      grantSetId?: string;
+      /** §13 — who this trigger runs as, for its window label ("runs with
+       *  Dana's access"). `display` rides the sponsorship row, captured from the
+       *  sponsor's own Principal when they took the automation on, so it reads the
+       *  same for everyone: Vendo still holds no directory and invents no name. */
+      sponsor?: { subject: string; display?: string };
+      /** §9.9 — set exactly while this trigger is STOPPED and waiting to be
+       *  adopted. `summary` is the same consumer sentence the adoption card and
+       *  the stopped run row carry, so the list is a route back to a paused
+       *  automation instead of the one place it vanished from (E8-F2). It never
+       *  names the sponsor: this string is read by anyone who can edit the app. */
+      stopped?: { reason: "edit" | "departure" | "grants"; summary: string };
+    }>;
     /** How many principals hold a grant on the app, when an access seam is
      *  configured — the "wider editor set" the label names when one exists. */
     editors?: number;
@@ -162,14 +177,14 @@ export interface AutomationsEngine {
   runs: {
     get(id: RunId, ctx: RunContext): Promise<RunRecord | null>;
     list(
-      filter: { appId?: AppId; status?: RunStatus; cursor?: string },
+      filter: { appId?: AppId; triggerId?: string; status?: RunStatus; cursor?: string },
       ctx: RunContext,
     ): Promise<{ runs: RunRecord[]; cursor?: string }>;
     /** Kill switch: best-effort cancel, marks "stopped". */
     stop(id: RunId, ctx: RunContext): Promise<void>;
   };
-  /** Preview: what would run, nothing executes. */
-  dryRun(appId: AppId, ctx: RunContext, event?: Json): Promise<RunPlan>;
+  /** Preview: what ONE trigger would run, nothing executes. */
+  dryRun(appId: AppId, triggerId: string, ctx: RunContext, event?: Json): Promise<RunPlan>;
 
   /** Build contract §9.9 — the apps runtime's `onDocumentEdit` hook, from this
    *  side: an edit by anyone other than the sponsor invalidates sponsorship;
@@ -193,13 +208,18 @@ export interface AutomationsEngine {
    *  }
    *  ```
    *
-   *  Any other key attaches a card nobody ever sees. */
+   *  Any other key attaches a card nobody ever sees.
+   *
+   *  Sponsorship is per (app, trigger), so a card is about ONE trigger and names
+   *  it (`AdoptionCard.triggerId`). The open payload carries a single card, so
+   *  when several of an app's triggers are waiting this answers for the first in
+   *  declaration order and the next one surfaces once that is taken on. */
   adoption(appId: AppId, ctx: RunContext): Promise<AdoptionCard | undefined>;
 
-  /** Take a stopped automation on: approve its reads and writes as YOURSELF
+  /** Take a stopped trigger on: approve its reads and writes as YOURSELF
    *  (approvals stay strictly self-subject) and become its sponsor. The first
    *  editor+ to complete wins; the loser hears `already-adopted`. */
-  adopt(appId: AppId, ctx: RunContext): Promise<{
+  adopt(appId: AppId, triggerId: string, ctx: RunContext): Promise<{
     adopted: boolean;
     missing: ApprovalRequest[];
     grantSetId?: string;

@@ -29,7 +29,7 @@ const APP_DOCUMENT_FIELDS = [
   "storage",
   "server",
   "machine",
-  "trigger",
+  "triggers",
   "egress",
   "secrets",
   "pins",

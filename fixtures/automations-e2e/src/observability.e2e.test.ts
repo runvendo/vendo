@@ -18,7 +18,7 @@ describe("run observability and dry-run", () => {
           run: { kind: "steps", steps: [{ id: "list", tool: "host_invoices_list" }] },
         },
       }));
-      const enabled = await stack.automations.enable(appId, ctx);
+      const enabled = await stack.automations.enable(appId, "main", ctx);
       await approve(stack, enabled.missing);
 
       const emitted: string[] = [];
@@ -76,11 +76,11 @@ describe("run observability and dry-run", () => {
           },
         },
       }));
-      const enabled = await stack.automations.enable(appId, ctx);
+      const enabled = await stack.automations.enable(appId, "main", ctx);
       const runsBefore = await tableCount(stack, "vendo_runs");
       const approvalsBefore = await tableCount(stack, "vendo_approvals");
 
-      const preGrant = await stack.automations.dryRun(appId, ctx, {
+      const preGrant = await stack.automations.dryRun(appId, "main", ctx, {
         items: [{ id: "inv_0002" }, { id: "inv_0005" }],
       });
       expect(preGrant.steps.map(({ id, tool, wouldAsk }) => ({ id, tool, wouldAsk }))).toEqual([
@@ -96,7 +96,7 @@ describe("run observability and dry-run", () => {
       expect(await tableCount(stack, "vendo_approvals")).toBe(approvalsBefore);
 
       await approve(stack, enabled.missing);
-      const postGrant = await stack.automations.dryRun(appId, ctx, {
+      const postGrant = await stack.automations.dryRun(appId, "main", ctx, {
         items: [{ id: "inv_0002" }, { id: "inv_0005" }],
       });
       expect(postGrant.steps).toHaveLength(3);
@@ -122,7 +122,7 @@ describe("run observability and dry-run", () => {
       const approvalsBefore = await tableCount(stack, "vendo_approvals");
       const invoicesBefore = (await fixtureInvoices()).length;
 
-      const plan = await stack.automations.dryRun(appId, ctx);
+      const plan = await stack.automations.dryRun(appId, "main", ctx);
       // Without a model seat, agentic capture previews every bound descriptor.
       expect(plan.steps.map(({ tool }) => tool).sort()).toEqual([
         "host_invoices_create", "host_invoices_get", "host_invoices_list",
@@ -167,7 +167,7 @@ describe("run observability and dry-run", () => {
       await enableAndApprove(stack, appId, ctx);
       const runsBefore = await tableCount(stack, "vendo_runs");
 
-      const plan = await stack.automations.dryRun(appId, ctx, {});
+      const plan = await stack.automations.dryRun(appId, "main", ctx, {});
       expect(plan.steps.map(({ id, wouldAsk }) => ({ id, wouldAsk }))).toEqual([
         { id: "create", wouldAsk: false },
         { id: "send", wouldAsk: false },

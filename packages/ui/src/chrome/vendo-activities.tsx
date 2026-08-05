@@ -117,6 +117,10 @@ export function VendoActivities({ pollMs = 5000, maxItems = 8 }: VendoActivities
               <div key={current.id} className="fl-approvals-slide">
                 {current.kind === "set" ? (() => {
                   const entry = automations.automations.find(candidate => candidate.app.id === current.appId);
+                  // Grant sets are minted per (app, TRIGGER), and the pending
+                  // queue names only the app — so the set id comes from the one
+                  // trigger of that app that is actually waiting on permissions.
+                  const waiting = entry?.triggers.find(row => (row.pendingGrants ?? 0) > 0);
                   return (
                     <GrantSetCard
                       name={entry?.app.name ?? "This automation"}
@@ -132,7 +136,7 @@ export function VendoActivities({ pollMs = 5000, maxItems = 8 }: VendoActivities
                         await decide(
                           current.asks.map(ask => ask.id),
                           { approve },
-                          entry?.grantSetId === undefined ? undefined : { grantSetId: entry.grantSetId },
+                          waiting?.grantSetId === undefined ? undefined : { grantSetId: waiting.grantSetId },
                         );
                         afterDecide();
                       }}

@@ -1,6 +1,7 @@
 import { createActions, VENDO_OVERRIDES_FORMAT, type ExtractedTool, type OverridesFile } from "@vendoai/actions";
 import { createAutomations } from "@vendoai/automations";
 import {
+  DEFAULT_TRIGGER_ID,
   VENDO_APP_FORMAT,
   type AppDocument,
   type ApprovalId,
@@ -225,10 +226,11 @@ async function runAutomations(fixture: Fixture): Promise<{ trace: Trace; finalSt
     format: VENDO_APP_FORMAT,
     id: "app_parity",
     name: "parity",
-    trigger: {
+    triggers: [{
+      id: DEFAULT_TRIGGER_ID,
       on: { kind: "host-event", event: "go" },
       run: { kind: "steps", steps: substituteRoot(fixture.steps, "event") },
-    },
+    }],
   };
   await store.records("vendo_apps").put({
     id: doc.id,

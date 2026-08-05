@@ -136,6 +136,7 @@ describe("LEAK 1 — the standing-access card rendered model instructions", () =
         <AdoptionCard
           card={{
             appId: "app_1",
+            triggerId: "main",
             automation: "Spending watcher",
             reason: "departure",
             sponsor: "Dana",
@@ -504,6 +505,7 @@ describe("the widened audit — no chrome surface renders a developer string", (
     ["automation", <AutomationCard name="Low balance alert" enabled description="Emails you when checking dips." />],
     ["paused adoption", <AdoptionCard card={{
       appId: "app_7f3a2b41",
+      triggerId: "main",
       automation: "Weekly sweep",
       reason: "grants",
       sponsor: "Dana",

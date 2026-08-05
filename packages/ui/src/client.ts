@@ -159,17 +159,24 @@ export interface VendoClient {
 
   automations: {
     list(): Promise<AutomationEntry[]>;
-    enable(id: AppId): Promise<EnableResult>;
-    disable(id: AppId): Promise<void>;
-    dryRun(id: AppId): Promise<RunPlan>;
+    /** Arm/disarm/preview ONE trigger of an app — an automation is an app with
+     *  a LIST of triggers, and each is decided on its own. */
+    enable(id: AppId, triggerId: string): Promise<EnableResult>;
+    disable(id: AppId, triggerId: string): Promise<void>;
+    dryRun(id: AppId, triggerId: string): Promise<RunPlan>;
     /** POST /automations/:id/adopt — build contract §9.9: take a stopped
      *  automation on, approving its reads and writes as YOURSELF. Editors+
      *  only; the first to complete wins. */
-    adopt(id: AppId): Promise<AdoptResult>;
+    adopt(id: AppId, triggerId: string): Promise<AdoptResult>;
   };
 
   runs: {
-    list(filter?: { appId?: AppId; status?: RunStatus; cursor?: string }): Promise<{ runs: RunRecord[]; cursor?: string }>;
+    list(filter?: {
+      appId?: AppId;
+      triggerId?: string;
+      status?: RunStatus;
+      cursor?: string;
+    }): Promise<{ runs: RunRecord[]; cursor?: string }>;
     get(id: RunId): Promise<RunRecord>;
     stop(id: RunId): Promise<void>;
   };

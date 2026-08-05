@@ -1,5 +1,5 @@
 import type { RunStatus } from "@vendoai/automations";
-import { VendoError } from "@vendoai/core";
+import { DEFAULT_TRIGGER_ID, VendoError } from "@vendoai/core";
 import { json, route, string, type RouteEntry } from "./shared.js";
 
 /** 07-automations / 09 §3 — the /automations wire area. */
@@ -7,22 +7,27 @@ export const automationRoutes: RouteEntry[] = [
   route("GET", "/automations", async ({ deps, context }) => {
     return json(await deps.automations.list(await context("automation")));
   }),
-  // Grouped like the old if-chain arm (`segments.length === 3 && POST`):
-  // context resolves before the operation check, and an unknown operation
-  // falls through to the table's not-found.
-  route("POST", "/automations/:appId/:op", async ({ deps, context, params, segments }) => {
+  // Grouped like the old if-chain arm (`segments.length === 3 && POST`),
+  // widened with a trailing rest segment for the trigger id — the same
+  // optional-trailing-segment shape the /runs/:runId/* route below already
+  // uses. A caller that names no trigger gets the legacy single-trigger app's
+  // id (DEFAULT_TRIGGER_ID); context resolves before the operation check, and
+  // an unknown operation falls through to the table's not-found.
+  route("POST", "/automations/:appId/:op/*", async ({ deps, context, params, segments }) => {
+    if (segments.length > 4) return undefined;
     const appId = string(params["appId"], "app id");
+    const triggerId = segments[3] ?? DEFAULT_TRIGGER_ID;
     const ctx = await context("automation");
-    if (segments[2] === "enable") return json(await deps.automations.enable(appId, ctx));
+    if (segments[2] === "enable") return json(await deps.automations.enable(appId, triggerId, ctx));
     if (segments[2] === "disable") {
-      await deps.automations.disable(appId, ctx);
+      await deps.automations.disable(appId, triggerId, ctx);
       return json({});
     }
-    if (segments[2] === "dry-run") return json(await deps.automations.dryRun(appId, ctx));
+    if (segments[2] === "dry-run") return json(await deps.automations.dryRun(appId, triggerId, ctx));
     // Build contract §9.9 — take on a stopped automation. Editor gating and
     // the CAS live in the engine; the door just carries the caller's context,
     // because the grants minted here are the CALLER's own.
-    if (segments[2] === "adopt") return json(await deps.automations.adopt(appId, ctx));
+    if (segments[2] === "adopt") return json(await deps.automations.adopt(appId, triggerId, ctx));
     return undefined;
   }),
 ];
@@ -37,6 +42,7 @@ export const runRoutes: RouteEntry[] = [
     }
     const filter = {
       ...(url.searchParams.get("appId") === null ? {} : { appId: url.searchParams.get("appId")! }),
+      ...(url.searchParams.get("triggerId") === null ? {} : { triggerId: url.searchParams.get("triggerId")! }),
       ...(status === undefined ? {} : { status: status as RunStatus }),
       ...(url.searchParams.get("cursor") === null ? {} : { cursor: url.searchParams.get("cursor")! }),
     };

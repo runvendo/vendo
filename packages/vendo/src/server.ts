@@ -2235,7 +2235,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       // opener already holds keeps the adoption lookup's two store reads off
       // EVERY app open in every deployment, including the single-player ones
       // that have no automations at all.
-      if (app.trigger === undefined) return undefined;
+      if (app.triggers === undefined || app.triggers.length === 0) return undefined;
       const card = await automationsForArming?.adoption(app.id, ctx);
       return card === undefined ? undefined : { [ADOPTION_VENUE_KEY]: card };
     },
@@ -2271,11 +2271,11 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // Wave 9 — a ladder-authored automation is armed through the automations
     // engine's own enable(), so the 07 §3 grant-capture flow runs at creation
     // and the missing standing-grant approvals surface on the edit result.
-    armAutomation: async (appId, armCtx) => {
+    armAutomation: async (appId, triggerId, armCtx) => {
       if (automationsForArming === undefined) {
         throw new VendoError("not-implemented", "the automations engine is not composed yet");
       }
-      return automationsForArming.enable(appId, armCtx);
+      return automationsForArming.enable(appId, triggerId, armCtx);
     },
     // The fast fill tier (models spec 2026-07-22, `models.paint` on the public
     // surface): the family fast pick when the agent slot rides the ladder, the

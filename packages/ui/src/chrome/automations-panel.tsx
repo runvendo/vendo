@@ -1,4 +1,10 @@
-import { serviceToolSlug, type ApprovalRequest, type AppId, type Trigger } from "@vendoai/core";
+import {
+  DEFAULT_TRIGGER_ID,
+  serviceToolSlug,
+  type ApprovalRequest,
+  type AppId,
+  type Trigger,
+} from "@vendoai/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { APPROVALS_DECIDED_EVENT } from "../client-impl.js";
 import { useVendoContext, useVendoTheme } from "../context.js";
@@ -6,7 +12,7 @@ import { useApprovals } from "../hooks/use-approvals.js";
 import { useAutomations } from "../hooks/use-automations.js";
 import type { RunPlan, RunRecord, RunStatus } from "../wire-types.js";
 import { formatAuditTime } from "./activity-semantics.js";
-import { automationFlow, sponsorLabel } from "./automation-card.js";
+import { automationFlow, sponsorLabel, triggerLabel } from "./automation-card.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { developmentMode } from "./dev-mode.js";
 import { GrantSetCard } from "./grant-set-card.js";
@@ -116,6 +122,10 @@ function nextRunLabel(trigger: Trigger | undefined, lastStartedAt: string | unde
   return null;
 }
 
+/** The identity of a panel ROW: one trigger of one app. An automation is an app
+    with a LIST of triggers, so nothing in this panel is keyed by app alone. */
+const rowKey = (appId: AppId, triggerId: string): string => `${appId}:${triggerId}`;
+
 /** 08-ui §4; 07-automations §5 — controls, grant capture, previews, history, kill switch.
     The trigger/flow labels (triggerLabel, automationFlow) moved to
     automation-card.tsx (2026-07 demo feedback), shared with the read-only
@@ -125,14 +135,18 @@ export function AutomationsPanel() {
   const approvals = useApprovals();
   const { client } = useVendoContext();
   const theme = useVendoTheme();
-  const [plans, setPlans] = useState<Record<AppId, RunPlan | undefined>>({});
-  const [runs, setRuns] = useState<Record<AppId, RunRecord[] | undefined>>({});
-  const [recent, setRecent] = useState<Record<AppId, RunRecord[] | undefined>>({});
+  // Every per-row map below is keyed by ROW — `${appId}:${triggerId}` — because
+  // an app has a list of triggers and each one is dry-run, inspected, armed and
+  // celebrated on its own. Keying any of these by app alone would make two
+  // triggers of one app share a run strip, a plan, and a busy flag.
+  const [plans, setPlans] = useState<Record<string, RunPlan | undefined>>({});
+  const [runs, setRuns] = useState<Record<string, RunRecord[] | undefined>>({});
+  const [recent, setRecent] = useState<Record<string, RunRecord[] | undefined>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string>();
-  const [justEnabled, setJustEnabled] = useState<Record<AppId, boolean>>({});
-  const enableTimers = useRef(new Map<AppId, number>());
-  const stripFetched = useRef(new Set<AppId>());
+  const [justEnabled, setJustEnabled] = useState<Record<string, boolean>>({});
+  const enableTimers = useRef(new Map<string, number>());
+  const stripFetched = useRef(new Set<string>());
   // 7-A — the countdown re-renders on a slow clock; minute precision needs no
   // faster tick, and an unmounted panel stops it.
   const [now, setNow] = useState(() => Date.now());
@@ -169,48 +183,51 @@ export function AutomationsPanel() {
     let cancelled = false;
     for (const entry of automations.automations) {
       const appId = entry.app.id;
-      if (stripFetched.current.has(appId)) continue;
-      stripFetched.current.add(appId);
-      void (async () => {
-        try {
-          const result = await listRuns({ appId });
-          // A discarded (cancelled) response must also unmark the appId, or an
-          // effect restart would skip its only retry and the strip never renders.
-          if (cancelled) {
-            stripFetched.current.delete(appId);
-            return;
+      for (const { trigger } of entry.triggers) {
+        const key = rowKey(appId, trigger.id);
+        if (stripFetched.current.has(key)) continue;
+        stripFetched.current.add(key);
+        void (async () => {
+          try {
+            const result = await listRuns({ appId, triggerId: trigger.id });
+            // A discarded (cancelled) response must also unmark the row, or an
+            // effect restart would skip its only retry and the strip never renders.
+            if (cancelled) {
+              stripFetched.current.delete(key);
+              return;
+            }
+            setRecent(current => ({ ...current, [key]: result.runs.slice(0, RUN_STRIP_LIMIT) }));
+          } catch {
+            if (!cancelled) stripFetched.current.delete(key);
           }
-          setRecent(current => ({ ...current, [appId]: result.runs.slice(0, RUN_STRIP_LIMIT) }));
-        } catch {
-          if (!cancelled) stripFetched.current.delete(appId);
-        }
-      })();
+        })();
+      }
     }
     return () => {
       cancelled = true;
     };
   }, [automations.automations, listRuns]);
 
-  const clearEnableCelebration = (appId: AppId) => {
-    const timer = enableTimers.current.get(appId);
+  const clearEnableCelebration = (key: string) => {
+    const timer = enableTimers.current.get(key);
     if (timer !== undefined) window.clearTimeout(timer);
-    enableTimers.current.delete(appId);
+    enableTimers.current.delete(key);
     setJustEnabled(current => {
-      if (!current[appId]) return current;
+      if (!current[key]) return current;
       const next = { ...current };
-      delete next[appId];
+      delete next[key];
       return next;
     });
   };
 
-  const celebrateEnable = (appId: AppId) => {
-    const existing = enableTimers.current.get(appId);
+  const celebrateEnable = (key: string) => {
+    const existing = enableTimers.current.get(key);
     if (existing !== undefined) window.clearTimeout(existing);
     const reduced = theme.motion === "reduced"
       || (typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
-    setJustEnabled(current => ({ ...current, [appId]: true }));
-    enableTimers.current.set(appId, window.setTimeout(
-      () => clearEnableCelebration(appId),
+    setJustEnabled(current => ({ ...current, [key]: true }));
+    enableTimers.current.set(key, window.setTimeout(
+      () => clearEnableCelebration(key),
       reduced ? REDUCED_ENABLE_CELEBRATION_MS : ENABLE_CELEBRATION_MS,
     ));
   };
@@ -249,7 +266,13 @@ export function AutomationsPanel() {
       did not; a failed repair surfaces in the panel alert with the row
       honestly still Enabled and the toggle as the retry — a denied automation
       is never silently left enabled. */
-  const decideSet = async (appId: AppId, asks: ApprovalRequest[], grantSetId: string | undefined, approve: boolean) => {
+  const decideSet = async (
+    appId: AppId,
+    triggerId: string,
+    asks: ApprovalRequest[],
+    grantSetId: string | undefined,
+    approve: boolean,
+  ) => {
     await approvals.decide(
       asks.map(ask => ask.id),
       { approve },
@@ -258,19 +281,23 @@ export function AutomationsPanel() {
     await automations.refresh();
     if (approve) return;
     const [entries, grants] = await Promise.all([client.automations.list(), client.grants.list()]);
-    const entry = entries.find(candidate => candidate.app.id === appId);
-    const stillArmed = entry !== undefined && entry.enabled && (entry.pendingGrants ?? 0) === 0;
+    const row = entries
+      .find(candidate => candidate.app.id === appId)
+      ?.triggers.find(candidate => candidate.trigger.id === triggerId);
+    const stillArmed = row !== undefined && row.enabled && (row.pendingGrants ?? 0) === 0;
     // The engine keeps a PARTIALLY granted automation armed by design (its
     // ungranted steps park at fire time) — repair only a consent moment that
-    // granted nothing yet left the row enabled.
+    // granted nothing yet left the row enabled. Scoped to the TRIGGER: a
+    // sibling trigger's grants are not evidence about this one.
     const grantedSomething = grants.some(grant =>
       grant.appId === appId
+      && (grant.triggerId ?? DEFAULT_TRIGGER_ID) === triggerId
       && grant.source === "automation"
       && grant.duration === "standing"
       && grant.revokedAt === undefined);
     if (!stillArmed || grantedSomething) return;
     try {
-      await automations.disable(appId);
+      await automations.disable(appId, triggerId);
     } catch (reason) {
       // Same rule as a failed run: what did not happen, and what is still true.
       // The wire's sentence goes to the developer's own channel.
@@ -296,45 +323,12 @@ export function AutomationsPanel() {
         {automations.automations.length === 0 ? <p className="fl-auto-sub" style={{ margin: 0 }}>No automations yet.</p> : null}
         {automations.automations.map(entry => {
           const appId = entry.app.id;
-          const appRuns = runs[appId];
-          const flow = automationFlow(entry.app.trigger);
-          const runsAs = sponsorLabel(entry.sponsor, entry.editors);
-          // The set-card rows come from the persisted pending queue; the count
-          // prefers the engine's own projection (they agree modulo poll skew).
-          const pendingAsks = pendingByApp.get(appId) ?? [];
-          const waitingOn = entry.pendingGrants ?? pendingAsks.length;
-          const celebrating = justEnabled[appId] === true;
-          // Oldest → newest left-to-right, so the strip reads like a timeline.
-          const strip = recent[appId]?.slice().reverse();
-          // 7-A liveness — a running run puts the traveling dot on the arrow
-          // and takes over the state line; otherwise the enabled line carries
-          // the next-run countdown when it can be computed honestly. The
-          // expanded history is fresher than the strip when both exist.
-          const known = runs[appId] ?? recent[appId];
-          const runningRun = known?.find(run => run.status === "running");
-          // "step N/M": M = the plan's step count, N = the step in flight
-          // (recorded steps + 1). Plans without steps just say "running now".
-          const plannedSteps = entry.app.trigger?.run.kind === "steps" ? entry.app.trigger.run.steps.length : 0;
-          const runningStep = runningRun && plannedSteps > 0
-            ? ` · step ${Math.min(runningRun.steps.length + 1, plannedSteps)}/${plannedSteps}`
-            : "";
-          // Latest start by value, not position — storage pages are not
-          // guaranteed newest-first (ISO instants compare lexically).
-          const lastStartedAt = known?.reduce<string | undefined>(
-            (latest, run) => (!latest || run.startedAt > latest ? run.startedAt : latest),
-            undefined,
-          );
-          const nextRun = entry.enabled && !runningRun
-            ? nextRunLabel(entry.app.trigger, lastStartedAt, now)
-            : null;
           return (
-            <article
-              className="fl-automation"
-              key={appId}
-              style={celebrating && !reduced
-                ? { animation: "fl-connect-bloom .5s cubic-bezier(.22,1,.36,1) both" }
-                : undefined}
-            >
+            <article className="fl-automation" key={appId}>
+              {/* The app is the GROUP header: it names the thing, and its
+                  triggers are the rows that get switched on and off. It carries
+                  no toggle of its own — an app is not a switch, its triggers
+                  are. */}
               <div className="fl-auto-head">
                 <span className="fl-auto-ic" aria-hidden="true">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -343,266 +337,352 @@ export function AutomationsPanel() {
                 </span>
                 <div>
                   <div className="fl-auto-title">{entry.app.name}</div>
-                  <div className="fl-auto-sub">
-                    {/* §9.9 — `stopped` is the SERVER's word on the automation
-                        itself and it outranks any run row: the fire-time check
-                        stops a run before its first tool call, so a run left
-                        looking live cannot be allowed to report "running now"
-                        about something that will not run again until it is
-                        taken on. */}
-                    {entry.stopped !== undefined ? (
-                      <>
-                        <span className="fl-auto-live fl-auto-wait" aria-hidden="true" />
-                        Stopped
-                      </>
-                    ) : runningRun ? (
-                      <>
-                        <span className="fl-act-spin" aria-hidden="true" />
-                        <span className="fl-auto-nextrun">running now{runningStep}</span>
-                      </>
-                    ) : (
-                      <>
-                        {entry.enabled ? (
-                          <span
-                            className={`fl-auto-live${waitingOn > 0 ? " fl-auto-wait" : ""}`}
-                            aria-hidden="true"
-                            style={celebrating && !reduced
-                              ? { animation: "fl-connect-pop .55s cubic-bezier(.22,1,.36,1) both" }
-                              : undefined}
-                          />
-                        ) : null}
-                        {entry.enabled
-                          ? waitingOn > 0
-                            ? `Enabled · waiting on ${waitingOn} permission${waitingOn === 1 ? "" : "s"}`
-                            : "Enabled"
-                          : "Disabled"}
-                        {nextRun ? <span className="fl-auto-nextrun">· {nextRun}</span> : null}
-                      </>
-                    )}
-                  </div>
-                  {/* §9.9 — WHY it stopped, in the server's own consumer sentence
-                      (the same one the adoption card carries, so the list and the
-                      card never say two different things). The card in the app is
-                      where it gets taken on; this is how it gets found. */}
-                  {entry.stopped === undefined ? null : (
-                    <div className="fl-auto-sub fl-auto-stopped" style={{ display: "block" }} role="status">
-                      {entry.stopped.summary}
+                  {entry.triggers.length > 1 ? (
+                    <div className="fl-auto-sub">{entry.triggers.length} triggers</div>
+                  ) : null}
+                </div>
+              </div>
+
+              {entry.triggers.map(row => {
+                const trigger = row.trigger;
+                const key = rowKey(appId, trigger.id);
+                const label = triggerLabel(trigger);
+                const rowRuns = runs[key];
+                const flow = automationFlow(trigger);
+                const runsAs = sponsorLabel(row.sponsor, entry.editors);
+                // The set-card rows come from the persisted pending queue; the
+                // count prefers the engine's own projection (they agree modulo
+                // poll skew).
+                //
+                // The queue names the APP, not the trigger, so which row shows
+                // the card is decided here: the trigger the engine says is
+                // waiting owns them, and when nothing claims them the FIRST row
+                // does. That fallback is not a nicety — a payload from before
+                // `pendingGrants` existed carries no claim at all, and a card
+                // nobody renders is a person left holding an approval the
+                // automation never hears the answer to. With one trigger (the
+                // ordinary case) both branches are the same row.
+                const claimant = entry.triggers.find(candidate => (candidate.pendingGrants ?? 0) > 0)
+                  ?? entry.triggers[0];
+                const pendingAsks = claimant?.trigger.id === trigger.id
+                  ? pendingByApp.get(appId) ?? []
+                  : [];
+                const waitingOn = row.pendingGrants ?? pendingAsks.length;
+                const celebrating = justEnabled[key] === true;
+                // Oldest → newest left-to-right, so the strip reads like a timeline.
+                const strip = recent[key]?.slice().reverse();
+                // 7-A liveness — a running run puts the traveling dot on the arrow
+                // and takes over the state line; otherwise the enabled line carries
+                // the next-run countdown when it can be computed honestly. The
+                // expanded history is fresher than the strip when both exist.
+                const known = runs[key] ?? recent[key];
+                const runningRun = known?.find(run => run.status === "running");
+                // "step N/M": M = the plan's step count, N = the step in flight
+                // (recorded steps + 1). Plans without steps just say "running now".
+                const plannedSteps = trigger.run.kind === "steps" ? trigger.run.steps.length : 0;
+                const runningStep = runningRun && plannedSteps > 0
+                  ? ` · step ${Math.min(runningRun.steps.length + 1, plannedSteps)}/${plannedSteps}`
+                  : "";
+                // Latest start by value, not position — storage pages are not
+                // guaranteed newest-first (ISO instants compare lexically).
+                const lastStartedAt = known?.reduce<string | undefined>(
+                  (latest, run) => (!latest || run.startedAt > latest ? run.startedAt : latest),
+                  undefined,
+                );
+                const nextRun = row.enabled && !runningRun
+                  ? nextRunLabel(trigger, lastStartedAt, now)
+                  : null;
+                // Every row after the first sits under the same hairline the
+                // flow block already uses, so a multi-trigger app reads as one
+                // card with rows rather than several cards jammed together.
+                return (
+                  <section
+                    key={key}
+                    aria-label={`${entry.app.name} — ${label.title}`}
+                    style={celebrating && !reduced
+                      ? { animation: "fl-connect-bloom .5s cubic-bezier(.22,1,.36,1) both" }
+                      : undefined}
+                  >
+                    <div
+                      className="fl-auto-head"
+                      style={{
+                        borderTop: "1px solid var(--vendo-border)",
+                        // Aligns the trigger's title under the app's, past the
+                        // app icon: the icon's 34px plus the head's 12px gap.
+                        paddingLeft: 34 + 12 + 16,
+                      }}
+                    >
+                      <div>
+                        {/* Deliberately the NODE type scale, not the title one:
+                            the app name above is the group's heading and has to
+                            keep primacy over its rows. */}
+                        <span className="fl-auto-node-t">{label.title}</span>
+                        <div className="fl-auto-sub">
+                          {/* §9.9 — `stopped` is the SERVER's word on the automation
+                              itself and it outranks any run row: the fire-time check
+                              stops a run before its first tool call, so a run left
+                              looking live cannot be allowed to report "running now"
+                              about something that will not run again until it is
+                              taken on. */}
+                          {row.stopped !== undefined ? (
+                            <>
+                              <span className="fl-auto-live fl-auto-wait" aria-hidden="true" />
+                              Stopped
+                            </>
+                          ) : runningRun ? (
+                            <>
+                              <span className="fl-act-spin" aria-hidden="true" />
+                              <span className="fl-auto-nextrun">running now{runningStep}</span>
+                            </>
+                          ) : (
+                            <>
+                              {row.enabled ? (
+                                <span
+                                  className={`fl-auto-live${waitingOn > 0 ? " fl-auto-wait" : ""}`}
+                                  aria-hidden="true"
+                                  style={celebrating && !reduced
+                                    ? { animation: "fl-connect-pop .55s cubic-bezier(.22,1,.36,1) both" }
+                                    : undefined}
+                                />
+                              ) : null}
+                              {row.enabled
+                                ? waitingOn > 0
+                                  ? `Enabled · waiting on ${waitingOn} permission${waitingOn === 1 ? "" : "s"}`
+                                  : "Enabled"
+                                : "Disabled"}
+                              {nextRun ? <span className="fl-auto-nextrun">· {nextRun}</span> : null}
+                            </>
+                          )}
+                        </div>
+                        {/* §9.9 — WHY it stopped, in the server's own consumer sentence
+                            (the same one the adoption card carries, so the list and the
+                            card never say two different things). The card in the app is
+                            where it gets taken on; this is how it gets found. */}
+                        {row.stopped === undefined ? null : (
+                          <div className="fl-auto-sub fl-auto-stopped" style={{ display: "block" }} role="status">
+                            {row.stopped.summary}
+                          </div>
+                        )}
+                        {/* §13 — an automation always runs as a named person, and its
+                            window says so. Per trigger, because each one is sponsored
+                            on its own. */}
+                        {runsAs === null
+                          ? null
+                          : <div className="fl-auto-sub" style={{ display: "block" }}>{runsAs}</div>}
+                      </div>
+                      <button
+                        className="fl-auto-toggle"
+                        type="button"
+                        role="switch"
+                        // Name identifies WHICH TRIGGER of which app (aria-checked
+                        // carries the on/off state) so screen readers and role/name
+                        // tests can tell two same-state toggles apart and never flip
+                        // the wrong one. Two triggers of one app is exactly the case
+                        // that makes the app name alone ambiguous.
+                        aria-label={`Enable ${entry.app.name} — ${label.title}`}
+                        aria-checked={row.enabled}
+                        disabled={busy[`toggle-${key}`]}
+                        style={{
+                          // OFF has to be VISIBLE as a state (WCAG 1.4.11): the 14%
+                          // hairline track sat at ~1.4:1, so "off" read as "no
+                          // control here". --vendo-indicator is the 3:1 derivation.
+                          background: row.enabled ? "var(--vendo-accent)" : "var(--vendo-indicator)",
+                          transform: row.enabled ? undefined : "rotate(180deg)",
+                          transition: "background .2s ease, transform .2s cubic-bezier(.22,1,.36,1)",
+                        }}
+                        onClick={() => void during(`toggle-${key}`, async () => {
+                          if (row.enabled) {
+                            await automations.disable(appId, trigger.id);
+                            clearEnableCelebration(key);
+                          } else {
+                            const result = await automations.enable(appId, trigger.id);
+                            // The minted asks land in the persisted pending queue;
+                            // re-fetch it so the grant-set card renders from the
+                            // same source a reload would use.
+                            await approvals.refresh();
+                            if (result.enabled && result.missing.length === 0) celebrateEnable(key);
+                          }
+                        })}
+                      />
                     </div>
-                  )}
-                  {/* §13 — an automation always runs as a named person, and its
-                      window says so. */}
-                  {runsAs === null
-                    ? null
-                    : <div className="fl-auto-sub" style={{ display: "block" }}>{runsAs}</div>}
-                </div>
-                <button
-                  className="fl-auto-toggle"
-                  type="button"
-                  role="switch"
-                  // Name identifies WHICH automation (aria-checked carries the on/off
-                  // state) so screen readers and role/name tests can tell two same-state
-                  // toggles apart and never flip the wrong app.
-                  aria-label={`Enable ${entry.app.name}`}
-                  aria-checked={entry.enabled}
-                  disabled={busy[`toggle-${appId}`]}
-                  style={{
-                    // OFF has to be VISIBLE as a state (WCAG 1.4.11): the 14%
-                    // hairline track sat at ~1.4:1, so "off" read as "no
-                    // control here". --vendo-indicator is the 3:1 derivation.
-                    background: entry.enabled ? "var(--vendo-accent)" : "var(--vendo-indicator)",
-                    transform: entry.enabled ? undefined : "rotate(180deg)",
-                    transition: "background .2s ease, transform .2s cubic-bezier(.22,1,.36,1)",
-                  }}
-                  onClick={() => void during(`toggle-${appId}`, async () => {
-                    if (entry.enabled) {
-                      await automations.disable(appId);
-                      clearEnableCelebration(appId);
-                    } else {
-                      const result = await automations.enable(appId);
-                      // The minted asks land in the persisted pending queue;
-                      // re-fetch it so the grant-set card renders from the
-                      // same source a reload would use.
-                      await approvals.refresh();
-                      if (result.enabled && result.missing.length === 0) celebrateEnable(appId);
-                    }
-                  })}
-                />
-              </div>
 
-              {/* role="group": a bare <div> may not carry aria-label (axe
-                  aria-prohibited-attr) — and this IS a group, the two labelled
-                  nodes of one trigger→action flow. */}
-              {flow ? (
-                <div className="fl-auto-flow" role="group" aria-label={`Automation flow for ${entry.app.name}`}>
-                  <span className="fl-auto-node" style={{ flex: 1 }}>
-                    <span className="fl-auto-node-ic" aria-hidden="true">↳</span>
-                    <span>
-                      <span className="fl-auto-node-t">{flow.trigger.title}</span>
-                      <span className="fl-auto-node-s" style={{ display: "block" }}>{flow.trigger.sub}</span>
-                    </span>
-                  </span>
-                  <span className="fl-auto-arrow" aria-hidden="true">
-                    {runningRun ? <span className="fl-auto-runner" /> : null}
-                  </span>
-                  <span className="fl-auto-node" style={{ flex: 1 }}>
-                    <span className="fl-auto-node-ic" aria-hidden="true">✓</span>
-                    <span>
-                      <span className="fl-auto-node-t">{flow.action.title}</span>
-                      <span className="fl-auto-node-s" style={{ display: "block" }}>{flow.action.sub}</span>
-                    </span>
-                  </span>
-                </div>
-              ) : null}
-
-              {/* role="img": the dots and the rollup are all aria-hidden, so
-                  the label IS the whole content — a graphic with a text
-                  alternative, which is what role=img means. */}
-              {strip && strip.length > 0 ? (
-                <div className="fl-auto-runs" role="img" aria-label={`Last ${strip.length} run${strip.length === 1 ? "" : "s"} for ${entry.app.name}: ${runRollup(strip)}`}>
-                  <span className="fl-auto-runs-lbl" aria-hidden="true">Last {strip.length} run{strip.length === 1 ? "" : "s"}</span>
-                  {strip.map(run => (
-                    <span
-                      key={run.id}
-                      className="fl-auto-runs-dot"
-                      data-status={run.status}
-                      title={`${RUN_STATUS_LABEL[run.status]} · ${formatAuditTime(run.startedAt)}`}
-                      aria-hidden="true"
-                    />
-                  ))}
-                  <span className="fl-auto-runs-sum" aria-hidden="true">{runRollup(strip)}</span>
-                </div>
-              ) : null}
-
-              {celebrating ? (
-                <div
-                  className="fl-auto-created-toast"
-                  role="status"
-                  aria-live="polite"
-                  style={!reduced
-                    ? { animation: "fl-item-in .24s ease-out 2.82s reverse both" }
-                    : undefined}
-                >
-                  <span className="fl-auto-created-live" aria-hidden="true" />
-                  <div className="fl-auto-created-copy">
-                    <div className="fl-auto-created-title">{entry.app.name} is live</div>
-                    <div className="fl-auto-created-sub">Automation enabled</div>
-                  </div>
-                </div>
-              ) : null}
-
-              <div className="fl-auto-flow" style={{ gap: 8 }}>
-                <button className="fl-btn" type="button" onClick={() => void during(`plan-${appId}`, async () => {
-                  const plan = await automations.dryRun(appId);
-                  setPlans(current => ({ ...current, [appId]: plan }));
-                })}>Dry run</button>
-                <button
-                  className="fl-btn"
-                  type="button"
-                  aria-expanded={appRuns !== undefined}
-                  onClick={() => void during(`runs-${appId}`, async () => {
-                    if (appRuns !== undefined) {
-                      setRuns(current => ({ ...current, [appId]: undefined }));
-                    } else {
-                      const result = await automations.runs({ appId });
-                      setRuns(current => ({ ...current, [appId]: result.runs }));
-                    }
-                  })}
-                >Run history</button>
-              </div>
-
-              {pendingAsks.length > 0 ? (
-                <GrantSetCard
-                  name={entry.app.name}
-                  permissions={pendingAsks.map(ask => {
-                    // A connector ask is FOR its service action, not for the
-                    // dispatcher — two service actions are otherwise the same
-                    // row twice.
-                    const slug = serviceToolSlug(ask.call);
-                    return {
-                      approvalId: ask.id,
-                      tool: ask.call.tool,
-                      ...(slug === undefined ? {} : { slug }),
-                      risk: ask.descriptor.risk,
-                    };
-                  })}
-                  state="parked"
-                  onDecide={async approve => {
-                    await decideSet(appId, pendingAsks, entry.grantSetId, approve);
-                    if (approve) celebrateEnable(appId);
-                  }}
-                />
-              ) : null}
-
-              {plans[appId] ? (
-                <div
-                  className="fl-auto-flow"
-                  // role="group": a bare <div> may not carry aria-label
-                  // (aria-prohibited-attr) — same fix as the flow block above.
-                  role="group"
-                  aria-label={`Dry run for ${entry.app.name}`}
-                  style={{ alignItems: "stretch", flexDirection: "column", gap: 10 }}
-                >
-                  <strong className="fl-auto-title">Dry-run plan</strong>
-                  <ol style={{ alignItems: "stretch", display: "flex", listStyle: "none", margin: 0, padding: 0 }}>
-                    {plans[appId]!.steps.map((step, index) => (
-                      <li key={step.id} style={{ alignItems: "center", display: "flex", flex: 1 }}>
-                        {index > 0 ? <span className="fl-auto-arrow" aria-hidden="true" /> : null}
+                    {/* role="group": a bare <div> may not carry aria-label (axe
+                        aria-prohibited-attr) — and this IS a group, the two labelled
+                        nodes of one trigger→action flow. */}
+                    {flow ? (
+                      <div className="fl-auto-flow" role="group" aria-label={`Automation flow for ${entry.app.name} — ${label.title}`}>
                         <span className="fl-auto-node" style={{ flex: 1 }}>
-                          <span className="fl-auto-node-ic" aria-hidden="true">{step.wouldAsk ? "?" : "✓"}</span>
+                          <span className="fl-auto-node-ic" aria-hidden="true">↳</span>
                           <span>
-                            <span className="fl-auto-node-t">{step.tool} — {step.wouldAsk ? "would ask" : "ready"}</span>
-                            <span className="fl-auto-node-s" style={{ display: "block" }}>Step {index + 1}</span>
+                            <span className="fl-auto-node-t">{flow.trigger.title}</span>
+                            <span className="fl-auto-node-s" style={{ display: "block" }}>{flow.trigger.sub}</span>
                           </span>
                         </span>
-                      </li>
-                    ))}
-                  </ol>
-                  <div className="fl-auto-sub">Missing grants: {plans[appId]!.grantsMissing.length ? plans[appId]!.grantsMissing.join(", ") : "none"}</div>
-                </div>
-              ) : null}
-
-              {appRuns !== undefined ? (
-                <div className="fl-act-body" role="group" aria-label={`Run history for ${entry.app.name}`}>
-                  {appRuns.length === 0 ? <p className="fl-act-row">No runs yet.</p> : appRuns.map(run => (
-                    <article key={run.id}>
-                      <div className="fl-act-row">
-                        <span className={`fl-act-ic ${run.status === "error" ? "fl-act-x" : "fl-act-tick"}`} aria-hidden="true">
-                          {run.status === "error" ? "✕" : "✓"}
+                        <span className="fl-auto-arrow" aria-hidden="true">
+                          {runningRun ? <span className="fl-auto-runner" /> : null}
                         </span>
-                        <strong className="fl-act-lbl">{RUN_STATUS_LABEL[run.status]}</strong>
-                        <time className="fl-act-sub" dateTime={run.startedAt}>{formatAuditTime(run.startedAt)}</time>
-                        {run.status === "running" ? (
-                          <button className="fl-btn fl-btn-ceremony" type="button" onClick={() => void during(`stop-${run.id}`, async () => {
-                            await automations.stopRun(run.id);
-                            setRuns(current => ({
-                              ...current,
-                              [appId]: (current[appId] ?? []).map(item => item.id === run.id ? { ...item, status: "stopped" } : item),
-                            }));
-                          })}>Stop</button>
-                        ) : null}
+                        <span className="fl-auto-node" style={{ flex: 1 }}>
+                          <span className="fl-auto-node-ic" aria-hidden="true">✓</span>
+                          <span>
+                            <span className="fl-auto-node-t">{flow.action.title}</span>
+                            <span className="fl-auto-node-s" style={{ display: "block" }}>{flow.action.sub}</span>
+                          </span>
+                        </span>
                       </div>
-                      {run.summary ? <p className="fl-act-peek">{run.summary}</p> : null}
-                      {/* Ruling 11 — a failed UNATTENDED run tells its owner what
-                          did not happen and that nothing changed. The run's own
-                          code and reason are written for whoever runs the
-                          deployment (the scheduler's refusals name billing
-                          allowances and console URLs), so they ride the dev-mode
-                          rail — the same seam the queue row's server preview
-                          uses. */}
-                      {run.error ? (
-                        <>
-                          <p role="alert" className="fl-error">
-                            {`This run didn’t finish — nothing in your account was changed.`}
-                          </p>
-                          {developmentMode()
-                            ? <p className="fl-act-sub">{`${run.error.code}: ${run.error.message}`}</p>
-                            : null}
-                        </>
-                      ) : null}
-                    </article>
-                  ))}
-                </div>
-              ) : null}
+                    ) : null}
+
+                    {/* role="img": the dots and the rollup are all aria-hidden, so
+                        the label IS the whole content — a graphic with a text
+                        alternative, which is what role=img means. */}
+                    {strip && strip.length > 0 ? (
+                      <div className="fl-auto-runs" role="img" aria-label={`Last ${strip.length} run${strip.length === 1 ? "" : "s"} for ${entry.app.name} — ${label.title}: ${runRollup(strip)}`}>
+                        <span className="fl-auto-runs-lbl" aria-hidden="true">Last {strip.length} run{strip.length === 1 ? "" : "s"}</span>
+                        {strip.map(run => (
+                          <span
+                            key={run.id}
+                            className="fl-auto-runs-dot"
+                            data-status={run.status}
+                            title={`${RUN_STATUS_LABEL[run.status]} · ${formatAuditTime(run.startedAt)}`}
+                            aria-hidden="true"
+                          />
+                        ))}
+                        <span className="fl-auto-runs-sum" aria-hidden="true">{runRollup(strip)}</span>
+                      </div>
+                    ) : null}
+
+                    {celebrating ? (
+                      <div
+                        className="fl-auto-created-toast"
+                        role="status"
+                        aria-live="polite"
+                        style={!reduced
+                          ? { animation: "fl-item-in .24s ease-out 2.82s reverse both" }
+                          : undefined}
+                      >
+                        <span className="fl-auto-created-live" aria-hidden="true" />
+                        <div className="fl-auto-created-copy">
+                          <div className="fl-auto-created-title">{entry.app.name} is live</div>
+                          <div className="fl-auto-created-sub">{label.title} enabled</div>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div className="fl-auto-flow" style={{ gap: 8 }}>
+                      <button className="fl-btn" type="button" onClick={() => void during(`plan-${key}`, async () => {
+                        const plan = await automations.dryRun(appId, trigger.id);
+                        setPlans(current => ({ ...current, [key]: plan }));
+                      })}>Dry run</button>
+                      <button
+                        className="fl-btn"
+                        type="button"
+                        aria-expanded={rowRuns !== undefined}
+                        onClick={() => void during(`runs-${key}`, async () => {
+                          if (rowRuns !== undefined) {
+                            setRuns(current => ({ ...current, [key]: undefined }));
+                          } else {
+                            const result = await automations.runs({ appId, triggerId: trigger.id });
+                            setRuns(current => ({ ...current, [key]: result.runs }));
+                          }
+                        })}
+                      >Run history</button>
+                    </div>
+
+                    {pendingAsks.length > 0 ? (
+                      <GrantSetCard
+                        name={entry.app.name}
+                        permissions={pendingAsks.map(ask => {
+                          // A connector ask is FOR its service action, not for the
+                          // dispatcher — two service actions are otherwise the same
+                          // row twice.
+                          const slug = serviceToolSlug(ask.call);
+                          return {
+                            approvalId: ask.id,
+                            tool: ask.call.tool,
+                            ...(slug === undefined ? {} : { slug }),
+                            risk: ask.descriptor.risk,
+                          };
+                        })}
+                        state="parked"
+                        onDecide={async approve => {
+                          await decideSet(appId, trigger.id, pendingAsks, row.grantSetId, approve);
+                          if (approve) celebrateEnable(key);
+                        }}
+                      />
+                    ) : null}
+
+                    {plans[key] ? (
+                      <div
+                        className="fl-auto-flow"
+                        // role="group": a bare <div> may not carry aria-label
+                        // (aria-prohibited-attr) — same fix as the flow block above.
+                        role="group"
+                        aria-label={`Dry run for ${entry.app.name} — ${label.title}`}
+                        style={{ alignItems: "stretch", flexDirection: "column", gap: 10 }}
+                      >
+                        <strong className="fl-auto-title">Dry-run plan</strong>
+                        <ol style={{ alignItems: "stretch", display: "flex", listStyle: "none", margin: 0, padding: 0 }}>
+                          {plans[key]!.steps.map((step, index) => (
+                            <li key={step.id} style={{ alignItems: "center", display: "flex", flex: 1 }}>
+                              {index > 0 ? <span className="fl-auto-arrow" aria-hidden="true" /> : null}
+                              <span className="fl-auto-node" style={{ flex: 1 }}>
+                                <span className="fl-auto-node-ic" aria-hidden="true">{step.wouldAsk ? "?" : "✓"}</span>
+                                <span>
+                                  <span className="fl-auto-node-t">{step.tool} — {step.wouldAsk ? "would ask" : "ready"}</span>
+                                  <span className="fl-auto-node-s" style={{ display: "block" }}>Step {index + 1}</span>
+                                </span>
+                              </span>
+                            </li>
+                          ))}
+                        </ol>
+                        <div className="fl-auto-sub">Missing grants: {plans[key]!.grantsMissing.length ? plans[key]!.grantsMissing.join(", ") : "none"}</div>
+                      </div>
+                    ) : null}
+
+                    {rowRuns !== undefined ? (
+                      <div className="fl-act-body" role="group" aria-label={`Run history for ${entry.app.name} — ${label.title}`}>
+                        {rowRuns.length === 0 ? <p className="fl-act-row">No runs yet.</p> : rowRuns.map(run => (
+                          <article key={run.id}>
+                            <div className="fl-act-row">
+                              <span className={`fl-act-ic ${run.status === "error" ? "fl-act-x" : "fl-act-tick"}`} aria-hidden="true">
+                                {run.status === "error" ? "✕" : "✓"}
+                              </span>
+                              <strong className="fl-act-lbl">{RUN_STATUS_LABEL[run.status]}</strong>
+                              <time className="fl-act-sub" dateTime={run.startedAt}>{formatAuditTime(run.startedAt)}</time>
+                              {run.status === "running" ? (
+                                <button className="fl-btn fl-btn-ceremony" type="button" onClick={() => void during(`stop-${run.id}`, async () => {
+                                  await automations.stopRun(run.id);
+                                  setRuns(current => ({
+                                    ...current,
+                                    [key]: (current[key] ?? []).map(item => item.id === run.id ? { ...item, status: "stopped" } : item),
+                                  }));
+                                })}>Stop</button>
+                              ) : null}
+                            </div>
+                            {run.summary ? <p className="fl-act-peek">{run.summary}</p> : null}
+                            {/* Ruling 11 — a failed UNATTENDED run tells its owner what
+                                did not happen and that nothing changed. The run's own
+                                code and reason are written for whoever runs the
+                                deployment (the scheduler's refusals name billing
+                                allowances and console URLs), so they ride the dev-mode
+                                rail — the same seam the queue row's server preview
+                                uses. */}
+                            {run.error ? (
+                              <>
+                                <p role="alert" className="fl-error">
+                                  {`This run didn’t finish — nothing in your account was changed.`}
+                                </p>
+                                {developmentMode()
+                                  ? <p className="fl-act-sub">{`${run.error.code}: ${run.error.message}`}</p>
+                                  : null}
+                              </>
+                            ) : null}
+                          </article>
+                        ))}
+                      </div>
+                    ) : null}
+                  </section>
+                );
+              })}
             </article>
           );
         })}

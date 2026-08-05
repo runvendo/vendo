@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { memoryKnowledgeAdapter } from "@vendoai/core/conformance";
 import {
+  DEFAULT_TRIGGER_ID,
   descriptorHash,
   VENDO_APP_FORMAT,
   VENDO_TREE_FORMAT,
@@ -207,11 +208,12 @@ describe("visibility governance — venue leakage matrix (k8 T5)", () => {
       format: VENDO_APP_FORMAT,
       id: "app_gov_auto",
       name: "Escalation digest",
-      trigger: {
+      triggers: [{
+        id: DEFAULT_TRIGGER_ID,
         on: { kind: "host-event", event: "gov-check" },
         // Step args are JSONata expressions — a literal query needs quotes.
         run: { kind: "steps", steps: [{ id: "kb", tool: "vendo_knowledge_search", args: { query: "'escalation'" } }] },
-      },
+      }],
     };
     await vendo.store.ensureSchema();
     await vendo.store.records("vendo_apps").put({

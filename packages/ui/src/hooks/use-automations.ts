@@ -12,10 +12,17 @@ export function useAutomations(options?: PollOptions): {
   error: Error | undefined;
   isLoading: boolean;
   refresh(): Promise<void>;
-  enable(id: AppId): Promise<EnableResult>;
-  disable(id: AppId): Promise<void>;
-  runs(filter?: { appId?: AppId; status?: RunStatus; cursor?: string }): Promise<{ runs: RunRecord[]; cursor?: string }>;
-  dryRun(id: AppId): Promise<RunPlan>;
+  /** Arm/disarm ONE trigger of an app: an automation is an app with a LIST of
+   *  triggers, and each is armed on its own. */
+  enable(id: AppId, triggerId: string): Promise<EnableResult>;
+  disable(id: AppId, triggerId: string): Promise<void>;
+  runs(filter?: {
+    appId?: AppId;
+    triggerId?: string;
+    status?: RunStatus;
+    cursor?: string;
+  }): Promise<{ runs: RunRecord[]; cursor?: string }>;
+  dryRun(id: AppId, triggerId: string): Promise<RunPlan>;
   stopRun(runId: RunId): Promise<void>;
 } {
   const { client } = useVendoContext();
@@ -23,16 +30,16 @@ export function useAutomations(options?: PollOptions): {
   const { data, error, isLoading, refresh } = useResource(list, [] as AutomationEntry[], options);
 
   const enable = useCallback(
-    async (id: AppId) => {
-      const result = await client.automations.enable(id);
+    async (id: AppId, triggerId: string) => {
+      const result = await client.automations.enable(id, triggerId);
       await refresh();
       return result;
     },
     [client, refresh],
   );
   const disable = useCallback(
-    async (id: AppId) => {
-      await client.automations.disable(id);
+    async (id: AppId, triggerId: string) => {
+      await client.automations.disable(id, triggerId);
       await refresh();
     },
     [client, refresh],

@@ -1,6 +1,7 @@
 import {
   VENDO_APP_FORMAT,
   descriptorHash,
+  triggerKindRefs,
   type AgentRunner,
   type AppDocument,
   type ApprovalId,
@@ -13,6 +14,7 @@ import {
   type ToolDescriptor,
   type ToolOutcome,
   type ToolRegistry,
+  type Trigger,
 } from "@vendoai/core";
 import { memoryStoreAdapter } from "@vendoai/core/conformance";
 import type { AppsRuntime } from "@vendoai/apps";
@@ -52,9 +54,9 @@ const ctx = (subject = "user_a"): RunContext => ({
 
 const app = (
   id: string,
-  trigger: NonNullable<AppDocument["trigger"]>,
+  trigger: Omit<Trigger, "id">,
   name = id,
-): AppDocument => ({ format: VENDO_APP_FORMAT, id, name, trigger });
+): AppDocument => ({ format: VENDO_APP_FORMAT, id, name, triggers: [{ id: "main", ...trigger }] });
 
 const seedApp = async (
   store: StoreAdapter,
@@ -65,9 +67,9 @@ const seedApp = async (
   await store.records("vendo_apps").put({
     id: doc.id,
     data: { subject, enabled, doc },
-    // Mirror the reserved store's derived trigger_kind ref so the memory double the tests use
+    // Mirror the reserved store's derived trigger-kind refs so the memory double the tests use
     // matches how the tick/emit filter apps in production.
-    refs: { subject, ...(doc.trigger === undefined ? {} : { trigger_kind: doc.trigger.on.kind }) },
+    refs: { subject, ...triggerKindRefs(doc.triggers) },
   });
 };
 
@@ -169,7 +171,7 @@ describe("automations enable and grant capture", () => {
       apps: appsDouble(), tools: registry([readTool, writeTool]), guard, store, now: () => NOW,
     });
 
-    const result = await engine.enable(doc.id, ctx());
+    const result = await engine.enable(doc.id, "main", ctx());
 
     expect(result.enabled).toBe(true);
     expect(result.missing.map((request) => request.call.tool)).toEqual([readTool.name, writeTool.name]);
@@ -195,7 +197,7 @@ describe("automations enable and grant capture", () => {
     const engine = createAutomations({
       apps: appsDouble(), tools: registry([readTool, writeTool]), guard, store, now: () => NOW,
     });
-    const { missing } = await engine.enable(doc.id, ctx());
+    const { missing } = await engine.enable(doc.id, "main", ctx());
 
     guard.decide(missing[0]!.id, true);
     guard.decide(missing[1]!.id, false);
@@ -237,12 +239,12 @@ describe("automations enable and grant capture", () => {
     const engine = createAutomations({
       apps: appsDouble(), tools: registry([readTool]), guard, store, now: () => NOW,
     });
-    expect((await engine.enable(schedule.id, ctx())).missing.map(({ call }) => call.tool)).toEqual([readTool.name]);
-    const cursor = await store.records("automations:schedule").get(schedule.id);
+    expect((await engine.enable(schedule.id, "main", ctx())).missing.map(({ call }) => call.tool)).toEqual([readTool.name]);
+    const cursor = await store.records("automations:schedule").get(`${schedule.id}:main`);
     expect(cursor?.data).toEqual({ lastFiredAt: NOW.toISOString() });
-    await engine.disable(schedule.id, ctx());
+    await engine.disable(schedule.id, "main", ctx());
     expect((await store.records("vendo_apps").get(schedule.id))?.data).toMatchObject({ enabled: false });
-    expect(await store.records("automations:schedule").get(schedule.id)).toEqual(cursor);
+    expect(await store.records("automations:schedule").get(`${schedule.id}:main`)).toEqual(cursor);
   });
 
   it("mints next-firing authority for an approved agentic call with no parked continuation", async () => {
@@ -326,7 +328,7 @@ describe("grant sets: one set per enable, dedupe against pending, list projectio
 
   it("returns one grantSetId spanning both missing asks and projects pendingGrants via list()", async () => {
     const engine = makeEngine();
-    const result = await engine.enable(weekly.id, ctx());
+    const result = await engine.enable(weekly.id, "main", ctx());
 
     expect(result.enabled).toBe(true);
     expect(result.missing).toHaveLength(2);
@@ -340,19 +342,17 @@ describe("grant sets: one set per enable, dedupe against pending, list projectio
     const listed = await engine.list(ctx());
     expect(listed).toHaveLength(1);
     expect(listed[0]).toMatchObject({
-      enabled: true,
-      pendingGrants: 2,
-      grantSetId: result.grantSetId,
+      triggers: [{ enabled: true, pendingGrants: 2, grantSetId: result.grantSetId }],
     });
   });
 
   it("re-running enable() reuses the pending ask — no duplicate ApprovalRequest per (appId, tool)", async () => {
     const engine = makeEngine();
-    const first = await engine.enable(weekly.id, ctx());
+    const first = await engine.enable(weekly.id, "main", ctx());
     guard.decide(first.missing[0]!.id, true);
     await flush();
 
-    const second = await engine.enable(weekly.id, ctx());
+    const second = await engine.enable(weekly.id, "main", ctx());
 
     expect(second.missing.map((ask) => ask.call.tool)).toEqual([transactionsTool.name]);
     expect(second.missing[0]!.id).toBe(first.missing[1]!.id);
@@ -364,8 +364,7 @@ describe("grant sets: one set per enable, dedupe against pending, list projectio
     });
     expect(pendingForPair).toHaveLength(1);
     expect((await engine.list(ctx()))[0]).toMatchObject({
-      pendingGrants: 1,
-      grantSetId: first.grantSetId,
+      triggers: [{ pendingGrants: 1, grantSetId: first.grantSetId }],
     });
   });
 
@@ -387,15 +386,15 @@ describe("grant sets: one set per enable, dedupe against pending, list projectio
     });
     await store.records("automations:captures").put({
       id: legacyRequest.id,
-      data: { appId: weekly.id, subject: "user_a", tool: insightsTool.name, descriptorHash: descriptorHash(insightsTool) },
+      data: { appId: weekly.id, triggerId: "main", subject: "user_a", tool: insightsTool.name, descriptorHash: descriptorHash(insightsTool) },
     });
     const engine = makeEngine();
 
     const listed = await engine.list(ctx());
-    expect(listed[0]).toMatchObject({ pendingGrants: 1 });
-    expect(listed[0]?.grantSetId).toBeUndefined();
+    expect(listed[0]).toMatchObject({ triggers: [{ pendingGrants: 1 }] });
+    expect(listed[0]?.triggers[0]?.grantSetId).toBeUndefined();
 
-    const result = await engine.enable(weekly.id, ctx());
+    const result = await engine.enable(weekly.id, "main", ctx());
     expect(result.missing.map((ask) => ask.id)).toEqual(["apr_legacy", result.missing[1]!.id]);
     expect(result.grantSetId).toEqual(expect.stringMatching(/^gset_/));
     expect((await store.records("automations:captures").get("apr_legacy"))?.data).toMatchObject({
@@ -405,7 +404,7 @@ describe("grant sets: one set per enable, dedupe against pending, list projectio
 
   it("a fully denied set disarms the automation in the same decision — deny is transactional server-side", async () => {
     const engine = makeEngine();
-    const { missing } = await engine.enable(weekly.id, ctx());
+    const { missing } = await engine.enable(weekly.id, "main", ctx());
     expect((await store.records("vendo_apps").get(weekly.id))?.data).toMatchObject({ enabled: true });
 
     guard.decide(missing[0]!.id, false);
@@ -417,13 +416,13 @@ describe("grant sets: one set per enable, dedupe against pending, list projectio
     expect((await store.records("vendo_apps").get(weekly.id))?.data).toMatchObject({ enabled: false });
     expect((await store.records("vendo_grants").list()).records).toHaveLength(0);
     const listed = await engine.list(ctx());
-    expect(listed[0]).toMatchObject({ enabled: false });
-    expect(listed[0]?.pendingGrants).toBeUndefined();
+    expect(listed[0]).toMatchObject({ triggers: [{ enabled: false }] });
+    expect(listed[0]?.triggers[0]?.pendingGrants).toBeUndefined();
   });
 
   it("a PARTIALLY granted automation stays armed on deny — the ungranted step parks at fire time (05 §6, J5)", async () => {
     const engine = makeEngine();
-    const { missing } = await engine.enable(weekly.id, ctx());
+    const { missing } = await engine.enable(weekly.id, "main", ctx());
 
     guard.decide(missing[0]!.id, true);
     guard.decide(missing[1]!.id, false);
@@ -434,13 +433,13 @@ describe("grant sets: one set per enable, dedupe against pending, list projectio
     expect((await store.records("vendo_apps").get(weekly.id))?.data).toMatchObject({ enabled: true });
     expect((await store.records("vendo_grants").list()).records).toHaveLength(1);
     const listed = await engine.list(ctx());
-    expect(listed[0]).toMatchObject({ enabled: true });
-    expect(listed[0]?.pendingGrants).toBeUndefined();
+    expect(listed[0]).toMatchObject({ triggers: [{ enabled: true }] });
+    expect(listed[0]?.triggers[0]?.pendingGrants).toBeUndefined();
   });
 
   it("deny order does not matter for partial grants: deny first, approve second still stays armed", async () => {
     const engine = makeEngine();
-    const { missing } = await engine.enable(weekly.id, ctx());
+    const { missing } = await engine.enable(weekly.id, "main", ctx());
 
     guard.decide(missing[1]!.id, false);
     guard.decide(missing[0]!.id, true);
@@ -452,16 +451,16 @@ describe("grant sets: one set per enable, dedupe against pending, list projectio
 
   it("clears the projection once every ask in the set is decided and omits grantSetId when nothing is missing", async () => {
     const engine = makeEngine();
-    const { missing } = await engine.enable(weekly.id, ctx());
+    const { missing } = await engine.enable(weekly.id, "main", ctx());
     guard.decide(missing[0]!.id, true);
     guard.decide(missing[1]!.id, true);
     await flush();
 
     const listed = await engine.list(ctx());
-    expect(listed[0]?.pendingGrants).toBeUndefined();
-    expect(listed[0]?.grantSetId).toBeUndefined();
+    expect(listed[0]?.triggers[0]?.pendingGrants).toBeUndefined();
+    expect(listed[0]?.triggers[0]?.grantSetId).toBeUndefined();
 
-    const again = await engine.enable(weekly.id, ctx());
+    const again = await engine.enable(weekly.id, "main", ctx());
     expect(again.missing).toHaveLength(0);
     expect(again.grantSetId).toBeUndefined();
   });
@@ -476,7 +475,7 @@ describe("grant sets: one set per enable, dedupe against pending, list projectio
   it("arms nothing when the person took the yes back before the callback could spend it", async () => {
     const engine = makeEngine();
     guard.spendApproval = async () => "taken-back";
-    const { missing } = await engine.enable(weekly.id, ctx());
+    const { missing } = await engine.enable(weekly.id, "main", ctx());
 
     guard.decide(missing[0]!.id, true);
     await flush();
@@ -487,7 +486,7 @@ describe("grant sets: one set per enable, dedupe against pending, list projectio
   it("arms nothing when someone else already spent the yes", async () => {
     const engine = makeEngine();
     guard.spendApproval = async () => "already-spent";
-    const { missing } = await engine.enable(weekly.id, ctx());
+    const { missing } = await engine.enable(weekly.id, "main", ctx());
 
     guard.decide(missing[0]!.id, true);
     await flush();
@@ -498,7 +497,7 @@ describe("grant sets: one set per enable, dedupe against pending, list projectio
   it("arms exactly one grant per won spend, and leaves the approval row to the guard", async () => {
     const engine = makeEngine();
     guard.spendApproval = async () => "spent";
-    const { missing } = await engine.enable(weekly.id, ctx());
+    const { missing } = await engine.enable(weekly.id, "main", ctx());
 
     guard.decide(missing[0]!.id, true);
     await flush();
@@ -516,7 +515,7 @@ describe("grant sets: one set per enable, dedupe against pending, list projectio
     // take-back it can see — and must not strip `voidedAt`/`deniedBy` off the
     // row (the parse used to drop both).
     const engine = makeEngine();
-    const { missing } = await engine.enable(weekly.id, ctx());
+    const { missing } = await engine.enable(weekly.id, "main", ctx());
     const takenBack = missing[0]!.id;
     const row = (await store.records("vendo_approvals").get(takenBack))?.data as Record<string, unknown>;
     await store.records("vendo_approvals").put({
@@ -854,7 +853,7 @@ describe("steps execution, parking, and resumption", () => {
     await seedApp(store, doc, "user_a", true);
     const engine = createAutomations({ apps: appsDouble(), tools, guard, store, now: () => NOW });
     const [runId] = await engine.emit("go", {}, ctx().principal);
-    await engine.disable(doc.id, ctx());
+    await engine.disable(doc.id, "main", ctx());
     const approval = await store.records("vendo_approvals").get("apr_disabled");
     await store.records("vendo_approvals").put({
       id: "apr_disabled",
@@ -1002,7 +1001,7 @@ describe("schedule, webhook, and host triggers", () => {
       calls.push({ appId, args });
       return { status: "ok", output: {} };
     });
-    const schedules: Array<[string, NonNullable<AppDocument["trigger"]>["on"]]> = [
+    const schedules: Array<[string, Trigger["on"]]> = [
       ["app_cron", { kind: "schedule", cron: "* * * * *" }],
       ["app_every", { kind: "schedule", every: "15m" }],
       ["app_at", { kind: "schedule", at: "2026-07-12T10:00:00.000Z" }],
@@ -1010,7 +1009,7 @@ describe("schedule, webhook, and host triggers", () => {
     for (const [appId, on] of schedules) {
       await seedApp(store, app(appId, { on, run: { kind: "steps", steps: [{ id: "run", tool: "fn:main", args: { event: "event" } }] } }), "user_a", true);
       await store.records("automations:schedule").put({
-        id: appId,
+        id: `${appId}:main`,
         data: { lastFiredAt: "2026-07-12T08:00:00.000Z" },
       });
     }
@@ -1022,7 +1021,7 @@ describe("schedule, webhook, and host triggers", () => {
     expect(calls).toHaveLength(3);
     expect((calls[0]?.args as { event: { firedAt: string } }).event.firedAt).toBe(NOW.toISOString());
     expect(calls).toHaveLength(3);
-    expect((await store.records("automations:schedule").get("app_at"))?.data).toMatchObject({ firedAt: NOW.toISOString() });
+    expect((await store.records("automations:schedule").get("app_at:main"))?.data).toMatchObject({ firedAt: NOW.toISOString() });
   });
 
   it("retains single-instance schedule behavior when the atomic capability is absent", async () => {
@@ -1033,7 +1032,7 @@ describe("schedule, webhook, and host triggers", () => {
     });
     await seedApp(store, doc, "user_a", true);
     await store.records("automations:schedule").put({
-      id: doc.id,
+      id: `${doc.id}:main`,
       data: { lastFiredAt: "2026-07-12T08:00:00.000Z" },
     });
     const engine = createAutomations({
@@ -1058,7 +1057,7 @@ describe("schedule, webhook, and host triggers", () => {
     });
 
     await expect(engine.tick()).resolves.toEqual([]);
-    expect((await store.records("automations:schedule").get(doc.id))?.data).toEqual({
+    expect((await store.records("automations:schedule").get(`${doc.id}:main`))?.data).toEqual({
       lastFiredAt: NOW.toISOString(),
     });
   });
@@ -1082,7 +1081,7 @@ describe("schedule, webhook, and host triggers", () => {
 
     expect(ticks.flat()).toHaveLength(1);
     expect(calls).toBe(1);
-    expect((await store.records("automations:schedule").get(doc.id))?.data).toEqual({
+    expect((await store.records("automations:schedule").get(`${doc.id}:main`))?.data).toEqual({
       lastFiredAt: NOW.toISOString(),
       firedAt: NOW.toISOString(),
     });
@@ -1108,8 +1107,8 @@ describe("schedule, webhook, and host triggers", () => {
     await seedApp(store, host, "user_a", true);
     const engine = createAutomations({ apps: appsDouble(), tools, guard, store, now: () => NOW });
     const peer = createAutomations({ apps: appsDouble(), tools, guard: new GuardDouble(), store, now: () => NOW });
-    await engine.enable(external.id, ctx());
-    const secret = ((await store.records("automations:webhook").get(external.id))?.data as { secret: string }).secret;
+    await engine.enable(external.id, "main", ctx());
+    const secret = ((await store.records("automations:webhook").get(`${external.id}:main`))?.data as { secret: string }).secret;
     const body = JSON.stringify({ answer: 42 });
     const timestamp = String(NOW.getTime() / 1_000);
     const signature = await sign(secret, "delivery_1", timestamp, body);
@@ -1181,8 +1180,8 @@ describe("schedule, webhook, and host triggers", () => {
     const engine = createAutomations({
       apps: appsDouble(), tools: registry(), guard: new GuardDouble(), store, now: () => NOW,
     });
-    await engine.enable(external.id, ctx());
-    const secret = ((await store.records("automations:webhook").get(external.id))?.data as { secret: string }).secret;
+    await engine.enable(external.id, "main", ctx());
+    const secret = ((await store.records("automations:webhook").get(`${external.id}:main`))?.data as { secret: string }).secret;
     const body = JSON.stringify({ answer: 42 });
     const timestamp = String(NOW.getTime() / 1_000);
     const deliveryId = "delivery_fallback";
@@ -1203,8 +1202,9 @@ describe("schedule, webhook, and host triggers", () => {
     expect(await first.json()).toMatchObject({ runIds: [expect.stringMatching(/^run_/)] });
     expect(await duplicate.json()).toEqual({ deduped: true });
     expect((await store.records("vendo_runs").list()).records).toHaveLength(1);
-    expect((await store.records("automations:deliveries").get(`${external.id}:${deliveryId}`))?.data).toEqual({
+    expect((await store.records("automations:deliveries").get(`${external.id}:main:${deliveryId}`))?.data).toEqual({
       appId: external.id,
+      triggerId: "main",
       deliveryId,
       receivedAt: NOW.toISOString(),
     });
@@ -1230,7 +1230,7 @@ describe("localTriggerKinds: deferring schedule/external firing to another autho
     });
     await seedApp(store, doc, "user_a", true);
     await store.records("automations:schedule").put({
-      id: doc.id,
+      id: `${doc.id}:main`,
       data: { lastFiredAt: "2026-07-12T08:00:00.000Z" },
     });
     const engine = createAutomations({
@@ -1241,7 +1241,7 @@ describe("localTriggerKinds: deferring schedule/external firing to another autho
     await expect(engine.tick()).resolves.toEqual([]);
     expect(calls).toBe(0);
     expect((await store.records("vendo_runs").list()).records).toHaveLength(0);
-    expect((await store.records("automations:schedule").get(doc.id))?.data).toEqual({
+    expect((await store.records("automations:schedule").get(`${doc.id}:main`))?.data).toEqual({
       lastFiredAt: "2026-07-12T08:00:00.000Z",
     });
   });
@@ -1259,8 +1259,8 @@ describe("localTriggerKinds: deferring schedule/external firing to another autho
       apps: appsDouble(), tools, guard, store, now: () => NOW,
       localTriggerKinds: new Set(),
     });
-    await engine.enable(external.id, ctx());
-    const secret = ((await store.records("automations:webhook").get(external.id))?.data as { secret: string }).secret;
+    await engine.enable(external.id, "main", ctx());
+    const secret = ((await store.records("automations:webhook").get(`${external.id}:main`))?.data as { secret: string }).secret;
     const body = JSON.stringify({ answer: 42 });
     const timestamp = String(NOW.getTime() / 1_000);
     const signature = await sign(secret, "delivery_1", timestamp, body);
@@ -1321,7 +1321,7 @@ describe("localTriggerKinds: deferring schedule/external firing to another autho
       });
       const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
       try {
-        await engine.enable(doc.id, ctx());
+        await engine.enable(doc.id, "main", ctx());
         return warn.mock.calls
           .map(([message]) => (typeof message === "string" ? message : ""))
           .filter((message) => message.includes("fn: steps"));
@@ -1383,7 +1383,7 @@ describe("dry runs, run visibility, agentic execution, and stopping", () => {
     });
     const beforeApprovals = await store.records("vendo_approvals").list();
 
-    const plan = await engine.dryRun(doc.id, ctx(), { items: [1, 2] });
+    const plan = await engine.dryRun(doc.id, "main", ctx(), { items: [1, 2] });
 
     expect(plan.steps).toEqual([
       { id: "fan", tool: readTool.name, wouldAsk: true },
@@ -1418,6 +1418,7 @@ describe("dry runs, run visibility, agentic execution, and stopping", () => {
     const record = {
       id: "run_blocked",
       appId: doc.id,
+      triggerId: "main",
       trigger: { kind: "schedule" as const },
       status: "error" as const,
       startedAt: NOW.toISOString(),

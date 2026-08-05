@@ -274,12 +274,13 @@ describe("an app.vendo the harness wrote", () => {
     await runtime.authored({ appId: APP_ID, compiled: compiled(SPEND) }, ctx());
     // Something only the app knows about itself, written by another door.
     const trigger = {
+      id: "main",
       on: { kind: "schedule" as const, cron: "0 9 * * *" },
       run: { kind: "agentic" as const, prompt: "send the weekly digest" },
     };
     await store.records("vendo_apps").put({
       id: APP_ID,
-      data: { subject: "u1", enabled: true, doc: { ...(await rowOf(store))!.doc!, trigger } },
+      data: { subject: "u1", enabled: true, doc: { ...(await rowOf(store))!.doc!, triggers: [trigger] } },
       refs: { subject: "u1" },
     });
 
@@ -287,7 +288,7 @@ describe("an app.vendo the harness wrote", () => {
 
     const row = await rowOf(store);
     expect(row?.doc?.name).toBe("Money");
-    expect(row?.doc?.trigger).toEqual(trigger);
+    expect(row?.doc?.triggers).toEqual([trigger]);
     // The trigger did not change, so the automation stays armed.
     expect(row?.enabled).toBe(true);
     expect((await runtime.list(ctx()))).toHaveLength(1);
@@ -370,6 +371,7 @@ describe("an app.vendo the harness wrote", () => {
  */
 describe("§9.9 — the announcement a files-first save owes", () => {
   const trigger = {
+    id: "main",
     on: { kind: "schedule" as const, cron: "0 9 * * *" },
     run: { kind: "agentic" as const, prompt: "send the weekly digest" },
   };
@@ -377,7 +379,7 @@ describe("§9.9 — the announcement a files-first save owes", () => {
   it("announces a third party's rewrite of a sponsored app, under THEIR subject", async () => {
     const { runtime, store, edits } = stand({ shared: true });
     await runtime.authored({ appId: APP_ID, compiled: compiled(SPEND) }, ctx("u1"));
-    await seedAppRow(store, { ...(await rowOf(store))!.doc!, trigger }, "u1", true);
+    await seedAppRow(store, { ...(await rowOf(store))!.doc!, triggers: [trigger] }, "u1", true);
     // u2 holds editor on u1's app (a shared automation) and rewrites the file.
     await seedGrantRows(store, APP_ID, { "user:u2": "editor" });
 
@@ -389,7 +391,7 @@ describe("§9.9 — the announcement a files-first save owes", () => {
     // And it could key on nothing else — every input to the intent hash (name,
     // trigger, declared tools) came through the rewrite unchanged.
     expect(edits[0]?.next.name).toBe(edits[0]?.previous.name);
-    expect(edits[0]?.next.trigger).toEqual(trigger);
+    expect(edits[0]?.next.triggers).toEqual([trigger]);
     // §9.5 — the row keeps its owner.
     expect((await rowOf(store))?.subject).toBe("u1");
   });
@@ -397,7 +399,7 @@ describe("§9.9 — the announcement a files-first save owes", () => {
   it("announces the sponsor's OWN rename, so their automation is re-bound not killed", async () => {
     const { runtime, store, edits } = stand();
     await runtime.authored({ appId: APP_ID, compiled: compiled(SPEND) }, ctx());
-    await seedAppRow(store, { ...(await rowOf(store))!.doc!, trigger }, "u1", true);
+    await seedAppRow(store, { ...(await rowOf(store))!.doc!, triggers: [trigger] }, "u1", true);
 
     await runtime.authored({ appId: APP_ID, compiled: compiled(SPEND.replace("Spending", "Money")) }, ctx());
 

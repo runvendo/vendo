@@ -55,7 +55,8 @@ function createInvoiceAutomation(on: TriggerOn, memo: string): AppDocument {
     format: "vendo/app@1",
     id: "app_import_placeholder", // re-minted by import
     name: "J4 invoice automation",
-    trigger: {
+    triggers: [{
+      id: "main",
       on,
       run: {
         kind: "steps",
@@ -72,7 +73,7 @@ function createInvoiceAutomation(on: TriggerOn, memo: string): AppDocument {
           },
         ],
       },
-    },
+    }],
   };
 }
 
@@ -151,9 +152,9 @@ describe("J4: automation lifecycle through the composed wire", () => {
     // GET /automations lists it enabled.
     const list = (await (await stack.wireFetch("/automations", {}, ADA)).json()) as Array<{
       app: { id: string };
-      enabled: boolean;
+      triggers: Array<{ enabled: boolean }>;
     }>;
-    expect(list.find((entry) => entry.app.id === appId)?.enabled).toBe(true);
+    expect(list.find((entry) => entry.app.id === appId)?.triggers[0]?.enabled).toBe(true);
   });
 
   it("(host-event) fires via vendo.emit, previews with dry-run, and disable stops firing", async () => {

@@ -35,7 +35,7 @@ async function createParked(
       },
     },
   }));
-  const enabled = await stack.automations.enable(appId, ctx);
+  const enabled = await stack.automations.enable(appId, "main", ctx);
   await approve(stack, enabled.missing.filter((request) => request.call.tool === "host_invoices_list"));
   const runIds = await stack.automations.emit("invoice.park", { id: "inv_0003" }, ADA);
   const runId = runIds[0];
@@ -193,7 +193,7 @@ describe("away run park and resume", () => {
   it("stops a parked run when the automation is disabled before approval", async () => {
     const setup = await createParked("disabled");
     try {
-      await setup.stack.automations.disable(setup.appId, setup.ctx);
+      await setup.stack.automations.disable(setup.appId, "main", setup.ctx);
       await setup.stack.guard.approvals.decide(setup.approvalId, { approve: true }, ADA);
       expect(await waitForRun(setup.stack, setup.runId, setup.ctx, "stopped")).toMatchObject({
         status: "stopped",
@@ -220,7 +220,7 @@ describe("away run park and resume", () => {
           },
         },
       }));
-      const enabled = await stack.automations.enable(appId, ctx);
+      const enabled = await stack.automations.enable(appId, "main", ctx);
       await approve(stack, enabled.missing);
       const [runId] = await stack.automations.emit("invoice.confirmEach", { id: "inv_0003" }, ADA);
       if (!runId) throw new Error("emit did not return a run id");
@@ -256,7 +256,7 @@ describe("away run park and resume", () => {
           },
         },
       }));
-      const enabled = await stack.automations.enable(appId, ctx);
+      const enabled = await stack.automations.enable(appId, "main", ctx);
       await approve(stack, enabled.missing.filter((request) => request.call.tool === "host_invoices_list"));
       const descriptor = (await stack.bound.descriptors()).find(({ name }) => name === "host_invoices_send");
       if (!descriptor) throw new Error("Harness omitted host_invoices_send");

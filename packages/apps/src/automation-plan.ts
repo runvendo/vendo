@@ -34,7 +34,10 @@ export interface AutomationPlanInput {
 }
 
 export interface AutomationPlan {
-  trigger: Trigger;
+  /** Id-less: the ladder never authors a trigger id (an app it authors for
+   *  has exactly one), so {@link applyAutomationPlan} stamps `DEFAULT_TRIGGER_ID`
+   *  onto this at land time. */
+  trigger: Omit<Trigger, "id">;
   name?: string;
   /** The app records collection the automation writes displayable results
    *  into (the store rows the tree queries via vendo_apps_data_list). */
@@ -113,7 +116,7 @@ const extractJson = (text: string): string => {
 /** The same schedule constraints the automations engine enforces at
  *  validateTrigger — checked HERE so an unfireable trigger is repaired at
  *  authoring time instead of silently never firing on the tick. */
-const scheduleIssues = (trigger: Trigger): string[] => {
+const scheduleIssues = (trigger: Omit<Trigger, "id">): string[] => {
   if (trigger.on.kind !== "schedule") return [];
   const issues: string[] = [];
   if (trigger.on.every !== undefined && !EVERY_DURATION.test(trigger.on.every)) {
@@ -151,7 +154,10 @@ const validatePlan = (
   }
   const candidate = parsed as { name?: unknown; trigger?: unknown; resultsCollection?: unknown };
   const issues: string[] = [];
-  const triggerResult = triggerSchema.safeParse(candidate.trigger);
+  // The ladder never asks the model for a trigger id (an app it plans for has
+  // exactly one trigger, stamped later by applyAutomationPlan) — parse the
+  // id-less shape so a model reply that never mentions "id" still validates.
+  const triggerResult = triggerSchema.omit({ id: true }).safeParse(candidate.trigger);
   if (!triggerResult.success) {
     const first = triggerResult.error.issues[0];
     const at = first === undefined || first.path.length === 0 ? "" : ` at trigger.${first.path.join(".")}`;

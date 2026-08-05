@@ -94,6 +94,14 @@ export interface PermissionGrant {
   contextKey?: string;
   appId?: AppId;
   /**
+   * WHICH trigger of that app this grant is for. An automation is an app with a
+   * list of triggers, and each one is consented to on its own: a grant minted
+   * while arming one trigger never authorizes another, so the fire-time lookup
+   * matches on it alongside `appId`. Absent on grants minted before an app had
+   * more than one trigger, and on every grant that is not an automation's.
+   */
+  triggerId?: string;
+  /**
    * How this grant was minted. `"mcp"` is additive (same mechanism the door
    * wave used for `AuditEvent.kind: "door-auth"`, 01-core §15) and has exactly
    * one mint point: the actions-side projection of the door's OAuth consent
@@ -117,6 +125,7 @@ export const permissionGrantSchema = z.object({
   duration: grantDurationSchema,
   contextKey: z.string().optional(),
   appId: appIdSchema.optional(),
+  triggerId: z.string().optional(),
   source: z.enum(["chat", "batch", "automation", "mcp"]),
   grantedAt: isoDateTimeSchema,
   expiresAt: isoDateTimeSchema.optional(),

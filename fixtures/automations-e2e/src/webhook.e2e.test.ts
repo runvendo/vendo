@@ -56,7 +56,7 @@ async function externalStack(appId: AppId): Promise<{ stack: Stack; secret: stri
   await enableAndApprove(stack, appId, ownerCtx(ADA.subject, appId));
   const rows = await stack.sql<{ data: unknown }>(
     "SELECT data FROM vendo_records WHERE collection = 'automations:webhook' AND id = $1",
-    [appId],
+    [`${appId}:main`],
   );
   const secret = record(rows[0]?.data).secret;
   if (typeof secret !== "string" || secret.length === 0) throw new Error("Enable did not mint a webhook secret");

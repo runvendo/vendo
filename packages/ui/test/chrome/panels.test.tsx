@@ -69,7 +69,7 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
 
   it("toggles, captures the grant SET, previews, expands runs, and stops a running run", async () => {
     render(<VendoProvider client={client}><AutomationsPanel /></VendoProvider>);
-    const toggle = await screen.findByRole("switch", { name: "Enable Invoice watcher" });
+    const toggle = await screen.findByRole("switch", { name: "Enable Invoice watcher — Invoice created" });
     expect(toggle.getAttribute("aria-checked")).toBe("false");
     fireEvent.click(toggle);
     // ONE set card for both minted asks (criterion 18): every permission
@@ -98,7 +98,7 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Dry run" }));
     // M30 — the dry-run block is a real group; a bare <div> may not be labelled.
-    const dry = await screen.findByRole("group", { name: "Dry run for Invoice watcher" });
+    const dry = await screen.findByRole("group", { name: "Dry run for Invoice watcher — Invoice created" });
     expect(dry.textContent).toContain("host_invoices_list — ready");
 
     fireEvent.click(screen.getByRole("button", { name: "Run history" }));
@@ -109,12 +109,12 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
     await waitFor(() => expect(screen.getByText("Stopped")).toBeTruthy());
     expect(wire.requests).toContainEqual(expect.objectContaining({ method: "POST", path: "/runs/run_1/stop" }));
 
-    fireEvent.click(screen.getByRole("switch", { name: "Enable Invoice watcher" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Enable Invoice watcher — Invoice created" }));
     await waitFor(() => expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("false"));
     // M33 — OFF is a STATE, so its track has to be visible as one (WCAG 1.4.11);
     // the 14% hairline it used to wear sat at ~1.4:1.
     expect(screen.getByRole("switch").style.background).toBe("var(--vendo-indicator)");
-    expect(wire.requests).toContainEqual(expect.objectContaining({ method: "POST", path: "/automations/app_auto/disable" }));
+    expect(wire.requests).toContainEqual(expect.objectContaining({ method: "POST", path: "/automations/app_auto/disable/main" }));
   });
 
   it("renders outstanding grant sets from the store projection after a reload (criterion 21)", async () => {
@@ -122,7 +122,7 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
     // session — they exist server-side only; no enable() result in memory.
     // (No running run: the "running now" line otherwise owns the sub line.)
     wire.state.runs.length = 0;
-    wire.state.automations[0]!.enabled = true;
+    wire.state.automations[0]!.triggers[0]!.enabled = true;
     wire.state.approvals.push(
       {
         ...wire.state.approvals[0]!,
@@ -148,7 +148,7 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
 
   it("Deny on the set card grants nothing and disarms the automation in the ONE decision (criterion 19)", async () => {
     render(<VendoProvider client={client}><AutomationsPanel /></VendoProvider>);
-    fireEvent.click(await screen.findByRole("switch", { name: "Enable Invoice watcher" }));
+    fireEvent.click(await screen.findByRole("switch", { name: "Enable Invoice watcher — Invoice created" }));
     await screen.findByLabelText("Standing access — Invoice watcher");
 
     fireEvent.click(screen.getByRole("button", { name: "Deny" }));
@@ -161,15 +161,15 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
     }));
     // Deny is transactional server-side: the decide itself disarmed the row —
     // no second disable request exists to fail after the asks are gone.
-    expect(wire.requests.filter(request => request.path === "/automations/app_auto/disable")).toHaveLength(0);
-    await waitFor(() => expect(screen.getByRole("switch", { name: "Enable Invoice watcher" }).getAttribute("aria-checked")).toBe("false"));
+    expect(wire.requests.filter(request => request.path === "/automations/app_auto/disable/main")).toHaveLength(0);
+    await waitFor(() => expect(screen.getByRole("switch", { name: "Enable Invoice watcher — Invoice created" }).getAttribute("aria-checked")).toBe("false"));
     // Nothing granted: no grant rows were minted by the deny.
     expect(wire.state.approvals.filter(item => item.ctx.appId === "app_auto")).toHaveLength(0);
   });
 
   it("a failed deny surfaces IN the card and stays retryable — never a vanished card with a live automation", async () => {
     render(<VendoProvider client={client}><AutomationsPanel /></VendoProvider>);
-    fireEvent.click(await screen.findByRole("switch", { name: "Enable Invoice watcher" }));
+    fireEvent.click(await screen.findByRole("switch", { name: "Enable Invoice watcher — Invoice created" }));
     await screen.findByLabelText("Standing access — Invoice watcher");
     wire.state.failures.push({
       method: "POST",
@@ -196,19 +196,19 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
     // Retry succeeds: one decision denies the set and disarms the row.
     fireEvent.click(screen.getByRole("button", { name: "Deny" }));
     await waitFor(() => expect(screen.queryByLabelText("Standing access — Invoice watcher")).toBeNull());
-    await waitFor(() => expect(screen.getByRole("switch", { name: "Enable Invoice watcher" }).getAttribute("aria-checked")).toBe("false"));
+    await waitFor(() => expect(screen.getByRole("switch", { name: "Enable Invoice watcher — Invoice created" }).getAttribute("aria-checked")).toBe("false"));
   });
 
   it("H2: decisions succeed but the DISABLE step fails — visible retryable error, never a silent enabled+denied automation", async () => {
     render(<VendoProvider client={client}><AutomationsPanel /></VendoProvider>);
-    fireEvent.click(await screen.findByRole("switch", { name: "Enable Invoice watcher" }));
+    fireEvent.click(await screen.findByRole("switch", { name: "Enable Invoice watcher — Invoice created" }));
     await screen.findByLabelText("Standing access — Invoice watcher");
     // The engine's in-decision disarm fails silently server-side, AND the
     // panel's explicit repair disable fails too — the worst case.
     wire.state.denyDisarmFails = true;
     wire.state.failures.push({
       method: "POST",
-      path: "/automations/app_auto/disable",
+      path: "/automations/app_auto/disable/main",
       code: "sandbox-unavailable",
       message: "Store briefly unavailable",
       status: 503,
@@ -222,7 +222,7 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
     // ...the panel attempted the repair disable...
     await waitFor(() => expect(wire.requests).toContainEqual(expect.objectContaining({
       method: "POST",
-      path: "/automations/app_auto/disable",
+      path: "/automations/app_auto/disable/main",
     })));
     // ...and its failure is VISIBLE: the alert names the still-enabled
     // automation and points at the retry; the row honestly reads enabled.
@@ -232,16 +232,16 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
     // for whoever runs the deployment and no longer rides along; what the owner
     // needs is what did not happen and what is still true, which is above.
     expect(alert.textContent).not.toContain("Store briefly unavailable");
-    expect(screen.getByRole("switch", { name: "Enable Invoice watcher" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("switch", { name: "Enable Invoice watcher — Invoice created" }).getAttribute("aria-checked")).toBe("true");
 
     // Retry IS the toggle: the next disable succeeds and the row disarms.
-    fireEvent.click(screen.getByRole("switch", { name: "Enable Invoice watcher" }));
-    await waitFor(() => expect(screen.getByRole("switch", { name: "Enable Invoice watcher" }).getAttribute("aria-checked")).toBe("false"));
+    fireEvent.click(screen.getByRole("switch", { name: "Enable Invoice watcher — Invoice created" }));
+    await waitFor(() => expect(screen.getByRole("switch", { name: "Enable Invoice watcher — Invoice created" }).getAttribute("aria-checked")).toBe("false"));
   });
 
   it("H2 guardrail: the repair never disarms a PARTIALLY granted automation (05 §6 law)", async () => {
     render(<VendoProvider client={client}><AutomationsPanel /></VendoProvider>);
-    fireEvent.click(await screen.findByRole("switch", { name: "Enable Invoice watcher" }));
+    fireEvent.click(await screen.findByRole("switch", { name: "Enable Invoice watcher — Invoice created" }));
     await screen.findByLabelText("Standing access — Invoice watcher");
     // The consent moment granted the automation something: a live
     // automation-source standing grant exists for this app.
@@ -262,9 +262,9 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
 
     await waitFor(() => expect(screen.queryByLabelText("Standing access — Invoice watcher")).toBeNull());
     // No repair disable fired, no error raised — the armed row is the law.
-    expect(wire.requests.filter(request => request.path === "/automations/app_auto/disable")).toHaveLength(0);
+    expect(wire.requests.filter(request => request.path === "/automations/app_auto/disable/main")).toHaveLength(0);
     expect(screen.queryByRole("alert")).toBeNull();
-    expect(screen.getByRole("switch", { name: "Enable Invoice watcher" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("switch", { name: "Enable Invoice watcher — Invoice created" }).getAttribute("aria-checked")).toBe("true");
   });
 
   it("backward-compat: a legacy payload WITHOUT pendingGrants/grantSetId still parses, renders, and decides", async () => {
@@ -274,7 +274,7 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
     // asks themselves, and the decision goes out without a set id.
     wire.state.legacyAutomationsPayload = true;
     render(<VendoProvider client={client}><AutomationsPanel /></VendoProvider>);
-    const toggle = await screen.findByRole("switch", { name: "Enable Invoice watcher" });
+    const toggle = await screen.findByRole("switch", { name: "Enable Invoice watcher — Invoice created" });
     fireEvent.click(toggle);
 
     const card = await screen.findByLabelText("Standing access — Invoice watcher");
@@ -288,9 +288,9 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
 
   it("backward-compat: an entry with no pending grants renders the plain Enabled row (no waiting copy)", async () => {
     wire.state.runs.length = 0;
-    wire.state.automations[0]!.enabled = true;
+    wire.state.automations[0]!.triggers[0]!.enabled = true;
     render(<VendoProvider client={client}><AutomationsPanel /></VendoProvider>);
-    await screen.findByRole("switch", { name: "Enable Invoice watcher" });
+    await screen.findByRole("switch", { name: "Enable Invoice watcher — Invoice created" });
     expect(await screen.findByText("Enabled")).toBeTruthy();
     expect(screen.queryByText(/waiting on/)).toBeNull();
     expect(screen.queryByLabelText(/^Standing access/)).toBeNull();
@@ -317,7 +317,7 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
   it("tells the owner of a failed run what did not happen and that nothing changed (pricing v3 §5)", async () => {
     seedRefusedRun();
     render(<VendoProvider client={client}><AutomationsPanel /></VendoProvider>);
-    await screen.findByRole("switch", { name: "Enable Invoice watcher" });
+    await screen.findByRole("switch", { name: "Enable Invoice watcher — Invoice created" });
 
     fireEvent.click(screen.getByRole("button", { name: "Run history" }));
     const failure = await screen.findByText(/didn’t finish/);
@@ -337,7 +337,7 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
     vi.stubEnv("NODE_ENV", "development");
     seedRefusedRun();
     render(<VendoProvider client={client}><AutomationsPanel /></VendoProvider>);
-    await screen.findByRole("switch", { name: "Enable Invoice watcher" });
+    await screen.findByRole("switch", { name: "Enable Invoice watcher — Invoice created" });
 
     fireEvent.click(screen.getByRole("button", { name: "Run history" }));
     const detail = await screen.findByText(new RegExp("meter-exhausted"));
@@ -373,10 +373,10 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
     const unhandled = vi.fn();
     window.addEventListener("unhandledrejection", unhandled);
     render(<VendoProvider client={client}><AutomationsPanel /></VendoProvider>);
-    const toggle = await screen.findByRole("switch", { name: "Enable Invoice watcher" });
+    const toggle = await screen.findByRole("switch", { name: "Enable Invoice watcher — Invoice created" });
     wire.state.failures.push({
       method: "POST",
-      path: "/automations/app_auto/enable",
+      path: "/automations/app_auto/enable/main",
       code: "sandbox-unavailable",
       message: "Automation unavailable",
       status: 501,
@@ -402,10 +402,10 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
    *  panel was missed. */
   it("answers a refusal in the CONSUMER's voice, never the developer's sentence", async () => {
     render(<VendoProvider client={client}><AutomationsPanel /></VendoProvider>);
-    const toggle = await screen.findByRole("switch", { name: "Enable Invoice watcher" });
+    const toggle = await screen.findByRole("switch", { name: "Enable Invoice watcher — Invoice created" });
     wire.state.failures.push({
       method: "POST",
-      path: "/automations/app_auto/enable",
+      path: "/automations/app_auto/enable/main",
       code: "cloud-required",
       message: "automations need Vendo Cloud: set VENDO_API_KEY (or pass a hosted store)",
       status: 402,
@@ -420,10 +420,10 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
 
   it("offers a viewer the truth rather than an access-level sentence", async () => {
     render(<VendoProvider client={client}><AutomationsPanel /></VendoProvider>);
-    const toggle = await screen.findByRole("switch", { name: "Enable Invoice watcher" });
+    const toggle = await screen.findByRole("switch", { name: "Enable Invoice watcher — Invoice created" });
     wire.state.failures.push({
       method: "POST",
-      path: "/automations/app_auto/enable",
+      path: "/automations/app_auto/enable/main",
       code: "forbidden",
       message: "editor access is required for app_auto",
       status: 403,

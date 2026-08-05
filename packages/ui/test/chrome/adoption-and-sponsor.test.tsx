@@ -23,6 +23,7 @@ const ok = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
 
 const WAITING: AdoptionVenue = {
   appId: "app_sweep",
+  triggerId: "main",
   automation: "Weekly invoice sweep",
   sponsor: "Dana",
   reason: "edit",

@@ -460,7 +460,7 @@ describe("§11 — trigger sources and run models", () => {
     expect(runModelSchema.safeParse({ kind: "steps", steps: "nope" }).success).toBe(false);
     expect(stepSchema.safeParse({ id: "s1", tool: "fn:x", if: "$exists(event)", forEach: "steps.load" }).success).toBe(true);
     expect(triggerSchema.safeParse({
-      on: { kind: "host-event", event: "e" }, run: { kind: "agentic", prompt: "p" },
+      id: "main", on: { kind: "host-event", event: "e" }, run: { kind: "agentic", prompt: "p" },
     }).success).toBe(true);
   });
 });

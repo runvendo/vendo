@@ -172,7 +172,7 @@ describe.skipIf(!plausible)("live prompt-injection cannot steer a real agent pas
       // the strongest form of the test: the agent is steered AND holds a
       // standing app-bound automation grant for the critical send, yet critical
       // is unsuppressible.
-      const enabled = await stack.automations.enable(appId, ownerCtx(ADA.subject, appId));
+      const enabled = await stack.automations.enable(appId, "main", ownerCtx(ADA.subject, appId));
       await approve(stack, enabled.missing);
       const grantedCritical = (await stack.guard.grants.list(ADA)).some(
         (grant) => grant.tool === "host_invoices_send_critical" && grant.appId === appId,

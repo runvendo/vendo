@@ -50,8 +50,9 @@ function referencedTools(doc: AppDocument): Set<string> {
     }
     for (const node of tree.nodes ?? []) collectActions(node.props, tools);
   }
-  if (doc.trigger?.run.kind === "steps") {
-    for (const step of doc.trigger.run.steps) {
+  for (const trigger of doc.triggers ?? []) {
+    if (trigger.run.kind !== "steps") continue;
+    for (const step of trigger.run.steps) {
       if (!step.tool.startsWith("fn:")) tools.add(step.tool);
     }
   }
@@ -78,7 +79,7 @@ export async function computeImpact(store: VendoStore, tools: string[]): Promise
     for (const app of apps) {
       if (!referencedTools(app.doc).has(tool)) continue;
       const reference = { id: app.doc.id, title: app.doc.name };
-      if (app.doc.trigger === undefined) impact.apps.push(reference);
+      if (app.doc.triggers === undefined || app.doc.triggers.length === 0) impact.apps.push(reference);
       else impact.automations.push(reference);
     }
     impact.grants = grants.filter((grant) => grant.tool === tool).length;

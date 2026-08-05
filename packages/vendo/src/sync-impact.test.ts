@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  DEFAULT_TRIGGER_ID,
   VENDO_APP_FORMAT,
   VENDO_TREE_FORMAT,
   type AppDocument,
@@ -40,10 +41,11 @@ function automation(id: string, name: string, tool: string): AppDocument {
     format: VENDO_APP_FORMAT,
     id,
     name,
-    trigger: {
+    triggers: [{
+      id: DEFAULT_TRIGGER_ID,
       on: { kind: "schedule", every: "1h" },
       run: { kind: "steps", steps: [{ id: "load", tool }] },
-    },
+    }],
   };
 }
 

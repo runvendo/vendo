@@ -1,4 +1,6 @@
 import {
+  TRIGGER_KIND_REF_KEYS,
+  triggerKindRefs,
   VendoError,
   type AtomicRecordStore,
   type AuditEvent,
@@ -174,9 +176,11 @@ function appRecord(row: AppRow): VendoRecord {
   return {
     id: row.id,
     data,
-    // trigger_kind mirrors the persisted generated column (schema.ts) so the
-    // automations tick / emit query can filter on it.
-    refs: refs({ subject: row.subject, trigger_kind: row.doc.trigger?.on.kind }),
+    // The per-kind trigger refs mirror the persisted generated columns
+    // (schema.ts) so the automations tick / emit query can filter on them. One
+    // key per kind because an app has a LIST of triggers and a ref matches by
+    // equality; `triggerKindRefs` is core's single definition of both.
+    refs: { ...refs({ subject: row.subject }), ...triggerKindRefs(row.doc.triggers) },
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     // Present when the row carries the write counter (01 §12: opaque token
@@ -483,7 +487,10 @@ function configFor(db: Db, collection: ReservedCollection): RoutedConfig {
         table: collection,
         select: "SELECT * FROM vendo_apps",
         cursorColumn: "created_at",
-        refs: { subject: "subject", trigger_kind: "trigger_kind" },
+        refs: {
+          subject: "subject",
+          ...Object.fromEntries(TRIGGER_KIND_REF_KEYS.map((key) => [key, key])),
+        },
         fromDb: (row) => appRecord(appFromRow(row)),
         async put(record) {
           const data = parseAppData(record.data, record.id);

@@ -45,7 +45,7 @@ function stepsAutomation(event: string, steps: Array<{ id: string; tool: string;
     format: "vendo/app@1",
     id: "app_import_placeholder",
     name: "J5 automation",
-    trigger: { on: { kind: "host-event", event }, run: { kind: "steps", steps } },
+    triggers: [{ id: "main", on: { kind: "host-event", event }, run: { kind: "steps", steps } }],
   };
 }
 
@@ -249,9 +249,9 @@ describe("J5: away capture, park, resume, revoke through the composed wire", () 
     // same decision — the row must not sit enabled-but-ungranted.
     const listed = (await (await stack.wireFetch("/automations", {}, ADA)).json()) as Array<{
       app: { id: string };
-      enabled: boolean;
+      triggers: Array<{ enabled: boolean }>;
     }>;
-    expect(listed.find((entry) => entry.app.id === appId)?.enabled).toBe(false);
+    expect(listed.find((entry) => entry.app.id === appId)?.triggers[0]?.enabled).toBe(false);
 
     // Re-arm; the re-minted capture ask stays UNDECIDED — an open ask leaves
     // the automation armed and the ungranted step parks at fire time, the

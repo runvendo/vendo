@@ -15,18 +15,22 @@ import type { AutomationEntry } from "../../src/wire-types.js";
 
 afterEach(cleanup);
 
-const entry = (over: Partial<AutomationEntry> = {}): AutomationEntry => ({
+const trigger = {
+  id: "main",
+  on: { kind: "schedule" as const, cron: "0 9 * * *" },
+  run: { kind: "steps" as const, steps: [{ id: "read", tool: "host_invoices_list" }] },
+};
+
+/** One app, one trigger — the row shape the panel renders. `over` lands on the
+ *  TRIGGER entry, because that is where a stopped automation's state lives now. */
+const entry = (over: Partial<AutomationEntry["triggers"][number]> = {}): AutomationEntry => ({
   app: {
     format: VENDO_APP_FORMAT,
     id: "app_digest",
     name: "Invoice digest",
-    trigger: {
-      on: { kind: "schedule", cron: "0 9 * * *" },
-      run: { kind: "steps", steps: [{ id: "read", tool: "host_invoices_list" }] },
-    },
+    triggers: [trigger],
   },
-  enabled: false,
-  ...over,
+  triggers: [{ trigger, enabled: false, ...over }],
 });
 
 function mount(entries: AutomationEntry[]): void {

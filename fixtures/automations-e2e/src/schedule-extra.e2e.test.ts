@@ -39,7 +39,7 @@ describe("schedule trigger extras", () => {
       clock = new Date("2026-07-12T10:00:00.000Z");
       expect(await stack.automations.tick(clock)).toEqual([]);
 
-      await stack.automations.disable(appId, ctx);
+      await stack.automations.disable(appId, "main", ctx);
       expect(await stack.automations.tick(clock)).toEqual([]);
       expect(await runCount(stack, appId)).toBe(1);
     } finally {

@@ -256,7 +256,7 @@ describe("runServerLane — steps and agentic automations", () => {
       land: async (doc, options) => { landed.push({ document: doc, armTrigger: options.armTrigger }); },
     }));
 
-    expect(result.document.trigger?.on).toEqual({ kind: "schedule", cron: "0 8 * * 5" });
+    expect(result.document.triggers?.[0]?.on).toEqual({ kind: "schedule", cron: "0 8 * * 5" });
     expect(result.document.storage?.digest?.kind).toBe("records");
     // The rewire survives, and the automation it was authored for survives the
     // rewire (a rebind that dropped the trigger would ship a dead automation).
@@ -264,7 +264,7 @@ describe("runServerLane — steps and agentic automations", () => {
     expect(rebinds[0]).toContain('collection:"digest"');
     expect(rebinds[0]).toContain(`appId:"${APP_ID}"`);
     expect(landed).toHaveLength(1);
-    expect(landed[0]?.document.trigger).toBeDefined();
+    expect(landed[0]?.document.triggers?.[0]).toBeDefined();
     // No arming seam wired → the persist arms the stored row itself.
     expect(landed[0]?.armTrigger).toBe(true);
     expect(result.automation).toMatchObject({ mode: "steps", resultsCollection: "digest" });
@@ -313,7 +313,7 @@ describe("runServerLane — steps and agentic automations", () => {
       land: async () => undefined,
     }));
 
-    expect(result.document.trigger).toBeDefined();
+    expect(result.document.triggers?.[0]).toBeDefined();
     expect(result.findings.map(({ message }) => message).join(" ")).toContain("was not rewired to show its results");
     expect(result.findings.every(({ severity }) => severity === "warn")).toBe(true);
   });

@@ -24,6 +24,7 @@
  * rest of the app stands.
  */
 import {
+  DEFAULT_TRIGGER_ID,
   compileWire,
   describeShapeWithSemantics,
   type AppDocument,
@@ -258,19 +259,26 @@ export const runIslandLane = async (
 /** The host's arming seam (`AppsConfig.armAutomation`). */
 export type ArmAutomationSeam = (
   appId: AppId,
+  triggerId: string,
   ctx: RunContext,
 ) => Promise<{ enabled: boolean; missing: ApprovalRequest[] }>;
 
 /** Put a planned automation onto a document: the trigger the automations
  *  engine fires, plus the results collection its last step publishes into.
- *  Idempotent, so re-stamping it over a rewired document (which must never
- *  drop the just-authored fields) is the same call. */
-export const applyAutomationPlan = <Doc extends Pick<AppDocument, "trigger" | "storage">>(
+ *  The ladder authors at most one trigger per app, always under
+ *  {@link DEFAULT_TRIGGER_ID} — idempotent, so re-stamping it over a rewired
+ *  document (which must never drop the just-authored fields, and must never
+ *  duplicate the entry) REPLACES that one entry, preserving any others. */
+export const applyAutomationPlan = <Doc extends Pick<AppDocument, "triggers" | "storage">>(
   document: Doc,
   plan: AutomationPlan,
 ): Doc => {
   const automated = structuredClone(document);
-  automated.trigger = structuredClone(plan.trigger);
+  const stamped: Trigger = { id: DEFAULT_TRIGGER_ID, ...structuredClone(plan.trigger) };
+  automated.triggers = [
+    ...(automated.triggers ?? []).filter((trigger) => trigger.id !== DEFAULT_TRIGGER_ID),
+    stamped,
+  ];
   if (plan.resultsCollection !== undefined && automated.storage?.[plan.resultsCollection] === undefined) {
     automated.storage = {
       ...automated.storage,
@@ -307,12 +315,13 @@ export const automationResultsInstruction = (input: {
 export const armAutomationTrigger = async (
   seam: ArmAutomationSeam | undefined,
   appId: AppId,
+  triggerId: string,
   ctx: RunContext,
 ): Promise<{ enabled: boolean; pendingGrants?: ApprovalRequest[]; issues: string[] }> => {
   // No seam means the stored row was armed by the persist itself.
   if (seam === undefined) return { enabled: true, issues: [] };
   try {
-    const armed = await seam(appId, ctx);
+    const armed = await seam(appId, triggerId, ctx);
     return {
       enabled: armed.enabled,
       ...(armed.missing.length === 0 ? {} : { pendingGrants: structuredClone(armed.missing) }),
@@ -494,7 +503,7 @@ const runAutomationArm = async (
   let armingIssues: string[] = [];
   if (deps.land !== undefined) {
     await deps.land(landed, { armTrigger: deps.armAutomation === undefined });
-    const armed = await armAutomationTrigger(deps.armAutomation, deps.appId, deps.ctx);
+    const armed = await armAutomationTrigger(deps.armAutomation, deps.appId, DEFAULT_TRIGGER_ID, deps.ctx);
     pendingGrants = armed.pendingGrants;
     enabled = armed.enabled;
     armingIssues = armed.issues;
@@ -506,7 +515,7 @@ const runAutomationArm = async (
     ...(armingIssues.length === 0 ? {} : { armingIssues }),
     automation: {
       mode,
-      trigger: structuredClone(automation.trigger),
+      trigger: { id: DEFAULT_TRIGGER_ID, ...structuredClone(automation.trigger) },
       enabled,
       ...(automation.resultsCollection === undefined ? {} : { resultsCollection: automation.resultsCollection }),
       ...(pendingGrants === undefined ? {} : { pendingGrants }),

@@ -40,7 +40,7 @@ describe.skipIf(!plausible)("live agentic automation", () => {
         },
       }));
 
-      const enabled = await stack.automations.enable(appId, ownerCtx(ADA.subject, appId));
+      const enabled = await stack.automations.enable(appId, "main", ownerCtx(ADA.subject, appId));
       // Agentic capture proposes the full bound surface; grant only the read.
       const listCapture = enabled.missing.filter((request) => request.call.tool === "host_invoices_list");
       expect(listCapture).toHaveLength(1);

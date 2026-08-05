@@ -255,7 +255,7 @@ describe("deterministic steps pipelines", () => {
         },
       }));
       const ctx = ownerCtx(ADA.subject, appId);
-      await stack.automations.enable(appId, ctx);
+      await stack.automations.enable(appId, "main", ctx);
       const ids = await stack.automations.emit("invoice.policy", {}, ADA);
       const id = ids[0];
       if (!id) throw new Error("emit did not return a run id");

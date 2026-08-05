@@ -1,4 +1,4 @@
-import type { ZodType } from "zod";
+import type { ZodType, ZodTypeDef } from "zod";
 import {
   VendoError,
   appDocumentSchema,
@@ -9,6 +9,8 @@ import {
   permissionGrantSchema,
   runIdSchema,
   threadIdSchema,
+  TRIGGER_KIND_REF_KEYS,
+  triggerKindRefs,
   type Json,
   type RecordStore,
   type StoreAdapter,
@@ -44,7 +46,7 @@ const RESERVED_REF_KEYS: Readonly<Record<string, readonly string[]>> = {
   vendo_audit: ["subject", "kind", "app_id", "tool"],
   vendo_threads: ["subject"],
   vendo_runs: ["app_id", "status"],
-  vendo_apps: ["subject", "trigger_kind"],
+  vendo_apps: ["subject", ...TRIGGER_KIND_REF_KEYS],
   vendo_state: ["app_id", "subject"],
 };
 
@@ -59,7 +61,11 @@ const reservedObject = (value: unknown, label: string): Record<string, unknown> 
   return value as Record<string, unknown>;
 };
 
-const parseReserved = <T>(schema: ZodType<T>, value: unknown, label: string): T => {
+// The Input parameter is deliberately `unknown`: this helper only ever calls
+// safeParse on a value it already has as `unknown`, and pinning Input to the
+// output type would exclude the schemas that normalize on read (appDocumentSchema
+// preprocesses the pre-list `trigger` shape, so its input is wider than its output).
+const parseReserved = <T>(schema: ZodType<T, ZodTypeDef, unknown>, value: unknown, label: string): T => {
   const parsed = schema.safeParse(value);
   if (parsed.success) return parsed.data;
   return invalidReserved(`${label}: ${parsed.error.issues[0]?.message ?? "invalid value"}`);
@@ -278,7 +284,7 @@ const projectMemoryRecord = (
       }
       return {
         data: { subject, enabled, doc },
-        refs: derivedRefs({ subject, trigger_kind: doc.trigger?.on.kind }),
+        refs: { ...derivedRefs({ subject }), ...triggerKindRefs(doc.triggers) },
         createdAt: previous?.createdAt ?? now,
         updatedAt: now,
       };

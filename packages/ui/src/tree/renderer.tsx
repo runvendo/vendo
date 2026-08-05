@@ -578,6 +578,9 @@ function StatefulTreeView({
   const adoptionRaw = (tree as WalkTree & Record<string, unknown>)[ADOPTION_VENUE_KEY];
   const adoption = typeof adoptionRaw === "object" && adoptionRaw !== null
     && typeof (adoptionRaw as AdoptionVenue).automation === "string"
+    // The trigger id is load-bearing, not decoration: adopt() acts on ONE
+    // trigger, so a card without it could only guess which.
+    && typeof (adoptionRaw as AdoptionVenue).triggerId === "string"
     && Array.isArray((adoptionRaw as AdoptionVenue).needs)
     ? adoptionRaw as AdoptionVenue
     : undefined;

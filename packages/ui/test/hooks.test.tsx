@@ -212,15 +212,15 @@ describe("headless hooks", () => {
 
     let enabled: Awaited<ReturnType<typeof result.current.enable>> | undefined;
     await act(async () => {
-      enabled = await result.current.enable("app_auto");
+      enabled = await result.current.enable("app_auto", "main");
     });
     expect(enabled).toMatchObject({ enabled: true });
-    expect(result.current.automations[0]?.enabled).toBe(true);
+    expect(result.current.automations[0]?.triggers[0]?.enabled).toBe(true);
     await act(async () => {
-      await result.current.disable("app_auto");
+      await result.current.disable("app_auto", "main");
     });
-    expect(result.current.automations[0]?.enabled).toBe(false);
-    await expect(result.current.dryRun("app_auto")).resolves.toMatchObject({ grantsMissing: [] });
+    expect(result.current.automations[0]?.triggers[0]?.enabled).toBe(false);
+    await expect(result.current.dryRun("app_auto", "main")).resolves.toMatchObject({ grantsMissing: [] });
     await expect(result.current.runs({ appId: "app_auto", status: "running" })).resolves.toMatchObject({
       runs: [expect.objectContaining({ id: "run_1" })],
     });

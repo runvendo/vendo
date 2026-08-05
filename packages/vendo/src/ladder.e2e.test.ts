@@ -236,9 +236,9 @@ async function harness(): Promise<{
     tools: boundTools,
     catalog: [],
     model: scriptedModel(respond),
-    armAutomation: async (appId, armCtx) => {
+    armAutomation: async (appId, triggerId, armCtx) => {
       if (automationsRef === undefined) throw new Error("automations not composed");
-      return automationsRef.enable(appId, armCtx);
+      return automationsRef.enable(appId, triggerId, armCtx);
     },
     // NO machine config at all: a sandbox is not merely unused, it does not exist.
   });
@@ -264,13 +264,13 @@ describe.sequential("Wave 9 rung (a) e2e — the 8am digest rides the automation
     const result = await apps.edit(APP_ID, "email me a digest of unpaid invoices at 8am", ctx);
     expect(result.failure).toBeUndefined();
     expect(result.automation?.mode).toBe("steps");
-    expect(result.app.trigger?.on).toEqual({ kind: "schedule", cron: "0 8 * * *" });
+    expect(result.app.triggers?.[0]?.on).toEqual({ kind: "schedule", cron: "0 8 * * *" });
     expect(result.app.machine).toBeUndefined();
 
     // The automations engine sees it: armed, listed, schedule-triggered.
     const listed = await automations.list(ctx);
     expect(listed).toHaveLength(1);
-    expect(listed[0]?.enabled).toBe(true);
+    expect(listed[0]?.triggers[0]?.enabled).toBe(true);
 
     // The arming ran the 07 §3 grant-capture flow: one standing-grant
     // approval per step tool rides the edit result. The owner approves them
