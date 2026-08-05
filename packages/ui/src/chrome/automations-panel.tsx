@@ -20,6 +20,11 @@ import { GrantSetCard, type GrantSetPermission } from "./grant-set-card.js";
 const ENABLE_CELEBRATION_MS = 3_100;
 const REDUCED_ENABLE_CELEBRATION_MS = 900;
 
+/** How often an open panel re-reads the state it is showing. The same cadence
+    WaitingQueue, VendoToasts and VendoActivities already ship, so a workspace
+    with several of them open polls on one rhythm. */
+const AUTOMATIONS_POLL_MS = 5_000;
+
 /** ui-lane-panels pick B — the last-10-runs dot strip. */
 const RUN_STRIP_LIMIT = 10;
 const RUN_STATUS_LABEL: Record<RunStatus, string> = {
@@ -154,13 +159,26 @@ const prefersReducedMotion = (motion: "full" | "reduced"): boolean =>
   || (typeof window !== "undefined" && typeof window.matchMedia === "function"
     && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
 
+export interface AutomationsPanelProps {
+  /** Re-read cadence for the state this panel shows, in ms. 0 turns the poll
+      off (a host driving refreshes itself, or a test). */
+  pollMs?: number;
+}
+
 /** 08-ui §4; 07-automations §5 — controls, grant capture, previews, history, kill switch.
     The trigger/flow labels (triggerLabel, automationFlow) moved to
     automation-card.tsx (2026-07 demo feedback), shared with the read-only
     in-thread AutomationCard. */
-export function AutomationsPanel() {
-  const automations = useAutomations();
-  const approvals = useApprovals();
+export function AutomationsPanel({ pollMs = AUTOMATIONS_POLL_MS }: AutomationsPanelProps = {}) {
+  // An automation is the one surface where everything interesting happens while
+  // NOBODY is looking at it: it fires away, on a schedule. A panel that read the
+  // wire once and then only ticked a clock could never show that — a run that
+  // started after the fetch was never seen "running", so its Stop button never
+  // rendered and the kill switch was unreachable, and a run that finished left
+  // the history reading "No runs yet" until someone reloaded the page.
+  const poll = pollMs > 0 ? { pollMs } : undefined;
+  const automations = useAutomations(poll);
+  const approvals = useApprovals(poll);
   const { client } = useVendoContext();
   const theme = useVendoTheme();
   // Every per-row map below is keyed by ROW — `${appId}:${triggerId}` — because
@@ -235,6 +253,51 @@ export function AutomationsPanel() {
       cancelled = true;
     };
   }, [automations.automations, listRuns]);
+
+  // The row states above ride the hooks' own poll; RUNS are fetched per row, so
+  // they get the same cadence here. Both copies are refreshed together — the
+  // strip (which decides whether the row says "running now") and, only where the
+  // person has it open, the expanded history (which carries the Stop button) —
+  // because a run that is live in one and finished in the other is exactly the
+  // disagreement this panel used to show. Same ref trick as the decision
+  // listener below: the sweep reads the CURRENT rows while its interval stays
+  // mount-stable.
+  const sweepRunsRef = useRef<() => void>(() => undefined);
+  sweepRunsRef.current = () => {
+    for (const entry of automations.automations) {
+      const appId = entry.app.id;
+      for (const { trigger } of entry.triggers) {
+        const key = rowKey(appId, trigger.id);
+        const open = runs[key] !== undefined;
+        void (async () => {
+          try {
+            const result = await listRuns({ appId, triggerId: trigger.id });
+            setRecent(current => ({ ...current, [key]: result.runs.slice(0, RUN_STRIP_LIMIT) }));
+            // Never REOPEN a history the person collapsed while this was in
+            // flight — `undefined` is what "collapsed" means to the row below.
+            if (open) {
+              setRuns(current => current[key] === undefined ? current : { ...current, [key]: result.runs });
+            }
+          } catch {
+            // A poll that misses changes nothing: the rows keep their last good
+            // answer and the next tick tries again. Same silence the first strip
+            // fetch keeps, and deliberately NOT the shared alert — a background
+            // refresh must not put an error in front of someone who did nothing.
+          }
+        })();
+      }
+    }
+  };
+  useEffect(() => {
+    if (pollMs <= 0) return;
+    const timer = window.setInterval(() => {
+      // A tab nobody is looking at costs the deployment nothing — the same rule
+      // the shared approvals feed follows.
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      sweepRunsRef.current();
+    }, pollMs);
+    return () => window.clearInterval(timer);
+  }, [pollMs]);
 
   const clearEnableCelebration = (key: string) => {
     const timer = enableTimers.current.get(key);
