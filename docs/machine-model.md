@@ -19,9 +19,10 @@ what shipped.
    off by default** — enable with
    `createVendo({ apps: { experimentalMachines: true } })`.
 3. **Machine everything**: the machine also serves a real web app; the host
-   embeds its URL as the app surface. The tree is gone. Experimental and off
-   by default (`experimentalServedApps`, which **requires**
-   `experimentalMachines`); see [Served apps](./served-apps.md).
+   embeds its URL as the app surface. The tree is gone. No flag of its own —
+   it rides `experimentalMachines`, and additionally needs the mounted wire
+   (which answers `/apps/:appId/serve/**`) and `VENDO_BASE_URL`, because the
+   only URL a served app is ever opened at is that authenticated proxy.
 
 The runtime escalates when an instruction demands it. Users never pick a
 layer.

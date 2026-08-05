@@ -457,14 +457,46 @@ describe("laneGates", () => {
     expect(gates.cannot.join(" ")).toContain("no sandbox configured");
   });
 
-  it("opens the box lane when the host has a sandbox and the flag on, and served only with its own flag", () => {
-    const withBox = laneGates({ machine: { sandbox: {} }, experimentalMachines: true });
-    expect(withBox.box).toBe(true);
-    expect(withBox.served).toBe(false);
-    expect(withBox.cannot.join(" ")).toContain("cannot serve its own web pages");
+  it("opens the box lane when the host has a sandbox and the flag on, and served only with a door to serve THROUGH", () => {
+    // A box with no `servedProxyPath` has no authenticated door to answer a
+    // served app on, so it cannot serve one — and the brain hears that as a
+    // <Cannot> BEFORE it plans, instead of after a machine has been built and
+    // the surface flipped to something no caller can open.
+    const unwired = laneGates({ machine: { sandbox: {} }, experimentalMachines: true });
+    expect(unwired.box).toBe(true);
+    expect(unwired.served).toBe(false);
+    expect(unwired.cannot.join(" ")).toContain("cannot serve its own web pages");
 
-    const withServed = laneGates({ machine: { sandbox: {} }, experimentalMachines: true, experimentalServedApps: true });
-    expect(withServed.served).toBe(true);
-    expect(withServed.cannot).toEqual([]);
+    const wired = laneGates({
+      machine: { sandbox: {} },
+      experimentalMachines: true,
+      servedProxyPath: () => "/api/vendo/apps/a/serve/",
+    });
+    expect(wired.served).toBe(true);
+    expect(wired.cannot).toEqual([]);
+  });
+
+  /** Served is a MACHINE surface — it is served BY a box. That used to be held
+      by a composition-time refusal on two flags agreeing with each other
+      (`experimentalServedApps requires experimentalMachines`). With the served
+      flag gone the relationship is not a rule to remember, it is the shape of
+      the expression: served is a narrowing of box, so no box can never be
+      served. */
+  it("never opens the served lane without the box lane it is served by", () => {
+    const proxy = () => "/api/vendo/apps/a/serve/";
+
+    // Machines off: a sandbox and a door are not enough.
+    expect(laneGates({ machine: { sandbox: {} }, servedProxyPath: proxy }).served).toBe(false);
+    // No sandbox at all: nothing to provision, flag and door notwithstanding.
+    expect(laneGates({ experimentalMachines: true, servedProxyPath: proxy }).served).toBe(false);
+
+    for (const config of [
+      { machine: { sandbox: {} }, servedProxyPath: proxy },
+      { experimentalMachines: true, servedProxyPath: proxy },
+      { machine: { sandbox: {} }, experimentalMachines: true, servedProxyPath: proxy },
+    ]) {
+      const gates = laneGates(config);
+      expect(gates.served).toBe(gates.box);
+    }
   });
 });

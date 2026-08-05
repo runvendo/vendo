@@ -549,14 +549,15 @@ export interface CreateVendoConfig {
       ladder's last rung) and machine provisioning refuse with a typed
       VendoError naming this flag until the host enables it; steps/agentic
       automations (the ladder's first two rungs) never need it, and apps that
-      already carry a machine keep every runtime path. `experimentalServedApps`
-      is the layer-3 opt-in on top: a machine may serve the app surface itself
-      (the host embeds its URL in a sandboxed iframe) — it REQUIRES
-      `experimentalMachines` (layer 3 is served by a layer-2 machine). OFF by
-      default — layer-3 generation, the 2→3 surface flip, and open() on a
-      served app all refuse with a typed VendoError naming the flag. */
+      already carry a machine keep every runtime path.
+
+      A layer-3 SERVED app — the machine serving the app surface itself, embedded
+      in a sandboxed iframe — needs no second flag: it is a narrowing of layer 2,
+      reachable only where there is a machine to serve it and a mounted wire to
+      serve it THROUGH (`createVendo().handler`, which answers
+      /apps/:appId/serve/**). A deployment missing either hears it as a plain
+      "cannot" in the plan rather than as a flag. */
   apps?: {
-    experimentalServedApps?: boolean;
     experimentalMachines?: boolean;
     /** Remix review (round-2 hardening 2026-08-02) — the host's reviewer
         assertion for the review-kind remix lifecycle: whether THIS caller may
@@ -2253,17 +2254,16 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       if (configuredBaseUrl === undefined) {
         throw new VendoError(
           "validation",
-          "serving a team app needs VENDO_BASE_URL — the app's URL has to be absolute for anything "
-          + "that is not already on this origin (an MCP client, a native app). Set it to this "
-          + "deployment's public origin and restart.",
+          "serving an app from its machine needs VENDO_BASE_URL — the app's URL has to be absolute "
+          + "for anything that is not already on this origin (an MCP client, a native app). Set it "
+          + "to this deployment's public origin and restart.",
         );
       }
       return `${configuredBaseUrl.replace(/\/+$/, "")}${BASE_PATH}/apps/${encodeURIComponent(appId)}/serve/`;
     },
-    // execution-v2 Waves 4+9 — the layer-2/3 experimental opt-ins, host-config
-    // only (never an env var: enabling machine-backed execution or a surface
-    // that runs generated web apps is a deliberate per-project decision).
-    ...(config.apps?.experimentalServedApps === undefined ? {} : { experimentalServedApps: config.apps.experimentalServedApps }),
+    // execution-v2 Wave 9 — the layer-2 experimental opt-in, host-config only
+    // (never an env var: enabling machine-backed execution is a deliberate
+    // per-project decision). Layer 3 rides it — see the CreateVendoConfig note.
     ...(config.apps?.experimentalMachines === undefined ? {} : { experimentalMachines: config.apps.experimentalMachines }),
     // Round-2 hardening — the host's reviewer assertion for the review-kind
     // remix lifecycle, threaded verbatim (see the CreateVendoConfig comment).
