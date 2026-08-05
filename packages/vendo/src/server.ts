@@ -2617,9 +2617,12 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // carries its own bound knobs, so only the default construction takes them.
   const harness = (composed?.harness ?? config.harness ?? vendo({
     onHire: reportHire,
-    ...(config.agent?.maxSteps === undefined ? {} : { maxSteps: config.agent.maxSteps }),
-    ...(config.agent?.historyWindow === undefined ? {} : { historyWindow: config.agent.historyWindow }),
-    ...(config.agent?.maxOutputTokens === undefined ? {} : { maxOutputTokens: config.agent.maxOutputTokens }),
+    // `agentOptions` is the ONE place the chat knobs are read from (see its
+    // definition): it already normalizes both arms of `agent:`, so a composed
+    // agent contributes nothing here and cannot double-bind its own knobs.
+    ...(agentOptions.maxSteps === undefined ? {} : { maxSteps: agentOptions.maxSteps }),
+    ...(agentOptions.historyWindow === undefined ? {} : { historyWindow: agentOptions.historyWindow }),
+    ...(agentOptions.maxOutputTokens === undefined ? {} : { maxOutputTokens: agentOptions.maxOutputTokens }),
   })) as Harness;
   assertHarnessComposable(harness, sandbox.adapter === undefined ? {} : { sandbox: sandbox.adapter });
   // The harness runtime, wired to everything a turn needs: the store handle (its
