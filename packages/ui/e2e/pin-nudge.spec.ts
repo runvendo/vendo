@@ -9,7 +9,7 @@
  * the ask queue, and for the same reason: every spec in the run shares one wire
  * server, so a mutation left behind would leak into its neighbours.
  */
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { openScenario, screenshotPath } from "./helpers.js";
 
 /** The scripted multi-tool + build turn (`[smoke-build]` in the wire fixture). */
@@ -50,6 +50,30 @@ async function hostPinWrite(page: Page): Promise<() => void> {
   };
 }
 
+/** Park the nudge on the keyframe at `ms`, or `null` to let it run again.
+ *  Photography only — it changes no declared timing, and it seeks the animation
+ *  itself: pausing and then rewriting `animation-delay` does NOT re-seek in
+ *  Chromium, which silently photographed the same resting frame twice. */
+async function freezeAt(target: Locator, ms: number | null): Promise<void> {
+  await target.evaluate((node, at) => {
+    const nudge = node.getAnimations().find(item => (item as CSSAnimation).animationName === "fl-pin-nudge");
+    if (nudge === undefined) throw new Error("the pin nudge is not animating");
+    if (at === null) return nudge.play();
+    nudge.pause();
+    nudge.currentTime = at;
+  }, ms);
+}
+
+/** The affordance itself, with room around it: the nudge is a ring OUTSIDE the
+ *  button's box, so a tight crop would cut off the thing being photographed. */
+async function closeUp(page: Page, target: Locator, name: string): Promise<void> {
+  const box = (await target.boundingBox())!;
+  await page.screenshot({
+    path: screenshotPath(name),
+    clip: { x: box.x - 24, y: box.y - 24, width: box.width + 48, height: box.height + 48 },
+  });
+}
+
 /** Chromium's animation clock, slowed so a 300ms flight and a 180ms ring can be
  *  photographed. The ceremony's own timings are untouched. */
 async function slowMotion(page: Page): Promise<void> {
@@ -85,6 +109,26 @@ test("a settled build invites the pin, and the pin lands in the Apps shelf", asy
   await expect(pin).toHaveAttribute("data-vendo-pin", "invite");
   await expect(pin).toHaveCSS("animation-iteration-count", /infinite/);
   await page.screenshot({ path: screenshotPath("pin-nudge-invite") });
+  // A still cannot show a pulse, so photograph both ENDS of the cycle — rest,
+  // then the 45% peak. This proves the ring's shape; the assertion above proves
+  // it is actually running.
+  await freezeAt(pin, 0);
+  await closeUp(page, pin, "pin-nudge-invite-rest");
+  const rest = await pin.evaluate(node => getComputedStyle(node).boxShadow);
+  await freezeAt(pin, 1_080);
+  await closeUp(page, pin, "pin-nudge-invite-peak");
+  const peak = await pin.evaluate(node => getComputedStyle(node).boxShadow);
+  // …and one frame per 200ms of the cycle, which assembles into the loop a
+  // person actually sees (a still can only ever show one instant of it).
+  for (let at = 0; at < 2_400; at += 200) {
+    await freezeAt(pin, at);
+    await closeUp(page, pin, `frames/pin-nudge-frame-${String(at).padStart(4, "0")}`);
+  }
+  // The ring really does open and close — a flat keyframe would photograph the
+  // same at both ends, and the two stills above could not tell you.
+  expect(peak, `rest ${rest} → peak ${peak}`).not.toBe(rest);
+  expect(peak).toMatch(/5px/);
+  await freezeAt(pin, null);
 
   // Taking it: the panel goes first, then the ghost flies to the shelf and the
   // shelf takes the settle ring. No slot is mounted anywhere on this page — that
@@ -128,5 +172,8 @@ test("the invitation resolves once the pin is taken, on whichever surface shows 
     .getByRole("button", { name: "Pin to dashboard" });
   await expect(settled).toHaveAttribute("data-vendo-pin", "pinned");
   await expect(settled).toHaveCSS("animation-iteration-count", /^(?!.*infinite).*$/);
-  await page.screenshot({ path: screenshotPath("pin-settled") });
+  // `animations: "disabled"` finishes the panel's entrance first — without it the
+  // shot lands mid-open and photographs a half-transparent dialog.
+  await page.screenshot({ path: screenshotPath("pin-settled"), animations: "disabled" });
+  await closeUp(page, settled, "pin-settled-bar");
 });
