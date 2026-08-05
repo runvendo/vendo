@@ -1611,7 +1611,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   const manifestTriggers = createManifestTriggers({
     store: config.store,
     lifecycle,
-    updateDocument: (appId, mutate) => updateAppRow(apps, appId, mutate),
+    updateDocument: updateAppDocument,
     ...(config.armAutomation === undefined ? {} : { armAutomation: config.armAutomation }),
   });
   const caller = fnCaller.wrap(createAppCaller(config.tools, {
@@ -3649,14 +3649,14 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       async destroy(appId, ctx) {
         const app = await requireOwned(appId, ctx, "owner");
         const cleared = await lifecycle.destroyMachine(app);
-        // De-graduation retires the retired scheduler's leftover row too.
+        // De-graduation retires the old scheduler's leftover row with the machine.
         await manifestTriggers.clearLegacyState(appId);
         if (app.machine !== undefined) await reportLifecycle("machine-destroy", appId, ctx);
         return cleared;
       },
       async syncManifest(appId, ctx) {
         const app = await requireOwned(appId, ctx);
-        return await manifestTriggers.sync(app, ctx);
+        return manifestTriggers.sync(app, ctx);
       },
       report: () => manifestTriggers.report(),
     },

@@ -105,11 +105,10 @@ export const systemRoutes: RouteEntry[] = [
     }
     // One authenticated tick drives the ONE scheduler — the automations engine,
     // which fires every trigger including the schedules a machine app declares
-    // in its vendo.json (folded into doc triggers at manifest sync; the separate
-    // machine-app scheduler this leg used to drive is gone) — plus the hosted
-    // TTL sweep (sweepOnTick). Point any external cron here (Vercel cron, GitHub
-    // Actions, crontab); the Cloud broker calls this same surface. The legs
-    // settle independently so one failing can never suppress the other; any
+    // in its vendo.json (folded into doc triggers at manifest sync) — plus the
+    // hosted TTL sweep (sweepOnTick). Point any external cron here (Vercel cron,
+    // GitHub Actions, crontab); the Cloud broker calls this same surface. The
+    // legs settle independently so one failing can never suppress the other; any
     // failure still answers 500 so a retrying cron comes back (both are
     // idempotent within their windows).
     const [runs, sessions] = await Promise.allSettled([

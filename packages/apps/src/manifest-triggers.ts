@@ -9,7 +9,7 @@ import {
   type Trigger,
 } from "@vendoai/core";
 import { Cron } from "croner";
-import { requestAppWithBootRetry, type BootRetryOptions } from "./box-agent.js";
+import { requestAppWithBootRetry } from "./box-agent.js";
 import type { MachineLifecycle } from "./machine-lifecycle.js";
 import { parseVendoManifest } from "./manifest.js";
 import { listAllRecords, rowFromRecord } from "./persistence.js";
@@ -60,7 +60,6 @@ export const LEGACY_SCHEDULE_STATE_COLLECTION = "vendo_app_schedules";
  * migration.
  */
 const SCHEDULE_CURSOR_COLLECTION = "automations:schedule";
-const cursorKey = (appId: AppId, triggerId: string): string => `${appId}:${triggerId}`;
 
 /** The trigger id a manifest `fn` converts to. `fn` admits `-` (it names a
  *  `POST /fn/<name>` route); a trigger id does not, so dashes fold to `_`. */
@@ -120,8 +119,6 @@ export interface ManifestTriggerConfig {
     triggerId: string,
     ctx: RunContext,
   ): Promise<{ enabled: boolean; missing: ApprovalRequest[] }>;
-  /** Test seam: shrink the post-resume boot retry. */
-  bootRetry?: BootRetryOptions;
 }
 
 const decoder = new TextDecoder();
@@ -165,11 +162,7 @@ export const createManifestTriggers = (config: ManifestTriggerConfig) => {
     const machine = await config.lifecycle.wake(app);
     // A wake may resume a snapshot whose app is still booting; retry the
     // manifest read past the provider's transient "port not open".
-    const answer = await requestAppWithBootRetry(
-      machine,
-      { method: "GET", path: "/vendo.json" },
-      config.bootRetry ?? {},
-    );
+    const answer = await requestAppWithBootRetry(machine, { method: "GET", path: "/vendo.json" }, {});
     if (answer.status === 404) return [];
     if (answer.status < 200 || answer.status >= 300) {
       throw new VendoError("validation", `vendo.json read failed (${answer.status})`, { appId: app.id });
@@ -196,7 +189,7 @@ export const createManifestTriggers = (config: ManifestTriggerConfig) => {
     for (const schedule of state?.schedules ?? []) {
       if (typeof schedule.fn !== "string" || typeof schedule.lastFiredAt !== "string") continue;
       const input = {
-        id: cursorKey(appId, manifestTriggerId(schedule.fn)),
+        id: `${appId}:${manifestTriggerId(schedule.fn)}`,
         data: { lastFiredAt: schedule.lastFiredAt } as unknown as Json,
       };
       if (cursors.atomic !== undefined) {
@@ -219,11 +212,10 @@ export const createManifestTriggers = (config: ManifestTriggerConfig) => {
     async sync(app: AppDocument, ctx: RunContext): Promise<ManifestTriggerSync> {
       const declared = await declaredSchedules(app);
       for (const { cron } of declared) assertCronValid(cron, app.id);
-      const converted: Trigger[] = [];
+      const converted = new Map<string, { trigger: Trigger; cron: string; fn: string }>();
       for (const { cron, fn } of declared) {
         const trigger = triggerFor(cron, fn);
-        const clash = converted.find((candidate) => candidate.id === trigger.id);
-        if (clash !== undefined) {
+        if (converted.has(trigger.id)) {
           // Two declarations that cannot both be honored: one trigger id is one
           // automation, so this must be said out loud rather than last-wins.
           throw new VendoError(
@@ -233,22 +225,23 @@ export const createManifestTriggers = (config: ManifestTriggerConfig) => {
             { appId: app.id },
           );
         }
-        converted.push(trigger);
+        converted.set(trigger.id, { trigger, cron, fn });
       }
 
       await carryLegacyCursors(app.id);
 
-      const before = new Map((app.triggers ?? []).filter(isManifestTrigger).map((t) => [t.id, JSON.stringify(t)]));
+      const before = new Map((app.triggers ?? []).filter(isManifestTrigger).map((trigger) => [trigger.id, JSON.stringify(trigger)]));
       const next = await config.updateDocument(app.id, (doc) => ({
         ...doc,
         // Everything NOT converter-owned keeps its place and its shape.
-        triggers: [...(doc.triggers ?? []).filter((trigger) => !isManifestTrigger(trigger)), ...converted],
+        triggers: [
+          ...(doc.triggers ?? []).filter((trigger) => !isManifestTrigger(trigger)),
+          ...[...converted.values()].map(({ trigger }) => trigger),
+        ],
       }));
 
       const results: ManifestTriggerResult[] = [];
-      for (const trigger of converted) {
-        const fn = declaredFn(trigger) ?? "";
-        const cron = trigger.on.kind === "schedule" ? trigger.on.cron ?? "" : "";
+      for (const { trigger, cron, fn } of converted.values()) {
         // A trigger whose declaration did not change is left exactly as the
         // person last decided it: re-arming here would undo a kill switch.
         if (before.get(trigger.id) === JSON.stringify(trigger)) {

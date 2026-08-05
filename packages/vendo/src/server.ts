@@ -2269,7 +2269,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       // opener already holds keeps the adoption lookup's two store reads off
       // EVERY app open in every deployment, including the single-player ones
       // that have no automations at all.
-      if (app.triggers === undefined || app.triggers.length === 0) return undefined;
+      if ((app.triggers ?? []).length === 0) return undefined;
       const card = await automationsForArming?.adoption(app.id, ctx);
       return card === undefined ? undefined : { [ADOPTION_VENUE_KEY]: card };
     },

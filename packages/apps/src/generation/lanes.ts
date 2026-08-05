@@ -263,21 +263,24 @@ export type ArmAutomationSeam = (
   ctx: RunContext,
 ) => Promise<{ enabled: boolean; missing: ApprovalRequest[] }>;
 
+/** The id-less plan trigger as the document carries it: the ladder authors at
+ *  most one trigger per app, always under {@link DEFAULT_TRIGGER_ID}. */
+const stampedTrigger = (plan: AutomationPlan): Trigger =>
+  ({ id: DEFAULT_TRIGGER_ID, ...structuredClone(plan.trigger) });
+
 /** Put a planned automation onto a document: the trigger the automations
  *  engine fires, plus the results collection its last step publishes into.
- *  The ladder authors at most one trigger per app, always under
- *  {@link DEFAULT_TRIGGER_ID} — idempotent, so re-stamping it over a rewired
- *  document (which must never drop the just-authored fields, and must never
- *  duplicate the entry) REPLACES that one entry, preserving any others. */
+ *  Idempotent, so re-stamping it over a rewired document (which must never drop
+ *  the just-authored fields, and must never duplicate the entry) REPLACES that
+ *  one entry, preserving any others. */
 export const applyAutomationPlan = <Doc extends Pick<AppDocument, "triggers" | "storage">>(
   document: Doc,
   plan: AutomationPlan,
 ): Doc => {
   const automated = structuredClone(document);
-  const stamped: Trigger = { id: DEFAULT_TRIGGER_ID, ...structuredClone(plan.trigger) };
   automated.triggers = [
     ...(automated.triggers ?? []).filter((trigger) => trigger.id !== DEFAULT_TRIGGER_ID),
-    stamped,
+    stampedTrigger(plan),
   ];
   if (plan.resultsCollection !== undefined && automated.storage?.[plan.resultsCollection] === undefined) {
     automated.storage = {
@@ -318,7 +321,6 @@ export const armAutomationTrigger = async (
   triggerId: string,
   ctx: RunContext,
 ): Promise<{ enabled: boolean; pendingGrants?: ApprovalRequest[]; issues: string[] }> => {
-  // No seam means the stored row was armed by the persist itself.
   if (seam === undefined) return { enabled: true, issues: [] };
   try {
     const armed = await seam(appId, triggerId, ctx);
@@ -515,7 +517,7 @@ const runAutomationArm = async (
     ...(armingIssues.length === 0 ? {} : { armingIssues }),
     automation: {
       mode,
-      trigger: { id: DEFAULT_TRIGGER_ID, ...structuredClone(automation.trigger) },
+      trigger: stampedTrigger(automation),
       enabled,
       ...(automation.resultsCollection === undefined ? {} : { resultsCollection: automation.resultsCollection }),
       ...(pendingGrants === undefined ? {} : { pendingGrants }),

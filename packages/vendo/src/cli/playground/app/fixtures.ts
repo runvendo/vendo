@@ -562,7 +562,7 @@ export function playgroundFixtures(): PlaygroundFixtures {
       {
         id: "run_01",
         appId: "app_digest",
-        triggerId: "main",
+        triggerId: DEFAULT_TRIGGER_ID,
         trigger: { kind: "schedule" },
         status: "ok",
         startedAt: "2026-07-17T08:00:00.000Z",
@@ -576,7 +576,7 @@ export function playgroundFixtures(): PlaygroundFixtures {
       {
         id: "run_02",
         appId: "app_digest",
-        triggerId: "main",
+        triggerId: DEFAULT_TRIGGER_ID,
         trigger: { kind: "schedule" },
         status: "error",
         startedAt: "2026-07-18T08:00:00.000Z",

@@ -56,6 +56,10 @@ const COLLECTION_NAME = /^[a-z][a-z0-9_-]{0,40}$/i;
 // n > 0, matching the automations engine's durationMs rule exactly — "0s"
 // would validate here and then never fire.
 const EVERY_DURATION = /^[1-9]\d*[smhd]$/;
+/** The ladder never asks the model for a trigger id (an app it plans for has
+ *  exactly one trigger, stamped later by applyAutomationPlan), so a model reply
+ *  that never mentions "id" still has to validate. */
+const planTriggerSchema = triggerSchema.omit({ id: true });
 
 /**
  * §12's law at authoring time: is this a thing Vendo will not do while nobody is
@@ -66,14 +70,11 @@ const EVERY_DURATION = /^[1-9]\d*[smhd]$/;
  * happen away: a declared `destructive`, and an `ungraded` tool, because nothing
  * has said what that one does either.
  *
- * It asks the DECLARED grade and nothing else. This slice was written against
- * core's `mechanicalRisk`, the second vote that read a tool's NAME and could
- * call a `write`-declared `host_invoices_send` destructive; that vote was deleted
- * repo-wide with two-vote grading (#791 — "the dev's label is final"), and
- * `packages/actions/src/sync/protocol-facts.test.ts` now enforces that nothing
- * anywhere concludes anything from a tool's name. So a mislabelled send tool
- * reaches the planner, exactly as it reaches the run; grading the catalog
- * (`vendo sync`, `.vendo/overrides.json`) is the only thing that stops it.
+ * It asks the DECLARED grade and nothing else (#791 — "the dev's label is
+ * final"; nothing anywhere concludes anything from a tool's name). So a
+ * mislabelled send tool reaches the planner exactly as it reaches the run, and
+ * grading the catalog (`vendo sync`, `.vendo/overrides.json`) is the only thing
+ * that stops it.
  */
 const irreversible = (tool: HostToolInfo): boolean =>
   withheldFromUnattended({
@@ -204,10 +205,7 @@ const validatePlan = (
   }
   const candidate = parsed as { name?: unknown; trigger?: unknown; resultsCollection?: unknown };
   const issues: string[] = [];
-  // The ladder never asks the model for a trigger id (an app it plans for has
-  // exactly one trigger, stamped later by applyAutomationPlan) — parse the
-  // id-less shape so a model reply that never mentions "id" still validates.
-  const triggerResult = triggerSchema.omit({ id: true }).safeParse(candidate.trigger);
+  const triggerResult = planTriggerSchema.safeParse(candidate.trigger);
   if (!triggerResult.success) {
     const first = triggerResult.error.issues[0];
     const at = first === undefined || first.path.length === 0 ? "" : ` at trigger.${first.path.join(".")}`;

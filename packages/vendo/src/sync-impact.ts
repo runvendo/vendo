@@ -79,7 +79,7 @@ export async function computeImpact(store: VendoStore, tools: string[]): Promise
     for (const app of apps) {
       if (!referencedTools(app.doc).has(tool)) continue;
       const reference = { id: app.doc.id, title: app.doc.name };
-      if (app.doc.triggers === undefined || app.doc.triggers.length === 0) impact.apps.push(reference);
+      if ((app.doc.triggers ?? []).length === 0) impact.apps.push(reference);
       else impact.automations.push(reference);
     }
     impact.grants = grants.filter((grant) => grant.tool === tool).length;

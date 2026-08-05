@@ -73,12 +73,11 @@ export const doctorRoutes: RouteEntry[] = [
   // an unrelated Cloud tenant).
   route("GET", "/doctor/mcp", async ({ deps }) => json({ selection: deps.mcpSelection })),
   // Dev-only machine/schedule reporting (sits AFTER the production gate above,
-  // like every probe route). Reporting only: which apps carry a machine, and
-  // whether a schedule caller (VENDO_TICK_SECRET) is configured for the /tick
-  // surface. WHEN a schedule last fired is not here any more: a vendo.json
-  // schedule is a doc trigger now, so its history is the automation's run
-  // records, and repeating the declaration's shape is all this route can
-  // honestly say.
+  // like every probe route). Reporting only: which apps carry a machine, what
+  // their manifests declare, and whether a schedule caller (VENDO_TICK_SECRET)
+  // is configured for the /tick surface. WHEN a schedule last fired is not here:
+  // a vendo.json schedule is a doc trigger, so its history is the automation's
+  // run records.
   route("GET", "/doctor/machines", async ({ deps }) => {
     return json({
       scheduleCallerConfigured: environment("VENDO_TICK_SECRET") !== undefined,

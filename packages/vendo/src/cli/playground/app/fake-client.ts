@@ -27,6 +27,12 @@ export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
     return found;
   };
 
+  /** The mutable per-trigger arm state the enable/disable flows flip. */
+  const automationTrigger = (appId: string, triggerId: string) =>
+    state.automations
+      .find((candidate) => candidate.app.id === appId)
+      ?.triggers.find((candidate) => candidate.trigger.id === triggerId);
+
   return {
     baseUrl: "playground:fake",
     headers: {},
@@ -200,16 +206,14 @@ export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
     },
 
     automations: {
-      list: async () => state.automations.map((entry) => ({ ...entry, triggers: entry.triggers.map((t) => ({ ...t })) })),
+      list: async () => state.automations.map((entry) => ({ ...entry, triggers: entry.triggers.map((trigger) => ({ ...trigger })) })),
       enable: async (id, triggerId) => {
-        const entry = state.automations.find((candidate) => candidate.app.id === id);
-        const trigger = entry?.triggers.find((candidate) => candidate.trigger.id === triggerId);
+        const trigger = automationTrigger(id, triggerId);
         if (trigger) trigger.enabled = true;
         return { enabled: true, missing: [] };
       },
       disable: async (id, triggerId) => {
-        const entry = state.automations.find((candidate) => candidate.app.id === id);
-        const trigger = entry?.triggers.find((candidate) => candidate.trigger.id === triggerId);
+        const trigger = automationTrigger(id, triggerId);
         if (trigger) trigger.enabled = false;
       },
       dryRun: async () => ({
