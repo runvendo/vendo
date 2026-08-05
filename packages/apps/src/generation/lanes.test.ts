@@ -454,6 +454,30 @@ describe("runServerLane — steps and agentic automations", () => {
     expect(result.document.triggers?.[0]?.run).toEqual({ kind: "agentic", prompt: "The daily nudge." });
   });
 
+  it("reads a trailing \"too\" as another one, the way people actually say it", async () => {
+    const before = document();
+    before.triggers = [{
+      id: "main",
+      on: { kind: "schedule", every: "1d" },
+      run: { kind: "agentic", prompt: "The daily nudge." },
+    }];
+    const LAZY_REPLACE = JSON.stringify({
+      name: "Weekly nudge summary",
+      replaces: "main",
+      trigger: {
+        on: { kind: "schedule", every: "7d" },
+        run: { kind: "agentic", prompt: "Weigh up the week's nudges.", budget: { maxToolCalls: 20 } },
+      },
+    });
+
+    const result = await runServerLane(agenticPlan(), before, serverDeps(scripted([], LAZY_REPLACE), {
+      request: "remind me weekly too",
+      land: async () => undefined,
+    }));
+
+    expect(result.document.triggers?.map(({ id }) => id)).toEqual(["main", "weekly_nudge_summary"]);
+  });
+
   it("hands the planner the person's own words, not only the plan's reason", async () => {
     // The planner decides create-vs-edit, and it was deciding it without ever
     // seeing the request that started all this.

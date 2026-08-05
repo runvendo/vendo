@@ -310,7 +310,7 @@ const idFromName = (name: string | undefined): string | undefined => {
  * second entry the person can delete; the miss it prevents costs them an
  * automation they cannot get back.
  */
-const ADDS_ANOTHER = /\b(also|another|second|third|as well|alongside|additionally|additional|in addition|on top of)\b/i;
+const ADDS_ANOTHER = /\b(also|another|second|third|too|as well|alongside|additionally|additional|in addition|on top of)\b/i;
 
 /** The first id in the `base`, `base_2`, `base_3` … series the app does not
  *  already hold. Safe to search occupancy because the id is decided ONCE per
