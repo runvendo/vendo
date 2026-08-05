@@ -709,6 +709,12 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
    unchanged. */
 .fl-act--scroll { display: flex; flex-direction: column; min-height: 0; max-height: min(72vh, 680px); }
 .fl-act--scroll > .fl-act-led { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+/* Inside the center pane the PANE caps the card, not the viewport: bridge the
+   .vendo-root block into the flex height chain so a pane shorter than 72vh
+   still contains the card and the ledger scrolls internally — without this,
+   .fl-center-page becomes the scroller and the card loses its containment. */
+.fl-center-page:has(.fl-act--scroll) { display: flex; flex-direction: column; }
+.fl-center-page > .vendo-root:has(.fl-act--scroll) { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .fl-act-head { display: flex; align-items: center; gap: 9px; width: 100%; padding: 9px 13px; cursor: pointer;
   border: 0; background: transparent; font: 600 12.5px/1.2 var(--vendo-font); color: var(--vendo-fg); text-align: left; }
 .fl-act-head:hover { background: var(--vendo-accent-soft); }
@@ -802,7 +808,8 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
    message never moves it. Left-aligned and inset 16px so the hero column and
    card grid line up with the composer bar below. Content is host-driven: title
    (greeting), tagline (intro), eyebrow, and icon all arrive as props. */
-.fl-landing { display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
+.fl-landing { display: flex; flex-direction: column; align-items: flex-start;
+  justify-content: center; justify-content: safe center;
   gap: 24px; flex: 1; min-height: 0; overflow-y: auto; padding: 40px 16px 16px; text-align: left; }
 .fl-hero { display: flex; flex-direction: column; align-items: flex-start; gap: 13px;
   width: 100%; max-width: 720px; }
@@ -820,11 +827,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   color: var(--vendo-fg); text-wrap: balance; }
 .fl-hero-tagline { margin: 0; max-width: 54ch; font-size: var(--vendo-text-body); line-height: 1.6;
   letter-spacing: -.004em; color: var(--vendo-fg-muted); }
-.fl-greet { margin: 0; font-family: var(--vendo-heading-font); font-size: calc(var(--vendo-base-size) * 1.533); font-weight: 600; letter-spacing: -.022em; }
-/* The optional capability line under the landing headline (VendoThread's
-   \`intro\` prop) — muted assistant voice, canvas geometry (max 460px). */
-.fl-intro { margin: 0; max-width: 460px; font-size: var(--vendo-text-body); line-height: 1.65;
-  letter-spacing: -.006em; color: var(--vendo-fg-muted); }
 /* Greeting-as-tutorial (ui-usage-dx §6): the one-time first message reads as
    the agent speaking — left-aligned assistant typography with its prompt chips
    beneath — inside the otherwise-centered landing. */
@@ -1980,7 +1982,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 /* 4B — starter cards on the landing (object suggestions). Sift-style: a calm
    two-up grid of bold-title + muted-subtitle cards, aligned left with the hero
    column above and the composer below (shared 720px max-width, 16px inset). */
-.fl-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(228px, 1fr)); gap: 10px;
+.fl-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(228px, 100%), 1fr)); gap: 10px;
   width: 100%; max-width: 720px; }
 .fl-card { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; text-align: left;
   cursor: pointer; border: 1px solid var(--vendo-border); border-radius: var(--vendo-radius);
