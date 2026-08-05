@@ -136,15 +136,47 @@ const appDirectory = async (
   return directory;
 };
 
+/**
+ * The file's content, PROVEN to be the content the row describes.
+ *
+ * `hash` is the CAS base — a commit diffs against it to decide what changed — so
+ * content that disagrees with it is not a smaller problem than content that is
+ * missing: both make a checkout produce a different app than the one stored, and
+ * "an app can always be rebuilt from its row" is the promise this contract exists
+ * to keep. The document validator cannot catch it (it sees field shapes, and
+ * never the blob's bytes at all), so the check belongs here, at the moment the
+ * bytes and their claimed identity are both in hand.
+ *
+ * Fails CLOSED. Hashing every file on checkout costs one pass over bytes we have
+ * already read and are about to write.
+ */
 const sourceText = async (file: AppSourceFile, seam: AppSourceSeam, path: string): Promise<string> => {
+  const text = await storedText(file, seam, path);
+  const bytes = encoder.encode(text).byteLength;
+  if (bytes !== file.bytes) {
+    throw new VendoError(
+      "conflict",
+      `source file "${path}" is ${bytes} bytes but its row says ${file.bytes} — refusing to check out content that is not the content stored`,
+    );
+  }
+  const hash = contentHash(text);
+  if (hash !== file.hash) {
+    throw new VendoError(
+      "conflict",
+      `source file "${path}" hashes to ${hash} but its row says ${file.hash} — refusing to check out content that is not the content stored`,
+    );
+  }
+  return text;
+};
+
+const storedText = async (file: AppSourceFile, seam: AppSourceSeam, path: string): Promise<string> => {
   if (file.text !== undefined) return file.text;
   if (file.blobRef === undefined) {
     throw new VendoError("validation", `source file "${path}" carries neither text nor a blob reference`);
   }
   const blob = await seam.blobs?.get(file.blobRef);
   if (blob === undefined) {
-    // The row pointed at bytes that are gone. Loud, because the alternative is a
-    // checkout that silently produces a DIFFERENT app than the one stored.
+    // The row pointed at bytes that are gone. Loud, for the same reason as above.
     throw new VendoError("not-found", `source file "${path}" is missing its stored bytes`);
   }
   return new TextDecoder().decode(blob.bytes);

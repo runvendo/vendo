@@ -16,6 +16,7 @@ import {
   VENDO_APP_FORMAT,
   WORKSPACE_INLINE_MAX_BYTES,
   appDocumentSchema,
+  sha256Hex,
   type AppDocument,
   type AppId,
   type FilesAdapter,
@@ -118,6 +119,9 @@ async function seedApp(store: VendoStore): Promise<void> {
     refs: { subject: principal.subject },
   });
 }
+
+/** The honest hash of some text, so a test can lie about ONE field at a time. */
+const contentHashOf = (text: string): string => `sha256:${sha256Hex(text)}`;
 
 const openWorkspace = (store: VendoStore, blobs?: FilesAdapter): Promise<WorkspaceFs> =>
   workspaceStore(store, blobs === undefined ? {} : { files: blobs }).open(principal);
@@ -248,6 +252,50 @@ describe("app source: checkout and commit (contract §3.2)", () => {
     await checkoutApp(APP, fresh, orgCtx, seam);
     expect(await fresh.readFile(`/orgs/${ORG}/apps/${APP}/src/App.tsx`)).toBe("export const App = () => null;\n");
     await expect(fresh.readFile(`/user/apps/${APP}/src/App.tsx`)).rejects.toThrow();
+  }, 60_000);
+
+  /**
+   * `hash` is the CAS base a commit diffs against, so a row whose metadata
+   * contradicts its bytes makes a checkout produce a DIFFERENT app than the one
+   * stored — and the whole promise of source-in-the-row is that it cannot. The
+   * document validator cannot catch this: it sees field shapes, and for a
+   * blob-spilled file it never sees the bytes at all.
+   */
+  it("refuses to check out content that is not the content its row describes", async () => {
+    const store = await tempStore();
+    await seedApp(store);
+    const blobs = memoryBlobs();
+    const seam = seamOver(store, blobs);
+    const real = "export const App = () => null;\n";
+
+    // Inline: honest bytes, lying hash.
+    await seam.update(APP, (doc) => ({
+      ...doc,
+      source: { "src/App.tsx": { hash: `sha256:${"0".repeat(64)}`, bytes: real.length, text: real } },
+    }), ctx);
+    const one = await openWorkspace(store, blobs);
+    await expect(checkoutApp(APP, one, ctx, seam)).rejects.toThrow(/hashes to sha256:.* but its row says/);
+
+    // Inline: honest hash, lying length.
+    await seam.update(APP, (doc) => ({
+      ...doc,
+      source: { "src/App.tsx": { hash: `sha256:${"0".repeat(64)}`, bytes: 1, text: real } },
+    }), ctx);
+    const two = await openWorkspace(store, blobs);
+    await expect(checkoutApp(APP, two, ctx, seam)).rejects.toThrow(/is 31 bytes but its row says 1/);
+
+    // Blob-spilled: the bytes exist and are simply not the ones described. This
+    // is the arm the validator can never reach.
+    await blobs.put("apps/forged", new TextEncoder().encode("something else entirely"));
+    await seam.update(APP, (doc) => ({
+      ...doc,
+      source: { "src/App.tsx": { hash: contentHashOf(real), bytes: real.length, blobRef: "apps/forged" } },
+    }), ctx);
+    const three = await openWorkspace(store, blobs);
+    await expect(checkoutApp(APP, three, ctx, seam)).rejects.toThrow(/but its row says/);
+
+    // Nothing was written on the way to any of those refusals.
+    await expect(three.readFile(`/user/apps/${APP}/src/App.tsx`)).rejects.toThrow();
   }, 60_000);
 
   it("refuses a source path that would escape the app's directory", async () => {
