@@ -88,9 +88,8 @@ const DEFAULT_RADIUS = { small: "4px", large: "12px" } as const;
 
 const BRIEF_PLACEHOLDER = `${BRIEF_TEMPLATE}\n`;
 
-/** Slot values → the frozen runtime VendoTheme contract. Exported so the try
- *  surface's deterministic pass (cli/try/extract.ts) writes theme.json with
- *  the EXACT conversion init uses — one derivation law, never two. */
+/** Slot values → the frozen runtime VendoTheme contract — one derivation law,
+ *  never two (theme/provenance.ts leans on this exact derivation). */
 export function toVendoTheme(slots: ThemeSlotValues): VendoTheme {
   const deriveRadius = (factor: number, fallback: string): string => {
     const value = slots.radius.match(/^(\d+(?:\.\d+)?)px$/)?.[1];

@@ -5,8 +5,7 @@ import { EMBED_BUNDLE_SOURCE } from "./playground/embed-bundle.gen.js";
 
 /**
  * The scripted-surface server + shared browser-open helper. The `vendo
- * playground` command was retired (`vendo try` absorbed it — cli/try.ts
- * serves the same bundle), but the machinery stays: startPlaygroundServer
+ * playground` command was retired, but the machinery stays: startPlaygroundServer
  * serves the ./playground/ bundles for the docs-media capture script
  * (packages/ui/scripts/capture-docs-media.mjs imports it from dist), and
  * /embed.js (window.VendoDocsEmbed) is what self-hosted docs/pages mount.

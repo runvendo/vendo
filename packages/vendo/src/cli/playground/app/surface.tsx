@@ -2,8 +2,8 @@
  * The try surface, as an importable client-only module.
  *
  * This is the ONE source both venues build from: the CLI IIFE (`main.tsx`,
- * served by `vendo try` at `/playground.js`) and a vendo-web Next client route
- * (`@vendoai/vendo/try-surface`). It carries NO module-level DOM/window access
+ * served by the playground server at `/playground.js`) and a vendo-web Next
+ * client route (`@vendoai/vendo/try-surface`). It carries NO module-level DOM/window access
  * so it is safe to import under SSR — every `document`/`window` touch lives
  * inside `mount()` or a component effect, which only ever run in the browser.
  *
@@ -195,11 +195,11 @@ export function PlaygroundApp(): ReactElement {
 }
 
 /**
- * The hosted try surface (`vendo try` / the console's try venue): boots the try
+ * The hosted try surface (the console's try venue): boots the try
  * profile from `config`, then renders the product stage + open overlay. The
  * FIRST paint blocks only on the initial profile load (the server answers from
  * disk — never an AI wait, so the latency law holds); a hard load failure hands
- * the page to the scripted playground, exactly like the CLI's classic fallback.
+ * the page to the scripted playground.
  */
 export function TrySurface({ config }: { config: TryBootConfig }): ReactElement | null {
   const [boot, setBoot] = useState<TryBoot | null>(null);
@@ -237,7 +237,7 @@ export function TrySurface({ config }: { config: TryBootConfig }): ReactElement 
 export interface MountOptions {
   /**
    * The try-mode boot pointer. When omitted, it is read from
-   * `window.__VENDO_TRY__` (the CLI's injection); pass `null` to force the
+   * `window.__VENDO_TRY__` (a host page's injection); pass `null` to force the
    * scripted playground, or a config to force try mode (a Next route that owns
    * its own config).
    */
@@ -245,10 +245,10 @@ export interface MountOptions {
 }
 
 /**
- * Boot the surface into `el` and return a disposer. Try mode (`vendo try`, the
- * hosted twin) boots from `window.__VENDO_TRY__`; any page without one — the
- * playground server, `?embed=1` iframes, hash-routed scenarios — is the classic
- * scripted playground. A failed profile load falls back to classic too.
+ * Boot the surface into `el` and return a disposer. Try mode boots from
+ * `window.__VENDO_TRY__`; any page without one — the playground server,
+ * `?embed=1` iframes, hash-routed scenarios — is the classic scripted
+ * playground. A failed profile load falls back to classic too.
  */
 export function mount(el: HTMLElement, options: MountOptions = {}): () => void {
   const config = options.tryConfig !== undefined ? options.tryConfig : readTryConfig(window);
