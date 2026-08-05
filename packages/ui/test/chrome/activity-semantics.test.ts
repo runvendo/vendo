@@ -110,11 +110,34 @@ describe("eventOutcomeLabel", () => {
     })).toEqual({ label: "Failed", tone: "error" });
   });
 
-  it("D6 · an automation-engine run row keeps its own older display, untouched", () => {
-    // Those rows carry `status` in detail, not `harness`. What they should read
-    // is a separate question and this fix deliberately does not answer it.
+  // ⚠️ TEST EDIT — this replaces "an automation-engine run row keeps its own
+  // older display, untouched", which asserted `{ status: "ok" }` reads
+  // "Running". That assertion PINNED the bug the D6 comment had already named
+  // and deferred: the engine's `audit()` never sets a wire `outcome`, so on a
+  // real deployment 20 of 25 finished automation rows claimed to be in flight
+  // while the API said `ok`. The row's own status is the answer; it is no
+  // longer a separate question.
+  it("reads an automation-engine run row's real outcome from detail.status", () => {
     expect(eventOutcomeLabel({ kind: "run", outcome: undefined, detail: { status: "ok" } }))
+      .toEqual({ label: "Succeeded", tone: "ok" });
+    expect(eventOutcomeLabel({ kind: "run", outcome: undefined, detail: { status: "error" } }))
+      .toEqual({ label: "Failed", tone: "error" });
+    expect(eventOutcomeLabel({ kind: "run", outcome: undefined, detail: { status: "stopped" } }))
+      .toEqual({ label: "Stopped", tone: "blocked" });
+  });
+
+  it("keeps a genuinely running automation row running — `running` is the one live status", () => {
+    expect(eventOutcomeLabel({ kind: "run", outcome: undefined, detail: { status: "running" } }))
       .toEqual({ label: "Running", tone: "running" });
+  });
+
+  it("reads the engine's three refusal statuses as the failures they are", () => {
+    // The engine writes these instead of (not as well as) a plain `error` on the
+    // row that refused, so leaving them unmapped left real failures reading live.
+    for (const status of ["sponsorship-check-failed", "sponsorship-invalidated", "webhook-rejected"]) {
+      expect(eventOutcomeLabel({ kind: "run", outcome: undefined, detail: { status } }))
+        .toEqual({ label: "Failed", tone: "error" });
+    }
   });
 });
 

@@ -87,11 +87,37 @@ export function outcomeLabel(outcome: AuditEvent["outcome"]): { label: string; t
   return OUTCOMES[outcome] ?? { label: outcome, tone: "running" };
 }
 
+/**
+ * What the automation engine stamps in a run row's `detail.status`.
+ *
+ * The engine's `audit()` writes `detail: { status, ... }` and NEVER a wire
+ * `outcome`, so every one of these rows fell through to `outcomeLabel`'s
+ * missing-outcome branch and claimed to be in flight: on a real deployment 20
+ * of 25 finished automation rows read "Running" while the API said `ok`.
+ *
+ * `running` is the ONLY status the engine writes about a run that is still
+ * going. The other four are settled facts, and the three refusals are settled
+ * FAILURES — a run refused for a dead sponsor or a rejected webhook never
+ * resumes. Terminal labels match the automations panel's own `RUN_STATUS_LABEL`
+ * so one run never reads two ways on two surfaces. An unrecognised status is
+ * left to {@link outcomeLabel} rather than guessed at.
+ */
+const RUN_DETAIL_STATUS: Record<string, { label: string; tone: OutcomeTone }> = {
+  running: { label: "Running", tone: "running" },
+  ok: { label: "Succeeded", tone: "ok" },
+  error: { label: "Failed", tone: "error" },
+  stopped: { label: "Stopped", tone: "blocked" },
+  "sponsorship-check-failed": { label: "Failed", tone: "error" },
+  "sponsorship-invalidated": { label: "Failed", tone: "error" },
+  "webhook-rejected": { label: "Failed", tone: "error" },
+};
+
 /** Event-aware outcome mapping. Approval-kind events record their resolution
     in `detail` (the guard's decide writes `{ approved }`, revoke writes
     `{ grantRevoked }`) with NO wire `outcome` — through the plain mapping
-    above they would read "Running" forever. Everything else defers to
-    {@link outcomeLabel}. */
+    above they would read "Running" forever. Run-kind events are the same trap
+    twice over: the harness stamps `harness`, the automation engine stamps
+    `status`. Everything else defers to {@link outcomeLabel}. */
 export function eventOutcomeLabel(
   event: Pick<AuditEvent, "kind" | "outcome" | "detail">,
 ): { label: string; tone: OutcomeTone } {
@@ -110,17 +136,21 @@ export function eventOutcomeLabel(
     }
   }
   if (event.outcome === undefined && event.kind === "run") {
-    const detail = (event.detail ?? {}) as { harness?: unknown; error?: unknown };
+    const detail = (event.detail ?? {}) as { harness?: unknown; error?: unknown; status?: unknown };
     // The harness runtime stamps `harness` and writes this row from `onFinish`,
     // so the row's EXISTENCE is its completion — showing it as in-flight (with a
     // pulsing icon) told users a finished turn was still running, and told them
-    // a failed one was still running too. Automation-engine rows carry their own
-    // `status` in `detail` instead; what those should read is a separate, older
-    // question and this branch deliberately leaves them alone.
+    // a failed one was still running too.
     if (typeof detail.harness === "string") {
       return detail.error === undefined
         ? { label: "Succeeded", tone: "ok" }
         : { label: "Failed", tone: "error" };
+    }
+    // Automation-engine rows carry their own `status` instead — the row says
+    // what became of the run, so it is read rather than overridden.
+    if (typeof detail.status === "string") {
+      const known = RUN_DETAIL_STATUS[detail.status];
+      if (known !== undefined) return known;
     }
   }
   return outcomeLabel(event.outcome);
