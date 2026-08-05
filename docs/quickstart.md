@@ -270,7 +270,7 @@ order:
    fallback.)
    Model calls go through the Vendo Cloud model gateway (`vendo` by
    default — pin another id with `VENDO_MODEL` or `models.default`, served via
-   `@ai-sdk/anthropic`) and meter your dev-mode runs allowance.
+   `@ai-sdk/anthropic`) and draw down the usage your plan includes.
 3. Nothing available: chat fails honestly, with exact instructions in the
    server log.
 
