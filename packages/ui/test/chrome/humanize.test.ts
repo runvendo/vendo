@@ -72,15 +72,15 @@ describe("toolTitle — Vendo's own tools have titles, not slugs (§3 consumer v
   // slug prettifier was the whole label — and it prettifies Vendo's OWN
   // namespace into words the user reads as jargon.
   it("titles Vendo's own tools from the shared table", () => {
-    expect(toolTitle("vendo_apps_edit")).toBe(VENDO_TOOL_TITLES.vendo_apps_edit);
-    expect(toolTitle("vendo_apps_edit")).not.toMatch(/vendo/i);
-    expect(toolTitle("vendo_apps_create")).not.toMatch(/vendo/i);
+    expect(toolTitle("vendo_make")).toBe(VENDO_TOOL_TITLES.vendo_make);
+    expect(toolTitle("vendo_make")).not.toMatch(/vendo/i);
+    expect(toolTitle("vendo_apps_open")).not.toMatch(/vendo/i);
     expect(toolTitle("vendo_knowledge_search")).not.toMatch(/vendo/i);
   });
 
   it("keeps the authority order: host label, then the descriptor, then the table", () => {
-    expect(toolTitle("vendo_apps_edit", { label: "Tweak my dashboard" })).toBe("Tweak my dashboard");
-    expect(toolTitle("vendo_apps_edit", undefined, "Change the app")).toBe("Change the app");
+    expect(toolTitle("vendo_make", { label: "Tweak my dashboard" })).toBe("Tweak my dashboard");
+    expect(toolTitle("vendo_make", undefined, "Change the app")).toBe("Change the app");
   });
 
   it("leaves host tools to the existing fallback", () => {

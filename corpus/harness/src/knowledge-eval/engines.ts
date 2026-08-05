@@ -1,6 +1,6 @@
 import type { KnowledgeAdapter, KnowledgeContext } from "@vendoai/core";
 import { memoryKnowledgeAdapter, memoryStoreAdapter } from "@vendoai/core/conformance";
-import { lexicalKnowledge } from "@vendoai/knowledge";
+import { vendoKnowledge } from "@vendoai/knowledge";
 
 /**
  * The engine registry. An engine joins the matrix with exactly two changes
@@ -12,7 +12,7 @@ import { lexicalKnowledge } from "@vendoai/knowledge";
  */
 export const KNOWLEDGE_ENGINES: Record<string, () => KnowledgeAdapter> = {
   memory: () => memoryKnowledgeAdapter(),
-  lexical: () => lexicalKnowledge({ store: memoryStoreAdapter() }),
+  lexical: () => vendoKnowledge({ store: memoryStoreAdapter() }),
 };
 
 export function createEngine(name: string): KnowledgeAdapter {

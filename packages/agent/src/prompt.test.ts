@@ -102,7 +102,7 @@ describe("assembleSystemPrompt", () => {
 
   it("knowledge k8 P0: the ONLY knowledge content in any venue's prompt is the resolver's bytes — internal source names filtered upstream can never reappear", async () => {
     // The umbrella's assembler filters internal sources out of the resolver
-    // output (knowledge-prompt.ts, unit-tested there). This sweep closes the
+    // output (@vendoai/knowledge prompt-note.ts, unit-tested there). This sweep closes the
     // loop at the prompt layer for ALL FOUR venues: tree venues carry the
     // resolver bytes verbatim and nothing else knowledge-shaped; the other
     // venues carry no knowledge block at all.

@@ -1038,6 +1038,49 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.20.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(lightningcss@1.32.0)(terser@5.48.0)
 
+  packages/agents:
+    dependencies:
+      '@vendoai/actions':
+        specifier: workspace:*
+        version: link:../actions
+      '@vendoai/apps':
+        specifier: workspace:*
+        version: link:../apps
+      '@vendoai/core':
+        specifier: workspace:*
+        version: link:../core
+      '@vendoai/guard':
+        specifier: workspace:*
+        version: link:../guard
+      '@vendoai/harnesses':
+        specifier: workspace:*
+        version: link:../harnesses
+      '@vendoai/knowledge':
+        specifier: workspace:*
+        version: link:../knowledge
+      '@vendoai/mcp':
+        specifier: workspace:*
+        version: link:../mcp
+      '@vendoai/store':
+        specifier: workspace:*
+        version: link:../store
+      zod:
+        specifier: ^3.25.0
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.0
+      ai:
+        specifier: 6.0.28
+        version: 6.0.28(zod@3.25.76)
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.20.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(lightningcss@1.32.0)(terser@5.48.0)
+
   packages/apps:
     dependencies:
       '@anthropic-ai/claude-agent-sdk':
@@ -1398,6 +1441,9 @@ importers:
       '@vendoai/agent':
         specifier: workspace:*
         version: link:../agent
+      '@vendoai/agents':
+        specifier: workspace:*
+        version: link:../agents
       '@vendoai/apps':
         specifier: workspace:*
         version: link:../apps

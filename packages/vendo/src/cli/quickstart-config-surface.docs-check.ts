@@ -38,8 +38,8 @@ import type {
   VendoAgent, VendoGuard, VendoStore, VendoTheme,
 } from "../index.js";
 import type {
-  AppsConfig, ConnectionsService, HarnessTurns, HostAuthPreset, ModelsConfig,
-  PackContext, ServerActionHandler, TourEntry,
+  AgentOptions, AppsConfig, ComposedAgent, ConnectionsService, HarnessTurns,
+  HostAuthPreset, ModelsConfig, PackContext, ServerActionHandler, TourEntry,
 } from "../server.js";
 import type { LanguageModel } from "ai";
 
@@ -87,15 +87,7 @@ export interface CreateVendoConfig {
     federation?: { secret: string };
   };
   oauth?: HostOAuthAdapter;   // escape hatch; required when `mcp` is true and `auth` is absent
-  agent?: {
-    instructions?: string;
-    toolOutputCap?: number;
-    maxOutputTokens?: number;
-    historyWindow?: number;
-    maxInitialTools?: number;
-    loadout?: string[];
-    maxSteps?: number;
-  };
+  agent?: AgentOptions | ComposedAgent; // the chat knobs, OR a whole agent() from @vendoai/agents
   sessions?: { ttlMs?: number; sweepIntervalMs?: number; now?: () => number };
   approvals?: { parkedCallTtlMs?: number };
   apps?: {

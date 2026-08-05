@@ -236,7 +236,7 @@ describe("headless hooks", () => {
     await waitFor(() => expect(result.current.events.map(event => event.id)).toEqual(["aud_1", "aud_2"]));
     await act(() => result.current.loadMore());
     // ⚠️ FIXTURE WIDENED (CR-2): the wire now serves a fourth audit row — the
-    // real `vendo_apps_edit` shape, whose args carry an app id. The page
+    // real `vendo_make` change shape, whose args carry an app id. The page
     // arithmetic is unchanged; there is simply one more row behind the cursor.
     expect(result.current.events.map(event => event.id)).toEqual(["aud_1", "aud_2", "aud_3", "aud_edit"]);
     expect(wire.requests).toContainEqual(expect.objectContaining({ method: "GET", path: "/activity?cursor=eyJjIjoiMjAyNi0wNy0xMVQxMjowMDowMC4wMDBaIiwiaSI6ImF1ZF8yIn0" }));

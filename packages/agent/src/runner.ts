@@ -1,4 +1,5 @@
 import {
+  auditContext,
   VendoError,
   type AgentRunner,
   type AgentRunReport,
@@ -135,11 +136,13 @@ export function createRunner(config: RunnerConfig): AgentRunner {
         id: mintAuditId(),
         at: new Date().toISOString(),
         kind: "run",
-        principal: awayCtx.principal,
-        venue: awayCtx.venue,
-        presence: awayCtx.presence,
-        appId: awayCtx.appId,
-        trigger: awayCtx.trigger,
+        // The same ctx the run's tool-call rows mint from, so this summary and
+        // those rows always AGREE: both carry the turn when the run has one, and
+        // neither claims a turn when it does not (an away run fired by a schedule
+        // or a webhook is genuinely turn-less). The old hand-copied block carried
+        // five of the six fields, so a delegated run inside a turn produced tool
+        // rows that named their turn and a summary that did not.
+        ...auditContext(awayCtx),
         outcome: undefined,
         detail: { status: report.status, toolCallCount: report.toolCalls.length },
       });

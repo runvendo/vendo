@@ -14,7 +14,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { RunContext, ToolResult, TurnTools } from "@vendoai/core";
-import { createTurnCredentials } from "./turn-credentials.js";
+import { createTurnCredentials } from "./turn-credential.js";
 
 const ctxFor = (subject: string, presence: RunContext["presence"] = "present"): RunContext => ({
   principal: { kind: "user", subject },

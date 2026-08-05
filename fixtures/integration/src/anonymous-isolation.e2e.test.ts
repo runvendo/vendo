@@ -76,8 +76,8 @@ describe("J7: anonymous sessions are isolated per client through the composed wi
     await resetFixture();
     stack = await createStack({
       turns: [
-        // Client 1, thread thr_anon_app: generate an app (create → generate → text).
-        toolCallTurn("vendo_apps_create", { prompt: "Build a greeting card" }, "call_app"),
+        // Client 1, thread thr_anon_app: generate an app (make → generate → text).
+        toolCallTurn("vendo_make", { request: "Build a greeting card" }, "call_app"),
         // Two-lane create (v2 spec §4): the tier-0 paint lane and the full
         // lane each consume one generation turn.
         generationTurn(CREATE_DIALECT),

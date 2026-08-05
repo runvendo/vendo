@@ -1,11 +1,10 @@
 import {
+  auditContext,
   canonicalJson,
   DEFAULT_TRIGGER_ID,
   descriptorHash,
   isUnattended,
-  mechanicalRisk,
   projectableForRun,
-  resolvedRisk,
   serviceToolSlug,
   withheldFromUnattended,
   withResolvedRisk,
@@ -211,11 +210,10 @@ function eventFromContext(
   return {
     id: makeId("aud_"),
     at: now(),
-    principal: ctx.principal,
-    venue: ctx.venue,
-    presence: ctx.presence,
-    ...(ctx.appId === undefined ? {} : { appId: ctx.appId }),
-    ...(ctx.trigger === undefined ? {} : { trigger: ctx.trigger }),
+    // Core's `auditContext` — the one copy of the ctx half. This mint used to own
+    // the only correct spelling of it, which is exactly why the five rows that do
+    // not come through here each drifted when `turnId` was added.
+    ...auditContext(ctx),
     ...fields,
   };
 }
@@ -378,6 +376,7 @@ class GuardImplementation implements VendoGuard {
   readonly #writeCounts = new Map<string, { count: number; touchedAt: number }>();
   #lastSweepAt = 0;
   readonly #approvalCallbacks = new Set<(id: ApprovalId, approved: boolean) => void>();
+  readonly #approvalRequestedCallbacks = new Set<(request: ApprovalRequest) => void>();
 
   readonly approvals = {
     pending: (principal: Principal): Promise<ApprovalRequest[]> =>
@@ -469,6 +468,13 @@ class GuardImplementation implements VendoGuard {
     this.#approvalCallbacks.add(cb);
     return () => {
       this.#approvalCallbacks.delete(cb);
+    };
+  }
+
+  onApprovalRequested(cb: (request: ApprovalRequest) => void): () => void {
+    this.#approvalRequestedCallbacks.add(cb);
+    return () => {
+      this.#approvalRequestedCallbacks.delete(cb);
     };
   }
 
@@ -635,7 +641,6 @@ class GuardImplementation implements VendoGuard {
               detail: {
                 reason: "unattended-destructive",
                 declaredRisk: completed.descriptor.risk,
-                mechanicalRisk: mechanicalRisk(completed.descriptor),
               },
             }),
           );
@@ -659,11 +664,11 @@ class GuardImplementation implements VendoGuard {
           // touched, because that is the only point where skipping is both safe
           // (authority was still checked) and effective (the effect is avoided).
           //
-          // `resolvedRisk`, not the declared label: gating on what the model said
-          // left the most dangerous class — a destructive tool mislabelled
-          // `read` — with no ledger protection at all.
-          const resolved = resolvedRisk(completed.descriptor);
-          const mutating = resolved === "write" || resolved === "destructive";
+          // The DECLARED label decides — the dev's label is final (two-vote
+          // grading removed), so a declared `read` is silent and takes no
+          // receipt.
+          const risk = completed.descriptor.risk;
+          const mutating = risk === "write" || risk === "destructive";
           const base = mutating ? effectBaseKey(ctx, call) : undefined;
           const key = base === undefined ? undefined : effectKeyOf(base, this.#effectOrdinal(base, call.id));
           const recorded = key === undefined ? undefined : await this.#recordedEffect(key);
@@ -1547,6 +1552,9 @@ class GuardImplementation implements VendoGuard {
         principal: cloneJson(ctx.principal),
         venue: ctx.venue,
         presence: ctx.presence,
+        // The owner identity the record below already keeps — ON the request
+        // too, so subscribers can scope delivery to the parking conversation.
+        sessionId: ctx.sessionId,
         ...(ctx.appId === undefined ? {} : { appId: ctx.appId }),
         ...(ctx.trigger === undefined ? {} : { trigger: cloneJson(ctx.trigger) }),
       },
@@ -1558,6 +1566,17 @@ class GuardImplementation implements VendoGuard {
       sessionId: ctx.sessionId,
     };
     await this.#store.records(APPROVALS_COLLECTION).put({ id: request.id, data, refs: approvalRefs(data) });
+    // Subscribers see the park only after it persisted, and a returned
+    // thenable is awaited (as decision callbacks are) so check() resolves
+    // only after notification work lands. A subscriber failure never turns a
+    // successfully parked ask into an error.
+    for (const callback of this.#approvalRequestedCallbacks) {
+      try {
+        await (callback(request) as void | Promise<void>);
+      } catch {
+        // The approval row is the truth; notification is best-effort.
+      }
+    }
     return request;
   }
 

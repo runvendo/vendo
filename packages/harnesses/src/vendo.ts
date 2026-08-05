@@ -169,6 +169,12 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
       if (turn.signal.aborted) return;
 
       const model = turn.options?.model ?? turn.models.default;
+      // Seats are required only where a harness reads them (contract §4,
+      // relaxed) — and THIS harness reads `default`, so a turn without it is
+      // the caller's composition bug, named loudly rather than limped past.
+      if (model === undefined) {
+        throw new Error("vendo() thinks with `turn.models.default`, and this turn carries no default seat");
+      }
       const system =
         (typeof deps.system === "function" ? await deps.system() : deps.system)
         ?? turn.system

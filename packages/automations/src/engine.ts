@@ -1,4 +1,5 @@
 import {
+  auditContext,
   VendoError,
   approvalRequestSchema,
   appDocumentSchema,
@@ -699,11 +700,10 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       id: id("aud_"),
       at: iso(),
       kind: "run",
-      principal: ctx.principal,
+      ...auditContext(ctx),
+      // An automation run is away by definition, whatever the ctx says.
       venue: "automation",
       presence: "away",
-      ...(ctx.appId === undefined ? {} : { appId: ctx.appId }),
-      ...(ctx.trigger === undefined ? {} : { trigger: ctx.trigger }),
       detail: { status, ...extra },
     };
     await config.guard.report(event);

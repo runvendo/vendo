@@ -35,6 +35,10 @@
       "types": "./dist/e2b/index.d.ts",
       "default": "./dist/e2b/index.js"
     },
+    "./sandbox-ladder": {
+      "types": "./dist/sandbox-ladder.d.ts",
+      "default": "./dist/sandbox-ladder.js"
+    },
     "./adapter-conformance": {
       "types": "./dist/adapter-conformance.d.ts",
       "default": "./dist/adapter-conformance.js"

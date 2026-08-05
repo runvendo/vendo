@@ -75,7 +75,7 @@
           "chunk": {
             "type": "tool-input-start",
             "toolCallId": "call_build",
-            "toolName": "vendo_apps_create"
+            "toolName": "vendo_make"
           }
         },
         {
@@ -83,9 +83,9 @@
           "chunk": {
             "type": "tool-input-available",
             "toolCallId": "call_build",
-            "toolName": "vendo_apps_create",
+            "toolName": "vendo_make",
             "input": {
-              "prompt": "document chases"
+              "request": "document chases"
             }
           }
         },

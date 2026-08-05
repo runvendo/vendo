@@ -23,7 +23,7 @@
  * here: `host_invoices_send` in an away run is unprojected and refused.
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { resolvedRisk, UNATTENDED_DESTRUCTIVE_REASON } from "@vendoai/core";
+import { UNATTENDED_DESTRUCTIVE_REASON } from "@vendoai/core";
 import type { AgentRunReport, RunContext, ToolRegistry } from "@vendoai/core";
 import type { LanguageModel } from "ai";
 import {
@@ -51,9 +51,10 @@ const APP_ID = "app_auto";
 const TOOL = "host_invoices_update";
 const update = descriptor({ name: TOOL, risk: "write" });
 
-/** The external tool the law forbids unattended — `send` reaches a human. */
+/** The external tool the law forbids unattended — `send` reaches a human, so
+ *  the dev labels it destructive, and the label is final. */
 const EXTERNAL_TOOL = "host_invoices_send";
-const send = descriptor({ name: EXTERNAL_TOOL, risk: "write" });
+const send = descriptor({ name: EXTERNAL_TOOL, risk: "destructive" });
 
 let env: Env;
 afterEach(async () => {
@@ -84,10 +85,10 @@ describe("scenario 6: away runner park + resume (05 §6)", () => {
     env = await createEnv();
 
     // The scenario is only about the grant ladder if the tool is one an
-    // automation may legally run unattended. Pin that with the REAL resolution,
-    // so renaming this tool to something destructive fails here loudly instead
+    // automation may legally run unattended. Pin the declared label — it is
+    // final — so relabelling this tool destructive fails here loudly instead
     // of silently turning the scenario into a law test.
-    expect(resolvedRisk(update)).toBe("write");
+    expect(update.risk).toBe("write");
 
     // --- Away run #1: ungranted write parks, fails soft ---------------------
     const reg1 = new SpyRegistry([update], { [TOOL]: { updated: 1 } });
@@ -161,7 +162,7 @@ describe("scenario 6: away runner park + resume (05 §6)", () => {
     // an unattended run never sees a destructive-or-external tool, so only a
     // legally-projectable write can prove anything about the GRANT rule.
     const toolB = descriptor({ name: "host_reports_write", risk: "write" });
-    expect(resolvedRisk(toolB)).toBe("write");
+    expect(toolB.risk).toBe("write");
     // A present-chat standing grant, no appId — the ordinary chat grant shape.
     await seedGrant(env.store, {
       subject: SUBJECT,
@@ -184,20 +185,17 @@ describe("scenario 6: away runner park + resume (05 §6)", () => {
     expect(await env.count("vendo_approvals", "status = 'pending'")).toBe(1);
   });
 
-  /** THE LAW (design §12): destructive AND EXTERNAL actions are never
-   *  unattended. `host_invoices_send` sends invoices TO PEOPLE, so it resolves
-   *  destructive (declared `write`, but the second mechanical vote reads `send`
-   *  and disagreement resolves against the tool) and is refused in an away run.
+  /** THE LAW (design §12): destructive actions are never unattended.
+   *  `host_invoices_send` sends invoices TO PEOPLE, so its dev labelled it
+   *  destructive — the label is final — and it is refused in an away run.
    *
    *  This is the behaviour that replaced this file's old park expectation, and it
    *  is the E2(e) property worth pinning: not with a limit, not with a
    *  condition, not with the strongest grant that exists. */
-  it("refuses an external tool in an away run — never projected, never executed (THE LAW, §12)", async () => {
+  it("refuses a destructive tool in an away run — never projected, never executed (THE LAW, §12)", async () => {
     env = await createEnv();
 
-    // The declared label is the permissive one; the mechanical vote overrules it.
-    expect(send.risk).toBe("write");
-    expect(resolvedRisk(send)).toBe("destructive");
+    expect(send.risk).toBe("destructive");
 
     // The strongest authority that exists today: standing, app-bound, minted by
     // automation enable-capture. The law must beat it.

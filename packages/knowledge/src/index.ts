@@ -38,7 +38,14 @@ export {
   type KnowledgeConfig,
   type KnowledgeSourceConfig,
 } from "./ingest/index.js";
-export { bindKnowledgeStore, lexicalKnowledge } from "./local/lexical.js";
+export { bindKnowledgeStore, vendoKnowledge } from "./local/lexical.js";
+/** Knowledge k8 — the static prompt index (boot + sync-state refresh). */
+export {
+  knowledgeIndexResolver,
+  knowledgeIndexSummary,
+  parseKnowledgeConfig,
+  type KnowledgeIndexReaders,
+} from "./prompt-note.js";
 /** Knowledge K14 — the verifier pass itself (cheap model, capped, fail-open). */
 export {
   entailmentVerifier,

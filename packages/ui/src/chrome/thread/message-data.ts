@@ -1,4 +1,4 @@
-import { riskLabelSchema, VENDO_APPS_CREATE_TOOL, VENDO_APPS_TOOL_PREFIX, vendoErrorCodeSchema, type ApprovalRequest, type JsonSchema, type RiskLabel, type VendoCitationsPart, type VendoErrorCode, type VendoKnowledgeCitation } from "@vendoai/core";
+import { isVendoAppsTool, riskLabelSchema, VENDO_MAKE_TOOL, vendoErrorCodeSchema, type ApprovalRequest, type JsonSchema, type RiskLabel, type VendoCitationsPart, type VendoErrorCode, type VendoKnowledgeCitation } from "@vendoai/core";
 import { isToolUIPart, type UIMessage } from "ai";
 import { previewArgs } from "../humanize.js";
 import { LONG_TEXT_CAP, truncateHead } from "../truncate.js";
@@ -318,15 +318,15 @@ export function toolCallIsContent(part: UIMessage["parts"][number]): boolean {
     part (06-apps §1: the apps tool namespace + a tree surface), never by
     duck-typing an arbitrary tool's output.
 
-    Wave E2E defect D1 — the card goes up at build START (`vendo_apps_create` is
-    the one tool that streams partial views through the VENDO_VIEW_STREAM
-    bridge), so checking only the RESULT left the whole build window narrating
-    twice: a "Build an app…" beat above a bar already saying "Building your
-    view…". The running create is therefore recognized by tool IDENTITY, before
-    its output exists. No other apps tool streams a partial view, so for the
-    rest the beat is the only narration until their tree lands — and a create
-    that is parked on an approval or has FAILED is narrated by no card at all,
-    so its beat is the whole record (§15). */
+    Wave E2E defect D1 — the card goes up at build START (`vendo_make` is the one
+    tool that streams partial views through the VENDO_VIEW_STREAM bridge), so
+    checking only the RESULT left the whole build window narrating twice: a
+    "Build an app…" beat above a bar already saying "Building your view…". The
+    running build is therefore recognized by tool IDENTITY, before its output
+    exists. No other apps tool streams a partial view, so for the rest the beat
+    is the only narration until their tree lands — and a build that is parked on
+    an approval or has FAILED is narrated by no card at all, so its beat is the
+    whole record (§15). */
 export function narratedByAppCard(
   part: UIMessage["parts"][number],
   siblingParts: UIMessage["parts"],
@@ -342,9 +342,19 @@ export function narratedByAppCard(
     && typeof (partData(sibling) as { reason?: unknown }).reason === "string");
   if (failed) return true;
   const name = toolName(part);
-  if (!name.startsWith(VENDO_APPS_TOOL_PREFIX)) return false;
+  if (!isVendoAppsTool(name)) return false;
   const building = part.state === "input-streaming" || part.state === "input-available";
-  if (name === VENDO_APPS_CREATE_TOOL && building) return true;
+  if (name === VENDO_MAKE_TOOL) {
+    if (building) return true;
+    if (part.state !== "output-available") return false;
+    // A SETTLED build used to be recognized by its output carrying a tree.
+    // `vendo_make` answers with a `MakeReceipt` — four fields of words — so that
+    // test can never match again, and leaving it would have printed a "Make you
+    // a screen" ✓ beat beside the very card it describes. The card's own part on
+    // the wire is the test now, which is exact rather than a guess: if the view
+    // is there, the card is what the reader is looking at.
+    return siblingParts.some(sibling => sibling.type === "data-vendo-view");
+  }
   if (part.state !== "output-available") return false;
   const output = part.output as { kind?: unknown } | null | undefined;
   if (typeof output !== "object" || output === null || output.kind !== "tree") return false;

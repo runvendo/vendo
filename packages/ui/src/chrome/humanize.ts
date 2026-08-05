@@ -58,7 +58,7 @@ export function humanizeToolName(raw: string): string {
  *
  * That third step exists because most surfaces have NO descriptor: the wire tool
  * part carries only a name, so a progress chip or an activity row prettified
- * `vendo_apps_edit` into "Vendo apps edit" — our namespace read out as words, the
+ * `vendo_apps_open` into "Vendo apps open" — our namespace read out as words, the
  * §3 leak wave-1 proof E1-5 caught. The table is core's, the same one the
  * descriptors author from, so the two can never disagree.
  */

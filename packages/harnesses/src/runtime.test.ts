@@ -131,6 +131,39 @@ describe("turn assembly", () => {
     await expect(seen!.skills.load("building-apps")).resolves.toBe("# body");
   });
 
+  it("attaches the turn's transcript to the ctx the guard reads (RunContext.messages)", async () => {
+    // Agents spec 2026-08-04: guards and judges weigh a call against what the
+    // user actually asked, so the ctx that reaches `guard.check` carries a
+    // transcript accessor — the SAME frozen view the harness holds.
+    const seen: Parameters<TestGuard["check"]>[2][] = [];
+    const base = testGuard();
+    const guard: TestGuard = {
+      ...base,
+      check: async (call, descriptor, runCtx) => {
+        seen.push(runCtx);
+        return base.check(call, descriptor, runCtx);
+      },
+    };
+    const f = fixture({
+      guard,
+      tools: { ping: { descriptor: readTool("ping"), execute: () => ({ ok: true }) } },
+    });
+    const harness = defineHarness({
+      name: "caller",
+      async *run(turn) {
+        await turn.tools.call("ping", {});
+      },
+    });
+    await f.run(harness, { messages: [userMessage("m1", "first"), userMessage("m2", "second")] });
+    // Every check this call produced (preview and execute both consult the
+    // guard) saw the same enriched ctx.
+    expect(seen.length).toBeGreaterThan(0);
+    for (const runCtx of seen) {
+      expect(runCtx.messages?.().map((message) => message.id)).toEqual(["m1", "m2"]);
+    }
+    expect(Object.isFrozen(seen[0]!.messages?.())).toBe(true);
+  });
+
   it("gives the harness a live abort signal", async () => {
     const f = fixture();
     const controller = new AbortController();

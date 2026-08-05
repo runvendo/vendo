@@ -13,4 +13,10 @@ export type {
   HostOAuthSessionContext,
 } from "./oauth/adapter.js";
 export type { AppsPort } from "./apps-port.js";
-export type { LiveTurn, TurnCredentialPort } from "./turn-credential.js";
+export { createTurnCredentials } from "./turn-credential.js";
+export type {
+  LiveTurn,
+  TurnCredentialPort,
+  TurnCredentials,
+  TurnCredentialsOptions,
+} from "./turn-credential.js";

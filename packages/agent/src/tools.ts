@@ -1,8 +1,7 @@
 import {
   VENDO_APP_BUILD_FAILED_PREFIX,
-  VENDO_APPS_CREATE_TOOL,
-  VENDO_APPS_TOOL_PREFIX,
   VENDO_KNOWLEDGE_RESULT_KIND,
+  VENDO_MAKE_TOOL,
   VENDO_VIEW_STREAM,
   modelToolDescription,
   toVendoWirePart,
@@ -11,6 +10,7 @@ import {
   vendoKnowledgeCitationSchema,
   vendoViewStreamId,
   vendoViewPartSchema,
+  isVendoAppsTool,
   type ApprovalId,
   type Guard,
   type RiskLabel,
@@ -26,6 +26,7 @@ import {
   type VendoConnectPart,
   type VendoViewPart,
   type VendoViewStreamingToolCall,
+  type VendoViewStreamUpdate,
 } from "@vendoai/core";
 import {
   dynamicTool,
@@ -195,11 +196,16 @@ export function guardedCall(
   // unpaired `input-available` one that a provider would later reject).
   return async (input, { toolCallId }) => {
   const call: VendoViewStreamingToolCall = { id: toolCallId, tool: descriptor.name, args: input };
-  if (descriptor.name === VENDO_APPS_CREATE_TOOL && options.writer !== undefined) {
+  if (descriptor.name === VENDO_MAKE_TOOL && options.writer !== undefined) {
     Object.defineProperty(call, VENDO_VIEW_STREAM, {
-      value: (update: { id: string; part: VendoViewPart }) => {
-        const view = vendoViewPartSchema.safeParse(update.part);
-        if (view.success) writePart(options.writer, view.data, update.id);
+      // The producer names the part; this only decides whether to believe it. One
+      // schema per type, so nothing can publish a part shape it did not declare.
+      value: (update: VendoViewStreamUpdate) => {
+        const schema = update.part.type === "data-vendo-view"
+          ? vendoViewPartSchema
+          : vendoAutomationPartSchema;
+        const part = schema.safeParse(update.part);
+        if (part.success) writePart(options.writer, part.data, update.id);
       },
     });
   }
@@ -217,7 +223,7 @@ export function guardedCall(
   // tools returning a tree OpenSurface (06 §1) — never by duck-typing an
   // arbitrary host tool's output, which could otherwise smuggle an unrelated
   // result onto the app-view channel and mis-route its actions (01 §16).
-  const producesView = descriptor.name.startsWith(VENDO_APPS_TOOL_PREFIX);
+  const producesView = isVendoAppsTool(descriptor.name);
   if (outcome.status === "ok" && producesView) {
     const surface = typeof outcome.output === "object" && outcome.output !== null
       ? outcome.output as Record<string, unknown>
@@ -236,31 +242,10 @@ export function guardedCall(
       : null;
     const view = vendoViewPartSchema.safeParse(candidate);
     if (view.success) writePart(options.writer, view.data, vendoViewStreamId(view.data.appId));
-    // The automation card (01 §16 amendment, stream-parts): an edit that
-    // rode the escalation ladder to an automation carries the authored
-    // envelope on its output — land it in the thread as a card, not
-    // prose. Scoped to the edit tool by NAME, never by output shape,
-    // for the same §16 reason as the view part above.
-    if (descriptor.name === "vendo_apps_edit") {
-      const automation = surface?.automation as Record<string, unknown> | undefined;
-      const app = surface?.app as Record<string, unknown> | undefined;
-      if (automation !== undefined && app !== undefined) {
-        const part = vendoAutomationPartSchema.safeParse({
-          type: "data-vendo-automation",
-          appId: app.id,
-          name: app.name,
-          enabled: automation.enabled,
-          trigger: automation.trigger,
-          ...(typeof app.description === "string" && app.description.length > 0
-            ? { description: app.description }
-            : {}),
-          ...(Array.isArray(automation.pendingGrants) && automation.pendingGrants.length > 0
-            ? { pendingGrants: automation.pendingGrants.length }
-            : {}),
-        });
-        if (part.success) writePart(options.writer, part.data, `vendo-automation-${String(app.id)}`);
-      }
-    }
+    // The automation card used to be reconstructed HERE, out of the edit tool's
+    // returned document. `vendo_make` returns a receipt — four fields of words —
+    // so the card is published by the apps runtime through the stream seam above,
+    // by the side that knows it armed something. One less thing read by shape.
   } else if (outcome.status === "pending-approval") {
     writePart(options.writer, approvalPart(toolCallId, descriptor.risk, outcome.approvalId));
   } else if (outcome.status === "connect-required") {
@@ -283,7 +268,7 @@ export function guardedCall(
     }
   } else if (
     outcome.status === "error"
-    && descriptor.name === VENDO_APPS_CREATE_TOOL
+    && descriptor.name === VENDO_MAKE_TOOL
     && outcome.error.message.startsWith(VENDO_APP_BUILD_FAILED_PREFIX)
   ) {
     // 0.4.4 cert defect B: a terminally failed BUILD is content the user

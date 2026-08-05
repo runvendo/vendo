@@ -87,7 +87,9 @@ export const hostTools = [
     name: "host_invoices_send",
     description: "Send invoice",
     inputSchema: { type: "object" },
-    risk: "write",
+    // Sending reaches a human, so the dev labels it destructive — the label is
+    // final (two-vote grading removed), and THE LAW's away-run refusals rest on it.
+    risk: "destructive",
     binding: { kind: "route", method: "POST", path: "/api/invoices/{id}/send", argsIn: "body" },
   },
   {
