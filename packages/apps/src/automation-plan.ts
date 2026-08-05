@@ -1,7 +1,7 @@
 import {
   describeShapeWithSemantics,
   isVendoAppsTool,
-  mechanicalRisk,
+  withheldFromUnattended,
   triggerSchema,
   UNATTENDED_DESTRUCTIVE_REASON,
   type ShapeType,
@@ -61,26 +61,29 @@ const EVERY_DURATION = /^[1-9]\d*[smhd]$/;
  * §12's law at authoring time: is this a thing Vendo will not do while nobody is
  * watching?
  *
- * The name vote is core's `mechanicalRisk`, never a second copy of the verb list
- * (`DESTRUCTIVE_VERBS` documents what the second copy cost). It is also the half
- * that matters: `host_invoices_send` arrives declared `write`, the vote calls it
- * destructive, and §12 resolves that disagreement against the tool. A check on
- * `risk` alone would offer it to the planner.
+ * The predicate is core's own `withheldFromUnattended` — the SAME one the run's
+ * projection uses — so authoring and firing cannot disagree about what may never
+ * happen away: a declared `destructive`, and an `ungraded` tool, because nothing
+ * has said what that one does either.
  *
- * {@link HostToolInfo} carries neither `bindingRisk` nor the Vendo-authored
- * brand, so this can only ever under-report against the guard's own
- * `resolvedRisk`: a DELETE-bound tool with an innocent name still reaches the
- * planner, and the arm-time projection refuses it there instead. Same direction
- * as the guard, one vote short of it.
+ * It asks the DECLARED grade and nothing else. This slice was written against
+ * core's `mechanicalRisk`, the second vote that read a tool's NAME and could
+ * call a `write`-declared `host_invoices_send` destructive; that vote was deleted
+ * repo-wide with two-vote grading (#791 — "the dev's label is final"), and
+ * `packages/actions/src/sync/protocol-facts.test.ts` now enforces that nothing
+ * anywhere concludes anything from a tool's name. So a mislabelled send tool
+ * reaches the planner, exactly as it reaches the run; grading the catalog
+ * (`vendo sync`, `.vendo/overrides.json`) is the only thing that stops it.
  */
 const irreversible = (tool: HostToolInfo): boolean =>
-  tool.risk === "destructive"
-  || mechanicalRisk({
+  withheldFromUnattended({
     name: tool.name,
     description: tool.description,
     inputSchema: {},
-    risk: "ungraded",
-  }) === "destructive";
+    risk: (tool.risk === "read" || tool.risk === "write" || tool.risk === "destructive"
+      ? tool.risk
+      : "ungraded"),
+  });
 
 /** The planning surface: host + connected tools, plus ONLY the results-publish
  *  tool from the apps family — an automation's job is host effects and one

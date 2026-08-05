@@ -186,8 +186,10 @@ describe("attack 1 — a grant for trigger A must not authorize trigger B", () =
       const [runId] = await stack.automations.emit("twin.beta", { id: PROBE }, ADA);
       const run = await stack.automations.runs.get(runId!, ctx);
       // Nothing beta was allowed to do has been allowed yet, so the run must
-      // stop and ask — and the invoice must be untouched.
-      expect(run?.status).toBe("pending-approval");
+      // stop LOUDLY on the permission it does not hold — and the invoice must be
+      // untouched.
+      expect(run?.status).toBe("error");
+      expect(run?.error?.code).toBe("needs-permission");
       expect(await probeMemo()).not.toBe("beta-ran");
 
       // Positive control: alpha, which WAS granted, really does run away.
@@ -316,7 +318,9 @@ describe("attack 2 — a legacy app-wide grant must not widen to a new trigger",
       expect((await stack.automations.enable(appId, "extra", ctx)).missing).toHaveLength(1);
 
       const [runId] = await stack.automations.emit("legacy.extra", { id: PROBE }, ADA);
-      expect((await stack.automations.runs.get(runId!, ctx))?.status).toBe("pending-approval");
+      const run = await stack.automations.runs.get(runId!, ctx);
+      expect(run?.status).toBe("error");
+      expect(run?.error?.code).toBe("needs-permission");
       expect(await probeMemo()).not.toBe("legacy-extra-ran");
     } finally {
       await stack.close();
@@ -610,7 +614,9 @@ describe("attack 6 — a non-automation grant still never reaches the automation
       for (const [event, memo] of [["twin.alpha", "alpha-ran"], ["twin.beta", "beta-ran"]] as const) {
         const [runId] = await stack.automations.emit(event, { id: PROBE }, ADA);
         expect(await probeMemo()).not.toBe(memo);
-        expect((await stack.automations.runs.get(runId!, ctx))?.status).toBe("pending-approval");
+        const run = await stack.automations.runs.get(runId!, ctx);
+        expect(run?.status).toBe("error");
+        expect(run?.error?.code).toBe("needs-permission");
       }
       expect(await probeMemo()).toBe(memoBefore);
     } finally {

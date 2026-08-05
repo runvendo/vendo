@@ -234,6 +234,10 @@ export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
         return found;
       },
       stop: async () => undefined,
+      // The playground fires nothing, so "run it again" hands back the run it
+      // was asked about rather than inventing a run id nothing will ever answer
+      // for.
+      rerun: async (id) => id,
     },
 
     activity: {

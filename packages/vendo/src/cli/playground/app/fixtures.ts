@@ -578,13 +578,19 @@ export function playgroundFixtures(): PlaygroundFixtures {
         appId: "app_digest",
         triggerId: "main",
         trigger: { kind: "schedule" },
-        status: "pending-approval",
+        status: "error",
         startedAt: "2026-07-18T08:00:00.000Z",
+        finishedAt: "2026-07-18T08:00:09.000Z",
         steps: [
           { id: "step_1", tool: "host_listRenewals", outcome: "ok", at: "2026-07-18T08:00:04.000Z" },
           { id: "step_2", tool: "slack_SLACK_SEND_MESSAGE", outcome: "pending-approval", at: "2026-07-18T08:00:09.000Z" },
         ],
-        summary: "Waiting on the Slack post approval.",
+        summary: "stopped at step_2: it needs a permission nobody has allowed yet — allow it and run this again",
+        error: {
+          code: "needs-permission",
+          message: "needs permission to post a Slack message",
+          tool: "slack_SLACK_SEND_MESSAGE",
+        },
       },
     ],
   };
