@@ -1366,6 +1366,37 @@ describe("compileWire braces in text", () => {
   });
 });
 
+/**
+ * v3 spec §5 (D6) — there is NO module envelope, and that is a design property
+ * rather than an omission: a wire document is exactly one `<App>` element, and
+ * the only declaration elements are `<Query>` and `<Island>` (whose source is
+ * sealed — no imports, and none can be added). Graduation adds imports/exports
+ * via a codemod when it ships; until then an envelope element must stay an
+ * unknown element, not quietly become grammar.
+ */
+describe("compileWire has no module envelope (D6)", () => {
+  it("gives every envelope name NO declaration meaning — it is just an unknown component", () => {
+    for (const tag of ["Import", "Export", "Module", "Use", "Include", "Require"]) {
+      const result = compile(`<App name="C"><${tag} from="./x">y</${tag}><Card/></App>`);
+      // A PascalCase name the compiler does not know is a sourceless component
+      // node (the renderer shows its contained unknown-component notice). What
+      // matters for D6 is what it is NOT: it declares nothing, hoists nothing,
+      // and brings nothing into scope.
+      const node = result.tree.nodes.find((candidate) => candidate.component === tag);
+      expect(node?.source).toBeUndefined();
+      expect(result.tree.queries).toBeUndefined();
+      expect(result.components).toEqual({});
+      expect(result.complete).toBe(true);
+    }
+  });
+
+  it("cannot bring a name into binding scope, so a binding through one still drops", () => {
+    const result = compile('<App name="C"><Import from="./q"/><Card v={q.rows}/></App>');
+    expect(result.issues.map((issue) => issue.code)).toEqual(["unknown-reference"]);
+    expect(result.tree.nodes.find((node) => node.component === "Card")?.props).toBeUndefined();
+  });
+});
+
 describe("compileWire comments before declarations", () => {
   it("still pre-scans queries and islands declared after a comment (Devin, PR #381)", () => {
     const wire = [
