@@ -295,6 +295,10 @@ describe("headless hooks", () => {
       .toEqual([
         expect.objectContaining({ path: "/threads" }),
         expect.objectContaining({ path: "/threads/thr_1" }),
+        // Stream resume: once the transcript has landed, the hook asks whether a
+        // turn is still streaming on the server. Third, never first — the SDK
+        // builds the resumed message on top of the last one it has.
+        expect.objectContaining({ path: "/threads/thr_1/stream" }),
       ]);
 
     await act(() => result.current.sendMessage({ text: "Send the email" }));

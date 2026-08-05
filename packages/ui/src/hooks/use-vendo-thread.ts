@@ -157,6 +157,14 @@ export function useVendoThread(threadId?: string) {
         headers: client.headers,
         fetch: async (input, init) => {
           const response = await globalThis.fetch(input, init);
+          // The transport's only GET is `reconnectToStream`'s, and the SDK THROWS
+          // on any answer that is neither ok nor 204 — which would turn "this
+          // wire has no resume route" (an older deployment) into a failed
+          // thread. From the client's side that is the same fact as "nothing to
+          // resume", so it is answered the same way.
+          if ((init?.method ?? "GET").toUpperCase() === "GET" && !response.ok) {
+            return new Response(null, { status: 204 });
+          }
           const returnedThreadId = response.headers.get(THREAD_ID_HEADER);
           if (returnedThreadId !== null && THREAD_ID_PATTERN.test(returnedThreadId)) {
             activeThreadIdRef.current = returnedThreadId;
