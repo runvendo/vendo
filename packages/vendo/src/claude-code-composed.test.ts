@@ -339,10 +339,17 @@ describe("createVendo({ sandbox, harness: claudeCode() })", () => {
       mkdirSync(join(box.root!, "user", "apps", appId), { recursive: true });
       writeFileSync(
         join(box.root!, "user", "apps", appId, "app.vendo"),
+        // Binds the ROWS. This fixture used to write `{invoices.invoices[0].id}`,
+        // which the expression grammar rejects outright (`malformed-expression`,
+        // "unexpected trailing content at index 17") — so its binding was silently
+        // DROPPED and this test passed on the resolved `data` blob alone, never on a
+        // binding that resolved. Since the builder loop now runs `validate` before
+        // it reports done, that malformed wire also costs a repair round it should
+        // never have needed. Valid wire fixes both: the binding really resolves.
         `<App name="Open invoices">
   <Query id="invoices" tool="maple_invoices_list" />
   <Stack>
-    <Text text={invoices.invoices[0].id} />
+    <Table rows={invoices.invoices} columns={[{key:"id"}]} />
   </Stack>
 </App>`,
       );
@@ -362,8 +369,14 @@ describe("createVendo({ sandbox, harness: claudeCode() })", () => {
     expect(body).toContain("data-vendo-view");
     expect(body).toContain(appId);
     expect(body).toContain("inv_1");
-    // The read ran through the one guard-bound registry, as the app venue.
-    expect(host.calls).toHaveLength(1);
+    // The read ran through the one guard-bound registry, as the app venue. TWO
+    // calls now, both this tool: the app's own `<Query>`, and the shape probe
+    // `validate` performs when the builder loop gates the turn (§7.1 item 4) —
+    // deriving the tool's response shape is exactly what lets the binding gate say
+    // whether a `$path` names a field that exists. It is a `read`, guarded like any
+    // other, and deduped per process, so it is paid once and not per turn.
+    expect(host.calls).toHaveLength(2);
+    expect(host.calls.every((args) => JSON.stringify(args) === "{}")).toBe(true);
 
     // 2. It is an app: in the person's list, with the title the model gave it.
     const ctx = {
@@ -398,10 +411,13 @@ describe("createVendo({ sandbox, harness: claudeCode() })", () => {
    */
   it("a bad app.vendo comes back as findings, gets one fix round, and then the screen updates", async () => {
     const appId = "app_validategate";
+    /** `invoices` is the field the tool really returns; `references` is not. Both
+     *  are syntactically perfect — the difference is only whether the field EXISTS,
+     *  which is exactly what the floor knows and the compiler alone cannot say. */
     const app = (field: string): string => `<App name="Open invoices">
   <Query id="invoices" tool="maple_invoices_list" />
   <Stack>
-    <Text text={invoices.invoices[0].${field}} />
+    <Table rows={invoices.${field}} columns={[{key:"id"}]} />
   </Stack>
 </App>`;
 
@@ -413,7 +429,7 @@ describe("createVendo({ sandbox, harness: claudeCode() })", () => {
       // `id`). Round 2 is the repair.
       writeFileSync(
         join(box.root!, "user", "apps", appId, "app.vendo"),
-        app(prompts.length === 1 ? "reference" : "id"),
+        app(prompts.length === 1 ? "references" : "invoices"),
       );
       box.emit({ type: "text", delta: prompts.length === 1 ? "Here are your open invoices." : "Fixed." });
     });
@@ -431,8 +447,10 @@ describe("createVendo({ sandbox, harness: claudeCode() })", () => {
     // 2. And it asked with the FINDINGS — the teaching sentence, naming the real
     //    field. This is the "bad file → findings" half.
     expect(prompts[1]).toContain("validate");
-    expect(prompts[1]).toContain("reference");
     expect(prompts[1]).toContain("app.vendo");
+    // The teaching sentence, naming the field that is missing AND the real one.
+    expect(prompts[1]).toContain("references");
+    expect(prompts[1]).toContain("invoices");
 
     // 3. "→ screen updates": the honest app is what reached the screen, with the
     //    query's real row on it. The lying binding never painted — if it had, the
@@ -440,7 +458,17 @@ describe("createVendo({ sandbox, harness: claudeCode() })", () => {
     expect(body).toContain("data-vendo-view");
     expect(body).toContain(appId);
     expect(body).toContain("inv_1");
-    expect(body).not.toContain("reference");
+    // Asserted on the VIEW PARTS, not on the whole body: the gate's `validate` call
+    // is mirrored into the stream like every other guarded call, so the broken
+    // document's own text legitimately appears in the activity. What must never
+    // appear is a SCREEN carrying the lie.
+    const views = body
+      .split("\n")
+      .filter((line) => line.startsWith("data:") && line.includes("data-vendo-view"))
+      .join("\n");
+    expect(views).not.toBe("");
+    expect(views).not.toContain("references");
+    expect(views).toContain("/invoices/invoices");
 
     // 4. And it is a real app afterwards, built from the REPAIRED document.
     const ctx = {
