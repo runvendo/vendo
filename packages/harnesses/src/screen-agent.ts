@@ -276,7 +276,7 @@ export async function assembleScreen(
   tools[SAVE_APP_TOOL] = tool({
     description:
       "Save this app's whole document. The person's screen repaints on every save that parses, so save "
-      + "as you go rather than once at the end. Returns whether the save landed and whether it painted.",
+      + "as you go rather than once at the end. Returns whether the save landed.",
     inputSchema: z.object({
       content: z.string().min(1).describe("The complete app document, in the .vendo format."),
     }),
