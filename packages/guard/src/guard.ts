@@ -66,6 +66,15 @@ const APPROVALS_COLLECTION = "vendo_approvals";
  *  window properly needs guarded writes on `vendo_approvals`; not chased here. */
 const APPROVAL_CLAIMS_COLLECTION = "guard:approval-claims";
 const AUDIT_COLLECTION = "vendo_audit";
+/** The emergency stop lives in ONE guard-owned row: `freeze` in a generic
+ *  collection, `{ frozen, by, at }`. `freeze()`/`unfreeze()` write it and the
+ *  console writes the same row directly, because a kill switch has to be
+ *  flippable from outside the process it stops. `#checkWithMetadata` reads it
+ *  before anything else, so while it is set NOTHING runs — declared reads,
+ *  standing grants and approved replays included. */
+const CONTROLS_COLLECTION = "guard:controls";
+const FREEZE_ROW = "freeze";
+const FROZEN_REASON = "vendo is frozen — nothing runs until it is unfrozen";
 /** Build contract §7 — the effect ledger: one row per completed mutating call,
  *  keyed by (run, tool, exact input). It is what makes fail-and-re-run correct:
  *  a re-run of a run that already sent the payment must not send it again. */
@@ -749,6 +758,39 @@ class GuardImplementation implements VendoGuard {
     };
   }
 
+  async freeze(by: string): Promise<void> {
+    await this.#setFrozen(true, by);
+  }
+
+  async unfreeze(by: string): Promise<void> {
+    await this.#setFrozen(false, by);
+  }
+
+  async frozen(): Promise<boolean> {
+    const record = await this.#store.records(CONTROLS_COLLECTION).get(FREEZE_ROW);
+    return (record?.data as { frozen?: unknown } | null)?.frozen === true;
+  }
+
+  /** The switch is flipped BEFORE it is reported: an audit failure must never
+   *  leave the caller believing a freeze did not land. Both directions are
+   *  idempotent, so a retry only writes a second line. */
+  async #setFrozen(frozen: boolean, by: string): Promise<void> {
+    await this.#store.records(CONTROLS_COLLECTION).put({
+      id: FREEZE_ROW,
+      data: { frozen, by, at: now() },
+    });
+    await this.report({
+      id: makeId("aud_"),
+      at: now(),
+      kind: "policy-decision",
+      principal: { kind: "user", subject: by },
+      venue: "chat",
+      presence: "present",
+      decidedBy: "frozen",
+      detail: { reason: frozen ? "frozen" : "unfrozen" },
+    });
+  }
+
   status(): { posture: "unconfigured" | "rules" | "judge" | "rules+judge" } {
     const hasRules = this.#policyConfig !== undefined;
     const hasJudge = this.#config.judge !== undefined;
@@ -792,6 +834,25 @@ class GuardImplementation implements VendoGuard {
     ctx: RunContext,
     commitRun = true,
   ): Promise<CompletedDecision> {
+    // The kill switch, read before any other stage: a frozen guard says no to
+    // every call and spends nothing — no risk resolution, no breaker slot, no
+    // parked approval to answer later.
+    if (await this.frozen()) {
+      await this.report(
+        eventFromContext(ctx, {
+          kind: "policy-decision",
+          tool: call.tool,
+          inputPreview: inputPreview(call),
+          outcome: "blocked",
+          decidedBy: "frozen",
+        }),
+      );
+      return {
+        decision: { action: "block", reason: FROZEN_REASON, decidedBy: "frozen" },
+        descriptor,
+      };
+    }
+
     const effectiveDescriptor = await this.#effectiveDescriptor(call, descriptor, ctx);
     const callsTripped = commitRun
       ? this.#recordCall(ctx.principal.subject)

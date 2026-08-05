@@ -132,6 +132,16 @@ export interface VendoGuard extends Guard {
    *  Optional: the umbrella feature-detects it. Returns the count swept. */
   sweepExpiredApprovals?(ttlMs: number, at?: number): Promise<number>;
 
+  /** The emergency stop. One row (`freeze` in the guard's `guard:controls`
+   *  collection), read first on every check: while it is set every call is
+   *  blocked, including declared reads and calls a standing grant would
+   *  authorize. The console flips the same row directly, so a runaway agent can
+   *  be stopped without redeploying. `by` names who did it and lands on the
+   *  audit trail in both directions. */
+  freeze(by: string): Promise<void>;
+  unfreeze(by: string): Promise<void>;
+  frozen(): Promise<boolean>;
+
   grants: {
     list(principal: Principal): Promise<PermissionGrant[]>;
     revoke(id: GrantId, principal: Principal): Promise<void>;
