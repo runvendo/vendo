@@ -86,6 +86,15 @@ const stringField = (entry: unknown, field: string, message: string): string => 
   return value;
 };
 
+/** The numeric twin of {@link stringField} — `workspace.index` entries carry
+    the revision a strict commit compare-and-swaps against, so the field is
+    contract the same way `commitId` is. */
+const numberField = (entry: unknown, field: string, message: string): number => {
+  const value = (entry as Record<string, unknown> | null)?.[field];
+  assert(typeof value === "number", `${message}: entry ${JSON.stringify(entry)} has no number "${field}"`);
+  return value;
+};
+
 /** A thread's harness state rides the harness slot under this synthetic appId
     (the store's `harnessStateKey`), which is what makes deleteThread's cascade
     onto harness state observable through the 32 ops. */
@@ -344,6 +353,27 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         assert(msgs.length === 2, `putMessage did not append: got ${msgs.length} messages`);
       }),
 
+      /** putMessage is an UPSERT, not an append-only log: a message re-sent
+          under an id the thread already holds REPLACES it, in place. That is
+          how an edit lands and how an approval flips from pending to answered;
+          appending instead leaves two messages under one id, which the thread
+          engines refuse outright, so the flip could never persist. */
+      opsCase(opts, "transcripts.putMessage edits by id, in place", async (ops) => {
+        await ops.transcripts.putThread({ id: "thr_pm2", subject: "u", messages: [] });
+        await ops.transcripts.putMessage("thr_pm2", { id: "msg_a", role: "user", text: "ask" });
+        await ops.transcripts.putMessage("thr_pm2", { id: "msg_b", role: "assistant", text: "answer" });
+        await ops.transcripts.putMessage("thr_pm2", { id: "msg_a", role: "user", text: "ask (edited)" });
+
+        const got = await ops.transcripts.getThread("thr_pm2");
+        const msgs = (got!.data as Record<string, unknown>)["messages"] as Array<Record<string, unknown>>;
+        assert(msgs.length === 2, `the edit should not have added a message: got ${msgs.length}`);
+        assertDeepEqual(
+          msgs.map((message) => [message["id"], message["text"]]),
+          [["msg_a", "ask (edited)"], ["msg_b", "answer"]],
+          "the edit did not replace its message in place",
+        );
+      }),
+
       opsCase(opts, "transcripts.recordAnswer records answer; duplicate same-id refused as conflict", async (ops) => {
         await ops.transcripts.putThread({ id: "thr_ra1", subject: "u", messages: [] });
         await ops.transcripts.recordAnswer("thr_ra1", { id: "ans_1", value: 42 });
@@ -461,6 +491,134 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
           "undo did not restore the value its commit replaced",
         );
         await assertThrowsCode(() => ops.workspace.undo("commit_absent"), "not-found", "undoing an unknown commit");
+      }),
+
+      /** The workspace is the last op family to name its owner, and until it
+          did, every end user of one deployment shared ONE drawer. Two owners,
+          one path: no read, index, history or undo may cross. */
+      opsCase(opts, "workspace ops keep two owners' drawers apart", async (ops) => {
+        const path = "shared.json";
+        await ops.workspace.commit([{ path, data: { who: "a" } }], { owner: "own_a" });
+        await ops.workspace.commit([{ path, data: { who: "b" } }], { owner: "own_b" });
+
+        assertDeepEqual(
+          (await ops.workspace.read([path], { owner: "own_a" }))[path],
+          { who: "a" },
+          "one owner's read returned another owner's file",
+        );
+        assertDeepEqual(
+          (await ops.workspace.read([path], { owner: "own_b" }))[path],
+          { who: "b" },
+          "one owner's read returned another owner's file",
+        );
+        assertDeepEqual(
+          await ops.workspace.read([path], { owner: "own_c" }),
+          {},
+          "an owner with no files read someone else's drawer",
+        );
+        assertDeepEqual(
+          (await ops.workspace.index({ owner: "own_a" })).entries
+            .map((entry) => stringField(entry, "path", "workspace.index")),
+          [path],
+          "one owner's index listed another owner's files",
+        );
+        assertDeepEqual(
+          (await ops.workspace.index({ owner: "own_c" })).entries,
+          [],
+          "an owner with no files indexed someone else's drawer",
+        );
+
+        const commitsOf = async (owner: string): Promise<string[]> =>
+          (await ops.workspace.history({ owner })).entries
+            .map((entry) => stringField(entry, "commitId", "workspace.history"));
+        const [ofA, ofB] = [await commitsOf("own_a"), await commitsOf("own_b")];
+        assert(ofA.length === 1 && ofB.length === 1, "history did not filter by owner");
+        assert(ofA[0] !== ofB[0], "two owners' histories returned the same commit");
+        await assertThrowsCode(
+          () => ops.workspace.undo(ofB[0]!, { owner: "own_a" }),
+          "not-found",
+          "undoing another owner's commit",
+        );
+        assertDeepEqual(
+          (await ops.workspace.read([path], { owner: "own_b" }))[path],
+          { who: "b" },
+          "a cross-owner undo changed the other owner's file",
+        );
+      }),
+
+      /** Deletion was inexpressible over the wire: a hosted workspace could
+          add and overwrite files forever but never drop one. */
+      opsCase(opts, "workspace.commit removes a path with a delete tombstone, and undo restores it", async (ops) => {
+        await ops.workspace.commit([{ path: "tomb.json", data: { v: 1 } }]);
+        await ops.workspace.commit([{ path: "tomb.json", delete: true }]);
+        assertDeepEqual(
+          await ops.workspace.read(["tomb.json"]),
+          {},
+          "the tombstone left the file behind",
+        );
+        assertDeepEqual(
+          (await ops.workspace.index()).entries
+            .map((entry) => stringField(entry, "path", "workspace.index")),
+          [],
+          "the tombstoned path is still in the index",
+        );
+        const newest = stringField(
+          (await ops.workspace.history()).entries[0],
+          "commitId",
+          "workspace.history",
+        );
+        await ops.workspace.undo(newest);
+        assertDeepEqual(
+          (await ops.workspace.read(["tomb.json"]))["tomb.json"],
+          { v: 1 },
+          "undoing a tombstone did not bring the file back",
+        );
+      }),
+
+      /** The `/orgs` mounts commit under strict compare-and-swap: a write built
+          on a revision that has moved must be refused, not silently applied
+          over a colleague's edit. */
+      opsCase(opts, "workspace.commit refuses a stale expectedRevision and applies nothing", async (ops) => {
+        await ops.workspace.commit([{ path: "cas.json", data: { v: 1 } }]);
+        const revision = numberField(
+          (await ops.workspace.index()).entries[0],
+          "revision",
+          "workspace.index",
+        );
+        // The head moves under the caller.
+        await ops.workspace.commit([{ path: "cas.json", data: { v: 2 } }]);
+
+        await assertThrowsCode(
+          () => ops.workspace.commit([
+            { path: "cas.json", data: { v: 3 }, expectedRevision: revision },
+            { path: "cas-other.json", data: { v: 3 } },
+          ]),
+          "conflict",
+          "committing against a revision that has moved",
+        );
+        assertDeepEqual(
+          (await ops.workspace.read(["cas.json"]))["cas.json"],
+          { v: 2 },
+          "the refused commit overwrote the newer content",
+        );
+        assert(
+          !("cas-other.json" in await ops.workspace.read(["cas-other.json"])),
+          "the refused commit applied its non-conflicting entry anyway",
+        );
+
+        // Re-aimed at the live head, the same commit lands.
+        const head = numberField(
+          (await ops.workspace.index()).entries
+            .find((entry) => (entry as { path?: unknown }).path === "cas.json"),
+          "revision",
+          "workspace.index",
+        );
+        await ops.workspace.commit([{ path: "cas.json", data: { v: 3 }, expectedRevision: head }]);
+        assertDeepEqual(
+          (await ops.workspace.read(["cas.json"]))["cas.json"],
+          { v: 3 },
+          "a commit aimed at the live revision did not land",
+        );
       }),
 
       // =====================================================================

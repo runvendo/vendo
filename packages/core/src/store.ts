@@ -133,12 +133,23 @@ export interface StoreOps {
     set(appId: string, subject: string, state: unknown): Promise<void>;
     clear(appId: string, subject: string): Promise<void>;
   };
+  /** Every workspace verb names its OWNER — the end user (or org) whose drawer
+      the files live in, exactly as conversations, records and blobs already do.
+      Omitted, the backend falls back to the owner it was constructed with, which
+      is the single-player local default; a multi-user hosted mount always passes
+      one, or its whole user base shares one drawer.
+
+      Entries are `{ path, data?, delete?, expectedRevision? }`: `delete: true` is
+      a tombstone (deletion is otherwise inexpressible), and `expectedRevision` is
+      the strict compare-and-swap the `/orgs` mounts commit under — a stale one
+      refuses the WHOLE commit with `conflict`, so the caller re-reads once.
+      Binary content rides `{"$vendoWorkspaceBytes": base64, contentType?}`. */
   workspace: {
-    index(query?: { cursor?: string; limit?: number }): Promise<{ entries: unknown[]; cursor?: string }>;
-    read(paths: string[]): Promise<Record<string, unknown>>;
-    commit(entries: unknown[], opts?: { idempotencyKey?: string }): Promise<void>;
-    history(query?: { cursor?: string; limit?: number }): Promise<{ entries: unknown[]; cursor?: string }>;
-    undo(commitId: string): Promise<void>;
+    index(query?: { cursor?: string; limit?: number; owner?: string }): Promise<{ entries: unknown[]; cursor?: string }>;
+    read(paths: string[], opts?: { owner?: string }): Promise<Record<string, unknown>>;
+    commit(entries: unknown[], opts?: { idempotencyKey?: string; owner?: string }): Promise<void>;
+    history(query?: { cursor?: string; limit?: number; owner?: string }): Promise<{ entries: unknown[]; cursor?: string }>;
+    undo(commitId: string, opts?: { owner?: string }): Promise<void>;
   };
   lifecycle: {
     erase(target: EraseTarget): Promise<unknown>;
