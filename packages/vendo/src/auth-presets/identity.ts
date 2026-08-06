@@ -169,15 +169,11 @@ export interface ComposeHostAuthPresetOptions {
     differ per system. The door's oauth half owns consent/CSRF/replay; this
     only supplies session lookup + subject resolution (10-mcp §3). */
 export function composeHostAuthPreset(opts: ComposeHostAuthPresetOptions): HostAuthPreset {
-  const principalFor = async (subject: string, claims: JwtClaims): Promise<Principal | null> => {
-    const resolved = await opts.resolveUser(subject, claims);
-    if (resolved === null) return null;
-    return {
-      kind: "user",
-      subject,
-      ...(resolved.display === undefined ? {} : { display: resolved.display }),
-    };
-  };
+  const principalOf = (subject: string, user: HostAuthPresetUser): Principal => ({
+    kind: "user",
+    subject,
+    ...(user.display === undefined ? {} : { display: user.display }),
+  });
 
   // Spec 2026-08-05 §1 — ONE session decode per request: the wire resolves the
   // principal and then the [User] facts off the SAME Request, and the decode +
@@ -202,12 +198,7 @@ export function composeHostAuthPreset(opts: ComposeHostAuthPresetOptions): HostA
 
   const principal = async (request: Request): Promise<Principal | null> => {
     const session = await resolveSession(request);
-    if (session === null) return null;
-    return {
-      kind: "user",
-      subject: session.subject,
-      ...(session.user.display === undefined ? {} : { display: session.user.display }),
-    };
+    return session === null ? null : principalOf(session.subject, session.user);
   };
 
   const facts = async (request: Request): Promise<Record<string, Json> | undefined> =>
@@ -220,7 +211,8 @@ export function composeHostAuthPreset(opts: ComposeHostAuthPresetOptions): HostA
       return opts.login(request, returnTo);
     },
     async principal(subject) {
-      return principalFor(subject, {});
+      const user = await opts.resolveUser(subject, {});
+      return user === null ? null : principalOf(subject, user);
     },
   };
 

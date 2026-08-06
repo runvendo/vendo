@@ -32,17 +32,18 @@ export function retireSituation(key: symbol): void {
     SYNCHRONOUS walk. No paint can happen inside one JS task, so nothing
     flickers, and each element's own aria-hidden value is restored verbatim. */
 function snapshotExcludingIgnored(root: Element): string {
-  const ignored = Array.from(document.querySelectorAll(IGNORE_SELECTOR));
-  const previous = ignored.map((element) => element.getAttribute("aria-hidden"));
-  for (const element of ignored) element.setAttribute("aria-hidden", "true");
+  const previous = new Map<Element, string | null>();
+  for (const element of document.querySelectorAll(IGNORE_SELECTOR)) {
+    previous.set(element, element.getAttribute("aria-hidden"));
+    element.setAttribute("aria-hidden", "true");
+  }
   try {
     return ariaSnapshot(root);
   } finally {
-    ignored.forEach((element, index) => {
-      const was = previous[index];
-      if (was === null || was === undefined) element.removeAttribute("aria-hidden");
+    for (const [element, was] of previous) {
+      if (was === null) element.removeAttribute("aria-hidden");
       else element.setAttribute("aria-hidden", was);
-    });
+    }
   }
 }
 
@@ -50,7 +51,7 @@ function snapshotExcludingIgnored(root: Element): string {
     visibility). Over budget, main content first: retry from <main> alone,
     then hard-truncate with an honest marker. */
 export function captureScreen(): string | undefined {
-  if (typeof document === "undefined" || document.body === null) return undefined;
+  if (typeof document === "undefined") return undefined;
   const header = `${document.location.href}\n${document.title}`;
   const budget = SNAPSHOT_CAP - header.length - 1;
   if (budget <= 0) return header.slice(0, SNAPSHOT_CAP);

@@ -245,14 +245,10 @@ export function hostAuthPresetConformance(opts: HostAuthPresetConformanceOptions
         async run(): Promise<void> {
           assert(typeof opts.preset.facts === "function", "preset has no facts seam (composeHostAuthPreset supplies it)");
           const known = await opts.preset.facts(await opts.sessionRequest(opts.knownSubject));
-          if (opts.expectedFacts === undefined) {
-            assert(known === undefined, `facts resolved ${JSON.stringify(known)} for a resolver that asserted none`);
-          } else {
-            assert(
-              JSON.stringify(known) === JSON.stringify(opts.expectedFacts),
-              `facts were ${JSON.stringify(known)}, expected ${JSON.stringify(opts.expectedFacts)}`,
-            );
-          }
+          assert(
+            JSON.stringify(known) === JSON.stringify(opts.expectedFacts),
+            `facts were ${JSON.stringify(known)}, expected ${JSON.stringify(opts.expectedFacts)}`,
+          );
           assert(await opts.preset.facts(anonymousRequest()) === undefined, "facts resolved for an anonymous request");
         },
       },
