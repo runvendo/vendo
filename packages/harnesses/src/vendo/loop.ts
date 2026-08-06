@@ -295,6 +295,42 @@ export async function turnModelMessages(input: TurnPromptInput): Promise<TurnPro
   };
 }
 
+/**
+ * Move the trailing cache breakpoint to the END of the prompt a step is about to
+ * send.
+ *
+ * {@link turnModelMessages} marks the history prefix once, before the first step.
+ * That is the right prefix for a one-step turn and the wrong one for every turn
+ * after it: each step appends its own assistant message and tool results to the
+ * same prompt, so from step two onward the growing tail sits outside the cached
+ * prefix and is re-billed in full on every remaining step. A ten-step build turn
+ * is where the context actually lives, and it was the turn paying the most.
+ *
+ * Stripping first is not tidiness. Anthropic honours four breakpoints, so a run
+ * that only ever ADDED would quietly lose its oldest — the system prompt — around
+ * step three. Leading system messages are the one thing this never touches: their
+ * marker (see {@link CACHE_BREAKPOINT}) covers the static prefix that every step
+ * shares, including whatever a later slice projects between it and the tail.
+ */
+function advanceCacheBreakpoint(messages: readonly ModelMessage[]): ModelMessage[] {
+  const stripped = messages.map((message) => {
+    if (message.role === "system") return message;
+    const anthropic = message.providerOptions?.anthropic;
+    if (anthropic?.cacheControl === undefined) return message;
+    const { cacheControl: _moved, ...kept } = anthropic;
+    return { ...message, providerOptions: { ...message.providerOptions, anthropic: kept } } as ModelMessage;
+  });
+  const last = stripped.at(-1);
+  // A prompt that is nothing but the system message has no tail to mark, and its
+  // marker is already where it belongs.
+  if (last === undefined || last.role === "system") return stripped;
+  stripped[stripped.length - 1] = {
+    ...last,
+    providerOptions: { ...last.providerOptions, ...CACHE_BREAKPOINT },
+  } as ModelMessage;
+  return stripped;
+}
+
 export interface TurnLoopOptions {
   model: LanguageModel;
   /** §4.1 item 3 — the rungs BELOW `model`, tried in order when a provider fails
@@ -384,12 +420,16 @@ export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
     // `vendo_tools_search` becomes callable on the very next step. This gates the
     // model's CHOICE only — every tool still executes through the guard-bound
     // registry, so there is no unguarded path.
-    ...(toolSearch === undefined
-      ? {}
-      : {
-          activeTools: toolSearch.activeToolNames(),
-          prepareStep: () => ({ activeTools: toolSearch.activeToolNames() }),
-        }),
+    ...(toolSearch === undefined ? {} : { activeTools: toolSearch.activeToolNames() }),
+    // One hook, two rails. `prepareStep` used to be built only when a tool-search
+    // session existed, which is why a step's growing tool results were never
+    // cached — the turn with the most to cache had no hook at all. It is returned
+    // on every turn now, and the loadout rides the same result rather than
+    // growing a second per-step hook beside it.
+    prepareStep: ({ messages }) => ({
+      messages: advanceCacheBreakpoint(messages),
+      ...(toolSearch === undefined ? {} : { activeTools: toolSearch.activeToolNames() }),
+    }),
     // AGENT-3: cancellation reaches the provider call itself; the loop never
     // starts another step once the signal fires.
     abortSignal: options.signal,
