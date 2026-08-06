@@ -47,6 +47,7 @@ export * from "./theme.js";
 export * from "./stream-parts.js";
 export * from "./tool-envelopes.js";
 export * from "./tools.js";
+export * from "./url.js";
 export * from "./genui/expr.js";
 export * from "./genui/tree-node.js";
 export * from "./genui/tree.js";
