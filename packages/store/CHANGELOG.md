@@ -1,8 +1,27 @@
 # @vendoai/store
 
-## 1.0.0
+## 0.8.0
 
-### Major Changes
+### Minor Changes
+
+- 21c8b10: One brain, one scheduler, and consent that is per trigger — everywhere outside
+  `@vendoai/automations` that has to agree with it.
+
+  A fire-time call now carries WHICH trigger fired (`TriggerRef.id`) and WHICH
+  firing it belongs to (`TriggerRef.lineageId`), so the guard matches an away grant
+  on (app, trigger) instead of app-wide — arming one trigger no longer authorizes
+  its siblings — and keys effect receipts on the firing, so re-running a run that
+  failed loudly cannot repeat the work the first attempt already completed. The
+  store carries that dimension too: grant and run rows index the trigger, so an
+  adapter that trusts its own refs narrows exactly as far as the engine does
+  instead of handing back a sibling trigger's grant. An agentic firing runs through
+  the same away runner the rest of Vendo uses, seeing only the connector dispatcher
+  it was actually granted. A machine app's `vendo.json` schedules are folded into
+  its document triggers when the manifest syncs, so there is exactly one scheduler
+  in the deployment (the automations engine) and one tick that drives it. The panel
+  and the wire follow: per-trigger enable, disable, dry-run and adopt doors, a
+  `POST /runs/:runId/rerun` door, and a run that stopped for a missing permission
+  showing "Failed" with the consent card and Grant & re-run right on the row.
 
 - fbf265b: One front door: `vendo_make` replaces `vendo_apps_create` and `vendo_apps_edit`,
   and it hands back words instead of the app.
@@ -80,26 +99,28 @@
   the realistic blast radius is nil — but it was an exported symbol, and removing
   one is a breaking change whether or not anybody held it.
 
-### Minor Changes
+- f7c6da2: A strict mount guards its creates, a refused turn writes nothing, and eleven
+  exports nobody imported are gone.
 
-- 21c8b10: One brain, one scheduler, and consent that is per trigger — everywhere outside
-  `@vendoai/automations` that has to agree with it.
+  `expectedRevision` on a workspace commit entry gains its third state: a number
+  compares, `null` means "this path must not exist yet", and the absent field
+  stays unguarded. The SQL backend already refused a create built on a base that
+  had moved; the hosted backend required a number and so degraded exactly that
+  case into an unguarded write, silently overwriting the colleague who created
+  the shared `/orgs` file first. Both backends and the memory reference are now
+  held to the same conformance case.
 
-  A fire-time call now carries WHICH trigger fired (`TriggerRef.id`) and WHICH
-  firing it belongs to (`TriggerRef.lineageId`), so the guard matches an away grant
-  on (app, trigger) instead of app-wide — arming one trigger no longer authorizes
-  its siblings — and keys effect receipts on the firing, so re-running a run that
-  failed loudly cannot repeat the work the first attempt already completed. The
-  store carries that dimension too: grant and run rows index the trigger, so an
-  adapter that trusts its own refs narrows exactly as far as the engine does
-  instead of handing back a sibling trigger's grant. An agentic firing runs through
-  the same away runner the rest of Vendo uses, seeing only the connector dispatcher
-  it was actually granted. A machine app's `vendo.json` schedules are folded into
-  its document triggers when the manifest syncs, so there is exactly one scheduler
-  in the deployment (the automations engine) and one tick that drives it. The panel
-  and the wire follow: per-trigger enable, disable, dry-run and adopt doors, a
-  `POST /runs/:runId/rerun` door, and a run that stopped for a missing permission
-  showing "Failed" with the consent card and Grant & re-run right on the row.
+  The per-turn refusal on a store that can serve neither the transcript nor the
+  workspace is atomic: the doors are resolved before the first write, so a
+  refused turn no longer leaves a `vendo_threads` row carrying the user's message
+  on a deployment that can never answer it.
+
+  `@vendoai/harnesses` drops eleven exports with no importer anywhere
+  (`abandonPendingApprovals`, `guardApprovalIds`, `addAgentTool`,
+  `buildAgentTools`, `guardedCall`, `previewApproval`, `computeInitialLoadout`,
+  `createToolSearchSession`, `CAPABILITY_MISS_TOOL_NAME`,
+  `createCapabilityMissDetector`, `scrubCapabilityMissText`). The `./vendo`
+  subpath is untouched.
 
 - 14e8246: A team-shared file now reaches the `claudeCode()` sandbox — and its edits come home.
 
@@ -230,6 +251,8 @@
 
 ### Patch Changes
 
+- Updated dependencies [2e792a1]
+- Updated dependencies [963d980]
 - Updated dependencies [3f98372]
 - Updated dependencies [21c8b10]
 - Updated dependencies [1bb535b]
@@ -248,10 +271,11 @@
 - Updated dependencies [798b618]
 - Updated dependencies [10a2b44]
 - Updated dependencies [98eba22]
+- Updated dependencies [f7c6da2]
 - Updated dependencies [14e8246]
 - Updated dependencies [fbf265b]
 - Updated dependencies [38a840d]
-  - @vendoai/core@1.0.0
+  - @vendoai/core@0.8.0
 
 ## 0.7.0
 

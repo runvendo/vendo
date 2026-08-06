@@ -5,7 +5,7 @@ import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { initTelemetry, repoHost, type Telemetry } from "@vendoai/telemetry";
 
-export const CLI_VERSION = "1.0.0";
+export const CLI_VERSION = "0.8.0";
 
 export interface Output {
   log(message: string): void;

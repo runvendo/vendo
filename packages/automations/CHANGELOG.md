@@ -1,8 +1,8 @@
 # @vendoai/automations
 
-## 1.0.0
+## 0.8.0
 
-### Major Changes
+### Minor Changes
 
 - 21c8b10: **BREAKING:** an automation is now a list of triggers, each armed on its own, and
   a run that meets a permission nobody granted fails LOUDLY instead of waiting.
@@ -28,8 +28,6 @@
     `triggers[]` per app rather than one trigger's state on the app.
   - `runs.list` accepts a `triggerId` filter; `runs.rerun` is new.
   - The parked-run collection and its resume path are removed.
-
-### Minor Changes
 
 - 8d623ec: Connector discovery uses the broker's own search; execution stays ours.
 
@@ -299,6 +297,8 @@
 
 ### Patch Changes
 
+- Updated dependencies [2e792a1]
+- Updated dependencies [963d980]
 - Updated dependencies [b022eb3]
 - Updated dependencies [1572060]
 - Updated dependencies [a004031]
@@ -319,6 +319,7 @@
 - Updated dependencies [c9df3f7]
 - Updated dependencies [6eb8a04]
 - Updated dependencies [fbf265b]
+- Updated dependencies [ce98c54]
 - Updated dependencies [2ed91b0]
 - Updated dependencies [e6aaa7a]
 - Updated dependencies [ab5d181]
@@ -329,12 +330,15 @@
 - Updated dependencies [10a2b44]
 - Updated dependencies [d1ff923]
 - Updated dependencies [98eba22]
+- Updated dependencies [f7c6da2]
 - Updated dependencies [14e8246]
+- Updated dependencies [6a3d9e3]
 - Updated dependencies [fbf265b]
 - Updated dependencies [38a840d]
 - Updated dependencies [a0dbfc6]
-  - @vendoai/apps@1.0.0
-  - @vendoai/core@1.0.0
+- Updated dependencies [39a7ecc]
+  - @vendoai/core@0.8.0
+  - @vendoai/apps@0.8.0
 
 ## 0.7.0
 

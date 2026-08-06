@@ -1,6 +1,6 @@
 # @vendoai/agents
 
-## 1.0.0
+## 0.8.0
 
 ### Minor Changes
 
@@ -203,6 +203,8 @@ arguments, but got 0`. Rename the call and you are done — nothing else about t
   first `on()` handler and released with the last. Deciding an approval was
   and remains owner-scoped: a foreign principal's decide is `not-found`.
 
+- Updated dependencies [2e792a1]
+- Updated dependencies [963d980]
 - Updated dependencies [b022eb3]
 - Updated dependencies [10a2b44]
 - Updated dependencies [1572060]
@@ -228,11 +230,14 @@ arguments, but got 0`. Rename the call and you are done — nothing else about t
 - Updated dependencies [215bfcc]
 - Updated dependencies [dcc08ab]
 - Updated dependencies [fbf265b]
+- Updated dependencies [f7c6da2]
+- Updated dependencies [ce98c54]
 - Updated dependencies [2ed91b0]
 - Updated dependencies [e6aaa7a]
 - Updated dependencies [ab5d181]
 - Updated dependencies [d0c3cc9]
 - Updated dependencies [0197470]
+- Updated dependencies [2819bcc]
 - Updated dependencies [38dd824]
 - Updated dependencies [798b618]
 - Updated dependencies [8132329]
@@ -240,16 +245,19 @@ arguments, but got 0`. Rename the call and you are done — nothing else about t
 - Updated dependencies [d1ff923]
 - Updated dependencies [98eba22]
 - Updated dependencies [10a2b44]
+- Updated dependencies [f7c6da2]
 - Updated dependencies [14e8246]
+- Updated dependencies [6a3d9e3]
 - Updated dependencies [b576ab9]
 - Updated dependencies [fbf265b]
 - Updated dependencies [38a840d]
 - Updated dependencies [a0dbfc6]
-  - @vendoai/apps@1.0.0
-  - @vendoai/mcp@1.0.0
-  - @vendoai/harnesses@1.0.0
-  - @vendoai/core@1.0.0
-  - @vendoai/actions@1.0.0
-  - @vendoai/guard@1.0.0
-  - @vendoai/store@1.0.0
-  - @vendoai/knowledge@1.0.0
+- Updated dependencies [39a7ecc]
+  - @vendoai/core@0.8.0
+  - @vendoai/apps@0.8.0
+  - @vendoai/mcp@0.8.0
+  - @vendoai/guard@0.8.0
+  - @vendoai/harnesses@0.8.0
+  - @vendoai/actions@0.8.0
+  - @vendoai/store@0.8.0
+  - @vendoai/knowledge@0.8.0

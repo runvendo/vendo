@@ -1,144 +1,112 @@
 # @vendoai/ui
 
-## 1.0.0
-
-### Major Changes
-
-- 6eb8a04: **BREAKING:** the knowledge entailment verifier is removed. The knowledge
-  stack is a pure retrieval plug-in again, and `weakScoreThreshold` is once more
-  the sole refusal calibration — unchanged, and still the knob to tune.
-
-  The check shipped off by default and the live measurement is why it never got
-  turned on: over the 94-question corpus it still answered 7-10 of 34
-  unanswerable questions per pass, while costing a model call per search and
-  seconds of latency on a call the user waits through. It never cleared the bar
-  it existed for, so it is gone rather than left as a knob nobody should set.
-
-  Removed surface:
-
-  - `@vendoai/knowledge`: `entailmentVerifier`, `KNOWLEDGE_VERIFY_TIMEOUT_MS`,
-    `KNOWLEDGE_VERIFY_TURN_BUDGET_MS`, the `KnowledgeVerifier` /
-    `KnowledgeVerdict` / `KnowledgeVerifierInput` / `KnowledgeVerifierPassage` /
-    `KnowledgeVerifyOptions` / `EntailmentVerifierOptions` types, and the
-    `verifier` + `verifyTurnBudgetMs` options on `createKnowledgeTools`. The tool
-    reverts to its pre-verifier decision rule: chat search → one deep retry on
-    weak evidence → structured `insufficient-evidence`.
-  - `@vendoai/core`: the `verifier` model seat (`Seat`, `SEATS`,
-    `ResolvedModels`, `migrateModelSeats`) and the `unverified` field on the
-    `data-vendo-citations` stream part.
-  - `@vendoai/vendo`: the `VENDO_KNOWLEDGE_VERIFY` and
-    `VENDO_MODEL_KNOWLEDGE_VERIFIER` environment knobs, and the
-    `models.verifier` / `models.knowledgeVerifier` slots.
-  - `@vendoai/ui`: the amber "I couldn't check this answer against the
-    documentation" line. The engine-outage flag and the structured
-    searched-line are untouched.
-
-- fbf265b: One front door: `vendo_make` replaces `vendo_apps_create` and `vendo_apps_edit`,
-  and it hands back words instead of the app.
-
-  **Breaking.** `vendo_apps_create` and `vendo_apps_edit` no longer exist. In their
-  place is one tool with three parameters:
-
-  ```ts
-  {
-    request: string,   // the ask, in the calling agent's own words — required
-    app?: string,      // an existing AppId, to change that one specifically
-    context?: string,  // free-text background, for callers whose conversation we cannot see
-  }
-  ```
-
-  Two tools meant every calling agent — ours, a host's own AI SDK or Mastra agent,
-  an outside agent over MCP — had to decide "new or change?" before it could ask,
-  and get it right. That was never their decision: the seam knows whether an app
-  exists, and a caller that wants a specific one says so with `app`. `context`
-  exists because an outside agent's transcript is not ours to read; on our own
-  doors the runtime's transcript stays authoritative and `context` is supplemental.
-
-  **Also breaking: the tool returns a receipt, not the document.**
-
-  ```ts
-  interface MakeReceipt {
-    id: AppId;
-    title: string;
-    status: "ready" | "building" | "failed";
-    say: string; // ONE speakable line, consumer voice
-  }
-  ```
-
-  The old tools returned the entire `AppDocument` — the tree, the island sources,
-  the storage declarations, the machine reference. So a model was handed UI and
-  trusted not to describe it, retell it, or invent from it. A model handed a tree
-  eventually talks about the tree. Screens go server → slot; the agent only ever
-  gets words, and `say` is the line it can utter verbatim. `status: "building"` is
-  the honest answer while work continues.
-
-  Two things follow from the receipt, and both are improvements rather than
-  compromises. The automation card is now PUBLISHED by the apps runtime through the
-  existing view-stream seam instead of being reconstructed at the agent bridge out
-  of the edit tool's return value — one less part read by shape (01-core §16's own
-  anti-smuggling rule, which that reconstruction was the exception to). And
-  `instant()` now speaks the receipt's `say` rather than a canned "Updated.",
-  which fixes a real mis-speak: a rejected change comes back OK, so the canned line
-  claimed success for work that did not happen.
-
-  **Migrating.** If you call the tool by name from your own agent, rename it and
-  rename `prompt` → `request` and `appId` → `app`; drop `instruction` into
-  `request`. If you read fields off its result, read `id` and `title` off the
-  receipt and say `say`. If you had a policy rule or an override matching
-  `vendo_apps_create` / `vendo_apps_edit` / `vendo_apps_*` for the build tools,
-  match `vendo_make` — it deliberately sits OUTSIDE the `vendo_apps_` prefix,
-  because it is the front door rather than a member of the runtime's family. Core
-  exports `isVendoAppsTool(name)` for anything that needs to recognise both.
-
-  Everything else about the call is unchanged: risk grade `read` (actions inside
-  the screen are still graded and consented individually at call time), the view
-  channel, the build-failed banner, and the transcript's build card.
-
-- a004031: **BREAKING:** the data hooks no longer return a generic `data` alias.
-
-  `useApps`, `useThreads`, `useActivity`, `useApprovals`, `useConnections`,
-  `useGrants`, `useAutomations` and `useApp` each returned the same value twice —
-  under the named field the contract makes canonical (`apps`, `threads`,
-  `events`, `pending`, `connections`, `grants`, `automations`, `app`) and again
-  as `data`. The alias is removed; read the named field. `error`, `isLoading`,
-  `refresh` and every write callback are unchanged.
-
-  ```diff
-  - const { data } = useApprovals();
-  + const { pending } = useApprovals();
-  ```
-
-- a0dbfc6: The agent can now be told who the user is and what they are looking at.
-
-  Two seams, both optional, both merged into one `[Situation]` block on every
-  message the user sends:
-
-  - **User facts.** The `user` resolver on the `authJs()` and `jwt()` auth presets
-    may now return a `facts` object alongside the principal, and those facts reach
-    the prompt. The session is decoded once per request for both the principal and
-    the facts. An anonymous request resolves no facts.
-  - **Live screen context.** `useVendoContext(data)` publishes structured host data
-    for as long as the component is mounted, and retires it on unmount. Several
-    mounted callers coexist and merge. `VendoProvider` also takes `captureScreen`
-    (default `true`) to control the screen snapshot that rides the same channel.
-
-  **BREAKING (`@vendoai/ui`, `@vendoai/vendo/react`): `useVendoContext` is now
-  `useVendoProvider`.** The name `useVendoContext` previously belonged to the
-  zero-argument hook that read everything `VendoProvider` supplies; it now belongs
-  to the host-facing hook above, which takes data and returns nothing. Both names
-  still exist, so the compiler is the thing that catches this:
-
-  ```diff
-  - const { client } = useVendoContext();
-  + const { client } = useVendoProvider();
-  ```
-
-  Because both names still exist, the compiler catches this rather than the
-  runtime: an existing zero-argument call now fails with `TS2554: Expected 1
-arguments, but got 0`. Rename the call and you are done — nothing else about the
-  provider value changed.
+## 0.8.0
 
 ### Minor Changes
+
+- 963d980: Agents can address a place on the page, and a slot tells the truth about what is in it.
+
+  An agent could make a person a screen, but never say WHERE it goes: a host wired
+  exactly one destination and everything landed there. Now a slot is something the
+  agent can name, the person can choose, and the page can be honest about.
+
+  **Placement is a row, not a string on the app document.** "Show this app in that
+  slot" moves off `doc.placements` — which is never read any more — and into real
+  rows in the generic collections: a pointer at `plc:<subject>:<slot>` naming who
+  holds the slot under which token (the single compare-and-swap arbitration
+  point), and a live row at `plcv:<subject>:<slot>:<token>` that exists only while
+  that placement holds it. That buys three things a document scan could not: a
+  slot can show a build that has not landed yet, a slot resolves in one query
+  instead of listing every app the person owns, and one app per slot is enforced
+  by the write instead of by whoever read last.
+
+  - `apps.place({ app, slot })` / `apps.unplace(…)` / `apps.placements({ slots })`
+    on the runtime, `POST /apps/:id/place`, `POST /apps/:id/unplace` and
+    `GET /apps/placements?slots=…` on the wire, `client.apps.place/unplace/
+placements` on the client.
+  - `place()` is one decision, not read-then-write: it compare-and-swaps on the
+    pointer's revision, the loser retries against the winner's row, and the
+    displaced app comes back as `evicted` so the surface can say what moved.
+  - `unplace()` and "clear this slot" only ever delete the token they named, so a
+    stale client can never evict the app that replaced it. Tokens are never
+    reused.
+  - Rows carry `refs.app_id`, and deleting an app sweeps them BY APP — so deleting
+    an app you share can no longer leave a permanent "didn't build" card standing
+    over somebody else's host markup.
+  - `GET /apps/placements` gates every entry on the same viewer check
+    `open`/`get`/`list` use; a slot the caller may no longer view reads as empty.
+    Slot ids are normalized identically on read and write, and percent-encoded per
+    item in the query, so an id containing a "," survives the round trip.
+  - `useSlotApp(slot)` now answers `{ appId, status }`, over ONE poller per client
+    shared by every mounted slot (it no longer takes `pollMs`).
+
+  **`vendo_make` takes one optional `slot`,** honoured on both engines the one
+  front door routes to. The slot is claimed at MINT — the instant the app id
+  exists, before a single token is generated — so the place the caller aimed at
+  shows the build forming instead of staying empty until it lands, and shows the
+  failure if it never does. An ask no engine landed writes the same terminal
+  tombstone a failed build writes, so a claimed slot turns into the honest failure
+  card the moment either engine gives up. A placement whose app no longer exists
+  renders as nothing placed, never a stuck failure card. On a CHANGE, `slot` is
+  refused by name: silently moving an existing app would evict whatever holds that
+  slot off the back of an edit nobody aimed there.
+
+  **Two new tools do the moving.** `vendo_apps_pin { app, slot }` puts an app the
+  user already has into a slot and reports what it replaced as `evicted`;
+  `vendo_apps_unpin { app, slot }` takes it out and leaves the app itself alone.
+  Both aim by the app's id OR the name the user said, and both are graded `write`
+  — a placement row is small and reversible.
+
+  Neither is offered to an unattended run, and neither is executable in one.
+  `PRESENCE_ONLY_TOOLS` (core) joins THE LAW's projection, and the guard's choke
+  point refuses a presence-only call outright — so a standing automation grant
+  that reaches `execute()` by name, without listing, can no longer rearrange a
+  page with nobody watching. Keyed on the name, not the grade, so policy rules and
+  consent cards still read an honest `write`. A slot-bearing `vendo_make` in an
+  unattended run still RUNS and simply drops the slot: placement is what needs a
+  person present, creation is not, and refusing the call would silently break the
+  automations that legitimately build screens.
+
+  **`McpDoorConfig.withholdTools`** names tools one door never offers, checked
+  BEFORE the `vendo_` prefix bypass and on BOTH legs of a mount — a turn-bearing
+  session used to be able to list and call a name the deployment said it never
+  offers. Curation, not security: a withheld name answers with the same in-band
+  not-found an unknown name gets.
+
+  **`VendoSlot` reads the placement's build status, not just its app id:**
+
+  - **building** — an EMPTY slot shows the skeleton it already uses, minus the
+    invitation, because there is nothing left to ask for. A slot carrying the
+    host's own markup KEEPS it until the build is ready: a working host component
+    never blanks into a skeleton for the length of a build.
+  - **failed** — the consumer sentence (never the wire's `reason`, which names
+    components and env vars and is written for whoever can fix the build), a "Try
+    again" that re-issues the ORIGINAL request when the failed record kept one,
+    and "Clear this slot". The failed card DOES replace the host's own children,
+    deliberately: a build that will never land should not hide behind markup that
+    looks fine.
+  - **ready** — unchanged, and now proven in a browser for both surface kinds.
+
+  **`AddToPicker` puts "Add to…" on a generated view's bar,** so a person can send
+  it to any slot the host has mounted instead of the one place a host wired. It
+  awaits `client.apps.place` before saying "Added to Hero", then announces the
+  placement so a mounted slot fills without waiting out its poll. It appears in
+  both places a generated view has a bar — the app embed and the IN-THREAD card,
+  which is the surface a person actually reaches a view from in every host that
+  renders its conversation through `VendoOverlay`. The affordance stays a
+  one-click "Pin to dashboard" while the origin knows a single destination — a
+  menu of one is not a choice — and becomes the picker the moment it knows more.
+
+  - `noteSlot` / `knownSlots` (new, re-exported from `vendoai/react`): the picker's
+    destinations. A slot id is the host's markup and no Vendo record carries it, so
+    a mounted `VendoSlot` recording itself in origin-scoped `localStorage` is the
+    only way a surface on another page can offer that slot at all. A slot the host
+    filled with an explicit `appId`/`pin` stays out of the list — a placement
+    written into it would never be read.
+
+  **Pinning is Vendo's write now:** with `pinSlot` set, the pin affordance calls
+  `apps.place` itself. `onPin` remains as an optional side-effect seam, so a host
+  no longer needs a pin route of its own (Maple's is deleted).
 
 - 4b6e362: The agentic UI redesign: visible work, one card system, the ChatGPT-shaped center.
 
@@ -407,6 +375,96 @@ iframe.contentWindow` — the one thing a sender cannot forge), the message
   on-screen embed's machine awake. Callers passing `{ ping, reopen }` drop
   `reopen`; nothing else changes.
 
+- 6eb8a04: **BREAKING:** the knowledge entailment verifier is removed. The knowledge
+  stack is a pure retrieval plug-in again, and `weakScoreThreshold` is once more
+  the sole refusal calibration — unchanged, and still the knob to tune.
+
+  The check shipped off by default and the live measurement is why it never got
+  turned on: over the 94-question corpus it still answered 7-10 of 34
+  unanswerable questions per pass, while costing a model call per search and
+  seconds of latency on a call the user waits through. It never cleared the bar
+  it existed for, so it is gone rather than left as a knob nobody should set.
+
+  Removed surface:
+
+  - `@vendoai/knowledge`: `entailmentVerifier`, `KNOWLEDGE_VERIFY_TIMEOUT_MS`,
+    `KNOWLEDGE_VERIFY_TURN_BUDGET_MS`, the `KnowledgeVerifier` /
+    `KnowledgeVerdict` / `KnowledgeVerifierInput` / `KnowledgeVerifierPassage` /
+    `KnowledgeVerifyOptions` / `EntailmentVerifierOptions` types, and the
+    `verifier` + `verifyTurnBudgetMs` options on `createKnowledgeTools`. The tool
+    reverts to its pre-verifier decision rule: chat search → one deep retry on
+    weak evidence → structured `insufficient-evidence`.
+  - `@vendoai/core`: the `verifier` model seat (`Seat`, `SEATS`,
+    `ResolvedModels`, `migrateModelSeats`) and the `unverified` field on the
+    `data-vendo-citations` stream part.
+  - `@vendoai/vendo`: the `VENDO_KNOWLEDGE_VERIFY` and
+    `VENDO_MODEL_KNOWLEDGE_VERIFIER` environment knobs, and the
+    `models.verifier` / `models.knowledgeVerifier` slots.
+  - `@vendoai/ui`: the amber "I couldn't check this answer against the
+    documentation" line. The engine-outage flag and the structured
+    searched-line are untouched.
+
+- fbf265b: One front door: `vendo_make` replaces `vendo_apps_create` and `vendo_apps_edit`,
+  and it hands back words instead of the app.
+
+  **Breaking.** `vendo_apps_create` and `vendo_apps_edit` no longer exist. In their
+  place is one tool with three parameters:
+
+  ```ts
+  {
+    request: string,   // the ask, in the calling agent's own words — required
+    app?: string,      // an existing AppId, to change that one specifically
+    context?: string,  // free-text background, for callers whose conversation we cannot see
+  }
+  ```
+
+  Two tools meant every calling agent — ours, a host's own AI SDK or Mastra agent,
+  an outside agent over MCP — had to decide "new or change?" before it could ask,
+  and get it right. That was never their decision: the seam knows whether an app
+  exists, and a caller that wants a specific one says so with `app`. `context`
+  exists because an outside agent's transcript is not ours to read; on our own
+  doors the runtime's transcript stays authoritative and `context` is supplemental.
+
+  **Also breaking: the tool returns a receipt, not the document.**
+
+  ```ts
+  interface MakeReceipt {
+    id: AppId;
+    title: string;
+    status: "ready" | "building" | "failed";
+    say: string; // ONE speakable line, consumer voice
+  }
+  ```
+
+  The old tools returned the entire `AppDocument` — the tree, the island sources,
+  the storage declarations, the machine reference. So a model was handed UI and
+  trusted not to describe it, retell it, or invent from it. A model handed a tree
+  eventually talks about the tree. Screens go server → slot; the agent only ever
+  gets words, and `say` is the line it can utter verbatim. `status: "building"` is
+  the honest answer while work continues.
+
+  Two things follow from the receipt, and both are improvements rather than
+  compromises. The automation card is now PUBLISHED by the apps runtime through the
+  existing view-stream seam instead of being reconstructed at the agent bridge out
+  of the edit tool's return value — one less part read by shape (01-core §16's own
+  anti-smuggling rule, which that reconstruction was the exception to). And
+  `instant()` now speaks the receipt's `say` rather than a canned "Updated.",
+  which fixes a real mis-speak: a rejected change comes back OK, so the canned line
+  claimed success for work that did not happen.
+
+  **Migrating.** If you call the tool by name from your own agent, rename it and
+  rename `prompt` → `request` and `appId` → `app`; drop `instruction` into
+  `request`. If you read fields off its result, read `id` and `title` off the
+  receipt and say `say`. If you had a policy rule or an override matching
+  `vendo_apps_create` / `vendo_apps_edit` / `vendo_apps_*` for the build tools,
+  match `vendo_make` — it deliberately sits OUTSIDE the `vendo_apps_` prefix,
+  because it is the front door rather than a member of the runtime's family. Core
+  exports `isVendoAppsTool(name)` for anything that needs to recognise both.
+
+  Everything else about the call is unchanged: risk grade `read` (actions inside
+  the screen are still graded and consented individually at call time), the view
+  channel, the build-failed banner, and the transcript's build card.
+
 - d0c3cc9: Risk grading stops guessing from tool names, and a tool nobody has graded now
   says so out loud instead of running.
 
@@ -520,6 +578,50 @@ iframe.contentWindow` — the one thing a sender cannot forge), the message
   `useVendoThread` now resumes automatically after it loads a thread's transcript,
   and returns `resumeStream()` for surfaces that reconnect on their own.
 
+- a004031: **BREAKING:** the data hooks no longer return a generic `data` alias.
+
+  `useApps`, `useThreads`, `useActivity`, `useApprovals`, `useConnections`,
+  `useGrants`, `useAutomations` and `useApp` each returned the same value twice —
+  under the named field the contract makes canonical (`apps`, `threads`,
+  `events`, `pending`, `connections`, `grants`, `automations`, `app`) and again
+  as `data`. The alias is removed; read the named field. `error`, `isLoading`,
+  `refresh` and every write callback are unchanged.
+
+  ```diff
+  - const { data } = useApprovals();
+  + const { pending } = useApprovals();
+  ```
+
+- a0dbfc6: The agent can now be told who the user is and what they are looking at.
+
+  Two seams, both optional, both merged into one `[Situation]` block on every
+  message the user sends:
+
+  - **User facts.** The `user` resolver on the `authJs()` and `jwt()` auth presets
+    may now return a `facts` object alongside the principal, and those facts reach
+    the prompt. The session is decoded once per request for both the principal and
+    the facts. An anonymous request resolves no facts.
+  - **Live screen context.** `useVendoContext(data)` publishes structured host data
+    for as long as the component is mounted, and retires it on unmount. Several
+    mounted callers coexist and merge. `VendoProvider` also takes `captureScreen`
+    (default `true`) to control the screen snapshot that rides the same channel.
+
+  **BREAKING (`@vendoai/ui`, `@vendoai/vendo/react`): `useVendoContext` is now
+  `useVendoProvider`.** The name `useVendoContext` previously belonged to the
+  zero-argument hook that read everything `VendoProvider` supplies; it now belongs
+  to the host-facing hook above, which takes data and returns nothing. Both names
+  still exist, so the compiler is the thing that catches this:
+
+  ```diff
+  - const { client } = useVendoContext();
+  + const { client } = useVendoProvider();
+  ```
+
+  Because both names still exist, the compiler catches this rather than the
+  runtime: an existing zero-argument call now fails with `TS2554: Expected 1
+arguments, but got 0`. Rename the call and you are done — nothing else about the
+  provider value changed.
+
 ### Patch Changes
 
 - ab5d181: `@vendoai/ui/kit` now exports the embedded-surface runtime and the theme
@@ -558,6 +660,20 @@ iframe.contentWindow` — the one thing a sender cannot forge), the message
   policy, and the jail boots (or does not) under exactly the same host policies as
   before.
 
+- 1deaa5c: A persisted turn failure reads whole after a reload.
+
+  The failure's headline rendered through the build beat's label — `white-space:
+nowrap` + `text-overflow: ellipsis` — inside a block capped at `max-width: 92%`
+  of a turn that is itself shrink-to-fit. The percentage therefore resolved
+  against a width the block's own text had just set, so the box came out narrower
+  than the headline it contained and the ellipsis ate the end: a reloaded failure
+  with no detail line under it read "The response didn't f…" (144px of a 159px
+  sentence). The turn already caps at 92% of the list, so the inner cap is gone
+  and a failure headline now wraps instead of clipping — it is content, not a
+  progress line. No copy, color or component changed.
+
+- Updated dependencies [2e792a1]
+- Updated dependencies [963d980]
 - Updated dependencies [3f98372]
 - Updated dependencies [21c8b10]
 - Updated dependencies [1bb535b]
@@ -576,10 +692,11 @@ iframe.contentWindow` — the one thing a sender cannot forge), the message
 - Updated dependencies [798b618]
 - Updated dependencies [10a2b44]
 - Updated dependencies [98eba22]
+- Updated dependencies [f7c6da2]
 - Updated dependencies [14e8246]
 - Updated dependencies [fbf265b]
 - Updated dependencies [38a840d]
-  - @vendoai/core@1.0.0
+  - @vendoai/core@0.8.0
 
 ## 0.7.0
 

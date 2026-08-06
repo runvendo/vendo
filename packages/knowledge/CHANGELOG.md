@@ -1,8 +1,8 @@
 # @vendoai/knowledge
 
-## 1.0.0
+## 0.8.0
 
-### Major Changes
+### Minor Changes
 
 - 6eb8a04: **BREAKING:** the knowledge entailment verifier is removed. The knowledge
   stack is a pure retrieval plug-in again, and `weakScoreThreshold` is once more
@@ -35,6 +35,8 @@
 
 ### Patch Changes
 
+- Updated dependencies [2e792a1]
+- Updated dependencies [963d980]
 - Updated dependencies [3f98372]
 - Updated dependencies [21c8b10]
 - Updated dependencies [1bb535b]
@@ -53,10 +55,11 @@
 - Updated dependencies [798b618]
 - Updated dependencies [10a2b44]
 - Updated dependencies [98eba22]
+- Updated dependencies [f7c6da2]
 - Updated dependencies [14e8246]
 - Updated dependencies [fbf265b]
 - Updated dependencies [38a840d]
-  - @vendoai/core@1.0.0
+  - @vendoai/core@0.8.0
 
 ## 0.7.0
 

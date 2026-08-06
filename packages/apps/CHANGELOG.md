@@ -1,242 +1,112 @@
 # @vendoai/apps
 
-## 1.0.0
-
-### Major Changes
-
-- a004031: **BREAKING:** the bench host surface is removed from `@vendoai/apps` —
-  `loadDemoBankCatalog`, `loadDemoBankTools`, and `demoBankToolShapes` are no
-  longer exported. The `HostToolInfo` type stays.
-
-  The W1-bench experiments those loaders served have concluded (verdicts:
-  inline refs ADOPT; builder-calls, fetch-then-generate, CFG-JSX DEFER — the
-  ledger lives in the private repo), and the loaders themselves could never have
-  worked for an npm consumer: they resolved `examples/demo-bank/.vendo/*.json`
-  relative to this repo's layout, so every call outside the monorepo threw. The
-  one real caller (an internal bench harness, since moved out of this repo) now
-  loads the catalog and tools locally.
-
-- 21c8b10: **BREAKING:** the BYO schedule engine is gone — a machine app's `vendo.json`
-  schedules are document triggers now, fired by the automations engine.
-
-  `AppsRuntime.schedules` (its `tick`, `sync` and `report`) and the
-  `SCHEDULE_STATE_COLLECTION` export are removed. `machine.syncManifest(appId, ctx)`
-  folds a woken box's declared schedules into the app's document triggers and
-  `machine.report()` says what happened, so last-fired state lives on the engine's
-  per-trigger cursor instead of in a second `vendo_app_schedules` cache that a tick
-  had to read to decide due-ness. A host that called `runtime.schedules.tick()` from
-  its cron should call the one `/api/vendo/tick` door instead — it already drove the
-  automation schedules, and it now drives these.
-
-  Authoring changed in the same direction: the planner is never offered a tool whose
-  unattended use is irreversible (the predicate is core's own
-  `withheldFromUnattended`, the same one the run's projection uses, so authoring and
-  firing cannot disagree), and an ask that needs one comes back as a sentence naming
-  why and offering the away-safe half — read the live data, publish the result, and
-  let the person do the irreversible part themselves. `planAutomation` is exported
-  so a harness can author a plan without booting the generation pipeline.
-
-- 56e0cc3: **BREAKING:** escalation gets its receiving end, and both experimental flags are
-  deleted. `apps.experimentalScreenAgent` and `apps.experimentalMachines` are gone
-  from `createVendo()`; passing either is now a type error.
-
-  **The screen agent is THE engine.** Every `vendo_make` ask starts in the cheap
-  assembly loop on every deployment. There is no flag and no coin-flip. The
-  conductor is unchanged and is still what an `unavailable` answer, a broken
-  assembler, or an `assembled` that left no app row falls through to.
-
-  **Machine-backed execution is gated by the sandbox adapter, and nothing else.**
-  Configure `createVendo({ sandbox })` and layer-2 boxes are reachable; leave it
-  out and they are not. Presence IS the deliberate opt-in — no capability boolean
-  beside it. Every read site moved: the box lane in `laneGates`, the box seam
-  inside the generation pipeline, and `apps.machine.provision`, whose refusal now
-  names the missing sandbox instead of a flag. Layer 3 is unchanged: a narrowing
-  of layer 2 that additionally needs the mounted wire and `VENDO_BASE_URL`.
-
-  **`escalate` now lands somewhere.** It used to fall through to the conductor with
-  the plan discarded — which meant the person watched a skeleton, then watched an
-  unrelated app replace it. Two answers now, and the deployment's own shape picks
-  which:
-
-  - **A sandbox is configured** → the build runs. The same `create` a
-    server-needing ask has always taken, at the SAME app id, so the plan's skeleton
-    and the finished app share one stream and the outline becomes the app in place.
-  - **No sandbox** → a `failed` receipt whose `say` names the capability gap in the
-    person's own terms. Not a fall-through: the conductor is assembly too, so it
-    cannot serve what assembly just escalated, and trying would spend a whole
-    build's latency to arrive at a worse version of the screen already on screen.
-    The still-forming card is unmounted by the UI once the turn is over, so the
-    receipt is the last word rather than a permanent shimmer.
-
-  **The build anchors on the escalated plan.** `AppsRuntime.create` takes an
-  additive `plan?: string` — the ask still travels verbatim and the plan rides
-  beside it as the brief, so the brain builds the outline the person is watching
-  rather than re-answering the ask from scratch. The plan is read back out of the
-  app's workspace through a new adapter slot, `AppsConfig.escalatedPlan`, filled by
-  composition for the same reason `AppsConfig.screen` is: `@vendoai/apps` holds no
-  workspace. Unfilled, the build plans from the ask exactly as before.
-
-  Additive surface: `AppsRuntime.machine.available()` (is a sandbox configured),
-  and `escalatedPlanPath(appId)` from `@vendoai/harnesses` so the writing and the
-  reading side cannot spell the plan's path two ways.
-
-  **Migration:** delete `apps: { experimentalScreenAgent: true }` — it is the
-  default now. Delete `apps: { experimentalMachines: true }` — if the deployment
-  already passes a `sandbox`, machines stay on with no further change; if it does
-  not, machines were never reachable anyway.
-
-- a004031: **BREAKING:** the `apps.fillConcurrency` config knob is removed —
-  `createVendo({ apps: { fillConcurrency } })`, `AppsConfig.fillConcurrency`,
-  and `ConductorOptions.fillConcurrency` are gone.
-
-  Nothing ever set it: not the umbrella's own composition, not a demo, not a
-  doc beyond the config listing, so every fill has always run at the built-in
-  default of 2 groups at a time and still does. `fillPlan`'s own `concurrency`
-  option (the internal dial the fill tests exercise) is unchanged; only the
-  never-wired public spelling is removed. A host that passes it will now get a
-  type error — delete the key, the behavior is identical.
-
-- fbf265b: One front door: `vendo_make` replaces `vendo_apps_create` and `vendo_apps_edit`,
-  and it hands back words instead of the app.
-
-  **Breaking.** `vendo_apps_create` and `vendo_apps_edit` no longer exist. In their
-  place is one tool with three parameters:
-
-  ```ts
-  {
-    request: string,   // the ask, in the calling agent's own words — required
-    app?: string,      // an existing AppId, to change that one specifically
-    context?: string,  // free-text background, for callers whose conversation we cannot see
-  }
-  ```
-
-  Two tools meant every calling agent — ours, a host's own AI SDK or Mastra agent,
-  an outside agent over MCP — had to decide "new or change?" before it could ask,
-  and get it right. That was never their decision: the seam knows whether an app
-  exists, and a caller that wants a specific one says so with `app`. `context`
-  exists because an outside agent's transcript is not ours to read; on our own
-  doors the runtime's transcript stays authoritative and `context` is supplemental.
-
-  **Also breaking: the tool returns a receipt, not the document.**
-
-  ```ts
-  interface MakeReceipt {
-    id: AppId;
-    title: string;
-    status: "ready" | "building" | "failed";
-    say: string; // ONE speakable line, consumer voice
-  }
-  ```
-
-  The old tools returned the entire `AppDocument` — the tree, the island sources,
-  the storage declarations, the machine reference. So a model was handed UI and
-  trusted not to describe it, retell it, or invent from it. A model handed a tree
-  eventually talks about the tree. Screens go server → slot; the agent only ever
-  gets words, and `say` is the line it can utter verbatim. `status: "building"` is
-  the honest answer while work continues.
-
-  Two things follow from the receipt, and both are improvements rather than
-  compromises. The automation card is now PUBLISHED by the apps runtime through the
-  existing view-stream seam instead of being reconstructed at the agent bridge out
-  of the edit tool's return value — one less part read by shape (01-core §16's own
-  anti-smuggling rule, which that reconstruction was the exception to). And
-  `instant()` now speaks the receipt's `say` rather than a canned "Updated.",
-  which fixes a real mis-speak: a rejected change comes back OK, so the canned line
-  claimed success for work that did not happen.
-
-  **Migrating.** If you call the tool by name from your own agent, rename it and
-  rename `prompt` → `request` and `appId` → `app`; drop `instruction` into
-  `request`. If you read fields off its result, read `id` and `title` off the
-  receipt and say `say`. If you had a policy rule or an override matching
-  `vendo_apps_create` / `vendo_apps_edit` / `vendo_apps_*` for the build tools,
-  match `vendo_make` — it deliberately sits OUTSIDE the `vendo_apps_` prefix,
-  because it is the front door rather than a member of the runtime's family. Core
-  exports `isVendoAppsTool(name)` for anything that needs to recognise both.
-
-  Everything else about the call is unchanged: risk grade `read` (actions inside
-  the screen are still graded and consented individually at call time), the view
-  channel, the build-failed banner, and the transcript's build card.
-
-- 8132329: A served app is reached through one checked door, and `experimentalServedApps` is
-  gone.
-
-  **The flip.** `open()` on a served (layer-3) app answered the OWNER with the
-  sandbox provider's raw public ingress URL, and only a non-owner with this
-  deployment's authenticated proxy URL. That owner URL is a bearer-by-obscurity
-  capability: it carries no per-request check, so it keeps working for anyone it
-  reaches — a shared screen, a copied link, a log line, a pasted bug report — and it
-  outlives the grant, the revoke, and the app. Every served app is now answered with
-  the proxy URL, which re-checks `can(viewer)` against live rows on every request
-  and wakes the machine only after that check passes. The provider-URL leg is
-  deleted, not left standing: there is no second way to reach a served app.
-
-  Theme parity is kept — the proxy forwards `?vendoTheme=` into the box, so a served
-  app renders in the host's brand exactly as before.
-
-  **BREAKING: `AppsConfig.experimentalServedApps` and `apps.experimentalServedApps`
-  are removed.** Layer 3 was never a capability a flag could grant on its own: it is
-  a narrowing of layer 2. Delete the option — a host that passes it now fails to
-  typecheck. `experimentalMachines` is unchanged and still required.
-
-  What gates a served app instead, all of it already load-bearing:
-
-  - **A machine to serve it.** `served` is derived as a narrowing of `box` in
-    `laneGates`, so no sandbox or no `experimentalMachines` means no served lane —
-    the relationship is the shape of the expression rather than two flags that have
-    to agree with each other at composition time.
-  - **A door to serve it through.** `laneGates` also requires `servedProxyPath`, so
-    a deployment whose wire is not mounted hears "this host cannot serve its own web
-    pages for an app" as a plain `<Cannot>` line in the plan, before a machine is
-    built and a surface flipped to something no caller can open. The umbrella fills
-    that seam from its own base path, so a `createVendo()` host has it already.
-  - **An absolute origin.** The proxy URL must be absolute for a caller that is not
-    already on this origin, so serving an app needs `VENDO_BASE_URL` — the same
-    variable machine provisioning already requires.
-  - **The surface flip's own two signals**, untouched: the plan asked to be served,
-    and the host itself fetched `GET /` and got a real page. A box that self-declares
-    a served surface on a layer-2 plan is still refused, loudly, and the tree keeps
-    serving.
-  - **Permission, first.** `edit()` on a served app no longer carries a flag
-    refusal; what comes first is `can(editor)`, and an already-provisioned machine is
-    never gated by the layer-2 flag — only new graduation and provisioning are.
-
-  Removed with it: `servedAppsDisabledError`, the `servedThroughProxy` predicate
-  (and the duplicate access read it did behind `open()`'s own check), the
-  `ServedSurface.enabled` mirror, and the composition-time
-  `experimentalServedApps requires experimentalMachines` refusal — six concepts out,
-  one expression in.
-
-- 38a840d: `vendo_make` has ONE engine. Assembly that produces no screen is the answer.
-
-  `ScreenOutcome.unavailable` used to fall through to the conductor, and so did an
-  unwired assembler, an assembler that threw, and an `assembled` that left no app
-  row behind. All four now end the ask with a FAILED `MakeReceipt` whose `say`
-  names what happened — the assembler's own `why` verbatim where there is one.
-
-  A quiet fall-through is how a composition bug ships: a deployment that forgot to
-  fill `apps.screen`, or whose assembler is broken, read all-green while every ask
-  was served by an engine nobody chose. It reads as broken now.
-
-  `escalate` is unchanged — it is a request for the builder, not the seam failing,
-  and a deployment with a sandbox still runs the build at the same app id.
-
-  **Migration**
-
-  - **`apps.screen` is required for `vendo_make`.** `createVendo()` fills it; a host
-    composing `@vendoai/apps` directly must pass a `ScreenAssembler` or `vendo_make`
-    will answer `status: "failed"` on every new-app request. `AppsRuntime.create`
-    and `AppsRuntime.edit` are unaffected and still generate.
-  - **`conductCreate`, `conductEdit`, `ConductedApp`, `ConductedResult` and
-    `ConductorOptions` are no longer exported from `@vendoai/apps`.** They were
-    public for "external bench harnesses"; a reverse-dependency walk found no
-    caller in this repo, the examples, the corpus harness or the docs. The pipeline
-    still runs inside `createApps()` — it just has no public surface to be extended
-    through.
-  - `generationPromptSections` (internal, `generation/contracts/sections.ts`) is
-    deleted: no caller, and a second unmaintained description of the v2 tree
-    contract is worse than none.
+## 0.8.0
 
 ### Minor Changes
+
+- 963d980: Agents can address a place on the page, and a slot tells the truth about what is in it.
+
+  An agent could make a person a screen, but never say WHERE it goes: a host wired
+  exactly one destination and everything landed there. Now a slot is something the
+  agent can name, the person can choose, and the page can be honest about.
+
+  **Placement is a row, not a string on the app document.** "Show this app in that
+  slot" moves off `doc.placements` — which is never read any more — and into real
+  rows in the generic collections: a pointer at `plc:<subject>:<slot>` naming who
+  holds the slot under which token (the single compare-and-swap arbitration
+  point), and a live row at `plcv:<subject>:<slot>:<token>` that exists only while
+  that placement holds it. That buys three things a document scan could not: a
+  slot can show a build that has not landed yet, a slot resolves in one query
+  instead of listing every app the person owns, and one app per slot is enforced
+  by the write instead of by whoever read last.
+
+  - `apps.place({ app, slot })` / `apps.unplace(…)` / `apps.placements({ slots })`
+    on the runtime, `POST /apps/:id/place`, `POST /apps/:id/unplace` and
+    `GET /apps/placements?slots=…` on the wire, `client.apps.place/unplace/
+placements` on the client.
+  - `place()` is one decision, not read-then-write: it compare-and-swaps on the
+    pointer's revision, the loser retries against the winner's row, and the
+    displaced app comes back as `evicted` so the surface can say what moved.
+  - `unplace()` and "clear this slot" only ever delete the token they named, so a
+    stale client can never evict the app that replaced it. Tokens are never
+    reused.
+  - Rows carry `refs.app_id`, and deleting an app sweeps them BY APP — so deleting
+    an app you share can no longer leave a permanent "didn't build" card standing
+    over somebody else's host markup.
+  - `GET /apps/placements` gates every entry on the same viewer check
+    `open`/`get`/`list` use; a slot the caller may no longer view reads as empty.
+    Slot ids are normalized identically on read and write, and percent-encoded per
+    item in the query, so an id containing a "," survives the round trip.
+  - `useSlotApp(slot)` now answers `{ appId, status }`, over ONE poller per client
+    shared by every mounted slot (it no longer takes `pollMs`).
+
+  **`vendo_make` takes one optional `slot`,** honoured on both engines the one
+  front door routes to. The slot is claimed at MINT — the instant the app id
+  exists, before a single token is generated — so the place the caller aimed at
+  shows the build forming instead of staying empty until it lands, and shows the
+  failure if it never does. An ask no engine landed writes the same terminal
+  tombstone a failed build writes, so a claimed slot turns into the honest failure
+  card the moment either engine gives up. A placement whose app no longer exists
+  renders as nothing placed, never a stuck failure card. On a CHANGE, `slot` is
+  refused by name: silently moving an existing app would evict whatever holds that
+  slot off the back of an edit nobody aimed there.
+
+  **Two new tools do the moving.** `vendo_apps_pin { app, slot }` puts an app the
+  user already has into a slot and reports what it replaced as `evicted`;
+  `vendo_apps_unpin { app, slot }` takes it out and leaves the app itself alone.
+  Both aim by the app's id OR the name the user said, and both are graded `write`
+  — a placement row is small and reversible.
+
+  Neither is offered to an unattended run, and neither is executable in one.
+  `PRESENCE_ONLY_TOOLS` (core) joins THE LAW's projection, and the guard's choke
+  point refuses a presence-only call outright — so a standing automation grant
+  that reaches `execute()` by name, without listing, can no longer rearrange a
+  page with nobody watching. Keyed on the name, not the grade, so policy rules and
+  consent cards still read an honest `write`. A slot-bearing `vendo_make` in an
+  unattended run still RUNS and simply drops the slot: placement is what needs a
+  person present, creation is not, and refusing the call would silently break the
+  automations that legitimately build screens.
+
+  **`McpDoorConfig.withholdTools`** names tools one door never offers, checked
+  BEFORE the `vendo_` prefix bypass and on BOTH legs of a mount — a turn-bearing
+  session used to be able to list and call a name the deployment said it never
+  offers. Curation, not security: a withheld name answers with the same in-band
+  not-found an unknown name gets.
+
+  **`VendoSlot` reads the placement's build status, not just its app id:**
+
+  - **building** — an EMPTY slot shows the skeleton it already uses, minus the
+    invitation, because there is nothing left to ask for. A slot carrying the
+    host's own markup KEEPS it until the build is ready: a working host component
+    never blanks into a skeleton for the length of a build.
+  - **failed** — the consumer sentence (never the wire's `reason`, which names
+    components and env vars and is written for whoever can fix the build), a "Try
+    again" that re-issues the ORIGINAL request when the failed record kept one,
+    and "Clear this slot". The failed card DOES replace the host's own children,
+    deliberately: a build that will never land should not hide behind markup that
+    looks fine.
+  - **ready** — unchanged, and now proven in a browser for both surface kinds.
+
+  **`AddToPicker` puts "Add to…" on a generated view's bar,** so a person can send
+  it to any slot the host has mounted instead of the one place a host wired. It
+  awaits `client.apps.place` before saying "Added to Hero", then announces the
+  placement so a mounted slot fills without waiting out its poll. It appears in
+  both places a generated view has a bar — the app embed and the IN-THREAD card,
+  which is the surface a person actually reaches a view from in every host that
+  renders its conversation through `VendoOverlay`. The affordance stays a
+  one-click "Pin to dashboard" while the origin knows a single destination — a
+  menu of one is not a choice — and becomes the picker the moment it knows more.
+
+  - `noteSlot` / `knownSlots` (new, re-exported from `vendoai/react`): the picker's
+    destinations. A slot id is the host's markup and no Vendo record carries it, so
+    a mounted `VendoSlot` recording itself in origin-scoped `localStorage` is the
+    only way a surface on another page can offer that slot at all. A slot the host
+    filled with an explicit `appId`/`pin` stays out of the list — a placement
+    written into it would never be read.
+
+  **Pinning is Vendo's write now:** with `pinSlot` set, the pin affordance calls
+  `apps.place` itself. `onPin` remains as an optional side-effect seam, so a host
+  no longer needs a pin route of its own (Maple's is deleted).
 
 - b022eb3: Lift the turn loop out of `createAgent`, and expose the cross-block seams behind
   `/internal`.
@@ -322,6 +192,38 @@ onAsk)`. Both are CURRIED so the ai-SDK still invokes the body directly: an
     exactly like a deletion and the entry was dropped. Now a path that still EXISTS
     but will not read keeps its stored entry and says so loudly; only a confirmed
     absence is a deletion. Per path, so the rest of the commit still lands.
+
+- a004031: **BREAKING:** the bench host surface is removed from `@vendoai/apps` —
+  `loadDemoBankCatalog`, `loadDemoBankTools`, and `demoBankToolShapes` are no
+  longer exported. The `HostToolInfo` type stays.
+
+  The W1-bench experiments those loaders served have concluded (verdicts:
+  inline refs ADOPT; builder-calls, fetch-then-generate, CFG-JSX DEFER — the
+  ledger lives in the private repo), and the loaders themselves could never have
+  worked for an npm consumer: they resolved `examples/demo-bank/.vendo/*.json`
+  relative to this repo's layout, so every call outside the monorepo threw. The
+  one real caller (an internal bench harness, since moved out of this repo) now
+  loads the catalog and tools locally.
+
+- 21c8b10: **BREAKING:** the BYO schedule engine is gone — a machine app's `vendo.json`
+  schedules are document triggers now, fired by the automations engine.
+
+  `AppsRuntime.schedules` (its `tick`, `sync` and `report`) and the
+  `SCHEDULE_STATE_COLLECTION` export are removed. `machine.syncManifest(appId, ctx)`
+  folds a woken box's declared schedules into the app's document triggers and
+  `machine.report()` says what happened, so last-fired state lives on the engine's
+  per-trigger cursor instead of in a second `vendo_app_schedules` cache that a tick
+  had to read to decide due-ness. A host that called `runtime.schedules.tick()` from
+  its cron should call the one `/api/vendo/tick` door instead — it already drove the
+  automation schedules, and it now drives these.
+
+  Authoring changed in the same direction: the planner is never offered a tool whose
+  unattended use is irreversible (the predicate is core's own
+  `withheldFromUnattended`, the same one the run's projection uses, so authoring and
+  firing cannot disagree), and an ask that needs one comes back as a sentence naming
+  why and offering the away-safe half — read the live data, publish the result, and
+  let the person do the irreversible part themselves. `planAutomation` is exported
+  so a harness can author a plan without booting the generation pipeline.
 
 - 1bb535b: The checks floor moves to the paint seam, and `instant()` is removed.
 
@@ -479,6 +381,151 @@ average, min, max, difference, days_until, group_by`. `avg` is removed from
 
   `WIRE_RESHAPE_OPS`, `isWireReshapeOp`, `reduceNumeric` and
   `AGGREGATE_DESCRIPTORS` are new exports; `EXPR_CALLS` is unchanged.
+
+- 56e0cc3: **BREAKING:** escalation gets its receiving end, and both experimental flags are
+  deleted. `apps.experimentalScreenAgent` and `apps.experimentalMachines` are gone
+  from `createVendo()`; passing either is now a type error.
+
+  **The screen agent is THE engine.** Every `vendo_make` ask starts in the cheap
+  assembly loop on every deployment. There is no flag and no coin-flip. The
+  conductor is unchanged and is still what an `unavailable` answer, a broken
+  assembler, or an `assembled` that left no app row falls through to.
+
+  **Machine-backed execution is gated by the sandbox adapter, and nothing else.**
+  Configure `createVendo({ sandbox })` and layer-2 boxes are reachable; leave it
+  out and they are not. Presence IS the deliberate opt-in — no capability boolean
+  beside it. Every read site moved: the box lane in `laneGates`, the box seam
+  inside the generation pipeline, and `apps.machine.provision`, whose refusal now
+  names the missing sandbox instead of a flag. Layer 3 is unchanged: a narrowing
+  of layer 2 that additionally needs the mounted wire and `VENDO_BASE_URL`.
+
+  **`escalate` now lands somewhere.** It used to fall through to the conductor with
+  the plan discarded — which meant the person watched a skeleton, then watched an
+  unrelated app replace it. Two answers now, and the deployment's own shape picks
+  which:
+
+  - **A sandbox is configured** → the build runs. The same `create` a
+    server-needing ask has always taken, at the SAME app id, so the plan's skeleton
+    and the finished app share one stream and the outline becomes the app in place.
+  - **No sandbox** → a `failed` receipt whose `say` names the capability gap in the
+    person's own terms. Not a fall-through: the conductor is assembly too, so it
+    cannot serve what assembly just escalated, and trying would spend a whole
+    build's latency to arrive at a worse version of the screen already on screen.
+    The still-forming card is unmounted by the UI once the turn is over, so the
+    receipt is the last word rather than a permanent shimmer.
+
+  **The build anchors on the escalated plan.** `AppsRuntime.create` takes an
+  additive `plan?: string` — the ask still travels verbatim and the plan rides
+  beside it as the brief, so the brain builds the outline the person is watching
+  rather than re-answering the ask from scratch. The plan is read back out of the
+  app's workspace through a new adapter slot, `AppsConfig.escalatedPlan`, filled by
+  composition for the same reason `AppsConfig.screen` is: `@vendoai/apps` holds no
+  workspace. Unfilled, the build plans from the ask exactly as before.
+
+  Additive surface: `AppsRuntime.machine.available()` (is a sandbox configured),
+  and `escalatedPlanPath(appId)` from `@vendoai/harnesses` so the writing and the
+  reading side cannot spell the plan's path two ways.
+
+  **Migration:** delete `apps: { experimentalScreenAgent: true }` — it is the
+  default now. Delete `apps: { experimentalMachines: true }` — if the deployment
+  already passes a `sandbox`, machines stay on with no further change; if it does
+  not, machines were never reachable anyway.
+
+- a004031: **BREAKING:** the `apps.fillConcurrency` config knob is removed —
+  `createVendo({ apps: { fillConcurrency } })`, `AppsConfig.fillConcurrency`,
+  and `ConductorOptions.fillConcurrency` are gone.
+
+  Nothing ever set it: not the umbrella's own composition, not a demo, not a
+  doc beyond the config listing, so every fill has always run at the built-in
+  default of 2 groups at a time and still does. `fillPlan`'s own `concurrency`
+  option (the internal dial the fill tests exercise) is unchanged; only the
+  never-wired public spelling is removed. A host that passes it will now get a
+  type error — delete the key, the behavior is identical.
+
+- fbf265b: One front door: `vendo_make` replaces `vendo_apps_create` and `vendo_apps_edit`,
+  and it hands back words instead of the app.
+
+  **Breaking.** `vendo_apps_create` and `vendo_apps_edit` no longer exist. In their
+  place is one tool with three parameters:
+
+  ```ts
+  {
+    request: string,   // the ask, in the calling agent's own words — required
+    app?: string,      // an existing AppId, to change that one specifically
+    context?: string,  // free-text background, for callers whose conversation we cannot see
+  }
+  ```
+
+  Two tools meant every calling agent — ours, a host's own AI SDK or Mastra agent,
+  an outside agent over MCP — had to decide "new or change?" before it could ask,
+  and get it right. That was never their decision: the seam knows whether an app
+  exists, and a caller that wants a specific one says so with `app`. `context`
+  exists because an outside agent's transcript is not ours to read; on our own
+  doors the runtime's transcript stays authoritative and `context` is supplemental.
+
+  **Also breaking: the tool returns a receipt, not the document.**
+
+  ```ts
+  interface MakeReceipt {
+    id: AppId;
+    title: string;
+    status: "ready" | "building" | "failed";
+    say: string; // ONE speakable line, consumer voice
+  }
+  ```
+
+  The old tools returned the entire `AppDocument` — the tree, the island sources,
+  the storage declarations, the machine reference. So a model was handed UI and
+  trusted not to describe it, retell it, or invent from it. A model handed a tree
+  eventually talks about the tree. Screens go server → slot; the agent only ever
+  gets words, and `say` is the line it can utter verbatim. `status: "building"` is
+  the honest answer while work continues.
+
+  Two things follow from the receipt, and both are improvements rather than
+  compromises. The automation card is now PUBLISHED by the apps runtime through the
+  existing view-stream seam instead of being reconstructed at the agent bridge out
+  of the edit tool's return value — one less part read by shape (01-core §16's own
+  anti-smuggling rule, which that reconstruction was the exception to). And
+  `instant()` now speaks the receipt's `say` rather than a canned "Updated.",
+  which fixes a real mis-speak: a rejected change comes back OK, so the canned line
+  claimed success for work that did not happen.
+
+  **Migrating.** If you call the tool by name from your own agent, rename it and
+  rename `prompt` → `request` and `appId` → `app`; drop `instruction` into
+  `request`. If you read fields off its result, read `id` and `title` off the
+  receipt and say `say`. If you had a policy rule or an override matching
+  `vendo_apps_create` / `vendo_apps_edit` / `vendo_apps_*` for the build tools,
+  match `vendo_make` — it deliberately sits OUTSIDE the `vendo_apps_` prefix,
+  because it is the front door rather than a member of the runtime's family. Core
+  exports `isVendoAppsTool(name)` for anything that needs to recognise both.
+
+  Everything else about the call is unchanged: risk grade `read` (actions inside
+  the screen are still graded and consented individually at call time), the view
+  channel, the build-failed banner, and the transcript's build card.
+
+- ce98c54: One validation floor at every door, and a host's declared tool schemas finally
+  reach the screen type check.
+
+  Four doors let an app reach a screen — the paint seam, `validate({ document })`,
+  `validate({ appId })` and the edit path — and each ran a different subset of the
+  checks, so an app refused at one shipped through another. An island that crashes
+  the moment it renders was caught at exactly one of them. All four now compose
+  the same `floorChecks`: the fact checks, the compiler static half, and the island
+  gates (admission plus the smoke render). The AI reviewer has not moved — it still
+  runs only where it ran before, at `validate`, because it spends a model call.
+
+  The island gates move from `generation/validation/` into `checking/`, where the
+  floor that runs them lives; the generation pipeline imports them from there. On
+  the paint hot path a repeated save costs ~3ms more, because the smoke render is
+  keyed on island source and an unchanged island never renders twice.
+
+  `screenTypings` has always preferred a tool's DECLARED `outputSchema` over the
+  shape sampled from one live call, and nothing ever populated it. It does now, so
+  a screen is type-checked against the host's own contract. Sampling erases what a
+  declaration keeps: an enum field samples as a bare `string`, so a host component
+  whose prop takes that enum could never be satisfied by any tool — demo-bank's
+  `MapleSpendingDonut` against `host_getSpendingInsights` was blocked at the checks
+  floor on a screen that was correct.
 
 - d0c3cc9: Risk grading stops guessing from tool names, and a tool nobody has graded now
   says so out loud instead of running.
@@ -662,6 +709,55 @@ SandboxMachine` casts in the e2b and Vendo Cloud adapters and on the fake, and
   Edits go through the conductor as before — routing them needs the app's checkout
   projection, which is not this change.
 
+- 8132329: A served app is reached through one checked door, and `experimentalServedApps` is
+  gone.
+
+  **The flip.** `open()` on a served (layer-3) app answered the OWNER with the
+  sandbox provider's raw public ingress URL, and only a non-owner with this
+  deployment's authenticated proxy URL. That owner URL is a bearer-by-obscurity
+  capability: it carries no per-request check, so it keeps working for anyone it
+  reaches — a shared screen, a copied link, a log line, a pasted bug report — and it
+  outlives the grant, the revoke, and the app. Every served app is now answered with
+  the proxy URL, which re-checks `can(viewer)` against live rows on every request
+  and wakes the machine only after that check passes. The provider-URL leg is
+  deleted, not left standing: there is no second way to reach a served app.
+
+  Theme parity is kept — the proxy forwards `?vendoTheme=` into the box, so a served
+  app renders in the host's brand exactly as before.
+
+  **BREAKING: `AppsConfig.experimentalServedApps` and `apps.experimentalServedApps`
+  are removed.** Layer 3 was never a capability a flag could grant on its own: it is
+  a narrowing of layer 2. Delete the option — a host that passes it now fails to
+  typecheck. `experimentalMachines` is unchanged and still required.
+
+  What gates a served app instead, all of it already load-bearing:
+
+  - **A machine to serve it.** `served` is derived as a narrowing of `box` in
+    `laneGates`, so no sandbox or no `experimentalMachines` means no served lane —
+    the relationship is the shape of the expression rather than two flags that have
+    to agree with each other at composition time.
+  - **A door to serve it through.** `laneGates` also requires `servedProxyPath`, so
+    a deployment whose wire is not mounted hears "this host cannot serve its own web
+    pages for an app" as a plain `<Cannot>` line in the plan, before a machine is
+    built and a surface flipped to something no caller can open. The umbrella fills
+    that seam from its own base path, so a `createVendo()` host has it already.
+  - **An absolute origin.** The proxy URL must be absolute for a caller that is not
+    already on this origin, so serving an app needs `VENDO_BASE_URL` — the same
+    variable machine provisioning already requires.
+  - **The surface flip's own two signals**, untouched: the plan asked to be served,
+    and the host itself fetched `GET /` and got a real page. A box that self-declares
+    a served surface on a layer-2 plan is still refused, loudly, and the tree keeps
+    serving.
+  - **Permission, first.** `edit()` on a served app no longer carries a flag
+    refusal; what comes first is `can(editor)`, and an already-provisioned machine is
+    never gated by the layer-2 flag — only new graduation and provisioning are.
+
+  Removed with it: `servedAppsDisabledError`, the `servedThroughProxy` predicate
+  (and the duplicate access read it did behind `open()`'s own check), the
+  `ServedSurface.enabled` mirror, and the composition-time
+  `experimentalServedApps requires experimentalMachines` refusal — six concepts out,
+  one expression in.
+
 - 14e8246: A team-shared file now reaches the `claudeCode()` sandbox — and its edits come home.
 
   Orgs, teams and sharing shipped, and the sandbox harness never learned. On
@@ -697,6 +793,57 @@ SandboxMachine` casts in the e2b and Vendo Cloud adapters and on the fake, and
   For hosts this is additive: `WorkspaceFs` is produced by
   `workspaceStore(store).open(...)` and consumed, never implemented — the new
   method only widens what you can call on the workspace you already hold.
+
+- 6a3d9e3: refactor(apps)!: the brain dies — one router, one builder, zero middlemen
+
+  `AppsRuntime.create` and `AppsRuntime.edit` no longer run a generation pipeline.
+  They run the SAME engine `vendo_make` runs: the screen assembler in the
+  `apps.screen` slot. "The seam routes, not the caller" was never a `vendo_make`
+  property — it is the runtime's, and now every caller behind it (the HTTP wire,
+  the React client, a seed script) gets it.
+
+  - **`create`** asks the assembler first. `assembled` → the row it stored is the
+    answer. `escalate` → the plan it wrote is the build's whole brief.
+    `unavailable`, a throw, or an unfilled slot → an honest failure that says so.
+  - **`edit`** is the assembler opening the app's own `app.vendo`, rewriting it and
+    saving it; the save lands through `AppsRuntime.authored`, so the store write,
+    the checks floor and the paint are the shipped ones. An `escalate` on an
+    existing app is the escalation ladder — an automation, or a box.
+  - **The machine lane briefs itself from the plan.** `<Server kind="steps" |
+"agentic" | "box" [served]>` is the escalating agent's own declaration and
+    nothing re-derives it; a plan that escalated with no `<Server>` defaults to
+    `kind="box"`, because the escalation is itself the claim that assembly cannot
+    serve the ask. The in-box task carries the plan text verbatim, the person's ask
+    verbatim, and the app's memory.
+
+  ## Breaking
+
+  - **`apps.fill` (`{ model }`) is gone**, and so is the fast fill tier it named:
+    the group fill workers it pointed at do not exist any more. `createVendo`'s
+    `models.fill` seat (and its deprecated `paint.model` predecessor) are still
+    accepted and validated, and are now **ignored** — nothing reads them — so a host
+    config does not have to change in the same release. **Migration:** delete
+    `apps: { fill: … }` from a direct `createApps(...)` composition, and drop
+    `models.fill` / `paint` from `createVendo(...)` at your convenience. Nothing
+    replaces them: there is one generation seat (`apps.model` / `models.default`),
+    plus whatever the assembler's own harness uses.
+  - **`apps.screen` is required for `create` and `edit`, not only for `vendo_make`.**
+    A deployment that composes `@vendoai/apps` without a `ScreenAssembler` now fails
+    those doors loudly instead of quietly serving them from a second engine.
+    `createVendo` fills the slot for you.
+  - `UNSTORED_APP_ID` is no longer exported from `@vendoai/apps`.
+  - An app row's `session` (the brain's transcript) is no longer written or read.
+    Existing rows are unaffected until their next write, which drops it. An app's
+    memory (`remember`) is what carries intent forward.
+
+  ## Deleted
+
+  `generation/conductor.ts`, `generation/brain.ts`, `generation/fill.ts`,
+  `generation/prompts/`, `generation/contracts/sections.ts`, the island lane and
+  `laneGates` in `generation/lanes.ts`, `growSkeleton` / `spliceFragment` /
+  `Skeleton.slots`, `FIX_ROUNDS`, the commit-gate lead paragraphs, and the session
+  plumbing. `skeletonFromPlan` stays — it is the live plan-paint path at the render
+  seam.
 
 - fbf265b: A turn, a beat and a screen each say what they are — plus an app's code moves
   into its row.
@@ -747,6 +894,36 @@ SandboxMachine` casts in the e2b and Vendo Cloud adapters and on the fake, and
   All additive for hosts: every new field is optional, every schema stays
   `.passthrough()`, and rows written before this keep parsing unchanged.
 
+- 38a840d: `vendo_make` has ONE engine. Assembly that produces no screen is the answer.
+
+  `ScreenOutcome.unavailable` used to fall through to the conductor, and so did an
+  unwired assembler, an assembler that threw, and an `assembled` that left no app
+  row behind. All four now end the ask with a FAILED `MakeReceipt` whose `say`
+  names what happened — the assembler's own `why` verbatim where there is one.
+
+  A quiet fall-through is how a composition bug ships: a deployment that forgot to
+  fill `apps.screen`, or whose assembler is broken, read all-green while every ask
+  was served by an engine nobody chose. It reads as broken now.
+
+  `escalate` is unchanged — it is a request for the builder, not the seam failing,
+  and a deployment with a sandbox still runs the build at the same app id.
+
+  **Migration**
+
+  - **`apps.screen` is required for `vendo_make`.** `createVendo()` fills it; a host
+    composing `@vendoai/apps` directly must pass a `ScreenAssembler` or `vendo_make`
+    will answer `status: "failed"` on every new-app request. `AppsRuntime.create`
+    and `AppsRuntime.edit` are unaffected and still generate.
+  - **`conductCreate`, `conductEdit`, `ConductedApp`, `ConductedResult` and
+    `ConductorOptions` are no longer exported from `@vendoai/apps`.** They were
+    public for "external bench harnesses"; a reverse-dependency walk found no
+    caller in this repo, the examples, the corpus harness or the docs. The pipeline
+    still runs inside `createApps()` — it just has no public surface to be extended
+    through.
+  - `generationPromptSections` (internal, `generation/contracts/sections.ts`) is
+    deleted: no caller, and a second unmaintained description of the v2 tree
+    contract is worse than none.
+
 - a0dbfc6: The agent can now be told who the user is and what they are looking at.
 
   Two seams, both optional, both merged into one `[Situation]` block on every
@@ -777,7 +954,58 @@ SandboxMachine` casts in the e2b and Vendo Cloud adapters and on the fake, and
 arguments, but got 0`. Rename the call and you are done — nothing else about the
   provider value changed.
 
+- 39a7ecc: **Both writers get a design brief.** The screen agent and the `claudeCode()`
+  builder could name every component in the catalog and had nothing to say about
+  WHICH one, HOW MANY, or WHERE — so a screen was whatever the model reached for
+  first.
+
+  **The design law ships inside the skill.** `buildingAppsSkill` gains a
+  `## What a good screen looks like` section, written in `.vendo` terms rather than
+  CSS, because every one of these is a choice made in the plan: lead with the
+  answer, fewer parts and better ones, never say the same thing twice, bind the
+  rows as they come, group by what the person came to do, `col` is width and never
+  slicing, pick the chart by the shape of the data, a hole is a `<Cannot>`, the
+  words are the host's own, and an `<Island>` styles with the theme's CSS variables
+  and nothing else. One text, in the skill BOTH writers read, so `claudeCode()` and
+  the screen agent cannot be taught different design.
+
+  **The host's theme and design rules now reach both writers.** `apps.designRules`
+  and the theme tokens are documented seams a host sets and expects to be obeyed.
+  They reached the fill worker of the retired conductor and nothing else — so on
+  both live write paths those two config keys silently did nothing. The new
+  `hostDesignBrief` (exported from `@vendoai/apps`) renders that pair ONCE, and
+  composition hands the same string to both seams: the screen agent's brief,
+  through a `design` slot beside `system` on `ScreenInput` and
+  `ScreenAssemblerDeps`, and the composed prompt `claudeCode()` thinks with. The
+  slot is a thunk, not a value, so a rules change applies to the next screen rather
+  than the next boot.
+
+  Deliberately NOT inside `claudeCode()`: that harness thinks with `turn.system`
+  whole and alone and appends nothing after the host's prompt seam, so the prompt
+  seam is the only honest place for them.
+
 ### Patch Changes
+
+- 2e792a1: Advisory compile issues are advisory at every validation door.
+
+  #906 put ONE floor behind the four doors an app reaches a screen through, but the
+  compile issues in FRONT of that floor were still classified twice. The paint seam
+  refuses only what did not parse — `compile-failed`, `missing-app` — while
+  `validateCompiledCreate` turned EVERY wire issue into a block.
+
+  They disagreed on `wire-id-ignored`, which is not a code a model has to invent:
+  `checkoutApp` writes an app's own `app.vendo` with
+  `printWire(…, { includeIds: true })`, so every element of a checked-out app carries
+  an id the compiler then ignores. The seam painted those bytes and
+  `validate({ document })` refused them — the door the assembly loop is told to call
+  "the floor" answering "does not pass" over our own printer's output. PR #913
+  measured it and deliberately left it.
+
+  Core now names the one classification the doors share
+  (`isAdvisoryWireIssue` / `WIRE_ADVISORY_ISSUE_CODES`), and the create and edit
+  validators read it instead of blocking on every issue. Nothing else moves: an
+  issue that drops something the author actually wrote still blocks everywhere, and
+  the paint seam's own parse gate is untouched.
 
 - 3f98372: **Apps remember what they were asked for.** A screen or build run is stateless,
   so the ARTIFACT now carries its own context: `AppDocument` gains an additive
@@ -882,6 +1110,8 @@ arguments, but got 0`. Rename the call and you are done — nothing else about t
   investigation: the sign was always the data's own, never a hint any code
   change could touch, but the model had no explicit instruction ruling out
   filtering, `Math.abs()`, or a hand-rolled subtraction instead of trusting it.
+- Updated dependencies [2e792a1]
+- Updated dependencies [963d980]
 - Updated dependencies [3f98372]
 - Updated dependencies [21c8b10]
 - Updated dependencies [1bb535b]
@@ -900,10 +1130,11 @@ arguments, but got 0`. Rename the call and you are done — nothing else about t
 - Updated dependencies [798b618]
 - Updated dependencies [10a2b44]
 - Updated dependencies [98eba22]
+- Updated dependencies [f7c6da2]
 - Updated dependencies [14e8246]
 - Updated dependencies [fbf265b]
 - Updated dependencies [38a840d]
-  - @vendoai/core@1.0.0
+  - @vendoai/core@0.8.0
 
 ## 0.7.0
 

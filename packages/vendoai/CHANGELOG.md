@@ -1,9 +1,10 @@
 # vendoai
 
-## 1.0.0
+## 0.8.0
 
 ### Patch Changes
 
+- Updated dependencies [963d980]
 - Updated dependencies [10a2b44]
 - Updated dependencies [1572060]
 - Updated dependencies [3f98372]
@@ -21,6 +22,8 @@
 - Updated dependencies [215bfcc]
 - Updated dependencies [6c1273a]
 - Updated dependencies [fbf265b]
+- Updated dependencies [f7c6da2]
+- Updated dependencies [dd1042c]
 - Updated dependencies [2ed91b0]
 - Updated dependencies [d0c3cc9]
 - Updated dependencies [0197470]
@@ -28,10 +31,13 @@
 - Updated dependencies [798b618]
 - Updated dependencies [8132329]
 - Updated dependencies [98eba22]
+- Updated dependencies [f7c6da2]
+- Updated dependencies [6a3d9e3]
 - Updated dependencies [b576ab9]
 - Updated dependencies [a0dbfc6]
 - Updated dependencies [a004031]
-  - @vendoai/vendo@1.0.0
+- Updated dependencies [39a7ecc]
+  - @vendoai/vendo@0.8.0
 
 ## 0.7.0
 

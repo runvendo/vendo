@@ -1,6 +1,6 @@
 # @vendoai/kit
 
-## 1.0.0
+## 0.8.0
 
 ### Minor Changes
 
@@ -36,6 +36,8 @@
 
 ### Patch Changes
 
+- Updated dependencies [2e792a1]
+- Updated dependencies [963d980]
 - Updated dependencies [4b6e362]
 - Updated dependencies [3f98372]
 - Updated dependencies [21c8b10]
@@ -54,15 +56,17 @@
 - Updated dependencies [6eb8a04]
 - Updated dependencies [fbf265b]
 - Updated dependencies [2ed91b0]
+- Updated dependencies [1deaa5c]
 - Updated dependencies [e6aaa7a]
 - Updated dependencies [d0c3cc9]
 - Updated dependencies [798b618]
 - Updated dependencies [10a2b44]
 - Updated dependencies [98eba22]
+- Updated dependencies [f7c6da2]
 - Updated dependencies [14e8246]
 - Updated dependencies [fbf265b]
 - Updated dependencies [a004031]
 - Updated dependencies [38a840d]
 - Updated dependencies [a0dbfc6]
-  - @vendoai/ui@1.0.0
-  - @vendoai/core@1.0.0
+  - @vendoai/core@0.8.0
+  - @vendoai/ui@0.8.0

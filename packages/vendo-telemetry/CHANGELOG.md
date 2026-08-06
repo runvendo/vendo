@@ -1,8 +1,8 @@
 # @vendoai/telemetry
 
-## 1.0.0
+## 0.4.0
 
-### Major Changes
+### Minor Changes
 
 - a004031: **BREAKING:** drop the `extract_completed` event and five cloud prop keys
   (`connectionsConfigured`, `toolkitsEnabled`, `servedApps`,

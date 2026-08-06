@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/guard",
-  "version": "1.0.0",
+  "version": "0.8.0",
   "description": "Vendo's policy core at one choke point: guard.bind, approvals, grants, audit, Vendo Auto judge, breakers.",
   "keywords": [
     "ai",
