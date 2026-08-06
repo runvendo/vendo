@@ -8,7 +8,7 @@
     "build": "turbo run build",
     "test": "VITEST_MIN_FORKS=1 VITEST_MAX_FORKS=2 VITEST_MIN_THREADS=1 VITEST_MAX_THREADS=2 turbo run test test:ui --continue --concurrency=4",
     "test:affected": "TURBO_SCM_BASE=origin/main VITEST_MIN_FORKS=1 VITEST_MAX_FORKS=2 VITEST_MIN_THREADS=1 VITEST_MAX_THREADS=2 turbo run test test:ui --affected --continue --concurrency=4",
-    "conformance": "turbo run conformance --filter=@vendoai/core --filter=@vendoai/store --filter=@vendoai/agent --filter=@vendoai/vendo",
+    "conformance": "turbo run conformance --filter=@vendoai/core --filter=@vendoai/store --filter=@vendoai/vendo",
     "typecheck": "turbo run typecheck",
     "lint": "node scripts/dependency-guard.mjs && node scripts/portability-gate.mjs && turbo run lint",
     "deps:guard": "node scripts/dependency-guard.mjs",

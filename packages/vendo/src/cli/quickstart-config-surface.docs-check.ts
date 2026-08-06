@@ -35,7 +35,7 @@ import type {
   Harness, HostOAuthAdapter, Json, KnowledgeAdapter, OverridesFile,
   PolicyFile, Principal, RunContext, RunId,
   SandboxAdapter, SecretsProvider, Skill, ToolDefinition, ToolRegistry,
-  VendoAgent, VendoGuard, VendoStore, VendoTheme,
+  VendoGuard, VendoStore, VendoTheme,
 } from "../index.js";
 import type {
   AppsConfig, ComposedAgent, ConnectionsService, GuardRules, HarnessTurns,
@@ -106,7 +106,6 @@ export interface CreateVendoConfig {
 export interface Vendo {
   handler: (req: Request) => Promise<Response>;
   emit(event: string, payload: Json, principal: Principal): Promise<RunId[]>;
-  agent: VendoAgent;
   guard: VendoGuard;
   guardedTools: ToolRegistry; // the guard-bound registry the vendo_* tool pack executes through
   apps: AppsRuntime;

@@ -114,22 +114,20 @@ async function compose(overrides: Partial<CreateVendoConfig> = {}): Promise<Comp
 }
 
 describe("D4 — list/get/delete come off the harness door, unchanged", () => {
-  it("answers what the agent door answers, over the same store", async () => {
+  it("answers the same over the wire and off the door's own handle", async () => {
     const { vendo, chat } = await compose();
     const turn = await chat("hello", "thr_parity_door");
     expect(turn.status).toBe(200);
 
-    // The wire route (which now reads `deps.harness.threads`) and BOTH doors'
-    // own handles agree — the survivors moved, the answers did not.
+    // The wire route (which reads `deps.harness.threads`) and the door's own
+    // handle agree — the survivors moved, the answers did not.
     const listed = await (await vendo.handler(new Request("https://host.test/api/vendo/threads"))).json();
-    expect(listed).toEqual(await vendo.agent.threads.list(ctx()));
     expect(listed).toEqual(await vendo.harness.threads.list(ctx()));
     expect((listed as Array<{ id: string }>).map((entry) => entry.id)).toEqual(["thr_parity_door"]);
 
     const fetched = await (await vendo.handler(
       new Request("https://host.test/api/vendo/threads/thr_parity_door"),
     )).json();
-    expect(fetched).toEqual(await vendo.agent.threads.get("thr_parity_door", ctx()));
     expect(fetched).toEqual(await vendo.harness.threads.get("thr_parity_door", ctx()));
 
     const deleted = await vendo.handler(new Request("https://host.test/api/vendo/threads/thr_parity_door", {
@@ -137,8 +135,8 @@ describe("D4 — list/get/delete come off the harness door, unchanged", () => {
       headers: { "content-type": "application/json" },
     }));
     expect(deleted.status).toBe(200);
-    // Gone for BOTH readers: one row, one repository.
-    expect(await vendo.agent.threads.get("thr_parity_door", ctx())).toBeNull();
+    // Gone for both readers: one row, one repository.
+    expect(await vendo.harness.threads.get("thr_parity_door", ctx())).toBeNull();
     expect(await vendo.harness.threads.list(ctx())).toEqual([]);
   });
 });

@@ -50,8 +50,7 @@ const reporting = defineHarness({
 /** A store the way a HOST supplies one: the whole public `VendoStore` surface,
  *  delegating to a real store so records and blobs genuinely work — but not the
  *  handle `@vendoai/store` minted, so it has no SQL tables and no StoreOps.
- *  `storeServesHarnessTurns` answers false for it, and chat on such a deployment
- *  keeps the legacy path. */
+ *  `storeServesHarnessTurns` answers false for it. */
 function nonSqlStore(backing: VendoStore): VendoStore {
   return {
     records: (collection) => backing.records(collection),
@@ -107,10 +106,10 @@ describe("vendo_delegate rides the composed away runner", () => {
   });
 
   /** The runner is a harness turn, so it needs what a harness turn needs. A host
-   *  store that serves neither Vendo's tables nor the operation contract keeps
-   *  the legacy chat path — and used to get a delegate tool that threw on its
-   *  first line, which the pack rendered as "the delegated run could not be
-   *  completed": a sentence that sends the host hunting a bug in their task. */
+   *  store that serves neither Vendo's tables nor the operation contract used to
+   *  get a delegate tool that threw on its first line, which the pack rendered as
+   *  "the delegated run could not be completed": a sentence that sends the host
+   *  hunting a bug in their task. */
   it("answers with the real reason on a store that cannot serve a harness turn", async () => {
     const { tools } = await compose(nonSqlStore);
     const delegate = tools[VENDO_DELEGATE_TOOL];

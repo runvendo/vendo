@@ -30,7 +30,7 @@ import {
   type ToolRegistry,
   type WorkspaceFs,
 } from "@vendoai/core";
-import { ThreadRepository, type Thread, type ThreadSummary } from "@vendoai/agent/internal";
+import { ThreadRepository, type Thread, type ThreadSummary } from "./threads.js";
 import type { VendoGuard } from "@vendoai/guard";
 import { harnessStateStore, threadMessageStore, workspaceStore, type VendoStore } from "@vendoai/store";
 import {

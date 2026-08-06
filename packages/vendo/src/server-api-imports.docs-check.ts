@@ -15,7 +15,7 @@
 import type {
   ActAs, ActionsRegistry, AppsRuntime, AutomationsEngine, ComponentCatalog,
   ComponentRegistry, Connector, HostOAuthAdapter, Json, Judge, PolicyConfig,
-  Principal, RunId, SandboxAdapter, SecretsProvider, ToolRegistry, VendoAgent,
+  Principal, RunId, SandboxAdapter, SecretsProvider, ToolRegistry,
   VendoGuard, VendoStore,
 } from "./index.js";
 import type {
@@ -26,7 +26,7 @@ import type {
 export type ServerApiPageImports = [
   ActAs, ActionsRegistry, AppsRuntime, AutomationsEngine, ComponentCatalog,
   ComponentRegistry, Connector, HostOAuthAdapter, Json, Judge, PolicyConfig,
-  Principal, RunId, SandboxAdapter, SecretsProvider, ToolRegistry, VendoAgent,
+  Principal, RunId, SandboxAdapter, SecretsProvider, ToolRegistry,
   VendoGuard, VendoStore,
   ConnectionsService, HostAuthPreset, ModelsConfig, ServerActionHandler,
 ];

@@ -236,53 +236,6 @@ describe("the turn id (contract §3.5)", () => {
     expect(rows.filter((row) => row.turnId !== turnId)).toEqual([]);
   }, 60_000);
 
-  it("stamps the turn on the AGENT route too — the BYO/no-SQL path was turn-less", async () => {
-    // The other tests here prove the HARNESS route, which mints in the harness
-    // runtime. `mintTurnId` had exactly one call site, so every deployment whose
-    // store cannot serve harness turns — a host's own non-SQL adapter, the Cloud
-    // hosted store — produced audit rows with no turn on them at all. Same
-    // question, same plane, other door.
-    const backing = await tempStore();
-    const store = nonSqlStore(backing);
-    let harnessRan = false;
-
-    const vendo = createVendo({
-      model: twoReadsThenAnswer(),
-      principal: async () => principal,
-      store,
-      // The route pin: a store with no SQL handle must NOT be served by a
-      // harness, so this must never run. Without it, a regression that routed
-      // here would pass on the runtime's own mint and prove nothing.
-      harness: defineHarness({
-        name: "must-not-run",
-        async *run() {
-          harnessRan = true;
-          yield { type: "text", delta: "" };
-        },
-      }) as never,
-    } as Parameters<typeof createVendo>[0]);
-    vendo.actions.add(hostTools());
-
-    const response = await vendo.handler(new Request("https://host.test/api/vendo/threads", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        threadId: "thr_agent_route",
-        message: { id: "m1", role: "user", parts: [{ type: "text", text: "list my invoices twice" }] },
-      }),
-    }));
-    await response.text();
-    expect(response.status).toBe(200);
-    expect(harnessRan, "a no-SQL store must stay on the agent route").toBe(false);
-
-    const rows = (await auditRows(backing)).filter((row) => row.kind === "tool-call");
-    // Two scripted reads, so the join is proven across rows rather than on one.
-    expect(rows.map((row) => row.tool)).toEqual([READ_TOOL, READ_TOOL]);
-    const turnIds = [...new Set(rows.map((row) => row.turnId))];
-    expect(turnIds, "every row this turn produced names ONE turn").toHaveLength(1);
-    expect(turnIds[0]).toMatch(/^trn_[0-9a-f]{32}$/);
-  }, 60_000);
-
   it("mints a fresh id for the next turn on the same thread", async () => {
     const store = await tempStore();
     const seen: string[] = [];

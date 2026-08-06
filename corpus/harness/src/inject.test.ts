@@ -40,7 +40,6 @@ async function createWorkspace(): Promise<string> {
       name: "@vendoai/vendo",
       dependencies: {
         "@vendoai/actions": "workspace:*",
-        "@vendoai/agent": "workspace:*",
         "@vendoai/agents": "workspace:*",
         "@vendoai/apps": "workspace:*",
         "@vendoai/automations": "workspace:*",
@@ -56,7 +55,6 @@ async function createWorkspace(): Promise<string> {
     },
     { dir: "vendoai", name: "vendoai", dependencies: { "@vendoai/vendo": "workspace:*" } },
     { dir: "actions", name: "@vendoai/actions" },
-    { dir: "agent", name: "@vendoai/agent" },
     { dir: "agents", name: "@vendoai/agents" },
     { dir: "apps", name: "@vendoai/apps" },
     { dir: "automations", name: "@vendoai/automations" },
@@ -180,7 +178,6 @@ describe("createLocalVendoInjector", () => {
     expect(buildCount).toBe(1);
     expect([...packCounts.entries()].sort()).toEqual([
       ["@vendoai/actions", 1],
-      ["@vendoai/agent", 1],
       ["@vendoai/agents", 1],
       ["@vendoai/apps", 1],
       ["@vendoai/automations", 1],
@@ -198,7 +195,6 @@ describe("createLocalVendoInjector", () => {
     await expect(readdir(path.join(repoOne, "vendor"))).resolves.toEqual(expect.arrayContaining([
       "vendoai-0.3.0.tgz",
       "vendoai-actions-0.3.0.tgz",
-      "vendoai-agent-0.3.0.tgz",
       "vendoai-agents-0.3.0.tgz",
       "vendoai-apps-0.3.0.tgz",
       "vendoai-automations-0.3.0.tgz",
@@ -214,7 +210,6 @@ describe("createLocalVendoInjector", () => {
     await expect(readdir(path.join(repoTwo, "vendor"))).resolves.toEqual(expect.arrayContaining([
       "vendoai-0.3.0.tgz",
       "vendoai-actions-0.3.0.tgz",
-      "vendoai-agent-0.3.0.tgz",
       "vendoai-agents-0.3.0.tgz",
       "vendoai-apps-0.3.0.tgz",
       "vendoai-automations-0.3.0.tgz",
@@ -234,7 +229,6 @@ describe("createLocalVendoInjector", () => {
     expect(pkg.devDependencies).toBeUndefined();
     for (const name of [
       "@vendoai/actions",
-      "@vendoai/agent",
       "@vendoai/agents",
       "@vendoai/apps",
       "@vendoai/automations",

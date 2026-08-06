@@ -138,7 +138,6 @@ describe("runCli run", () => {
               packageManager: "pnpm",
               packages: [
                 "@vendoai/actions",
-                "@vendoai/agent",
                 "@vendoai/apps",
                 "@vendoai/automations",
                 "@vendoai/core",

@@ -6,7 +6,6 @@
     [
       "@vendoai/core",
       "@vendoai/store",
-      "@vendoai/agent",
       "@vendoai/actions",
       "@vendoai/guard",
       "@vendoai/apps",

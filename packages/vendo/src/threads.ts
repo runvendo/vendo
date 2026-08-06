@@ -1,9 +1,21 @@
+/**
+ * The thread LIFECYCLE — ids, ownership, the listing title, the guarded write.
+ *
+ * It lived in `@vendoai/agent` until that package was deleted, and it lands here
+ * rather than in the store because a `Thread` carries ai's `UIMessage`: the store
+ * block deliberately has no `ai` dependency. Its one consumer is the harness turn
+ * door (`harness-turn.ts`), which resolves, persists and evicts through it.
+ */
 import { VendoError, type IsoDateTime, type RunContext, type StoreAdapter, type ThreadId, type VendoRecord } from "@vendoai/core";
 import type { UIMessage } from "ai";
-import { mintThreadId } from "./ids.js";
 
 const THREAD_COLLECTION = "vendo_threads";
 const THREAD_ID_PATTERN = /^thr_.+$/;
+
+/** 03-agent §5 */
+function mintThreadId(): ThreadId {
+  return `thr_${globalThis.crypto.randomUUID().replaceAll("-", "")}`;
+}
 
 /** 03-agent §5 */
 export interface Thread {
@@ -109,11 +121,8 @@ function mergeMessages(current: UIMessage[], turn: UIMessage[]): UIMessage[] {
 
 /** 03-agent §5 */
 export class ThreadRepository {
-  // kill-list B5: threads live ONLY in the store — a caller that omits
-  // `createAgent({ store })` still gets one; `createAgent` (agent.ts) passes
-  // core's in-memory `memoryStoreAdapter` (@vendoai/core/conformance) as that
-  // default, so every composition — BYO or store-backed — resolves, lists,
-  // persists, and evicts threads through this SAME code path. There is no
+  // kill-list B5: threads live ONLY in the store, through the adapter seam —
+  // no SQL, so a hosted store serves the lifecycle too, and there is no
   // separate in-memory branch here to keep behavior-parity with.
   constructor(private readonly store: StoreAdapter) {}
 

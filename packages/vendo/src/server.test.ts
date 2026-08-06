@@ -123,7 +123,7 @@ function requestFrom(
 }
 
 function stubRouteBlocks(vendo: Vendo): void {
-  vi.spyOn(vendo.agent, "stream").mockResolvedValue(new Response("event: done\n\n", {
+  vi.spyOn(vendo.harness, "stream").mockResolvedValue(new Response("event: done\n\n", {
     headers: { "content-type": "text/event-stream" },
   }));
   // Wave 2 flipped `POST /threads` onto the harness runtime for every host, and

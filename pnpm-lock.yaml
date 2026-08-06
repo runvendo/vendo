@@ -49,9 +49,6 @@ importers:
 
   bench:
     dependencies:
-      '@vendoai/agent':
-        specifier: workspace:*
-        version: link:../packages/agent
       '@vendoai/apps':
         specifier: workspace:*
         version: link:../packages/apps
@@ -70,6 +67,9 @@ importers:
       '@vendoai/ui':
         specifier: workspace:*
         version: link:../packages/ui
+      '@vendoai/vendo':
+        specifier: workspace:*
+        version: link:../packages/vendo
     devDependencies:
       '@ai-sdk/anthropic':
         specifier: 3.0.12
@@ -493,9 +493,6 @@ importers:
       '@vendoai/actions':
         specifier: workspace:*
         version: link:../../packages/actions
-      '@vendoai/agent':
-        specifier: workspace:*
-        version: link:../../packages/agent
       '@vendoai/agents':
         specifier: workspace:*
         version: link:../../packages/agents
@@ -524,34 +521,6 @@ importers:
       '@ai-sdk/anthropic':
         specifier: ^3.0.12
         version: 3.0.12(zod@3.25.76)
-      '@types/node':
-        specifier: ^22.0.0
-        version: 22.20.0
-      ai:
-        specifier: ^6.0.0
-        version: 6.0.28(zod@3.25.76)
-      typescript:
-        specifier: ^5.6.0
-        version: 5.9.3
-      vitest:
-        specifier: ^2.1.0
-        version: 2.1.9(@types/node@22.20.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(lightningcss@1.32.0)(terser@5.48.0)
-
-  fixtures/chat-e2e:
-    dependencies:
-      '@vendoai/agent':
-        specifier: workspace:*
-        version: link:../../packages/agent
-      '@vendoai/core':
-        specifier: workspace:*
-        version: link:../../packages/core
-      '@vendoai/guard':
-        specifier: workspace:*
-        version: link:../../packages/guard
-      '@vendoai/store':
-        specifier: workspace:*
-        version: link:../../packages/store
-    devDependencies:
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.0
@@ -751,9 +720,9 @@ importers:
       '@vendoai/actions':
         specifier: workspace:*
         version: link:../../packages/actions
-      '@vendoai/agent':
+      '@vendoai/agents':
         specifier: workspace:*
-        version: link:../../packages/agent
+        version: link:../../packages/agents
       '@vendoai/apps':
         specifier: workspace:*
         version: link:../../packages/apps
@@ -766,6 +735,9 @@ importers:
       '@vendoai/guard':
         specifier: workspace:*
         version: link:../../packages/guard
+      '@vendoai/harnesses':
+        specifier: workspace:*
+        version: link:../../packages/harnesses
       '@vendoai/mcp':
         specifier: workspace:*
         version: link:../../packages/mcp
@@ -827,40 +799,6 @@ importers:
       zod-to-json-schema:
         specifier: ^3.25.2
         version: 3.25.2(zod@3.25.76)
-
-  packages/agent:
-    dependencies:
-      '@vendoai/core':
-        specifier: workspace:*
-        version: link:../core
-      '@vendoai/harnesses':
-        specifier: workspace:*
-        version: link:../harnesses
-      zod:
-        specifier: ^3.25.76
-        version: 3.25.76
-    devDependencies:
-      '@ai-sdk/anthropic':
-        specifier: 3.0.12
-        version: 3.0.12(zod@3.25.76)
-      '@ai-sdk/openai':
-        specifier: 3.0.9
-        version: 3.0.9(zod@3.25.76)
-      '@ai-sdk/openai-compatible':
-        specifier: 2.0.9
-        version: 2.0.9(zod@3.25.76)
-      '@types/node':
-        specifier: ^22.0.0
-        version: 22.20.0
-      ai:
-        specifier: 6.0.28
-        version: 6.0.28(zod@3.25.76)
-      typescript:
-        specifier: ^5.6.0
-        version: 5.9.3
-      vitest:
-        specifier: ^2.1.0
-        version: 2.1.9(@types/node@22.20.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(lightningcss@1.32.0)(terser@5.48.0)
 
   packages/agents:
     dependencies:
@@ -1112,6 +1050,15 @@ importers:
         specifier: ^3.25.0
         version: 3.25.76
     devDependencies:
+      '@ai-sdk/anthropic':
+        specifier: 3.0.12
+        version: 3.0.12(zod@3.25.76)
+      '@ai-sdk/openai':
+        specifier: 3.0.9
+        version: 3.0.9(zod@3.25.76)
+      '@ai-sdk/openai-compatible':
+        specifier: 2.0.9
+        version: 2.0.9(zod@3.25.76)
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.0
@@ -1339,9 +1286,6 @@ importers:
       '@vendoai/actions':
         specifier: workspace:*
         version: link:../actions
-      '@vendoai/agent':
-        specifier: workspace:*
-        version: link:../agent
       '@vendoai/agents':
         specifier: workspace:*
         version: link:../agents

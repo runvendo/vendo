@@ -62,6 +62,9 @@
     "@anthropic-ai/claude-agent-sdk": ">=0.3.0 <1"
   },
   "devDependencies": {
+    "@ai-sdk/anthropic": "3.0.12",
+    "@ai-sdk/openai": "3.0.9",
+    "@ai-sdk/openai-compatible": "2.0.9",
     "@types/node": "^22.0.0",
     "ai": "6.0.28",
     "just-bash": "^3.1.0",

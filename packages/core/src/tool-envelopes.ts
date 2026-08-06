@@ -23,7 +23,7 @@ export const VENDO_APPROVAL_REF_KIND = "vendo/approval-ref@1" as const;
  *  observed conversations narrated a fabricated, finished dashboard off an
  *  envelope that carried an appId and a title and nothing telling the model
  *  otherwise). A build that terminally fails is never wrapped in this ref —
- *  see `appRefFromReceipt` in `@vendoai/agent`. */
+ *  see `appRefFromReceipt` in `@vendoai/harnesses`. */
 export interface VendoAppRef {
   kind: typeof VENDO_APP_REF_KIND;
   appId: AppId;

@@ -323,7 +323,6 @@ jobs:
                   "@vendoai-fixtures/mcp-e2e",
                   "@vendoai/redteam-e2e",
                   "@vendoai-fixtures/automations-e2e",
-                  "@vendoai-fixtures/chat-e2e",
                   "demo-bank"))] | length == 0' /tmp/affected.json > /dev/null; then
             echo "integration scope unaffected by this PR; skipping"
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -332,7 +331,7 @@ jobs:
       # suffix pulls each fixture package's transitive workspace deps;
       # `demo-bank^...` builds demo-bank's deps without running its Next build).
       - if: steps.affected.outputs.skip != 'true'
-        run: pnpm turbo run build --filter=@vendoai-fixtures/integration... --filter=@vendoai-fixtures/integration-browser... --filter=@vendoai-fixtures/mcp-e2e... --filter=@vendoai/redteam-e2e... --filter=@vendoai-fixtures/automations-e2e... --filter=@vendoai-fixtures/chat-e2e... --filter=demo-bank^...
+        run: pnpm turbo run build --filter=@vendoai-fixtures/integration... --filter=@vendoai-fixtures/integration-browser... --filter=@vendoai-fixtures/mcp-e2e... --filter=@vendoai/redteam-e2e... --filter=@vendoai-fixtures/automations-e2e... --filter=demo-bank^...
       # The node suite boots the real composed umbrella over HTTP against the host app.
       - if: steps.affected.outputs.skip != 'true'
         run: pnpm --filter @vendoai-fixtures/integration test
@@ -355,11 +354,6 @@ jobs:
       # nightly's).
       - if: steps.affected.outputs.skip != 'true'
         run: pnpm --filter @vendoai-fixtures/automations-e2e test
-      # Chat governance/approval e2e: approval-roundtrip, away-runner, blocked,
-      # deny, ephemeral, grant-drift, thread-scoping. Own PGlite per test, no
-      # shared server.
-      - if: steps.affected.outputs.skip != 'true'
-        run: pnpm --filter @vendoai-fixtures/chat-e2e test
       # Maple's suite (auth, away drill, transfers, money, mcp-config, server
       # routes). demo apps define no test:coverage script, so the test-rest job's
       # turbo run skips them — this is demo-bank's only CI execution.

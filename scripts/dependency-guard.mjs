@@ -58,12 +58,6 @@ const PACKAGES_DIR = join(ROOT, "packages");
 const LAYERS = {
   "@vendoai/core": [],
   "@vendoai/store": ["@vendoai/core"],
-  // temporary until S6 deletes the package: the engine folded into
-  // @vendoai/harnesses, and what is left here (`createAgent`, its runner, the
-  // thread repository) drives it from the other side of that edge. The arrow
-  // used to point the other way; harnesses no longer depends on agent at all,
-  // so there is no cycle — just a door outliving its engine by one slice.
-  "@vendoai/agent": ["@vendoai/core", "@vendoai/harnesses"],
   "@vendoai/actions": ["@vendoai/core"],
   "@vendoai/guard": ["@vendoai/core"],
   "@vendoai/ui": ["@vendoai/core"],

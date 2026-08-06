@@ -1,16 +1,6 @@
-import { ASK_USER_TOOL, type RunContext, type ToolRegistry } from "@vendoai/core";
+import { ASK_USER_TOOL, type RunContext } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { askUserRegistry } from "./ask-user.js";
-import { createAgent } from "@vendoai/agent";
-import {
-  ctx as agentCtx,
-  readSse,
-  scriptedModel,
-  testGuard,
-  textTurn,
-  toolCallTurn,
-  userMessage,
-} from "./agent-doubles.test-util.js";
 
 const ctx = (overrides: Partial<RunContext> = {}): RunContext => ({
   principal: { kind: "user", subject: "user_alice" },
@@ -83,77 +73,5 @@ describe("ask_user — questions as a tool, one door, any seat (design §4)", ()
   it("rejects a blank question rather than registering an empty one", async () => {
     const outcome = await askUserRegistry().execute(call({ question: "  " }), ctx());
     expect(outcome.status).toBe("error");
-  });
-});
-
-describe("a question ENDS the turn (design §6, build contract §8)", () => {
-  /**
-   * The REAL registry is handed to `createAgent` as its toolset, not a
-   * `boundRegistry` double. That is load-bearing: the double wraps whatever its
-   * implementation returns in `{ status: "ok", output: ... }`, so every outcome —
-   * a refusal included — reads as ok to a stop condition. `guardedCall` returns
-   * the registry's `ToolOutcome` verbatim as the tool output, which is the shape
-   * `askedUserStop` actually sees in production.
-   */
-  const counted = (): { tools: ToolRegistry; calls: () => number } => {
-    const inner = askUserRegistry();
-    let calls = 0;
-    return {
-      calls: () => calls,
-      tools: {
-        descriptors: (runCtx) => inner.descriptors?.(runCtx) ?? Promise.resolve([]),
-        execute: async (toolCall, runCtx) => {
-          calls += 1;
-          return inner.execute(toolCall, runCtx);
-        },
-      },
-    };
-  };
-
-  it("stops after the question instead of taking another step", async () => {
-    const registry = counted();
-    // ONE scripted turn. If the loop asked the model for a second step after the
-    // question, the scripted model would throw ("scripted model exhausted") and
-    // the stream would carry an error part — so a clean [DONE] IS the stop.
-    const model = scriptedModel([
-      toolCallTurn(ASK_USER_TOOL, { question: "Which account?" }, "call_ask_1"),
-    ]);
-    const agent = createAgent({ model, tools: registry.tools, guard: testGuard({}) });
-
-    const response = await agent.stream({
-      threadId: "thr_asked",
-      message: userMessage("user_asked", "move some money"),
-      ctx: agentCtx(),
-    });
-    const { parts } = await readSse(response);
-
-    expect(parts.filter((part) => part.type === "error")).toEqual([]);
-    expect(registry.calls()).toBe(1);
-    // The question really is in the mirrored tool output — that IS the record,
-    // there is no question row anywhere else.
-    expect(JSON.stringify(parts)).toContain("Which account?");
-  });
-
-  it("does NOT stop on a refused question — the model still finishes what it can", async () => {
-    // A blank or unattended question is not an answer pending; ending the turn on
-    // it would strand work the model could still do.
-    const registry = counted();
-    const model = scriptedModel([
-      // A blank question → `error`, so the loop must continue...
-      toolCallTurn(ASK_USER_TOOL, { question: "   " }, "call_ask_blank"),
-      // ...and this SECOND scripted turn is only reached if it did.
-      textTurn("I could not ask, so here is what I know."),
-    ]);
-    const agent = createAgent({ model, tools: registry.tools, guard: testGuard({}) });
-
-    const response = await agent.stream({
-      threadId: "thr_asked_blank",
-      message: userMessage("user_asked_blank", "do something"),
-      ctx: agentCtx(),
-    });
-    const { parts } = await readSse(response);
-
-    expect(parts.filter((part) => part.type === "error")).toEqual([]);
-    expect(parts.some((part) => JSON.stringify(part).includes("here is what I know"))).toBe(true);
   });
 });

@@ -3,11 +3,10 @@
  * registry — as the tool-pack and registry suites that moved here already used
  * them.
  *
- * A copy, deliberately: `@vendoai/agent` does not export its `test-helpers.ts`
- * (a test-only subpath on a published package is surface nobody asked for), and
- * `@vendoai/harnesses` keeps its own equivalent for the same reason
- * (`test-doubles.test-util.ts`). The alternative — a shared doubles package —
- * would outlive the door these suites were written against.
+ * A copy, deliberately: `@vendoai/harnesses` keeps its own equivalent
+ * (`test-doubles.test-util.ts`) rather than either package publishing a
+ * test-only subpath, which is surface nobody asked for. The alternative — a
+ * shared doubles package — would be a package for two callers.
  */
 import type {
   ApprovalId,

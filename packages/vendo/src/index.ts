@@ -1,7 +1,7 @@
 /** @vendoai/vendo — root contract types (09-vendo §1). */
 export type * from "@vendoai/core";
 export type { VendoStore } from "@vendoai/store";
-export type { Thread, ThreadSummary, VendoAgent } from "@vendoai/agent";
+export type { Thread, ThreadSummary } from "./threads.js";
 export type {
   ActionsRegistry,
   // Task 15a — the actions-file shapes a host names when composing the

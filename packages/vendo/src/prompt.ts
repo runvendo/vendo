@@ -2,10 +2,8 @@
  * The system prompt, assembled per turn.
  *
  * It lives in the umbrella because the umbrella is what knows the brief, the
- * catalog and the knowledge index. `@vendoai/agent` keeps a byte-identical copy
- * for as long as `createAgent` exists: the door cannot import this one without
- * inverting the dependency, and duplicating 120 lines of prompt for one slice is
- * cheaper than either a third package or a cycle. The copy dies with the door.
+ * catalog and the knowledge index. It rides the turn (`Turn.system`), so every
+ * harness — the default one, a host's own — thinks on the same brief.
  */
 import type { Guard, RunContext } from "@vendoai/core";
 

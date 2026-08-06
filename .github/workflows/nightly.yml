@@ -68,10 +68,14 @@ jobs:
       - run: pnpm build
       - run: mkdir -p nightly-logs
 
-      - name: Agent provider matrix (Anthropic, OpenAI, proxy)
+      # The BYO-model provider matrix. It drove `createAgent` in the deleted
+      # @vendoai/agent; the loop moved into @vendoai/harnesses, so the live proof
+      # moved beside it (src/vendo/live.test.ts) — same journey, same providers,
+      # same env gating.
+      - name: Provider matrix (Anthropic, OpenAI, proxy)
         id: agent_providers
         continue-on-error: true
-        run: pnpm --filter @vendoai/agent exec vitest run src/live.test.ts 2>&1 | tee nightly-logs/agent-providers.log
+        run: pnpm --filter @vendoai/harnesses exec vitest run src/vendo/live.test.ts 2>&1 | tee nightly-logs/agent-providers.log
 
       # The matrix legs describe.skipIf on their provider secrets, so an empty
       # secret silently skips a leg and the step above still passes — coverage

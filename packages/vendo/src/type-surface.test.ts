@@ -48,8 +48,7 @@ const HOST_FACING_TYPES = [
   "AuditEvent",
   // store
   "VendoStore",
-  // agent
-  "VendoAgent",
+  // the thread lifecycle
   "Thread",
   "ThreadSummary",
   // actions

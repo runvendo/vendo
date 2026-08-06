@@ -1,41 +1,18 @@
-import { agentRunnerConformance, runConformance } from "@vendoai/core/conformance";
 import {
   VENDO_MAKE_TOOL,
   vendoApprovalRefSchema,
+  type AgentRunner,
   type ToolDescriptor,
 } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
-import { createAgent } from "@vendoai/agent";
 import { buildVendoToolPack } from "./pack.js";
 import { VENDO_CREATE_APP_TOOL, VENDO_DELEGATE_TOOL } from "./tool-pack.js";
 import {
   boundRegistry,
   ctx,
-  scriptedModel,
   testGuard,
-  textTurn,
-  toolCallTurn,
   type TestToolImplementation,
 } from "./agent-doubles.test-util.js";
-
-describe("core conformance — AgentRunner seam", () => {
-  it("asRunner() passes agentRunnerConformance", async () => {
-    const suite = agentRunnerConformance({
-      makeRunner: async () => {
-        const model = scriptedModel([
-          toolCallTurn("conformance_echo", { ping: true }, "call_conformance"),
-          textTurn("Echoed the conformance ping once.", "text_conformance"),
-        ]);
-        const guard = testGuard({});
-        return createAgent({ model, tools: boundRegistry({}, guard), guard }).asRunner();
-      },
-      ctx: ctx({ venue: "automation", presence: "away", sessionId: "run_conformance" }),
-    });
-    const report = await runConformance(suite);
-    expect(report.failures).toEqual([]);
-    expect(report.ok).toBe(true);
-  });
-});
 
 describe("tool-pack conformance — every pack tool routes through the guard", () => {
   const packDescriptor = (name: string, risk: ToolDescriptor["risk"]): ToolDescriptor => ({
@@ -65,14 +42,17 @@ describe("tool-pack conformance — every pack tool routes through the guard", (
       [VENDO_MAKE_TOOL]: "ask",
     });
     const registry = boundRegistry(implementations, guard);
-    // The REAL runner seam behind vendo_delegate: agent.asRunner() executing
-    // over the same guard-bound registry. The scripted model tries one guarded
-    // call, sees it park, and finishes.
-    const model = scriptedModel([
-      toolCallTurn("host_send", { report: "q3" }, "call_delegated_send"),
-      textTurn("The send is parked awaiting approval.", "text_delegated"),
-    ]);
-    const runner = createAgent({ model, tools: registry, guard }).asRunner();
+    // The runner seam behind vendo_delegate, exercised over the pack's OWN
+    // registry so the delegated call meets the same guard every other pack tool
+    // does. The shipped motor is `awayRunner`, which needs a SQL store this
+    // in-memory suite has no business booting — it is proven on the real thing
+    // in delegate.test.ts and by agentRunnerConformance in automations-e2e.
+    const delegatedCall = { id: "call_delegated_send", tool: "host_send", args: { report: "q3" } };
+    const runner: AgentRunner = async (task, runCtx) => ({
+      status: "ok",
+      summary: "The send is parked awaiting approval.",
+      toolCalls: [{ call: delegatedCall, outcome: (await task.tools.execute(delegatedCall, runCtx)).status }],
+    });
     const pack = await buildVendoToolPack({ registry, runner });
     expect(pack.map((tool) => tool.name).sort()).toEqual([
       VENDO_CREATE_APP_TOOL,
@@ -101,10 +81,4 @@ describe("tool-pack conformance — every pack tool routes through the guard", (
     });
     expect(JSON.stringify(guard.events)).not.toContain("leaked");
   });
-});
-
-it.skip("03-agent §3 clause (4) — catalog + theme summary is assembled for tree venues (Wave 5)", () => {
-  // Intentionally visible and skipped until Wave 5 wires catalog/theme into
-  // createAgent. Removing the skip before then would contradict the approved
-  // staged contract implementation rather than close this Wave 2 test gap.
 });

@@ -105,7 +105,6 @@
   "dependencies": {
     "@ai-sdk/anthropic": "3.0.12",
     "@vendoai/actions": "workspace:*",
-    "@vendoai/agent": "workspace:*",
     "@vendoai/agents": "workspace:*",
     "@vendoai/apps": "workspace:*",
     "@vendoai/automations": "workspace:*",

@@ -16,7 +16,6 @@ import type { VendoGuard } from "@vendoai/guard";
 import type { McpDoor } from "@vendoai/mcp";
 import type { SubjectMergeReport, VendoStore } from "@vendoai/store";
 import type { Telemetry } from "@vendoai/telemetry";
-import type { VendoAgent } from "@vendoai/agent";
 import type { ByoApprovalResolution } from "../byo-approvals.js";
 import type { HarnessTurns } from "../harness-turn.js";
 import type { ConnectionsService } from "../connections.js";
@@ -74,19 +73,17 @@ export interface WireDeps {
   sessionId: string;
   store: VendoStore;
   telemetry?: Telemetry;
-  agent: VendoAgent;
-  /** Architecture §3 — the composed `Harness` door.
+  /** Architecture §3 — the composed `Harness` door, and the ONLY one: every
+      chat turn is served here — `harness:` when the host named one, `vendo()`
+      when they did not.
 
-      `threads` is ALWAYS here: the thread lifecycle rides the adapter-only
-      ThreadRepository, so it needs no SQL and works on a hosted store too.
-
-      `stream` is the probe-gated half. Post-flip (wave 2) `POST /threads` runs
-      here for EVERY host — `harness:` when the host named one, `vendo()` when
-      they did not — and what decides it is the STORE, not the config: a store
-      with no SQL handle cannot serve the transcript and workspace TABLES a
-      harness turn needs (build contract §3.3/§6), so those deployments keep
-      `agent.stream`, which needs neither table. */
-  harness: Pick<HarnessTurns, "threads"> & Partial<Pick<HarnessTurns, "stream">>;
+      `threads` needs nothing from the store beyond the adapter seam, so the
+      lifecycle works on a hosted store as it always did. `stream` needs
+      somewhere to keep the transcript and the workspace (build contract
+      §3.3/§6), and a store that offers neither a SQL handle nor a StoreOps
+      surface refuses THAT TURN, loudly, naming both options — where the old
+      probe silently routed the whole deployment onto the legacy door. */
+  harness: Pick<HarnessTurns, "stream" | "threads">;
   guard: VendoGuard;
   /** Which optional subsystems this deployment mounted (`createVendo({ apps:
       false })` / `{ automations: false }`). An unmounted subsystem's routes are
