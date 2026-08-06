@@ -90,6 +90,12 @@ function app(id: string, name: string, automation = false): AppDocument {
   };
 }
 
+/** The fixture's app shape, for callers outside this module (the browser
+ *  harness seeds served/landing apps before the first request). */
+export function fixtureApp(id: string, name: string): AppDocument {
+  return app(id, name);
+}
+
 /** Existing-agents polish — a model-realistic generated dashboard island: the
  *  page sizes itself with viewport-height CSS in a `<style>` TAG (not inline
  *  styles), the shape the live examples' builds produce. Inside an auto-sized
@@ -311,6 +317,13 @@ export async function createWireServer(options: WireServerOptions = {}) {
      *  per subject — one row per slot, and the entry's status is derived from
      *  the app list on read, never stored. */
     placements: [] as Array<{ slot: string; appId: string }>,
+    /** PR3 — apps whose build "lands" after N placements polls (app id →
+     *  {remaining, name}), so a test can watch a slot go building → ready over
+     *  the real wire instead of asserting two static pages. */
+    landingApps: new Map<string, { remaining: number; name: string }>(),
+    /** PR3 — apps served as an `{kind:"http"}` surface (app id → url): the
+     *  second surface kind a slot must mount. */
+    httpApps: new Map<string, string>(),
     approvals: [approval()],
     // Existing-agents — decided approvals move here so GET /approvals/:id can
     // answer the embed's poll; tests may also seed terminal states directly.
@@ -1102,6 +1115,14 @@ export async function createWireServer(options: WireServerOptions = {}) {
       // real route table (the catch-all would otherwise read "placements" as an
       // app id).
       if (url.pathname === "/apps/placements" && method === "GET") {
+        // PR3 — the harness's build window: a landing app joins the app list
+        // after a couple of polls, exactly like a build completing mid-poll.
+        for (const [landingId, landing] of state.landingApps) {
+          landing.remaining -= 1;
+          if (landing.remaining <= 0 && !state.apps.some(item => item.id === landingId)) {
+            state.apps.push(app(landingId, landing.name));
+          }
+        }
         const asked = (url.searchParams.get("slots") ?? "")
           .split(",").map(slot => slot.trim()).filter(slot => slot.length > 0);
         const rows = state.placements.filter(row => asked.length === 0 || asked.includes(row.slot));
@@ -1111,9 +1132,14 @@ export async function createWireServer(options: WireServerOptions = {}) {
             slot: row.slot,
             app: row.appId,
             title: placed?.name ?? "",
-            status: placed === undefined
-              ? "building"
-              : placed.buildFailed === undefined ? "ready" : "failed",
+            // PR3 — a failure record is a terminal build, whether the fixture
+            // carries it on the app document (the runtime's persisted
+            // `buildFailed`) or in the failedApps shim open() answers from.
+            status: state.failedApps.has(row.appId)
+              ? "failed"
+              : placed === undefined
+                ? "building"
+                : placed.buildFailed === undefined ? "ready" : "failed",
           };
         }));
       }
@@ -1207,6 +1233,10 @@ export async function createWireServer(options: WireServerOptions = {}) {
           return wireError(response, "not-found", "App not found", 404);
         }
         if (action === "open" && method === "GET") {
+          // A served (rung-4) app answers with its machine url; everything else
+          // is a tree. Both must mount in a slot.
+          const served = state.httpApps.get(id);
+          if (served !== undefined) return json(response, { kind: "http", url: served });
           return json(response, { kind: "tree", payload: state.apps[index]?.tree });
         }
         if (action === "call" && method === "POST") return json(response, { status: "ok", output: parsedBody });
