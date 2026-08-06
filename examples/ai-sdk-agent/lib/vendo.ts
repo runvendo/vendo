@@ -38,7 +38,7 @@ export async function sendTripReport(to: string, subject: string, body: string) 
 export const demoUser = { kind: "user", subject: "demo-user" } as const;
 
 export const vendo = createVendo({
-  // Vendo's own model seam: powers app generation (`vendo_create_app`) and the
+  // Vendo's own model seam: powers app generation (`vendo_make`) and the
   // delegate. Your agent keeps its own model in app/api/chat/route.ts.
   model: anthropic("claude-sonnet-4-6"),
   principal: async () => demoUser,
