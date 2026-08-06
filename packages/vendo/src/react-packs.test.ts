@@ -9,7 +9,7 @@
  * `createElement` rather than JSX because this package's tsconfig preserves JSX
  * for its bundler; the test needs no transform of its own.
  */
-import { useVendoContext } from "@vendoai/ui";
+import { useVendoProvider } from "@vendoai/ui";
 import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -27,7 +27,7 @@ const compliancePack = definePack({
 /** Reads the components the provider actually mounted — the same map the
  *  renderer resolves a host component name against. */
 const Probe = (): ReactNode => {
-  const { components } = useVendoContext();
+  const { components } = useVendoProvider();
   return createElement("span", null, Object.keys(components).sort().join(","));
 };
 
