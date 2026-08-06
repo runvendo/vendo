@@ -36,9 +36,7 @@ export const composePromptSections = (sections: readonly GenerationPromptSection
  * the theme tokens are documented seams a host sets and expects to be obeyed.
  * A prompt that omits them makes those config keys silently do nothing.
  */
-export const hostDesignRulesSection = (
-  deps: Pick<GenerationDependencies, "designRules">,
-): GenerationPromptSection[] => {
+export const hostDesignRulesSection = (deps: Pick<GenerationDependencies, "designRules">): GenerationPromptSection[] => {
   const rules = (typeof deps.designRules === "function" ? deps.designRules() : deps.designRules)?.trim();
   // The section is emitted even when the host set no rules: "(none provided)" is
   // the difference between a model that knows there are no house rules and one
@@ -49,9 +47,7 @@ export const hostDesignRulesSection = (
   }];
 };
 
-export const hostThemeSection = (
-  deps: Pick<GenerationDependencies, "theme">,
-): GenerationPromptSection[] =>
+export const hostThemeSection = (deps: Pick<GenerationDependencies, "theme">): GenerationPromptSection[] =>
   deps.theme === undefined ? [] : [{
     id: "theme" as const,
     content: `THEME TOKENS:\n${JSON.stringify(deps.theme, null, 2)}`,
@@ -65,9 +61,8 @@ export const hostThemeSection = (
  * The same two sections the fill worker reads, so the writers cannot be told
  * different things about the same host configuration.
  */
-export const hostDesignBrief = (
-  deps: Pick<GenerationDependencies, "theme" | "designRules">,
-): string => composePromptSections([...hostThemeSection(deps), ...hostDesignRulesSection(deps)]);
+export const hostDesignBrief = (deps: Pick<GenerationDependencies, "theme" | "designRules">): string =>
+  composePromptSections([...hostThemeSection(deps), ...hostDesignRulesSection(deps)]);
 
 /** The COMPONENTS section is GENERATED from the component schemas (kitPrompt
  *  over the Kit specs + the legacy primitive signatures); no hand-written

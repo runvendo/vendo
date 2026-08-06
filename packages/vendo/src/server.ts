@@ -2806,27 +2806,24 @@ export function createVendo(input: CreateVendoConfig): Vendo {
     // can never name different sets.
     catalog,
     models: inference.seats,
-    system: async (ctx, opts) => [
-      await assembleSystemPrompt(
-        guard,
-        ctx,
-        system,
-        // Both rails now reach the harness path (`createDiscoveryRails`), so the
-        // prompt may promise them — and must, or the model is handed the miss
-        // reporter and a discovery rail with no instructions about either. WHICH
-        // discovery section rides is the turn's to say: an uncurated surface has no
-        // `find_tools`, so teaching it would name a tool that is not there.
-        true,
-        opts?.discovery ?? "find-tools",
-      ),
-      // The host's house rules, HERE rather than inside `claudeCode()`: that
-      // harness thinks with `turn.system` whole and alone, and lines it appends
-      // after the host's prompt seam are exactly what it refuses to invent
-      // (`claude-code/index.ts`). It writes `app.vendo` with its own hands, so
-      // without this the theme and `apps.designRules` reach the fill worker and
-      // the screen agent and never reach the builder.
-      writerDesignBrief(),
-    ].filter((section) => section.trim() !== "").join("\n\n"),
+    // The host's house rules ride HERE rather than inside `claudeCode()`: that
+    // harness thinks with `turn.system` whole and alone, and lines it appends
+    // after the host's prompt seam are exactly what it refuses to invent
+    // (`claude-code/index.ts`). It writes `app.vendo` with its own hands, so
+    // without this the theme and `apps.designRules` reach the fill worker and
+    // the screen agent and never reach the builder.
+    system: async (ctx, opts) => `${await assembleSystemPrompt(
+      guard,
+      ctx,
+      system,
+      // Both rails now reach the harness path (`createDiscoveryRails`), so the
+      // prompt may promise them — and must, or the model is handed the miss
+      // reporter and a discovery rail with no instructions about either. WHICH
+      // discovery section rides is the turn's to say: an uncurated surface has no
+      // `find_tools`, so teaching it would name a tool that is not there.
+      true,
+      opts?.discovery ?? "find-tools",
+    )}\n\n${writerDesignBrief()}`,
     // Projected for THIS ctx, so THE LAW's unattended filter (design §12) decides
     // what the model is even shown — not just what it is allowed to run.
     descriptors: (ctx) => boundTools.descriptors(ctx),
