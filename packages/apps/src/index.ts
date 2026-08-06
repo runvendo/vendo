@@ -133,6 +133,11 @@ export {
 // through.
 export { agentToolDescriptors } from "./agent-tools.js";
 export { buildingAppsSkill } from "./skills/building-apps.js";
+// The host's own theme and design rules, as the writers read them. Public
+// because both briefs that carry them are assembled outside this package — the
+// screen agent's in `@vendoai/harnesses`, the builder's in composition — and a
+// second rendering of the same two config keys is how they start to disagree.
+export { hostDesignBrief } from "./generation/contracts/sections.js";
 // `conductCreate` / `conductEdit` and their result types were public here for
 // "external bench harnesses". A reverse-dependency walk (2026-08-05) found no
 // caller anywhere — in this repo, the examples, the corpus harness or the docs —

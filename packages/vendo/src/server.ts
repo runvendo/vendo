@@ -42,6 +42,7 @@ import {
   buildingAppsSkill,
   createApps,
   createAppTokens,
+  hostDesignBrief,
   pinBaselineSchema,
   type AppsConfig,
   type AppsRuntime,
@@ -2043,6 +2044,16 @@ export function createVendo(input: CreateVendoConfig): Vendo {
   const designRules = configDesignRules
     ? configDesignRules
     : () => selectConfigSurface("design-rules.md", { readFile: readSurfaceFile, cloud: configCloud }).value;
+  /**
+   * The same two config keys, for whoever WRITES the app.
+   *
+   * The apps thunk seam below hands them to the fill worker; this hands them to
+   * the two briefs assembled outside that seam — the screen agent's, and the
+   * deployment prompt a `claudeCode()` builder thinks with. Rendered by the apps
+   * block's own sections either way, so the writers cannot be told different
+   * things. Resolved per call for the same reason `designRules` is a provider.
+   */
+  const writerDesignBrief = (): string => hostDesignBrief({ theme: themeProvider(), designRules });
   const pinBaselines = dotVendoPinBaselines(config.profileDir);
   // W3 + cse lane 3 — field semantics from the merged .vendo
   // pair (generated tools.json overlaid by overrides.json). The OVERRIDES
@@ -2388,6 +2399,13 @@ export function createVendo(input: CreateVendoConfig): Vendo {
       // deployment prompt's job — voice, venue gate, guard directions, the
       // discovery rail — belongs to the thinker talking to the PERSON. This loop
       // talks to nobody: the front door speaks its one-line receipt.
+      //
+      // `design` is NOT part of that. `apps.designRules` and the theme tokens are
+      // documented seams a host sets and expects a generated screen to obey, and
+      // this loop is the thing that generates it — a brief without them makes
+      // those two config keys silently do nothing on the route that serves every
+      // ask.
+      design: writerDesignBrief,
     }),
     // Round-2 hardening — the host's reviewer assertion for the review-kind
     // remix lifecycle, threaded verbatim (see the CreateVendoConfig comment).
@@ -2788,18 +2806,27 @@ export function createVendo(input: CreateVendoConfig): Vendo {
     // can never name different sets.
     catalog,
     models: inference.seats,
-    system: async (ctx, opts) => assembleSystemPrompt(
-      guard,
-      ctx,
-      system,
-      // Both rails now reach the harness path (`createDiscoveryRails`), so the
-      // prompt may promise them — and must, or the model is handed the miss
-      // reporter and a discovery rail with no instructions about either. WHICH
-      // discovery section rides is the turn's to say: an uncurated surface has no
-      // `find_tools`, so teaching it would name a tool that is not there.
-      true,
-      opts?.discovery ?? "find-tools",
-    ),
+    system: async (ctx, opts) => [
+      await assembleSystemPrompt(
+        guard,
+        ctx,
+        system,
+        // Both rails now reach the harness path (`createDiscoveryRails`), so the
+        // prompt may promise them — and must, or the model is handed the miss
+        // reporter and a discovery rail with no instructions about either. WHICH
+        // discovery section rides is the turn's to say: an uncurated surface has no
+        // `find_tools`, so teaching it would name a tool that is not there.
+        true,
+        opts?.discovery ?? "find-tools",
+      ),
+      // The host's house rules, HERE rather than inside `claudeCode()`: that
+      // harness thinks with `turn.system` whole and alone, and lines it appends
+      // after the host's prompt seam are exactly what it refuses to invent
+      // (`claude-code/index.ts`). It writes `app.vendo` with its own hands, so
+      // without this the theme and `apps.designRules` reach the fill worker and
+      // the screen agent and never reach the builder.
+      writerDesignBrief(),
+    ].filter((section) => section.trim() !== "").join("\n\n"),
     // Projected for THIS ctx, so THE LAW's unattended filter (design §12) decides
     // what the model is even shown — not just what it is allowed to run.
     descriptors: (ctx) => boundTools.descriptors(ctx),

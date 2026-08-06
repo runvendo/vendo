@@ -17,11 +17,7 @@ import {
   type PlanGroup,
   type PlanQuery,
 } from "@vendoai/core";
-import {
-  composePromptSections,
-  hostDesignRulesSection,
-  hostThemeSection,
-} from "../contracts/sections.js";
+import { hostDesignBrief } from "../contracts/sections.js";
 import { PREWIRED_SCHEMAS } from "../../prewired-schema.js";
 import type { GenerationDependencies } from "../engine.js";
 
@@ -77,7 +73,7 @@ export const workerSystemPrompt = (deps: GenerationDependencies, group: PlanGrou
     // The worker writes the markup, so the host's stated design rules and brand
     // tokens have to reach IT — they are host configuration, not prompt polish,
     // and a section written without them ignores what the host asked for.
-    composePromptSections([...hostThemeSection(deps), ...hostDesignRulesSection(deps)]),
+    hostDesignBrief(deps),
   ].filter((section) => section !== "").join("\n\n");
 
 export interface WorkerFillInput {

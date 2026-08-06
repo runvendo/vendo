@@ -125,6 +125,10 @@ export interface ScreenInput {
   /** The deployment's assembled prompt, when there is one — prepended, so the
    *  host's voice and the guard's directions are not lost to the job description. */
   system?: string;
+  /** The host's own theme tokens and design rules (`hostDesignBrief`), when
+   *  composition has them. House rules for the WRITER, so they sit with the job
+   *  description rather than with the deployment's voice. */
+  design?: string;
 }
 
 /** What one assembly run answers. `ScreenOutcome` plus the title an assembled
@@ -230,12 +234,15 @@ deliberate.
 ${toolBrief(listings)}`;
 
 /** The full brief: the deployment's own prompt, the shipped job description, the
- *  shipped syntax manual, then what is different here. */
+ *  shipped syntax manual, the host's own house rules, then what is different
+ *  here. The design brief sits with the job rather than with the deployment's
+ *  voice — it is configuration the writer obeys, not a thing to say. */
 function screenBrief(input: ScreenInput, listings: readonly ToolListing[]): string {
   return [
     input.system,
     buildingAppsSkill.body,
     buildingAppsSkill.files?.[`references/${"format.md"}`],
+    input.design,
     environmentNote(input.appId, listings),
   ]
     .filter((section): section is string => section !== undefined && section.trim().length > 0)
@@ -523,6 +530,10 @@ export interface ScreenAssemblerDeps {
   render?: (ctx: RunContext) => Omit<RenderSeamOptions, "emit">;
   /** The deployment's assembled prompt for this ctx, when composition has one. */
   system?: (ctx: RunContext) => Promise<string | undefined>;
+  /** The host's theme tokens and design rules (`hostDesignBrief` in
+   *  `@vendoai/apps`). A thunk, not a value: `designRules` resolves per
+   *  generation so a console publish applies to the next screen. */
+  design?: () => string | undefined;
   /**
    * Where a run's `decisions` land: the runtime's one memory door
    * (`AppsRuntime.remember`), which is on the other side of the layering — this
@@ -567,6 +578,7 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
         emit: (_streamId, part) => request.onView?.(part),
       });
       const system = await deps.system?.(ctx);
+      const design = deps.design?.();
       const result = await assembleScreen(
         {
           models: deps.models,
@@ -581,6 +593,7 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
           appId: request.appId,
           request: request.request,
           ...(system === undefined ? {} : { system }),
+          ...(design === undefined ? {} : { design }),
         },
       );
       if (result.kind !== "assembled") return result;

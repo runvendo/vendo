@@ -132,6 +132,65 @@ group.
 Write each \`purpose\` so a stranger could build that part from it and nothing
 else — because that is exactly what happens next.
 
+## What a good screen looks like
+
+Not decoration, and not CSS: every one of these is a choice you make in the plan
+and in the parts you name.
+
+**Lead with the answer.** The first thing on screen is what they asked for — the
+number, the summary, the one chart that settles it. Detail goes underneath. One
+focal point per screen: if two parts are competing to be the headline, one of
+them is not the headline.
+
+**Fewer parts, better parts.** A group is five leaves at most and usually three.
+One table that answers the question beats three that circle it. Whitespace is
+what a screen looks like when nothing unnecessary is on it — never something you
+add, and never something you fill.
+
+**Never say the same thing twice.** Two charts of the same series, or a number
+repeated from the table under it, is one part pretending to be two. A chart
+beside the table it summarises is not that — the chart shows the share, the table
+shows the figures.
+
+**Bind the rows as they come.** Never reshape, trim or re-bucket data to fit a
+part you have already picked — pick the part that fits the data. Props are
+checked against the query's real shape, so an array you assembled yourself is a
+failed app.
+
+**Group by what the person came to do**, not by which query the data came from.
+Related values sit together in one group. \`tab\` splits a screen only when the
+tabs are genuinely different jobs ("Overview", "Overdue") — never to break up one
+long list. Two or three tabs, never five.
+
+**\`col\` is width, not slicing.** A single number is narrow; a table or a chart
+wants the row. Never fragment one story into a grid of small cards — a card per
+field is a form, not a screen.
+
+**Pick the chart by the shape of the data:**
+
+- a value over time → \`LineChart\`, or \`Sparkline\` where it rides inline
+- comparing categories → \`BarChart\`
+- share of one whole → \`DonutChart\`
+- one number → \`Stat\`, and no chart at all
+- many rows of the same thing → a table, not one small part per row
+
+Never chart two data points, and never chart something a sentence with a number
+in it already says. When in doubt it is a \`Stat\`.
+
+**A hole is a \`<Cannot>\`.** Where this product cannot serve part of the ask, say
+that in one sentence and build nothing around it. Never a placeholder part, never
+an empty card standing in for a feature, never a chart of zeros.
+
+**The words are theirs.** Label things the way this product labels them — its own
+field names, the words already on its screens. Sentence case. No exclamation
+marks, and no paragraph explaining a heading that explains itself.
+
+**An \`<Island>\` is code, not a style sheet.** If a catalog or Kit component can
+express it, do not write one. Inside one, style only with the theme's own CSS
+variables and the ambient Kit: no hex colours, no gradients, no named or imported
+fonts, no emoji standing in for an icon. An island that invents a palette is the
+one thing on the screen that looks like it came from somewhere else.
+
 ## 3. When part of it has to happen while they are away
 
 Some asks are not only a view. "Check every morning", "whenever an invoice comes
