@@ -13,7 +13,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { buildVendoToolPack, type VendoPackTool } from "./pack.js";
 import { VENDO_CREATE_APP_TOOL, VENDO_DELEGATE_TOOL } from "./tool-pack.js";
-import { boundRegistry, ctx, testGuard, type TestToolImplementation } from "./test-helpers.js";
+import { boundRegistry, ctx, testGuard, type TestToolImplementation } from "./agent-doubles.test-util.js";
 
 const DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema";
 

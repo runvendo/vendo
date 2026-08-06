@@ -1,4 +1,4 @@
-import { buildVendoToolPack } from "@vendoai/agent";
+import { buildVendoToolPack } from "./pack.js";
 import { VendoError, type RunContext } from "@vendoai/core";
 import { dynamicTool, jsonSchema, type ToolSet } from "ai";
 import type { Vendo } from "./server.js";
@@ -21,8 +21,8 @@ export {
   type VendoDelegateResult,
   type VendoToolPackFilter,
   type VendoToolPackOptions,
-} from "@vendoai/agent";
-import type { VendoToolPackOptions } from "@vendoai/agent";
+} from "./tool-pack.js";
+import type { VendoToolPackOptions } from "./tool-pack.js";
 
 /**
  * Build the Vendo tool pack as an AI SDK `ToolSet` for `streamText`/

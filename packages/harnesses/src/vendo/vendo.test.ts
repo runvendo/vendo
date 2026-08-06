@@ -10,7 +10,7 @@
 import type { HarnessEvent, Json, ToolDescriptor, Turn } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { vendo, type HarnessHand } from "./vendo.js";
-import { createTurnTools } from "./turn-tools.js";
+import { createTurnTools } from "../turn-tools.js";
 import {
   boundRegistry,
   ctx,
@@ -25,7 +25,7 @@ import {
   userMessage,
   ZERO_USAGE,
   type TestGuard,
-} from "./test-doubles.test-util.js";
+} from "../test-doubles.test-util.js";
 
 /** Drive a harness directly — the runtime is proven separately, so here the Turn
  *  is assembled by hand and the events are collected raw. */

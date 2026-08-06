@@ -12,8 +12,13 @@ import {
   type OverridesFile,
   type ServerActionHandler,
 } from "@vendoai/actions";
-import { askUserRegistry, connectorDiscoveryRegistry, createAgent, vendoVerbsRegistry, USE_SERVICE_TOOL, VENDO_TOOL_PACK_PREFIX, type CapabilityMissConfig, type ToolSearchConfig, type VendoAgent } from "@vendoai/agent";
-import { assembleSystemPrompt } from "@vendoai/agent/internal";
+import { createAgent, type VendoAgent } from "@vendoai/agent";
+import type { CapabilityMissConfig, ToolSearchConfig } from "@vendoai/harnesses";
+import { askUserRegistry } from "./ask-user.js";
+import { connectorDiscoveryRegistry, USE_SERVICE_TOOL } from "./connector-discovery.js";
+import { vendoVerbsRegistry } from "./vendo-verbs.js";
+import { VENDO_TOOL_PACK_PREFIX } from "./tool-pack.js";
+import { assembleSystemPrompt } from "./prompt.js";
 // Architecture §3 — the harness runtime and the default thinker. `vendo()` is
 // composed HERE (not by the host) when `harness:` is unset; its prompt and
 // descriptor catalog reach it on the turn, never at construction.

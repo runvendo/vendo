@@ -25,12 +25,14 @@ import type { Json, RunContext, ThreadId, ToolDescriptor, ToolListing, ToolOutco
 import {
   CAPABILITY_MISS_TOOL_NAME,
   createCapabilityMissDetector,
+  type CapabilityMissConfig,
+} from "./capability-miss.js";
+import {
   createToolSearchSession,
   FIND_TOOLS_TOOL_NAME,
-  type CapabilityMissConfig,
-  type ToolBridgeOptions,
   type ToolSearchConfig,
-} from "@vendoai/agent/internal";
+} from "./tool-search.js";
+import type { ToolBridgeOptions } from "./tool-bridge.js";
 import type { ToolSet } from "ai";
 
 /** One runtime-owned meta-tool: what the harness shows its model, and the shipped

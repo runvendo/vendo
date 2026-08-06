@@ -1,7 +1,7 @@
 import type { Guard, GuardDecision, RunContext, ToolCall, ToolDescriptor, ToolOutcome, ToolRegistry } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
-import { addAgentTool } from "./tools.js";
-import { ctx } from "./test-helpers.js";
+import { addAgentTool } from "./tool-bridge.js";
+import { ctx } from "./test-doubles.test-util.js";
 
 // genqa defect 1 (double-count): the AI SDK calls `needsApproval` (a preview)
 // and then, when it answers false, `execute` (the real, dispatching call)

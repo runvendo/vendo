@@ -31,6 +31,10 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./vendo": {
+      "types": "./dist/vendo/index.d.ts",
+      "default": "./dist/vendo/index.js"
+    },
     "./claude-code": {
       "types": "./dist/claude-code/index.d.ts",
       "default": "./dist/claude-code/index.js"
@@ -47,7 +51,6 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@vendoai/agent": "workspace:*",
     "@vendoai/apps": "workspace:*",
     "@vendoai/core": "workspace:*",
     "@vendoai/guard": "workspace:*",

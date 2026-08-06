@@ -7,7 +7,7 @@ import {
   type VendoDelegateResult,
   type VendoToolPackFilter,
   type VendoToolPackOptions,
-} from "./index.js";
+} from "./tool-pack.js";
 
 // Wave 0 contract freeze — these names and option shapes are what the docs,
 // the examples, and both umbrella shims build against; Lane A implements

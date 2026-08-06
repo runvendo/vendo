@@ -58,7 +58,12 @@ const PACKAGES_DIR = join(ROOT, "packages");
 const LAYERS = {
   "@vendoai/core": [],
   "@vendoai/store": ["@vendoai/core"],
-  "@vendoai/agent": ["@vendoai/core"],
+  // temporary until S6 deletes the package: the engine folded into
+  // @vendoai/harnesses, and what is left here (`createAgent`, its runner, the
+  // thread repository) drives it from the other side of that edge. The arrow
+  // used to point the other way; harnesses no longer depends on agent at all,
+  // so there is no cycle — just a door outliving its engine by one slice.
+  "@vendoai/agent": ["@vendoai/core", "@vendoai/harnesses"],
   "@vendoai/actions": ["@vendoai/core"],
   "@vendoai/guard": ["@vendoai/core"],
   "@vendoai/ui": ["@vendoai/core"],
@@ -78,9 +83,10 @@ const LAYERS = {
   // the harness runtime (build contract 2026-07-30 §2): the second multi-block
   // package after the umbrella. It runs any Harness — building the Turn, mapping
   // the guard's outcomes, mirroring onto today's wire, and emitting hot-path
-  // views — so it reaches core (the contract), agent (the vendo() loop), apps
-  // (the plan skeleton) and guard. It is NOT the umbrella: no store, no actions.
-  "@vendoai/harnesses": ["@vendoai/core", "@vendoai/agent", "@vendoai/apps", "@vendoai/guard"],
+  // views — and since the engine fold it OWNS the turn loop too, so it reaches
+  // core (the contract), apps (the plan skeleton) and guard, and nothing else.
+  // It is NOT the umbrella: no store, no actions.
+  "@vendoai/harnesses": ["@vendoai/core", "@vendoai/apps", "@vendoai/guard"],
   // the standalone agent runtime (agents-v0 spec, 2026-08-04): the open-source
   // front door Vendo's embed consumes across a real seam. It assembles what the
   // umbrella assembles — harness runtime (harnesses), guard, store, host tools

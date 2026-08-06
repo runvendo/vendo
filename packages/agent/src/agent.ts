@@ -24,24 +24,27 @@ import {
   type UIMessage,
   type UIMessageStreamWriter,
 } from "ai";
-import { startTurn, type Supervise, type TurnContext } from "./loop.js";
-import { wireErrorMessage } from "./wire-error.js";
+import { startTurn, type TurnContext } from "@vendoai/harnesses/vendo";
+import {
+  addAgentTool,
+  buildAgentTools,
+  createCapabilityMissDetector,
+  createToolSearchSession,
+  latestUserIntent,
+  wireErrorMessage,
+  type CapabilityMissConfig,
+  type ToolSearchConfig,
+} from "@vendoai/harnesses";
 import { assembleSystemPrompt } from "./prompt.js";
 import { createRunner } from "./runner.js";
 import { ThreadRepository, type Thread, type ThreadSummary } from "./threads.js";
-import { addAgentTool, buildAgentTools } from "./tools.js";
-import {
-  createCapabilityMissDetector,
-  latestUserIntent,
-  type CapabilityMissConfig,
-} from "./capability-miss.js";
-import { createToolSearchSession, type ToolSearchConfig } from "./tool-search.js";
 
 /** The effective thread id every turn response carries (03 §1), so a caller
- *  that began without one can adopt it. Exported through `@vendoai/agent/internal`
- *  because a composition serving turns through the harness runtime must stamp the
- *  SAME header — the wire reads it to register turn liveness. */
-export const THREAD_ID_HEADER = "x-vendo-thread-id";
+ *  that began without one can adopt it. This door's private copy of
+ *  `THREAD_ID_HEADER` in `@vendoai/harnesses` — the same string, because the wire
+ *  reads it to register turn liveness whichever door served the turn — kept local
+ *  only for as long as this door outlives the engine it used to own. */
+const THREAD_ID_HEADER = "x-vendo-thread-id";
 
 // ENG-309: backoff between persist attempts after a completed stream. Short and
 // bounded — long waits would hold the response open for nothing (the user
@@ -114,10 +117,6 @@ interface AgentConfig {
    *  ceiling it is, because neither this door nor the loop has any business
    *  knowing. Unset changes nothing. */
   stopWhen?: readonly StopCondition<ToolSet>[];
-  /** §4.1 item 6 — a verdict on every final answer, shipped as a no-op (unset =
-   *  approved). Lives here rather than on the harness because the frozen signature
-   *  takes a `RunContext` and a `Turn` deliberately carries none. */
-  supervise?: Supervise;
   capabilityMiss?: CapabilityMissConfig;
   /** ENG-252: enable the `find_tools` meta-tool and runtime loadout.
    *  When set, the model starts with a bounded initial loadout and discovers the
@@ -206,7 +205,7 @@ function validateConfig(config: AgentConfig): void {
 
 // System-role messages are rejected: the system prompt is assembled server-side
 // (03 §3); accepting one from the client would be a prompt-injection channel.
-export function validateMessage(message: UIMessage | undefined): asserts message is UIMessage {
+function validateMessage(message: UIMessage | undefined): asserts message is UIMessage {
   if (!message
     || typeof message.id !== "string"
     || message.id.length === 0
@@ -216,7 +215,7 @@ export function validateMessage(message: UIMessage | undefined): asserts message
   }
 }
 
-export function upsertMessage(messages: UIMessage[], message: UIMessage): void {
+function upsertMessage(messages: UIMessage[], message: UIMessage): void {
   const index = messages.findIndex((candidate) => candidate.id === message.id);
   if (index === -1) messages.push(message);
   else messages[index] = message;
@@ -266,7 +265,7 @@ function isApprovalResponse(stored: unknown, incoming: unknown): boolean {
 /** AGENT-12: clients may add fresh USER messages and answer approvals — they
  *  may not author assistant content or rewrite history by replaying a known
  *  message id with different parts. */
-export function validateUpsert(messages: UIMessage[], message: UIMessage): void {
+function validateUpsert(messages: UIMessage[], message: UIMessage): void {
   const existing = messages.find((candidate) => candidate.id === message.id);
   if (existing === undefined) {
     if (message.role !== "user") {
@@ -296,7 +295,7 @@ export function validateUpsert(messages: UIMessage[], message: UIMessage): void 
   }
 }
 
-export function abandonPendingApprovals(messages: UIMessage[]): string[] {
+function abandonPendingApprovals(messages: UIMessage[]): string[] {
   const abandonedToolCallIds: string[] = [];
   for (const message of messages) {
     message.parts = message.parts.map((part) => {
@@ -331,7 +330,7 @@ export function abandonPendingApprovals(messages: UIMessage[]): string[] {
  *  part's `approval.id` is the ai-SDK's own handle; the GUARD's approvalId
  *  rides the data-vendo-approval part beside it, keyed by toolCallId — read it
  *  from either the persisted nested envelope or the flat §16 shape. */
-export function guardApprovalIds(messages: UIMessage[], toolCallIds: string[]): ApprovalId[] {
+function guardApprovalIds(messages: UIMessage[], toolCallIds: string[]): ApprovalId[] {
   if (toolCallIds.length === 0) return [];
   const wanted = new Set(toolCallIds);
   const ids: ApprovalId[] = [];
@@ -556,7 +555,6 @@ export function createAgent(config: AgentConfig): VendoAgent {
             ...(input.signal === undefined ? {} : { signal: input.signal }),
             ...(config.context === undefined ? {} : { context: config.context }),
             ...(config.stopWhen === undefined ? {} : { stopWhen: config.stopWhen }),
-            ...(config.supervise === undefined ? {} : { supervision: { ctx, supervise: config.supervise } }),
             ...(toolSearch === undefined ? {} : { toolSearch }),
           });
           // self-serve P: the ai-SDK `error` chunk is TRANSIENT — it sets the
@@ -589,20 +587,6 @@ export function createAgent(config: AgentConfig): VendoAgent {
           // not because the model finished — stream a renderable notice.
           const stepLimit = await loop.stepLimitPart();
           if (stepLimit !== undefined) writer.write(toVendoWirePart(stepLimit) as never);
-          // §4.1 item 6 — a withheld answer is a turn failure, so it travels the
-          // failure path this turn already has: the same `error` chunk the client
-          // renders and the same recorded notice a reload reads. Nothing new.
-          const refusal = await loop.supervisorRefusal();
-          if (refusal !== undefined) {
-            const message = wireErrorMessage(refusal);
-            // Recorded BEFORE the chunk, and in that order for the same reason
-            // the tap above records before it enqueues: writing an `error` chunk
-            // re-enters the stream's own onError with its own `new Error(text)`,
-            // which this gate can only render generically. The once-guard keeps
-            // whichever message got there first, so the crafted one has to.
-            recordTurnError(message, (part) => writer.write(part as never));
-            writer.write({ type: "error", errorText: message } as never);
-          }
         },
         onFinish: async ({ messages }) => {
           await persistFinishedTurn(threads, thread, messages, ctx);

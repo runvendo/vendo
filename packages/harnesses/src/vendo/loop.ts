@@ -3,12 +3,11 @@
  *
  * This is the `streamText` call that used to live inside `createAgent`'s
  * `createUIMessageStream` closure, lifted out verbatim so it can also be driven
- * by a `Harness` (`vendo()` in @vendoai/harnesses). Extracting it is what makes
- * the harness a genuine lift rather than a parallel reimplementation: every rail
- * here — the step cap, `buildFailedStop`, the history window, the cache
+ * by a `Harness` (`vendo()`, its neighbour in this folder). Extracting it is what
+ * makes the harness a genuine lift rather than a parallel reimplementation: every
+ * rail here — the step cap, `buildFailedStop`, the history window, the cache
  * breakpoints, the abandoned-approval provider rewrite, the tool-search loadout —
- * is shared, so a rail can only be dropped by deleting it for BOTH callers, and
- * @vendoai/agent's own suite is the specification that would catch that.
+ * is shared, so a rail can only be dropped by deleting it for BOTH callers.
  *
  * What is deliberately NOT here: how output reaches a consumer. `createAgent`
  * merges `result.toUIMessageStream()`; the harness reads `result.fullStream` and
@@ -19,7 +18,6 @@ import {
   VendoError,
   VENDO_MAKE_TOOL,
   VENDO_APP_BUILD_FAILED_PREFIX,
-  type RunContext,
   type TurnId,
   type VendoStepLimitPart,
 } from "@vendoai/core";
@@ -36,7 +34,7 @@ import {
   type UIMessage,
 } from "ai";
 import { failoverModel, type ResolvedModel } from "./failover.js";
-import type { ToolSearchSession } from "./tool-search.js";
+import type { ToolSearchSession } from "../tool-search.js";
 
 // AGENT-7: the default agent-loop step cap (unchanged from the previously
 // hardcoded value); hosts raise or lower it via context.maxSteps.
@@ -235,17 +233,6 @@ export interface TurnLoopOptions {
    *  composed turn; every composed caller mints one. */
   turnId?: TurnId;
   context?: TurnContext;
-  /**
-   * §4.1 item 6 — the supervisor slot, shipped as a NO-OP. Unset means
-   * `{ok: true}` and costs the turn nothing: the final answer is not even
-   * awaited for it.
-   *
-   * `ctx` travels beside the hook because the signature is a frozen inter-project
-   * seam that asks for one, and the loop holds no `RunContext` of its own. That is
-   * also why only `createAgent` can fill this: a `Turn` deliberately carries no
-   * ctx, so a harness has none to hand over.
-   */
-  supervision?: { ctx: RunContext; supervise: Supervise };
   /** Extra stop conditions, COMPOSED with the loop's own three rather than
    *  replacing them. The array used to be a literal, so a caller who needed a
    *  fourth condition had nowhere to put it and would have had to grow a second
@@ -271,17 +258,6 @@ export interface TurnContext {
   maxRetries?: number;
 }
 
-/**
- * §4.1 item 6 — FROZEN signature (inter-project seam; the verification project
- * is the consumer). A verdict on the turn's final answer: `{ok: true}` lets it
- * stand, `{ok: false}` withholds it with a reason the user is shown.
- */
-export type Supervise = (input: {
-  turnId: TurnId;
-  answer: string;
-  ctx: RunContext;
-}) => Promise<{ ok: true } | { ok: false; reason: string }>;
-
 export interface TurnLoop {
   result: ReturnType<typeof streamText>;
   maxSteps: number;
@@ -291,17 +267,6 @@ export interface TurnLoop {
    * because of the cap, not because the model finished.
    */
   stepLimitPart(): Promise<VendoStepLimitPart | undefined>;
-  /**
-   * §4.1 item 6 — the supervisor's verdict on the final answer, as an ERROR the
-   * caller sends through the failure path it already has. A `VendoError` because
-   * that is the one shape `wireErrorMessage` passes through recognizably: the
-   * reason is ours and crafted, so the user reads it instead of the generic line,
-   * and no new wire part or `HarnessEvent` member had to exist for this.
-   *
-   * Resolves `undefined` when no supervisor is configured — including without
-   * awaiting the answer, so an unset slot is not even a scheduling difference.
-   */
-  supervisorRefusal(): Promise<VendoError | undefined>;
 }
 
 /** The model `streamText` is handed: the one the caller named, or the ordered
@@ -319,11 +284,6 @@ function turnModel(options: TurnLoopOptions): LanguageModel {
 
 export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
   const maxSteps = options.context?.maxSteps ?? DEFAULT_MAX_STEPS;
-  if (options.supervision !== undefined && options.turnId === undefined) {
-    // A verdict nobody can attribute is not a verdict. Every composed caller
-    // mints a turn id, so this is a wiring mistake, not a runtime condition.
-    throw new VendoError("validation", "supervision needs the turn it is judging (turnId)");
-  }
   const modelMessages = await turnModelMessages(
     options.messages,
     options.system,
@@ -358,17 +318,6 @@ export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
   return {
     result,
     maxSteps,
-    async supervisorRefusal() {
-      const { supervision, turnId } = options;
-      if (supervision === undefined || turnId === undefined) return undefined;
-      const verdict = await supervision.supervise({
-        turnId,
-        answer: await result.text,
-        ctx: supervision.ctx,
-      });
-      if (verdict.ok) return undefined;
-      return new VendoError("blocked", verdict.reason);
-    },
     async stepLimitPart() {
       try {
         const [finishReason, steps] = await Promise.all([result.finishReason, result.steps]);

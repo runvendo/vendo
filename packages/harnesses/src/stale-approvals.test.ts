@@ -12,7 +12,7 @@
  *    preview said "run" (a breaker or presence boundary). The one exception is the
  *    `interactive: false` card, which is meant to stand.
  */
-import { providerHistory, turnModelMessages } from "@vendoai/agent/internal";
+import { providerHistory, turnModelMessages } from "./vendo/loop.js";
 import type { ApprovalId, ThreadId } from "@vendoai/core";
 import { convertToModelMessages, type UIMessage } from "ai";
 import { describe, expect, it, vi } from "vitest";

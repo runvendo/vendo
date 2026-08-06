@@ -53,3 +53,21 @@ export type { HostOAuthAdapter } from "@vendoai/mcp";
 // Existing-agents Lane B — the wire's per-approval resolution for a parked BYO
 // guarded call (what GET /approvals/:id answers; the ui client mirrors it).
 export type { ByoApprovalResolution } from "./byo-approvals.js";
+// The three Vendo-owned tool registries, on the root because a host composing
+// its OWN actions registry (rather than `createVendo`'s) has to be able to add
+// them. They stood on `@vendoai/agent`'s public barrel until the engine fold
+// moved them here; this keeps that surface reachable under its new name.
+export { ASK_USER_TOOL, askUserRegistry } from "./ask-user.js";
+export {
+  VENDO_VERB_TOOLS,
+  vendoVerbsRegistry,
+  type VendoVerbFinding,
+  type VendoVerbPorts,
+} from "./vendo-verbs.js";
+export {
+  CONNECTOR_DISCOVERY_TOOLS,
+  USE_SERVICE_TOOL,
+  connectorDiscoveryRegistry,
+  type ConnectorDiscoveryPorts,
+  type ServiceToolMatch,
+} from "./connector-discovery.js";

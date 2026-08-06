@@ -16,7 +16,7 @@ import { APICallError } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_MAX_RETRIES, startTurn, type TurnLoopOptions } from "./loop.js";
-import { ZERO_USAGE } from "./test-helpers.js";
+import { ZERO_USAGE } from "../test-doubles.test-util.js";
 
 afterEach(() => {
   vi.restoreAllMocks();

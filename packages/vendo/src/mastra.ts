@@ -1,4 +1,5 @@
-import { buildVendoToolPack, type VendoToolPackFilter } from "@vendoai/agent";
+import { buildVendoToolPack } from "./pack.js";
+import type { VendoToolPackFilter } from "./tool-pack.js";
 import { VendoError, type Principal, type RunContext } from "@vendoai/core";
 // Static import of an OPTIONAL peer: this module only loads when the host
 // imports `@vendoai/vendo/mastra`, and a Mastra host has @mastra/core by
@@ -32,7 +33,7 @@ export {
   VENDO_TOOL_PACK_PREFIX,
   type VendoDelegateResult,
   type VendoToolPackFilter,
-} from "@vendoai/agent";
+} from "./tool-pack.js";
 
 /** Request-context key holding the caller's Vendo `Principal` (`{ kind, subject }`).
  *  REQUIRED on every request that may reach a `vendo_*` tool — a missing or

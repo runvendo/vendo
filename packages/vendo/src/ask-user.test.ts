@@ -1,7 +1,7 @@
 import { ASK_USER_TOOL, type RunContext, type ToolRegistry } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { askUserRegistry } from "./ask-user.js";
-import { createAgent } from "./index.js";
+import { createAgent } from "@vendoai/agent";
 import {
   ctx as agentCtx,
   readSse,
@@ -10,7 +10,7 @@ import {
   textTurn,
   toolCallTurn,
   userMessage,
-} from "./test-helpers.js";
+} from "./agent-doubles.test-util.js";
 
 const ctx = (overrides: Partial<RunContext> = {}): RunContext => ({
   principal: { kind: "user", subject: "user_alice" },

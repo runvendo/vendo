@@ -1,14 +1,14 @@
 import type { ToolDescriptor } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
-import { CAPABILITY_MISS_TOOL_NAME } from "./capability-miss.js";
-import { createAgent } from "./index.js";
 import {
+  CAPABILITY_MISS_TOOL_NAME,
   DEFAULT_MAX_INITIAL_TOOLS,
   FIND_TOOLS_TOOL_NAME,
   computeInitialLoadout,
   createToolSearchSession,
   type ToolSearchFn,
-} from "./tool-search.js";
+} from "@vendoai/harnesses";
+import { createAgent } from "./index.js";
 import {
   boundRegistry,
   ctx,
@@ -378,7 +378,7 @@ describe("seeded loadout (connection-scoped, spec 2026-07-20)", () => {
 
 describe("discovery discipline (criterion 12) — the meta-tool no longer invites unconnected calls", () => {
   it("the description budgets search and never calls unconnected tools 'safe and correct'", async () => {
-    const { createToolSearchSession } = await import("./tool-search.js");
+    const { createToolSearchSession } = await import("@vendoai/harnesses");
     const session = createToolSearchSession({
       config: { search: async () => [] },
       descriptors: [],
@@ -397,7 +397,7 @@ describe("discovery discipline (criterion 12) — the meta-tool no longer invite
 
 describe("mid-turn materialization (lazily expanded search hits)", () => {
   it("search results NOT in the built toolset resolve + materialize + load", async () => {
-    const { createToolSearchSession } = await import("./tool-search.js");
+    const { createToolSearchSession } = await import("@vendoai/harnesses");
     const materialized: string[] = [];
     const session = createToolSearchSession({
       config: { search: async () => [{ name: "gmail_SEND", description: "send", risk: "write", score: 5 }] },

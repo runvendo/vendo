@@ -15,14 +15,14 @@ import {
   type StopCondition,
   type ToolSet,
 } from "ai";
-import { mintAuditId } from "./ids.js";
-import { assembleSystemPrompt } from "./prompt.js";
-import { buildAgentTools } from "./tools.js";
 import {
+  buildAgentTools,
   createCapabilityMissDetector,
   scrubCapabilityMissText,
   type CapabilityMissConfig,
-} from "./capability-miss.js";
+} from "@vendoai/harnesses";
+import { mintAuditId } from "./ids.js";
+import { assembleSystemPrompt } from "./prompt.js";
 
 /** 03-agent §2 */
 export interface RunnerConfig {

@@ -5,7 +5,7 @@ import {
   type ToolDescriptor,
 } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
-import { createAgent } from "./index.js";
+import { createAgent } from "@vendoai/agent";
 import { buildVendoToolPack } from "./pack.js";
 import { VENDO_CREATE_APP_TOOL, VENDO_DELEGATE_TOOL } from "./tool-pack.js";
 import {
@@ -16,7 +16,7 @@ import {
   textTurn,
   toolCallTurn,
   type TestToolImplementation,
-} from "./test-helpers.js";
+} from "./agent-doubles.test-util.js";
 
 describe("core conformance — AgentRunner seam", () => {
   it("asRunner() passes agentRunnerConformance", async () => {

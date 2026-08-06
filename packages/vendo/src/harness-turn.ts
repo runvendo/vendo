@@ -30,31 +30,37 @@ import {
   type ToolRegistry,
   type WorkspaceFs,
 } from "@vendoai/core";
-import {
-  latestUserIntent,
-  THREAD_ID_HEADER,
-  ThreadRepository,
-  upsertMessage,
-  validateMessage,
-  validateUpsert,
-  wireErrorMessage,
-  type CapabilityMissConfig,
-  type ScriptedTurn,
-  type ToolBridgeOptions,
-  type ToolSearchConfig,
-} from "@vendoai/agent/internal";
+import { ThreadRepository } from "@vendoai/agent/internal";
 import type { VendoGuard } from "@vendoai/guard";
 import { harnessStateStore, threadMessageStore, workspaceStore, type VendoStore } from "@vendoai/store";
 import {
   createDiscoveryRails,
   createHarnessRuntime,
+  latestUserIntent,
   provideHarnessAdapters,
+  THREAD_ID_HEADER,
+  upsertMessage,
+  validateMessage,
+  validateUpsert,
+  wireErrorMessage,
+  type CapabilityMissConfig,
   type ToolDoorPort,
   type DiscoveryRails,
   type HarnessRuntimeDeps,
+  type ToolBridgeOptions,
+  type ToolSearchConfig,
 } from "@vendoai/harnesses";
 import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
-import type { LanguageModel, UIMessage } from "ai";
+import type { LanguageModel, UIMessage, UIMessageStreamWriter } from "ai";
+
+/** One scripted turn's body: everything it writes goes onto the same stream a
+ *  live turn writes to, and is persisted by the same `onFinish`. Tour mode's
+ *  play shape — it lives here because this door is the one that serves the
+ *  turns a tour scripts. */
+export type ScriptedTurn = (input: {
+  writer: UIMessageStreamWriter<UIMessage>;
+  signal?: AbortSignal;
+}) => Promise<void>;
 
 
 export interface HarnessTurnsConfig {

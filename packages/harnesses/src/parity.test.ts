@@ -15,7 +15,7 @@ import {
   type ToolRegistry,
   type VendoViewStreamingToolCall,
 } from "@vendoai/core";
-import { wireErrorMessage } from "@vendoai/agent/internal";
+import { wireErrorMessage } from "./wire-error.js";
 import { describe, expect, it, vi } from "vitest";
 import { defineHarness } from "./define.js";
 import { createHarnessRuntime } from "./runtime.js";

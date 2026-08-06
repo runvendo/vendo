@@ -12,7 +12,8 @@ import type {
   TurnId,
   TurnTools,
 } from "@vendoai/core";
-import { FIND_TOOLS_TOOL_NAME, guardedCall, previewApproval, type ToolBridgeOptions } from "@vendoai/agent/internal";
+import { FIND_TOOLS_TOOL_NAME } from "./tool-search.js";
+import { guardedCall, previewApproval, type ToolBridgeOptions } from "./tool-bridge.js";
 import type { DiscoveryRails } from "./discovery.js";
 
 /**

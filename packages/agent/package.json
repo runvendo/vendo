@@ -43,13 +43,14 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "conformance": "vitest run src/conformance.test.ts src/wire.test.ts src/stream-client.test.ts src/provider-wire.conformance.test.ts",
+    "conformance": "vitest run src/wire.test.ts src/stream-client.test.ts src/provider-wire.conformance.test.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@vendoai/core": "workspace:*",
+    "@vendoai/harnesses": "workspace:*",
     "zod": "^3.25.76"
   },
   "peerDependencies": {

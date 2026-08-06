@@ -96,6 +96,7 @@
     "build": "tsc -p tsconfig.json",
     "pretest": "pnpm run build:playground",
     "test": "vitest run",
+    "conformance": "vitest run src/conformance.test.ts",
     "pretypecheck": "pnpm run build:playground",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.docs-check.json --noEmit",
     "pretest:coverage": "pnpm run build:playground",

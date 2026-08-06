@@ -1,9 +1,8 @@
 /**
  * `vendo()` — the default harness. NOT a second loop: it drives `startTurn` from
- * @vendoai/agent, the same call `createAgent` drives, so every rail in that loop
+ * ./loop.ts, the same call `createAgent` drives, so every rail in that loop
  * (the step cap, `buildFailedStop`, the history window, the cache breakpoints, the
  * tool-search loadout, the step-limit notice) is shared rather than re-derived.
- * @vendoai/agent's own 134 tests are the specification for it.
  *
  * What the lift changes, and only this:
  * - tools execute through `turn.tools.call()`, which runs the SHIPPED guarded-call
@@ -18,10 +17,11 @@
  */
 import { z } from "zod";
 import { modelToolDescription, type Harness, type HarnessEvent, type Json, type ToolDescriptor, type Turn } from "@vendoai/core";
-import { startTurn, wireErrorMessage, type TurnContext } from "@vendoai/agent/internal";
-import { reportHire } from "./runtime.js";
+import { startTurn, type TurnContext } from "./loop.js";
+import { wireErrorMessage } from "../wire-error.js";
+import { reportHire } from "../runtime.js";
 import { jsonSchema, stepCountIs, streamText, tool, type LanguageModel, type ToolSet } from "ai";
-import { defineHarness } from "./define.js";
+import { defineHarness } from "../define.js";
 
 /** How many messages a hired subagent may exchange before it must report back.
  *  Bounded so a runaway helper costs a receipt, not a turn. */

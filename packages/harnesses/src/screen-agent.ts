@@ -55,7 +55,7 @@ import {
 import { buildingAppsSkill } from "@vendoai/apps";
 import type { LanguageModel } from "ai";
 import { defineHarness } from "./define.js";
-import { vendo, type HarnessHand, type VendoHarnessOptions } from "./vendo.js";
+import { vendo, type HarnessHand, type VendoHarnessOptions } from "./vendo/vendo.js";
 import { wrapWorkspaceForRender, type RenderSeamOptions } from "./render-seam.js";
 
 /**

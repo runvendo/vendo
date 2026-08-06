@@ -29,7 +29,14 @@ export {
   type TranscriptStore,
   type TurnRunInput,
 } from "./runtime.js";
-export { vendo, type HarnessHand, type VendoHarnessDeps, type VendoHarnessOptions } from "./vendo.js";
+// `vendo()` itself stays on the ROOT barrel: `harness: vendo()` is the
+// umbrella's documented one-liner and `@vendoai/vendo` re-exports it from here.
+// Everything else that harness owns — its loop and its provider ladder — lives
+// behind `@vendoai/harnesses/vendo`, one subpath per harness.
+export { vendo, type HarnessHand, type VendoHarnessDeps, type VendoHarnessOptions } from "./vendo/vendo.js";
+// §4.1 item 4 — the shipped per-tenant token ceiling, for a door's `stopWhen`.
+// Public because the ceiling belongs to whoever is being metered.
+export { tokenBudgetStop } from "./vendo/loop.js";
 export {
   assembleScreen,
   escalatedPlanPath,
@@ -81,7 +88,43 @@ export {
   VALIDATE_TOOL,
   type AppValidationFailure,
 } from "./validate-gate.js";
-export { VENDO_STATUS_PART } from "./wire.js";
+export { THREAD_ID_HEADER, VENDO_STATUS_PART } from "./wire.js";
+// The engine the doors share. These used to live in `@vendoai/agent`; they are
+// here because the runtime above is their only long-term caller, and a rail can
+// only drift by being changed for every door at once.
+export { wireErrorMessage } from "./wire-error.js";
+export {
+  abandonPendingApprovals,
+  guardApprovalIds,
+  upsertMessage,
+  validateMessage,
+  validateUpsert,
+} from "./transcript-rules.js";
+export {
+  addAgentTool,
+  buildAgentTools,
+  guardedCall,
+  previewApproval,
+  type ToolBridgeOptions,
+} from "./tool-bridge.js";
+export {
+  computeInitialLoadout,
+  createToolSearchSession,
+  DEFAULT_MAX_INITIAL_TOOLS,
+  FIND_TOOLS_TOOL_NAME,
+  type ToolSearchConfig,
+  type ToolSearchFn,
+  type ToolSearchMatch,
+  type ToolSearchSession,
+} from "./tool-search.js";
+export {
+  CAPABILITY_MISS_TOOL_NAME,
+  createCapabilityMissDetector,
+  latestUserIntent,
+  scrubCapabilityMissText,
+  type CapabilityMissConfig,
+  type CapabilityMissDetector,
+} from "./capability-miss.js";
 // The materialization seam (materialize.ts) is deliberately NOT re-exported:
 // its consumers are the harness drivers in this package, which reach it
 // relatively. A barrel export with no reader is surface nobody asked for.

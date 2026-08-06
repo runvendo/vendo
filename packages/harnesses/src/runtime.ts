@@ -34,8 +34,8 @@ import {
   abandonPendingApprovals,
   guardApprovalIds,
   validateUpsert,
-  type ToolBridgeOptions,
-} from "@vendoai/agent/internal";
+} from "./transcript-rules.js";
+import type { ToolBridgeOptions } from "./tool-bridge.js";
 import {
   createUIMessageStream,
   createUIMessageStreamResponse,

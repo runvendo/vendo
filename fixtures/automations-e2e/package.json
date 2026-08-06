@@ -20,7 +20,8 @@
     "@vendoai/core": "workspace:*",
     "@vendoai/guard": "workspace:*",
     "@vendoai/harnesses": "workspace:*",
-    "@vendoai/store": "workspace:*"
+    "@vendoai/store": "workspace:*",
+    "@vendoai/vendo": "workspace:*"
   },
   "devDependencies": {
     "@ai-sdk/anthropic": "^3.0.12",

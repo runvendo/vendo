@@ -1,6 +1,6 @@
 import type { CapabilityMissEvent, ToolDescriptor } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
-import { CAPABILITY_MISS_TOOL_NAME } from "./capability-miss.js";
+import { CAPABILITY_MISS_TOOL_NAME } from "@vendoai/harnesses";
 import { createAgent } from "./index.js";
 import {
   boundRegistry,
