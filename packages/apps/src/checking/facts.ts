@@ -195,6 +195,14 @@ const KIND_PROBES: Partial<Record<ShapeType["kind"], unknown>> = {
   object: {},
 };
 
+/** The value a slot's zod schema is probed with. A DECLARED enum probes with
+ *  one of its OWN values: `"probe"` through a `"paid" | "void"` slot fails a
+ *  binding the host's contract actually permits. */
+const probeFor = (shape: ShapeType): unknown =>
+  "enum" in shape && shape.enum !== undefined && shape.enum.length > 0
+    ? shape.enum[0]
+    : KIND_PROBES[shape.kind];
+
 const KIT_WIRE_SET: ReadonlySet<string> = new Set(KIT_WIRE_COMPONENT_NAMES);
 
 export const kitSlotIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] => {
@@ -216,7 +224,7 @@ export const kitSlotIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] 
       if (shape === undefined) continue;
       const bound = shapeAtPointer(shape, rest.length === 0 ? "" : `/${rest.join("/")}`);
       if (bound === undefined || bound.kind === "json" || bound.kind === "null") continue;
-      const probe = KIND_PROBES[bound.kind];
+      const probe = probeFor(bound);
       if (probe === undefined) continue;
       if (!propSpec.schema.safeParse(probe).success) {
         issues.push(atProp(node.id, prop, `on <${node.component}> binds ${value.$path}, a ${bound.kind} field, but this slot takes a different RAW type (${propSpec.doc}) — bind the raw field with that type (e.g. the integer-cents field, not a pre-formatted display string).`));

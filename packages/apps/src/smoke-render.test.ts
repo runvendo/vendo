@@ -310,4 +310,10 @@ describe("sampleFromShape", () => {
     expect(sample.clients).toHaveLength(2);
     expect(sample.clients[0]).toEqual({ id: "sample", name: "sample", missingDocs: 2 });
   });
+
+  it("samples an enum-carrying scalar as its first declared value", () => {
+    expect(sampleFromShape({ kind: "string", enum: ["dining", "groceries"] })).toBe("dining");
+    expect(sampleFromShape({ kind: "number", enum: [0, 1] })).toBe(0);
+    expect(sampleFromShape({ kind: "string" })).toBe("sample");
+  });
 });

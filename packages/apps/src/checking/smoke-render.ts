@@ -51,12 +51,14 @@ export interface SmokeRenderOptions {
 
 /** A sample instance of a tool's response shape. Arrays carry TWO items so an
  *  island that maps rows re-renders with grown collections — the exact motion
- *  that fires hooks-order violations (C11) with live data. */
+ *  that fires hooks-order violations (C11) with live data. A DECLARED enum
+ *  samples as one of its own values: a generic "sample" through a closed
+ *  vocabulary renders a branch the real data never takes. */
 export const sampleFromShape = (shape: ShapeType): unknown => {
   switch (shape.kind) {
-    case "string": return "sample";
-    case "number": return 2;
-    case "boolean": return false;
+    case "string": return shape.enum?.[0] ?? "sample";
+    case "number": return shape.enum?.[0] ?? 2;
+    case "boolean": return shape.enum?.[0] ?? false;
     case "null": return null;
     case "json": return {};
     case "array": return [sampleFromShape(shape.items), sampleFromShape(shape.items)];
