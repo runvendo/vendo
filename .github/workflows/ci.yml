@@ -100,7 +100,7 @@ jobs:
       # affected — verified locally: 74 tasks vs the correct 0.
       - name: Skip if package unaffected (PRs only)
         id: affected
-        if: github.event_name == 'TEMP-proof-force-shards-to-run'
+        if: github.event_name == 'pull_request'
         env:
           TURBO_SCM_BASE: origin/${{ github.base_ref }}
         run: |
