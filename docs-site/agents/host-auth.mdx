@@ -17,7 +17,7 @@ Init detects from `package.json` (dependencies and devDependencies):
 
 | Dependency matches | Preset | Runtime SDK the preset lazy-loads |
 | --- | --- | --- |
-| `next-auth` or `@auth/*` | `authJs` | `@auth/core` |
+| `next-auth` or `@auth/*` | `authJs` (v5 — a next-auth major-4 host is wired with a printed advisory: v4 sessions resolve as anonymous) | `@auth/core` |
 | `@clerk/*` | `clerk` | `@clerk/backend` |
 | `@supabase/*` | `supabase` | `jose` |
 | `@auth0/*` | `auth0` | `jose` |

@@ -24,7 +24,7 @@ name/email session-token claims:
 
 | Preset | Session secret (env) | Session source |
 | --- | --- | --- |
-| `authJs()` | `AUTH_SECRET` | Auth.js session JWE (`@auth/core`) |
+| `authJs()` | `AUTH_SECRET`, then next-auth v4's `NEXTAUTH_SECRET` | Auth.js session JWE (`@auth/core`) |
 | `clerk()` | `CLERK_SECRET_KEY` (+ optional `CLERK_JWT_KEY`) | `__session` cookie or `Authorization: Bearer` |
 | `supabase()` | `SUPABASE_JWT_SECRET` | `sb-*-auth-token` cookie or `Authorization: Bearer` |
 | `auth0()` | `AUTH0_DOMAIN` / `AUTH0_ISSUER_BASE_URL` (tenant JWKS) | `Authorization: Bearer` |
@@ -122,6 +122,17 @@ the host API verifier uses, never a public or publishable key.
 
 Install Auth.js alongside the preset. It is an optional peer so hosts that do
 not use Auth.js do not install it.
+
+**next-auth v4 is not supported.** v4 uses its own cookie names
+(`next-auth.session-token`) and its own JWE derivation, so v4 sessions are
+structurally unreadable here: signed-in users resolve as anonymous (the
+preset logs one console hint when it sees a v4-named cookie), and away calls
+into the host fail its session verification even though the doctor probe's
+vendo-side round-trip passes. `vendo init` prints an advisory when it wires
+authJs() onto a next-auth major-4 host. The secret fallback to
+`NEXTAUTH_SECRET` exists for v5 hosts still using the legacy variable name —
+it does not make v4 sessions readable. Upgrade to v5, or stay anonymous with
+`--auth none` until then.
 
 ```sh
 pnpm add @auth/core
