@@ -59,7 +59,13 @@ export * from "./workspace.js";
 // compiled tree once the fn: shapes are sampled.
 export { compileWire, type WireCompileOptions, type WireCompileResult } from "./genui/wire/compile.js";
 export { expandInlineRefs, type InlineRefsResult } from "./genui/wire/inline-refs.js";
-export { WIRE_ISSUE_CODES, type WireIssue, type WireIssueCode } from "./genui/wire/expression.js";
+export {
+  isAdvisoryWireIssue,
+  WIRE_ADVISORY_ISSUE_CODES,
+  WIRE_ISSUE_CODES,
+  type WireIssue,
+  type WireIssueCode,
+} from "./genui/wire/expression.js";
 // v2 spec §5 — the one-dialect edit surface: print the app as id-anchored
 // wire (the model's edit context).
 export { printWire, type WirePrintInput, type WirePrintOptions } from "./genui/wire/print.js";
