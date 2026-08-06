@@ -51,6 +51,8 @@ describe("apps agent tools", () => {
       "vendo_make",
       "vendo_apps_rebase_pin",
       "vendo_apps_open",
+      "vendo_apps_pin",
+      "vendo_apps_unpin",
       "vendo_apps_data_list",
       "vendo_apps_data_put",
       "vendo_apps_data_delete",
@@ -71,7 +73,7 @@ describe("apps agent tools", () => {
     // rearranging your own view is not an act on the world, and history/undo are
     // the safety net.
     expect(descriptors.map((descriptor) => descriptor.risk)).toEqual([
-      "read", "write", "read", "read", "write", "write",
+      "read", "write", "read", "write", "write", "read", "write", "write",
     ]);
     // The one-narrower-retry instruction survived the merge onto `vendo_make`:
     // without it the model's answer to a rejected change was to rebuild the app
@@ -663,6 +665,122 @@ describe("vendo_make — the slot a new app lands in", () => {
     }, ctx);
 
     expect(outcome).toEqual({
+      status: "error",
+      error: { code: "validation", message: "slot must be a non-empty string" },
+    });
+  });
+});
+
+describe("vendo_apps_pin / vendo_apps_unpin — putting an app on the page", () => {
+  // No screen assembler: every app here is made through the runtime's own
+  // `create`, and these two tools only ever move an app that already exists.
+  const makeRuntime = (): AppsRuntime => createApps({
+    store: memoryStore(),
+    guard: guardFixture(),
+    tools: hostTools,
+    catalog: [],
+    model: scriptedLanguageModel(generated),
+  });
+
+  it("takes exactly app and slot, both required", async () => {
+    const descriptors = await makeRuntime().agentTools().descriptors();
+
+    for (const name of ["vendo_apps_pin", "vendo_apps_unpin"]) {
+      const schema = descriptors.find((descriptor) => descriptor.name === name)!.inputSchema as {
+        properties: Record<string, unknown>;
+        required: string[];
+        additionalProperties: boolean;
+      };
+      expect(Object.keys(schema.properties).sort(), name).toEqual(["app", "slot"]);
+      expect(schema.required.slice().sort(), name).toEqual(["app", "slot"]);
+      expect(schema.additionalProperties, name).toBe(false);
+    }
+  });
+
+  it("pins an existing app into a slot, and the placement reads back", async () => {
+    const runtime = makeRuntime();
+    const created = await runtime.create({ prompt: "Build a dashboard" }, ctx);
+
+    const outcome = await runtime.agentTools().execute({
+      id: "call_pin",
+      tool: "vendo_apps_pin",
+      args: { app: created.id, slot: "dashboard.hero" },
+    }, ctx);
+
+    expect(outcome).toEqual({ status: "ok", output: { app: created.id, slot: "dashboard.hero" } });
+    expect(await runtime.placements({}, ctx)).toEqual([
+      expect.objectContaining({ slot: "dashboard.hero", app: created.id }),
+    ]);
+  });
+
+  it("names what it replaced, so the model can say so", async () => {
+    const runtime = makeRuntime();
+    const first = await runtime.create({ prompt: "Build a dashboard" }, ctx);
+    const second = await runtime.create({ prompt: "Build a second dashboard" }, ctx);
+    await runtime.agentTools().execute({
+      id: "call_pin_first",
+      tool: "vendo_apps_pin",
+      args: { app: first.id, slot: "dashboard.hero" },
+    }, ctx);
+
+    const outcome = await runtime.agentTools().execute({
+      id: "call_pin_second",
+      tool: "vendo_apps_pin",
+      args: { app: second.id, slot: "dashboard.hero" },
+    }, ctx);
+
+    expect(outcome).toEqual({
+      status: "ok",
+      output: { app: second.id, slot: "dashboard.hero", evicted: first.id },
+    });
+    expect(await runtime.placements({}, ctx)).toEqual([
+      expect.objectContaining({ slot: "dashboard.hero", app: second.id }),
+    ]);
+  });
+
+  it("aims by the NAME the user said, not only by id", async () => {
+    const runtime = makeRuntime();
+    const created = await runtime.create({ prompt: "Build a dashboard" }, ctx);
+
+    const outcome = await runtime.agentTools().execute({
+      id: "call_pin_by_name",
+      tool: "vendo_apps_pin",
+      args: { app: created.name, slot: "dashboard.hero" },
+    }, ctx);
+
+    expect(outcome).toEqual({ status: "ok", output: { app: created.id, slot: "dashboard.hero" } });
+  });
+
+  it("unpins, leaving the app itself alone", async () => {
+    const runtime = makeRuntime();
+    const created = await runtime.create({ prompt: "Build a dashboard" }, ctx);
+    await runtime.agentTools().execute({
+      id: "call_pin_before_unpin",
+      tool: "vendo_apps_pin",
+      args: { app: created.id, slot: "dashboard.hero" },
+    }, ctx);
+
+    const outcome = await runtime.agentTools().execute({
+      id: "call_unpin",
+      tool: "vendo_apps_unpin",
+      args: { app: created.id, slot: "dashboard.hero" },
+    }, ctx);
+
+    expect(outcome).toEqual({ status: "ok", output: { app: created.id, slot: "dashboard.hero" } });
+    expect(await runtime.placements({}, ctx)).toEqual([]);
+    // The app is still the user's; only its place on the page is gone.
+    expect((await runtime.list(ctx)).map((app) => app.id)).toContain(created.id);
+  });
+
+  it("refuses a missing slot", async () => {
+    const runtime = makeRuntime();
+    const created = await runtime.create({ prompt: "Build a dashboard" }, ctx);
+
+    expect(await runtime.agentTools().execute({
+      id: "call_pin_no_slot",
+      tool: "vendo_apps_pin",
+      args: { app: created.id },
+    }, ctx)).toEqual({
       status: "error",
       error: { code: "validation", message: "slot must be a non-empty string" },
     });

@@ -1,4 +1,6 @@
 import {
+  VENDO_APPS_PIN_TOOL,
+  VENDO_APPS_UNPIN_TOOL,
   VENDO_MAKE_TOOL,
   VENDO_TOOL_TITLES,
   appIdSchema,
@@ -94,6 +96,56 @@ const descriptors = [
       additionalProperties: false,
     },
     risk: "read",
+  },
+  {
+    name: VENDO_APPS_PIN_TOOL,
+    description: "Put one of the user's own apps into a named slot on the page they are looking at, where it stays until they move it. `app` is the app's id, or its name exactly as the user said it, resolved against their own apps (if two share that name you are told both, so ask which one they mean). `slot` is a slot id the host published for that place on the page — pass one you were told rather than one you invented. Whatever held that slot is replaced, and the reply names it as `evicted` so you can say what moved.",
+    inputSchema: {
+      $schema: DRAFT_2020_12,
+      type: "object",
+      properties: {
+        app: {
+          type: "string",
+          minLength: 1,
+          description: "The app's id, or its name as the user says it.",
+        },
+        slot: {
+          type: "string",
+          minLength: 1,
+          description: "The slot id the host published for that place on the page.",
+        },
+      },
+      required: ["app", "slot"],
+      additionalProperties: false,
+    },
+    // A `write`, and only a write: one small row saying where an app the user
+    // already owns sits on their own page. It is reversible by the tool below,
+    // and history is the safety net. What keeps it away from an unattended run
+    // is `PRESENCE_ONLY_TOOLS`, not an inflated grade.
+    risk: "write",
+  },
+  {
+    name: VENDO_APPS_UNPIN_TOOL,
+    description: "Take an app back out of a slot on the user's page. The app itself is untouched — it stays in their apps and can be put back any time. `app` is the app's id or its name as the user said it; `slot` is the slot it is in.",
+    inputSchema: {
+      $schema: DRAFT_2020_12,
+      type: "object",
+      properties: {
+        app: {
+          type: "string",
+          minLength: 1,
+          description: "The app's id, or its name as the user says it.",
+        },
+        slot: {
+          type: "string",
+          minLength: 1,
+          description: "The slot the app is in.",
+        },
+      },
+      required: ["app", "slot"],
+      additionalProperties: false,
+    },
+    risk: "write",
   },
   {
     name: "vendo_apps_data_list",
@@ -576,6 +628,23 @@ export const createAgentTools = (
         // "no such app" while that app sat in the caller's own list.
         const appId = await resolveAppRef(runtime, args.appId as string, ctx);
         return { status: "ok", output: await runtime.open(appId, ctx) as unknown as Json };
+      }
+      if (call.tool === VENDO_APPS_PIN_TOOL) {
+        const args = input(call.args, ["app", "slot"]);
+        const appId = await resolveAppRef(runtime, args.app as string, ctx);
+        const slot = args.slot as string;
+        const { evicted } = await runtime.place({ app: appId, slot }, ctx);
+        return {
+          status: "ok",
+          output: { app: appId, slot, ...(evicted === undefined ? {} : { evicted }) },
+        };
+      }
+      if (call.tool === VENDO_APPS_UNPIN_TOOL) {
+        const args = input(call.args, ["app", "slot"]);
+        const appId = await resolveAppRef(runtime, args.app as string, ctx);
+        const slot = args.slot as string;
+        await runtime.unplace({ app: appId, slot }, ctx);
+        return { status: "ok", output: { app: appId, slot } };
       }
       if (call.tool === "vendo_apps_data_list") {
         const args = input(call.args, ["appId", "collection"], ["refs", "limit", "cursor"]);
