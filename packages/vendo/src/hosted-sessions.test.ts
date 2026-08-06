@@ -30,7 +30,7 @@ interface Harness {
 
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
-/** The demo-accounting-shaped composition: VENDO_API_KEY set, no explicit
+/** The Cloud-hosted composition: VENDO_API_KEY set, no explicit
  * store, host principal resolver returns null (anonymous visitors).
  * `wrapFetch` must be applied HERE — the adapter captures globalThis.fetch at
  * construction, so a later re-stub never reaches it. */

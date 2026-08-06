@@ -32,7 +32,7 @@ Commit `components/`. It is generated, but a missing local file is **not** a
 deletion signal to the Cloud push (that rule is what keeps a half-written
 capture from wiping the console's copy), so gitignoring it does not clean
 anything up — it just hides drift. Size scales with distinct modules, not with
-components: the two demo hosts here store 3 components in ~25 KB, and a
+components: the demo host here stores 3 components in ~26 KB, and a
 50-component registry over a shared design system lands in the low hundreds of
 KB because every shared module and the app-root CSS are stored once. Mark it
 `linguist-generated=true` in `.gitattributes` so reviews collapse it.

@@ -11,13 +11,13 @@ import { createRunContext } from "../run-context.js";
  * dependency, no lockfile, no vendor tarballs, no agent-config files — so a
  * headless coding agent starts from what a real pre-Vendo repo looks like.
  *
- * KNOWN LIMIT (documented on purpose): the demo apps' SOURCE still imports
+ * KNOWN LIMIT (documented on purpose): the demo app's SOURCE still imports
  * Vendo (layout wiring, vendo/ server files) because de-integrating the app
  * code would be a hand-maintained fork. The fixture therefore measures
  * "restore a working install from a repo whose deps and contract are gone",
  * which exercises the same playbook loop (install → init → hand-wire →
  * doctor) with a head start on wiring. express-host is closest to a truly
- * pre-Vendo host; treat demo rows accordingly in the report.
+ * pre-Vendo host; treat the demo row accordingly in the report.
  */
 
 export interface InstallEvalFixture {
@@ -75,16 +75,6 @@ export const INSTALL_EVAL_FIXTURES: readonly InstallEvalFixture[] = [
   {
     name: "demo-bank",
     sourcePath: "examples/demo-bank",
-    devServer: {
-      command: "npm run dev",
-      readinessUrl: "http://127.0.0.1:3000",
-      readinessTimeoutMs: 180_000,
-    },
-    doctorUrl: "http://127.0.0.1:3000/api/vendo",
-  },
-  {
-    name: "demo-accounting",
-    sourcePath: "examples/demo-accounting",
     devServer: {
       command: "npm run dev",
       readinessUrl: "http://127.0.0.1:3000",
