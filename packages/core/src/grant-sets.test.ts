@@ -173,3 +173,33 @@ describe("bundles are proposed, never blank (§12)", () => {
     expect(isBundleEligible(["a", "b"], registry, [tool("a", "read"), tool("b", "destructive")])).toBe(false);
   });
 });
+
+describe("presence-only tools: nothing rearranges a page nobody is looking at", () => {
+  const surface = [
+    tool("vendo_make", "read"),
+    tool("vendo_apps_pin", "write"),
+    tool("vendo_apps_unpin", "write"),
+    tool("maple_invoice_update", "write"),
+  ];
+
+  it("withholds the placement pair from an unattended run", () => {
+    const projected = projectableForRun(surface, { venue: "automation", presence: "away" });
+
+    expect(projected.map((t) => t.name)).toEqual(["vendo_make", "maple_invoice_update"]);
+  });
+
+  it("keys the rule on the NAME, not the grade — another write is untouched", () => {
+    // Their risk is honestly `write`: a placement row is small and reversible,
+    // and needs no ceremony with a person right there. So the withholding cannot
+    // ride the risk label, and this is the assertion that says so.
+    const projected = projectableForRun(surface, { venue: "automation", presence: "away" });
+
+    expect(projected.map((t) => t.risk)).toEqual(["read", "write"]);
+  });
+
+  it("offers them to a person who is present", () => {
+    const projected = projectableForRun(surface, { venue: "chat", presence: "present" });
+
+    expect(projected).toHaveLength(4);
+  });
+});

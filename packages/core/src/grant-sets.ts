@@ -1,7 +1,7 @@
 import { canonicalJson } from "./jcs.js";
 import { sha256Hex } from "./sha256.js";
 import type { Json } from "./ids.js";
-import { USE_SERVICE_TOOL, type ToolDescriptor } from "./tools.js";
+import { PRESENCE_ONLY_TOOLS, USE_SERVICE_TOOL, type ToolDescriptor } from "./tools.js";
 import type { RunContext } from "./run-context.js";
 
 /** Build contract §7 — a grant set is per person, bound to an app's INTENT
@@ -117,7 +117,12 @@ export function projectableForRun(
 ): ToolDescriptor[] {
   if (!isUnattended(ctx)) return [...descriptors];
   return descriptors.filter(
-    (descriptor) => !withheldFromUnattended(descriptor) || isGrantedDispatcher(descriptor, ctx),
+    (descriptor) =>
+      // A tool whose whole effect is on a person's screen has nothing to act on
+      // when nobody is there — see {@link PRESENCE_ONLY_TOOLS}. Named, not
+      // graded: these are honest `write`s.
+      !PRESENCE_ONLY_TOOLS.has(descriptor.name)
+      && (!withheldFromUnattended(descriptor) || isGrantedDispatcher(descriptor, ctx)),
   );
 }
 
