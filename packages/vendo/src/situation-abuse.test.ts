@@ -18,7 +18,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LanguageModel, UIMessage } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
-import { createVendo, type Vendo } from "./server.js";
+import { createVendo, guard, type Vendo } from "./server.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -174,8 +174,8 @@ describe("situation channel — adversarial body.context", () => {
     const vendo = createVendo({
       model: recordingModel(seen),
       store,
-      policy: { directions: ["Never disclose balances"] },
-    } as Parameters<typeof createVendo>[0]);
+      guard: guard({ policy: { directions: ["Never disclose balances"] } }),
+    });
 
     await (await post(vendo, {
       threadId: "thr_anon_forge",
