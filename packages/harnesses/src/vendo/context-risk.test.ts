@@ -495,9 +495,17 @@ describe("the window follows the model the provider actually served", () => {
     // call and IS reported after it, so it is measured like the prompt count is
     // measured, never guessed.
     const seat = measuredSeat(120_000, { modelId: "vendo-env", respondsAs: "claude-sonnet-4-6-20260101" });
+    // The window is only knowable AFTER the first call, so turn 1 always runs on
+    // the 128k default and has to fit inside it: 190,000 characters is 95,000
+    // tokens, under the 103,680 that window trips at. Turn 2 then adds 60,000
+    // characters to land at ~125,000 — BETWEEN the two triggers, over the 128k
+    // default's 103,680 and under the 200k seat's 162,000. That gap is the only
+    // place this claim is visible. The old fixture leaned on the provider's carried
+    // count to reach it; nothing carries a count now, so the estimate itself has to
+    // sit in the gap or the test passes whichever window the seat is given.
     const first: Turn["messages"] = [
       userMessage("m1", ANCHOR),
-      userMessage("m2", "m".repeat(100_000)),
+      userMessage("m2", "m".repeat(190_000)),
       userMessage("m3", "and now?"),
     ];
     await driveThread({
@@ -508,14 +516,14 @@ describe("the window follows the model the provider actually served", () => {
         [
           ...first,
           { id: "a1", role: "assistant", parts: [{ type: "text", text: "ok" }] },
-          userMessage("m4", "what next?"),
+          userMessage("m4", `what next? ${"w".repeat(60_000)}`),
         ],
       ],
     });
 
-    // 120,000 reported tokens is over 81% of 128k and nowhere near 81% of 200k.
-    // On the window this seat actually has there is nothing to do, and doing
-    // something costs a summarizer call and the oldest band of a healthy thread.
+    // ~125,000 tokens is over 81% of 128k and nowhere near 81% of 200k. On the
+    // window this seat actually has there is nothing to do, and doing something
+    // costs a summarizer call and the oldest band of a healthy thread.
     expect(seat.generateCalls()).toBe(0);
     expect(JSON.stringify(seat.prompts[1])).toContain(ANCHOR);
   });
