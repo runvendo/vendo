@@ -2732,6 +2732,84 @@ describe("createMcpDoor turn-credential results", () => {
   });
 });
 
+/**
+ * ADVERSARIAL: `withholdTools` on the TURN-bearing leg (risk round, 2026-08-06).
+ *
+ * `withholdTools` is documented as "names this door NEVER offers, whatever else
+ * says otherwise" and as "what THIS door, as deployed, does not do" — a
+ * deployment fact, not a menu fact, which is why it is checked ahead of the
+ * `vendo_` prefix bypass.
+ *
+ * A door with `turnCredentials` (every `createVendo({ mcp: true })` composition
+ * has them — server.ts passes them to the outside door too) has a SECOND
+ * credential space on the SAME mount. `#handleMcp` resolves a turn bearer
+ * before anything else, and from there `#registerHandlers` lists
+ * `turnTools(state.turn)` and `#callTool` hands the name straight to
+ * `turn.tools.call` — neither consults `#withheld`. So a name this deployment
+ * said it does not do is both advertised and callable on the other leg of the
+ * same door.
+ */
+describe("createMcpDoor withholdTools on a turn-bearing session", () => {
+  const TOKEN = "vtk_withhold_turn";
+  const WITHHELD = "vendo_apps_pin";
+
+  function harnessFor(calls: string[]) {
+    return makeHarness({
+      withholdTools: [WITHHELD],
+      turnCredentials: {
+        async resolve(token) {
+          if (token !== TOKEN) return null;
+          return {
+            ctx: {
+              principal: { kind: "user" as const, subject: "user_1" },
+              venue: "chat" as const,
+              presence: "present" as const,
+            },
+            tools: {
+              async call(name: string) {
+                calls.push(name);
+                return { status: "ok" as const, output: { placed: true } };
+              },
+              async list() {
+                return [
+                  { name: "host_lookup", description: "Look something up", risk: "read" as const, inputSchema: { type: "object", properties: {} } },
+                  { name: WITHHELD, description: "Pin an app", risk: "write" as const, inputSchema: { type: "object", properties: {} } },
+                ];
+              },
+            },
+          };
+        },
+      },
+    });
+  }
+
+  it("does not advertise the withheld name to a live turn either", async () => {
+    const connected = await connect(harnessFor([]).door, TOKEN);
+
+    const listed = (await connected.client.listTools()).tools.map((tool) => tool.name);
+
+    expect(listed).toContain("host_lookup");
+    expect(listed).not.toContain(WITHHELD);
+    await connected.client.close();
+  });
+
+  it("refuses the withheld name on a turn-bearing call, as the OAuth leg does", async () => {
+    const calls: string[] = [];
+    const connected = await connect(harnessFor(calls).door, TOKEN);
+
+    const refused = await connected.client.callTool({ name: WITHHELD, arguments: { app: "app_1", slot: "hero" } });
+
+    expect(refused).toMatchObject({
+      isError: true,
+      content: [{ type: "text", text: expect.stringContaining("not-found") }],
+    });
+    // Not offered has to mean not callable — on BOTH legs of one mount, or the
+    // withhold is a listing cosmetic with a documented security posture.
+    expect(calls).toEqual([]);
+    await connected.client.close();
+  });
+});
+
 /** A host response model that references itself by OBJECT — what an inliner
  *  produces for a recursive OpenAPI model. `JSON.stringify` throws on it. */
 function cyclicSchema(): Record<string, unknown> {
