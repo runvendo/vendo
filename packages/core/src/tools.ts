@@ -144,6 +144,23 @@ export const ASK_USER_TOOL = "ask_user";
  *  packages read and none of them may spell differently. */
 export const USE_SERVICE_TOOL = "use_service_tool";
 
+/** The four permanent connector-discovery names (design 2026-08-03) — the whole
+ *  door onto a broker's catalog, however many tens of thousands of tools it holds.
+ *
+ *  Beside {@link USE_SERVICE_TOOL} because a THIRD side reads them: the loadout.
+ *  Not one of them carries the `vendo_*` prefix the always-active exemption keys
+ *  on, so a host with more tools than the initial cap — or any curated
+ *  `surfaces.agent` menu — silently dropped `request_connection` and
+ *  `list_connections` while the system prompt went on teaching both (uiaudit
+ *  2026-08-06). These are Vendo's own tools, not host API tools that explode in
+ *  number, so they are exempt like the rest of ours. */
+export const CONNECTOR_DISCOVERY_TOOLS = [
+  "find_service_tools",
+  USE_SERVICE_TOOL,
+  "list_connections",
+  "request_connection",
+] as const;
+
 /** 01-core §4 */
 export const gradedRiskLabelSchema = z.enum(["read", "write", "destructive"]) satisfies z.ZodType<GradedRiskLabel>;
 

@@ -1,4 +1,4 @@
-import { VENDO_TOOL_TITLES, type Json, type RunContext, type ToolDescriptor, type ToolOutcome, type ToolRegistry } from "@vendoai/core";
+import { CONNECTOR_DISCOVERY_TOOLS, VENDO_TOOL_TITLES, type Json, type RunContext, type ToolDescriptor, type ToolOutcome, type ToolRegistry } from "@vendoai/core";
 
 /**
  * The connector-discovery tools, projected as ordinary tools on the one registry
@@ -14,17 +14,16 @@ import { VENDO_TOOL_TITLES, type Json, type RunContext, type ToolDescriptor, typ
  *
  * CONNECTING is still a UI act — only the person can complete a consent screen,
  * and the connect card is where they do it. What `request_connection` changes is
- * WHO STARTS IT: the agent may now ASK, in its own words, before calling a
- * service it already knows is unconnected. The tool mints exactly the
- * `connect-required` outcome a refused call would have produced, so the card the
- * user sees is the same card — it just no longer costs a failed call to reach.
+ * WHO STARTS IT: the agent may now ASK, in its own words, as soon as it knows the
+ * request needs a service this user has not connected — with or without that
+ * service's tools on its listing. The tool mints exactly the `connect-required`
+ * outcome a refused call would have produced, so the card the user sees is the
+ * same card — it just no longer costs a failed call to reach.
+ *
+ * The four names themselves live in core: the loadout reads them too, and none of
+ * them carries the `vendo_*` prefix its always-active exemption keys on.
  */
-export const CONNECTOR_DISCOVERY_TOOLS = [
-  "find_service_tools",
-  "use_service_tool",
-  "list_connections",
-  "request_connection",
-] as const;
+export { CONNECTOR_DISCOVERY_TOOLS };
 
 /** The one dispatcher's name. Exported because composition has to recognise it
  *  to resolve the call's REAL, per-slug risk — see `serviceToolRisk` in the
@@ -163,10 +162,16 @@ const DESCRIPTORS: ToolDescriptor[] = [
   {
     name: "request_connection",
     title: VENDO_TOOL_TITLES.request_connection,
+    // "INSTEAD of a service tool you already know is unconnected" scoped this tool
+    // to a situation the shipped demo cannot reach (uiaudit 2026-08-06): the
+    // zero-key Cloud default projects NO service tools, so a literal reading made
+    // the tool inapplicable to the only deployment that needs it most. The
+    // condition is the REQUEST's, not the listing's.
     description:
-      "Ask the user to connect an outside service, and stop there. Call this INSTEAD of a service tool "
-      + "you already know is unconnected — never call that tool to see what happens, and never substitute "
-      + "a different service. Pass the toolkit slug exactly as find_service_tools or list_connections "
+      "Ask the user to connect an outside service, and stop there. Call this whenever the request needs a "
+      + "service that is not connected — whether or not you can see that service's tools. Never call a tool "
+      + "of an unconnected service to see what happens, and never substitute a different service. "
+      + "Pass the toolkit slug exactly as find_service_tools or list_connections "
       + "reported it, and one plain sentence saying why you need it, in the user's words. "
       + "The user gets a connect button; wait for them.",
     inputSchema: {

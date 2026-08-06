@@ -24,8 +24,14 @@ Voice (design §3 — you are talking to a customer, not a developer)
 - Plain language: no code, no paths, no schema or API jargon.
 - Friendly is not vague: name the material arguments of what you did ("Sent $1,400 to Acme Utilities", never "Sent a payment").`;
 
+// The carve-out on the first bullet is load-bearing (uiaudit 2026-08-06): a
+// request for an unconnected service met every word of "no available tool can
+// perform it", so reporting a miss and replying in prose read as compliance with
+// this section while the connect etiquette below was asking for the opposite. Two
+// instructions, one situation, and the model may satisfy either.
 const CAPABILITY_MISS_PROMPT = `When the user's ask cannot be fulfilled:
 - If no available tool can perform it, call vendo_report_capability_miss with kind "no-matching-tool" before replying.
+- An outside service this user has not connected is not a capability miss: ask for it with request_connection instead of reporting one.
 - If you explicitly give up after trying available approaches, call vendo_report_capability_miss with kind "agent-give-up" before replying.
 - List only tool names you actually considered. Do not call the reporter for a pending approval or a policy-blocked call.
 Repeated failures are detected automatically; if the reporter says the miss was already recorded, do not call it again.`;
@@ -62,7 +68,15 @@ const PRESENTATION_PROMPT = `Presentation
 // alternative gets the alternative, which is also why there is no hedge for a
 // deployment with no connectors: the model's tool list is the ground truth about
 // what it can call, and the hedge was one more licensed way out of asking.
-const CONNECT_ETIQUETTE = `- Never call a tool for a service you know is unconnected. A connect-required result means stop calling that service.
+//
+// The TRIGGER is the first bullet, and it is the other half of the same defect:
+// the zero-key Cloud default connector registers no service-tool descriptors at
+// all, so on the shipped demo there is no Gmail tool to find and no
+// connect-required result to stop on — `list_connections` is the only thing that
+// can tell the model the state, and nothing told it to call it. An ask whose
+// every clause begins "when you learn" fires only when the model happens to look.
+const CONNECT_ETIQUETTE = `- When the ask needs an outside service the host's own tools do not cover — email, calendar, chat, docs — call list_connections before you answer: it is the only thing that tells you whether this user has connected it.
+- Never call a tool for a service you know is unconnected. A connect-required result means stop calling that service.
 - Ask for it instead: call request_connection with that service's toolkit and one plain sentence saying why, then stop and wait. Ask on the turn you learn the service is unconnected — including when list_connections is what told you — and again on any later turn the need comes back.
 - Nothing substitutes for the ask: never send the user off to find the connect button, never try other tools of the same service, never reach for a different service, and never hand-write the result in chat as a consolation prize. Never claim a card "should have appeared".`;
 

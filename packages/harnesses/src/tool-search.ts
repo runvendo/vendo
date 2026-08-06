@@ -1,4 +1,5 @@
 import {
+  CONNECTOR_DISCOVERY_TOOLS,
   VendoError,
   type RiskLabel,
   type RunContext,
@@ -87,9 +88,17 @@ const SEARCH_INPUT_SCHEMA = {
 /** Vendo's own always-available tools (apps, connect, the meta-tools) are never
  * loadout-gated: they are not host API tools that explode in number, and gating
  * them out would break the product surface. Everything `vendo_`-prefixed stays
- * active; host tools are what the loadout bounds. */
+ * active; host tools are what the loadout bounds.
+ *
+ * The connector-discovery four are ours too and carry no prefix (public names,
+ * deliberately). Without them here, a host past the cap or with a curated
+ * `surfaces.agent` menu lost `request_connection` and `list_connections` off the
+ * listing while the system prompt kept teaching both — the teaching became a lie
+ * in exactly the deployments that grow big enough to need it (uiaudit 2026-08-06). */
+const ALWAYS_ACTIVE_NAMES: ReadonlySet<string> = new Set(CONNECTOR_DISCOVERY_TOOLS);
+
 function isAlwaysActive(name: string): boolean {
-  return name.startsWith("vendo_");
+  return name.startsWith("vendo_") || ALWAYS_ACTIVE_NAMES.has(name);
 }
 
 /** Does the surface menu offer this name? ONE definition, used by both the
@@ -212,12 +221,17 @@ export function createToolSearchSession(options: ToolSearchSessionOptions): Tool
       if (tools[FIND_TOOLS_TOOL_NAME] !== undefined) {
         throw new VendoError("conflict", `Reserved internal tool name: ${FIND_TOOLS_TOOL_NAME}`);
       }
+      // The last sentence used to promise that "an unconnected service surfaces an
+      // inline connect card WITHOUT its tools running" — a card that arrives on its
+      // own, with nobody asking for it. It does not: the card is minted by
+      // `request_connection`, which the model has to call. That was a licensed
+      // reason not to ask (uiaudit 2026-08-06).
       tools[FIND_TOOLS_TOOL_NAME] = dynamicTool({
         description:
           "Search this product's tools and connected-service tools by intent, and LOAD the matches so you can call them this run. "
           + "Use this only when no currently-available tool fits the ask — never to browse or enumerate what exists. "
-          + "Results may include tools for services the user has NOT connected yet; an unconnected service surfaces an inline connect card "
-          + "WITHOUT its tools running, so do not keep calling tools of a service you know is unconnected.",
+          + "Results may include tools for services the user has NOT connected yet: do not keep calling tools of a "
+          + "service you know is unconnected — ask for it with request_connection instead.",
         inputSchema: jsonSchema(SEARCH_INPUT_SCHEMA),
         execute: async (input): Promise<ToolOutcome> => {
           const parsed = input as { query?: unknown; limit?: unknown } | null;

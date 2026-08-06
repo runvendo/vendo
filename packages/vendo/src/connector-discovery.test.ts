@@ -52,6 +52,18 @@ describe("the connector-discovery tools are ordinary tools on the one registry",
     expect(byName.get("request_connection")).toBe("read");
   });
 
+  /** uiaudit 2026-08-06 — the description used to scope the tool to "INSTEAD of a
+   *  service tool you already know is unconnected", and the zero-key Cloud default
+   *  projects NO service tools at all: a literal reading made the tool inapplicable
+   *  to the one deployment that has nothing else. The condition is the REQUEST's. */
+  it("scopes request_connection to the request, not to what is on the listing", async () => {
+    const byName = new Map((await connectorDiscoveryRegistry(ports()).descriptors()).map((d) => [d.name, d.description]));
+    const ask = byName.get("request_connection")!;
+    expect(ask).toContain("whenever the request needs a service that is not connected");
+    expect(ask).toContain("whether or not you can see that service's tools");
+    expect(ask).not.toContain("INSTEAD of a service tool you already know is unconnected");
+  });
+
   it("reads each title from core's one table, and none of them is an identifier", async () => {
     const descriptors = await connectorDiscoveryRegistry(ports()).descriptors();
     expect(descriptors.map((d) => d.title)).toEqual([

@@ -263,6 +263,29 @@ describe("the connect etiquette every discovery surface carries", () => {
   const promptFor = (discovery: "find-tools" | "connectors" | false) =>
     assembleSystemPrompt(guard(), ctx(), undefined, false, discovery);
 
+  /** The ask had no TRIGGER on the shipped demo: the zero-key Cloud connector
+   *  registers no service-tool descriptors, so there is no Gmail tool to find and
+   *  no connect-required result to stop on, and every clause of the etiquette
+   *  began "when you learn". `list_connections` is the only thing that can tell
+   *  the model, and nothing told it to call it. */
+  it("gives the ask a trigger on EVERY discovery surface: check before answering", async () => {
+    for (const discovery of ["find-tools", "connectors"] as const) {
+      const prompt = await promptFor(discovery);
+      expect(prompt, discovery).toContain("call list_connections before you answer");
+      // One copy per prompt, the same law the ask itself is held to.
+      expect(prompt.match(/call list_connections before you answer/g), discovery).toHaveLength(1);
+    }
+  });
+
+  /** The competing licensed exit: an unconnected service met every word of "no
+   *  available tool can perform it", so reporting a miss and replying in prose was
+   *  compliance with one section while the etiquette asked for the opposite. */
+  it("does not license a capability miss for a service that is merely unconnected", async () => {
+    const prompt = await assembleSystemPrompt(guard(), ctx(), undefined, true, "find-tools");
+    expect(prompt).toContain('kind "no-matching-tool"');
+    expect(prompt).toContain("is not a capability miss: ask for it with request_connection instead");
+  });
+
   it("teaches request_connection on EVERY discovery surface, engine path included", async () => {
     for (const discovery of ["find-tools", "connectors"] as const) {
       const prompt = await promptFor(discovery);
@@ -302,6 +325,7 @@ describe("the connect etiquette every discovery surface carries", () => {
   it("reaches the model through the composed turn door", async () => {
     const { vendo, seen } = await compose({});
     await (await post(vendo, { threadId: "thr_ask", message: userMessage("m1", "draft me an email") })).text();
+    expect(seen[0]).toContain("call list_connections before you answer");
     expect(seen[0]).toContain("call request_connection with that service's toolkit");
     expect(seen[0]).not.toMatch(/point (the user )?(to|at) the connect/i);
   });
