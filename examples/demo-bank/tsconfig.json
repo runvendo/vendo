@@ -36,9 +36,7 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts",
     ".next/away-drill/types/**/*.ts",
-    ".next/away-drill/dev/types/**/*.ts",
-    ".next/v5-proof/types/**/*.ts",
-    ".next/v5-proof/dev/types/**/*.ts"
+    ".next/away-drill/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"
