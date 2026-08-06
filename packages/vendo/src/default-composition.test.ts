@@ -32,7 +32,9 @@ const DEFAULT_TOOL_NAMES = [
   "vendo_apps_data_list",
   "vendo_apps_data_put",
   "vendo_apps_open",
+  "vendo_apps_pin",
   "vendo_apps_rebase_pin",
+  "vendo_apps_unpin",
   "vendo_make",
 ] as const;
 
