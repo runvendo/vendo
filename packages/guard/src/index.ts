@@ -1,5 +1,9 @@
 /** @vendoai/guard — policy, approvals, audit, safety (docs/contracts/05-guard.md). */
 export { createGuard } from "./guard.js";
+// The late-bound rules value (`guard({ policy, judge, approvals })`) and the
+// discriminator every consumer of a `VendoGuard | GuardRules` slot needs.
+// `createGuard` stays the one constructor both arms end at.
+export { guard, isGuardInstance } from "./spec.js";
 export { vendoAutoJudge } from "./judge.js";
 // Preset expansion (00-overview decision 8): exported so a caller that needs
 // a preset's ACTUAL rules outside a live guard instance (the try venue's
@@ -20,6 +24,7 @@ export { parseOrgPolicyFile } from "./org-policy.js";
 // package.
 export type { GuardLike } from "@vendoai/core";
 export type {
+  GuardRules,
   Judge,
   PolicyConfig,
   PolicyConfigObject,

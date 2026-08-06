@@ -69,19 +69,17 @@ truth about the code as it stands.
 | `skills` | **slot** `skills` | added by the pack removal: SKILL.md values mounted at `/host/skills`, where a pack's `skills` slot used to land |
 | `catalog` | **pack option** (`apps()`'s `components`, build contract §5) | unchanged. Host components are the apps pack's input, but they also feed `<VendoRoot>` on the client, so the top-level key is what a host writes once and passes both ways |
 | `theme` | **adapter family** (deployment identity) | unchanged. Not generation-only — the chrome, the client and the prompt summary all read it |
-| `brief` | **adapter family** (deployment identity) | unchanged; the prose `.vendo/brief.md` carries, programmatically |
+| `instructions` | **adapter family** (deployment identity) | RENAMED from `brief`, and merged with `agent.instructions` — one prose key. Still the programmatic override for `.vendo/brief.md`, still the prompt's Product section |
 | `store` | **slot** `store` | unchanged |
 | `files` | **slot** `files` | unchanged. Unset is a documented default, not a gap: blobs live in the store to `FILES_STORE_MAX_BYTES` and the first over-cap write names this key |
 | `sandbox` | **slot** `sandbox` | unchanged |
 | `harness` | **slot** `harness` | unchanged. Unset now means a composed `vendo()` that actually SERVES the chat route (wave-2 flip), not a door nobody reaches |
 | `knowledge` | **adapter family** (`KnowledgeAdapter`) | unchanged. A candidate for a `knowledge()` pack once packs carry adapters; today a pack cannot contribute one |
-| `connectors` | **adapter family** (tool sources) | unchanged |
-| `connectorApps` | **adapter family** (scopes the auto-composed Cloud connector) | unchanged. A modifier of `connectors`, ignored when `connectors`/`connections` is explicit |
+| `connectors` | **adapter family** (tool sources) | widened to `readonly (string \| Connector)[]`: a string names a Cloud toolkit, an object is a provider, mixed freely. `connectorApps` folded into it and is gone |
 | `connections` | **adapter family** (`ConnectionsService`) | unchanged |
 | `actAs` | **adapter family** (`auth`'s per-seam escape hatch) | unchanged; see `principal` |
 | `serverActions` | **venue plumbing** (the generated wiring file's registration map) | unchanged. Emitted by codegen, not hand-written |
-| `policy` | **adapter family** (the guard) | unchanged. The guard is ours, not a pack's, and §14 keeps policy a platform concern |
-| `judge` | **adapter family** (the guard's judgment channel) | unchanged. Note: the JUDGE MODEL is `models.judge`; this key is the judge implementation |
+| `guard` | **slot** `guard` | NEW spelling of the guard seam: `guard({ policy, judge, approvals })` or a built `VendoGuard`. `policy`, `judge` and `approvals` folded into it and are gone. The JUDGE MODEL is still `models.judge`; `guard({ judge })` is the judge implementation |
 | `secrets` | **adapter family** (`SecretsProvider`) | unchanged |
 | `telemetry` | **venue plumbing** | unchanged; a boolean switch on build/dev telemetry |
 | `development` | **venue plumbing** (dev-only source capture) | unchanged |
@@ -90,21 +88,39 @@ truth about the code as it stands.
 | `profile` | **venue plumbing** (the `.vendo/` pieces as in-memory compose inputs) | `profile.tools` **deprecated** → the `tools:` slot; the other pieces (`overrides`, `theme`, `brief`, `catalog`, `policy`, `designRules`) unchanged |
 | `mcp` | **adapter family** (the MCP door) | unchanged |
 | `oauth` | **adapter family** (`auth`'s per-seam escape hatch) | unchanged; see `principal` |
-| `agent` | **harness option** → `vendo({ … })` | unchanged, and NOT movable in wave 2: `instructions`, `toolOutputCap`, `maxOutputTokens`, `historyWindow`, `maxInitialTools`, `loadout`, `maxSearchExpansions`, `maxSteps` are chat-loop knobs, and `vendo()` today declares only `model` and `maxSteps`. Widening its options is a `packages/harnesses/src/vendo.ts` change this lane does not own — see the lane report |
+| `agent` | **slot** `agent` (the composed-agent seam) | narrowed to `ComposedAgent` — the whole agent `agent()` builds. The knobs bag is gone: `instructions` became the top-level key, `toolOutputCap`/`maxInitialTools`/`loadout` became top-level composition keys, and `maxSteps`/`historyWindow`/`maxOutputTokens` became `vendo()` deps (they configure the thinker, and `vendo()` already declares all three) |
 | `sessions` | **venue plumbing** (ephemeral session lifecycle) | unchanged |
-| `approvals` | **adapter family** (the guard's approval lifecycle) | unchanged |
+| `toolOutputCap` | **venue plumbing** (how much of a tool result reaches the model) | moved up from `agent.toolOutputCap`. Composition's, not the thinker's: the same number bounds the agent loop, the harness bridge, and the connector-discovery registry's own search results |
+| `maxInitialTools` | **venue plumbing** (the discovery rail's initial-loadout cap) | moved up from `agent.maxInitialTools`. The rail is built here and handed to BOTH thinkers, so the knob stays on the composition |
+| `loadout` | **venue plumbing** (the discovery rail's curated loadout) | moved up from `agent.loadout`; same rail, same reason |
 | `apps` | **pack option** → `apps({ … })` | unchanged. `designRules`, `fillConcurrency`, `checks`, `pipeline` are generation options; `experimentalMachines` / `experimentalServedApps` are project-level opt-ins. Deliberately NOT given a second spelling in wave 2: `apps: {…}` works, no host asked for `apps({…})`, and two spellings for one thing is the cost, not the feature |
 | `automations` | **subsystem switch** | added by the pack removal: `false` unmounts automations (routes, `emit`, and its judgment rule). `packs` is gone with the same change — capability arrives on `tools`, `skills`, `apps.checks` and `catalog` |
 | `tours` | **venue plumbing** (tour mode's scripted-turn seam) | unchanged. Plain OSS config, arrived on main after this table was written (#713): an ordered list of `{ prompt, respond }` entries replayed in front of the live agent. It composes the agent's `scripted` hook and nothing else, so it has no slot to move into |
 
 ## Deleted keys
 
-**None.** Every one of the 33 has a live consumer, and the contract permits
-deletion only with zero consumers stated. Nothing qualified.
+Wave 2 deleted none. The config-coherence change (2026-08-05) deletes five
+top-level keys and one options object, each folded into a key that already had
+to exist — no capability is lost, and every one has a stated replacement:
+
+- **brief** → `instructions` (one prose key; `.vendo/brief.md` still backs it)
+- **policy** → `guard({ policy })`
+- **judge** → `guard({ judge })`
+- **approvals** → `guard({ approvals })`
+- **connectorApps** → a toolkit string inside `connectors`
+- **agent.instructions** → `instructions`
+- **agent.toolOutputCap** → `toolOutputCap`
+- **agent.maxInitialTools** → `maxInitialTools`
+- **agent.loadout** → `loadout`
+- **agent.maxSteps / historyWindow / maxOutputTokens** → `harness: vendo({ … })`
+
+`createVendo` refuses to compose against any of them, naming the replacement
+(`rejectRemovedConfigKeys`), so a JavaScript host cannot lose its policy
+silently.
 
 ## What a host has to change
 
-Nothing, this minor. Three warnings appear for hosts on the old spellings:
+Three warnings appear for hosts on the deprecated spellings:
 
 ```
 [vendo] `model` is deprecated: use `models: { default }`. …
@@ -113,4 +129,5 @@ Nothing, this minor. Three warnings appear for hosts on the old spellings:
 ```
 
 Each names its destination, because a warning that does not say where to go is a
-warning a host cannot act on.
+warning a host cannot act on. The deleted keys above throw instead of warning:
+they no longer work at all, and a silent drop would change a security posture.

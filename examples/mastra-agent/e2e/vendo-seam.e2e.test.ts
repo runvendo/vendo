@@ -117,14 +117,18 @@ async function setup() {
   const dataDir = await mkdtemp(join(tmpdir(), "mastra-example-store-"));
   // Vendo's own model (app generation, the delegate loop) — distinct from the
   // Mastra agent's model, exactly like the example (two models, deliberately).
-  const vendoModel = scripted((prompt) =>
-    prompt.includes(DELEGATE_MARKER) ? textTurn("Weather brief compiled.") : [
-      { type: "text-start", id: "g1" },
-      { type: "text-delta", id: "g1", delta: APP_MARKUP },
-      { type: "text-end", id: "g1" },
-      { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
-    ],
-  );
+  // `# In this loop` is the screen agent's own brief — the marker that says a
+  // prompt belongs to the assembly loop — and `save_app` is how that loop lands
+  // an app. One save is the whole generation for an ask this small.
+  let assembled = false;
+  const vendoModel = scripted((prompt) => {
+    if (prompt.includes(DELEGATE_MARKER)) return textTurn("Weather brief compiled.");
+    if (prompt.includes("# In this loop") && !assembled) {
+      assembled = true;
+      return toolCallTurn("save_app", { content: APP_MARKUP });
+    }
+    return textTurn("ok");
+  });
   const store = createStore({ dataDir });
   cleanups.push(async () => {
     await store.close();

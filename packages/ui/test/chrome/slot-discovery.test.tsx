@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // Shelf Task 3 — Slot self-discovery: the slot resolves "the app placed in
-// slot X" on its own (the polling dance demo-accounting's hero-slot used to
-// hand-roll), via the useSlotApp hook over the standard useResource lifecycle.
+// slot X" on its own (the polling dance host hero-slots used to hand-roll),
+// via the useSlotApp hook over the standard useResource lifecycle.
 // Since the 2026-08-02 pins/placements split, discovery reads `placements`
 // ONLY; `pins` is fork provenance and never places an app.
 import type { AppDocument } from "@vendoai/core";

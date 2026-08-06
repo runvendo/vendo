@@ -18,7 +18,8 @@ your repo:
 - an auth preset or a `principal` line,
 - `catalog` (the component registry init generated),
 - a `serverActions` map, only when init detected `"use server"` actions,
-- `policy: {}` reads `.vendo/policy.json`: destructive asks, reads run.
+- `guard: guard({ policy: {} })` reads `.vendo/policy.json`: destructive asks,
+  reads run.
 
 ## One principal, two places
 

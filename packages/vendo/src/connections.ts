@@ -255,12 +255,14 @@ export function cloudConnections(options: CloudConnectionsOptions): ConnectionsS
 }
 
 /** The no-broker fallback adapter: listing is honestly empty (the panel
- * renders an empty state), any mutation explains what to configure. */
-export function unconfiguredConnections(): ConnectionsService {
+ * renders an empty state), any mutation explains what to configure. The
+ * composition seam may pass a sharper sentence when it knows exactly what this
+ * config was missing (toolkit strings with no Cloud key). */
+export function unconfiguredConnections(reason?: string): ConnectionsService {
   const refuse = (): never => {
     throw new VendoError(
       "not-implemented",
-      "connected accounts are not configured: pass a Composio connector (composioConnector) to createVendo({ connectors }) or set VENDO_API_KEY for the Vendo Cloud broker",
+      reason ?? "connected accounts are not configured: pass a Composio connector (composioConnector) to createVendo({ connectors }) or set VENDO_API_KEY for the Vendo Cloud broker",
     );
   };
   return {

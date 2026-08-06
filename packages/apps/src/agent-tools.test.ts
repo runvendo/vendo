@@ -8,8 +8,9 @@ import {
 } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { agentToolDescriptors } from "./agent-tools.js";
-import { createApps } from "./index.js";
+import { createApps, type AppsRuntime } from "./index.js";
 import {
+  authoringAssembler,
   bindTools,
   guardFixture,
   memoryStore,
@@ -294,12 +295,13 @@ describe("apps agent tools", () => {
   it("creates and opens an app through the guard-bound fixture", async () => {
     const store = memoryStore();
     const guard = guardFixture();
-    const runtime = createApps({
+    const runtime: AppsRuntime = createApps({
       store,
       guard,
       tools: hostTools,
       catalog: [],
       model: scriptedLanguageModel(generated),
+      screen: authoringAssembler(() => runtime, generated),
     });
     const bound = bindTools(guard, runtime.agentTools());
 
@@ -339,12 +341,13 @@ describe("apps agent tools", () => {
   it("keeps the raw registry unbound while the umbrella wrapper blocks and audits", async () => {
     const store = memoryStore();
     const guard = guardFixture({ rules: { vendo_make: "block" } });
-    const runtime = createApps({
+    const runtime: AppsRuntime = createApps({
       store,
       guard,
       tools: hostTools,
       catalog: [],
       model: scriptedLanguageModel(generated),
+      screen: authoringAssembler(() => runtime, generated),
     });
     const call = {
       id: "call_unbound_create",

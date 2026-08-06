@@ -220,7 +220,7 @@ async function runTheTurn(): Promise<TurnResult> {
     store,
     // `cautious` is what makes the approval leg real: a `write` tool asks, a
     // `read` tool runs. Without a policy every call would be `decidedBy: default`.
-    policy: "cautious",
+    guard: { policy: "cautious" },
     harness: harness as never,
   } as Parameters<typeof createVendo>[0]);
   vendo.actions.add(hostTools());
@@ -480,7 +480,7 @@ describe("the unattended failure card (design §3)", () => {
       model: {} as LanguageModel,
       principal: async () => principal,
       store,
-      policy: "cautious",
+      guard: { policy: "cautious" },
       harness: harness as never,
     } as Parameters<typeof createVendo>[0]);
     vendo.actions.add(awayTools(executed));

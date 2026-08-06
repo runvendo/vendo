@@ -126,7 +126,7 @@ hand-write one.
 // app/api/vendo/[...vendo]/route.ts — equivalent to what `vendo init` scaffolds
 // (init writes a relative registry import; the `@/*` alias reads better here)
 import { authJs } from "@vendoai/vendo/auth/auth-js";
-import { createVendo, nextVendoHandler } from "@vendoai/vendo/server";
+import { createVendo, guard, nextVendoHandler } from "@vendoai/vendo/server";
 import { registry } from "@/vendo/registry";
 
 const vendo = createVendo({
@@ -135,7 +135,7 @@ const vendo = createVendo({
   // hatch: docs/act-as-presets.md.
   auth: authJs(),
   catalog: registry,
-  policy: {}, // .vendo/policy.json: destructive asks, reads run
+  guard: guard({ policy: {} }), // .vendo/policy.json: destructive asks, reads run
 });
 
 export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);
@@ -152,7 +152,7 @@ const vendo = createVendo({
   models: { agent: "claude-sonnet-4-6" },
   auth: authJs(),
   catalog: registry,
-  policy: {},
+  guard: guard({ policy: {} }),
 });
 ```
 
@@ -175,17 +175,19 @@ Every key is optional — `createVendo({})` legitimately boots, with an
 env-resolved model, anonymous ephemeral sessions, and PGlite persistence. (The
 config object itself is required: `createVendo()` with no argument does not
 typecheck and throws at runtime.)
-The `policy: {}` line activates the `.vendo/policy.json` file init wrote, so
-the scaffolded default posture is: destructive tools ask, reads run. Remove
-the `policy` key entirely and every call auto-runs (audited, with the
-unconfigured-policy notice in shipped chrome). The default file is read
-fail-soft: deleting `.vendo/policy.json` while keeping `policy: {}` also
-auto-runs, silently and without the notice — keep the file in version
-control; it is part of your security posture. Named presets replace the
-file: `"cautious"` asks before write/destructive calls and runs reads,
-`"readonly"` runs reads and blocks everything else, and `"autopilot"` runs
-everything. Inline `{ rules }` and the explicit `{ file }` form cover
-anything a preset doesn't.
+The `guard: guard({ policy: {} })` line activates the `.vendo/policy.json`
+file init wrote, so the scaffolded default posture is: destructive tools ask,
+reads run. `guard()` is the one place a deployment's rules live — policy, an
+optional judge, and the approval lifecycle — and this composition completes it
+with the store and the risk grading. Remove the `guard` key entirely and every
+call auto-runs (audited, with the unconfigured-policy notice in shipped
+chrome). The default file is read fail-soft: deleting `.vendo/policy.json`
+while keeping `guard({ policy: {} })` also auto-runs, silently and without the
+notice — keep the file in version control; it is part of your security posture.
+Named presets replace the file: `"cautious"` asks before write/destructive
+calls and runs reads, `"readonly"` runs reads and blocks everything else, and
+`"autopilot"` runs everything. Inline `{ rules }` and the explicit `{ file }`
+form cover anything a preset doesn't.
 
 Prefer a separate `vendo/server.ts` (exporting the same `createVendo`
 result) when code outside the route needs the `vendo` object — `vendo.emit`
@@ -376,9 +378,9 @@ VENDO_BASE_URL=https://app.example.com
 ```
 
 Every call passes through the guard. The scaffolded composition passes
-`policy: {}`, which reads `.vendo/policy.json`: destructive tools ask, reads
-run. A composition with no `policy` key at all auto-runs every call (audited),
-and shipped chrome displays the unconfigured-policy notice.
+`guard: guard({ policy: {} })`, which reads `.vendo/policy.json`: destructive
+tools ask, reads run. A composition with no `guard` key at all auto-runs every
+call (audited), and shipped chrome displays the unconfigured-policy notice.
 
 ## What works without more configuration
 
@@ -440,13 +442,13 @@ compiled against the real `CreateVendoConfig` in
 import type {
   ActAs, ActionsRegistry, AppsRuntime, AutomationsEngine, CatalogFile,
   ComponentCatalog, ComponentRegistry, Connector, ExtractedTool, FilesAdapter,
-  Harness, HostOAuthAdapter, Json, Judge, KnowledgeAdapter, OverridesFile,
-  PolicyConfig, PolicyFile, Principal, RunContext, RunId,
+  Harness, HostOAuthAdapter, Json, KnowledgeAdapter, OverridesFile,
+  PolicyFile, Principal, RunContext, RunId,
   SandboxAdapter, SecretsProvider, Skill, ToolDefinition, ToolRegistry,
   VendoAgent, VendoGuard, VendoStore, VendoTheme,
 } from "@vendoai/vendo";
 import type {
-  AgentOptions, AppsConfig, ComposedAgent, ConnectionsService, HarnessTurns,
+  AppsConfig, ComposedAgent, ConnectionsService, GuardRules, HarnessTurns,
   HostAuthPreset, ModelsConfig, ServerActionHandler, TourEntry,
 } from "@vendoai/vendo/server";
 import type { LanguageModel } from "ai";
@@ -463,19 +465,17 @@ export interface CreateVendoConfig {
   skills?: readonly Skill[];  // SKILL.md values mounted at /host/skills
   catalog?: ComponentCatalog | ComponentRegistry;          // registry.tsx, or the array form
   theme?: VendoTheme;         // programmatic override for .vendo/theme.json
-  brief?: string;             // programmatic override for .vendo/brief.md
+  instructions?: string;      // THE prose knob; programmatic override for .vendo/brief.md
   store?: VendoStore;
   files?: FilesAdapter;       // workspace file content; unset → blobs in the store, 5 MiB cap
   sandbox?: SandboxAdapter;
   harness?: Harness<never>;   // WHO THINKS. unset → vendo(). also: claudeCode()
   knowledge?: KnowledgeAdapter; // unset → no vendo_knowledge_search tool
-  connectors?: Connector[];
-  connectorApps?: string[];   // toolkit scope for the auto-composed Cloud connector
+  connectors?: readonly (string | Connector)[]; // a string names a Cloud toolkit; an object is a provider
   connections?: ConnectionsService; // explicit connections adapter; always wins over defaults
   actAs?: ActAs;              // escape hatch
   serverActions?: Record<string, ServerActionHandler>; // the generated vendo-actions.ts map
-  policy?: PolicyConfig;      // "cautious" | "readonly" | "autopilot" | { file } | { rules }
-  judge?: Judge;
+  guard?: VendoGuard | GuardRules; // guard({ policy, judge, approvals }), or a built guard
   secrets?: SecretsProvider;
   telemetry?: boolean;
   development?: boolean;    // dev-only injection seams
@@ -496,9 +496,11 @@ export interface CreateVendoConfig {
     federation?: { secret: string };
   };
   oauth?: HostOAuthAdapter;   // escape hatch; required when `mcp` is true and `auth` is absent
-  agent?: AgentOptions | ComposedAgent; // the chat knobs, OR a whole agent() from @vendoai/agents
+  agent?: ComposedAgent;      // a whole agent() from @vendoai/agents, adopted by this deployment
   sessions?: { ttlMs?: number; sweepIntervalMs?: number; now?: () => number };
-  approvals?: { parkedCallTtlMs?: number };
+  toolOutputCap?: number;     // how much of one tool result reaches the model; 0 disables
+  maxInitialTools?: number;   // cap on the uncurated initial loadout; the rest via find_tools
+  loadout?: readonly string[]; // the curated initial loadout, by tool name
   apps?: false | {            // false unmounts app generation: no tools, skill or /apps routes
     review?: {                // review-kind remixes: who may review (queue/reject/approve)
       reviewer?(ctx: RunContext): boolean | Promise<boolean>;

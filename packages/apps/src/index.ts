@@ -133,21 +133,12 @@ export {
 // through.
 export { agentToolDescriptors } from "./agent-tools.js";
 export { buildingAppsSkill } from "./skills/building-apps.js";
-// The generation seam for external bench harnesses: the SAME conductor
-// createApps() rides, driven directly against a host fixture with no store
-// behind it. Additive export — generation behavior is identical.
-//
-// QUARANTINED (blueprint §14.2) — see the header of `generation/conductor.ts`. The
-// export stays so bench harnesses and the five `runtime.ts` call sites keep working;
-// it is frozen, not extended. New work uses the lean loop and the checks floor at
-// the paint seam.
-export {
-  conductCreate,
-  conductEdit,
-  type ConductedApp,
-  type ConductedResult,
-  type ConductorOptions,
-} from "./generation/conductor.js";
+// `conductCreate` / `conductEdit` and their result types were public here for
+// "external bench harnesses". A reverse-dependency walk (2026-08-05) found no
+// caller anywhere — in this repo, the examples, the corpus harness or the docs —
+// so the quarantined pipeline no longer has a public surface to be extended
+// through. `createApps()` still drives it internally; new work uses the lean
+// loop and the checks floor at the paint seam.
 // Contract §3.2 — the checkout/commit seam. Public because the workspace half of
 // it lives outside this package: a sandboxed harness holds a `WorkspaceFs` and
 // never a store, so composition binds the store side once and hands these to

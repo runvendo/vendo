@@ -73,6 +73,47 @@ export const appSourceFileSchema = z.object({
   blobRef: z.string().min(1).optional(),
 }).passthrough() satisfies z.ZodType<AppSourceFile>;
 
+/**
+ * The app's own memory — what it was asked for, and what was decided.
+ *
+ * A screen or build run is STATELESS; the artifact is what carries the context
+ * forward. Without this, every editor after the first reads a document with no
+ * idea why it looks the way it does, and quietly undoes a deliberate choice
+ * ("filtered to 2 accounts — the ask was trip-only") because nothing recorded
+ * that it was one.
+ *
+ * SERVER-WRITTEN, like {@link AppBuildFailure}: `asks` is recorded by the front
+ * door and `decisions` by the agent's own save hand, both through the runtime's
+ * one memory door. A model-authored `memory` on a generated document is stripped
+ * before persist, exactly as a forged `egressApproved` is.
+ *
+ * Deliberately NOT a log. Reasoning traces, transcripts and tool outputs are not
+ * here and must not be added: this is the smallest thing the next editor needs,
+ * and an append-only history of everything is how dead context gets read as
+ * current fact.
+ */
+export interface AppMemory {
+  /**
+   * Every `vendo_make` request that touched this app, VERBATIM and in order,
+   * the create ask first. Never a paraphrase — a paraphrase drifts the intent
+   * it was written to preserve. Capped at the write site (oldest dropped).
+   */
+  asks: string[];
+  /**
+   * A few lines the agent chose to record: choices made, constraints found,
+   * things ruled out. REPLACED on every run that writes one, never appended —
+   * a stale decision presented as current is worse than no memory at all.
+   * Byte-capped at the write site.
+   */
+  decisions?: string;
+}
+
+/** 01-core §9 */
+export const appMemorySchema = z.object({
+  asks: z.array(z.string()),
+  decisions: z.string().optional(),
+}).passthrough() satisfies z.ZodType<AppMemory>;
+
 /** 01-core §9 */
 export interface Pin {
   slot: string;
@@ -185,6 +226,12 @@ export interface AppDocument {
    * server-authoritative fields.
    */
   buildFailed?: AppBuildFailure;
+  /**
+   * What this app remembers about itself. Server-written — stripped from a
+   * generated document before persist and pinned from the stored row on every
+   * edit, so only the memory door ever changes it.
+   */
+  memory?: AppMemory;
 }
 
 /**
@@ -216,6 +263,7 @@ const appDocumentShapeSchema = z.object({
   placements: z.array(z.string()).optional(),
   forkedFrom: appIdSchema.optional(),
   buildFailed: appBuildFailureSchema.optional(),
+  memory: appMemorySchema.optional(),
 }).passthrough() satisfies z.ZodType<AppDocument>;
 
 /**

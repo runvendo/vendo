@@ -183,14 +183,14 @@ the docs' copy-paste prompt alone (agent-install DX design 2026-07-19
 
 1. Copies the fixture source (`invoify` — external pinned corpus repo,
    cloned through the normal manifest-pin machinery — plus `express-host`,
-   `examples/demo-bank`, `examples/demo-accounting`) to a clean directory under
+   `examples/demo-bank`) to a clean directory under
    `corpus/.repos/.install-eval/` with the Vendo footprint stripped: no
    `.vendo/`, no vendoai/@vendoai dependency or override, no lockfile, no
    CLAUDE.md/AGENTS.md/.claude (a clean host repo carries none of that), then
    snapshots it as a one-commit git repo so agent edits stay diffable.
-   **Known limit (read demo rows accordingly): the demo apps' source still
-   imports Vendo** — de-integrating their app code would be a
-   hand-maintained fork — so those rows measure "restore an install whose
+   **Known limit (read the demo row accordingly): the demo app's source still
+   imports Vendo** — de-integrating its app code would be a
+   hand-maintained fork — so that row measures "restore an install whose
    deps and contract are gone". `invoify` is a truly pre-Vendo host and
    `express-host` is the closest local one. Of the other external corpus
    repos, the deep-tier ones (umami, skateshop, papermark, teable, twenty)

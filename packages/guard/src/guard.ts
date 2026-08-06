@@ -46,6 +46,26 @@ import type {
   VendoGuard,
 } from "./types.js";
 
+/** A BYO loop has no turn-driven abandonment sweep, so an orphaned approval
+ *  card in a foreign chat expires on time instead: generous enough to walk away
+ *  and come back, bounded enough that stale writes can't be approved days
+ *  later. */
+const DEFAULT_PARKED_CALL_TTL_MS = 60 * 60_000;
+
+/** `0` (the documented off switch) and any other non-negative integer only —
+ *  validated HERE so both entry points, `guard({ approvals })` and a direct
+ *  `createGuard`, refuse the same typo the same way. */
+function resolveParkedCallTtlMs(configured: number | undefined): number {
+  const ttlMs = configured ?? DEFAULT_PARKED_CALL_TTL_MS;
+  if (!Number.isInteger(ttlMs) || ttlMs < 0) {
+    throw new VendoError(
+      "validation",
+      "guard approvals.parkedCallTtlMs must be a non-negative integer (0 disables parked-call expiry)",
+    );
+  }
+  return ttlMs;
+}
+
 const GRANTS_COLLECTION = "vendo_grants";
 const APPROVALS_COLLECTION = "vendo_approvals";
 /** One-time transition receipts for approvals (kill-list B5): `decided:<id>` /
@@ -394,6 +414,7 @@ class GuardImplementation implements VendoGuard {
   readonly #approvalRequestedCallbacks = new Set<(request: ApprovalRequest) => void>();
 
   readonly approvals = {
+    parkedCallTtlMs: DEFAULT_PARKED_CALL_TTL_MS,
     pending: (principal: Principal): Promise<ApprovalRequest[]> =>
       this.#pendingApprovals(principal),
     decide: (
@@ -427,6 +448,7 @@ class GuardImplementation implements VendoGuard {
     this.#policy = new PolicyResolver(this.#policyConfig, config.policyCloudFallback);
     this.#maxCallsPerMinute = config.breakers?.maxCallsPerMinute ?? 60;
     this.#maxWritesPerRun = config.breakers?.maxWritesPerRun ?? 20;
+    this.approvals.parkedCallTtlMs = resolveParkedCallTtlMs(config.approvals?.parkedCallTtlMs);
   }
 
   async check(

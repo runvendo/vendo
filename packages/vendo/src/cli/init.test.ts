@@ -142,7 +142,7 @@ describe("vendo init (zero-question)", () => {
     // The generated code files: model-less createVendo (model is optional)
     // wired to the empty shared registry.
     const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
-    expect(route).toContain('import { createVendo, nextVendoHandler } from "@vendoai/vendo/server";');
+    expect(route).toContain('import { createVendo, guard, nextVendoHandler } from "@vendoai/vendo/server";');
     expect(route).toContain('import { registry } from ' + '"../../../../vendo/registry";');
     expect(route).toContain("catalog: registry,");
     // The anonymous principal matches the docs' chat-route demo principal —
@@ -299,7 +299,7 @@ describe("vendo init (zero-question)", () => {
     // so importing it never resolves the other presets' optional peer deps
     // (corpus-triage Task 9).
     expect(route).toContain(`import { ${preset} } from "${specifier}";`);
-    expect(route).toContain('import { createVendo, nextVendoHandler } from "@vendoai/vendo/server";');
+    expect(route).toContain('import { createVendo, guard, nextVendoHandler } from "@vendoai/vendo/server";');
     expect(route).toContain(`auth: ${preset}(),`);
     // The detected line carries its escape hatch, and the preset owns the
     // principal seam — no hand-wired anonymous resolver remains.
@@ -849,7 +849,7 @@ describe("vendo init (zero-question)", () => {
     const root = await fixture();
     await mkdir(join(root, "app", "api", "vendo", "[...vendo]"), { recursive: true });
     await writeFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"),
-      'import { createVendo, nextVendoHandler } from "@vendoai/vendo/server";\n' +
+      'import { createVendo, guard, nextVendoHandler } from "@vendoai/vendo/server";\n' +
       "const vendo = createVendo({ principal: async () => null });\n" +
       "export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);\n");
     const sink = output();
@@ -1151,12 +1151,12 @@ describe("vendo init (zero-question)", () => {
     const root = await fixture();
     expect(await run(root, output())).toBe(0);
     const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
-    expect(route).toContain("policy: {},");
+    expect(route).toContain("guard: guard({ policy: {} }),");
 
     const express = await expressFixture(false);
     expect(await run(express, output())).toBe(0);
     const server = await readFile(join(express, "vendo", "server.ts"), "utf8");
-    expect(server).toContain("policy: {},");
+    expect(server).toContain("guard: guard({ policy: {} }),");
 
     // End to end: the config the scaffold passes plus the file init wrote
     // really produce the documented posture (destructive asks, reads run).

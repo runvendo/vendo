@@ -161,7 +161,7 @@ async function composeVendo(entityId: string, baseUrl: string) {
     // The demo posture: BYO Composio scoped to the demo's toolkits, guard
     // asking on every write (Maple's .vendo/policy.json intent).
     connectors: [composioConnector({ apiKey: apiKey!, apps: ["gmail", "slack"], entityId: () => entityId })],
-    policy: { rules: [{ match: { risk: "write" }, action: "ask" }, { match: { risk: "destructive" }, action: "ask" }] },
+    guard: { policy: { rules: [{ match: { risk: "write" }, action: "ask" }, { match: { risk: "destructive" }, action: "ask" }] } },
     principal: async () => ({ kind: "user", subject: entityId }),
   });
   // Settle composition (boot-time schema load) before the counter is read.

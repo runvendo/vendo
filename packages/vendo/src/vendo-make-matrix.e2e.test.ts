@@ -16,7 +16,7 @@
  *  2. edit of an existing one  → lands in place, repaints on the SAME stream id
  *  3. escalate WITH a sandbox  → the build runs, and the outline becomes the app
  *  4. escalate with NO sandbox → a failed receipt that says why, no orphan card
- *  5. assembler unavailable    → the conductor still answers (the control case)
+ *  5. assembler unavailable    → a failed receipt that says so, and nothing else runs
  *  6. the MCP door             → an outside agent gets words, and a screen lands
  *
  * Case 3 is the one this PR adds a receiving end for, and it is the one proven
@@ -539,25 +539,28 @@ describe("the six-type matrix — every `vendo_make` ask type, one deployment", 
     // fully drained, which is what makes the card dead rather than pending.
   }, 60_000);
 
-  it("TYPE 5 · an assembler that produces nothing renderable falls through — the conductor answers", async () => {
-    // The control case. The screen agent saved bytes the compiler cannot render,
-    // so the seam painted nothing and `authored` stored no row: the front door
-    // finds no app and the conductor takes the ask, exactly as it did before this
-    // seam existed. An `unavailable` is not an `escalate` and never was.
+  it("TYPE 5 · an assembler that produces nothing renderable fails honestly — nothing rescues it", async () => {
+    // The control case, inverted. The screen agent saved bytes the compiler cannot
+    // render, so the seam painted nothing and `authored` stored no row. That used
+    // to fall through to the conductor; the conductor is gone from this route, and
+    // an unwired or unserving assembler is a composition bug that has to surface
+    // rather than be quietly served by an engine nobody chose.
     const walked = await walk({
       asks: [{ request: "show me what I spent this month" }],
       screenTurns: [call("save_app", { content: "not a document at all" }, "c1"), speak("saved")],
+      // What a fall-through WOULD have built. It must not appear anywhere.
       brain: SPENDING,
     });
 
     const receipt = walked.receipts[0]!;
-    expect(receipt.status).toBe("ready");
-    expect(receipt.title).toBe("Spending");
-    // The conductor genuinely ran: its brain prompt is on the record.
-    expect(walked.prompts.filter((prompt) => prompt.includes(BRAIN_MARKER)).length).toBeGreaterThan(0);
-    // And its app is real and on the same stream the front door minted.
-    expect((await walked.vendo.apps.get(receipt.id, ctx))?.name).toBe("Spending");
-    expect(new Set(walked.views.map((view) => view.appId))).toEqual(new Set([receipt.id]));
+    expect(receipt.status).toBe("failed");
+    // The say is plain, and it is about this ask.
+    expect(receipt.say).toContain("couldn't put that screen together");
+    expect(receipt.title).toBe("show me what I spent this month");
+    // NOTHING generated behind it: not one brain prompt, no row, no paint.
+    expect(walked.prompts.filter((prompt) => prompt.includes(BRAIN_MARKER))).toHaveLength(0);
+    expect(await walked.vendo.apps.get(receipt.id, ctx)).toBeNull();
+    expect(JSON.stringify(walked.views)).not.toContain("This month");
   }, 60_000);
 
   it("TYPE 6 · the MCP door: an outside agent asks for a screen, gets words, and a screen lands", async () => {

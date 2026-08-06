@@ -100,7 +100,7 @@ async function compose(
     model: recordingModel(seen),
     principal: async () => principal,
     store,
-    agent: { instructions: HOST_VOICE },
+    instructions: HOST_VOICE,
     ...overrides,
   } as Parameters<typeof createVendo>[0]);
   vendo.actions.add(hostTools());

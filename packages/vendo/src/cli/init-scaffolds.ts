@@ -127,7 +127,7 @@ function authImportLine(auth: AuthMatch | null): string {
 
 export function routeSource(options: { serverActions: boolean; auth: AuthMatch | null; registrySpecifier: string }): string {
   return authImportLine(options.auth) +
-    `import { createVendo, nextVendoHandler } from "@vendoai/vendo/server";\n` +
+    `import { createVendo, guard, nextVendoHandler } from "@vendoai/vendo/server";\n` +
     (options.serverActions ? `import { serverActions } from "./vendo-actions";\n` : "") +
     `import { registry } from ${JSON.stringify(options.registrySpecifier)};\n` +
     `\nconst vendo = createVendo({\n` +
@@ -135,7 +135,7 @@ export function routeSource(options: { serverActions: boolean; auth: AuthMatch |
     (options.auth === null ? anonymousPrincipalLines(true) : authConfigLines(options.auth)) +
     `  catalog: registry,\n` +
     (options.serverActions ? `  serverActions,\n` : "") +
-    `  policy: {}, // .vendo/policy.json: destructive asks, reads run\n` +
+    `  guard: guard({ policy: {} }), // .vendo/policy.json: destructive asks, reads run\n` +
     `});\n\n` +
     `export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);\n`;
 }
@@ -336,7 +336,7 @@ export function customServerSource(typescript: boolean, auth: AuthMatch | null =
     ` */\n` +
     `import { createAnthropic } from "@ai-sdk/anthropic";\n` +
     authImportLine(auth) +
-    `import { cloudConnections, cloudSandbox, cloudTools, createVendo, hostedStore } from "@vendoai/vendo/server";\n` +
+    `import { cloudConnections, cloudSandbox, cloudTools, createVendo, guard, hostedStore } from "@vendoai/vendo/server";\n` +
     `import { registry } from ${JSON.stringify(registrySpecifier)};\n` +
     envType +
     `\n${signatures.vendoVar}\n` +
@@ -353,7 +353,7 @@ export function customServerSource(typescript: boolean, auth: AuthMatch | null =
     (auth === null ? anonymousPrincipalLines(typescript) : authConfigLines(auth))
       .split("\n").map((line) => (line === "" ? line : `    ${line}`)).join("\n") +
     `      catalog: registry,\n` +
-    `      policy: {}, // .vendo/policy.json: destructive asks, reads run\n` +
+    `      guard: guard({ policy: {} }), // .vendo/policy.json: destructive asks, reads run\n` +
     `      // With a Vendo Cloud key the infrastructure seams wire the Cloud\n` +
     `      // adapters EXPLICITLY (composition decides; blocks never read the\n` +
     `      // environment). Without one, pass your own adapters here — model,\n` +
@@ -434,13 +434,13 @@ export function expressServerSource(typescript: boolean, auth: AuthMatch | null 
     ` */\n` +
     imports +
     authImportLine(auth) +
-    `import { createVendo } from "@vendoai/vendo/server";\n` +
+    `import { createVendo, guard } from "@vendoai/vendo/server";\n` +
     `import { registry } from ${JSON.stringify(registrySpecifier)};\n` +
     types +
     `\nconst vendo = createVendo({\n` +
     (auth === null ? anonymousPrincipalLines(typescript) : authConfigLines(auth)) +
     `  catalog: registry,\n` +
-    `  policy: {}, // .vendo/policy.json: destructive asks, reads run\n` +
+    `  guard: guard({ policy: {} }), // .vendo/policy.json: destructive asks, reads run\n` +
     `});\n\n` +
     `function requestHeaders${signatures.requestHeaders} {\n` +
     `  const result = new Headers();\n` +
