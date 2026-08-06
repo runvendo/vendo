@@ -16,6 +16,7 @@ import type {
 import { useResource } from "../hooks/use-resource.js";
 import { AppFrame } from "../tree/frames.js";
 import type { ApprovalResolution, OpenSurface } from "../wire-types.js";
+import { AddToPicker } from "./add-to-picker.js";
 import { ApprovalCard } from "./approval-card.js";
 import {
   CardActions,
@@ -370,6 +371,11 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
             <span className="fl-boot-building" aria-hidden={!building}>Building {title}…</span>
             <span className="fl-boot-ready" aria-hidden={building}>{title}</span>
           </span>
+          {/* The destination affordance, only once the view is READY — the same
+              law the thread card's pin follows (§8: a build gets one moving
+              thing). It targets the app actually on screen, so after a retry
+              that is the replacement build's id. */}
+          {surface !== undefined ? <AddToPicker appId={activeAppId} /> : null}
           <span className="fl-boot-hairline" aria-hidden="true" />
         </div>
         <div className="fl-appcard-body">
