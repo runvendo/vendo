@@ -114,6 +114,9 @@ import {
   type McpDoor,
   type TurnCredentials,
 } from "@vendoai/mcp";
+// The caller's half of `mcp.serviceAuth`: the host's own backend exchanges its
+// `vsk_` key plus one of its user ids for that user's short-lived MCP token.
+export { vendoUserToken, type VendoUserToken, type VendoUserTokenInput } from "@vendoai/mcp";
 import {
   adoptEphemeralSubject,
   appAccess,

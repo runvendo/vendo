@@ -17,6 +17,7 @@ contract and can change without notice.
 | `VENDO_TELEMETRY_DISABLED=1` | disables build and development telemetry |
 | `VENDO_TICK_SECRET` | bearer secret required by `POST /tick` |
 | `VENDO_BASE_URL` | trusted host origin used for server-side execution of extracted route tools, for marking the anonymous-session cookie `Secure` behind a TLS-terminating proxy, as the MCP door's canonical public base, and as the origin of the box callback URLs (`VENDO_STORE_URL`/`VENDO_HOST_URL`); machine provisioning fails without it |
+| `VENDO_SERVICE_KEY` | the name the docs and `vendo service-key new` use for a `vsk_` MCP service key. Nothing reads it automatically: your composition passes it in explicitly (`mcp: { serviceAuth: { keys: [process.env.VENDO_SERVICE_KEY!] } }`) and your backend hands the same value to `vendoUserToken`, so any name you prefer works just as well. See [Your own backend, as one of your users](/existing-agents/mcp) |
 | `VENDO_URL` | base URL that `vendo doctor` probes for the live `/status` check and that `vendo sync` queries for blast-radius impact; defaults to `http://localhost:3000/api/vendo`, overridden per run by `--url` |
 | `VENDO_POSTHOG_KEY` · `VENDO_POSTHOG_HOST` | override the telemetry project key and the host capture events are sent to |
 | `DO_NOT_TRACK=1` | disables telemetry and is also honored by Scarf |

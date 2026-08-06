@@ -1,0 +1,46 @@
+import { randomBytes } from "node:crypto";
+import { consoleOutput, type Output } from "./shared.js";
+
+const HELP = `vendo service-key — keys for your OWN backend to act as one of your users over MCP\n\nUsage:\n  vendo service-key new [--name <label>] [--json]\n\nOptions:\n  --name <label>  A label for your own records; it is printed back and stored nowhere\n  --json          Print { key, keyId, name } instead of the human output\n`;
+
+export interface ServiceKeyOptions {
+  output?: Output;
+}
+
+export async function runServiceKey(args: string[], options: ServiceKeyOptions = {}): Promise<number> {
+  const output = options.output ?? consoleOutput;
+  const [command, ...commandArgs] = args;
+  if (command === undefined || command === "--help" || command === "-h") {
+    output.log(HELP);
+    return 0;
+  }
+  if (command !== "new") {
+    output.error(`Unknown service-key command: ${command}\n\n${HELP}`);
+    return 1;
+  }
+
+  // `vsk_<8 hex keyId>_<40 hex secret>` — the only shape the door accepts
+  // (packages/mcp/src/oauth/service-keys.ts). Minted here and nowhere else:
+  // nothing is written, nothing is sent, and this process is the only copy.
+  const key = `vsk_${randomBytes(4).toString("hex")}_${randomBytes(20).toString("hex")}`;
+  const name = option(commandArgs, "--name");
+  if (commandArgs.includes("--json")) {
+    output.log(JSON.stringify({ key, keyId: key.slice(4, 12), ...(name === undefined ? {} : { name }) }));
+    return 0;
+  }
+  output.log(`Service key${name === undefined ? "" : ` (${name})`} — copy it now. It is shown once and cannot be recovered.`);
+  output.log(`\n  VENDO_SERVICE_KEY=${key}\n`);
+  output.log("Vendo keeps no copy: list it on your door yourself, and rotate by listing both keys until the old one is out of use.");
+  output.log("\n  createVendo({ mcp: { serviceAuth: { keys: [process.env.VENDO_SERVICE_KEY!] } } })\n");
+  output.log("Your backend exchanges it for one user's short-lived MCP token with `vendoUserToken` — https://docs.vendo.run/existing-agents/mcp");
+  return 0;
+}
+
+function option(args: string[], name: string): string | undefined {
+  const exact = args.indexOf(name);
+  if (exact >= 0) {
+    const value = args[exact + 1];
+    return value !== undefined && !value.startsWith("--") ? value : undefined;
+  }
+  return args.find((value) => value.startsWith(`${name}=`))?.slice(name.length + 1);
+}

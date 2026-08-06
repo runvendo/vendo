@@ -87,6 +87,101 @@ looked at instead of read out, how to phrase the request, when to name a
 destination, and never to describe a screen it has not seen. Source:
 [`examples/claude-code-plugin`](https://github.com/runvendo/vendo/tree/main/examples/claude-code-plugin).
 
+## Your own backend, as one of your users
+
+Everything above is an agent you do not run. When the caller is **your own
+backend** — a nightly job, a queue worker, a support console acting for someone
+who is not at a browser — the OAuth dance has nobody to run it: no browser to
+bounce, no consent page to click, and no third party to consent to.
+
+A service key is the first-party way in. You mint it, your backend holds it, and
+it exchanges the key plus one of **your** user ids for a short-lived token bound
+to that user. Nothing downstream changes: same guard, same approvals, same
+audit, and the tool call is attributed to the key (`svc:<keyId>`) as well as to
+the person. Per-user OAuth stays the story for anyone else's agent; a service
+key is for code you deploy, and it can name any user, so it is exactly as
+powerful as your backend already is.
+
+<Steps>
+  <Step title="Mint a key">
+    ```bash
+    npx vendo service-key new --name backend
+    ```
+
+    It is printed once and stored nowhere — not by the CLI, not by Vendo. Put it
+    in your backend's environment before you close the terminal:
+
+    ```bash
+    VENDO_SERVICE_KEY=vsk_ab12cd34_…
+    ```
+  </Step>
+
+  <Step title="List it on the door">
+    ```ts
+    export const vendo = createVendo({
+      model,
+      principal: resolvePrincipal,
+      oauth,
+      mcp: { serviceAuth: { keys: [process.env.VENDO_SERVICE_KEY!] } },
+    });
+    ```
+
+    The door keeps sha256 hashes only. Rotate by listing both keys until the old
+    one is out of use, then drop it.
+  </Step>
+
+  <Step title="Exchange it for one user's token">
+    ```ts
+    import { vendoUserToken } from "@vendoai/vendo/server";
+
+    const token = await vendoUserToken({
+      url: "https://your-app.example.com/api/vendo/mcp",
+      key: process.env.VENDO_SERVICE_KEY!,
+      user: "user_1904", // one of YOUR user ids, in your own spelling
+    });
+    // { accessToken: "vmat_…", tokenType: "Bearer", expiresIn: 600, expiresAt, scope }
+    ```
+
+    The MCP URL is the only endpoint you configure: the helper reads the door's
+    own discovery documents to find the token endpoint, which is also how it
+    follows a deployment fronted by a broker. Ten minutes, no refresh token, no
+    cache — mint one per job and let it expire.
+  </Step>
+
+  <Step title="Talk MCP with it">
+    ```ts
+    { authorization: `Bearer ${token.accessToken}` }
+    ```
+
+    Hand that header to any MCP client and the session is an ordinary one: the
+    same `tools/list`, the same `vendo_make`, the same policy on every call.
+  </Step>
+</Steps>
+
+Not a JavaScript backend? The exchange is one RFC 8693 form post, and on a door
+that runs its own OAuth surface the token endpoint is your MCP URL plus
+`/token`:
+
+```bash
+curl -s https://your-app.example.com/api/vendo/mcp/token \
+  -d grant_type=urn:ietf:params:oauth:grant-type:token-exchange \
+  -d client_id=vendo-service \
+  -d client_secret=$VENDO_SERVICE_KEY \
+  -d subject_token=user_1904 \
+  -d subject_token_type=urn:vendo:params:oauth:token-type:user-id
+```
+
+`vendoUserToken` is that request plus the discovery step. An unknown key, a
+retired one, and a wrong `client_id` all answer the same `invalid_client` —
+nothing tells a guesser which half they have right.
+
+<Note>
+  A door pointed at an external authorization server (`mcp.remoteAs`, or the
+  hosted broker) does not serve its own token endpoint, so the exchange lives at
+  that server instead. `vendoUserToken` follows the discovery documents there;
+  a hand-rolled post has to aim at the issuer's own `token_endpoint`.
+</Note>
+
 ## What the agent gets
 
 | Tool | What it does |
