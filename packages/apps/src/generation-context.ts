@@ -4,7 +4,13 @@
  *
  * Lifted out of `createApps` unchanged.
  */
-import { deriveShapeCard, type RunContext, type ShapeType, type ToolDescriptor } from "@vendoai/core";
+import {
+  deriveShapeCard,
+  shapeFromJsonSchema,
+  type RunContext,
+  type ShapeType,
+  type ToolDescriptor,
+} from "@vendoai/core";
 import type { LanguageModel } from "ai";
 import { snapshotDesignRules, type GenerationDependencies } from "./engine.js";
 import type { AppsConfig } from "./types.js";
@@ -115,6 +121,16 @@ export const createGenerationContext = (config: AppsConfig) => {
           // Unknown shape stays defensive; the tool is still listed by name.
         }
       }));
+    // The host's own DECLARED response schema is the shape. A live sample is
+    // the fallback and never overwrites a declaration: sampling erases what a
+    // declaration keeps (an enum samples as a bare `string`).
+    const shapes = new Map<string, ShapeType>();
+    for (const descriptor of descriptors) {
+      if (descriptor.outputSchema !== undefined) {
+        shapes.set(descriptor.name, shapeFromJsonSchema(descriptor.outputSchema));
+      }
+    }
+    for (const [name, sampled] of sampledShapes) if (!shapes.has(name)) shapes.set(name, sampled);
     return {
       tools: descriptors.map(({ name, description, risk, inputSchema, outputSchema }) => ({
         name,
@@ -129,7 +145,7 @@ export const createGenerationContext = (config: AppsConfig) => {
         // reads before it falls back to a sample (checking/deps.ts).
         ...(outputSchema === undefined ? {} : { outputSchema }),
       })),
-      ...(sampledShapes.size === 0 ? {} : { toolShapes: Object.fromEntries(sampledShapes) }),
+      ...(shapes.size === 0 ? {} : { toolShapes: Object.fromEntries(shapes) }),
     };
   };
 
