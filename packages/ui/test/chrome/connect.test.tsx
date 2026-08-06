@@ -6,6 +6,22 @@ import { VendoProvider, createVendoClient, type VendoClient } from "../../src/in
 import { ConnectCard, ConnectedAccountsPanel } from "../../src/chrome/index.js";
 import { createWireServer } from "../wire-server.js";
 
+/** A stand-in for the window `openConnectPopup` hands back: the card navigates
+    it once the redirect URL lands and closes it from the opener when the account
+    goes active. */
+function fakePopup() {
+  return { location: { replace: vi.fn() }, close: vi.fn() } as unknown as Window
+    & { location: { replace: ReturnType<typeof vi.fn> }; close: ReturnType<typeof vi.fn> };
+}
+
+/** Stub `window.open` with what a browser that ALLOWS the popup returns. */
+function allowPopups() {
+  const popup = fakePopup();
+  const open = vi.fn(() => popup);
+  vi.stubGlobal("open", open);
+  return { popup, open };
+}
+
 describe("ConnectCard and ConnectedAccountsPanel", () => {
   let wire: Awaited<ReturnType<typeof createWireServer>>;
   let client: VendoClient;
@@ -21,9 +37,11 @@ describe("ConnectCard and ConnectedAccountsPanel", () => {
     await wire.close();
   });
 
-  it("initiates, opens the broker redirect, polls to active, and fires the retry", async () => {
-    const opened = vi.fn();
-    vi.stubGlobal("open", opened);
+  it("opens the popup INSIDE the click (before initiate), navigates it, polls to active, closes it, fires the retry", async () => {
+    const { popup, open } = allowPopups();
+    for (const [axis, size] of [["width", 1600], ["height", 1080]] as const) {
+      Object.defineProperty(window.screen, axis, { value: size, configurable: true });
+    }
     const onConnected = vi.fn();
     render(
       <VendoProvider client={client}>
@@ -41,12 +59,29 @@ describe("ConnectCard and ConnectedAccountsPanel", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Connect Gmail" }));
 
+    // THE defect this design exists for: Safari and Firefox judge a popup by
+    // call-stack provenance, so the window must already be open before the
+    // first await. It is blank at this instant, and initiate has not run.
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(open.mock.calls[0]![0]).toBe("about:blank");
+    expect(wire.requests.some(request => request.path === "/connections/initiate")).toBe(false);
+    // …and centered on the screen, at the designed size, rather than dropped
+    // in a corner. (jsdom reports a 0x0 screen, so the test states one.)
+    const features = open.mock.calls[0]![2] as string;
+    expect(features).toBe("popup=yes,width=520,height=680,left=540,top=200");
+
     await waitFor(() => expect(onConnected).toHaveBeenCalledTimes(1));
-    expect(opened).toHaveBeenCalledWith("https://connect.test/oauth/1", "_blank", "noopener");
+    // The blank window is navigated to the broker's URL, then closed from the
+    // opener once the account is live — the user never closes it themselves.
+    expect(popup.location.replace).toHaveBeenCalledWith("https://connect.test/oauth/1");
+    expect(popup.close).toHaveBeenCalledTimes(1);
     // The card STAYS as a quiet Connected record — no "retrying" plumbing text.
     expect(screen.getByRole("status").textContent).toContain("Connected");
     expect(screen.queryByText(/retrying/i)).toBeNull();
     expect(screen.queryByRole("button", { name: "Connect Gmail" })).toBeNull();
+    // The receipt: what the account can now do, in the same plain words the ask
+    // used — never an OAuth scope string.
+    expect(screen.getByText("We can now read and send mail as you.")).toBeTruthy();
     expect(wire.requests).toContainEqual(
       expect.objectContaining({ method: "POST", path: "/connections/initiate", body: { toolkit: "gmail", connector: "composio" } }),
     );
@@ -55,8 +90,121 @@ describe("ConnectCard and ConnectedAccountsPanel", () => {
     );
   });
 
+  it("says what connecting grants, in plain words, before anyone clicks", async () => {
+    allowPopups();
+    render(
+      <VendoProvider client={client}>
+        <ConnectCard connector="composio" toolkit="gmail" message="Connect gmail." onConnected={() => undefined} />
+      </VendoProvider>,
+    );
+    const card = screen.getByRole("article", { name: "Connect Gmail" });
+    expect(card.textContent).toContain("Connecting lets us read and send mail as you.");
+    // The scope strings the broker actually asks for are the grant's IDENTIFIER,
+    // not its meaning — a consent surface that shows them has said nothing.
+    expect(card.textContent).not.toContain("googleapis.com");
+    expect(card.textContent).not.toContain("scope");
+  });
+
+  it("a host-supplied access line wins over the table", async () => {
+    allowPopups();
+    render(
+      <VendoProvider client={client}>
+        <ConnectCard
+          connector="composio"
+          toolkit="gmail"
+          message="Connect gmail."
+          access="read your last 30 days of mail"
+          onConnected={() => undefined}
+        />
+      </VendoProvider>,
+    );
+    expect(screen.getByRole("article", { name: "Connect Gmail" }).textContent)
+      .toContain("Connecting lets us read your last 30 days of mail.");
+  });
+
+  it("a blocked popup keeps the flow alive behind a plain link, and still completes", async () => {
+    // Every browser blocks SOMETIMES (a blocker extension, a hardened profile).
+    // A blocked window must not be a dead end: the connect was already initiated
+    // and the poll is running, so the same URL in a tab finishes it.
+    vi.stubGlobal("open", vi.fn(() => null));
+    wire.state.connections.push({
+      id: "ca_new", connector: "composio", toolkit: "gmail",
+      status: "pending" as never, createdAt: "2026-07-23T00:00:00.000Z",
+    });
+    const onConnected = vi.fn();
+    render(
+      <VendoProvider client={client}>
+        <ConnectCard connector="composio" toolkit="gmail" message="Connect gmail." onConnected={onConnected} />
+      </VendoProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Connect Gmail" }));
+
+    const link = await screen.findByRole("link", { name: "Open sign-in in a new tab" });
+    expect(link.getAttribute("href")).toBe("https://connect.test/oauth/1");
+    expect(screen.getByRole("status").textContent).toContain("blocked the sign-in window");
+    // The poll never stopped: finishing in the tab settles the card as normal.
+    const account = wire.state.connections.find(item => item.id === "ca_new")!;
+    (account as { status: string }).status = "active";
+    await waitFor(() => expect(onConnected).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("status").textContent).toContain("Connected");
+  });
+
+  it("\"Not now\" collapses to a one-line Skipped record that still offers Connect", async () => {
+    allowPopups();
+    const onDeclined = vi.fn();
+    render(
+      <VendoProvider client={client}>
+        <ConnectCard
+          connector="composio"
+          toolkit="gmail"
+          message="Connect gmail."
+          onConnected={() => undefined}
+          onDeclined={onDeclined}
+        />
+      </VendoProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Not now" }));
+
+    expect(onDeclined).toHaveBeenCalledTimes(1);
+    const card = screen.getByRole("article", { name: "Connect Gmail" });
+    expect(card.getAttribute("data-vendo-connect-card")).toBe("skipped");
+    expect(card.textContent).toContain("Skipped — Gmail isn’t connected");
+    // "Not now" is a moment's answer, not a standing one — the offer survives.
+    fireEvent.click(screen.getByRole("button", { name: "Connect Gmail" }));
+    await waitFor(() => expect(wire.requests).toContainEqual(
+      expect.objectContaining({ method: "POST", path: "/connections/initiate" }),
+    ));
+  });
+
+  it("a Skipped record survives the turn going stale (declining is what makes it stale)", async () => {
+    allowPopups();
+    const card = (live: boolean) => (
+      <VendoProvider client={client}>
+        <ConnectCard connector="composio" toolkit="gmail" message="Connect gmail." onConnected={() => undefined} live={live} />
+      </VendoProvider>
+    );
+    const { rerender } = render(card(true));
+    fireEvent.click(screen.getByRole("button", { name: "Not now" }));
+    // The decline sends the agent its continuation, so the very next render has
+    // this turn stale. The record of the answer must not blink out with it.
+    rerender(card(false));
+    expect(screen.getByRole("article", { name: "Connect Gmail" }).getAttribute("data-vendo-connect-card")).toBe("skipped");
+  });
+
+  it("a stale card never offers \"Not now\" — it is a record, not an ask", async () => {
+    // live=false + an active account renders the Connected record; the decline
+    // affordance belongs only to the turn that is still waiting on an answer.
+    render(
+      <VendoProvider client={client}>
+        <ConnectCard connector="composio" toolkit="gmail" message="Connect gmail." onConnected={() => undefined} live={false} />
+      </VendoProvider>,
+    );
+    await screen.findByRole("status");
+    expect(screen.queryByRole("button", { name: "Not now" })).toBeNull();
+  });
+
   it("shows the Connecting… loading state (disabled button) while the OAuth poll runs", async () => {
-    vi.stubGlobal("open", vi.fn());
+    allowPopups();
     // Pre-seed the initiated account as PENDING so the poll keeps waiting.
     wire.state.connections.push({
       id: "ca_new", connector: "composio", toolkit: "gmail",
@@ -110,7 +258,7 @@ describe("ConnectCard and ConnectedAccountsPanel", () => {
     // the second mount, so the poll loop in completeConnection exits on its
     // first check and the card sits on "Connecting…" forever (the demo host
     // had to ship reactStrictMode:false because of this).
-    vi.stubGlobal("open", vi.fn());
+    allowPopups();
     const onConnected = vi.fn();
     render(
       <StrictMode>
@@ -125,7 +273,7 @@ describe("ConnectCard and ConnectedAccountsPanel", () => {
   });
 
   it("surfaces an initiation failure inline and stays retryable", async () => {
-    vi.stubGlobal("open", vi.fn());
+    allowPopups();
     wire.state.failures.push({
       method: "POST",
       path: "/connections/initiate",

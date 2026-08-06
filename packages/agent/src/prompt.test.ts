@@ -195,6 +195,15 @@ describe("discovery sections", () => {
     expect(prompt).toContain("hunt for substitutes across the catalog");
   });
 
+  /** V5 — the etiquette above says what NOT to do; without this line the model
+   *  had no action left but prose, so it either called the unconnected tool to
+   *  "check" or told the user to go find a button. The ask is now a tool. */
+  it("connectors: names request_connection as the move for an unconnected service", async () => {
+    const prompt = await assembleSystemPrompt(testGuard({}, []), ctx(), undefined, false, "connectors");
+    expect(prompt).toContain("call request_connection with its toolkit and one sentence saying why");
+    expect(prompt).toContain("never the service tool itself, and never a substitute service");
+  });
+
   /** The section this replaced taught the model to hunt a found tool down on its
    * own tool list, behind a `mcp__vendo__` server prefix. That was only ever true
    * of the expansion shape, and it was never reliably true even then (measured

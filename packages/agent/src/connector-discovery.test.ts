@@ -30,6 +30,7 @@ const ports = (overrides: Partial<ConnectorDiscoveryPorts> = {}): ConnectorDisco
   find: async () => [MATCH],
   use: async () => ({ status: "ok", output: { ok: true } }),
   list: async () => [{ toolkit: "gmail", label: "Gmail", connected: true }],
+  connect: async (toolkit) => (toolkit === "gmail" ? { connector: "composio", toolkit: "gmail" } : undefined),
   ...overrides,
 });
 
@@ -47,6 +48,8 @@ describe("the connector-discovery tools are ordinary tools on the one registry",
     expect(byName.get("find_service_tools")).toBe("read");
     expect(byName.get("list_connections")).toBe("read");
     expect(byName.get("use_service_tool")).toBe("ungraded");
+    // Asking is a read: the tool changes nothing — the PERSON decides on the card.
+    expect(byName.get("request_connection")).toBe("read");
   });
 
   it("reads each title from core's one table, and none of them is an identifier", async () => {
@@ -55,6 +58,7 @@ describe("the connector-discovery tools are ordinary tools on the one registry",
       VENDO_TOOL_TITLES.find_service_tools,
       VENDO_TOOL_TITLES.use_service_tool,
       VENDO_TOOL_TITLES.list_connections,
+      VENDO_TOOL_TITLES.request_connection,
     ]);
     for (const descriptor of descriptors) {
       expect(descriptor.title, descriptor.name).toBeTruthy();
@@ -315,6 +319,75 @@ describe("list_connections", () => {
   });
 });
 
+/** V5 — connecting stays a UI act, but the ASK is now a tool call: the agent
+ *  raises the card in its own words BEFORE spending a call it knows will be
+ *  refused. What comes back is the same `connect-required` outcome a refused
+ *  service call produces, so nothing new reaches the wire or the renderer. */
+describe("request_connection", () => {
+  it("mints the connect-required outcome verbatim, carrying the model's own sentence", async () => {
+    const seen: Array<[string, string]> = [];
+    const registry = connectorDiscoveryRegistry(ports({
+      connect: async (toolkit, connectCtx) => {
+        seen.push([toolkit, connectCtx.principal.subject]);
+        return { connector: "composio", toolkit };
+      },
+    }));
+
+    const outcome = await registry.execute(
+      call("request_connection", { toolkit: " gmail ", reason: "I need Gmail to draft your spending summary." }),
+      ctx(),
+    );
+
+    // A connection belongs to a person: the port gets the CALLER's ctx.
+    expect(seen).toEqual([["gmail", "user_alice"]]);
+    // The EXISTING shape (01-core §4) — the reason becomes the card's message.
+    expect(outcome).toEqual({
+      status: "connect-required",
+      connect: {
+        connector: "composio",
+        toolkit: "gmail",
+        message: "I need Gmail to draft your spending summary.",
+      },
+    });
+  });
+
+  it("refuses a toolkit this deployment cannot connect instead of raising a dead button", async () => {
+    const outcome = await connectorDiscoveryRegistry(ports())
+      .execute(call("request_connection", { toolkit: "salesforce", reason: "To read your pipeline." }), ctx());
+
+    expect(outcome).toMatchObject({ status: "error", error: { code: "not-found" } });
+    const message = (outcome as { error: { message: string } }).error.message;
+    expect(message).toContain("salesforce");
+    expect(message).toContain("list_connections");
+  });
+
+  it("rejects a blank toolkit and a blank reason before the port is reached", async () => {
+    let asked = false;
+    const registry = connectorDiscoveryRegistry(ports({
+      connect: async () => { asked = true; return { connector: "composio", toolkit: "gmail" }; },
+    }));
+    for (const args of [{ toolkit: "  ", reason: "Because." }, { toolkit: "gmail", reason: "   " }]) {
+      expect(await registry.execute(call("request_connection", args), ctx()))
+        .toMatchObject({ status: "error", error: { code: "validation" } });
+    }
+    expect(asked).toBe(false);
+  });
+
+  it("refuses a reason longer than one sentence — the card is not a place for a rationale", async () => {
+    // Same law as MAX_NEED_LENGTH: the schema is advice to the model, the
+    // execute check is the enforcement. A person reads this on a card.
+    const outcome = await connectorDiscoveryRegistry(ports())
+      .execute(call("request_connection", { toolkit: "gmail", reason: "x".repeat(281) }), ctx());
+
+    expect(outcome).toMatchObject({ status: "error", error: { code: "validation" } });
+    expect((outcome as { error: { message: string } }).error.message).toContain("280");
+    // The boundary itself is fine.
+    expect(await connectorDiscoveryRegistry(ports())
+      .execute(call("request_connection", { toolkit: "gmail", reason: "x".repeat(280) }), ctx()))
+      .toMatchObject({ status: "connect-required" });
+  });
+});
+
 describe("no adapter, no tool", () => {
   it("projects list_connections ALONE when nothing can search or dispatch", async () => {
     // The zero-key Cloud default connector's shape: connections, no catalog.
@@ -325,7 +398,7 @@ describe("no adapter, no tool", () => {
 
   it("answers a call for an unprojected tool the way it answers a name it never had", async () => {
     const registry = connectorDiscoveryRegistry({ list: ports().list });
-    for (const tool of ["find_service_tools", "use_service_tool"]) {
+    for (const tool of ["find_service_tools", "use_service_tool", "request_connection"]) {
       expect(await registry.execute(call(tool, { need: "x", slug: "x" }), ctx()), tool)
         .toMatchObject({ status: "error", error: { code: "not-found" } });
     }

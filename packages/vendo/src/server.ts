@@ -2535,6 +2535,15 @@ export function createVendo(input: CreateVendoConfig): Vendo {
           connected: connected.has(entry.toolkit),
         })) as unknown as Json;
       },
+      // The same catalog `list` reads, resolved to ONE row: the ask the agent
+      // raises can only name a toolkit this deployment can actually connect, so
+      // the card's button always has a broker behind it. `undefined` is the
+      // honest answer for anything else — the tool turns it into "check what
+      // exists" rather than a dead button.
+      connect: async (toolkit) => {
+        const entry = (await connections.catalog()).find((candidate) => candidate.toolkit === toolkit);
+        return entry === undefined ? undefined : { connector: entry.connector, toolkit: entry.toolkit };
+      },
     }, { toolOutputCap }));
   }
   // Knowledge K1 — the tool exists exactly when an adapter is configured;

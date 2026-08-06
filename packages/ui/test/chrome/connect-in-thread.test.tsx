@@ -6,7 +6,7 @@
 // unconnected service produced a silent denial and the promised connect card
 // never appeared. The ENGINE path carries the typed outcome on the tool part AND
 // writes the same part, so both shapes must add up to exactly one card.
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { UIMessage } from "ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { VendoThread } from "../../src/chrome/index.js";
@@ -103,6 +103,29 @@ describe("connect card in the thread (both wire shapes)", () => {
 
     await screen.findByRole("article", { name: "Connect Gmail" });
     expect(cards()).toHaveLength(1);
+  });
+
+  /** V5 — "Not now" is an answer, and the agent is the one waiting on it. It
+      travels the same hidden carrier the Connected line uses: the Skipped row
+      IS the visible record, so a user bubble would say it twice. */
+  it("\"Not now\" tells the agent through hidden context and collapses to a re-offerable Skipped row", async () => {
+    renderTurn("msg_connect_declined", [
+      { type: "text", text: "I'll get that digest out." },
+      connectRequiredCall(),
+    ]);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Not now" }));
+
+    await waitFor(() => expect(wire.requests.some(request =>
+      request.method === "POST"
+      && request.path === "/threads"
+      && JSON.stringify(request.body).includes("[vendo:context] Declined to connect Gmail."))).toBe(true));
+    const card = screen.getByRole("article", { name: "Connect Gmail" });
+    expect(card.getAttribute("data-vendo-connect-card")).toBe("skipped");
+    expect(card.textContent).toContain("Skipped — Gmail isn’t connected");
+    // The offer survives the decline, and the carrier never becomes a bubble.
+    expect(screen.getByRole("button", { name: "Connect Gmail" })).toBeTruthy();
+    expect(document.body.textContent).not.toContain("vendo:context");
   });
 
   it("renders nothing for a malformed part (no toolkit)", async () => {

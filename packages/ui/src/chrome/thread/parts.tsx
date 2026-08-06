@@ -107,6 +107,13 @@ function ThreadConnect({ ask, live, sendMessage }: {
         // gmail_send_email").
         void sendMessage?.({ text: `${AGENT_CONTEXT_MARK} Connected ${toolkitDisplayName(ask.toolkit)}.` });
       }}
+      onDeclined={() => {
+        // "Not now" is an answer, and the agent is the one waiting on it —
+        // without this it sits on a card the user already dismissed. Same
+        // hidden-context carrier as the Connected line above: the Skipped row
+        // is the visible record, so a user bubble would say it twice.
+        void sendMessage?.({ text: `${AGENT_CONTEXT_MARK} Declined to connect ${toolkitDisplayName(ask.toolkit)}.` });
+      }}
     />
   );
 }

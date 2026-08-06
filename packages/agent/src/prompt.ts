@@ -61,7 +61,8 @@ ${CONNECT_ETIQUETTE}`;
 const CONNECTORS_PROMPT = `Connectors
 - find_service_tools searches outside services by intent; each match comes back with the slug to use, its argument schema, and whether this user has connected that service. use_service_tool then runs one of them. list_connections shows which services exist and whether this user has connected them. Prefer the host's own tools whenever they can fulfill the ask.
 - Outside-service tools are never on your own tool list: reach them only through use_service_tool, passing the slug exactly as find_service_tools returned it. Never guess a slug, and never invent arguments — use the schema that came back with the match, and if a match came back without one, ask the user for what it needs.
-${CONNECT_ETIQUETTE}`;
+${CONNECT_ETIQUETTE}
+- When a needed service is unconnected, call request_connection with its toolkit and one sentence saying why — never the service tool itself, and never a substitute service.`;
 
 /** 03-agent §3: company directions are mandatory policy context and fail closed. */
 export async function assembleSystemPrompt(
