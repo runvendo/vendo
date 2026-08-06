@@ -3,6 +3,7 @@ import type { SandboxVenue } from "@vendoai/apps/sandbox-ladder";
 import type { AutomationsEngine } from "@vendoai/automations";
 import {
   VendoError,
+  type Json,
   type Membership,
   type Principal,
   type ResolvedPerson,
@@ -58,6 +59,10 @@ export interface WireDeps {
       downstream of one `context()` call reads the same answer. Unset → no orgs
       asserted → `can()` degenerates to ownership. */
   memberships?: (principal: Principal) => Promise<Membership[]>;
+  /** Spec 2026-08-05 §1 — the auth preset's request→facts seam (ONE session
+      decode with `principal`; the preset memoizes per Request). Resolved once
+      per context resolution and stashed as `ctx.user`; unset → no [User] block. */
+  userFacts?: (req: Request) => Promise<Record<string, Json> | undefined>;
   /** Build contract §9.1 companion — the host's own directory lookup, behind the
       owner gate on the Share dialog's door. Takes the ASKER so the host can scope
       its directory to them. Unset → /status says so and the dialog does not offer
