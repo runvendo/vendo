@@ -13,9 +13,9 @@ import { describe, expect, it } from "vitest";
  *     FIRST in its group (it is the on-ramp);
  *  2. every tool name the page puts in a reader's system prompt really exists
  *     in the registry the page is describing;
- *  3. `vendo_make`'s four documented arguments are its real schema properties,
- *     and the page's asymmetry claim — that the IN-PROCESS pack carries no
- *     `slot` and no `vendo_apps_*` — matches pack.ts. That asymmetry is the one
+ *  3. `vendo_make`'s four documented arguments are its real schema properties on
+ *     BOTH doors, and the page's remaining asymmetry claim — that the IN-PROCESS
+ *     pack carries no `vendo_apps_*` — matches pack.ts. That asymmetry is the one
  *     thing a reader can silently get wrong (an invented tool call), so it is
  *     pinned from both sides;
  *  4. the receipt really has exactly the four fields the page calls a law;
@@ -125,19 +125,18 @@ describe("the page's argument tables match the real schemas", () => {
     }
   });
 
-  /** The one asymmetry the page warns about twice. If the in-process pack ever
-   *  gains `slot` or the pin tools, the page's warnings become the lie. */
-  it("the IN-PROCESS pack's vendo_make still has no slot", async () => {
+  /** `slot` is the one argument both doors carry, and the page now says so on
+   *  both paths. If the pack ever loses it, the page's parity claim is the lie. */
+  it("the IN-PROCESS pack's vendo_make takes the same four arguments", async () => {
     const source = await read(PACK);
     const start = source.indexOf("function makeAppTool");
     expect(start, "makeAppTool must still exist").toBeGreaterThan(-1);
     const schema = source.slice(start, source.indexOf("function delegateTool", start));
-    expect(schema).toContain('request: { type: "string"');
-    expect(schema).toContain('context: { type: "string"');
-    expect(schema).toContain('app: { type: "string"');
-    expect(schema, "pack.ts gained `slot` — the page's Path A warnings are now wrong").not.toContain(
-      'slot: { type: "string"',
-    );
+    for (const argument of ["request", "context", "app", "slot"]) {
+      expect(schema, `the pack's vendo_make must accept \`${argument}\``).toContain(
+        `${argument}: { type: "string"`,
+      );
+    }
   });
 
   it("the IN-PROCESS pack still strips every vendo_apps_* tool", async () => {
@@ -150,7 +149,7 @@ describe("the page's argument tables match the real schemas", () => {
 
   it("the page says so, in both places it must", async () => {
     const page = await read(PAGE);
-    expect(page).toMatch(/in-process pack \*\*does not carry\*\* `slot`/i);
+    expect(page).toMatch(/in-process pack \*\*does not carry\*\* any\s+`vendo_apps_\*` tool/i);
     expect(page).toMatch(/Do not put\s+`vendo_apps_pin` in a Path A system prompt/);
   });
 });

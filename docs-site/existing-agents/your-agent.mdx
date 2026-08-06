@@ -112,13 +112,14 @@ the same `.vendo/theme.json`.
 | Runtime | Node/TS, same process as `createVendo` | any language, any host |
 | Clients | your agent | your agent, plus any MCP client you point at it |
 | Extra tools | `vendo_delegate` | `vendo_apps_pin` · `vendo_apps_unpin` · `vendo_apps_open` · the saved-apps viewer |
-| `vendo_make` takes | `request` · `context` · `app` | `request` · `context` · `app` · `slot` |
+| `vendo_make` takes | `request` · `context` · `app` · `slot` | `request` · `context` · `app` · `slot` |
 
 <Warning>
-  Read the last two rows twice. The in-process pack **does not carry** `slot` or
-  any `vendo_apps_*` tool — in-app interaction rides the wire, not your loop.
-  Placing a view is still fully available on Path A; you do it from your own code
-  with the app id, in [step 5](#5-put-it-where-you-want-it).
+  Read the `Extra tools` row twice. The in-process pack **does not carry** any
+  `vendo_apps_*` tool — in-app interaction rides the wire, not your loop. Moving
+  a view your agent already made is still fully available on Path A; you do it
+  from your own code with the app id, in
+  [step 5](#5-put-it-where-you-want-it).
 </Warning>
 
 ## 3. Teach your agent when to use it
@@ -169,7 +170,8 @@ are not on. So:
 - status "building": honest, not an error. Say the line and move on.
 ```
 
-Add this second block **only on Path B**. Teaching an agent about a tool it does
+Add this second block too. `WHERE IT LANDS` is both paths; add `MOVING ONE THEY
+ALREADY HAVE` **only on Path B**, because teaching an agent about a tool it does
 not have is how you get an invented tool call:
 
 ```text
@@ -243,14 +245,14 @@ untouched — no wrapper, so inline one anywhere. Filled: build skeleton, then t
 live view, then a failure with a retry. Never a blank hole. One view per slot per
 person; a second one evicts the first.
 
-**Path B** — your agent aims at a slot by id:
+**Either path** — your agent aims at a slot by id:
 
 ```json
 { "request": "This month's spending by category, largest first", "slot": "home-hero" }
 ```
 
-**Path A** — you place it, using the `appId` from the `vendo/app-ref@1` envelope
-your loop already received:
+**Path A, without `slot`** — you place it, using the `appId` from the
+`vendo/app-ref@1` envelope your loop already received:
 
 ```tsx
 <VendoSlot id={block.id} appId={block.vendoAppId} />
@@ -263,7 +265,7 @@ your loop already received:
   person with that document open, and your editor keeps owning layout.
 </Note>
 
-Slot ids are yours, and nothing enumerates them for an agent at the door — tell
+Slot ids are yours, and nothing enumerates them for an agent on either path — tell
 the agent the id, or let the person say it. That is why step 3 forbids inventing
 one.
 

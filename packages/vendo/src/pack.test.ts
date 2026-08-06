@@ -364,7 +364,7 @@ describe("vendo_make (the pack's app door)", () => {
     expect(description).toMatch(/never describe|never say it is created/i);
   });
 
-  it("takes vendo_make's own arguments: request required, context/app optional", async () => {
+  it("takes vendo_make's own arguments: request required, context/app/slot optional", async () => {
     const { byName } = await pack({
       implementations: { ...hostTools(), [VENDO_MAKE_TOOL]: makeTool({ appId: "app_schema", name: "x" }) },
     });
@@ -375,10 +375,35 @@ describe("vendo_make (the pack's app door)", () => {
         request: { type: "string", minLength: 1 },
         context: { type: "string", minLength: 1 },
         app: { type: "string", minLength: 1 },
+        slot: { type: "string", minLength: 1 },
       },
       required: ["request"],
       additionalProperties: false,
     });
+  });
+
+  /** Parity with the MCP door: an in-process agent can say where the screen
+   *  lands, and the slot reaches the same `vendo_make` handler that claims it. */
+  it("takes `slot` and forwards it to vendo_make", async () => {
+    const seen: Json[] = [];
+    const implementations = {
+      ...hostTools(),
+      [VENDO_MAKE_TOOL]: {
+        descriptor: makeTool({ appId: "app_slot", name: "Spending" }).descriptor,
+        execute: (args: Json): Json => {
+          seen.push(args);
+          return { id: "app_slot", title: "Spending", status: "ready", say: "Spending is on your screen." };
+        },
+      },
+    };
+    const { byName } = await pack({ implementations });
+    const tool = byName.get(VENDO_MAKE_TOOL)!;
+    expect((tool.inputSchema as { properties: Record<string, unknown> }).properties.slot).toEqual({
+      type: "string",
+      minLength: 1,
+    });
+    await tool.execute({ request: "this month's spending", slot: "home-hero" }, { ctx: ctx() });
+    expect(seen).toEqual([{ request: "this month's spending", slot: "home-hero" }]);
   });
 
   it("forwards the caller's arguments to vendo_make verbatim — nothing is translated", async () => {
