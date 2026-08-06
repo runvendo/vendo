@@ -16,10 +16,6 @@
       "title": "Read Maple's own records",
       "description": "Reads Maple's internal record of what happened in this workspace."
     },
-    "host_demo_chips_list": {
-      "title": "List Maple's suggestions",
-      "description": "Reads the suggestions Maple offers you to try."
-    },
     "host_demo_pin_create": {
       "title": "Pin a view to your home page",
       "description": "Pins one of your views onto your Maple home page, where it stays."

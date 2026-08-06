@@ -64,24 +64,6 @@
       },
       "evidence": "    amount: -(input.amountCents ?? 3184),\n    timestamp: lateNightPacificISO(input.hour ?? 1, minute),\n    category: \"dining\",\n    status: \"posted\",\n    statusTimeline: [{ state: \"posted\", at: new Date().toISOString() }],\n    method: \"Maple Debit ·· 4471\",\n    location: \"San Francisco, CA\",\n    notes: input.items ?? \"Taco Bell · late-night delivery\",\n  }\n\n  store.transactions.unshift(txn)"
     },
-    "host_demo_chips_list": {
-      "binding": "GET /maple/api/demo/chips",
-      "srcHash": "sha256:7945bac1c3e89bd8cc8a281d7959247c373c4ed4ec84d8d3df83425f91ce0e57",
-      "fields": {
-        "description": "The signed-in user's \"try this\" suggestion chips — a manifest of pre-generated demo prompts ({ key, prompt }), five at most. Returns an empty array when signed out or when the manifest row is missing or the schema hasn't migrated. UI garnish, not bank data.",
-        "title": "List suggested prompts",
-        "risk": "read",
-        "semantics": {
-          "data.chips.key": {
-            "kind": "plain"
-          },
-          "data.chips.prompt": {
-            "kind": "plain"
-          }
-        }
-      },
-      "evidence": "  const user = await resolveMapleSession(request);\n  if (user === null) return ok({ chips: [] });\n  const chips = await readChipManifest(user.subject);\n  return ok({ chips: chips.map(({ key, prompt }) => ({ key, prompt })) });"
-    },
     "host_demo_pin_create": {
       "binding": "POST /maple/api/demo/pin",
       "srcHash": "sha256:2b2382a49fa37795b8d0c105ee6d8a1d8b6c58133d4de957e7fd858b034cb4f1",
