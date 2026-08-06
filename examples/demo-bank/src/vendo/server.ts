@@ -17,8 +17,6 @@ const composioApiKey = process.env.COMPOSIO_API_KEY;
 // OAuth adapter. `user` maps an Auth.js subject to the seeded Maple
 // identity; returning null means "not a Maple user" — the principal
 // resolves to anonymous and away/MCP minting for that subject declines.
-// Exported so chip pre-generation (chips-seed.ts) can mint the same away
-// session the automations path mints — a background seed has no request.
 export const mapleAuth = authJs({
   secret: authSecret,
   user: (subject) => {

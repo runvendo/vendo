@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest"
  * card shows the person being asked to approve the call (spec §16 law 3).
  *
  * Live 2026-08-03: Maple shipped seven of them as the route scanner's own
- * fallback — "POST /api/demo/pin", "GET /api/demo/chips" — because nothing
+ * fallback — "POST /api/demo/pin" and friends — because nothing
  * authored a real one. The SDK now drops a description that reads like a
  * developer string, so the leak is closed at the card; this test is the other
  * half, so the demo stops producing them. The authored layer
