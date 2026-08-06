@@ -4,11 +4,12 @@ import {
   VENDO_TOOL_TITLES,
   toolDescriptorSchema,
   type RunContext,
+  type ScreenAssembler,
   type ToolRegistry,
 } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { agentToolDescriptors } from "./agent-tools.js";
-import { createApps, type AppsRuntime } from "./index.js";
+import { createApps, type AppsRuntime, type PlacementEntry } from "./index.js";
 import {
   authoringAssembler,
   basicLanguageModel,
@@ -542,20 +543,26 @@ describe("§3 consumer voice — every apps tool carries a title", () => {
 });
 
 describe("vendo_make — the slot a new app lands in", () => {
-  /** The ASSEMBLY engine — the one that serves most asks. `authoringAssembler`
-   *  compiles with core's own compiler and lands the row through
-   *  `runtime.authored`, which is the shipped write path, not a stub. */
-  const assembling = (): AppsRuntime => {
+  /** The front door with one answer or another behind the seam. `self` is the
+   *  same compose-time knot `packages/vendo` ties: the assembler writes through
+   *  the runtime that composing returns. */
+  const assemblingWith = (screen: (self: () => AppsRuntime) => ScreenAssembler): AppsRuntime => {
     const runtime: AppsRuntime = createApps({
       store: memoryStore(),
       guard: guardFixture(),
       tools: hostTools,
       catalog: [],
       model: scriptedLanguageModel(generated),
-      screen: authoringAssembler(() => runtime, generated),
+      screen: screen(() => runtime),
     });
     return runtime;
   };
+
+  /** The ASSEMBLY engine — the one that serves most asks. `authoringAssembler`
+   *  compiles with core's own compiler and lands the row through
+   *  `runtime.authored`, which is the shipped write path, not a stub. */
+  const assembling = (): AppsRuntime =>
+    assemblingWith((self) => authoringAssembler(self, generated));
 
   /** The BUILDER engine — assembly escalates and this deployment has somewhere
    *  to build. Same front door, same minted id, a different engine behind it,
@@ -601,6 +608,64 @@ describe("vendo_make — the slot a new app lands in", () => {
     expect(await runtime.placements({}, ctx)).toEqual([
       expect.objectContaining({ slot: "dashboard.hero", app: receipt.id, status: "ready" }),
     ]);
+  });
+
+  it("claims the slot at MINT, so the slot shows the build while assembly is still running", async () => {
+    // B1 on the FAST engine. The row used to go down only after assembly
+    // RETURNED, so a slot the person was already looking at stayed empty for the
+    // whole of the make and the skeleton it exists to show never appeared. The
+    // reading is taken from inside the assembler, mid-flight, through the
+    // runtime's own placements path.
+    let inFlight: PlacementEntry[] = [];
+    const runtime = assemblingWith((self) => ({
+      async assemble(request, runCtx) {
+        inFlight = await self().placements({}, runCtx);
+        return authoringAssembler(self, generated).assemble(request, runCtx);
+      },
+    }));
+
+    const outcome = await runtime.agentTools().execute({
+      id: "call_make_slot_inflight",
+      tool: "vendo_make",
+      args: { request: "my spending this month", slot: "dashboard.hero" },
+    }, ctx);
+
+    const receipt = (outcome as { output: { id: string } }).output;
+    expect(inFlight).toEqual([
+      { slot: "dashboard.hero", app: receipt.id, title: "", status: "building" },
+    ]);
+    // The same row, unmoved, is what goes READY when assembly lands.
+    expect(await runtime.placements({}, ctx)).toEqual([
+      expect.objectContaining({ slot: "dashboard.hero", app: receipt.id, status: "ready" }),
+    ]);
+  });
+
+  it("leaves the honest failure IN the slot when assembly fails terminally", async () => {
+    // B1's other half. A make that died in assembly wrote no row at all, so the
+    // slot showed nothing and the failure lived only in the conversation.
+    const runtime = assemblingWith(() => ({
+      async assemble() { return { kind: "unavailable", why: "the screen agent is down" }; },
+    }));
+
+    const outcome = await runtime.agentTools().execute({
+      id: "call_make_slot_failed",
+      tool: "vendo_make",
+      args: { request: "my spending this month", slot: "dashboard.hero" },
+    }, ctx);
+
+    const receipt = (outcome as { output: { id: string; status: string; title: string } }).output;
+    expect(receipt.status).toBe("failed");
+    // FAILED now, read back through the real placements path — not a skeleton
+    // that only ages into a failure once the build window elapses.
+    expect(await runtime.placements({}, ctx)).toEqual([
+      { slot: "dashboard.hero", app: receipt.id, title: receipt.title, status: "failed" },
+    ]);
+    // The terminal record is a tombstone, exactly as a failed build's is: it
+    // answers the slot and never joins the user's apps.
+    expect(await runtime.list(ctx)).toEqual([]);
+    // Dismiss = unplace, and it leaves nothing behind.
+    await runtime.unplace({ app: receipt.id, slot: "dashboard.hero" }, ctx);
+    expect(await runtime.placements({}, ctx)).toEqual([]);
   });
 
   it("lands an ESCALATED build in it too — one front door, two engines, one row", async () => {

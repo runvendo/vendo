@@ -285,6 +285,14 @@ const optionalLimit = (value: Json | undefined): number | undefined => {
 export interface AgentToolsDataDependencies {
   data: AppDataAccess;
   requireOwned(appId: AppId, ctx: RunContext): Promise<AppDocument>;
+  /** B1 — claim the slot for an id this door just minted, before either engine
+   *  runs. `AppsRuntime.place` cannot: it gates on an app record, and there is
+   *  none yet. Filled by the runtime that constructs this registry. */
+  claimSlot(appId: AppId, slot: string, ctx: RunContext): Promise<void>;
+  /** B1's other end — the terminal record for an id assembly never landed, so a
+   *  claimed slot reads as the honest failure card instead of a skeleton that
+   *  ages out. The same tombstone a failed build leaves. */
+  markUnbuilt(appId: AppId, name: string, reason: string, ctx: RunContext): Promise<void>;
   /** UI-generation blueprint §1 point 2 — the screen agent. Threaded from
    *  `AppsConfig.screen`, which composition fills; see the routing block in the
    *  `vendo_make` handler below. Unfilled, `vendo_make` has nothing to assemble
@@ -468,6 +476,21 @@ export const createAgentTools = (
           // coming back empty, and assembly coming back empty is the ANSWER —
           // there is no second engine behind this seam to rescue it with.
           const appId = `app_${globalThis.crypto.randomUUID()}` as AppId;
+          // B1 — the claim rides the MINT, not the landing, for BOTH engines.
+          // Claiming after assembly returned left the slot empty for the whole
+          // of a fast make, and left nothing at all behind a failed one, so the
+          // slot stayed empty and the person heard about the failure only in the
+          // conversation. The builder route has always claimed here (`create`'s
+          // own `slot`, which this door no longer needs to pass).
+          if (claimed !== undefined) await dependencies.claimSlot(appId, claimed, ctx);
+          /** The one exit for an ask no engine landed: the tombstone that turns
+           *  the claimed slot into the honest failure card, then the receipt
+           *  that says so — the record's reason is the sentence the person is
+           *  told, verbatim, because there is nothing else true to record. */
+          const failUnbuilt = async (title: string, say: string): Promise<ToolOutcome> => {
+            if (claimed !== undefined) await dependencies.markUnbuilt(appId, title, say, ctx);
+            return receipt({ id: appId, title, status: "failed", say });
+          };
           let threw: string | undefined;
           const routed = dependencies.screen === undefined
             ? undefined
@@ -486,11 +509,8 @@ export const createAgentTools = (
             const stored = await runtime.get(appId, ctx).catch(() => null);
             if (stored !== null) {
               await remember(appId);
-              // B1, on the engine that serves most asks. `place()` gates on the
-              // app record (§9.4) and assembly is what writes that record, so
-              // this is the FIRST instant the claim can legally be made — and
-              // the last instant it is still part of the call the person made.
-              if (claimed !== undefined) await runtime.place({ app: stored.id, slot: claimed }, ctx);
+              // No claim here: the slot has held this id since the mint above,
+              // and the row already names it.
               return receipt({
                 id: stored.id,
                 title: stored.name,
@@ -522,36 +542,29 @@ export const createAgentTools = (
             // Assembly produced no screen. Said plainly, at the id whose stream
             // the person is looking at, instead of quietly restarting the ask in
             // a different engine.
-            return receipt({
-              id: appId,
-              title: nameForUnbuilt(undefined, ask),
-              status: "failed",
-              say: unbuiltSay(
+            return await failUnbuilt(
+              nameForUnbuilt(undefined, ask),
+              unbuiltSay(
                 dependencies.screen === undefined ? NO_ASSEMBLER
                   : threw ?? (routed?.kind === "unavailable" ? routed.why : NOTHING_RENDERABLE),
               ),
-            });
+            );
           }
           if (!runtime.machine.available()) {
-            return receipt({
-              id: appId,
+            return await failUnbuilt(
               // The name on the skeleton they are looking at, so the sentence and
               // the card are about the same thing.
-              title: nameForUnbuilt(plan, ask),
-              status: "failed",
-              say: "That one needs a real build — code running on a server — and I can't do that here.",
-            });
+              nameForUnbuilt(plan, ask),
+              "That one needs a real build — code running on a server — and I can't do that here.",
+            );
           }
           let unsaved: string | undefined;
           const created = await runtime.create({
             appId,
             prompt: ask,
             ...(plan === undefined ? {} : { plan }),
-            // B1 — `create` claims the slot at MINT, so a build that is still
-            // running (or that never lands) occupies the place the caller aimed
-            // at instead of appearing out of nowhere minutes later. This tool
-            // only aims; the runtime owns the row.
-            ...(claimed === undefined ? {} : { slot: claimed }),
+            // No `slot`: the claim went down at the mint above, which is the
+            // same instant `create` would have made it for an id of its own.
             onUnsaved: (reason) => { unsaved = reason; },
             ...(stream === undefined ? {} : {
               onView: (part) => stream({ id: vendoViewStreamId(part.appId), part }),

@@ -5,9 +5,12 @@
  *  - the WRITE goes in over the real MCP door (register → authorize → token →
  *    JSON-RPC), through the real guard-bound registry and the real apps
  *    contribution;
- *  - the READ comes back out of the real store's `vendo_placements` rows.
- *    Nothing in this file knows how a placement is stored, and nothing in the
- *    apps runtime knows this file exists.
+ *  - the READ comes back out of the real store's `vendo_placements` rows, and
+ *    what the slot SHOWS out of the real `GET /apps/placements` route a browser
+ *    polls — the status is derived server-side, so a build that lands (or that
+ *    never does) is measured where the person would see it. Nothing in this file
+ *    knows how a placement is stored, and nothing in the apps runtime knows this
+ *    file exists.
  *  - the PROJECTION is measured on real turns — one attended, one unattended —
  *    because the composed surface is declared STATICALLY
  *    (`toolsFromRegistry(appsAgentTools, agentToolDescriptors)` in server.ts),
@@ -59,6 +62,15 @@ interface PlacementRow {
 const placementRows = async (store: VendoStore): Promise<PlacementRow[]> => {
   const { records } = await store.records(PLACEMENTS).list({ refs: { subject: SUBJECT } });
   return records.map((record) => record.data as unknown as PlacementRow);
+};
+
+/** What a slot on the page actually SHOWS, over the same route a browser polls
+ *  — the real read path, with the build status derived server-side. */
+interface PlacementEntry { slot: string; app: string; title: string; status: string }
+
+const placementEntries = async (vendo: Vendo): Promise<PlacementEntry[]> => {
+  const response = await vendo.handler(new Request("https://host.test/api/vendo/apps/placements"));
+  return await response.json() as PlacementEntry[];
 };
 
 interface Host {
@@ -148,6 +160,42 @@ describe("a slot-targeted make, over the MCP door", () => {
     // own provenance rather than being reconstructed by a reader.
     expect(typeof rows[0]!.placedBy).toBe("string");
     expect(Number.isFinite(Date.parse(rows[0]!.placedAt))).toBe(true);
+    // And through the read path a slot on the page actually polls: READY, the
+    // other end of the same transition the failure case below measures.
+    expect(await placementEntries(vendo)).toEqual([
+      { slot: "dashboard.hero", app: receipt.id, title: receipt.title, status: "ready" },
+    ]);
+  });
+
+  it("holds the slot with the honest failure when assembly cannot serve the ask", async () => {
+    // B1's failure half, end to end. A make that dies in assembly used to write
+    // no row at all: the slot the caller aimed at showed NOTHING and the failure
+    // existed only in the conversation.
+    //
+    // The failure is real, not injected — this host's screen agent can serve one
+    // ask, so the second reaches the same door and comes back with nothing that
+    // renders. Nothing is stubbed on either side: the write goes over the real
+    // MCP door and the status comes back out of GET /apps/placements.
+    const { vendo, store } = await host();
+    const door = await openDoor(vendo, await bearer(vendo));
+    await door.callTool(VENDO_MAKE_TOOL, { request: "my spending this month" });
+
+    const answered = await door.callTool(VENDO_MAKE_TOOL, {
+      request: "match my invoices to payments",
+      slot: "dashboard.hero",
+    });
+
+    const receipt = makeReceiptSchema.parse(JSON.parse(answered.text));
+    expect(receipt.status).toBe("failed");
+    // The row exists at all — the gap this closes left none.
+    expect(await placementRows(store)).toEqual([
+      expect.objectContaining({ slot: "dashboard.hero", appId: receipt.id }),
+    ]);
+    // …and the read path calls it FAILED now, not a skeleton that only becomes a
+    // failure once the build window ages out.
+    expect(await placementEntries(vendo)).toEqual([
+      { slot: "dashboard.hero", app: receipt.id, title: receipt.title, status: "failed" },
+    ]);
   });
 
   it("leaves no placement when no slot was named", async () => {

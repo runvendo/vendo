@@ -2030,10 +2030,54 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     return trimmed;
   };
 
+  /**
+   * B1 — the slot is claimed the moment the id EXISTS, so it shows the build
+   * forming (and, if it never lands, its failure) instead of sitting empty
+   * until the app record does. `place()` cannot be used: it gates on an app
+   * record, and by construction there is none yet.
+   *
+   * Two callers, one write: `create` for a build that mints its own id, and the
+   * `vendo_make` front door for the id it minted before it routed. Whichever
+   * engine the ask reaches, the row is already down.
+   */
+  const claimSlot = async (appId: AppId, slot: string, ctx: RunContext): Promise<void> => {
+    const named = requireSlot(slot);
+    await placementRows.put(ctx.principal.subject, {
+      slot: named,
+      appId,
+      placedBy: ctx.principal.subject,
+      placedAt: new Date().toISOString(),
+    });
+    await reportLifecycle("place", appId, ctx, { slot: named });
+  };
+
+  /**
+   * The terminal record for an id no engine will ever land — the front door's
+   * own, for an ask that died in assembly.
+   *
+   * The SAME tombstone a failed build leaves (`failBuild`, inside `create`), and
+   * that is the whole point: `entryFor` below reads one thing, so a claimed slot
+   * turns into the honest failure card the instant either engine gives up rather
+   * than holding a skeleton until the build window ages out.
+   */
+  const markUnbuilt = async (
+    appId: AppId,
+    name: string,
+    reason: string,
+    ctx: RunContext,
+  ): Promise<void> => {
+    await apps.put(appRecordInput({
+      format: "vendo/app@1",
+      id: appId,
+      name,
+      buildFailed: { reason, at: new Date().toISOString() },
+    }, ctx.principal.subject));
+  };
+
   /** Where a placed app's build stands, read off its record every time.
    *
-   *  NO RECORD is the build still running — `create` writes the placement row
-   *  at mint and the app record only at completion. Past the UI build window
+   *  NO RECORD is the build still running — the slot is claimed at mint and the
+   *  app record only lands at completion. Past the UI build window
    *  that stops being true: either the watchdog would have landed a terminal
    *  record by now, or the app was deleted out from under the row. Either way
    *  it is not forming, and a slot that says "building" forever is the exact
@@ -2552,20 +2596,9 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // skeleton and this build's paints share one stream.
       const appId = input.appId ?? `app_${globalThis.crypto.randomUUID()}`;
       const createStartedAt = Date.now();
-      // B1 — the slot is claimed the moment the id exists, so the slot shows
-      // this build forming (and, if it never lands, its failure) instead of
-      // sitting empty until the record does. `place()` cannot be used: there
-      // is no app record to gate on yet, by construction.
-      if (input.slot !== undefined) {
-        const slot = requireSlot(input.slot);
-        await placementRows.put(ctx.principal.subject, {
-          slot,
-          appId,
-          placedBy: ctx.principal.subject,
-          placedAt: new Date().toISOString(),
-        });
-        await reportLifecycle("place", appId, ctx, { slot });
-      }
+      // B1, for a caller that minted its id HERE. The front door claims before
+      // it routes (it minted earlier), so it passes no slot down.
+      if (input.slot !== undefined) await claimSlot(appId, input.slot, ctx);
       // The build's dead-man switch. The catch below persists a terminal failure
       // when the build turn THROWS, but a build task that hangs (a provider
       // stream that never settles) or dies with its promise chain severed
@@ -3540,6 +3573,8 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       return createAgentTools(runtime, {
         data,
         requireOwned,
+        claimSlot,
+        markUnbuilt,
         ...(config.screen === undefined ? {} : { screen: config.screen }),
         ...(config.escalatedPlan === undefined ? {} : { escalatedPlan: config.escalatedPlan }),
       });
