@@ -285,7 +285,9 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
       // message, so its notice has to go before the real answer is appended
       // under it. Done on our copy, which is also what persistence diffs against
       // `pristine` — so the cleared message is written back over the stored row.
-      clearFailedTurnRecord(messages);
+      // `before` is passed because a `regenerate()` posts the history WITHOUT the
+      // message it is replacing: the record to clear is only in the store.
+      clearFailedTurnRecord(messages, before ?? []);
       // The shipped rule (agent.ts `abandonPendingApprovals`): an approval a fresh
       // turn superseded resolves to its abandoned state. Resolving only the GUARD
       // side would leave the PART at `approval-requested` forever, and
@@ -335,7 +337,13 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
       // pinned rather than generated, so `onFinish` upserts OVER this row
       // instead of leaving a second copy of the same reply. (`generateId` is
       // called exactly once by the SDK, for the response message id.)
-      const assistantMessageId = globalThis.crypto.randomUUID();
+      //
+      // A transcript that ENDS in an assistant message is one the SDK continues
+      // instead — it ignores `generateId` and reuses that message's id — so the
+      // checkpoint has to be the same message, or a turn that parks during a
+      // retry checkpoints under an id `onFinish` never writes.
+      const continued = messages.at(-1)?.role === "assistant" ? messages.at(-1) : undefined;
+      const assistantMessageId = continued?.id ?? globalThis.crypto.randomUUID();
       /** Calls already checkpointed — a turn can park more than once, and the
        *  second ask deserves the save the first one got. */
       const checkpointed = new Set<string>();
@@ -576,7 +584,11 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
       void (async () => {
         try {
           for await (const message of readUIMessageStream<UIMessage>({
-            message: { id: assistantMessageId, role: "assistant", parts: [] },
+            message: {
+              id: assistantMessageId,
+              role: "assistant",
+              parts: continued === undefined ? [] : structuredClone(continued.parts),
+            },
             stream: toCheckpoint,
           })) {
             const parked = message.parts.filter(isParkedApproval)

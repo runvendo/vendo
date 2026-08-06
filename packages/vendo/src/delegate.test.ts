@@ -47,7 +47,24 @@ const reporting = defineHarness({
   },
 });
 
-async function compose(): Promise<{ store: VendoStore; tools: Record<string, Tool> }> {
+/** A store the way a HOST supplies one: the whole public `VendoStore` surface,
+ *  delegating to a real store so records and blobs genuinely work — but not the
+ *  handle `@vendoai/store` minted, so it has no SQL tables and no StoreOps.
+ *  `storeServesHarnessTurns` answers false for it, and chat on such a deployment
+ *  keeps the legacy path. */
+function nonSqlStore(backing: VendoStore): VendoStore {
+  return {
+    records: (collection) => backing.records(collection),
+    blobs: (namespace) => backing.blobs(namespace),
+    ensureSchema: () => backing.ensureSchema(),
+    close: () => backing.close(),
+    raw: () => backing.raw(),
+  };
+}
+
+async function compose(
+  wrap: (store: VendoStore) => VendoStore = (store) => store,
+): Promise<{ store: VendoStore; tools: Record<string, Tool> }> {
   const dataDir = await mkdtemp(join(tmpdir(), "vendo-delegate-"));
   const store = createStore({ dataDir });
   cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
@@ -55,7 +72,7 @@ async function compose(): Promise<{ store: VendoStore; tools: Record<string, Too
   const vendo = createVendo({
     model,
     principal: async () => principal,
-    store,
+    store: wrap(store),
     harness: reporting as never,
   } as CreateVendoConfig);
   return { store, tools: await vendoTools(vendo, { principal }) };
@@ -87,5 +104,24 @@ describe("vendo_delegate rides the composed away runner", () => {
       "SELECT message FROM vendo_thread_messages ORDER BY seq",
     );
     expect(JSON.stringify(messages.rows)).toContain("reconcile the July invoices");
+  });
+
+  /** The runner is a harness turn, so it needs what a harness turn needs. A host
+   *  store that serves neither Vendo's tables nor the operation contract keeps
+   *  the legacy chat path — and used to get a delegate tool that threw on its
+   *  first line, which the pack rendered as "the delegated run could not be
+   *  completed": a sentence that sends the host hunting a bug in their task. */
+  it("answers with the real reason on a store that cannot serve a harness turn", async () => {
+    const { tools } = await compose(nonSqlStore);
+    const delegate = tools[VENDO_DELEGATE_TOOL];
+
+    const result = await delegate?.execute?.(
+      { task: "reconcile the July invoices" },
+      { toolCallId: "call_delegate", messages: [] } as ToolCallOptions,
+    ) as { status: string; summary: string };
+
+    expect(result.status).toBe("error");
+    expect(result.summary).toContain("cannot serve a harness turn");
+    expect(result.summary).not.toContain("could not be completed");
   });
 });

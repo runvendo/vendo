@@ -146,12 +146,34 @@ export function abandonPendingApprovals(messages: UIMessage[]): string[] {
  *  per changed message and can only add or replace, never remove. A message
  *  dropped here would simply stay in the store — the retry would look clean live
  *  and still reload with the stale notice above the answer. Left in place, the
- *  continuation reuses its id and the write overwrites the stored copy. */
-export function clearFailedTurnRecord(messages: UIMessage[]): void {
+ *  continuation reuses its id and the write overwrites the stored copy.
+ *
+ *  `stored` is the transcript as the STORE holds it, and it is what makes this
+ *  work over the wire: the ai-SDK's `regenerate()` slices the assistant message
+ *  it is replacing off the history it posts, so the retry arrives ending in the
+ *  user message and the record to clear is not in it at all. Carrying the stored
+ *  one back on is also what makes the retry a continuation — the SDK reuses that
+ *  message's id, so the recovered answer overwrites the failed row instead of
+ *  landing under it. Without it the reload showed both, forever. */
+export function clearFailedTurnRecord(messages: UIMessage[], stored: readonly UIMessage[] = []): void {
   const last = messages.at(-1);
-  if (last?.role !== "assistant") return;
-  const kept = last.parts.filter((part) => part.type !== "data-vendo-turn-error");
-  if (kept.length !== last.parts.length) last.parts = kept;
+  if (last === undefined) return;
+  const strip = (message: UIMessage): UIMessage["parts"] =>
+    message.parts.filter((part) => part.type !== "data-vendo-turn-error");
+  if (last.role === "assistant") {
+    const kept = strip(last);
+    if (kept.length !== last.parts.length) last.parts = kept;
+    return;
+  }
+  // Only the record directly behind this message, and only when it is the end of
+  // the stored thread: anything else is history the turn is not replacing.
+  const at = stored.findIndex((message) => message.id === last.id);
+  if (at === -1 || at !== stored.length - 2) return;
+  const failed = stored[at + 1];
+  if (failed?.role !== "assistant" || strip(failed).length === failed.parts.length) return;
+  const carried = structuredClone(failed) as UIMessage;
+  carried.parts = strip(carried);
+  messages.push(carried);
 }
 
 /** AGENT-6: the guard's approval ids for abandoned tool calls. The native tool

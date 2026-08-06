@@ -155,6 +155,33 @@ describe("a retry never inherits the failed turn's notice", () => {
     expect(after.filter((message) => message.role === "user")).toHaveLength(1);
     expect(JSON.stringify(after)).toContain("Here is your dashboard.");
   });
+
+  it("clears it on the ai-SDK's OWN retry, which posts the history without the failed reply", async () => {
+    const { run, transcript } = runtimeFor();
+    await run(failing);
+
+    // The shape the door actually receives: `regenerate()` slices the assistant
+    // message it is replacing off the transcript before posting it (ai's
+    // `Chat.regenerate`), so the record to clear is only in the STORE. Handing
+    // the runtime the stored thread intact — as the case above does — is a shape
+    // no client sends, and it hid this for a whole review window.
+    const before = await transcript.list(ctx().principal, THREAD);
+    expect(turnErrors(before)).toHaveLength(1);
+    await run(
+      defineHarness({
+        name: "answers",
+        async *run() { yield { type: "text", delta: "Here is your dashboard." }; },
+      }),
+      before.filter((message) => message.role === "user"),
+    );
+
+    const after = await transcript.list(ctx().principal, THREAD);
+    expect(turnErrors(after)).toHaveLength(0);
+    // The retry CONTINUES the failed reply rather than landing a second one
+    // under it — one question, one answer, on reload as on screen.
+    expect(after.filter((message) => message.role === "assistant")).toHaveLength(1);
+    expect(JSON.stringify(after)).toContain("Here is your dashboard.");
+  });
 });
 
 describe("ENG-309 — a store blip does not cost the turn", () => {

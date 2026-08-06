@@ -2935,27 +2935,42 @@ export function createVendo(input: CreateVendoConfig): Vendo {
    * `liveTurn` rides along, unlike the automations firing above: a delegation
    * happens INSIDE a chat request, in this process, so a harness whose thinker
    * lives on a machine must be able to reach the door for the delegated turn too.
+   *
+   * Gated on the SAME probe that picks the chat route (`storeServesHarnessTurns`
+   * below): a delegated run is a harness turn, so a store that cannot serve one
+   * cannot serve this either. Such a deployment keeps `agent.stream` for chat, and
+   * `awayRunner` would have thrown on its first line — which the tool pack turns
+   * into "the delegated run could not be completed", a sentence that sends the
+   * host looking for a bug in their task. It says the real reason instead.
    */
-  const delegateRunner: AgentRunner = awayRunner({
-    harness,
-    store,
-    files,
-    guard,
-    skills: capability.skills,
-    models: inference.seats,
-    // The SAME brief a chat turn thinks on, assembled for the delegated ctx. No
-    // discovery section: a delegated run has no discovery rails, and promising
-    // `find_tools` would name a tool that is not on its listing.
-    system: (ctx) => assembleSystemPrompt(guard, ctx, system, true, false),
-    liveTurn: ({ threadId, ctx, tools, steer }) => {
-      const unpublish = turnCredentials.publish(threadId, { ctx, tools });
-      const unregister = registerTurnSteer({ threadId, subject: ctx.principal.subject, steer });
-      return () => {
-        unregister();
-        unpublish();
-      };
-    },
-  });
+  const delegateRunner: AgentRunner = storeServesHarnessTurns(store)
+    ? awayRunner({
+      harness,
+      store,
+      files,
+      guard,
+      skills: capability.skills,
+      models: inference.seats,
+      // The SAME brief a chat turn thinks on, assembled for the delegated ctx. No
+      // discovery section: a delegated run has no discovery rails, and promising
+      // `find_tools` would name a tool that is not on its listing.
+      system: (ctx) => assembleSystemPrompt(guard, ctx, system, true, false),
+      liveTurn: ({ threadId, ctx, tools, steer }) => {
+        const unpublish = turnCredentials.publish(threadId, { ctx, tools });
+        const unregister = registerTurnSteer({ threadId, subject: ctx.principal.subject, steer });
+        return () => {
+          unregister();
+          unpublish();
+        };
+      },
+    })
+    : async () => ({
+      status: "error",
+      summary: "This deployment's store cannot serve a harness turn, so there is no brain to delegate to. "
+        + "vendo_delegate needs a store with Vendo's own tables or one that speaks the store operation "
+        + "contract; chat on this deployment runs on the legacy path, which needs neither.",
+      toolCalls: [],
+    });
   // Per-subject connected-toolkit lookups are cached briefly so a turn never
   // pays a broker round-trip it doesn't need; failures degrade to host tools
   // only (warn, never the turn). Bounded so long-lived deployments don't grow.
