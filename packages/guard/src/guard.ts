@@ -67,6 +67,30 @@ function resolveParkedCallTtlMs(configured: number | undefined): number {
   return ttlMs;
 }
 
+/** The breaker defaults (05 §2): 60 calls a minute per principal, 20 writes a run. */
+const DEFAULT_MAX_CALLS_PER_MINUTE = 60;
+const DEFAULT_MAX_WRITES_PER_RUN = 20;
+
+/** Same rule and the same reason as {@link resolveParkedCallTtlMs}, now that
+ *  `guard({ breakers })` is a host-facing door: a limit is a non-negative
+ *  integer. `0` is legal and means everything asks — a coherent lockdown, since
+ *  the comparisons are `writes >= max` and `active.length > max`. Both ends of
+ *  the range otherwise fail SILENTLY and in opposite directions: a negative
+ *  limit parks every call for the life of the process, while `NaN` and
+ *  `Infinity` make both comparisons false, so the breaker never trips and the
+ *  deterministic backstop is simply gone. `Number.isInteger` is false for all
+ *  three, and for a fraction, which is a threshold nobody can act on. */
+function resolveBreakerLimit(configured: number | undefined, name: string, fallback: number): number {
+  const limit = configured ?? fallback;
+  if (!Number.isInteger(limit) || limit < 0) {
+    throw new VendoError(
+      "validation",
+      `guard breakers.${name} must be a non-negative integer (0 makes every call ask)`,
+    );
+  }
+  return limit;
+}
+
 const GRANTS_COLLECTION = "vendo_grants";
 const APPROVALS_COLLECTION = "vendo_approvals";
 /** One-time transition receipts for approvals (kill-list B5): `decided:<id>` /
@@ -447,8 +471,12 @@ class GuardImplementation implements VendoGuard {
     // from `createGuard` itself.
     this.#policyConfig = resolvePolicyConfig(config.policy);
     this.#policy = new PolicyResolver(this.#policyConfig, config.policyCloudFallback);
-    this.#maxCallsPerMinute = config.breakers?.maxCallsPerMinute ?? 60;
-    this.#maxWritesPerRun = config.breakers?.maxWritesPerRun ?? 20;
+    this.#maxCallsPerMinute = resolveBreakerLimit(
+      config.breakers?.maxCallsPerMinute, "maxCallsPerMinute", DEFAULT_MAX_CALLS_PER_MINUTE,
+    );
+    this.#maxWritesPerRun = resolveBreakerLimit(
+      config.breakers?.maxWritesPerRun, "maxWritesPerRun", DEFAULT_MAX_WRITES_PER_RUN,
+    );
     this.approvals.parkedCallTtlMs = resolveParkedCallTtlMs(config.approvals?.parkedCallTtlMs);
   }
 

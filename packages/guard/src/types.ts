@@ -200,7 +200,9 @@ export interface GuardRules {
    *  `maxCallsPerMinute` counts every call by one principal (default 60),
    *  `maxWritesPerRun` counts the `write` and `destructive` calls of one run
    *  (default 20). A deployment decision like the rules above, so a host sets them
-   *  through `guard({ breakers })`; unset leaves the defaults. */
+   *  through `guard({ breakers })`; unset leaves the defaults. Each is a
+   *  non-negative integer, refused at construction otherwise; `0` is the lockdown
+   *  — every call asks. */
   breakers?: {
     maxCallsPerMinute?: number;
     maxWritesPerRun?: number;
