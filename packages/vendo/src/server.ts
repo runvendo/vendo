@@ -649,8 +649,10 @@ export interface CreateVendoConfig {
       `false` UNMOUNTS app generation: its tools (`vendo_make`, the
       `vendo_apps_*` set) are absent from the registry, its `building-apps`
       skill is absent from the mount, and the `/apps/**` wire surface answers
-      not-found. Honest absence — the agent genuinely cannot build apps and
-      says so, rather than being handed tools that refuse. */
+      not-found. Honest absence — the AGENT genuinely cannot build apps and
+      says so, rather than being handed tools that refuse. The host's own
+      `vendo.apps` runtime handle stays: unmounting is about what the agent and
+      the wire offer, never about taking your server code's API away. */
   apps?: false | {
     experimentalMachines?: boolean;
     /** UI-generation blueprint §4.2 — route every `vendo_make` request through
