@@ -22,8 +22,13 @@ const REPORT_FINDINGS_TOOL = "report_findings";
 
 /** One query result trimmed to this many characters of JSON — enough to judge
  *  a literal against, small enough that a long table cannot crowd the app
- *  markup out of the prompt. */
-const MAX_SAMPLE_CHARS = 800;
+ *  markup out of the prompt.
+ *
+ *  Raised from 800 when the reviewer started judging AGGREGATES rather than only
+ *  literals: 800 characters is three or four rows, and a total cannot be checked
+ *  against three rows. A trailing `…` is what says the rest was cut, and the
+ *  rubric tells the reviewer how to reason when it sees one. */
+const MAX_SAMPLE_CHARS = 4_000;
 
 /** The flat strict schema (Anthropic strict tool use: additionalProperties
  *  false, every property required, no recursion) — one array of findings in

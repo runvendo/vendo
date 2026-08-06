@@ -369,13 +369,17 @@ describe("createVendo({ sandbox, harness: claudeCode() })", () => {
     expect(body).toContain("data-vendo-view");
     expect(body).toContain(appId);
     expect(body).toContain("inv_1");
-    // The read ran through the one guard-bound registry, as the app venue. TWO
-    // calls now, both this tool: the app's own `<Query>`, and the shape probe
+    // The read ran through the one guard-bound registry, as the app venue. THREE
+    // calls now, all this tool: the app's own `<Query>`; the shape probe
     // `validate` performs when the builder loop gates the turn (§7.1 item 4) —
     // deriving the tool's response shape is exactly what lets the binding gate say
-    // whether a `$path` names a field that exists. It is a `read`, guarded like any
-    // other, and deduped per process, so it is paid once and not per turn.
-    expect(host.calls).toHaveLength(2);
+    // whether a `$path` names a field that exists; and the EVIDENCE read behind the
+    // mandatory reviewer pass, which runs this app's own queries so the reviewer can
+    // check the totals on screen against the rows that produced them (a
+    // double-counted headline is invisible in the markup and obvious beside the
+    // data). All three are `read`, guarded like any other; the shape probe is deduped
+    // per process, so it is paid once and not per turn.
+    expect(host.calls).toHaveLength(3);
     expect(host.calls.every((args) => JSON.stringify(args) === "{}")).toBe(true);
 
     // 2. It is an app: in the person's list, with the title the model gave it.

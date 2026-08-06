@@ -55,6 +55,30 @@ const isFinding = (value: unknown): value is Finding =>
 const appDocumentAt = (path: string): AppId | undefined =>
   path.endsWith("/app.vendo") ? hotPathAppId(path) : undefined;
 
+/** One `validate` call, or undefined for every way it could not reach a verdict —
+ *  each of which is reported to the OPERATOR and to nobody else. */
+async function askValidate(
+  tools: Pick<TurnTools, "call">,
+  appId: AppId,
+  args: { document: string } | { appId: AppId },
+): Promise<readonly Finding[] | undefined> {
+  const result = await tools.call(VALIDATE_TOOL, args);
+  if (result.status !== "ok") {
+    console.error(
+      `[vendo] could not validate ${appId} before finishing the turn, so this app was not gated — `
+      + (result.status === "denied" ? result.reason : result.error.message),
+    );
+    return undefined;
+  }
+  const output = result.output;
+  if (!isRecord(output) || typeof output["ok"] !== "boolean") {
+    console.error(`[vendo] validate answered in a shape the gate cannot read, so ${appId} was not gated`);
+    return undefined;
+  }
+  if (output["ok"]) return [];
+  return Array.isArray(output["findings"]) ? output["findings"].filter(isFinding) : [];
+}
+
 /**
  * Run `validate` over every app document among `paths` and report the ones that did
  * not pass.
@@ -71,6 +95,25 @@ export async function validateWrittenApps(input: {
   /** The paths this turn wrote, as a sync reports them. Non-app paths are ignored,
    *  so a caller can hand over everything it changed. */
   paths: readonly string[];
+  /**
+   * ALSO face the AI reviewer — the mandatory pass, for a caller standing at the
+   * end of a finished screen rather than mid-write.
+   *
+   * The reviewer is the only check that can see invented data, a dishonest tool
+   * use, or a headline that contradicts its own rows, and until now it ran only
+   * when the writing model chose to call `validate({appId})`. A bills dashboard
+   * double-counted two overlapping queries into an $11,216 headline over ~$6,276 of
+   * real bills (demo-bank, 2026-08-06); every mechanical check passed and the one
+   * check that could have caught it was never asked.
+   *
+   * It runs on the SECOND door — `validate({appId})`, which composes the floor and
+   * the reviewer with the app's own query results behind it — and only on a
+   * document that already passed the mechanical half, for two reasons: a screen
+   * that does not pass the floor is not a finished screen, and a document that
+   * never painted has no row for the row-scoped door to find. So the reviewer is
+   * spent exactly once, on exactly the screens a person is about to keep.
+   */
+  review?: boolean;
 }): Promise<AppValidationFailure[]> {
   const failures: AppValidationFailure[] = [];
   for (const path of input.paths) {
@@ -78,22 +121,15 @@ export async function validateWrittenApps(input: {
     if (appId === undefined) continue;
     try {
       const document = await input.workspace.readFile(path);
-      const result = await input.tools.call(VALIDATE_TOOL, { document });
-      if (result.status !== "ok") {
-        console.error(
-          `[vendo] could not validate ${appId} before finishing the turn, so this app was not gated — `
-          + (result.status === "denied" ? result.reason : result.error.message),
-        );
+      const mechanical = await askValidate(input.tools, appId, { document });
+      if (mechanical === undefined) continue;
+      if (mechanical.length > 0) {
+        failures.push({ path, appId, findings: mechanical });
         continue;
       }
-      const output = result.output;
-      if (!isRecord(output) || typeof output["ok"] !== "boolean") {
-        console.error(`[vendo] validate answered in a shape the gate cannot read, so ${appId} was not gated`);
-        continue;
-      }
-      if (output["ok"]) continue;
-      const findings = Array.isArray(output["findings"]) ? output["findings"].filter(isFinding) : [];
-      failures.push({ path, appId, findings });
+      if (input.review !== true) continue;
+      const judged = await askValidate(input.tools, appId, { appId });
+      if (judged !== undefined && judged.length > 0) failures.push({ path, appId, findings: judged });
     } catch (error) {
       console.error(
         `[vendo] the validate gate could not read ${path} back, so ${appId} was not gated — ${safeErrorMessage(error)}`,

@@ -635,6 +635,11 @@ export function claudeCode(
             tools: turn.tools,
             workspace: turn.workspace,
             paths: [...landed],
+            // …AND the reviewer, on whatever passed the mechanical half. This is
+            // the turn boundary, so every app here is finished: the one place a
+            // build can be judged for invented data and headlines that contradict
+            // their own rows, whether or not the builder thought to ask.
+            review: true,
           });
           const instruction = repairInstruction(failures);
           if (instruction !== undefined) yield* round(instruction);

@@ -320,10 +320,16 @@ interface Walked {
   box: BoxLog;
 }
 
-/** Every prompt that was NOT the assembly loop's — the middleman detector. A
- *  brain prompt here is a second engine reappearing. */
+/** The AI reviewer's own rubric (`REVIEWER_SYSTEM`). Every finished screen faces
+ *  it once, by design — so its prompt is not a middleman, and the detector below
+ *  must not read it as one. */
+const REVIEWER_MARKER = "You are the last reader of a generated app";
+
+/** Every prompt that was NOT the assembly loop's, and not the reviewer judging
+ *  what the loop finished — the middleman detector. A brain prompt here is a
+ *  second engine reappearing. */
 const nonScreenPrompts = (prompts: readonly string[]): string[] =>
-  prompts.filter((prompt) => !prompt.includes(SCREEN_BRIEF_MARKER));
+  prompts.filter((prompt) => !prompt.includes(SCREEN_BRIEF_MARKER) && !prompt.includes(REVIEWER_MARKER));
 
 /**
  * One real turn whose harness does exactly what a calling agent does: ask

@@ -84,6 +84,7 @@ import type { Finding } from "./checking/types.js";
 // called rather than re-derived — so the verb and generation can never disagree
 // about whether a document is sound.
 import { createCheckingLayer, judgmentRules } from "./checking/layer.js";
+import { queryEvidence } from "./checking/evidence.js";
 import { reviewerCheck } from "./checking/reviewer.js";
 import { UNSTORED_APP_ID, validateCompiledCreate } from "./generation/validation/validate.js";
 import { wireCompileOptionsFor } from "./wire-options.js";
@@ -3296,19 +3297,24 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // deriving the rubric with the same function the layer exposes it with, so the
       // rubric the reviewer reads and `layer.rubric` cannot diverge. Fail-open is
       // unchanged: silence, a refusal and a failed request all mean no findings.
-      // No `samples` — a verb call has run no queries, so there is no resolved data
-      // to check literals against, and the reviewer's prompt simply omits that
-      // section rather than pretending to have it.
+      //
+      // `samples` are the app's OWN queries, run (`queryEvidence`). This door used
+      // to pass none, on the reasoning that a verb call has run no queries — true,
+      // and it left the reviewer judging markup with nothing behind it, which is
+      // half its rubric switched off. A double-counted headline ($11,216 shown,
+      // ~$6,276 true, demo-bank 2026-08-06) is invisible in the markup and obvious
+      // beside the rows.
       //
       // `request` is empty because a verb call carries no user text — the checks
       // that read it treat that as "no carve-out", which is the conservative
       // direction.
       const plugged = config.checks ?? [];
+      const samples = await queryEvidence(document, config.tools, ctx);
       const findings = await createCheckingLayer({
         deps,
         // The thorough door: the shared floor AND the reviewer. Off the
         // scripted-create hot path, so the tsc pass is affordable here (§7.1).
-        checks: [...floorChecks(deps), reviewerCheck(deps, undefined, judgmentRules(plugged)), ...plugged],
+        checks: [...floorChecks(deps), reviewerCheck(deps, samples, judgmentRules(plugged)), ...plugged],
       }).run({ document, request: "" });
       return { ok: !findings.some(({ severity }) => severity === "block"), findings };
     },

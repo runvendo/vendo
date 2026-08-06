@@ -261,6 +261,12 @@ function screenBrief(input: ScreenInput, listings: readonly ToolListing[]): stri
 interface RunRecord {
   /** Did an `app.vendo` save ever reach the store? */
   assembled: boolean;
+  /** Did the LAST save reach the person's SCREEN? A landed save is not a finished
+   *  screen — bytes the seam declines to paint leave a row-less app the hand
+   *  already sent back to the floor — and only a finished screen faces the
+   *  reviewer. Absent paint information (an unwrapped workspace) claims nothing,
+   *  exactly as the hand's own gate does. */
+  painted: boolean;
   title?: string;
   escalated?: string;
   /** The last non-empty `decisions` a save carried — this run's whole memory
@@ -315,7 +321,7 @@ export async function assembleScreen(
 
   const directory = appDirectory(input.appId);
   const listings = await surface.tools.list().catch(() => [] as ToolListing[]);
-  const record: RunRecord = { assembled: false };
+  const record: RunRecord = { assembled: false, painted: false };
 
   /**
    * Write one hot-path file and land it.
@@ -382,7 +388,8 @@ export async function assembleScreen(
        * workspace — nothing known, so nothing claimed.
        */
       const painted = paintedIn(committed);
-      if (painted !== undefined && !painted.includes(input.appId)) {
+      record.painted = painted?.includes(input.appId) ?? false;
+      if (painted !== undefined && !record.painted) {
         const instruction = repairInstruction(await validateWrittenApps({
           tools: turn.tools,
           workspace: turn.workspace,
@@ -467,12 +474,22 @@ export async function assembleScreen(
     // twice.
     system: () => screenBrief(input, listings),
   });
-  // The events MUST be drained or nothing runs. Nothing is teed and nothing is
-  // buffered: this loop produces no prose for a person — the screen is the answer
-  // and the front door speaks the receipt.
-  for await (const event of harness.run(turn)) {
-    if (event.type === "error") failure ??= event.message;
-  }
+  /**
+   * One drive of the loop. The events MUST be drained or nothing runs. Nothing is
+   * teed and nothing is buffered: this loop produces no prose for a person — the
+   * screen is the answer and the front door speaks the receipt.
+   *
+   * It takes the messages because the review below needs a SECOND drive, and a
+   * repair round that went through different code than the turn would be a second
+   * way to drive the same loop (`claude-code/index.ts`'s `round` for the same
+   * reason).
+   */
+  const drive = async (messages: Turn<VendoHarnessOptions>["messages"]): Promise<void> => {
+    for await (const event of harness.run({ ...turn, messages })) {
+      if (event.type === "error") failure ??= event.message;
+    }
+  };
+  await drive(turn.messages);
 
   if (surface.signal.aborted) return { kind: "unavailable", why: "the caller hung up" };
   // Escalation wins over a partial paint: the builder is finishing this app, and
@@ -482,6 +499,54 @@ export async function assembleScreen(
   if (record.escalated !== undefined) return { kind: "escalate", why: record.escalated };
   // A model failure AFTER a screen already painted is not a failed screen.
   if (record.assembled) {
+    /**
+     * THE MANDATORY REVIEWER PASS — every finished screen faces it, whether or not
+     * this loop ever called `validate` itself.
+     *
+     * Live 2026-08-06 (demo-bank, "a dashboard for my upcoming bills and
+     * subscriptions"): the screen summed two overlapping query results into an
+     * $11,216 headline over ~$6,276 of real bills. Every mechanical check passed —
+     * a double count is not a shape error — and the one check that could have seen
+     * it never ran, because it fires only when the writing model volunteers to
+     * call `validate({appId})`. So the gate asks, once, at the end.
+     *
+     * ONE repair round, for the brain's own reason (`claude-code/index.ts`): being
+     * shown exactly what is wrong fixes it on the first try or not at all, and a
+     * second round is the person waiting longer for the same answer. Whatever
+     * survives it stands — the screen has already painted, and the honest thing is
+     * to leave it rather than take it away.
+     *
+     * `record.painted` is the gate, not `record.assembled`. A save that landed bytes
+     * the seam declined to paint is not a finished screen: the hand already handed
+     * that loop the floor's own sentences, the app has no row for the reviewer's
+     * row-scoped door to find, and asking again here would only spend the person's
+     * time repeating it.
+     */
+    const appPath = `${directory}/${APP_FILE}`;
+    const instruction = record.painted
+      ? repairInstruction(await validateWrittenApps({
+        tools: turn.tools,
+        workspace: turn.workspace,
+        paths: [appPath],
+        review: true,
+      }))
+      : undefined;
+    if (instruction !== undefined && !surface.signal.aborted) {
+      // The document rides along: a drive starts from the messages it is given, so
+      // the repair round has none of the first one's context — and a repair with no
+      // document in front of it is a rewrite from scratch.
+      const saved = await turn.workspace.readFile(appPath).catch(() => undefined);
+      await drive([...turn.messages, {
+        id: `repair_${input.appId}`,
+        role: "user",
+        parts: [{
+          type: "text",
+          text: saved === undefined
+            ? instruction
+            : `${instruction}\n\nThis is the document you saved. Save the whole corrected version:\n${saved}`,
+        }],
+      }]);
+    }
     return {
       kind: "assembled",
       ...(record.title === undefined ? {} : { title: record.title }),
