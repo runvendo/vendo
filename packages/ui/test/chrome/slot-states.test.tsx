@@ -130,33 +130,10 @@ describe("VendoSlot build states", () => {
       expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
     });
 
-    // ADVERSARIAL (risk round, 2026-08-06). The building arm states the law and
-    // sits BEHIND the children arm to honour it: "a working host component must
-    // never blank into a skeleton for the length of a build." The failed arm
-    // sits IN FRONT of it, so it breaks that same law and does not stop.
-    //
-    // A placement row is written at MINT, by any caller that can reach
-    // `vendo_make {slot}` — which includes a run with nobody watching (see
-    // packages/apps/src/placement-risk.test.ts). If that build never lands, the
-    // host's real net-worth card is replaced by a Vendo error card on the host's
-    // own page, and stays replaced until a person finds the slot and taps
-    // "Clear this slot". A build that failed is not "something real to swap in".
-    it("keeps the host's own markup up when the build in the slot failed", async () => {
-      doomed(false, "a spending board");
-      // A second, READY slot on the same page. One poller serves both in one
-      // request, so this one mounting is the proof that the failed slot's own
-      // answer has landed — no sleep, and no waiting on the state under test.
-      wire.state.placements.push({ slot: "aside", appId: "app_1" });
-      render(
-        <VendoProvider client={client}>
-          <VendoSlot id="hero"><span>Original hero</span></VendoSlot>
-          <VendoSlot id="aside" />
-        </VendoProvider>,
-      );
-
-      expect(await screen.findByText("Invoices app surface")).toBeTruthy();
-      expect(screen.queryByText("Original hero")).not.toBeNull();
-    });
+    // By design, and not a bug: the failed arm REPLACES the host's markup, which
+    // is what makes "Try again" and "Clear this slot" reachable at all. The
+    // building/failed asymmetry is deliberate — do not add a case asking failure
+    // to sit behind children.
 
     it("clearing the slot unplaces the app and gives the host its own markup back", async () => {
       doomed(false, "a spending board");

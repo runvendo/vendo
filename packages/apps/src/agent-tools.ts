@@ -4,6 +4,7 @@ import {
   VENDO_MAKE_TOOL,
   VENDO_TOOL_TITLES,
   appIdSchema,
+  isUnattended,
   VENDO_VIEW_STREAM,
   VendoError,
   makeReceiptSchema,
@@ -416,6 +417,12 @@ export const createAgentTools = (
         const args = input(call.args, ["request"], ["app", "context", "slot"]);
         const app = optionalString(args.app, "app");
         const slot = optionalString(args.slot, "slot");
+        // Presence-only, at the source (core `presenceOnlyCall`): a slot claims
+        // a place on somebody's page and evicts whatever held it, so with
+        // nobody there the build still runs and the slot is simply not taken.
+        // The refusal below still reads `slot`, because "you aimed a new app at
+        // a slot on an EDIT" is wrong however present the person is.
+        const claimed = isUnattended(ctx) ? undefined : slot;
         const stream = (call as VendoViewStreamingToolCall)[VENDO_VIEW_STREAM];
         const request = args.request as string;
         const ask = withContext(request, optionalString(args.context, "context"));
@@ -481,7 +488,7 @@ export const createAgentTools = (
               // app record (§9.4) and assembly is what writes that record, so
               // this is the FIRST instant the claim can legally be made — and
               // the last instant it is still part of the call the person made.
-              if (slot !== undefined) await runtime.place({ app: stored.id, slot }, ctx);
+              if (claimed !== undefined) await runtime.place({ app: stored.id, slot: claimed }, ctx);
               return receipt({
                 id: stored.id,
                 title: stored.name,
@@ -542,7 +549,7 @@ export const createAgentTools = (
             // running (or that never lands) occupies the place the caller aimed
             // at instead of appearing out of nowhere minutes later. This tool
             // only aims; the runtime owns the row.
-            ...(slot === undefined ? {} : { slot }),
+            ...(claimed === undefined ? {} : { slot: claimed }),
             onUnsaved: (reason) => { unsaved = reason; },
             ...(stream === undefined ? {} : {
               onView: (part) => stream({ id: vendoViewStreamId(part.appId), part }),

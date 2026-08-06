@@ -1,7 +1,13 @@
 import { canonicalJson } from "./jcs.js";
 import { sha256Hex } from "./sha256.js";
 import type { Json } from "./ids.js";
-import { PRESENCE_ONLY_TOOLS, USE_SERVICE_TOOL, type ToolDescriptor } from "./tools.js";
+import {
+  PRESENCE_ONLY_TOOLS,
+  USE_SERVICE_TOOL,
+  VENDO_MAKE_TOOL,
+  type ToolCall,
+  type ToolDescriptor,
+} from "./tools.js";
 import type { RunContext } from "./run-context.js";
 
 /** Build contract §7 — a grant set is per person, bound to an app's INTENT
@@ -180,6 +186,24 @@ function isGrantedDispatcher(
  */
 export function withheldFromUnattended(descriptor: ToolDescriptor): boolean {
   return descriptor.risk === "destructive" || descriptor.risk === "ungraded";
+}
+
+/**
+ * The presence-only half of the law, as a CALL rather than as a name.
+ *
+ * {@link PRESENCE_ONLY_TOOLS} names the two tools whose whole effect is on a
+ * person's screen. `vendo_make` is honestly `read` and stays offered to an
+ * unattended run — most makes are — but a make that carries a `slot` claims
+ * that slot at mint and EVICTS whatever held it, which is the same change
+ * nobody asked for and nobody saw. The slot rides in the arguments, so only the
+ * call can say; the descriptor cannot, and regrading every make to buy this
+ * would lie about the ones that place nothing.
+ */
+export function presenceOnlyCall(call: Pick<ToolCall, "tool" | "args">): boolean {
+  if (PRESENCE_ONLY_TOOLS.has(call.tool)) return true;
+  if (call.tool !== VENDO_MAKE_TOOL) return false;
+  const slot = (call.args as { slot?: unknown } | null)?.slot;
+  return typeof slot === "string" && slot.trim() !== "";
 }
 
 /** §12 — "Whole-registry declarations are rejected, not bundled; a declared set

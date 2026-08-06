@@ -740,7 +740,7 @@ class Door {
     state.server.setRequestHandler(ListToolsRequestSchema, async () => {
       const tools = state.turn === undefined
         ? await this.#listedTools(state)
-        : await turnTools(state.turn);
+        : await turnTools(state.turn, this.#withheld);
       return { tools };
     });
     state.server.setRequestHandler(CallToolRequestSchema, async (request) =>
@@ -837,7 +837,12 @@ class Door {
     // parity by construction rather than a second implementation of it. The
     // turn's own curation (the loadout, `surfaces.agent`, §12) already decided
     // what is callable, and an unknown name comes back as its own error.
+    //
+    // A WITHHELD name is the exception, because it is not curation: it is what
+    // this door does not do, so it is refused here exactly as the OAuth leg
+    // refuses it — not offered has to mean not callable on either leg.
     if (state.turn !== undefined) {
+      if (this.#withheld.has(name)) return inBandError(`not-found: Tool ${name} was not found`);
       const turn = state.turn;
       return turnResult(await turn.tools.call(name, args as Json));
     }
@@ -1539,12 +1544,15 @@ function bearerOf(req: Request): string | undefined {
  * re-applying its own `surfaces.mcp` menu here would curate a CHAT turn's tools
  * by the MCP door's list, which is the wrong menu for the wrong surface.
  *
+ * `withheld` is the exception, and it is not a menu: it is what THIS door, as
+ * deployed, does not do, so it holds on every leg of the mount.
+ *
  * Asked fresh on every `tools/list`, so a tool `find_tools` equipped mid-turn is
  * visible without reopening anything — the limitation that made the in-process
  * projection snapshot its tool set at session open dies here.
  */
-async function turnTools(turn: LiveTurn): Promise<Tool[]> {
-  const listings = await turn.tools.list();
+async function turnTools(turn: LiveTurn, withheld: ReadonlySet<string>): Promise<Tool[]> {
+  const listings = (await turn.tools.list()).filter((listing) => !withheld.has(listing.name));
   const compiles = wireSchemaCompiler();
   return listings.map((listing) => {
     const label = listing.title === undefined || listing.title.trim() === "" ? undefined : listing.title;

@@ -2038,12 +2038,17 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
    *  record by now, or the app was deleted out from under the row. Either way
    *  it is not forming, and a slot that says "building" forever is the exact
    *  failure the build watchdog exists to prevent. */
-  const entryFor = async (row: PlacementRow): Promise<PlacementEntry> => {
+  const entryFor = async (row: PlacementRow, ctx: RunContext): Promise<PlacementEntry | undefined> => {
     const record = await apps.get(row.appId);
     if (record === null) {
       const forming = Date.now() - Date.parse(row.placedAt) < effectiveAppBuildUiDeadlineMs();
       return { slot: row.slot, app: row.appId, title: "", status: forming ? "building" : "failed" };
     }
+    // §9.4, on the placement read too: a placement names a DOCUMENT, so its
+    // title and its live build status are that document's to mask. A viewer
+    // whose grant was taken back reads the slot as empty, exactly as
+    // open()/get()/list() have already gone back to not-found for them.
+    if (!(await holds(row.appId, ctx, "viewer", record))) return undefined;
     // Two fields off the raw row, deliberately without document validation:
     // one unparseable app must not take down every other slot's answer (the
     // same read the wire's ?pending=1 probe does).
@@ -2990,7 +2995,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // weight — and a row with no app record reads as a build in flight, which
       // would park a skeleton in the slot until the build window elapsed.
       for (const row of await placementRows.list(ctx.principal.subject)) {
-        if (row.appId === appId) await placementRows.delete(ctx.principal.subject, row.slot);
+        if (row.appId === appId) await placementRows.delete(ctx.principal.subject, row.slot, appId);
       }
       await reportLifecycle("delete", appId, ctx);
     },
@@ -3035,8 +3040,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // masks an app the caller cannot see (§9.4) before any row is written.
       await requireOwned(input.app, ctx, "viewer");
       const subject = ctx.principal.subject;
-      const previous = await placementRows.get(subject, slot);
-      await placementRows.put(subject, {
+      const previous = await placementRows.place(subject, {
         slot,
         appId: input.app,
         placedBy: subject,
@@ -3055,15 +3059,18 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       const subject = ctx.principal.subject;
       const row = await placementRows.get(subject, slot);
       // Not this app's slot (any more): nothing to clear, and clearing what
-      // replaced it would be a silent eviction nobody asked for.
+      // replaced it would be a silent eviction nobody asked for. The store's
+      // delete is scoped to the same app, so a place that lands between this
+      // read and that write keeps the slot.
       if (row === undefined || row.appId !== input.app) return;
-      await placementRows.delete(subject, slot);
+      await placementRows.delete(subject, slot, input.app);
       await reportLifecycle("unplace", input.app, ctx, { slot });
     },
 
     async placements(input, ctx) {
       const rows = await placementRows.list(ctx.principal.subject, input.slots);
-      return await Promise.all(rows.map(entryFor));
+      const entries = await Promise.all(rows.map((row) => entryFor(row, ctx)));
+      return entries.filter((entry): entry is PlacementEntry => entry !== undefined);
     },
 
     async promote(appId, orgId, ctx) {

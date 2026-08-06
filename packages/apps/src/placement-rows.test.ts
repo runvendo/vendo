@@ -15,7 +15,11 @@ describe("placementStore — one row per (subject, slot)", () => {
     // Another subject's slot of the same name is a different row entirely.
     expect(await rows.get("user_mia", "home-hero")).toBeUndefined();
 
-    await rows.delete("user_ada", "home-hero");
+    // Scoped to the app that holds it: naming another one clears nothing.
+    await rows.delete("user_ada", "home-hero", "app_2");
+    expect(await rows.get("user_ada", "home-hero")).toEqual(row("home-hero", "app_1"));
+
+    await rows.delete("user_ada", "home-hero", "app_1");
     expect(await rows.get("user_ada", "home-hero")).toBeUndefined();
   });
 

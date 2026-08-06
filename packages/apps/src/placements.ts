@@ -18,7 +18,7 @@
  * `packages/store/src/erase.ts`), and `{subject, slot}` is the GIN-indexed pair
  * a slot query reads.
  */
-import type { StoreAdapter, VendoRecord } from "@vendoai/core";
+import type { RecordInput, StoreAdapter, VendoRecord } from "@vendoai/core";
 import { listAllRecords } from "./persistence.js";
 
 /** The generic collection the rows live in (never a dedicated table). */
@@ -34,7 +34,10 @@ export interface PlacementRow {
 export interface PlacementStore {
   get(subject: string, slot: string): Promise<PlacementRow | undefined>;
   put(subject: string, row: PlacementRow): Promise<void>;
-  delete(subject: string, slot: string): Promise<void>;
+  /** Take the slot and report what held it, as ONE decision. */
+  place(subject: string, row: PlacementRow): Promise<PlacementRow | undefined>;
+  /** Clear the slot only while `appId` still holds it. */
+  delete(subject: string, slot: string, appId: string): Promise<void>;
   list(subject: string, slots?: readonly string[]): Promise<PlacementRow[]>;
 }
 
@@ -64,24 +67,71 @@ export function placementStore(store: StoreAdapter): PlacementStore {
     return record === null ? undefined : rowOf(record);
   };
 
+  const inputFor = (subject: string, row: PlacementRow): RecordInput => ({
+    id: rowId(subject, row.slot),
+    data: {
+      slot: row.slot,
+      appId: row.appId,
+      placedBy: row.placedBy,
+      placedAt: row.placedAt,
+    },
+    refs: { subject, slot: row.slot },
+  });
+
   return {
     get,
 
     async put(subject, row) {
-      await rows.put({
-        id: rowId(subject, row.slot),
-        data: {
-          slot: row.slot,
-          appId: row.appId,
-          placedBy: row.placedBy,
-          placedAt: row.placedAt,
-        },
-        refs: { subject, slot: row.slot },
-      });
+      await rows.put(inputFor(subject, row));
     },
 
-    async delete(subject, slot) {
-      await rows.delete(rowId(subject, slot));
+    /**
+     * The eviction receipt is only true if the read and the write are ONE
+     * decision: read-then-put let two places into the same slot both answer
+     * "nothing was replaced" while one of them was silently displaced. The
+     * generic records collection carries a revision on every adapter Vendo
+     * ships, so the loser sees the winner's row and retries against it.
+     */
+    async place(subject, row) {
+      const input = inputFor(subject, row);
+      const atomic = rows.atomic;
+      if (atomic === undefined) {
+        // A BYO adapter with no compare-and-swap keeps the old read-then-write
+        // and its old race; there is nothing else to arbitrate on.
+        const previous = await get(subject, row.slot);
+        await rows.put(input);
+        return previous;
+      }
+      for (;;) {
+        const current = await rows.get(input.id);
+        if (current === null) {
+          if (await atomic.insertIfAbsent(input) !== null) return undefined;
+          continue;
+        }
+        if (current.revision === undefined) throw new Error("placement row is missing its revision");
+        if (await atomic.compareAndSwap(input, current.revision) !== null) return rowOf(current);
+      }
+    },
+
+    /**
+     * Scoped to the app the caller named, at the STORE: a stale client whose
+     * read said `appId` must never take out the app that replaced it between
+     * that read and this write. `claim` compares and deletes in one statement;
+     * an adapter without it falls back to the read the caller already did.
+     */
+    async delete(subject, slot, appId) {
+      const id = rowId(subject, slot);
+      const record = await rows.get(id);
+      if (record === null || rowOf(record)?.appId !== appId) return;
+      if (rows.claim !== undefined) {
+        await rows.claim({
+          id,
+          data: record.data,
+          ...(record.refs === undefined ? {} : { refs: record.refs }),
+        });
+        return;
+      }
+      await rows.delete(id);
     },
 
     async list(subject, slots) {
