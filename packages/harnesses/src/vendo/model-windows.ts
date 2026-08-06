@@ -49,18 +49,23 @@ export const MODEL_CONTEXT_WINDOWS: readonly (readonly [match: string, tokens: n
  * `override` is the BYO escape and it wins outright, table hit or not: a host on
  * a model this repo has never heard of, or on a seat whose entry has gone stale,
  * needs a way to be right that does not involve waiting for a release. It has to
- * be a FINITE positive number of tokens to be a window at all, and this is the
+ * be a positive WHOLE number of tokens to be a window at all, and this is the
  * only place either door is checked: `vendo.ts` declares `optionsSchema` as
  * `z.number().int().positive()`, but nothing in the stack parses a harness's
  * options schema, so the per-turn knob arrives exactly as unvalidated as the
- * deployment one. Both ends of the range fail the same way, silently and in
- * opposite directions: a zero puts the trigger at zero, so every turn pays for a
+ * deployment one — which is why the check here is that same rule and not a
+ * looser one. Both ends of the range fail the same way, silently and in opposite
+ * directions: a zero puts the trigger at zero, so every turn pays for a
  * summarizer pass and then sheds the conversation to its last message; an
  * infinity puts the trigger past every estimate there is, so compaction never
- * fires again and the provider's 400 is the only rail left.
+ * fires again and the provider's 400 is the only rail left. A fraction is the
+ * zero in disguise — `triggerTokens` floors the window times the ratio, so any
+ * window under ~1.24 tokens clears `> 0` and still trips at zero.
+ * `Number.isInteger` is false for `NaN` and both infinities too, so it is the
+ * whole rule in one call.
  */
 export function contextWindowTokens(model: LanguageModel, override?: number): number {
-  if (override !== undefined && Number.isFinite(override) && override > 0) return override;
+  if (override !== undefined && Number.isInteger(override) && override > 0) return override;
   const id = (typeof model === "string" ? model : model.modelId).toLowerCase();
   let matched: readonly [string, number] | undefined;
   for (const entry of MODEL_CONTEXT_WINDOWS) {

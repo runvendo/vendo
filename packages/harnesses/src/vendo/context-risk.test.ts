@@ -517,19 +517,23 @@ describe("a window override has to be a window", () => {
     expect(contextWindowTokens("claude-sonnet-4-5", -1)).toBe(200_000);
   });
 
-  it("declines a window that is not a NUMBER of tokens", () => {
+  it("declines a window that is not a WHOLE number of tokens", () => {
     // `optionsSchema` is declared and nothing in the stack parses it — the
     // per-turn knob reaches this function exactly as unvalidated as the
-    // deployment one, so this guard is the only one either path has. `NaN > 0`
-    // is already false; `Infinity > 0` is not, and an infinite window puts the
-    // trigger past every estimate there is: compaction never fires again and the
-    // provider's 400 is the only rail left, which is the failure of a window of
-    // zero read from the other end.
+    // deployment one, so this guard is the only one either path has, and the
+    // line it has to hold is the one the schema already states:
+    // `z.number().int().positive()`. `NaN > 0` is already false; `Infinity > 0`
+    // is not, and an infinite window puts the trigger past every estimate there
+    // is: compaction never fires again and the provider's 400 is the only rail
+    // left, which is the failure of a window of zero read from the other end.
     expect(contextWindowTokens("claude-sonnet-4-5", Number.NaN)).toBe(200_000);
     expect(contextWindowTokens("claude-sonnet-4-5", Number.POSITIVE_INFINITY)).toBe(200_000);
-    // A fraction is a real number of tokens, badly rounded — the trigger floors
-    // it, so it costs nothing and is not this function's business to refuse.
-    expect(contextWindowTokens("claude-sonnet-4-5", 1_000.5)).toBe(1_000.5);
+    // A fraction is the window of zero wearing a number that clears `> 0`:
+    // `triggerTokens` floors the window times the ratio, so anything under
+    // ~1.24 tokens trips the trigger at zero and every turn sheds the thread to
+    // its last message. Refusing it here is the same refusal as the zero above.
+    expect(contextWindowTokens("claude-sonnet-4-5", 0.5)).toBe(200_000);
+    expect(contextWindowTokens("claude-sonnet-4-5", 1_000.5)).toBe(200_000);
   });
 
   it("reaches the same guard from the deployment knob and from the turn", async () => {
