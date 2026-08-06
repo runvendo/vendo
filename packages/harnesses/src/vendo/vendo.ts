@@ -19,8 +19,16 @@ import { z } from "zod";
 import { modelToolDescription, type Harness, type HarnessEvent, type Json, type ToolDescriptor, type Turn } from "@vendoai/core";
 import { startTurn, type TurnContext } from "./loop.js";
 import { wireErrorMessage } from "../wire-error.js";
-import { reportHire } from "../runtime.js";
-import { jsonSchema, stepCountIs, streamText, tool, type LanguageModel, type ToolSet } from "ai";
+import { reportHire, type HireRecord, type UsageTotals } from "../runtime.js";
+import {
+  jsonSchema,
+  stepCountIs,
+  streamText,
+  tool,
+  type LanguageModel,
+  type LanguageModelUsage,
+  type ToolSet,
+} from "ai";
 import { defineHarness } from "../define.js";
 
 /** How many messages a hired subagent may exchange before it must report back.
@@ -84,12 +92,7 @@ export interface VendoHarnessDeps {
    * reach it), so without this it would be invisible. Override only to observe it
    * somewhere else too.
    */
-  onHire?: (record: {
-    purpose: string;
-    skill?: string;
-    summary: string;
-    usage: { inputTokens: number; outputTokens: number };
-  }) => void;
+  onHire?: (record: HireRecord) => void;
   /**
    * The CLOSED toolbox. Set, the equipped set is EXACTLY this list: a string
    * equips that registry tool (guarded, via `turn.tools.call`, same as today); a
@@ -216,8 +219,21 @@ async function equipClosedLoadout(
 interface SubagentReport {
   summary: string;
   /** Every token a hired specialist spent. Unmetered subagents are the bulk of a
-   *  build turn's inference, so this is not optional bookkeeping. */
-  usage: { inputTokens: number; outputTokens: number };
+   *  build turn's inference, so this is not optional bookkeeping — and the FULL
+   *  shape, cache split included, because the hire's own audit row is the only
+   *  row that carries it. */
+  usage: UsageTotals;
+}
+
+/** One usage figure set from an `ai` totals block, in `UsageTotals` shape. */
+function usageOf(usage: LanguageModelUsage): UsageTotals {
+  const { cacheReadTokens, cacheWriteTokens } = usage.inputTokenDetails;
+  return {
+    inputTokens: usage.inputTokens ?? 0,
+    outputTokens: usage.outputTokens ?? 0,
+    ...(cacheReadTokens === undefined ? {} : { cacheReadTokens }),
+    ...(cacheWriteTokens === undefined ? {} : { cacheWriteTokens }),
+  };
 }
 
 /**
@@ -253,7 +269,7 @@ async function runSubagent(
   const [text, usage] = await Promise.all([result.text, result.totalUsage]);
   return {
     summary: text.trim() || "The specialist finished without a summary.",
-    usage: { inputTokens: usage.inputTokens ?? 0, outputTokens: usage.outputTokens ?? 0 },
+    usage: usageOf(usage),
   };
 }
 
@@ -293,8 +309,6 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
       // nothing to discover, so it fills the same object once and stops.)
       const residentTools: ToolSet = {};
       let equipped: string[] = [];
-      /** Subagent tokens, drained onto the turn's usage after the stream ends. */
-      const hiredUsage: Array<{ inputTokens: number; outputTokens: number }> = [];
       const hireSubagent = tool({
         description:
           "Hire a specialist for one big job (building or editing an app, a long research pass). "
@@ -310,7 +324,9 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
             // bounded at one and a helper cannot spawn a tree.
             const { [HIRE_SUBAGENT]: _hiring, ...hands } = residentTools;
             const report = await runSubagent(turn, model, input, hands);
-            hiredUsage.push(report.usage);
+            // The ONLY place a hire's spend is reported. The turn's `usage` event
+            // stays the resident's own, so the run row and the hire rows partition
+            // the turn instead of overlapping — see `reportRun`.
             (deps.onHire ?? reportHire)({
               purpose: input.instructions,
               ...(input.skill === undefined ? {} : { skill: input.skill }),
@@ -393,34 +409,14 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
             case "abort":
               // The caller hung up: stop cleanly, say nothing.
               return;
-            case "finish": {
-              // `model` is left unset: the contract's field is optional, and the
-              // resolved model id is not on this part — composition, which chose
-              // the seat, is the honest place to attribute it.
-              const { inputTokens, outputTokens, inputTokenDetails } = part.totalUsage;
-              const hired = hiredUsage.reduce(
-                (total, one) => ({
-                  inputTokens: total.inputTokens + one.inputTokens,
-                  outputTokens: total.outputTokens + one.outputTokens,
-                }),
-                { inputTokens: 0, outputTokens: 0 },
-              );
-              yield {
-                type: "usage",
-                // Subagent tokens are the bulk of a build turn's inference;
-                // billing that counted only the resident would under-report by
-                // most of the spend.
-                inputTokens: (inputTokens ?? 0) + hired.inputTokens,
-                outputTokens: (outputTokens ?? 0) + hired.outputTokens,
-                ...(inputTokenDetails.cacheReadTokens === undefined
-                  ? {}
-                  : { cacheReadTokens: inputTokenDetails.cacheReadTokens }),
-                ...(inputTokenDetails.cacheWriteTokens === undefined
-                  ? {}
-                  : { cacheWriteTokens: inputTokenDetails.cacheWriteTokens }),
-              };
+            case "finish":
+              // The RESIDENT loop's own spend, and only it. Folding the hires in
+              // here too double-counted them: each hire is already its own audit
+              // row (`reportHire`), so a host summing the turn's rows paid for
+              // every specialist twice — and the cache split, which is the
+              // resident's, then described a total that was not.
+              yield { type: "usage", ...usageOf(part.totalUsage) };
               break;
-            }
             default:
               // Tool call/result chunks are consumed here and dropped: the RUNTIME
               // mirrors them (§1.5), so echoing them would double every call.

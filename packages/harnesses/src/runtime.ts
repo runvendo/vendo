@@ -87,7 +87,9 @@ export interface HireRecord {
   skill?: string;
   /** The specialist's own report back, as the resident received it. */
   summary: string;
-  usage?: { inputTokens: number; outputTokens: number };
+  /** This hire's spend and nobody else's — the full shape, so its row prices on
+   *  its own. The turn's `usage` event never carries it: see `reportRun`. */
+  usage?: UsageTotals;
 }
 
 /**
@@ -196,7 +198,9 @@ export interface HarnessRuntime {
 
 const mintAuditId = (): string => `aud_${globalThis.crypto.randomUUID()}`;
 
-interface UsageTotals {
+/** The metering figures an audit row carries — the `usage` HarnessEvent's own
+ *  shape, which is why a harness can hand one straight over. */
+export interface UsageTotals {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens?: number;
@@ -734,8 +738,18 @@ async function saveHarnessState(
   }
 }
 
-/** One audit row per turn carrying the metering figures and any failure —
- *  `audit ⊇ transcript`, so billing never depends on the story layer. */
+/**
+ * The turn's metering rows — `audit ⊇ transcript`, so billing never depends on
+ * the story layer.
+ *
+ * HOW TO READ THEM, which is the whole rule a host needs: every row counts its
+ * OWN spend and nobody else's. The `run` row's `usage` is the resident loop
+ * alone; each `subagent` row's `usage` is that one hire. No row contains
+ * another, so a turn's total is the SUM over its rows — and a row on its own is
+ * never the total. The harness held the other half of this: it used to fold the
+ * hires into the turn's `usage` event AND report each hire, so the rows
+ * overlapped and every turn that hired over-billed by its hires.
+ */
 async function reportRun(
   guard: Guard,
   input: TurnRunInput<unknown>,
