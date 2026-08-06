@@ -112,13 +112,17 @@ function expectSendable(messages: ModelMessage[]): void {
 
 describe("token-budgeted compaction", () => {
   it("sheds nothing at all when the thread already fits", async () => {
-    const generous = await turnModelMessages(thread(), "system", undefined, 100_000);
-    const unbudgeted = await turnModelMessages(thread(), "system", undefined);
+    const { messages: generous } = await turnModelMessages({
+      messages: thread(), system: "system", tokenBudget: 100_000,
+    });
+    const { messages: unbudgeted } = await turnModelMessages({ messages: thread(), system: "system" });
     expect(wire(generous)).toBe(wire(unbudgeted));
   });
 
   it("sheds REASONING first, and nothing else", async () => {
-    const shed = await turnModelMessages(thread(), "system", undefined, 1_500);
+    const { messages: shed } = await turnModelMessages({
+      messages: thread(), system: "system", tokenBudget: 1_500,
+    });
     const raw = wire(shed);
     expect(raw).not.toContain(REASONING);
     // Everything cheaper to keep is still here — this is the whole point of an
@@ -130,7 +134,9 @@ describe("token-budgeted compaction", () => {
   });
 
   it("sheds OLD TOOL PAYLOADS second, keeping the words around them", async () => {
-    const shed = await turnModelMessages(thread(), "system", undefined, 400);
+    const { messages: shed } = await turnModelMessages({
+      messages: thread(), system: "system", tokenBudget: 400,
+    });
     const raw = wire(shed);
     expect(raw).not.toContain(REASONING);
     expect(raw).not.toContain(TOOL_OUTPUT);
@@ -141,7 +147,9 @@ describe("token-budgeted compaction", () => {
   });
 
   it("drops the OLDEST messages only as a last resort", async () => {
-    const shed = await turnModelMessages(thread(), "system", undefined, 10);
+    const { messages: shed } = await turnModelMessages({
+      messages: thread(), system: "system", tokenBudget: 10,
+    });
     const raw = wire(shed);
     expect(raw).not.toContain(OLDEST);
     // Under any budget the ask survives: a turn with no user message is not a
@@ -153,7 +161,9 @@ describe("token-budgeted compaction", () => {
     // An assistant tool-call whose result was pruned is a malformed prompt every
     // provider rejects, so the pair is shed together or not at all.
     for (const budget of [100_000, 1_500, 400, 10]) {
-      const shed = await turnModelMessages(thread(), "system", undefined, budget);
+      const { messages: shed } = await turnModelMessages({
+        messages: thread(), system: "system", tokenBudget: budget,
+      });
       const calls = shed.flatMap((message) =>
         typeof message.content === "string"
           ? []
@@ -169,20 +179,26 @@ describe("token-budgeted compaction", () => {
     // above) cannot see either defect: the dangling call is orphaned before any
     // budget applies, and the assistant-first prompt is perfectly paired.
     for (const budget of [100_000, 2_500, 2_000, 1_000, 600, 500, 200, 10]) {
-      const shed = await turnModelMessages(threadWithDanglingCall(), "system", undefined, budget);
+      const { messages: shed } = await turnModelMessages({
+        messages: threadWithDanglingCall(), system: "system", tokenBudget: budget,
+      });
       expectWellFormed(shed, `budget ${budget}`);
       expect(wire(shed), `budget ${budget}`).toContain(NEWEST);
     }
     // …and the walk really did cross the cliff, so this can never pass on a
     // thread that never sheds a message at all.
-    const floor = await turnModelMessages(threadWithDanglingCall(), "system", undefined, 10);
+    const { messages: floor } = await turnModelMessages({
+      messages: threadWithDanglingCall(), system: "system", tokenBudget: 10,
+    });
     expect(wire(floor)).not.toContain(OLDEST);
   });
 
   it("keeps the message-count window working untouched", async () => {
     // Back-compat: `historyWindow` is a shipped host knob and its meaning does
     // not change because a budget joined it.
-    const windowed = await turnModelMessages(thread(), "system", 1);
+    const { messages: windowed } = await turnModelMessages({
+      messages: thread(), system: "system", historyWindow: 1,
+    });
     expect(wire(windowed)).toContain(NEWEST);
     expect(wire(windowed)).not.toContain(OLDEST);
   });

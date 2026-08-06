@@ -224,8 +224,8 @@ describe("1 — a stale approval-requested part is flipped at the start of a har
   });
 
   it("does not need turnModelMessages to be re-derived — the loop's own converter agrees", async () => {
-    const paired = await turnModelMessages(
-      [
+    const { messages: paired } = await turnModelMessages({
+      messages: [
         userMessage("m1", "hi"),
         {
           id: "m2",
@@ -242,9 +242,8 @@ describe("1 — a stale approval-requested part is flipped at the start of a har
           ],
         } as unknown as UIMessage,
       ],
-      "system",
-      undefined,
-    );
+      system: "system",
+    });
     const calls = paired.flatMap((m) => (Array.isArray(m.content) ? m.content : [])).filter((p) => p.type === "tool-call");
     const results = paired.flatMap((m) => (Array.isArray(m.content) ? m.content : [])).filter((p) => p.type === "tool-result");
     expect([calls.length, results.length]).toEqual([1, 1]);
