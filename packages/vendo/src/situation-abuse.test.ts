@@ -198,8 +198,15 @@ describe("situation channel — adversarial body.context", () => {
       context: { screen: "あ".repeat(9_000) },
     })).text();
     const run = /あ{100,}/.exec(seen[0] ?? "")?.[0] ?? "";
-    expect(run.length, "the situation reached the prompt").toBeGreaterThan(4_000);
-    expect(new TextEncoder().encode(run).byteLength).toBeLessThanOrEqual(8_192);
+    const bytes = new TextEncoder().encode(run).byteLength;
+    // The budget is BYTES. 8192 of them hold at most 2730 of these characters,
+    // so a character bound here is measured against that ceiling, never against
+    // the ASCII one in situation-seam.test.ts.
+    expect(bytes, "the cap is a byte budget").toBeLessThanOrEqual(8_192);
+    // …and it is paid for by counting, not by throwing the content away: the
+    // situation still spends most of the budget it was given.
+    expect(bytes, "the situation reached the prompt").toBeGreaterThan(4_096);
+    expect(run.length, "and not as a handful of characters").toBeGreaterThan(2_000);
   }, 60_000);
 
   it("never truncates a situation into a lone surrogate", async () => {
