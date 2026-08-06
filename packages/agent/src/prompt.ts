@@ -63,6 +63,21 @@ const CONNECTORS_PROMPT = `Connectors
 - Outside-service tools are never on your own tool list: reach them only through use_service_tool, passing the slug exactly as find_service_tools returned it. Never guess a slug, and never invent arguments — use the schema that came back with the match, and if a match came back without one, ask the user for what it needs.
 ${CONNECT_ETIQUETTE}`;
 
+/**
+ * Every character a reader ends a line on, not just the one JS string methods
+ * know: the four ECMAScript terminators (LF, CR, U+2028, U+2029) plus the three
+ * Unicode adds (VT, FF, NEL). `\r\n` leads so a CRLF pair stays ONE break.
+ *
+ * Indenting only `\n` left the block's defence absent for the other six — the
+ * value's lines came back at column 0 with a real blank line between them, which
+ * is exactly the forgery the indent exists to stop.
+ */
+const LINE_TERMINATOR = /\r\n|[\n\r\u2028\u2029\u0085\v\f]/gu;
+
+/** One convention out (LF), and every line after the first indented — so the
+ *  invariant holds no matter which terminator the value arrived with. */
+const indentContinuations = (line: string): string => line.replace(LINE_TERMINATOR, "\n  ");
+
 /** The `[User]` fact renderer — mirrors @vendoai/agents prompt.ts factLines:
  *  function values never reach the model (they are the ctx bag's, callable at
  *  guard/tool check-time), undefined entries drop.
@@ -77,7 +92,7 @@ const factLines = (facts: Record<string, unknown>): string[] =>
   Object.entries(facts)
     .filter(([, value]) => typeof value !== "function" && value !== undefined)
     .map(([key, value]) =>
-      `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`.replaceAll("\n", "\n  "));
+      indentContinuations(`${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`));
 
 /** 03-agent §3: company directions are mandatory policy context and fail closed. */
 export async function assembleSystemPrompt(
