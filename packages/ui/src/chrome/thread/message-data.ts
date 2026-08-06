@@ -205,9 +205,6 @@ export interface TurnKnowledgeSources {
   citations: VendoKnowledgeCitation[];
   refused: boolean;
   unavailable: boolean;
-  /** Knowledge K15 — a knowledge call in this turn could not be verified
-      (the evidence check was attempted and gave no verdict). */
-  unverified: boolean;
 }
 
 /** Knowledge K1 (pattern: approvalByCall) — fold a turn's citations parts
@@ -218,13 +215,11 @@ export function sourcesFor(message: UIMessage): TurnKnowledgeSources {
   const seen = new Set<string>();
   let refused = false;
   let unavailable = false;
-  let unverified = false;
   for (const part of message.parts) {
     if (part.type !== "data-vendo-citations") continue;
     const data = partData(part) as Partial<VendoCitationsPart>;
     if (data.outcome === "unavailable") unavailable = true;
     if (data.outcome === "insufficient-evidence") refused = true;
-    if (data.unverified === true) unverified = true;
     if (data.outcome !== "answered" || !Array.isArray(data.citations)) continue;
     for (const citation of data.citations) {
       if (typeof citation?.docId !== "string" || typeof citation.title !== "string") continue;
@@ -236,7 +231,7 @@ export function sourcesFor(message: UIMessage): TurnKnowledgeSources {
       citations.push(citation);
     }
   }
-  return { citations, refused, unavailable, unverified };
+  return { citations, refused, unavailable };
 }
 
 export function toolName(part: Extract<UIMessage["parts"][number], { toolCallId: string }>): string {

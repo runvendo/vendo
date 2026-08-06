@@ -126,9 +126,6 @@ function knowledgeCitationsPart(toolCallId: string, output: unknown): VendoCitat
     toolCallId,
     citations,
     outcome,
-    // K15 — the evidence check could not run for this result; the thread says
-    // so rather than letting an unchecked answer look checked.
-    ...(record.unverified === true ? { unverified: true as const } : {}),
   });
   return parsed.success ? parsed.data : null;
 }

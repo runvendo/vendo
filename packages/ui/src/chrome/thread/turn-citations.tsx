@@ -56,7 +56,7 @@ function CitationChip({ citation }: { citation: VendoKnowledgeCitation }) {
     refusal, and the amber flag for an engine outage. All three render from
     the `data-vendo-citations` part's outcome — never from free text. */
 export function TurnCitations({ message }: { message: UIMessage }) {
-  const { citations, refused, unavailable, unverified } = sourcesFor(message);
+  const { citations, refused, unavailable } = sourcesFor(message);
   if (citations.length === 0 && !refused && !unavailable) return null;
   return (
     <>
@@ -78,17 +78,6 @@ export function TurnCitations({ message }: { message: UIMessage }) {
           <span>
             I couldn&apos;t check the docs just now — the knowledge base is temporarily
             unreachable, so this answer isn&apos;t verified against the documentation.
-          </span>
-        </div>
-      ) : null}
-      {unverified && !unavailable ? (
-        <div className="fl-know-unavail" role="status" data-vendo-knowledge-unverified="">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M12 3l10 18H2L12 3z" /><path d="M12 10v5" /><path d="M12 18.2v.1" />
-          </svg>
-          <span>
-            I couldn&apos;t check this answer against the documentation just now — the
-            evidence check didn&apos;t run, so treat these sources as unverified.
           </span>
         </div>
       ) : null}

@@ -22,22 +22,12 @@ export interface ModelsConfig {
    *  delete. */
   default?: string | LanguageModel;
   reviewer?: string | LanguageModel;
-  /** The knowledge check's cheap/fast model. Its own seat: pinning the model
-   *  that GRADES answers must never repoint the one that ANSWERS. */
-  verifier?: string | LanguageModel;
   fill?: string | LanguageModel;
   /** @deprecated superseded by `default` (still functional for one minor). */
   agent?: string | LanguageModel;
   /** @deprecated superseded by `fill` (still functional for one minor). */
   paint?: string | LanguageModel;
   judge?: string | LanguageModel;
-  /** K15 — the knowledge tool's evidence check (a cheap/fast model reading the
-      retrieved passages before the tool returns them). Its own slot beside
-      `judge`: pinning the model that GRADES answers must not silently repoint
-      the one that GATES them. Unset = the family fast pick on whatever rung
-      the host's credentials resolve to; `VENDO_KNOWLEDGE_VERIFY=off` turns the
-      check off entirely. */
-  knowledgeVerifier?: string | LanguageModel;
 }
 
 export interface ResolveModelsInput {
@@ -59,9 +49,6 @@ export interface ComposedModelSlots {
   /** The apps-block paint knob, post-precedence. Undefined = engine falls
    *  back to the agent model (today's explicit-model behavior). */
   paint: { model?: LanguageModel; disabled?: boolean } | undefined;
-  /** The knowledge check's cheap/fast model (contract amendment 2026-07-30 — its
-   *  own seat, never the agent's). Undefined = the family fast pick. */
-  verifier: { model: LanguageModel } | undefined;
   /** Build contract §4's `ResolvedModels` — every seat filled, which is what a
    *  `Turn` carries. Same resolution order as the slots above, stated once: an
    *  explicit seat, else `default`. Borrowing `default` is the contract's own
@@ -96,8 +83,6 @@ export function resolveModels(config: ResolveModelsInput, makeModel: MakeModel =
   validateSlot("agent", config.models?.agent);
   validateSlot("paint", config.models?.paint);
   validateSlot("judge", config.models?.judge);
-  validateSlot("verifier", config.models?.verifier);
-  validateSlot("knowledgeVerifier", config.models?.knowledgeVerifier);
 
   // Collapse both vocabularies onto seats once, here, so the precedence below
   // never has to know which spelling a host used.
@@ -157,18 +142,6 @@ export function resolveModels(config: ResolveModelsInput, makeModel: MakeModel =
         ...(disabled === undefined ? {} : { disabled }),
       };
 
-  // The verifier seat resolves independently of `agent` — that independence IS
-  // the amendment: a host setting only the knowledge check's model must not
-  // change which model answers users.
-  const verifierConfigured = seats.verifier;
-  const verifier = verifierConfigured === undefined
-    ? undefined
-    : {
-        model: typeof verifierConfigured === "string"
-          ? makeModel(verifierConfigured, { slot: "knowledgeVerifier" })
-          : verifierConfigured,
-      };
-
   // Build contract §4's seat record, resolved from the SAME values above so the
   // model a seat names can never disagree with the model the matching slot got.
   // A seat nobody set borrows `default`; that is the contract's fallback, not a
@@ -189,7 +162,6 @@ export function resolveModels(config: ResolveModelsInput, makeModel: MakeModel =
     // the default rides the ladder), so take the resolved value rather than
     // re-deriving it and risking two answers for one seat.
     fill: paintModel ?? agent.model,
-    verifier: verifier?.model ?? agent.model,
     // No `slot` for the reviewer: the ladder's slots are the ones with an env pin
     // and a Cloud family name, and `reviewer` has neither yet — so a reviewer
     // model named as a string rides `inferSlot`, exactly like any other name.
@@ -197,5 +169,5 @@ export function resolveModels(config: ResolveModelsInput, makeModel: MakeModel =
     judge: seat(seats.judge, { slot: "judge" }),
   };
 
-  return { agent, paint, verifier, seats: resolvedSeats };
+  return { agent, paint, seats: resolvedSeats };
 }

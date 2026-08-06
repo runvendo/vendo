@@ -1961,14 +1961,10 @@ const citationsThread: Thread = {
       role: "assistant",
       parts: [
         {
-          // K15 — the evidence check was attempted and gave no verdict, so the
-          // answer ships (fail OPEN) carrying the amber unverified line beside
-          // its sources.
           type: "data-vendo-citations",
           data: {
             toolCallId: "call_cit_4",
             outcome: "answered",
-            unverified: true,
             citations: [
               {
                 docId: "doc-exports",

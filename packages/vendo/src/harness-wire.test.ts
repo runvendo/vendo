@@ -255,7 +255,6 @@ describe("createVendo({ harness }) — a turn served through the composed runtim
     // ever undefined for a harness that reads one.
     expect(seats["judge"]).toBe(model);
     expect(seats["fill"]).toBe(model);
-    expect(seats["verifier"]).toBe(model);
   });
 
   it("boot-errors when a harness needs a sandbox and none is wired", () => {

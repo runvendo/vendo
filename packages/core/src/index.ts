@@ -109,10 +109,7 @@ export type { CommitResult, WorkspaceFs } from "./workspace.js";
 export { WORKSPACE_INLINE_MAX_BYTES, appRootPath } from "./workspace.js";
 export type { AppMount } from "./workspace.js";
 // `Seat` / `ResolvedModels` come from `./model-seats.js` through the star export
-// above. They were ALSO re-exported here from a second, lane-A copy in
-// `./models.ts` — four seats instead of five, non-generic, and typed against the
-// ai-SDK's `LanguageModel`, which put an `ai` import in core for one type. The
-// explicit re-export won over the star, so core's public `Seat` was silently
-// missing `verifier` and `Turn.models` could not describe the verifier seat.
-// Lane A's own file said "if lane D's version differs, lane D's wins"; it does,
-// so the copy is gone and there is one definition.
+// above. They were ALSO re-exported here from a second copy in `./models.ts`,
+// non-generic and typed against the ai-SDK's `LanguageModel` — which put an `ai`
+// import in core for one type — and the explicit re-export silently won over the
+// star. The copy is gone, so there is one definition.

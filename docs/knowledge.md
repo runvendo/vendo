@@ -75,63 +75,6 @@ real call rather than at a validate endpoint — the tool answers `unavailable`
 "nothing found"), and the server log carries the actual cause, once per
 distinct failure.
 
-## The verifier pass (Cloud engine)
-
-Retrieval scores are a weak signal for "do I actually know this?". Measured
-against our own docs, the Cloud engine scores questions it *can* answer and
-questions it *cannot* in the same range: at the best possible score bar, 47%
-of unanswerable questions still cleared it. No bar fixes that — it is a
-property of embedding similarity, which cannot tell "how to install in a
-framework" from "how to install in **your** framework".
-
-So there is an opt-in check on the Cloud engine. Turn it on with
-`VENDO_KNOWLEDGE_VERIFY=on` and, before the tool returns, a cheap model reads
-the passages the search actually returned and answers one question: can this
-question be answered from these alone? If not, the tool returns its ordinary
-`insufficient-evidence` outcome — carrying the gap the verifier named, so the
-agent can say *what* the docs do not cover — and the agent says it does not
-know. Same tool, same outcomes, same UI.
-
-The check is **not** gated on the retrieval score. An earlier version ran it
-only inside the score band where the bar was provably useless, and the live run
-showed the cost: four unanswerable questions per pass scored outside that band,
-were never checked, and were answered. A check gated on the number it exists to
-replace inherits that number's blind spots.
-
-Measured live against Agentset over the 94-question corpus: see
-[the table](eval/KNOWLEDGE.md#the-verifier-pass) for per-pass numbers, the
-worst case, added latency and per-search cost.
-
-Five properties are worth knowing:
-
-- **It is OFF by default, and `on` is one variable.** It ships off because the
-  live measurement says it does not deliver the thing it exists for: with the
-  check on, the corpus still answered a quarter to a half of its unanswerable
-  questions, while costing a model call per search and seconds of latency on a
-  call your user is waiting through. That is a trade to opt into with your eyes
-  open, not a default. Anything that is neither `on` nor `off` fails loudly at
-  startup rather than leaving you with a trust feature you think is running.
-- **Turning it on changes no threshold.** Your `weakScoreThreshold` is exactly
-  what you set it to; every search the check cannot read (no model, timeout,
-  unusable answer) is decided by that threshold as before. When there IS a
-  verdict the verdict decides, in both directions: it refuses evidence the
-  score liked, and answers evidence the score did not.
-- **It only applies to the Cloud engine.** Scores are engine-relative, so a
-  number calibrated on one engine means nothing on another. Local lexical, BYO
-  and self-hosted engines are untouched.
-- **It can never take knowledge away — and it says when it could not check.**
-  No model credential, a timeout past 5s, or an unusable response means *no
-  verdict*: the tool answers exactly as it would have without a verifier, and
-  flags the result `unverified`. The thread renders that as the amber "I
-  couldn't check this answer against the documentation" line beside the
-  sources, so a check that did not run never looks like one that passed.
-  Verification is capped per turn as well as per call, so a chat→deep
-  escalation cannot spend the cap twice.
-- **It has its own model slot.** `knowledgeVerifier` sits beside `judge`: pin
-  it with `VENDO_MODEL_KNOWLEDGE_VERIFIER` or `models.knowledgeVerifier`, and
-  the model that grades your answers stays independent of the one that gates
-  them. It defaults to your provider's cheap/fast model.
-
 ## Engines
 
 **Local lexical** — honest keyword grade: deterministic term-frequency

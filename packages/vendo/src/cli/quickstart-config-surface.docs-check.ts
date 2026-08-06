@@ -48,7 +48,7 @@ export interface CreateVendoConfig {
   model?: LanguageModel;
   /** @deprecated the model half is superseded by `models.fill`; `disabled` stays. */
   paint?: { model?: LanguageModel; disabled?: boolean };
-  models?: ModelsConfig;      // seats: default, reviewer, judge, fill, verifier
+  models?: ModelsConfig;      // seats: default, reviewer, judge, fill
   auth?: HostAuthPreset;      // one preset fills principal + actAs + oauth
   principal?: (req: Request) => Promise<Principal | null>; // escape hatch
   tools?: ExtractedTool[];    // `vendo init`/`vendo sync` declarations, in memory
