@@ -17,8 +17,8 @@ concurrency:
 # lint on ONE runner, ~30 min wall. It is now, all fanned out over the shared
 # turbo remote cache so the fan-out does not multiply the build:
 #   typecheck-lint    the non-test half
-#   test-shards       8 intra-package vitest shards for the big three
-#                     (vendo x3, store x3, ui x2 — 40 of the 55 serial minutes)
+#   test-shards       9 intra-package vitest shards for the big three
+#                     (vendo x4, store x3, ui x2 — 40 of the 55 serial minutes)
 #   test-rest         the other 15 packages in 2 turbo groups
 #   coverage-merge    merges the shards' blob reports and enforces the
 #                     per-package coverage floors (they cannot be enforced on a
@@ -73,9 +73,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: vendo-1, pkg: "@vendoai/vendo", dir: packages/vendo, shard: "1/3", pre: "build:playground" }
-          - { name: vendo-2, pkg: "@vendoai/vendo", dir: packages/vendo, shard: "2/3", pre: "build:playground" }
-          - { name: vendo-3, pkg: "@vendoai/vendo", dir: packages/vendo, shard: "3/3", pre: "build:playground" }
+          # 4 shards, not 3: vitest deals files by count, not duration, and at
+          # 3 the full-stack suites clustered on shard 2 (7m25s vs its
+          # siblings' ~4m45s — measured on the #849 proof run), making it tie
+          # integration as the whole run's critical path.
+          - { name: vendo-1, pkg: "@vendoai/vendo", dir: packages/vendo, shard: "1/4", pre: "build:playground" }
+          - { name: vendo-2, pkg: "@vendoai/vendo", dir: packages/vendo, shard: "2/4", pre: "build:playground" }
+          - { name: vendo-3, pkg: "@vendoai/vendo", dir: packages/vendo, shard: "3/4", pre: "build:playground" }
+          - { name: vendo-4, pkg: "@vendoai/vendo", dir: packages/vendo, shard: "4/4", pre: "build:playground" }
           - { name: store-1, pkg: "@vendoai/store", dir: packages/store, shard: "1/3", tsc: "true" }
           - { name: store-2, pkg: "@vendoai/store", dir: packages/store, shard: "2/3", tsc: "true" }
           - { name: store-3, pkg: "@vendoai/store", dir: packages/store, shard: "3/3", tsc: "true" }
