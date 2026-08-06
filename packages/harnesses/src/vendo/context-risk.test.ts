@@ -351,6 +351,31 @@ describe("one very large message is not a thread compaction gives up on", () => 
     expect(compactions, "no turn summarized anything at all").toBeGreaterThanOrEqual(3);
     // Bounded: the thread never ships MORE than the un-compacted first turn.
     expect(Math.max(...sizes)).toBeLessThanOrEqual((sizes[0] as number) + 5_000);
+
+    // READ THIS BEFORE TRUSTING THE ASSERTIONS ABOVE. The measured series is
+    // 308346, 795, 308592, 1041, 308838, 1287: it ALTERNATES, and the turns
+    // that did not compact still ship the whole paste. That is a SECOND defect,
+    // open and deliberately not fixed here, one layer up from this one.
+    //
+    // A turn that compacts is `reduced`, so `vendo.ts` reports no measurement
+    // and the next turn's trigger falls back to chars/4 — which is a 1.83x
+    // UNDER-estimate for dense text (142,890 real against 78,244 estimated),
+    // lands under the trigger, and ships the transcript whole. Then it measures
+    // it, and the turn after compacts again.
+    //
+    // The one-line fix — keep the slot's older measurement instead of erasing
+    // it — is UNSOUND and was reverted after the browser suite caught it:
+    // `reportedThrough` (loop.ts) attributes a carried figure POSITIONALLY, as
+    // covering everything but the trailing user run, which is only true of the
+    // immediately previous turn. Carried further, a tiny seed turn's 9,483 was
+    // credited with covering two 100,000-character statements, the trigger
+    // never fired, and `compaction-recall.spec.ts` shipped a 96,091-token
+    // recall turn. A real fix has to carry WHAT the figure covered, or carry a
+    // measured density instead of a count.
+    //
+    // The window this thread runs on is what makes the gap visible at all: the
+    // browser suite's 32k seat clears the trigger on chars/4 alone, so it never
+    // alternates. This fixture's 128k default is where the two ledgers part.
   });
 });
 
