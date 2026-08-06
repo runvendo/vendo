@@ -388,8 +388,13 @@ describe("connect dock + tray (ENG-225)", () => {
   });
 
   it("connects an available toolkit through the broker flow", async () => {
-    const opened: string[] = [];
-    vi.stubGlobal("open", (url: string) => { opened.push(url); return null; });
+    // The sign-in window is opened in two phases: blank inside the click (a
+    // popup is judged by call-stack provenance, so it cannot wait for the
+    // broker), then navigated to the real OAuth URL once initiate resolves. The
+    // stand-in is what a browser that ALLOWS the popup hands back.
+    const popup = { location: { replace: vi.fn() }, close: vi.fn() };
+    const open = vi.fn(() => popup);
+    vi.stubGlobal("open", open);
     render(
       <VendoProvider client={client} connectors={CONNECTORS}><VendoThread threadId="thr_1" /></VendoProvider>,
     );
@@ -398,9 +403,13 @@ describe("connect dock + tray (ENG-225)", () => {
     const tray = await screen.findByRole("dialog", { name: "Connect tools" });
 
     fireEvent.click(await within(tray).findByRole("button", { name: "Connect Slack" }));
-    // The hosted OAuth window opened, and the account polls to active.
-    await waitFor(() => expect(opened).toEqual(["https://connect.test/oauth/1"]));
+    // Phase one is blank and synchronous; phase two reaches the hosted OAuth
+    // URL, and the account then polls to active.
+    expect(open.mock.calls[0]?.[0]).toBe("about:blank");
+    await waitFor(() => expect(popup.location.replace).toHaveBeenCalledWith("https://connect.test/oauth/1"));
     await within(tray).findByRole("img", { name: "Slack connected" });
+    // Closed from the opener once the account is live — never left hanging.
+    expect(popup.close).toHaveBeenCalled();
     // The freshly connected row celebrates (one-shot bloom class).
     expect(tray.querySelector(".is-just-connected")).toBeTruthy();
   });
