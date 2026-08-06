@@ -22,7 +22,14 @@
  * eval next door (`compaction-eval.live.test.ts`). What is graded here is the
  * mechanism, which must hold for every seat including a compromised one.
  */
-import { jsonSchema, tool, type ModelMessage, type ToolSet, type UIMessage } from "ai";
+import {
+  convertToModelMessages,
+  jsonSchema,
+  tool,
+  type ModelMessage,
+  type ToolSet,
+  type UIMessage,
+} from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { describe, expect, it } from "vitest";
 import { findCutIndex, summaryMessage } from "./compaction.js";
@@ -84,69 +91,78 @@ const wire = (messages: readonly ModelMessage[]): string => JSON.stringify(messa
 const say = (role: "user" | "assistant", text: string): ModelMessage =>
   ({ role, content: [{ type: "text", text }] }) as ModelMessage;
 
-const calls = (id: string, chars = 10): ModelMessage =>
-  ({
-    role: "assistant",
-    content: [{ type: "tool-call", toolCallId: id, toolName: "maple_listTransactions", input: { q: "x".repeat(chars) } }],
-  }) as ModelMessage;
-
-const answers = (id: string, chars = 10): ModelMessage =>
-  ({
-    role: "tool",
-    content: [{
-      type: "tool-result",
-      toolCallId: id,
-      toolName: "maple_listTransactions",
-      output: { type: "json", value: { rows: "y".repeat(chars) } },
-    }],
-  }) as ModelMessage;
+/** A UIMessage, because the cut runs in UIMessage space: the boundary it produces
+ *  is what the thread PERSISTS, and only a UIMessage has an id to persist. */
+const ui = (id: string, role: "user" | "assistant", text: string): UIMessage =>
+  ({ id, role, parts: [{ type: "text", text }] }) as UIMessage;
 
 describe("the cut point", () => {
-  it("never lands on a tool result — the call that made it would be summarized away", () => {
-    // The token walk backwards stops right on the tool message; a cut there
-    // leaves its `tool-call` below the line and the provider rejects the prompt.
-    const messages = [
-      say("user", "older ask"),
-      say("assistant", "older reply"),
-      calls("c1", 400),
-      answers("c1", 400),
-      say("assistant", "and here is what I found"),
+  it("cannot orphan a tool call from its result, whatever the budget", async () => {
+    // cline needs a rule for this (walk back to a safe boundary) because it cuts
+    // where `ai` has already split one message into an assistant message and a
+    // `role: "tool"` message that must not be divided. Cutting in UIMessage space
+    // removes the hazard instead of guarding it: a call and its result are PARTS OF
+    // ONE UIMessage, so no boundary between two messages can separate them.
+    // Asserted on the CONVERTED projection, which is the form the provider judges.
+    const paired: UIMessage[] = [
+      ui("m1", "user", "older ask"),
+      {
+        id: "m2",
+        role: "assistant",
+        parts: [{
+          type: "tool-maple_listTransactions",
+          toolCallId: "c1",
+          state: "output-available",
+          input: { q: "x".repeat(400) },
+          output: { rows: "y".repeat(400) },
+        }],
+      } as UIMessage,
+      ui("m3", "user", "and here is what I found"),
     ];
     for (let preserve = 50; preserve <= 400; preserve += 25) {
-      const cut = findCutIndex(messages, preserve);
-      expect(messages[cut]?.role, `preserve=${preserve}`).not.toBe("tool");
+      const cut = findCutIndex(paired, preserve);
+      const projection = await convertToModelMessages(paired.slice(cut));
+      const calls = new Set<string>();
+      const results = new Set<string>();
+      for (const message of projection) {
+        if (typeof message.content === "string") continue;
+        for (const part of message.content) {
+          if (part.type === "tool-call") calls.add(part.toolCallId);
+          if (part.type === "tool-result") results.add(part.toolCallId);
+        }
+      }
+      expect([...calls], `preserve=${preserve}`).toEqual([...results]);
     }
   });
 
   it("never runs past the newest user turn's start — that turn survives verbatim", () => {
     const messages = [
-      say("user", "a".repeat(4_000)),
-      say("assistant", "b".repeat(4_000)),
-      say("user", "the ask I am in the middle of"),
-      say("assistant", "working on it"),
+      ui("m1", "user", "a".repeat(4_000)),
+      ui("m2", "assistant", "b".repeat(4_000)),
+      ui("m3", "user", "the ask I am in the middle of"),
+      ui("m4", "assistant", "working on it"),
     ];
     // A preserve budget so small the walk would happily cut at the last message.
     expect(findCutIndex(messages, 10)).toBeLessThanOrEqual(2);
   });
 
   it("returns 0 when the whole thread already fits inside the preserved tail", () => {
-    const messages = [say("user", "short"), say("assistant", "also short")];
-    expect(findCutIndex(messages, 20_000)).toBe(0);
+    expect(findCutIndex([ui("m1", "user", "short"), ui("m2", "assistant", "also short")], 20_000)).toBe(0);
   });
 
   it("cuts ABOVE a message too big for the tail, rather than giving up on the thread", () => {
     // The dead path. The walk used to ABSORB the message that tipped the budget,
     // so one message bigger than the whole tail — a pasted statement, a 300KB
-    // tool result — put the cut on index 0 and `compactContext` read that as
-    // "nothing to summarize". The single thread shape compaction exists for was
-    // the one shape it never touched, on every turn, forever. The tipping
-    // message belongs to the SUMMARY.
-    const giant = say("user", `PASTED ${"g".repeat(400_000)}`);
+    // tool result — put the cut on index 0 and the caller read that as "nothing to
+    // summarize". The single thread shape compaction exists for was the one shape
+    // it never touched, on every turn, forever. The tipping message belongs to the
+    // SUMMARY.
+    const giant = ui("m0", "user", `PASTED ${"g".repeat(400_000)}`);
     for (const tail of [2, 10]) {
       const messages = [
         giant,
         ...Array.from({ length: tail }, (_, index) =>
-          say(index % 2 === 0 ? "assistant" : "user", `small ${index}`)),
+          ui(`m${index + 1}`, index % 2 === 0 ? "assistant" : "user", `small ${index}`)),
       ];
       expect(findCutIndex(messages, 20_000), `tail=${tail}`).toBeGreaterThan(0);
     }
@@ -155,7 +171,11 @@ describe("the cut point", () => {
   it("keeps the newest message verbatim even when IT is the oversized one", () => {
     // The tail is never empty: a cut at the end would summarize the ask the turn
     // is answering and project a prompt with nothing to answer.
-    const messages = [say("user", "older ask"), say("assistant", "older reply"), say("user", "P".repeat(400_000))];
+    const messages = [
+      ui("m1", "user", "older ask"),
+      ui("m2", "assistant", "older reply"),
+      ui("m3", "user", "P".repeat(400_000)),
+    ];
     expect(findCutIndex(messages, 20_000)).toBe(messages.length - 1);
   });
 
@@ -163,7 +183,7 @@ describe("the cut point", () => {
     // Nothing to summarize and nothing to shed: one message larger than the
     // window is the one case no projection can fix, so the floor sends it and the
     // provider's own refusal is the honest answer.
-    expect(findCutIndex([say("user", "g".repeat(400_000))], 20_000)).toBe(0);
+    expect(findCutIndex([ui("m1", "user", "g".repeat(400_000))], 20_000)).toBe(0);
   });
 });
 
@@ -215,7 +235,11 @@ describe("the projection", () => {
       messages: thread(),
       system: "system",
       tools: {},
-      compaction: tripping(seat, { state: { version: 1, summary: "## Goal\nEARLIER SUMMARY TEXT" } }),
+      // With the boundary it absorbed — a summary without one describes history
+      // this thread cannot place, and the projection drops it.
+      compaction: tripping(seat, {
+        state: { version: 1, summary: "## Goal\nEARLIER SUMMARY TEXT", boundaryMessageId: "m1" },
+      }),
     });
     const prompt = JSON.stringify(seat.doGenerateCalls[0]?.prompt);
     expect(prompt).toContain("<previous-summary>");

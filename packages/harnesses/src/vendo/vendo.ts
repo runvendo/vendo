@@ -348,8 +348,8 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
       // so a fact from a branch the user abandoned would be copied forward for
       // as long as the thread lives, and answered from. Dropping it costs one
       // extra compaction.
-      const covered = stored?.coveredThroughMessageId;
-      const carried = covered !== undefined && !turn.messages.some((message) => message.id === covered)
+      const boundary = stored?.boundaryMessageId;
+      const carried = boundary !== undefined && !turn.messages.some((message) => message.id === boundary)
         ? undefined
         : stored;
       const compaction: TurnCompaction = {
@@ -489,10 +489,6 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
         return;
       }
 
-      // The provider's own count for the whole prompt of a step — cache reads
-      // included, which is what makes it usable as the next turn's ground truth
-      // instead of a second guess at the same tokens.
-      let lastPromptTokens: number | undefined;
       /** The turn's single retry, spent. */
       let retried = false;
       for (;;) {
@@ -505,11 +501,12 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
                 yield { type: "text", delta: part.text };
                 break;
               case "finish-step":
-                // Last step wins: it sent the biggest prompt of the turn, and it
-                // is the one the next turn grows from.
-                lastPromptTokens = part.usage.inputTokens ?? lastPromptTokens;
-                // …and which model actually served it, which a lazy seat cannot
-                // say before the call and the provider says on every one.
+                // Which model actually served it, which a lazy seat cannot say
+                // before the call and the provider says on every one. The step's
+                // reported prompt COUNT is deliberately not read here: it is the
+                // usage event's and the audit ledger's, and it drives no decision
+                // (see `compaction.ts`'s header for the four bugs it caused when
+                // it drove the trigger).
                 rememberResolvedModelId(model, part.response.modelId);
                 break;
               case "error":
@@ -584,35 +581,24 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
 
       // §1.3's slot, which the runtime persists at turn end (`runtime.ts`
       // `onFinish` → `saveHarnessState`). Whatever the slot already carried
-      // survives what this turn did not touch, so a token count does not erase a
-      // summary or the other way round.
-      const remembered = loop.compacted?.summary ?? carried?.summary;
-      const newest = turn.messages.at(-1)?.id;
-      // The provider's count is the trigger's ground truth NEXT turn, and it is
-      // only ground truth while it still describes this thread's history. A turn
-      // whose prompt was REDUCED — summarized, shed, or sliced by the host's own
-      // window — measured something smaller than the thread, and the transcript
-      // is never truncated, so the next turn projects the whole thread again and
-      // that figure describes a prompt it will not send. Carried forward it tells
-      // the trigger the thread is small for as long as the thread lives: the
-      // trigger never fires again, every turn ships the entire history, and the
-      // provider's 400 is the only rail left. So a reduced turn reports no
-      // measurement at all, and drops the slot's older one with it — chars/4 over
-      // the full history is the honest over-estimate, and over-estimating costs
-      // one compaction. Which of the three reduced it is the LOOP's to know: it
-      // builds the projection, and naming the producers here instead is how this
-      // covered the summarizer and missed the other two.
-      const measured = loop.reduced ? undefined : lastPromptTokens;
-      if (measured !== undefined || remembered !== undefined) {
-        turn.state.set(writeCompactionState({
-          version: 1,
-          ...(remembered === undefined ? {} : { summary: remembered }),
-          // Where the thread stood when this was written, so the next turn can
-          // tell that it still stands there (see the read above).
-          ...(newest === undefined ? {} : { coveredThroughMessageId: newest }),
-          ...(measured === undefined ? {} : { lastPromptTokens: measured }),
-        }));
-      }
+      // survives what this turn did not touch.
+      //
+      // What the slot holds is a SUMMARY and the boundary it absorbed, together or
+      // not at all — half of that pair is not usable and the projection discards
+      // it. No measurement is carried. The provider's reported prompt count used to
+      // live here, and it was the wrong kind of fact to persist: it describes what
+      // a turn SENT while the next turn's trigger asks about what the thread
+      // STORES, and after a compaction those are different sizes. Every turn
+      // measures its own candidate prompt fresh instead (`compaction.ts`).
+      const state = loop.compacted ?? carried;
+      if (state !== undefined) turn.state.set(writeCompactionState(state));
+      // …and a state this turn REFUSED is destroyed rather than left in the row.
+      // Declining to overwrite it is not the same thing: the boundary it names
+      // could be re-created by a later edit, and the summary would come back to
+      // life describing a branch nobody is on. This used to happen by accident —
+      // the turn always wrote its measurement, which overwrote the summary with
+      // it — so deleting the measurement is what made the clear load-bearing.
+      else if (stored !== undefined) turn.state.clear();
 
       const stepLimit = await loop.stepLimitPart();
       if (stepLimit !== undefined) {

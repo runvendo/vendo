@@ -8,35 +8,58 @@
  * trigger is the line it must not cross; and the summarizer is what happens when
  * it does — one pass, at the start of a turn, invisible to the user.
  *
- * The estimate is a HYBRID, and that is the whole idea. Every turn ends with the
- * provider telling us exactly what the prompt cost (`finish-step`'s
- * `usage.inputTokens`, cache reads included), so re-guessing that same prefix at
- * four characters per token throws away a measurement already paid for. The guess
- * is for the DELTA only — the messages the provider has not seen yet. Ported from
- * pi-mono (`packages/agent/src/harness/compaction/compaction.ts`, MIT, Mario
- * Zechner), whose estimator carries the reported count forward for exactly this
- * reason.
+ * The estimate measures ONE thing, THIS turn: the prompt that is about to be
+ * sent — system prompt, tools block, projected messages — in characters, over a
+ * single pessimistic characters-per-token ratio. Nothing is carried between
+ * turns, and that is the whole of a bug class this shipped four times.
+ *
+ * The engine used to carry the provider's reported count forward (pi-mono's
+ * estimator does, `packages/agent/src/harness/compaction/compaction.ts`, MIT,
+ * Mario Zechner) and guess only the delta on top of it. The count describes what
+ * the last turn SENT; the trigger decides about what the thread STORES; and after
+ * a compaction those are different quantities — the prompt was a summary and a
+ * tail, and the transcript was never truncated. One variable held both, so the
+ * trigger read a compacted turn's small count as a fact about a large thread. It
+ * went blind for the life of the thread when the figure was carried, and it
+ * ALTERNATED — compact, ship the whole paste, compact, ship it again — when the
+ * figure was dropped and the guess underneath was too optimistic. Attributing the
+ * count to the messages it covered is the same confusion wearing bookkeeping: a
+ * seed turn's 9,483 was credited with covering two 100,000-character statements.
+ * A measurement taken fresh, of the thing in front of it, cannot be wrong about
+ * which thing it measured.
  *
  * No tokenizer: a per-provider vocabulary is megabytes, is wrong for every model
- * it was not built for, and would have to load before the first turn. Four
- * characters per token is within a few percent of every BPE tokenizer on English
- * prose and JSON, and the trigger sits at 81% precisely so an estimate can be a
- * few percent wrong without costing anyone a turn.
+ * it was not built for, and would have to load before the first turn. So the
+ * ratio is pessimistic instead of accurate ({@link PESSIMISTIC_CHARS_PER_TOKEN}),
+ * and the trigger sits at 81% so the margin is not the only thing standing
+ * between a thread and a 400.
  */
-import { asSchema, generateText, type LanguageModel, type ModelMessage, type ToolSet } from "ai";
+import {
+  asSchema,
+  generateText,
+  type LanguageModel,
+  type ModelMessage,
+  type ToolSet,
+  type UIMessage,
+} from "ai";
 
 export interface CompactionState {
   version: 1;
   summary?: string;
-  /** `id` of the newest transcript message this state covers: everything older
-   *  is either inside {@link summary} or was projected verbatim beneath it. Ids,
-   *  not indexes, because the store's rows are id-keyed. Not found in
-   *  `turn.messages` = the thread has been rewound past what this state
-   *  describes = the whole state is DISCARDED (one extra compaction), never
-   *  carried into a branch that no longer holds the history it was built from. */
-  coveredThroughMessageId?: string;
-  /** Provider-reported prompt tokens on the LAST step of the turn that wrote this. */
-  lastPromptTokens?: number;
+  /** `id` of the newest UIMessage {@link summary} ABSORBED. Everything after it is
+   *  the verbatim tail, so the next turn rebuilds the same projection — summary,
+   *  then the messages the summary never read — instead of re-summarizing the
+   *  whole transcript. That is what makes compaction converge: without it a thread
+   *  whose bulk is one huge paste pays a summarizer pass on EVERY turn, reading
+   *  the whole paste each time, which costs about what simply sending it would.
+   *
+   *  Ids, not indexes, because the store's rows are id-keyed and an index means
+   *  nothing after an edit. Not found in `turn.messages` = the thread has been
+   *  rewound or edited past what this state describes = the whole state is
+   *  DISCARDED and the turn measures the full transcript, which errs toward
+   *  compacting. Never carried into a branch that no longer holds the history it
+   *  was built from. */
+  boundaryMessageId?: string;
 }
 
 /**
@@ -63,13 +86,17 @@ export function readCompactionState(slot: string | undefined): CompactionState |
   // migrate from and nothing to guess at.
   if (raw["version"] !== 1) return undefined;
   const summary = raw["summary"];
-  const covered = raw["coveredThroughMessageId"];
-  const lastPromptTokens = raw["lastPromptTokens"];
+  const boundary = raw["boundaryMessageId"];
+  // Fields this build no longer knows about — `lastPromptTokens` and
+  // `coveredThroughMessageId`, written by every build before this one — are simply
+  // not read. A row missing `boundaryMessageId` therefore reads as a summary with
+  // no boundary, which the projection treats as unresolvable: the summary is
+  // dropped and the turn measures the full transcript. One extra compaction per
+  // pre-existing thread, in the safe direction.
   return {
     version: 1,
     ...(typeof summary === "string" ? { summary } : {}),
-    ...(typeof covered === "string" ? { coveredThroughMessageId: covered } : {}),
-    ...(typeof lastPromptTokens === "number" ? { lastPromptTokens } : {}),
+    ...(typeof boundary === "string" ? { boundaryMessageId: boundary } : {}),
   };
 }
 
@@ -90,6 +117,27 @@ export function writeCompactionState(state: CompactionState): string {
 export const TRIGGER_RATIO = 0.81;
 
 /**
+ * Characters per token, chosen to OVER-count rather than to be right.
+ *
+ * The engine assumed four for years, which is within a few percent on English
+ * prose and JSON and is where the whole dead path started: the one shape
+ * compaction exists for is a pasted statement or a 300KB tool result, and dense
+ * text is nothing like prose. Measured on this repo's own walker thread —
+ * 308,000 characters of statement text that the provider billed at 142,890
+ * tokens — the real figure is 2.156 characters per token, 1.83x denser than the
+ * assumption. Two is the round number at least as conservative as the worst case
+ * anything here has measured: it prices that same text at 154,000, above what it
+ * actually cost, and it prices ordinary prose at roughly twice its cost.
+ *
+ * That second half is the price of the deletion, stated plainly: a prose thread
+ * compacts at around 40% of the real window instead of 81%, so it summarizes
+ * earlier and keeps less verbatim history than it strictly has to. That is the
+ * cheap direction. The expensive direction is a prompt the provider rejects, and
+ * an over-count cannot produce one.
+ */
+export const PESSIMISTIC_CHARS_PER_TOKEN = 2;
+
+/**
  * Ported from cline `sdk/packages/core/src/extensions/context/compaction-shared.ts:19`
  * (Apache-2.0): the verbatim tail a compaction always preserves.
  *
@@ -107,13 +155,12 @@ export interface CompactionConfig {
   preserveRecentTokens?: number;
 }
 
-/** Prompt tokens per character — see the file header for why this is an estimate
- *  and not a tokenizer. The shed keeps its own copy (`loop.ts`'s
- *  `CHARS_PER_TOKEN`) because it measures a different thing: the messages it may
- *  drop, never the system prompt or the tools block it cannot. */
-const CHARS_PER_TOKEN = 4;
-
-const tokensFor = (chars: number): number => Math.ceil(chars / CHARS_PER_TOKEN);
+/** THE conversion, and the only one. Exported because `loop.ts`'s shed floor
+ *  charges its candidates with it too: two rails over one prompt, denominated
+ *  differently, is how the trigger came to say "over budget" and the floor "fits"
+ *  about the same 308,000 characters and neither of them acted. */
+export const tokensFor = (chars: number): number =>
+  Math.ceil(chars / PESSIMISTIC_CHARS_PER_TOKEN);
 
 const messageChars = (messages: readonly ModelMessage[]): number =>
   messages.reduce((chars, message) => chars + JSON.stringify(message).length, 0);
@@ -137,22 +184,19 @@ function toolsBlockChars(tools: ToolSet): number {
   }, 0);
 }
 
+/**
+ * What THIS turn's prompt costs: the system prompt, the messages it projects and
+ * the tools block it carries, all of it measured now.
+ *
+ * There is no history in this function and there is no state behind it. That is
+ * deliberate — see the file header.
+ */
 export function estimatePromptTokens(input: {
   system: string;
   messages: readonly ModelMessage[];
   tools: ToolSet;
-  lastPromptTokens?: number;
-  /** How many of `messages` that number already covers. */
-  reportedThrough?: number;
 }): number {
-  const { system, messages, tools, lastPromptTokens, reportedThrough } = input;
-  if (lastPromptTokens === undefined) {
-    return tokensFor(system.length + messageChars(messages) + toolsBlockChars(tools));
-  }
-  // The provider's number already covers the system prompt and the tools block
-  // it was sent with, so only the messages it has not seen are added to it.
-  const covered = Math.min(Math.max(reportedThrough ?? 0, 0), messages.length);
-  return lastPromptTokens + tokensFor(messageChars(messages.slice(covered)));
+  return tokensFor(input.system.length + messageChars(input.messages) + toolsBlockChars(input.tools));
 }
 
 /** The estimate at which a turn must act. */
@@ -165,39 +209,36 @@ export function shouldCompact(promptTokens: number, config: CompactionConfig): b
 }
 
 /**
- * A cut boundary is SAFE when starting the preserved tail there cannot orphan
- * half of a tool-call/tool-result pair.
- *
- * Ported from cline `sdk/packages/core/src/extensions/context/compaction-shared.ts:312-324`
- * (Apache-2.0), whose comment states the asymmetry exactly: an assistant message
- * keeps its tool results in the message that FOLLOWS it, so both halves land on
- * the same side of a cut made at the assistant. A `tool` message is never safe —
- * its matching `tool-call` sits in the assistant message above and would be
- * summarized away, leaving a result the provider rejects. (cline's transcript
- * carries results on user messages; in `ai`'s vocabulary they are their own
- * `role: "tool"` message, which is the only translation here.)
- */
-function isSafeCutBoundary(message: ModelMessage): boolean {
-  return message.role === "assistant" || message.role === "user";
-}
-
-/**
  * Where the verbatim tail starts: everything below this index becomes summary,
  * everything from it survives word for word.
  *
- * Ported from cline `compaction-shared.ts:326-359` (Apache-2.0). Three rules,
- * applied in order, and each of them is a bug somebody already shipped:
+ * Ported from cline `compaction-shared.ts:326-359` (Apache-2.0). Two rules,
+ * applied in order, and each is a bug somebody already shipped:
  *  1. walk back from the newest message taking every one that still FITS inside
  *     `preserveRecentTokens` — the tail is a token budget, not a message count,
  *     because one tool result can outweigh forty exchanges;
  *  2. never cut past the newest user turn's start, so the ask the user is in the
- *     middle of survives verbatim however small the budget is;
- *  3. walk back to a safe boundary, so no tool pair is split.
+ *     middle of survives verbatim however small the budget is.
+ *
+ * cline has a third — walk back to a boundary that cannot orphan half of a
+ * tool-call/tool-result pair — and this cuts in UIMessage space precisely so that
+ * rule has nothing left to do. A tool call and its result are PARTS OF ONE
+ * UIMessage here, so no boundary between two of them can separate them; the same
+ * argument the host's `historyWindow` slice already runs on. Cutting in
+ * ModelMessage space needed the rule because `ai` splits one UIMessage into an
+ * assistant message and a `role: "tool"` message that must not be divided.
+ *
+ * The coordinate system is load-bearing for a second reason: the cut is what the
+ * thread PERSISTS ({@link CompactionState.boundaryMessageId}), so it has to be
+ * expressible as a stable id. UIMessages have ids and the store's rows are
+ * id-keyed; converted ModelMessages have neither, which is why a boundary derived
+ * from them could not be re-resolved on the next turn — and without that the
+ * projection cannot be rebuilt and every turn pays a summarizer pass.
  *
  * Rule 1 stops BEFORE the message that tips the budget, and that word is the
  * whole of a defect this shipped with. The walk used to absorb the tipping
  * message, so one message bigger than the entire tail — a pasted statement, a
- * 300KB tool result — put the cut on index 0 and `compactContext` read that as
+ * 300KB tool result — put the cut on index 0 and the caller read that as
  * "nothing to summarize". On a thread whose bulk is one message, which is the
  * single shape compaction exists for, the trigger then fired every turn and the
  * projection never changed. An oversized message belongs to the SUMMARY.
@@ -210,7 +251,7 @@ function isSafeCutBoundary(message: ModelMessage): boolean {
  * provider's own refusal be the honest answer.
  */
 export function findCutIndex(
-  messages: readonly ModelMessage[],
+  messages: readonly UIMessage[],
   preserveRecentTokens: number,
 ): number {
   let total = 0;
@@ -228,9 +269,7 @@ export function findCutIndex(
       break;
     }
   }
-  let cut = lastUserIndex > 0 ? Math.min(candidate, lastUserIndex) : candidate;
-  while (cut > 0 && !isSafeCutBoundary(messages[cut] as ModelMessage)) cut -= 1;
-  return cut;
+  return lastUserIndex > 0 ? Math.min(candidate, lastUserIndex) : candidate;
 }
 
 /**
@@ -402,6 +441,9 @@ function serializeMessage(message: ModelMessage): string {
 }
 
 export interface CompactionRequest {
+  /** The BAND to absorb — already cut, because the cut is the caller's: it decides
+   *  the boundary in UIMessage space so the thread can persist it, and this is
+   *  handed the converted result. */
   messages: readonly ModelMessage[];
   /** The summary this thread already carries — fed back so ONE pass UPDATES it
    *  rather than re-reading history it no longer holds (pi `compaction.ts:545`). */
@@ -414,9 +456,6 @@ export interface CompactionRequest {
 
 export interface CompactionResult {
   summary: string;
-  /** Index into `request.messages`: everything below it is now summary. Zero
-   *  means there was nothing to summarize and no call was made. */
-  cutIndex: number;
   usage: { inputTokens: number; outputTokens: number };
 }
 
@@ -436,15 +475,9 @@ export interface CompactionResult {
  * is a transcript to read, not a conversation it is party to.
  */
 export async function compactContext(request: CompactionRequest): Promise<CompactionResult> {
-  const preserve = request.config.preserveRecentTokens ?? PRESERVE_RECENT_TOKENS;
-  const cutIndex = findCutIndex(request.messages, preserve);
-  // Nothing above the tail: summarizing would spend a call and project a LONGER
-  // prompt than the one it was asked to shrink.
-  if (cutIndex === 0) return { summary: request.summary ?? "", cutIndex: 0, usage: { inputTokens: 0, outputTokens: 0 } };
-
   const conversation = fenced(
     "conversation",
-    request.messages.slice(0, cutIndex).map(serializeMessage).join("\n\n"),
+    request.messages.map(serializeMessage).join("\n\n"),
   );
   const previous = request.summary === undefined || request.summary === ""
     ? ""
@@ -466,7 +499,6 @@ export async function compactContext(request: CompactionRequest): Promise<Compac
   });
   return {
     summary: result.text.trim(),
-    cutIndex,
     usage: {
       inputTokens: result.usage.inputTokens ?? 0,
       outputTokens: result.usage.outputTokens ?? 0,

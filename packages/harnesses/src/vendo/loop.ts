@@ -36,8 +36,11 @@ import {
 import {
   compactContext,
   estimatePromptTokens,
+  findCutIndex,
+  PRESERVE_RECENT_TOKENS,
   shouldCompact,
   summaryMessage,
+  tokensFor,
   triggerTokens,
   type CompactionConfig,
   type CompactionState,
@@ -136,27 +139,13 @@ export function providerHistory(messages: UIMessage[]): UIMessage[] {
   }));
 }
 
-/**
- * Prompt tokens per character. An ESTIMATE, deliberately: there is no tokenizer
- * in this repo and adding one buys accuracy the budget does not need — a
- * per-provider vocabulary is megabytes, is wrong for every model it was not
- * built for, and would have to load before the first turn. Four characters per
- * token is within a few percent of every BPE tokenizer on English prose and
- * JSON, and both directions of error are cheap: under-shedding is caught by the
- * provider's own context limit, over-shedding costs one extra old message.
- */
-const CHARS_PER_TOKEN = 4;
-
-/** The estimate, over the wire form the provider is actually billed for. */
+/** The messages' own share of a prompt, in the ONE conversion
+ *  ({@link tokensFor}) every rail here is denominated in. This is what the shed
+ *  can reach; the system prompt and the tools block are in the figure it is
+ *  charged against and are not sheddable. */
 function estimateTokens(messages: readonly ModelMessage[]): number {
-  return Math.ceil(JSON.stringify(messages).length / CHARS_PER_TOKEN);
+  return tokensFor(JSON.stringify(messages).length);
 }
-
-/** The chars/4 guess at a WHOLE prompt: the system message, which is part of the
- *  same window and is not sheddable, plus the history. What the host's
- *  `contextTokenBudget` is denominated in. */
-const estimatedPromptTokens = (system: string, messages: readonly ModelMessage[]): number =>
-  estimateTokens([{ role: "system", content: system }]) + estimateTokens(messages);
 
 /**
  * Shed a turn's history to a token budget, CHEAPEST LOSS FIRST:
@@ -172,20 +161,16 @@ const estimatedPromptTokens = (system: string, messages: readonly ModelMessage[]
  * sheds. The ask always survives: a turn with no user message is not a cheaper
  * turn, it is a broken one.
  *
- * `promptTokens` is what the WHOLE prompt costs IN THE BUDGET'S OWN UNITS, and
- * it is the caller's to supply because only the caller knows which ledger its
- * budget is written in. This used to be re-derived here at chars/4 whoever was
- * asking, and the compaction floor's budget is not written in chars/4: it trips
- * on the provider's reported count. 308,000 characters of dense statement text
- * bill 142,890 real tokens and estimate 78,244 — 1.83x apart — so the trigger
- * said "over the budget" and this said "fits" about the same prompt, and neither
- * rail did anything at all. Passing the number in is what makes them one rail:
- * `fits(messages)` is now exactly the negation of the trigger that called.
- *
- * A candidate is charged at `promptTokens` minus a chars/4 CREDIT for the text
- * dropped. The credit under-counts whenever the dropped text is denser than
- * chars/4, so the shed errs toward dropping one message too many — the cheap
- * direction, and the only one that cannot re-open the disagreement.
+ * `promptTokens` is what the WHOLE prompt costs, and it is the caller's to
+ * supply — it is the same figure the caller's own rail decided on, so
+ * `fits(messages)` is exactly the negation of the trigger that called and the two
+ * cannot disagree about the prompt they are both looking at. This used to be
+ * re-derived here, in a second conversion, while the trigger tripped on the
+ * provider's reported count: 308,000 characters of dense statement text bill
+ * 142,890 real tokens and used to estimate 78,244, so the trigger said "over the
+ * budget" and this said "fits" about the same prompt and neither rail did
+ * anything. There is one conversion now ({@link tokensFor}) and one measurement
+ * per turn, which is why the credit below is in the same units as the charge.
  *
  * The tools block rides inside whatever figure the caller passed, and it is not
  * sheddable, so it raises where the shed STARTS and never what the shed can
@@ -303,37 +288,52 @@ export interface TurnPromptInput {
 export interface TurnPrompt {
   messages: ModelMessage[];
   /** Carried out as DATA, because the loop does not know where the caller's
-   *  state slot is. Written by the summarizer. */
+   *  state slot is. Written by the summarizer, and carrying the boundary the next
+   *  turn rebuilds this same projection from. */
   compacted?: CompactionState;
-  /** This projection left out history the thread still holds — the host's window
-   *  slice, the shed, or the summarizer. Three producers and one consumer: the
-   *  provider's count for a REDUCED prompt is not a fact about the thread, and a
-   *  caller that stores it as one blinds its own trigger for the life of the
-   *  thread (see `vendo.ts`, where the slot is written). */
-  reduced: boolean;
 }
 
 /**
- * How much of a projection the provider's own count already covers.
+ * Which of `history` the thread's stored summary has ALREADY absorbed.
  *
- * `lastPromptTokens` was measured on the LAST step of the previous turn, whose
- * prompt ended with that turn's own assistant output and tool results. Everything
- * up to the trailing run of user messages is therefore inside that number, and
- * only this turn's fresh ask is not. Both directions of error are cheap and
- * self-correcting: a previous turn that was itself windowed or shed reports a
- * smaller number than its history really costs, which buys one late compaction —
- * and the next turn's own report replaces the figure either way.
+ * Three outcomes, and the middle one is the reason this is a function:
+ *  - the boundary is IN this window: the summary covers everything up to it, so
+ *    the tail is what follows and the summary stands in for the rest;
+ *  - the boundary is older than the window but still in the thread: the host's
+ *    slice already dropped the covered band, so the whole window is tail and the
+ *    summary still stands in front of it. It is not a duplicate — it accounts for
+ *    messages this prompt does not carry;
+ *  - the boundary is nowhere in the thread (rewound, edited, or a row written by
+ *    a build that had no boundary at all): the summary describes history that no
+ *    longer exists, so it is DISCARDED and the turn measures the whole transcript.
+ *    That errs toward compacting, which is the direction that cannot ship a
+ *    prompt the provider rejects.
  */
-function reportedThrough(messages: readonly ModelMessage[]): number {
-  let index = messages.length;
-  while (index > 0 && messages[index - 1]?.role === "user") index -= 1;
-  return index;
+function resolveBoundary(
+  state: CompactionState | undefined,
+  history: readonly UIMessage[],
+  thread: readonly UIMessage[],
+): { summary?: string; tail: readonly UIMessage[] } {
+  const summary = state?.summary;
+  const boundary = state?.boundaryMessageId;
+  if (summary === undefined || summary === "" || boundary === undefined) return { tail: history };
+  const index = history.findIndex((message) => message.id === boundary);
+  if (index !== -1) return { summary, tail: history.slice(index + 1) };
+  if (thread.some((message) => message.id === boundary)) return { summary, tail: history };
+  return { tail: history };
 }
 
 /**
- * The provider messages for one turn: the system prompt, the optionally windowed
- * and budgeted history, the summary standing in for whatever no longer fits, and
- * the cache breakpoints that keep a growing thread from re-billing.
+ * The provider messages for one turn: the system prompt, the summary standing in
+ * for the band it absorbed, the verbatim tail that follows it, and the cache
+ * breakpoints that keep a growing thread from re-billing.
+ *
+ * The ORDER is the mechanism. The candidate prompt is REBUILT first — summary
+ * plus the messages the summary never read — and only then measured. Measuring the
+ * stored transcript instead is what made a thread whose bulk is one huge paste pay
+ * a summarizer pass on every single turn: that number is permanently over the
+ * trigger, so the trigger fired forever and the summarizer re-read the whole paste
+ * each time, for about what simply sending it would have cost.
  */
 export async function turnModelMessages(input: TurnPromptInput): Promise<TurnPrompt> {
   const { messages, system, historyWindow, tokenBudget, compaction, resume } = input;
@@ -342,89 +342,74 @@ export async function turnModelMessages(input: TurnPromptInput): Promise<TurnPro
   const history = historyWindow !== undefined && messages.length > historyWindow
     ? messages.slice(-historyWindow)
     : messages;
-  // Tracked from here down because three separate things below leave history
-  // out, and the one caller that has to know cannot tell from the result: it
-  // sees a prompt, not the thread it came from. See {@link TurnPrompt.reduced}.
-  let reduced = history !== messages;
-  let converted = (await convertToModelMessages(providerHistory(history)))
-    .filter((message) => message.content.length > 0);
+  // What the thread already paid to have summarized, and what it did not.
+  const resolved = resolveBoundary(compaction?.state, history, messages);
+  let summary = resolved.summary;
+  let tail = resolved.tail;
+  const convert = async (band: readonly UIMessage[]): Promise<ModelMessage[]> =>
+    (await convertToModelMessages(providerHistory([...band]))).filter((message) => message.content.length > 0);
+  let converted = await convert(tail);
+  /** The candidate this turn would send: the summary is part of the prompt, so it
+   *  is part of what the prompt costs. */
+  const projected = (): ModelMessage[] =>
+    summary === undefined ? converted : [summaryMessage(summary), ...converted];
+  // THE measurement, taken fresh wherever a rail needs it and never carried: the
+  // prompt about to be sent — system, messages AND the tools block, the part that
+  // never shrinks — in the one conversion every rail here shares.
+  const promptTokens = (): number =>
+    estimatePromptTokens({ system, messages: projected(), tools: input.tools ?? {} });
   // Budgeting runs on the CONVERTED form because that is the form the provider
   // bills, and it runs before the breakpoints below because shedding changes
   // which message is the stable prefix's last one.
-  if (tokenBudget !== undefined) {
-    const shed = shedToBudget(converted, tokenBudget, estimatedPromptTokens(system, converted));
-    // MEASURED, not assumed: `shedToBudget` returns a new array whether or not
-    // it found anything to drop — a thread of one message cannot shed, and the
-    // whole point of the flag is to tell that apart from a thread that did.
-    reduced ||= estimateTokens(shed) < estimateTokens(converted);
-    converted = shed;
-  }
-  // The window the model actually has, measured against the prompt this turn is
-  // actually sending — system, messages AND the tools block, which is the part
-  // no rail here has ever counted and the part that never shrinks. The host's
-  // own `historyWindow` slice is already applied above and is not negotiable
-  // (Q2b): what the host cut is gone, and this decides about what is left.
+  if (tokenBudget !== undefined) converted = shedToBudget(converted, tokenBudget, promptTokens());
+  // The window the model actually has, against the prompt this turn is actually
+  // sending. The host's own `historyWindow` slice is already applied above and is
+  // not negotiable (Q2b): what the host cut is gone, and this decides about what
+  // is left.
   let compacted: CompactionState | undefined;
   if (compaction !== undefined) {
-    const lastPromptTokens = compaction.state?.lastPromptTokens;
-    const promptTokens = estimatePromptTokens({
-      system,
-      messages: converted,
-      tools: input.tools ?? {},
-      ...(lastPromptTokens === undefined
-        ? {}
-        : { lastPromptTokens, reportedThrough: reportedThrough(converted) }),
-    });
+    const tripped = promptTokens();
     // `force` is the overflow retry's re-entry: the provider has already said no,
     // so the estimate has nothing left to decide.
-    if (compaction.force === true || shouldCompact(promptTokens, compaction)) {
+    if (compaction.force === true || shouldCompact(tripped, compaction)) {
+      // The cut, in UIMessage space, so the boundary it produces is an id the
+      // thread can store and the next turn can re-resolve.
+      const cut = findCutIndex(tail, compaction.preserveRecentTokens ?? PRESERVE_RECENT_TOKENS);
       // ONE pass, on the thread's own seat, at the start of the turn. Its own
       // failure is not the turn's: a summarizer that 500s, times out or refuses
       // leaves the shed underneath, which is the entire reason the shed stayed.
-      const result = await compactContext({
-        messages: converted,
+      // Nothing above the tail (`cut === 0`) means summarizing would spend a call
+      // and project a LONGER prompt than the one it was asked to shrink.
+      const result = cut === 0 ? undefined : await compactContext({
+        messages: await convert(tail.slice(0, cut)),
         model: compaction.model,
         config: compaction,
-        ...(compaction.state?.summary === undefined ? {} : { summary: compaction.state.summary }),
+        ...(summary === undefined ? {} : { summary }),
         ...(input.signal === undefined ? {} : { signal: input.signal }),
       }).catch(() => undefined);
-      if (result === undefined || result.cutIndex === 0 || result.summary === "") {
+      if (result === undefined || result.summary === "") {
         // The floor. Drops reasoning, then tool payloads, then the oldest
         // messages, with no summary and no notice to the model. It is handed the
-        // SAME count the trigger just tripped on, so the two cannot disagree
-        // about the prompt they are both looking at — and the LARGER of that and
-        // the chars/4 guess, because the floor only ever runs after something
-        // already said this prompt is too big, and `force` arrives from a
-        // provider that refused it while the carried measurement was still
-        // small. A trip the tools block alone caused now sheds the history and
-        // then stops, still over budget — the old floor charged the messages
-        // against the WHOLE window and so quietly shed nothing at all in that
-        // case, which is the same blindness one layer down.
-        const shed = shedToBudget(
-          converted,
-          triggerTokens(compaction),
-          Math.max(promptTokens, estimatedPromptTokens(system, converted)),
-        );
-        reduced ||= estimateTokens(shed) < estimateTokens(converted);
-        converted = shed;
+        // SAME figure the trigger just tripped on, so the two cannot disagree
+        // about the prompt they are both looking at. A trip the tools block alone
+        // caused sheds the history and then stops, still over budget — the old
+        // floor charged the messages against the WHOLE window and so quietly shed
+        // nothing at all in that case, which is the same blindness one layer down.
+        converted = shedToBudget(converted, triggerTokens(compaction), tripped);
       } else {
-        converted = [summaryMessage(result.summary), ...converted.slice(result.cutIndex)];
-        compacted = { version: 1, summary: result.summary };
-        reduced = true;
+        // One pass folded `tail[0..cut)` into whatever the summary already held, so
+        // the boundary moves to the newest message that pass read.
+        const absorbed = (tail[cut - 1] as UIMessage).id;
+        summary = result.summary;
+        tail = tail.slice(cut);
+        converted = await convert(tail);
+        compacted = { version: 1, summary: result.summary, boundaryMessageId: absorbed };
       }
     }
   }
-  // The thread's own account of what an earlier turn left out. It is written by
-  // the turn that compacts and read by every turn after it — and a turn UNDER
-  // the trigger writes nothing, so without this the thread sends a prompt that
-  // remembers neither the history the host's window just sliced off nor the
-  // summary it already paid a provider call to have. Only when something really
-  // was left out: with the whole thread in the prompt the summary is a second,
-  // worse copy of what the model can already read.
-  const remembered = compaction?.state?.summary;
-  if (compacted === undefined && reduced && remembered !== undefined && remembered !== "") {
-    converted = [summaryMessage(remembered), ...converted];
-  }
+  // The summary is part of the prompt from here down, exactly as it was part of
+  // every measurement above.
+  converted = projected();
   // What this turn has ALREADY produced, appended after everything the projection
   // decided: never summarized and never shed, because each tool call in it is a
   // real guarded effect that a re-run would perform twice.
@@ -445,7 +430,6 @@ export async function turnModelMessages(input: TurnPromptInput): Promise<TurnPro
       { role: "system", content: system, providerOptions: CACHE_BREAKPOINT },
       ...converted,
     ],
-    reduced,
     ...(compacted === undefined ? {} : { compacted }),
   };
 }
@@ -547,9 +531,6 @@ export interface TurnLoop {
   /** What this turn compacted, as DATA for whoever owns the state slot — the
    *  loop does not know where that is. Written by the summarizer. */
   compacted?: CompactionState;
-  /** Whether this turn's prompt was the thread's whole history. See
-   *  {@link TurnPrompt.reduced}. */
-  reduced: boolean;
 }
 
 /** The model `streamText` is handed: the one the caller named, or the ordered
@@ -567,7 +548,7 @@ function turnModel(options: TurnLoopOptions): LanguageModel {
 
 export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
   const maxSteps = options.context?.maxSteps ?? DEFAULT_MAX_STEPS;
-  const { messages: modelMessages, compacted, reduced } = await turnModelMessages({
+  const { messages: modelMessages, compacted } = await turnModelMessages({
     messages: options.messages,
     system: options.system,
     // The live toolset, because the trigger has to count what the prompt
@@ -611,7 +592,6 @@ export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
   return {
     result,
     maxSteps,
-    reduced,
     // DATA out: what this turn compacted, for whoever owns the state slot.
     ...(compacted === undefined ? {} : { compacted }),
     async stepLimitPart() {

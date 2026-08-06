@@ -18,18 +18,29 @@ describe("the compaction state codec", () => {
     const state: CompactionState = {
       version: 1,
       summary: "The user is reconciling January.",
-      coveredThroughMessageId: "m_42",
-      lastPromptTokens: 91_284,
+      boundaryMessageId: "m_42",
     };
     expect(readCompactionState(writeCompactionState(state))).toEqual(state);
   });
 
-  it("round-trips a slot carrying only what S2 writes", () => {
-    // The summary arrives with the summarizer; until then the slot is the
-    // provider's last prompt count and nothing else, and that must survive on
-    // its own rather than needing the fields around it.
-    const state: CompactionState = { version: 1, lastPromptTokens: 91_284 };
-    expect(readCompactionState(writeCompactionState(state))).toEqual(state);
+  it("drops a MEASUREMENT an older build wrote, rather than carrying it", () => {
+    // Every build before this one stored the provider's reported prompt count
+    // (`lastPromptTokens`) and a `coveredThroughMessageId` that marked where the
+    // thread stood rather than what the summary absorbed. Both drove the trigger
+    // and both were wrong about it. A row that still holds them reads as the
+    // summary alone — and with no boundary the projection discards even that and
+    // measures the full transcript, which is one extra compaction in the safe
+    // direction.
+    const legacy = JSON.stringify({
+      version: 1,
+      summary: "The user is reconciling January.",
+      coveredThroughMessageId: "m_42",
+      lastPromptTokens: 91_284,
+    });
+    expect(readCompactionState(legacy)).toEqual({
+      version: 1,
+      summary: "The user is reconciling January.",
+    });
   });
 
   it("discards an UNKNOWN version rather than guessing at its shape", () => {
@@ -54,7 +65,7 @@ describe("the compaction state codec", () => {
   it("drops fields of the wrong type instead of handing them on", () => {
     // A number where a string belongs is the same class of problem as an
     // unreadable slot, but only for that one field — the rest still works.
-    const slot = JSON.stringify({ version: 1, summary: 7, coveredThroughMessageId: [], lastPromptTokens: "big" });
+    const slot = JSON.stringify({ version: 1, summary: 7, boundaryMessageId: [] });
     expect(readCompactionState(slot)).toEqual({ version: 1 });
   });
 });

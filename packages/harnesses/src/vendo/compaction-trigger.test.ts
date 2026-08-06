@@ -64,55 +64,33 @@ describe("the prompt estimate", () => {
     expect(long - short).toBeGreaterThan(9_000);
   });
 
-  it("uses the PROVIDER's number for the prefix it covers, not a guess", () => {
-    // A prefix nobody needs to guess at: 400k characters the provider already
-    // priced at 50k tokens. Re-estimating it would report ~100k.
-    const covered = [message("user", "a".repeat(200_000)), message("assistant", "b".repeat(200_000))];
-    const messages = [...covered, message("user", "and now the newest ask")];
-    const guessed = estimatePromptTokens({ system: "system", messages, tools: {} });
-    const measured = estimatePromptTokens({
+  it("OVER-counts dense text rather than under-counting it", () => {
+    // The whole reason the ratio is 2 and not cline's 3 or the 4 this shipped
+    // with. 308,000 characters of dense statement text is what the walker thread
+    // pasted, and the provider billed 142,890 tokens for it: the estimate has to
+    // land ABOVE that, because the cheap error is one compaction the thread did
+    // not need and the expensive one is a prompt the provider rejects.
+    const dense = [message("user", "d".repeat(308_000))];
+    expect(estimatePromptTokens({ system: "", messages: dense, tools: {} })).toBeGreaterThan(142_890);
+  });
+
+  it("measures THIS prompt and nothing carried — same input, same answer", () => {
+    // No history, no state, no previous turn's report. The estimate used to add a
+    // stored count to a guess at the delta, and a stored count is a fact about a
+    // prompt some earlier turn SENT: after a compaction that is a different size
+    // from the thread, which is how the trigger went blind and how it alternated.
+    const messages = [message("user", "a".repeat(200_000)), message("assistant", "b".repeat(200_000))];
+    const once = estimatePromptTokens({ system: "system", messages, tools: {} });
+    const twice = estimatePromptTokens({ system: "system", messages, tools: {} });
+    expect(once).toBe(twice);
+    // …and it grows with the prompt, monotonically, because it IS the prompt.
+    const grown = estimatePromptTokens({
       system: "system",
-      messages,
+      messages: [...messages, message("user", "n".repeat(8_000))],
       tools: {},
-      lastPromptTokens: 50_000,
-      reportedThrough: covered.length,
     });
-    expect(guessed).toBeGreaterThan(90_000);
-    expect(measured).toBeLessThan(51_000);
-    expect(measured).toBeGreaterThan(50_000);
-  });
-
-  it("guesses the DELTA the provider has not seen, rather than ignoring it", () => {
-    const covered = [message("user", "old")];
-    const tail = message("user", "n".repeat(8_000));
-    const measured = estimatePromptTokens({
-      system: "system",
-      messages: [...covered, tail],
-      tools: {},
-      lastPromptTokens: 50_000,
-      reportedThrough: covered.length,
-    });
-    // ~8k characters of new text is ~2k tokens at four characters each.
-    expect(measured - 50_000).toBeGreaterThan(1_800);
-    expect(measured - 50_000).toBeLessThan(2_400);
-  });
-
-  it("is exactly the provider's number when nothing has been added since", () => {
-    const messages = [message("user", "old"), message("assistant", "older")];
-    expect(estimatePromptTokens({
-      system: "system",
-      messages,
-      tools: {},
-      lastPromptTokens: 50_000,
-      reportedThrough: messages.length,
-    })).toBe(50_000);
-  });
-
-  it("falls back to the whole-prompt guess when no turn has reported yet", () => {
-    // The first turn of a thread has no provider number at all.
-    const messages = [message("user", "a".repeat(40_000))];
-    const first = estimatePromptTokens({ system: "system", messages, tools: {} });
-    expect(first).toBeGreaterThan(9_000);
+    expect(grown - once).toBeGreaterThan(3_800);
+    expect(grown - once).toBeLessThan(4_400);
   });
 });
 
@@ -184,20 +162,25 @@ describe("the loop's interim floor", () => {
     expect(messages.filter((entry) => entry.role !== "system").length).toBe(1);
   });
 
-  it("uses the state's provider number instead of re-guessing the prefix", async () => {
-    // Same thread, same window, one difference: the previous turn reported that
-    // this prompt cost 100 tokens. The guess says ~10k and would shed; the
-    // measurement says it fits, and the measurement is what the provider billed.
-    const { messages } = await turnModelMessages({
+  it("uses the state's SUMMARY instead of re-reading the band it absorbed", async () => {
+    // Same thread, same window, one difference: the slot already holds a summary
+    // and the boundary it absorbed. What the trigger measures is the prompt that
+    // rebuild produces — summary plus the messages the summary never read — so a
+    // thread whose bulk is already summarized is no longer over the line, and the
+    // summarizer is not called again.
+    const { messages, compacted } = await turnModelMessages({
       messages: thread(),
       system: "system",
       tools: {},
       compaction: {
         model: "probe-model",
         contextWindowTokens: 2_000,
-        state: { version: 1, lastPromptTokens: 100 },
+        state: { version: 1, summary: "## Goal\nREUSED ACCOUNT", boundaryMessageId: "m2" },
       },
     });
-    expect(wire(messages)).toContain("OLDEST");
+    expect(wire(messages)).toContain("REUSED ACCOUNT");
+    expect(wire(messages)).not.toContain("OLDEST");
+    // Nothing compacted, so there is no new state to persist.
+    expect(compacted).toBeUndefined();
   });
 });

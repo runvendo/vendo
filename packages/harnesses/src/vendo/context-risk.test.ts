@@ -124,9 +124,11 @@ async function driveThread(options: {
    *  carried — a host may forward a knob to its end users, so two turns of one
    *  thread do not have to agree about one. */
   turns: readonly (Turn["messages"] | { messages: Turn["messages"]; options: Turn["options"] })[];
+  /** A slot the thread arrives ALREADY carrying, as a thread mid-life does. */
+  slot?: string;
 }): Promise<Array<string | undefined>> {
   const slots: Array<string | undefined> = [];
-  let slot: string | undefined;
+  let slot: string | undefined = options.slot;
   for (const turnSpec of options.turns) {
     const { messages, options: turnOptions } = Array.isArray(turnSpec)
       ? { messages: turnSpec, options: {} }
@@ -165,14 +167,19 @@ const ANCHOR = "the January transfer came from Checking 4021";
 const BULK = "b".repeat(400_000);
 
 describe("the trigger's ground truth survives its own compaction", () => {
-  it("does not go blind after the first compaction", async () => {
-    // The bug this pins. `lastPromptTokens` is the provider's count for the
-    // prompt the LAST turn sent. When that turn compacted, the prompt it sent was
-    // a summary and a tail — but the transcript is never truncated, so the NEXT
-    // turn projects the whole thread again. Carried forward, the compacted figure
-    // tells the trigger the thread is small for as long as the thread lives: the
-    // trigger never fires again, every turn ships the entire history, and the
-    // provider's 400 is the only rail left standing.
+  it("stays small after the first compaction, and does not pay for a second pass", async () => {
+    // Two bugs, opposite directions, one thread. The engine used to carry the
+    // provider's count for the prompt the LAST turn sent; when that turn
+    // compacted, the prompt was a summary and a tail while the transcript was
+    // never truncated, so the figure told the trigger the thread was small for as
+    // long as the thread lived — trigger never fires again, every turn ships the
+    // whole history, the provider's 400 is the only rail left. Dropping the figure
+    // instead made the trigger fire on EVERY turn and re-summarize the whole
+    // transcript each time, which costs about what shipping it would.
+    //
+    // The projection is rebuilt from the stored summary and the boundary it
+    // absorbed, so both are pinned here: turn 2 must not carry the bulk, and it
+    // must not buy another summarizer pass to manage that.
     const seat = measuredSeat(5_000);
     const harness = vendo({ contextWindowTokens: 100_000 });
     const first: Turn["messages"] = [
@@ -196,14 +203,16 @@ describe("the trigger's ground truth survives its own compaction", () => {
     // Turn 1 tripped the trigger and summarized the oldest band.
     expect(seat.generateCalls()).toBeGreaterThanOrEqual(1);
     expect(JSON.stringify(seat.prompts[0])).not.toContain(ANCHOR);
-    // Turn 2's thread is strictly BIGGER, so it must compact too.
-    expect(seat.generateCalls()).toBe(2);
+    // Turn 2's thread is strictly BIGGER, and it still must not ship the bulk.
     expect(JSON.stringify(seat.prompts[1])).not.toContain(ANCHOR);
-    // …and the summary the thread paid for is still in the slot.
+    // …on the summary turn 1 already paid for, which is still in the slot with
+    // the boundary that makes it reusable.
+    expect(seat.generateCalls()).toBe(1);
     expect(slots[1]).toContain("Everything that came before.");
+    expect(slots[1]).toContain("boundaryMessageId");
   });
 
-  it("fires on turn 2, on turn 6, and on every turn between", async () => {
+  it("stays bounded on turn 2, on turn 6, and on every turn between", async () => {
     // One compaction proves nothing about the next one. The failure this pins is
     // stateful by construction — right on turn 1, wrong on turn N — so the only
     // assertion that can see it is one made over a thread that keeps growing.
@@ -219,8 +228,40 @@ describe("the trigger's ground truth survives its own compaction", () => {
 
     await driveThread({ harness, model: seat.model, turns });
 
-    expect(seat.generateCalls()).toBe(6);
     for (const prompt of seat.prompts) expect(JSON.stringify(prompt)).not.toContain(ANCHOR);
+    // CONVERGENCE, and it is a first-class claim rather than a diagnostic. Six
+    // turns over one 400,000-character bulk cost ONE summarizer pass: the band is
+    // absorbed once and the boundary is what keeps it absorbed. Re-measuring the
+    // stored transcript instead made this 6 — each pass re-reading the whole bulk,
+    // for about what sending it would have cost.
+    expect(seat.generateCalls(), "one pass per turn is not compaction").toBe(1);
+  });
+
+  it("compacts AGAIN once the verbatim tail alone outgrows the trigger", async () => {
+    // The other half, and the one that keeps the assertion above honest: a pass
+    // count of one must mean "absorbed and stayed absorbed", never "the trigger
+    // died after its first firing". The tail this thread grows is bulk in its own
+    // right, so it has to be absorbed too — a second boundary, further along.
+    const seat = measuredSeat(5_000, {
+      summaries: ["## Goal\nFIRST-PASS-ACCOUNT", "## Goal\nSECOND-PASS-ACCOUNT"],
+    });
+    const harness = vendo({ contextWindowTokens: 100_000 });
+    const first: Turn["messages"] = [userMessage("m1", ANCHOR), userMessage("m2", BULK), userMessage("m3", "and now?")];
+    const grown: Turn["messages"] = [
+      ...first,
+      { id: "a1", role: "assistant", parts: [{ type: "text", text: "ok" }] },
+      userMessage("m4", `SECOND-BULK ${BULK}`),
+      userMessage("m5", "what next?"),
+    ];
+    const slots = await driveThread({ harness, model: seat.model, turns: [first, grown] });
+
+    expect(seat.generateCalls()).toBe(2);
+    expect(JSON.stringify(seat.prompts[1])).not.toContain("SECOND-BULK");
+    // The boundary MOVED: the second pass absorbed the messages the first one
+    // never read, so the state names the newer of the two.
+    expect(slots[0]).toContain("\"boundaryMessageId\":\"m2\"");
+    expect(slots[1]).toContain("SECOND-PASS-ACCOUNT");
+    expect(slots[1]).toContain("\"boundaryMessageId\":\"m4\"");
   });
 
   it("a turn that compacted TWICE reports no measurement either", async () => {
@@ -237,7 +278,76 @@ describe("the trigger's ground truth survives its own compaction", () => {
 
     expect(seat.generateCalls()).toBe(2);
     expect(slots[0]).toContain("Everything that came before.");
+    // What the slot carries is the summary and the boundary it absorbed, and
+    // nothing measured. A count belongs to the prompt a turn SENT; the next turn's
+    // trigger asks about what the thread STORES, and after a compaction those are
+    // different sizes.
     expect(slots[0]).not.toContain("lastPromptTokens");
+    expect(slots[0]).toContain("boundaryMessageId");
+  });
+
+  it("REUSES a stored summary without buying a new summarizer pass", async () => {
+    // The reuse path on its own, with no compaction to hide behind: the slot
+    // arrives already holding a summary and the boundary it absorbed, and the
+    // thread's remaining tail is small. The projection has to be built FROM that
+    // state — summary, then the messages the summary never read — and the
+    // summarizer must not be called at all. Measuring the stored transcript
+    // instead trips the trigger on history the summary already accounts for.
+    const seat = measuredSeat(5_000);
+    const harness = vendo({ contextWindowTokens: 100_000 });
+    const thread: Turn["messages"] = [
+      userMessage("m1", ANCHOR),
+      userMessage("m2", BULK),
+      { id: "a1", role: "assistant", parts: [{ type: "text", text: "ok" }] },
+      userMessage("m3", "and now?"),
+    ];
+    const slot = JSON.stringify({
+      version: 1,
+      summary: "## Goal\nSTORED-ACCOUNT of the January statements.",
+      boundaryMessageId: "m2",
+    });
+
+    const slots = await driveThread({ harness, model: seat.model, turns: [thread], slot });
+
+    expect(seat.generateCalls(), "the stored summary was not reused").toBe(0);
+    const prompt = JSON.stringify(seat.prompts[0]);
+    expect(prompt).toContain("STORED-ACCOUNT");
+    // The absorbed band is gone and the tail beneath it survived verbatim.
+    expect(prompt).not.toContain(ANCHOR);
+    expect(prompt).toContain("and now?");
+    // Untouched: nothing compacted, so the state is exactly what it arrived as.
+    expect(slots[0]).toContain("STORED-ACCOUNT");
+    expect(slots[0]).toContain("\"boundaryMessageId\":\"m2\"");
+  });
+
+  it("DISCARDS a summary whose boundary the thread no longer holds", async () => {
+    // The safe direction, and the only one available: a boundary that does not
+    // resolve means the summary describes history this thread does not have — an
+    // edit, a rewind, or a row written by a build that stored no boundary at all.
+    // Trusting it would project a summary of a branch nobody is on; so it is
+    // dropped and the turn measures the FULL transcript, which errs toward
+    // compacting rather than toward a prompt the provider rejects.
+    const seat = measuredSeat(5_000);
+    const harness = vendo({ contextWindowTokens: 100_000 });
+    const thread: Turn["messages"] = [
+      userMessage("m1", ANCHOR),
+      userMessage("m2", BULK),
+      userMessage("m3", "and now?"),
+    ];
+    const slot = JSON.stringify({
+      version: 1,
+      summary: "## Goal\nSTALE-ACCOUNT from a branch that no longer exists.",
+      boundaryMessageId: "m_from_a_deleted_branch",
+    });
+
+    await driveThread({ harness, model: seat.model, turns: [thread], slot });
+
+    const prompt = JSON.stringify(seat.prompts[0]);
+    expect(prompt).not.toContain("STALE-ACCOUNT");
+    // …and it measured the whole transcript, so it compacted rather than shipping
+    // 400,000 characters on the strength of a summary it could not place.
+    expect(seat.generateCalls()).toBe(1);
+    expect(prompt).not.toContain(ANCHOR);
   });
 
   it("keeps the newest summary even when it is SHORTER than the one before", async () => {
@@ -249,7 +359,10 @@ describe("the trigger's ground truth survives its own compaction", () => {
     const slots = await driveThread({
       harness: vendo({ contextWindowTokens: 100_000 }),
       model: seat.model,
-      turns: [first, [...first, userMessage("m4", "what next?")]],
+      // Turn 2's own bulk is what buys the SECOND pass: a turn that adds nothing
+      // the summary has not already absorbed does not summarize again, which is
+      // the point of the boundary.
+      turns: [first, [...first, userMessage("m4", `MORE ${BULK}`), userMessage("m5", "what next?")]],
     });
 
     expect(slots[0]).toContain("A long first account");
@@ -257,7 +370,7 @@ describe("the trigger's ground truth survives its own compaction", () => {
     expect(slots[1]).not.toContain("A long first account");
   });
 
-  it("reports nothing after a turn the host's TOKEN BUDGET shrank", async () => {
+  it("stays bounded after a turn the host's TOKEN BUDGET shrank", async () => {
     // The same hole one branch over, and the branch the fix did not walk. A
     // measurement is the next turn's ground truth only while it still describes
     // the whole thread, and the summarizer is not the only thing that leaves
@@ -279,7 +392,7 @@ describe("the trigger's ground truth survives its own compaction", () => {
     expect(JSON.stringify(seat.prompts[1])).not.toContain(ANCHOR);
   });
 
-  it("reports nothing after a turn the host's HISTORY WINDOW sliced", async () => {
+  it("stays bounded after a turn the host's HISTORY WINDOW sliced", async () => {
     // The third producer of a reduced prompt (Q2b: the host's slice wins and
     // runs first). Same consequence, and the same one-line cause: the next turn
     // projects the whole thread again.
@@ -329,85 +442,46 @@ describe("one very large message is not a thread compaction gives up on", () => 
     await driveThread({ harness: vendo(), model: seat.model, turns });
 
     const sizes = seat.prompts.map((prompt) => JSON.stringify(prompt).length);
-    // Turn 1 ships the paste, and correctly: chars/4 is all there is to go on
-    // before the provider has priced anything, and it reads 77k against a
-    // 103,680 trigger.
-    expect(sizes[0]).toBeGreaterThan(300_000);
-    // THE claim. Not "compaction ran" — a smaller prompt.
-    expect(
-      Math.min(...sizes),
-      `no turn ever projected a smaller prompt: ${sizes.join(", ")}`,
-    ).toBeLessThan((sizes[0] as number) / 10);
-    // …and not once, either: every turn that PAYS for a summarizer pass has to
-    // project less than the turn before it, or the pass bought nothing.
-    let compactions = 0;
-    for (let index = 1; index < sizes.length; index += 1) {
-      if (seat.summariesBefore[index] === seat.summariesBefore[index - 1]) continue;
-      compactions += 1;
-      expect(sizes[index] as number, `turn ${index + 1} paid for a summary`)
-        .toBeLessThan((sizes[index - 1] as number) / 10);
+    // EVERY turn, including the first. There is no un-priced turn any more: the
+    // estimate is the prompt's own characters over one honest ratio, so the paste
+    // is over the line the moment it arrives rather than one turn later.
+    for (let index = 0; index < sizes.length; index += 1) {
+      expect(sizes[index] as number, `turn ${index + 1} of ${sizes.join(", ")}`).toBeLessThan(20_000);
       expect(JSON.stringify(seat.prompts[index]), `turn ${index + 1}`).not.toContain(PASTE_MARKER);
     }
-    expect(compactions, "no turn summarized anything at all").toBeGreaterThanOrEqual(3);
-    // Bounded: the thread never ships MORE than the un-compacted first turn.
-    expect(Math.max(...sizes)).toBeLessThanOrEqual((sizes[0] as number) + 5_000);
-
-    // READ THIS BEFORE TRUSTING THE ASSERTIONS ABOVE. The measured series is
-    // 308346, 795, 308592, 1041, 308838, 1287: it ALTERNATES, and the turns
-    // that did not compact still ship the whole paste. That is a SECOND defect,
-    // open and deliberately not fixed here, one layer up from this one.
-    //
-    // A turn that compacts is `reduced`, so `vendo.ts` reports no measurement
-    // and the next turn's trigger falls back to chars/4 — which is a 1.83x
-    // UNDER-estimate for dense text (142,890 real against 78,244 estimated),
-    // lands under the trigger, and ships the transcript whole. Then it measures
-    // it, and the turn after compacts again.
-    //
-    // The one-line fix — keep the slot's older measurement instead of erasing
-    // it — is UNSOUND and was reverted after the browser suite caught it:
-    // `reportedThrough` (loop.ts) attributes a carried figure POSITIONALLY, as
-    // covering everything but the trailing user run, which is only true of the
-    // immediately previous turn. Carried further, a tiny seed turn's 9,483 was
-    // credited with covering two 100,000-character statements, the trigger
-    // never fired, and `compaction-recall.spec.ts` shipped a 96,091-token
-    // recall turn. A real fix has to carry WHAT the figure covered, or carry a
-    // measured density instead of a count.
-    //
-    // The window this thread runs on is what makes the gap visible at all: the
-    // browser suite's 32k seat clears the trigger on chars/4 alone, so it never
-    // alternates. This fixture's 128k default is where the two ledgers part.
+    // …and CONVERGENCE, which is the difference between compaction and paying for
+    // the context twice. The series used to ALTERNATE — 308346, 795, 308592, 1041,
+    // 308838, 1287 — because a compacted turn reported no measurement and the next
+    // turn's trigger fell back to a guess that under-counted dense text by 1.83x.
+    // Measuring honestly fixed the alternation and replaced it with a summarizer
+    // pass on every single turn, each one re-reading the whole paste: bounded
+    // prompts bought with about what shipping the paste would have cost. The
+    // boundary is what makes the summary REUSABLE, so the band is absorbed once.
+    expect(seat.generateCalls(), `passes for ${sizes.length} turns`).toBe(1);
   });
 });
 
 describe("the trigger and the floor measure the same prompt", () => {
-  it("sheds against the count the trigger tripped on, not a second guess at it", async () => {
-    // Two rails over one thread, disagreeing by 1.83x. The trigger tripped on
-    // the provider's own 142,890 for 308,000 characters of dense statement
-    // text; `shedToBudget`'s `fits` asked chars/4, got 77,000 for the same
-    // characters, and concluded the prompt fit the budget it had just been told
-    // it blew. Neither of them acted. The summarizer is dead here on purpose,
-    // so the floor is the only rail left and the claim is about the floor alone.
+  it("sheds against the figure the trigger tripped on, not a second guess at it", async () => {
+    // Two rails over one thread, disagreeing by 1.83x. The trigger tripped on the
+    // provider's own 142,890 for 308,000 characters of dense statement text;
+    // `shedToBudget`'s `fits` asked a second conversion, got 77,000 for the same
+    // characters, and concluded the prompt fit the budget it had just been told it
+    // blew. Neither of them acted. There is ONE conversion now and the floor is
+    // handed the trigger's own figure, so they cannot part. The summarizer is dead
+    // here on purpose, so the floor is the only rail left and the claim is about
+    // the floor alone.
     const seat = measuredSeat(PASTE_TOKENS, { brokenSummarizer: true });
-    const first: Turn["messages"] = [userMessage("m1", PASTE), userMessage("m2", "and now?")];
     await driveThread({
       harness: vendo(),
       model: seat.model,
-      turns: [
-        first,
-        [
-          ...first,
-          { id: "a1", role: "assistant", parts: [{ type: "text", text: "ok" }] },
-          userMessage("m3", "what next?"),
-        ],
-      ],
+      turns: [[userMessage("m1", PASTE), userMessage("m2", "and now?")]],
     });
 
-    // Turn 1 is under the estimate's own trigger and ships the paste whole.
-    expect(JSON.stringify(seat.prompts[0])).toContain(PASTE_MARKER);
-    // Turn 2 tripped on the provider's count, so the floor owes the same count
-    // an answer.
-    expect(JSON.stringify(seat.prompts[1])).not.toContain(PASTE_MARKER);
-    expect(JSON.stringify(seat.prompts[1]).length).toBeLessThan(20_000);
+    // The summarizer refused, so the paste left by the FLOOR and nothing else.
+    expect(seat.generateCalls()).toBe(1);
+    expect(JSON.stringify(seat.prompts[0])).not.toContain(PASTE_MARKER);
+    expect(JSON.stringify(seat.prompts[0]).length).toBeLessThan(20_000);
   });
 });
 
@@ -482,7 +556,12 @@ describe("a summary is only worth what a later turn does with it", () => {
     // stopped existing, and the update skeleton's rule is PRESERVE — so a fact
     // from a branch the user abandoned would stay in the thread's memory for as
     // long as the thread lives.
-    const seat = measuredSeat(5_000);
+    // Distinct summaries per pass, so a slot holding the FIRST one is
+    // distinguishable from a rewound turn that wrote its own. With one shared
+    // string this passed for the wrong reason.
+    const seat = measuredSeat(5_000, {
+      summaries: ["## Goal\nABANDONED-BRANCH-ACCOUNT", "## Goal\nA fresh account of what is left."],
+    });
     const first: Turn["messages"] = [userMessage("m1", ANCHOR), userMessage("m2", BULK), userMessage("m3", "and now?")];
     const slots = await driveThread({
       harness: vendo({ contextWindowTokens: 100_000 }),
@@ -490,8 +569,10 @@ describe("a summary is only worth what a later turn does with it", () => {
       turns: [first, [userMessage("m1", ANCHOR)]],
     });
 
-    expect(slots[0]).toContain("Everything that came before.");
-    expect(slots[1] ?? "").not.toContain("Everything that came before.");
+    expect(slots[0]).toContain("ABANDONED-BRANCH-ACCOUNT");
+    // The boundary the first summary absorbed (`m2`) is gone from the thread, so
+    // the state is unusable and nothing from that branch survives into turn 2.
+    expect(slots[1] ?? "").not.toContain("ABANDONED-BRANCH-ACCOUNT");
   });
 });
 
@@ -707,15 +788,23 @@ describe("a window override has to be a window", () => {
     // either. A zero from either door leaves the window the table gives the seat
     // — here the 128k default, this mock being a model no table names.
     const seat = measuredSeat(5_000);
-    const first: Turn["messages"] = [userMessage("m1", ANCHOR), userMessage("m2", BULK), userMessage("m3", "and now?")];
+    // Sized against the ONE conversion the engine now uses: 150,000 characters is
+    // 75,000 tokens, under the 103,680 a 128k window trips at. The old fixture was
+    // 400,000 characters, which the chars/4 assumption priced at 100,000 and which
+    // the honest ratio prices at 200,000 — the recalibration the ratio change
+    // forced, not a change of claim.
+    const first: Turn["messages"] = [
+      userMessage("m1", ANCHOR),
+      userMessage("m2", "b".repeat(150_000)),
+      userMessage("m3", "and now?"),
+    ];
     await driveThread({
       harness: vendo({ contextWindowTokens: 0 }),
       model: seat.model,
       turns: [{ messages: first, options: { contextWindowTokens: 0 } }],
     });
 
-    // 400k characters is ~100k tokens, under 81% of 128k — so a window honoured
-    // as zero is the only reason this thread would summarize.
+    // A window honoured as zero is the only reason this thread would summarize.
     expect(seat.generateCalls()).toBe(0);
     expect(JSON.stringify(seat.prompts[0])).toContain(ANCHOR);
   });
