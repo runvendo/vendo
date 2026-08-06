@@ -72,26 +72,7 @@ live("hosted transcript + harness state over the real console", () => {
     expect(textOf(listed[1])).toBe("checking now");
   }, LIVE_TIMEOUT_MS);
 
-  /**
-   * KNOWN CONSOLE GAP, recorded as an executable fact rather than a comment:
-   * `it.fails` passes while the console is wrong and turns RED the moment it is
-   * fixed, so nobody has to remember to come back.
-   *
-   * Design D2 reads `transcripts.putMessage` as "insert OR edit-by-id", which is
-   * what the local backend does (`packages/store/src/ops.ts`: append, and on an
-   * id collision UPDATE that row). The live console instead appends into the
-   * thread's message array and re-puts the whole thread, so re-writing a message
-   * under its own id is refused with
-   *   `thread … carries two messages with the id "m_2"; message ids must be
-   *    unique within a thread`.
-   *
-   * That is the approval flip: when an approval resolves, the runtime re-writes
-   * the already persisted assistant message under its own id. Until the console
-   * makes `putMessage` replace-by-id, a hosted deployment fails that write —
-   * loudly, at least, not silently duplicating history. The fix is console-side;
-   * there is no wire op that expresses an edit any other way.
-   */
-  it.fails("an approval flip edits the message in place — one copy, not two", async () => {
+  it("an approval flip edits the message in place — one copy, not two", async () => {
     await threadMessageStore<UIMessage>(writer)
       .upsert(owner, threadId, message("m_2", "approved: you owe $40", "assistant"), 1);
 
