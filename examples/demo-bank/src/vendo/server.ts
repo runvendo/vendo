@@ -23,7 +23,18 @@ export const mapleAuth = authJs({
   secret: authSecret,
   user: (subject) => {
     const user = resolveMapleSubject(subject);
-    return user ? { display: user.display, email: user.email } : null;
+    if (!user) return null;
+    return {
+      display: user.display,
+      email: user.email,
+      // Spec 2026-08-05 §1 — the [User] block: what the agent may know about
+      // the signed-in customer, asserted fresh every request. Data only.
+      facts: {
+        name: user.display,
+        email: user.email,
+        role: user.subject === primaryMapleUser().subject ? "org admin" : "member",
+      },
+    };
   },
   // Build contract §9.1 — Maple's OWN identity tables answer "which orgs?".
   // One query against what the host already knows; Vendo stores nothing about
