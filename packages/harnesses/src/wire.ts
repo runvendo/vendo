@@ -115,6 +115,18 @@ export function writeError(writer: Writer, message: string): void {
 }
 
 /**
+ * self-serve P — the failure as part of the ASSISTANT MESSAGE, not only of the
+ * client's transient state. The `error` chunk above belongs to no message and is
+ * gone on the next mount, so a reloaded thread showed the user's question
+ * answered by a blank reply. This part persists beside it, carrying the same
+ * gated sentence the screen was given (core `stream-parts.ts` — an existing
+ * name, no new wire format).
+ */
+export function writeTurnError(write: (part: unknown) => void, message: string): void {
+  write(toVendoWirePart({ type: "data-vendo-turn-error", message }));
+}
+
+/**
  * Mirror one tool call onto the wire. Dynamic tools are the right shape: a
  * harness's tool set is resolved at runtime from the registry, exactly like the
  * agent bridge's `dynamicTool` calls, so hosts render these with the component

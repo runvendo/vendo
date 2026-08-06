@@ -29,6 +29,7 @@ import { assertHarnessComposable, escalatedPlanPath, reportHire, screenAssembler
 // package the host installed. Alias it at the import when your own composed
 // value is called `vendo` (`import { vendo as vendoHarness }`).
 export { vendo, type VendoHarnessDeps, type VendoHarnessOptions } from "@vendoai/harnesses";
+import { setDelegateRunner } from "./delegate.js";
 import { createHarnessTurns, type HarnessTurns } from "./harness-turn.js";
 // Both types already sit in the PUBLIC signatures below — `apps:` is typed off
 // `AppsConfig`, `Vendo.harness` is a `HarnessTurns` — so a host reads them
@@ -73,6 +74,7 @@ import {
   descriptorHash,
   vendoThemeSchema,
   type ActAs,
+  type AgentRunner,
   type AppDocument,
   type AppId,
   type ComponentCatalog,
@@ -2907,7 +2909,53 @@ export function createVendo(input: CreateVendoConfig): Vendo {
       await ready();
       return harnessTurns.workspace(principal, opts);
     },
+    threads: {
+      get: async (id, ctx) => {
+        await ready();
+        return harnessTurns.threads.get(id, ctx);
+      },
+      list: async (ctx) => {
+        await ready();
+        return harnessTurns.threads.list(ctx);
+      },
+      delete: async (id, ctx) => {
+        await ready();
+        await harnessTurns.threads.delete(id, ctx);
+      },
+    },
+    evictSubject: (subject) => harnessTurns.evictSubject(subject),
   };
+  /**
+   * D5 — `vendo_delegate`'s motor: one non-interactive run of THIS deployment's
+   * brain, on the same runtime, the same guard-bound choke point and the same
+   * durable workspace a chat turn gets. It replaces `createAgent`'s
+   * mini-loop, which was a second engine with its own prompt and its own
+   * persistence (none — the delegated run left no thread behind).
+   *
+   * `liveTurn` rides along, unlike the automations firing above: a delegation
+   * happens INSIDE a chat request, in this process, so a harness whose thinker
+   * lives on a machine must be able to reach the door for the delegated turn too.
+   */
+  const delegateRunner: AgentRunner = awayRunner({
+    harness,
+    store,
+    files,
+    guard,
+    skills: capability.skills,
+    models: inference.seats,
+    // The SAME brief a chat turn thinks on, assembled for the delegated ctx. No
+    // discovery section: a delegated run has no discovery rails, and promising
+    // `find_tools` would name a tool that is not on its listing.
+    system: (ctx) => assembleSystemPrompt(guard, ctx, system, true, false),
+    liveTurn: ({ threadId, ctx, tools, steer }) => {
+      const unpublish = turnCredentials.publish(threadId, { ctx, tools });
+      const unregister = registerTurnSteer({ threadId, subject: ctx.principal.subject, steer });
+      return () => {
+        unregister();
+        unpublish();
+      };
+    },
+  });
   // Per-subject connected-toolkit lookups are cached briefly so a turn never
   // pays a broker round-trip it doesn't need; failures degrade to host tools
   // only (warn, never the turn). Bounded so long-lived deployments don't grow.
@@ -3048,7 +3096,10 @@ export function createVendo(input: CreateVendoConfig): Vendo {
     }
     if (sessionsConfig.ttlMs <= 0) return;
     for (const subject of await sessionOps.sweep(sessionsConfig.ttlMs, sessionNow())) {
-      agent.evictSubject(subject);
+      // D6 — ONE sweep. Both doors evict the SAME rows through the same
+      // repository, so calling both would just delete twice; the harness door is
+      // the one that also holds the per-thread tool loadouts to reclaim.
+      await harnessTurns.evictSubject(subject);
     }
   };
   const sweepEnabled = sessionsConfig.ttlMs > 0 || parkedCallTtlMs > 0;
@@ -3366,7 +3417,14 @@ export function createVendo(input: CreateVendoConfig): Vendo {
     // deployment would turn every chat turn into a boot-shaped error. Those stay
     // on `agent.stream`, which needs neither. The probe is a WeakMap lookup
     // inside @vendoai/store, not I/O, so it is safe at module init.
-    ...(storeServesHarnessTurns(store) ? { harness: harnessDoor } : {}),
+    //
+    // The probe gates `stream` ALONE (D4). The thread lifecycle rides the
+    // adapter-only ThreadRepository — no SQL, hosted stores included — so
+    // list/get/delete are served by this door on every deployment, and the
+    // `loadedTools` cleanup that hangs off delete stays glued to it.
+    harness: storeServesHarnessTurns(store)
+      ? harnessDoor
+      : { threads: harnessDoor.threads },
     guard,
     mounted: { apps: appsMounted, automations: automationsMounted },
     apps,
@@ -3424,7 +3482,7 @@ export function createVendo(input: CreateVendoConfig): Vendo {
     },
   });
 
-  return {
+  const instance: Vendo = {
     handler,
     async emit(event, payload, principal) {
       // Loud, not silent: a host still calling `emit` after unmounting
@@ -3467,6 +3525,10 @@ export function createVendo(input: CreateVendoConfig): Vendo {
     // rows, so the schema has to be there first.
     harness: harnessDoor,
   };
+  // D5 — the tool pack's `vendo_delegate` motor, carried internally rather than
+  // on the host surface (see delegate.ts).
+  setDelegateRunner(instance, delegateRunner);
+  return instance;
 }
 
 /** 09-vendo §2 — adapt the fetch handler to a Next.js catch-all route module.

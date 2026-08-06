@@ -94,13 +94,13 @@ export const threadRoutes: RouteEntry[] = [
     // downstream (liveness, abort, the client) can tell which ran.
     //
     // Post-flip (wave 2) EVERY host is routed here — `harness:` when the host
-    // named one, `vendo()` when they did not. `deps.harness` is unset for exactly
-    // one reason, and it is a capability fact rather than a preference: a store
-    // with no SQL handle cannot serve the transcript and workspace TABLES a
+    // named one, `vendo()` when they did not. `deps.harness.stream` is unset for
+    // exactly one reason, and it is a capability fact rather than a preference: a
+    // store with no SQL handle cannot serve the transcript and workspace TABLES a
     // harness turn needs, so those deployments keep `agent.stream`, which needs
     // neither. See `storeServesHarnessTurns` in server.ts.
-    const runTurn = deps.harness ?? deps.agent;
-    const turn = await runTurn.stream({
+    const runTurn = deps.harness.stream ?? deps.agent.stream;
+    const turn = await runTurn({
       ...(body["threadId"] === undefined ? {} : { threadId: string(body["threadId"], "threadId") }),
       message: body["message"] as never,
       ctx: situation === undefined ? ctx : { ...ctx, context: situation },
@@ -175,8 +175,11 @@ export const threadRoutes: RouteEntry[] = [
       ),
     });
   }),
+  // D4 — the thread lifecycle is the HARNESS door's, on every deployment. It
+  // rides the adapter-only ThreadRepository, so unlike `stream` it needs no SQL
+  // handle and a hosted store is served here too.
   route("GET", "/threads", async ({ deps, context }) => {
-    return json(await deps.agent.threads.list(await context("chat")));
+    return json(await deps.harness.threads.list(await context("chat")));
   }),
   // Grouped like the old if-chain arm: ANY method resolves context first, and
   // an unhandled method falls through to the table's not-found.
@@ -184,12 +187,12 @@ export const threadRoutes: RouteEntry[] = [
     const ctx = await context("chat");
     const id = string(params["id"], "thread id");
     if (request.method === "GET") {
-      const thread = await deps.agent.threads.get(id, ctx);
+      const thread = await deps.harness.threads.get(id, ctx);
       if (thread === null) throw new VendoError("not-found", `thread not found: ${id}`);
       return json(thread);
     }
     if (request.method === "DELETE") {
-      await deps.agent.threads.delete(id, ctx);
+      await deps.harness.threads.delete(id, ctx);
       return json({});
     }
     return undefined;

@@ -126,17 +126,17 @@ function stubRouteBlocks(vendo: Vendo): void {
   vi.spyOn(vendo.agent, "stream").mockResolvedValue(new Response("event: done\n\n", {
     headers: { "content-type": "text/event-stream" },
   }));
-  // Wave 2 flipped `POST /threads` onto the harness runtime for every host, so
-  // the chat door these route tests drive is `harness.stream`. Both are stubbed:
-  // the agent door still serves the thread list/get/delete routes below.
+  // Wave 2 flipped `POST /threads` onto the harness runtime for every host, and
+  // D4 moved the thread list/get/delete routes onto the same door — so every
+  // /threads route these tests drive is `vendo.harness`.
   vi.spyOn(vendo.harness, "stream").mockResolvedValue(new Response("event: done\n\n", {
     headers: { "content-type": "text/event-stream" },
   }));
-  vi.spyOn(vendo.agent.threads, "list").mockResolvedValue([]);
-  vi.spyOn(vendo.agent.threads, "get").mockResolvedValue({
+  vi.spyOn(vendo.harness.threads, "list").mockResolvedValue([]);
+  vi.spyOn(vendo.harness.threads, "get").mockResolvedValue({
     id: "thr_x", subject: principal.subject, messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
   });
-  vi.spyOn(vendo.agent.threads, "delete").mockResolvedValue();
+  vi.spyOn(vendo.harness.threads, "delete").mockResolvedValue();
   vi.spyOn(vendo.guard.approvals, "pending").mockResolvedValue([]);
   vi.spyOn(vendo.guard.approvals, "decide").mockResolvedValue();
   vi.spyOn(vendo.guard.grants, "list").mockResolvedValue([]);

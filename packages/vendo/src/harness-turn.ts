@@ -30,7 +30,7 @@ import {
   type ToolRegistry,
   type WorkspaceFs,
 } from "@vendoai/core";
-import { ThreadRepository } from "@vendoai/agent/internal";
+import { ThreadRepository, type Thread, type ThreadSummary } from "@vendoai/agent/internal";
 import type { VendoGuard } from "@vendoai/guard";
 import { harnessStateStore, threadMessageStore, workspaceStore, type VendoStore } from "@vendoai/store";
 import {
@@ -169,6 +169,21 @@ export interface HarnessTurns {
     principal: Principal,
     opts?: { host?: Record<string, string>; memberships?: Membership[] },
   ): Promise<WorkspaceFs>;
+  /** D4 — the thread LIFECYCLE, on the door that serves the turns. The same
+   *  `ThreadRepository` this door already resolves every turn through, so the
+   *  listing, the read and the delete a client sees are the ones the turn wrote.
+   *  Unlike `stream`, this needs no SQL: the repository is adapter-only, so these
+   *  work on a hosted store too. */
+  threads: {
+    get(id: ThreadId, ctx: RunContext): Promise<Thread | null>;
+    list(ctx: RunContext): Promise<ThreadSummary[]>;
+    /** Also releases the thread's searched-in loadout, so a reused id can never
+     *  inherit stale tools — the cleanup stays glued to the delete. */
+    delete(id: ThreadId, ctx: RunContext): Promise<void>;
+  };
+  /** D6 — drop a subject's threads when its ephemeral session is swept, and
+   *  release each evicted thread's loadout with them. */
+  evictSubject(subject: string): Promise<void>;
 }
 
 export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
@@ -333,6 +348,25 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
   };
 
   return {
+    threads: {
+      get: (id, ctx) => threads.get(id, ctx),
+      list: (ctx) => threads.list(ctx),
+      delete: async (id, ctx) => {
+        loadedTools.delete(id);
+        await threads.delete(id, ctx);
+      },
+    },
+
+    async evictSubject(subject) {
+      // Release each evicted thread's searched-in loadout so a reused id can't
+      // inherit stale tools, and so memory is reclaimed on session sweep. Awaited
+      // rather than fire-and-forget (`createAgent`'s signature was synchronous):
+      // the caller is the sweep, which has somewhere to put a failure.
+      for (const id of await threads.evictSubject(subject)) {
+        loadedTools.delete(id);
+      }
+    },
+
     async workspace(principal, opts) {
       // §9.7 — the mount set is the host's ASSERTIONS for this principal. The
       // seam is keyed on the principal precisely so this door (which has no

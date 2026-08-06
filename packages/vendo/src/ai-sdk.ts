@@ -1,4 +1,5 @@
 import { buildVendoToolPack } from "./pack.js";
+import { delegateRunner } from "./delegate.js";
 import { VendoError, type RunContext } from "@vendoai/core";
 import { dynamicTool, jsonSchema, type ToolSet } from "ai";
 import type { Vendo } from "./server.js";
@@ -9,9 +10,9 @@ import type { Vendo } from "./server.js";
  * One thin format shim over the framework-neutral tool pack in
  * `@vendoai/agent`, executing through `vendo.guardedTools` — the guard-bound
  * registry Vendo's own loop shares, decorated to park pending-approval calls
- * so `<VendoApprovalEmbed>` can resume them over the wire — plus
- * `agent.asRunner()` behind `vendo_delegate`. No tool reachable from the host
- * loop has an unguarded route.
+ * so `<VendoApprovalEmbed>` can resume them over the wire — plus the composed
+ * away runner behind `vendo_delegate`. No tool reachable from the host loop has
+ * an unguarded route.
  */
 
 export {
@@ -58,7 +59,7 @@ export async function vendoTools(vendo: Vendo, options: VendoToolPackOptions): P
   };
   const pack = await buildVendoToolPack({
     registry: vendo.guardedTools,
-    runner: vendo.agent.asRunner(),
+    runner: delegateRunner(vendo),
     ...(options.include === undefined ? {} : { include: options.include }),
     ...(options.exclude === undefined ? {} : { exclude: options.exclude }),
   });

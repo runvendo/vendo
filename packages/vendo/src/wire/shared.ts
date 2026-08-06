@@ -75,14 +75,18 @@ export interface WireDeps {
   store: VendoStore;
   telemetry?: Telemetry;
   agent: VendoAgent;
-  /** Architecture §3 — turns through the composed `Harness`. Post-flip (wave 2)
-      `POST /threads` routes here for EVERY host: `harness:` when the host named
-      one, `vendo()` when they did not. What decides it is the STORE, not the
-      config — this is unset for exactly one reason, that the store has no SQL
-      handle and so cannot serve the transcript and workspace TABLES a harness
-      turn needs (build contract §3.3/§6). Those deployments keep `agent.stream`,
-      which needs neither table. */
-  harness?: Pick<HarnessTurns, "stream">;
+  /** Architecture §3 — the composed `Harness` door.
+
+      `threads` is ALWAYS here: the thread lifecycle rides the adapter-only
+      ThreadRepository, so it needs no SQL and works on a hosted store too.
+
+      `stream` is the probe-gated half. Post-flip (wave 2) `POST /threads` runs
+      here for EVERY host — `harness:` when the host named one, `vendo()` when
+      they did not — and what decides it is the STORE, not the config: a store
+      with no SQL handle cannot serve the transcript and workspace TABLES a
+      harness turn needs (build contract §3.3/§6), so those deployments keep
+      `agent.stream`, which needs neither table. */
+  harness: Pick<HarnessTurns, "threads"> & Partial<Pick<HarnessTurns, "stream">>;
   guard: VendoGuard;
   /** Which optional subsystems this deployment mounted (`createVendo({ apps:
       false })` / `{ automations: false }`). An unmounted subsystem's routes are

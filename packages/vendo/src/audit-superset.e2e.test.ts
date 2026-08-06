@@ -289,6 +289,11 @@ const ACCOUNTABLE_PARTS: Record<string, Accountable> = {
   // row because the guard never saw the hire — only the specialist's calls.
   "data-vendo-subagent": (row) =>
     row.kind === "run" && typeof (row.detail as { subagent?: unknown } | undefined)?.subagent === "object",
+  // The turn's failure, kept in the transcript so a reload still says why the
+  // answer never came (self-serve P). The audit plane's counterpart is the run
+  // row's `error` — one turn can only fail once, so one part, one row.
+  "data-vendo-turn-error": (row) =>
+    row.kind === "run" && typeof (row.detail as { error?: unknown } | undefined)?.error === "object",
 };
 
 describe("audit ⊇ transcript (design §3, evaluation E7)", () => {

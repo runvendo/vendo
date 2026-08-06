@@ -13,3 +13,4 @@
  * `@vendoai/harnesses`, where the runtime that drives them lives.
  */
 export { ThreadRepository } from "./threads.js";
+export type { Thread, ThreadSummary } from "./threads.js";

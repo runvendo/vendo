@@ -32,6 +32,7 @@ import {
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
   abandonPendingApprovals,
+  clearFailedTurnRecord,
   guardApprovalIds,
   validateUpsert,
 } from "./transcript-rules.js";
@@ -42,6 +43,7 @@ import {
   readUIMessageStream,
   type LanguageModel,
   type UIMessage,
+  type UIMessageStreamWriter,
 } from "ai";
 import {
   classifyHistory,
@@ -52,7 +54,7 @@ import {
 import type { DiscoveryRails } from "./discovery.js";
 import { wrapWorkspaceForRender, type RenderSeamOptions } from "./render-seam.js";
 import { createTurnTools, type MirrorEvent } from "./turn-tools.js";
-import { TextChannel, writeError, writeMirror, writeStatus, writeView } from "./wire.js";
+import { TextChannel, writeError, writeMirror, writeStatus, writeTurnError, writeView } from "./wire.js";
 
 /**
  * `turn.messages` is OURS and read-only (§1). A frozen array still hands out live
@@ -279,6 +281,11 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
       // The canonical transcript for this turn: our copy, so the flip below never
       // mutates the caller's objects.
       const messages = input.messages.map((message) => structuredClone(message));
+      // self-serve P: a retry CONTINUES the failed turn's trailing assistant
+      // message, so its notice has to go before the real answer is appended
+      // under it. Done on our copy, which is also what persistence diffs against
+      // `pristine` — so the cleared message is written back over the stored row.
+      clearFailedTurnRecord(messages);
       // The shipped rule (agent.ts `abandonPendingApprovals`): an approval a fresh
       // turn superseded resolves to its abandoned state. Resolving only the GUARD
       // side would leave the PART at `approval-requested` forever, and
@@ -302,6 +309,19 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
       /** The last message we deliberately put on the error channel, so the
        *  stream's own onError does not log it again. */
       let surfaced: string | undefined;
+      /** self-serve P: the writer, reachable from the stream's own onError so a
+       *  failure thrown BEFORE (or outside) the harness loop is recorded in the
+       *  turn too, instead of persisting a blank assistant reply. */
+      let turnWriter: UIMessageStreamWriter<UIMessage> | undefined;
+      /** ONE notice per turn, from whichever path sees the failure first — a turn
+       *  can only fail once. Needed because the stream's onError runs again for
+       *  the very error chunk we deliberately wrote. */
+      let turnErrorRecorded = false;
+      const recordTurnError = (message: string, write: (part: unknown) => void): void => {
+        if (turnErrorRecorded) return;
+        turnErrorRecorded = true;
+        writeTurnError(write, message);
+      };
       // Hoisted beside them: onFinish audits what execute collected.
       const hires: HireRecord[] = [];
 
@@ -350,6 +370,7 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
         originalMessages: messages,
         generateId: () => assistantMessageId,
         execute: async ({ writer }) => {
+          turnWriter = writer;
           const text = new TextChannel(writer);
           const mirror = (event: MirrorEvent): void => {
             // Close the open text part first, so a reply that spans tool calls
@@ -483,6 +504,10 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
                   text.break();
                   surfaced = event.message;
                   writeError(writer, event.message);
+                  // …and the TRANSCRIPT's. The chunk above belongs to no
+                  // message, so without this the reload of a failed turn shows
+                  // the question answered by a blank reply.
+                  recordTurnError(event.message, (part) => writer.write(part as never));
                   break;
                 case "usage":
                   // Audit/metering only — never the screen, never the transcript.
@@ -533,6 +558,13 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
         onError: (error) => {
           const text = error instanceof Error ? error.message : String(error);
           if (text !== surfaced) console.error("[vendo] harness stream error:", error);
+          // The record for failures the harness loop can never see: `execute`
+          // itself rejecting (building the toolset, mounting the workspace) —
+          // those never become a harness `error` event. What the USER was told
+          // is what the turn keeps; nothing of the internals travels. The
+          // SDK's writer swallows a write past close, so this is safe at any
+          // point in the turn's life.
+          recordTurnError(HARNESS_FAILED, (part) => turnWriter?.write(part as never));
           return HARNESS_FAILED;
         },
       });
@@ -607,6 +639,13 @@ function withoutDanglingToolCalls(messages: UIMessage[]): UIMessage[] {
   });
 }
 
+// ENG-309: backoff between persist attempts after a completed stream. Short and
+// bounded — long waits would hold the response open for nothing (the user
+// already has the reply); a store blip that outlives ~600ms is a real outage.
+const PERSIST_RETRY_DELAYS_MS = [100, 500] as const;
+
+const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function persistTurn(
   transcript: TranscriptStore,
   input: TurnRunInput<unknown>,
@@ -614,23 +653,35 @@ async function persistTurn(
   before: readonly UIMessage[] | undefined,
 ): Promise<void> {
   const messages = withoutDanglingToolCalls(rawMessages);
-  try {
-    const unchanged = new Map(
-      (before ?? []).map((message) => [message.id, JSON.stringify(message)]),
-    );
-    for (const [seq, message] of messages.entries()) {
-      if (unchanged.get(message.id) === JSON.stringify(message)) continue;
-      await transcript.upsert(input.ctx.principal, input.threadId, message, seq);
+  const unchanged = new Map(
+    (before ?? []).map((message) => [message.id, JSON.stringify(message)]),
+  );
+  // ENG-309: a store blip must not cost the turn. Each attempt re-walks the
+  // whole diff — `upsert` is per-row and idempotent for an unchanged row, so a
+  // partial first pass costs a repeat write, never a corrupted thread.
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      for (const [seq, message] of messages.entries()) {
+        if (unchanged.get(message.id) === JSON.stringify(message)) continue;
+        await transcript.upsert(input.ctx.principal, input.threadId, message, seq);
+      }
+      return;
+    } catch (error) {
+      const delay = PERSIST_RETRY_DELAYS_MS[attempt];
+      if (delay === undefined) {
+        // By the time onFinish runs the reply is already on the wire, so throwing
+        // here would corrupt a delivered stream. A thread silently vanishing after a
+        // successful reply is data loss, so it is named LOUDLY instead.
+        console.error("[vendo] harness runtime: transcript persist failed — this turn was NOT saved", {
+          threadId: input.threadId,
+          subject: input.ctx.principal.subject,
+          attempts: attempt + 1,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return;
+      }
+      await wait(delay);
     }
-  } catch (error) {
-    // By the time onFinish runs the reply is already on the wire, so throwing
-    // here would corrupt a delivered stream. A thread silently vanishing after a
-    // successful reply is data loss, so it is named LOUDLY instead.
-    console.error("[vendo] harness runtime: transcript persist failed — this turn was NOT saved", {
-      threadId: input.threadId,
-      subject: input.ctx.principal.subject,
-      error: error instanceof Error ? error.message : String(error),
-    });
   }
 }
 

@@ -134,6 +134,26 @@ export function abandonPendingApprovals(messages: UIMessage[]): string[] {
   return abandonedToolCallIds;
 }
 
+/** self-serve P — a new turn never inherits the LAST turn's failure notice.
+ *  When the thread's final message is an assistant turn, the ai-SDK CONTINUES
+ *  it (handleUIMessageStreamFinish reuses its id and seeds the new turn's state
+ *  from its parts), so a retry after a failed turn would append the real answer
+ *  UNDER the stale "no model key" line and persist both — the flagship keyless
+ *  → `vendo login` → Retry flow, permanently wrong on every reload. Anything
+ *  the failed turn actually produced (partial text, tool beats) stays.
+ *
+ *  The emptied message is KEPT rather than dropped: persistence writes one row
+ *  per changed message and can only add or replace, never remove. A message
+ *  dropped here would simply stay in the store — the retry would look clean live
+ *  and still reload with the stale notice above the answer. Left in place, the
+ *  continuation reuses its id and the write overwrites the stored copy. */
+export function clearFailedTurnRecord(messages: UIMessage[]): void {
+  const last = messages.at(-1);
+  if (last?.role !== "assistant") return;
+  const kept = last.parts.filter((part) => part.type !== "data-vendo-turn-error");
+  if (kept.length !== last.parts.length) last.parts = kept;
+}
+
 /** AGENT-6: the guard's approval ids for abandoned tool calls. The native tool
  *  part's `approval.id` is the ai-SDK's own handle; the GUARD's approvalId
  *  rides the data-vendo-approval part beside it, keyed by toolCallId — read it
