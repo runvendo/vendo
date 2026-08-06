@@ -95,6 +95,24 @@ export interface VendoOverlayProps {
    * provider's `greeting`.
    */
   greeting?: VendoGreeting;
+  /**
+   * Where the panel sits while open.
+   *
+   * `"center"` (the default) is the centered modal box: scrim, body
+   * scroll-lock, inert background and focus trap. It stays the default so
+   * upgrading never changes an existing host's behavior.
+   *
+   * `"dock"` is the opt-in DevTools posture: a full-height side panel against
+   * the right edge, with the host page REFLOWED beside it. It is deliberately
+   * NON-modal — none of those four containments — because the page is the
+   * thing being reshaped and has to stay visible and clickable while the panel
+   * is open. Below the mobile breakpoint both collapse to the full-bleed
+   * takeover, which owns small screens either way.
+   */
+  placement?: "dock" | "center";
+  /** Docked panel width in CSS px (default 420) — also the amount the host
+   *  page reflows by, so the two can never disagree. */
+  dockWidth?: number;
 }
 
 /** Whisper caption duration — long enough to read two short lines, short
@@ -251,6 +269,140 @@ function EmbedMorphGhost({ from, target, clipTo, clone, mode, onDone }: {
       style={{ top: from.top, left: from.left, width: from.width, height: from.height }}
     >
       <div ref={scaleRef} className="fl-embed-ghost-scale" style={{ width: from.width }} />
+    </div>
+  );
+}
+
+/** The page reflow is owned CENTRALLY, not per panel: `data-vendo-dock` and
+    `--vendo-dock-w` live on the one documentElement every overlay shares, so a
+    second docked panel closing must not hand the page back its width while the
+    first is still open. Refcounted — the last release restores what was there.
+    The width is the newest acquirer's, which is also what the panels look
+    like: whichever docked last is the one against the edge. */
+let dockHolders = 0;
+let dockWidthBefore = "";
+
+function acquireDock(width: number): () => void {
+  const root = document.documentElement;
+  if (dockHolders === 0) dockWidthBefore = root.style.getPropertyValue("--vendo-dock-w");
+  dockHolders += 1;
+  root.style.setProperty("--vendo-dock-w", `${width}px`);
+  root.setAttribute("data-vendo-dock", "");
+  return () => {
+    dockHolders -= 1;
+    if (dockHolders > 0) return;
+    root.removeAttribute("data-vendo-dock");
+    if (dockWidthBefore === "") root.style.removeProperty("--vendo-dock-w");
+    else root.style.setProperty("--vendo-dock-w", dockWidthBefore);
+  };
+}
+
+/** The docked posture only exists where there is room for it: the takeover
+ *  owns everything below the breakpoint, so `docked` is the desktop answer,
+ *  and every modality behavior keys off it. `dockedOpen` narrows that to the
+ *  panel actually being open — the page frame the editing bar pins to, and the
+ *  launcher's step-aside, both need the panel on screen. */
+function dockPosture(placement: "dock" | "center", takeoverActive: boolean, open: boolean): {
+  docked: boolean;
+  dockedOpen: boolean;
+} {
+  const docked = placement === "dock" && !takeoverActive;
+  return { docked, dockedOpen: docked && open };
+}
+
+/** What the placement decides about the panel's own chrome, resolved once so
+ *  the JSX below stays flat.
+ *
+ *  Docked has no scrim at all: there is nothing to dim (the page is not
+ *  "behind" the panel, it is beside it) and nothing to click through to
+ *  dismiss — the close X and the launcher are the toggles. Nor does it claim
+ *  `aria-modal`, which would tell assistive tech the rest of the page is
+ *  unavailable — the opposite of true. */
+function placementChrome(docked: boolean, takeover: boolean, onScrimClick: () => void): {
+  scrim: ReactNode;
+  panelClass: string;
+  modal: { "aria-modal"?: "true" };
+  /** The workspace expander is hidden below the breakpoint (the takeover is
+   *  already full-bleed) and while docked, where a full-height rail has no
+   *  room for a stage beside it — the workspace stays a centered-box feature. */
+  stageHidden: boolean;
+} {
+  return {
+    /* Click-outside-to-dismiss: the visible frosted scrim reads as clickable,
+       so honor it. Dismissal fires on click (not mousedown) so the full
+       press-release is consumed by the scrim — closing on mousedown lets the
+       mouseup land on the revealed page and steal the restored focus. */
+    scrim: docked ? null : <div className="fl-overlay-scrim" onClick={onScrimClick} />,
+    /* ENG-228: below the breakpoint the panel goes full-bleed (`.fl-takeover`,
+       the designed Intercom-style mode). */
+    panelClass: `fl-overlay-panel${takeover ? " fl-takeover" : ""}${docked ? " fl-dock" : ""}`,
+    modal: docked ? {} : { "aria-modal": "true" },
+    stageHidden: takeover || docked,
+  };
+}
+
+/** The page-level effects the two placements split, in their own hook so the
+ *  overlay component stays under the complexity ceiling.
+ *
+ *  Modal: lock body scroll and make everything behind the portal inert (the
+ *  scrim + panel live in their own body-level subtree). Restored on close AND
+ *  on unmount-while-open via the effect cleanup.
+ *
+ *  Docked: deliberately NEITHER containment — the page beside it is the
+ *  subject of the conversation and must stay scrollable and clickable — and
+ *  instead documentElement carries the width reduction (see
+ *  `html[data-vendo-dock]` in chrome-css) so the host page lays out in the
+ *  remaining space rather than being covered. Stamped on the ROOT element
+ *  rather than body because body's width is usually author-controlled, and
+ *  torn down on close/unmount/placement-flip so a host is never left narrow.
+ *  Host chrome that is itself `position: fixed` is anchored to the viewport,
+ *  not to documentElement, so it does not reflow with this — such elements can
+ *  read `--vendo-dock-w` to inset themselves. */
+function usePlacementEffects(
+  open: boolean,
+  docked: boolean,
+  dockWidth: number,
+  portalRoot: { current: HTMLElement | null },
+): void {
+  useEffect(() => {
+    if (!open || docked) return;
+    const { body } = document;
+    const previousOverflow = body.style.overflow;
+    body.style.overflow = "hidden";
+    const release = inertBehind(portalRoot.current);
+    return () => {
+      release();
+      body.style.overflow = previousOverflow;
+    };
+  }, [open, docked, portalRoot]);
+
+  useEffect(() => {
+    if (!open || !docked || typeof document === "undefined") return;
+    return acquireDock(dockWidth);
+  }, [open, docked, dockWidth]);
+}
+
+/** The edit-in-progress bar: a hairline sweeping along the TOP EDGE of the
+    framed host page for as long as a turn is running, so work reads as
+    happening TO THE PAGE rather than only inside the panel.
+
+    Indeterminate on purpose. `RunActivity` does expose `done`/`total`, but
+    those count tool steps the turn has ALREADY BEGUN — not a forecast — so
+    rendering them as a percentage would be a fabricated completion estimate.
+    The codebase already settled this for the app-boot hairline ("no fake
+    percentage, no completion jump"); this follows the same law and the same
+    sweep vocabulary.
+
+    Geometry mirrors `html[data-vendo-dock]`: same gap inset on the left, and
+    the panel's column plus two gaps reserved on the right, so the bar lines
+    up with the frame it belongs to. Docked only — there is no page frame to
+    pin it to in the centered/takeover placements. */
+function EditingBar() {
+  const activity = useSyncExternalStore(subscribeRunActivity, runActivity, () => IDLE_RUN_ACTIVITY);
+  if (!activity.running) return null;
+  return (
+    <div className="fl-editing-bar" role="presentation" aria-hidden="true">
+      <span className="fl-editing-bar-sweep" />
     </div>
   );
 }
@@ -444,6 +596,8 @@ export function VendoOverlay({
   thread: Thread = VendoThread,
   discoverability,
   greeting,
+  placement = "center",
+  dockWidth = 420,
 }: VendoOverlayProps = {}) {
   const controlled = openProp !== undefined;
   const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
@@ -464,6 +618,7 @@ export function VendoOverlay({
     useRememberedConversation(conversationKey);
   const theme = useVendoTheme();
   const takeover = useMobileTakeover();
+  const { docked, dockedOpen } = dockPosture(placement, takeover.active, open);
   const pin = usePinAction();
 
   // 2026-07 demo feedback — the expandable split-view workspace (split-view.tsx
@@ -494,6 +649,8 @@ export function VendoOverlay({
   const [suggestExpand, setSuggestExpand] = useState(false);
   const splitStateRef = useRef(splitState);
   splitStateRef.current = splitState;
+  const dockedRef = useRef(docked);
+  dockedRef.current = docked;
   const suggestTimer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(suggestTimer.current), []);
   useEffect(() => {
@@ -517,6 +674,10 @@ export function VendoOverlay({
   // on the user's behalf. It is keyed by the BUILD, so a new build the user
   // ASKED for can still stage after they collapsed the previous one.
   const autoStage = useCallback((appId: string, buildKey: string) => {
+    // The docked posture has no stage — it is display:none and its toggle is
+    // hidden — so staging on the user's behalf here would strand an app they
+    // can neither see nor collapse. The embed still lands in the rail.
+    if (dockedRef.current) return;
     const state = splitStateRef.current;
     if (state.autoStaged.includes(buildKey)) return;
     dispatchSplit({ type: "auto-stage", buildKey });
@@ -670,22 +831,10 @@ export function VendoOverlay({
     }
   }, [open]);
 
-  // While open: lock body scroll and make everything behind the portal inert
-  // (the scrim + panel live in their own body-level subtree). Restored on
-  // close AND on unmount-while-open via the effect cleanup.
-  useEffect(() => {
-    if (!open) return;
-    const { body } = document;
-    const previousOverflow = body.style.overflow;
-    body.style.overflow = "hidden";
-    const release = inertBehind(portalRoot.current);
-    return () => {
-      release();
-      body.style.overflow = previousOverflow;
-    };
-  }, [open]);
+  usePlacementEffects(open, docked, dockWidth, portalRoot);
 
   const close = () => setOpen(false);
+  const panelChrome = placementChrome(docked, takeover.active, close);
 
   // The prefill scope: this overlay's composer registers under it, so a
   // delivered prompt reaches THIS overlay's thread — not an embedded
@@ -801,7 +950,9 @@ export function VendoOverlay({
       close();
       return;
     }
-    if (event.key !== "Tab") return;
+    // Docked is non-modal: Tab must be able to walk OUT of the panel and into
+    // the page, so the wrap-around trap is a modal-only behavior.
+    if (event.key !== "Tab" || docked) return;
     const focusable = [...(dialog.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])];
     if (focusable.length === 0) return;
     const first = focusable[0]!;
@@ -832,23 +983,18 @@ export function VendoOverlay({
       // state (and any in-flight stream) lives on underneath.
       style={{ ...themeCssVariables(theme), fontFamily: "var(--vendo-font-family)", fontSize: "var(--vendo-font-size)", ...(open ? {} : { display: "none" }) } as CSSProperties}
     >
-      {/* Click-outside-to-dismiss: the visible frosted scrim reads as clickable,
-          so honor it. Dismissal fires on click (not mousedown) so the full
-          press-release is consumed by the scrim — closing on mousedown lets the
-          mouseup land on the revealed page and steal the restored focus. */}
-      <div className="fl-overlay-scrim" onClick={close} />
-      {/* ENG-228: below the breakpoint the panel goes full-bleed (`.fl-takeover`,
-          the designed Intercom-style mode) and carries the virtual-keyboard
-          inset var so the composer stays above the on-screen keyboard. */}
+      {panelChrome.scrim}
+      {/* The panel carries the virtual-keyboard inset var in the takeover so
+          the composer stays above the on-screen keyboard. */}
       <div
         ref={dialog}
         id="vendo-overlay-dialog"
-        className={`fl-overlay-panel${takeover.active ? " fl-takeover" : ""}`}
+        className={panelChrome.panelClass}
         {...(expanded ? { "data-vendo-expanded": "" } : {})}
         {...(embedGhost ? { "data-vendo-ghost": embedGhost.mode } : {})}
         style={takeover.style}
         role="dialog"
-        aria-modal="true"
+        {...panelChrome.modal}
         aria-label="Vendo assistant"
         onKeyDown={onKeyDown}
       >
@@ -871,7 +1017,7 @@ export function VendoOverlay({
           <span className="fl-sr-only">Previous conversations</span>
         </button>
         <WorkspaceToggle
-          hidden={takeover.active}
+          hidden={panelChrome.stageHidden}
           expanded={expanded}
           suggest={suggestExpand}
           onToggle={() => setWorkspace(!splitState.expanded)}
@@ -931,6 +1077,8 @@ export function VendoOverlay({
           </div>
         </SplitViewContext.Provider>
       </div>
+      {/* Pinned to the framed page, so it only exists in the docked posture. */}
+      {dockedOpen ? <EditingBar /> : null}
       {/* The embed's shared-element flight rides ABOVE the panel (the panel
           clips overflow, and mid-flight the ghost straddles both panes). */}
       {embedGhost ? (
@@ -958,6 +1106,9 @@ export function VendoOverlay({
           {...styleProp(launcherOffsetStyle)}
           // Blob-only orb when the host clears the label (`label: null`).
           {...(launcherLabel === null ? { "data-vendo-launcher-bare": "" } : {})}
+          // Steps aside instead of hiding under the docked panel, so the pill
+          // stays a live toggle rather than becoming unreachable while open.
+          {...(dockedOpen ? { "data-vendo-docked": "" } : {})}
           // Present only while the whisper is live: keys the one-time pulse
           // (suppressed under prefers-reduced-motion — the caption still shows).
           {...(whisperActive && !open ? { "data-vendo-whisper": "" } : {})}

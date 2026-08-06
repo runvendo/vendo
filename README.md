@@ -124,6 +124,36 @@ recommendations, `vendo sync --json` for a machine-readable sync report, and
 a `vendo-setup` skill shipped inside the npm tarball that init offers to
 write into `.claude/skills/`.
 
+## The docked panel
+
+The conversation surface can sit **beside** the product instead of on top of
+it. `<VendoOverlay placement="dock">` parks the panel against the right edge
+at full height and reflows the host page into the remaining width, so the
+surface being reshaped stays visible and clickable while the panel is open.
+Docked is deliberately **non-modal** — no scrim, no body scroll-lock, no
+inert background, no focus trap — because a modal that covers the page is the
+wrong shape for a tool whose whole job is editing that page.
+
+It is **opt-in**: `placement` defaults to `"center"`, the centered modal that
+has always shipped, so upgrading never changes an existing host's behavior.
+
+```tsx
+<VendoOverlay />                                    // the centered modal box (default)
+<VendoOverlay placement="dock" dockWidth={420} />   // the docked side panel
+```
+
+| Prop | Default | What it does |
+| --- | --- | --- |
+| `placement` | `"center"` | `"center"` for the centered modal, `"dock"` for the side panel |
+| `dockWidth` | `420` | Docked width in px — also how far the host page reflows |
+
+Below the mobile breakpoint both collapse to the existing full-bleed
+takeover, which still owns small screens. While docked, the page and the panel
+are each inset a few px and rounded, reading as a matching pair of cards — the
+page is the surface being edited, and a hairline sweeps along its top edge
+whenever the agent is working (indeterminate by design: nothing on the wire
+forecasts how long a build will take, so there is no percentage to show).
+
 <img src="assets/kicker-04-packages.svg" alt="04 · Packages">
 
 ## Packages

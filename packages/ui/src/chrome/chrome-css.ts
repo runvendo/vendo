@@ -1146,6 +1146,104 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
    would otherwise sit under a takeover overlay panel (2147483001). */
 .fl-overlay-scrim.fl-takeover { z-index: 2147483002; }
 
+/* ---------- docked side panel (DevTools posture) ---------- */
+/* The NON-MODAL placement, and the default above the mobile breakpoint. The
+   panel parks against the right edge at full height and the host page REFLOWS
+   beside it — documentElement's width shrinks by --vendo-dock-w — so the
+   surface the user came here to reshape is never underneath the thing they are
+   reshaping it with. No scrim, no scroll-lock, no inert background, no focus
+   trap: the page stays live and clickable while the panel is open, which is
+   the entire point of the posture (the centered modal, placement="center",
+   keeps all four). Mutually exclusive with the takeover — below the
+   breakpoint there is no room to dock, so small screens still go full-bleed. */
+/* The framed-page look (2026-08): while docked, the host page itself shrinks
+   a few px on every edge, gains a hairline border and rounded corners, and
+   sits on a neutral canvas — reading as "this is the surface being edited",
+   the same signal DevTools' element-inspect overlay gives. overflow: auto
+   (not hidden) so the page's own scroll keeps working — any overflow value
+   other than visible still clips content to the border-radius. Colors use
+   the CSS system keywords Canvas/CanvasText rather than a --vendo-* token:
+   html sits OUTSIDE the .vendo-root theme boundary (that's only stamped on
+   the portaled panel), and the system pair adapts to light/dark on its own. */
+/* The reserved column is the panel's width plus a gap on EACH side of it, so
+   the page frame and the panel sit inset from the viewport by the same amount
+   and are separated by exactly one gap. Both are rounded on all four corners
+   and read as a matching pair of floating cards. */
+html[data-vendo-dock] {
+  /* html is content-box by default, so the 2px frame border would land OUTSIDE
+     the reserved width and push the page 4px past the viewport. */
+  box-sizing: border-box;
+  width: calc(100% - var(--vendo-dock-w, 420px) - (var(--vendo-dock-gap, 5px) * 3));
+  margin: var(--vendo-dock-gap, 5px)
+    calc(var(--vendo-dock-w, 420px) + (var(--vendo-dock-gap, 5px) * 2))
+    var(--vendo-dock-gap, 5px) var(--vendo-dock-gap, 5px);
+  overflow: auto;
+  border-radius: 10px;
+  border: 2px solid #111111;
+  box-shadow: 0 1px 3px color-mix(in srgb, CanvasText 10%, transparent);
+  background: color-mix(in srgb, CanvasText 6%, Canvas);
+  transition: width .34s cubic-bezier(.22, 1, .36, 1), margin .34s cubic-bezier(.22, 1, .36, 1); }
+/* Inset by the same gap on all four sides rather than flush to the viewport
+   edge, so the rounded corners have room to show instead of being cropped by
+   the screen. A FULL border (not just border-left) gives the radius an edge to
+   follow the whole way round. */
+.fl-overlay-panel.fl-dock { left: auto; transform: none;
+  right: var(--vendo-dock-gap, 5px); top: var(--vendo-dock-gap, 5px);
+  width: var(--vendo-dock-w, 420px);
+  height: calc(100dvh - (var(--vendo-dock-gap, 5px) * 2));
+  max-width: none; max-height: none;
+  border: 1px solid var(--vendo-border-strong); border-radius: 10px;
+  box-shadow: -16px 0 44px color-mix(in srgb, var(--vendo-fg) 12%, transparent);
+  animation: fl-dock-in .34s cubic-bezier(.22, 1, .36, 1) both; }
+/* Travels its own width PLUS the inset, so it starts fully off-screen instead
+   of peeking in by the gap. */
+@keyframes fl-dock-in {
+  from { transform: translateX(calc(100% + var(--vendo-dock-gap, 5px))); }
+  to { transform: translateX(0); } }
+/* Compact-when-empty and the split workspace are centered-BOX behaviors: a
+   full-height rail has no dead glass to trim and no room for a stage. */
+.fl-overlay-panel.fl-dock:has(.fl-landing) { height: calc(100dvh - (var(--vendo-dock-gap, 5px) * 2)); }
+.fl-overlay-panel.fl-dock[data-vendo-expanded] { width: var(--vendo-dock-w, 420px);
+  height: calc(100dvh - (var(--vendo-dock-gap, 5px) * 2)); }
+.fl-overlay-panel.fl-dock .fl-split-stage { display: none; }
+.fl-overlay-panel.fl-dock .fl-split-rail { flex-basis: 100%; }
+/* The launcher steps aside rather than hiding under the panel, so the pill
+   stays a live toggle while docked. */
+.fl-launcher[data-vendo-launcher="bottom-right"][data-vendo-docked] {
+  right: calc(18px + var(--vendo-dock-w, 420px) + (var(--vendo-dock-gap, 5px) * 2)); }
+@media (prefers-reduced-motion: reduce) {
+  html[data-vendo-dock] { transition: none; }
+  .fl-overlay-panel.fl-dock { animation: fl-dock-fade .16s ease both; }
+  @keyframes fl-dock-fade { from { opacity: 0; } to { opacity: 1; } }
+}
+
+/* ---------- the edit-in-progress bar ---------- */
+/* Rides the TOP EDGE of the framed page while a turn runs. Inset to match
+   html[data-vendo-dock] exactly: one gap on the left, the panel column plus
+   two gaps on the right, and pushed down by the frame's 2px border so it sits
+   just inside the black edge rather than straddling it. z-index 2147483050
+   sits in the unused …005–…099 lane — above the approval sheet, below toasts.
+   pointer-events: none because it is pure signal and must never eat a click
+   aimed at the page underneath. */
+.fl-editing-bar { position: fixed; z-index: 2147483050; pointer-events: none;
+  top: calc(var(--vendo-dock-gap, 5px) + 2px);
+  left: calc(var(--vendo-dock-gap, 5px) + 2px);
+  right: calc(var(--vendo-dock-w, 420px) + (var(--vendo-dock-gap, 5px) * 2) + 2px);
+  height: 2px; overflow: hidden; border-radius: 2px; }
+/* Indeterminate by design — see EditingBar in vendo-overlay.tsx. The static
+   base is a dim full-width fill so reduced-motion users still get an honest
+   "something is running" signal rather than nothing at all. */
+.fl-editing-bar-sweep { display: block; width: 100%; height: 100%; border-radius: 2px;
+  background: color-mix(in srgb, var(--vendo-accent) 45%, transparent); }
+@media (prefers-reduced-motion: no-preference) {
+  .fl-editing-bar-sweep { width: 32%;
+    background: linear-gradient(90deg, transparent,
+      var(--vendo-accent) 35%, var(--vendo-accent) 65%, transparent);
+    animation: fl-editing-sweep 1.4s cubic-bezier(.45, .05, .55, .95) infinite; }
+  @keyframes fl-editing-sweep {
+    from { transform: translateX(-110%); } to { transform: translateX(420%); } }
+}
+
 /* ---------- mobile input + touch ergonomics (ENG-228) ---------- */
 /* iOS Safari auto-zooms any focused text input under 16px, and 44px is the
    HIG touch-target floor. Keyed to small viewports OR coarse pointers so
