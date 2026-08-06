@@ -5,6 +5,7 @@ import { useVendoProvider } from "../../context.js";
 import { useSplitView } from "../split-view.js";
 import { useApprovalSheetPresentation } from "../../hooks/use-mobile-takeover.js";
 import { PayloadView } from "../../tree/renderer.js";
+import { AddToPicker, useKnownSlots } from "../add-to-picker.js";
 import { ApprovalCard } from "../approval-card.js";
 import { ApprovalSheet } from "../approval-sheet.js";
 import { AutomationCard } from "../automation-card.js";
@@ -419,6 +420,10 @@ const PREVIEW_MAX_HEIGHT = 300;
 function ThreadAppCard({ appId, payload, restored, buildKey }: { appId: string; payload: UIPayload; restored: boolean; buildKey: string }) {
   const { client, components } = useVendoProvider();
   const pin = usePinAction();
+  // The destinations this origin knows — a mounted VendoSlot is the only thing
+  // that can say a slot exists (slot-notes.ts). More than one, and the bar's
+  // placement affordance is a picker rather than a single fixed pin.
+  const [slots] = useKnownSlots();
   const split = useSplitView();
   const streaming = (payload as { streaming?: boolean }).streaming === true;
   // The nudge belongs to the build that just LANDED (§10.1: the user pins, the
@@ -580,22 +585,31 @@ function ThreadAppCard({ appId, payload, restored, buildKey }: { appId: string; 
             Feature
           </button>
         ) : null}
-        {/* Lane pick C5 (5A+5D) — the pin lives ON the bar (visible only once
-            the view is ready), replacing the old full-width footer row. The
-            renderer lane's data-state/label/hairline markup above is the
-            shared contract and stays untouched. */}
+        {/* Lane pick C5 (5A+5D) — the placement affordance lives ON the bar
+            (visible only once the view is ready), replacing the old full-width
+            footer row. The renderer lane's data-state/label/hairline markup
+            above is the shared contract and stays untouched.
+
+            ONE destination is a verb ("Pin to dashboard") — naming the only
+            place it could go would be a menu of one. Several, and the same
+            affordance becomes the picker: this card is the surface a real user
+            actually reaches a generated view from, so it is where the choice
+            has to live (the embed-only picker was unreachable in every host
+            that renders its conversation through the overlay). */}
         {!streaming && pin ? (
-          <button
-            type="button"
-            className="fl-barpin"
-            {...(nudge === undefined ? {} : { "data-vendo-pin": nudge })}
-            onClick={() => pin({ appId, payload })}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-              <path d="M12 17v5M9 3h6l-1 7 3 3H7l3-3-1-7Z" />
-            </svg>
-            Pin to dashboard
-          </button>
+          slots.length > 1 ? <AddToPicker appId={appId} /> : (
+            <button
+              type="button"
+              className="fl-barpin"
+              {...(nudge === undefined ? {} : { "data-vendo-pin": nudge })}
+              onClick={() => pin({ appId, payload })}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M12 17v5M9 3h6l-1 7 3 3H7l3-3-1-7Z" />
+              </svg>
+              Pin to dashboard
+            </button>
+          )
         ) : null}
         <span className="fl-boot-hairline" aria-hidden="true" />
       </div>
