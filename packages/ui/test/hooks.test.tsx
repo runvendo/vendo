@@ -312,7 +312,8 @@ describe("headless hooks", () => {
     );
 
     const turn = wire.requests.find(request => request.method === "POST" && request.path === "/threads");
-    expect(Object.keys(turn?.body as object).sort()).toEqual(["message", "threadId"]);
+    // Spec 2026-08-05 §2: every send now also carries the situation channel.
+    expect(Object.keys(turn?.body as object).sort()).toEqual(["context", "message", "threadId"]);
     expect(turn?.body).toMatchObject({
       threadId: "thr_1",
       message: { role: "user", parts: [{ type: "text", text: "Send the email" }] },
@@ -413,6 +414,38 @@ describe("headless hooks", () => {
       state: "approval-responded",
       approval: { id: "apr_stream", approved: true },
     }));
+  });
+
+  it("sends the screen snapshot as body.context on every turn (spec 2026-08-05 §2)", async () => {
+    document.title = "Maple — Home";
+    const host = document.createElement("main");
+    host.innerHTML = "<h1>Accounts overview</h1>";
+    document.body.append(host);
+    try {
+      const { result } = renderHook(() => useVendoThread(), { wrapper });
+      await act(() => result.current.sendMessage({ text: "What am I looking at?" }));
+      await waitFor(() => expect(result.current.status).toBe("ready"));
+      const turn = wire.requests.find(request => request.method === "POST" && request.path === "/threads");
+      const context = (turn?.body as { context?: Record<string, unknown> }).context;
+      const screen = context?.screen;
+      expect(typeof screen).toBe("string");
+      expect((screen as string).startsWith("http://localhost:3000/\nMaple — Home\n")).toBe(true);
+      expect(screen).toContain("Accounts overview");
+    } finally {
+      host.remove();
+      document.title = "";
+    }
+  });
+
+  it("omits the snapshot when the provider disables capture (the one off-switch)", async () => {
+    function quietWrapper({ children }: PropsWithChildren) {
+      return <VendoProvider client={client} captureScreen={false}>{children}</VendoProvider>;
+    }
+    const { result } = renderHook(() => useVendoThread(), { wrapper: quietWrapper });
+    await act(() => result.current.sendMessage({ text: "hello" }));
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    const turn = wire.requests.find(request => request.method === "POST" && request.path === "/threads");
+    expect(turn?.body).not.toHaveProperty("context");
   });
 });
 

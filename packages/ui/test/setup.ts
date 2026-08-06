@@ -31,6 +31,26 @@ configure({ asyncUtilTimeout: 10000 });
  */
 afterEach(cleanup);
 
+/**
+ * jsdom has no pseudo-element styles, and answers any
+ * `getComputedStyle(el, "::before")` with a "Not implemented" jsdomError that
+ * it routes to console.error. The screen capture (src/situation.ts) walks the
+ * page through aria-snapshot, whose accessible-name computation reads
+ * `::before`/`::after` content per the accname spec — legitimate in a real
+ * browser, pure noise here, and loud enough to trip suites that assert
+ * console.error is never called. Answer pseudo-element queries with the CSS
+ * initial `content: none` (i.e. this pseudo generates no text), which is what
+ * jsdom's styleless pseudo-elements actually mean; real element queries still
+ * go to jsdom. No repo code passes a pseudo-element argument.
+ */
+const nativeGetComputedStyle = globalThis.getComputedStyle;
+
+globalThis.getComputedStyle = ((element: Element, pseudoElement?: string | null) =>
+  pseudoElement === undefined || pseudoElement === null
+    ? nativeGetComputedStyle(element)
+    : ({ content: "none", display: "inline", visibility: "visible" } as unknown as CSSStyleDeclaration)
+) as typeof globalThis.getComputedStyle;
+
 const nativeFetch = globalThis.fetch;
 
 globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
