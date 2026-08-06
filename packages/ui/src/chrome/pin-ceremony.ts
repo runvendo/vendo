@@ -27,6 +27,7 @@ import { useVendoProvider } from "../context.js";
 import { announcePin, onPinAnnounced, pinTaken } from "../pin-events.js";
 import { openVendoConversation } from "./overlay-registry.js";
 import { developmentMode } from "./dev-mode.js";
+import { vendoToast } from "./vendo-toasts.js";
 
 /** 300 + 180 = 480ms end to end (the design budget is "under half a second"). */
 const FLIGHT_MS = 300;
@@ -332,12 +333,19 @@ export function usePinAction(): ((app: { appId: string; payload: unknown }) => v
           try {
             await client.apps.place(app.appId, pinSlot);
           } catch (reason) {
-            // The ceremony already played and the host's own seam still runs:
-            // a failed write must not swallow the rest of the path, and the
-            // slot's next read is the truth either way.
+            // Nothing was written, so nothing downstream may say otherwise:
+            // announcing settles every pin affordance into its pinned state and
+            // sends every mounted slot to re-read a placement that does not
+            // exist, and `onPin` is the host mirroring a pin that never
+            // happened. One honest line instead — the same sentence the
+            // "Add to…" picker shows when its own `apps.place` is refused. A
+            // toast because this path's surface is already dismissed by the
+            // time the write answers, so there is nowhere inline left to say it.
             if (developmentMode()) {
               console.warn(`[vendo] pin: placing ${app.appId} in "${pinSlot}" failed — ${String(reason)}`);
             }
+            vendoToast({ text: "That didn’t go through — try again.", state: "error" });
+            return;
           }
         }
         announcePin(app.appId);

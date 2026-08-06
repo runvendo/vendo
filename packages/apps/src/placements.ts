@@ -207,7 +207,24 @@ export function placementStore(store: StoreAdapter): PlacementStore {
     // deleted app leave nothing behind: nothing else in the tree ever collects
     // a pointer, and only a full subject erase would reach it.
     const current = await pointers.get(pointerId(subject, slot));
-    if (current !== null && tokenOf(current) === token) await pointers.delete(pointerId(subject, slot));
+    if (current === null || tokenOf(current) !== token) return;
+    // The token check has to ride the WRITE, not merely precede it. A delete
+    // keyed on the slot alone lands on whatever the pointer names when it
+    // arrives, so a place landing in the gap above has its brand-new pointer
+    // deleted out from under it — its live row orphaned and the slot the person
+    // just filled reading empty. `claim` with no replacement is the store
+    // contract's compare-and-delete, keyed on the row this read saw.
+    if (pointers.claim === undefined) {
+      // A BYO adapter with no compare-and-delete keeps the read-then-delete and
+      // its race, the same concession `swingPointer` makes without CAS.
+      await pointers.delete(pointerId(subject, slot));
+      return;
+    }
+    await pointers.claim({
+      id: current.id,
+      data: current.data,
+      ...(current.refs === undefined ? {} : { refs: current.refs }),
+    });
   };
 
   return {

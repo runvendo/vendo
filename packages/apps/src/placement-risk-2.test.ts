@@ -151,6 +151,72 @@ describe("what a deleted app leaves in the slot rows", () => {
   });
 });
 
+describe("the pointer a clear takes with it is the pointer it read", () => {
+  it("leaves the replacement holding the slot when a place lands inside the pointer's read-then-delete", async () => {
+    // The token check in front of the pointer delete is a READ, and the delete
+    // it guards names the slot, not the token — so a place that lands in the
+    // gap between them swings the pointer to a NEW token and the delete takes
+    // that pointer down instead. The replacement's live row survives with
+    // nothing naming it, and the slot the person just filled reads empty.
+    //
+    // Forced through the STORE, like the round-1 unplace race: the runtime, the
+    // placement rows and the store beneath are all real, and both verbs run for
+    // real. The pointer read is held open from the moment the clear has taken
+    // its own live row down — which is exactly where that gap opens.
+    const base = memoryStore();
+    let openTheWindow = (): void => {};
+    const window = new Promise<void>((resolve) => { openTheWindow = resolve; });
+    let clearing = false;
+    let held = false;
+    const store: StoreAdapter = {
+      ...base,
+      records(collection) {
+        const rows = base.records(collection);
+        if (collection === PLACEMENTS_COLLECTION) {
+          return {
+            ...rows,
+            async delete(id: string) {
+              await rows.delete(id);
+              clearing = true;
+            },
+          };
+        }
+        if (collection !== PLACEMENT_SLOTS_COLLECTION) return rows;
+        return {
+          ...rows,
+          async get(id: string) {
+            const record = await rows.get(id);
+            if (clearing && !held) {
+              held = true;
+              await window;
+            }
+            return record;
+          },
+        };
+      },
+    } as StoreAdapter;
+
+    await seedAppRow(base, doc("app_1", "Spending"), ada.principal.subject);
+    await seedAppRow(base, doc("app_2", "Savings"), ada.principal.subject);
+    const runtime = createApps({ store, guard: guardFixture(), tools, catalog: [] });
+    await runtime.place({ app: "app_1", slot: "home-hero" }, ada);
+
+    // The clear reads the pointer (app_1's token), then stalls before removing it.
+    const clear = runtime.unplace({ app: "app_1", slot: "home-hero" }, ada);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // Meanwhile the person puts app_2 there — a new token on the same pointer.
+    await runtime.place({ app: "app_2", slot: "home-hero" }, ada);
+    openTheWindow();
+    await clear;
+
+    expect(await runtime.placements({}, ada)).toEqual([
+      { slot: "home-hero", app: "app_2", title: "Savings", status: "ready" },
+    ]);
+    expect(await pointerApps(base, ada.principal.subject)).toEqual(["app_2"]);
+    expect(await liveRows(base, ada.principal.subject)).toHaveLength(1);
+  });
+});
+
 describe("the slot string a caller places with is the slot string it can read", () => {
   it("answers a `slots` filter that is spelled exactly as the write was", async () => {
     // `requireSlot` trims on every WRITE (place/unplace/create); the read path
