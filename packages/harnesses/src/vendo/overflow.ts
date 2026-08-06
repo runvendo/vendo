@@ -54,6 +54,13 @@ const OVERFLOW_PATTERNS = [
  *  Matching one of these settles the question before the set above is consulted. */
 const NON_OVERFLOW_PATTERNS = [
   /^(Throttling error|Service unavailable):/i, // AWS Bedrock, via its own error formatter
+  // OURS, not pi's. The line above matches the prefix pi's OWN formatter adds,
+  // which this stack never sees: `@ai-sdk/amazon-bedrock` hands us the service's
+  // sentence unprefixed, and the header's whole worked example then fell through
+  // to the generic `too many tokens` pattern below — answering a throttle by
+  // summarizing the thread and calling straight back, which is the exact failure
+  // that paragraph was written to prevent.
+  /too many tokens,? please wait/i, // AWS Bedrock throttling, in the service's own words
   /rate limit/i, // Generic rate limiting
   /too many requests/i, // Generic HTTP 429 style
 ] as const;

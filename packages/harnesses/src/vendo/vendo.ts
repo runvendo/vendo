@@ -568,18 +568,27 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
       }
 
       // §1.3's slot, which the runtime persists at turn end (`runtime.ts`
-      // `onFinish` → `saveHarnessState`). Written only after a turn that
-      // finished: a measurement from a turn that died describes a prompt the
-      // thread never actually sent, and a summary from one describes history the
-      // thread never actually sent either. Whatever the slot already carried is
-      // spread through first, so a token count does not erase a summary or the
-      // other way round.
-      if (lastPromptTokens !== undefined || loop.compacted !== undefined) {
+      // `onFinish` → `saveHarnessState`). Whatever the slot already carried
+      // survives what this turn did not touch, so a token count does not erase a
+      // summary or the other way round.
+      const remembered = loop.compacted?.summary ?? carried?.summary;
+      // The provider's count is the trigger's ground truth NEXT turn, and it is
+      // only ground truth while it still describes this thread's history. A turn
+      // that COMPACTED measured a summary and a tail — but the transcript is
+      // never truncated, so the next turn projects the whole thread again and
+      // that figure describes a prompt it will not send. Carried forward it tells
+      // the trigger the thread is small for as long as the thread lives: the
+      // trigger never fires again, every turn ships the entire history, and the
+      // provider's 400 is the only rail left. So a compacted turn reports no
+      // measurement at all, and drops the slot's older one with it — chars/4 over
+      // the full history is the honest over-estimate, and over-estimating costs
+      // one compaction.
+      const measured = loop.compacted === undefined ? lastPromptTokens : undefined;
+      if (measured !== undefined || remembered !== undefined) {
         turn.state.set(writeCompactionState({
-          ...carried,
-          ...loop.compacted,
           version: 1,
-          ...(lastPromptTokens === undefined ? {} : { lastPromptTokens }),
+          ...(remembered === undefined ? {} : { summary: remembered }),
+          ...(measured === undefined ? {} : { lastPromptTokens: measured }),
         }));
       }
 

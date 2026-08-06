@@ -48,10 +48,15 @@ export const MODEL_CONTEXT_WINDOWS: readonly (readonly [match: string, tokens: n
  *
  * `override` is the BYO escape and it wins outright, table hit or not: a host on
  * a model this repo has never heard of, or on a seat whose entry has gone stale,
- * needs a way to be right that does not involve waiting for a release.
+ * needs a way to be right that does not involve waiting for a release. It has to
+ * be a positive number of tokens to be a window at all — the per-turn form of the
+ * same knob is `z.number().int().positive()` (`vendo.ts`'s `optionsSchema`) and
+ * the deployment form reaches here unvalidated, so this is where the two agree. A
+ * zero puts the trigger at zero, which makes every turn pay for a summarizer pass
+ * and then shed the conversation to its last message, silently.
  */
 export function contextWindowTokens(model: LanguageModel, override?: number): number {
-  if (override !== undefined) return override;
+  if (override !== undefined && override > 0) return override;
   const id = (typeof model === "string" ? model : model.modelId).toLowerCase();
   let matched: readonly [string, number] | undefined;
   for (const entry of MODEL_CONTEXT_WINDOWS) {
