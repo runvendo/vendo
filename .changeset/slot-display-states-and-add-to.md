@@ -19,10 +19,17 @@ A slot tells the truth about the app placed in it, and any surface can put one t
 - **ready** — unchanged, and now proven in a browser for both surface kinds: a
   tree payload and a served machine url.
 
-`AddToPicker` puts "Add to…" on the app embed's bar, so a BYO chat page can send
-a generated app to the dashboard without a host-built pin control. It awaits
+`AddToPicker` puts "Add to…" on a generated view's bar, so a person can send it
+to any slot the host has mounted instead of the one place a host wired. It awaits
 `client.apps.place` before saying "Added to Hero", then announces the placement
 so a mounted slot fills without waiting out its poll.
+
+It appears in the two places a generated view has a bar: the app embed (for a BYO
+chat page) and the IN-THREAD card, which is the surface a person reaches a view
+from in every host that renders its conversation through `VendoOverlay`. The
+thread card's affordance stays the one-click "Pin to dashboard" while the origin
+knows a single destination — a menu of one is not a choice — and becomes the
+picker the moment it knows more.
 
 - `noteSlot` / `knownSlots` (new, re-exported from `vendoai/react`): the picker's
   destinations. A slot id is the host's markup and no Vendo record carries it, so

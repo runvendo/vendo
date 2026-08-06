@@ -9,28 +9,35 @@
  * affordance renders nothing at all rather than an empty menu.
  *
  * The same `.fl-barpin` affordance the thread card's pin uses — no new button
- * language on the app-card bar.
+ * language on the app-card bar. The thread card swaps ITS pin for this picker
+ * once the origin knows more than one destination (thread/parts.tsx), which is
+ * what makes the choice reachable from a conversation in a real host and not
+ * only from a BYO page that mounts `VendoAppEmbed` itself.
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useVendoProvider } from "../context.js";
 import { announcePin } from "../pin-events.js";
 import { knownSlots, type SlotNote } from "../slot-notes.js";
 
+/** The slots this origin has seen, plus a re-read. Storage is unreadable during
+ *  render (SSR) and a slot may mount after the reader did, so the list is read
+ *  on mount and again whenever the caller asks. */
+export function useKnownSlots(): [SlotNote[], () => void] {
+  const [slots, setSlots] = useState<SlotNote[]>([]);
+  const reread = useCallback(() => { setSlots(knownSlots()); }, []);
+  useEffect(() => { reread(); }, [reread]);
+  return [slots, reread];
+}
+
 export function AddToPicker({ appId }: { appId: string }) {
   const { client } = useVendoProvider();
-  const [slots, setSlots] = useState<SlotNote[]>([]);
+  const [slots, rereadSlots] = useKnownSlots();
   const [open, setOpen] = useState(false);
   const [placedIn, setPlacedIn] = useState<string>();
   const [failed, setFailed] = useState(false);
 
-  // Storage is unreadable during render (SSR) and a slot may mount after this
-  // embed did, so the list is read on mount and again on every open.
-  useEffect(() => {
-    setSlots(knownSlots());
-  }, []);
-
   const toggle = () => {
-    setSlots(knownSlots());
+    rereadSlots();
     setFailed(false);
     setOpen(current => !current);
   };
