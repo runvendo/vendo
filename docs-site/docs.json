@@ -59,6 +59,7 @@
           "existing-agents/index",
           "existing-agents/ai-sdk",
           "existing-agents/mastra",
+          "existing-agents/mcp",
           "existing-agents/embeds",
           "existing-agents/configuration"
         ]
