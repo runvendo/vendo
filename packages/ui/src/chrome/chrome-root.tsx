@@ -56,6 +56,9 @@ function ChromeBoundary({
     <ChromeRootContext.Provider value>
       <div
         className={["vendo-root", className].filter(Boolean).join(" ")}
+        // Decision 4 (spec 2026-08-05): the widget excludes itself from the
+        // screen snapshot — every chrome boundary marks its own root.
+        data-vendo-ignore=""
         data-vendo-motion={theme.motion}
         data-vendo-density={theme.density}
         style={{ ...themeCssVariables(theme), fontFamily: "var(--vendo-font-family)", fontSize: "var(--vendo-font-size)" } as CSSProperties}

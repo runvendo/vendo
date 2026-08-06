@@ -67,6 +67,7 @@ export function ApprovalSheet({ children, label }: {
   return createPortal(
     <div
       className="vendo-root fl-approval-sheet-layer"
+      data-vendo-ignore=""
       data-vendo-motion={theme.motion}
       data-vendo-density={theme.density}
       style={{ ...themeCssVariables(theme), ...takeover.style } as CSSProperties}

@@ -211,6 +211,7 @@ export function VendoToasts({ placement = "bottom-right", approvals = false, pol
       {toasts.length > 0 ? createPortal(
         <div
           className="vendo-root"
+          data-vendo-ignore=""
           // H-2 — the toast stack lives ABOVE the modal layer: it portals to
           // <body> with no dialog semantics, so `inertBehind` (overlay panel,
           // mobile takeover) inerted it and every toast raised while one was

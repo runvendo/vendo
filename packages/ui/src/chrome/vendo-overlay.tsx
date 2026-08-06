@@ -608,6 +608,7 @@ export function VendoOverlay({
     <div
       ref={portalRoot}
       className="vendo-root fl-overlay-portal"
+      data-vendo-ignore=""
       data-vendo-motion={theme.motion}
       data-vendo-density={theme.density}
       // Closed = hidden, NOT unmounted (ENG-221): inline display:none beats the

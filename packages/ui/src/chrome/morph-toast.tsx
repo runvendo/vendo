@@ -108,6 +108,7 @@ export function MorphToast({ startRect, title, sub, logoUrl, theme, holdMs, dock
   return createPortal(
     <div
       className="vendo-root fl-morph-layer"
+      data-vendo-ignore=""
       data-vendo-motion={reduced ? "reduced" : theme.motion}
       style={{ ...themeCssVariables(theme) } as React.CSSProperties}
     >
