@@ -5,6 +5,12 @@
     "test": { "dependsOn": ["^build", "build"], "env": ["CI", "POSTGRES_URL", "VITEST_MIN_FORKS", "VITEST_MAX_FORKS", "VITEST_MIN_THREADS", "VITEST_MAX_THREADS"] },
     "test:ui": { "dependsOn": ["^build", "build"], "env": ["CI", "VITEST_MIN_FORKS", "VITEST_MAX_FORKS", "VITEST_MIN_THREADS", "VITEST_MAX_THREADS"] },
     "test:coverage": { "dependsOn": ["^build", "build"], "outputs": ["coverage/**"], "env": ["CI", "POSTGRES_URL", "VITEST_MIN_FORKS", "VITEST_MAX_FORKS", "VITEST_MIN_THREADS", "VITEST_MAX_THREADS"] },
+    // box-template.test.ts provisions and vite-builds packages/box-template, which imports
+    // @vendoai/kit — but apps must NOT depend on the kit/ui layer (scripts/dependency-guard.mjs),
+    // so the ordering is declared here instead. Without it turbo is free to schedule this suite
+    // before @vendoai/kit:build and the template build dies on an unresolvable @vendoai/kit.
+    "@vendoai/apps#test": { "dependsOn": ["^build", "build", "@vendoai/box-template#build"], "env": ["CI", "POSTGRES_URL", "VITEST_MIN_FORKS", "VITEST_MAX_FORKS", "VITEST_MIN_THREADS", "VITEST_MAX_THREADS"] },
+    "@vendoai/apps#test:coverage": { "dependsOn": ["^build", "build", "@vendoai/box-template#build"], "outputs": ["coverage/**"], "env": ["CI", "POSTGRES_URL", "VITEST_MIN_FORKS", "VITEST_MAX_FORKS", "VITEST_MIN_THREADS", "VITEST_MAX_THREADS"] },
     "conformance": { "dependsOn": ["^build", "build"], "env": ["CI", "POSTGRES_URL"] },
     "typecheck": { "dependsOn": ["^build"] },
     "lint": {}
