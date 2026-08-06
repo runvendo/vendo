@@ -31,9 +31,13 @@ async function script(request: APIRequestContext): Promise<void> {
         { kind: "text", text: "Hi Ada, I'm ready to help.", id: "t_greet" },
         { kind: "tool", name: "host_invoices_delete", input: { id: INVOICE }, toolCallId: "call_del" },
         { kind: "text", text: "Deleted the invoice.", id: "t_done" },
-        // Two-lane create (v2 spec §4): paint + full lane each consume a turn.
-        { kind: "generate", dialect: CREATE_DIALECT },
-        { kind: "generate", dialect: CREATE_DIALECT, id: "gen_2" },
+        // The create runs the ONE engine — the screen agent — so these are its own
+        // two turns: save the whole document with its own hands, then stop. The
+        // row the `useApps` probe lists is what that save landed through
+        // `AppsRuntime.authored`, which is the only thing that makes a written
+        // document an app.
+        { kind: "tool", name: "save_app", input: { content: CREATE_DIALECT }, toolCallId: "screen_save" },
+        { kind: "text", text: "saved", id: "screen_done" },
       ],
     },
   });
