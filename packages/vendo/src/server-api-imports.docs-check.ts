@@ -14,19 +14,23 @@
  */
 import type {
   ActAs, ActionsRegistry, AppsRuntime, AutomationsEngine, ComponentCatalog,
-  ComponentRegistry, Connector, HostOAuthAdapter, Json, Judge, PolicyConfig,
-  Principal, RunId, SandboxAdapter, SecretsProvider, ToolRegistry,
-  VendoGuard, VendoStore,
+  ComponentRegistry, Connector, ExtractedTool, FilesAdapter, Harness,
+  HostOAuthAdapter, Json, KnowledgeAdapter, Principal, RunId, SandboxAdapter,
+  SecretsProvider, Skill, ToolDefinition, ToolRegistry, VendoGuard, VendoStore,
+  VendoTheme,
 } from "./index.js";
 import type {
-  ConnectionsService, HostAuthPreset, ModelsConfig, ServerActionHandler,
+  ComposedAgent, ConnectionsService, CreateVendoConfig, GuardRules, HarnessTurns,
+  HostAuthPreset, ModelsConfig, ServerActionHandler, TourEntry,
 } from "./server.js";
 
 /** Force every imported name to be used, so an unresolved one is an error. */
 export type ServerApiPageImports = [
   ActAs, ActionsRegistry, AppsRuntime, AutomationsEngine, ComponentCatalog,
-  ComponentRegistry, Connector, HostOAuthAdapter, Json, Judge, PolicyConfig,
-  Principal, RunId, SandboxAdapter, SecretsProvider, ToolRegistry,
-  VendoGuard, VendoStore,
-  ConnectionsService, HostAuthPreset, ModelsConfig, ServerActionHandler,
+  ComponentRegistry, Connector, ExtractedTool, FilesAdapter, Harness,
+  HostOAuthAdapter, Json, KnowledgeAdapter, Principal, RunId, SandboxAdapter,
+  SecretsProvider, Skill, ToolDefinition, ToolRegistry, VendoGuard, VendoStore,
+  VendoTheme,
+  ComposedAgent, ConnectionsService, CreateVendoConfig, GuardRules, HarnessTurns,
+  HostAuthPreset, ModelsConfig, ServerActionHandler, TourEntry,
 ];
