@@ -87,3 +87,23 @@ describe("the page teaches the door's make-and-place contract", () => {
     expect(broken).toEqual([]);
   });
 });
+
+describe("capabilities/mcp.mdx tells the truth about creation at the door", () => {
+  const DOOR_PAGE = "docs-site/capabilities/mcp.mdx";
+
+  it("no longer calls the door a viewer and runner that cannot create", async () => {
+    const text = await read(DOOR_PAGE);
+    expect(text).not.toMatch(/viewer and runner/i);
+    expect(text).not.toMatch(/creation and editing stay in-product/i);
+  });
+
+  it("names vendo_make in the saved-apps section and points at the walkthrough", async () => {
+    const text = await read(DOOR_PAGE);
+    const start = text.indexOf("## Saved apps ride along");
+    expect(start, "the saved-apps section must still exist").toBeGreaterThan(-1);
+    const section = text.slice(start, text.indexOf("\n## ", start + 1));
+    expect(section).toContain("vendo_make");
+    expect(section).toContain("vendo_apps_pin");
+    expect(section).toContain("/existing-agents/mcp");
+  });
+});
