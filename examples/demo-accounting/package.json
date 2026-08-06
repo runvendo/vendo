@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "predev": "vendo sync . --no-ai",
-    "dev": "next dev",
+    "dev": "node ../../scripts/dev-with-port-fallback.mjs",
     "prebuild": "vendo sync . --no-ai",
     "build": "next build",
     "start": "next start",
