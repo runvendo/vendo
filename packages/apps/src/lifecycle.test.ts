@@ -372,4 +372,40 @@ describe("apps lifecycle", () => {
     await expect(runtime.list(ctx)).resolves.toEqual([edited.app]);
     await expect(runtime.history(valid.id, ctx).list()).resolves.toEqual([edited.version]);
   });
+
+  it("reports the version history stored, not a later clock read", async () => {
+    // Only `Date` is faked: the store, the guard and every await in the write
+    // path still run on real timers.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-07-12T12:00:00.000Z"));
+    try {
+      const store = memoryStore();
+      let runtime: AppsRuntime;
+      const assembler = screenFor(() => runtime);
+      runtime = createApps({
+        store,
+        guard: guardFixture(),
+        tools,
+        catalog: [],
+        model: basicLanguageModel(),
+        // The assembler's save is where the history row is appended, so moving
+        // the clock the moment it returns puts every later read in the NEXT
+        // millisecond — the straddle that used to need a busy machine.
+        screen: {
+          async assemble(request, assembleCtx) {
+            const outcome = await assembler.assemble(request, assembleCtx);
+            vi.setSystemTime(new Date(Date.now() + 1));
+            return outcome;
+          },
+        },
+      });
+      const ctx = context("user_ada");
+      const app = await runtime.create({ prompt: "Valid" }, ctx);
+      const edited = await runtime.edit(app.id, "Edited", ctx);
+
+      await expect(runtime.history(app.id, ctx).list()).resolves.toEqual([edited.version]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

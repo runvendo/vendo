@@ -1968,6 +1968,20 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   const editIntents = new Map<AppId, string>();
 
   /**
+   * The version row an edit's own save APPENDED, keyed by app — the return leg
+   * of `editIntents`.
+   *
+   * The row is written where the save happens (`authored`, the one write path),
+   * and `edit` reports it verbatim rather than stamping a second `new Date()`:
+   * two clock reads agree only inside one millisecond, so the version handed to
+   * the caller otherwise differs from the one history holds whenever the two
+   * straddle a tick. Cleared at the top of every `assembleEdit` so a previous
+   * edit's row can never be reported as this one's, and taken (not read) by
+   * `edit`.
+   */
+  const editVersions = new Map<AppId, VersionEntry>();
+
+  /**
    * ONE instruction through the ONE builder.
    *
    * There is no second engine: the assembler opens the app's own `app.vendo`,
@@ -2001,6 +2015,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     const before = await apps.get(appId).catch(() => null);
     const memory = appMemoryBrief(before === null ? undefined : rowFromRecord(before).doc.memory);
     editIntents.set(appId, instruction);
+    editVersions.delete(appId);
     let outcome: Awaited<ReturnType<ScreenAssembler["assemble"]>>;
     try {
       outcome = await config.screen.assemble({
@@ -2887,11 +2902,15 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
               // (`edit`, and the trail `pins.rebase` replays); "Saved app.vendo"
               // for every other author, which is all a bare file save can say.
               const intent = editIntents.get(input.appId);
-              appended = await history.append(input.appId, previous, {
+              const entry: VersionEntry = {
                 at: new Date().toISOString(),
                 intent: intent ?? "Saved app.vendo",
                 rung: rungFor(document),
-              }, touchedPinSlots(previous, document),
+              };
+              // ONE clock read for this save: when the save is an `edit`'s, that
+              // door reports this very row (see `editVersions`).
+              if (intent !== undefined) editVersions.set(input.appId, entry);
+              appended = await history.append(input.appId, previous, entry, touchedPinSlots(previous, document),
               // A "touch" for an authored save, never an "edit": that receipt
               // records THAT the save changed a pinned component and nothing
               // about what it changed. Handing "Saved app.vendo" to a rebase as a
@@ -2944,6 +2963,9 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           // snapshot predates the concurrent edit the refusal just preserved, and
           // `undo()` would write it straight over that edit (see discardVersion).
           if (appended !== undefined) await discardVersion(input.appId, appended);
+          // …and a discarded version is not history, so it is not this edit's
+          // answer either.
+          editVersions.delete(input.appId);
         }
       }
       // The queries, through the SAME guard-bound caller `open()` resolves with:
@@ -3452,13 +3474,15 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         }
       }
       // `authored` appended this edit's own undo point under the person's words
-      // (see `editIntents`), so the version reported here names the surface the
-      // edit LANDED on and nothing else is written.
-      const version: VersionEntry = {
+      // (see `editIntents`), so the version reported here IS that row — read
+      // back rather than re-stamped, because a second clock read tells the
+      // caller a millisecond history does not hold. Nothing else is written.
+      const version: VersionEntry = editVersions.get(appId) ?? {
         at: new Date().toISOString(),
         intent: instruction,
         rung: rungFor(app),
       };
+      editVersions.delete(appId);
       return withPinDrift({
         app,
         version,
