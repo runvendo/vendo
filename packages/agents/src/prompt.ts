@@ -28,10 +28,15 @@ export interface PromptInput {
   directions?: readonly string[];
 }
 
+/** Continuation lines are INDENTED — the same defence @vendoai/agent's copy
+ *  carries: `situation` is client-supplied and sections join on a blank line, so
+ *  an unindented one inside a value forges a top-level section (a forged
+ *  `Directions` is mandatory policy). An indented blank line is not one. */
 const factLines = (facts: Record<string, unknown>): string[] =>
   Object.entries(facts)
     .filter(([, value]) => typeof value !== "function" && value !== undefined)
-    .map(([key, value]) => `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`);
+    .map(([key, value]) =>
+      `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`.replaceAll("\n", "\n  "));
 
 export function assemblePrompt(input: PromptInput): string {
   const sections: string[] = [BASE_RULES];

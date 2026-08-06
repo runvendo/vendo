@@ -65,11 +65,19 @@ ${CONNECT_ETIQUETTE}`;
 
 /** The `[User]` fact renderer — mirrors @vendoai/agents prompt.ts factLines:
  *  function values never reach the model (they are the ctx bag's, callable at
- *  guard/tool check-time), undefined entries drop. */
+ *  guard/tool check-time), undefined entries drop.
+ *
+ *  Continuation lines are INDENTED, and that is the block's only defence: facts
+ *  are host- or client-supplied text (an aria snapshot is legitimately
+ *  multi-line), sections join on a blank line, so a value carrying one would
+ *  otherwise read as a top-level section the assembler wrote — including a
+ *  forged `Directions`, which is mandatory policy. An indented blank line is not
+ *  a blank line, so nothing a fact says can close its own block. */
 const factLines = (facts: Record<string, unknown>): string[] =>
   Object.entries(facts)
     .filter(([, value]) => typeof value !== "function" && value !== undefined)
-    .map(([key, value]) => `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`);
+    .map(([key, value]) =>
+      `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`.replaceAll("\n", "\n  "));
 
 /** 03-agent §3: company directions are mandatory policy context and fail closed. */
 export async function assembleSystemPrompt(
