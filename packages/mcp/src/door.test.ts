@@ -2158,6 +2158,66 @@ describe("createMcpDoor tool menu, titles, and annotations", () => {
     expect(listed.tools.map((tool) => tool.name)).toEqual(["host_lookup", "host_pay", "host_wipe", "host_admin"]);
     await connected.client.close();
   });
+
+  it("never offers a withheld tool — not even a vendo_ one the menu can never curate away", async () => {
+    // The prefix bypass exists so a host's curated menu cannot delete Vendo's
+    // own plumbing. `withholdTools` is the deployment's own decision about ITS
+    // door, so it is checked FIRST — otherwise it could hold back everything
+    // except the tools it most needs to.
+    const { connected } = await open({
+      extraDescriptors: [
+        ...surfaceDescriptors,
+        { name: "vendo_make", description: "Make a screen", inputSchema: { type: "object" }, risk: "read" as const },
+        { name: "vendo_apps_pin", description: "Pin an app", inputSchema: { type: "object" }, risk: "write" as const },
+      ],
+      withholdTools: ["vendo_apps_pin", "host_admin"],
+    });
+
+    const listed = (await connected.client.listTools()).tools.map((tool) => tool.name);
+    expect(listed).not.toContain("vendo_apps_pin");
+    expect(listed).not.toContain("host_admin");
+    expect(listed).toContain("vendo_make");
+    expect(listed).toContain("host_lookup");
+    await connected.client.close();
+  });
+
+  it("answers a call to a withheld tool with the same in-band not-found an unknown name gets", async () => {
+    const { harness, connected } = await open({
+      extraDescriptors: [
+        { name: "vendo_apps_pin", description: "Pin an app", inputSchema: { type: "object" }, risk: "write" as const },
+      ],
+      withholdTools: ["vendo_apps_pin"],
+    });
+
+    const before = harness.executions.length;
+    const refused = await connected.client.callTool({ name: "vendo_apps_pin", arguments: {} });
+    expect(refused).toMatchObject({
+      isError: true,
+      content: [{ type: "text", text: expect.stringContaining("not-found") }],
+    });
+    // Not offered means not callable: the tool never ran.
+    expect(harness.executions.length).toBe(before);
+    await connected.client.close();
+  });
+
+  it("withholds an apps ride-along by name, so the apps path is not a way around it", async () => {
+    const { connected } = await open({
+      withholdTools: ["vendo_apps_call"],
+      apps: {
+        async list() { return []; },
+        async open() { return { kind: "tree" as const, payload: { formatVersion: "vendo-genui/v2", root: "root", nodes: [] } }; },
+        async call() { return {}; },
+      },
+    });
+
+    const listed = (await connected.client.listTools()).tools.map((tool) => tool.name);
+    expect(listed).toContain("vendo_apps_list");
+    expect(listed).toContain("vendo_apps_open");
+    expect(listed).not.toContain("vendo_apps_call");
+    const refused = await connected.client.callTool({ name: "vendo_apps_call", arguments: {} });
+    expect(refused).toMatchObject({ isError: true });
+    await connected.client.close();
+  });
 });
 
 /**
@@ -2691,6 +2751,8 @@ function hugeProperties(): Record<string, unknown> {
 interface HarnessOptions {
   store?: MemoryStore;
   menuTools?: string[] | (() => string[] | undefined | Promise<string[] | undefined>);
+  /** 10-mcp — names this door never offers, whatever the menu says. */
+  withholdTools?: string[];
   productName?: string;
   state?: McpDoorState;
   /** The call is passed so one harness can answer several tools differently. */
@@ -2755,6 +2817,7 @@ function makeHarness(options: HarnessOptions = {}) {
     store,
     apps: options.apps,
     ...(options.menuTools === undefined ? {} : { menuTools: options.menuTools }),
+    ...(options.withholdTools === undefined ? {} : { withholdTools: options.withholdTools }),
     ...(options.productName === undefined ? {} : { productName: options.productName }),
     ...(options.mount === undefined ? {} : { mount: options.mount }),
     ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
