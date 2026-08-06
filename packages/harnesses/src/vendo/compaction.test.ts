@@ -120,8 +120,11 @@ describe("token-budgeted compaction", () => {
   });
 
   it("sheds REASONING first, and nothing else", async () => {
+    // 3,000 rather than 1,500: the budget is denominated in the engine's ONE
+    // conversion, which is now two characters per token instead of four. Same
+    // band shed, same claim — the units under it changed.
     const { messages: shed } = await turnModelMessages({
-      messages: thread(), system: "system", tokenBudget: 1_500,
+      messages: thread(), system: "system", tokenBudget: 3_000,
     });
     const raw = wire(shed);
     expect(raw).not.toContain(REASONING);
