@@ -31,7 +31,7 @@ The pack adds three things:
    every call routed through policy, approval, and audit. The pack wraps the
    same guard-bound registry Vendo's own loop uses, so no tool reachable from
    your loop has an unguarded route.
-2. **Micro-apps in your chat.** A `vendo_create_app` tool builds live,
+2. **Micro-apps in your chat.** A `vendo_make` tool builds live,
    interactive micro-apps that render inline in your own chat surface via
    embed components.
 3. **Vendo as a delegate.** A `vendo_delegate` tool hands Vendo's agent a
@@ -94,7 +94,7 @@ built-ins are already prefixed:
 | Tool | What it does |
 | --- | --- |
 | `vendo_<your action>` | one per registered host action, guard-wrapped per call |
-| `vendo_create_app` | builds a micro-app; returns fast with an app ref while the build streams over the wire, so your loop never blocks on generation |
+| `vendo_make` | builds a micro-app; returns fast with an app ref while the build streams over the wire, so your loop never blocks on generation |
 | `vendo_delegate` | hands Vendo's own agent a whole task via the runner seam; returns `{ status, summary, refs }` |
 
 `include` and `exclude` filter the pack by final (namespaced) tool name,
