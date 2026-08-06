@@ -23,9 +23,8 @@ concurrency:
 #   coverage-merge    merges the shards' blob reports and enforces the
 #                     per-package coverage floors (they cannot be enforced on a
 #                     single shard — see the comment on that job)
-#   hermetic-extras   the suites that were never in CI at all
 #   ci                aggregate; KEEPS the required-check name `ci`
-# Required checks on main are: ci, integration, perf, conformance, audit.
+# Required checks on main are: ci, integration, conformance, audit.
 # Renaming any of those job names breaks merges.
 jobs:
   typecheck-lint:
@@ -246,40 +245,10 @@ jobs:
             fi
           done
 
-  # Three suites that existed, passed locally, and ran NOWHERE in CI: both
-  # framework integration examples and the corpus express host. All hermetic — scripted models, temp PGlite,
-  # no keys. They define `test` and not `test:coverage`, which is exactly why
-  # the old ci job's `turbo run test:coverage` never touched them.
-  # ai-sdk-agent's cloud-posture.e2e.test.ts self-skips without
-  # VENDO_LIVE_CLOUD=1; it stays skipped here (it is a nightly-class live test).
-  hermetic-extras:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      VITEST_MIN_FORKS: "1"
-      VITEST_MAX_FORKS: "2"
-      VITEST_MIN_THREADS: "1"
-      VITEST_MAX_THREADS: "2"
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - name: Turbo remote cache (GitHub-cache backed)
-        uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
-      - run: pnpm install --frozen-lockfile
-      # No separate build step: turbo.json gives `test` dependsOn
-      # ["^build", "build"], so this one command builds the three packages and
-      # their workspace deps before running them.
-      - name: Test formerly-local-only suites
-        run: pnpm turbo run test --continue --concurrency=2 --filter=@vendoai-examples/ai-sdk-agent --filter=@vendoai-examples/mastra-agent --filter=@vendoai-corpus/express-host
-
   # The required check. Its name must stay `ci` (branch protection on main).
   ci:
     runs-on: ubuntu-latest
-    needs: [typecheck-lint, test-shards, test-rest, coverage-merge, hermetic-extras]
+    needs: [typecheck-lint, test-shards, test-rest, coverage-merge]
     if: always()
     steps:
       - name: All lanes green

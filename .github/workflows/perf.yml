@@ -1,18 +1,15 @@
 name: Perf
 
+# Demoted from a per-PR required check to nightly (2026-08-06, Yousef's call):
+# a budget breach caught overnight is soon enough, and it keeps the per-PR
+# surface small. Same cron as the nightly live conformance run.
 on:
-  push:
-    branches: [main]
-  pull_request:
+  schedule:
+    - cron: "17 7 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
-
-# A new push to a PR supersedes the previous run; cancel it. Pushes to main
-# never cancel each other (every main commit keeps its full record).
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   perf:
@@ -20,8 +17,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          fetch-depth: 0 # turbo ls --affected diffs against the base branch
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -30,25 +25,8 @@ jobs:
       - name: Turbo remote cache (GitHub-cache backed)
         uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
       - run: pnpm install --frozen-lockfile
-      # @vendoai/bench depends on every package it measures, so `--affected`
-      # (which includes dependents) marks it whenever anything the budgets
-      # cover changes — see the ci.yml integration job's skip step for the
-      # TURBO_SCM_BASE and fall-open rationale.
-      - name: Skip if bench scope unaffected (PRs only)
-        id: affected
-        if: github.event_name == 'pull_request'
-        env:
-          TURBO_SCM_BASE: origin/${{ github.base_ref }}
-        run: |
-          if pnpm turbo ls --affected --output=json > /tmp/affected.json \
-             && jq -e '[.packages.items[].name | select(. == "@vendoai/bench")] | length == 0' /tmp/affected.json > /dev/null; then
-            echo "bench scope unaffected by this PR; skipping"
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          fi
-      - if: steps.affected.outputs.skip != 'true'
-        run: pnpm build
+      - run: pnpm build
       # Deterministic suites only, compared against bench/budgets.json; exits 1
       # on any breach and writes the results table to the job summary. Live
       # suites (gen-live, e2b) never run in CI — they need paid API keys.
-      - if: steps.affected.outputs.skip != 'true'
-        run: pnpm --filter @vendoai/bench bench -- --check
+      - run: pnpm --filter @vendoai/bench bench -- --check

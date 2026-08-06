@@ -1,15 +1,16 @@
 name: Knowledge Eval
 
-# The per-PR knowledge eval gate (docs/eval/KNOWLEDGE.md): deterministic
-# offline legs only — golden-set retrieval vs expected doc ids, refusal
-# mechanics, ratcheted bars — against the in-memory engine. Exits nonzero on
-# any hard failure or bars breach. Model-costed judging and live engines run
-# nightly/on-demand, never here (the front door's per-PR carve-out).
+# The knowledge eval gate (docs/eval/KNOWLEDGE.md): deterministic offline
+# legs only — golden-set retrieval vs expected doc ids, refusal mechanics,
+# ratcheted bars — against the in-memory engine. Exits nonzero on any hard
+# failure or bars breach. Model-costed judging and live engines stay
+# on-demand. Demoted from a per-PR gate to nightly (2026-08-06, Yousef's
+# call): an eval regression caught overnight is soon enough.
 
 on:
-  push:
-    branches: [main]
-  pull_request:
+  schedule:
+    - cron: "17 7 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
