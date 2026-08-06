@@ -20,6 +20,8 @@ const REASONING = `R${"e".repeat(4000)}`;
 const TOOL_OUTPUT = `T${"o".repeat(4000)}`;
 const OLDEST = "the oldest question";
 const NEWEST = "the newest question";
+/** Enough bulk that a budget can land between the shed's bands. */
+const FILLER = "x".repeat(2000);
 
 /** A thread with all three sheddable kinds in it, newest last. */
 const thread = (): UIMessage[] => [
@@ -48,7 +50,58 @@ const thread = (): UIMessage[] => [
   { id: "m5", role: "user", parts: [{ type: "text", text: NEWEST }] },
 ];
 
+/**
+ * The same thread carrying an UNANSWERED tool call — an approval the previous
+ * turn abandoned, a step a crash cut short. `runtime.ts:294-300` flips those
+ * parts upstream today for exactly this reason: the projection would otherwise
+ * hand the provider a tool-call with no tool-result, which is a 400.
+ */
+const threadWithDanglingCall = (): UIMessage[] => [
+  { id: "d1", role: "user", parts: [{ type: "text", text: `${OLDEST} ${FILLER}` }] },
+  {
+    id: "d2",
+    role: "assistant",
+    parts: [{
+      type: "dynamic-tool",
+      toolName: "dump",
+      toolCallId: "c1",
+      state: "input-available",
+      input: { q: FILLER },
+    }],
+  } as unknown as UIMessage,
+  {
+    id: "d3",
+    role: "assistant",
+    parts: [{
+      type: "dynamic-tool",
+      toolName: "dump",
+      toolCallId: "c2",
+      state: "output-available",
+      input: {},
+      output: { rows: TOOL_OUTPUT },
+    }],
+  } as unknown as UIMessage,
+  { id: "d4", role: "assistant", parts: [{ type: "text", text: "Found some." }] },
+  { id: "d5", role: "user", parts: [{ type: "text", text: NEWEST }] },
+];
+
 const wire = (messages: ModelMessage[]): string => JSON.stringify(messages);
+
+/**
+ * The two prompts every provider rejects outright: a tool-call whose result is
+ * missing (or a result whose call is), and a prompt whose first non-system
+ * message is the assistant's. Both are reachable from the shed above, because
+ * its last band drops from the FRONT.
+ */
+function expectWellFormed(messages: ModelMessage[], where: string): void {
+  const parts = messages.flatMap((message) =>
+    typeof message.content === "string" ? [] : message.content);
+  const called = parts.filter((part) => part.type === "tool-call").map((part) => part.toolCallId);
+  const answered = parts.filter((part) => part.type === "tool-result").map((part) => part.toolCallId);
+  expect([...called].sort(), `tool pairs, ${where}`).toEqual([...answered].sort());
+  expect(messages.find((message) => message.role !== "system")?.role, `first non-system, ${where}`)
+    .toBe("user");
+}
 
 /** Every prompt must still be sendable: a system prompt, then at least the ask. */
 function expectSendable(messages: ModelMessage[]): void {
@@ -107,6 +160,23 @@ describe("token-budgeted compaction", () => {
           : message.content.filter((part) => part.type === "tool-call" || part.type === "tool-result"));
       expect(calls.length % 2, `budget ${budget}`).toBe(0);
     }
+  });
+
+  it("projects a well-formed prompt across the band-2 cliff", async () => {
+    // The cliff this walks, measured on the fixture: 2_500 still fits whole,
+    // 2_000 has shed the tool payloads, and somewhere between 600 and 500 the
+    // shed starts dropping the oldest messages. Pair parity alone (the test
+    // above) cannot see either defect: the dangling call is orphaned before any
+    // budget applies, and the assistant-first prompt is perfectly paired.
+    for (const budget of [100_000, 2_500, 2_000, 1_000, 600, 500, 200, 10]) {
+      const shed = await turnModelMessages(threadWithDanglingCall(), "system", undefined, budget);
+      expectWellFormed(shed, `budget ${budget}`);
+      expect(wire(shed), `budget ${budget}`).toContain(NEWEST);
+    }
+    // …and the walk really did cross the cliff, so this can never pass on a
+    // thread that never sheds a message at all.
+    const floor = await turnModelMessages(threadWithDanglingCall(), "system", undefined, 10);
+    expect(wire(floor)).not.toContain(OLDEST);
   });
 
   it("keeps the message-count window working untouched", async () => {
