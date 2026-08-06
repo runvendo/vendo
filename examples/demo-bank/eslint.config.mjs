@@ -9,6 +9,10 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
+    // fixtures/context-e2e's dev server. Its dist dir is a SIBLING of `.next`
+    // and not a child (CLAUDE.md: `next build` wipes its whole distDir), which
+    // is exactly why the `.next/**` line above does not already cover it.
+    ".next-context-e2e/**",
     "out/**",
     "build/**",
     "next-env.d.ts",
