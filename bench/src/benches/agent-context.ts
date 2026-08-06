@@ -55,7 +55,7 @@ export const agentContextSuite: Suite = {
     try {
       await store.ensureSchema();
       const principal: Principal = { kind: "user", subject: SUBJECT };
-      const vendo = createVendo({ model: idleModel(), principal: async () => principal, store });
+      const vendo = createVendo({ models: { default: idleModel() }, principal: async () => principal, store });
       const ctx: RunContext = {
         principal,
         venue: "chat",
