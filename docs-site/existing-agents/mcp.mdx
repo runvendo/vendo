@@ -166,6 +166,136 @@ behind all three are in [HTTP routes](/reference/http-routes).
   destination, and the outside agent's own chat stays text.
 </Note>
 
+## Walk through it
+
+What the whole thing looks like end to end, run against the
+[`demo-bank`](https://github.com/runvendo/vendo/tree/main/examples/demo-bank)
+host (Maple) with an outside MCP client. Every screenshot below is that run.
+
+<Steps>
+  <Step title="Sign the agent in">
+    Point the client at the door and let it do the OAuth itself — discovery,
+    dynamic client registration, PKCE, your login, the door's consent page:
+
+    ```bash
+    export VENDO_MCP_URL=https://your-app.example.com/api/vendo/mcp
+    node examples/mcp-agent/agent.mjs "make me something to watch my spending on"
+    ```
+
+    The client's `tools/list` then carries your host actions and the `vendo_*`
+    tools together. Nothing about the connection is your code.
+  </Step>
+
+  <Step title="Show the agent where a view can land">
+    A slot is your markup, and nothing enumerates slots for an outside agent —
+    so the agent has to be told the id, or the person has to say it. Empty, the
+    slot is whatever you put in it:
+
+    <Frame caption="The host's own hero slot before anything is placed — Maple's markup, not Vendo's.">
+      <img src="/images/existing-agents/mcp-walk-slot-empty.png" alt="Maple dashboard with an empty Vendo hero slot inviting the person to describe a view" />
+    </Frame>
+  </Step>
+
+  <Step title="Ask for a view with a destination">
+    The person says where it goes, the agent passes that slot id:
+
+    ```json
+    {
+      "request": "A breakdown of this month's spending by category, largest first",
+      "slot": "home-hero"
+    }
+    ```
+
+    The agent gets back four fields of words. The screen goes to the page, bound
+    to live host data it read itself — nothing in the request was a number the
+    agent computed:
+
+    <Frame caption="The same slot, filled. The figures come from the host's own spending endpoint, read at render time.">
+      <img src="/images/existing-agents/mcp-walk-slot-filled.png" alt="The Maple hero slot now showing a generated spending breakdown with a donut chart and a category table of live amounts" />
+    </Frame>
+  </Step>
+
+  <Step title="Or ask with no destination, and place it after">
+    Leave `slot` out and the screen goes to the person's apps list. To move it
+    onto the page later, the agent calls `vendo_apps_pin` with the app — by id,
+    or by the name the person used.
+
+    That is a write, so under a `cautious` policy it parks. The person sees the
+    tool, the app, the slot, and the exact arguments before anything moves:
+
+    <Frame caption="The parked pin in Maple's approvals queue. The agent is told an approval is pending; nothing has changed yet.">
+      <img src="/images/existing-agents/mcp-walk-approval.png" alt="Approval card reading Needs your approval, Pin the app to your page, showing the app name, the slot, and the vendo_apps_pin arguments with Deny and Approve buttons" />
+    </Frame>
+
+    Approve it and the agent's retry goes through. The reply names whatever was
+    evicted, so the agent can say what moved:
+
+    ```json
+    { "app": "app_5a3948bc…", "slot": "home-hero", "evicted": "app_c0d6b562…" }
+    ```
+
+    <Frame caption="The pinned app in the hero slot, replacing what held it.">
+      <img src="/images/existing-agents/mcp-walk-pinned.png" alt="The Maple hero slot showing a pinned savings goals table with each goal and its target amount" />
+    </Frame>
+
+    <Warning>
+      Approving does not resume the parked call — the agent has to call again,
+      **on the same MCP session**. The door reuses the parked call's id for an
+      identical retry within that session, and the approval is pinned to that
+      id; a client that reconnects between attempts mints a new id and parks
+      again. Real clients hold one session for the conversation, so this is
+      only a trap for scripts that connect per call.
+    </Warning>
+  </Step>
+
+  <Step title="Take it back out">
+    `vendo_apps_unpin` clears the slot. The app itself is untouched — it stays
+    in the person's apps and can go back any time — and the slot returns to
+    your own children:
+
+    <Frame caption="After unpinning. This is the same screenshot as step 2, because the page really is identical again.">
+      <img src="/images/existing-agents/mcp-walk-slot-empty.png" alt="The Maple dashboard back to its own hero slot invitation after the pinned app was removed" />
+    </Frame>
+
+    Pass the app id rather than the name if the person has two apps with the
+    same title: the tool refuses the guess and hands the agent both candidates
+    to ask about.
+  </Step>
+
+  <Step title="Check it is per person">
+    A placement belongs to the person who made it. Signed in as a different
+    Maple user, the same slot on the same page is untouched:
+
+    <Frame caption="A second user's dashboard. The first user's pinned app is not there, and their apps list is their own.">
+      <img src="/images/existing-agents/mcp-walk-other-user.png" alt="The Maple dashboard for a second signed-in user, showing the empty hero slot invitation rather than the first user's pinned app" />
+    </Frame>
+  </Step>
+</Steps>
+
+### Two things that are not bugs
+
+**A build can come back `failed`, with a reason.** The checks floor rejects a
+screen whose bindings claim data your host does not return, or whose props do
+not type-check — nothing is painted and whatever held the slot stays. The agent
+gets that sentence and should retry once on the same `app` with a narrower
+request rather than rebuilding from scratch.
+
+**Placing is a write, and writes park.** Reading is not: on Maple's policy the
+agent's `host_*` reads answer straight away, while every `vendo_apps_pin` and
+`vendo_apps_unpin` waits for the person. Your policy decides where that line
+sits — the door adds no exemption to it either way.
+
+<Warning>
+  Mounted under a path prefix? `VENDO_BASE_URL` must be the full public base
+  including that prefix (`https://site.com/app`), or the door advertises OAuth
+  endpoints that 404. Two known bugs bite in that configuration today —
+  [#866](https://github.com/runvendo/vendo/issues/866) (the login redirect and
+  the consent form drop the prefix) and
+  [#867](https://github.com/runvendo/vendo/issues/867) — so verify the sign-in
+  bounce end to end before pointing a real client at a prefixed deployment. A
+  deployment served at an origin root is unaffected.
+</Warning>
+
 ## The perimeter does not move
 
 - Every door call runs the guard-bound registry — policy, approvals, audit —
