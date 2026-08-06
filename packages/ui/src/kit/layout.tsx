@@ -3,7 +3,7 @@ import type { CSSProperties, PropsWithChildren } from "react";
 import { font, t } from "./tokens.js";
 
 const gapVar = (gap: number | undefined): string =>
-  gap === undefined ? "var(--vendo-space-small, 10px)" : `${gap}px`;
+  gap === undefined ? "var(--vendo-density-content-gap, 10px)" : `${gap}px`;
 
 export interface StackProps {
   gap?: number;

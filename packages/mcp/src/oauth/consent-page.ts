@@ -32,14 +32,14 @@ export function consentPage(
       margin: 0;
       display: grid;
       place-items: center;
-      padding: var(--vendo-space-large, 28px);
+      padding: 28px;
       background:
         radial-gradient(circle at 20% 0%, color-mix(in srgb, var(--vendo-color-accent, #3157d5) 12%, transparent), transparent 38rem),
         var(--vendo-color-background, #f3ede2);
     }
     main {
       width: min(100%, 31rem);
-      padding: var(--vendo-space-large, 30px);
+      padding: 30px;
       border: 1px solid var(--vendo-color-border, rgba(23, 24, 29, .12));
       border-radius: var(--vendo-radius-medium, 16px);
       background: var(--vendo-color-surface, #fffdf9);
@@ -57,7 +57,7 @@ export function consentPage(
       letter-spacing: -.04em;
     }
     h1 {
-      margin: var(--vendo-space-large, 24px) 0 var(--vendo-space-small, 10px);
+      margin: 24px 0 var(--vendo-density-content-gap, 10px);
       font-family: var(--vendo-heading-family, var(--vendo-font-family, inherit));
       font-size: clamp(1.45rem, 4vw, 1.8rem);
       line-height: 1.18;
@@ -67,9 +67,9 @@ export function consentPage(
     .scope {
       display: flex;
       justify-content: space-between;
-      gap: var(--vendo-space-medium, 14px);
-      margin-top: var(--vendo-space-large, 24px);
-      padding: var(--vendo-space-medium, 14px);
+      gap: 14px;
+      margin-top: 24px;
+      padding: 14px;
       border: 1px solid var(--vendo-color-border, rgba(23, 24, 29, .12));
       border-radius: var(--vendo-radius-small, 10px);
       background: color-mix(in srgb, var(--vendo-color-surface, #fffdf9) 78%, var(--vendo-color-background, #f3ede2));
@@ -77,7 +77,7 @@ export function consentPage(
     }
     .scope span { color: var(--vendo-color-muted, #686a73); }
     .scope strong { overflow-wrap: anywhere; text-align: right; }
-    form { display: flex; gap: var(--vendo-space-small, 10px); margin-top: var(--vendo-space-large, 26px); }
+    form { display: flex; gap: var(--vendo-density-content-gap, 10px); margin-top: 26px; }
     button {
       min-height: 2.7rem;
       flex: 1;
@@ -96,9 +96,9 @@ export function consentPage(
       color: var(--vendo-color-accent-text, #fff);
       background: var(--vendo-color-accent, #3157d5);
     }
-    .fine { margin-top: var(--vendo-space-medium, 14px); font-size: .78rem; text-align: center; }
+    .fine { margin-top: 14px; font-size: .78rem; text-align: center; }
     @media (max-width: 30rem) {
-      main { padding: var(--vendo-space-large, 24px) var(--vendo-space-medium, 18px); }
+      main { padding: 24px 18px; }
       form { flex-direction: column-reverse; }
     }
   </style>

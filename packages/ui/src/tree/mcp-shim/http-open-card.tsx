@@ -4,14 +4,14 @@ import type { OpenInProductPayload } from "./shim-core.js";
 const cardStyle: CSSProperties = {
   display: "grid",
   gridTemplateColumns: "auto minmax(0, 1fr)",
-  gap: "var(--vendo-space-medium, 16px)",
+  gap: "16px",
   alignItems: "start",
   color: "var(--vendo-color-text, #1a1a1e)",
   background: "var(--vendo-color-surface, #ffffff)",
   border: "1px solid var(--vendo-color-border, #e3e3e8)",
   borderRadius: "var(--vendo-radius-medium, 12px)",
   boxShadow: "0 10px 32px color-mix(in srgb, var(--vendo-color-text, #1a1a1e) 9%, transparent)",
-  padding: "var(--vendo-space-large, 20px)",
+  padding: "20px",
   fontFamily: "var(--vendo-font-family, system-ui, sans-serif)",
 };
 
@@ -52,9 +52,9 @@ const linkStyle: CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   justifyContent: "center",
-  marginTop: "var(--vendo-space-medium, 16px)",
+  marginTop: "16px",
   minHeight: 42,
-  padding: "0 var(--vendo-space-large, 18px)",
+  padding: "0 18px",
   borderRadius: "var(--vendo-radius-medium, 10px)",
   color: "var(--vendo-color-accent-text, #ffffff)",
   background: "var(--vendo-color-accent, #111111)",

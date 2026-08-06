@@ -11,6 +11,7 @@ import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { VendoTheme } from "@vendoai/core";
 import { defaultVendoTheme, themeCssVariables } from "../src/theme.js";
+import { t } from "../src/kit/tokens.js";
 import { VendoProvider, createVendoClient } from "../src/index.js";
 import { ChromeRoot } from "../src/chrome/chrome-root.js";
 import { CHROME_CSS } from "../src/chrome/chrome-css.js";
@@ -122,6 +123,33 @@ describe("tokenized colors — no scattered literals", () => {
 
   it("dead --vendo-warning typo vars are replaced by the real warn tokens", () => {
     expect(CHROME_CSS).not.toContain("--vendo-warning");
+  });
+});
+
+describe("Kit token fallbacks — an unthemed Kit is the default theme, exactly", () => {
+  // These were a retyped copy of defaultVendoTheme and had drifted: surface and
+  // background were swapped, so a Kit with no host theme painted an off-white
+  // PAGE with white cards — the inverse of the default — and fontFamily had
+  // lost the Onest brand stack. Nothing pinned them, which is why it shipped.
+  it("every color fallback is its own default, never a neighbour's", () => {
+    const d = defaultVendoTheme.colors;
+    expect(t.background).toBe(`var(--vendo-color-background, ${d.background})`);
+    expect(t.surface).toBe(`var(--vendo-color-surface, ${d.surface})`);
+    expect(t.text).toBe(`var(--vendo-color-text, ${d.text})`);
+    expect(t.muted).toBe(`var(--vendo-color-muted, ${d.muted})`);
+    expect(t.accent).toBe(`var(--vendo-color-accent, ${d.accent})`);
+    expect(t.accentText).toBe(`var(--vendo-color-accent-text, ${d.accentText})`);
+    expect(t.danger).toBe(`var(--vendo-color-danger, ${d.danger})`);
+    expect(t.border).toBe(`var(--vendo-color-border, ${d.border})`);
+  });
+
+  it("the type and radius fallbacks carry the default theme's own values", () => {
+    expect(t.fontFamily).toBe(`var(--vendo-font-family, ${defaultVendoTheme.typography.fontFamily})`);
+    expect(t.fontFamily).toContain("Onest");
+    expect(t.fontSize).toBe(`var(--vendo-font-size, ${defaultVendoTheme.typography.baseSize})`);
+    expect(t.radiusSmall).toBe(`var(--vendo-radius-small, ${defaultVendoTheme.radius.small})`);
+    expect(t.radiusMedium).toBe(`var(--vendo-radius-medium, ${defaultVendoTheme.radius.medium})`);
+    expect(t.radiusLarge).toBe(`var(--vendo-radius-large, ${defaultVendoTheme.radius.large})`);
   });
 });
 

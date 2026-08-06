@@ -1,10 +1,10 @@
 {
   "name": "MapleSpendingDonut",
-  "hash": "sha256:e801472d79c1a7f565ac159d04ff8f8f36a424473e52b548f7043f1eb6cac0f0",
-  "capturedAt": "2026-08-03T18:04:19.538Z",
+  "hash": "sha256:56419ecdeeaf49f4dbc1e1e64cd21238ba6b00f97bf3edec56eae9d594d91765",
+  "capturedAt": "2026-08-06T11:22:01.985Z",
   "module": "src/vendo/registry.tsx",
   "export": "MapleSpendingDonut",
-  "entry": "fbab51e4a08afa45c381b8c6f51043dad807afb1e110cdba174aac89b9500dfd",
+  "entry": "ff9eb194f3b09e308ae62c2acff935360b34f6ec47013e6f832ada1e8b8fb88d",
   "modules": {
     "src/components/charts/colors.ts": "86c8b59ecc843e1d4549847b254c7647d568a4a8fe96f0d7048dad184ecd72ab",
     "src/components/charts/donut.tsx": "499fc969edce5dee3823d9d27b914ed39cabb90845b726478a24b59ada47d145",
