@@ -1,4 +1,4 @@
-import { isVendoAppsTool, riskLabelSchema, VENDO_MAKE_TOOL, vendoErrorCodeSchema, type ApprovalRequest, type JsonSchema, type RiskLabel, type VendoCitationsPart, type VendoErrorCode, type VendoKnowledgeCitation } from "@vendoai/core";
+import { AGENT_CONTEXT_MARK, isAgentContextText, isVendoAppsTool, riskLabelSchema, VENDO_MAKE_TOOL, vendoErrorCodeSchema, type ApprovalRequest, type JsonSchema, type RiskLabel, type VendoCitationsPart, type VendoErrorCode, type VendoKnowledgeCitation } from "@vendoai/core";
 import { isToolUIPart, type UIMessage } from "ai";
 import { previewArgs } from "../humanize.js";
 import { LONG_TEXT_CAP, truncateHead } from "../truncate.js";
@@ -371,7 +371,8 @@ export function narratedByAppCard(
 export const AGENT_CONTEXT_METADATA = { vendo: { agentContext: true } } as const;
 
 /**
- * The SAME mark, in the text itself.
+ * The SAME mark, in the text itself — 01-core's, re-exported so the chrome's
+ * consumers keep the name they import today.
  *
  * THE HOLE the post-check found: `providerMetadata` is the only thing saying
  * "never show this", and a store that persists a text part as `{ type, text }`
@@ -381,13 +382,11 @@ export const AGENT_CONTEXT_METADATA = { vendo: { agentContext: true } } as const
  * with it. That is the exact leak the carrier was invented to avoid, one
  * reload later.
  *
- * The mark therefore rides the channel that always survives. It fails CLOSED:
- * a part that carries it is hidden even with no metadata at all, and the id is
- * never what a person sees. The model reads the mark too, which costs a few
- * tokens and tells it (truthfully) that the line is context rather than
- * something the person typed.
+ * It lives in core (not here) because the SERVER needs it too: the thread title
+ * is minted in @vendoai/agent, which had no concept of the mark and persisted
+ * "[vendo:context] Declined to connect Gmail." into the thread rail.
  */
-export const AGENT_CONTEXT_MARK = "[vendo:context]";
+export { AGENT_CONTEXT_MARK };
 
 /** The text part that carries grounding to the model and to nobody else. */
 export function agentContextPart(context: string): { type: "text"; text: string; providerMetadata: typeof AGENT_CONTEXT_METADATA } {
@@ -401,7 +400,7 @@ export function agentContextPart(context: string): { type: "text"; text: string;
 export function isAgentContext(part: UIMessage["parts"][number]): boolean {
   if (part.type !== "text") return false;
   const vendo = (part.providerMetadata as { vendo?: { agentContext?: unknown } } | undefined)?.vendo;
-  return vendo?.agentContext === true || part.text.startsWith(AGENT_CONTEXT_MARK);
+  return vendo?.agentContext === true || isAgentContextText(part.text);
 }
 
 /** The plain text a user turn carried, joined across its text parts — the seed

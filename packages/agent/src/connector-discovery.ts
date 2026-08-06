@@ -156,7 +156,7 @@ const DESCRIPTORS: ToolDescriptor[] = [
     title: VENDO_TOOL_TITLES.list_connections,
     description:
       "List the outside services this product can connect to and whether this user has connected each. "
-      + "A service the user has not connected cannot run: say so plainly and point at the connect button.",
+      + "A service the user has not connected cannot run: ask for it with request_connection instead of calling it.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     risk: "read",
   },

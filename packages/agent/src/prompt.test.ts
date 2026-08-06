@@ -190,18 +190,49 @@ describe("discovery sections", () => {
   it("connectors: carries the same connect etiquette the budget section carries", async () => {
     const prompt = await assembleSystemPrompt(testGuard({}, []), ctx(), undefined, false, "connectors");
     expect(prompt).toContain("A connect-required result means stop calling that service");
-    expect(prompt).toContain("connect (link) button in the message box");
-    expect(prompt).toContain("never claim a card \"should have appeared\"");
-    expect(prompt).toContain("hunt for substitutes across the catalog");
+    expect(prompt).toContain("Never claim a card \"should have appeared\"");
+    expect(prompt).toContain("never try other tools of the same service");
   });
 
-  /** V5 — the etiquette above says what NOT to do; without this line the model
-   *  had no action left but prose, so it either called the unconnected tool to
-   *  "check" or told the user to go find a button. The ask is now a tool. */
-  it("connectors: names request_connection as the move for an unconnected service", async () => {
-    const prompt = await assembleSystemPrompt(testGuard({}, []), ctx(), undefined, false, "connectors");
-    expect(prompt).toContain("call request_connection with its toolkit and one sentence saying why");
-    expect(prompt).toContain("never the service tool itself, and never a substitute service");
+  /** uiaudit 2026-08-06 — the ask was taught in the connectors section only, and
+   *  the `vendo()` engine (the demo, and every composed route: agent.ts hard-codes
+   *  "find-tools") never gets that section. So the model read the tool's own
+   *  description against a system rule pointing at the connect button and the card
+   *  appeared on 2 of 6 identical prompts. The teaching rides the ETIQUETTE now,
+   *  which both surfaces carry. */
+  it("teaches request_connection on EVERY discovery surface, engine path included", async () => {
+    for (const discovery of ["find-tools", "connectors"] as const) {
+      const prompt = await assembleSystemPrompt(testGuard({}, []), ctx(), undefined, false, discovery);
+      expect(prompt).toContain("call request_connection with that service's toolkit and one plain sentence saying why");
+      expect(prompt).toContain("then stop and wait");
+      // One copy per prompt: the sentence used to be duplicated into the
+      // connectors section on top of the shared etiquette.
+      expect(prompt.match(/call request_connection with/g)).toHaveLength(1);
+    }
+  });
+
+  /** The contradiction itself: a section telling the model to make the USER go
+   *  find the button is a section telling it not to ask. The dock button is still
+   *  there for a person who wants it — it is just never the agent's answer. */
+  it("no section sends the user hunting for the connect button", async () => {
+    for (const discovery of ["find-tools", "connectors", false] as const) {
+      const prompt = await assembleSystemPrompt(testGuard({}, []), ctx(), undefined, false, discovery);
+      expect(prompt).not.toMatch(/point (the user )?(to|at) the connect/i);
+      expect(prompt).not.toContain("connect (link) button in the message box");
+    }
+  });
+
+  /** Measured on the first live run of the fixed prompt: the model learned Gmail
+   *  was unconnected from list_connections and hand-wrote the email in chat for
+   *  the user to copy. Every named substitute here is one that was actually taken,
+   *  and the etiquette leaves no graceful alternative to the ask — the etiquette
+   *  never promises a card either, so it still reads honestly on a deployment
+   *  whose connect port is unset and projects no `request_connection`. */
+  it("leaves no substitute for the ask", async () => {
+    const prompt = await assembleSystemPrompt(testGuard({}, []), ctx(), undefined, false, "find-tools");
+    expect(prompt).toContain("including when list_connections is what told you");
+    expect(prompt).toContain("never hand-write the result in chat as a consolation prize");
+    expect(prompt).toContain("never reach for a different service");
   });
 
   /** The section this replaced taught the model to hunt a found tool down on its

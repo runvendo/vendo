@@ -1,4 +1,4 @@
-import { VendoError, type IsoDateTime, type RunContext, type StoreAdapter, type ThreadId, type VendoRecord } from "@vendoai/core";
+import { isAgentContextText, VendoError, type IsoDateTime, type RunContext, type StoreAdapter, type ThreadId, type VendoRecord } from "@vendoai/core";
 import type { UIMessage } from "ai";
 import { mintThreadId } from "./ids.js";
 
@@ -70,6 +70,11 @@ function deriveTitle(messages: UIMessage[]): string {
         && (part as { type?: unknown }).type === "text"
         && typeof (part as { text?: unknown }).text === "string") {
         const title = (part as { text: string }).text.trim();
+        // A hidden agent-context part is text the model reads and a person never
+        // sees (01-core's AGENT_CONTEXT_MARK), so it is not this thread's name:
+        // a connect card's "Not now" answer listed in the rail as
+        // "[vendo:context] Declined to connect Gmail." Skip it and keep looking.
+        if (isAgentContextText(title)) continue;
         return title ? title.slice(0, 80) : "New thread";
       }
     }

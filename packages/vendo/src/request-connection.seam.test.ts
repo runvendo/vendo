@@ -21,7 +21,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Connector } from "@vendoai/actions";
-import type { Principal } from "@vendoai/core";
+import { AGENT_CONTEXT_MARK, type Principal } from "@vendoai/core";
 import { defineHarness } from "@vendoai/harnesses";
 import { createStore, type VendoStore } from "@vendoai/store";
 import { VendoProvider, createVendoClient } from "@vendoai/ui";
@@ -216,6 +216,25 @@ describe("request_connection: the agent asks, the chrome renders the ask", () =>
       sent.find(body => JSON.stringify(body).includes("Declined to connect Gmail.")));
     expect(JSON.stringify(decline)).toContain("[vendo:context]");
     expect(document.body.textContent).not.toContain("vendo:context");
+  });
+
+  /** uiaudit 2026-08-06 — the same hidden line, one surface later. The chrome's
+   *  card answers are sent as bare marked text, and a fresh conversation's first
+   *  message is sometimes exactly that; the title is minted server-side in
+   *  @vendoai/agent, which knew nothing about the mark. Written through the real
+   *  door and read back through the real `GET /threads` listing — the rail's own
+   *  read path, no stub on either side. */
+  it("a hidden context message never becomes the thread's listed title", async () => {
+    const { build } = compose("gmail");
+    const vendo = await build();
+    await runTurn(vendo, "thr_hidden_title", `${AGENT_CONTEXT_MARK} Declined to connect Gmail.`);
+
+    const listing = await vendo.handler(new Request(`${BASE}/threads`));
+    expect(listing.status).toBe(200);
+    const rows = await listing.json() as Array<{ id: string; title: string }>;
+    const row = rows.find(entry => entry.id === "thr_hidden_title");
+    expect(row).toBeDefined();
+    expect(row!.title).not.toContain(AGENT_CONTEXT_MARK);
   });
 
   it("a toolkit this deployment cannot connect is refused, and paints no card", async () => {

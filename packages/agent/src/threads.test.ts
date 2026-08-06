@@ -1,4 +1,4 @@
-import type { StoreAdapter } from "@vendoai/core";
+import { AGENT_CONTEXT_MARK, type StoreAdapter } from "@vendoai/core";
 import type { UIMessage } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAgent } from "./index.js";
@@ -70,6 +70,44 @@ describe("agent threads", () => {
     expect(assistantText(secondThread!.messages)).toContain("First reply.");
     expect(assistantText(secondThread!.messages)).toContain("Second reply.");
     expect(Date.parse(secondThread!.updatedAt)).toBeGreaterThan(Date.parse(firstThread!.updatedAt));
+  });
+
+  /** uiaudit 2026-08-06 — the chrome answers a connect card by SENDING a marked
+   *  text part ("[vendo:context] Declined to connect Gmail."): the model reads it,
+   *  a person never sees it, and it arrives as a bare `{ type, text }` with no
+   *  metadata at all. deriveTitle took the first user text part it found with no
+   *  filter, so a thread that opened on one was listed in the rail under the
+   *  plumbing (observed live). The mark lives in 01-core now, for exactly this. */
+  it("never titles a thread with a hidden agent-context message", async () => {
+    const store = memoryStore();
+    const guard = testGuard({});
+    const tools = boundRegistry({}, guard);
+    const model = scriptedModel([
+      textTurn("Understood.", "text_hidden_1"),
+      textTurn("Here you go.", "text_hidden_2"),
+    ]);
+    const agent = createAgent({ model, tools, guard, store });
+    const runCtx = ctx();
+    const threadId = "thr_hidden_context";
+
+    await readSse(await agent.stream({
+      threadId,
+      message: userMessage("user_hidden", `${AGENT_CONTEXT_MARK} Declined to connect Gmail.`),
+      ctx: runCtx,
+    }));
+
+    // Nothing eligible yet, so the existing fallback stands — never the mark.
+    expect(await agent.threads.list(runCtx)).toMatchObject([{ id: threadId, title: "New thread" }]);
+
+    // And the first thing the person actually types becomes the title.
+    await readSse(await agent.stream({
+      threadId,
+      message: userMessage("user_typed", "Summarise this week's spending"),
+      ctx: runCtx,
+    }));
+    const summaries = await agent.threads.list(runCtx);
+    expect(summaries[0]).toMatchObject({ id: threadId, title: "Summarise this week's spending" });
+    expect(JSON.stringify(summaries)).not.toContain(AGENT_CONTEXT_MARK);
   });
 
   it("isolates get, list, and delete by principal subject — one subject never reads or deletes another's thread", async () => {

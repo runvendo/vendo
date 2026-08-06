@@ -40,8 +40,24 @@ const PRESENTATION_PROMPT = `Presentation
 // The connect etiquette, shared verbatim by both discovery sections below: it is
 // load-bearing on every surface that can reach a connector, and one copy is what
 // keeps the two from drifting apart.
-const CONNECT_ETIQUETTE = `- Never call a tool for a service you know is unconnected. A connect-required result means stop calling that service: tell the user what it needs. A connect card appears with that result on that turn only — on later turns, point the user to the connect (link) button in the message box instead; never claim a card "should have appeared".
-- When a needed service is unconnected, say so plainly and surface the connect step — do not try other tools of the same service or hunt for substitutes across the catalog.`;
+//
+// The ASK lives here too, and that is the whole point (uiaudit 2026-08-06): the
+// `vendo()` engine — the demo and every composed route — only ever gets
+// DISCOVERY_BUDGET_PROMPT, so teaching `request_connection` in the connectors
+// section alone meant the engine's model never read it, while this bullet told it
+// to send the user hunting for the connect button. The card appeared on 2 of 6
+// identical prompts. One copy, both surfaces, one instruction.
+//
+// Every substitute named below was measured, not imagined — the button-hunt is
+// what the old text prescribed, and on the first live run of the fixed prompt the
+// model called list_connections, learned Gmail was unconnected, and hand-wrote the
+// email in chat for the user to copy. An instruction that leaves any graceful
+// alternative gets the alternative, which is also why there is no hedge for a
+// deployment with no connectors: the model's tool list is the ground truth about
+// what it can call, and the hedge was one more licensed way out of asking.
+const CONNECT_ETIQUETTE = `- Never call a tool for a service you know is unconnected. A connect-required result means stop calling that service.
+- Ask for it instead: call request_connection with that service's toolkit and one plain sentence saying why, then stop and wait. Ask on the turn you learn the service is unconnected — including when list_connections is what told you — and again on any later turn the need comes back.
+- Nothing substitutes for the ask: never send the user off to find the connect button, never try other tools of the same service, never reach for a different service, and never hand-write the result in chat as a consolation prize. Never claim a card "should have appeared".`;
 
 // Discovery-discipline 2026-07-25 (section id: discovery-budget) — a bounded
 // discovery posture so a large connector catalog can never become a per-turn
@@ -61,8 +77,7 @@ ${CONNECT_ETIQUETTE}`;
 const CONNECTORS_PROMPT = `Connectors
 - find_service_tools searches outside services by intent; each match comes back with the slug to use, its argument schema, and whether this user has connected that service. use_service_tool then runs one of them. list_connections shows which services exist and whether this user has connected them. Prefer the host's own tools whenever they can fulfill the ask.
 - Outside-service tools are never on your own tool list: reach them only through use_service_tool, passing the slug exactly as find_service_tools returned it. Never guess a slug, and never invent arguments — use the schema that came back with the match, and if a match came back without one, ask the user for what it needs.
-${CONNECT_ETIQUETTE}
-- When a needed service is unconnected, call request_connection with its toolkit and one sentence saying why — never the service tool itself, and never a substitute service.`;
+${CONNECT_ETIQUETTE}`;
 
 /** 03-agent §3: company directions are mandatory policy context and fail closed. */
 export async function assembleSystemPrompt(

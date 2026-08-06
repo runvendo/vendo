@@ -172,6 +172,28 @@ describe("activeToolNames — the persisted loaded set is re-checked against the
 });
 
 describe("find_tools meta-tool", () => {
+  /** uiaudit 2026-08-06 — the loadout path is what the demo (and every composed
+   *  `vendo()` route) runs, and agent.ts hard-codes its discovery section to
+   *  "find-tools". The connect teaching lived in the connectors section only, so
+   *  the model on THIS path never read it. Asserted on the prompt the model was
+   *  actually handed, not on the assembler's return value. */
+  it("hands the model a system prompt that teaches the connect ask", async () => {
+    const model = scriptedModel([textTurn("Done.", "text_prompt")]);
+    const guard = testGuard({});
+    const tools = boundRegistry(impls, guard);
+    const agent = createAgent({ model, tools, guard, toolSearch: { search: registrySearch(tools), loadout: [] } });
+
+    await readSse(await agent.stream({
+      threadId: "thr_prompt",
+      message: userMessage("u1", "draft me an email summarising this week's spending"),
+      ctx: ctx(),
+    }));
+
+    const system = model.prompts[0]?.find((message) => message.role === "system");
+    expect(JSON.stringify(system)).toContain("call request_connection with that service's toolkit");
+    expect(JSON.stringify(system)).not.toContain("point the user to the connect");
+  });
+
   it("loads a previously-unavailable tool and executes it through the guard-bound registry", async () => {
     const model = scriptedModel([
       toolCallTurn(FIND_TOOLS_TOOL_NAME, { query: "export csv" }, "call_search"),
