@@ -233,6 +233,26 @@ describe("app-default", () => {
   });
 });
 
+/** Spec 2026-08-05 §1 — the [User] block: the host's asserted profile of the
+ * present user (`ctx.user`, server-trust), rendered every turn. Format mirrors
+ * @vendoai/agents prompt.ts factLines. */
+describe("[User] block", () => {
+  it("renders ctx.user facts as key: value lines after Product, before Directions", async () => {
+    const guard = testGuard({}, ["Never disclose balances"]);
+    const prompt = await assembleSystemPrompt(guard, ctx({ user: { name: "Mia", plan: "Pro", accounts: 2 } }), {
+      product: "Maple, a neobank",
+    });
+    expect(prompt).toContain("[User]\nname: Mia\nplan: Pro\naccounts: 2");
+    expect(prompt.indexOf("Product")).toBeLessThan(prompt.indexOf("[User]"));
+    expect(prompt.indexOf("[User]")).toBeLessThan(prompt.indexOf("Directions"));
+  });
+
+  it("omits the block when ctx.user is absent or empty", async () => {
+    expect(await assembleSystemPrompt(testGuard({}, []), ctx())).not.toContain("[User]");
+    expect(await assembleSystemPrompt(testGuard({}, []), ctx({ user: {} }))).not.toContain("[User]");
+  });
+});
+
 describe("§3's consumer-voice register rides the operating prompt", () => {
   // Wave-1 live proof E1-5: an honest refusal named `host_transferMoney` in a
   // code span to an end user. The model wrote it, and nothing in its prompt told

@@ -63,6 +63,14 @@ const CONNECTORS_PROMPT = `Connectors
 - Outside-service tools are never on your own tool list: reach them only through use_service_tool, passing the slug exactly as find_service_tools returned it. Never guess a slug, and never invent arguments — use the schema that came back with the match, and if a match came back without one, ask the user for what it needs.
 ${CONNECT_ETIQUETTE}`;
 
+/** The `[User]` fact renderer — mirrors @vendoai/agents prompt.ts factLines:
+ *  function values never reach the model (they are the ctx bag's, callable at
+ *  guard/tool check-time), undefined entries drop. */
+const factLines = (facts: Record<string, unknown>): string[] =>
+  Object.entries(facts)
+    .filter(([, value]) => typeof value !== "function" && value !== undefined)
+    .map(([key, value]) => `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`);
+
 /** 03-agent §3: company directions are mandatory policy context and fail closed. */
 export async function assembleSystemPrompt(
   guard: Guard,
@@ -96,6 +104,12 @@ export async function assembleSystemPrompt(
   }
   const product = (typeof system?.product === "function" ? system.product() : system?.product)?.trim();
   if (product) sections.push(`Product\n${product}`);
+
+  // Spec 2026-08-05 §1 — the host's asserted profile of the present user
+  // (ctx.user, server-trust, refreshed per request by the auth preset's
+  // resolver). Same [User] format as @vendoai/agents' assemblePrompt.
+  const user = ctx.user === undefined ? [] : factLines(ctx.user);
+  if (user.length > 0) sections.push(["[User]", ...user].join("\n"));
 
   const directions = (await guard.directions(ctx))
     .map((direction) => direction.trim())
