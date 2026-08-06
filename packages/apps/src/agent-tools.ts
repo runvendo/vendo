@@ -417,9 +417,11 @@ export const createAgentTools = (
         const args = input(call.args, ["request"], ["app", "context", "slot"]);
         const app = optionalString(args.app, "app");
         const slot = optionalString(args.slot, "slot");
-        // Presence-only, at the source (core `presenceOnlyCall`): a slot claims
-        // a place on somebody's page and evicts whatever held it, so with
-        // nobody there the build still runs and the slot is simply not taken.
+        // The slot, and ONLY the slot, needs a person there: it claims a place
+        // on somebody's page and evicts whatever held it. Creation does not, so
+        // an unattended run still builds what it was asked for and simply takes
+        // no slot — this is the whole of that rule (ruled 2026-08-06; the
+        // guard's presence-only refusal covers the pin tools, never make).
         // The refusal below still reads `slot`, because "you aimed a new app at
         // a slot on an EDIT" is wrong however present the person is.
         const claimed = isUnattended(ctx) ? undefined : slot;

@@ -2993,10 +2993,12 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       await apps.delete(appId);
       // A deleted app can never mount again, so its placement rows are dead
       // weight — and a row with no app record reads as a build in flight, which
-      // would park a skeleton in the slot until the build window elapsed.
-      for (const row of await placementRows.list(ctx.principal.subject)) {
-        if (row.appId === appId) await placementRows.delete(ctx.principal.subject, row.slot, appId);
-      }
+      // would park a skeleton in the slot until the build window elapsed and
+      // then a failure card over the host's own markup. Swept by APP, not by
+      // the deleter's subject: a shared app sits in slots belonging to people
+      // the deleter cannot enumerate, and those pages are the ones that would
+      // be left holding it.
+      await placementRows.clearForApp(appId);
       await reportLifecycle("delete", appId, ctx);
     },
 
@@ -3068,7 +3070,10 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     },
 
     async placements(input, ctx) {
-      const rows = await placementRows.list(ctx.principal.subject, input.slots);
+      // The SAME normalization every write goes through. Trimming on one side
+      // only means `placements({ slots: [" hero "] })` cannot see what
+      // `place(" hero ")` wrote.
+      const rows = await placementRows.list(ctx.principal.subject, input.slots?.map(requireSlot));
       const entries = await Promise.all(rows.map((row) => entryFor(row, ctx)));
       return entries.filter((entry): entry is PlacementEntry => entry !== undefined);
     },

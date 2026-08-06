@@ -16,23 +16,29 @@
  * TWO rows per slot, because one row cannot answer both questions at once:
  *
  *   pointer  `plc:<subject>:<slot>`          — WHO holds the slot, and under
- *                                              which token. Never deleted; the
- *                                              only arbitration point, so the
+ *                                              which token. The only
+ *                                              arbitration point, so the
  *                                              eviction receipt is one CAS.
  *   live     `plcv:<subject>:<slot>:<token>` — exists iff THAT placement still
  *                                              holds the slot.
  *
  * The slot is occupied iff the live row the pointer names exists. Splitting
- * them is what makes a clear safe: a clear is `delete(liveId(token))` and
- * nothing else, and a token is never reused, so a stale client's delete can
- * only ever hit its OWN placement — never the app that replaced it. Keyed on
- * the shared (subject, slot) pair alone, that delete lands on whatever now
- * occupies the id, which is exactly the row it must not touch.
+ * them is what makes a clear safe: a clear deletes the token'd live row, and a
+ * token is never reused, so a stale client's delete can only ever hit its OWN
+ * placement — never the app that replaced it. Keyed on the shared
+ * (subject, slot) pair alone, that delete lands on whatever now occupies the
+ * id, which is exactly the row it must not touch.
+ *
+ * A clear takes the pointer with it, but ONLY while the pointer still names
+ * the token being cleared: an emptied slot must cost no row, and the token
+ * check is what keeps that from evicting whoever took the slot in between.
  *
  * `refs` is the queryable key on both: `subject` is what the erase cascade
  * matches (`vendo_records WHERE refs @> '{"subject": …}'::jsonb` —
- * `packages/store/src/erase.ts`), and `{subject, slot}` is the GIN-indexed
- * pair a slot query reads.
+ * `packages/store/src/erase.ts`), `{subject, slot}` is the GIN-indexed pair a
+ * slot query reads, and `app_id` is what app deletion sweeps on (the same ref
+ * name `egress-approval.ts` clears an app by) — a shared app is placed by
+ * people its owner cannot enumerate.
  */
 import type { RecordInput, StoreAdapter, VendoRecord } from "@vendoai/core";
 import { listAllRecords } from "./persistence.js";
@@ -61,6 +67,8 @@ export interface PlacementStore {
   place(subject: string, row: PlacementRow): Promise<PlacementRow | undefined>;
   /** Clear the slot only while `appId` still holds it. */
   delete(subject: string, slot: string, appId: string): Promise<void>;
+  /** Clear every placement of one app, whoever holds it (app-deletion cleanup). */
+  clearForApp(appId: string): Promise<void>;
   list(subject: string, slots?: readonly string[]): Promise<PlacementRow[]>;
 }
 
@@ -102,16 +110,19 @@ export function placementStore(store: StoreAdapter): PlacementStore {
     placedAt: row.placedAt,
   });
 
+  const refsFor = (subject: string, row: PlacementRow): Record<string, string> =>
+    ({ subject, slot: row.slot, app_id: row.appId });
+
   const pointerInput = (subject: string, row: PlacementRow, token: string): RecordInput => ({
     id: pointerId(subject, row.slot),
     data: { ...dataFor(row), token },
-    refs: { subject, slot: row.slot },
+    refs: refsFor(subject, row),
   });
 
   const liveInput = (subject: string, row: PlacementRow, token: string): RecordInput => ({
     id: liveId(subject, row.slot, token),
     data: dataFor(row),
-    refs: { subject, slot: row.slot },
+    refs: refsFor(subject, row),
   });
 
   const get = async (subject: string, slot: string): Promise<PlacementRow | undefined> => {
@@ -129,22 +140,19 @@ export function placementStore(store: StoreAdapter): PlacementStore {
    * pointer carries a revision on every adapter Vendo ships, so the loser
    * sees the winner's pointer and retries against it.
    */
-  const place = async (subject: string, row: PlacementRow): Promise<PlacementRow | undefined> => {
-    const token = globalThis.crypto.randomUUID();
+  const swingPointer = async (
+    subject: string,
+    row: PlacementRow,
+    token: string,
+  ): Promise<PlacementRow | undefined> => {
     const atomic = pointers.atomic;
     if (atomic === undefined) {
       // A BYO adapter with no compare-and-swap keeps the old read-then-write
       // and its old race; there is nothing else to arbitrate on.
       const previous = await get(subject, row.slot);
-      await rows.put(liveInput(subject, row, token));
       await pointers.put(pointerInput(subject, row, token));
       return previous;
     }
-    // The live row goes down FIRST and the pointer swings to it second, so the
-    // slot never reads empty mid-replace: until the CAS lands every reader
-    // still resolves the app that is really there. Losing the CAS means this
-    // row was never named by anyone, so it is taken back out before retrying.
-    await rows.put(liveInput(subject, row, token));
     for (;;) {
       const current = await pointers.get(pointerId(subject, row.slot));
       const input = pointerInput(subject, row, token);
@@ -153,6 +161,8 @@ export function placementStore(store: StoreAdapter): PlacementStore {
         return undefined;
       }
       if (current.revision === undefined) throw new Error("placement pointer is missing its revision");
+      // Losing the CAS retries under the SAME token, so the live row already
+      // down is the one the next attempt names; there is nothing to collect.
       if (await atomic.compareAndSwap(input, current.revision) === null) continue;
       // The slot is ours. Whatever the pointer named before us is strictly
       // older than this placement, so clearing it can never take out a newer
@@ -166,23 +176,59 @@ export function placementStore(store: StoreAdapter): PlacementStore {
     }
   };
 
+  const place = async (subject: string, row: PlacementRow): Promise<PlacementRow | undefined> => {
+    const token = globalThis.crypto.randomUUID();
+    // The live row goes down FIRST and the pointer swings to it second, so the
+    // slot never reads empty mid-replace: until the pointer lands every reader
+    // still resolves the app that is really there. The cost is that until then
+    // nothing names this row, so a swing that throws has to take it back out —
+    // otherwise every retry strands one more row nobody reads or collects.
+    await rows.put(liveInput(subject, row, token));
+    try {
+      return await swingPointer(subject, row, token);
+    } catch (error) {
+      await rows.delete(liveId(subject, row.slot, token));
+      throw error;
+    }
+  };
+
+  const remove = async (subject: string, slot: string, appId: string): Promise<void> => {
+    const pointer = await pointers.get(pointerId(subject, slot));
+    if (pointer === null) return;
+    const token = tokenOf(pointer);
+    if (token === undefined || rowOf(pointer)?.appId !== appId) return;
+    // Names THIS placement's token: a place that lands between the read above
+    // and this write installs a new token, so the app that replaced ours is in
+    // a row this delete cannot address.
+    await rows.delete(liveId(subject, slot, token));
+    // The pointer is shared by every placement into this slot, so it goes only
+    // while it still names OUR token — re-read, because a place may have taken
+    // the slot since. Removing it rather than leaving it vacant is what lets a
+    // deleted app leave nothing behind: nothing else in the tree ever collects
+    // a pointer, and only a full subject erase would reach it.
+    const current = await pointers.get(pointerId(subject, slot));
+    if (current !== null && tokenOf(current) === token) await pointers.delete(pointerId(subject, slot));
+  };
+
   return {
     get,
     place,
+    delete: remove,
 
     async put(subject, row) {
       await place(subject, row);
     },
 
-    async delete(subject, slot, appId) {
-      const pointer = await pointers.get(pointerId(subject, slot));
-      if (pointer === null) return;
-      const token = tokenOf(pointer);
-      if (token === undefined || rowOf(pointer)?.appId !== appId) return;
-      // The only mutation, and it names THIS placement's token: a place that
-      // lands between the read above and this write installs a new token, so
-      // the app that replaced ours is in a row this delete cannot address.
-      await rows.delete(liveId(subject, slot, token));
+    /** By `app_id`, not by subject: a shared app is placed by people its owner
+     *  cannot enumerate, and a row left behind reads as a build that never
+     *  landed — a failure card standing on somebody else's page. */
+    async clearForApp(appId) {
+      for (const pointer of await listAllRecords(pointers, { refs: { app_id: appId } })) {
+        const subject = pointer.refs?.subject;
+        const slot = rowOf(pointer)?.slot;
+        if (subject === undefined || slot === undefined) continue;
+        await remove(subject, slot, appId);
+      }
     },
 
     async list(subject, slots) {

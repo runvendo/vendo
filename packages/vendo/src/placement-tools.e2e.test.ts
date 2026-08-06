@@ -25,6 +25,7 @@ import {
   VENDO_MAKE_TOOL,
   makeReceiptSchema,
   type ToolListing,
+  type ToolOutcome,
 } from "@vendoai/core";
 import { defineHarness } from "@vendoai/harnesses";
 import type { VendoStore } from "@vendoai/store";
@@ -38,6 +39,7 @@ import {
   runHarnessTurn,
   runUnattendedTurn,
   screenModel,
+  tapWhenItAppears,
   tempStore,
 } from "./mcp-door.test-util.js";
 import { createVendo, type Vendo } from "./server.js";
@@ -66,6 +68,29 @@ interface Host {
   listings: ToolListing[][];
 }
 
+/** What a turn does after it has listed, so a test can drive a real CALL
+ *  through the same guard-bound registry the listing came from. */
+type OnTurn = (tools: { call(name: string, args: unknown): Promise<ToolOutcome> }) => Promise<void>;
+
+/** One firing of a scheduled automation. `runUnattendedTurn` carries no app,
+ *  and 05 §6 binds an away run's captured authority to the app it runs for, so
+ *  a firing that means to spend a grant has to name one. */
+const fireAutomation = async (vendo: Vendo, threadId: string): Promise<void> => {
+  const response = await vendo.harness.stream({
+    threadId,
+    message: { id: `m_${threadId}`, role: "user", parts: [{ type: "text", text: "run the nightly job" }] },
+    ctx: {
+      principal,
+      venue: "automation",
+      presence: "away",
+      sessionId: `session_${threadId}`,
+      appId: "app_nightly",
+      trigger: { runId: `run_${threadId}`, kind: "schedule" },
+    },
+  } as never);
+  await response.text();
+};
+
 /**
  * The composed host. No `policy`, deliberately: the guard's default runs a
  * write, so these tests measure PLACEMENT rather than the approval queue (the
@@ -73,13 +98,14 @@ interface Host {
  * gate). `screenModel()` is what makes a `vendo_make` reach a real receipt
  * instead of the no-screen failure path.
  */
-async function host(): Promise<Host> {
+async function host(onTurn?: OnTurn): Promise<Host> {
   const store = await tempStore();
   const listings: ToolListing[][] = [];
   const harness = defineHarness({
     name: "placement-probe",
     async *run(turn) {
       listings.push(await turn.tools.list());
+      await onTurn?.(turn.tools);
       yield { type: "text", delta: "done" };
     },
   });
@@ -169,5 +195,43 @@ describe("THE LAW, for a tool whose whole effect is on a person's screen", () =>
     expect(away).not.toContain(VENDO_APPS_UNPIN_TOOL);
     // And the front door is untouched: an automation may still MAKE something.
     expect(away).toContain(VENDO_MAKE_TOOL);
+  });
+
+  /**
+   * Ruled 2026-08-06. A slot needs a person there; CREATING does not. Refusing
+   * a slot-bearing `vendo_make` outright would silently break every automation
+   * that legitimately builds a screen, so the call runs and the slot is the
+   * only thing dropped.
+   *
+   * Nothing is stubbed on either side: the call crosses the same guard-bound
+   * registry that refuses the pin tool above, on a real away run holding the
+   * real captured authority such a run needs (05 §6 — parked on the first
+   * firing, granted by one present tap, spent by the second). The "no
+   * placement" half is read straight out of the store's rows.
+   */
+  it("builds a slot-bearing make on an unattended run and takes no slot", async () => {
+    const outcomes: ToolOutcome[] = [];
+    const { vendo, store } = await host(async (tools) => {
+      outcomes.push(await tools.call(VENDO_MAKE_TOOL, {
+        request: "my spending this month",
+        slot: "dashboard.hero",
+      }));
+    });
+
+    // First firing: away runs hold only captured authority, so this parks a
+    // card. The person taps it once, present, and the automation fires again.
+    await fireAutomation(vendo, "thr_nightly_1");
+    await tapWhenItAppears(vendo, VENDO_MAKE_TOOL, true);
+    await fireAutomation(vendo, "thr_nightly_2");
+
+    // Not blocked, and not a refusal dressed as an error: the app was made.
+    const outcome = outcomes.at(-1);
+    expect(outcome?.status).toBe("ok");
+    const receipt = makeReceiptSchema.parse((outcome as { output: unknown }).output);
+    expect(receipt.status).toBe("ready");
+    const listed = await vendo.handler(new Request("https://host.test/api/vendo/apps"));
+    expect((await listed.json() as Array<{ id: string }>).map((app) => app.id)).toContain(receipt.id);
+    // The slot, and only the slot, is what nobody was there to consent to.
+    expect(await placementRows(store)).toEqual([]);
   });
 });

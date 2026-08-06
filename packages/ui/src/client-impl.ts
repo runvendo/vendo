@@ -25,6 +25,15 @@ function idPath(id: string): string {
   return encodeURIComponent(id);
 }
 
+/** The slot list rides ONE query param, comma-separated, so each id is
+ *  percent-encoded on its own BEFORE the join — otherwise a "," inside a slot
+ *  id reads as the separator and the page asks for two slots that do not
+ *  exist. The outer encode is the ordinary query-value escape; the route
+ *  decodes each item after the split (`wire/apps.ts`). */
+function slotsQuery(slots: readonly string[]): string {
+  return `?slots=${encodeURIComponent(slots.map(encodeURIComponent).join(","))}`;
+}
+
 async function throwWireError(response: Response): Promise<never> {
   let parsed: unknown;
   try {
@@ -230,7 +239,7 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
         await json(`/apps/${idPath(id)}/unplace`, "POST", { slot });
       },
       placements: slots =>
-        readJson(`/apps/placements${slots === undefined || slots.length === 0 ? "" : `?slots=${encodeURIComponent(slots.join(","))}`}`),
+        readJson(`/apps/placements${slots === undefined || slots.length === 0 ? "" : slotsQuery(slots)}`),
     },
     automations: {
       list: () => readJson("/automations"),

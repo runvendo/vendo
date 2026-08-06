@@ -58,6 +58,18 @@ async function probeUnownedAppRecord(store: VendoStore, appId: string): Promise<
   }
 }
 
+/** One slot id out of the comma-separated `?slots=` list. Each id is
+ *  percent-encoded on its OWN before the join (`client-impl.ts` slotsQuery), so
+ *  a "," that belongs to a slot id can never read as the separator. Text that
+ *  is not valid percent-encoding is a hand-written URL and stands for itself. */
+function decodeSlot(slot: string): string {
+  try {
+    return decodeURIComponent(slot);
+  } catch {
+    return slot;
+  }
+}
+
 /** 06-apps / 09 §3 — the /apps wire area: CRUD, open/call/edit, history,
     ship-diff, pin drift/rebase, the gesture fork (fork-pin), export/import,
     fork (whole-app copy — a different feature from fork-pin). */
@@ -131,7 +143,7 @@ export const appRoutes: RouteEntry[] = [
     const ctx = await context("app");
     const slots = (url.searchParams.get("slots") ?? "")
       .split(",")
-      .map((slot) => slot.trim())
+      .map((slot) => decodeSlot(slot.trim()))
       .filter((slot) => slot.length > 0);
     return json(await deps.apps.placements(slots.length === 0 ? {} : { slots }, ctx));
   }),

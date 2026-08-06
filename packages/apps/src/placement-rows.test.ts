@@ -54,11 +54,32 @@ describe("placementStore — one row per (subject, slot)", () => {
     // the cascade finds it — by refs — rather than by a spelled-out id.
     const live = await store.records(PLACEMENTS_COLLECTION).list({ refs: { subject: "user_ada" } });
     expect(live.records.map((record) => record.refs))
-      .toEqual([{ subject: "user_ada", slot: "home-hero" }]);
+      .toEqual([{ subject: "user_ada", slot: "home-hero", app_id: "app_1" }]);
     // The pointer is a row too, and an erase that missed it would leave a slot
     // pointing at a token whose live row is gone.
     const pointer = await store.records(PLACEMENT_SLOTS_COLLECTION).get("plc:user_ada:home-hero");
-    expect(pointer?.refs).toEqual({ subject: "user_ada", slot: "home-hero" });
+    expect(pointer?.refs).toEqual({ subject: "user_ada", slot: "home-hero", app_id: "app_1" });
+  });
+
+  it("clears every subject's placement of one app, not just one person's", async () => {
+    // App deletion sweeps by app: a shared app sits in slots belonging to
+    // people its owner cannot enumerate, and a row left behind is a failure
+    // card standing on somebody else's page.
+    const store = memoryStore();
+    const rows = placementStore(store);
+    await rows.put("user_ada", row("home-hero", "app_shared"));
+    await rows.put("user_mia", row("sidebar", "app_shared"));
+    await rows.put("user_mia", row("home-hero", "app_other"));
+
+    await rows.clearForApp("app_shared");
+
+    expect(await rows.list("user_ada")).toEqual([]);
+    expect((await rows.list("user_mia")).map(({ slot }) => slot)).toEqual(["home-hero"]);
+    // Nothing left behind on either side of the split.
+    expect((await store.records(PLACEMENTS_COLLECTION).list({ refs: { app_id: "app_shared" } })).records)
+      .toEqual([]);
+    expect((await store.records(PLACEMENT_SLOTS_COLLECTION).list({ refs: { app_id: "app_shared" } })).records)
+      .toEqual([]);
   });
 
   it("leaves exactly one live row per slot — the count the seam readers take", async () => {

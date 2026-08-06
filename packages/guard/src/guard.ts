@@ -672,6 +672,12 @@ class GuardImplementation implements VendoGuard {
         // without listing reaches `execute()` by name regardless. Those tools
         // are honestly `write`, so the risk-keyed test above never spoke for
         // them and the projection was their whole law.
+        //
+        // It refuses the PIN tools and nothing else. `vendo_make` carrying a
+        // `slot` is not refused here (ruled 2026-08-06): creation does not need
+        // a person present, only placement does, and blocking the call would
+        // break every automation that legitimately builds a screen. The slot is
+        // dropped at the tool's own door instead (`apps/agent-tools.ts`).
         if (
           decision.action === "run" && !replayApproved && isUnattended(ctx)
           && (withheldFromUnattended(completed.descriptor) || presenceOnlyCall(call))
