@@ -1,8 +1,9 @@
 import type { AppDocument, RunContext, StoreAdapter, ToolRegistry } from "@vendoai/core";
+import type { LanguageModel } from "ai";
 import { describe, expect, it } from "vitest";
 import { createApps } from "./index.js";
 import { placementStore } from "./placements.js";
-import { guardFixture, memoryStore, seedAppRow } from "./testing/index.js";
+import { basicLanguageModel, guardFixture, memoryStore, seedAppRow } from "./testing/index.js";
 
 const ctx: RunContext = {
   principal: { kind: "user", subject: "user_ada" },
@@ -176,5 +177,95 @@ describe("AppsRuntime placement verbs", () => {
       .filter((event) => event.kind === "app-lifecycle")
       .map((event) => (event.detail as { operation?: string }).operation);
     expect(operations).toEqual(["place", "unplace"]);
+  });
+});
+
+/** Poll until the condition holds, with NO inner budget on purpose: the test's
+ *  own timeout is the hang detector, and a tighter inner limit is a second,
+ *  invisible speed limit that reports a product bug when the machine is busy. */
+const until = async <T>(read: () => Promise<T>, ok: (value: T) => boolean): Promise<T> => {
+  for (;;) {
+    const value = await read();
+    if (ok(value)) return value;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+};
+
+/** `basicLanguageModel`, held until the test releases it — which is what makes
+ *  "the slot shows the build forming" observable without a sleep. */
+const gatedModel = (gate: Promise<void>): LanguageModel => {
+  const base = basicLanguageModel() as unknown as {
+    specificationVersion: "v2";
+    provider: string;
+    modelId: string;
+    supportedUrls: Record<string, string[]>;
+    doGenerate(call: unknown): Promise<unknown>;
+    doStream(call: unknown): Promise<unknown>;
+  };
+  return {
+    ...base,
+    async doGenerate(call: unknown) {
+      await gate;
+      return await base.doGenerate(call);
+    },
+    async doStream(call: unknown) {
+      await gate;
+      return await base.doStream(call);
+    },
+  } as unknown as LanguageModel;
+};
+
+describe("a slot-targeted create claims its slot at mint (B1)", () => {
+  it("shows the slot BUILDING while the model runs, then READY when it lands", async () => {
+    const store = memoryStore();
+    let release = (): void => {};
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const runtime = createApps({
+      store, guard: guardFixture(), tools, catalog: [], model: gatedModel(gate),
+    });
+
+    const building = runtime.create({ prompt: "Show my spending", slot: "home-hero" }, ctx);
+    // The row exists before a single token does.
+    await until(() => runtime.placements({}, ctx), rows => rows[0]?.status === "building");
+
+    release();
+    const app = await building;
+    expect(await runtime.placements({}, ctx)).toEqual([
+      { slot: "home-hero", app: app.id, title: app.name, status: "ready" },
+    ]);
+  });
+
+  it("leaves the slot alone when the create names none", async () => {
+    const store = memoryStore();
+    const runtime = createApps({
+      store, guard: guardFixture(), tools, catalog: [], model: basicLanguageModel(),
+    });
+    await runtime.create({ prompt: "Show my spending" }, ctx);
+    expect(await runtime.placements({}, ctx)).toEqual([]);
+  });
+});
+
+describe("the empty-slot Remix gesture places its mint", () => {
+  it("writes a placement row instead of a document placement", async () => {
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog: [],
+      pinBaselines: [{
+        slot: "net-worth-card",
+        source: "export default function NetWorthCard() { return <strong>$1.2M</strong>; }",
+        hash: "sha256:maple-base",
+        exportable: false,
+        capturedAt: "2026-07-14T12:00:00.000Z",
+      }],
+    });
+
+    const forked = await runtime.pins.fork({ slot: "net-worth-card" }, ctx);
+    expect(forked.app.placements).toBeUndefined();
+    expect(await runtime.placements({}, ctx)).toEqual([
+      { slot: "net-worth-card", app: forked.app.id, title: forked.app.name, status: "ready" },
+    ]);
   });
 });

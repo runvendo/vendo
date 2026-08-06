@@ -2547,6 +2547,20 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // skeleton and this build's paints share one stream.
       const appId = input.appId ?? `app_${globalThis.crypto.randomUUID()}`;
       const createStartedAt = Date.now();
+      // B1 — the slot is claimed the moment the id exists, so the slot shows
+      // this build forming (and, if it never lands, its failure) instead of
+      // sitting empty until the record does. `place()` cannot be used: there
+      // is no app record to gate on yet, by construction.
+      if (input.slot !== undefined) {
+        const slot = requireSlot(input.slot);
+        await placementRows.put(ctx.principal.subject, {
+          slot,
+          appId,
+          placedBy: ctx.principal.subject,
+          placedAt: new Date().toISOString(),
+        });
+        await reportLifecycle("place", appId, ctx, { slot });
+      }
       // The build's dead-man switch. The catch below persists a terminal failure
       // when the build turn THROWS, but a build task that hangs (a provider
       // stream that never settles) or dies with its promise chain severed
@@ -3691,15 +3705,20 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
               root: "root",
               nodes: [{ id: "root", component: "Stack", source: "prewired" }],
             },
-            // The empty-slot gesture means "show the remix in THIS slot": the
-            // mint records the placement (location) beside the pin the fork
-            // records (provenance) — slot discovery reads placements only.
-            placements: [input.slot],
           };
           // Dry-run the fork BEFORE persisting the base, so a bad baseline
           // never strands an empty app.
           forkOnto(minted);
           await apps.put(appRecordInput(minted, ctx.principal.subject));
+          // The empty-slot gesture means "show the remix in THIS slot": the
+          // placement is a ROW now (the pin on the document stays what it
+          // always was — provenance, never location).
+          await placementRows.put(ctx.principal.subject, {
+            slot: input.slot,
+            appId: minted.id,
+            placedBy: ctx.principal.subject,
+            placedAt: new Date().toISOString(),
+          });
           await reportLifecycle("create", minted.id, ctx);
           // Re-read the stored row: persistEdit's concurrency check compares
           // against the store's own JSON round-trip of the document (a jsonb
