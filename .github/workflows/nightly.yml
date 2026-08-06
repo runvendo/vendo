@@ -118,6 +118,22 @@ jobs:
         continue-on-error: true
         run: pnpm --filter @vendoai/guard exec vitest run test/live/judge.live.test.ts 2>&1 | tee nightly-logs/judge-live.log
 
+      # packages/ui/e2e/live-voice.spec.ts — the only UI browser spec that needs
+      # a real model: it drives the OpenAI Realtime session over WebRTC. That is
+      # why it is not in the per-PR conformance gate, and until now it ran
+      # nowhere at all. `build:jail` first (the gitignored jail runtime is what
+      # `test:browser`'s pretest hook would normally build; `exec playwright
+      # test` skips that hook).
+      - name: UI live voice (OpenAI Realtime, WebRTC)
+        id: live_voice
+        continue-on-error: true
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          pnpm --filter @vendoai/ui run build:jail
+          pnpm --filter @vendoai/ui exec playwright install chromium
+          pnpm --filter @vendoai/ui exec playwright test e2e/live-voice.spec.ts 2>&1 | tee nightly-logs/live-voice.log
+
       - name: Install Claude Code for live MCP door
         run: npm install --global @anthropic-ai/claude-code@2.1.209
 
@@ -179,10 +195,11 @@ jobs:
           LIVE_EGRESS: ${{ steps.live_egress.outcome }}
           CLOUD_SANDBOX: ${{ steps.cloud_sandbox.outcome }}
           JUDGE_LIVE: ${{ steps.judge_live.outcome }}
+          LIVE_VOICE: ${{ steps.live_voice.outcome }}
           LIVE_CLAUDE: ${{ steps.live_claude.outcome }}
         run: |
           failed=0
-          for leg in AGENT_PROVIDERS PROVIDER_MATRIX_GUARD LIVE_AGENTIC LIVE_E2B LIVE_EGRESS CLOUD_SANDBOX JUDGE_LIVE LIVE_CLAUDE; do
+          for leg in AGENT_PROVIDERS PROVIDER_MATRIX_GUARD LIVE_AGENTIC LIVE_E2B LIVE_EGRESS CLOUD_SANDBOX JUDGE_LIVE LIVE_VOICE LIVE_CLAUDE; do
             eval "outcome=\$$leg"
             if [ "$outcome" != "success" ]; then
               echo "::error title=Nightly live leg failed::$leg finished with outcome '$outcome'; inspect the uploaded logs."
