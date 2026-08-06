@@ -519,6 +519,11 @@ const screenTypeFindings = (tree: Tree, document: AppDocument, deps: FloorDepend
   const typings = screenTypings({
     catalog: [...deps.catalog, ...generated],
     queries,
+    // The host's own declared response shapes, which outrank the samples: a
+    // sample erases what a declaration keeps (an enum field samples as a bare
+    // `string`, so a prop declared over that enum could never be satisfied).
+    toolOutputSchemas: Object.fromEntries((deps.tools ?? [])
+      .flatMap((tool) => (tool.outputSchema === undefined ? [] : [[tool.name, tool.outputSchema] as const]))),
     toolShapes: deps.toolShapes,
   });
   const screen = printWire({ tree, components: {}, name: document.name }, { includeIds: false });

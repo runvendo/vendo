@@ -1,5 +1,5 @@
 /**
- * The island syntax check (generation/validation/islands.ts) lazy-loads
+ * The island syntax check (checking/islands.ts) lazy-loads
  * esbuild (a native-binary package). A bundler (webpack, or Next's Turbopack) that
  * sees a literal `import("esbuild")` in a module it's bundling walks INTO
  * esbuild's own package to build its module graph — regardless of whether
@@ -57,7 +57,7 @@ const GUARDED_ESBUILD_IMPORT =
 
 function buildDistIslandsSource(): string {
   execFileSync("npx", ["tsc", "-p", "tsconfig.json"], { cwd: PACKAGE_DIR, stdio: "pipe" });
-  return readFileSync(join(PACKAGE_DIR, "dist", "generation", "validation", "islands.js"), "utf8");
+  return readFileSync(join(PACKAGE_DIR, "dist", "checking", "islands.js"), "utf8");
 }
 
 describe("islands.ts esbuild import — bundler-style reachability (built dist)", () => {
@@ -72,7 +72,7 @@ describe("islands.ts esbuild import — bundler-style reachability (built dist)"
   });
 
   it("sanity: the source itself carries the same guarded form (what a reviewer edits matches what ships)", () => {
-    const source = readFileSync(join(PACKAGE_DIR, "src", "generation", "validation", "islands.ts"), "utf8");
+    const source = readFileSync(join(PACKAGE_DIR, "src", "checking", "islands.ts"), "utf8");
     expect(NAKED_ESBUILD_IMPORT.test(source)).toBe(false);
     expect(GUARDED_ESBUILD_IMPORT.test(source)).toBe(true);
   });

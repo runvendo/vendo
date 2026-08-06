@@ -75,6 +75,15 @@ export const pinComponentName = (slot: string): string => {
   return `Pinned${stem}${sha256Hex(slot).slice(0, 8)}`;
 };
 
+/** Is this component name a captured host slot's? The counterpart of
+ *  {@link pinComponentName}, for the seams that hold a document's components
+ *  but not its `pins` — the paint floor checks a compiled `app.vendo`, and a
+ *  checkout prints pinned sources into that file alongside the model's islands.
+ *  Captured host source is not a model island: it keeps its imports and is
+ *  never put through the ambient contract. */
+export const isPinComponentName = (name: string): boolean =>
+  /^Pinned[A-Za-z0-9]*[0-9a-f]{8}$/.test(name);
+
 /**
  * Blank comment and string/template contents (length-preserving) so export
  * detection never matches commented-out or quoted code. (Adapted from the

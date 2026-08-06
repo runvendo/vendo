@@ -17,8 +17,8 @@ import {
   scanIslandTools,
   stripIslandImports,
 } from "@vendoai/core";
-import { hasDefaultExport } from "../../pins.js";
-import type { HostToolInfo } from "../engine.js";
+import { hasDefaultExport } from "../pins.js";
+import type { HostToolInfo } from "./deps.js";
 
 /** Models wrap island TSX in a JSX template-literal expression (`{`…`}`)
  *  despite instructions; strip it deterministically, the way the engine's

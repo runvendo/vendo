@@ -27,10 +27,13 @@ import {
   type Finding,
   type WireCompileResult,
 } from "@vendoai/core";
+import { isPinComponentName } from "../pins.js";
 import { wireCompileOptionsFor } from "../wire-options.js";
 import type { FloorDependencies } from "./deps.js";
 import { screenTypesCheck } from "./facts.js";
+import { prepareIslands } from "./islands.js";
 import { createCheckingLayer } from "./layer.js";
+import { smokeRenderIslands } from "./smoke-render.js";
 
 /** A compiled wire result as the document the checks read. The checks take a whole
  *  `AppDocument` (build contract §5) and the seam knows the id, so this is the
@@ -45,6 +48,54 @@ const documentOf = (appId: AppId, compiled: WireCompileResult): AppDocument => (
   tree: compiled.tree as unknown as AppDocument["tree"],
   ...(Object.keys(compiled.components).length === 0 ? {} : { components: compiled.components }),
 } as AppDocument);
+
+/**
+ * The island gate as a check: admission through the ambient contract
+ * (`prepareIslands`) and, on an otherwise-clean set, the crash gate
+ * (`smokeRenderIslands`) — the same two the create validator runs, ordered the
+ * same way, so a cheap failure never pays for a render.
+ *
+ * PINNED components are skipped: their source is host source captured on the
+ * furnishing trust path, so it keeps its imports and was never a model island.
+ */
+const islandsCheck = (deps: FloorDependencies): Check => ({
+  name: "islands-render",
+  kind: "fact",
+  run: async ({ document, request }) => {
+    const components = Object.fromEntries(Object.entries(document.components ?? {})
+      .filter(([name]) => !isPinComponentName(name)));
+    if (Object.keys(components).length === 0) return [];
+    const prepared = await prepareIslands(
+      components,
+      deps.tools,
+      deps.catalog.map(({ name }) => name),
+      // Absence is "no carve-out" — the conservative direction, and what a
+      // verb call or a file save honestly has.
+      request === "" ? undefined : request,
+    );
+    const issues = prepared.issues.length > 0 ? prepared.issues : await smokeRenderIslands({
+      components: prepared.components,
+      componentTools: prepared.componentTools,
+      tools: deps.tools,
+      toolShapes: deps.toolShapes,
+    });
+    // An island issue already names its island, so it has no separate locus.
+    return issues.map((message) => ({ severity: "block" as const, message }));
+  },
+});
+
+/**
+ * THE floor: the mechanical checks every door runs on top of the layer's own
+ * fact checks — the compiler static half and the island gates. One definition,
+ * imported by all four doors (the paint seam below, `validate` on a document,
+ * `validate` on a stored app, and the edit path), because the four used to run
+ * four different subsets and an app blocked at one shipped through another.
+ *
+ * The AI reviewer is NOT here. It spends a model call, so it stays exactly where
+ * it is today: `AppsRuntime.validate` alone.
+ */
+export const floorChecks = (deps: FloorDependencies): Check[] =>
+  [screenTypesCheck(deps), islandsCheck(deps)];
 
 export interface AppFloorOptions {
   /**
@@ -70,13 +121,13 @@ export const createAppFloor = ({ deps, checks }: AppFloorOptions): AppFloor => {
     },
     async check({ appId, compiled }) {
       const resolved = await once();
-      // The compiler static half runs HERE — the paint gate blocks a bad screen
-      // from a user, and this ms is off the synchronous create latency budget
-      // (§7.1). The generate path uses the cheap node-anchored `bindingKindCheck`
-      // instead; neither path runs both.
+      // The compiler static half and the island gates run HERE — the paint gate
+      // blocks a bad screen from a user, and this ms is off the synchronous
+      // create latency budget (§7.1). The generate path uses the cheap
+      // node-anchored `bindingKindCheck` instead; neither path runs both.
       const layer = createCheckingLayer({
         deps: resolved,
-        checks: [screenTypesCheck(resolved), ...(checks ?? [])],
+        checks: [...floorChecks(resolved), ...(checks ?? [])],
       });
       // `request: ""` for the same reason `validate` passes it: a file write
       // carries no user text, and the checks that read it treat absence as "no

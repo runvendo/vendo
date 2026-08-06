@@ -9,7 +9,7 @@
  * keeps working unchanged — and the floor now runs anywhere a catalog and a model
  * exist, which is what lets it move to the paint seam.
  */
-import type { NormalizedCatalog, ShapeType } from "@vendoai/core";
+import type { JsonSchema, NormalizedCatalog, ShapeType } from "@vendoai/core";
 import type { LanguageModel } from "ai";
 
 /** The slice of a tool descriptor the floor (and the generation prompts) need:
@@ -24,6 +24,12 @@ export interface HostToolInfo {
   description: string;
   risk: string;
   inputSchema?: Record<string, unknown>;
+  /** The tool's DECLARED result shape (`ToolDescriptor.outputSchema`). The
+   *  screen type check prefers it over a sampled shape: a declaration is the
+   *  host's contract where a sample is one observation, and sampling erases
+   *  what a declaration keeps — an enum field samples as a bare `string`, so a
+   *  prop that takes the enum could never be satisfied from a sample. */
+  outputSchema?: JsonSchema;
 }
 
 /**

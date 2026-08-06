@@ -56,7 +56,7 @@ import { appLifecycleEvent } from "./audit.js";
 import { createAppCaller } from "./call.js";
 import { createParkedActions } from "./parked-action.js";
 import type { Check } from "./checking/types.js";
-import { createAppFloor } from "./checking/floor.js";
+import { createAppFloor, floorChecks } from "./checking/floor.js";
 import type {
   CloudAppsClient,
   PublishRecord,
@@ -81,10 +81,9 @@ import type { Finding } from "./checking/types.js";
 // The `validate` verb IS the shipped floor plus the shipped create validation,
 // called rather than re-derived — so the verb and generation can never disagree
 // about whether a document is sound.
-import { screenTypesCheck } from "./checking/facts.js";
 import { createCheckingLayer, judgmentRules } from "./checking/layer.js";
 import { reviewerCheck } from "./checking/reviewer.js";
-import { validateCompiledCreate } from "./generation/validation/validate.js";
+import { UNSTORED_APP_ID, validateCompiledCreate } from "./generation/validation/validate.js";
 import { wireCompileOptionsFor } from "./wire-options.js";
 import { createAppHistory, type PinIntentKind } from "./history.js";
 import { createInClientApprovals, type InClientVerdict } from "./inclient.js";
@@ -2094,7 +2093,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         }
       }));
     return {
-      tools: descriptors.map(({ name, description, risk, inputSchema }) => ({
+      tools: descriptors.map(({ name, description, risk, inputSchema, outputSchema }) => ({
         name,
         description,
         risk,
@@ -2103,6 +2102,9 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         ...(typeof inputSchema === "object" && inputSchema !== null && !Array.isArray(inputSchema)
           ? { inputSchema: inputSchema as Record<string, unknown> }
           : {}),
+        // The host's own declared response shape — what the screen type check
+        // reads before it falls back to a sample (checking/deps.ts).
+        ...(outputSchema === undefined ? {} : { outputSchema }),
       })),
       ...(sampledShapes.size === 0 ? {} : { toolShapes: Object.fromEntries(sampledShapes) }),
     };
@@ -3088,11 +3090,18 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           input.document,
           wireCompileOptionsFor(deps),
         );
-        const { issues } = await validateCompiledCreate(compiled, deps);
-        return {
-          ok: issues.length === 0,
-          findings: issues.map((message) => ({ severity: "block" as const, message })),
-        };
+        const { document, issues } = await validateCompiledCreate(compiled, deps);
+        if (document === undefined) {
+          // Wire that did not compile, or islands that did not pass admission:
+          // the screen text the floor would read does not exist yet, so those
+          // sentences are the whole answer.
+          return { ok: false, findings: issues.map((message) => ({ severity: "block" as const, message })) };
+        }
+        // …and then the SAME floor every other door runs, on the document the
+        // wire assembled to.
+        const findings = await createCheckingLayer({ deps, checks: floorChecks(deps) })
+          .run({ document: { ...document, id: UNSTORED_APP_ID } as AppDocument, request: "" });
+        return { ok: !findings.some(({ severity }) => severity === "block"), findings };
       }
 
       if (input.appId === undefined) {
@@ -3124,9 +3133,9 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       const plugged = config.checks ?? [];
       const findings = await createCheckingLayer({
         deps,
-        // The thorough door: the compiler static half AND the reviewer. Off the
+        // The thorough door: the shared floor AND the reviewer. Off the
         // scripted-create hot path, so the tsc pass is affordable here (§7.1).
-        checks: [screenTypesCheck(deps), reviewerCheck(deps, undefined, judgmentRules(plugged)), ...plugged],
+        checks: [...floorChecks(deps), reviewerCheck(deps, undefined, judgmentRules(plugged)), ...plugged],
       }).run({ document, request: "" });
       return { ok: !findings.some(({ severity }) => severity === "block"), findings };
     },

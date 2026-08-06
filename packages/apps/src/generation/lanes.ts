@@ -31,6 +31,8 @@ import {
   type Trigger,
 } from "@vendoai/core";
 import { planAutomation, type AutomationPlan } from "../automation-plan.js";
+import { prepareIslands } from "../checking/islands.js";
+import { smokeRenderIslands } from "../checking/smoke-render.js";
 import type { Finding } from "../checking/types.js";
 import type { GeneratedAppDocument, GenerationDependencies } from "./engine.js";
 

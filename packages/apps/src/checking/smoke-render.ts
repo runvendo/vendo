@@ -34,7 +34,7 @@ import {
   ISLAND_AMBIENT_REACT_NAMES,
   type ShapeType,
 } from "@vendoai/core";
-import type { HostToolInfo } from "../engine.js";
+import type { HostToolInfo } from "./deps.js";
 
 export interface SmokeRenderOptions {
   /** name → island TSX source (post-prepare, canonical). */

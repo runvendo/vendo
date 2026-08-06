@@ -16,6 +16,7 @@ import {
   validateAppDocument,
   validateTree,
   type AppDocument,
+  type Finding,
   type WireCompileResult,
 } from "@vendoai/core";
 import {
@@ -30,6 +31,10 @@ import {
   queryInputIssues,
   unknownToolIssues,
 } from "../../checking/facts.js";
+import { floorChecks } from "../../checking/floor.js";
+import { createCheckingLayer } from "../../checking/layer.js";
+import { prepareIslands } from "../../checking/islands.js";
+import { smokeRenderIslands } from "../../checking/smoke-render.js";
 import { pinComponentName } from "../../pins.js";
 import {
   asPayload,
@@ -37,8 +42,12 @@ import {
   type GenerationDependencies,
 } from "../engine.js";
 import { withoutPlanVocabulary } from "../skeleton.js";
-import { prepareIslands } from "./islands.js";
-import { smokeRenderIslands } from "./smoke-render.js";
+
+/** The id a document that is not stored is checked under. A freshly compiled
+ *  document has no id of its own, and both doors that hold one — create
+ *  validation below and `validate({ document })` — need the checks to read a
+ *  whole `AppDocument`. */
+export const UNSTORED_APP_ID = "app_generation_validation";
 
 /** Create validation: the compile must be complete and clean, the tree
  *  catalog-consistent and renderable, islands syntactically sound, queries
@@ -106,16 +115,21 @@ export const validateCompiledCreate = async (
       componentTools: structuredClone(prepared.componentTools),
     }),
   };
-  const appValidation = validateAppDocument({ ...document, id: "app_generation_validation" });
+  const appValidation = validateAppDocument({ ...document, id: UNSTORED_APP_ID });
   if (!appValidation.ok) return { issues: [appValidation.error.message] };
   return { document, issues: [] };
 };
 
-/** Edit validation. Every per-node check is filtered against the pre-existing
- *  app the same way, so an edit that doesn't touch a stale node (a legacy
- *  Table.data prop, an already-dead button) is never blocked by that node's
- *  issue — only issues the edit newly introduces surface. Ids are stable
- *  across an edit, so a carried-over issue is a byte-identical string. */
+/** One finding as the issue line this validator speaks. */
+const issueLine = ({ where, message }: Finding): string =>
+  where === undefined ? message : `${where} ${message}`;
+
+/** Edit validation: the SAME floor every other door runs (checking/floor.ts),
+ *  filtered against the pre-existing app, so an edit that doesn't touch a stale
+ *  node (a legacy Table.data prop, an already-dead button, an island that
+ *  already crashed) is never blocked by that node's issue — only issues the edit
+ *  newly introduces surface. Ids are stable across an edit and both runs read
+ *  the same request text, so a carried-over issue is a byte-identical string. */
 export const validateEditedApp = async (
   app: AppDocument,
   deps: GenerationDependencies,
@@ -130,13 +144,11 @@ export const validateEditedApp = async (
   if (app.tree?.formatVersion !== VENDO_TREE_FORMAT) return ["tree edit produced an unsupported format"];
   const treeValidation = validateTree(app.tree);
   if (!treeValidation.ok) return [treeValidation.error.message];
-  const sourceTreeValidation = validateTree(source.tree);
-  const carried = sourceTreeValidation.ok
-    ? new Set((await catalogIssues(sourceTreeValidation.tree, source.components, deps.catalog)).map(factIssueLine))
-    : new Set<string>();
-  void requestText;
-  return (await catalogIssues(treeValidation.tree, app.components, deps.catalog))
-    .map(factIssueLine)
+  const layer = createCheckingLayer({ deps, checks: floorChecks(deps) });
+  const request = requestText ?? "";
+  const carried = new Set((await layer.run({ document: source, request })).map(issueLine));
+  return (await layer.run({ document: app, request }))
+    .map(issueLine)
     .filter((issue) => !carried.has(issue));
 };
 
@@ -173,12 +185,10 @@ export const documentFromEdit = async (
   });
   const hostComponents = deps.catalog.map(({ name }) => name);
   const parts = split(compiled.components);
+  // Admission runs here for the STAMP (`componentTools`); its issues are the
+  // floor's to report, from `validateEditedApp` below, where the carried-issue
+  // filter lives.
   const prepared = await prepareIslands(parts.model, deps.tools, hostComponents, instruction);
-  // A pre-existing island issue never blocks an unrelated edit: both prepares
-  // see the SAME instruction text, so a carried-over issue stays byte-identical.
-  const before = await prepareIslands(split(previous.components ?? {}).model, deps.tools, hostComponents, instruction);
-  const carried = new Set(before.issues);
-  const islandIssues = prepared.issues.filter((issue) => !carried.has(issue));
   const components = { ...parts.pinned, ...prepared.components };
   if (Object.keys(components).length === 0) {
     delete app.components;
@@ -190,6 +200,6 @@ export const documentFromEdit = async (
     // source-scan fallback.
     app.componentTools = structuredClone(prepared.componentTools);
   }
-  const issues = [...islandIssues, ...await validateEditedApp(app, deps, previous, instruction)];
+  const issues = await validateEditedApp(app, deps, previous, instruction);
   return issues.length > 0 ? { issues } : { document: app, issues: [] };
 };
