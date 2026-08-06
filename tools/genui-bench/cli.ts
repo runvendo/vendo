@@ -25,7 +25,7 @@ import type { HostFixture, HostName, LaneAdapter, LaneName, RunRequest } from ".
 
 const APP_DIR = dirname(fileURLToPath(import.meta.url));
 const HOSTS: HostName[] = ["maple", "cadence"];
-const LANES: LaneName[] = ["vendo", "thesys-c1", "copilotkit", "tambo"];
+const LANES: LaneName[] = ["vendo", "thesys-c1", "copilotkit", "tambo", "openui"];
 
 async function main(): Promise<void> {
   const { values, positionals } = parseArgs({
@@ -206,7 +206,7 @@ function loadRootEnv(): void {
 function usage(message: string): never {
   console.error(`genui-bench: ${message}`);
   console.error(
-    'usage: bench run --host <maple|cadence> (--prompt "..." [--prompt "..."] | --pack <name>) [--lanes vendo,thesys-c1,copilotkit,tambo] [--runs-dir <dir>]' +
+    'usage: bench run --host <maple|cadence> (--prompt "..." [--prompt "..."] | --pack <name>) [--lanes vendo,thesys-c1,copilotkit,tambo,openui] [--runs-dir <dir>]' +
       `\n       [--model <id|label>] [--temperature <0-1>] [--thinking <tokens|${EFFORT_LEVELS.join("|")}>]` +
       `\n       models: ${modelChoices()}` +
       `\n       (no --model = the engine default, ${PRODUCTION_MODEL.id})`,

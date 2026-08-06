@@ -4,7 +4,7 @@ import type { RunModel } from "./models";
 
 export type { RunModel };
 
-export type LaneName = "vendo" | "thesys-c1" | "copilotkit" | "tambo";
+export type LaneName = "vendo" | "thesys-c1" | "copilotkit" | "tambo" | "openui";
 export type HostName = "maple" | "cadence";
 
 export interface RunRequest {
@@ -28,7 +28,8 @@ export type LaneResult =
       document?: AppDocument;
       /** Vendo lane: raw wire text as streamed. */
       wire?: string;
-      /** Vendo lane: what the checking layer still reported on the shipped app. */
+      /** What is still wrong with the app that shipped: the Vendo lane's
+       *  checking-layer report; the OpenUI lane's hallucinated tool bindings. */
       findings?: Finding[];
       /** Competitor lanes: their raw response payload, renderable by their SDK. */
       raw?: unknown }

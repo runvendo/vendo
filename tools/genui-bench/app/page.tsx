@@ -10,6 +10,7 @@ import { VendoPane } from "../cockpit/VendoPane";
 import ThesysPane from "../cockpit/panes/ThesysPane";
 import CopilotKitPane from "../cockpit/panes/CopilotKitPane";
 import TamboPane from "../cockpit/panes/TamboPane";
+import OpenUIPane from "../cockpit/panes/OpenUIPane";
 
 /** The page-level lane → pane mapping (the grid stays generic): the Vendo
  *  pane is the real production runtime, competitor panes render with their
@@ -19,6 +20,7 @@ const PANES: Record<LaneName, PaneComponent> = {
   "thesys-c1": ThesysPane,
   copilotkit: CopilotKitPane,
   tambo: TamboPane,
+  openui: OpenUIPane,
 };
 
 export default function Page() {

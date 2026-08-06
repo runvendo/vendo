@@ -1,11 +1,11 @@
 # genui-bench
 
 The interactive inner loop for the micro-app format and generation pipeline:
-type a prompt (or run a pack), watch four lanes answer it side by side — the
+type a prompt (or run a pack), watch five lanes answer it side by side — the
 Vendo lane as a fully interactive app on the production `@vendoai/ui` renderer
 with tool calls executing against canned host fixtures, and Thesys C1 /
-CopilotKit / Tambo rendered with their own SDKs — with every run persisted as
-a RunRecord you can reload, pin, and split-compare. Private workspace app,
+CopilotKit / Tambo / OpenUI rendered with their own SDKs — with every run
+persisted as a RunRecord you can reload, pin, and split-compare. Private workspace app,
 never published or deployed. There is deliberately no judging: eyes are the
 judge. Spec: `docs/superpowers/specs/2026-07-26-genui-bench-playground-design.md`.
 
@@ -81,9 +81,10 @@ lane `{"status":"no-key"}` and the run proceeds):
 | copilotkit | `ANTHROPIC_API_KEY` | self-hosted runtime (keyless — no CopilotKit account needed) |
 | thesys-c1  | `THESYS_API_KEY`    | their API + their React renderer (model below)               |
 | tambo      | `TAMBO_API_KEY`     | their orchestration + harness component registry             |
+| openui     | `ANTHROPIC_API_KEY` | openui-lang single-shot over their OSS runtime (keyless — no OpenUI account needed) |
 
-`GENUI_BENCH_MODEL` overrides the Vendo/CopilotKit default model id (a per-run
-`--model` wins over it — see Model controls).
+`GENUI_BENCH_MODEL` overrides the Vendo/CopilotKit/OpenUI default model id (a
+per-run `--model` wins over it — see Model controls).
 `GENUI_BENCH_FAKE_LANES=1` swaps every lane for a stub (tests, no keys).
 
 **Thesys C1 is model-agnostic.** Their catalog (`GET /v1/embed/models`, 34
@@ -97,6 +98,20 @@ final assistant content string wrapped in a `<content thesys="true"
 version="2">` envelope around an ```openui-lang``` program; the lane passes
 that string through untouched because `C1Component` parses the envelope
 itself.
+
+**OpenUI is the same language without their cloud.** The openui lane drives
+openui-lang as a candidate generation format directly: one Anthropic call
+(same key and default model id as the Vendo lane, for family parity) with the
+system prompt their own library generates (`openuiLibrary.prompt(...)` from
+`@openuidev/react-ui`, fixture tools injected as ToolSpecs with the shape
+cards as output schemas), no repair loop. The returned program is parsed with
+their real parser — a parse error or truncation is status `failed` — and
+rendered in OpenUIPane by their `Renderer` (`@openuidev/react-lang`) with a
+toolProvider that resolves `Query()`/`Mutation()` bindings through
+`/api/tools` at render time (generation-time binding: no tools execute during
+generation). A program that binds a tool the host does not expose stays `ok`
+but reports each such binding as a warn finding — the same finding count the
+CLI summary and pane header already surface.
 
 Working in a git worktree (or keeping keys outside the repo)? There is no
 `.env` at the worktree root, so source your key file into the shell first —

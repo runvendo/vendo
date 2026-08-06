@@ -19,6 +19,7 @@ const PANES: Record<LaneName, PaneComponent> = {
   "thesys-c1": GenericPane,
   copilotkit: GenericPane,
   tambo: GenericPane,
+  openui: GenericPane,
 };
 
 const VENDO_FINDINGS: Finding[] = [
@@ -123,11 +124,11 @@ test("boot: rail lists canned runs, panes render placeholders until a run loads"
   screen.getByText(/dispute this charge from Uber/);
   expect(screen.getByText(/★ baseline/)).toBeTruthy();
 
-  // Four panes, all placeholders (nothing selected yet).
-  for (const name of ["Vendo", "Thesys C1", "CopilotKit", "Tambo"]) {
+  // Five panes, all placeholders (nothing selected yet).
+  for (const name of ["Vendo", "Thesys C1", "CopilotKit", "Tambo", "OpenUI"]) {
     expect(screen.getByRole("region", { name })).toBeTruthy();
   }
-  expect(screen.getAllByText("no run loaded")).toHaveLength(4);
+  expect(screen.getAllByText("no run loaded")).toHaveLength(5);
   screen.getByText("run something to see the pipeline internals");
 });
 
