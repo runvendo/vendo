@@ -33,6 +33,13 @@ import {
   type ToolSet,
   type UIMessage,
 } from "ai";
+import {
+  estimatePromptTokens,
+  shouldCompact,
+  triggerTokens,
+  type CompactionConfig,
+  type CompactionState,
+} from "./compaction.js";
 import { failoverModel, type ResolvedModel } from "./failover.js";
 import type { ToolSearchSession } from "../tool-search.js";
 
@@ -228,6 +235,20 @@ function wellFormed(messages: readonly ModelMessage[]): ModelMessage[] {
 }
 
 /**
+ * What the loop is asked to do about a window it now knows the size of.
+ *
+ * `contextWindowTokens` and the two ratios come from {@link CompactionConfig};
+ * the rest is the turn's own: which seat summarizes, what the thread already
+ * remembers, and whether the caller is past asking.
+ */
+export interface TurnCompaction extends CompactionConfig {
+  model: LanguageModel;
+  state?: CompactionState;
+  /** Compact whatever the estimate says — the overflow retry's re-entry. */
+  force?: boolean;
+}
+
+/**
  * One turn's prompt inputs. This was four positionals; the shipment's window
  * table, compaction and overflow retry add three more, and a seventh positional
  * is unreadable at the call site — so the shape is declared once, whole, before
@@ -242,8 +263,7 @@ export interface TurnPromptInput {
   tools?: ToolSet;
   historyWindow?: number;
   tokenBudget?: number;
-  /** `TurnCompaction`, once it exists. */
-  compaction?: unknown;
+  compaction?: TurnCompaction;
   /** Model messages this turn ALREADY produced: appended after the projection
    *  and never summarized, so a retry CONTINUES the turn instead of re-running
    *  its tool calls — each one a real guarded effect. */
@@ -252,9 +272,26 @@ export interface TurnPromptInput {
 
 export interface TurnPrompt {
   messages: ModelMessage[];
-  /** `CompactionState`, once it exists — carried out as DATA, because the loop
-   *  does not know where the caller's state slot is. */
-  compacted?: unknown;
+  /** Carried out as DATA, because the loop does not know where the caller's
+   *  state slot is. Written by the summarizer. */
+  compacted?: CompactionState;
+}
+
+/**
+ * How much of a projection the provider's own count already covers.
+ *
+ * `lastPromptTokens` was measured on the LAST step of the previous turn, whose
+ * prompt ended with that turn's own assistant output and tool results. Everything
+ * up to the trailing run of user messages is therefore inside that number, and
+ * only this turn's fresh ask is not. Both directions of error are cheap and
+ * self-correcting: a previous turn that was itself windowed or shed reports a
+ * smaller number than its history really costs, which buys one late compaction —
+ * and the next turn's own report replaces the figure either way.
+ */
+function reportedThrough(messages: readonly ModelMessage[]): number {
+  let index = messages.length;
+  while (index > 0 && messages[index - 1]?.role === "user") index -= 1;
+  return index;
 }
 
 /**
@@ -262,10 +299,10 @@ export interface TurnPrompt {
  * and budgeted history, and the cache breakpoints that keep a growing thread from
  * re-billing.
  *
- * `tools`, `compaction` and `resume` are accepted and not yet read.
+ * `resume` is accepted and not yet read.
  */
 export async function turnModelMessages(input: TurnPromptInput): Promise<TurnPrompt> {
-  const { messages, system, historyWindow, tokenBudget } = input;
+  const { messages, system, historyWindow, tokenBudget, compaction } = input;
   // History windowing: bound what is re-sent per turn to the last N whole messages.
   // Slicing whole UIMessages keeps each turn's tool-call/result pairing intact.
   const history = historyWindow !== undefined && messages.length > historyWindow
@@ -277,6 +314,30 @@ export async function turnModelMessages(input: TurnPromptInput): Promise<TurnPro
   // bills, and it runs before the breakpoints below because shedding changes
   // which message is the stable prefix's last one.
   if (tokenBudget !== undefined) converted = shedToBudget(converted, system, tokenBudget);
+  // The window the model actually has, measured against the prompt this turn is
+  // actually sending — system, messages AND the tools block, which is the part
+  // no rail here has ever counted and the part that never shrinks. The host's
+  // own `historyWindow` slice is already applied above and is not negotiable
+  // (Q2b): what the host cut is gone, and this decides about what is left.
+  if (compaction !== undefined) {
+    const lastPromptTokens = compaction.state?.lastPromptTokens;
+    const promptTokens = estimatePromptTokens({
+      system,
+      messages: converted,
+      tools: input.tools ?? {},
+      ...(lastPromptTokens === undefined
+        ? {}
+        : { lastPromptTokens, reportedThrough: reportedThrough(converted) }),
+    });
+    // INTERIM, until the summarizer lands: a trip falls straight to the shed,
+    // which drops reasoning, then tool payloads, then the oldest messages, with
+    // no summary and no notice to the model. The budget bounds the MESSAGES, so
+    // a trip caused by the tools block alone sheds nothing — the tools are not
+    // sheddable, and the floor does not pretend otherwise.
+    if (shouldCompact(promptTokens, compaction)) {
+      converted = shedToBudget(converted, system, triggerTokens(compaction));
+    }
+  }
   // Whatever the window and the shed left behind, the prompt still has to be one
   // a provider will accept — and this is the last place that is knowable.
   converted = wellFormed(converted);
@@ -355,6 +416,12 @@ export interface TurnLoopOptions {
    *  stop mechanism beside this one. */
   stopWhen?: readonly StopCondition<ToolSet>[];
   toolSearch?: ToolSearchSession;
+  /** The window this turn has, and what the thread already remembers about
+   *  filling it. Unset means no window awareness at all — the loop's behaviour
+   *  before this shipment. */
+  compaction?: TurnCompaction;
+  /** Model messages this turn already produced, for a retry that continues it. */
+  resume?: readonly ModelMessage[];
 }
 
 /** The per-turn knobs, one shape both callers pass so neither can carry half of
@@ -383,6 +450,9 @@ export interface TurnLoop {
    * because of the cap, not because the model finished.
    */
   stepLimitPart(): Promise<VendoStepLimitPart | undefined>;
+  /** What this turn compacted, as DATA for whoever owns the state slot — the
+   *  loop does not know where that is. Written by the summarizer. */
+  compacted?: CompactionState;
 }
 
 /** The model `streamText` is handed: the one the caller named, or the ordered
@@ -403,8 +473,13 @@ export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
   const { messages: modelMessages } = await turnModelMessages({
     messages: options.messages,
     system: options.system,
+    // The live toolset, because the trigger has to count what the prompt
+    // actually carries and the tools block is most of it on a curated surface.
+    tools: options.tools,
     historyWindow: options.context?.historyWindow,
     tokenBudget: options.context?.contextTokenBudget,
+    ...(options.compaction === undefined ? {} : { compaction: options.compaction }),
+    ...(options.resume === undefined ? {} : { resume: options.resume }),
   });
   const { toolSearch } = options;
   const result = streamText({

@@ -17,7 +17,9 @@
  */
 import { z } from "zod";
 import { modelToolDescription, type Harness, type HarnessEvent, type Json, type ToolDescriptor, type Turn } from "@vendoai/core";
-import { startTurn, type TurnContext } from "./loop.js";
+import { readCompactionState, writeCompactionState } from "./compaction.js";
+import { startTurn, type TurnCompaction, type TurnContext } from "./loop.js";
+import { contextWindowTokens } from "./model-windows.js";
 import { wireErrorMessage } from "../wire-error.js";
 import { reportHire, type HireRecord, type UsageTotals } from "../runtime.js";
 import {
@@ -51,6 +53,7 @@ const optionsSchema = z.object({
   historyWindow: z.number().int().positive().optional(),
   contextTokenBudget: z.number().int().positive().optional(),
   maxOutputTokens: z.number().int().positive().optional(),
+  contextWindowTokens: z.number().int().positive().optional(),
 });
 
 export interface VendoHarnessOptions {
@@ -64,11 +67,20 @@ export interface VendoHarnessOptions {
   historyWindow?: number;
   contextTokenBudget?: number;
   maxOutputTokens?: number;
+  /** Override the window this seat is assumed to have. The BYO escape for a
+   *  model {@link contextWindowTokens}'s table cannot name. */
+  contextWindowTokens?: number;
 }
 
 /** The knobs a per-turn option may override, and the deployment defaults they
  *  override. One list, so a new knob cannot reach one half and not the other. */
-const CONTEXT_KNOBS = ["maxSteps", "historyWindow", "contextTokenBudget", "maxOutputTokens"] as const;
+const CONTEXT_KNOBS = [
+  "maxSteps",
+  "historyWindow",
+  "contextTokenBudget",
+  "maxOutputTokens",
+  "contextWindowTokens",
+] as const;
 
 export interface VendoHarnessDeps {
   /**
@@ -87,6 +99,10 @@ export interface VendoHarnessDeps {
   historyWindow?: number;
   contextTokenBudget?: number;
   maxOutputTokens?: number;
+  /** The window this deployment's seat is assumed to have, when the shipped
+   *  table is wrong about it. Q1a: this lives on the harness and nowhere else —
+   *  it is a fact about a model, not a product decision a host composes. */
+  contextWindowTokens?: number;
   /**
    * Called once per hired specialist. Defaults to the runtime's own
    * {@link reportHire}, which writes the audit row and the transcript receipt — a
@@ -260,6 +276,9 @@ async function runSubagent(
   tools: ToolSet,
   /** The loadout the specialist may PICK from, hiring filtered out — lock #2. */
   equipped: readonly string[],
+  /** The resident's window, minus its state: a hire has no next turn, so there
+   *  is nothing for it to remember and nothing of the thread's for it to spend. */
+  compaction: TurnCompaction,
 ): Promise<SubagentReport> {
   let brief = input.instructions;
   if (input.skill !== undefined) {
@@ -278,6 +297,7 @@ async function runSubagent(
     // `attach` is a no-op for the resident's reason: the runtime owns `find_tools`.
     toolSearch: { activeToolNames: () => [...equipped], attach: () => {} },
     context: { maxSteps: SUBAGENT_MAX_STEPS },
+    compaction,
     signal: turn.signal,
     turnId: turn.turnId,
   });
@@ -305,11 +325,24 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
       if (model === undefined) {
         throw new Error("vendo() thinks with `turn.models.default`, and this turn carries no default seat");
       }
-      const context: TurnContext = {};
+      const resolved: Partial<Record<(typeof CONTEXT_KNOBS)[number], number>> = {};
       for (const knob of CONTEXT_KNOBS) {
         const value = turn.options?.[knob] ?? deps[knob];
-        if (value !== undefined) context[knob] = value;
+        if (value !== undefined) resolved[knob] = value;
       }
+      // The window is not one of the loop's `TurnContext` knobs — it configures
+      // COMPACTION, which is its own shape. It rides the same resolution list
+      // anyway, so a per-turn option and a deployment default cannot disagree
+      // about which one wins for this knob and not for its neighbours.
+      const { contextWindowTokens: windowOverride, ...context } = resolved;
+      // What the thread already knows about its own size. An unreadable or
+      // foreign slot reads as no state, which costs one un-compacted turn.
+      const carried = readCompactionState(turn.state.get());
+      const compaction: TurnCompaction = {
+        model,
+        contextWindowTokens: contextWindowTokens(model, windowOverride),
+        ...(carried === undefined ? {} : { state: carried }),
+      };
       const system =
         (typeof deps.system === "function" ? await deps.system() : deps.system)
         ?? turn.system
@@ -343,7 +376,10 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
             // time, so the loadout has to be too or it could name a tool the
             // specialist was never handed.
             const loadout = equipped.filter((name) => name !== HIRE_SUBAGENT);
-            report = await runSubagent(turn, model, input, hands, loadout);
+            report = await runSubagent(turn, model, input, hands, loadout, {
+              ...compaction,
+              state: undefined,
+            });
           } catch (error) {
             // A failed hire is one tool result the resident can react to — never
             // the turn's death.
@@ -412,6 +448,10 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
           // not the harness — owns `find_tools`: that is the dividing line, and it
           // is what gives a third-party harness the same rail for free.
           toolSearch: { activeToolNames, attach: () => {} },
+          // How big this seat's window is, and what the thread remembers about
+          // filling it. Always passed: a deployment that never set a knob is
+          // exactly the deployment that has never had a context rail at all.
+          compaction,
           // The WHOLE context, not just `maxSteps`. Passing one knob is what made
           // every other knob unreachable from `vendo()` — the loop declared them,
           // `createAgent` passed them, and this caller silently dropped them, so
@@ -423,11 +463,20 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
         return;
       }
 
+      // The provider's own count for the whole prompt of a step — cache reads
+      // included, which is what makes it usable as the next turn's ground truth
+      // instead of a second guess at the same tokens.
+      let lastPromptTokens: number | undefined;
       try {
         for await (const part of loop.result.fullStream) {
           switch (part.type) {
             case "text-delta":
               yield { type: "text", delta: part.text };
+              break;
+            case "finish-step":
+              // Last step wins: it sent the biggest prompt of the turn, and it
+              // is the one the next turn grows from.
+              lastPromptTokens = part.usage.inputTokens ?? lastPromptTokens;
               break;
             case "error":
               // `wireErrorMessage` is the SHIPPED formatter: a Vendo-shaped error
@@ -469,6 +518,15 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
       } catch (error) {
         yield { type: "error", message: wireErrorMessage(error), code: "model" };
         return;
+      }
+
+      // §1.3's slot, which the runtime persists at turn end (`runtime.ts`
+      // `onFinish` → `saveHarnessState`). Written only after a turn that
+      // finished: a measurement from a turn that died describes a prompt the
+      // thread never actually sent. Whatever else the slot carries is spread
+      // through, so a later slice's summary is not erased by a token count.
+      if (lastPromptTokens !== undefined) {
+        turn.state.set(writeCompactionState({ ...carried, version: 1, lastPromptTokens }));
       }
 
       const stepLimit = await loop.stepLimitPart();

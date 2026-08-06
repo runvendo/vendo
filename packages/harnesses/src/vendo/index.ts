@@ -19,7 +19,24 @@ export {
   type TurnContext,
   type TurnLoop,
   type TurnLoopOptions,
+  type TurnCompaction,
   type TurnPrompt,
   type TurnPromptInput,
 } from "./loop.js";
+// The window table and its BYO override — the one new public knob of the
+// context shipment, and the only part of it a host is ever meant to touch.
+export {
+  contextWindowTokens,
+  DEFAULT_CONTEXT_WINDOW_TOKENS,
+  MODEL_CONTEXT_WINDOWS,
+} from "./model-windows.js";
+// The state codec, because the slot it decodes is the HOST's row: anyone reading
+// `harnessStateStore` directly needs the same reader the loop uses, or the two
+// disagree about a shape only one of them ships.
+export {
+  readCompactionState,
+  writeCompactionState,
+  type CompactionConfig,
+  type CompactionState,
+} from "./compaction.js";
 export { failoverModel, type ResolvedModel } from "./failover.js";
