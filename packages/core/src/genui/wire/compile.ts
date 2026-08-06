@@ -46,9 +46,10 @@ import { FAILED, issue, type CompileState, type Frame } from "./state.js";
 
 /** v2 spec §2 / plan D3 — compiler options. `hostComponents` (the host
  *  catalog names) feeds source resolution: host brand wins over the prewired
- *  set and islands. `toolShapes` (v2 spec §3) are the shape cards' outputs
- *  keyed by tool name (host tools and fn: refs alike); when present, every
- *  `$path` binding is type-checked against them (shape-check.ts). */
+ *  set and islands. `toolShapes` (v2 spec §3) are the tools' DECLARED output
+ *  schemas in structural form (`shapeFromJsonSchema`), keyed by tool name
+ *  (host tools and fn: refs alike); when present, every `$path` binding is
+ *  type-checked against them (shape-check.ts). */
 export interface WireCompileOptions {
   hostComponents?: readonly string[];
   toolShapes?: Readonly<Record<string, ShapeType>>;
