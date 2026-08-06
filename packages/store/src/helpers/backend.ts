@@ -5,7 +5,7 @@ import type { Db } from "../db-postgres.js";
 import { maybeDbFor, type VendoStore } from "../store.js";
 
 /** Where a helper's rows actually live for THIS store handle. */
-export type StoreBackend =
+type StoreBackend =
   | { kind: "sql"; db: Db }
   | { kind: "ops"; ops: StoreOps };
 

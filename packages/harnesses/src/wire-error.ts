@@ -19,7 +19,7 @@ export function wireErrorMessage(error: unknown): string {
 }
 
 /** The fixed sentence for a failure with nothing safe to repeat. */
-export const GENERIC_TURN_ERROR = "An error occurred while generating the response.";
+const GENERIC_TURN_ERROR = "An error occurred while generating the response.";
 
 /** The half of {@link wireErrorMessage} that can NAME the failure, split out so
  *  a caller with its own fallback sentence can still tell the two apart —

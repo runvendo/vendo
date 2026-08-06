@@ -94,22 +94,12 @@ export { THREAD_ID_HEADER, VENDO_STATUS_PART } from "./wire.js";
 // only drift by being changed for every door at once.
 export { wireErrorMessage } from "./wire-error.js";
 export {
-  abandonPendingApprovals,
-  guardApprovalIds,
   upsertMessage,
   validateMessage,
   validateUpsert,
 } from "./transcript-rules.js";
+export { type ToolBridgeOptions } from "./tool-bridge.js";
 export {
-  addAgentTool,
-  buildAgentTools,
-  guardedCall,
-  previewApproval,
-  type ToolBridgeOptions,
-} from "./tool-bridge.js";
-export {
-  computeInitialLoadout,
-  createToolSearchSession,
   DEFAULT_MAX_INITIAL_TOOLS,
   FIND_TOOLS_TOOL_NAME,
   type ToolSearchConfig,
@@ -118,10 +108,7 @@ export {
   type ToolSearchSession,
 } from "./tool-search.js";
 export {
-  CAPABILITY_MISS_TOOL_NAME,
-  createCapabilityMissDetector,
   latestUserIntent,
-  scrubCapabilityMissText,
   type CapabilityMissConfig,
   type CapabilityMissDetector,
 } from "./capability-miss.js";
