@@ -7,6 +7,12 @@ on:
 permissions:
   contents: read
 
+# A new push to a PR supersedes the previous run; cancel it. Pushes to main
+# never cancel each other (every main commit keeps its full record).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 # The old `ci` job did install → build → test:coverage (24 min) → typecheck →
 # lint on ONE runner, ~30 min wall. It is now, all fanned out over the shared
 # turbo remote cache so the fan-out does not multiply the build:
@@ -307,6 +313,8 @@ jobs:
       POSTGRES_URL: postgres://vendo:vendo@localhost:5432/vendo_integration
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0 # turbo ls --affected diffs against the base branch
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -315,40 +323,73 @@ jobs:
       - name: Turbo remote cache (GitHub-cache backed)
         uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
       - run: pnpm install --frozen-lockfile
+      # Same skip contract as test-shards: `--affected` marks a package when it
+      # or ANY of its workspace deps changed (verified: a one-line core edit
+      # marks every fixture and demo below), so a skip here can never hide a
+      # change these suites could catch. TURBO_SCM_BASE is explicit for the
+      # same reason as in test-shards — turbo's default base is the local
+      # `main`, absent on a PR checkout. If the probe itself fails, we fall
+      # open into running everything.
+      - name: Skip if e2e scope unaffected (PRs only)
+        id: affected
+        if: github.event_name == 'pull_request'
+        env:
+          TURBO_SCM_BASE: origin/${{ github.base_ref }}
+        run: |
+          if pnpm turbo ls --affected --output=json > /tmp/affected.json \
+             && jq -e '[.packages.items[].name | select(IN(
+                  "@vendoai-fixtures/integration",
+                  "@vendoai-fixtures/integration-browser",
+                  "@vendoai-fixtures/mcp-e2e",
+                  "@vendoai/redteam-e2e",
+                  "@vendoai-fixtures/automations-e2e",
+                  "@vendoai-fixtures/chat-e2e",
+                  "demo-bank"))] | length == 0' /tmp/affected.json > /dev/null; then
+            echo "integration scope unaffected by this PR; skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
       # Build only the workspace deps the integration suites need (the `...`
       # suffix pulls each fixture package's transitive workspace deps;
       # `demo-bank^...` builds demo-bank's deps without running its Next build).
-      - run: pnpm turbo run build --filter=@vendoai-fixtures/integration... --filter=@vendoai-fixtures/integration-browser... --filter=@vendoai-fixtures/mcp-e2e... --filter=@vendoai/redteam-e2e... --filter=@vendoai-fixtures/automations-e2e... --filter=@vendoai-fixtures/chat-e2e... --filter=demo-bank^...
+      - if: steps.affected.outputs.skip != 'true'
+        run: pnpm turbo run build --filter=@vendoai-fixtures/integration... --filter=@vendoai-fixtures/integration-browser... --filter=@vendoai-fixtures/mcp-e2e... --filter=@vendoai/redteam-e2e... --filter=@vendoai-fixtures/automations-e2e... --filter=@vendoai-fixtures/chat-e2e... --filter=demo-bank^...
       # The node suite boots the real composed umbrella over HTTP against the host app.
-      - run: pnpm --filter @vendoai-fixtures/integration test
+      - if: steps.affected.outputs.skip != 'true'
+        run: pnpm --filter @vendoai-fixtures/integration test
       # The MCP door e2e suite: its multi-instance token-claim race test
       # (token-claim-race.e2e.test.ts, the ENG-270 single-use-token guarantee)
       # gates on POSTGRES_URL and otherwise silently skips — the job-level
       # POSTGRES_URL above makes it actually run its forced-overlap races here.
-      - run: pnpm --filter @vendoai-fixtures/mcp-e2e test
+      - if: steps.affected.outputs.skip != 'true'
+        run: pnpm --filter @vendoai-fixtures/mcp-e2e test
       # The offline security corpus (PR #123): prompt-injection, oauth-csrf,
       # artifact/away-authority, shared-app-dormant, smoke. Mock-model and
       # key-free; the live-egress legs stay on nightly. Each fixture boots its
       # own host-app dev server on an ephemeral port with a per-suite dist dir,
       # so these steps are safe to run back to back on one runner; they stay
       # sequential steps (not turbo-parallel) to avoid oversubscribing CPUs.
-      - run: pnpm --filter @vendoai/redteam-e2e test
+      - if: steps.affected.outputs.skip != 'true'
+        run: pnpm --filter @vendoai/redteam-e2e test
       # Automations governance e2e: kill-switch, emit-and-revoke, park-resume,
       # webhook, schedules, observability, steps-pipeline (live-* legs are
       # nightly's).
-      - run: pnpm --filter @vendoai-fixtures/automations-e2e test
+      - if: steps.affected.outputs.skip != 'true'
+        run: pnpm --filter @vendoai-fixtures/automations-e2e test
       # Chat governance/approval e2e: approval-roundtrip, away-runner, blocked,
       # deny, ephemeral, grant-drift, thread-scoping. Own PGlite per test, no
       # shared server.
-      - run: pnpm --filter @vendoai-fixtures/chat-e2e test
+      - if: steps.affected.outputs.skip != 'true'
+        run: pnpm --filter @vendoai-fixtures/chat-e2e test
       # Maple's suite (auth, away drill, transfers, money, mcp-config, server
       # routes). demo apps define no test:coverage script, so the test-rest job's
-      # turbo run skips them — this is demo-bank's only CI execution (Cadence
-      # gets the cadence-supabase-auth job).
-      - run: pnpm --filter demo-bank test
+      # turbo run skips them — this is demo-bank's only CI execution.
+      - if: steps.affected.outputs.skip != 'true'
+        run: pnpm --filter demo-bank test
       # The browser leg drives the shipped hooks/chrome in Chromium against the same wire.
-      - run: pnpm --filter @vendoai-fixtures/integration-browser exec playwright install --with-deps chromium
-      - run: pnpm --filter @vendoai-fixtures/integration-browser test:browser
+      - if: steps.affected.outputs.skip != 'true'
+        run: pnpm --filter @vendoai-fixtures/integration-browser exec playwright install --with-deps chromium
+      - if: steps.affected.outputs.skip != 'true'
+        run: pnpm --filter @vendoai-fixtures/integration-browser test:browser
       - if: failure()
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4
         with:
@@ -377,6 +418,8 @@ jobs:
       POSTGRES_URL: postgres://vendo:vendo@localhost:5432/vendo_conformance
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0 # turbo ls --affected diffs against the base branch
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -385,12 +428,35 @@ jobs:
       - name: Turbo remote cache (GitHub-cache backed)
         uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
       - run: pnpm install --frozen-lockfile
-      - run: pnpm conformance
+      # This job exercises exactly four packages: the root `conformance` script
+      # is turbo over core/store/agent, and the browser suites are @vendoai/ui.
+      # `--affected` includes dependents, so a change anywhere beneath them
+      # still runs this job — see the integration job's skip step for the
+      # TURBO_SCM_BASE and fall-open rationale.
+      - name: Skip if conformance scope unaffected (PRs only)
+        id: affected
+        if: github.event_name == 'pull_request'
+        env:
+          TURBO_SCM_BASE: origin/${{ github.base_ref }}
+        run: |
+          if pnpm turbo ls --affected --output=json > /tmp/affected.json \
+             && jq -e '[.packages.items[].name | select(IN(
+                  "@vendoai/core",
+                  "@vendoai/store",
+                  "@vendoai/agent",
+                  "@vendoai/ui"))] | length == 0' /tmp/affected.json > /dev/null; then
+            echo "conformance scope unaffected by this PR; skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.affected.outputs.skip != 'true'
+        run: pnpm conformance
       # Vite's generated bundle differs byte-for-byte between macOS and Linux,
       # so freshness cannot be enforced with a cross-platform source diff. The
       # checked-in artifact is instead exercised through its real browser wire.
-      - run: pnpm --filter @vendoai/ui exec playwright install --with-deps chromium
+      - if: steps.affected.outputs.skip != 'true'
+        run: pnpm --filter @vendoai/ui exec playwright install --with-deps chromium
       - name: MCP Apps shim semantic contract
+        if: steps.affected.outputs.skip != 'true'
         run: pnpm --filter @vendoai/ui test:mcp-shim
       # ENG-231 — the permanent solidity + stress gate over the localhost wire
       # fixture: the stress spec (mid-stream kill, phone viewports, rapid
@@ -450,6 +516,7 @@ jobs:
       #   screenshots.spec.ts  writes PNGs; it is a capture job, not a gate.
       #   live-voice.spec.ts   needs OPENAI_API_KEY and a real model.
       - name: UI solidity + stress suite
+        if: steps.affected.outputs.skip != 'true'
         run: >-
           pnpm --filter @vendoai/ui test:browser
           e2e/smoke.spec.ts
