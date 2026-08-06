@@ -325,11 +325,6 @@ export interface VendoCitationsPart {
   toolCallId: string;
   citations: VendoKnowledgeCitation[];
   outcome: "answered" | "insufficient-evidence" | "unavailable";
-  /** Knowledge K15 (additive, §15 forward-compat): the tool's evidence check
-   *  was attempted for this result and produced no verdict, so the thread says
-   *  the answer is not verified against the documentation instead of implying
-   *  it was checked. Absent = checked, or a host with no check configured. */
-  unverified?: true;
 }
 
 /** Knowledge K1 */
@@ -338,7 +333,6 @@ export const vendoCitationsPartSchema = z.object({
   toolCallId: z.string(),
   citations: z.array(vendoKnowledgeCitationSchema),
   outcome: z.enum(["answered", "insufficient-evidence", "unavailable"]),
-  unverified: z.literal(true).optional(),
 }).passthrough() satisfies z.ZodType<VendoCitationsPart>;
 
 /** AGENT-10 — the nested wire envelope of {@link vendoViewPartSchema}. */

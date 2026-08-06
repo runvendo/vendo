@@ -28,7 +28,7 @@ export * from "./knowledge-wire.js";
 export * from "./meter-exhausted.js";
 export * from "./model-seats.js";
 export * from "./kit/index.js";
-export * from "./pack.js";
+export * from "./capability.js";
 export * from "./principal.js";
 export * from "./reshape.js";
 export * from "./product-slug.js";
@@ -109,28 +109,7 @@ export type { CommitResult, WorkspaceFs } from "./workspace.js";
 export { WORKSPACE_INLINE_MAX_BYTES, appRootPath } from "./workspace.js";
 export type { AppMount } from "./workspace.js";
 // `Seat` / `ResolvedModels` come from `./model-seats.js` through the star export
-// above. They were ALSO re-exported here from a second, lane-A copy in
-// `./models.ts` — four seats instead of five, non-generic, and typed against the
-// ai-SDK's `LanguageModel`, which put an `ai` import in core for one type. The
-// explicit re-export won over the star, so core's public `Seat` was silently
-// missing `verifier` and `Turn.models` could not describe the verifier seat.
-// Lane A's own file said "if lane D's version differs, lane D's wins"; it does,
-// so the copy is gone and there is one definition.
-
-// Deprecated aliases from the pre-de-versioning naming (0.4.x). Remove next minor.
-/** @deprecated Use compileWire. */
-export { compileWire as compileWireV2 } from "./genui/wire/compile.js";
-/** @deprecated Use printWire. */
-export { printWire as printWireV2 } from "./genui/wire/print.js";
-/** @deprecated Use validateTree. */
-export { validateTree as validateTreeV2 } from "./genui/tree.js";
-/** @deprecated Use VENDO_TREE_FORMAT. */
-export { VENDO_TREE_FORMAT as VENDO_TREE_FORMAT_V2 } from "./formats.js";
-/** @deprecated Use treeSchema. */
-export { treeSchema as treeV2Schema } from "./genui/tree.js";
-/** @deprecated Use treeQuerySchema. */
-export { treeQuerySchema as treeQueryV2Schema } from "./genui/tree.js";
-/** @deprecated Use Tree. */
-export type { Tree as TreeV2 } from "./genui/tree.js";
-/** @deprecated Use TreeQuery. */
-export type { TreeQuery as TreeQueryV2 } from "./genui/tree.js";
+// above. They were ALSO re-exported here from a second copy in `./models.ts`,
+// non-generic and typed against the ai-SDK's `LanguageModel` — which put an `ai`
+// import in core for one type — and the explicit re-export silently won over the
+// star. The copy is gone, so there is one definition.

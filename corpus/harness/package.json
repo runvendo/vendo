@@ -9,8 +9,7 @@
     "ui-parity": "node --import tsx src/ui-parity-nightly.ts",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "knowledge-verifier-live": "node --import tsx src/knowledge-eval/verifier-live.ts"
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@vendoai/actions": "workspace:*",

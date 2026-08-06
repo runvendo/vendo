@@ -130,7 +130,7 @@ Two things about a cell are worth knowing:
   hardenings.
 - it is scored from the judgments file read back off disk, not from the pass's
   return value, because that file is the channel's actual output — the artifact a
-  human reviews, `vendo doctor`/`vendo try` display, and the runtime resolves
+  human reviews, `vendo doctor` displays, and the runtime resolves
   through `effectiveHostTool` (`packages/actions/src/runtime/registry.ts`,
   `mergeOverride(applyJudgment(extracted, judgment), override)`). The rubric
   computes that same state with the same `applyJudgment`, so it grades what the

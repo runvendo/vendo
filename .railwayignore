@@ -13,7 +13,6 @@
 docs/
 docs-site/
 assets/
-flow-demo.webm
-apps/*/docs/
+examples/*/docs/
 packages/*/docs/
 corpus/harness/src/knowledge-eval/fixtures/

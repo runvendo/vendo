@@ -282,7 +282,6 @@ describe("cloud lane (VENDO_API_KEY)", () => {
       framework: "next",
       projectName: "maple-bank",
       repoHost: "github.com",
-      connectionsConfigured: 3,
       detectMs: 1200,
       engineMs: 800,
     });
@@ -290,7 +289,6 @@ describe("cloud lane (VENDO_API_KEY)", () => {
     expect(props.framework).toBe("next");
     expect(props.projectName).toBe("maple-bank");
     expect(props.repoHost).toBe("github.com");
-    expect(props.connectionsConfigured).toBe(3);
     expect(props.detectMs).toBe(1200);
     expect(props.engineMs).toBe(800);
   });
@@ -359,11 +357,11 @@ describe("cloud lane (VENDO_API_KEY)", () => {
     const t = createTelemetry(deps);
     await t.track("agent_run", {
       projectName: "a".repeat(5000),
-      servedApps: { nested: "secret" },
+      errorDetail: { nested: "secret" },
     } as never);
     const props = sentProps(deps);
     expect((props.projectName as string).length).toBeLessThanOrEqual(512);
-    expect("servedApps" in props).toBe(false);
+    expect("errorDetail" in props).toBe(false);
   });
 });
 

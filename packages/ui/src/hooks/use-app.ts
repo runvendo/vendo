@@ -22,8 +22,6 @@ export interface AppOptions {
 
 export function useApp(appId: AppId, { enabled = true }: AppOptions = {}): {
   app: AppDocument | undefined;
-  /** Alias for `app` — the consistent `data` field across data hooks (§3). */
-  data: AppDocument | undefined;
   surface: OpenSurface | undefined;
   error: Error | undefined;
   isLoading: boolean;
@@ -110,5 +108,5 @@ export function useApp(appId: AppId, { enabled = true }: AppOptions = {}): {
     [appId, client, refresh],
   );
 
-  return { app, data: app, surface, error, isLoading, call, edit, history, refresh };
+  return { app, surface, error, isLoading, call, edit, history, refresh };
 }

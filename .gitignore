@@ -24,7 +24,6 @@ corpus/.repos/
 # browser-verification artifacts
 .playwright-mcp/
 *.png
-bench/demo-capture/output/
 
 # ...except RAW MEASUREMENT DATA under docs/verification: logs, counters, and
 # sample sets are small, they diff, and a lane's claims are worthless without
@@ -43,15 +42,6 @@ docs/verification/**/*.gif
 docs/verification/**/*.webm
 docs/verification/**/*.mp4
 docs/verification/**/*.mov
-
-# Generated prospect demos — NEVER committed. `demo:create` clones outside the
-# repo by default, but an explicit `--target-dir examples` run must not be one
-# `git add -A` away from publishing a prospect's brand in the OSS repo. Only
-# the three real example apps are tracked.
-examples/demo-*
-!examples/demo-bank/
-!examples/demo-accounting/
-!examples/demo-template/
 
 # Factory lane scratch at the repo ROOT — a lane's working notes, contract,
 # park file and report are its own, never the repo's. Four of these had already
@@ -111,17 +101,14 @@ design-canvas/
 packages/apps/box/claude-turn.mjs
 
 # Agent working notes and factory process exhaust — useful locally, not shipped.
-# Lane contracts, raw proof logs, and eval run dumps stay on their branches;
-# only frozen specs (cited by source comments) live in the tree.
+# Lane contracts, raw proof logs, and eval run dumps stay on their branches.
 .claude/
 docs/verification/
-docs/superpowers/evidence/
-docs/superpowers/plans/
-docs/superpowers/lanes/
 docs/eval/runs/
-
-# Red gate runs (scripts/serial-gate.sh) — logs kept for inspection, never evidence.
-.gate-failures/
 
 # Per-PID scratch fixtures written by wire-type-parity.test.ts (a killed run leaves them behind)
 packages/vendo/.wire-parity.*
+
+# Harness/test run outputs — write-only sinks, never committed
+corpus/reports/
+fixtures/existing-agents-e2e/.artifacts/

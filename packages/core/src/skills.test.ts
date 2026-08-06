@@ -6,7 +6,7 @@ import {
   renderSkillMd,
   skillFilePath,
   skillPath,
-  type PackSkill,
+  type Skill,
   type SkillsFs,
 } from "./skills.js";
 
@@ -37,10 +37,10 @@ const memoryFs = (initial: Record<string, string> = {}): SkillsFs & { paths(): s
 
 /** Open a workspace whose `/host` projection carries these skills — the real
  *  path: `hostSkillFiles` in, façade reads out, nothing written. */
-const mounted = (...skills: PackSkill[]): SkillsFs & { paths(): string[] } =>
+const mounted = (...skills: Skill[]): SkillsFs & { paths(): string[] } =>
   memoryFs(hostSkillFiles(skills));
 
-const skill = (name: string, description: string, body: string): PackSkill => ({ name, description, body });
+const skill = (name: string, description: string, body: string): Skill => ({ name, description, body });
 
 describe("skill paths (build contract §3.1)", () => {
   it("puts every skill at /host/skills/<name>/SKILL.md", () => {
@@ -115,7 +115,7 @@ describe("hostSkillFiles — the /host projection, not stored rows", () => {
     ]);
   });
 
-  it("is a pure value of the configured packs, so a reworded skill leaves nothing stale", async () => {
+  it("is a pure value of the configured skills, so a reworded skill leaves nothing stale", async () => {
     // Two deploys, two projections. There is no store to carry the old one
     // forward — the second projection simply IS what exists.
     const before = createTurnSkills(memoryFs(hostSkillFiles([skill("a", "Old.", "old\n")])));
@@ -135,7 +135,7 @@ describe("companion files ride beside a skill's SKILL.md", () => {
   // The skill format is a DIRECTORY, and Claude Code reads it whole. Depth the
   // body should not carry (the full .vendo reference) lands here and the body
   // points at it.
-  const withFiles: PackSkill = {
+  const withFiles: Skill = {
     ...skill("building-apps", "Build an app.", "body\n"),
     files: { "references/format.md": "# The format\n", "checklist.md": "- one\n" },
   };
@@ -267,7 +267,7 @@ describe("TurnSkills (build contract §1.2)", () => {
   });
 
   it("lists host-authored skills already on the mount, not just projected ones", async () => {
-    // /host/ is the host's own skills + pack skills alike (architecture §8):
+    // /host/ is the host's own skills and the built-in ones alike (architecture §8):
     // the disk is the one source of truth, so a hand-authored SKILL.md lists.
     const fs = memoryFs({
       "/host/skills/house-style/SKILL.md": '---\nname: house-style\ndescription: How this company writes.\n---\n\nBe brief.\n',

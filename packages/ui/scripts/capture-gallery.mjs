@@ -3,7 +3,7 @@
 // Captures the core surface + headline-stress GIFs off the real-browser harness
 // (the deterministic wire fixture that STREAMS exactly like the demos — the same
 // @vendoai/ui chrome the hosts mount). Each clip is Playwright recordVideo →
-// ffmpeg palette GIF, the proven capture path from scripts/capture-flow-gif.mjs.
+// ffmpeg palette GIF.
 //
 // Prereqs: ffmpeg on PATH. Usage:
 //   node scripts/capture-gallery.mjs            # capture all GIF beats
@@ -13,7 +13,7 @@
 // `cards` is the designed CARD reference (card audit §10): it drives the
 // gallery app's `#cards` board — every card kind × state × degraded-data case,
 // rendered through the real components — and writes one PNG per
-// `[data-gallery-case]` into the lane-G evidence folder. The toolkit logo CDN
+// `[data-gallery-case]` into a gitignored output folder. The toolkit logo CDN
 // is stubbed so the capture is offline-deterministic, then a second pass
 // BLOCKS it and recaptures the logo-bearing cases as `<id>--logo-failed.png`
 // (the forced `onError` fallback, proved rather than asserted).
@@ -37,12 +37,12 @@ const { chromium } = requireFromUi("@playwright/test");
 const PORT = Number(process.env.VENDO_GALLERY_PORT) || 4271;
 const BASE = `http://127.0.0.1:${PORT}`;
 const OUT_DIR = resolve(packageRoot, "../../docs/verification/eng-232");
-/** Lane G's card reference is the default home; a later lane re-shooting the
- *  same board for its OWN proof points VENDO_CARDS_OUT_DIR at its own folder
- *  rather than rewriting somebody else's evidence. */
+/** Gitignored by default (packages/ui/.gitignore covers e2e/test-results/);
+ *  a run shooting the board for its own proof points VENDO_CARDS_OUT_DIR at
+ *  its own folder. */
 const CARDS_OUT_DIR = process.env.VENDO_CARDS_OUT_DIR
   ? resolve(process.env.VENDO_CARDS_OUT_DIR)
-  : resolve(packageRoot, "../../docs/superpowers/evidence/2026-08-03-ui-redesign/lane-g/cards");
+  : resolve(packageRoot, "e2e/test-results/gallery/cards");
 const VIEWPORT = { width: 1200, height: 720 };
 const MOBILE = { width: 390, height: 844 };
 const LOGO_CDN = "https://logos.composio.dev/**";

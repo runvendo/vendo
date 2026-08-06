@@ -19,8 +19,9 @@ export interface CheckingLayerOptions {
   /** The host surface the fact checks measure against (catalog, tools, tool
    *  shapes). */
   deps: FloorDependencies;
-  /** Checks plugged in by packs (`Pack.checks`, build contract §5). APPENDED —
-   *  they can add findings, never remove or replace a built-in. */
+  /** Checks plugged in through `createVendo({ apps: { checks } })`, plus the
+   *  ones a mounted subsystem brings. APPENDED — they can add findings, never
+   *  remove or replace a built-in. */
   checks?: readonly Check[];
 }
 

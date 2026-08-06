@@ -14,7 +14,7 @@ import {
   type FilesAdapter,
   type Harness,
   type Json,
-  type PackSkill,
+  type Skill,
   type Principal,
   type RunContext,
   type ThreadId,
@@ -66,7 +66,7 @@ export interface SessionDeps {
   guard: VendoGuard;
   /** Guard-bound already — the one choke point. */
   tools: ToolRegistry;
-  skills: readonly PackSkill[];
+  skills: readonly Skill[];
   instructions?: string;
   /** Publish the turn in flight to the agent's own MCP door (`door.ts`). A
    *  harness that thinks outside this process mints a credential pointing at

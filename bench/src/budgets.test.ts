@@ -26,7 +26,6 @@ const metric = (name: string, p95: number): SuiteResult["cases"][number] => ({
 });
 
 const budgets: BudgetsFile = {
-  toleranceRationale: "test",
   ceilings: { "tree-validate:nodes-10": 5, "store:put-pglite": 10 },
 };
 
@@ -107,7 +106,6 @@ describe("budgetKey", () => {
 describe("loadBudgets", () => {
   it("loads the committed budgets.json with ceilings", async () => {
     const file = await loadBudgets();
-    expect(typeof file.toleranceRationale).toBe("string");
     expect(Object.keys(file.ceilings).length).toBeGreaterThan(0);
     for (const value of Object.values(file.ceilings)) expect(typeof value).toBe("number");
   });

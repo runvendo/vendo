@@ -142,9 +142,9 @@ const statOf = (kind: "file" | "directory", size: number, mtime: Date): FsStat =
  * own scratch belongs in the `scratch` directory each mount reserves for it.
  *
  * `/host/**` is a read-only overlay the caller supplies per turn, not store
- * rows: pack skills and host knowledge are code-defined (`PackSkill.body`,
+ * rows: skills and host knowledge are code-defined (`Skill.body`,
  * contract §5), so projecting them per turn is always current, while a copy in
- * the store could go stale against the deployed packs.
+ * the store could go stale against the deployed code.
  */
 /** Build contract §9.7 — what one turn's façade may reach. `subject` owns
     `/user/**`; each asserted org owns `/orgs/<org>/**`. `canCommit` is the

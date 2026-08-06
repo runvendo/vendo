@@ -6,9 +6,7 @@ import { type PollOptions, useResource } from "./use-resource.js";
 import type { AutomationEntry, EnableResult, RunPlan, RunRecord, RunStatus } from "../wire-types.js";
 
 export function useAutomations(options?: PollOptions): {
-  /** Back-compat alias for `data` (contract §3). */
   automations: AutomationEntry[];
-  data: AutomationEntry[];
   error: Error | undefined;
   isLoading: boolean;
   refresh(): Promise<void>;
@@ -63,7 +61,6 @@ export function useAutomations(options?: PollOptions): {
 
   return {
     automations: data,
-    data,
     error,
     isLoading,
     refresh,

@@ -23,9 +23,7 @@ function pageCursor(event: AuditEvent | undefined): string | undefined {
 }
 
 export function useActivity(options?: PollOptions): {
-  /** Back-compat alias for `data` (contract §3). */
   events: AuditEvent[];
-  data: AuditEvent[];
   error: Error | undefined;
   isLoading: boolean;
   /** Whether another page may still exist. Flips to `false` once a fetched page
@@ -65,5 +63,5 @@ export function useActivity(options?: PollOptions): {
     setEnded(added.length === 0);
   }, [client, events]);
 
-  return { events, data: events, error, isLoading, hasMore, loadMore, refresh };
+  return { events, error, isLoading, hasMore, loadMore, refresh };
 }

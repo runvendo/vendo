@@ -48,7 +48,7 @@ export function missingCreateTotalError(
  *  - The engine hardcodes `temperature: 0`, which claude-sonnet-5 rejects with a
  *    400. create() therefore fails (after its internal retries) on sonnet-5; we
  *    record that and also run create() against a temperature-compatible model so
- *    RESULTS carries a real engine-through-LLM number.
+ *    the results carry a real engine-through-LLM number.
  */
 export const genLiveSuite: Suite = {
   name: "gen-live",

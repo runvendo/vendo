@@ -22,8 +22,8 @@ requires — is on the **root** `@vendoai/vendo`.
 import type {
   ActAs, ActionsRegistry, AppsRuntime, AutomationsEngine, ComponentCatalog,
   ComponentRegistry, Connector, HostOAuthAdapter, Json, Judge, PolicyConfig,
-  Principal, RunId, SandboxAdapter, SecretsProvider, ToolRegistry, VendoAgent,
-  VendoGuard, VendoStore,
+  Principal, RunId, SandboxAdapter, SecretsProvider, Skill, ToolDefinition,
+  ToolRegistry, VendoAgent, VendoGuard, VendoStore,
 } from "@vendoai/vendo";
 import type {
   ConnectionsService, HostAuthPreset, ModelsConfig, ServerActionHandler,
@@ -34,9 +34,9 @@ export function createVendo(config: {
   // The slots. Nothing here is required: day one is `createVendo({ auth })`,
   // and `.vendo/` (written by `vendo init`) supplies the rest.
   auth?: HostAuthPreset;                      // one preset fills principal + actAs + oauth; see /connect/act-as-presets
-  tools?: ExtractedTool[];                    // host-tool declarations in memory; else `.vendo/tools.json`
+  tools?: (ExtractedTool | ToolDefinition)[]; // host-tool declarations in memory (else `.vendo/tools.json`), and/or executable tools
+  skills?: Skill[];                           // SKILL.md values mounted at /host/skills for the harness to read
   harness?: Harness;                          // WHO THINKS. default: vendo(); also claudeCode(), or your own
-  packs?: PackProvider[];                     // where capability comes from. default: [apps()]
   models?: {                                  // the seats. each: a model-name string or an ai-SDK model
     default?: LanguageModel | string;         // the thinker; every unset seat borrows this
     reviewer?: LanguageModel | string;        // generated-app review

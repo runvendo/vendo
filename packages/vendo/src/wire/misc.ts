@@ -90,15 +90,23 @@ export const devRoutes: RouteEntry[] = [
   }),
 ];
 
-/** The machine-facing surfaces: webhook ingress, the authenticated scheduler
-    tick, and the dev-only sync impact probe. All match on the RAW path
-    (prefix or exact) ahead of any segment decoding, exactly like the old
-    chain. (The v1 run-token apps proxy mount died with execution-v2 Wave 1.5;
-    the box callback surface at /box/ is its replacement.) */
-export const systemRoutes: RouteEntry[] = [
+/** External-event ingress. Mounted with the automations subsystem, and absent
+    without it — a delivery to a deployment that does not run automations is a
+    404 rather than a door that accepts the event and drops it. */
+export const webhookRoutes: RouteEntry[] = [
   prefixRoute("POST", "/webhooks/", async ({ request, deps }) => {
     return await deps.automations.webhook(request);
   }),
+];
+
+/** The machine-facing surfaces: the authenticated scheduler tick and the
+    dev-only sync impact probe. Both match on the RAW path (prefix or exact)
+    ahead of any segment decoding, exactly like the old chain. The tick is here
+    rather than with the webhook door because it also drives the hosted session
+    sweep, which every deployment needs. (The v1 run-token apps proxy mount died
+    with execution-v2 Wave 1.5; the box callback surface at /box/ is its
+    replacement.) */
+export const systemRoutes: RouteEntry[] = [
   route("POST", "/tick", async ({ request, deps, sweep }) => {
     if (!await tickAuthorized(request)) {
       return json({ error: { code: "blocked", message: "invalid tick credential" } }, 401);

@@ -390,8 +390,8 @@ and shipped chrome displays the unconfigured-policy notice.
 
 Server-shaped app requests ("email me a digest of unpaid invoices at 8am")
 ride the automations engine by default — a steps or agentic automation on the
-app document, created in seconds with no sandbox anywhere. A sandbox adapter
-plus the experimental `apps: { experimentalMachines: true }` opt-in unlocks
+app document, created in seconds with no sandbox anywhere. A configured
+`sandbox` adapter — and nothing else, there is no flag beside it — unlocks
 machine-backed apps (custom server code in a box): see
 [the machine model](./machine-model.md) for the three layers, the escalation
 ladder, graduation, and the box contract. Machine provisioning also requires
@@ -441,13 +441,13 @@ import type {
   ActAs, ActionsRegistry, AppsRuntime, AutomationsEngine, CatalogFile,
   ComponentCatalog, ComponentRegistry, Connector, ExtractedTool, FilesAdapter,
   Harness, HostOAuthAdapter, Json, Judge, KnowledgeAdapter, OverridesFile,
-  PackProvider, PolicyConfig, PolicyFile, Principal, RunContext, RunId,
-  SandboxAdapter, SecretsProvider, ToolRegistry,
+  PolicyConfig, PolicyFile, Principal, RunContext, RunId,
+  SandboxAdapter, SecretsProvider, Skill, ToolDefinition, ToolRegistry,
   VendoAgent, VendoGuard, VendoStore, VendoTheme,
 } from "@vendoai/vendo";
 import type {
   AgentOptions, AppsConfig, ComposedAgent, ConnectionsService, HarnessTurns,
-  HostAuthPreset, ModelsConfig, PackContext, ServerActionHandler, TourEntry,
+  HostAuthPreset, ModelsConfig, ServerActionHandler, TourEntry,
 } from "@vendoai/vendo/server";
 import type { LanguageModel } from "ai";
 
@@ -456,10 +456,11 @@ export interface CreateVendoConfig {
   model?: LanguageModel;
   /** @deprecated the model half is superseded by `models.fill`; `disabled` stays. */
   paint?: { model?: LanguageModel; disabled?: boolean };
-  models?: ModelsConfig;      // seats: default, reviewer, judge, fill, verifier
+  models?: ModelsConfig;      // seats: default, reviewer, judge, fill
   auth?: HostAuthPreset;      // one preset fills principal + actAs + oauth
   principal?: (req: Request) => Promise<Principal | null>; // escape hatch
-  tools?: ExtractedTool[];    // `vendo init`/`vendo sync` declarations, in memory
+  tools?: readonly (ExtractedTool | ToolDefinition)[]; // `vendo sync` declarations, and/or executable tools
+  skills?: readonly Skill[];  // SKILL.md values mounted at /host/skills
   catalog?: ComponentCatalog | ComponentRegistry;          // registry.tsx, or the array form
   theme?: VendoTheme;         // programmatic override for .vendo/theme.json
   brief?: string;             // programmatic override for .vendo/brief.md
@@ -498,18 +499,15 @@ export interface CreateVendoConfig {
   agent?: AgentOptions | ComposedAgent; // the chat knobs, OR a whole agent() from @vendoai/agents
   sessions?: { ttlMs?: number; sweepIntervalMs?: number; now?: () => number };
   approvals?: { parkedCallTtlMs?: number };
-  apps?: {
-    experimentalMachines?: boolean;
-    experimentalScreenAgent?: boolean; // route vendo_make through the cheap screen agent first
+  apps?: false | {            // false unmounts app generation: no tools, skill or /apps routes
     review?: {                // review-kind remixes: who may review (queue/reject/approve)
       reviewer?(ctx: RunContext): boolean | Promise<boolean>;
     };
     pipeline?: AppsConfig["pipeline"];                 // { smokeRender } — the island render gate
-    fillConcurrency?: AppsConfig["fillConcurrency"];   // groups filled at once (default 2)
     checks?: AppsConfig["checks"];                     // the host's own checks, appended to the built-ins
     designRules?: string;
   };
-  packs?: readonly PackProvider<PackContext>[]; // where capability comes from. unset → [apps()]
+  automations?: false;        // false unmounts automations: no /automations, /runs or /webhooks routes
   tours?: readonly TourEntry[];
 }
 

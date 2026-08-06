@@ -125,7 +125,6 @@ type DraftDecision =
 interface DecisionMetadata {
   decision: DraftDecision;
   rationale?: string;
-  blockAlreadyAudited?: boolean;
   invalidatedGrants?: PermissionGrant[];
 }
 
@@ -1097,7 +1096,7 @@ class GuardImplementation implements VendoGuard {
       };
     }
 
-    if (draft.action === "block" && !metadata.blockAlreadyAudited) {
+    if (draft.action === "block") {
       await this.report(
         eventFromContext(ctx, {
           kind: "policy-decision",

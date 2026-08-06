@@ -81,7 +81,6 @@ describe("the box door scrubs responses (integration)", () => {
       tools,
       catalog: [],
       secrets,
-      experimentalMachines: true,
       machine: { sandbox: fakeStatefulSandbox(), buildEnv: () => ({ PORT: "8080" }) },
     });
     await runtime.machine.provision(doc.id, ada);
@@ -164,7 +163,6 @@ describe("issue #566 — injected secret values redact without a refetch", () =>
       tools,
       catalog: [],
       secrets: secretsProvider,
-      experimentalMachines: true,
       machine: { sandbox: fakeStatefulSandbox(), buildEnv: injectingEnv(inject) },
     });
 

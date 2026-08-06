@@ -31,7 +31,7 @@
  *
  * Yousef iterates on this text — keep it one screen per section.
  */
-import type { PackSkill } from "@vendoai/core";
+import type { Skill } from "@vendoai/core";
 import { VENDO_FORMAT_REFERENCE } from "./format-reference.js";
 
 const BODY = `# Building an app
@@ -277,7 +277,7 @@ a plan in it, and does not want to.
   "this product can't send email" beats anything that sounds like it worked.
 `;
 
-export const buildingAppsSkill: PackSkill = {
+export const buildingAppsSkill: Skill = {
   name: "building-apps",
   description: "Build or change an app for someone out of the product's own components and live data: plan it, fill it in, validate it, and say what you did in their words.",
   body: BODY,

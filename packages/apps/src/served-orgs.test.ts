@@ -59,7 +59,6 @@ const setup = async (over: Partial<AppsConfig> = {}, guard = guardFixture()): Pr
     catalog: [],
     appAccess: storeAccessFixture(store),
     multiParty: true,
-    experimentalMachines: true,
     machine: { sandbox },
     // The wire fills this with its own base path; the runtime never invents it.
     servedProxyPath: (appId) => `/api/vendo/apps/${appId}/serve/`,

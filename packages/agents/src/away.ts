@@ -26,7 +26,7 @@ import {
   type Guard,
   type Harness,
   type HarnessEvent,
-  type PackSkill,
+  type Skill,
   type RunContext,
   type SeatModels,
   type ThreadId,
@@ -52,7 +52,7 @@ export interface AwayRunnerDeps {
   /** Where workspace blobs land; unset → the store's own rows. */
   files?: FilesAdapter;
   /** Projected into the read-only `/host/skills` mount, as in a session. */
-  skills?: readonly PackSkill[];
+  skills?: readonly Skill[];
   /** The host's prompt block. */
   instructions?: string;
   /**

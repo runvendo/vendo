@@ -35,12 +35,10 @@ for (const shot of shots) {
     await expect(page.locator(shot.ready).first()).toBeVisible();
     if (shot.scenario === "page") await expect(page.getByRole("tab", { name: "Apps" })).toHaveAttribute("aria-selected", "true");
     if (shot.scenario === "thread-citations") {
-      // All three Surface-2 states settled, with the first citation popover
+      // Both Surface-2 states settled, with the first citation popover
       // expanded (the mockup's "one expanded" grounded state).
       await expect(page.locator("[data-vendo-knowledge-searched]")).toBeVisible();
       await expect(page.locator("[data-vendo-knowledge-unavailable]")).toBeVisible();
-      // K15 — the fail-open mark renders beside its sources, not instead of them.
-      await expect(page.locator("[data-vendo-knowledge-unverified]")).toBeVisible();
       await page.locator(".fl-cite-btn").first().click();
       await expect(page.locator(".fl-cite--open .fl-cite-pop")).toBeVisible();
     }

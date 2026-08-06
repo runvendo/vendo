@@ -11,7 +11,6 @@ import { runKnowledge } from "./cli/knowledge/index.js";
 import { runMcp } from "./cli/mcp/index.js";
 import { CLI_VERSION } from "./cli/shared.js";
 import { runSync } from "./cli/sync.js";
-import { runTry } from "./cli/try.js";
 
 const HELP = `vendo — install your product's agent
 
@@ -83,7 +82,7 @@ const INIT_VALUE_OPTIONS = ["--auth", "--framework", "--cloud-key", "--theme", "
 const INIT_AUTH_VALUES = ["authJs", "clerk", "supabase", "auth0", "jwt", "none"];
 const INIT_FRAMEWORK_VALUES = ["next", "express", "custom"];
 /** The user-facing engine families (judge/engine.ts's ENGINE_FAMILIES values) —
-    one ladder, so `init --engine` and `try --engine` accept the same names. */
+    one ladder, so `init --engine` and `sync --engine` accept the same names. */
 const ENGINE_VALUES = ["claude", "codex", "npx"];
 const DOCTOR_FLAGS = new Set(["--json", "--yes"]);
 const DOCTOR_VALUE_OPTIONS = ["--url"];
@@ -117,47 +116,6 @@ function optionErrors(args: string[], flags: Set<string>, valueOptions: string[]
     errors.push(`unknown option: ${arg}`);
   }
   return errors;
-}
-
-/** `vendo try` follows the ENG-335 rule too: unknown flags (and stray
-    positionals — try always profiles the cwd) fail loudly, and a bad
-    --engine names the valid families instead of silently running keyless. */
-function tryOptionErrors(args: string[]): { errors: string[]; port?: number; engine?: string } {
-  const errors: string[] = [];
-  let port: number | undefined;
-  let engine: string | undefined;
-  const parsePort = (value: string | undefined): void => {
-    const parsed = value !== undefined && /^\d+$/.test(value) ? Number(value) : NaN;
-    if (Number.isInteger(parsed) && parsed >= 1 && parsed <= 65_535) port = parsed;
-    else errors.push("--port requires a port number (1-65535)");
-  };
-  const parseEngine = (value: string | undefined): void => {
-    if (value !== undefined && ENGINE_VALUES.includes(value)) engine = value;
-    else errors.push(`--engine must be one of ${ENGINE_VALUES.join(", ")} (example: vendo try --engine claude)`);
-  };
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index]!;
-    if (arg === "--no-open" || arg === "--no-ai") continue;
-    if (arg === "--port" || arg === "--engine") {
-      const value = args[index + 1];
-      const usable = value !== undefined && !value.startsWith("--");
-      (arg === "--port" ? parsePort : parseEngine)(usable ? value : undefined);
-      if (usable) index += 1;
-      continue;
-    }
-    if (arg.startsWith("--port=")) {
-      parsePort(arg.slice("--port=".length));
-      continue;
-    }
-    if (arg.startsWith("--engine=")) {
-      parseEngine(arg.slice("--engine=".length));
-      continue;
-    }
-    errors.push(arg.startsWith("--")
-      ? `unknown option: ${arg}`
-      : `unexpected argument: ${arg} — try profiles the current directory; cd there and rerun`);
-  }
-  return { errors, port, engine };
 }
 
 function target(args: string[]): string {
@@ -276,32 +234,13 @@ export async function main(argv: string[]): Promise<number> {
   }
   if (command === "refine") {
     // Retired in #568 (format v3): `vendo sync` now owns AI enrichment of
-    // .vendo (compounds/briefs live in .vendo/overrides.json), and the try
-    // surface's refine panel carries the conversational-correction loop —
-    // the refine ENGINE lives on there (src/refine.ts).
+    // .vendo (compounds/briefs live in .vendo/overrides.json).
     console.error("vendo refine was retired — `vendo sync` AI-enriches .vendo now (compounds and briefs live in .vendo/overrides.json). Run: vendo sync");
     return 1;
   }
-  // UNLISTED (self-serve audit B1): `try` still runs for anyone who already
-  // invokes it, but HELP no longer advertises it — the pre-install pitch it
-  // fronted (`npx vendo try`) resolves no npm package, so naming it here sends
-  // strangers to a 404 or, worse, a same-named binary already on their PATH.
-  if (command === "try") {
-    const { errors, port, engine } = tryOptionErrors(args);
-    if (errors.length > 0) {
-      console.error(`vendo try: ${errors.join("; ")}\n\n${HELP}`);
-      return 1;
-    }
-    return runTry({
-      port,
-      open: !args.includes("--no-open"),
-      ai: !args.includes("--no-ai"),
-      ...(engine === undefined ? {} : { engine }),
-    });
-  }
   if (command === "playground") {
-    // Retired: the playground's job moved into the try surface (unlisted —
-    // see the `try` branch below). The bundle machinery lives on in
+    // Retired: the playground's job moved into the hosted try surface
+    // (vendo.run/playground). The bundle machinery lives on in
     // cli/playground.ts and cli/playground/.
     console.error("vendo playground was retired — set Vendo up in your own repo instead: `vendo init`, then `vendo doctor`. Docs: https://vendo.run/quickstart");
     return 1;

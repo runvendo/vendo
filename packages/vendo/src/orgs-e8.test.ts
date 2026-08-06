@@ -493,7 +493,6 @@ describe("E8 — §9.8: open() hands a served app a RESOLVABLE url", () => {
         principal: async () => acting,
         memberships: async (principal) => memberships[principal.subject] ?? [],
       },
-      apps: { experimentalMachines: true },
     });
     vendo.actions.add(tools);
     await store.ensureSchema();

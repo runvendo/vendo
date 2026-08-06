@@ -10,7 +10,7 @@ import {
   VendoError,
   type FilesAdapter,
   type Harness,
-  type PackSkill,
+  type Skill,
   type ToolRegistry,
 } from "@vendoai/core";
 import { createGuard, type VendoGuard } from "@vendoai/guard";
@@ -76,7 +76,7 @@ export interface AgentComposition {
   guard: VendoGuard;
   /** Guard-bound already — the one choke point. */
   tools: ToolRegistry;
-  skills: readonly PackSkill[];
+  skills: readonly Skill[];
   /** Present only for a harness that thinks on a machine. */
   sandbox?: SandboxAdapter;
   instructions?: string;
@@ -207,7 +207,7 @@ export function agent(config: AgentConfig): VendoAgent {
   const guard = config.guard ?? createGuard({ store });
   const tools = mergeSources(config.tools ?? [], config.mcp ?? []);
   const bound = guard.bind(tools);
-  const skills: PackSkill[] = loadSkillFolders(config.skills);
+  const skills: Skill[] = loadSkillFolders(config.skills);
 
   const resolved =
     config.harness.requires?.sandbox === true ? resolveSandbox(config.sandbox) : config.sandbox;

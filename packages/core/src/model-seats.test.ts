@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { SEATS, migrateModelSeats, seatConflict, type Seat } from "./index.js";
 
 describe("the seat map (build contract §4)", () => {
-  it("is exactly the five contracted seats", () => {
-    expect(SEATS).toEqual(["default", "reviewer", "judge", "fill", "verifier"]);
+  it("is exactly the contracted seats", () => {
+    expect(SEATS).toEqual(["default", "reviewer", "judge", "fill"]);
   });
 
   it("migrates today's slot names onto seats", () => {
@@ -12,19 +12,6 @@ describe("the seat map (build contract §4)", () => {
       fill: "p",
       judge: "j",
     });
-  });
-
-  it("maps knowledgeVerifier to its own `verifier` seat", () => {
-    // This test previously asserted the FOLD into `default`. The contract
-    // amendment retracted it: the fold's premise (no independent consumer) was
-    // false, and it silently repointed the model that answers users whenever a
-    // host set only this knob. Covered in depth in verifier-seat.test.ts.
-    expect(migrateModelSeats({ knowledgeVerifier: "kv" })).toEqual({ verifier: "kv" });
-  });
-
-  it("keeps the agent model and the knowledge check independent", () => {
-    expect(migrateModelSeats({ agent: "a", knowledgeVerifier: "kv" }))
-      .toEqual({ default: "a", verifier: "kv" });
   });
 
   it("carries a seat already written in the new vocabulary straight through", () => {

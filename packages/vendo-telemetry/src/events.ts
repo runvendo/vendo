@@ -31,17 +31,11 @@ export const CLOUD_PROP_KEYS: ReadonlySet<string> = new Set([
   "repoHost",
   // Scrubbed, truncated error text (see scrub.ts); never raw messages.
   "errorDetail",
-  // Setup shape: counts and short enums only.
-  "connectionsConfigured",
-  "toolkitsEnabled",
-  "servedApps",
-  "experimentalFlags",
   // Per-stage init timings (milliseconds).
   "detectMs",
   "engineMs",
   "themeMs",
   "wiringMs",
-  "componentsMs",
 ]);
 
 export type EventName =
@@ -49,7 +43,6 @@ export type EventName =
   | "init_completed"
   | "init_failed"
   | "doctor_run"
-  | "extract_completed"
   | "command_run"
   | "star_prompt"
   | "agent_run"
@@ -89,25 +82,12 @@ export const EVENT_ALLOWLIST: Record<EventName, ReadonlySet<string>> = {
   init_failed: new Set([...BASE_PROP_KEYS, "framework", "failedStep", "errorClass"]),
   // `vendo doctor` health-check run: counts + a wired bool, never any content.
   doctor_run: new Set([...BASE_PROP_KEYS, "failures", "warnings", "wired"]),
-  // `vendo extract --apply` result: counts, enums, versions — same voice as
-  // init_completed. `method` is the api-detect enum: route-scan | zod | none.
-  extract_completed: new Set([
-    ...BASE_PROP_KEYS,
-    "framework",
-    "method",
-    "routeCount",
-    "toolCount",
-    "ok",
-    "durationMs",
-    "frameworkVersion",
-    "zodVersion",
-  ]),
   // One row per tracked CLI command run — each a standalone `vendo <command>`
   // except cloud-init, which fires from the cloud step inside `vendo init`
   // (the standalone run of the same claim ceremony is `login`).
-  // `command` is a closed enum: login | try | extract | theme | eject
-  // | sync | cloud-init | mcp. (Retired values — playground, refine —
-  // survive only in historical rows.)
+  // `command` is a closed enum: login | extract | theme | eject
+  // | sync | cloud-init | mcp | knowledge. (Retired values — playground,
+  // refine, try — survive only in historical rows.)
   // failedStep/errorClass are short enums/class names, never message text.
   command_run: new Set([
     ...BASE_PROP_KEYS,

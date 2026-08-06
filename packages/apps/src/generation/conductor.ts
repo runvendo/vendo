@@ -5,8 +5,8 @@
  * GONE: `checking/` now owns `FloorDependencies` and imports nothing from this
  * directory, and the checks it runs are reachable from the paint seam through
  * `AppFloor`, for every author rather than only for apps this pipeline built. What
- * keeps the file alive is its five `runtime.ts` call sites, the public re-export in
- * `index.ts`, and the genui-bench vendo lane — all of which still work, unchanged.
+ * keeps the file alive is its five `runtime.ts` call sites and the public re-export
+ * in `index.ts` — all of which still work, unchanged.
  *
  * The replacement is the LEAN loop plus the floor at the seam (§4.1, §7.1): a
  * builder writes `plan.vendo` / `app.vendo` with its own hands, the seam compiles
@@ -75,8 +75,6 @@ export interface ConductorOptions {
    *  READ-risk tools only — the plan is a proposal, and a proposal must not
    *  have side effects. Absent → workers fill without example rows. */
   runQuery?: FillOptions["runQuery"];
-  /** Groups filled at the same time (`AppsConfig.fillConcurrency`). */
-  fillConcurrency?: number;
   /** The host's own checks (`AppsConfig.checks`), APPENDED to the built-in fact
    *  checks and the reviewer — a host adds findings, never removes one. */
   checks?: readonly Check[];
@@ -333,7 +331,6 @@ const growAndFill = async (
   const filled = await fillPlan(plan, skeleton, deps, {
     groups: readyGroups(plan),
     ...(Object.keys(islandLane.components).length === 0 ? {} : { components: islandLane.components }),
-    ...(options.fillConcurrency === undefined ? {} : { concurrency: options.fillConcurrency }),
     ...(options.runQuery === undefined ? {} : { runQuery: options.runQuery }),
   });
 
@@ -597,7 +594,6 @@ export const fillAfterServer = async (
   }, deps, {
     groups: waiting,
     serverInterface: { queries, samples },
-    ...(options.fillConcurrency === undefined ? {} : { concurrency: options.fillConcurrency }),
   });
   return { document: filled.document, findings: filled.findings };
 };

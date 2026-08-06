@@ -1,9 +1,9 @@
-/** Build contract §4 — the five model seats. A seat is a JOB, not a model: the
+/** Build contract §4 — the model seats. A seat is a JOB, not a model: the
  *  same model may fill several, and swapping one never renames the others. */
-export type Seat = "default" | "reviewer" | "judge" | "fill" | "verifier";
+export type Seat = "default" | "reviewer" | "judge" | "fill";
 
 /** Iteration order for the seats, so callers never hand-roll the list. */
-export const SEATS: readonly Seat[] = ["default", "reviewer", "judge", "fill", "verifier"];
+export const SEATS: readonly Seat[] = ["default", "reviewer", "judge", "fill"];
 
 /**
  * Build contract §4's `ResolvedModels`: every seat filled.
@@ -20,8 +20,8 @@ export type ResolvedModels<Model = unknown> = Readonly<Record<Seat, Model>>;
  * What a `Turn` carries (agents spec 2026-08-04): any subset of the seats. A
  * seat is required only where a harness actually reads it — `claudeCode()`
  * reads none (its box brings its own inference), `vendo()` thinks with
- * `default`, `instant()` routes with `fill` — so demanding all five from every
- * caller made hosts fabricate models nobody would call. Composition still
+ * `default`, `instant()` routes with `fill` — so demanding every seat from
+ * every caller made hosts fabricate models nobody would call. Composition still
  * hands over a full `ResolvedModels` (it is assignable); a host driving the
  * runtime directly passes only what its harness reads. A harness that reads a
  * seat owns saying so loudly when it is missing.
@@ -36,18 +36,11 @@ export interface LegacyModelsConfig<Model = unknown> {
   agent?: Model | string;
   paint?: Model | string;
   judge?: Model | string;
-  knowledgeVerifier?: Model | string;
 }
 
 /**
  * Build contract §4's migration: `agent → default`, `paint → fill`, `judge`
- * unchanged, `knowledgeVerifier → verifier`.
- *
- * `knowledgeVerifier` is NOT folded into `default` (amendment 2026-07-30). The
- * fold was premised on it having no independent consumer; that premise was false —
- * `server.ts` still reads it — so folding silently repointed the model that
- * ANSWERS USERS whenever a host set only the knowledge check's cheap/fast model.
- * A documented public knob must never change something else.
+ * unchanged.
  *
  * Seats already written in the new vocabulary pass straight through and win over
  * the legacy spelling, so a half-migrated config still works.
@@ -58,8 +51,6 @@ export function migrateModelSeats<Model = unknown>(
   const seats: SeatConfig<Model> = {};
   const chosenDefault = config.default ?? config.agent;
   if (chosenDefault !== undefined) seats.default = chosenDefault;
-  const verifier = config.verifier ?? config.knowledgeVerifier;
-  if (verifier !== undefined) seats.verifier = verifier;
   const fill = config.fill ?? config.paint;
   if (fill !== undefined) seats.fill = fill;
   const judge = config.judge;

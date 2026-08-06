@@ -11,8 +11,8 @@ export async function register() {
     // its own origin, so an unset VENDO_BASE_URL (the local-dev posture) makes
     // every route-bound call fail. Prime the loopback origin first.
     process.env.VENDO_BASE_URL ??= `http://localhost:${process.env.PORT ?? 3000}`;
-    const { seedDemoScript } = await import("@/demo-script/seed");
-    const { pregenerateChips } = await import("@/vendo/chips-seed");
+    const { seedDemoScript } = await import("@/demo-script/seed.js");
+    const { pregenerateChips } = await import("@/vendo/chips-seed.js");
     // Chips ride AFTER the fixture seed on the same fire-and-forget chain —
     // both must stay un-awaited (writer-lock gotcha above), and generation is
     // idempotent so repeated boots only repair gaps.

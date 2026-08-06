@@ -235,6 +235,10 @@ export interface AgentToolsDataDependencies {
    *  conductor. Threaded from `AppsConfig.screen`, which composition fills; see
    *  the routing block in the `vendo_make` handler below. */
   screen?: ScreenAssembler;
+  /** §4.5's other half — the escalated `plan.vendo`, read back out of the app's
+   *  workspace so the build anchors on it. Threaded from
+   *  `AppsConfig.escalatedPlan`; see that slot for why it is composition's. */
+  escalatedPlan?: (appId: AppId, ctx: RunContext) => Promise<string | undefined>;
 }
 
 /**
@@ -291,6 +295,23 @@ const resolveAppRef = async (
   return ref;
 };
 
+/**
+ * What to call an app that was never built — the one receipt with no document to
+ * read a name off (`MakeReceipt.title` is required).
+ *
+ * The `<Plan>`'s own name first, because the person is already looking at that
+ * plan's skeleton titled with this exact string, so the sentence and the card are
+ * about the same thing. Otherwise the ask, collapsed and capped — the same answer
+ * a failed build record's name field gets.
+ */
+const nameForUnbuilt = (plan: string | undefined, ask: string): string => {
+  const named = plan === undefined ? null : /<Plan\b[^>]*\bname="([^"]+)"/.exec(plan);
+  const title = named?.[1]?.trim();
+  if (title !== undefined && title !== "") return title;
+  const collapsed = ask.replace(/\s+/g, " ").trim();
+  return collapsed === "" ? "Vendo app" : collapsed.slice(0, 60);
+};
+
 const errorOutcome = (error: unknown): ToolOutcome => {
   if (error instanceof VendoError) {
     return {
@@ -337,6 +358,8 @@ export const createAgentTools = (
           // so a screen agent that saved bytes nobody can render leaves no row
           // and this falls through to the conductor exactly as if it had never
           // been composed.
+          //
+          // `escalate` is the one answer that is NOT a fall-through — see below.
           const appId = `app_${globalThis.crypto.randomUUID()}` as AppId;
           const routed = dependencies.screen === undefined
             ? undefined
@@ -364,10 +387,42 @@ export const createAgentTools = (
               });
             }
           }
+          // ── §4.5's RECEIVING END ────────────────────────────────────────────
+          // An escalation is the screen agent asking for the builder by name; it
+          // is not the seam failing, so it is not a fall-through. Two answers,
+          // and the deployment's own shape picks which:
+          //
+          //  - A sandbox is configured → the build runs. Same `create` a
+          //    server-needing ask has always taken, at the SAME app id, so the
+          //    plan's skeleton and the finished app share one stream and the
+          //    outline becomes the app. The escalated plan rides in as the
+          //    brief; the ask still travels verbatim.
+          //  - No sandbox → say so. Falling to the conductor here would be
+          //    dishonest twice over: the conductor is assembly too, so it cannot
+          //    serve what assembly just escalated, and it would spend a full
+          //    build's latency to arrive at a worse version of the screen the
+          //    person was already shown. The skeleton is left as it is — the UI
+          //    unmounts a still-forming card once the turn is over
+          //    (`chrome/thread/parts.tsx`), so the last word is this receipt.
+          const escalated = routed?.kind === "escalate";
+          const plan = !escalated
+            ? undefined
+            : await dependencies.escalatedPlan?.(appId, ctx).catch(() => undefined);
+          if (escalated && !runtime.machine.available()) {
+            return receipt({
+              id: appId,
+              // The name on the skeleton they are looking at, so the sentence and
+              // the card are about the same thing.
+              title: nameForUnbuilt(plan, ask),
+              status: "failed",
+              say: "That one needs a real build — code running on a server — and I can't do that here.",
+            });
+          }
           let unsaved: string | undefined;
           const created = await runtime.create({
             appId,
             prompt: ask,
+            ...(plan === undefined ? {} : { plan }),
             onUnsaved: (reason) => { unsaved = reason; },
             ...(stream === undefined ? {} : {
               onView: (part) => stream({ id: vendoViewStreamId(part.appId), part }),

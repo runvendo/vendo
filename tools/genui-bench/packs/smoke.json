@@ -1,8 +1,0 @@
-{
-  "name": "smoke",
-  "prompts": [
-    "show my account balances at a glance",
-    "let me transfer money between my accounts",
-    "show my recent transactions with search"
-  ]
-}

@@ -62,9 +62,9 @@ const warn = (where: string, message: string): Finding => ({ severity: "warn", w
 /** The slice of `AppsConfig` the gates read (structurally satisfied by it; the
  *  lanes never import the runtime). */
 export interface LaneGateConfig {
-  experimentalMachines?: boolean;
   /** The machine seams. No sandbox adapter → nothing can be provisioned at
-   *  all, flag or no flag. */
+   *  all, and that presence is the WHOLE gate: a configured sandbox is the
+   *  deliberate opt-in, so there is no second flag beside it. */
   machine?: { sandbox?: unknown };
   /** Build contract §9.8 — the authenticated door a served app is answered on.
    *  Unset means this deployment has no way to serve one, so the served lane is
@@ -105,18 +105,15 @@ const AUTOMATIONS_NEED_NO_MACHINE = 'Scheduled or triggered work still runs on t
  * something the brain KNOWS rather than something it finds out afterwards.
  */
 export const laneGates = (config: LaneGateConfig): LaneGates => {
-  const sandbox = config.machine?.sandbox !== undefined;
-  const box = sandbox && config.experimentalMachines === true;
+  const box = config.machine?.sandbox !== undefined;
   // Layer 3 is a machine surface served through an authenticated door, so served
   // is a NARROWING of box: no box can never be served, and a box with no door to
   // serve through cannot either. Stated as the shape of the expression rather
   // than as two flags that have to agree with each other.
   const served = box && config.servedProxyPath !== undefined;
   const cannot: string[] = [];
-  if (!sandbox) {
+  if (!box) {
     cannot.push(`This host has no sandbox configured, so no machine can be provisioned: custom server code is out of reach. ${AUTOMATIONS_NEED_NO_MACHINE}`);
-  } else if (config.experimentalMachines !== true) {
-    cannot.push(`This host has machines disabled, so custom server code cannot run for it. ${AUTOMATIONS_NEED_NO_MACHINE}`);
   }
   if (!served) {
     cannot.push("This host cannot serve its own web pages for an app: the app is the generated view, so anything that needs a hand-built page or a custom frontend is out of reach.");

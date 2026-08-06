@@ -7,7 +7,7 @@
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { basename, join, relative, resolve, sep } from "node:path";
-import { SAFE_SKILL_NAME, VendoError, type PackSkill } from "@vendoai/core";
+import { SAFE_SKILL_NAME, VendoError, type Skill } from "@vendoai/core";
 
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 
@@ -19,7 +19,7 @@ const frontmatterField = (block: string, field: string): string | undefined => {
   return undefined;
 };
 
-const readSkillFolder = (folder: string): PackSkill => {
+const readSkillFolder = (folder: string): Skill => {
   const dir = resolve(folder);
   const name = basename(dir);
   if (!SAFE_SKILL_NAME.test(name)) {
@@ -62,7 +62,7 @@ const readSkillFolder = (folder: string): PackSkill => {
   return { name, description, body, ...(Object.keys(files).length === 0 ? {} : { files }) };
 };
 
-export function loadSkillFolders(folders: readonly string[] | undefined): PackSkill[] {
+export function loadSkillFolders(folders: readonly string[] | undefined): Skill[] {
   if (folders === undefined || folders.length === 0) return [];
   const skills = folders.map(readSkillFolder);
   const names = new Set<string>();

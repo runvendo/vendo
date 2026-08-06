@@ -602,7 +602,7 @@ describe("§9.3 — the permission check costs what it claims to cost", () => {
   });
 
   it("checks access ONCE per serve, not twice", async () => {
-    const { runtime, store, reset, canCalls } = instrumented({ experimentalMachines: true });
+    const { runtime, store, reset, canCalls } = instrumented();
     await seedAppRow(store, doc("app_serve_once"), "acme");
     await seedGrants(store, "app_serve_once", { "user:kim": "viewer" });
     reset();

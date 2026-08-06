@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /** Portability gate — the enforcement half of the edge-portability contract
- *  (docs/superpowers/plans/2026-07-21-edge-portability.md; field origin:
- *  vendo-on-Cloudflare-Workers, Mohamed/digger.dev, 2026-07-21).
+ *  (2026-07-21 edge-portability plan, archived in the private repo; field
+ *  origin: vendo-on-Cloudflare-Workers, Mohamed/digger.dev, 2026-07-21).
  *
  *  Leg A (bundle): the server entry must bundle for a Worker target with no
  *    unresolved imports and none of the known Node-only legs in the graph

@@ -17,7 +17,7 @@ import { assembleSystemPrompt } from "@vendoai/agent/internal";
 // Architecture §3 — the harness runtime and the default thinker. `vendo()` is
 // composed HERE (not by the host) when `harness:` is unset; its prompt and
 // descriptor catalog reach it on the turn, never at construction.
-import { assertHarnessComposable, reportHire, screenAssembler, vendo } from "@vendoai/harnesses";
+import { assertHarnessComposable, escalatedPlanPath, reportHire, screenAssembler, vendo } from "@vendoai/harnesses";
 // …and re-exported, because §10's one-line opt-in is `harness: vendo()`. Without
 // this, naming the default harness costs a SECOND direct dependency on
 // `@vendoai/harnesses` — a documented one-liner that does not compile from the
@@ -37,7 +37,9 @@ import { orgPolicyPath, orgPolicyResolver, workspacePolicySource } from "./org-p
 import { createPromoteApp } from "./promote-app.js";
 import { memoizedSurfaceMenu } from "./surface-menu.js";
 import {
+  agentToolDescriptors,
   buildEnv,
+  buildingAppsSkill,
   createApps,
   createAppTokens,
   pinBaselineSchema,
@@ -56,6 +58,7 @@ import {
 } from "@vendoai/agents";
 import {
   createAutomations,
+  unattendedIrreversibilityCheck,
   type AutomationsEngine,
 } from "@vendoai/automations";
 import {
@@ -73,28 +76,28 @@ import {
   type Harness,
   type Json,
   type KnowledgeAdapter,
-  type PackProvider,
   type PermissionGrant,
   type Principal,
   type RiskLabel,
   type RunContext,
   type RunId,
   type SecretsProvider,
+  type Skill,
   type StoreAdapter,
   type ToolCall,
+  type ToolDefinition,
   type ToolDescriptor,
   type ToolOutcome,
   type ToolRegistry,
   type VendoTheme,
+  type WorkspaceFs,
 } from "@vendoai/core";
 import { createGuard, type Judge, type PolicyConfig, type PolicyFile, type RiskResolver, type VendoGuard } from "@vendoai/guard";
 import {
   bindKnowledgeStore,
   cloudKnowledge,
   createKnowledgeTools,
-  entailmentVerifier,
   knowledgeIndexResolver,
-  type KnowledgeToolsOptions,
 } from "@vendoai/knowledge";
 import {
   createMcpDoor,
@@ -154,14 +157,13 @@ import {
 } from "./capability-misses.js";
 import { catalogThemeSummary, mergeRuntimeCatalog, normalizeCatalogConfig, runtimeCatalogFromFile, runtimeCatalogFromJson, searchRuntimeCatalog } from "./catalog.js";
 import {
-  DEFAULT_PACKS,
-  hostPackToolCollision,
+  hostToolCollision,
   hostToolNamesIn,
-  mergePacks,
-  missingAppsPackWarning,
+  mergeCapability,
+  toolsFromRegistry,
   vendoDirOf,
-  type PackContext,
-} from "./packs/index.js";
+  type Contribution,
+} from "./capability/index.js";
 import { bindVendoModelSlots, vendoModel } from "#dev-creds/model";
 // Models spec 2026-07-22 — `vendoModel(name?)` is the vendo model family
 // entry: the lazily-resolving env ladder createVendo composes when the host
@@ -244,20 +246,15 @@ import { HostedSessionDoorsMissingError, hostedStore, type HostedStore } from ".
 // adapters: a host can pass it explicitly via createVendo({ store }) with its
 // own options instead of relying on the VENDO_API_KEY default.
 export { hostedStore, type HostedStore, type HostedStoreOptions } from "./hosted-store.js";
-// Packs — the composition side (architecture §5). `definePack` is on the root
-// entry instead, because pack modules are imported on the client too.
+// The composition merge, for anyone re-expressing a `ToolRegistry` as the
+// `tools:` entries createVendo takes.
 export {
-  APPS_PACK_NAME,
-  AUTOMATIONS_PACK_NAME,
-  DEFAULT_PACKS,
-  UNATTENDED_IRREVERSIBILITY_RULE,
-  apps,
-  automations,
-  mergePacks,
+  mergeCapability,
   toolsFromRegistry,
-  type MergedPacks,
-  type PackContext,
-} from "./packs/index.js";
+  type Contribution,
+  type MergedCapability,
+} from "./capability/index.js";
+export { UNATTENDED_IRREVERSIBILITY_RULE } from "@vendoai/automations";
 import {
   BASE_PATH,
   VERSION,
@@ -294,6 +291,7 @@ import {
   orgsRoutes,
   statusRoutes,
   systemRoutes,
+  webhookRoutes,
 } from "./wire/misc.js";
 import { threadRoutes } from "./wire/threads.js";
 
@@ -442,8 +440,19 @@ export interface CreateVendoConfig {
       Precedence: `tools:` wins over the deprecated `profile.tools` (the same
       value under its pre-§10 spelling), which wins over the `profileDir` /
       cwd `tools.json` read. Unset, nothing changes — the file is read exactly
-      as before. */
-  tools?: ExtractedTool[];
+      as before.
+
+      The SAME key also takes a `ToolDefinition` — a descriptor plus an
+      `execute` — which is how a third party ships an executable tool: it joins
+      the one registry under the name it declared, guarded, audited and
+      projected exactly like a host tool. The two shapes are told apart by
+      `execute`, and only the declaration shape feeds `.vendo` semantics. */
+  tools?: readonly (ExtractedTool | ToolDefinition)[];
+  /** Skills the deployment mounts at `/host/skills`, beside the ones its own
+      subsystems bring: agentskills.io SKILL.md values a harness lists cheaply
+      and loads on demand. Names are global as authored and a collision with
+      another contributor fails at boot naming both. */
+  skills?: readonly Skill[];
   /** Host components available to generated apps: the name-keyed registry
       object (01 §14 — the same object serves <VendoRoot>; the server ignores
       each entry's `component` reference) or the array form. Entry names must
@@ -622,31 +631,24 @@ export interface CreateVendoConfig {
   approvals?: {
     parkedCallTtlMs?: number;
   };
-  /** execution-v2 Waves 4+9 — apps-block options. `experimentalMachines` is
-      the per-project layer-2 opt-in: NEW box graduation (the escalation
-      ladder's last rung) and machine provisioning refuse with a typed
-      VendoError naming this flag until the host enables it; steps/agentic
-      automations (the ladder's first two rungs) never need it, and apps that
-      already carry a machine keep every runtime path.
+  /** Apps-block options.
 
-      A layer-3 SERVED app — the machine serving the app surface itself, embedded
-      in a sandboxed iframe — needs no second flag: it is a narrowing of layer 2,
-      reachable only where there is a machine to serve it and a mounted wire to
-      serve it THROUGH (`createVendo().handler`, which answers
+      Machine-backed execution (layer 2) has no flag: it is gated by exactly one
+      thing, a configured `sandbox` adapter, because configuring one IS the
+      deliberate opt-in. A layer-3 SERVED app — the machine serving the app
+      surface itself, embedded in a sandboxed iframe — additionally needs a
+      mounted wire to serve it THROUGH (`createVendo().handler`, which answers
       /apps/:appId/serve/**). A deployment missing either hears it as a plain
-      "cannot" in the plan rather than as a flag. */
-  apps?: {
-    experimentalMachines?: boolean;
-    /** UI-generation blueprint §4.2 — route every `vendo_make` request through
-        the cheap screen agent before the conductor: a small assembly loadout, the
-        host's declared result shapes, a tight step budget, and one `escalate`
-        door that hands the ask on with its plan already painted as the first
-        skeleton. OFF until the six-type proof matrix is walked, because it
-        changes which engine answers every screen ask; the conductor is untouched
-        and is what an escalation, an unserved ask, or an unavailable assembler
-        falls through to. Host config only, like the two flags above — choosing
-        the engine that answers your users is not an env-var decision. */
-    experimentalScreenAgent?: boolean;
+      "cannot" in the plan rather than as a flag.
+
+      `false` UNMOUNTS app generation: its tools (`vendo_make`, the
+      `vendo_apps_*` set) are absent from the registry, its `building-apps`
+      skill is absent from the mount, and the `/apps/**` wire surface answers
+      not-found. Honest absence — the AGENT genuinely cannot build apps and
+      says so, rather than being handed tools that refuse. The host's own
+      `vendo.apps` runtime handle stays: unmounting is about what the agent and
+      the wire offer, never about taking your server code's API away. */
+  apps?: false | {
     /** Remix review (round-2 hardening 2026-08-02) — the host's reviewer
         assertion for the review-kind remix lifecycle: whether THIS caller may
         read the full review queue, reject, and approve review-kind remixes.
@@ -663,8 +665,6 @@ export interface CreateVendoConfig {
     /** The island smoke-render gate: every generated island renders once in a
         headless DOM before it can reach a screen. ON unless explicitly false. */
     pipeline?: AppsConfig["pipeline"];
-    /** Groups filled at the same time during app generation (default 2). */
-    fillConcurrency?: AppsConfig["fillConcurrency"];
     /** The host's own checks over a generated app: each one reports findings
         (`block` stops the app shipping as-is, `warn` rides along) the same way
         the built-in fact checks and the AI reviewer do. APPENDED to the
@@ -678,17 +678,15 @@ export interface CreateVendoConfig {
         restart. */
     designRules?: string;
   };
-  /** Packs — the only way capability arrives (architecture §5). Each one
-      contributes to four slots that already exist: tools → the one registry
-      (guarded and projected like every other tool), skills → the workspace
-      mount, checks → the checking floor, components → the catalog. Names are
-      global as authored and a collision fails at boot naming both packs; nothing
-      is ever auto-prefixed.
+  /** `false` UNMOUNTS automations: the `/automations/**` and `/runs/**` wire
+      surfaces answer not-found, `vendo.emit` refuses, and THE LAW's
+      unattended-irreversibility rule leaves the reviewer's rubric with the
+      subsystem it belongs to. Nothing fires while nobody is watching, and the
+      absence is audible rather than a silently inert engine.
 
-      Unset means `[apps()]`. A pack whose tools need a platform handle is
-      written as a plain function of the boot context — which is exactly what
-      `apps()` is, so it has no privileged path a third party lacks. */
-  packs?: readonly PackProvider<PackContext>[];
+      Only `false` today, because the subsystem has no other host-facing knob;
+      it widens to an options object the day it grows one. */
+  automations?: false;
   /** Tour mode — deterministic scripted responses in front of the real agent,
       for demos and onboarding tours. An ordered list of `{ prompt, respond }`
       entries: an entry fires only on a close variant of its own frozen prompt
@@ -816,64 +814,6 @@ function selectKnowledge(
   const cloud = cloudKeyOptions();
   if (cloud === undefined) return undefined;
   return cloudKnowledge(cloud);
-}
-
-/** The verifier is OFF by default (conductor ruling, checker round 1).
-    `VENDO_KNOWLEDGE_VERIFY=on` turns it on for the Cloud engine.
-
-    It ships off because the live measurement says it does not clear the bar it
-    exists for: on the 94-question corpus it still answered 9-19 of 34
-    unanswerable questions per pass (docs/eval/KNOWLEDGE.md), while adding a
-    model call per search and seconds of latency to a call the user waits
-    through. Shipping that on by default would be a product decision nobody
-    made. Hosts who want the trade — fewer confident wrong answers, at that
-    cost — opt in with one variable.
-
-    A value that is neither on nor off is a TYPO, and a typo that silently
-    means "off" is how a host thinks it has a trust feature it does not. Loud,
-    like every other env knob here (positiveIntegerEnv). */
-function knowledgeVerifyEnabled(): boolean {
-  const raw = environment("VENDO_KNOWLEDGE_VERIFY")?.trim().toLowerCase();
-  if (raw === undefined || raw === "") return false;
-  if (["on", "true", "1"].includes(raw)) return true;
-  if (["off", "false", "0"].includes(raw)) return false;
-  throw new VendoError(
-    "validation",
-    `VENDO_KNOWLEDGE_VERIFY must be on or off, got ${JSON.stringify(raw)}`,
-  );
-}
-
-/** The tool options for the composed engine: the verifier, and nothing else.
-
-    It is NOT score-gated. K14 ran it only inside a calibrated band, and the
-    live run showed what that costs — four unanswerable questions per pass
-    scored outside the band, were never checked, and were answered by the
-    threshold. A check gated on the number it exists to replace inherits that
-    number's blind spots (spec §The verifier pass: "not threshold-gated ... it
-    runs on every search that would return hits").
-
-    The verifier model is the family's cheap pick on its own
-    `knowledgeVerifier` slot — pinnable with VENDO_MODEL_KNOWLEDGE_VERIFIER or
-    `models.knowledgeVerifier`, beside `judge` rather than borrowing it. A rung
-    that resolves to nothing simply yields no verdict: the tool answers as it
-    would have without a verifier and marks the result unverified, which is why
-    this can never make knowledge unavailable.
-
-    NOTE the one thing this function must never do: change a threshold. */
-function knowledgeToolOptions(
-  hostConfigured: boolean,
-  models: ModelsConfig | undefined,
-): KnowledgeToolsOptions {
-  if (hostConfigured || !knowledgeVerifyEnabled()) return {};
-  const model = vendoModel(undefined, { slot: "knowledgeVerifier" });
-  // The seat is spelled `verifier` in the new vocabulary and `knowledgeVerifier`
-  // in the old one; the slot binder only knows the old name, so normalise here.
-  // The new spelling wins, same rule as every other seat.
-  bindVendoModelSlots(model, models === undefined ? undefined : {
-    ...models,
-    ...(models.verifier === undefined ? {} : { knowledgeVerifier: models.verifier }),
-  });
-  return { verifier: entailmentVerifier({ model }) };
 }
 
 /** ADAPTER RULE (docs/superpowers/specs/2026-07-17-vendo-cloud-definition-design.md):
@@ -1263,7 +1203,27 @@ function hostToolNames(config: CreateVendoConfig): string[] {
  * who adds the documented slot expects it to take effect.
  */
 function selectHostTools(config: CreateVendoConfig): ExtractedTool[] | undefined {
-  return config.tools ?? config.profile?.tools;
+  if (config.tools === undefined) return config.profile?.tools;
+  const declared = config.tools.filter(isDeclaration);
+  // A `tools:` carrying ONLY executables did not supply a declaration list, so
+  // it must not shadow `profile.tools` or the `tools.json` read with an empty
+  // set — that silently erased every host tool AND blinded the boot collision
+  // gate, which then read no file and passed everything. An explicitly empty
+  // `tools: []` still means "no host tools", exactly as it always did.
+  if (declared.length === 0 && config.tools.length > 0) return config.profile?.tools;
+  return declared;
+}
+
+/** The two shapes `tools:` accepts, told apart by the one thing only an
+ *  executable tool has. A declaration carries a `binding` the registry executes
+ *  through; a definition carries the function itself. */
+const isDeclaration = (tool: ExtractedTool | ToolDefinition): tool is ExtractedTool =>
+  typeof (tool as ToolDefinition).execute !== "function";
+
+/** The executable half of `tools:` — what joins the one registry as a
+ *  contribution rather than as a `.vendo` declaration. */
+function hostToolDefinitions(config: CreateVendoConfig): ToolDefinition[] {
+  return (config.tools ?? []).filter((tool): tool is ToolDefinition => !isDeclaration(tool));
 }
 
 /** The compose-time project root for .vendo reads that happen LATER (the
@@ -1403,9 +1363,10 @@ function telemetryClient(enabled: boolean | undefined): Telemetry | undefined {
     A handler returning undefined falls through to later entries (grouped
     handlers keep the old chain's method/operation fall-out), and no match at
     all answers not-found. */
-const wireRoutes: readonly RouteEntry[] = [
+const wireRoutesFor = (mounted: WireDeps["mounted"]): readonly RouteEntry[] => [
   ...devRoutes,
   ...doctorRoutes,
+  ...(mounted.automations ? webhookRoutes : []),
   ...systemRoutes,
   // execution-v2 Lane C: the box callback surface is a machine surface like
   // webhooks/tick — raw prefix match, bearer-authenticated, ahead of the user
@@ -1417,18 +1378,26 @@ const wireRoutes: readonly RouteEntry[] = [
   ...connectionRoutes,
   ...grantRoutes,
   ...orgsRoutes,
-  ...fnProxyRoutes,
-  // Build contract §9.8 — ahead of the grouped /apps arm for the same reason
-  // the fn proxy is: /apps/:id/serve/** must resolve here, not fall through it.
-  ...servedProxyRoutes,
-  ...appRoutes,
-  ...automationRoutes,
-  ...runRoutes,
+  // The whole /apps surface goes with app generation: with `apps: false` there
+  // is nothing to open, fork, serve or import, so the door is not there either.
+  ...(mounted.apps
+    ? [
+      ...fnProxyRoutes,
+      // Build contract §9.8 — ahead of the grouped /apps arm for the same reason
+      // the fn proxy is: /apps/:id/serve/** must resolve here, not fall through it.
+      ...servedProxyRoutes,
+      ...appRoutes,
+    ]
+    : []),
+  ...(mounted.automations ? [...automationRoutes, ...runRoutes] : []),
   ...activityRoutes,
   ...statusRoutes,
 ];
 
 function createWireHandler(deps: WireDeps): (request: Request) => Promise<Response> {
+  // Assembled once per composition, not per request: what is mounted is a boot
+  // fact.
+  const wireRoutes = wireRoutesFor(deps.mounted);
   // Amortized on-request sweep bookkeeping — lives in the shared handler closure
   // (persists across requests), NOT per-invocation. The serverless-safe leg:
   // Next.js gives no timer guarantee, so every request may trigger the sweep.
@@ -1542,8 +1511,21 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
   };
 }
 
+/** The options `apps:` carries when app generation IS mounted — derived rather
+ *  than declared, so the config surface stays one inline shape. */
+type AppsOptions = Exclude<CreateVendoConfig["apps"], false | undefined>;
+
 /** 09-vendo §2 — compose every live block around the guard choke point. */
-export function createVendo(config: CreateVendoConfig): Vendo {
+export function createVendo(input: CreateVendoConfig): Vendo {
+  // Whether each subsystem mounts, decided once. `apps: false` is folded away
+  // here so the hundred reads below stay `config.apps?.x`: an unmounted
+  // subsystem has no options, which is the same thing as none configured.
+  const appsMounted = input.apps !== false;
+  const automationsMounted = input.automations !== false;
+  const config: Omit<CreateVendoConfig, "apps"> & { apps?: AppsOptions } = {
+    ...input,
+    ...(input.apps === false ? { apps: undefined } : { apps: input.apps }),
+  };
   // §10 consolidation — a deprecated key still works, and says where it went.
   // Once per key per process: a deployment composes once, but a multi-tenant
   // venue composes per session and repeated advice is noise nobody reads.
@@ -2069,49 +2051,48 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       return undefined;
     }
   };
-  // ONE composition call for every configured pack (architecture §5). It runs
-  // here, before the catalog and the apps runtime, because two of its four slots
-  // feed them: components → the catalog below, checks → the checking floor
-  // createApps() is built with. The apps runtime it hands back to a pack tool is
-  // a thunk for that reason — composed further down, resolved when a tool
-  // actually runs, which is always inside a request.
-  let appsForPacks: AppsRuntime | undefined;
-  const packContext: PackContext = {
-    apps: () => {
-      if (appsForPacks === undefined) {
-        throw new VendoError("not-implemented", "the apps runtime is not composed yet");
-      }
-      // A NEW object carrying only what the handle names, not the runtime with a
-      // narrower type on it. `delete`, `publish` and `exportApp` live on the
-      // runtime, and "no reaching into other packs" cannot rest on a type a pack
-      // author is free to cast away — so the reach is closed by construction.
-      return { agentTools: appsForPacks.agentTools.bind(appsForPacks) };
-    },
+  // ONE composition call for everything that contributes tools or skills. It
+  // runs here, before the apps runtime, because the skills it merges reach the
+  // harness and the tools it merges reach the one registry. The apps runtime the
+  // app tools act through is a THUNK for that reason — composed further down,
+  // resolved when a tool actually runs, which is always inside a request.
+  let appsRuntime: AppsRuntime | undefined;
+  const appsAgentTools = (): ToolRegistry => {
+    if (appsRuntime === undefined) {
+      throw new VendoError("not-implemented", "the apps runtime is not composed yet");
+    }
+    return appsRuntime.agentTools();
   };
-  const packs = mergePacks(config.packs ?? DEFAULT_PACKS, packContext);
-  // A pack claiming one of the host's own tool names is a BOOT error, naming both
-  // parties: the tool registry would refuse it anyway, but only on some later
-  // request and only as "added registry". Compared against the host tool names
-  // composition already has in hand — deliberately no I/O, so composing never
-  // reaches the network to find out.
-  const toolCollision = hostPackToolCollision(packs.toolOwners, hostToolNames(config));
+  const capability = mergeCapability([
+    // App generation mounts itself, through the same two lists a third party
+    // gets — there is no privileged internal path, which is the whole point of
+    // expressing it this way.
+    ...(appsMounted
+      ? [{
+        from: "app generation",
+        tools: toolsFromRegistry(appsAgentTools, agentToolDescriptors),
+        skills: [buildingAppsSkill],
+      } satisfies Contribution]
+      : []),
+    // The host's own, last, so a collision message reads in the order the
+    // deployment was assembled.
+    { from: "createVendo({ tools, skills })", tools: hostToolDefinitions(config), skills: config.skills ?? [] },
+  ]);
+  // A contributor claiming one of the host's own extracted tool names is a BOOT
+  // error, naming both parties: the tool registry would refuse it anyway, but
+  // only on some later request and only as "added registry". Compared against the
+  // host tool names composition already has in hand — deliberately no I/O, so
+  // composing never reaches the network to find out.
+  const toolCollision = hostToolCollision(capability.toolOwners, hostToolNames(config));
   if (toolCollision !== undefined) throw toolCollision;
-  // An explicit `packs:` without apps() leaves the agent unable to build apps.
-  // Legitimate, but never silent.
-  const noAppsPack = missingAppsPackWarning(config.packs === undefined ? undefined : packs.names);
-  if (noAppsPack !== undefined) console.warn(noAppsPack);
   // Task 15a: an in-memory profile.catalog replaces the DISK leg of the merge
   // (it normalizes through the same validator-building path as the file
-  // read); explicit createVendo({ catalog }) registrations still win by name,
-  // and both win over a pack's components — the host has the last word about
-  // its own screens.
+  // read); explicit createVendo({ catalog }) registrations still win by name —
+  // the host has the last word about its own screens.
   const catalog = mergeRuntimeCatalog(
-    mergeRuntimeCatalog(
-      config.profile?.catalog !== undefined
-        ? runtimeCatalogFromFile(config.profile.catalog, "createVendo({ profile: { catalog } })")
-        : runtimeCatalogFromJson(dotVendoFile("catalog.json", config.profileDir)),
-      normalizeCatalogConfig(packs.components),
-    ),
+    config.profile?.catalog !== undefined
+      ? runtimeCatalogFromFile(config.profile.catalog, "createVendo({ profile: { catalog } })")
+      : runtimeCatalogFromJson(dotVendoFile("catalog.json", config.profileDir)),
     normalizeCatalogConfig(config.catalog),
   );
   // execution-v2 Lane C — the per-app box bearer store (hash rows are the
@@ -2239,6 +2220,18 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // exact mount set — `/host` projection and asserted orgs included — that a
   // harness turn's own hands write through.
   let harnessTurnsForScreens: HarnessTurns | undefined;
+  /** That door, opened for one ctx. ONE spelling, because the assembler that
+   *  WRITES the escalated plan and the receiving end that READS it back must be
+   *  looking at the same mount set or the plan is simply not there. */
+  const screenWorkspace = async (screenCtx: RunContext): Promise<WorkspaceFs> => {
+    if (harnessTurnsForScreens === undefined) {
+      throw new VendoError("not-implemented", "the harness turn door is not composed yet");
+    }
+    return await harnessTurnsForScreens.workspace(
+      screenCtx.principal,
+      screenCtx.memberships === undefined ? undefined : { memberships: screenCtx.memberships },
+    );
+  };
   // Build contract §9.3 — ONE `can()` over the host's store, held by the apps
   // runtime and the automations engine alike, so one rule answers both sides.
   const access = appAccess(store);
@@ -2323,36 +2316,44 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // @vendoai/harnesses, the front door is in @vendoai/apps, and apps depends on
     // core alone — so composition, the one place that already holds the seats, the
     // guard-bound registry, the store and the seam, is what joins them.
-    ...(config.apps?.experimentalScreenAgent !== true ? {} : {
-      screen: screenAssembler({
-        // The SAME seats every other thinker runs on.
-        models: inference.seats,
-        // The SAME guard-bound registry. There is no second choke point.
-        tools: boundTools,
-        workspace: async (screenCtx) => {
-          if (harnessTurnsForScreens === undefined) {
-            throw new VendoError("not-implemented", "the harness turn door is not composed yet");
-          }
-          return await harnessTurnsForScreens.workspace(
-            screenCtx.principal,
-            screenCtx.memberships === undefined ? undefined : { memberships: screenCtx.memberships },
-          );
-        },
-        // §1.6's app half, the SAME one the harness turns pass the seam below:
-        // the row that makes a written file an app, and the queries that put real
-        // data behind its bindings.
-        render: (screenCtx) => ({ authoredApp: (input) => apps.authored(input, screenCtx) }),
-        // `system` is deliberately unset. The screen agent's brief is the shipped
-        // `building-apps` skill plus the host's own tool shapes, and the
-        // deployment prompt's job — voice, venue gate, guard directions, the
-        // discovery rail — belongs to the thinker talking to the PERSON. This loop
-        // talks to nobody: the front door speaks its one-line receipt.
+    escalatedPlan: async (appId, planCtx) => {
+      // §4.5's receiving end reads the plan back through the SAME workspace the
+      // escalating agent wrote it to — no second copy, no cache, no store column
+      // invented to hold it. Best-effort: the front door treats `undefined` as
+      // "build from the ask", which is what it did before this seam existed.
+      const workspace = await screenWorkspace(planCtx).catch(() => undefined);
+      if (workspace === undefined) return undefined;
+      const source = await workspace.readFile(escalatedPlanPath(appId)).catch(() => undefined);
+      return typeof source === "string" && source.trim() !== "" ? source : undefined;
+    },
+    screen: screenAssembler({
+      // The SAME seats every other thinker runs on.
+      models: inference.seats,
+      // The SAME guard-bound registry. There is no second choke point.
+      tools: boundTools,
+      workspace: screenWorkspace,
+      // The SAME seam options the harness turns pass below — every one of them,
+      // because a screen assembled here lands on the same store through the same
+      // `commit()`. §1.6's app half (the row that makes a written file an app,
+      // and the queries that put real data behind its bindings), §3.2's source
+      // half, and §7.1's floor.
+      //
+      // The floor was the one that was missing, and its absence was invisible: a
+      // screen assembled through `vendo_make` compiled with a bare `compileWire`
+      // — no fact checks, no binding gate, no tsc — so a lying binding painted
+      // here and was refused one route over. One seam cannot have two answers
+      // about the same bytes.
+      render: (screenCtx) => ({
+        authoredApp: (input) => apps.authored(input, screenCtx),
+        commitSource: (input) => apps.commitSource(input, screenCtx),
+        floor: apps.floor(screenCtx),
       }),
+      // `system` is deliberately unset. The screen agent's brief is the shipped
+      // `building-apps` skill plus the host's own tool shapes, and the
+      // deployment prompt's job — voice, venue gate, guard directions, the
+      // discovery rail — belongs to the thinker talking to the PERSON. This loop
+      // talks to nobody: the front door speaks its one-line receipt.
     }),
-    // execution-v2 Wave 9 — the layer-2 experimental opt-in, host-config only
-    // (never an env var: enabling machine-backed execution is a deliberate
-    // per-project decision). Layer 3 rides it — see the CreateVendoConfig note.
-    ...(config.apps?.experimentalMachines === undefined ? {} : { experimentalMachines: config.apps.experimentalMachines }),
     // Round-2 hardening — the host's reviewer assertion for the review-kind
     // remix lifecycle, threaded verbatim (see the CreateVendoConfig comment).
     ...(config.apps?.review === undefined ? {} : { review: config.apps.review }),
@@ -2371,11 +2372,14 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // single-lane `disabled` switch has nothing left to disable.
     ...(inference.paint?.model === undefined ? {} : { fill: { model: inference.paint.model } }),
     ...(config.apps?.pipeline === undefined ? {} : { pipeline: config.apps.pipeline }),
-    ...(config.apps?.fillConcurrency === undefined ? {} : { fillConcurrency: config.apps.fillConcurrency }),
-    // The floor's plugged checks: the host's own, then every pack's. Appended,
-    // never replacing — and a pack's judgment rules ride along here too, which
-    // the floor splits out into the reviewer's rubric rather than running.
-    checks: [...(config.apps?.checks ?? []), ...packs.checks],
+    // The floor's plugged checks: the host's own, then the ones a mounted
+    // subsystem brings. Appended, never replacing — and a judgment rule rides
+    // along here too, which the floor splits out into the reviewer's rubric
+    // rather than running.
+    checks: [
+      ...(config.apps?.checks ?? []),
+      ...(automationsMounted ? [unattendedIrreversibilityCheck] : []),
+    ],
     // cse lane 3 — theme/semantics flow as PROVIDER thunks so a
     // cloud-owned surface applies without a compose-time fetch. semantics
     // resolves live per generation (picks up cloud overrides as the snapshot warms);
@@ -2409,12 +2413,11 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     },
   });
   resolveAppToolRisk = apps.agentToolRisk;
-  appsForPacks = apps;
-  // Every pack's tools reach the ONE registry here — the same `add` the app
-  // tools used to arrive through directly, so they are guarded, audited, and
-  // projected identically. `apps()` is in `packs` by default, which is why
-  // `apps.agentTools()` is no longer added by name: it comes in as a pack.
-  actions.add(packs.tools);
+  appsRuntime = apps;
+  // Every contributed tool reaches the ONE registry here — the same `add` the
+  // app tools used to arrive through directly, so they are guarded, audited,
+  // and projected identically to a host tool.
+  actions.add(capability.tools);
   // Design §4's vendo verbs, projected onto the SAME registry as everything else
   // — guarded, audited, and searchable by `find_tools`, with no privileged side
   // door. `records_list/put/delete` are deliberately absent: they already ship as
@@ -2518,7 +2521,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // calibrated against (the Cloud default); a host-passed adapter keeps the
   // uncalibrated defaults it has today.
   if (knowledge !== undefined) {
-    actions.add(createKnowledgeTools(knowledge, knowledgeToolOptions(config.knowledge !== undefined, config.models)));
+    actions.add(createKnowledgeTools(knowledge));
   }
   // Knowledge k8 (ENG-368) — the prompt index rides exactly when the tool
   // composes. Byte-stable at a fixed sync state, refreshed when the sync
@@ -2752,7 +2755,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     files,
     guard,
     tools: boundTools,
-    packSkills: packs.skills,
+    skills: capability.skills,
     // The SAME normalized catalog the prompt summary is built from, so the
     // reference files on the mount and the components the model is told about
     // can never name different sets.
@@ -3074,7 +3077,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       store,
       files,
       guard,
-      skills: packs.skills,
+      skills: capability.skills,
       models: inference.seats,
       // The SAME brief a chat turn thinks on, assembled for the FIRING ctx — so
       // the venue gate and the guard's directions are the away run's too, and the
@@ -3093,7 +3096,12 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // request does; the callback is host server code in this deployment, so the
     // absence of a session is not in its way.
     ...(membershipsSeam === undefined ? {} : { memberships: membershipsSeam }),
-    ...(hostedStoreComposed ? { localTriggerKinds: new Set<"schedule" | "external">() } : {}),
+    // Nothing fires locally when Cloud is already the firing authority for this
+    // data — or when the host unmounted automations, which is the same
+    // statement about this process: it is not the one that fires.
+    ...(hostedStoreComposed || !automationsMounted
+      ? { localTriggerKinds: new Set<"schedule" | "external">() }
+      : {}),
   });
   automationsForArming = automations;
   // 04-actions §3 — per-principal connected accounts, selected by the adapter
@@ -3327,6 +3335,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // lookup inside @vendoai/store, not I/O, so it is safe at module init.
     ...(storeServesHarnessTurns(store) ? { harness: harnessDoor } : {}),
     guard,
+    mounted: { apps: appsMounted, automations: automationsMounted },
     apps,
     // execution-v2 Lane C — the /box surfaces: tool calls through the SAME
     // guard binding, bearer verification over the composed store.
@@ -3385,6 +3394,15 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   return {
     handler,
     async emit(event, payload, principal) {
+      // Loud, not silent: a host still calling `emit` after unmounting
+      // automations is a wiring mistake, and answering `[]` would hide it
+      // behind "no automation matched that event".
+      if (!automationsMounted) {
+        throw new VendoError(
+          "not-implemented",
+          `createVendo({ automations: false }) unmounted the automations engine, so vendo.emit("${event}") has nothing to fire. Remove the flag, or remove the emit call.`,
+        );
+      }
       await ready();
       return automations.emit(event, payload, principal);
     },

@@ -67,7 +67,7 @@ const FIX_ROUNDS = 2;
 const FILL_FAILED_TEXT = "This section could not be built — retry the edit.";
 
 export interface FillOptions {
-  /** Groups filled at the same time (`AppsConfig.fillConcurrency`). */
+  /** Groups filled at the same time (default 2). */
   concurrency?: number;
   /**
    * Executes one of the plan's queries against the host's tool registry.

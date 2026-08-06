@@ -10,7 +10,7 @@
  * Usage/metering is not seedable from here — the console meters model-gateway,
  * tool, and sandbox traffic server-side; real agent turns fill those charts.
  */
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { createStore, type VendoStore } from "@vendoai/store";
 import { seedConsoleData } from "../src/demo-script/console-seed";
 
@@ -19,7 +19,7 @@ async function main(): Promise<void> {
   const cloud = args.includes("--cloud");
   const dataDirFlag = args.indexOf("--data-dir");
   const dataDir = dataDirFlag === -1
-    ? fileURLToPath(new URL("../.vendo/data", import.meta.url))
+    ? join(__dirname, "../.vendo/data")
     : args[dataDirFlag + 1];
   if (dataDir === undefined) throw new Error("--data-dir needs a path");
 

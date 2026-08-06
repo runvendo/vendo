@@ -2,8 +2,8 @@
  * `@vendoai/vendo/try-surface` — the try/playground surface as an importable,
  * CLIENT-ONLY React entry (HANDOFF oss-export).
  *
- * Both venues build from this one source: the CLI IIFE (`vendo try`, served at
- * `/playground.js`) and a vendo-web Next client route. The import closure is
+ * Both venues build from this one source: the CLI IIFE (the playground server
+ * serves it at `/playground.js`) and a vendo-web Next client route. The import closure is
  * asserted client-only by `closure-guard` — it contains ONLY @vendoai/ui,
  * @vendoai/core, react, ai, and the app's own files, never the umbrella server
  * graph (@vendoai/store, @vendoai/actions, @vendoai/agent, ./server,

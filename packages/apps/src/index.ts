@@ -92,17 +92,9 @@ export {
   type ShipDiffGenerated,
   type ShipDiffPin,
 } from "./ship-diff.js";
-// The bench host surface (tools/genui-bench): the demo-bank catalog/tool/shape
-// loaders the live harnesses already share, exported because the exports map
-// closes deep imports. Data-only helpers — no engine behavior rides on them.
-// HostToolInfo is the tool slice those loaders (and GenerationDependencies)
-// speak.
+// HostToolInfo is the tool slice GenerationDependencies (and external
+// harnesses) speak.
 export type { HostToolInfo } from "./generation/engine.js";
-export {
-  demoBankToolShapes,
-  loadDemoBankCatalog,
-  loadDemoBankTools,
-} from "./bench/demo-bank-surface.js";
 // The checking layer's contract: the shape a host writes an AppsConfig.checks
 // entry in, and the finding shape every check reports (checking/types.ts).
 export type {
@@ -135,18 +127,18 @@ export {
   type GeneratedAppDocument,
   type GenerationDependencies,
 } from "./generation/engine.js";
-// The apps PACK's raw materials: the tools it declares through `Pack.tools` and
-// the skill it teaches the pattern with. The pack itself is assembled in the
-// umbrella (`vendo/src/packs/apps.ts`), which is the only layer that has both
-// the runtime and `definePack` in scope.
+// What app generation mounts itself with: the tools it declares and the skill
+// it teaches the pattern with. The umbrella composes them (`server.ts`), which
+// is the only layer holding both these values and the live runtime they act
+// through.
 export { agentToolDescriptors } from "./agent-tools.js";
 export { buildingAppsSkill } from "./skills/building-apps.js";
-// The generation seam for the genui-bench vendo lane: the SAME conductor
+// The generation seam for external bench harnesses: the SAME conductor
 // createApps() rides, driven directly against a host fixture with no store
 // behind it. Additive export — generation behavior is identical.
 //
 // QUARANTINED (blueprint §14.2) — see the header of `generation/conductor.ts`. The
-// export stays so the bench lane and the five `runtime.ts` call sites keep working;
+// export stays so bench harnesses and the five `runtime.ts` call sites keep working;
 // it is frozen, not extended. New work uses the lean loop and the checks floor at
 // the paint seam.
 export {
