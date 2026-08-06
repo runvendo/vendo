@@ -38,8 +38,11 @@ interface WorkspaceEntry {
    *  undo brings it back). */
   delete?: true;
   /** Strict compare-and-swap against the revision the caller read — the
-   *  `/orgs` mounts' commit policy. A stale one refuses the WHOLE commit. */
-  expectedRevision?: number;
+   *  `/orgs` mounts' commit policy. A stale one refuses the WHOLE commit.
+   *  `null` is the create-only guard: the caller read nothing at this path, so
+   *  the commit must lose to whoever created it first. The absent field is
+   *  unguarded. */
+  expectedRevision?: number | null;
 }
 
 function parseWorkspaceEntries(entries: unknown[]): WorkspaceEntry[] {
@@ -52,7 +55,9 @@ function parseWorkspaceEntries(entries: unknown[]): WorkspaceEntry[] {
       invalid(`workspace entry ${path} needs data`);
     }
     const expectedRevision = (entry as { expectedRevision?: unknown }).expectedRevision;
-    if (expectedRevision !== undefined && typeof expectedRevision !== "number") {
+    if (expectedRevision !== undefined
+      && expectedRevision !== null
+      && typeof expectedRevision !== "number") {
       invalid(`workspace entry ${path} has a non-numeric expectedRevision`);
     }
     // One commit, one mutation per path. Two entries for the same path leave a
@@ -484,10 +489,13 @@ export function createStoreOps(
               return (existing?.data as { body?: unknown } | undefined)?.body === body;
             }
             const txRows = workspaceRows(tdb, filesFor(tdb));
-            const expected = new Map(
+            // `null` is a guard, so only the ABSENT field stays out of the map —
+            // `get` then tells "must not exist yet" (null) from "unguarded"
+            // (undefined), which a filter on falsiness would collapse.
+            const expected = new Map<string, number | null>(
               parsed
                 .filter((entry) => entry.expectedRevision !== undefined)
-                .map((entry) => [entry.path, entry.expectedRevision!]),
+                .map((entry) => [entry.path, entry.expectedRevision as number | null]),
             );
             // Strict entries compare-and-swap against the revision the caller
             // read. A lost swap throws, so the transaction takes the whole

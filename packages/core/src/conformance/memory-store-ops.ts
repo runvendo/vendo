@@ -71,7 +71,7 @@ export function memoryStoreOps(): StoreOps {
   // workspace — one drawer per owner (the end user or org the files belong to);
   // a call with no owner rides the bound single-player default, exactly as the
   // local backend does.
-  type WsEntry = { path: string; data?: unknown; delete?: true; expectedRevision?: number };
+  type WsEntry = { path: string; data?: unknown; delete?: true; expectedRevision?: number | null };
   type WsFile = { data: unknown; revision: number; updatedAt: IsoDateTime };
   /** `before` is what each path held before the commit (absent = the commit
       created it), and `beforeRevision` which revision that was — the pair a
@@ -374,9 +374,11 @@ export function memoryStoreOps(): StoreOps {
       const files = drawer(owner);
       // Strict compare-and-swap is checked for the WHOLE set first: a commit
       // that conflicts on one path applies none of itself.
+      // `null` is the create-only guard, so an ABSENT path reads as `null` and
+      // matches it; only the missing field is unguarded.
       const conflicts = (entries as WsEntry[])
         .filter((e) => e.expectedRevision !== undefined
-          && files.get(e.path)?.revision !== e.expectedRevision)
+          && (files.get(e.path)?.revision ?? null) !== e.expectedRevision)
         .map((e) => e.path);
       if (conflicts.length > 0) {
         throw new VendoError(

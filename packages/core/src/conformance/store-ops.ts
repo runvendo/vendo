@@ -804,6 +804,43 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         );
       }),
 
+      /** The guard's third state. A colleague who opened the mount before the
+          file existed checked out NOTHING, so their base is `null`, not a
+          number — and a backend that only understands numbers drops the guard
+          on exactly the write that creates the shared file, which is where two
+          colleagues collide most. */
+      opsCase(opts, "workspace.commit refuses a create under expectedRevision null when the path exists", async (ops) => {
+        // Nothing there yet: the create-only guard is satisfied and lands.
+        await ops.workspace.commit([
+          { path: "create-cas.json", data: { by: "first" }, expectedRevision: null },
+        ]);
+        assertDeepEqual(
+          (await ops.workspace.read(["create-cas.json"]))["create-cas.json"],
+          { by: "first" },
+          "a create against an absent path did not land",
+        );
+
+        // The second creator read nothing either, and must lose rather than
+        // overwrite the file that appeared under them.
+        await assertThrowsCode(
+          () => ops.workspace.commit([
+            { path: "create-cas.json", data: { by: "second" }, expectedRevision: null },
+            { path: "create-cas-other.json", data: { by: "second" } },
+          ]),
+          "conflict",
+          "creating a path that another caller already created",
+        );
+        assertDeepEqual(
+          (await ops.workspace.read(["create-cas.json"]))["create-cas.json"],
+          { by: "first" },
+          "the refused create overwrote the first creator's file",
+        );
+        assert(
+          !("create-cas-other.json" in await ops.workspace.read(["create-cas-other.json"])),
+          "the refused commit applied its non-conflicting entry anyway",
+        );
+      }),
+
       // =====================================================================
       // lifecycle
       // =====================================================================

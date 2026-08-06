@@ -184,14 +184,21 @@ export function workspaceOpsRows(ops: StoreOps): WorkspaceRows {
     async land(owner, prepared, _intent, options) {
       // The commit message has no field on the wire; it is a history label, and
       // history is S3's leg.
-      const strict = options?.strict === true && typeof options.expectedRevision === "number";
+      // A strict mount guards EVERY write, the create included: a caller who
+      // checked out nothing sends `expectedRevision: null` ("this path must not
+      // exist yet"), which is exactly the state `WorkspaceStoreFs.commit` is in
+      // for a path it never read. Requiring a number here degraded that case
+      // into an unguarded write, so the hosted backend silently overwrote the
+      // colleague who created the file first while the SQL backend refused.
+      const strict = options?.strict === true;
+      const expectedRevision = options?.expectedRevision ?? null;
       const checkedOut = typeof options?.expectedRevision === "number" ? options.expectedRevision : 0;
       try {
         await ops.workspace.commit(
           [{
             path: prepared.path,
             data: workspaceBytesToJson(prepared.content),
-            ...(strict ? { expectedRevision: options!.expectedRevision } : {}),
+            ...(strict ? { expectedRevision } : {}),
           }],
           { owner },
         );

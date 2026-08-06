@@ -216,13 +216,18 @@ const ownerField = { owner: z.string().min(1).optional() };
     it (deletion was otherwise inexpressible over the wire). `expectedRevision`
     makes the write a strict compare-and-swap against the revision the caller
     read — the `/orgs` mounts' policy — and a stale one refuses the commit.
+    It has THREE states: a number compares, `null` is the create-only guard
+    ("the caller read nothing here, so this path must not exist yet"), and the
+    absent field is unguarded. Without `null` a caller who checked out before
+    the file existed had no way to say so, and the guard degraded into an
+    unguarded write that silently overwrote whoever created it first.
     `data` stays unknown: content is the caller's JSON, with binary riding the
     `{"$vendoWorkspaceBytes": base64}` envelope. */
 export const storeWireWorkspaceEntrySchema = z.object({
   path: z.string().min(1),
   data: z.unknown(),
   delete: z.literal(true).optional(),
-  expectedRevision: z.number().int().min(0).optional(),
+  expectedRevision: z.number().int().min(0).nullable().optional(),
 }).passthrough();
 
 export const storeWireWorkspaceIndexRequestSchema = cursorQuerySchema.extend(ownerField);
