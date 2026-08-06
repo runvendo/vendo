@@ -428,15 +428,4 @@ describe("extractTheme demo-app allowlist behavior (deterministic)", () => {
     expect(result.matched["border"]).toBe("--color-border");
     expect(result.defaulted).toEqual(expect.arrayContaining(["accent", "background", "text", "mutedText"]));
   });
-
-  it("Cadence: only the true conventional token is exact-claimed (--color-card), never --color-surface", async () => {
-    const result = await extractTheme(join(examplesDir, "demo-accounting"));
-    // Cadence's --color-card #ffffff IS the shadcn card convention — a
-    // correct exact read. Its --color-surface is the PAGE background, and
-    // "surface" is not a shadcn name, so no exact pass may claim it: the
-    // background slot stays default (visible), not silently wrong.
-    expect(result.matched["surface"]).toBe("--color-card");
-    expect(result.slots.surface).toBe("#ffffff");
-    expect(result.defaulted).toEqual(expect.arrayContaining(["accent", "background", "text", "mutedText", "border"]));
-  });
 });

@@ -32,13 +32,13 @@ type Assert<T extends true> = T;
 import type {
   ActAs, ActionsRegistry, AppsRuntime, AutomationsEngine, CatalogFile,
   ComponentCatalog, ComponentRegistry, Connector, ExtractedTool, FilesAdapter,
-  Harness, HostOAuthAdapter, Json, Judge, KnowledgeAdapter, OverridesFile,
-  PolicyConfig, PolicyFile, Principal, RunContext, RunId,
+  Harness, HostOAuthAdapter, Json, KnowledgeAdapter, OverridesFile,
+  PolicyFile, Principal, RunContext, RunId,
   SandboxAdapter, SecretsProvider, Skill, ToolDefinition, ToolRegistry,
   VendoAgent, VendoGuard, VendoStore, VendoTheme,
 } from "../index.js";
 import type {
-  AgentOptions, AppsConfig, ComposedAgent, ConnectionsService, HarnessTurns,
+  AppsConfig, ComposedAgent, ConnectionsService, GuardRules, HarnessTurns,
   HostAuthPreset, ModelsConfig, ServerActionHandler, TourEntry,
 } from "../server.js";
 import type { LanguageModel } from "ai";
@@ -55,19 +55,17 @@ export interface CreateVendoConfig {
   skills?: readonly Skill[];  // SKILL.md values mounted at /host/skills
   catalog?: ComponentCatalog | ComponentRegistry;          // registry.tsx, or the array form
   theme?: VendoTheme;         // programmatic override for .vendo/theme.json
-  brief?: string;             // programmatic override for .vendo/brief.md
+  instructions?: string;      // THE prose knob; programmatic override for .vendo/brief.md
   store?: VendoStore;
   files?: FilesAdapter;       // workspace file content; unset → blobs in the store, 5 MiB cap
   sandbox?: SandboxAdapter;
   harness?: Harness<never>;   // WHO THINKS. unset → vendo(). also: claudeCode()
   knowledge?: KnowledgeAdapter; // unset → no vendo_knowledge_search tool
-  connectors?: Connector[];
-  connectorApps?: string[];   // toolkit scope for the auto-composed Cloud connector
+  connectors?: readonly (string | Connector)[]; // a string names a Cloud toolkit; an object is a provider
   connections?: ConnectionsService; // explicit connections adapter; always wins over defaults
   actAs?: ActAs;              // escape hatch
   serverActions?: Record<string, ServerActionHandler>; // the generated vendo-actions.ts map
-  policy?: PolicyConfig;      // "cautious" | "readonly" | "autopilot" | { file } | { rules }
-  judge?: Judge;
+  guard?: VendoGuard | GuardRules; // guard({ policy, judge, approvals }), or a built guard
   secrets?: SecretsProvider;
   telemetry?: boolean;
   development?: boolean;    // dev-only injection seams
@@ -88,9 +86,11 @@ export interface CreateVendoConfig {
     federation?: { secret: string };
   };
   oauth?: HostOAuthAdapter;   // escape hatch; required when `mcp` is true and `auth` is absent
-  agent?: AgentOptions | ComposedAgent; // the chat knobs, OR a whole agent() from @vendoai/agents
+  agent?: ComposedAgent;      // a whole agent() from @vendoai/agents, adopted by this deployment
   sessions?: { ttlMs?: number; sweepIntervalMs?: number; now?: () => number };
-  approvals?: { parkedCallTtlMs?: number };
+  toolOutputCap?: number;     // how much of one tool result reaches the model; 0 disables
+  maxInitialTools?: number;   // cap on the uncurated initial loadout; the rest via find_tools
+  loadout?: readonly string[]; // the curated initial loadout, by tool name
   apps?: false | {            // false unmounts app generation: no tools, skill or /apps routes
     review?: {                // review-kind remixes: who may review (queue/reject/approve)
       reviewer?(ctx: RunContext): boolean | Promise<boolean>;

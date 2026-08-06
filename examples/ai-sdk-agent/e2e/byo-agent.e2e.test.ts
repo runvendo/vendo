@@ -8,7 +8,7 @@ import {
 } from "@vendoai/core";
 import { createStore } from "@vendoai/store";
 import { vendoTools } from "@vendoai/vendo/ai-sdk";
-import { createVendo, type Vendo } from "@vendoai/vendo/server";
+import { createVendo, guard, type Vendo } from "@vendoai/vendo/server";
 import {
   convertToModelMessages,
   stepCountIs,
@@ -112,7 +112,7 @@ async function compose(): Promise<Vendo> {
   return createVendo({
     model: generationModel(),
     principal: async () => demoUser,
-    policy: "cautious",
+    guard: guard({ policy: "cautious" }),
     store,
     serverActions: {
       "lib/vendo.ts#getWeather": getWeather,

@@ -89,7 +89,7 @@ async function compose(): Promise<{ vendo: Vendo; fetchSpy: ReturnType<typeof vi
     model: {} as LanguageModel,
     principal: async () => principal,
     store,
-    policy: { rules: [{ match: { tool: "host_send" }, action: "ask" }] },
+    guard: { policy: { rules: [{ match: { tool: "host_send" }, action: "ask" }] } },
   });
   return { vendo, fetchSpy };
 }

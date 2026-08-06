@@ -94,7 +94,7 @@ async function internalHost(
     model: {} as LanguageModel,
     principal: async () => principal,
     store,
-    policy: "cautious",
+    guard: { policy: "cautious" },
     harness: harness as never,
   } as Parameters<typeof createVendo>[0]);
   composed.actions.add(hostTools());

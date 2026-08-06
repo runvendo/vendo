@@ -109,12 +109,14 @@ async function createUmbrella(
     store,
     // The shipped posture (05 §3): reads run, destructive asks. venue="mcp" gets
     // the identical treatment chat does (10-mcp §2) — no weaker door perimeter.
-    policy: {
-      rules: [
-        { match: { risk: "destructive" }, action: "ask" },
-        { match: { risk: "read" }, action: "run" },
-        { match: { risk: "write" }, action: "run" },
-      ],
+    guard: {
+      policy: {
+        rules: [
+          { match: { risk: "destructive" }, action: "ask" },
+          { match: { risk: "read" }, action: "run" },
+          { match: { risk: "write" }, action: "run" },
+        ],
+      },
     },
     oauth,
     ...(options.withActAs === false ? {} : { actAs }),

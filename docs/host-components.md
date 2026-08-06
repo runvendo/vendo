@@ -257,11 +257,11 @@ content is `.vendo/greeting.json`, imported and passed through:
 ```jsonc
 // .vendo/greeting.json
 {
-  "intro": "Hi — I'm Cadence's built-in assistant. …",
+  "intro": "Hi — I'm Maple's built-in assistant. …",
   "prompts": [
-    "Which clients still owe documents?",
-    "Build me a deadline board for this month",
-    "Reshape my dashboard around document chasing"   // keep one molding prompt
+    "Where did my money go last month?",
+    "Build me a spending board for this quarter",
+    "Reshape my dashboard around upcoming bills"   // keep one molding prompt
   ]
 }
 ```

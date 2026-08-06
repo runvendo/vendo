@@ -113,6 +113,13 @@ export interface VendoGuard extends Guard {
   onApprovalRequested(cb: (request: ApprovalRequest) => void): () => void;
 
   approvals: {
+    /** The resolved parked-approval TTL, in ms (`0` disables expiry). The
+     *  guard holds it because it is the guard's own lifecycle number — both
+     *  sweeps that read it (`sweepExpiredApprovals` here, and the umbrella's
+     *  BYO parked-call sweep) are sweeping approvals this guard minted — so a
+     *  host that passes a built instance keeps the knob instead of losing it
+     *  with the rules that came in beside it. */
+    parkedCallTtlMs: number;
     pending(principal: Principal): Promise<ApprovalRequest[]>;
     decide(
       ids: ApprovalId | ApprovalId[],
@@ -165,10 +172,34 @@ export interface VendoGuard extends Guard {
   };
 }
 
-export interface CreateGuardConfig {
+/**
+ * The host's RULES for a guard — everything a deployment decides, with none of
+ * the plumbing (the store, the risk resolver, the org-policy reader) that only
+ * a composition can supply. This is what {@link guard} carries and what
+ * `createVendo({ guard })` / `agent({ guard })` accept beside a built
+ * {@link VendoGuard}: the spec form is completed by whoever composes it,
+ * through `createGuard` — the one constructor — and an instance always wins
+ * verbatim.
+ */
+export interface GuardRules {
+  policy?: PolicyConfig;
+  judge?: Judge;
+  /** Approval lifecycle. `parkedCallTtlMs` is the idle timeout for a pending
+   *  approval — a guarded call parked from a BYO agent loop (a
+   *  `vendo/approval-ref@1` envelope with no thread to resume through), and the
+   *  general TTL backstop over stranded away/automation approvals. Past it the
+   *  sweep denies through the existing abandonment semantics and
+   *  `<VendoApprovalEmbed>` reads "expired". Default 60 min; `0` disables
+   *  expiry. Vendo-thread approvals are untouched — their abandonment stays
+   *  turn-driven (AGENT-6). */
+  approvals?: {
+    parkedCallTtlMs?: number;
+  };
+}
+
+export interface CreateGuardConfig extends GuardRules {
   store: StoreAdapter;
   resolveRisk?: RiskResolver;
-  policy?: PolicyConfig;
   /** cse lane 3 — a source for a cloud-published policy.json body, consulted
    *  by the PolicyResolver STRICTLY AFTER the local file and only when policy
    *  is already configured (opt-in). The umbrella backs it with the hosted
@@ -181,7 +212,6 @@ export interface CreateGuardConfig {
    *  A resolver that throws applies no org rules and is audited — the guard
    *  never guesses at an unreadable policy, and never loosens on one. */
   orgPolicy?: (ctx: RunContext) => Promise<PolicyRule[]>;
-  judge?: Judge;
   breakers?: {
     maxCallsPerMinute?: number;
     maxWritesPerRun?: number;

@@ -4,7 +4,7 @@
 // Action descriptors (name, schema, risk) live in `.vendo/tools.json`, exactly
 // where `vendo init` extracts them in a real app.
 import type { Principal } from "@vendoai/core";
-import { createVendo, type Vendo } from "@vendoai/vendo/server";
+import { createVendo, guard, type Vendo } from "@vendoai/vendo/server";
 import { getWeather, sendTripReport } from "./vendo-actions";
 
 /** The demo runs as one fixed user. A real host resolves the principal from
@@ -16,7 +16,7 @@ export function composeVendo(overrides?: Parameters<typeof createVendo>[0]): Ven
     principal: async () => DEMO_PRINCIPAL,
     // "cautious" runs reads and asks before write/destructive calls — that is
     // what parks vendo_send_trip_report on the approval embed in the demo.
-    policy: "cautious",
+    guard: guard({ policy: "cautious" }),
     // The registration map for .vendo/tools.json's server-action bindings.
     serverActions: {
       "src/lib/vendo-actions.ts#getWeather": getWeather,

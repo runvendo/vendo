@@ -173,7 +173,7 @@ export async function startBackends(): Promise<Backends> {
     },
     store,
     actAs: async (principal: Principal) => ({ headers: { cookie: await loginCookie(principal.subject) } }),
-    policy: { file: ".vendo/policy.json" },
+    guard: { policy: { file: ".vendo/policy.json" } },
     connectors: [composioConnector({ apiKey: "stub-key", apps: ["gmail"], baseUrl: composioStub.url })],
     mcp: { baseUrl: wireUrl },
     oauth: {

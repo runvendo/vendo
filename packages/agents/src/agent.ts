@@ -13,7 +13,7 @@ import {
   type Skill,
   type ToolRegistry,
 } from "@vendoai/core";
-import { createGuard, type VendoGuard } from "@vendoai/guard";
+import { createGuard, isGuardInstance, type GuardRules, type VendoGuard } from "@vendoai/guard";
 import { provideHarnessAdapters } from "@vendoai/harnesses";
 import { createStore, storeFiles, type VendoStore } from "@vendoai/store";
 import { randomUUID } from "node:crypto";
@@ -31,8 +31,10 @@ export interface AgentConfig {
   harness: Harness<unknown>;
   tools?: readonly ToolSource[];
   mcp?: readonly McpServerConfig[];
-  /** Always an instance; unset → default `createGuard({ store })`. */
-  guard?: VendoGuard;
+  /** A built guard, or the rules for one — `guard({ policy, judge, approvals })`,
+   *  which this composition completes with its own store. An instance always
+   *  wins verbatim; unset → default `createGuard({ store })`. */
+  guard?: VendoGuard | GuardRules;
   /** Skill folders, boot-loaded; deploy = update the folder. */
   skills?: readonly string[];
   /** Agent-level outbound allowlist; unset = the harness's minimum. */
@@ -204,7 +206,11 @@ export function agent(config: AgentConfig): VendoAgent {
 
   const store = config.store ?? defaultStore();
   const files = storeBlobs.get(store) ?? storeFiles(store);
-  const guard = config.guard ?? createGuard({ store });
+  // One constructor either way: an instance is taken verbatim, rules are
+  // completed with this composition's store.
+  const guard = isGuardInstance(config.guard)
+    ? config.guard
+    : createGuard({ store, ...config.guard });
   const tools = mergeSources(config.tools ?? [], config.mcp ?? []);
   const bound = guard.bind(tools);
   const skills: Skill[] = loadSkillFolders(config.skills);

@@ -11,7 +11,6 @@ const repoRoot = path.resolve(fileURLToPath(import.meta.url), "../../../../../")
 describe("committed demo catalog drift guard", () => {
   it.each([
     { app: "demo-bank", names: ["MapleNetWorthCard", "MapleSparkline", "MapleSpendingDonut"] },
-    { app: "demo-accounting", names: ["CadenceDocProgress", "CadenceMissingDocsHero", "CadenceStatusBadge"] },
   ])("keeps $app catalog.json aligned with compiler extraction", async ({ app, names }) => {
     const root = path.join(repoRoot, "examples", app);
     const committed = catalogFileSchema.parse(JSON.parse(

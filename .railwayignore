@@ -1,6 +1,6 @@
 # WHAT `railway up` MUST NOT SHIP.
 #
-# Both demo services build from the monorepo root (their Dockerfile does
+# The demo service builds from the monorepo root (its Dockerfile does
 # `COPY . .`, then `pnpm install --frozen-lockfile`, then `turbo run build
 # --filter=<app>`), so the upload is the whole tree. Untrimmed that is ~50MB of
 # documentation, evidence media and eval corpora the build never reads — and a

@@ -1,8 +1,0 @@
-{
-  "format": "vendo/theme-extracted@1",
-  "slots": {
-    "surface": "#ffffff",
-    "fontFamily": "Inter, ui-sans-serif, system-ui, sans-serif",
-    "headingFamily": "Inter, ui-sans-serif, system-ui, sans-serif"
-  }
-}

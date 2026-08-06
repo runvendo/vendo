@@ -91,11 +91,11 @@ Breakers can turn a run decision into an ask at any point.
 
 Loadout selection is deterministic:
 
-- An explicit `agent.loadout` list wins: exactly those tool names, uncapped
+- An explicit `loadout` list wins: exactly those tool names, uncapped
   (missing names are dropped).
 - Otherwise the default is a connection-scoped seed — your host tools plus
   the toolkits this principal has actually connected — capped at
-  `agent.maxInitialTools` (default `128`), never an alphabetical slice.
+  `maxInitialTools` (default `128`), never an alphabetical slice.
 - If the seed cannot be resolved, the agent degrades to the whole enabled
   host surface when it fits the cap, else to a read-first bounded default:
   safest risk first, then name. The remainder stay searchable.
@@ -110,7 +110,7 @@ the model calls a searched-in tool, it becomes available on the very next
 step; loaded tools persist for the life of the thread and are cleared when
 the thread is deleted.
 
-See [`agent.maxInitialTools` and `agent.loadout`](/reference/handler-options#agent-context)
+See [`maxInitialTools` and `loadout`](/reference/handler-options#turn-context)
 for the configuration surface.
 
 ### Grant invalidation
