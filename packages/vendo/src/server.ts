@@ -1754,6 +1754,7 @@ export function createVendo(input: CreateVendoConfig): Vendo {
     store,
     resolveRisk,
     ...(guardRules.approvals === undefined ? {} : { approvals: guardRules.approvals }),
+    ...(guardRules.breakers === undefined ? {} : { breakers: guardRules.breakers }),
     ...(configPolicy === undefined ? {} : { policy: configPolicy }),
     // cse lane 3 — a cloud policy.json body, consulted by the resolver STRICTLY
     // AFTER the local file and only within its existing opt-in path (decision

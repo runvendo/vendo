@@ -195,6 +195,16 @@ export interface GuardRules {
   approvals?: {
     parkedCallTtlMs?: number;
   };
+  /** 05 §2's deterministic breakers — the rate limits under everything else. Past
+   *  either one a would-be `run` becomes an `ask` until the window clears:
+   *  `maxCallsPerMinute` counts every call by one principal (default 60),
+   *  `maxWritesPerRun` counts the `write` and `destructive` calls of one run
+   *  (default 20). A deployment decision like the rules above, so a host sets them
+   *  through `guard({ breakers })`; unset leaves the defaults. */
+  breakers?: {
+    maxCallsPerMinute?: number;
+    maxWritesPerRun?: number;
+  };
 }
 
 export interface CreateGuardConfig extends GuardRules {
@@ -212,8 +222,4 @@ export interface CreateGuardConfig extends GuardRules {
    *  A resolver that throws applies no org rules and is audited — the guard
    *  never guesses at an unreadable policy, and never loosens on one. */
   orgPolicy?: (ctx: RunContext) => Promise<PolicyRule[]>;
-  breakers?: {
-    maxCallsPerMinute?: number;
-    maxWritesPerRun?: number;
-  };
 }

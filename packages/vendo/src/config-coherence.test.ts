@@ -186,6 +186,51 @@ describe("guard: one slot, two arms, the same decisions main made", () => {
     expect(() => createGuard({ store, approvals: { parkedCallTtlMs: -1 } }))
       .toThrow(VendoError);
   });
+
+  // The breakers were real, tested and user-visible (60 calls/min, 20 writes/run)
+  // with no path from `guard({ … })`: they lived on `CreateGuardConfig`, which is
+  // the composition's shape, and server.ts forwarded `approvals`, `policy` and
+  // `judge` but never these. Both halves are proven on a real composition —
+  // RED for either: take `breakers` back off `GuardRules`, or drop the forward in
+  // server.ts's `createGuard` call, and the second call below runs clean because
+  // the limit in force is the default the host never chose.
+  const breakerVendo = async (
+    prefix: string,
+    breakers: { maxCallsPerMinute?: number; maxWritesPerRun?: number },
+  ): Promise<Vendo> => {
+    await dotVendo();
+    stubHostFetch();
+    return createVendo({
+      model: {} as LanguageModel,
+      principal: async () => principal,
+      store: await tempStore(prefix),
+      guard: guardRules({ breakers }),
+    });
+  };
+
+  it("the host's call-rate breaker is the one in force", async () => {
+    const vendo = await breakerVendo("vendo-coherence-rate-", { maxCallsPerMinute: 1 });
+    // One session, two distinct calls — a repeat of the same call id is a replay
+    // the guard dedupes, which would never reach the breaker at all.
+    const session: RunContext = {
+      principal, venue: "chat", presence: "present", sessionId: "ses_rate",
+    };
+    const read = (id: string) => ({ id, tool: "host_read", args: {} });
+    expect((await vendo.guardedTools.execute(read("call_r1"), session)).status).toBe("ok");
+    expect((await vendo.guardedTools.execute(read("call_r2"), session)).status)
+      .toBe("pending-approval");
+  });
+
+  it("the host's write budget is the one in force", async () => {
+    const vendo = await breakerVendo("vendo-coherence-writes-", { maxWritesPerRun: 1 });
+    const session: RunContext = {
+      principal, venue: "chat", presence: "present", sessionId: "ses_writes",
+    };
+    const write = (id: string) => ({ id, tool: "host_write", args: {} });
+    expect((await vendo.guardedTools.execute(write("call_w1"), session)).status).toBe("ok");
+    expect((await vendo.guardedTools.execute(write("call_w2"), session)).status)
+      .toBe("pending-approval");
+  });
 });
 
 /** Records every system prompt it is asked to think with, then says one line. */
