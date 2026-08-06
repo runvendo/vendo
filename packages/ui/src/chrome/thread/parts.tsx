@@ -174,8 +174,8 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks, co
     }
     // Spec §1 — THE TRANSCRIPT SHOWS THE WORK: every tool call leaves a beat at
     // its position in the conversation (this reverses lane pick C1, which sent
-    // progress to the StatusRibbon and kept the transcript beat-free). Two
-    // exceptions:
+    // progress to a status ribbon above the composer and kept the transcript
+    // beat-free). Two exceptions:
     //   · the settled turn folds its beats into one summary row (hideBeats) —
     //     but a failed or declined call is content, not progress, so its ✕ beat
     //     stays visible either way (spec §15: the ✕ stays in the record);

@@ -82,10 +82,10 @@ const VALUE_EXPORTS = [
   // ejected thread template renders it (the eject standalone guard requires
   // every template import to be part of the chrome surface).
   "BeatSummary",
-  "StatusRibbon",
-  // 2026-07 loading-state audit — the between-steps busy voice; the ejected
+  // 2026-07 loading-state audit — the between-steps busy voice, now a beat at
+  // the transcript tail rather than a pill above the composer; the ejected
   // thread template renders it, so it must be public (eject standalone rule).
-  "WorkingRibbon",
+  "WorkingBeat",
   "toolPresentation",
   // 2026-07 split-view workspace — the overlay's expand/collapse machine;
   // the ejected thread's app cards read the context via useSplitView.

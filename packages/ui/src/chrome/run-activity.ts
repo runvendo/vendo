@@ -43,9 +43,9 @@ export interface RunActivity {
   /** RAW tool name of the live step — the reader humanizes it (`toolTitle`). */
   tool?: string;
   /** Tool steps of the live turn that have settled, and how many it started.
-      `total > 1` is what makes the ring determinate: it is the same honest
-      count the StatusRibbon shows as "step N of M" — steps the turn has
-      actually begun, never a guess at what it will do next. */
+      `total > 1` is what makes the ring determinate: an honest count of the
+      steps the turn has actually begun, never a guess at what it will do
+      next. */
   done: number;
   total: number;
 }

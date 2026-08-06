@@ -357,10 +357,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 }
 @keyframes fl-boot-sweep { from { transform: translateX(-110%); } to { transform: translateX(495%); } }
 
-/* Working indicator — fluidkit metaball droplets (ENG-205); inherits the muted
-   foreground as the flat-material fill. The .fl-typing dots below are its
-   first-paint and no-fluidkit fallback. */
-.fl-thinking { align-self: flex-start; color: var(--vendo-fg-muted); padding: 4px 2px; }
 /* Typing indicator — three pulsing dots while the agent is working. */
 .fl-typing { align-self: flex-start; display: flex; align-items: center; gap: 5px; padding: 4px 2px; }
 .fl-typing span { width: 7px; height: 7px; border-radius: 50%; background: var(--vendo-fg-muted);
@@ -803,12 +799,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 .fl-greeting-intro { margin: 0; line-height: 1.65; font-size: var(--vendo-text-body); letter-spacing: -.006em; }
 .fl-greeting .fl-chips { justify-content: flex-start; }
 .fl-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
-/* Mixed suggestions (cards + chips): the chips are the second tier, under an
-   "Or try this" micro-label (demo-live-readiness mockup §1). */
-.fl-try-row { margin-top: 16px; }
-.fl-try-row .fl-chips { justify-content: flex-start; }
-.fl-try-label { display: block; margin-bottom: 9px; font-size: 11px; font-weight: 600;
-  letter-spacing: .08em; text-transform: uppercase; color: var(--vendo-fg-muted); }
 .fl-chip { border: 1px solid var(--vendo-border); background: var(--vendo-surface);
   border-radius: 999px; padding: 8px 14px; font-size: 12.5px; color: var(--vendo-fg); cursor: pointer;
   transition: border-color .14s, background .14s, transform .18s cubic-bezier(.22,1,.36,1), box-shadow .18s; }
@@ -1813,36 +1803,10 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 }
 
 /* ====================================================================
-   ui-lane-thread block — the converged thread-surface picks (C1 ribbon,
-   C5 bar pin, 2B/2C/2E/2F composer, 3A/3D list, 4B landing cards, 6B
-   mobile jump, 8A-8E markdown). Derived from existing tokens only.
+   ui-lane-thread block — the converged thread-surface picks (C5 bar pin,
+   2B/2C/2E/2F composer, 3A/3D list, 4B landing cards, 6B mobile jump,
+   8A-8E markdown). Derived from existing tokens only.
    ==================================================================== */
-
-/* C1 — live status ribbon, tucked BEHIND the composer (one unit, Codex-
-   style): narrower than the composer, top corners only, and its bottom edge
-   slides under the card — the composer (position:relative) paints over the
-   overlap, so the composer keeps its own full radius. The composer sits
-   either adjacent or inside the dock anchor, so both DOM shapes lose their
-   top margin. */
-.fl-ribbon { display: flex; align-items: center; gap: 9px; margin: 0 30px -12px; padding: 7px 12px 19px;
-  border: 1px solid var(--vendo-border); border-bottom: 0; border-radius: 14px 14px 0 0;
-  background: color-mix(in srgb, var(--vendo-fg) 3%, var(--vendo-surface));
-  font: 500 12.5px/1.3 var(--vendo-font); color: var(--vendo-fg-muted); }
-.fl-ribbon + .fl-composer, .fl-ribbon + .fl-dock-anchor .fl-composer { margin-top: 0; }
-/* The between-steps register: the orb rests (build calm), the label carries
-   the "…" — same voice as an in-thread working beat. */
-.fl-ribbon--working .fl-ribbon-label { color: var(--vendo-fg); }
-.fl-ribbon .fl-beat-orb { width: 9px; height: 9px; }
-.fl-ribbon-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  color: var(--vendo-fg); font-weight: 550; }
-@media (prefers-reduced-motion: no-preference) {
-  .fl-ribbon { animation: fl-item-in var(--vendo-duration) var(--vendo-ease) both; }
-  .fl-ribbon-label { animation: fl-fade-in .22s ease both; }
-}
-.fl-ribbon-time { flex-shrink: 0; font: 500 10.5px/1 var(--vendo-font-mono); color: var(--vendo-fg-muted);
-  opacity: .75; font-variant-numeric: tabular-nums; }
-.fl-ribbon-count { margin-left: auto; flex-shrink: 0; font: 600 10.5px/1.4 var(--vendo-font);
-  border: 1px solid var(--vendo-border); border-radius: 999px; padding: 1px 7px; color: var(--vendo-fg-muted); }
 
 /* C5 — the pin lives on the app-card bar once the view is ready (replaces the
    old footer row). Sits between the boot labels and the hairline. */

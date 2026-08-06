@@ -96,7 +96,7 @@ export function useLauncherStatus({ open, threadId, onOpen }: {
     working,
     label: activity.tool === undefined ? "Working" : toolTitle(activity.tool, tools[activity.tool]),
     // Determinate only when the turn has actually begun more than one step —
-    // the same honest count the StatusRibbon shows as "step N of M". A single
+    // an honest count, never a guess at what it will do next. A single
     // open-ended step gets the quiet indeterminate ring instead of a fake bar.
     ...(activity.total > 1 ? { progress: { done: activity.done, total: activity.total } } : {}),
     askCount,

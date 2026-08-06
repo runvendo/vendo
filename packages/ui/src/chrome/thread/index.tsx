@@ -355,13 +355,13 @@ export function VendoThread({
   // indicator anywhere (no live beat, the caret needs streaming text,
   // FluidThinking stands down once text exists). Only while text deltas are
   // actively flowing does the caret own the floor; every other busy moment
-  // narrates through the quiet Working ribbon — a RUNNING call excepted, since
+  // narrates through the quiet WorkingBeat — a RUNNING call excepted, since
   // its beat is already ticking in the transcript.
   const textActivelyStreaming = lastPart?.type === "text" && lastPart.state === "streaming"
     && lastPart.text.trim().length > 0;
-  // 2026-08-06 polish — the ribbon is pinned to real work: a beat must exist
-  // (a text-only turn is never "between steps") and the gap must outlast the
-  // end-of-stream teardown, which used to flash "Working… 0.5s" under an
+  // 2026-08-06 polish — the quiet beat is pinned to real work: a beat must
+  // exist (a text-only turn is never "between steps") and the gap must outlast
+  // the end-of-stream teardown, which used to flash "Working… 0.5s" under an
   // already-finished answer while `busy` drained.
   const quietBusyEligible = busy && hasBeats && liveToolPart === undefined
     && !textActivelyStreaming && !caretShowing && !working;
@@ -457,9 +457,9 @@ export function VendoThread({
               // Lane pick 4B — object suggestions render as two-line starter
               // cards (title + concrete outcome, optional host icon); plain
               // strings keep the pill chip. A MIXED array renders both
-              // containers (cards grid, then a chips row) so string entries
-              // never stretch as grid cells (AI-review catch). Both send on
-              // tap, unchanged.
+              // containers (cards grid, then one plain chips row) so string
+              // entries never stretch as grid cells (AI-review catch). Both
+              // send on tap, unchanged.
               <>
                 {suggestions.some(s => typeof s !== "string") ? (
                   <div className="fl-cards">
@@ -477,21 +477,12 @@ export function VendoThread({
                   </div>
                 ) : null}
                 {suggestions.some(s => typeof s === "string") ? (
-                  // In MIXED mode the chips are the second tier below the
-                  // cards, so they carry the "Or try this" micro-label
-                  // (demo-live-readiness mockup §1); a chips-only array keeps
-                  // the unlabelled row it always had.
-                  <div className={suggestions.some(s => typeof s !== "string") ? "fl-try-row" : undefined}>
-                    {suggestions.some(s => typeof s !== "string") ? (
-                      <span className="fl-try-label">Or try this</span>
-                    ) : null}
-                    <div className="fl-chips">
-                      {suggestions.flatMap((text, i) => (
-                        typeof text === "string"
-                          ? [<button type="button" className="fl-chip" key={`${i}-${text}`} onClick={() => send(text)}>{text}</button>]
-                          : []
-                      ))}
-                    </div>
+                  <div className="fl-chips">
+                    {suggestions.flatMap((text, i) => (
+                      typeof text === "string"
+                        ? [<button type="button" className="fl-chip" key={`${i}-${text}`} onClick={() => send(text)}>{text}</button>]
+                        : []
+                    ))}
                   </div>
                 ) : null}
               </>

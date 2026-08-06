@@ -3,7 +3,7 @@ import type { ApprovalRequest, Thread } from "@vendoai/core";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { VendoProvider, createVendoClient, type ToolMetaMap, type VendoClient } from "../../src/index.js";
-import { ApprovalCard, BuildBeat, StatusRibbon, VendoThread } from "../../src/chrome/index.js";
+import { ApprovalCard, BuildBeat, VendoThread } from "../../src/chrome/index.js";
 import { createWireServer } from "../wire-server.js";
 
 const NOW = "2026-07-11T12:00:00.000Z";
@@ -214,23 +214,21 @@ describe("Vendo's own tools never read as their identifiers (§3)", () => {
     input: { app: "app_1", request: "make it blue" },
   };
 
-  it("narrates the live progress chip with a title — never 'Vendo apps edit…'", () => {
+  it("narrates the live beat with a title — never 'Vendo apps edit…'", () => {
     // The exact string wave-1 live proof E1-5 photographed. This surface holds no
     // descriptor: the wire tool part carries a name and nothing else.
     render(
       <VendoProvider client={client}>
-        <StatusRibbon part={appsEdit} stepIndex={1} stepTotal={1} />
+        <BuildBeat part={appsEdit as never} risk="write" />
       </VendoProvider>,
     );
-    const ribbon = document.querySelector(".fl-ribbon");
-    expect(ribbon?.textContent).toContain("Make you a screen");
-    expect(ribbon?.textContent).not.toMatch(/vendo/i);
+    const beat = document.querySelector(".fl-beat");
+    expect(beat?.textContent).toContain("Make you a screen");
+    expect(beat?.textContent).not.toMatch(/vendo/i);
     // The raw name stays as the machine affordance, exactly as for host tools.
-    expect(ribbon?.getAttribute("data-vendo-tool")).toBe("vendo_make");
-    // M32 — and NOT as a tooltip on a role="status" aria-live node, where it is
-    // both hoverable and read out as the live region's description.
-    expect(ribbon?.hasAttribute("title")).toBe(false);
-    expect(ribbon?.getAttribute("role")).toBe("status");
+    expect(beat?.getAttribute("data-vendo-tool")).toBe("vendo_make");
+    // M32 — and never as a tooltip, where it is both hoverable and read out.
+    expect(beat?.hasAttribute("title")).toBe(false);
   });
 
   it("M32 — a beat carries the slug for machines only, never in a tooltip", () => {
