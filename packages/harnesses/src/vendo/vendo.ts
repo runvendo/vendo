@@ -390,13 +390,6 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
               // travel; the operator's terminal gets the real error.
               yield { type: "error", message: wireErrorMessage(part.error), code: "model" };
               break;
-            case "tool-error":
-              // A thrown or malformed tool call is a real failure the user must be
-              // told about — swallowing it left the turn looking finished.
-              // (`tool-input-error` is a UI-stream chunk, not a fullStream part;
-              // the SDK surfaces that class here as `tool-error` too.)
-              yield { type: "error", message: wireErrorMessage(part.error), code: "tool" };
-              break;
             case "abort":
               // The caller hung up: stop cleanly, say nothing.
               return;
@@ -431,6 +424,18 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
             default:
               // Tool call/result chunks are consumed here and dropped: the RUNTIME
               // mirrors them (§1.5), so echoing them would double every call.
+              //
+              // `tool-error` is dropped with them, and that is the rule: a turn
+              // FAILS by how it ends — an `error` part, a throw out of this drain,
+              // an abort — never by a step it recovered from. The SDK raises this
+              // part for its own malformed-input/unknown-tool class, feeds it back,
+              // and the model answers on the next step; a guarded call cannot raise
+              // it at all, because `turn.tools.call()` never throws (§1.1) and its
+              // failures are already a tool RESULT the model reads. Reporting it as
+              // an `error` event made the runtime — right to treat a reported error
+              // as the turn's death — stamp a finished turn failed: a permanent
+              // "The response didn't finish" notice and a failed audit row above a
+              // perfectly good answer.
               break;
           }
         }

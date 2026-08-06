@@ -9,19 +9,25 @@
  * the TRANSCRIPT holds — the real read path — not against the live stream, since
  * the live stream was never the part that was broken.
  */
-import type { ThreadId } from "@vendoai/core";
-import type { UIMessage } from "ai";
+import type { SeatModels, ThreadId } from "@vendoai/core";
+import type { LanguageModel, UIMessage } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { defineHarness } from "./define.js";
 import { createHarnessRuntime } from "./runtime.js";
+import { vendo } from "./vendo/vendo.js";
 import {
   boundRegistry,
   ctx,
   readSse,
+  readTool,
+  scriptedModel,
+  seats,
   testGuard,
   testSkills,
   testTranscript,
   testWorkspace,
+  textTurn,
+  toolCallTurn,
   unusedModels,
   userMessage,
 } from "./test-doubles.test-util.js";
@@ -45,16 +51,17 @@ function runtimeFor(overrides: Partial<Parameters<typeof createHarnessRuntime>[0
   const run = async (
     harness: Parameters<typeof runtime.run>[0]["harness"],
     messages: UIMessage[] = [userMessage("m1", "go")],
+    models: SeatModels<LanguageModel> = unusedModels(),
   ) => readSse(await runtime.run({
     harness,
     threadId: THREAD,
     messages,
     ctx: ctx(),
     workspace: testWorkspace(),
-    models: unusedModels(),
+    models,
     interactive: true,
   }));
-  return { run, transcript };
+  return { run, guard, transcript };
 }
 
 const failing = defineHarness({
@@ -127,6 +134,68 @@ describe("a failed turn keeps its reason in the transcript", () => {
     }));
 
     expect(turnErrors(await transcript.list(ctx().principal, THREAD))).toHaveLength(0);
+  });
+});
+
+/**
+ * Ported from the deleted `createAgent` door (`agent/src/stream-error.test.ts`,
+ * "recoverable tool errors are NOT turn failures"): the same loop, now reached
+ * through `vendo()`. Driven end to end — real harness, real runtime, real
+ * guard — because the defect was exactly a disagreement between the two halves:
+ * `vendo()` reported the SDK's recoverable `tool-error` as a harness `error`,
+ * and the runtime, which is right to treat a reported error as the turn's
+ * death, then stamped a finished turn failed.
+ */
+describe("a recoverable tool error is not a failed turn", () => {
+  const echo = readTool("echo");
+  const runRows = (guard: ReturnType<typeof testGuard>) =>
+    guard.events.filter((event) => event.kind === "run");
+
+  it("a hallucinated tool name the model recovers from leaves the turn clean", async () => {
+    // The SDK rejects the unknown name before any tool runs, feeds the rejection
+    // back, and the model answers on the next step. A notice here would render a
+    // permanent failed-turn banner above a successful reply.
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const model = scriptedModel([
+      toolCallTurn("no_such_tool", { value: "x" }, "call_bogus"),
+      textTurn("Here is your dashboard."),
+    ]);
+    const guard = testGuard();
+    const { run, transcript } = runtimeFor({
+      guard,
+      tools: boundRegistry({ echo: { descriptor: echo, execute: async (args) => args } }, guard),
+    });
+
+    const parts = await run(vendo(), [userMessage("m1", "Show me a dashboard")], seats(model));
+
+    expect(parts.find((part) => part.type === "error")).toBeUndefined();
+    const stored = await transcript.list(ctx().principal, THREAD);
+    expect(turnErrors(stored)).toHaveLength(0);
+    expect(JSON.stringify(stored)).toContain("Here is your dashboard.");
+    // The ledger says the same thing the transcript does.
+    expect(runRows(guard).some((row) => (row.detail as { error?: unknown }).error !== undefined))
+      .toBe(false);
+  });
+
+  it("a tool that throws mid-turn leaves the turn clean too", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const model = scriptedModel([
+      toolCallTurn("echo", { value: "x" }, "call_throws"),
+      textTurn("Recovered without it."),
+    ]);
+    const guard = testGuard();
+    const { run, transcript } = runtimeFor({
+      guard,
+      tools: boundRegistry({
+        echo: { descriptor: echo, execute: () => { throw new Error("upstream 500"); } },
+      }, guard),
+    });
+
+    await run(vendo(), [userMessage("m1", "Echo something")], seats(model));
+
+    const stored = await transcript.list(ctx().principal, THREAD);
+    expect(turnErrors(stored)).toHaveLength(0);
+    expect(JSON.stringify(stored)).toContain("Recovered without it.");
   });
 });
 
