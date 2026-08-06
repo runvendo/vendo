@@ -11,8 +11,8 @@
  * passed against the dead channel too.
  *
  * The law being pinned, in order: a beat with `phase`/`appId` lands, a bare
- * label lands, beats accumulate newest-active, the composer ribbon speaks the
- * latest one, a settled turn leaves NOTHING behind (ephemeral by
+ * label lands, beats accumulate newest-active, the transcript-tail working
+ * beat speaks the latest one, a settled turn leaves NOTHING behind (ephemeral by
  * construction — no `data-vendo-status` ever reaches `messages`), and a
  * malformed chunk is simply not a beat.
  */
@@ -98,9 +98,12 @@ describe("the status channel reaches the screen", () => {
     );
   });
 
-  // HOME A — the between-steps ribbon above the composer. It has always taken
-  // a `label` and nobody ever passed one, so every busy gap said "Working".
-  it("the composer ribbon speaks the latest beat instead of the generic label", { timeout: 20_000 }, async () => {
+  // HOME A — the between-steps gap indicator. It has always taken a `label`
+  // and nobody ever passed one, so every busy gap said "Working". Since the
+  // 2026-08-06 polish it is a working BEAT at the transcript tail (the direct
+  // `.fl-msglist` child; a tool's own beat is nested in its turn's article),
+  // debounced by 800ms.
+  it("the working beat speaks the latest harness beat instead of the generic label", { timeout: 20_000 }, async () => {
     render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
     expect(await screen.findByText("Existing thread")).toBeTruthy();
 
@@ -110,17 +113,17 @@ describe("the status channel reaches the screen", () => {
 
     expect(await screen.findByText(/Here is the plan/)).toBeTruthy();
     await waitFor(() => {
-      const working = document.querySelector(".fl-ribbon--working");
+      const working = document.querySelector(".fl-msglist > .fl-beat-working");
       expect(working).toBeTruthy();
       // The LAST valid beat, not the last chunk (the stream's final chunk is
       // deliberately malformed) and not "Working".
       expect(working?.textContent).toContain("Adding drag and drop");
-    });
-    expect(document.querySelector(".fl-ribbon--working")?.textContent).not.toContain("Working");
+    }, { timeout: 5_000 });
+    expect(document.querySelector(".fl-msglist > .fl-beat-working")?.textContent).not.toContain("Working");
 
     await act(async () => release());
     expect(await screen.findByText("All done.")).toBeTruthy();
-    await waitFor(() => expect(document.querySelector(".fl-ribbon--working")).toBeNull());
+    await waitFor(() => expect(document.querySelector(".fl-msglist > .fl-beat-working")).toBeNull());
   });
 
   // HOME B — the accumulating rail on the EXISTING split-view stage (no new
@@ -195,15 +198,16 @@ describe("the status channel reaches the screen", () => {
     fireEvent.change(outside, { target: { value: "[beats] build it" } });
     fireEvent.keyDown(outside, { key: "Enter" });
 
-    // Positive anchor FIRST: the beats really are live on the running surface,
-    // so the absence asserted next cannot pass vacuously.
-    await waitFor(() => expect(document.querySelector(".fl-ribbon--working")?.textContent)
-      .toContain("Adding drag and drop"));
+    // Positive anchor FIRST: the beats really are live on the running surface
+    // (its transcript-tail working beat says the latest one), so the absence
+    // asserted next cannot pass vacuously.
+    await waitFor(() => expect(document.querySelector(".fl-msglist > .fl-beat-working")?.textContent)
+      .toContain("Adding drag and drop"), { timeout: 5_000 });
     // …and they do not leak onto a stage that is showing someone else.
     expect(panel.querySelector(".fl-beatrail")).toBeNull();
 
     await act(async () => release());
-    await waitFor(() => expect(document.querySelector(".fl-ribbon--working")).toBeNull());
+    await waitFor(() => expect(document.querySelector(".fl-msglist > .fl-beat-working")).toBeNull());
 
     // The same stage DOES narrate its own conversation — the scope is a filter,
     // not a mute.

@@ -111,10 +111,13 @@ describe("VendoThread and VendoOverlay exports", () => {
 
   // 2026-07 loading-state audit — the remaining dead-air class: prose has
   // streamed AND the turn's tool calls have all SETTLED, but the turn is still
-  // busy (the model deciding its next step). No live part → no StatusRibbon;
+  // busy (the model deciding its next step). No live part → no beat ticking;
   // no streaming text → no caret; text exists → no FluidThinking. The quiet
-  // Working ribbon must hold that moment, then stand down when text resumes.
-  it("shows the Working ribbon in the settled-tools busy gap and drops it when the turn closes", { timeout: 20_000 }, async () => {
+  // working beat must hold that moment, then stand down when the turn closes.
+  // 2026-08-06 polish — it speaks in the transcript's own beat vocabulary at
+  // the list TAIL (was a WorkingRibbon pill above the composer), and it waits
+  // out an 800ms debounce so the end-of-stream teardown never flashes it.
+  it("shows the working beat in the settled-tools busy gap and drops it when the turn closes", { timeout: 20_000 }, async () => {
     let release = () => undefined;
     wire.state.threadReplyGate = new Promise<void>(resolve => { release = resolve; });
     render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
@@ -126,26 +129,34 @@ describe("VendoThread and VendoOverlay exports", () => {
 
     // The prose landed and the tool settled…
     expect(await screen.findByText(/Here is the plan/)).toBeTruthy();
-    // …and the busy gap narrates through the generic Working ribbon.
+    // …and the busy gap narrates through the generic working beat. Only the
+    // gap beat is a DIRECT child of the list (a tool's beat is nested in its
+    // turn's article), so this selector is the tail placement.
     await waitFor(() => {
-      const working = document.querySelector(".fl-ribbon--working");
+      const working = document.querySelector(".fl-msglist > .fl-beat-working");
       expect(working).toBeTruthy();
       expect(working?.textContent).toContain("Working");
-    });
-    // No stale tool ribbon poses as running (the call already settled — its
-    // beat sits ticked in the transcript, which is the record, not a promise).
-    expect(document.querySelector(".fl-ribbon[data-vendo-tool]")).toBeNull();
+    }, { timeout: 5_000 });
+    // It is the LAST thing in the transcript — below every turn and below the
+    // parked-approval slot.
+    expect(document.querySelector(".fl-msglist")?.lastElementChild?.className)
+      .toBe("fl-beat fl-beat-working");
+    // Nothing narrates above the composer any more: one vocabulary for "in
+    // progress", and no stale tool ribbon posing as running (the call already
+    // settled — its beat sits ticked in the transcript, the record, not a
+    // promise).
+    expect(document.querySelector(".fl-ribbon")).toBeNull();
     expect(document.querySelector("[data-vendo-tool='host_list_transactions']")?.className)
       .toBe("fl-beat fl-beat-done");
 
     await act(async () => release());
     expect(await screen.findByText("All done.")).toBeTruthy();
-    await waitFor(() => expect(document.querySelector(".fl-ribbon--working")).toBeNull());
+    await waitFor(() => expect(document.querySelector(".fl-msglist > .fl-beat-working")).toBeNull());
   });
 
   // M22 — a REFUSED ask is terminal. It used to count as a live step forever, so
-  // the between-steps ribbon never returned for the rest of the turn.
-  it("brings the Working ribbon back after a denial — a refused ask is not live", { timeout: 20_000 }, async () => {
+  // the between-steps indicator never returned for the rest of the turn.
+  it("brings the working beat back after a denial — a refused ask is not live", { timeout: 20_000 }, async () => {
     let release = () => undefined;
     wire.state.threadReplyGate = new Promise<void>(resolve => { release = resolve; });
     render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
@@ -159,12 +170,14 @@ describe("VendoThread and VendoOverlay exports", () => {
     await waitFor(() => expect(document.querySelector("[data-vendo-tool='host_transferMoney']")?.className)
       .toContain("fl-beat-done"));
     expect(document.body.textContent).toContain("you declined it");
-    // …and the still-busy turn narrates its gap again.
-    await waitFor(() => expect(document.querySelector(".fl-ribbon--working")).toBeTruthy());
+    // …and the still-busy turn narrates its gap again, at the transcript tail
+    // (past the 800ms debounce).
+    await waitFor(() => expect(document.querySelector(".fl-msglist > .fl-beat-working")).toBeTruthy(),
+      { timeout: 5_000 });
 
     await act(async () => release());
     expect(await screen.findByText("Nothing was sent.")).toBeTruthy();
-    await waitFor(() => expect(document.querySelector(".fl-ribbon--working")).toBeNull());
+    await waitFor(() => expect(document.querySelector(".fl-msglist > .fl-beat-working")).toBeNull());
   });
 
   it("opens as a modal, traps focus, closes on Escape, and restores launcher focus", async () => {

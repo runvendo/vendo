@@ -6,22 +6,15 @@ import { useRouter } from "next/navigation";
 import { useVendoOverlay } from "@vendoai/ui";
 import { VendoOverlay, VendoPalette, VendoThread, type VendoCommand, type VendoThreadProps } from "@vendoai/ui/chrome";
 import { MapleMark } from "@/components/ui/maple-mark";
-import { useTryThisChips } from "@/components/vendo/use-try-this-chips";
 import { mapleScenarios } from "@/vendo/scenarios";
 
-/** The overlay's thread with the Maple scenario cards on the empty landing,
- *  plus the pre-generated "try this" pill chips one tier below (demo-hygiene;
- *  absent while the chip cache is empty).
+/** The overlay's thread with the Maple scenario cards on the empty landing.
  *  Module-scope so the component identity is stable across VendoLayer renders.
  *  discoverability="quiet" stands the fire-once greeting-as-tutorial down so
  *  the scripted-demo landing is the four scenario cards, identically on every
  *  machine and after every reset. */
 function MapleThread(props: VendoThreadProps) {
-  const chips = useTryThisChips();
-  // Empty cache keeps the original mapleScenarios reference (and no extra
-  // render — see useTryThisChips), matching the full page's landing contract.
-  const suggestions = chips.length === 0 ? mapleScenarios : [...mapleScenarios, ...chips];
-  return <VendoThread {...props} suggestions={suggestions} discoverability="quiet" />;
+  return <VendoThread {...props} suggestions={mapleScenarios} discoverability="quiet" />;
 }
 
 async function resetDemo(): Promise<void> {

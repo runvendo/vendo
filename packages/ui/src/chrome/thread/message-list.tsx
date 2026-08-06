@@ -1,5 +1,6 @@
 import type { RiskLabel } from "@vendoai/core";
 import type { ComponentProps } from "react";
+import { WorkingBeat } from "../build-beat.js";
 import { FluidThinking } from "../fluid-thinking.js";
 import { ThreadMessage } from "./message.js";
 import { ThreadApprovals } from "./parts.js";
@@ -13,7 +14,7 @@ export function MessageList({
   scroll, messageWindow, busy, risks, isRestored,
   activeAssistantId, lastUserId, lastAssistantId, onEditLast, onRegenerateLast,
   approvals, guardApprovals, cardRefs, respond, onMorph,
-  sendMessage, working,
+  sendMessage, working, quietLabel,
 }: {
   scroll: ReturnType<typeof useStickToBottom>;
   messageWindow: ReturnType<typeof useMessageWindow>;
@@ -33,6 +34,8 @@ export function MessageList({
   /** The thread's send — connect cards use it for the post-connect continuation. */
   sendMessage: (message: { text: string }) => unknown;
   working: boolean;
+  /** Set = the between-steps gap is live; renders a WorkingBeat at the tail. */
+  quietLabel?: string | undefined;
 }) {
   return (
     <div className="fl-msglist-wrap">
@@ -81,6 +84,7 @@ export function MessageList({
           onMorph={onMorph}
         />
         {working ? <FluidThinking label="Working" /> : null}
+        {quietLabel !== undefined ? <WorkingBeat label={quietLabel} /> : null}
       </div>
       {/* Lane picks 3A + 6B — the jump affordance ("N new replies · …") now
           renders inside the composer's .fl-dock-anchor (see VendoThread), so

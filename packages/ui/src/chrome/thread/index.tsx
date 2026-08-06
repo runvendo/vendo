@@ -3,7 +3,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { APPROVALS_DECIDED_EVENT, type ApprovalsDecidedDetail } from "../../client-impl.js";
 import { useVendoDiscoverability, useVendoGreeting } from "../../context.js";
 import { useVendoThread } from "../../hooks/use-vendo-thread.js";
-import { WorkingRibbon } from "../build-beat.js";
 import { ChromeRoot } from "../chrome-root.js";
 import { defaultVendoGreeting, hasSeen, markSeen, type VendoDiscoverability, type VendoGreeting } from "../discoverability.js";
 import { MorphToast, type MorphToastProps } from "../morph-toast.js";
@@ -360,16 +359,26 @@ export function VendoThread({
   // its beat is already ticking in the transcript.
   const textActivelyStreaming = lastPart?.type === "text" && lastPart.state === "streaming"
     && lastPart.text.trim().length > 0;
-  const quietBusy = busy && liveToolPart === undefined
+  // 2026-08-06 polish — the ribbon is pinned to real work: a beat must exist
+  // (a text-only turn is never "between steps") and the gap must outlast the
+  // end-of-stream teardown, which used to flash "Working… 0.5s" under an
+  // already-finished answer while `busy` drained.
+  const quietBusyEligible = busy && hasBeats && liveToolPart === undefined
     && !textActivelyStreaming && !caretShowing && !working;
-  // §3.4 — the ribbon has always taken a `label` and nobody ever passed one, so
-  // every busy gap said "Working" while the harness was already narrating the
-  // real step on the status channel. The latest beat is that step; "Working" is
-  // the floor for a harness that says nothing.
-  const latestBeat = thread.beats.at(-1);
-  const ribbon = quietBusy
-    ? <WorkingRibbon {...(latestBeat === undefined ? {} : { label: latestBeat.label })} />
-    : null;
+  const [quietBusy, setQuietBusy] = useState(false);
+  useEffect(() => {
+    if (!quietBusyEligible) {
+      setQuietBusy(false);
+      return;
+    }
+    const timer = setTimeout(() => setQuietBusy(true), 800);
+    return () => clearTimeout(timer);
+  }, [quietBusyEligible]);
+  // §3.4 — the gap narrates the latest harness beat when there is one;
+  // "Working" is the floor for a harness that says nothing. It renders as a
+  // WorkingBeat at the transcript tail (2026-08-06 polish: one beat
+  // vocabulary, no separate ribbon pill).
+  const quietLabel = quietBusy ? thread.beats.at(-1)?.label ?? "Working" : undefined;
 
   // Lane pick 2E — the WHOLE thread surface is the drop target (the composer
   // bar no longer owns drag): a huge, overshoot-proof zone with a centered
@@ -518,10 +527,10 @@ export function VendoThread({
           onMorph={setMorph}
           sendMessage={message => thread.sendMessage(message)}
           working={working}
+          quietLabel={quietLabel}
         />
         {errorBanner}
         {composerAccessory}
-        {ribbon}
         {composer}
       </div>
       {morph ? <MorphToast {...morph} onDone={() => setMorph(null)} /> : null}

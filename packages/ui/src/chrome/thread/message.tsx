@@ -4,7 +4,7 @@ import { Fragment, useRef, useState } from "react";
 import { BeatSummary } from "../build-beat.js";
 import { useCopyFeedback } from "../clipboard.js";
 import { SentAttachment, type FilePart } from "./attachments.js";
-import { assistantText, collapseToolRuns, toolCallIsContent, toolCallPending, userText } from "./message-data.js";
+import { assistantText, collapseToolRuns, isAgentContext, toolCallIsContent, toolCallPending, userText } from "./message-data.js";
 import { ThreadPart } from "./parts.js";
 import { TurnCitations } from "./turn-citations.js";
 
@@ -61,7 +61,7 @@ export function ThreadMessage({ message, restored, risks, busy, activeAssistantI
     : [];
   const bubbleText = message.role === "user" ? userText(message) : assistantText(message);
   const skipBubble = message.role === "user" && bubbleText.length === 0
-    && message.parts.every(part => part.type === "file");
+    && message.parts.every(part => part.type === "file" || isAgentContext(part));
   // ENG-225 — every settled turn carries a Copy action (hover-
   // revealed, see chrome-css); Edit stays on the last user turn and
   // Regenerate on the last assistant turn (ENG-215). The actively

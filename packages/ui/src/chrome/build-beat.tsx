@@ -404,6 +404,36 @@ export function WorkingRibbon({ label = "Working" }: { label?: string }) {
   );
 }
 
+/** Live elapsed clock for an in-flight line; 0 (never ticking) under
+    prefers-reduced-motion, where a counting number is itself motion. */
+function useElapsedSeconds(): number {
+  const startRef = useRef(Date.now());
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const timer = setInterval(() => {
+      setElapsed((Date.now() - startRef.current) / 1000);
+    }, 100);
+    return () => clearInterval(timer);
+  }, []);
+  return elapsed;
+}
+
+/** The between-steps gap, spoken in the transcript's own beat vocabulary — a
+    checklist line, not a separate pill (2026-08-06 polish: the WorkingRibbon
+    shell was a second visual language for "in progress"; the beat already is
+    one). Mounts at the transcript tail while the turn is busy with no live
+    call and nothing streaming; the next real beat replaces it. */
+export function WorkingBeat({ label = "Working" }: { label?: string }) {
+  const elapsed = useElapsedSeconds();
+  return (
+    <div className="fl-beat fl-beat-working" role="status" aria-live="polite">
+      <BeatLine mark="working" label={`${label}…`} />
+      {elapsed >= 0.1 ? <span className="fl-beat-result">· {elapsed.toFixed(1)}s</span> : null}
+    </div>
+  );
+}
+
 /** How a beat's mark reads: in flight, settled, failed, or refused. */
 type BeatMark = "working" | "done" | "error" | "declined";
 

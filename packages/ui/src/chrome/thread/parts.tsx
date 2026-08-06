@@ -19,6 +19,7 @@ import { LONG_TEXT_CAP, truncateHead } from "../truncate.js";
 import { SentAttachment } from "./attachments.js";
 import { buildApprovalRequest } from "./approval-wire.js";
 import {
+  AGENT_CONTEXT_MARK,
   appTitle,
   BUILD_FAILURE_COPY,
   isAgentContext,
@@ -98,12 +99,13 @@ function ThreadConnect({ ask, live, sendMessage }: {
       message={ask.message}
       live={live}
       onConnected={() => {
-        // The continuation: the account is live, so resume the turn.
-        // A NATURAL user line, not tool plumbing — the parked turn's
-        // context (the connect-required call directly above) tells the
-        // agent what to retry (2026-07 demo feedback; the old line
-        // read "retry gmail_send_email" in the transcript).
-        void sendMessage?.({ text: `Connected ${toolkitDisplayName(ask.toolkit)}.` });
+        // The continuation: the account is live, so resume the turn. It
+        // travels as agent context (hidden from the transcript) — the card's
+        // own Connected badge already records the fact, and a fabricated
+        // user bubble put words in the user's mouth (2026-08-06 polish; the
+        // previous visible line was itself a rewrite of "retry
+        // gmail_send_email").
+        void sendMessage?.({ text: `${AGENT_CONTEXT_MARK} Connected ${toolkitDisplayName(ask.toolkit)}.` });
       }}
     />
   );
