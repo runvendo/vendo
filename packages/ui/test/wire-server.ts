@@ -319,6 +319,10 @@ export async function createWireServer(options: WireServerOptions = {}) {
       { toolkit: "gmail", connector: "composio" },
       { toolkit: "slack", connector: "composio" },
     ],
+    /** What POST /connections/initiate hands back as the broker's hosted OAuth
+     *  URL. A knob because the URL is the one field of that response the
+     *  BROKER controls, and the surfaces navigate a window to it. */
+    redirectUrl: "https://connect.test/oauth/1",
     automations: [
       { app: automationApp, triggers: [{ trigger: automationApp.triggers![0]!, enabled: false }] },
     ] satisfies AutomationEntry[],
@@ -1011,7 +1015,7 @@ export async function createWireServer(options: WireServerOptions = {}) {
             createdAt: NOW,
           });
         }
-        return json(response, { id: "ca_new", connector: initiateBody.connector ?? "composio", redirectUrl: "https://connect.test/oauth/1" });
+        return json(response, { id: "ca_new", connector: initiateBody.connector ?? "composio", redirectUrl: state.redirectUrl });
       }
       const connectionMatch = url.pathname.match(/^\/connections\/([^/]+)$/);
       if (connectionMatch) {

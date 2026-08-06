@@ -34,6 +34,7 @@ describe("ConnectCard and ConnectedAccountsPanel", () => {
   afterEach(async () => {
     cleanup();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
     await wire.close();
   });
 
@@ -294,6 +295,95 @@ describe("ConnectCard and ConnectedAccountsPanel", () => {
     expect(alert.textContent).toBe("Sign in first, then connect Gmail.");
     expect(alert.textContent).not.toContain("external accounts");
     expect(screen.getByRole("button", { name: "Connect Gmail" }).hasAttribute("disabled")).toBe(false);
+  });
+
+  /**
+   * V5 popup mechanics — `redirectUrl` is the ONE field of the initiate
+   * response the third-party broker writes, and the card navigates a window we
+   * opened to it. That window is `about:blank` opened WITHOUT `noopener` (by
+   * design — the handle is what lets us close it), so it inherits this page's
+   * origin: a `javascript:` URL replaced into it runs in our own document and
+   * can reach `opener`. Nothing between the broker and `popup.location.replace`
+   * checks the scheme. Only http(s) may be navigated to.
+   */
+  it("never navigates the popup to a redirect URL that is not http(s)", async () => {
+    const { popup } = allowPopups();
+    wire.state.redirectUrl = "javascript:window.opener.document.body.append('pwned')";
+    wire.state.connections.push({
+      id: "ca_new", connector: "composio", toolkit: "gmail",
+      status: "pending" as never, createdAt: "2026-07-23T00:00:00.000Z",
+    });
+    render(
+      <VendoProvider client={client}>
+        <ConnectCard connector="composio" toolkit="gmail" message="Connect gmail." onConnected={() => undefined} />
+      </VendoProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Connect Gmail" }));
+
+    await waitFor(() => expect(wire.requests.some(request => request.path === "/connections/initiate")).toBe(true));
+    const navigated = popup.location.replace.mock.calls.map(call => String(call[0]));
+    expect(navigated.filter(url => !/^https?:\/\//.test(url))).toEqual([]);
+  });
+
+  it("never offers a non-http(s) redirect as the blocked-popup fallback link", async () => {
+    vi.stubGlobal("open", vi.fn(() => null));
+    wire.state.redirectUrl = "javascript:window.opener.document.body.append('pwned')";
+    wire.state.connections.push({
+      id: "ca_new", connector: "composio", toolkit: "gmail",
+      status: "pending" as never, createdAt: "2026-07-23T00:00:00.000Z",
+    });
+    render(
+      <VendoProvider client={client}>
+        <ConnectCard connector="composio" toolkit="gmail" message="Connect gmail." onConnected={() => undefined} />
+      </VendoProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Connect Gmail" }));
+
+    await waitFor(() => expect(wire.requests.some(request => request.path === "/connections/initiate")).toBe(true));
+    // React neutralizes a `javascript:` href, so what the person gets is a
+    // primary button that does nothing while the card claims the poll is
+    // running — a dead end dressed as the recovery path. Refuse the URL at the
+    // seam instead, and this link is never offered.
+    expect(screen.queryByRole("link", { name: "Open sign-in in a new tab" })).toBeNull();
+  });
+
+  /**
+   * V5 — the timed-out phase: the poll's deadline passed with nothing settled.
+   * A deadline is not a refusal, so the card says nothing changed (no error
+   * alert) and re-offers. Untested until now — the whole phase shipped unproven.
+   * The clock is moved rather than waited on: `completeConnection` reads
+   * `Date.now()` once for the deadline and once per loop turn, so a stub that
+   * jumps past the window ends the poll on its first check.
+   */
+  it("a poll that reaches its deadline settles on the timed-out record, and Try again re-runs the flow", async () => {
+    allowPopups();
+    wire.state.connections.push({
+      id: "ca_new", connector: "composio", toolkit: "gmail",
+      status: "pending" as never, createdAt: "2026-07-23T00:00:00.000Z",
+    });
+    let clock = Date.parse("2026-08-06T00:00:00.000Z");
+    vi.spyOn(Date, "now").mockImplementation(() => (clock += 200_000));
+    const onConnected = vi.fn();
+    render(
+      <VendoProvider client={client}>
+        <ConnectCard connector="composio" toolkit="gmail" message="Connect gmail." onConnected={onConnected} />
+      </VendoProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Connect Gmail" }));
+
+    const card = await screen.findByRole("article", { name: "Connect Gmail" });
+    await waitFor(() => expect(card.getAttribute("data-vendo-connect-card")).toBe("timed-out"));
+    expect(card.textContent).toContain("Nothing changed — the sign-in never finished.");
+    // A deadline is not a refusal: no failure copy, and nothing was connected.
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(onConnected).not.toHaveBeenCalled();
+
+    // Try again re-runs the whole flow from the top.
+    const before = wire.requests.filter(request => request.path === "/connections/initiate").length;
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(
+      wire.requests.filter(request => request.path === "/connections/initiate").length,
+    ).toBeGreaterThan(before));
   });
 
   it("lists accounts with real identity and severs one through confirm + undo window", async () => {

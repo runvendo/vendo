@@ -9,6 +9,7 @@ import {
   TREE_MAX_QUERIES,
   TREE_MAX_TOTAL_COMPONENT_BYTES,
 } from "../tree-limits.js";
+import { KIT_COMPONENT_NAMES, WIRE_COMPONENT_NAMES } from "../../kit/specs.js";
 import { validateTree } from "../tree.js";
 import { compileWire, type WireCompileOptions, type WireCompileResult } from "./compile.js";
 
@@ -605,6 +606,24 @@ describe("compileWire source resolution (D3)", () => {
     expect(builtinOverIsland.tree.nodes[1]?.source).toBe("prewired");
     expect(builtinOverIsland.components).toStrictEqual({});
     expect(codes(builtinOverIsland)).toContain("invalid-island-name");
+  });
+
+  /**
+   * The island-name gate reads WIRE_COMPONENT_NAMES, which is the Kit MINUS
+   * the names the wire cannot express (KIT_WIRE_UNSAFE_NAMES — "Accordion").
+   * Every consumer downstream reads the FULL Kit instead: `prepareIslands`
+   * rejects the name (KIT_COMPONENT_NAMES) and the tree renderer hard-fails the
+   * whole payload ("generated component shadows a Kit component name"). So a
+   * wire the compiler calls clean cannot render at all. The stricter set is the
+   * right one — a Kit name is unreachable as an island whether or not the wire
+   * can spell its props.
+   */
+  it("refuses an island named after a Kit component the WIRE cannot express (Accordion)", () => {
+    expect(KIT_COMPONENT_NAMES).toContain("Accordion");
+    expect(WIRE_COMPONENT_NAMES).not.toContain("Accordion");
+    const result = compileWire('<App><Island name="Accordion">src</Island><Badge/></App>');
+    expect(result.components).toStrictEqual({});
+    expect(codes(result)).toContain("invalid-island-name");
   });
 
   it("leaves source undefined for unknown names, with no issue", () => {
