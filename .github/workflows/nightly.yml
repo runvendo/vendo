@@ -169,6 +169,19 @@ jobs:
           pnpm --filter @vendoai/ui exec playwright install chromium
           pnpm --filter @vendoai/ui exec playwright test e2e/live-voice.spec.ts 2>&1 | tee nightly-logs/live-voice.log
 
+      # fixtures/context-e2e — the whole Shipment 1 context chain (trigger →
+      # summary → recall → hires → the shed floor → cache growth) driven through
+      # the REAL demo-bank app in Chromium against a real seat. Nightly and not
+      # per-push: every assertion costs real model calls, and several turns carry
+      # a 25k-token message. Each spec `test.skip`s itself without a plausible
+      # ANTHROPIC_API_KEY, so an empty secret skips rather than fails.
+      - name: Whole-chain context proof on Maple (browser)
+        id: context_e2e
+        continue-on-error: true
+        run: |
+          pnpm --filter @vendoai-fixtures/context-e2e exec playwright install --with-deps chromium
+          pnpm --filter @vendoai-fixtures/context-e2e test:browser 2>&1 | tee nightly-logs/context-e2e.log
+
       - name: Install Claude Code for live MCP door
         run: npm install --global @anthropic-ai/claude-code@2.1.209
 
@@ -231,10 +244,11 @@ jobs:
           CLOUD_SANDBOX: ${{ steps.cloud_sandbox.outcome }}
           JUDGE_LIVE: ${{ steps.judge_live.outcome }}
           LIVE_VOICE: ${{ steps.live_voice.outcome }}
+          CONTEXT_E2E: ${{ steps.context_e2e.outcome }}
           LIVE_CLAUDE: ${{ steps.live_claude.outcome }}
         run: |
           failed=0
-          for leg in AGENT_PROVIDERS PROVIDER_MATRIX_GUARD LIVE_AGENTIC LIVE_E2B LIVE_EGRESS CLOUD_SANDBOX JUDGE_LIVE LIVE_VOICE LIVE_CLAUDE; do
+          for leg in AGENT_PROVIDERS PROVIDER_MATRIX_GUARD LIVE_AGENTIC LIVE_E2B LIVE_EGRESS CLOUD_SANDBOX JUDGE_LIVE LIVE_VOICE CONTEXT_E2E LIVE_CLAUDE; do
             eval "outcome=\$$leg"
             if [ "$outcome" != "success" ]; then
               echo "::error title=Nightly live leg failed::$leg finished with outcome '$outcome'; inspect the uploaded logs."

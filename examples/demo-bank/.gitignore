@@ -44,3 +44,8 @@ next-env.d.ts
 # local Vendo store
 /.vendo/data/
 voice-e2e/
+
+# fixtures/context-e2e boots its own dev server. A SIBLING of /.next/, never a
+# child: `next build` wipes its whole distDir, so a fixture's dist dir nested
+# under the build's would be deleted out from under a concurrent run.
+/.next-context-e2e/
