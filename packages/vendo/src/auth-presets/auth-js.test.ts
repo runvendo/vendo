@@ -110,6 +110,50 @@ describe("authJs() zero-argument standard case", () => {
     await expect(preset.principal(withCookie(await sessionCookie("user_env"))))
       .rejects.toThrow(/AUTH_SECRET/);
   });
+
+  it("resolves cookie-less requests to null without touching the secret or @auth/core (#872)", async () => {
+    // A misconfigured preset must not take down anonymous traffic: with no
+    // Auth.js session cookie there is no session to decode, so nothing that
+    // can throw may run.
+    vi.stubEnv("AUTH_SECRET", "");
+    const preset = authJs();
+    await expect(preset.principal(new Request("https://host.test/api/vendo/threads")))
+      .resolves.toBeNull();
+    await expect(preset.principal(withCookie("unrelated=1; theme=dark")))
+      .resolves.toBeNull();
+  });
+
+  it("reads NEXTAUTH_SECRET (next-auth v4's name) when AUTH_SECRET is absent", async () => {
+    vi.stubEnv("NEXTAUTH_SECRET", secret);
+    const preset = authJs();
+    const resolved = await preset.principal(withCookie(await sessionCookie("user_v4_name")));
+    expect(resolved).toEqual({ kind: "user", subject: "user_v4_name" });
+  });
+
+  it("prefers AUTH_SECRET over NEXTAUTH_SECRET when both are set", async () => {
+    vi.stubEnv("AUTH_SECRET", secret);
+    vi.stubEnv("NEXTAUTH_SECRET", "legacy-secret-that-must-lose");
+    const preset = authJs();
+    const resolved = await preset.principal(withCookie(await sessionCookie("user_both_names")));
+    expect(resolved).toEqual({ kind: "user", subject: "user_both_names" });
+  });
+
+  it("names next-auth v4 ONCE when it sees a v4 session cookie, and resolves it as anonymous", async () => {
+    vi.stubEnv("AUTH_SECRET", secret);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const preset = authJs();
+      const v4Cookie = "next-auth.session-token=some-v4-jwe-vendo-cannot-read";
+      await expect(preset.principal(withCookie(v4Cookie))).resolves.toBeNull();
+      await expect(preset.principal(withCookie(v4Cookie))).resolves.toBeNull();
+      const v4Warnings = warn.mock.calls.filter(([message]) =>
+        typeof message === "string" && message.includes("next-auth v4"));
+      expect(v4Warnings).toHaveLength(1);
+      expect(v4Warnings[0]![0]).toContain("Auth.js v5");
+    } finally {
+      warn.mockRestore();
+    }
+  });
 });
 
 describe("authJs() subject→user resolver overrides", () => {
