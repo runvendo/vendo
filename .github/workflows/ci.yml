@@ -131,11 +131,17 @@ jobs:
       - name: tsc (store keeps its tsc-before-test contract)
         if: steps.affected.outputs.skip != 'true' && matrix.tsc == 'true'
         run: pnpm --filter ${{ matrix.pkg }} exec tsc -p tsconfig.json
+      # --reporter=default alongside blob: with blob as the SOLE reporter a
+      # failing shard prints nothing about WHICH test failed, so a red shard
+      # is undebuggable from the log alone.
       - name: Test shard
         if: steps.affected.outputs.skip != 'true'
-        run: pnpm --filter ${{ matrix.pkg }} exec vitest run --coverage --coverage.thresholds.lines=0 --reporter=blob --shard=${{ matrix.shard }}
+        run: pnpm --filter ${{ matrix.pkg }} exec vitest run --coverage --coverage.thresholds.lines=0 --reporter=default --reporter=blob --shard=${{ matrix.shard }}
+      # always(): a failed shard must still upload its blob, or coverage-merge
+      # merges a hole and reports a phantom coverage drop on top of the real
+      # failure.
       - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4
-        if: steps.affected.outputs.skip != 'true'
+        if: always() && steps.affected.outputs.skip != 'true'
         with:
           name: blob-${{ matrix.name }}
           path: ${{ matrix.dir }}/.vitest-reports/
