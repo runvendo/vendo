@@ -28,10 +28,10 @@ export interface VendoContextValue {
    * saved to the host surface until the user invokes it.
    */
   onPin?(app: { appId: string; payload: unknown }): void;
-  /** Which VendoSlot a pin lands in — the pin ceremony's destination. Only
-   *  needed by hosts mounting SEVERAL slots: with one, the ceremony finds it,
-   *  and with none there is nothing to fly to. Presentation only; the pin
-   *  itself is whatever `onPin` writes. */
+  /** Which VendoSlot a pin lands in. Set it and a pin becomes REAL: the pin
+   *  action places the app in this slot through the wire (`apps.place`) and
+   *  the slot picks it up on its own — a host needs no pin route of its own.
+   *  Unset, a pin is presentation plus whatever `onPin` chooses to do. */
   pinSlot?: string;
   /** Optional host-supplied friendly tool metadata, keyed by tool name/id
       (ENG-216 humanization seam — additive, UI-side, no wire/contract change). */

@@ -4,7 +4,6 @@
 // poll happened to fire. Now the panel dismisses first, a ghost of the card
 // flies into the slot (300ms) and the slot settles with a pulse (180ms), and
 // the slot re-reads on the pin itself instead of waiting for a tick.
-import type { AppDocument } from "@vendoai/core";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
@@ -302,19 +301,6 @@ describe("the pin ceremony (Keystone graduates B8)", () => {
   });
 });
 
-const pinnedApp: AppDocument = {
-  format: "vendo/app@1",
-  id: "app_1",
-  name: "Invoices",
-  ui: "tree",
-  tree: {
-    formatVersion: "vendo-genui/v2",
-    root: "root",
-    nodes: [{ id: "root", component: "Text", props: { text: "Invoices app surface" } }],
-  },
-  placements: ["hero"],
-};
-
 describe("the slot refreshes on the pin, not on the next poll tick", () => {
   let wire: Awaited<ReturnType<typeof createWireServer>>;
   let client: VendoClient;
@@ -335,11 +321,12 @@ describe("the slot refreshes on the pin, not on the next poll tick", () => {
     return pin ? <button type="button" onClick={() => pin({ appId: "app_1", payload: {} })}>Pin</button> : null;
   }
 
-  it("shows the pinned app immediately instead of waiting out the 5s poll", async () => {
-    const list = vi.spyOn(client.apps, "list").mockResolvedValue([]);
-    const onPin = vi.fn(async () => {
-      list.mockResolvedValue([pinnedApp]);
-    });
+  it("writes the placement itself, then announces — the slot fills without waiting out the poll", async () => {
+    // Both spies call THROUGH to the fixture wire: the write and the read back
+    // are the real ones, which is the only way this proves anything.
+    const place = vi.spyOn(client.apps, "place");
+    const placements = vi.spyOn(client.apps, "placements");
+    const onPin = vi.fn();
 
     render(
       <VendoProvider client={client} onPin={onPin} pinSlot="hero">
@@ -347,16 +334,28 @@ describe("the slot refreshes on the pin, not on the next poll tick", () => {
         <PinButton />
       </VendoProvider>,
     );
-    await waitFor(() => expect(list).toHaveBeenCalled());
+    // The slot is polling (and empty) before the pin.
+    await waitFor(() => expect(placements).toHaveBeenCalled());
 
     fireEvent.click(screen.getByRole("button", { name: "Pin" }));
 
-    expect(onPin).toHaveBeenCalledWith({ appId: "app_1", payload: {} });
+    await waitFor(() => expect(place).toHaveBeenCalledWith("app_1", "hero"));
+    // The host seam still fires — after the write, never instead of it.
+    await waitFor(() => expect(onPin).toHaveBeenCalledWith({ appId: "app_1", payload: {} }));
     // The default poll is 5000ms; this has to land long before that.
-    expect(await screen.findByText("Invoices app surface", undefined, { timeout: 1500 })).toBeTruthy();
+    expect(await screen.findByText("Invoices app surface", undefined, { timeout: 2500 })).toBeTruthy();
   });
 
-  it("hides the affordance when the host wired no onPin", () => {
+  it("offers the affordance on a host that wired a pinSlot and no onPin at all", async () => {
+    const place = vi.spyOn(client.apps, "place");
+    render(
+      <VendoProvider client={client} pinSlot="hero"><PinButton /></VendoProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Pin" }));
+    await waitFor(() => expect(place).toHaveBeenCalledWith("app_1", "hero"));
+  });
+
+  it("hides the affordance when the host wired neither onPin nor a pinSlot", () => {
     render(<VendoProvider client={client}><PinButton /></VendoProvider>);
     expect(screen.queryByRole("button", { name: "Pin" })).toBeNull();
   });
