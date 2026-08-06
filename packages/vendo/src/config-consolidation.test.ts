@@ -97,6 +97,30 @@ describe("the `tools` slot (§10) — the host's own declared tools", () => {
     expect(names).not.toContain("host_from_profile");
     expect(lines.join("\n")).toContain("profile.tools");
   });
+
+  it("an EXECUTABLE-only `tools:` contributes its tool without erasing the declarations", async () => {
+    // The two shapes share one key, and only the declaration half feeds `.vendo`
+    // semantics. Filtering it to an empty list and calling that "the host set
+    // the slot" silently deleted every declared host tool — and blinded the boot
+    // collision gate, which then read no tools.json and passed everything.
+    const vendo = createVendo({
+      model: {} as LanguageModel,
+      principal: async () => principal,
+      store: await tempStore(),
+      tools: [{
+        name: "check_report",
+        description: "Check one compliance report.",
+        inputSchema: { type: "object", properties: {} },
+        risk: "read" as const,
+        execute: async () => ({ status: "clean" }),
+      }],
+      profile: { tools: [hostTool("host_invoices_list")] },
+    });
+
+    const names = (await vendo.actions.descriptors()).map((descriptor) => descriptor.name);
+    expect(names).toContain("check_report");
+    expect(names).toContain("host_invoices_list");
+  });
 });
 
 describe("deprecation shims — one minor of grace, and a warning that names the move", () => {

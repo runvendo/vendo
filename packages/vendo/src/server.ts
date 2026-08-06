@@ -1277,9 +1277,15 @@ function hostToolNames(config: CreateVendoConfig): string[] {
  * who adds the documented slot expects it to take effect.
  */
 function selectHostTools(config: CreateVendoConfig): ExtractedTool[] | undefined {
-  // The key that was passed wins, exactly as before; the executable entries are
-  // simply not declarations and take no part in `.vendo` semantics.
-  return config.tools === undefined ? config.profile?.tools : config.tools.filter(isDeclaration);
+  if (config.tools === undefined) return config.profile?.tools;
+  const declared = config.tools.filter(isDeclaration);
+  // A `tools:` carrying ONLY executables did not supply a declaration list, so
+  // it must not shadow `profile.tools` or the `tools.json` read with an empty
+  // set — that silently erased every host tool AND blinded the boot collision
+  // gate, which then read no file and passed everything. An explicitly empty
+  // `tools: []` still means "no host tools", exactly as it always did.
+  if (declared.length === 0 && config.tools.length > 0) return config.profile?.tools;
+  return declared;
 }
 
 /** The two shapes `tools:` accepts, told apart by the one thing only an
