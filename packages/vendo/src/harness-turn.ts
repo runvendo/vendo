@@ -401,6 +401,13 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       validateUpsert(thread.messages, input.message);
       upsertMessage(thread.messages, input.message);
 
+      // Before the FIRST write, not after it. `threads.persist` goes through the
+      // adapter seam and so succeeds even on a store that can keep neither the
+      // transcript nor the workspace — so resolving the doors any later makes the
+      // refusal a half-write, leaving a `vendo_threads` row carrying the user's
+      // message on a deployment that can never answer it.
+      const { transcript, workspaces, harnessState } = sqlDoors();
+
       // The thread ROW has to exist before the runtime writes message rows:
       // `threadMessageStore.upsert` sources its INSERT from `vendo_threads`
       // joined on the subject, so a missing row is refused rather than created.
@@ -435,7 +442,6 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
         return played;
       }
 
-      const { transcript, workspaces, harnessState } = sqlDoors();
       // §9.7 — the turn's façade mounts every org the wire asserted for this
       // request, so an agent turn can read and write the team's files at all.
       const workspace = await workspaces.open(input.ctx.principal, {
