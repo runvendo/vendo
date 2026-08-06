@@ -58,27 +58,35 @@ pass instead of guessing a layout.
   <Step title="Load your docs in the console">
     Open [console.vendo.run](https://console.vendo.run) and go to the Knowledge
     tab. **Upload files** takes documents straight off your machine. **Crawl a
-    URL** points the crawler at a docs site you already publish. Either way the
-    tab reports the indexed document count when the run finishes, which is how
-    you know the corpus is searchable.
+    URL** points the crawler at a docs site you already publish.
+
+    Indexing is not instant, and the page does not spin while it runs. Right
+    after an upload the tab still reads "0 documents indexed" and the source
+    shows "—". Wait a few seconds and refresh; the count then flips to the real
+    number, which is how you know the corpus is searchable.
   </Step>
 
-  <Step title="Ask the agent a question">
-    Start your dev server, open the launcher, and ask something your docs
-    answer — "how do refunds work?" rather than a request to do something.
+  <Step title="See it answer in the Playground">
+    Still in the Knowledge tab, open **Playground** and type a question your
+    docs answer — "How long do card refunds take?" rather than a request to do
+    something. The result shows whether the answer clears the evidence bar and
+    which document it cites, with a match score like 0.73.
 
-    The answer arrives with a **Sources** row under it: one chip per cited
-    document, each opening the snippet plus its origin byline (source, kind,
-    and visibility). The row renders once the turn finishes streaming, and it
-    is built from the citation data the tool returned, never parsed out of the
-    model's prose.
+    Read it like this: a higher score is a stronger match; the passage marked
+    **Would answer** is the one the agent answers from; a passage marked
+    **Below the bar — retrieved, not cited** was found but not used.
+
+    The Playground proves the corpus without touching your app. In your own
+    app the same `vendo_knowledge_search` tool runs automatically, and the
+    answer arrives with a **Sources** row under it — one chip per cited
+    document, each opening the snippet it came from.
   </Step>
 </Steps>
 
 ## Docs in your repo? Keep them synced
 
 If your documentation lives next to your code, push it from the repo instead
-of uploading it by hand.
+of uploading it by hand. Syncing to Vendo Cloud needs vendo 1.0.0+.
 
 ```bash
 npx vendo knowledge add "docs/**/*.md"
