@@ -7,7 +7,7 @@
     {
       "name": "vendo",
       "source": "./examples/claude-code-plugin",
-      "description": "Connect Claude Code to a product running Vendo: guarded host tools, and `vendo_make` for putting a screen in front of the user."
+      "description": "Connect Claude Code to a product running Vendo: guarded host tools, and `vendo_make` for putting a screen in front of the user — in their apps list, or in a slot on their own page."
     }
   ]
 }

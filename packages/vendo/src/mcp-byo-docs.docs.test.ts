@@ -153,3 +153,30 @@ describe("the plugin skill teaches slot targeting and pin etiquette", () => {
     expect(text).toMatch(/replace|evict/i);
   });
 });
+
+describe("the plugin's own surfaces point at the walkthrough", () => {
+  const DOCS_URL = "https://docs.vendo.run/existing-agents/mcp";
+
+  it("the README covers placement and links the page", async () => {
+    const text = await read("examples/claude-code-plugin/README.md");
+    expect(text).toContain("vendo_apps_pin");
+    expect(text).toContain(DOCS_URL);
+  });
+
+  it("the plugin manifest homepages the walkthrough", async () => {
+    const manifest = await readJson<{ homepage: string; description: string }>(
+      "examples/claude-code-plugin/.claude-plugin/plugin.json",
+    );
+    expect(manifest.homepage).toBe(DOCS_URL);
+    expect(manifest.description).toMatch(/screen/i);
+  });
+
+  it("the marketplace entry says where the screen can land", async () => {
+    const marketplace = await readJson<{ plugins: { name: string; description: string }[] }>(
+      ".claude-plugin/marketplace.json",
+    );
+    const entry = marketplace.plugins.find((plugin) => plugin.name === "vendo");
+    expect(entry, "the vendo plugin must be listed").toBeDefined();
+    expect(entry?.description).toMatch(/slot/i);
+  });
+});
