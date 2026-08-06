@@ -201,7 +201,7 @@ describe("the seven fact checks all reach the seam", () => {
     {
       check: "components-exist",
       why: "a prop name the renderer silently drops — the valid-table-empty-rows class",
-      wire: app(`<Stack><Table data={spend.rows} /></Stack>`),
+      wire: app(`<Stack><DataTable data={spend.rows} /></Stack>`),
     },
     {
       check: "bindings-fit",

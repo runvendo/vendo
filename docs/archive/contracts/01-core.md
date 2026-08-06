@@ -7,7 +7,7 @@ Status: FROZEN (wave-2 gate passed by Yousef, 2026-07-11). Changes now require a
 
 Everything below is exported from the package root unless noted. Core has one additional entry point: `@vendoai/core/conformance`, which exports the contract-conformance kits and `memoryStoreAdapter` for tests. That subpath is explicitly test-infrastructure behavior and is exempt from the root's "no behavior" rule; the package root remains governed by it. Every type ships a matching zod schema (`<camelCaseName>Schema`) unless marked *type-only*.
 
-The stable root utility surface also includes `canonicalJson`, `sha256Hex`, `safeErrorMessage`, `TOOL_NAME_PATTERN`, the `TREE_MAX_*` constants, `RESERVED_COMPONENT_NAMES`, and `PathBinding` / `StateBinding` with their guards. These are contract utilities shared by sibling blocks, not deep-import implementation details.
+The stable root utility surface also includes `canonicalJson`, `sha256Hex`, `safeErrorMessage`, `TOOL_NAME_PATTERN`, the `TREE_MAX_*` constants, `KIT_COMPONENT_NAMES` / `KIT_WIRE_COMPONENT_NAMES` (the built-in component vocabulary), and `PathBinding` / `StateBinding` with their guards. These are contract utilities shared by sibling blocks, not deep-import implementation details.
 
 ## 1. Formats, ids, time
 
@@ -270,7 +270,7 @@ export function isStateBinding(value: unknown): value is StateBinding;
 
 **`fn:` references** (v0 addition, Yousef-approved): anywhere a tree names a callable — `TreeQuery.tool` or an action name — the form `fn:<name>` (`<name>` matching `/^[A-Za-z_][A-Za-z0-9_-]*$/`) targets a function of the app's own machine instead of a tool. Resolution: `POST /fn/<name>` on the app's server (06 §4). Trees without a machine must not contain `fn:` references (validation error).
 
-**Limits and reserved names** (pinned): max 5000 nodes, 16 queries, 16 generated components, 64 KB per component source / 256 KB total; generated component names are PascalCase and may not shadow the prewired primitives (`Stack`, `Row`, `Grid`, `Text`, `Skeleton`, `Surface`, `Divider`).
+**Limits and reserved names** (pinned): max 5000 nodes, 16 queries, 16 generated components, 64 KB per component source / 256 KB total; generated component names are PascalCase and may not shadow a built-in component. The built-ins are the Kit — one component family, declared by `KIT_SPECS` and listed by `KIT_COMPONENT_NAMES`, so the reserved set follows the Kit rather than a separate hand-kept list. `Table` and `Skeleton` are not among them: `DataTable` is the table, and a loading placeholder is renderer chrome, not a component a tree names.
 
 Core deliberately does not bound the size of `Tree.data` or `TreeNode.props`. Hosts must enforce request-body limits before tree validation; the core DoS conformance test records this delegation.
 

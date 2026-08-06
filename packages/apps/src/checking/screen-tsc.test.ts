@@ -67,11 +67,14 @@ describe("screenTscFindings", () => {
   });
 
   it("names an unknown prop and lists the ones the component really reads", () => {
-    const findings = check('<App name="x"><Table data={invoices.data}/></App>;');
-    expect(findings).toHaveLength(1);
-    expect(findings[0]?.where).toBe('<Table> prop "data"');
-    expect(findings[0]?.message).toContain('sets unknown prop "data"');
-    expect(findings[0]?.message).toContain("rows");
+    const findings = check('<App name="x"><DataTable data={invoices.data}/></App>;');
+    // Two, since V4: the unknown prop, AND the required `rows` it displaced.
+    // (The retired Table's `rows` was optional, so this used to be one.)
+    expect(findings.map((finding) => finding.where)).toContain('<DataTable> prop "data"');
+    const unknownProp = findings.find((finding) => finding.where === '<DataTable> prop "data"');
+    expect(unknownProp?.message).toContain('sets unknown prop "data"');
+    expect(unknownProp?.message).toContain("rows");
+    expect(findings.map((finding) => finding.message).join(" ")).toContain('missing required prop "rows"');
   });
 
   it("names a missing required prop", () => {

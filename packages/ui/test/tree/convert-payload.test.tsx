@@ -48,7 +48,7 @@ describe("vendo-genui/v2 renderer registration", () => {
     expect(screen.queryByRole("note", { name: /unsupported ui format/i })).toBeNull();
   });
 
-  it("renders the prewired primitives from a v2 tree", () => {
+  it("renders the built-in Kit components from a v2 tree", () => {
     render(
       <PayloadView
         payload={treePayload([
@@ -64,9 +64,9 @@ describe("vendo-genui/v2 renderer registration", () => {
       />,
     );
 
-    expect(screen.getByText("v2 heading").getAttribute("data-primitive")).toBe("Text");
+    expect(screen.getByText("v2 heading").getAttribute("data-kit")).toBe("Text");
     for (const name of ["Stack", "Row", "Grid", "Surface", "Divider"]) {
-      expect(document.querySelector(`[data-primitive="${name}"]`)).not.toBeNull();
+      expect(document.querySelector(`[data-kit="${name}"]`)).not.toBeNull();
     }
   });
 
@@ -174,7 +174,7 @@ describe("vendo-genui/v2 actions", () => {
 });
 
 describe("vendo-genui/v2 component source resolution", () => {
-  it("renders the HOST implementation when source is explicitly host, even over a prewired name", () => {
+  it("renders the HOST implementation when source is explicitly host, even over a built-in name", () => {
     const Card: ComponentType<{ title?: string }> = ({ title }) => <article>Host card: {title}</article>;
     render(
       <PayloadView
@@ -187,23 +187,23 @@ describe("vendo-genui/v2 component source resolution", () => {
     );
 
     expect(screen.getByText("Host card: brand wins")).toBeTruthy();
-    expect(document.querySelector('[data-primitive="Card"]')).toBeNull();
+    expect(document.querySelector('[data-kit="Card"]')).toBeNull();
   });
 
-  it("still prefers the primitive for an undefined-source name collision (v1 parity)", () => {
+  it("still prefers the built-in for an undefined-source name collision (v1 parity)", () => {
     const Card: ComponentType<{ title?: string }> = ({ title }) => <article>Host card: {title}</article>;
     render(
       <PayloadView
         payload={treePayload([
-          { id: "card-1", component: "Card", props: { title: "primitive wins" } },
+          { id: "card-1", component: "Card", props: { title: "built-in wins" } },
         ])}
         components={{ Card }}
         onAction={ok}
       />,
     );
 
-    expect(document.querySelector('[data-primitive="Card"]')).not.toBeNull();
-    expect(screen.queryByText("Host card: primitive wins")).toBeNull();
+    expect(document.querySelector('[data-kit="Card"]')).not.toBeNull();
+    expect(screen.queryByText("Host card: built-in wins")).toBeNull();
   });
 
   it("mounts a generated island in the jail with its payload-carried source", () => {
@@ -223,22 +223,22 @@ describe("vendo-genui/v2 component source resolution", () => {
 });
 
 describe("v1 walk regression", () => {
-  it("keeps preferring the primitive for undefined-source v1 nodes that collide with host names", () => {
+  it("keeps preferring the built-in for undefined-source v1 nodes that collide with host names", () => {
     const Card: ComponentType<{ title?: string }> = ({ title }) => <article>Host card: {title}</article>;
     render(
       <TreeView
         tree={{
           formatVersion: "vendo-genui/v2",
           root: "root",
-          nodes: [{ id: "root", component: "Card", props: { title: "still primitive" } }],
+          nodes: [{ id: "root", component: "Card", props: { title: "still built-in" } }],
         }}
         components={{ Card }}
         onAction={ok}
       />,
     );
 
-    expect(document.querySelector('[data-primitive="Card"]')).not.toBeNull();
-    expect(screen.queryByText("Host card: still primitive")).toBeNull();
+    expect(document.querySelector('[data-kit="Card"]')).not.toBeNull();
+    expect(screen.queryByText("Host card: still built-in")).toBeNull();
   });
 });
 
@@ -292,7 +292,7 @@ describe("v2 reshape bindings at render", () => {
     );
     const notice = screen.getByRole("note", { name: "Data shape" });
     expect(notice.textContent).toContain("period");
-    expect(document.querySelector('[data-primitive="Text"]')).toBeNull();
+    expect(document.querySelector('[data-kit="Text"]')).toBeNull();
   });
 
   it("a mis-bound container's notice replaces the component only, never its valid children", () => {

@@ -54,10 +54,10 @@ const documentFrom = (wire: string): AppDocument => {
   } as AppDocument;
 };
 
-const GOOD = '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack gap={12}><Text text="Invoices" variant="heading"/><Table rows={invoices.data}/></Stack></App>';
+const GOOD = '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack gap={12}><Text text="Invoices" variant="heading"/><DataTable rows={invoices.data}/></Stack></App>';
 
 /** A deliberately bad app: it names a tool the host does not have. */
-const BAD = '<App name="Invoices"><Query id="invoices" tool="host_wireMoney"/><Stack><Table rows={invoices.data}/></Stack></App>';
+const BAD = '<App name="Invoices"><Query id="invoices" tool="host_wireMoney"/><Stack><DataTable rows={invoices.data}/></Stack></App>';
 
 const inputFor = (wire: string, request = "show me my invoices"): CheckInput =>
   ({ document: documentFrom(wire), request });

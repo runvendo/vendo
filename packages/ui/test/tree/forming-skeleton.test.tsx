@@ -32,21 +32,21 @@ describe("FormingSkeleton", () => {
     render(<FormingSkeleton name="RenewalList" />);
     const shape = document.querySelector('[data-form-shape="rows"]');
     expect(shape).not.toBeNull();
-    expect(shape!.querySelectorAll('[data-primitive="Skeleton"]').length).toBe(3);
+    expect(shape!.querySelectorAll('[data-skeleton]').length).toBe(3);
   });
 
   it("renders a tiles silhouette as a three-up shimmer band", () => {
     render(<FormingSkeleton name="RenewalHero" />);
     const shape = document.querySelector('[data-form-shape="tiles"]');
     expect(shape).not.toBeNull();
-    expect(shape!.querySelectorAll('[data-primitive="Skeleton"]').length).toBe(3);
+    expect(shape!.querySelectorAll('[data-skeleton]').length).toBe(3);
   });
 
   it("falls back to one 72px slab for unrecognized names", () => {
     render(<FormingSkeleton name="RevenueCard" />);
     const shape = document.querySelector('[data-form-shape="slab"]');
     expect(shape).not.toBeNull();
-    expect(shape!.querySelectorAll('[data-primitive="Skeleton"]').length).toBe(1);
+    expect(shape!.querySelectorAll('[data-skeleton]').length).toBe(1);
   });
 });
 
@@ -84,6 +84,6 @@ describe("TreeView streaming placeholders (pick A)", () => {
         onAction={ok}
       />,
     );
-    expect(document.querySelector('[data-dangling-node="mystery"] [data-primitive="Skeleton"]')).not.toBeNull();
+    expect(document.querySelector('[data-dangling-node="mystery"] [data-skeleton]')).not.toBeNull();
   });
 });

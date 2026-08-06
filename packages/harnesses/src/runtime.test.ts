@@ -542,7 +542,7 @@ describe("the render seam is wired into the turn's workspace (§1.6)", () => {
         yield { type: "status", label: "Sketching the layout" };
         await turn.workspace.writeFile(
           "/user/apps/app_7/plan.vendo",
-          `<Plan name="Invoices"><Group title="Unpaid"><Leaf component="Table" /></Group></Plan>`,
+          `<Plan name="Invoices"><Group title="Unpaid"><Leaf component="DataTable" /></Group></Plan>`,
         );
       },
     });
@@ -566,7 +566,7 @@ describe("the render seam is wired into the turn's workspace (§1.6)", () => {
 });
 
 describe("write = commit for in-process hands (§3.5 + the commit-cadence seam)", () => {
-  const PLAN = `<Plan name="Invoices"><Group title="Unpaid"><Leaf component="Table" /></Group></Plan>`;
+  const PLAN = `<Plan name="Invoices"><Group title="Unpaid"><Leaf component="DataTable" /></Group></Plan>`;
 
   it("a workspace tool edit lands on its own call, not at turn end", async () => {
     const workspace = testWorkspace();

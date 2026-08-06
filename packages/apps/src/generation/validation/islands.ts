@@ -6,8 +6,7 @@
  * supplied one).
  */
 import {
-  KIT_WIRE_COMPONENT_NAMES,
-  RESERVED_COMPONENT_NAMES,
+  KIT_COMPONENT_NAMES,
   WIRE_COMPONENT_NAMES,
   ISLAND_AMBIENT_KIT_NAMES,
   ISLAND_STRIPPED_SPECIFIERS,
@@ -121,7 +120,6 @@ const KIT_VOCABULARY: ReadonlyArray<readonly [RegExp, string]> = [
   [/table|datagrid/i, "DataTable"],
   [/stat|metric|kpi|tile/i, "Stat"],
   [/callout|banner|alert|notice/i, "Callout"],
-  [/card|panel|surface/i, "Surface"],
   [/list|feed/i, "CardList"],
   [/money|amount|currency|price/i, "Money"],
   [/date|time/i, "DateTime"],
@@ -194,12 +192,11 @@ export const prepareIslands = async (
   const components: Record<string, string> = {};
   const componentTools: Record<string, string[]> = {};
   const knownTools = tools === undefined ? undefined : new Set(tools.map((tool) => tool.name));
-  // Host catalog + tree-resolvable components (prewired AND branded — a
-  // non-ambient <Table>/<Card> dies exactly like <Skeleton>) render in the
-  // HOST page — they can never cross into the opaque-origin jail, so an
-  // island JSX tag naming one is a guaranteed ReferenceError (live example:
-  // <MapleSpendingDonut/>). Names the ambient Kit also provides are fine —
-  // the Kit version renders.
+  // Host catalog components render in the HOST page — they can never cross
+  // into the opaque-origin jail, so an island JSX tag naming one is a
+  // guaranteed ReferenceError (live example: <MapleSpendingDonut/>). V4 made
+  // the built-in vocabulary a subset of the ambient Kit, so the built-ins
+  // filter out below and only host names remain host-only.
   const ambientNames = new Set<string>(ISLAND_AMBIENT_KIT_NAMES);
   const hostOnlyNames = [...new Set([...hostComponents, ...WIRE_COMPONENT_NAMES])]
     .filter((componentName) => !ambientNames.has(componentName));
@@ -208,8 +205,7 @@ export const prepareIslands = async (
   // dead weight. Reject the name itself → repair to a distinct one.
   const unreachableIslandNames = new Set<string>([
     ...hostComponents,
-    ...RESERVED_COMPONENT_NAMES,
-    ...KIT_WIRE_COMPONENT_NAMES,
+    ...KIT_COMPONENT_NAMES,
   ]);
   let transform = await esbuildTransform;
   for (const [name, rawSource] of Object.entries(rawComponents)) {

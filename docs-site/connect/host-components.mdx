@@ -484,21 +484,32 @@ export interface RegisteredComponent {
 export type ComponentCatalog = ReadonlyArray<RegisteredComponent>;
 ```
 
-### Prewired primitives
+### Built-in components
 
-The prewired primitives are `Stack`, `Row`, `Grid`, `Text`, `Skeleton`,
-`Surface`, `Divider`, `Card`, `Button`, `Input`, `Select`, `Table`, `Badge`,
-`Stat`, and `Tabs`. Catalog entries and generated components cannot shadow
-them. All prewired primitives read the same [theme tokens](/connect/theming)
-so they pick up your brand's colors, radii, density, and motion without extra
-wiring.
+Vendo ships one component family: the Kit. Layout is `Stack`, `Row`, `Grid`,
+`Surface`, `Card`, and `Divider`; values are `Text`, `Money`, `DateTime`,
+`Percent`, `Num`, and `EnumBadge`; data is `DataTable`, `CardList`, `Stat`,
+and `Badge`; charts are `LineChart`, `BarChart`, `DonutChart`, `Sparkline`,
+and `Progress`; forms and actions are `Input`, `Select`, `DatePicker`,
+`Textarea`, `Checkbox`, `Button`, `Form`, and `Disclaimer`; feedback is
+`Tabs`, `Callout`, and `Accordion`. Catalog entries and generated components
+cannot shadow them. Every one reads the same
+[theme tokens](/connect/theming), so they pick up your brand's colors, radii,
+density, and motion without extra wiring.
 
-`Card`, `Button`, `Badge`, `Stat`, `Table`, and `Tabs` are display and action
-surfaces: interactive controls invoke bound zero-arg action callbacks.
-`Input` and `Select` accept typed input locally, but under the current
-zero-arg binding contract they cannot round-trip a typed value back through
-a bound action. Treat them as display plus local input, not as form fields
-wired to server state.
+Two names people look for are deliberately absent. `DataTable` is the only
+table — it sorts, filters, searches, paginates, resolves dot-path column keys,
+and formats each cell, so there is no plain `Table` to reach for. And there is
+no `Skeleton`: a loading placeholder is chrome the renderer paints while an
+app streams in, not something an app names.
+
+`Card`, `Badge`, `Stat`, `DataTable`, and `Tabs` are display surfaces;
+`Tabs` manages its own selection, so switching a tab never makes a round trip.
+`Button` and `Form` are the action surfaces: an `on*` prop names a host tool,
+which is the only way generated UI mutates anything. `Input` and `Select`
+accept typed input locally, but under the current zero-arg binding contract
+they cannot round-trip a typed value back through a bound action. Treat them
+as display plus local input, not as form fields wired to server state.
 
 ### Remix capture rules
 

@@ -88,7 +88,7 @@ type SlotCheck =
    *  null means every row field shows (the renderer's default). */
   | { kind: "cells"; displayed: ReadonlySet<string> | null };
 
-/** The column keys of a fully-literal Table `columns` prop; null when the
+/** The column keys of a fully-literal DataTable `columns` prop; null when the
  *  prop is absent or carries bindings/unknown forms — then the renderer
  *  falls back to showing every row field, and so does the check. */
 const literalColumnKeys = (columns: unknown): ReadonlySet<string> | null => {
@@ -125,7 +125,7 @@ const slotFor = (node: TreeNode, prop: string): SlotCheck | null => {
     return { kind: "options", required, hint: "bind rows that carry those fields, or write literal {value, label} items" };
   }
   if (DISPLAY_TEXT_PROPS.get(node.component)?.has(prop) === true) return { kind: "display", prop };
-  if (node.component === "Table" && prop === "rows") {
+  if (node.component === "DataTable" && prop === "rows") {
     const columns = node.props?.columns;
     // An ABSENT columns prop means the renderer shows every row field (its
     // default), so every field is checked; a PRESENT but non-literal columns
@@ -152,8 +152,10 @@ const displaySlotMiss = (shape: ShapeType, prop: string): MissReport | null => {
   };
 };
 
-/** Object/array-valued DISPLAYED columns in Table rows render raw JSON
- *  braces per cell (`{"received":3,"total":6}` — the final-gate class). */
+/** Object/array-valued DISPLAYED columns in DataTable rows render raw JSON
+ *  braces per cell (`{"received":3,"total":6}` — the final-gate class). V4
+ *  retargeted this from the retired `Table` primitive onto DataTable, which is
+ *  now the only table: the check's own repair advice already pointed here. */
 const cellsMiss = (shape: ShapeType, displayed: ReadonlySet<string> | null): MissReport | null => {
   if (shape.kind !== "array" || shape.items.kind !== "object") return null;
   const fields = shape.items.fields;
@@ -168,7 +170,7 @@ const cellsMiss = (shape: ShapeType, displayed: ReadonlySet<string> | null): Mis
     return `{key:"${field}${sub === undefined ? "" : `.${sub}`}"}`;
   });
   return {
-    message: `these rows carry object-valued column(s) ${offenders.map(([field]) => `"${field}"`).join(", ")} — a Table cell renders an object as raw JSON braces; use the Kit <DataTable> with dot-path column keys reaching the nested scalars (e.g. columns={[${hints.join(", ")}]}) or list only scalar keys in columns`,
+    message: `these rows carry object-valued column(s) ${offenders.map(([field]) => `"${field}"`).join(", ")} — a table cell renders an object as raw JSON braces; DataTable resolves dot-path column keys, so reach the nested scalars (e.g. columns={[${hints.join(", ")}]}) or list only scalar keys in columns`,
     available: Object.keys(fields),
   };
 };

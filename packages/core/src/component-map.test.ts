@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { componentMapError } from "./component-map.js";
+import { KIT_COMPONENT_NAMES } from "./kit/specs.js";
 import {
-  RESERVED_COMPONENT_NAMES,
   TREE_MAX_COMPONENT_SOURCE_CHARS,
   TREE_MAX_COMPONENT_SOURCE_BYTES,
   TREE_MAX_GENERATED_COMPONENTS,
@@ -15,7 +15,7 @@ import {
 describe("componentMapError", () => {
   it("accepts an empty map and a well-formed PascalCase map", () => {
     expect(componentMapError({})).toBeNull();
-    expect(componentMapError({ Card: "export default () => null", PriceTag: "const x = 1" })).toBeNull();
+    expect(componentMapError({ RevenueNote: "export default () => null", PriceTag: "const x = 1" })).toBeNull();
   });
 
   it("rejects more than the pinned max number of components", () => {
@@ -37,27 +37,30 @@ describe("componentMapError", () => {
     expect(componentMapError({ "1Card": "x" })).toContain("PascalCase");
   });
 
-  it("rejects reserved (prewired primitive) names", () => {
-    const reserved = RESERVED_COMPONENT_NAMES[0];
-    expect(reserved).toBeTruthy();
-    expect(componentMapError({ [reserved]: "x" })).toBe(
-      `generated component name "${reserved}" is reserved (prewired primitive)`,
-    );
+  /** V4 — one component family: the reserved set is the whole Kit, so an
+   *  island can never shadow a built-in the renderer would resolve first. */
+  it("rejects reserved (Kit component) names", () => {
+    for (const reserved of ["Stack", "DataTable", "Card", "Tabs"]) {
+      expect(KIT_COMPONENT_NAMES, `${reserved} must be a Kit name`).toContain(reserved);
+      expect(componentMapError({ [reserved]: "x" })).toBe(
+        `generated component name "${reserved}" is reserved (Kit component)`,
+      );
+    }
   });
 
   it("rejects a non-string source", () => {
-    expect(componentMapError({ Card: 42 as unknown as string })).toBe(
-      'generated component "Card" source must be a string',
+    expect(componentMapError({ PriceTag: 42 as unknown as string })).toBe(
+      'generated component "PriceTag" source must be a string',
     );
-    expect(componentMapError({ Card: { code: "x" } as unknown as string })).toContain(
+    expect(componentMapError({ PriceTag: { code: "x" } as unknown as string })).toContain(
       "source must be a string",
     );
   });
 
   it("rejects a single ASCII source over the per-component byte limit", () => {
     const tooBig = "a".repeat(TREE_MAX_COMPONENT_SOURCE_BYTES + 1);
-    expect(componentMapError({ Card: tooBig })).toBe(
-      `generated component "Card" source too large (max ${TREE_MAX_COMPONENT_SOURCE_BYTES} bytes)`,
+    expect(componentMapError({ PriceTag: tooBig })).toBe(
+      `generated component "PriceTag" source too large (max ${TREE_MAX_COMPONENT_SOURCE_BYTES} bytes)`,
     );
   });
 
@@ -81,8 +84,8 @@ describe("byte-based component caps", () => {
     // "€" is one UTF-16 code unit but three UTF-8 bytes.
     const euros = "€".repeat(Math.floor(TREE_MAX_COMPONENT_SOURCE_BYTES / 3) + 1);
     expect(euros.length).toBeLessThan(TREE_MAX_COMPONENT_SOURCE_BYTES);
-    expect(componentMapError({ Card: euros })).toBe(
-      `generated component "Card" source too large (max ${TREE_MAX_COMPONENT_SOURCE_BYTES} bytes)`,
+    expect(componentMapError({ PriceTag: euros })).toBe(
+      `generated component "PriceTag" source too large (max ${TREE_MAX_COMPONENT_SOURCE_BYTES} bytes)`,
     );
   });
 

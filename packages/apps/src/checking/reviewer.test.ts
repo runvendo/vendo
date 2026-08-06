@@ -65,7 +65,7 @@ const inputFor = (wire: string, request = "show me my invoices"): CheckInput =>
   ({ document: documentFrom(wire), request });
 
 const invoicesApp =
-  '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack gap={12}><Text text="Total: $12,480" variant="heading"/><Table rows={invoices.data}/></Stack></App>';
+  '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack gap={12}><Text text="Total: $12,480" variant="heading"/><DataTable rows={invoices.data}/></Stack></App>';
 
 const samples = {
   invoices: { data: [{ id: "inv_1", client: "Northwind", amountCents: 990_00 }] },
@@ -79,7 +79,7 @@ const reported = (findings: unknown): { tool: string; input: unknown } =>
 const scheduledPlan = (): AppPlan => ({
   name: "Invoices",
   queries: [{ id: "invoices", tool: "host_listInvoices", input: {} }],
-  groups: [{ tab: "Overview", leaves: [{ component: "Table", query: "invoices", purpose: "open invoices" }] }],
+  groups: [{ tab: "Overview", leaves: [{ component: "DataTable", query: "invoices", purpose: "open invoices" }] }],
   server: { kind: "steps", schedule: "every Friday", why: "Chasing overdue invoices happens when nobody has the app open." },
   cannot: [],
 });
@@ -224,7 +224,7 @@ describe("the AI reviewer", () => {
     expect(text).toContain("USER_REQUEST: list my overdue invoices");
     // The app as a person sees it: id-free markup, not compiler bookkeeping.
     expect(text).toContain('<Text text="Total: $12,480"');
-    expect(text).toContain("<Table rows={invoices.data}/>");
+    expect(text).toContain("<DataTable rows={invoices.data}/>");
     expect(text).not.toMatch(/id="n\d/);
     // The truth the literals are judged against.
     expect(text).toContain('invoices: {"data":[{"id":"inv_1","client":"Northwind","amountCents":99000}]}');
@@ -257,7 +257,7 @@ describe("the AI reviewer", () => {
     // A query naming a tool the host has not got: one fact finding, alongside
     // whatever the reviewer says.
     const findings = await layer.run(inputFor(
-      '<App name="Invoices"><Query id="invoices" tool="host_getInvoices"/><Stack><Table rows={invoices.data}/></Stack></App>',
+      '<App name="Invoices"><Query id="invoices" tool="host_getInvoices"/><Stack><DataTable rows={invoices.data}/></Stack></App>',
     ));
 
     expect(layer.checks.map(({ name }) => name)).toContain("reviewer");

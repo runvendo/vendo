@@ -28,7 +28,7 @@ const GOOD_APP = `<App name="Spending">
 
 const GOOD_PLAN = `<Plan name="Spending">
   <Group title="This month">
-    <Leaf component="Table" />
+    <Leaf component="DataTable" />
   </Group>
 </Plan>`;
 

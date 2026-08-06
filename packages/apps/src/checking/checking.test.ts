@@ -78,7 +78,7 @@ const inputFor = (wire: string, request = "show me my invoices"): CheckInput =>
   ({ document: documentFrom(wire), request });
 
 const cleanApp =
-  '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack gap={12}><Text text="Invoices" variant="heading"/><Table rows={invoices.data}/></Stack></App>';
+  '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack gap={12}><Text text="Invoices" variant="heading"/><DataTable rows={invoices.data}/></Stack></App>';
 
 /** Blocks every arrival until `count` of them have arrived: a check that gets
  *  past it can only have done so alongside the others. */
@@ -214,7 +214,7 @@ describe("every finding says which check produced it", () => {
   it("stamps the built-in that fired, so the two are now distinguishable", async () => {
     const layer = createCheckingLayer({ deps: deps(), checks: [hostCheck] });
     const findings = await layer.run(inputFor(
-      '<App name="Invoices"><Query id="invoices" tool="host_wireMoney"/><Stack><Table rows={invoices.data}/></Stack></App>',
+      '<App name="Invoices"><Query id="invoices" tool="host_wireMoney"/><Stack><DataTable rows={invoices.data}/></Stack></App>',
     ));
     const byCheck = new Set(findings.map(({ check }) => check));
     expect(byCheck).toContain("tools-exist");
@@ -260,7 +260,7 @@ describe("built-in fact checks", () => {
   it("names the real tools when a query names one the host does not have", async () => {
     const layer = createCheckingLayer({ deps: deps() });
     const findings = await layer.run(inputFor(
-      '<App name="Invoices"><Query id="invoices" tool="host_getInvoices"/><Stack><Table rows={invoices.data}/></Stack></App>',
+      '<App name="Invoices"><Query id="invoices" tool="host_getInvoices"/><Stack><DataTable rows={invoices.data}/></Stack></App>',
     ));
 
     const finding = findings.find(({ where }) => where === 'query "invoices"');
@@ -299,7 +299,7 @@ describe("built-in fact checks", () => {
   it("names the allowed props when a prewired component is given one it has not got", async () => {
     const layer = createCheckingLayer({ deps: deps() });
     const findings = await layer.run(inputFor(
-      '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack><Table data={invoices.data}/></Stack></App>',
+      '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack><DataTable data={invoices.data}/></Stack></App>',
     ));
 
     const finding = findings.find(({ message }) => message.includes('unknown prop "data"'));
@@ -338,7 +338,7 @@ describe("built-in fact checks", () => {
     const layer = createCheckingLayer({ deps: deps() });
     const app = documentFrom(cleanApp);
     const tree = structuredClone(app.tree) as NonNullable<AppDocument["tree"]>;
-    const table = tree.nodes.find((node) => node.component === "Table");
+    const table = tree.nodes.find((node) => node.component === "DataTable");
     (table as { props?: Record<string, unknown> }).props = { rows: { $expr: 'sum(invoices.data, "amountCents") + * 2' } };
     const findings = await layer.run({ document: { ...app, tree }, request: "invoices" });
 

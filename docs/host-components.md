@@ -42,9 +42,11 @@ export type ComponentCatalog = ReadonlyArray<RegisteredComponent>;
 ```
 
 Names are PascalCase and unique. `propsSchema` uses the Standard Schema
-interface. The prewired primitives are reserved and do not appear in the
-catalog: `Stack`, `Row`, `Grid`, `Text`, `Skeleton`, `Surface`, and
-`Divider`.
+interface. The built-in Kit component names are reserved and do not appear in
+the catalog — `Stack`, `Row`, `Grid`, `Surface`, `Card`, `Divider`, `Text`,
+`DataTable`, `Stat`, `Button`, `Tabs`, and the rest of the Kit. Read the live
+list from `KIT_COMPONENT_NAMES` rather than copying it; there is one component
+family, so anything the Kit declares is reserved.
 
 Remix is not a catalog concern: wrapping a component in `<Remixable>` is the
 whole registration (see "Remixable surfaces" below). `vendo sync` scans for

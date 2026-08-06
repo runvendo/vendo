@@ -1,4 +1,5 @@
-/** 01-core §8 — the pinned vendo-genui tree limits and reserved names. */
+/** 01-core §8 — the pinned vendo-genui tree limits. The built-in component
+ *  vocabulary lives in kit/specs.ts (V4: the Kit is the only family). */
 
 /** 01-core §8 */
 export const TREE_MAX_NODES = 5_000;
@@ -23,36 +24,3 @@ export const TREE_MAX_COMPONENT_SOURCE_CHARS = TREE_MAX_COMPONENT_SOURCE_BYTES;
 /** @deprecated CORE-6: the cap is enforced in bytes — use
  *  {@link TREE_MAX_TOTAL_COMPONENT_BYTES}. Same value, kept for importers. */
 export const TREE_MAX_TOTAL_COMPONENT_CHARS = TREE_MAX_TOTAL_COMPONENT_BYTES;
-
-/** 01-core §8 */
-export const RESERVED_COMPONENT_NAMES = [
-  "Stack",
-  "Row",
-  "Grid",
-  "Text",
-  "Skeleton",
-  "Surface",
-  "Divider",
-] as const;
-
-/** 01-core §8 / v2 spec §2 — the branded prewired components beyond the
- *  reserved layout primitives. ONE list, mirrored by the implementations in
- *  packages/ui/src/tree/branded.tsx (core cannot import ui); the wire
- *  compiler's source resolution and the engine's catalog validation must
- *  agree on it (verify-v2 fixes: they did not). */
-export const BRANDED_COMPONENT_NAMES = [
-  "Card",
-  "Button",
-  "Input",
-  "Select",
-  "Table",
-  "Badge",
-  "Stat",
-  "Tabs",
-] as const;
-
-/** The full prewired set a tree node may resolve to without a source map. */
-export const PREWIRED_COMPONENT_NAMES = [
-  ...RESERVED_COMPONENT_NAMES,
-  ...BRANDED_COMPONENT_NAMES,
-] as const;

@@ -21,7 +21,6 @@ import {
   type NormalizedCatalog,
 } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
-import { PREWIRED_SCHEMAS } from "../prewired-schema.js";
 import { screenTypings } from "./screen-typings.js";
 import { screenTscFindings } from "./screen-tsc.js";
 
@@ -73,11 +72,10 @@ const BROAD_SCREEN = `<App name="Cash flow">
   <Query id="cashflow" tool="host_getCashflowInsights"/>
   <Stack gap={16}>
     <Text text="Cash flow" variant="heading"/>
-    {/* Row/Grid/Select/Surface are LEGACY PREWIRED names, so their allowed prop
-        set is prewired-schema.ts's, not the Kit spec's for the same name — the
-        Kit's align/justify/gap/multiple/title are not writable here, and the
-        bespoke prewiredPropsIssues check refuses them too. */}
-    <Row gap={12}>
+    {/* V4 — one component family: every name below is a Kit name, so the Kit
+        spec IS the allowed prop set (there is no second, narrower legacy
+        surface shadowing it any more). */}
+    <Row gap={12} justify="between">
       <Stat label="Money in" value={sum(cashflow.data, "in")} format="money"/>
       <Stat label="Money out" value={average(cashflow.data, "out")} format="money"/>
       <Stat label="Periods" value={count(cashflow.data)}/>
@@ -87,7 +85,6 @@ const BROAD_SCREEN = `<App name="Cash flow">
       <MapleNetWorthCard valueCents={sum(cashflow.data, "in")} series={[1, 2, 3]} initialRange="1M"/>
       <Card title="Detail" description="This period" tone="accent"><Divider/><Badge label="Live" tone="accent"/></Card>
     </Grid>
-    <Table rows={cashflow.data} columns={["label", "in", "out"]} caption="By period" rowKey="label"/>
     <DataTable rows={cashflow.data} sortBy="label asc" limit={20} searchable={true} paginate={10}
       columns={[{ key: "label", label: "Period" }, { key: "in", format: "money", align: "end" }]}
       filterableBy={["label"]} emptyState="No periods" caption="Cash flow"/>
@@ -103,13 +100,13 @@ const BROAD_SCREEN = `<App name="Cash flow">
     <DonutChart data={cashflow.data} categoryKey="label" valueKey="in" format="money" donut={true}/>
     <Sparkline data={[1, 2, 3]} height={24}/>
     <Callout tone="info" title="Note">Numbers are integer cents.</Callout>
-    <Surface><Skeleton width={100} height={20}/></Surface>
-    <Select label="Period" options={cashflow.data} labelField="label" valueField="label"/>
+    <Surface title="Detail"><Text text="Nested"/></Surface>
+    <Select label="Period" options={cashflow.data} labelField="label" valueField="label" multiple={false}/>
     <Input label="Search" type="search" onChange="host_search"/>
     <DatePicker label="From" min="2026-01-01"/>
     <Form onSubmit="host_note" submitLabel="Save"><Textarea label="Note" rows={3}/><Checkbox label="Pin"/></Form>
     <Button label="Refresh" onClick="host_getCashflowInsights" variant="primary"/>
-    <Tabs tabs={["In", "Out"]} value="In" onChange="host_tab"/>
+    <Tabs tabs={["In", "Out"]} value="In"><Text text="Money in"/><Text text="Money out"/></Tabs>
     <Disclaimer reason="No tool exposes forecasts." title="Not shown"/>
     <Text text="Grouped" pending={true}/>
     <Sparkline data={group_by(cashflow.data, "label", "month", sum.of("in"))} valueKey="value"/>
@@ -130,8 +127,8 @@ describe("the vocabulary a good screen may name", () => {
     expect(uncovered, "add these to BROAD_SCREEN").toEqual([]);
   });
 
-  it("covers the Kit wire set and the legacy prewired set together", () => {
+  it("covers the one component family — the Kit wire set IS the vocabulary", () => {
     expect(KIT_WIRE_COMPONENT_NAMES.length).toBeGreaterThan(0);
-    expect(Object.keys(PREWIRED_SCHEMAS).length).toBeGreaterThan(0);
+    expect([...WIRE_COMPONENT_NAMES].sort()).toEqual([...KIT_WIRE_COMPONENT_NAMES].sort());
   });
 });

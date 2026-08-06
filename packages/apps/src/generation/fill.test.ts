@@ -65,12 +65,12 @@ const TWO_GROUPS = plan([
   },
   {
     tab: "Overdue",
-    leaves: [{ component: "Table", query: "invoices", purpose: "GROUP1 the overdue invoices, worst first" }],
+    leaves: [{ component: "DataTable", query: "invoices", purpose: "GROUP1 the overdue invoices, worst first" }],
   },
 ], [INVOICE_QUERY]);
 
 const METRIC = '<MetricCard label="Outstanding" value={sum(invoices, "amountCents")}/>';
-const TABLE = '<Table columns={["id", "client"]} rows={invoices}/>';
+const TABLE = '<DataTable columns={[{key: "id"}, {key: "client"}]} rows={invoices}/>';
 
 /** The fragment each group's worker writes, chosen by the purpose in its own
  *  prompt (the only thing a worker sees of the plan). */
@@ -111,7 +111,7 @@ describe("fillPlan", () => {
     expect(overview).toContain("host_listInvoices");
     // And nothing whatsoever about the other group.
     expect(overview).not.toContain("GROUP1");
-    expect(overview).not.toContain("Table");
+    expect(overview).not.toContain("DataTable");
     expect(overdue).not.toContain("GROUP0");
     expect(overdue).not.toContain("MetricCard");
   });
@@ -131,13 +131,13 @@ describe("fillPlan", () => {
     // Each slot container survived and now holds that worker's nodes, named
     // under the slot so two workers minting "metriccard-1" cannot collide.
     expect(node(tree, "group-0-body")?.children).toEqual(["group-0-body-metriccard-1"]);
-    expect(node(tree, "group-1-body")?.children).toEqual(["group-1-body-table-1"]);
+    expect(node(tree, "group-1-body")?.children).toEqual(["group-1-body-datatable-1"]);
     expect(node(tree, "group-0-body-metriccard-1")).toMatchObject({
       component: "MetricCard",
       source: "host",
       props: { label: "Outstanding" },
     });
-    expect(node(tree, "group-1-body-table-1")).toMatchObject({ component: "Table" });
+    expect(node(tree, "group-1-body-datatable-1")).toMatchObject({ component: "DataTable" });
     // Not one pending placeholder is left standing.
     expect(tree.nodes.filter((candidate) => candidate.props?.pending === true)).toEqual([]);
     // The screen saw each section land, one at a time.
@@ -168,7 +168,7 @@ describe("fillPlan", () => {
   it("respects the concurrency dial — never more than N workers in flight", async () => {
     const groups: AppPlan["groups"] = [0, 1, 2, 3].map((index) => ({
       tab: `Tab${index}`,
-      leaves: [{ component: "Table", query: "invoices", purpose: `GROUP${index} rows` }],
+      leaves: [{ component: "DataTable", query: "invoices", purpose: `GROUP${index} rows` }],
     }));
     const four = plan(groups, [INVOICE_QUERY]);
     let inFlight = 0;
@@ -188,14 +188,14 @@ describe("fillPlan", () => {
     expect(result.findings).toEqual([]);
     for (const index of [0, 1, 2, 3]) {
       expect(node(treeOf(result.document), `group-${index}-body`)?.children)
-        .toEqual([`group-${index}-body-table-1`]);
+        .toEqual([`group-${index}-body-datatable-1`]);
     }
   });
 
   it("never executes a mutating tool at plan time, and says why that section has no rows", async () => {
     const withWrite = plan([
       { tab: "Overview", leaves: [{ component: "MetricCard", query: "invoices", purpose: "GROUP0 total" }] },
-      { tab: "Chase", leaves: [{ component: "Table", query: "reminders", purpose: "GROUP1 reminders sent" }] },
+      { tab: "Chase", leaves: [{ component: "DataTable", query: "reminders", purpose: "GROUP1 reminders sent" }] },
     ], [INVOICE_QUERY, { id: "reminders", tool: "host_sendReminder", input: {} }]);
     const deps = depsWith(answering(fragmentFor));
     const { calls, runQuery } = readingQueries();
@@ -269,7 +269,7 @@ describe("fillPlan", () => {
     }]);
     // THE ISOLATION: the other group's fragment is untouched, the tab chrome
     // still stands, and no fact check trips on what the failure left behind.
-    expect(node(tree, "group-1-body")?.children).toEqual(["group-1-body-table-1"]);
+    expect(node(tree, "group-1-body")?.children).toEqual(["group-1-body-datatable-1"]);
     expect(node(tree, "tabs")?.props?.tabs).toEqual([
       { value: "Overview", label: "Overview" },
       { value: "Overdue", label: "Overdue" },

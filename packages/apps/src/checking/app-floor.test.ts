@@ -45,9 +45,9 @@ const floorDeps = (): FloorDependencies => ({ catalog, tools, toolShapes });
 
 /** Inline tool reference — the form that compiled to nothing before the seam
  *  shared the dialect. */
-const INLINE = '<App name="Invoices"><Stack gap={12}><Text text="Invoices" variant="heading"/><Table rows={host_listInvoices({}).data}/></Stack></App>';
+const INLINE = '<App name="Invoices"><Stack gap={12}><Text text="Invoices" variant="heading"/><DataTable rows={host_listInvoices({}).data}/></Stack></App>';
 /** Binds a field the shape card does not have. */
-const BAD_BINDING = '<App name="Invoices"><Table rows={host_listInvoices({}).nope}/></App>';
+const BAD_BINDING = '<App name="Invoices"><DataTable rows={host_listInvoices({}).nope}/></App>';
 
 describe("compile speaks the ONE dialect, not compileWire's defaults", () => {
   it("expands an inline tool reference into a query", async () => {

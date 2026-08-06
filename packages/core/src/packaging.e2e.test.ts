@@ -19,7 +19,7 @@ const RUNTIME_EXPORTS = [
   "VENDO_POLICY_FORMAT", "VENDO_CAPABILITY_MISS_FORMAT", "descriptorHash", "validateTree", "validateAppDocument", "VendoError",
   "safeErrorMessage", "canonicalJson", "sha256Hex", "TOOL_NAME_PATTERN",
   "TREE_MAX_NODES", "TREE_MAX_QUERIES", "TREE_MAX_GENERATED_COMPONENTS",
-  "TREE_MAX_COMPONENT_SOURCE_CHARS", "TREE_MAX_TOTAL_COMPONENT_CHARS", "RESERVED_COMPONENT_NAMES",
+  "TREE_MAX_COMPONENT_SOURCE_CHARS", "TREE_MAX_TOTAL_COMPONENT_CHARS", "KIT_COMPONENT_NAMES",
   "isPathBinding", "isStateBinding",
   "principalSchema", "runContextSchema", "triggerRefSchema", "riskLabelSchema",
   "toolDescriptorSchema", "toolCallSchema", "toolOutcomeSchema",

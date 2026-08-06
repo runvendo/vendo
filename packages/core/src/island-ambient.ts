@@ -40,7 +40,7 @@ export const ISLAND_AMBIENT_REACT_NAMES = [
 /** The Kit components ambient in every island. Pinned to the ui Kit registry
  *  by a test in @vendoai/ui (core cannot import ui — layering). */
 export const ISLAND_AMBIENT_KIT_NAMES = [
-  "Stack", "Row", "Grid", "Surface", "Divider",
+  "Stack", "Row", "Grid", "Surface", "Card", "Divider",
   "Text", "Money", "DateTime", "Percent", "Num", "EnumBadge",
   "DataTable", "CardList", "Stat", "Badge",
   "LineChart", "BarChart", "DonutChart", "Sparkline", "Progress",

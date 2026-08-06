@@ -4,7 +4,7 @@ import type { OpenSurface } from "../wire-types.js";
 import { applyFrameResize, FRAME_MAX_HEIGHT_CSS } from "./frame-resize.js";
 import { ContainedNotice } from "./notice.js";
 import { PayloadView } from "./renderer.js";
-import { Skeleton } from "./primitives.js";
+import { Skeleton } from "./forming-skeleton.js";
 
 /**
  * Wave 7 H2 — the served-surface keepalive seam. An embedded served app dies

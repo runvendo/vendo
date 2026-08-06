@@ -6,8 +6,8 @@
  * island contract.
  */
 import {
+  KIT_COMPONENT_NAMES,
   KIT_WIRE_COMPONENT_NAMES,
-  RESERVED_COMPONENT_NAMES,
   TREE_MAX_COMPONENT_SOURCE_BYTES,
   TREE_MAX_GENERATED_COMPONENTS,
   TREE_MAX_NODES,
@@ -20,7 +20,6 @@ import {
   type NormalizedCatalog,
 } from "@vendoai/core";
 import { pinComponentName, type PinBaseline } from "../../pins.js";
-import { prewiredSchemaPrompt } from "../../prewired-schema.js";
 import type { GenerationDependencies } from "../engine.js";
 
 const catalogPrompt = (catalog: NormalizedCatalog): string => JSON.stringify(
@@ -87,7 +86,7 @@ export const generationPromptSections = (deps: GenerationDependencies): Generati
 - At rest the app is {name, description?, tree, components?}; never emit id, server, secrets, egress, storage, or authority.
 - tree.formatVersion is "vendo-genui/v2" and tree contains root, nodes, optional data and queries. Generated component sources live at the DOCUMENT level in components — the tree itself never carries them.
 - Maximums: ${TREE_MAX_NODES} nodes, ${TREE_MAX_QUERIES} queries, ${TREE_MAX_GENERATED_COMPONENTS} generated components, ${TREE_MAX_COMPONENT_SOURCE_BYTES} bytes per generated component source, ${TREE_MAX_TOTAL_COMPONENT_BYTES} bytes of generated-component source in total.
-- Reserved prewired primitive names: ${RESERVED_COMPONENT_NAMES.join(", ")}.
+- Reserved built-in component names: ${KIT_COMPONENT_NAMES.join(", ")}.
 - Every node is exactly {id, component, source?, props?, children?}. "component" is a REQUIRED non-empty string on EVERY node, including layout containers — use a prewired primitive (e.g. Stack, Row, Grid) as the component for containers; children is an array of node ids. Never emit a node without a component.
 - "nodes" is a FLAT array of every node; nesting is expressed only through "children" id references, never by inlining child objects. "root" is the id of the top node.
 - A node source is "prewired", "host", or "generated". Generated names are PascalCase, non-reserved, and require a document components[name] ESM React source.
@@ -132,17 +131,14 @@ ${pinBaselinesPrompt(deps.pinBaselines)}
 - Never remove or rename a pinned component, and never invent or alter baseline hashes.`,
 }];
 
-/** The COMPONENTS section is GENERATED from the component schemas (kitPrompt
- *  over the Kit specs + the legacy primitive signatures); no hand-written
- *  component list survives here. Deps-independent, so it is rendered once per
- *  process (perf budget: gen-scripted:create). */
+/** The COMPONENTS section is GENERATED from the Kit specs (kitPrompt); no
+ *  hand-written component list survives here. V4 retired the legacy primitive
+ *  block — one family, one generated section. Deps-independent, so it is
+ *  rendered once per process (perf budget: gen-scripted:create). */
 let componentsPromptCache: string | undefined;
 export const componentsPromptSection = (): string => componentsPromptCache ??= `COMPONENTS (generated from the component schemas — use these EXACT component and prop names; an unknown prop is silently dropped and fails validation):
 
-${kitPrompt({ only: [...KIT_WIRE_COMPONENT_NAMES] })}
-
-# Legacy primitives (also available)
-${prewiredSchemaPrompt()}`;
+${kitPrompt({ only: [...KIT_WIRE_COMPONENT_NAMES] })}`;
 
 /** The island contract, shared by the create and edit dialects. The
  *  "LAST RESORT" fear rules are retired: use the Kit when it covers the need

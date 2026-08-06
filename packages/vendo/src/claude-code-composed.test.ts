@@ -349,7 +349,7 @@ describe("createVendo({ sandbox, harness: claudeCode() })", () => {
         `<App name="Open invoices">
   <Query id="invoices" tool="maple_invoices_list" />
   <Stack>
-    <Table rows={invoices.invoices} columns={[{key:"id"}]} />
+    <DataTable rows={invoices.invoices} columns={[{key:"id"}]} />
   </Stack>
 </App>`,
       );
@@ -417,7 +417,7 @@ describe("createVendo({ sandbox, harness: claudeCode() })", () => {
     const app = (field: string): string => `<App name="Open invoices">
   <Query id="invoices" tool="maple_invoices_list" />
   <Stack>
-    <Table rows={invoices.${field}} columns={[{key:"id"}]} />
+    <DataTable rows={invoices.${field}} columns={[{key:"id"}]} />
   </Stack>
 </App>`;
 

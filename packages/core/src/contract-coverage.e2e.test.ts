@@ -577,9 +577,13 @@ describe("amended public export surface — root utilities and /conformance inve
     ]) {
       expect(typeof registry[name], `missing numeric export ${name}`).toBe("number");
     }
-    expect(registry.RESERVED_COMPONENT_NAMES).toEqual([
-      "Stack", "Row", "Grid", "Text", "Skeleton", "Surface", "Divider",
-    ]);
+    // V4 — one component family: the Kit specs ARE the built-in vocabulary,
+    // and the three hand-kept name lists that used to sit beside them
+    // (reserved / branded / prewired) are gone from the root.
+    expect(registry.KIT_COMPONENT_NAMES).toEqual(registry.KIT_SPECS.map((spec: { name: string }) => spec.name));
+    expect(registry.KIT_COMPONENT_NAMES).toContain("DataTable");
+    expect(Object.keys(registry).filter((name) => /_COMPONENT_NAMES$/.test(name)).sort())
+      .toEqual(["KIT_COMPONENT_NAMES", "KIT_WIRE_COMPONENT_NAMES", "WIRE_COMPONENT_NAMES"]);
   });
 
   it("exports the exact executable /conformance kit inventory", () => {
