@@ -1,0 +1,241 @@
+---
+title: "Vendo Full Stack Agents"
+sidebarTitle: "Full stack agents"
+description: "The whole story of the agent inside your product: it acts through your API as the signed-in user, sees the screen they are on, knows your product, renders UI in your brand, works while they are away, and is guarded and audited throughout."
+---
+
+Most in-product AI is a chat box bolted to a retrieval index. It can describe
+your product; it cannot operate it. A full stack agent is the other thing: it
+runs on the same API your UI runs on, with the same identity, the same
+permissions, and the same audit trail — and it draws real screens instead of
+paragraphs about them.
+
+That is the whole of Vendo. Seven capabilities, one agent. This page is the
+narrative; each section ends with the page that documents it properly.
+
+## Acts through your API
+
+The agent has no private backend. Everything it does, it does by calling the
+endpoints your own frontend calls. `vendo sync` statically extracts your
+OpenAPI operations, tRPC procedures, GraphQL operations, Next.js server
+actions, and host routes into `.vendo/tools.json`, each with a JSON Schema
+input and a `read`, `write`, or `destructive` risk label. Extraction runs on
+`predev` and `prebuild`, so the tool surface cannot drift from the API it came
+from. There is no second copy of your business logic to keep in sync, and no
+tool that exists because someone hand-wrote it.
+
+Identity is not simulated either. One auth preset resolves the incoming
+request to a principal using the session your app already issues, so every
+call the agent makes lands on your API as the signed-in user. Your existing
+authorization is the authorization: a user who cannot delete an invoice
+through your UI cannot delete one by asking. Nothing about the agent widens
+what an account can reach.
+
+Hosts with hundreds of endpoints do not flood the model with all of them. Each
+thread starts from a bounded, connection-scoped loadout and discovers the rest
+at runtime through the `find_tools` meta-tool. What the model *sees* is
+gated; what can *run* is not — a searched-in write tool still faces the same
+guard as every other call.
+
+See [Tools from your API](/connect/api-tools) for every extractor and its
+naming rules, and [Tools and the catalog](/agents/tools) for what makes a tool
+worth exposing.
+
+## Sees what the user sees
+
+An agent that has to ask "which invoice?" when the invoice is on screen is not
+in your product, it is next to it. Vendo gives the agent the user's current
+screen as context on every message.
+
+The capture is an accessibility snapshot, not a picture. On send, the widget
+takes an `aria-snapshot` of the visible page — the same structural tree a
+screen reader would read — prepends the URL and title, and attaches it to the
+`POST /threads` body. No screenshots, no pixels, no vision model. Alongside it,
+any component can publish structured data into the same channel with the
+`useVendoContext` hook, so the host can say "the user is looking at invoice
+`inv_88`, filtered to overdue" in exact terms rather than leaving the model to
+infer it from a tree. Both halves merge into one `[Situation]` block in the
+system prompt, explicitly labeled as observation and not instruction — page
+content is evidence the model reasons over, never orders it follows.
+
+The channel is deliberately small and deliberately forgetful. It is capped at
+8 KB on both ends, truncating toward main content, and it lives exactly one
+turn: it rides the request, never the transcript, so yesterday's screen never
+haunts today's answer. Anything the widget cannot use is dropped rather than
+refused. Elements marked `data-vendo-ignore` are excluded — Vendo's own chrome
+carries the attribute, so the agent never snapshots itself — and a host that
+wants none of it sets `captureScreen={false}` on the provider and the snapshot
+half stops entirely.
+
+Who the user *is* arrives on a separate, server-trusted path. The auth
+preset's user resolver returns a `facts` object — name, role, plan, whatever
+your product considers relevant — which the composition renders as a `[User]`
+block, refreshed from your database on every request. Facts come from your
+server, never from the client, and Vendo stores none of them.
+
+See [actAs presets](/connect/act-as-presets) for the resolver that supplies
+those facts.
+
+## Knows your product
+
+Acting is half the job; the other half is knowing what your product means. The
+knowledge base is one frozen adapter contract with three engines behind it:
+`vendoKnowledge()` does keyword retrieval in your own store with zero keys and
+no network, `cloudKnowledge()` is Vendo Cloud's managed engine, and
+`httpKnowledge({ url })` is any endpoint you run, in any language, speaking the
+same wire. Which one you get is the ordinary adapter decision — an explicit
+adapter always wins, `VENDO_API_KEY` fills an empty slot with Cloud, and
+nothing configured means no adapter at all.
+
+Content is docs-as-code. `vendo knowledge add "docs/**/*.md"` registers a glob
+in `.vendo/knowledge.json` with a content kind (`docs` chunks prose at heading
+boundaries; `glossary` and `api` make one document per term, which is what
+makes exact lookups honest) and a visibility tier, where `internal` sources
+answer only trusted host-wired callers and never end users. `vendo knowledge
+sync` is the only verb that moves anything: it ingests, diffs against a hash
+manifest, and pushes exactly what changed — to the engine your *server* would
+read, so the docs land where the agent will actually look.
+
+On the agent side there is one tool, `vendo_knowledge_search`. It retrieves
+snippets, fetches read-more context, and cites the documents it used — or says
+the evidence is weak instead of filling the gap. With no adapter configured the
+tool does not exist, so the agent never advertises a knowledge base you do not
+have.
+
+See [`vendo knowledge`](/reference/cli) for the CLI verbs and
+[the `knowledge` slot](/reference/handler-options) for the configuration
+surface.
+
+## Renders UI in your brand
+
+The agent's output is not always a paragraph. When a user asks for a view of
+their own — a reconciliation screen, a filtered pipeline, a dashboard nobody
+on your roadmap was going to build — the agent generates one. Every generated
+app is an `AppDocument` in the `vendo/app@1` format, owned by the user who
+asked for it. Import, fork, and share each mint a fresh app id, so an artifact
+carries no data, no grants, and no authority with it.
+
+Generated screens render inside a sandboxed surface — an iframe, with host
+tools reachable only through the guarded proxy — but they do not look
+sandboxed. Theme extraction pulls your real colors, type, radii, and spacing
+into `.vendo/theme.json` and exposes them as `--vendo-*` custom properties, so
+a generated screen inherits your design system instead of approximating it.
+Better still, your registry hands the model your actual components: fill
+`vendo/registry.tsx` with the same buttons, tables, and charts your product
+ships, and the agent composes screens out of those rather than inventing
+lookalikes.
+
+Most apps stay tree-only, with no server at all. When work genuinely needs
+custom code, the app escalates to a per-app sandbox machine — but the agent
+prefers the cheapest rung that expresses the job, and tree-only edits run
+without an approval card precisely because they cannot reach host tools or
+perform egress.
+
+See [Generated UI](/concepts/generated-ui) for the document format and the
+three-layer machine model, and [Host components](/connect/host-components) for
+the registry contract.
+
+## Works while they're away
+
+A user should be able to hand work to the agent and close the tab. Automations
+are that: an app carries a list of triggers, each with its own grants, its own
+sponsorship, and its own on/off switch, and each fires the work without anyone
+watching.
+
+Three things can pull a trigger. A **schedule** — a five-field UTC cron, a
+duration like `15m`, or a one-shot timestamp — driven either by a long-lived
+`automations.start()` or, on serverless, by any external cron pointed at
+`POST /tick`. Firing is idempotent within a window, so a double-hit never
+double-runs. A **host event**, emitted from the code path that owns it with
+`vendo.emit("invoice.paid", invoice, principal)`. Or an **external webhook**,
+verified before principal resolution or dispatch, with delivery ids
+deduplicated so at-least-once retries stay at-most-once in effect.
+
+Away authority is strictly narrower than present authority. An away run cannot
+stop and ask, so it requires a standing grant bound to the running app,
+granted ahead of time for the declared tools — a chat grant never transfers,
+and another app's grant never transfers. A run that hits a permission it was
+not given fails loudly with a "grant and re-run" path rather than quietly
+doing something adjacent. And any run in flight can be stopped:
+`POST /runs/:id/stop` drains outstanding calls and lands the run in a
+cancelled terminal state, idempotently and on the audit log.
+
+See [Automations and webhooks](/deploy/scheduler-and-webhooks) for all three
+triggers and the stop semantics.
+
+## Runs on the loop you choose
+
+Everything so far describes what the agent does, not who does the thinking.
+That seat is a slot. `harness` on `createVendo` names it, and leaving it unset
+is already a real answer: the built-in `vendo()` runs Vendo's own loop
+in-process, inside your own server, thinking with whatever `LanguageModel` you
+resolved. No separate agent-SDK credential, no extra process, nothing new in
+your deploy. Its per-turn knobs are ordinary configuration — `maxSteps`,
+`historyWindow`, `contextTokenBudget`, `maxOutputTokens`.
+
+When you want a different thinker, you swap the slot. `claudeCode()`, from the
+`@vendoai/harnesses/claude-code` subpath, runs the Claude Agent SDK behind the
+same frozen `Harness` contract — on a sandbox machine by default, or on your
+own server with `machine: "local"` and the SDK as an optional peer dependency.
+It is a heavier, code-writing thinker with real bash over a materialized
+workspace, and it is the flagship proof of the contract: a harness that
+declares `requires: { sandbox: true }` with no sandbox adapter is a boot error,
+never a turn that dies in front of a user.
+
+Here is the part that matters. Swapping the thinker adds **not one new safety
+mechanism**. Every tool call still lands in `turn.tools.call()` — the same
+guard, the same policy order, the same audit row — exactly as under `vendo()`.
+The Claude machine's toolset is a projection of the guarded registry, never an
+execution site of its own; host tools reach it only through the
+[MCP door](/capabilities/mcp), which is the same guarded path any outside agent
+gets. Changing who thinks changes the reasoning, never the perimeter.
+
+And if neither loop is yours, `defineHarness()` puts your own behind the same
+contract, while the [bring-your-own-agent](/existing-agents) path is the third
+flavor of the same idea: keep your AI SDK or Mastra loop where it is and import
+Vendo's guarded tools, generated UI, and approval surfaces into it. Three
+shapes, one invariant — the guard is not in the loop, the loop is inside the
+guard.
+
+See [the `harness` option](/reference/handler-options) for the slot and
+`vendo()`'s knobs, and the [Server API](/reference/server-api) for the runtime
+surface it composes.
+
+## Guarded and audited
+
+Everything above converges on one choke point. `guard.bind(tools)` is the only
+sanctioned execution path in the system — the registry handed to the agent, to
+apps, and to automations is the same guard-bound registry, so there is no side
+door where a call skips the rules.
+
+The decision order is fixed and inspectable: the `confirmEach` flag, then a
+matching grant, then policy rules, then policy code, then the judge, then the
+default posture, with breakers able to turn any run into an ask. Risk labels
+carry the weight — `read` auto-runs, `write` and `destructive` are gated, and
+`ungraded` (nobody has classified it yet) is treated like `destructive` and
+asked about, so an unreviewed endpoint fails toward caution. Approval cards
+show the real arguments, not a summary of them. Grants bind to the principal,
+the tool descriptor hash, the scope, and a duration; when a tool's shape drifts
+from the hash a grant was bound to, the guard invalidates it loudly and asks
+again rather than honoring consent the user gave to a different function.
+
+Every tool call, approval, policy decision, run, and app lifecycle event is
+audited with its principal, venue, presence, and app context. When someone
+asks what the agent did in your product last Tuesday, the answer is a query,
+not an investigation.
+
+See [Tools and safety](/concepts/tools-and-safety) for the full decision
+reference.
+
+## Where to start
+
+<CardGroup cols={2}>
+  <Card title="Bring your own agent" icon="puzzle-piece" href="/existing-agents">
+    Keep your AI SDK or Mastra loop and add Vendo's guarded tools, generated
+    UI, and approval surfaces to it.
+  </Card>
+  <Card title="Connect your app" icon="plug" href="/connect/vendo-init">
+    Run `npx vendo init` to extract your host API into guarded tools and
+    scaffold the two files you own.
+  </Card>
+</CardGroup>

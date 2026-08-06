@@ -34,6 +34,56 @@ html.dark img[src$="/images/logos/mastra.svg"] {
     0 14px 34px -18px rgba(60, 40, 120, 0.18);
 }
 
+/* The launch announcement pill (snippets/announcement-pill.jsx). */
+.vendo-announce {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.8rem 0.3rem 0.65rem;
+  border: 1px solid rgba(108, 59, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(108, 59, 255, 0.06);
+  font-size: 0.8rem;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--vendo-brand);
+  text-decoration: none;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.vendo-announce-arrow {
+  opacity: 0.7;
+  transition: transform 150ms cubic-bezier(0.23, 1, 0.32, 1), opacity 150ms ease;
+}
+
+.vendo-announce:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.dark .vendo-announce {
+  border-color: rgba(167, 139, 250, 0.26);
+  background: rgba(139, 107, 255, 0.14);
+  color: var(--vendo-brand-lilac);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .vendo-announce:hover {
+    background: rgba(108, 59, 255, 0.1);
+    border-color: rgba(108, 59, 255, 0.3);
+  }
+
+  .dark .vendo-announce:hover {
+    background: rgba(139, 107, 255, 0.2);
+    border-color: rgba(167, 139, 250, 0.4);
+  }
+
+  .vendo-announce:hover .vendo-announce-arrow {
+    opacity: 1;
+    transform: translateX(2px);
+  }
+}
+
 /* The install-with-your-agent prompt card (snippets/agent-prompt.jsx). */
 .vendo-agent-prompt {
   margin: 1.5rem 0;

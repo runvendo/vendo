@@ -48,6 +48,7 @@
         "group": "Start here",
         "pages": [
           "index",
+          "full-stack-agents",
           "concepts/architecture",
           "concepts/tools-and-safety"
         ]
