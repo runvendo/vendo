@@ -21,3 +21,9 @@ next-env.d.ts
 
 # RunRecords stay local — packs/ is the committed, shared artifact
 /runs/
+
+# Committed experiment evidence: the root `*.png` browser-artifact ignore
+# must not swallow results/ screenshots (same rationale as the root
+# .gitignore's docs/verification negation — a result claim is worthless
+# without the evidence next to it).
+!/results/openui-experiment/screenshots/*.png
