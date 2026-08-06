@@ -152,6 +152,10 @@ describe("the compaction slot, written and read through the real store", () => {
     expect(readCompactionState(slot)).toEqual({
       version: 1,
       lastPromptTokens: MEASURED_PROMPT_TOKENS,
+      // Where the thread stood when this was written, so a later turn can tell
+      // that it still stands there. Round 2: a state the thread has been rewound
+      // past describes a branch that no longer exists, and is discarded.
+      coveredThroughMessageId: "m1",
     });
   });
 

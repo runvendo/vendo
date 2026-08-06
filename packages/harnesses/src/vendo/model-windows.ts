@@ -49,14 +49,18 @@ export const MODEL_CONTEXT_WINDOWS: readonly (readonly [match: string, tokens: n
  * `override` is the BYO escape and it wins outright, table hit or not: a host on
  * a model this repo has never heard of, or on a seat whose entry has gone stale,
  * needs a way to be right that does not involve waiting for a release. It has to
- * be a positive number of tokens to be a window at all — the per-turn form of the
- * same knob is `z.number().int().positive()` (`vendo.ts`'s `optionsSchema`) and
- * the deployment form reaches here unvalidated, so this is where the two agree. A
- * zero puts the trigger at zero, which makes every turn pay for a summarizer pass
- * and then shed the conversation to its last message, silently.
+ * be a FINITE positive number of tokens to be a window at all, and this is the
+ * only place either door is checked: `vendo.ts` declares `optionsSchema` as
+ * `z.number().int().positive()`, but nothing in the stack parses a harness's
+ * options schema, so the per-turn knob arrives exactly as unvalidated as the
+ * deployment one. Both ends of the range fail the same way, silently and in
+ * opposite directions: a zero puts the trigger at zero, so every turn pays for a
+ * summarizer pass and then sheds the conversation to its last message; an
+ * infinity puts the trigger past every estimate there is, so compaction never
+ * fires again and the provider's 400 is the only rail left.
  */
 export function contextWindowTokens(model: LanguageModel, override?: number): number {
-  if (override !== undefined && override > 0) return override;
+  if (override !== undefined && Number.isFinite(override) && override > 0) return override;
   const id = (typeof model === "string" ? model : model.modelId).toLowerCase();
   let matched: readonly [string, number] | undefined;
   for (const entry of MODEL_CONTEXT_WINDOWS) {

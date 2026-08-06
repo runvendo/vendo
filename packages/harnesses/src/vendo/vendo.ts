@@ -339,7 +339,19 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
       const { contextWindowTokens: windowOverride, ...context } = resolved;
       // What the thread already knows about its own size. An unreadable or
       // foreign slot reads as no state, which costs one un-compacted turn.
-      const carried = readCompactionState(turn.state.get());
+      const stored = readCompactionState(turn.state.get());
+      // …and a slot the thread has OUTGROWN reads as no state too. §1.3 clears
+      // the slot for an arbitrary edit and keeps it for a rewind, because a
+      // harness with a native session rewinds that session itself. This one
+      // cannot: the summary is the thread's only account of a band that has just
+      // stopped existing, and the update skeleton's standing order is PRESERVE —
+      // so a fact from a branch the user abandoned would be copied forward for
+      // as long as the thread lives, and answered from. Dropping it costs one
+      // extra compaction.
+      const covered = stored?.coveredThroughMessageId;
+      const carried = covered !== undefined && !turn.messages.some((message) => message.id === covered)
+        ? undefined
+        : stored;
       const compaction: TurnCompaction = {
         model,
         contextWindowTokens: contextWindowTokens(model, windowOverride),
@@ -572,22 +584,29 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
       // survives what this turn did not touch, so a token count does not erase a
       // summary or the other way round.
       const remembered = loop.compacted?.summary ?? carried?.summary;
+      const newest = turn.messages.at(-1)?.id;
       // The provider's count is the trigger's ground truth NEXT turn, and it is
       // only ground truth while it still describes this thread's history. A turn
-      // that COMPACTED measured a summary and a tail — but the transcript is
-      // never truncated, so the next turn projects the whole thread again and
+      // whose prompt was REDUCED — summarized, shed, or sliced by the host's own
+      // window — measured something smaller than the thread, and the transcript
+      // is never truncated, so the next turn projects the whole thread again and
       // that figure describes a prompt it will not send. Carried forward it tells
       // the trigger the thread is small for as long as the thread lives: the
       // trigger never fires again, every turn ships the entire history, and the
-      // provider's 400 is the only rail left. So a compacted turn reports no
+      // provider's 400 is the only rail left. So a reduced turn reports no
       // measurement at all, and drops the slot's older one with it — chars/4 over
       // the full history is the honest over-estimate, and over-estimating costs
-      // one compaction.
-      const measured = loop.compacted === undefined ? lastPromptTokens : undefined;
+      // one compaction. Which of the three reduced it is the LOOP's to know: it
+      // builds the projection, and naming the producers here instead is how this
+      // covered the summarizer and missed the other two.
+      const measured = loop.reduced ? undefined : lastPromptTokens;
       if (measured !== undefined || remembered !== undefined) {
         turn.state.set(writeCompactionState({
           version: 1,
           ...(remembered === undefined ? {} : { summary: remembered }),
+          // Where the thread stood when this was written, so the next turn can
+          // tell that it still stands there (see the read above).
+          ...(newest === undefined ? {} : { coveredThroughMessageId: newest }),
           ...(measured === undefined ? {} : { lastPromptTokens: measured }),
         }));
       }

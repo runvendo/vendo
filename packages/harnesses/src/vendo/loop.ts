@@ -281,6 +281,12 @@ export interface TurnPrompt {
   /** Carried out as DATA, because the loop does not know where the caller's
    *  state slot is. Written by the summarizer. */
   compacted?: CompactionState;
+  /** This projection left out history the thread still holds — the host's window
+   *  slice, the shed, or the summarizer. Three producers and one consumer: the
+   *  provider's count for a REDUCED prompt is not a fact about the thread, and a
+   *  caller that stores it as one blinds its own trigger for the life of the
+   *  thread (see `vendo.ts`, where the slot is written). */
+  reduced: boolean;
 }
 
 /**
@@ -312,12 +318,23 @@ export async function turnModelMessages(input: TurnPromptInput): Promise<TurnPro
   const history = historyWindow !== undefined && messages.length > historyWindow
     ? messages.slice(-historyWindow)
     : messages;
+  // Tracked from here down because three separate things below leave history
+  // out, and the one caller that has to know cannot tell from the result: it
+  // sees a prompt, not the thread it came from. See {@link TurnPrompt.reduced}.
+  let reduced = history !== messages;
   let converted = (await convertToModelMessages(providerHistory(history)))
     .filter((message) => message.content.length > 0);
   // Budgeting runs on the CONVERTED form because that is the form the provider
   // bills, and it runs before the breakpoints below because shedding changes
   // which message is the stable prefix's last one.
-  if (tokenBudget !== undefined) converted = shedToBudget(converted, system, tokenBudget);
+  if (tokenBudget !== undefined) {
+    const shed = shedToBudget(converted, system, tokenBudget);
+    // MEASURED, not assumed: `shedToBudget` returns a new array whether or not
+    // it found anything to drop — a thread of one message cannot shed, and the
+    // whole point of the flag is to tell that apart from a thread that did.
+    reduced ||= estimateTokens(shed) < estimateTokens(converted);
+    converted = shed;
+  }
   // The window the model actually has, measured against the prompt this turn is
   // actually sending — system, messages AND the tools block, which is the part
   // no rail here has ever counted and the part that never shrinks. The host's
@@ -352,12 +369,26 @@ export async function turnModelMessages(input: TurnPromptInput): Promise<TurnPro
         // messages, with no summary and no notice to the model. The budget bounds
         // the MESSAGES, so a trip caused by the tools block alone sheds nothing —
         // the tools are not sheddable and the floor does not pretend otherwise.
-        converted = shedToBudget(converted, system, triggerTokens(compaction));
+        const shed = shedToBudget(converted, system, triggerTokens(compaction));
+        reduced ||= estimateTokens(shed) < estimateTokens(converted);
+        converted = shed;
       } else {
         converted = [summaryMessage(result.summary), ...converted.slice(result.cutIndex)];
         compacted = { version: 1, summary: result.summary };
+        reduced = true;
       }
     }
+  }
+  // The thread's own account of what an earlier turn left out. It is written by
+  // the turn that compacts and read by every turn after it — and a turn UNDER
+  // the trigger writes nothing, so without this the thread sends a prompt that
+  // remembers neither the history the host's window just sliced off nor the
+  // summary it already paid a provider call to have. Only when something really
+  // was left out: with the whole thread in the prompt the summary is a second,
+  // worse copy of what the model can already read.
+  const remembered = compaction?.state?.summary;
+  if (compacted === undefined && reduced && remembered !== undefined && remembered !== "") {
+    converted = [summaryMessage(remembered), ...converted];
   }
   // What this turn has ALREADY produced, appended after everything the projection
   // decided: never summarized and never shed, because each tool call in it is a
@@ -379,6 +410,7 @@ export async function turnModelMessages(input: TurnPromptInput): Promise<TurnPro
       { role: "system", content: system, providerOptions: CACHE_BREAKPOINT },
       ...converted,
     ],
+    reduced,
     ...(compacted === undefined ? {} : { compacted }),
   };
 }
@@ -480,6 +512,9 @@ export interface TurnLoop {
   /** What this turn compacted, as DATA for whoever owns the state slot — the
    *  loop does not know where that is. Written by the summarizer. */
   compacted?: CompactionState;
+  /** Whether this turn's prompt was the thread's whole history. See
+   *  {@link TurnPrompt.reduced}. */
+  reduced: boolean;
 }
 
 /** The model `streamText` is handed: the one the caller named, or the ordered
@@ -497,7 +532,7 @@ function turnModel(options: TurnLoopOptions): LanguageModel {
 
 export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
   const maxSteps = options.context?.maxSteps ?? DEFAULT_MAX_STEPS;
-  const { messages: modelMessages, compacted } = await turnModelMessages({
+  const { messages: modelMessages, compacted, reduced } = await turnModelMessages({
     messages: options.messages,
     system: options.system,
     // The live toolset, because the trigger has to count what the prompt
@@ -541,6 +576,7 @@ export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
   return {
     result,
     maxSteps,
+    reduced,
     // DATA out: what this turn compacted, for whoever owns the state slot.
     ...(compacted === undefined ? {} : { compacted }),
     async stepLimitPart() {

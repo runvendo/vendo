@@ -56,11 +56,16 @@ const NON_OVERFLOW_PATTERNS = [
   /^(Throttling error|Service unavailable):/i, // AWS Bedrock, via its own error formatter
   // OURS, not pi's. The line above matches the prefix pi's OWN formatter adds,
   // which this stack never sees: `@ai-sdk/amazon-bedrock` hands us the service's
-  // sentence unprefixed, and the header's whole worked example then fell through
-  // to the generic `too many tokens` pattern below — answering a throttle by
-  // summarizing the thread and calling straight back, which is the exact failure
-  // that paragraph was written to prevent.
-  /too many tokens,? please wait/i, // AWS Bedrock throttling, in the service's own words
+  // sentence unprefixed on `doGenerate` and prefixed with the raw exception NAME
+  // (`ThrottlingException:`, not `Throttling error:`) on `doStream`, and the
+  // header's whole worked example then fell through to the generic `too many
+  // tokens` pattern below — answering a throttle by summarizing the thread and
+  // calling straight back, which is the exact failure that paragraph was written
+  // to prevent. Matching on the QUOTA is what made that guard partial: Bedrock
+  // names a different one each time it is hit (tokens, tokens per day,
+  // requests). The instruction is the constant, and it is also the whole
+  // distinction — a prompt that does not fit never comes to fit by waiting.
+  /please wait before trying again/i, // AWS Bedrock throttling, whichever quota it names
   /rate limit/i, // Generic rate limiting
   /too many requests/i, // Generic HTTP 429 style
 ] as const;
