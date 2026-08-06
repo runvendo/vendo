@@ -168,6 +168,10 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, discover = true
   // guaranteed "this view didn't load". The host's own children stay up until
   // there is something real to swap in.
   const appId = appIdProp ?? (pin === undefined && discovery.status === "ready" ? discovery.appId : undefined);
+  // The placed app's own build status. Only discovery carries one: an explicit
+  // `appId`/`pin` prop is the host asserting the slot's contents, and that path
+  // is unchanged.
+  const status = appIdProp === undefined && pin === undefined ? discovery.status : undefined;
 
   // A slot id lives in the host's markup and nowhere else, so a surface that is
   // not on this page (the embed's "Add to…" picker) can only learn this slot
@@ -197,6 +201,22 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, discover = true
       console.warn(`[vendo] VendoSlot "${id}": suggestions open the conversation surface — mount a VendoOverlay for them to land in.`);
     }
   };
+
+  // A placement row is written the moment the app id is minted, so the slot
+  // knows it is about to be filled while the build is still streaming. It says
+  // so with the skeleton the empty state already uses — minus the invitation,
+  // because there is nothing to ask for any more. Ahead of the empty/children
+  // arms below: a slot with a build coming is not empty, and the host's markup
+  // gives way to the view that is about to take its place.
+  if (status === "building") {
+    return (
+      <ChromeRoot>
+        <div className="fl-slot" data-vendo-slot={id}>
+          <SlotGhost label="Building your view…" loading />
+        </div>
+      </ChromeRoot>
+    );
+  }
 
   if (!appId && !pin) {
     if (children !== undefined) return <>{children}</>;
