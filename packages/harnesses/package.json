@@ -1,7 +1,7 @@
 {
   "name": "@vendoai/harnesses",
-  "version": "0.5.0",
-  "description": "The harness runtime: runs any Harness safely, and vendo() \u2014 the default in-process thinker.",
+  "version": "1.0.0",
+  "description": "The harness runtime: runs any Harness safely, and vendo() — the default in-process thinker.",
   "keywords": [
     "ai",
     "agent",

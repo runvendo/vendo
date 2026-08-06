@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/kit",
-  "version": "0.7.0",
+  "version": "1.0.0",
   "description": "The code-land runtime for Vendo apps: the Kit components, the reshape + aggregate vocabulary, and the guarded data/action hooks a generated app imports inside its box.",
   "keywords": [
     "ai",
