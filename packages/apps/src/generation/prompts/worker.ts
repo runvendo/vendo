@@ -22,7 +22,6 @@ import {
   hostDesignRulesSection,
   hostThemeSection,
 } from "../contracts/sections.js";
-import { PREWIRED_SCHEMAS } from "../../prewired-schema.js";
 import type { GenerationDependencies } from "../engine.js";
 
 /** One query result trimmed to this many characters of JSON. Enough rows to
@@ -45,12 +44,11 @@ You can only see your own section. Do not write anything belonging elsewhere in 
 
 /** The docs for exactly the components this group's leaves name: the host's own
  *  entries (schema and all — a host component is the brand-native answer), then
- *  the Kit and legacy primitives from the generated specs. */
+ *  the Kit components from the generated specs. */
 const componentDocs = (group: PlanGroup, catalog: NormalizedCatalog): string => {
   const named = new Set(group.leaves.map(({ component }) => component));
   const host = catalog.filter(({ name }) => named.has(name));
   const kit = KIT_WIRE_COMPONENT_NAMES.filter((name) => named.has(name));
-  const legacy = Object.entries(PREWIRED_SCHEMAS).filter(([name]) => named.has(name));
   return [
     host.length === 0 ? "" : `THIS HOST'S OWN COMPONENTS (use these exact prop names):\n${JSON.stringify(
       host.map(({ name, description, propsJsonSchema, examples }) => ({
@@ -63,7 +61,6 @@ const componentDocs = (group: PlanGroup, catalog: NormalizedCatalog): string => 
       2,
     )}`,
     kit.length === 0 ? "" : kitPrompt({ only: [...kit] }),
-    legacy.length === 0 ? "" : `PRIMITIVES:\n${legacy.map(([, schema]) => `- ${schema.signature}`).join("\n")}`,
   ].filter((section) => section !== "").join("\n\n");
 };
 

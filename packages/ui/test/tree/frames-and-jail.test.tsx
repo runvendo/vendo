@@ -147,7 +147,7 @@ describe("AppFrame", () => {
 
   it("uses a skeleton when the resuming cover is absent", () => {
     render(<AppFrame surface={{ kind: "resuming" }} />);
-    expect(document.querySelector('[data-primitive="Skeleton"]')).not.toBeNull();
+    expect(document.querySelector('[data-skeleton]')).not.toBeNull();
   });
 
   it("dispatches tree surfaces through PayloadView", () => {
@@ -380,7 +380,7 @@ describe("generated component jail structure", () => {
 
     await waitFor(() => expect(screen.queryByTitle("Generated component: Partial")).toBeNull());
     expect(screen.queryByRole("note", { name: "Generated component error" })).toBeNull();
-    expect(document.querySelector('[data-primitive="Skeleton"]')).not.toBeNull();
+    expect(document.querySelector('[data-skeleton]')).not.toBeNull();
   });
 
   it("contains a generated component that renders no content", async () => {

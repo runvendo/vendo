@@ -122,7 +122,7 @@ test("tree node failures and dangling children remain contained", async ({ page 
   await expect(nodeError).toContainText("Part of this view didn’t load.");
   await expect(nodeError).not.toContainText("exploded");
   await expect(page.getByText("Sibling survived")).toBeVisible();
-  await expect(page.locator('[data-dangling-node="not-yet-streamed"] [data-primitive="Skeleton"]')).toBeVisible();
+  await expect(page.locator('[data-dangling-node="not-yet-streamed"] [data-skeleton]')).toBeVisible();
   await expect(page.locator("#root")).not.toBeEmpty();
 
   const unexpected = pageErrors.filter(message => !message.includes("host render exploded inside its node boundary"));

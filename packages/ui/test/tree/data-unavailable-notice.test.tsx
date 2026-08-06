@@ -26,8 +26,8 @@ function spendingTree(extras: Record<string, unknown> = {}): UIPayload {
       { id: "root", component: "Stack", children: ["table"] },
       {
         id: "table",
-        component: "Table",
-        props: { columns: ["merchant", "amount"], rows: { $path: "/spend/rows" } },
+        component: "DataTable",
+        props: { columns: [{ key: "merchant" }, { key: "amount" }], rows: { $path: "/spend/rows" } },
       },
     ],
     ...extras,
@@ -45,8 +45,8 @@ function mixedTree(extras: Record<string, unknown> = {}): UIPayload {
       { id: "total", component: "Text", props: { text: { $path: "/spend/total" } } },
       {
         id: "table",
-        component: "Table",
-        props: { columns: ["merchant", "amount"], rows: { $path: "/spend/rows" } },
+        component: "DataTable",
+        props: { columns: [{ key: "merchant" }, { key: "amount" }], rows: { $path: "/spend/rows" } },
       },
     ],
     ...extras,

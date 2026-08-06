@@ -33,7 +33,7 @@ import {
   type TreeNode,
 } from "@vendoai/core";
 import type { AppDocument } from "@vendoai/core";
-import { prewiredPropNames } from "../prewired-schema.js";
+import { wirePropNames } from "../prewired-schema.js";
 import type { FloorDependencies, HostToolInfo } from "./deps.js";
 import { screenTypings } from "./screen-typings.js";
 import { screenTscFindings } from "./screen-tsc.js";
@@ -343,14 +343,15 @@ const hostPropsIssues = async (
   }
 };
 
-/** Prewired primitives are handed to the model by name plus an exact prop
- *  signature (prewired-schema.ts). The compiler keeps any attribute the model
- *  writes, so a wrong name (`data` for Table's `rows`, `onPress` for Button's
- *  `onClick`) survives into props and the renderer silently ignores it — the
- *  "valid table, empty rows" class. Reject unknown prop names so the model
- *  repairs to the real one instead of shipping a dead component. */
+/** Built-in components are handed to the model by name plus their exact prop
+ *  schemas (the Kit specs, via prewired-schema.ts). The compiler keeps any
+ *  attribute the model writes, so a wrong name (`data` for DataTable's `rows`,
+ *  `onPress` for Button's `onClick`) survives into props and the renderer
+ *  silently ignores it — the "valid table, empty rows" class. Reject unknown
+ *  prop names so the model repairs to the real one instead of shipping a dead
+ *  component. */
 const prewiredPropsIssues = (node: TreeNode): FactIssue[] => {
-  const allowed = prewiredPropNames.get(node.component);
+  const allowed = wirePropNames.get(node.component);
   const props = node.props;
   if (allowed === undefined || props === undefined) return [];
   return Object.keys(props)

@@ -1,7 +1,38 @@
 import type { CSSProperties } from "react";
-import { Skeleton } from "./primitives.js";
 
 export type FormShape = "slab" | "tiles" | "rows" | "pill" | "chart" | "control";
+
+/**
+ * The shimmer bar every silhouette below is built from. V4 (one component
+ * family) took `Skeleton` off the component vocabulary and the public
+ * `@vendoai/ui/tree` surface — a loading placeholder is renderer chrome, not
+ * something a model names. It lives here, with its only two consumers (this
+ * module and frames.tsx), and is NOT re-exported from tree/index.ts.
+ *
+ * `data-skeleton` is the stable hook tests select on (it replaced
+ * `data-primitive="Skeleton"`, which died with the primitive family).
+ */
+export function Skeleton(props: { width?: string | number; height?: string | number }) {
+  return (
+    <span
+      className="fl-glass fl-glass-shimmer"
+      data-skeleton=""
+      aria-hidden="true"
+      style={{
+        display: "block",
+        width: props.width ?? "100%",
+        height: props.height ?? "var(--vendo-skeleton-height, 16px)",
+        minHeight: props.height ?? "var(--vendo-skeleton-height, 16px)",
+        background: `linear-gradient(100deg,
+          color-mix(in srgb, var(--vendo-color-accent, #111111) 10%, transparent) 30%,
+          color-mix(in srgb, var(--vendo-color-accent, #111111) 22%, transparent) 50%,
+          color-mix(in srgb, var(--vendo-color-accent, #111111) 10%, transparent) 70%)`,
+        backgroundSize: "200% 100%",
+        borderRadius: "var(--vendo-radius-medium, 10px)",
+      }}
+    />
+  );
+}
 
 /**
  * Pick A (ui-lane-renderer, 2026-07-19) — the tree streams before generated

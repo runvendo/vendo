@@ -185,11 +185,11 @@ describe("tsc subsumes components-exist (hostPropsIssues)", () => {
 
 describe("tsc subsumes components-exist (prewiredPropsIssues)", () => {
   it("Table.data instead of Table.rows is a JSX unknown-attribute error", async () => {
-    const wire = screen('<Table data={invoices.data}/>');
+    const wire = screen('<DataTable data={invoices.data}/>');
     const { bespoke, tsc: findings } = await bothReport(wire, async (tree) =>
       (await catalogIssues(tree, undefined, catalog)).map((issue) => issue.message));
-    expect(bespoke[0]).toContain('sets unknown prop "data" on prewired component "Table"');
-    expect(findings[0]?.message).toContain('sets unknown prop "data" on <Table>');
+    expect(bespoke[0]).toContain('sets unknown prop "data" on prewired component "DataTable"');
+    expect(findings[0]?.message).toContain('sets unknown prop "data" on <DataTable>');
     expect(findings[0]?.message).toContain("rows");
   });
 
@@ -203,7 +203,7 @@ describe("tsc subsumes components-exist (prewiredPropsIssues)", () => {
   });
 
   it("still allows `pending` — the plan skeleton writes it on every leaf", () => {
-    expect(tsc(screen('<Table rows={invoices.data} pending={true}/>'))).toEqual([]);
+    expect(tsc(screen('<DataTable rows={invoices.data} pending={true}/>'))).toEqual([]);
   });
 });
 
@@ -246,7 +246,7 @@ describe("tsc subsumes bindings-fit (kitSlotIssues)", () => {
 
 describe("tsc subsumes bindings-fit (bindingShapeIssues — the field-existence half)", () => {
   it("a field the response shape does not carry is a property-access error", async () => {
-    const wire = screen('<Table rows={invoices.rowz}/>');
+    const wire = screen('<DataTable rows={invoices.rowz}/>');
     const { bespoke, tsc: findings } = await bothReport(wire, (tree) =>
       checkBindingShapes(tree.nodes, tree.queries ?? [], toolShapes).map((error) => error.message));
     expect(bespoke[0]).toContain('field "rowz" is absent from the tool\'s response shape');
@@ -280,12 +280,15 @@ describe("the honest gap list — what tsc CANNOT see", () => {
     expect(tsc('<App name="x"><Query id="invoices" tool="not_a_real_tool"/></App>')).toEqual([]);
   });
 
-  it("GAP: a permissive prewired prop type accepts a wrongly-typed binding", () => {
-    // The legacy prewired primitives carry no schema, only an allowed prop-NAME
-    // set. Their prop NAMES are subsumed; their prop TYPES are not, so
-    // `<Stat value={rows}/>` type-checks where a Kit `<Money cents={...}/>`
-    // would not.
-    expect(tsc(screen('<Stat label="Total" value={invoices.data}/>'))).toEqual([]);
+  /** CLOSED by V4 (one component family). This used to be a gap: the legacy
+   *  prewired primitives carried no schema, only an allowed prop-NAME set, so
+   *  `<Stat value={rows}/>` type-checked where a Kit `<Money cents={...}/>`
+   *  would not. Retiring them left one Stat with a real zod-derived type, so
+   *  the wrongly-typed binding is now caught like any other. */
+  it("no longer a gap: every built-in carries its Kit prop TYPES, not just names", () => {
+    const findings = tsc(screen('<Stat label="Total" value={invoices.data}/>'));
+    expect(findings.length).toBeGreaterThan(0);
+    expect(findings.map((finding) => finding.message).join(" ")).toContain('prop "value" on <Stat>');
   });
 
   it("GAP: asPoints into a host prop with its own item fields is a valid call", () => {

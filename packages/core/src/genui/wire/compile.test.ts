@@ -595,12 +595,16 @@ describe("compileWire source resolution (D3)", () => {
     expect(result.tree.nodes[1]).toStrictEqual({ id: "note-1", component: "Note", source: "generated" });
   });
 
-  it("host beats prewired beats island for the same name", () => {
+  it("host beats built-in beats island for the same name", () => {
     const host = compile("<App><Card/></App>", { hostComponents: ["Card"] });
     expect(host.tree.nodes[1]?.source).toBe("host");
-    const prewiredOverIsland = compile('<App><Card/><Island name="Card">src</Island></App>');
-    expect(prewiredOverIsland.tree.nodes[1]?.source).toBe("prewired");
-    expect(prewiredOverIsland.components).toStrictEqual({ Card: "src" });
+    // V4 — the built-in vocabulary is the whole Kit, and an island may not
+    // take one of its names: the built-in always wins resolution, so the
+    // island source would be dead weight. The NAME is refused outright.
+    const builtinOverIsland = compile('<App><Card/><Island name="Card">src</Island></App>');
+    expect(builtinOverIsland.tree.nodes[1]?.source).toBe("prewired");
+    expect(builtinOverIsland.components).toStrictEqual({});
+    expect(codes(builtinOverIsland)).toContain("invalid-island-name");
   });
 
   it("leaves source undefined for unknown names, with no issue", () => {
@@ -1228,14 +1232,14 @@ describe("compileWire display-slot object check (raw-braces class)", () => {
   const tableWire = (attrs: string): string => `
 <App name="Deadlines">
   <Query id="dl" tool="host_listDeadlines"/>
-  <Table ${attrs}/>
+  <DataTable ${attrs}/>
 </App>`;
 
-  it("Table rows carrying object-valued columns fail: every displayed cell must be a scalar", () => {
+  it("DataTable rows carrying object-valued columns fail: every displayed cell must be a scalar", () => {
     const result = compile(tableWire("rows={dl.data}"), shapes);
     expect(codes(result)).toEqual(["shape-mismatch"]);
     const error = result.bindingErrors[0];
-    expect(error?.nodeId).toBe("table-1");
+    expect(error?.nodeId).toBe("datatable-1");
     expect(error?.prop).toBe("rows");
     expect(error?.message).toContain("progress");
     expect(error?.message).toContain("assignedTo");
@@ -1248,9 +1252,9 @@ describe("compileWire display-slot object check (raw-braces class)", () => {
   });
 
   it("a literal columns list restricted to scalar keys passes; one naming an object field fails", () => {
-    const scalarColumns = compile(tableWire('columns={["client", "dueDate"]} rows={dl.data}'), shapes);
+    const scalarColumns = compile(tableWire('columns={[{key: "client"}, {key: "dueDate"}]} rows={dl.data}'), shapes);
     expect(scalarColumns.bindingErrors).toEqual([]);
-    const objectColumn = compile(tableWire('columns={["client", {key: "progress"}]} rows={dl.data}'), shapes);
+    const objectColumn = compile(tableWire('columns={[{key: "client"}, {key: "progress"}]} rows={dl.data}'), shapes);
     expect(codes(objectColumn)).toEqual(["shape-mismatch"]);
     expect(objectColumn.bindingErrors[0]?.message).toContain("progress");
     expect(objectColumn.bindingErrors[0]?.message).not.toContain("assignedTo");

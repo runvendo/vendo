@@ -1,5 +1,5 @@
 import {
-  RESERVED_COMPONENT_NAMES,
+  KIT_COMPONENT_NAMES,
   TREE_MAX_COMPONENT_SOURCE_CHARS,
   TREE_MAX_GENERATED_COMPONENTS,
   TREE_MAX_TOTAL_COMPONENT_CHARS,
@@ -36,7 +36,6 @@ import { JailedComponent, type JailFurnishing } from "./jail/JailedComponent.js"
 import { ContainedNotice } from "./notice.js";
 import { KIT_COMPONENTS } from "../kit/registry.js";
 import { useKeyedState } from "../kit/state.js";
-import { PREWIRED_COMPONENTS } from "./primitives.js";
 
 export interface TreeViewProps {
   tree: WalkTree;
@@ -113,7 +112,7 @@ const validateWalkTree = (input: WalkTree): WalkValidation => {
   }
   const components = input.components ?? {};
   // The jail-compile bounds the v1 walk enforced per render survive here:
-  // reserved names can never be shadowed and the §8 component caps hold even
+  // Kit names can never be shadowed and the §8 component caps hold even
   // for payloads that bypassed document validation (direct TreeView input).
   const names = Object.keys(components);
   if (names.length > TREE_MAX_GENERATED_COMPONENTS) {
@@ -121,8 +120,8 @@ const validateWalkTree = (input: WalkTree): WalkValidation => {
   }
   let totalChars = 0;
   for (const name of names) {
-    if ((RESERVED_COMPONENT_NAMES as readonly string[]).includes(name)) {
-      return walkFail(`generated component "${name}" shadows a reserved primitive name`);
+    if (KIT_COMPONENT_NAMES.includes(name)) {
+      return walkFail(`generated component "${name}" shadows a Kit component name`);
     }
     const source = components[name];
     if (typeof source !== "string") return walkFail(`generated component "${name}" source must be a string`);
@@ -505,16 +504,15 @@ function NodeRenderer(props: NodeRendererProps) {
       </FluidReveal>
     );
   } else {
-    // W3 Kit adoption — legacy prewired names keep their implementations
-    // (retirement is Wave 5); the Kit fills the names the legacy set lacks
-    // (Money, DateTime, DataTable, charts, Form, Disclaimer, …).
-    const primitive = PREWIRED_COMPONENTS[node.component]
-      ?? (KIT_COMPONENTS[node.component] as ComponentType<Record<string, unknown>> | undefined);
+    // V4 — one component family: the Kit is the only built-in set.
+    const kit = KIT_COMPONENTS[node.component] as ComponentType<Record<string, unknown>> | undefined;
     const host = props.components[node.component] as ComponentType<Record<string, unknown>> | undefined;
     // v2 spec §2 — an explicit `source: "host"` resolution means the host
-    // brand won the name; only an undefined source keeps the historical
-    // primitive-first order.
-    const Implementation = node.source === "host" ? host ?? primitive : primitive ?? host;
+    // brand won the name. An undefined (or "prewired") source keeps the
+    // built-in first, which is exactly the historical primitive-first order:
+    // deliberate v1 parity, so a stored app whose node collides with a host
+    // catalog name still renders the built-in it was written against.
+    const Implementation = node.source === "host" ? host ?? kit : kit ?? host;
     if (!Implementation) {
       // Mid-stream, an unresolved name is a transient (the defining island or
       // a corrected reference may still arrive) — hold the silhouette; the

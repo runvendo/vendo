@@ -349,7 +349,7 @@ describe("H3 — the seam's payload streams, then settles", () => {
   const APP_VENDO = "/user/apps/app_5/app.vendo";
   const PLAN_VENDO = "/user/apps/app_5/plan.vendo";
   const GOOD = `<App name="X"><Stack><Text value="Hi" /></Stack></App>`;
-  const PLAN = `<Plan name="X"><Group title="G"><Leaf component="Table" /></Group></Plan>`;
+  const PLAN = `<Plan name="X"><Group title="G"><Leaf component="DataTable" /></Group></Plan>`;
 
   it("stamps streaming:true on the skeleton, so a mid-build tree is not read as a finished one", async () => {
     const plan = await viewForWrite(PLAN_VENDO, PLAN, { emit: () => undefined });

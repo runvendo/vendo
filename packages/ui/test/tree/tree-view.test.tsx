@@ -17,27 +17,70 @@ function tree(nodes: WalkTree["nodes"], root = nodes[0]?.id ?? "root", component
 }
 
 describe("TreeView public surface", () => {
-  it("renders the reserved primitives", () => {
+  it("renders the built-in Kit layout components", () => {
     render(
       <TreeView
         tree={tree([
-          { id: "root", component: "Stack", children: ["heading", "row", "grid", "surface", "divider", "skeleton"] },
+          { id: "root", component: "Stack", children: ["heading", "row", "grid", "surface", "card", "divider"] },
           { id: "heading", component: "Text", props: { text: "Tree heading", variant: "heading" } },
           { id: "row", component: "Row" },
           { id: "grid", component: "Grid", props: { columns: 3 } },
           { id: "surface", component: "Surface" },
+          { id: "card", component: "Card", props: { title: "Spend" } },
           { id: "divider", component: "Divider" },
-          { id: "skeleton", component: "Skeleton" },
         ])}
         components={{}}
         onAction={ok}
       />,
     );
 
-    expect(screen.getByText("Tree heading").getAttribute("data-primitive")).toBe("Text");
-    for (const name of ["Stack", "Row", "Grid", "Surface", "Divider", "Skeleton"]) {
-      expect(document.querySelector(`[data-primitive="${name}"]`)).not.toBeNull();
+    expect(screen.getByText("Tree heading").getAttribute("data-kit")).toBe("Text");
+    for (const name of ["Stack", "Row", "Grid", "Surface", "Card", "Divider"]) {
+      expect(document.querySelector(`[data-kit="${name}"]`)).not.toBeNull();
     }
+  });
+
+  /** R4 containment, for the two names V4 retired: a stored app naming
+   *  `Table`/`Skeleton` must show the contained notice on THAT node while every
+   *  sibling still renders — never a blank surface. */
+  it("contains a retired Table node while its siblings still render", () => {
+    render(
+      <TreeView
+        tree={tree([
+          { id: "root", component: "Stack", children: ["before", "gone", "after"] },
+          { id: "before", component: "Text", props: { text: "Above the table" } },
+          { id: "gone", component: "Table", props: { rows: [], columns: ["a"] } },
+          { id: "after", component: "Stat", props: { label: "Total", value: 42 } },
+        ])}
+        components={{}}
+        onAction={ok}
+      />,
+    );
+
+    expect(screen.getByRole("note", { name: /unknown component/i }).textContent).toContain("Table");
+    // The siblings are the point: containment, not a dead surface.
+    expect(screen.getByText("Above the table")).toBeTruthy();
+    expect(document.querySelector('[data-kit="Stat"]')).not.toBeNull();
+    expect(screen.getByText("42")).toBeTruthy();
+  });
+
+  /** V4 — `Skeleton` left the vocabulary with the legacy family; a tree naming
+   *  it is now an unknown component, contained like any other. */
+  it("contains a tree node naming the retired Skeleton primitive", () => {
+    render(
+      <TreeView
+        tree={tree([
+          { id: "root", component: "Stack", children: ["gone", "kept"] },
+          { id: "gone", component: "Skeleton" },
+          { id: "kept", component: "Text", props: { text: "Sibling survived" } },
+        ])}
+        components={{}}
+        onAction={ok}
+      />,
+    );
+
+    expect(screen.getByRole("note", { name: /unknown component/i }).textContent).toContain("Skeleton");
+    expect(screen.getByText("Sibling survived")).toBeTruthy();
   });
 
   it("looks up host components and contains unknown names", () => {
@@ -67,7 +110,7 @@ describe("TreeView public surface", () => {
       />,
     );
 
-    expect(document.querySelector('[data-dangling-node="not-yet-streamed"] [data-primitive="Skeleton"]')).not.toBeNull();
+    expect(document.querySelector('[data-dangling-node="not-yet-streamed"] [data-skeleton]')).not.toBeNull();
   });
 
   it("skeletons a generated node until its streamed source arrives", () => {
@@ -78,7 +121,7 @@ describe("TreeView public surface", () => {
 
     render(<TreeView tree={partial} components={{}} onAction={ok} />);
 
-    expect(document.querySelector('[data-streaming-component="RevenueCard"] [data-primitive="Skeleton"]')).not.toBeNull();
+    expect(document.querySelector('[data-streaming-component="RevenueCard"] [data-skeleton]')).not.toBeNull();
     expect(screen.queryByRole("note", { name: /invalid ui tree/i })).toBeNull();
   });
 
@@ -105,7 +148,7 @@ describe("TreeView public surface", () => {
     render(<TreeView tree={partial} components={{}} onAction={ok} />);
 
     expect(screen.queryByRole("note", { name: /empty ui tree/i })).toBeNull();
-    expect(document.querySelector('[data-primitive="Skeleton"]')).not.toBeNull();
+    expect(document.querySelector('[data-skeleton]')).not.toBeNull();
   });
 
   it("contains an erroring host node while preserving its sibling", () => {
@@ -154,7 +197,7 @@ describe("TreeView public surface", () => {
 
     const view = render(<TreeView tree={partial} components={{ Boom }} onAction={ok} />);
     expect(screen.queryByRole("note", { name: /node render error/i })).toBeNull();
-    expect(document.querySelector('[data-primitive="Skeleton"]')).not.toBeNull();
+    expect(document.querySelector('[data-skeleton]')).not.toBeNull();
 
     // The FINAL payload (streaming flag gone) re-evaluates fresh: the crash
     // is now a verdict and the notice renders.
@@ -216,7 +259,7 @@ describe("TreeView public surface", () => {
     render(<PayloadView payload={payload} components={{}} onAction={ok} />);
 
     expect(screen.queryByRole("note", { name: /invalid ui tree/i })).toBeNull();
-    expect(document.querySelector('[data-primitive="Skeleton"]')).not.toBeNull();
+    expect(document.querySelector('[data-skeleton]')).not.toBeNull();
   });
 
   it("contains unknown format versions", () => {
@@ -257,7 +300,7 @@ describe("TreeView public surface", () => {
 
     const notice = screen.getByRole("note", { name: /invalid ui tree/i });
     expect(notice.getAttribute("data-error-code")).toBe("provision");
-    expect(notice.textContent).toMatch(/reserved/i);
+    expect(notice.textContent).toMatch(/shadows a Kit component/i);
   });
 });
 

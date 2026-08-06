@@ -8,8 +8,8 @@
  * zod-schema'd and classed `config | copy | data`; the model-facing prompt is
  * GENERATED from those schemas by `kitPrompt()`.
  *
- * This is a NEW module. The existing prewired set (`../tree`) stays intact;
- * retirement is a later wave.
+ * V4: the Kit is the ONLY component family — the legacy prewired/branded set
+ * under `../tree` is retired.
  */
 
 // Semantics

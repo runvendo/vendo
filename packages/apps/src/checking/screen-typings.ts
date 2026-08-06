@@ -35,7 +35,6 @@ import {
   type ShapeType,
 } from "@vendoai/core";
 import { z, type ZodTypeAny } from "zod";
-import { PREWIRED_SCHEMAS } from "../prewired-schema.js";
 
 /** One query a screen declares: `<Query id="invoices" tool="maple_invoices_list"/>`.
  *  Structurally the floor's own `tree.queries` entry. */
@@ -302,18 +301,12 @@ export function screenTypings(input: ScreenTypingsInput): string {
     lines.push(componentDeclaration(name, propsText));
   };
 
-  // Kit first, then the legacy prewired set: both shadow a host component of
-  // the same name, because the renderer resolves a reserved name to the
-  // primitive before it looks at the catalog (facts.ts `catalogIssues`).
+  // The Kit first: a built-in shadows a host component of the same name,
+  // because the renderer resolves a built-in name before it looks at the
+  // catalog (facts.ts `catalogIssues`). V4: the Kit specs are the only source.
   for (const name of KIT_WIRE_COMPONENT_NAMES) {
     const spec = kitSpec(name);
     if (spec !== undefined) push(name, propsTextFrom(spec.props));
-  }
-  for (const [name, schema] of Object.entries(PREWIRED_SCHEMAS)) {
-    // Prewired primitives carry no schema — a hand-written signature string
-    // and an exact prop-NAME set (prewired-schema.ts). Names are the contract;
-    // the types stay permissive.
-    push(name, `{ ${[...schema.props.map((prop) => `${prop}?: any`), AMBIENT_PROPS].join("; ")} }`);
   }
   for (const entry of input.catalog) {
     push(entry.name, entry.propsJsonSchema === undefined
@@ -341,10 +334,17 @@ export function screenTypings(input: ScreenTypingsInput): string {
   // `$state` is a live binding kind (core `isStateBinding`) whose values are
   // written at runtime. The dialect settled (#808) that it is EXACTLY one
   // segment — `state.<key>`, never `state.<key>.<deeper>`, no aggregates on it,
-  // none inside `$expr`. `unknown` is the shim that enforces that: `state.foo`
-  // reads any value, but `state.foo.bar` needs a narrow the wire cannot write,
-  // so the deeper access is a type error — the compiler would silently drop it
-  // at runtime, so the screen must not name it.
-  lines.push("declare const state: Record<string, unknown>;");
+  // none inside `$expr`.
+  //
+  // `never` is the shim that enforces exactly that, and nothing more: a
+  // single-segment read binds into ANY prop (the renderer resolves the real
+  // value at render, so the gate must not guess its type), while `state.k.deep`
+  // is an error because `never` has no members — the renderer would silently
+  // drop the deeper access, so the screen must not name it. This was
+  // `Record<string, unknown>` until V4: `unknown` banned the deeper access the
+  // same way, but it ALSO refused every typed prop, which only went unnoticed
+  // while the legacy prewired components' permissive `any` props existed to
+  // absorb state bindings. Retiring them made that hole load-bearing.
+  lines.push("declare const state: Record<string, never>;");
   return `${lines.join("\n")}\n`;
 }

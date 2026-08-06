@@ -164,11 +164,11 @@ describe("evaluateAssertion", () => {
 
   it("matches rendered views from fake signals and fake DOM roles/test ids", async () => {
     const observed = signals({
-      views: [{ component: "Table", role: "table", testId: "ui-node", text: "Pricing" }],
+      views: [{ component: "DataTable", role: "table", testId: "ui-node", text: "Pricing" }],
     });
     const page = new FakePage({ "role:list": 1, "testid:ui-node": 1 });
 
-    await expect(evaluateAssertion({ kind: "view-rendered", component: "Table", role: "table" }, observed))
+    await expect(evaluateAssertion({ kind: "view-rendered", component: "DataTable", role: "table" }, observed))
       .resolves.toMatchObject({ pass: true });
     await expect(evaluateAssertion({ kind: "view-rendered", role: "list" }, signals({}), page))
       .resolves.toMatchObject({ pass: true });

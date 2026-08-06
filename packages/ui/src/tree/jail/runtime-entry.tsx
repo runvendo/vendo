@@ -16,7 +16,7 @@ import { zodShim } from "./zod-shim.js";
 import { ISLAND_AMBIENT_NAMES, jailPackageUrl, type IslandResolvableModule } from "@vendoai/core";
 import { applyThemeVars, postToHost, startFrameProtocol } from "../../embedded-runtime.js";
 import {
-  Accordion, Badge, BarChart, Button, Callout, CardList, Checkbox, DataTable,
+  Accordion, Badge, BarChart, Button, Callout, Card, CardList, Checkbox, DataTable,
   DatePicker, DateTime, Disclaimer, Divider, DonutChart, EnumBadge, Form, Grid,
   Input, LineChart, Money, Num, Percent, Progress, Row, Select, Sparkline,
   Stack, Stat, Surface, Tabs, Text, Textarea,
@@ -189,7 +189,7 @@ const AMBIENT_SCOPE: Record<(typeof ISLAND_AMBIENT_NAMES)[number], unknown> = {
   useTransition: React.useTransition,
   useDeferredValue: React.useDeferredValue,
   useSyncExternalStore: React.useSyncExternalStore,
-  Stack, Row, Grid, Surface, Divider,
+  Stack, Row, Grid, Surface, Card, Divider,
   Text, Money, DateTime, Percent, Num, EnumBadge,
   DataTable, CardList, Stat, Badge,
   LineChart, BarChart, DonutChart, Sparkline, Progress,

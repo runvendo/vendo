@@ -65,7 +65,10 @@ export const skeletonFromPlan = (plan: AppPlan, from = 0): Skeleton => {
   if (tabs.length > 0) {
     // The panels are the bar's CHILDREN, one per tab in tab order — that
     // nesting is what makes the bar own which panel shows (packages/ui
-    // tree/branded.tsx Tabs), so switching tabs never leaves the browser.
+    // kit/feedback/tabs.tsx Tabs), so switching tabs never leaves the browser.
+    // This node shape is a FIXED SEAM: the Kit Tabs is written to satisfy it,
+    // and packages/ui test/tree/tabs-skeleton-seam.test.tsx renders exactly
+    // this through the real renderer so the two cannot drift.
     nodes.push({
       id: TAB_CHROME_ID,
       component: "Tabs",

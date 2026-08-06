@@ -67,22 +67,23 @@ describe("screenTypings", () => {
     expect(dts).toContain("declare const MapleFreeform: (props: { [prop: string]: any");
   });
 
-  it("lets a prewired/Kit name win over a host component of the same name", () => {
+  it("lets a Kit name win over a host component of the same name", () => {
     const dts = screenTypings({
-      catalog: [{ name: "Stack", description: "a host component squatting a reserved name" }],
+      catalog: [{ name: "Stack", description: "a host component squatting a built-in name" }],
       queries: [],
     });
     expect(dts.match(/declare const Stack:/gu)).toHaveLength(1);
-    // The renderer resolves a reserved name to the primitive before it looks at
-    // the catalog, so the primitive's prop-NAME set is what a screen may write.
-    expect(dts).toContain("declare const Stack: (props: { gap?: any;");
+    // The renderer resolves a built-in name before it looks at the catalog, so
+    // the Kit spec's typed props are what a screen may write.
+    expect(dts).toContain("declare const Stack: (props: { gap?: number;");
   });
 
-  it("keeps the legacy prewired primitives to their prop NAMES, permissively typed", () => {
-    // They carry no schema — a hand-written signature string and an exact
-    // allowed-name set (prewired-schema.ts). Names are the contract.
+  /** V4 — the legacy prewired family is retired, so DataTable is the only
+   *  table and it carries a real zod-derived type, not a permissive name set. */
+  it("types the one table from its Kit spec, not a permissive name list", () => {
     const dts = screenTypings({ catalog: [], queries: [] });
-    expect(dts).toContain("declare const Table: (props: { columns?: any; rows?: any; caption?: any; emptyLabel?: any; rowKey?: any;");
+    expect(dts).toContain("declare const DataTable: (props: { rows:");
+    expect(dts).not.toContain("declare const Table:");
   });
 
   it("allows `pending` on every component (the plan skeleton writes it on every leaf)", () => {

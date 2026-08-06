@@ -27,7 +27,7 @@ const GOOD_APP = `<App name="Invoices">
 
 const GOOD_PLAN = `<Plan name="Invoices">
   <Group title="Unpaid">
-    <Leaf component="Table" />
+    <Leaf component="DataTable" />
   </Group>
 </Plan>`;
 
@@ -234,7 +234,7 @@ describe("a save to plan.vendo", () => {
 describe("the plan's display hint", () => {
   const planWith = (head: string) => `<${head}>
   <Group title="Unpaid">
-    <Leaf component="Table" />
+    <Leaf component="DataTable" />
   </Group>
 </Plan>`;
 
@@ -336,7 +336,7 @@ describe("the app half of an app.vendo commit (§1.6)", () => {
     const { calls, emitted, save } = appSeam({});
     await save(
       PLAN_VENDO,
-      `<Plan name="Invoices"><Group title="Unpaid"><Leaf component="Table" /></Group></Plan>`,
+      `<Plan name="Invoices"><Group title="Unpaid"><Leaf component="DataTable" /></Group></Plan>`,
     );
     expect(calls).toEqual([]);
     expect(emitted).toHaveLength(1);
