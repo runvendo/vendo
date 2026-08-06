@@ -22,8 +22,6 @@ import { wireErrorMessage } from "../wire-error.js";
 import { reportHire, type HireRecord, type UsageTotals } from "../runtime.js";
 import {
   jsonSchema,
-  stepCountIs,
-  streamText,
   tool,
   type LanguageModel,
   type LanguageModelUsage,
@@ -34,6 +32,12 @@ import { defineHarness } from "../define.js";
 /** How many messages a hired subagent may exchange before it must report back.
  *  Bounded so a runaway helper costs a receipt, not a turn. */
 const SUBAGENT_MAX_STEPS = 12;
+
+/** The job description a hire runs under. Its reply is the resident's private
+ *  context, not a wire artifact, which is why the prose says so out loud. */
+const SPECIALIST_SYSTEM =
+  "You are a specialist hired for one job. Do it with the tools you have, then report back in "
+  + "at most three sentences. Your reply is read by another agent, not by a person.";
 
 const HIRE_SUBAGENT = "hire_subagent";
 
@@ -254,7 +258,10 @@ async function runSubagent(
   turn: Turn<unknown>,
   model: LanguageModel,
   input: { instructions: string; skill?: string },
+  /** Already the resident's toolset minus the hiring tool — depth-1 lock #1. */
   tools: ToolSet,
+  /** The loadout the specialist may PICK from, hiring filtered out — lock #2. */
+  equipped: readonly string[],
 ): Promise<SubagentReport> {
   let brief = input.instructions;
   if (input.skill !== undefined) {
@@ -263,18 +270,26 @@ async function runSubagent(
     const body = await turn.skills.load(input.skill);
     brief = `${body}\n\n---\n\n${input.instructions}`;
   }
-  const result = streamText({
+  // THE shipped loop, for the hire as well. This used to be a second, bare
+  // `streamText`, so every rail `startTurn` owns — the stop conditions, the
+  // history assembly, the cache breakpoints, the stated retry budget — stopped
+  // at the resident, and a specialist ran without them. A hire is a turn; the
+  // only thing that makes it different is whose words it speaks.
+  const loop = await startTurn({
     model,
-    system:
-      "You are a specialist hired for one job. Do it with the tools you have, then report back in "
-      + "at most three sentences. Your reply is read by another agent, not by a person.",
-    prompt: brief,
-    // No hiring tool: depth is bounded at one, so a helper cannot spawn a tree.
+    system: SPECIALIST_SYSTEM,
+    // `startTurn` drives a thread, and a hire's thread is one message long: the
+    // brief, as the ask the specialist answers.
+    messages: [{ id: "hire-brief", role: "user", parts: [{ type: "text", text: brief }] }],
     tools,
-    stopWhen: [stepCountIs(SUBAGENT_MAX_STEPS)],
-    abortSignal: turn.signal,
+    // `attach` is a no-op for the same reason it is on the resident: the runtime
+    // owns `find_tools`, not the harness.
+    toolSearch: { activeToolNames: () => [...equipped], attach: () => {} },
+    context: { maxSteps: SUBAGENT_MAX_STEPS },
+    signal: turn.signal,
+    turnId: turn.turnId,
   });
-  const [text, usage] = await Promise.all([result.text, result.totalUsage]);
+  const [text, usage] = await Promise.all([loop.result.text, loop.result.totalUsage]);
   return {
     summary: text.trim() || "The specialist finished without a summary.",
     usage: usageOf(usage, model),
@@ -331,7 +346,16 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
             // searched-in tools included — minus the hiring tool, so depth is
             // bounded at one and a helper cannot spawn a tree.
             const { [HIRE_SUBAGENT]: _hiring, ...hands } = residentTools;
-            const report = await runSubagent(turn, model, input, hands);
+            const report = await runSubagent(
+              turn,
+              model,
+              input,
+              hands,
+              // A snapshot, not the live variable: the specialist's hands are
+              // frozen at hire time, so its loadout has to be too or it could
+              // name a tool it was never handed.
+              equipped.filter((name) => name !== HIRE_SUBAGENT),
+            );
             // The ONLY place a hire's spend is reported. The turn's `usage` event
             // stays the resident's own, so the run row and the hire rows partition
             // the turn instead of overlapping — see `reportRun`.
