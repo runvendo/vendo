@@ -40,7 +40,8 @@ async function drive(options: {
   signal?: AbortSignal;
   skills?: ReturnType<typeof testSkills>;
   messages?: Turn["messages"];
-  /** The per-turn options a caller sent — `optionsSchema`'s parsed shape. */
+  /** The per-turn options a caller sent — `Turn.options`, as `runtime.run`
+   *  delivers them: typed by `VendoHarnessOptions`, never schema-parsed. */
   options?: Record<string, unknown>;
 }) {
   const guard = options.guard ?? testGuard();
@@ -94,10 +95,6 @@ describe("vendo() is a harness", () => {
     const harness = vendo();
     expect(harness.name).toBe("vendo");
     expect(harness.requires?.sandbox).not.toBe(true);
-  });
-
-  it("declares its per-turn-overridable knobs", () => {
-    expect(vendo().optionsSchema).toBeDefined();
   });
 });
 

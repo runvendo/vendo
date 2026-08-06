@@ -772,11 +772,10 @@ describe("a window override has to be a window", () => {
   });
 
   it("declines a window that is not a WHOLE number of tokens", () => {
-    // `optionsSchema` is declared and nothing in the stack parses it — the
-    // per-turn knob reaches this function exactly as unvalidated as the
-    // deployment one, so this guard is the only one either path has, and the
-    // line it has to hold is the one the schema already states:
-    // `z.number().int().positive()`. `NaN > 0` is already false; `Infinity > 0`
+    // Nothing in the stack parses a harness's options schema, so the per-turn
+    // knob reaches this function exactly as unvalidated as the deployment one —
+    // this guard is the only one either path has, and the line it has to hold is
+    // a positive WHOLE number of tokens. `NaN > 0` is already false; `Infinity > 0`
     // is not, and an infinite window puts the trigger past every estimate there
     // is: compaction never fires again and the provider's 400 is the only rail
     // left, which is the failure of a window of zero read from the other end.
