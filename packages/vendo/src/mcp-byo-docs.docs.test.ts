@@ -107,3 +107,24 @@ describe("capabilities/mcp.mdx tells the truth about creation at the door", () =
     expect(section).toContain("/existing-agents/mcp");
   });
 });
+
+describe("the HTTP reference carries the placement routes", () => {
+  const ROUTES_PAGE = "docs-site/reference/http-routes.mdx";
+
+  it.each([
+    ["`/apps/placements`", "GET"],
+    ["`/apps/:id/place`", "POST"],
+    ["`/apps/:id/unplace`", "POST"],
+  ])("documents %s as a %s row", async (route, method) => {
+    const lines = (await read(ROUTES_PAGE)).split("\n");
+    const row = lines.find((line) => line.startsWith(`| ${route} |`));
+    expect(row, `${ROUTES_PAGE} must carry a table row for ${route}`).toBeDefined();
+    expect(row).toContain(`| ${method} |`);
+  });
+
+  it("states the slots query and the eviction answer", async () => {
+    const text = await read(ROUTES_PAGE);
+    expect(text).toContain("?slots=");
+    expect(text).toContain("evicted");
+  });
+});
