@@ -22,7 +22,7 @@ const noticeStyle = (danger: boolean): CSSProperties => ({
   fontWeight: 500,
   letterSpacing: "-0.006em",
   lineHeight: 1.4,
-  padding: "var(--vendo-space-small, 8px) var(--vendo-space-medium, 11px)",
+  padding: "8px 11px",
 });
 
 /**

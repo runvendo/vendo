@@ -34,6 +34,8 @@ const RUNTIME_EXPORTS = [
   "isoDateTimeSchema", "jsonSchemaSchema",
   "VENDO_TREE_FORMAT", "validateTree", "treeSchema", "treeQuerySchema",
   "compileWire", "WIRE_ISSUE_CODES",
+  "defaultVendoTheme", "resolveTheme", "colorSchemeForBackground", "themeCssVariables",
+  "VENDO_THEME_VARIABLE_NAMES",
 ];
 
 interface PackedPackage {

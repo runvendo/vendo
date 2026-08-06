@@ -12,7 +12,7 @@ import type {
   ToolResult,
   VendoTheme,
 } from "@vendoai/core";
-import { auditContext } from "@vendoai/core";
+import { auditContext, themeCssVariables } from "@vendoai/core";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv";
@@ -1705,27 +1705,10 @@ function shimHtml(theme: VendoTheme | undefined): string {
   return SHIM_HTML.replace(SHIM_THEME_MARKER, style);
 }
 
+/** The declaration-block serialization of core's one theme→CSS-variable
+ * mapping — the third copy of that mapping until now, and the shortest. */
 function themeDeclarations(theme: VendoTheme): string {
-  const declarations: Array<[string, string | undefined]> = [
-    ["--vendo-color-background", theme.colors.background],
-    ["--vendo-color-surface", theme.colors.surface],
-    ["--vendo-color-text", theme.colors.text],
-    ["--vendo-color-muted", theme.colors.muted],
-    ["--vendo-color-accent", theme.colors.accent],
-    ["--vendo-color-accent-text", theme.colors.accentText],
-    ["--vendo-color-danger", theme.colors.danger],
-    ["--vendo-color-border", theme.colors.border],
-    ["--vendo-font-family", theme.typography.fontFamily],
-    ["--vendo-heading-family", theme.typography.headingFamily],
-    ["--vendo-font-size", theme.typography.baseSize],
-    ["--vendo-radius-small", theme.radius.small],
-    ["--vendo-radius-medium", theme.radius.medium],
-    ["--vendo-radius-large", theme.radius.large],
-    ["--vendo-density", theme.density],
-    ["--vendo-motion", theme.motion],
-  ];
-  return declarations
-    .filter((entry): entry is [string, string] => entry[1] !== undefined)
+  return Object.entries(themeCssVariables(theme))
     .map(([name, value]) => `${name}:${escapeCssValue(value)};`)
     .join("");
 }

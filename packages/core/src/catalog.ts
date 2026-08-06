@@ -49,7 +49,9 @@ export interface NormalizedCatalogEntry extends RegisteredComponent {
 /** The normalized internal catalog the composition hands to the apps block. */
 export type NormalizedCatalog = ReadonlyArray<NormalizedCatalogEntry>;
 
-/** 01-core §14 */
+/** 01-core §14. The shape only: `./theme.js` owns the defaults, the merge, and
+ * the one mapping onto `--vendo-*` CSS variables that every surface renders
+ * through. */
 export interface VendoTheme {
   colors: {
     background: string;

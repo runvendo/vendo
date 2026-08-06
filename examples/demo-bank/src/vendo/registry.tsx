@@ -11,7 +11,7 @@ function MapleSparkline({ data, height = 28 }: { data: number[]; height?: number
   if (!data?.length) return null;
   return (
     <div style={{ height }}>
-      <Sparkline data={data} height={height} stroke="var(--vendo-color-text, #14151A)" />
+      <Sparkline data={data} height={height} stroke="var(--vendo-color-text, #1a1a1e)" />
     </div>
   );
 }

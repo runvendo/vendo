@@ -13,6 +13,7 @@ import {
   TREE_MAX_NODES,
   TREE_MAX_QUERIES,
   TREE_MAX_TOTAL_COMPONENT_BYTES,
+  VENDO_THEME_VARIABLE_NAMES,
   describeShapeWithSemantics,
   kitPrompt,
   ISLAND_AMBIENT_KIT_NAMES,
@@ -105,7 +106,7 @@ export const generationPromptSections = (deps: GenerationDependencies): Generati
   id: "component-styling",
   content: `GENERATED COMPONENT STYLING:
 - The component renders in a sandbox that sits directly on the host page's background (THEME TOKENS colors.background when provided; otherwise assume a light background). Never design for an imaginary dark backdrop; give the component's own containers explicit backgrounds.
-- The host's brand tokens are available as CSS custom properties: --vendo-color-background, --vendo-color-surface, --vendo-color-text, --vendo-color-muted, --vendo-color-accent, --vendo-color-accent-text, --vendo-color-danger, --vendo-color-border, --vendo-font-family, --vendo-heading-family, --vendo-font-size, --vendo-radius-small/medium/large. Prefer them (e.g. color: "var(--vendo-color-text)") so the view matches the host brand.
+- The host's brand tokens are available as CSS custom properties: ${VENDO_THEME_VARIABLE_NAMES.join(", ")}. Prefer them (e.g. color: "var(--vendo-color-text)") so the view matches the host brand.
 `,
 }, {
   id: "catalog",
