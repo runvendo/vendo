@@ -11,7 +11,7 @@
  * message" seeded the composer with it. One reload, and the leak is back.
  */
 import type { UIMessage } from "ai";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
 import { VendoThread } from "../../src/chrome/index.js";
@@ -21,6 +21,7 @@ import {
   isAgentContext,
   userText,
 } from "../../src/chrome/thread/message-data.js";
+import { useStickToBottom } from "../../src/chrome/thread/scrolling.js";
 import { createWireServer } from "../wire-server.js";
 
 const GROUNDING = 'The view being remixed is the "spending" slot, app app_9a3f2b1c.';
@@ -49,6 +50,62 @@ describe("the grounding part survives a {type,text}-only store", () => {
       ({ id: "msg_1", role: "user", parts: [{ type: "text", text: "make it dark" }, part] }) as UIMessage;
     expect(userText(message(agentContextPart(GROUNDING)))).toBe("make it dark");
     expect(userText(message(persisted()))).toBe("make it dark");
+  });
+});
+
+/**
+ * V5 gave the carrier two NEW senders on the permissions surface: the connect
+ * card posts `[vendo:context] Connected Gmail.` and `[vendo:context] Declined
+ * to connect Gmail.` as hidden turns. Every surface that prints message text
+ * therefore has to know about the mark — and the jump-to-latest bar
+ * ("2 new replies · …") quotes the newest message's raw text parts with no
+ * filter, so a hidden turn that lands while the reader is scrolled away is
+ * printed to them verbatim.
+ */
+describe("the jump-to-latest snippet never quotes hidden context", () => {
+  /** Drive the real hook against a list whose scroll geometry we control
+   *  (jsdom reports 0 for every box), then read the snippet it publishes. */
+  function scrolledAwayFrom(messages: UIMessage[]) {
+    let snippet = "";
+    function Probe({ list }: { list: UIMessage[] }) {
+      const scroll = useStickToBottom(list, "thr_1");
+      snippet = scroll.snippet;
+      return <div ref={scroll.listRef} onScroll={scroll.onScroll} data-testid="list" />;
+    }
+    const view = render(<Probe list={messages.slice(0, -1)} />);
+    const list = view.getByTestId("list");
+    const size = (scrollHeight: number, scrollTop: number) => {
+      for (const [property, value] of [["scrollHeight", scrollHeight], ["clientHeight", 300], ["scrollTop", scrollTop]] as const) {
+        Object.defineProperty(list, property, { value, configurable: true, writable: true });
+      }
+    };
+    // Settle at the bottom, then scroll up: the stick releases.
+    size(1_000, 700);
+    view.rerender(<Probe list={messages.slice(0, -1)} />);
+    size(1_000, 0);
+    fireEvent.scroll(list);
+    // The hidden turn lands while they are away — the bar appears.
+    size(1_200, 0);
+    view.rerender(<Probe list={messages} />);
+    return snippet;
+  }
+
+  it("leaves the connect card's hidden continuation out of the new-replies bar", () => {
+    const snippet = scrolledAwayFrom([
+      { id: "m1", role: "assistant", parts: [{ type: "text", text: "I'll need Gmail first." }] },
+      { id: "m2", role: "user", parts: [agentContextPart("Declined to connect Gmail.")] },
+    ] as UIMessage[]);
+    expect(snippet).not.toContain(AGENT_CONTEXT_MARK);
+    expect(snippet).not.toContain("Declined to connect");
+  });
+
+  it("leaves the remix grounding out of it too, mark-only (the post-store shape)", () => {
+    const snippet = scrolledAwayFrom([
+      { id: "m1", role: "assistant", parts: [{ type: "text", text: "Here it is." }] },
+      { id: "m2", role: "user", parts: [{ type: "text", text: "make it dark" }, persisted()] },
+    ] as UIMessage[]);
+    expect(snippet).toContain("make it dark");
+    expect(snippet).not.toContain("app_9a3f2b1c");
   });
 });
 

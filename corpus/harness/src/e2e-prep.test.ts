@@ -263,7 +263,12 @@ describe("prepareE2eRepo", () => {
     // Fixture guidance now rides in the tool descriptions (the old handler
     // instructionsExtra knob no longer exists in the composed umbrella).
     expect(tools.tools[0]!.description).toContain("Youness gradient cuts impact 8.375 skateboard deck");
-    expect(tools.tools[0]!.description).toContain("Table view");
+    // V4 retired the legacy prewired family: the tabular Kit component is
+    // DataTable, and "Table" is no longer a name the generation model can
+    // resolve. Fixture guidance is model-facing prompt text, so a retired name
+    // here teaches the corpus run to ask for a component that cannot render.
+    expect(tools.tools[0]!.description).toContain("DataTable view");
+    expect(tools.tools[0]!.description).not.toContain("a Table view");
     // The init-scaffolded handler is already correct; prep must not touch it.
     expect(route).toContain("nextVendoHandler(vendo)");
     expect(overlay).toContain('"use client"');
