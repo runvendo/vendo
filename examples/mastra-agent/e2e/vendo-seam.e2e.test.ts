@@ -6,7 +6,7 @@
 //      loop receives the vendo/approval-ref@1 envelope without blocking.
 //      Approving over the wire executes the parked call; GET /approvals/:id
 //      serves the "executed" state the embed renders.
-//   2. Generated UI: vendo_create_app returns the vendo/app-ref@1 envelope.
+//   2. Generated UI: vendo_make returns the vendo/app-ref@1 envelope.
 //   3. Delegation: vendo_delegate runs Vendo's own loop and reports back.
 //
 // It exercises the example's REAL wiring: composeVendo (policy, serverActions),
@@ -192,11 +192,11 @@ describe.sequential("mastra-agent example — the Vendo seam end to end", () => 
     expect(((await after.json()) as { state: string }).state).toBe("executed");
   });
 
-  it("vendo_create_app returns the vendo/app-ref@1 envelope from a real generation", async () => {
+  it("vendo_make returns the vendo/app-ref@1 envelope from a real generation", async () => {
     const { vendo } = await setup();
     const tools = await vendoMastraTools(vendo);
-    const output = await tools["vendo_create_app"]!.execute!(
-      { prompt: "Compare weather in Paris, Tokyo and NYC" },
+    const output = await tools["vendo_make"]!.execute!(
+      { request: "Compare weather in Paris, Tokyo and NYC" },
       executionContext(),
     );
     const ref = vendoAppRefSchema.parse(output);
