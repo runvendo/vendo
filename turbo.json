@@ -1,5 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  // Worst-case CI proof — this comment is the only change.
   "tasks": {
     "build": { "dependsOn": ["^build"], "outputs": ["dist/**", ".next/**", "!.next/cache/**"] },
     "test": { "dependsOn": ["^build", "build"], "env": ["CI", "POSTGRES_URL", "VITEST_MIN_FORKS", "VITEST_MAX_FORKS", "VITEST_MIN_THREADS", "VITEST_MAX_THREADS"] },
