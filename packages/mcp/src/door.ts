@@ -30,6 +30,7 @@ import type { AppsPort } from "./apps-port.js";
 import { handleFederation } from "./oauth/federation.js";
 import { RemoteAsVerifier } from "./oauth/remote-as.js";
 import { canonicalUri, json, OAuthServer, randomHex, sameCanonicalUri } from "./oauth/server.js";
+import { TOKEN_EXCHANGE_GRANT_TYPE } from "./oauth/service-keys.js";
 import { SHIM_HTML } from "./shim/shim-html.gen.js";
 import {
   InMemoryMcpDoorState,
@@ -146,6 +147,15 @@ export interface McpDoorConfig {
   remoteAs?: { issuer: string; jwksUri?: string; audience: string };
   /** Enable the generic signed login-federation handshake at `{mount}/federate`. */
   federation?: { secret: string };
+  /** First-party service auth: the host's own backend exchanges one of these
+   * keys plus a user id for a short-lived user-bound access token at
+   * `{mount}/token`, then talks MCP with it like any other client.
+   *
+   * Keys are the full `vsk_…` strings, read from the host's environment; the
+   * door keeps only their hashes. Rotation is listing both the old and the new
+   * key until the old one is out of use. Unset means the grant is neither
+   * advertised in the authorization-server metadata nor served. */
+  serviceAuth?: { keys: readonly string[] };
   /**
    * The tool menu this door offers — the host's curated `surfaces.mcp` list,
    * resolved by the umbrella (`registry.surfaceMenu("mcp")`) and passed in.
@@ -365,7 +375,11 @@ class Door {
     }
     if (path.startsWith(AS_PREFIX)) {
       if (req.method !== "GET" || this.#config.remoteAs !== undefined) return notFound();
-      return json(authorizationServerMetadata(base, stripPathPrefix(this.#publicBasePath, path.slice(AS_PREFIX.length))));
+      return json(authorizationServerMetadata(
+        base,
+        stripPathPrefix(this.#publicBasePath, path.slice(AS_PREFIX.length)),
+        this.#config.serviceAuth !== undefined,
+      ));
     }
     if (path === SERVER_CARD_PATH || path === SERVER_CARD_ALIAS_PATH) {
       if (req.method !== "GET") return notFound();
@@ -397,7 +411,9 @@ class Door {
         : notFound();
     }
     if (endpoint.kind === "token") {
-      return req.method === "POST" && this.#config.remoteAs === undefined ? oauth.token(req) : notFound();
+      return req.method === "POST" && this.#config.remoteAs === undefined
+        ? oauth.token(req, resourceUri(base, mount))
+        : notFound();
     }
     if (endpoint.kind === "revoke") {
       if (req.method !== "POST" || this.#config.remoteAs !== undefined) return notFound();
@@ -1172,7 +1188,7 @@ function protectedResourceMetadata(base: string, mount: string, remoteIssuer?: s
   };
 }
 
-function authorizationServerMetadata(base: string, mount: string) {
+function authorizationServerMetadata(base: string, mount: string, serviceAuth: boolean) {
   const issuer = resourceUri(base, mount);
   return {
     issuer,
@@ -1182,8 +1198,14 @@ function authorizationServerMetadata(base: string, mount: string) {
     registration_endpoint: `${issuer}/register`,
     scopes_supported: ["read", "write"],
     response_types_supported: ["code"],
-    grant_types_supported: ["authorization_code", "refresh_token"],
-    token_endpoint_auth_methods_supported: ["none"],
+    grant_types_supported: [
+      "authorization_code",
+      "refresh_token",
+      ...(serviceAuth ? [TOKEN_EXCHANGE_GRANT_TYPE] : []),
+    ],
+    // The service exchange is the only flow that presents a secret; the OAuth
+    // clients this door registers are public and always will be.
+    token_endpoint_auth_methods_supported: serviceAuth ? ["none", "client_secret_post"] : ["none"],
     code_challenge_methods_supported: ["S256"],
     client_id_metadata_document_supported: true,
   };

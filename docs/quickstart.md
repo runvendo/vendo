@@ -494,6 +494,7 @@ export interface CreateVendoConfig {
     baseUrl?: string;
     remoteAs?: { issuer: string; jwksUri?: string; audience: string };
     federation?: { secret: string };
+    serviceAuth?: { keys: readonly string[] }; // your backend's `vsk_` keys
   };
   oauth?: HostOAuthAdapter;   // escape hatch; required when `mcp` is true and `auth` is absent
   agent?: ComposedAgent;      // a whole agent() from @vendoai/agents, adopted by this deployment

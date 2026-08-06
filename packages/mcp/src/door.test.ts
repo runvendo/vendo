@@ -41,6 +41,10 @@ const BASE = "https://product.example/api/vendo/mcp";
 const PROXIED_BASE = "http://door.internal:8787/api/vendo/mcp";
 const REDIRECT = "https://client.example/callback";
 const VERIFIER = "a-very-long-pkce-verifier-that-is-valid-for-the-test-suite-1234567890";
+/** Two service keys, spelled the way `vsk_<keyId>_<secret>` is minted. */
+const SERVICE_KEY = "vsk_0a1b2c3d_0123456789abcdef0123456789abcdef01234567";
+const SERVICE_KEY_B = "vsk_5f6e7d8c_fedcba9876543210fedcba9876543210fedcba98";
+const SERVICE_CLIENT = "svc:0a1b2c3d";
 const CONSENT_THEME: VendoTheme = {
   colors: {
     background: "#101820",
@@ -2810,6 +2814,123 @@ describe("createMcpDoor withholdTools on a turn-bearing session", () => {
   });
 });
 
+describe("createMcpDoor first-party service auth", () => {
+  const AS_URL = "https://product.example/.well-known/oauth-authorization-server/api/vendo/mcp";
+
+  it("exchanges a key and a user id for a short-lived token that works on a real tools/call", async () => {
+    const harness = makeHarness({ serviceAuth: { keys: [SERVICE_KEY] } });
+
+    const response = await serviceExchange(harness.door);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    const body = await response.json() as TokenResponse & { issued_token_type: string };
+    expect(body.access_token).toMatch(/^vmat_[A-Za-z0-9_-]{43}$/);
+    expect(body).toMatchObject({
+      token_type: "Bearer",
+      expires_in: 600,
+      scope: "read write",
+      issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
+    });
+    // No refresh token — and none of the machinery behind one. A backend that
+    // holds the key exchanges again; there is nothing outstanding to rotate.
+    expect(Object.keys(body).sort()).toEqual([
+      "access_token", "expires_in", "issued_token_type", "scope", "token_type",
+    ]);
+    const grants = harness.store.rows("vendo_mcp_grants");
+    expect(grants).toHaveLength(1);
+    expect(grants[0]!.data).toMatchObject({
+      kind: "access",
+      subject: "user_1",
+      clientId: SERVICE_CLIENT,
+      resource: BASE,
+      scopes: ["read", "write"],
+    });
+    const expiresAt = Date.parse((grants[0]!.data as { expiresAt: string }).expiresAt);
+    expect(expiresAt - Date.now()).toBeLessThanOrEqual(600_000);
+    expect(JSON.stringify(grants)).not.toContain(body.access_token);
+    expect(JSON.stringify(grants)).not.toContain(SERVICE_KEY);
+    expect(harness.audits.at(-1)).toMatchObject({
+      kind: "door-auth",
+      detail: { clientId: SERVICE_CLIENT, event: "exchange" },
+    });
+
+    const connected = await connect(harness.door, body.access_token);
+    const result = await connected.client.callTool({ name: "host_lookup", arguments: { query: "balance" } });
+    expect(textOf(result)).toContain("42");
+    // The service key is the CLIENT on every row the call leaves behind.
+    expect((harness.executions[0]?.ctx as { mcpConsent?: unknown }).mcpConsent).toEqual({
+      clientId: SERVICE_CLIENT,
+      scopes: ["read", "write"],
+    });
+    await connected.client.close();
+  });
+
+  it("answers every bad exchange with one OAuth error, and never says which key exists", async () => {
+    const harness = makeHarness({ serviceAuth: { keys: [SERVICE_KEY] } });
+    const rows: Array<[string, Record<string, string | null>, string]> = [
+      ["an unknown key", { client_secret: SERVICE_KEY_B }, "invalid_client"],
+      ["a malformed key", { client_secret: "vsk_not-hex_short" }, "invalid_client"],
+      ["a key with the right id and a wrong secret", { client_secret: `vsk_0a1b2c3d_${"f".repeat(40)}` }, "invalid_client"],
+      ["another client_id", { client_id: "mcpc_000000000000" }, "invalid_client"],
+      ["no client_secret", { client_secret: null }, "invalid_request"],
+      ["no subject_token", { subject_token: null }, "invalid_request"],
+      ["an empty subject_token", { subject_token: "" }, "invalid_request"],
+      ["no subject_token_type", { subject_token_type: null }, "invalid_request"],
+      ["a subject_token_type this door does not speak", { subject_token_type: "urn:ietf:params:oauth:token-type:jwt" }, "invalid_request"],
+      ["another server's resource", { resource: "https://other.example/mcp" }, "invalid_target"],
+      ["a grant_type nobody serves", { grant_type: "client_credentials" }, "unsupported_grant_type"],
+    ];
+    for (const [name, overrides, error] of rows) {
+      const response = await serviceExchange(harness.door, overrides);
+      expect(response.status, name).toBe(400);
+      expect(await response.json(), name).toMatchObject({ error });
+    }
+    const wrongType = await serviceExchange(harness.door, {}, "application/json");
+    expect(wrongType.status).toBe(400);
+    expect(await wrongType.json()).toMatchObject({ error: "invalid_request" });
+
+    // Nothing was minted and nothing was audited along the way.
+    expect(harness.store.rows("vendo_mcp_grants")).toEqual([]);
+    expect(harness.audits).toEqual([]);
+  });
+
+  it("serves both keys through a rotation, and refuses one the door no longer lists", async () => {
+    const rotating = makeHarness({ serviceAuth: { keys: [SERVICE_KEY, SERVICE_KEY_B] } });
+    for (const key of [SERVICE_KEY, SERVICE_KEY_B]) {
+      expect((await serviceExchange(rotating.door, { client_secret: key })).status, key).toBe(200);
+    }
+
+    const retired = makeHarness({ serviceAuth: { keys: [SERVICE_KEY] } });
+    const refused = await serviceExchange(retired.door, { client_secret: SERVICE_KEY_B });
+    expect(refused.status).toBe(400);
+    expect(await refused.json()).toMatchObject({ error: "invalid_client" });
+  });
+
+  it("does not serve the grant at all on a door with no keys", async () => {
+    const response = await serviceExchange(makeHarness().door);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: "unsupported_grant_type" });
+  });
+
+  it("advertises the exchange and client_secret_post only when keys are configured", async () => {
+    const off = await makeHarness().door.handler(new Request(AS_URL));
+    expect(await off.json()).toMatchObject({
+      grant_types_supported: ["authorization_code", "refresh_token"],
+      token_endpoint_auth_methods_supported: ["none"],
+    });
+
+    const on = await makeHarness({ serviceAuth: { keys: [SERVICE_KEY] } }).door.handler(new Request(AS_URL));
+    expect(await on.json()).toMatchObject({
+      grant_types_supported: [
+        "authorization_code",
+        "refresh_token",
+        "urn:ietf:params:oauth:grant-type:token-exchange",
+      ],
+      token_endpoint_auth_methods_supported: ["none", "client_secret_post"],
+    });
+  });
+});
+
 /** A host response model that references itself by OBJECT — what an inliner
  *  produces for a recursive OpenAPI model. `JSON.stringify` throws on it. */
 function cyclicSchema(): Record<string, unknown> {
@@ -2861,6 +2982,8 @@ interface HarnessOptions {
   memberships?: (principal: Principal) => Promise<Membership[]>;
   /** 10-mcp §3b — a live turn behind a per-turn bearer. */
   turnCredentials?: TurnCredentialPort;
+  /** First-party service keys the door accepts at its token endpoint. */
+  serviceAuth?: { keys: readonly string[] };
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -2905,6 +3028,7 @@ function makeHarness(options: HarnessOptions = {}) {
     ...(options.memberships === undefined ? {} : { memberships: options.memberships }),
     ...(options.internal === undefined ? {} : { internal: options.internal }),
     ...(options.turnCredentials === undefined ? {} : { turnCredentials: options.turnCredentials }),
+    ...(options.serviceAuth === undefined ? {} : { serviceAuth: options.serviceAuth }),
     oauth: options.oauth ?? {
       async authorize(_req, ctx) {
         authorizeContexts.push(ctx);
@@ -3006,6 +3130,29 @@ async function exchange(door: McpDoor, values: Record<string, string>, base = BA
       ...values,
     }),
   }));
+}
+
+/** A valid service-key exchange at the token endpoint. An override of `null`
+ *  DROPS that field, which is how the missing-field rows are driven. */
+async function serviceExchange(
+  door: McpDoor,
+  overrides: Record<string, string | null> = {},
+  contentType = "application/x-www-form-urlencoded",
+) {
+  const fields: Record<string, string | null> = {
+    grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
+    client_id: "vendo-service",
+    client_secret: SERVICE_KEY,
+    subject_token: "user_1",
+    subject_token_type: "urn:vendo:params:oauth:token-type:user-id",
+    resource: BASE,
+    ...overrides,
+  };
+  const body = new URLSearchParams();
+  for (const [name, value] of Object.entries(fields)) {
+    if (value !== null) body.set(name, value);
+  }
+  return door.handler(new Request(`${BASE}/token`, { method: "POST", headers: { "content-type": contentType }, body }));
 }
 
 async function issue(door: McpDoor, clientId: string, base = BASE): Promise<TokenResponse> {

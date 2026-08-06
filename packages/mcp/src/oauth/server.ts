@@ -10,10 +10,23 @@ import type {
 import { z } from "zod";
 import type { HostOAuthAdapter } from "./adapter.js";
 import { consentPage } from "./consent-page.js";
+import {
+  SERVICE_CLIENT_ID,
+  SERVICE_SUBJECT_TOKEN_TYPE,
+  TOKEN_EXCHANGE_GRANT_TYPE,
+  serviceClientId,
+  serviceKeyHashes,
+  verifyServiceKey,
+} from "./service-keys.js";
 
 const CLIENTS_COLLECTION = "vendo_mcp_clients";
 const GRANTS_COLLECTION = "vendo_mcp_grants";
 const ACCESS_TOKEN_SECONDS = 60 * 60;
+/** A service token is minted on demand by a backend that holds the key, so it
+ *  never needs to outlive the call it was minted for — and it has no refresh
+ *  path to revoke, which is exactly why the window is short. */
+const SERVICE_ACCESS_TOKEN_SECONDS = 10 * 60;
+const SERVICE_SCOPES = ["read", "write"];
 const REFRESH_TOKEN_SECONDS = 30 * 24 * 60 * 60;
 const CODE_SECONDS = 60;
 const CONSENT_SECONDS = 10 * 60;
@@ -126,6 +139,7 @@ interface OAuthServerConfig {
   store: StoreAdapter;
   guard: Guard;
   theme?: VendoTheme;
+  serviceAuth?: { keys: readonly string[] };
 }
 
 interface ResolvedClient {
@@ -139,6 +153,10 @@ export class OAuthServer {
   readonly #store: StoreAdapter;
   readonly #guard: Guard;
   readonly #theme: VendoTheme | undefined;
+  readonly #serviceAuth: { keys: readonly string[] } | undefined;
+  /** Hashed once, on the first exchange — hashing is async and construction is
+   *  not, and a door nobody exchanges against should never pay for it. */
+  #serviceHashes: Promise<Map<string, string>> | undefined;
 
   constructor(config: OAuthServerConfig) {
     if (config.oauth.authorize === undefined && config.oauth.session === undefined) {
@@ -148,6 +166,7 @@ export class OAuthServer {
     this.#store = config.store;
     this.#guard = config.guard;
     this.#theme = config.theme;
+    this.#serviceAuth = config.serviceAuth;
   }
 
   get hasPrebuiltConsent(): boolean {
@@ -381,12 +400,17 @@ export class OAuthServer {
     }));
   }
 
-  async token(req: Request): Promise<Response> {
+  async token(req: Request, resource: string): Promise<Response> {
     if (!contentType(req).startsWith("application/x-www-form-urlencoded")) {
       return oauthJsonError("invalid_request", "Expected application/x-www-form-urlencoded");
     }
     const form = new URLSearchParams(await req.text());
     const grantType = form.get("grant_type");
+    // A door with no `serviceAuth` does not serve this grant at all: it falls
+    // through to the unsupported_grant_type below, exactly as it did before.
+    if (grantType === TOKEN_EXCHANGE_GRANT_TYPE && this.#serviceAuth !== undefined) {
+      return this.#exchangeServiceKey(form, resource);
+    }
     if (grantType === "authorization_code") {
       const code = form.get("code");
       if (!code) return oauthJsonError("invalid_request", "code is required");
@@ -616,6 +640,76 @@ export class OAuthServer {
     return json(body, 200, tokenHeaders());
   }
 
+  /**
+   * RFC 8693 at the same token endpoint: a service key plus one host user id
+   * for one short-lived access token bound to that user.
+   *
+   * No `principal()` check here. The subject is whatever the host's backend
+   * says one of its users is called; a bogus one dies at `principal()` on the
+   * first MCP request the token is used for, which is the same kill switch
+   * every other grant answers to.
+   */
+  async #exchangeServiceKey(form: URLSearchParams, resource: string): Promise<Response> {
+    const secret = form.get("client_secret");
+    const subject = form.get("subject_token");
+    if (!secret || !subject) {
+      return oauthJsonError("invalid_request", "client_secret and subject_token are required");
+    }
+    if (form.get("subject_token_type") !== SERVICE_SUBJECT_TOKEN_TYPE) {
+      return oauthJsonError("invalid_request", `subject_token_type must be ${SERVICE_SUBJECT_TOKEN_TYPE}`);
+    }
+    // ONE answer for a wrong client_id, an unknown key, a malformed key and a
+    // retired one. Anything narrower tells whoever is guessing which half of
+    // the credential they already have right.
+    const key = form.get("client_id") === SERVICE_CLIENT_ID
+      ? await verifyServiceKey(secret, await this.#serviceKeyHashes())
+      : null;
+    if (key === null) return oauthJsonError("invalid_client", "Service key is not valid for this MCP server");
+    const requestedResource = form.get("resource");
+    if (requestedResource !== null && !sameCanonicalUri(requestedResource, resource)) {
+      return oauthJsonError("invalid_target", "resource does not identify this MCP server");
+    }
+    return this.#issueServiceToken(key.keyId, subject, resource);
+  }
+
+  /** One access grant and nothing else: no refresh token, so no rotation, no
+   *  family, and nothing outstanding to revoke after ten minutes. The backend
+   *  holding the key exchanges again. */
+  async #issueServiceToken(keyId: string, subject: string, resource: string): Promise<Response> {
+    const clientId = serviceClientId(keyId);
+    const accessToken = `vmat_${randomBase64Url(32)}`;
+    const grant: AccessGrant = {
+      kind: "access",
+      subject,
+      clientId,
+      resource,
+      scopes: SERVICE_SCOPES,
+      expiresAt: expiresIn(SERVICE_ACCESS_TOKEN_SECONDS),
+    };
+    await this.#store.records(GRANTS_COLLECTION).put({
+      id: `mcpg_${randomHex(12)}`,
+      data: grant,
+      refs: {
+        kind: "access",
+        token_hash: await sha256Hex(accessToken),
+        subject,
+        client_id: clientId,
+      },
+    });
+    await this.#audit({ kind: "user", subject }, clientId, "exchange");
+    return json({
+      access_token: accessToken,
+      issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
+      token_type: "Bearer",
+      expires_in: SERVICE_ACCESS_TOKEN_SECONDS,
+      scope: SERVICE_SCOPES.join(" "),
+    }, 200, tokenHeaders());
+  }
+
+  #serviceKeyHashes(): Promise<Map<string, string>> {
+    return (this.#serviceHashes ??= serviceKeyHashes(this.#serviceAuth!.keys));
+  }
+
   async #issueTokens(source: Pick<CodeGrant, "subject" | "clientId" | "familyId" | "resource" | "scopes">): Promise<{
     access_token: string;
     token_type: "Bearer";
@@ -775,7 +869,11 @@ export class OAuthServer {
     throw new Error("Token grant changed too many times during revocation");
   }
 
-  async #audit(principal: Principal, clientId: string, event: "issue" | "refresh" | "register" | "revoke"): Promise<void> {
+  async #audit(
+    principal: Principal,
+    clientId: string,
+    event: "issue" | "refresh" | "register" | "revoke" | "exchange",
+  ): Promise<void> {
     const audit: AuditEvent = {
       id: `aud_${randomHex(12)}`,
       at: new Date().toISOString(),

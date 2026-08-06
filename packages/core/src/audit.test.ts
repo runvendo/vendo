@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { auditEventSchema } from "./audit.js";
+import { auditContext, auditEventSchema } from "./audit.js";
+import type { RunContext } from "./run-context.js";
 
 /** 01-core §7 — the append-only audit event. */
 const base = {
@@ -43,5 +44,25 @@ describe("auditEventSchema", () => {
     // Valid boundary values from the enums.
     expect(auditEventSchema.safeParse({ ...base, kind: "door-auth", venue: "mcp" }).success).toBe(true);
     expect(auditEventSchema.safeParse({ ...base, decidedBy: "breaker", outcome: "pending-approval" }).success).toBe(true);
+  });
+});
+
+describe("auditContext", () => {
+  const ctx: RunContext = {
+    principal: base.principal,
+    venue: "mcp",
+    presence: "present",
+    sessionId: "mcps_1",
+  };
+
+  it("carries the MCP client the row came in on", () => {
+    expect(auditContext({ ...ctx, mcpConsent: { clientId: "svc:0a1b2c3d", scopes: ["read", "write"] } }))
+      .toEqual({ principal: base.principal, venue: "mcp", presence: "present", clientId: "svc:0a1b2c3d" });
+  });
+
+  it("leaves clientId ABSENT off the door, never an undefined key", () => {
+    const projection = auditContext(ctx);
+    expect(projection).toEqual({ principal: base.principal, venue: "mcp", presence: "present" });
+    expect(Object.hasOwn(projection, "clientId")).toBe(false);
   });
 });

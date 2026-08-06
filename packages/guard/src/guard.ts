@@ -242,7 +242,7 @@ function inputPreview(call: ToolCall): string {
 
 function eventFromContext(
   ctx: RunContext,
-  fields: Omit<AuditEvent, "id" | "at" | "principal" | "venue" | "presence" | "appId" | "trigger">,
+  fields: Omit<AuditEvent, "id" | "at" | "principal" | "venue" | "presence" | "appId" | "trigger" | "clientId">,
 ): AuditEvent {
   return {
     id: makeId("aud_"),

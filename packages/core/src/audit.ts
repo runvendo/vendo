@@ -21,6 +21,10 @@ export interface AuditEvent {
    *  the mint helpers — never authored by a caller. Absent on a run with no turn
    *  (a webhook, a schedule fire, an org-policy load). */
   turnId?: TurnId;
+  /** The MCP client this row came in on — `mcpc_*` or a CIMD URL for a
+   *  third-party agent, `svc:<keyId>` for a host's own service key. Absent on
+   *  every row that did not arrive at the door. */
+  clientId?: string;
   tool?: string;
   /** The risk the guard actually gated on — the EFFECTIVE grade, after any
    *  `resolveRisk`, not the descriptor's static label. Absent on rows written
@@ -49,14 +53,15 @@ export interface AuditEvent {
  * built through this is byte-identical to the hand-written ones it replaces.
  */
 export const auditContext = (
-  ctx: Pick<RunContext, "principal" | "venue" | "presence" | "appId" | "trigger" | "turnId">,
-): Pick<AuditEvent, "principal" | "venue" | "presence" | "appId" | "trigger" | "turnId"> => ({
+  ctx: Pick<RunContext, "principal" | "venue" | "presence" | "appId" | "trigger" | "turnId" | "mcpConsent">,
+): Pick<AuditEvent, "principal" | "venue" | "presence" | "appId" | "trigger" | "turnId" | "clientId"> => ({
   principal: ctx.principal,
   venue: ctx.venue,
   presence: ctx.presence,
   ...(ctx.appId === undefined ? {} : { appId: ctx.appId }),
   ...(ctx.trigger === undefined ? {} : { trigger: ctx.trigger }),
   ...(ctx.turnId === undefined ? {} : { turnId: ctx.turnId }),
+  ...(ctx.mcpConsent === undefined ? {} : { clientId: ctx.mcpConsent.clientId }),
 });
 
 /** 01-core §7 */
@@ -70,6 +75,7 @@ export const auditEventSchema = z.object({
   appId: appIdSchema.optional(),
   trigger: triggerRefSchema.optional(),
   turnId: turnIdSchema.optional(),
+  clientId: z.string().optional(),
   tool: z.string().optional(),
   risk: riskLabelSchema.optional(),
   inputPreview: z.string().optional(),

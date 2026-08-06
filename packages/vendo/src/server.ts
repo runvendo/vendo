@@ -587,11 +587,16 @@ export interface CreateVendoConfig {
       trusted. `remoteAs` (10-mcp §3.1) trusts an external authorization server
       — e.g. the hosted broker at `{tenant}.mcp.vendo.run` — instead of serving
       the door's local OAuth surface, and `federation` (10-mcp §3.2) answers
-      that server's signed login handshake at `{mount}/federate`. */
+      that server's signed login handshake at `{mount}/federate`.
+      `serviceAuth` opens first-party service auth: the host's OWN backend
+      exchanges one of these `vsk_…` keys plus a user id for a short-lived
+      user-bound token at the door's token endpoint (the door keeps hashes
+      only; rotation is listing both keys). */
   mcp?: boolean | {
     baseUrl?: string;
     remoteAs?: { issuer: string; jwksUri?: string; audience: string };
     federation?: { secret: string };
+    serviceAuth?: { keys: readonly string[] };
   };
   /** 10-mcp §3 plus its additive prebuilt flow — the host's session + identity seam. Threaded top-level like
       `actAs`/`principal` (the door is agnostic; the umbrella owns the shape).
@@ -3330,6 +3335,8 @@ export function createVendo(input: CreateVendoConfig): Vendo {
       // authorization server's tokens and answer its login federation.
       ...(remoteAs === undefined ? {} : { remoteAs }),
       ...(federation === undefined ? {} : { federation }),
+      // First-party service auth at the door's own token endpoint.
+      ...(mcpOptions.serviceAuth === undefined ? {} : { serviceAuth: mcpOptions.serviceAuth }),
       ...(theme === undefined ? {} : { theme }),
     });
     // ADAPTER RULE, mcp seam (selectMcpBroker — cloned from selectConnections
@@ -3341,6 +3348,13 @@ export function createVendo(input: CreateVendoConfig): Vendo {
     const mcpCloud = cloudKeyOptions();
     const selection = selectMcpBroker(mcpOptions, mcpCloud, doorBaseUrl, MCP_MOUNT);
     mcpSelection = selection.mode;
+    if (mcpOptions.serviceAuth !== undefined && (selection.mode === "broker" || selection.mode === "explicit")) {
+      console.warn(
+        "[vendo] mcp.serviceAuth is set, but this door trusts an external authorization server "
+        + "(mcp.remoteAs, or the hosted broker VENDO_API_KEY selects), so it does not serve its own "
+        + "token endpoint — the service-key exchange lives there. Exchange keys at that server instead.",
+      );
+    }
     if (selection.mode === "broker" && mcpCloud !== undefined) {
       mcpPosture = "broker";
       // Boot-once, awaited: the first door construction rides the ready latch
