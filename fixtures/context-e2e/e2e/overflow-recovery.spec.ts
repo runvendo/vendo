@@ -44,6 +44,11 @@ test("a message far past the window still finishes, with nothing said about it",
   // A silent recovery means both are clean.
   const runs = await newRunsSince(page, before);
   const turn = runs.at(-1);
-  console.log("[context-e2e] oversized turn usage:", JSON.stringify(turn?.detail?.usage));
-  expect(turn?.detail?.error, `the runtime recorded a failure: ${JSON.stringify(turn?.detail?.error)}`).toBeUndefined();
+  // The row has to EXIST before its absent error means anything. Read off an
+  // empty ledger, `turn?.detail?.error` is undefined for the one reason this
+  // spec must never accept: the runtime recorded nothing at all, and the
+  // recovery it claims to have seen never happened.
+  expect(turn, "the oversized turn wrote no run row — the runtime recorded nothing").toBeDefined();
+  console.log("[context-e2e] oversized turn usage:", JSON.stringify(turn!.detail?.usage));
+  expect(turn!.detail?.error, `the runtime recorded a failure: ${JSON.stringify(turn!.detail?.error)}`).toBeUndefined();
 });
