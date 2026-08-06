@@ -21,7 +21,10 @@ const cookieName = "authjs.session-token";
 
 describe("authJsPreset", () => {
   beforeEach(() => vi.useFakeTimers().setSystemTime(new Date("2026-07-14T12:00:00.000Z")));
-  afterEach(() => vi.useRealTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+  });
 
   it("mints an Auth.js v5 JWE accepted by the real getToken implementation", async () => {
     const actAs = authJsPreset({
@@ -103,5 +106,41 @@ describe("authJsPreset", () => {
 
     await expect(denied(principal, grant)).resolves.toBeNull();
     await expect(missingSecret(principal, grant)).resolves.toBeNull();
+  });
+
+  it("falls back to NEXTAUTH_SECRET (next-auth v4's name) when AUTH_SECRET is absent", async () => {
+    vi.stubEnv("NEXTAUTH_SECRET", secret);
+    const actAs = authJsPreset({ cookieName });
+
+    const material = await actAs(principal, grant);
+
+    expect(material?.headers.cookie).toMatch(/^authjs\.session-token=/);
+    await expect(getToken({
+      req: { headers: material?.headers ?? {} },
+      secret,
+      cookieName,
+    })).resolves.toMatchObject({ sub: principal.subject });
+  });
+
+  it("prefers AUTH_SECRET over NEXTAUTH_SECRET when both are set (Auth.js's own order)", async () => {
+    vi.stubEnv("AUTH_SECRET", secret);
+    vi.stubEnv("NEXTAUTH_SECRET", "legacy-secret-that-must-lose");
+    const actAs = authJsPreset({ cookieName });
+
+    const material = await actAs(principal, grant);
+
+    await expect(getToken({
+      req: { headers: material?.headers ?? {} },
+      secret,
+      cookieName,
+    })).resolves.toMatchObject({ sub: principal.subject });
+  });
+
+  it("an explicit secret source that declines never falls back to the env names", async () => {
+    vi.stubEnv("AUTH_SECRET", secret);
+    vi.stubEnv("NEXTAUTH_SECRET", secret);
+    const declined = authJsPreset({ secret: async () => undefined });
+
+    await expect(declined(principal, grant)).resolves.toBeNull();
   });
 });
