@@ -5,21 +5,19 @@ description: "Let Claude Code, Claude, Cursor, or any MCP client act in your pro
 ---
 
 The [AI SDK](/existing-agents/ai-sdk) and [Mastra](/existing-agents/mastra)
-walkthroughs are for an agent you run — your loop, your model, in process with
-`createVendo`. This is the other one. Open the [MCP door](/capabilities/mcp) and
-an agent you do **not** run acts in your product as the person who signed in,
-through the same guard, approvals, and audit your own surfaces use.
+walkthroughs are for an agent you run in process with `createVendo`. Open the
+[MCP door](/capabilities/mcp) instead and an agent you do **not** run acts in
+your product as the person who signed in, through the same guard, approvals,
+and audit your own surfaces use.
 
-There is nothing to build on the agent's side. It reads the door's `tools/list`
-and calls what it finds: your host actions, and Vendo's own `vendo_make`.
-`examples/mcp-agent/agent.mjs` in the repo is the proof — a stock AI SDK loop
-plus the MCP SDK, importing nothing from `@vendoai`.
+Nothing to build on the agent's side: it reads the door's `tools/list` and
+calls what it finds — your host actions, and Vendo's own `vendo_make`.
 
 <Note>
-  **Status: experimental**, the same label the door itself carries. It is real,
-  guard-bound, and covered by protocol-level e2e, but it stays out of the main
-  [quickstart](/quickstart) until the attended live-client matrix is green. See
-  [MCP door](/capabilities/mcp) for what is still outstanding.
+  **Status: experimental**, the same label the [MCP door](/capabilities/mcp)
+  carries: real, guard-bound, covered by protocol-level e2e, but out of the
+  main [quickstart](/quickstart) until the attended live-client matrix is
+  green.
 </Note>
 
 ## 1. Open the door
@@ -45,9 +43,9 @@ import { vendo } from "@/lib/vendo";
 export const { GET, POST } = wellKnownVendoHandler(vendo);
 ```
 
-Your existing catch-all route already serves the transport. The adapter
-contract, the consent page, `remoteAs`, and federation are all on
-[MCP door](/capabilities/mcp), and `npx vendo doctor` checks the wiring.
+Your existing catch-all route already serves the transport, and
+`npx vendo doctor` checks the wiring. The adapter contract and the consent page
+are on [MCP door](/capabilities/mcp).
 
 ## 2. Connect any client
 
@@ -60,8 +58,7 @@ https://your-app.example.com/api/vendo/mcp
 The OAuth is nobody's code. The door answers the client's first
 unauthenticated request with the RFC 9728 challenge; the client registers
 itself through dynamic client registration, runs PKCE, and sends the person to
-**your** login and the door's own consent page. From then on every call is
-judged as that person: your policy, your approvals queue, your audit rows.
+**your** login and the door's own consent page.
 
 The door also serves a page for people at
 `https://your-app.example.com/api/vendo/mcp/connect` — your product's name, the
@@ -85,10 +82,9 @@ export VENDO_MCP_URL=https://your-app.example.com/api/vendo/mcp
 ```
 
 Signing in is the same OAuth dance, run by Claude Code itself. The skill is the
-only thing the plugin adds beyond the connection, and it is judgment rather
-than code: when an answer wants to be looked at instead of read out, how to
-phrase the request, when to name a destination, and never to describe a screen
-it has not seen. Source:
+only thing the plugin adds beyond the connection: when an answer wants to be
+looked at instead of read out, how to phrase the request, when to name a
+destination, and never to describe a screen it has not seen. Source:
 [`examples/claude-code-plugin`](https://github.com/runvendo/vendo/tree/main/examples/claude-code-plugin).
 
 ## What the agent gets
@@ -101,7 +97,7 @@ it has not seen. Source:
 | `vendo_apps_pin` · `vendo_apps_unpin` | put a saved app into one of your product's slots, or clear it |
 
 Your host tools are curated with `surfaces.mcp` in `.vendo/overrides.json`; the
-`vendo_*` tools are the runtime's own plumbing and are never curated away. See
+`vendo_*` tools are never curated away. See
 [Curate the tool menu](/capabilities/mcp).
 
 ### `vendo_make`
@@ -148,28 +144,26 @@ import { VendoSlot } from "@vendoai/ui/chrome";
 </VendoSlot>
 ```
 
-`VendoSlot` ships from `@vendoai/ui/chrome`, so add `@vendoai/ui` as a direct
-dependency. Empty, the slot renders your own children; targeted, it shows a
-build skeleton while the screen is made, the failure with a retry if the build
-fails, and the live screen when it is ready — no blank hole in any state. One
-app per slot per person: placing a second one evicts the first.
+Add `@vendoai/ui` as a direct dependency. Empty, the slot renders your own
+children; targeted, it shows a build skeleton, then the live screen or the
+failure with a retry — no blank hole in any state. One app per slot per person:
+placing a second one evicts the first.
 
-Slot ids are yours, and nothing enumerates them for an outside agent. Tell the
-agent the id, or let the person say it; the plugin skill takes it from there
-and is taught never to invent one. An invented id places the screen where
-nobody is looking, and nothing about that looks like an error.
+Slot ids are yours, and nothing enumerates them for an outside agent: tell the
+agent the id, or let the person say it. The plugin skill is taught never to
+invent one — an invented id puts the screen where nobody is looking, and that
+does not look like an error.
 
-`vendo_apps_pin` moves an app the person already has into a slot, and
-`vendo_apps_unpin` clears it. Both are writes, judged like any other write:
-under a `cautious` policy the first one parks in your approvals queue. The
-routes behind all three are in [HTTP routes](/reference/http-routes).
+`vendo_apps_pin` and `vendo_apps_unpin` move an app the person already has in
+and out of a slot. Both are writes, judged like any other write: under a
+`cautious` policy the first one parks in your approvals queue. The routes
+behind all three are in [HTTP routes](/reference/http-routes).
 
 <Note>
   Running your own agent in your own backend as well? Its tool outputs render
   inline in that chat with `<VendoToolResult>` — see
-  [Embeds and envelopes](/existing-agents/embeds). Those embeds are the
-  in-process path. Over MCP the slot is the destination, and the outside
-  agent's own chat stays text.
+  [Embeds and envelopes](/existing-agents/embeds). Over MCP the slot is the
+  destination, and the outside agent's own chat stays text.
 </Note>
 
 ## The perimeter does not move

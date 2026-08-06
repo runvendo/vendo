@@ -74,6 +74,6 @@ request, or by inventing a description of a screen it never saw. The skill is
 the fix for all three, and it is one screen of text because it gets read
 mid-conversation.
 
-The host-side story — opening the door, connecting any MCP client, the tool
-contract, and the `<VendoSlot>` that receives the screen — is
+The host-side story — opening the door, the tool contract, and the
+`<VendoSlot>` that receives the screen — is
 [Bring your own agent over MCP](https://docs.vendo.run/existing-agents/mcp).
