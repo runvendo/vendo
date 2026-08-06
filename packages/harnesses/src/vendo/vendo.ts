@@ -220,19 +220,27 @@ interface SubagentReport {
   summary: string;
   /** Every token a hired specialist spent. Unmetered subagents are the bulk of a
    *  build turn's inference, so this is not optional bookkeeping — and the FULL
-   *  shape, cache split included, because the hire's own audit row is the only
-   *  row that carries it. */
+   *  shape, cache split and model included, because the hire's own audit row is
+   *  the only row that carries them. */
   usage: UsageTotals;
 }
 
+/** The resolved id of the seat that spent the tokens: the union's string form IS
+ *  the id, the object form names it. */
+const modelIdOf = (model: LanguageModel): string =>
+  typeof model === "string" ? model : model.modelId;
+
 /** One usage figure set from an `ai` totals block, in `UsageTotals` shape. */
-function usageOf(usage: LanguageModelUsage): UsageTotals {
+function usageOf(usage: LanguageModelUsage, model: LanguageModel): UsageTotals {
   const { cacheReadTokens, cacheWriteTokens } = usage.inputTokenDetails;
   return {
     inputTokens: usage.inputTokens ?? 0,
     outputTokens: usage.outputTokens ?? 0,
     ...(cacheReadTokens === undefined ? {} : { cacheReadTokens }),
     ...(cacheWriteTokens === undefined ? {} : { cacheWriteTokens }),
+    // The seat this loop actually thought with, so the row prices without
+    // anyone asking composition which seat it chose.
+    model: modelIdOf(model),
   };
 }
 
@@ -269,7 +277,7 @@ async function runSubagent(
   const [text, usage] = await Promise.all([result.text, result.totalUsage]);
   return {
     summary: text.trim() || "The specialist finished without a summary.",
-    usage: usageOf(usage),
+    usage: usageOf(usage, model),
   };
 }
 
@@ -415,7 +423,7 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
               // row (`reportHire`), so a host summing the turn's rows paid for
               // every specialist twice — and the cache split, which is the
               // resident's, then described a total that was not.
-              yield { type: "usage", ...usageOf(part.totalUsage) };
+              yield { type: "usage", ...usageOf(part.totalUsage, model) };
               break;
             default:
               // Tool call/result chunks are consumed here and dropped: the RUNTIME

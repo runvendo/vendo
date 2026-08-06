@@ -84,7 +84,7 @@ async function turnThatHires() {
     models: seats(model),
     interactive: true,
   }));
-  return { guard };
+  return { guard, modelId: (model as unknown as { modelId: string }).modelId };
 }
 
 describe("subagent spend lands in the ledger exactly once", () => {
@@ -128,5 +128,15 @@ describe("subagent spend lands in the ledger exactly once", () => {
       cacheReadTokens: HIRE.inputTokens.cacheRead,
       cacheWriteTokens: HIRE.inputTokens.cacheWrite,
     });
+  });
+});
+
+describe("a usage row names the model that spent it", () => {
+  it("carries the resolved model id, so a row prices without guessing the seat", async () => {
+    const { guard, modelId } = await turnThatHires();
+    const usages = usagesOf(guard.events);
+
+    expect(usages).not.toHaveLength(0);
+    expect(usages.every((usage) => usage.model === modelId)).toBe(true);
   });
 });
