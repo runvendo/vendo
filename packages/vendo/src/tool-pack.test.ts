@@ -1,8 +1,8 @@
 import type { Principal, VendoAppRef, VendoApprovalRef } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import {
-  VENDO_CREATE_APP_TOOL,
   VENDO_DELEGATE_TOOL,
+  VENDO_MAKE_TOOL,
   VENDO_TOOL_PACK_PREFIX,
   type VendoDelegateResult,
   type VendoToolPackFilter,
@@ -16,9 +16,11 @@ import {
 describe("tool-pack contract", () => {
   it("pins the vendo_* namespace and the two built-in tool names", () => {
     expect(VENDO_TOOL_PACK_PREFIX).toBe("vendo_");
-    expect(VENDO_CREATE_APP_TOOL).toBe("vendo_create_app");
+    // The pack's app door IS Vendo's own make tool — one name in-process and
+    // over the MCP door, never a BYO-only alias.
+    expect(VENDO_MAKE_TOOL).toBe("vendo_make");
     expect(VENDO_DELEGATE_TOOL).toBe("vendo_delegate");
-    expect(VENDO_CREATE_APP_TOOL.startsWith(VENDO_TOOL_PACK_PREFIX)).toBe(true);
+    expect(VENDO_MAKE_TOOL.startsWith(VENDO_TOOL_PACK_PREFIX)).toBe(true);
     expect(VENDO_DELEGATE_TOOL.startsWith(VENDO_TOOL_PACK_PREFIX)).toBe(true);
   });
 
@@ -27,13 +29,13 @@ describe("tool-pack contract", () => {
     const options: VendoToolPackOptions = {
       principal,
       sessionId: "session_host",
-      include: ["vendo_create_app"],
+      include: ["vendo_make"],
       exclude: ["vendo_delegate"],
     };
     // The filter alone is what the static Mastra shim accepts (principal
     // resolves lazily per call from the framework's runtime context).
     const filter: VendoToolPackFilter = options;
-    expect(filter.include).toEqual(["vendo_create_app"]);
+    expect(filter.include).toEqual(["vendo_make"]);
     const bare: VendoToolPackOptions = { principal };
     expect(bare.include).toBeUndefined();
   });
