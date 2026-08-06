@@ -25,6 +25,10 @@ import { REMOVED_CONFIG_KEYS, docsTableDiff, tableKeys } from "./config-keys.js"
  */
 
 const SERVER_API_PAGE = new URL("../../../docs-site/reference/server-api.mdx", import.meta.url);
+const HANDLER_OPTIONS_PAGE = new URL(
+  "../../../docs-site/reference/handler-options.mdx",
+  import.meta.url,
+);
 
 /** The `## Config keys` section only: a key named in prose or in an example is
  *  not documentation, the same rule the sibling's section slice enforces. */
@@ -53,14 +57,42 @@ describe("server-api.mdx stays 1:1 with CreateVendoConfig", () => {
     // never saw.
     expect(page).not.toMatch(/agent\?:\s*\{/);
   });
+});
 
-  it("names the four real model seats and no invented one", async () => {
-    const page = await readFile(SERVER_API_PAGE, "utf8");
-    const modelsRow = page.split("\n").find((line) => line.startsWith("| `models` |"));
-    expect(modelsRow).toBeDefined();
-    for (const seat of SEATS) expect(modelsRow).toContain(seat);
-    // `verifier` / `knowledgeVerifier` is the seat this page invented. `SEATS`
-    // is the closed list; a name outside it resolves to nothing at all.
-    expect(page).not.toMatch(/verifier/i);
+/** The `models` row of a reference page's option table — where both pages teach
+ *  the seats. */
+const modelsRow = (page: string): string | undefined =>
+  page.split("\n").find((line) => line.startsWith("| `models` |"));
+
+/** The seats that row teaches: the identifiers in its `{ … }` group. Both pages
+ *  spell the list that way, so one comparison against `SEATS` covers both. */
+const documentedSeats = (row: string | undefined): string[] | undefined =>
+  row
+    ?.match(/\{([^}]*)\}/)?.[1]
+    .split(",")
+    .map((seat) => seat.trim().replace(/[`?]/g, ""))
+    .filter((seat) => seat.length > 0);
+
+/**
+ * Both reference pages document the seat vocabulary, so both are pinned to the
+ * one closed list in `@vendoai/core`. server-api.mdx invented a `verifier` seat
+ * and handler-options.mdx taught the same one plus a `knowledgeVerifier` →
+ * `verifier` migration — neither has ever existed on `ModelsConfig`, and the
+ * knowledge verifier pass they belonged to was removed outright.
+ */
+describe("the reference pages pin their model seats to model-seats.ts", () => {
+  it.each([
+    ["server-api.mdx", SERVER_API_PAGE],
+    ["handler-options.mdx", HANDLER_OPTIONS_PAGE],
+  ])("%s names exactly the real seats, in order", async (_name, url) => {
+    const row = modelsRow(await readFile(url, "utf8"));
+    expect(row).toBeDefined();
+    expect(documentedSeats(row)).toEqual([...SEATS]);
+    // The set comparison covers an invented seat inside the LIST; this covers
+    // one named in the row's prose, which is where the "`knowledgeVerifier` →
+    // `verifier`" migration claim sat. Scoped to the seat SPELLING rather than
+    // the word, so the page can still say the old slot is gone — which it
+    // should, and which the house style does for every other removed key.
+    expect(row).not.toMatch(/`(models\.)?verifier`/i);
   });
 });
