@@ -1,35 +1,22 @@
 // @vitest-environment jsdom
-// Shelf Task 3 — Slot self-discovery: the slot resolves "the app placed in
-// slot X" on its own (the polling dance host hero-slots used to hand-roll),
-// via the useSlotApp hook over the standard useResource lifecycle.
-// Since the 2026-08-02 pins/placements split, discovery reads `placements`
-// ONLY; `pins` is fork provenance and never places an app.
-import type { AppDocument } from "@vendoai/core";
+// Slot self-discovery, on placement ROWS (2026-08-05): the slot resolves "the
+// app placed in slot X" and where that app's build stands, through ONE shared
+// poller per client — every mounted slot rides the same GET /apps/placements.
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, useSlotApp, type VendoClient } from "../../src/index.js";
 import { VendoSlot } from "../../src/chrome/index.js";
 import { createWireServer } from "../wire-server.js";
 
-/** The wire server's app_1 ("Invoices"), placed in the hero slot. Keeping the
- *  id real lets the slot's mount path open it over the same wire. */
-function pinnedApp(overrides: Partial<AppDocument> = {}): AppDocument {
-  return {
-    format: "vendo/app@1",
-    id: "app_1",
-    name: "Invoices",
-    ui: "tree",
-    tree: {
-      formatVersion: "vendo-genui/v2",
-      root: "root",
-      nodes: [{ id: "root", component: "Text", props: { text: "Invoices app surface" } }],
-    },
-    placements: ["hero"],
-    ...overrides,
-  };
-}
+const entry = (overrides: Partial<{ slot: string; app: string; title: string; status: string }> = {}) => ({
+  slot: "hero",
+  app: "app_1",
+  title: "Invoices",
+  status: "ready" as const,
+  ...overrides,
+});
 
-describe("Slot pin self-discovery (useSlotApp + VendoSlot)", () => {
+describe("Slot self-discovery (useSlotApp + VendoSlot) over placement rows", () => {
   let wire: Awaited<ReturnType<typeof createWireServer>>;
   let client: VendoClient;
 
@@ -44,74 +31,92 @@ describe("Slot pin self-discovery (useSlotApp + VendoSlot)", () => {
     await wire.close();
   });
 
-  function Probe({ slot, pollMs }: { slot: string; pollMs?: number }) {
-    const { appId, isLoading } = useSlotApp(slot, pollMs === undefined ? {} : { pollMs });
-    return <output>{isLoading ? "loading" : appId ?? "none"}</output>;
+  function Probe({ slot }: { slot: string }) {
+    const { appId, status, isLoading } = useSlotApp(slot);
+    return <output>{isLoading ? "loading" : `${appId ?? "none"}:${status ?? "none"}`}</output>;
   }
 
-  // ⚠️ TEST EDIT (D5) — this case used a HAND-ORDERED `client.apps.list` mock, so
-  // it could not express the order the wire actually returns and `.at(-1)` (the
-  // OLDEST match) passed as "latest wins" for two months. It now goes over the
-  // real wire, whose /apps mirrors `runtime.list()`: newest first.
-  it("resolves the LATEST app placed in the slot, over the wire's real newest-first order", async () => {
-    wire.state.apps.push(
-      pinnedApp({ id: "app_older", name: "First remix" }),
-      pinnedApp({ id: "app_newer", name: "Newer remix" }),
-      pinnedApp({ id: "app_other", placements: ["sidebar"] }),
-    );
+  it("resolves the app placed in the slot, over the real wire", async () => {
+    await client.apps.place("app_1", "hero");
     render(<VendoProvider client={client}><Probe slot="hero" /></VendoProvider>);
-    await waitFor(() => expect(screen.getByRole("status").textContent).toBe("app_newer"));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toBe("app_1:ready"));
   });
 
   it("reports no app when nothing is placed in the slot", async () => {
-    vi.spyOn(client.apps, "list").mockResolvedValue([pinnedApp({ placements: [] })]);
     render(<VendoProvider client={client}><Probe slot="hero" /></VendoProvider>);
-    await waitFor(() => expect(screen.getByRole("status").textContent).toBe("none"));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toBe("none:none"));
   });
 
-  it("ignores pins — fork provenance never places an app in a slot", async () => {
-    vi.spyOn(client.apps, "list").mockResolvedValue([
-      pinnedApp({ placements: [], pins: [{ slot: "hero", base: "sha256:abc123" }] }),
+  it("carries a build that has not landed as building, with its id", async () => {
+    vi.spyOn(client.apps, "placements").mockResolvedValue([
+      entry({ app: "app_forming", title: "", status: "building" }),
     ]);
     render(<VendoProvider client={client}><Probe slot="hero" /></VendoProvider>);
-    await waitFor(() => expect(screen.getByRole("status").textContent).toBe("none"));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toBe("app_forming:building"));
   });
 
-  it("keeps polling on the configured interval so a new placement appears on its own", async () => {
-    const list = vi.spyOn(client.apps, "list").mockResolvedValue([]);
-    render(<VendoProvider client={client}><Probe slot="hero" pollMs={20} /></VendoProvider>);
-    await waitFor(() => expect(screen.getByRole("status").textContent).toBe("none"));
-    list.mockResolvedValue([pinnedApp()]);
-    await waitFor(() => expect(screen.getByRole("status").textContent).toBe("app_1"));
-    expect(list.mock.calls.length).toBeGreaterThan(1);
+  it("asks for EVERY mounted slot in ONE request, and keeps polling", async () => {
+    const placements = vi.spyOn(client.apps, "placements").mockResolvedValue([]);
+    render(
+      <VendoProvider client={client}>
+        <Probe slot="hero" />
+        <Probe slot="sidebar" />
+      </VendoProvider>,
+    );
+    await waitFor(() => {
+      const asked = placements.mock.calls.at(-1)?.[0] ?? [];
+      expect([...asked].sort()).toEqual(["hero", "sidebar"]);
+    });
+    // A placement made anywhere else appears on the poll's own cadence…
+    placements.mockResolvedValue([entry()]);
+    await waitFor(
+      () => expect(screen.getAllByRole("status")[0]?.textContent).toBe("app_1:ready"),
+      { timeout: 25_000 },
+    );
+    // …and no request ever asked for a single slot on its own: one poller,
+    // every mounted slot, one request per tick.
+    for (const [asked] of placements.mock.calls) {
+      expect([...(asked ?? [])].sort()).toEqual(["hero", "sidebar"]);
+    }
   });
 
-  it("VendoSlot discovers its own placement when no appId/pin prop is passed", async () => {
-    vi.spyOn(client.apps, "list").mockResolvedValue([pinnedApp()]);
+  it("VendoSlot mounts the placed app when it is READY", async () => {
+    vi.spyOn(client.apps, "placements").mockResolvedValue([entry()]);
     render(
       <VendoProvider client={client}>
         <VendoSlot id="hero"><span>Original hero</span></VendoSlot>
       </VendoProvider>,
     );
-    // The host children render immediately; the discovered app then mounts
-    // through the normal app path (opened over the wire).
     expect(await screen.findByText("Invoices app surface")).toBeTruthy();
   });
 
-  it("VendoSlot leaves children untouched when nothing is placed", async () => {
-    vi.spyOn(client.apps, "list").mockResolvedValue([pinnedApp({ placements: [] })]);
+  it("VendoSlot keeps the host's children while the placed build is still forming", async () => {
+    vi.spyOn(client.apps, "placements").mockResolvedValue([
+      entry({ app: "app_forming", title: "", status: "building" }),
+    ]);
     render(
       <VendoProvider client={client}>
         <VendoSlot id="hero"><span>Original hero</span></VendoSlot>
       </VendoProvider>,
     );
-    await waitFor(() => expect(client.apps.list).toHaveBeenCalled());
+    await waitFor(() => expect(client.apps.placements).toHaveBeenCalled());
     expect(screen.getByText("Original hero")).toBeTruthy();
     expect(screen.queryByText("Invoices app surface")).toBeNull();
   });
 
-  it("discover={false} stands discovery down even with no appId/pin (host polls itself)", async () => {
-    const list = vi.spyOn(client.apps, "list");
+  it("VendoSlot leaves children untouched when nothing is placed", async () => {
+    vi.spyOn(client.apps, "placements").mockResolvedValue([]);
+    render(
+      <VendoProvider client={client}>
+        <VendoSlot id="hero"><span>Original hero</span></VendoSlot>
+      </VendoProvider>,
+    );
+    await waitFor(() => expect(client.apps.placements).toHaveBeenCalled());
+    expect(screen.getByText("Original hero")).toBeTruthy();
+  });
+
+  it("discover={false} stands discovery down (host polls itself)", async () => {
+    const placements = vi.spyOn(client.apps, "placements");
     render(
       <VendoProvider client={client}>
         <VendoSlot id="hero" discover={false}><span>Original hero</span></VendoSlot>
@@ -119,17 +124,17 @@ describe("Slot pin self-discovery (useSlotApp + VendoSlot)", () => {
     );
     expect(screen.getByText("Original hero")).toBeTruthy();
     await new Promise(resolve => setTimeout(resolve, 50));
-    expect(list).not.toHaveBeenCalled();
+    expect(placements).not.toHaveBeenCalled();
   });
 
-  it("an explicit appId prop wins over discovery (no polling dance started)", async () => {
-    const list = vi.spyOn(client.apps, "list");
+  it("an explicit appId prop wins over discovery (no poll started)", async () => {
+    const placements = vi.spyOn(client.apps, "placements");
     render(
       <VendoProvider client={client}>
         <VendoSlot id="hero" appId="app_1"><span>Original hero</span></VendoSlot>
       </VendoProvider>,
     );
     expect(await screen.findByText("Invoices app surface")).toBeTruthy();
-    expect(list).not.toHaveBeenCalled();
+    expect(placements).not.toHaveBeenCalled();
   });
 });

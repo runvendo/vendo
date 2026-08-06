@@ -155,7 +155,11 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, discover = true
   // Self-discovery (ui-usage-dx §2): with no explicit `appId`/`pin`, the slot
   // resolves its own pinned app — hosts never write the polling dance.
   const discovery = useSlotApp(id, { enabled: discover && appIdProp === undefined && pin === undefined });
-  const appId = appIdProp ?? (pin === undefined ? discovery.appId : undefined);
+  // Only a READY app mounts: a placement can name a build that is still
+  // forming (or that failed), and opening an app with no document yet is a
+  // guaranteed "this view didn't load". The host's own children stay up until
+  // there is something real to swap in.
+  const appId = appIdProp ?? (pin === undefined && discovery.status === "ready" ? discovery.appId : undefined);
 
   const author = () => {
     if (onAuthor) {
