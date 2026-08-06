@@ -37,20 +37,20 @@ const POPUP_HEIGHT = 680;
  * Returns `null` when the browser blocked it anyway — the caller keeps going and
  * offers the same URL as a plain link.
  */
-export function openConnectPopup(name = "vendo-connect"): Window | null {
+export function openConnectPopup(): Window | null {
   // Centered on the screen the browser is on, so the consent page lands where
   // the eye already is rather than in a corner behind the app.
   const left = Math.max(0, Math.round((window.screen.width - POPUP_WIDTH) / 2));
   const top = Math.max(0, Math.round((window.screen.height - POPUP_HEIGHT) / 2));
   return window.open(
     "about:blank",
-    name,
+    "vendo-connect",
     `popup=yes,width=${POPUP_WIDTH},height=${POPUP_HEIGHT},left=${left},top=${top}`,
   ) ?? null;
 }
 
 /** Initiate a broker connection and poll it to `active` (the ConnectCard flow,
-    shared). Resolves with the broker's redirect URL once the account is live. */
+    shared). */
 export async function completeConnection(
   client: ReturnType<typeof useVendoContext>["client"],
   input: { toolkit: string; connector?: string },
@@ -63,7 +63,7 @@ export async function completeConnection(
   /** Called once the broker's redirect URL exists — the fallback link's href,
       needed WHILE the poll runs, long before this resolves. */
   onRedirect?: (redirectUrl: string) => void,
-): Promise<{ redirectUrl: string }> {
+): Promise<void> {
   const initiated = await client.connections.initiate(input);
   onRedirect?.(initiated.redirectUrl);
   if (popup === undefined) window.open(initiated.redirectUrl, "_blank", "noopener");
@@ -77,7 +77,7 @@ export async function completeConnection(
     // nothing of ours running inside it to postMessage back.
     if (account?.status === "active") {
       popup?.close();
-      return { redirectUrl: initiated.redirectUrl };
+      return;
     }
     if (account?.status === "failed" || account?.status === "expired") {
       popup?.close();
@@ -85,7 +85,7 @@ export async function completeConnection(
     }
     await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
   }
-  if (isCancelled()) return { redirectUrl: initiated.redirectUrl };
+  if (isCancelled()) return;
   popup?.close();
   // Coded, because a deadline is not a refusal: the surface says "nothing
   // changed" and re-offers, where a failure says the connect went wrong.

@@ -9,9 +9,8 @@ import { themeCssVariables, type VendoTheme } from "@vendoai/core";
  */
 
 /** The style-attribute serialization of core's one theme→CSS-variable mapping.
- * This used to be a hand-kept copy of ui's mapping (mcp may only depend on
- * core, so importing ui was not an option) and had fallen sixteen variables
- * behind it. */
+ * It lives in core rather than ui because `scripts/dependency-guard.mjs`
+ * restricts `@vendoai/mcp` to `@vendoai/core`, so ui is not importable here. */
 export function vendoThemeStyle(theme: VendoTheme): string {
   return Object.entries(themeCssVariables(theme)).map(([name, value]) => `${name}:${value}`).join(";");
 }

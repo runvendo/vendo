@@ -7,7 +7,7 @@
  */
 // @vitest-environment jsdom
 import { render } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { mapleScenarios } from "@/vendo/scenarios";
 
 const threadProps = vi.fn();
@@ -26,10 +26,6 @@ vi.mock("@/components/vendo/VendoRoot", () => ({
 }));
 
 import VendoTabPage from "./page";
-
-afterEach(() => {
-  threadProps.mockClear();
-});
 
 describe("/vendo full page thread", () => {
   it("shows the scenario cards on the very first visit: tutorial stands down, cards ride in", () => {

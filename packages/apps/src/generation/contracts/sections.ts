@@ -43,7 +43,7 @@ const pinBaselinesPrompt = (baselines: readonly PinBaseline[] = []): string => J
 );
 
 export interface GenerationPromptSection {
-  id: "role" | "tree-contract" | "clock" | "component-styling" | "catalog" | "theme" | "design-rules" | "remixable-slots" | "prewired-props" | "limits";
+  id: "role" | "tree-contract" | "clock" | "component-styling" | "catalog" | "theme" | "design-rules" | "remixable-slots" | "limits";
   content: string;
 }
 

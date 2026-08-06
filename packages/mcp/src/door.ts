@@ -1705,8 +1705,7 @@ function shimHtml(theme: VendoTheme | undefined): string {
   return SHIM_HTML.replace(SHIM_THEME_MARKER, style);
 }
 
-/** The declaration-block serialization of core's one theme→CSS-variable
- * mapping — the third copy of that mapping until now, and the shortest. */
+/** The declaration-block serialization of core's one theme→CSS-variable mapping. */
 function themeDeclarations(theme: VendoTheme): string {
   return Object.entries(themeCssVariables(theme))
     .map(([name, value]) => `${name}:${escapeCssValue(value)};`)
