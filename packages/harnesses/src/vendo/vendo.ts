@@ -20,6 +20,7 @@ import { modelToolDescription, type Harness, type HarnessEvent, type Json, type 
 import { readCompactionState, writeCompactionState } from "./compaction.js";
 import { startTurn, type TurnCompaction, type TurnContext } from "./loop.js";
 import { contextWindowTokens } from "./model-windows.js";
+import { isContextOverflow } from "./overflow.js";
 import { wireErrorMessage } from "../wire-error.js";
 import { reportHire, type HireRecord, type UsageTotals } from "../runtime.js";
 import {
@@ -27,6 +28,7 @@ import {
   tool,
   type LanguageModel,
   type LanguageModelUsage,
+  type ModelMessage,
   type ToolSet,
 } from "ai";
 import { defineHarness } from "../define.js";
@@ -428,11 +430,18 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
         activeToolNames = () => equipped;
       }
 
-      let loop: Awaited<ReturnType<typeof startTurn>>;
-      try {
+      // ONE attempt at the turn. The overflow retry re-enters through the same
+      // function so the two attempts cannot drift on any input but the two the
+      // retry means to change.
+      const attempt = (
+        attemptCompaction: TurnCompaction,
+        /** What the failed attempt already produced, for a retry that CONTINUES
+         *  the turn rather than restarting it. */
+        resume?: readonly ModelMessage[],
+      ): Promise<Awaited<ReturnType<typeof startTurn>>> =>
         // THE shipped loop. Every rail lives in it, so this harness cannot drift
         // from `createAgent` on any of them.
-        loop = await startTurn({
+        startTurn({
           model,
           system,
           messages: [...turn.messages],
@@ -451,13 +460,18 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
           // How big this seat's window is, and what the thread remembers about
           // filling it. Always passed: a deployment that never set a knob is
           // exactly the deployment that has never had a context rail at all.
-          compaction,
+          compaction: attemptCompaction,
+          ...(resume === undefined ? {} : { resume }),
           // The WHOLE context, not just `maxSteps`. Passing one knob is what made
           // every other knob unreachable from `vendo()` — the loop declared them,
           // `createAgent` passed them, and this caller silently dropped them, so
           // the two thinkers disagreed about a host's own configuration.
           ...(Object.keys(context).length === 0 ? {} : { context }),
         });
+
+      let loop: Awaited<ReturnType<typeof startTurn>>;
+      try {
+        loop = await attempt(compaction);
       } catch (error) {
         yield { type: "error", message: wireErrorMessage(error), code: "model" };
         return;
@@ -467,57 +481,90 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
       // included, which is what makes it usable as the next turn's ground truth
       // instead of a second guess at the same tokens.
       let lastPromptTokens: number | undefined;
-      try {
-        for await (const part of loop.result.fullStream) {
-          switch (part.type) {
-            case "text-delta":
-              yield { type: "text", delta: part.text };
-              break;
-            case "finish-step":
-              // Last step wins: it sent the biggest prompt of the turn, and it
-              // is the one the next turn grows from.
-              lastPromptTokens = part.usage.inputTokens ?? lastPromptTokens;
-              break;
-            case "error":
-              // `wireErrorMessage` is the SHIPPED formatter: a Vendo-shaped error
-              // keeps its message and code, the Cloud meter's 402 becomes the
-              // sentence with figures, reset date and both exits, and anything
-              // else stays the fixed generic string. Provider internals never
-              // travel; the operator's terminal gets the real error.
-              yield { type: "error", message: wireErrorMessage(part.error), code: "model" };
-              break;
-            case "abort":
-              // The caller hung up: stop cleanly, say nothing.
-              return;
-            case "finish":
-              // The RESIDENT loop's own spend, and only it. Folding the hires in
-              // here too double-counted them: each hire is already its own audit
-              // row (`reportHire`), so a host summing the turn's rows paid for
-              // every specialist twice — and the cache split, which is the
-              // resident's, then described a total that was not.
-              yield { type: "usage", ...usageOf(part.totalUsage, model) };
-              break;
-            default:
-              // Tool call/result chunks are consumed here and dropped: the RUNTIME
-              // mirrors them (§1.5), so echoing them would double every call.
-              //
-              // `tool-error` is dropped with them, and that is the rule: a turn
-              // FAILS by how it ends — an `error` part, a throw out of this drain,
-              // an abort — never by a step it recovered from. The SDK raises this
-              // part for its own malformed-input/unknown-tool class, feeds it back,
-              // and the model answers on the next step; a guarded call cannot raise
-              // it at all, because `turn.tools.call()` never throws (§1.1) and its
-              // failures are already a tool RESULT the model reads. Reporting it as
-              // an `error` event made the runtime — right to treat a reported error
-              // as the turn's death — stamp a finished turn failed: a permanent
-              // "The response didn't finish" notice and a failed audit row above a
-              // perfectly good answer.
-              break;
+      /** The turn's single retry, spent. */
+      let retried = false;
+      for (;;) {
+        /** Set when THIS attempt died on a prompt that did not fit. */
+        let overflowed = false;
+        try {
+          for await (const part of loop.result.fullStream) {
+            switch (part.type) {
+              case "text-delta":
+                yield { type: "text", delta: part.text };
+                break;
+              case "finish-step":
+                // Last step wins: it sent the biggest prompt of the turn, and it
+                // is the one the next turn grows from.
+                lastPromptTokens = part.usage.inputTokens ?? lastPromptTokens;
+                break;
+              case "error":
+                // A prompt that did not fit is the ONE provider failure this loop
+                // can answer by itself: compact what the thread is carrying and
+                // continue, silently, once. Everything else — and a second
+                // overflow, and a caller who has already hung up — takes the
+                // normal path below.
+                if (!retried && !turn.signal.aborted && isContextOverflow(part.error)) {
+                  overflowed = true;
+                  break;
+                }
+                // `wireErrorMessage` is the SHIPPED formatter: a Vendo-shaped error
+                // keeps its message and code, the Cloud meter's 402 becomes the
+                // sentence with figures, reset date and both exits, and anything
+                // else stays the fixed generic string. Provider internals never
+                // travel; the operator's terminal gets the real error.
+                yield { type: "error", message: wireErrorMessage(part.error), code: "model" };
+                break;
+              case "abort":
+                // The caller hung up: stop cleanly, say nothing.
+                return;
+              case "finish":
+                // The RESIDENT loop's own spend, and only it. Folding the hires in
+                // here too double-counted them: each hire is already its own audit
+                // row (`reportHire`), so a host summing the turn's rows paid for
+                // every specialist twice — and the cache split, which is the
+                // resident's, then described a total that was not.
+                yield { type: "usage", ...usageOf(part.totalUsage, model) };
+                break;
+              default:
+                // Tool call/result chunks are consumed here and dropped: the RUNTIME
+                // mirrors them (§1.5), so echoing them would double every call.
+                //
+                // `tool-error` is dropped with them, and that is the rule: a turn
+                // FAILS by how it ends — an `error` part, a throw out of this drain,
+                // an abort — never by a step it recovered from. The SDK raises this
+                // part for its own malformed-input/unknown-tool class, feeds it back,
+                // and the model answers on the next step; a guarded call cannot raise
+                // it at all, because `turn.tools.call()` never throws (§1.1) and its
+                // failures are already a tool RESULT the model reads. Reporting it as
+                // an `error` event made the runtime — right to treat a reported error
+                // as the turn's death — stamp a finished turn failed: a permanent
+                // "The response didn't finish" notice and a failed audit row above a
+                // perfectly good answer.
+                break;
+            }
           }
+        } catch (error) {
+          yield { type: "error", message: wireErrorMessage(error), code: "model" };
+          return;
         }
-      } catch (error) {
-        yield { type: "error", message: wireErrorMessage(error), code: "model" };
-        return;
+        if (!overflowed) break;
+        retried = true;
+        // Everything the failed attempt said and did, tool RESULTS included. It
+        // rides the next prompt verbatim, below the compaction: each of those
+        // calls has already run through `turn.tools.call()` and committed a real
+        // effect, so an attempt that replayed them would transfer the money
+        // twice. An overflow on the FIRST step produced no step at all, and `ai`
+        // rejects `response` rather than resolving it empty — nothing to carry.
+        const resume: readonly ModelMessage[] = await loop.result.response.then(
+          (response) => response.messages,
+          () => [],
+        );
+        try {
+          loop = await attempt({ ...compaction, force: true }, resume);
+        } catch (error) {
+          yield { type: "error", message: wireErrorMessage(error), code: "model" };
+          return;
+        }
       }
 
       // §1.3's slot, which the runtime persists at turn end (`runtime.ts`

@@ -39,4 +39,8 @@ export {
   type CompactionConfig,
   type CompactionState,
 } from "./compaction.js";
+// Told apart from a 429 by the same pattern set the retry uses, because a host
+// driving `startTurn` itself faces the identical fork: compact and continue, or
+// surface the failure.
+export { isContextOverflow } from "./overflow.js";
 export { failoverModel, type ResolvedModel } from "./failover.js";
