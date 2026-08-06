@@ -46,6 +46,15 @@ export interface PendingSurface {
   kind: "pending";
 }
 
+/** 06-apps — one row of `GET /apps/placements`: what is in a slot, and where
+ *  that app's build stands. `title` is "" while a build has not landed. */
+export interface PlacementEntry {
+  slot: string;
+  app: AppId;
+  title: string;
+  status: "ready" | "building" | "failed";
+}
+
 /**
  * Remix final shape (2026-08-02) — where the CURRENT version of a review-kind
  * remix stands with the host reviewer, riding the venue verdict: "pending"

@@ -225,6 +225,12 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
       forkPin: ({ appId, ...body }) =>
         json(appId === undefined ? "/apps/fork-pin" : `/apps/${idPath(appId)}/fork-pin`, "POST", body),
       pingMachine: id => json(`/apps/${idPath(id)}/machine/ping`, "POST"),
+      place: (id, slot) => json(`/apps/${idPath(id)}/place`, "POST", { slot }),
+      unplace: async (id, slot) => {
+        await json(`/apps/${idPath(id)}/unplace`, "POST", { slot });
+      },
+      placements: slots =>
+        readJson(`/apps/placements${slots === undefined || slots.length === 0 ? "" : `?slots=${encodeURIComponent(slots.join(","))}`}`),
     },
     automations: {
       list: () => readJson("/automations"),

@@ -307,6 +307,10 @@ export async function createWireServer(options: WireServerOptions = {}) {
   };
   const state = {
     apps: [baseApp, automationApp, ...(options.islandApp === true ? [islandApp()] : [])],
+    /** Placement rows (2026-08-05): the fixture keeps the SHAPE the wire keeps
+     *  per subject — one row per slot, and the entry's status is derived from
+     *  the app list on read, never stored. */
+    placements: [] as Array<{ slot: string; appId: string }>,
     approvals: [approval()],
     // Existing-agents — decided approvals move here so GET /approvals/:id can
     // answer the embed's poll; tests may also seed terminal states directly.
@@ -1061,10 +1065,12 @@ export async function createWireServer(options: WireServerOptions = {}) {
         const target = existingId === undefined
           ? (() => {
             const minted = app(`app_pin_${state.apps.length + 1}`, `${slot} remix`);
-            // Mirrors the runtime's mint: placement (location) beside the pin
-            // (provenance) — slot discovery reads placements only (2026-08-02
-            // split); the wrapper's in-place mount reads pins only.
-            minted.placements = [slot];
+            // Mirrors the runtime's mint: the placement is a ROW (location)
+            // beside the pin on the document (provenance).
+            state.placements = [
+              ...state.placements.filter(row => row.slot !== slot),
+              { slot, appId: minted.id },
+            ];
             minted.tree = {
               formatVersion: "vendo-genui/v2",
               root: "root",
@@ -1091,6 +1097,37 @@ export async function createWireServer(options: WireServerOptions = {}) {
           slot,
           componentName,
         });
+      }
+      // Placement (2026-08-05) — ahead of the /apps/:id arms, exactly like the
+      // real route table (the catch-all would otherwise read "placements" as an
+      // app id).
+      if (url.pathname === "/apps/placements" && method === "GET") {
+        const asked = (url.searchParams.get("slots") ?? "")
+          .split(",").map(slot => slot.trim()).filter(slot => slot.length > 0);
+        const rows = state.placements.filter(row => asked.length === 0 || asked.includes(row.slot));
+        return json(response, rows.map(row => {
+          const placed = state.apps.find(item => item.id === row.appId);
+          return {
+            slot: row.slot,
+            app: row.appId,
+            title: placed?.name ?? "",
+            status: placed === undefined
+              ? "building"
+              : placed.buildFailed === undefined ? "ready" : "failed",
+          };
+        }));
+      }
+      const placeMatch = url.pathname.match(/^\/apps\/([^/]+)\/(place|unplace)$/);
+      if (method === "POST" && placeMatch) {
+        const id = decodeURIComponent(placeMatch[1] ?? "");
+        const { slot } = parsedBody as { slot: string };
+        const held = state.placements.find(row => row.slot === slot);
+        if (placeMatch[2] === "unplace") {
+          if (held?.appId === id) state.placements = state.placements.filter(row => row.slot !== slot);
+          return json(response, {});
+        }
+        state.placements = [...state.placements.filter(row => row.slot !== slot), { slot, appId: id }];
+        return json(response, held === undefined || held.appId === id ? {} : { evicted: held.appId });
       }
       // ⚠️ FIXTURE EDIT (D5) — NEWEST FIRST, which is what the real wire returns.
       // `runtime.list()` sorts createdAt DESCENDING (packages/apps/src/runtime.ts,
