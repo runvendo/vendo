@@ -54,6 +54,7 @@ import {
 import type { DiscoveryRails } from "./discovery.js";
 import { wrapWorkspaceForRender, type RenderSeamOptions } from "./render-seam.js";
 import { createTurnTools, type MirrorEvent } from "./turn-tools.js";
+import { specificWireErrorMessage } from "./wire-error.js";
 import { TextChannel, writeError, writeMirror, writeStatus, writeTurnError, writeView } from "./wire.js";
 
 /**
@@ -533,8 +534,21 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
               threadId: input.threadId,
               error: error instanceof Error ? error.message : String(error),
             });
-            failure = { message: HARNESS_FAILED, code: "harness" };
-            text.delta(HARNESS_FAILED);
+            // …unless the error is one Vendo itself crafted (the credential
+            // ladder's `vendo login` guidance, the Cloud meter refusal), which
+            // the legacy door put in front of the user verbatim. Substituting
+            // our constant for those is how a keyless deployment migrated onto
+            // this path lost the one sentence that said what to do about it.
+            const message = specificWireErrorMessage(error) ?? HARNESS_FAILED;
+            failure = { message, code: "harness" };
+            // Same two carriers as a reported `error` event above — the screen's
+            // banner/Retry and the transcript's record. A thrown failure used to
+            // be spoken as prose instead, which read as the agent talking, gave
+            // the user nothing to act on, and left a reload showing a blank reply.
+            text.break();
+            surfaced = message;
+            writeError(writer, message);
+            recordTurnError(message, (part) => writer.write(part as never));
           } finally {
             // FIRST: the turn is over, so the door must stop answering for it.
             // A call arriving during turn-end cleanup has nothing to be judged
@@ -567,13 +581,17 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
           const text = error instanceof Error ? error.message : String(error);
           if (text !== surfaced) console.error("[vendo] harness stream error:", error);
           // The record for failures the harness loop can never see: `execute`
-          // itself rejecting (building the toolset, mounting the workspace) —
-          // those never become a harness `error` event. What the USER was told
-          // is what the turn keeps; nothing of the internals travels. The
-          // SDK's writer swallows a write past close, so this is safe at any
-          // point in the turn's life.
-          recordTurnError(HARNESS_FAILED, (part) => turnWriter?.write(part as never));
-          return HARNESS_FAILED;
+          // itself rejecting (building the toolset, mounting the workspace,
+          // minting a turn credential) — those never become a harness `error`
+          // event, and they are exactly where the credential ladder's own
+          // VendoErrors surface. What the USER was told is what the turn keeps:
+          // Vendo's crafted sentence when there is one, the plain constant
+          // otherwise, and nothing of the internals either way. The SDK's writer
+          // swallows a write past close, so this is safe at any point in the
+          // turn's life.
+          const message = specificWireErrorMessage(error) ?? HARNESS_FAILED;
+          recordTurnError(message, (part) => turnWriter?.write(part as never));
+          return message;
         },
       });
 

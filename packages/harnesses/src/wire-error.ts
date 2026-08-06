@@ -15,6 +15,17 @@ import { VendoError, formatMeterExhausted, meterExhaustedFromError } from "@vend
  */
 export function wireErrorMessage(error: unknown): string {
   console.error("[vendo] turn stream error:", error);
+  return specificWireErrorMessage(error) ?? GENERIC_TURN_ERROR;
+}
+
+/** The fixed sentence for a failure with nothing safe to repeat. */
+export const GENERIC_TURN_ERROR = "An error occurred while generating the response.";
+
+/** The half of {@link wireErrorMessage} that can NAME the failure, split out so
+ *  a caller with its own fallback sentence can still tell the two apart —
+ *  the runtime's, for a harness that threw rather than reported. Logs nothing;
+ *  the caller that has the raw error owns the operator's line. */
+export function specificWireErrorMessage(error: unknown): string | undefined {
   // Name+code duck check besides instanceof: a host bundle can carry a second
   // @vendoai/core copy (dual-package hazard), and its VendoErrors are just as
   // safe — same crafted messages, same code enum.
@@ -41,5 +52,5 @@ export function wireErrorMessage(error: unknown): string {
   // would get told to re-mint a model key. The credential ladder is the only
   // place that knows the call was the model's, and it wraps its own 401s with
   // its rung's fix (vendo's dev-creds/model); those arrive above as VendoErrors.
-  return "An error occurred while generating the response.";
+  return undefined;
 }
