@@ -33,8 +33,6 @@ import { defineHarness } from "../define.js";
  *  Bounded so a runaway helper costs a receipt, not a turn. */
 const SUBAGENT_MAX_STEPS = 12;
 
-/** The job description a hire runs under. Its reply is the resident's private
- *  context, not a wire artifact, which is why the prose says so out loud. */
 const SPECIALIST_SYSTEM =
   "You are a specialist hired for one job. Do it with the tools you have, then report back in "
   + "at most three sentences. Your reply is read by another agent, not by a person.";
@@ -270,20 +268,14 @@ async function runSubagent(
     const body = await turn.skills.load(input.skill);
     brief = `${body}\n\n---\n\n${input.instructions}`;
   }
-  // THE shipped loop, for the hire as well. This used to be a second, bare
-  // `streamText`, so every rail `startTurn` owns — the stop conditions, the
-  // history assembly, the cache breakpoints, the stated retry budget — stopped
-  // at the resident, and a specialist ran without them. A hire is a turn; the
-  // only thing that makes it different is whose words it speaks.
+  // THE shipped loop, for the hire as well: every rail `startTurn` owns reaches
+  // the specialist too, so it cannot drift from the resident on any of them.
   const loop = await startTurn({
     model,
     system: SPECIALIST_SYSTEM,
-    // `startTurn` drives a thread, and a hire's thread is one message long: the
-    // brief, as the ask the specialist answers.
     messages: [{ id: "hire-brief", role: "user", parts: [{ type: "text", text: brief }] }],
     tools,
-    // `attach` is a no-op for the same reason it is on the resident: the runtime
-    // owns `find_tools`, not the harness.
+    // `attach` is a no-op for the resident's reason: the runtime owns `find_tools`.
     toolSearch: { activeToolNames: () => [...equipped], attach: () => {} },
     context: { maxSteps: SUBAGENT_MAX_STEPS },
     signal: turn.signal,
@@ -346,16 +338,11 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
             // searched-in tools included — minus the hiring tool, so depth is
             // bounded at one and a helper cannot spawn a tree.
             const { [HIRE_SUBAGENT]: _hiring, ...hands } = residentTools;
-            const report = await runSubagent(
-              turn,
-              model,
-              input,
-              hands,
-              // A snapshot, not the live variable: the specialist's hands are
-              // frozen at hire time, so its loadout has to be too or it could
-              // name a tool it was never handed.
-              equipped.filter((name) => name !== HIRE_SUBAGENT),
-            );
+            // A snapshot, not the live variable: the hands are frozen at hire
+            // time, so the loadout has to be too or it could name a tool the
+            // specialist was never handed.
+            const loadout = equipped.filter((name) => name !== HIRE_SUBAGENT);
+            const report = await runSubagent(turn, model, input, hands, loadout);
             // The ONLY place a hire's spend is reported. The turn's `usage` event
             // stays the resident's own, so the run row and the hire rows partition
             // the turn instead of overlapping — see `reportRun`.
