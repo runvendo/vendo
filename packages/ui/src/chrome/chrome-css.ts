@@ -540,7 +540,53 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 .fl-grantset-outcome { display: flex; align-items: center; gap: 7px; margin-top: 12px; padding-top: 11px;
   border-top: 1px solid var(--vendo-border); font: 600 12.5px/1 var(--vendo-font); color: var(--vendo-fg); }
 .fl-grantset[data-state="denied"] .fl-grantset-outcome { color: var(--vendo-fg-muted); font-weight: 500; }
-.fl-automation-approval { padding: 16px; }
+/* Approval/grant-set card rendered directly inside an automation card: the
+   card's shared max-width/align-self (tuned for the flex chat column) go inert
+   under .fl-automation's plain block layout, leaving it hugging the panel's
+   bottom-left corner — content and dividers running edge-to-edge against the
+   automation card's border. Fill the width with the panel's own 16px insets
+   (matching .fl-auto-head/.fl-auto-flow) so it reads as one of the automation
+   card's sections, not a card jammed in the corner. Scoped to this context so
+   the shared chat/voice/connect approval surfaces are untouched.
+   align-self: stretch + an explicit margin-aware width make the fill EXPLICIT
+   rather than relying on block-box auto-width: the base .fl-approval keeps
+   align-self: flex-start, so the moment this card sits in any flex context
+   (the .fl-automation-approval-slot, a future column layout) it would otherwise
+   shrink to its own content width and float with dead space beside it. */
+.fl-automation > .fl-approval { max-width: none; min-width: 0; box-sizing: border-box;
+  align-self: stretch; width: calc(100% - 32px); margin: 0 16px 16px; }
+.fl-automation-approval { padding: 14px; }
+.fl-auto-approval-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.fl-auto-approval-heading { min-width: 0; }
+.fl-auto-approval-title { margin-top: 5px; font: 650 15px/1.25 var(--vendo-heading-font); color: var(--vendo-fg);
+  letter-spacing: -.01em; overflow-wrap: anywhere; }
+.fl-auto-logo-stack { display: flex; align-items: center; flex-shrink: 0; padding-top: 1px; }
+.fl-auto-logo { display: grid; place-items: center; width: 31px; height: 31px; border: 1px solid var(--vendo-border);
+  border-radius: 10px; background: var(--vendo-surface); box-shadow: inset 0 1px 0 light-dark(rgba(255,255,255,.58), rgba(255,255,255,.08)); }
+.fl-auto-logo + .fl-auto-logo { margin-left: -7px; }
+.fl-auto-summary { display: flex; flex-direction: column; gap: 9px; margin-top: 14px; padding-top: 12px;
+  border-top: 1px solid var(--vendo-border); }
+.fl-auto-summary-row { display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 10px; align-items: start; }
+.fl-auto-summary-k { padding-top: 1px; color: var(--vendo-fg-muted); font-size: 11.5px; font-weight: 650; }
+.fl-auto-summary-v { min-width: 0; display: flex; flex-direction: column; gap: 2px; color: var(--vendo-fg);
+  font-size: 12.5px; line-height: 1.35; }
+.fl-auto-summary-v strong { font: 600 12.8px/1.35 var(--vendo-font); overflow-wrap: anywhere; }
+.fl-auto-summary-v span { color: var(--vendo-fg-muted); overflow-wrap: anywhere; }
+.fl-auto-access { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.fl-auto-access-label { color: var(--vendo-fg-muted); font-size: 11.5px; font-weight: 650; }
+.fl-auto-access-row { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; align-items: center;
+  min-width: 0; padding: 9px 0; border-top: 1px solid color-mix(in srgb, var(--vendo-border) 68%, transparent); }
+.fl-auto-access-row:first-of-type { border-top: 0; }
+.fl-auto-access-logo { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid var(--vendo-border);
+  border-radius: 10px; background: var(--vendo-surface); box-shadow: inset 0 1px 0 light-dark(rgba(255,255,255,.58), rgba(255,255,255,.08)); }
+.fl-auto-access-copy { min-width: 0; }
+.fl-auto-access-title { color: var(--vendo-fg); font-size: 12.5px; font-weight: 650; line-height: 1.2; }
+.fl-auto-access-sub { margin-top: 2px; color: var(--vendo-fg-muted); font-size: 11.5px; line-height: 1.25;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fl-auto-access-badge[data-auto] { background: var(--vendo-accent); color: var(--vendo-accent-fg); border-color: var(--vendo-accent); }
+.fl-auto-access-badge { justify-self: end; max-width: 112px; padding: 4px 7px; border-radius: 999px;
+  background: var(--vendo-accent-soft); color: var(--vendo-fg); font-size: 10.5px; font-weight: 650;
+  line-height: 1.15; text-align: center; overflow-wrap: normal; }
 .fl-auto-details { margin-top: 8px; }
 .fl-auto-details summary { color: var(--vendo-fg-muted); font-size: 11px; cursor: pointer; }
 .fl-auto-details pre { margin: 7px 0 0; max-height: 180px; overflow: auto; white-space: pre-wrap;
@@ -587,8 +633,19 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   display: inline-flex; align-items: center; justify-content: center; gap: 7px; white-space: nowrap;
   background: var(--vendo-surface); color: var(--vendo-fg); cursor: pointer;
   transition: background .13s, border-color .13s, transform .05s; }
-.fl-btn:hover { background: var(--vendo-accent-soft); border-color: var(--vendo-border-strong); }
-.fl-btn:active { transform: translateY(.5px); }
+.fl-btn:hover:not(:disabled) { background: var(--vendo-accent-soft); border-color: var(--vendo-border-strong); }
+.fl-btn:active:not(:disabled) { transform: translateY(.5px); }
+/* A disabled button used to be indistinguishable from a live one — same fill,
+   same hover lift, same pointer — so "unavailable" read as "nothing happened
+   when I clicked". Muted, flat, and not-allowed on hover, theme vars only so
+   it holds in light and dark. The wrapper carries the same cursor because a
+   disabled control swallows pointer events in some engines. */
+.fl-btn:disabled { color: var(--vendo-fg-muted); border-color: var(--vendo-border);
+  background: color-mix(in srgb, var(--vendo-fg) 4%, var(--vendo-surface));
+  cursor: not-allowed; }
+.fl-btn:disabled:hover { background: color-mix(in srgb, var(--vendo-fg) 4%, var(--vendo-surface));
+  border-color: var(--vendo-border); }
+.fl-btn-wrap-disabled { cursor: not-allowed; }
 .fl-btn-primary { background: var(--vendo-accent); color: var(--vendo-accent-fg); border-color: transparent; }
 .fl-btn-primary:hover { opacity: .92; background: var(--vendo-accent); border-color: transparent; }
 /* Ceremony = the ONLY other filled button: destructive confirms. Its AA-safe
@@ -1201,6 +1258,17 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 .fl-page-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .fl-page-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .fl-page-pane[hidden] { display: none; }
+/* The Automations panel owns its own scroll region — same shape as .fl-msglist.
+   .fl-page-pane bounds height (flex:1; min-height:0) but its own overflow is
+   visible, so under an overflow:hidden host a tall panel (expanded rehearsal /
+   standing-access lists) spilled below the fold with no scrollbar and no way to
+   reach the cards beneath. flex:1; min-height:0; overflow-y:auto gives it a
+   bounded, scrollable box; in an unbounded host the height resolves to content
+   and nothing scrolls, exactly as before. */
+.fl-auto-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+/* Children must never compress — without this a bounded box crushes the cards to
+   fit instead of overflowing into the scroll (mirrors .fl-msglist > *). */
+.fl-auto-scroll > * { flex-shrink: 0; }
 
 /* ---------- generative dashboard slot (vendo-slot) ---------- */
 .fl-slot { position: relative; width: 100%; min-height: var(--fl-slot-min-h, 370px);

@@ -37,6 +37,7 @@ import type {
   PinDrift,
   PinForkResult,
   PinRebaseResult,
+  RehearsalReport,
   RunPlan,
   RunRecord,
   RunStatus,
@@ -164,6 +165,10 @@ export interface VendoClient {
     enable(id: AppId, triggerId: string): Promise<EnableResult>;
     disable(id: AppId, triggerId: string): Promise<void>;
     dryRun(id: AppId, triggerId: string): Promise<RunPlan>;
+    /** POST /automations/:id/rehearse/:triggerId — replay ONE trigger's
+     *  schedule firings over the trailing `windowDays` (7 or 30, defaulting to
+     *  30) window; reads run for real, writes come back as simulated cards. */
+    rehearse(id: AppId, triggerId: string, windowDays?: 7 | 30): Promise<RehearsalReport>;
     /** POST /automations/:id/adopt — build contract §9.9: take a stopped
      *  automation on, approving its reads and writes as YOURSELF. Editors+
      *  only; the first to complete wins. */

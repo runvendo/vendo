@@ -295,3 +295,40 @@ export interface ToolRegistry {
   descriptors(ctx?: ToolListingContext): Promise<ToolDescriptor[]>;
   execute(call: ToolCall, ctx: RunContext): Promise<ToolOutcome>;
 }
+
+/** Additive venue "rehearsal" (07-automations rehearse()): the structured
+ *  simulated outcome the guard returns — as an ok outcome's `output` — for a
+ *  write/destructive-risk call made under the rehearsal venue. Nothing
+ *  executed; `args` are the call's fully resolved arguments (JSONata already
+ *  evaluated against real upstream step outputs), so surfaces can show the
+ *  exact action the enabled automation would have taken. */
+export interface RehearsalSimulation {
+  rehearsalSimulated: true;
+  tool: string;
+  risk: Exclude<RiskLabel, "read">;
+  args: Json;
+  /** The would-be LIVE-run verdict for this write, resolved at rehearsal time
+   *  through the same policy pipeline a real call takes but WITHOUT executing,
+   *  parking an approval, or spending a grant. `true` when the enabled
+   *  automation would still need an approval for this exact call — no standing
+   *  grant captured yet, a critical tool, or a policy `ask` rule — so surfaces
+   *  render it as "would ask / would be blocked" instead of a clean
+   *  "would have done this" card. Absent only from producers (test doubles)
+   *  that don't resolve policy; the guard always sets it. */
+  wouldAsk?: boolean;
+  /** The tool(s) whose standing grant is absent for this write at rehearsal
+   *  time — this tool's name when `wouldAsk` is a missing-grant condition,
+   *  empty for a critical/policy ask or when the call would run. Mirrors the
+   *  shape of `RunPlan.grantsMissing` (07-automations dryRun). */
+  grantsMissing?: string[];
+  /** Present when a policy BLOCK rule (not merely an ask) would stop this write
+   *  outright even after the automation is enabled; carries the block reason. */
+  wouldBlock?: string;
+}
+
+/** Whether an ok outcome's `output` is the rehearsal venue's simulated card. */
+export function isRehearsalSimulation(output: unknown): output is RehearsalSimulation {
+  return typeof output === "object" && output !== null
+    && (output as { rehearsalSimulated?: unknown }).rehearsalSimulated === true
+    && typeof (output as { tool?: unknown }).tool === "string";
+}

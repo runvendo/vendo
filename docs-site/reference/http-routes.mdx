@@ -49,6 +49,7 @@ unauthenticated in every environment by design: it reveals only whether
 | `/automations` | GET | list; each entry optionally carries `pendingGrants` (count of still-undecided standing-grant asks) and `grantSetId` — projected from the store so a reload still shows "waiting on N permissions" |
 | `/automations/:id/enable` · `/disable` | POST | `{ enabled, missing, grantSetId? }` · `{}`; `grantSetId` names the ONE grant set the `missing` asks belong to (present exactly when `missing` is non-empty) — decide every member in one `POST /approvals/decide { ids }` and the whole set lands all-or-none |
 | `/automations/:id/dry-run` | POST | `RunPlan` |
+| `/automations/:id/rehearse` | POST | `RehearsalReport`, replaying the schedule trigger's firings over a trailing window — optional body `{ windowDays: 7 \| 30 }`, clamped server-side and defaulting to 30 for any other/absent value; the resolved window is echoed on `RehearsalReport.windowDays` (reads execute for real, writes resolve to simulated cards; nothing persists to run history) |
 | `/runs` · `/runs/:id` | GET | run records |
 | `/runs/:id/stop` | POST | `{}` |
 | `/tick` | POST | scheduler tick (serverless cron target; requires `Authorization: Bearer <secret>`) |

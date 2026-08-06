@@ -125,6 +125,39 @@ describe("THE LAW: unattended destructive calls are refused at the guard", () =>
     expect(outcome.status).toBe("pending-approval");
   });
 
+  it("PARKS the concurrent write-cap loser instead of law-blocking it (law flag is run-only)", async () => {
+    // Two unattended writes to a withheld (destructive) tool fire concurrently
+    // under a standing automation grant with a one-write budget. Each snapshots
+    // the write count at 0 (< cap) and awaits its verdict as a "run" — so both
+    // carry THE LAW's run-only refusal flag. The atomic re-check then hands the
+    // single slot to whichever firing resumes first; the other is reclassified
+    // to a BREAKER ASK. That reclassification is exactly the law's replacement
+    // pattern (the automation prepares, a human sends), so the loser must PARK.
+    //
+    // Regression: if the law flag were left set when the run is reclassified as
+    // a breaker ask, bind()'s law branch (which runs before its ask branch)
+    // would BLOCK the loser instead of parking it — both firings would then
+    // come back "blocked" and no approval card would ever appear.
+    const store = createMemoryStore();
+    const send = descriptor("destructive", { name: "maple_payments_send" });
+    await seedGrant(store, { descriptor: send, appId: "app_1", source: "automation" });
+    const tools = new FixtureTools([send]);
+    const bound = createGuard({ store, breakers: { maxWritesPerRun: 1, maxCallsPerMinute: 100 } })
+      .bind(tools);
+
+    const [a, b] = await Promise.all([
+      bound.execute(call(send.name, { amount: 5000 }, "cap_a"), awayCtx()),
+      bound.execute(call(send.name, { amount: 5000 }, "cap_b"), awayCtx()),
+    ]);
+
+    // The slot winner is refused by THE LAW (an unattended destructive run); the
+    // slot loser is parked for a person, not swept up in the same block.
+    const statuses = [a.status, b.status].sort();
+    expect(statuses).toEqual(["blocked", "pending-approval"]);
+    // Neither destructive call ever actually executes.
+    expect(tools.executions).toHaveLength(0);
+  });
+
   it("honours a human's approval of THIS exact call — attended irreversibility", async () => {
     // Once a person has seen the real amount and recipient and tapped approve,
     // executing is attended, not unattended. Refusing here would make the law
@@ -176,7 +209,26 @@ describe("THE LAW: unattended destructive calls are refused at the guard", () =>
       context({ venue, presence: "away", appId: "app_1" }),
     );
 
-    expect(outcome).toEqual({ status: "blocked", reason: UNATTENDED_DESTRUCTIVE_REASON });
+    // Rehearsal is the ONE venue that does not BLOCK an away destructive call —
+    // it INTERCEPTS it. In venue=rehearsal every write/destructive call is
+    // resolved at the guard's choke point to a simulated "would-ask" preview
+    // card and never reaches the registry at all (guard.ts #execute; the
+    // feature's own `rehearsal-venue.test.ts` proves the branch). So THE LAW's
+    // SUBSTANTIVE guarantee — no real unattended destructive action ever
+    // happens — is fully upheld here too: `tools.executions` stays empty below
+    // for rehearsal exactly as for every running venue. Only the literal status
+    // differs (a simulated preview, not `blocked`), because rehearsal exists to
+    // PREVIEW a schedule, never to run it. The presence-only LAW is unchanged
+    // for the four running venues; rehearsal runs nothing, so it cannot run an
+    // unattended destructive action to begin with.
+    if (venue === "rehearsal") {
+      expect(outcome.status).toBe("ok");
+      expect(outcome).toMatchObject({ output: { rehearsalSimulated: true } });
+    } else {
+      expect(outcome).toEqual({ status: "blocked", reason: UNATTENDED_DESTRUCTIVE_REASON });
+    }
+    // The substantive guarantee, asserted for EVERY venue including rehearsal:
+    // the destructive tool is never actually executed.
     expect(tools.executions).toHaveLength(0);
   });
 

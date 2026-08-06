@@ -15,7 +15,7 @@ import {
 } from "@vendoai/core";
 import { createServer, type IncomingHttpHeaders, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { ApprovalResolution, AutomationEntry, RunRecord, Thread, ThreadSummary, VersionEntry } from "../src/index.js";
+import type { ApprovalResolution, AutomationEntry, RehearsalFiring, RehearsalReport, RunRecord, Thread, ThreadSummary, VersionEntry } from "../src/index.js";
 
 export interface RecordedRequest {
   method: string;
@@ -79,11 +79,22 @@ function app(id: string, name: string, automation = false): AppDocument {
       nodes: [{ id: "root", component: "Text", props: { text: `${name} app surface` } }],
     },
     ...(automation
+      // Schedule-driven so it is genuinely rehearsable: production's rehearse()
+      // (07-automations §1) takes schedule + steps triggers only, so a
+      // host-event fixture would let the rehearsal e2e specs pass against a
+      // shape the real engine rejects. DAILY on purpose: the rehearse fixture
+      // below emits one firing per day of the window, and the real engine
+      // replays a schedule at its own cadence — a weekly cron here would
+      // advertise a timeline (windowDays daily firings) production could
+      // never return for this app.
       ? {
         triggers: [{
           id: DEFAULT_TRIGGER_ID,
-          on: { kind: "host-event" as const, event: "invoice.created" },
-          run: { kind: "steps" as const, steps: [] },
+          on: { kind: "schedule" as const, cron: "0 9 * * *" },
+          run: { kind: "steps" as const, steps: [
+            { id: "renewals", tool: "host_listRenewals" },
+            { id: "notify", tool: "slack_SLACK_SEND_MESSAGE" },
+          ] },
         }],
       }
       : {}),
@@ -247,7 +258,7 @@ function run(): RunRecord {
   return {
     id: "run_1",
     appId: "app_auto",
-    trigger: { kind: "host-event", event: "invoice.created" },
+    trigger: { kind: "schedule" },
     status: "running",
     startedAt: NOW,
     steps: [],
@@ -1220,6 +1231,68 @@ export async function createWireServer(options: WireServerOptions = {}) {
               index === 0 ? { ...row, pendingGrants: pending, grantSetId: GRANT_SET_ID } : row),
           };
         }));
+      }
+      const rehearseMatch = url.pathname.match(/^\/automations\/([^/]+)\/rehearse\/([^/]+)$/);
+      if (method === "POST" && rehearseMatch) {
+        const id = decodeURIComponent(rehearseMatch[1] ?? "");
+        const triggerId = decodeURIComponent(rehearseMatch[2] ?? "");
+        const entry = state.automations.find(item => item.app.id === id);
+        if (!entry) return wireError(response, "not-found", "Automation not found", 404);
+        // Mirror production's support predicate (07-automations §1): rehearse()
+        // takes schedule + steps triggers only, per TRIGGER. The double rejects
+        // anything else exactly as the real engine does, so a test can never
+        // rehearse a shape production would refuse.
+        const trig = entry.app.triggers?.find(candidate => candidate.id === triggerId);
+        if (trig?.on.kind !== "schedule" || trig.run.kind !== "steps") {
+          return wireError(response, "validation", "rehearsal supports schedule triggers only", 400);
+        }
+        // Mirror the real wire route's server-side clamp (07-automations §1):
+        // exactly 7 or 30, defaulting to 30 for anything else. The window then
+        // drives how many trailing daily firings the report replays, so the
+        // 7d/30d toggle produces a visibly different report (fewer firings and
+        // a nearer `from` on 7d).
+        const requested = (parsedBody as { windowDays?: unknown } | undefined)?.windowDays;
+        const windowDays: 7 | 30 = requested === 7 ? 7 : 30;
+        const day = 86_400_000;
+        const to = Date.parse(NOW);
+        const from = to - windowDays * day;
+        const firings = [] as RehearsalFiring[];
+        for (let firedAt = to - day; firedAt >= from; firedAt -= day) {
+          // Each date-pinned read replays a DIFFERENT historical window, so its
+          // total must vary by firing (a constant would mask the as-of behavior
+          // these rows advertise). Deterministic from the firing's day index;
+          // the two-item breakdown always sums to the headline total.
+          const dayIndex = Math.round((to - firedAt) / day);
+          const northwind = 18_000 + dayIndex * 1_000;
+          const contoso = 24_000 - dayIndex * 500;
+          firings.unshift({
+            scheduledFor: new Date(firedAt).toISOString(),
+            status: "fired",
+            simulatedActions: 1,
+            steps: [
+              {
+                id: "renewals",
+                tool: "host_listRenewals",
+                status: "ok",
+                // The engine pins a firing's window back to the PREVIOUS firing
+                // — one day at this fixture's daily cadence.
+                window: { from: new Date(firedAt - day).toISOString(), to: new Date(firedAt).toISOString() },
+                evaluatedOn: "window",
+                result: { totalCents: northwind + contoso, breakdown: [
+                  { label: "Northwind Traders", cents: northwind },
+                  { label: "Contoso Ltd", cents: contoso },
+                ] },
+              },
+              {
+                id: "notify",
+                tool: "slack_SLACK_SEND_MESSAGE",
+                status: "simulated",
+                args: { channel: "#renewals", message: "2 renewals close this week" },
+              },
+            ],
+          });
+        }
+        return json(response, { appId: id, triggerId, windowDays, from: new Date(from).toISOString(), to: NOW, firings } satisfies RehearsalReport);
       }
       const automationMatch = url.pathname.match(/^\/automations\/([^/]+)\/(enable|disable|dry-run)\/([^/]+)$/);
       if (method === "POST" && automationMatch) {

@@ -1,6 +1,12 @@
 import type { RunStatus } from "@vendoai/automations";
 import { DEFAULT_TRIGGER_ID, VendoError } from "@vendoai/core";
-import { json, route, string, type RouteEntry } from "./shared.js";
+import { json, requestJson, route, string, type RouteEntry } from "./shared.js";
+
+/** Rehearsal window crosses an HTTP boundary, so clamp it server-side to the
+ *  two valid values, defaulting to 30 for anything else (07-automations §1). */
+function rehearsalWindowDays(value: unknown): 7 | 30 {
+  return value === 7 ? 7 : 30;
+}
 
 /** 07-automations / 09 §3 — the /automations wire area. */
 export const automationRoutes: RouteEntry[] = [
@@ -12,7 +18,7 @@ export const automationRoutes: RouteEntry[] = [
   // trigger gets the legacy single-trigger app's id. Context resolves before
   // the operation check, and an unknown operation (or a deeper path) falls
   // through to the table's not-found.
-  route("POST", "/automations/:appId/:op/*", async ({ deps, context, params, segments }) => {
+  route("POST", "/automations/:appId/:op/*", async ({ request, deps, context, params, segments }) => {
     if (segments.length > 4) return undefined;
     const appId = string(params["appId"], "app id");
     const triggerId = segments[3] ?? DEFAULT_TRIGGER_ID;
@@ -24,6 +30,10 @@ export const automationRoutes: RouteEntry[] = [
       return json({});
     }
     if (operation === "dry-run") return json(await deps.automations.dryRun(appId, triggerId, ctx));
+    if (operation === "rehearse") {
+      const body = await requestJson(request);
+      return json(await deps.automations.rehearse(appId, triggerId, ctx, rehearsalWindowDays(body["windowDays"])));
+    }
     // Build contract §9.9 — take on a stopped automation. Editor gating and
     // the CAS live in the engine; the door just carries the caller's context,
     // because the grants minted here are the CALLER's own.

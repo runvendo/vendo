@@ -10,12 +10,14 @@ import { APPROVALS_DECIDED_EVENT } from "../client-impl.js";
 import { useVendoContext, useVendoTheme } from "../context.js";
 import { useApprovals } from "../hooks/use-approvals.js";
 import { useAutomations } from "../hooks/use-automations.js";
-import type { RunPlan, RunRecord, RunStatus } from "../wire-types.js";
+import type { RehearsalFiring, RehearsalOutlook, RehearsalReport, RehearsalStep, RunPlan, RunRecord, RunStatus } from "../wire-types.js";
 import { formatAuditTime } from "./activity-semantics.js";
 import { automationFlow, sponsorLabel, triggerLabel } from "./automation-card.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { developmentMode } from "./dev-mode.js";
 import { GrantSetCard, type GrantSetPermission } from "./grant-set-card.js";
+import { humanizeToolName } from "./humanize.js";
+import { Money } from "../kit/values.js";
 
 const ENABLE_CELEBRATION_MS = 3_100;
 const REDUCED_ENABLE_CELEBRATION_MS = 900;
@@ -95,6 +97,318 @@ function refusalCopy(reason: unknown): string {
   if (code === "not-found") return "That automation isn’t available any more.";
   if (code === "cloud-required") return "That isn’t turned on for this workspace yet.";
   return "That didn’t go through — nothing changed. Try again in a moment.";
+}
+
+/** "Jul 18" — short day label for rehearsal windows and firing rows. */
+function formatRehearsalDay(iso: string): string {
+  const at = Date.parse(iso);
+  if (Number.isNaN(at)) return iso;
+  // Format in UTC: the server supplies ISO window bounds and the rest of the
+  // timeline reads dates in UTC, so a local-timezone render here would drift the
+  // displayed day off the actual pinned range by one for many viewers.
+  return new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
+}
+
+/** Firings-box sizing. One collapsed firing row ≈ .fl-act-row (8+8px padding +
+    line; measured ≈ 40px in the demo); REHEARSAL_BODY_PAD_PX is .fl-act-body's
+    vertical padding. The box has no height cap and no internal scroll — a busy
+    automation's full list renders in the page's normal flow, so the page-level
+    .fl-auto-scroll scrollbar is the only one that ever appears. The estimate is
+    used only as a minHeight high-water-mark so toggling 7d/30d for the same
+    automation never visibly shrinks its own results box. */
+const REHEARSAL_FIRING_ROW_PX = 40;
+const REHEARSAL_BODY_PAD_PX = 6;
+
+const REHEARSAL_FIRING_LABEL: Record<RehearsalFiring["status"], string> = {
+  fired: "fired",
+  skipped: "skipped",
+  error: "stopped",
+};
+
+/** "dining" → "Dining", "Maple Checking" → "Maple Checking": Title-case each
+    word so a lowercase enum label (the spending category) reads as a proper
+    noun while an already-cased account name stays untouched. */
+function titleCase(label: string): string {
+  return label.replace(/\b\w/g, char => char.toUpperCase());
+}
+
+/** The one resolved number a firing surfaces on its single line: the first ok
+    read that carried a numeric summary (a schedule's headline read runs first,
+    e.g. the spending total ahead of the transaction list). */
+function firingHeadline(firing: RehearsalFiring): RehearsalStep["result"] | undefined {
+  return firing.steps.find(step => step.status === "ok" && step.result !== undefined)?.result;
+}
+
+/** How many of a firing's simulated writes would NOT simply run once live — a
+    policy block, or a call that would still ask for approval (missing grant /
+    critical). Surfaced on the collapsed firing row so an honest "would ask"
+    verdict is visible without expanding. */
+function firingWouldStopCount(firing: RehearsalFiring): number {
+  return firing.steps.filter(step =>
+    step.status === "simulated" && (step.wouldBlock !== undefined || step.wouldAsk === true)).length;
+}
+
+/** One rehearsed step, shown only in a firing's expanded detail: reads show
+    what they ran against (the pinned window, or "today's data" when the tool
+    takes no date bounds) plus a per-item money breakdown when the resolved
+    output had one; simulated writes render as the simulated-action card with
+    their resolved arguments — the exact call the enabled automation would have
+    made, never executed. */
+function RehearsalStepRow({ step }: { step: RehearsalStep }) {
+  const name = humanizeToolName(step.tool);
+  if (step.status === "simulated") {
+    // The honest verdict the guard resolved for this write (07-automations):
+    // a plain simulated action would run once live, but a would-block or
+    // would-ask one would NOT — the card must say so rather than reading rosy.
+    const missing = step.grantsMissing ?? [];
+    const grantList = missing.map(humanizeToolName).join(", ");
+    const wouldStop = step.wouldBlock !== undefined || step.wouldAsk === true;
+    const verdictLabel = step.wouldBlock !== undefined
+      ? "would have been blocked"
+      : step.wouldAsk === true
+        ? "would ask first"
+        : "simulated";
+    const verdictSub = step.wouldBlock !== undefined
+      ? `Would have been blocked — ${step.wouldBlock}`
+      : missing.length > 0
+        // A missing grant is an APPROVAL request, not a hard block, so the
+        // sub-line agrees with the "would ask first" label (not "blocked").
+        // It stops short of promising execution, though: a standing grant does
+        // not clear an unattended destructive call — THE LAW still refuses it —
+        // so the copy states only that approval is the gate, not that it runs.
+        ? `Would have asked for approval first — missing grant: ${grantList} (approval is required before it can run)`
+        : step.wouldAsk === true
+          ? "Would have asked for approval first — this action always needs sign-off"
+          : "Not executed — this is what it would have sent";
+    return (
+      <div className="fl-act-row" style={{ alignItems: "flex-start" }}>
+        <span className={`fl-act-ic ${wouldStop ? "fl-act-x" : ""}`} aria-hidden="true">{wouldStop ? "⚠" : "✉"}</span>
+        <span style={{ minWidth: 0 }}>
+          <strong className="fl-act-lbl">{name} — {verdictLabel}</strong>
+          <span className="fl-act-sub" style={{ display: "block" }}>{verdictSub}</span>
+          {step.args !== undefined && Object.keys(step.args).length > 0 ? (
+            <code className="fl-act-peek" style={{ display: "block", overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}>
+              {JSON.stringify(step.args, null, 1)}
+            </code>
+          ) : null}
+        </span>
+      </div>
+    );
+  }
+  const scope = step.status === "ok"
+    ? step.evaluatedOn === "window" && step.window !== undefined
+      ? `${formatRehearsalDay(step.window.from)} → ${formatRehearsalDay(step.window.to)}`
+      : step.evaluatedOn === "today"
+        ? "today's data"
+        : undefined
+    : step.detail;
+  const result = step.status === "ok" ? step.result : undefined;
+  return (
+    <>
+      <div className="fl-act-row">
+        <span className={`fl-act-ic ${step.status === "ok" ? "fl-act-tick" : step.status === "skipped" ? "" : "fl-act-x"}`} aria-hidden="true">
+          {step.status === "ok" ? "✓" : step.status === "skipped" ? "–" : "✕"}
+        </span>
+        <strong className="fl-act-lbl">{name}</strong>
+        <span className="fl-act-sub" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+          {scope !== undefined ? <span>{step.status === "ok" ? scope : `${step.status} · ${scope}`}</span> : step.status !== "ok" ? <span>{step.status}</span> : null}
+          {/* A single-value read (no per-item split) carries its number inline;
+              a breakdown renders the total below with its items. */}
+          {result !== undefined && result.breakdown === undefined ? (
+            <strong style={{ color: "var(--vendo-fg)", fontVariantNumeric: "tabular-nums" }}><Money cents={result.totalCents} /></strong>
+          ) : null}
+        </span>
+      </div>
+      {result?.breakdown !== undefined ? (
+        <div className="fl-act-peek">
+          {result.breakdown.map((item, index) => (
+            <div className="fl-act-peek-row" key={`${item.label}-${index}`}>
+              <span className="fl-act-peek-k">{titleCase(item.label)}</span>
+              <span className="fl-act-peek-v"><Money cents={item.cents} /></span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+/** Says what a rehearsal will be worth BEFORE it costs a round of real host
+ *  reads. The acting-step count is the load-bearing half: a read-only
+ *  automation replays fine and tells the user nothing they did not already
+ *  know, which reads as the feature being thin rather than the automation
+ *  being inert. The history half only qualifies how varied the timeline is. */
+function rehearseHint(outlook: RehearsalOutlook | undefined): string | undefined {
+  if (outlook === undefined) return undefined;
+  if (outlook.actingSteps === 0) {
+    return "Nothing to rehearse — this automation only reads, so there is no action to preview or approve.";
+  }
+  const actions = `${outlook.actingSteps} action${outlook.actingSteps === 1 ? "" : "s"} to preview`;
+  if (outlook.readSteps === 0) return actions;
+  return outlook.historicalReads === outlook.readSteps
+    ? `${actions} · every firing replays its own window`
+    : `${actions} · ${outlook.readSteps - outlook.historicalReads} of ${outlook.readSteps} reads answer with today's data, so those firings repeat`;
+}
+
+/** The rehearsal timeline: one line per firing over the trailing window
+    (7 or 30 days — `report.windowDays`), newest first — date/time, fired
+    status, and the firing's one resolved headline number (a real read's total,
+    formatted in the host's currency). Every firing starts collapsed; its
+    per-step detail (the money breakdown, simulated cards) expands on click,
+    with no exception for the newest. A small 7d/30d control in the header re-fetches this report over
+    the chosen window in place (`onWindowChange`), disabled while `busy`. Purely
+    a preview — the header says so, and the enable toggle + grant capture stay
+    the one consent path. */
+function RehearsalTimeline({
+  name,
+  report,
+  busy,
+  onWindowChange,
+}: {
+  name: string;
+  report: RehearsalReport;
+  busy: boolean;
+  onWindowChange: (windowDays: 7 | 30) => void;
+}) {
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  // Every scheduled firing in the window, including the ones that skipped (all
+  // `if`s false / a forEach matched nothing) — those still show as rows in the
+  // timeline below, so the headline count must include them or it contradicts
+  // what the reader sees.
+  const firingCount = report.firings.length;
+  const simulated = report.firings.reduce((count, firing) => count + firing.simulatedActions, 0);
+  const newestFirst = report.firings.slice().reverse();
+  // The firings box renders at its full natural height — no cap, no internal
+  // scroll — so a busy automation's list is part of the page's normal flow and
+  // the page-level .fl-auto-scroll scrollbar is the only one. bodyEstimate is a
+  // minHeight high-water-mark that NEVER shrinks: the default 30d window (always
+  // ≥ the 7d window's firing count) loads first and locks the larger floor, so
+  // toggling 7d/30d for the same automation can't visibly shrink its own box.
+  const bodyEstimate = report.firings.length * REHEARSAL_FIRING_ROW_PX + REHEARSAL_BODY_PAD_PX;
+  const [bodyHeight, setBodyHeight] = useState(bodyEstimate);
+  useEffect(() => {
+    setBodyHeight(prev => Math.max(prev, bodyEstimate));
+  }, [bodyEstimate]);
+  return (
+    <div
+      className="fl-auto-flow"
+      role="group"
+      aria-label={`Rehearsal for ${name}`}
+      style={{ alignItems: "stretch", flexDirection: "column", gap: 10 }}
+    >
+      <div style={{ alignItems: "center", display: "flex", gap: 8, justifyContent: "space-between" }}>
+        <strong className="fl-auto-title">Rehearsal — last {report.windowDays} days</strong>
+        <div
+          role="group"
+          aria-label="Rehearsal window"
+          style={{ display: "inline-flex", flexShrink: 0, gap: 2 }}
+        >
+          {([7, 30] as const).map(windowDays => {
+            const selected = report.windowDays === windowDays;
+            return (
+              <button
+                key={windowDays}
+                className="fl-btn"
+                type="button"
+                aria-pressed={selected}
+                disabled={busy || selected}
+                onClick={() => onWindowChange(windowDays)}
+                style={{
+                  fontSize: 11,
+                  fontWeight: selected ? 600 : 400,
+                  opacity: !selected && busy ? 0.6 : 1,
+                  padding: "2px 8px",
+                  ...(selected ? { background: "var(--vendo-fg)", color: "var(--vendo-bg)" } : {}),
+                }}
+              >{windowDays}d</button>
+            );
+          })}
+        </div>
+      </div>
+      <div className="fl-auto-sub" style={{ display: "block" }}>
+        {report.firings.length === 0
+          ? `This schedule would not have fired in the last ${report.windowDays} days.`
+          : `Would have fired ${firingCount} time${firingCount === 1 ? "" : "s"}`
+            + (simulated > 0 ? ` · ${simulated} simulated action${simulated === 1 ? "" : "s"} — nothing was executed` : " · nothing was executed")
+            + (report.truncated === true ? " · showing the most recent firings" : "")}
+      </div>
+      {/* minHeight (not height/maxHeight) high-water-marked so it never visibly
+          shrinks on a 7d/30d toggle: the box holds its floor across toggles for
+          the same automation, but content grows past it at its natural height
+          with no internal scroll — a busy list simply extends the page and the
+          single page-level scrollbar reaches it. */}
+      {newestFirst.length > 0 ? (
+        <div className="fl-act-body" style={{ minHeight: bodyHeight }}>
+          {newestFirst.map(firing => {
+            const key = firing.scheduledFor;
+            const headline = firingHeadline(firing);
+            const hasDetail = firing.steps.length > 0;
+            const opened = hasDetail && (open[key] ?? false);
+            return (
+              <article key={key}>
+                <div className="fl-act-row">
+                  {/* `skipped` keeps the bare (inherited-color) icon: a green
+                      tick beside a visible "skipped" verdict would contradict it. */}
+                  <span
+                    className={`fl-act-ic ${firing.status === "fired" ? "fl-act-tick" : firing.status === "error" ? "fl-act-x" : ""}`}
+                    aria-hidden="true"
+                  >
+                    {firing.status === "fired" ? "✓" : firing.status === "skipped" ? "–" : "✕"}
+                  </span>
+                  <strong className="fl-act-lbl">{formatAuditTime(key)}</strong>
+                  <span className="fl-act-sub" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    <span>{REHEARSAL_FIRING_LABEL[firing.status]}</span>
+                    {firing.simulatedActions > 0 ? (
+                      <span>· {firing.simulatedActions} simulated</span>
+                    ) : null}
+                    {(() => {
+                      const wouldStop = firingWouldStopCount(firing);
+                      // "would stop", not "would ask": this count folds in
+                      // policy-BLOCKED actions (which never run) alongside
+                      // would-ask ones, so labelling it "would ask" would present
+                      // a rule that will never fire as an approval request.
+                      return wouldStop > 0 ? (
+                        <span className="fl-act-x" style={{ fontWeight: 600 }}>· {wouldStop} would stop</span>
+                      ) : null;
+                    })()}
+                    {headline !== undefined ? (
+                      <strong style={{ color: "var(--vendo-fg)", fontVariantNumeric: "tabular-nums" }}>
+                        <Money cents={headline.totalCents} />
+                      </strong>
+                    ) : null}
+                  </span>
+                  {/* The disclosure sits OUTSIDE .fl-act-sub: that class truncates its
+                      text with overflow:hidden + max-width:55%, which in a narrow host
+                      column clipped this control out of its box entirely — rendered but
+                      not hit-testable, so a real click landed on nothing and the row
+                      never expanded. As a row-level flex item (flex-shrink:0) it stays
+                      visible and clickable at any width; the text still ellipsises. */}
+                  {hasDetail ? (
+                    <button
+                      type="button"
+                      aria-expanded={opened}
+                      aria-label={`${opened ? "Hide" : "Show"} details for the ${formatAuditTime(key)} firing`}
+                      onClick={() => setOpen(current => ({ ...current, [key]: !(current[key] ?? false) }))}
+                      style={{ border: "none", background: "none", color: "var(--vendo-fg-muted)", cursor: "pointer", flexShrink: 0, fontSize: 11, lineHeight: 1, padding: "0 2px" }}
+                    >
+                      {opened ? "▾" : "▸"}
+                    </button>
+                  ) : null}
+                </div>
+                {opened ? (
+                  <div>
+                    {firing.steps.map((step, index) => (
+                      <RehearsalStepRow key={`${key}-${step.id}-${index}`} step={step} />
+                    ))}
+                  </div>
+                ) : null}
+              </article>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 /** Lane pick 7-A — liveness. `every` durations the wire uses ("30m", "6h",
@@ -182,10 +496,11 @@ export function AutomationsPanel({ pollMs = AUTOMATIONS_POLL_MS }: AutomationsPa
   const { client } = useVendoContext();
   const theme = useVendoTheme();
   // Every per-row map below is keyed by ROW — `${appId}:${triggerId}` — because
-  // an app has a list of triggers and each one is dry-run, inspected, armed and
-  // celebrated on its own. Keying any of these by app alone would make two
-  // triggers of one app share a run strip, a plan, and a busy flag.
+  // an app has a list of triggers and each one is dry-run, rehearsed, inspected,
+  // armed and celebrated on its own. Keying any of these by app alone would make
+  // two triggers of one app share a run strip, a plan, a rehearsal and a busy flag.
   const [plans, setPlans] = useState<Record<string, RunPlan | undefined>>({});
+  const [rehearsals, setRehearsals] = useState<Record<string, RehearsalReport | undefined>>({});
   const [runs, setRuns] = useState<Record<string, RunRecord[] | undefined>>({});
   const [recent, setRecent] = useState<Record<string, RunRecord[] | undefined>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
@@ -462,7 +777,7 @@ export function AutomationsPanel({ pollMs = AUTOMATIONS_POLL_MS }: AutomationsPa
 
   return (
     <ChromeRoot>
-      <section aria-labelledby="vendo-automations-heading" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <section className="fl-auto-scroll" aria-labelledby="vendo-automations-heading" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <h2 id="vendo-automations-heading" className="fl-auto-title" style={{ margin: 0 }}>Automations</h2>
         {error ? <div role="alert" className="fl-error">{error}</div> : null}
         {automations.automations.length === 0 ? <p className="fl-auto-sub" style={{ margin: 0 }}>No automations yet.</p> : null}
@@ -757,6 +1072,35 @@ export function AutomationsPanel({ pollMs = AUTOMATIONS_POLL_MS }: AutomationsPa
                         const plan = await automations.dryRun(appId, trigger.id);
                         setPlans(current => ({ ...current, [key]: plan }));
                       })}>Dry run</button>
+                      {/* The outlook is resolved server-side with rehearse()'s own
+                          predicates, per TRIGGER — rehearsal replays one trigger's
+                          schedule. Unsupported shapes (agentic runs, non-schedule
+                          triggers, armed triggers, empty windows) drop the control
+                          entirely rather than offering an action that only errors.
+                          No acting step DISABLES it: the replay would spend a full
+                          round of real host reads to report that there is nothing
+                          to consent to, and a control that looks spent-but-clickable
+                          invites exactly that. The title says why, on the wrapper —
+                          a disabled button does not surface its own tooltip. Absent
+                          outlook (older server) = unknown, so offer it exactly as
+                          before. */}
+                      {row.rehearsal === undefined || row.rehearsal.supported ? (
+                        <span
+                          title={rehearseHint(row.rehearsal)}
+                          className={row.rehearsal?.actingSteps === 0 ? "fl-btn-wrap-disabled" : undefined}
+                          style={{ display: "inline-flex" }}
+                        >
+                          <button
+                            className="fl-btn"
+                            type="button"
+                            disabled={busy[`rehearse-${key}`] || row.rehearsal?.actingSteps === 0}
+                            onClick={() => void during(`rehearse-${key}`, async () => {
+                              const report = await automations.rehearse(appId, trigger.id);
+                              setRehearsals(current => ({ ...current, [key]: report }));
+                            })}
+                          >{busy[`rehearse-${key}`] ? "Rehearsing…" : "Rehearse"}</button>
+                        </span>
+                      ) : null}
                       <button
                         className="fl-btn"
                         type="button"
@@ -781,6 +1125,18 @@ export function AutomationsPanel({ pollMs = AUTOMATIONS_POLL_MS }: AutomationsPa
                           await decideSet(appId, trigger.id, armingAsks, row.grantSetId, approve);
                           if (approve) celebrateEnable(key);
                         }}
+                      />
+                    ) : null}
+
+                    {rehearsals[key] ? (
+                      <RehearsalTimeline
+                        name={entry.app.name}
+                        report={rehearsals[key]!}
+                        busy={busy[`rehearse-${key}`] ?? false}
+                        onWindowChange={windowDays => void during(`rehearse-${key}`, async () => {
+                          const report = await automations.rehearse(appId, trigger.id, windowDays);
+                          setRehearsals(current => ({ ...current, [key]: report }));
+                        })}
                       />
                     ) : null}
 

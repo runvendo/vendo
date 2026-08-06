@@ -195,6 +195,10 @@ const RUN_VENUE: Record<AuditEvent["venue"], { badge: string; action: string }> 
   app: { badge: "App", action: "App run" },
   automation: { badge: "Automation", action: "Automation run" },
   mcp: { badge: "Agent", action: "Connected agent run" },
+  // Rehearsal replays a schedule through the live session and never persists a
+  // run row (07-automations rehearse()), so this branch is effectively
+  // unreachable — the entry keeps the venue map exhaustive.
+  rehearsal: { badge: "Rehearsal", action: "Rehearsal run" },
 };
 
 /** Turn an audit event into the two readable strings a row shows: a short kind

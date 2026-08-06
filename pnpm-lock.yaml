@@ -378,6 +378,9 @@ importers:
       jsdom:
         specifier: ^29.1.1
         version: 29.1.1(@noble/hashes@2.2.0)
+      jsonata:
+        specifier: ^2.0.5
+        version: 2.2.1
       tailwindcss:
         specifier: ^4
         version: 4.3.2

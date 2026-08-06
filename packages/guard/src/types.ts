@@ -71,7 +71,7 @@ export const policyRuleSchema = z
       .object({
         tool: z.string().optional(),
         risk: riskLabelSchema.optional(),
-        venue: z.enum(["chat", "app", "automation", "mcp"]).optional(),
+        venue: z.enum(["chat", "app", "automation", "mcp", "rehearsal"]).optional(),
         presence: z.enum(["present", "away"]).optional(),
       })
       .strict(),

@@ -39,12 +39,57 @@ export function transferMoney(input: TransferMoneyInput = {}): Transaction {
   const recipient = input.recipientName?.trim() || "Payee"
   const ref = 4100 + ((transferCounter * 17) % 900)
   transferCounter++
+  // A process-unique, monotonic token for THIS transfer, shared by both posted
+  // rows (source debit + destination credit) with distinct suffixes. Date.now()
+  // alone collides for two transfers in the same millisecond — and these ids are
+  // used as pagination cursors (`listTransactions`) and detail lookups
+  // (`getTransaction` returns the FIRST id match), so a collision makes
+  // pagination skip/repeat rows and a detail URL resolve to the wrong credit.
+  // The counter (already incremented once per call) keeps every id addressable.
+  const transferToken = `${Date.now()}_${transferCounter}`
 
-  // Debit the account (the demo's "money actually left" moment).
+  // Debit the source account (the demo's "money actually left" moment).
   if (account) account.balance -= amount
 
+  // Account-aware: when the recipient names one of the user's OWN accounts
+  // (e.g. the "Friday savings sweep" moving 10% into "Maple Savings"), also
+  // CREDIT that account so an internal transfer is net-worth-neutral and the
+  // money genuinely lands in savings — not debited from checking into thin air.
+  // The recipient may carry the account's masked suffix — the assistant's
+  // scripted transfer sends "Maple Savings ··8820", and UI copy renders
+  // "Maple Savings ·· 8820" — so both masked spellings match alongside the
+  // bare name. A person/payee recipient matches no account and behaves
+  // exactly as before.
+  const recipientKey = recipient.toLowerCase()
+  const destination = store.accounts.find(
+    (a) =>
+      a.id !== accountId
+      && [a.name, `${a.name} ··${a.mask}`, `${a.name} ·· ${a.mask}`].some(
+        (name) => name.trim().toLowerCase() === recipientKey,
+      ),
+  )
+  if (destination) {
+    destination.balance += amount
+    // Post the matching CREDIT row on the destination account so its own
+    // Transactions view shows the incoming transfer — mirroring the seed's
+    // paired "INTERNAL XFER" representation (source debit + destination credit).
+    const at = new Date().toISOString()
+    store.transactions.unshift({
+      id: `txn_transfer_${transferToken}_destination`,
+      accountId: destination.id,
+      merchant: `Transfer from ${account?.name ?? "Checking"}`,
+      descriptor: "INTERNAL XFER",
+      amount,
+      timestamp: at,
+      category: "transfer",
+      status: "posted",
+      statusTimeline: [{ state: "posted", at }],
+      method: "Internal transfer",
+    })
+  }
+
   const txn: Transaction = {
-    id: `txn_transfer_${Date.now()}`,
+    id: `txn_transfer_${transferToken}`,
     accountId,
     merchant: recipient,
     descriptor: `MAPLE TRANSFER TO ${recipient.toUpperCase()} REF ${ref}`,

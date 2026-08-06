@@ -2,6 +2,7 @@ import { z } from "zod";
 import { appIdSchema, isoDateTimeSchema, turnIdSchema, type AppId, type IsoDateTime, type Json, type TurnId } from "./ids.js";
 import { principalSchema, type Principal } from "./principal.js";
 import type { RunContext } from "./run-context.js";
+import { venueSchema } from "./venue.js";
 import { triggerRefSchema, type TriggerRef } from "./triggers.js";
 import type { GuardDecision } from "./guard.js";
 import { riskLabelSchema, type RiskLabel, type ToolOutcome } from "./tools.js";
@@ -65,7 +66,7 @@ export const auditEventSchema = z.object({
   at: isoDateTimeSchema,
   kind: z.enum(["tool-call", "approval", "policy-decision", "run", "app-lifecycle", "share", "door-auth", "principal"]),
   principal: principalSchema,
-  venue: z.enum(["chat", "app", "automation", "mcp"]),
+  venue: venueSchema,
   presence: z.enum(["present", "away"]),
   appId: appIdSchema.optional(),
   trigger: triggerRefSchema.optional(),

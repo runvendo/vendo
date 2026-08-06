@@ -4,8 +4,12 @@ import { permissionGrantSchema, type PermissionGrant } from "./grants.js";
 import { appIdSchema, turnIdSchema, type AppId, type Json, type TurnId } from "./ids.js";
 import { principalSchema, type Principal } from "./principal.js";
 import { triggerRefSchema, type TriggerRef } from "./triggers.js";
+import { venueSchema, type Venue } from "./venue.js";
 
 export type { TriggerRef } from "./triggers.js";
+// The venue vocabulary lives in a leaf module (breaks the grants ↔ run-context
+// cycle); re-exported here so its long-standing public path is unchanged.
+export { VENUES, type Venue } from "./venue.js";
 
 /** CORE-2 (wave 5 — 01 §3 amendment parked): the MCP door's OAuth-consent
  *  projection (10-mcp §3), attached by the door on venue="mcp" calls. */
@@ -13,14 +17,6 @@ export interface McpConsent {
   clientId: string;
   scopes: string[];
 }
-
-/** The doors a run can arrive through. ONE list: the type, the schema, and the
- *  security tests that sweep every venue all derive from it, so a fifth venue
- *  cannot be added in one place and silently escape the others. THE LAW's
- *  predicate is presence, never the venue (grant-sets `isUnattended`) — the
- *  sweeps exist to keep it that way for venues nobody has thought of yet. */
-export const VENUES = ["chat", "app", "automation", "mcp"] as const;
-export type Venue = (typeof VENUES)[number];
 
 /** CORE-2 */
 const mcpConsentSchema = z.object({
@@ -62,7 +58,12 @@ export const membershipSchema = z.object({
     CORE-2 (wave 5): `grant` and `mcpConsent` are promoted to first-class
     optional fields — the guard attaches the exact grant behind an away
     execution, the MCP door attaches its consent projection — replacing the
-    structural twins downstream blocks used to declare. */
+    structural twins downstream blocks used to declare.
+    Additive venue "rehearsal" (07-automations rehearse()): the automation
+    preview that replays a trigger's historical firings through the live
+    interactive session — the guard executes read-risk tools for real and
+    resolves write/destructive-risk tools to a simulated outcome, never
+    parking approvals and never requiring grants. */
 export interface RunContext {
   principal: Principal;
   venue: Venue;
@@ -117,7 +118,7 @@ export interface RunContext {
 /** 01-core §3 */
 export const runContextSchema = z.object({
   principal: principalSchema,
-  venue: z.enum(VENUES),
+  venue: venueSchema,
   presence: z.enum(["present", "away"]),
   sessionId: z.string(),
   appId: appIdSchema.optional(),

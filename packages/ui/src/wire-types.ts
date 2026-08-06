@@ -13,6 +13,7 @@ import type {
   ApprovalRequest,
   AuditEvent,
   IsoDateTime,
+  Json,
   Membership,
   RiskLabel,
   RunId,
@@ -255,6 +256,74 @@ export interface RunPlan {
   grantsMissing: string[];
 }
 
+/** Additive (rehearse) — one step row of a rehearsal firing. "simulated" =
+ *  the guard resolved a write/destructive call to its simulated card instead
+ *  of executing; `args` carry the fully resolved arguments. */
+export interface RehearsalStep {
+  id: string;
+  tool: string;
+  status: "ok" | "simulated" | "skipped" | "blocked" | "error";
+  args?: Record<string, Json>;
+  preview?: string;
+  /** A numeric summary of a real read's resolved output (07-automations
+   *  `RehearsalStep.result`): `totalCents` is the timeline row's single-line
+   *  headline, `breakdown` the per-item split for the expandable detail. Both
+   *  integer minor units; absent when the read had no single unambiguous
+   *  numeric field to sum. */
+  result?: { totalCents: number; breakdown?: Array<{ label: string; cents: number }> };
+  window?: { from: IsoDateTime; to: IsoDateTime };
+  evaluatedOn?: "window" | "today";
+  detail?: string;
+  /** For a "simulated" write: the guard's honest verdict for what the ENABLED
+   *  automation would do with this call. `wouldAsk` = it would still need an
+   *  approval (missing standing grant, critical tool, or policy `ask`);
+   *  `grantsMissing` = the tool(s) whose grant is absent; `wouldBlock` = a
+   *  policy BLOCK rule would stop it outright. Absent/false ⇒ a plain simulated
+   *  action that would run once live. */
+  wouldAsk?: boolean;
+  grantsMissing?: string[];
+  wouldBlock?: string;
+}
+
+/** Additive (rehearse) — one historical firing of the trigger. */
+export interface RehearsalFiring {
+  scheduledFor: IsoDateTime;
+  status: "fired" | "skipped" | "error";
+  simulatedActions: number;
+  steps: RehearsalStep[];
+}
+
+/** Additive — what `POST /automations/:id/rehearse` returns. */
+export interface RehearsalReport {
+  appId: AppId;
+  /** The trigger this report replays — rehearsal is per trigger. */
+  triggerId: string;
+  /** The resolved trailing window this report replays (7 or 30 days); the UI
+   *  renders "last N days" and the toggle's selected state from this. */
+  windowDays: 7 | 30;
+  from: IsoDateTime;
+  to: IsoDateTime;
+  firings: RehearsalFiring[];
+  truncated?: boolean;
+}
+
+/** 07-automations §1 — what a rehearsal of this automation could show, resolved
+ *  server-side from the trigger and the bound descriptors with rehearse()'s own
+ *  predicates. Additive: absent from an older server, so treat undefined as
+ *  "unknown" and keep today's always-offer behaviour. */
+export interface RehearsalOutlook {
+  /** rehearse() takes schedule triggers driving `steps` runs and nothing else. */
+  supported: boolean;
+  /** Steps bound to a write/destructive tool — the ones that produce simulated
+   *  cards. Zero means a rehearsal has nothing to consent to. Steps, not
+   *  actions: a forEach fans one step out over however many items it reads. */
+  actingSteps: number;
+  readSteps: number;
+  /** Reads whose window rehearse() will pin; short of readSteps, some firings
+   *  repeat today's data instead of replaying different history. */
+  historicalReads: number;
+}
+
 /** 07-automations §1 — one entry of `GET /automations`. `pendingGrants` /
  *  `grantSetId` (additive) project the app's still-undecided standing-grant
  *  asks so panels can render "waiting on N permissions" reload-safely. */
@@ -275,6 +344,7 @@ export interface AutomationTriggerEntry {
   enabled: boolean;
   pendingGrants?: number;
   grantSetId?: string;
+  rehearsal?: RehearsalOutlook;
   /** §13 — whose access it runs with. `display` only when the caller IS the
    *  sponsor: Vendo holds no directory, so a name for anyone else would be
    *  invented; the subject is the honest fallback. */

@@ -3,7 +3,7 @@ import type { AppId, RunId } from "@vendoai/core";
 import { useCallback } from "react";
 import { useVendoContext } from "../context.js";
 import { type PollOptions, useResource } from "./use-resource.js";
-import type { AutomationEntry, EnableResult, RunPlan, RunRecord, RunStatus } from "../wire-types.js";
+import type { AutomationEntry, EnableResult, RehearsalReport, RunPlan, RunRecord, RunStatus } from "../wire-types.js";
 
 export function useAutomations(options?: PollOptions): {
   automations: AutomationEntry[];
@@ -21,6 +21,7 @@ export function useAutomations(options?: PollOptions): {
     cursor?: string;
   }): Promise<{ runs: RunRecord[]; cursor?: string }>;
   dryRun(id: AppId, triggerId: string): Promise<RunPlan>;
+  rehearse(id: AppId, triggerId: string, windowDays?: 7 | 30): Promise<RehearsalReport>;
   stopRun(runId: RunId): Promise<void>;
   /** Run it again — a FRESH run of the same automation on the same triggering
    *  event (07 §1 `runs.rerun`). The remedy for a run that failed, and the second
@@ -68,6 +69,7 @@ export function useAutomations(options?: PollOptions): {
     disable,
     runs: client.runs.list,
     dryRun: client.automations.dryRun,
+    rehearse: client.automations.rehearse,
     stopRun: client.runs.stop,
     rerun,
   };

@@ -70,7 +70,7 @@ describe("AutomationsPanel liveness", () => {
 
     // Named for its trigger, the way the row's toggle is — two same-labelled
     // controls on one page are two controls nobody can tell apart.
-    const stop = await screen.findByRole("button", { name: "Stop Invoice watcher — Invoice created" });
+    const stop = await screen.findByRole("button", { name: "Stop Invoice watcher — Daily at 9:00 AM UTC" });
     expect(screen.queryByRole("group", { name: /^Run history/ })).toBeNull();
     expect(screen.getByText(/running now/)).toBeTruthy();
 
@@ -82,7 +82,7 @@ describe("AutomationsPanel liveness", () => {
     // The row stops claiming a run it just killed, and the stop it offered goes
     // with it.
     await waitFor(() => expect(screen.queryByText(/running now/)).toBeNull());
-    expect(screen.queryByRole("button", { name: "Stop Invoice watcher — Invoice created" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Stop Invoice watcher — Daily at 9:00 AM UTC" })).toBeNull();
   });
 
   it("updates a completing run without a reload", async () => {

@@ -5,7 +5,11 @@ import {
   appDocumentSchema,
   DEFAULT_TRIGGER_ID,
   descriptorHash,
+  humanizeEnumValue,
+  isPlainObject,
+  isRehearsalSimulation,
   permissionGrantSchema,
+  semanticAtPointer,
   serviceToolPhrase,
   serviceToolSlug,
   TRIGGER_KIND_REF_PRESENT,
@@ -24,12 +28,14 @@ import {
   type GrantScope,
   type Principal,
   type RecordStore,
+  type RiskLabel,
   type RunContext,
   type RunId,
   type Step,
   type ToolCall,
   type ToolDescriptor,
   type ToolOutcome,
+  type ToolSemantics,
   type Trigger,
   type TriggerSource,
   type VendoRecord,
@@ -60,6 +66,9 @@ import {
 import type {
   AutomationsConfig,
   AutomationsEngine,
+  RehearsalFiring,
+  RehearsalOutlook,
+  RehearsalStep,
   RunPlan,
   RunRecord,
   RunStatus,
@@ -95,6 +104,22 @@ const PRE_LIST_TRIGGER_KIND_REF = "trigger_kind";
 const ARMED = "automations:armed";
 const WEBHOOK_MAX_BYTES = 1024 * 1024;
 const FOREACH_MAX_ITEMS = 1000;
+const REHEARSAL_WINDOW_DAYS = [7, 30] as const;
+const REHEARSAL_DEFAULT_WINDOW_DAYS = 30;
+/** Resolve a requested window to a valid day count, defaulting to 30. */
+const resolveRehearsalWindowDays = (windowDays?: 7 | 30): 7 | 30 =>
+  windowDays !== undefined && REHEARSAL_WINDOW_DAYS.includes(windowDays)
+    ? windowDays
+    : REHEARSAL_DEFAULT_WINDOW_DAYS;
+
+const REHEARSAL_MAX_FIRINGS = 30;
+/** Backstop on the forward `cron.nextRun()` walk: negligible for the daily/
+ *  weekly crons rehearsal targets, ~3.9s worst case for `* * * * *`. */
+const REHEARSAL_MAX_ITERATIONS = 50_000;
+const REHEARSAL_PREVIEW_CHARS = 240;
+/** Each rehearsal replays up to REHEARSAL_MAX_FIRINGS × steps real host reads,
+ *  so collapse burst repeats to one replay per app-per-caller. */
+const REHEARSAL_COOLDOWN_MS = 3_000;
 
 const appRowSchema = z.object({
   subject: z.string(),
@@ -510,12 +535,178 @@ const validateForEachItems = (step: Step, value: Json): Json[] => {
   return value;
 };
 
+/** Fire times oldest first, with `preceding`*/ 
+type RehearsalFireTimes = { times: Date[]; truncated: boolean; preceding?: Date };
+
+/** Forward croner walk (UTC, the same engine as the tick)*/
+const cronFireTimes = (expression: string, from: Date, to: Date): RehearsalFireTimes => {
+  const cron = new Cron(expression, { timezone: "UTC", paused: true });
+  const times: Date[] = [];
+  let preceding: Date | undefined;
+  let cursor = from;
+  let iterations = 0;
+  while (iterations < REHEARSAL_MAX_ITERATIONS) {
+    iterations += 1;
+    const next = cron.nextRun(cursor);
+    if (next === null || next.getTime() > to.getTime()) break;
+    times.push(next);
+    if (times.length > REHEARSAL_MAX_FIRINGS) preceding = times.shift() as Date;
+    cursor = next;
+  }
+  return {
+    times,
+    truncated: preceding !== undefined || iterations >= REHEARSAL_MAX_ITERATIONS,
+    ...(preceding === undefined ? {} : { preceding }),
+  };
+};
+
+/** A disabled automation has no enable cursor, so `every` is anchored at the
+ *  window END and walked backward — which also stops the walk at the cap. */
+const everyFireTimes = (every: string, from: Date, to: Date): RehearsalFireTimes => {
+  const interval = durationMs(every);
+  if (interval === null) {
+    throw new Error(`rehearsal: schedule.every "${every}" is not a valid duration (validateTrigger should have rejected it)`);
+  }
+  const recentFirst: Date[] = [];
+  for (let at = to.getTime() - interval; at >= from.getTime(); at -= interval) {
+    if (recentFirst.length === REHEARSAL_MAX_FIRINGS) {
+      return { times: recentFirst.reverse(), truncated: true, preceding: new Date(at) };
+    }
+    recentFirst.push(new Date(at));
+  }
+  return { times: recentFirst.reverse(), truncated: false };
+};
+
+/** A one-shot `at` contributes its single instant, and only inside the window. */
+const atFireTimes = (at: string, from: Date, to: Date): RehearsalFireTimes => {
+  const instant = Date.parse(at);
+  const inWindow = instant >= from.getTime() && instant <= to.getTime();
+  return { times: inWindow ? [new Date(instant)] : [], truncated: false };
+};
+
+/** The schedule's would-have-fired instants inside [from, to], by trigger kind. */
+const rehearsalFireTimes = (
+  source: Extract<TriggerSource, { kind: "schedule" }>,
+  from: Date,
+  to: Date,
+): RehearsalFireTimes => {
+  if (source.cron !== undefined) return cronFireTimes(source.cron, from, to);
+  if (source.every !== undefined) return everyFireTimes(source.every, from, to);
+  if (source.at !== undefined) return atFireTimes(source.at, from, to);
+  return { times: [], truncated: false };
+};
+
+/** Whether a tool's input schema declares string `from`/`to` params rehearse()
+ *  can pin to the firing's window. */
+const acceptsDateBounds = (descriptor: ToolDescriptor): boolean => {
+  const schema = descriptor.inputSchema as { properties?: Record<string, { type?: unknown }> };
+  return schema.properties?.["from"]?.type === "string"
+    && schema.properties?.["to"]?.type === "string";
+};
+
+const rehearsalPreview = (output: Json): string => {
+  const text = JSON.stringify(output) ?? "null";
+  return text.length > REHEARSAL_PREVIEW_CHARS ? `${text.slice(0, REHEARSAL_PREVIEW_CHARS - 1)}…` : text;
+};
+
+const REHEARSAL_LABEL_FIELDS = ["name", "label", "title", "category", "merchant", "description", "id"];
+
+/** RFC 6901 token escaping, the encode half of what semanticAtPointer decodes. */
+const encodePointerToken = (token: string): string => token.replaceAll("~", "~0").replaceAll("/", "~1");
+
+const rehearsalObjectList = (output: Json): { list: Array<Record<string, Json>>; pointer: string } | undefined => {
+  let candidate: Json = output;
+  let pointer = "";
+  if (isPlainObject(candidate)) {
+    const arrays = Object.entries(candidate).filter((entry): entry is [string, Json[]] => Array.isArray(entry[1]));
+    if (arrays.length !== 1) return undefined;
+    const [key, list] = arrays[0]!;
+    pointer = `/${encodePointerToken(key)}`;
+    candidate = list;
+  }
+  if (!Array.isArray(candidate) || candidate.length === 0 || !candidate.every(isPlainObject)) return undefined;
+  return { list: candidate as Array<Record<string, Json>>, pointer };
+};
+
+/** The keys EVERY element carries as a finite number — the only candidates a
+ *  headline can sum. A field missing from one row (an `apy` only some accounts
+ *  have) is not shared and never enters a total. */
+const sharedNumericFields = (list: Array<Record<string, Json>>): string[] => {
+  let shared: string[] | undefined;
+  for (const row of list) {
+    const numeric = Object.keys(row).filter((key) => typeof row[key] === "number" && Number.isFinite(row[key]));
+    shared = shared === undefined ? numeric : shared.filter((key) => numeric.includes(key));
+    if (shared.length === 0) break;
+  }
+  return shared ?? [];
+};
+
+/** The one field the host's synced semantics declare money, plus the factor that
+ *  puts it in minor units. Undefined when none is declared or several are. */
+const rehearsalMoneyField = (
+  fields: string[],
+  pointer: string,
+  semantics: ToolSemantics,
+): { field: string; scale: number } | undefined => {
+  // `/0/` is any array index — semanticAtPointer collapses it out, so every
+  // element resolves to the one key the file is written under.
+  const money = fields.filter((key) =>
+    semanticAtPointer(semantics, `${pointer}/0/${encodePointerToken(key)}`)?.kind === "money");
+  if (money.length !== 1) return undefined;
+  const field = money[0]!;
+  const semantic = semanticAtPointer(semantics, `${pointer}/0/${encodePointerToken(field)}`);
+  return { field, scale: semantic?.kind === "money" && semantic.unit === "dollars" ? 100 : 1 };
+};
+
+/** Names each breakdown row from the first REHEARSAL_LABEL_FIELDS entry every
+ *  element carries as a string, humanized for enums; "Item N" when none does. */
+const rehearsalRowLabel = (
+  list: Array<Record<string, Json>>,
+  pointer: string,
+  semantics: ToolSemantics,
+): ((row: Record<string, Json>, index: number) => string) => {
+  const field = REHEARSAL_LABEL_FIELDS.find((key) =>
+    list.every((row) => typeof row[key] === "string" && (row[key] as string).length > 0));
+  if (field === undefined) return (_row, index) => `Item ${index + 1}`;
+  const semantic = semanticAtPointer(semantics, `${pointer}/0/${encodePointerToken(field)}`);
+  const labels = semantic?.kind === "enum" ? semantic.labels : undefined;
+  return (row) => {
+    const raw = String(row[field]);
+    // A value minted since the last sync is absent from the labels map, so it
+    // humanizes through the SAME function that built those labels rather than
+    // falling back to the raw token.
+    return labels === undefined ? raw : labels[raw] ?? humanizeEnumValue(raw);
+  };
+};
+
+
+const rehearsalResult = (output: Json, semantics?: ToolSemantics): RehearsalStep["result"] => {
+  // No synced semantics for this tool ⇒ nothing can be declared money ⇒ no
+  // headline, so the whole summary is skipped rather than walked to the same
+  // conclusion.
+  if (semantics === undefined) return undefined;
+  const found = rehearsalObjectList(output);
+  if (found === undefined) return undefined;
+  const { list, pointer } = found;
+  const money = rehearsalMoneyField(sharedNumericFields(list), pointer, semantics);
+  if (money === undefined) return undefined;
+  const label = rehearsalRowLabel(list, pointer, semantics);
+  let totalCents = 0;
+  const breakdown = list.map((row, index) => {
+    const cents = Math.round((row[money.field] as number) * money.scale);
+    totalCents += cents;
+    return { label: label(row, index), cents };
+  });
+  return { totalCents, ...(breakdown.length > 1 ? { breakdown } : {}) };
+};
+
 export const createAutomationsEngine = (config: AutomationsConfig): AutomationsEngine => {
   const now = (): Date => config.now?.() ?? new Date();
   const iso = (): string => now().toISOString();
   const stopped = new Set<string>();
   const active = new Set<string>();
   const inFlightDeliveries = new Set<string>();
+  const rehearseCooldowns = new Map<string, number>();
   const abortControllers = new Map<string, AbortController>();
   let tickTail: Promise<void> = Promise.resolve();
   // Absent localTriggerKinds → every kind fires locally (today's behavior, unchanged).
@@ -1861,6 +2052,111 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     await disarmTrigger(found.record, found.row, triggerId);
   };
 
+  /** The SAME per-call risk resolution rehearse() executes under: the live
+   *  classifier (config.apps.agentToolRisk) in the enabled automation's away
+   *  context, with the static descriptor as the conservative fallback on a
+   *  throw/miss — mirrors the guard's #effectiveDescriptor. Shared by
+   *  rehearseFiring and the list() outlook so the two cannot drift. */
+  const effectiveStepRisk = async (
+    call: ToolCall,
+    descriptor: ToolDescriptor,
+    awayCtx: RunContext,
+  ): Promise<RiskLabel> => {
+    try {
+      const risk = await config.apps.agentToolRisk(call, awayCtx);
+      if (risk === "read" || risk === "write" || risk === "destructive") return risk;
+    } catch {
+      // The static descriptor is the conservative fallback — mirrors the
+      // guard's #effectiveDescriptor on a classifier throw.
+    }
+    return descriptor.risk;
+  };
+
+  /** Resolved with the SAME predicates rehearse() applies (the supported-shape
+   *  check below mirrors its guards; acceptsDateBounds is literally the
+   *  function it calls, and per-step risk goes through the same
+   *  effectiveStepRisk resolver rehearseFiring uses), so the outlook can never
+   *  promise what the report would not show. An unknown or `fn:` tool counts
+   *  as neither read nor action: rehearsal skips app functions outright.
+   *  Per TRIGGER, like everything else on a list row: a rehearsal replays one
+   *  trigger's schedule, so each trigger carries its own outlook.
+   *
+   *  KNOWN LIMIT: the outlook classifies each step with its DECLARED args
+   *  (the unevaluated expressions) — a firing's resolved args do not exist
+   *  before the replay — so a classifier that grades risk off argument VALUES
+   *  can still grade a specific firing differently than this projection. */
+  const rehearsalOutlook = async (
+    doc: AppDocument,
+    trigger: Trigger,
+    byName: Map<string, ToolDescriptor>,
+    enabled: boolean,
+    ctx: RunContext,
+  ): Promise<RehearsalOutlook> => {
+    const steps = trigger.run.kind === "steps" ? trigger.run.steps : [];
+    // rehearse() throws `unknown tool in automation` on any non-`fn:` step it
+    // cannot resolve, so a schedule carrying an unknown tool is NOT actually
+    // rehearsable — offering the action would just fail. Mark it unsupported so
+    // the list and the endpoint agree.
+    const hasUnknownTool = steps.some(
+      (step) => !step.tool.startsWith("fn:") && !byName.has(step.tool),
+    );
+    // A schedule whose WIDEST selectable window contains no firing — a
+    // one-shot `at` in the future or further back than 30 days, an `every`
+    // longer than the window — replays an empty report no matter which window
+    // the user picks, so the control is dropped rather than advertised. An
+    // unparseable schedule counts as no firing: rehearse() would reject it in
+    // validateTrigger before replaying anything.
+    let windowHasFiring = false;
+    if (trigger.on.kind === "schedule") {
+      const to = now();
+      const from = new Date(to.getTime() - Math.max(...REHEARSAL_WINDOW_DAYS) * 86_400_000);
+      try {
+        windowHasFiring = rehearsalFireTimes(trigger.on, from, to).times.length > 0;
+      } catch {
+        windowHasFiring = false;
+      }
+    }
+    // ENABLED (armed) triggers are rejected by rehearse() (below): the replay
+    // anchors `schedule.every` at the window end, which only matches a DISARMED
+    // trigger (no enable cursor) — rehearsal is the pre-enable confidence step.
+    // Drop the control rather than offer an action that errors on an armed one.
+    const supported = trigger.on.kind === "schedule"
+      && trigger.run.kind === "steps"
+      && !hasUnknownTool
+      && !enabled
+      && windowHasFiring;
+    // Classify against the enabled automation's away context, exactly as
+    // rehearseFiring does — never the static descriptor alone, or a classifier
+    // that reclassifies a tool would let this outlook advertise acting/read
+    // counts the replayed report will not contain.
+    const awayCtx: RunContext = { ...ctx, venue: "automation", presence: "away", appId: doc.id };
+    let actingSteps = 0;
+    let readSteps = 0;
+    let historicalReads = 0;
+    for (const step of steps) {
+      if (step.tool.startsWith("fn:")) continue;
+      const descriptor = byName.get(step.tool);
+      if (descriptor === undefined) continue;
+      const risk = await effectiveStepRisk(
+        { id: id("call_outlook_"), tool: step.tool, args: step.args ?? {} },
+        descriptor,
+        awayCtx,
+      );
+      if (risk === "write" || risk === "destructive") {
+        actingSteps += 1;
+        continue;
+      }
+      if (risk !== "read") continue;
+      readSteps += 1;
+      // Historical only when rehearse() will actually pin the window: it fills
+      // `from`/`to` with `??=`, so a step that hard-codes BOTH bounds re-reads
+      // the same fixed range every firing and replays no different history.
+      const fixesBothBounds = step.args?.["from"] !== undefined && step.args?.["to"] !== undefined;
+      if (acceptsDateBounds(descriptor) && !fixesBothBounds) historicalReads += 1;
+    }
+    return { supported, actingSteps, readSteps, historicalReads };
+  };
+
   /**
    * Every sponsorship row for these apps' triggers, in ONE query — and the
    * pre-list rekey, because the LIST is where a person reads who an automation
@@ -1901,6 +2197,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   };
 
   const list: AutomationsEngine["list"] = async (ctx) => {
+    const byName = await descriptors(ctx);
     const subject = ctx.principal.subject;
     const records = await allRecords(config.store.records(APPS), { refs: { subject } });
     const rows = records.map(parseAppRow).filter((row) => row.subject === subject);
@@ -1978,7 +2275,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       const armedHere = new Set(armedTriggers(row, armed).map((trigger) => trigger.id));
       entries.push({
         app: row.doc,
-        triggers: triggersOf(row.doc).map((trigger) => {
+        triggers: await Promise.all(triggersOf(row.doc).map(async (trigger) => {
           const key = triggerKey(row.doc.id, trigger.id);
           const pending = outstanding.get(key);
           // §13's window label — "runs with Dana's access". The name rides the
@@ -1994,9 +2291,11 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
           const stopped = sponsorship?.status === "invalidated"
             ? stopFor(sponsorship.reason ?? "edit", row.doc.name)
             : undefined;
+          const enabled = armedHere.has(trigger.id);
           return {
             trigger,
-            enabled: armedHere.has(trigger.id),
+            enabled,
+            rehearsal: await rehearsalOutlook(row.doc, trigger, byName, enabled, ctx),
             sponsor: { subject: sponsor, ...(display === undefined ? {} : { display }) },
             ...(stopped === undefined ? {} : { stopped }),
             ...(pending === undefined ? {} : {
@@ -2004,7 +2303,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
               ...(pending.grantSetId === undefined ? {} : { grantSetId: pending.grantSetId }),
             }),
           };
-        }),
+        })),
         ...(editors === undefined ? {} : { editors }),
       });
     }
@@ -2458,6 +2757,218 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     return plan;
   };
 
+  const rehearseFiring = async (
+    steps: Step[],
+    byName: Map<string, ToolDescriptor>,
+    hostSemantics: Readonly<Record<string, ToolSemantics>> | undefined,
+    base: { caller: RunContext; appId: string },
+    windowFrom: Date,
+    firedAt: Date,
+  ): Promise<RehearsalFiring> => {
+    const event: Json = { scheduledFor: firedAt.toISOString(), firedAt: firedAt.toISOString() };
+    const rehearsalCtx: RunContext = {
+      // Preserve the caller's COMPLETE interactive context (memberships, actor,
+      // requestHeaders, …) — editableApp() already authorized this caller using
+      // ctx.memberships, so the subsequent guarded/host reads must see the same
+      // identity or org-policy and host access checks disagree with what was
+      // authorized. Only the rehearsal-specific fields below are overridden.
+      ...base.caller,
+      venue: "rehearsal",
+      presence: "present",
+      appId: base.appId,
+      // AUDIT-SCOPED ONLY: rehearsal persists nothing to run history.
+      trigger: { runId: id("run_rehearsal_") as RunId, kind: "schedule" },
+    };
+    // The guard classifies read-vs-simulate against the enabled automation's
+    // away context (venue "automation", presence "away") via the SAME resolver
+    // wired into createGuard's resolveRisk (apps.agentToolRisk). Resolve risk
+    // the same way here — through the shared effectiveStepRisk the list()
+    // outlook also uses — so date-bound pinning and the read/window row agree
+    // with what the guard actually did: never pin a call the guard treats as a
+    // write, and always pin a real read the guard executes.
+    const awayCtx: RunContext = { ...rehearsalCtx, venue: "automation", presence: "away" };
+    const effectiveRisk = (call: ToolCall, descriptor: ToolDescriptor): Promise<RiskLabel> =>
+      effectiveStepRisk(call, descriptor, awayCtx);
+
+    const rows: RehearsalStep[] = [];
+    const outputs: Record<string, Json> = {};
+    let simulatedActions = 0;
+    let failed = false;
+
+    for (const step of steps) {
+      let items: Json[] | undefined;
+      try {
+        if (step.if !== undefined && !await evaluate(step.if, { event, steps: outputs, item: undefined })) {
+          rows.push({ id: step.id, tool: step.tool, status: "skipped", detail: "condition was false" });
+          continue;
+        }
+        if (step.forEach !== undefined) {
+          items = validateForEachItems(step, await evaluate(step.forEach, { event, steps: outputs, item: undefined }));
+        }
+      } catch (error) {
+        rows.push({ id: step.id, tool: step.tool, status: "error", detail: message(error) });
+        failed = true;
+        break;
+      }
+      if (step.tool.startsWith("fn:")) {
+        rows.push({ id: step.id, tool: step.tool, status: "skipped", detail: "app function calls don't execute in rehearsal" });
+        continue;
+      }
+      const descriptor = byName.get(step.tool) as ToolDescriptor;
+      const iterations: Array<{ item?: Json }> = items === undefined ? [{}] : items.map((item) => ({ item }));
+      // A forEach that matched nothing has no iteration to report, and dropping
+      // the step silently contradicts the step count the surface shows above
+      // the firing — the reader is left to guess whether it ran. Mirror the
+      // false-`if` row so every step is accounted for, and set the output the
+      // tail assignment below would have set (an empty list, not undefined).
+      if (iterations.length === 0) {
+        rows.push({ id: step.id, tool: step.tool, status: "skipped", detail: "forEach matched 0 items" });
+        outputs[step.id] = [];
+        continue;
+      }
+      const iterationOutputs: Json[] = [];
+      for (const iteration of iterations) {
+        let args: Record<string, Json>;
+        try {
+          args = await stepArgs(step, event, outputs, iteration.item);
+        } catch (error) {
+          rows.push({ id: step.id, tool: step.tool, status: "error", detail: message(error) });
+          failed = true;
+          break;
+        }
+        const call: ToolCall = { id: id("call_"), tool: step.tool, args };
+        const risk = await effectiveRisk(call, descriptor);
+        // Pin the firing's window onto date-bounded reads the step left open —
+        // keyed on the EFFECTIVE risk (what the guard executes), not the static
+        // label, so a reclassified tool pins exactly when the guard reads.
+        if (risk === "read" && acceptsDateBounds(descriptor)) {
+          args["from"] ??= windowFrom.toISOString();
+          args["to"] ??= firedAt.toISOString();
+        }
+        const bounded = typeof args["from"] === "string" && typeof args["to"] === "string";
+        const outcome = await config.tools.execute(call, rehearsalCtx);
+        const row: RehearsalStep = { id: step.id, tool: step.tool, status: "ok" };
+        if (Object.keys(args).length > 0) row.args = clone(args);
+        if (outcome.status === "ok") {
+          // Gate the simulated-card discriminator on the EFFECTIVE risk: the
+          // guard only ever mints a RehearsalSimulation for a non-read call, so
+          // a real read whose payload happens to carry `rehearsalSimulated: true`
+          // (a host's own field) keeps its preview/result and is never counted
+          // as a simulated action.
+          if (risk !== "read" && isRehearsalSimulation(outcome.output)) {
+            row.status = "simulated";
+            simulatedActions += 1;
+            const sim = outcome.output;
+            if (sim.wouldAsk === true) row.wouldAsk = true;
+            if (sim.grantsMissing !== undefined && sim.grantsMissing.length > 0) {
+              row.grantsMissing = sim.grantsMissing;
+            }
+            if (sim.wouldBlock !== undefined) row.wouldBlock = sim.wouldBlock;
+          } else {
+            row.preview = rehearsalPreview(outcome.output);
+            if (risk === "read") {
+              const result = rehearsalResult(outcome.output, hostSemantics?.[step.tool]);
+              if (result !== undefined) row.result = result;
+              if (bounded) {
+                row.window = { from: String(args["from"]), to: String(args["to"]) };
+                row.evaluatedOn = "window";
+              } else {
+                row.evaluatedOn = "today";
+              }
+            }
+          }
+          rows.push(row);
+          iterationOutputs.push(outcome.output);
+          continue;
+        }
+        row.status = outcome.status === "blocked" ? "blocked" : "error";
+        row.detail = errorForOutcome(outcome).message;
+        rows.push(row);
+        failed = true;
+        break;
+      }
+      if (failed) break;
+      outputs[step.id] = items === undefined ? iterationOutputs[0] ?? null : iterationOutputs;
+    }
+
+    const status: RehearsalFiring["status"] = failed
+      ? "error"
+      : rows.length > 0 && rows.every((row) => row.status === "skipped")
+        ? "skipped"
+        : "fired";
+    return { scheduledFor: firedAt.toISOString(), status, simulatedActions, steps: rows };
+  };
+
+  const rehearse: AutomationsEngine["rehearse"] = async (appId, triggerId, ctx, windowDays) => {
+    const found = await editableApp(appId, ctx);
+    // The same per-trigger door every other ceremony (enable, adopt, dryRun)
+    // goes through: an undeclared trigger id is the caller's mistake.
+    const trigger = declaredTrigger(found.row.doc, triggerId);
+    // Rehearsal is the PRE-ENABLE confidence step: `schedule.every` replay
+    // anchors at the window end, which only matches a DISARMED trigger (no
+    // enable cursor — see everyFireTimes). An armed trigger would get a
+    // timeline that disagrees with its real schedule, so reject it rather
+    // than mislead.
+    if (await isArmed(found.row, triggerId)) {
+      throw new VendoError("validation", "rehearsal is a pre-enable step; disable the automation to rehearse it");
+    }
+
+    if (trigger.on.kind !== "schedule" || trigger.run.kind !== "steps") {
+      throw new VendoError("validation", trigger.on.kind !== "schedule"
+        ? "rehearsal supports schedule triggers only"
+        : "rehearsal supports steps automations only");
+    }
+    const byName = await descriptors(ctx);
+    for (const step of trigger.run.steps) {
+      if (!step.tool.startsWith("fn:") && !byName.has(step.tool)) {
+        throw new VendoError("validation", `unknown tool in automation: ${step.tool}`);
+      }
+    }
+    const resolvedWindowDays = resolveRehearsalWindowDays(windowDays);
+    // Server-side throttle (07-automations): reject a repeat replay of the same
+    // trigger+window by the same caller inside the cooldown
+    const cooldownKey = `${ctx.principal.subject}:${triggerKey(appId, triggerId)}:${resolvedWindowDays}`;
+    const nowMs = now().getTime();
+    for (const [key, at] of rehearseCooldowns) {
+      if (nowMs - at >= REHEARSAL_COOLDOWN_MS) rehearseCooldowns.delete(key);
+    }
+    const lastAt = rehearseCooldowns.get(cooldownKey);
+    if (lastAt !== undefined && nowMs - lastAt < REHEARSAL_COOLDOWN_MS) {
+      const retryInMs = REHEARSAL_COOLDOWN_MS - (nowMs - lastAt);
+      throw new VendoError(
+        "conflict",
+        `rehearsal is cooling down; retry in ${Math.ceil(retryInMs / 1000)}s`,
+      );
+    }
+    rehearseCooldowns.set(cooldownKey, nowMs);
+    const to = now();
+    const from = new Date(to.getTime() - resolvedWindowDays * 86_400_000);
+    const { times, truncated, preceding } = rehearsalFireTimes(trigger.on, from, to);
+    const base = { caller: ctx, appId };
+    // Resolved ONCE per report, not per firing: the provider form re-reads
+    // .vendo off disk (the apps runtime's per-generation contract), and every
+    // firing in one replay should summarize under the same semantics anyway.
+    const hostSemantics = typeof config.semantics === "function" ? config.semantics() : config.semantics;
+    const firings: RehearsalFiring[] = [];
+    for (let index = 0; index < times.length; index += 1) {
+      const firedAt = times[index] as Date;
+      // The firing's window reaches back to the PREVIOUS firing — including a
+      // firing the cap discarded (`preceding`); only when no earlier fire time
+      // exists does the first firing fall back to the report window's start.
+      const windowFrom = index > 0 ? times[index - 1] as Date : preceding ?? from;
+      firings.push(await rehearseFiring(trigger.run.steps, byName, hostSemantics, base, windowFrom, firedAt));
+    }
+    return {
+      appId,
+      triggerId,
+      windowDays: resolvedWindowDays,
+      from: from.toISOString(),
+      to: to.toISOString(),
+      firings,
+      ...(truncated ? { truncated: true } : {}),
+    };
+  };
+
   const runsGet: AutomationsEngine["runs"]["get"] = async (runId, ctx) => {
     const stored = await config.store.records(RUNS).get(runId);
     if (stored === null) return null;
@@ -2585,6 +3096,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     webhook,
     runs: { get: runsGet, list: runsList, stop: runsStop, rerun: runsRerun },
     dryRun,
+    rehearse,
     onDocumentEdit,
     adoption,
     adopt,

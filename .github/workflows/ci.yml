@@ -507,6 +507,8 @@ jobs:
           e2e/center-a11y.spec.ts
           e2e/approvals-poller-proof.spec.ts
           e2e/jail-and-tree.spec.ts
+          e2e/rehearsal-collapse.spec.ts
+          e2e/rehearsal-window.spec.ts
       - if: failure()
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4
         with:

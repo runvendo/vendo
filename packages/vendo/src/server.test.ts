@@ -162,6 +162,9 @@ function stubRouteBlocks(vendo: Vendo): void {
   vi.spyOn(vendo.automations, "enable").mockResolvedValue({ enabled: true, missing: [] });
   vi.spyOn(vendo.automations, "disable").mockResolvedValue();
   vi.spyOn(vendo.automations, "dryRun").mockResolvedValue({ steps: [], grantsMissing: [] });
+  vi.spyOn(vendo.automations, "rehearse").mockResolvedValue({
+    appId: "app_wire", triggerId: "main", windowDays: 30, from: new Date(0).toISOString(), to: new Date().toISOString(), firings: [],
+  });
   vi.spyOn(vendo.automations.runs, "list").mockResolvedValue({ runs: [] });
   vi.spyOn(vendo.automations.runs, "get").mockResolvedValue({
     id: "run_x", appId: "app_wire", trigger: { kind: "schedule" }, status: "ok",
@@ -201,6 +204,7 @@ describe("09 §3 public wire", () => {
       request("POST", "/automations/app_wire/enable", {}),
       request("POST", "/automations/app_wire/disable", {}),
       request("POST", "/automations/app_wire/dry-run", {}),
+      request("POST", "/automations/app_wire/rehearse", {}),
       request("GET", "/runs?status=ok"),
       request("GET", "/runs/run_x"),
       request("POST", "/runs/run_x/stop", {}),
@@ -212,6 +216,25 @@ describe("09 §3 public wire", () => {
       const response = await vendo.handler(route);
       expect(response.status, `${route.method} ${route.url}: ${await response.clone().text()}`).toBeLessThan(400);
     }
+  });
+
+  it("clamps the rehearse window at the HTTP boundary: 7 and 30 pass through, anything else falls back to 30", async () => {
+    const { vendo } = await setup();
+    stubRouteBlocks(vendo);
+    const rehearse = vi.spyOn(vendo.automations, "rehearse").mockImplementation(async (appId, triggerId, _ctx, windowDays) => ({
+      appId, triggerId, windowDays: windowDays ?? 30, from: new Date(0).toISOString(), to: new Date().toISOString(), firings: [],
+    }));
+    const windowFor = async (body: unknown): Promise<number | undefined> => {
+      rehearse.mockClear();
+      await vendo.handler(request("POST", "/automations/app_wire/rehearse", body));
+      return rehearse.mock.calls[0]?.[3];
+    };
+    expect(await windowFor({ windowDays: 7 })).toBe(7);
+    expect(await windowFor({ windowDays: 30 })).toBe(30);
+    // Out-of-range / wrong-type / absent all resolve to the 30-day default.
+    expect(await windowFor({ windowDays: 99 })).toBe(30);
+    expect(await windowFor({ windowDays: "7" })).toBe(30);
+    expect(await windowFor({})).toBe(30);
   });
 
   it("wires client disconnect to the chat turn: POST /threads hands the request signal to the served turn (AGENT-3)", async () => {

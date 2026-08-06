@@ -3101,6 +3101,9 @@ export function createVendo(input: CreateVendoConfig): Vendo {
       // would name a tool that is not on its listing.
       system: (ctx) => assembleSystemPrompt(guard, ctx, system, true, false),
     }),
+    // rehearse() summarizes a replayed read's money from these; the registry
+    // strips semantics off descriptors(), so this seam is its only path in.
+    semantics: hostSemanticsProvider,
     resolveRisk,
     // Build contract §9.3 — the fire-time sponsorship gate and the adoption
     // card ask `can(editor)` through this seam. Unwired it would silently fall

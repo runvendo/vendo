@@ -78,7 +78,7 @@ the next clean sync:
 | `useApps` | list, create, remove, and fork |
 | `useApp` | open, call, edit, history, undo, and refresh by re-opening |
 | `useSlotApp` | the app currently pinned to a slot (polls; `VendoSlot` uses it itself) |
-| `useAutomations` | enable, disable, runs, dry-run, and stop |
+| `useAutomations` | enable, disable, runs, dry-run, rehearse, and stop |
 | `useActivity` | self-scoped audit activity |
 | `useVendoOverlay` | programmatic open/close controller for `VendoOverlay` |
 | `useVendoStatus` | connection and guard posture |

@@ -96,7 +96,7 @@
         "method": "POST",
         "path": "/maple/api/orders"
       },
-      "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
+      "srcHash": "sha256:b50277e9a0bd24246df5abb17b4577b238bf45fc88ad8d6384bc641fe7b429f4"
     },
     {
       "name": "host_demo_chips_list",
@@ -175,7 +175,7 @@
         "method": "GET",
         "path": "/maple/api/accounts/{id}"
       },
-      "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
+      "srcHash": "sha256:b50277e9a0bd24246df5abb17b4577b238bf45fc88ad8d6384bc641fe7b429f4"
     },
     {
       "name": "host_getBudgets",
@@ -191,7 +191,7 @@
         "method": "GET",
         "path": "/maple/api/insights/budgets"
       },
-      "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
+      "srcHash": "sha256:b50277e9a0bd24246df5abb17b4577b238bf45fc88ad8d6384bc641fe7b429f4"
     },
     {
       "name": "host_getCashflowInsights",
@@ -241,7 +241,7 @@
         "method": "GET",
         "path": "/maple/api/insights/cashflow"
       },
-      "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
+      "srcHash": "sha256:b50277e9a0bd24246df5abb17b4577b238bf45fc88ad8d6384bc641fe7b429f4"
     },
     {
       "name": "host_getProfile",
@@ -257,7 +257,7 @@
         "method": "GET",
         "path": "/maple/api/profile"
       },
-      "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
+      "srcHash": "sha256:b50277e9a0bd24246df5abb17b4577b238bf45fc88ad8d6384bc641fe7b429f4"
     },
     {
       "name": "host_getRecurringInsights",
@@ -273,7 +273,7 @@
         "method": "GET",
         "path": "/maple/api/insights/recurring"
       },
-      "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
+      "srcHash": "sha256:b50277e9a0bd24246df5abb17b4577b238bf45fc88ad8d6384bc641fe7b429f4"
     },
     {
       "name": "host_getSpendingInsights",
@@ -330,7 +330,7 @@
         "method": "GET",
         "path": "/maple/api/insights/spending"
       },
-      "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
+      "srcHash": "sha256:b50277e9a0bd24246df5abb17b4577b238bf45fc88ad8d6384bc641fe7b429f4"
     },
     {
       "name": "host_getTransaction",
@@ -353,7 +353,7 @@
         "method": "GET",
         "path": "/maple/api/transactions/{id}"
       },
-      "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
+      "srcHash": "sha256:b50277e9a0bd24246df5abb17b4577b238bf45fc88ad8d6384bc641fe7b429f4"
     },
     {
       "name": "host_listAccounts",
@@ -369,17 +369,25 @@
         "method": "GET",
         "path": "/maple/api/accounts"
       },
-      "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
+      "srcHash": "sha256:b50277e9a0bd24246df5abb17b4577b238bf45fc88ad8d6384bc641fe7b429f4"
     },
     {
       "name": "host_listAccountTransactions",
-      "description": "List recent transactions for one account.",
+      "description": "List recent transactions for one account. Pass `from`/`to` to bound the ledger by transaction time; every transaction carries an immutable timestamp, so this window is exact.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "id": {
             "type": "string",
             "description": "Account id"
+          },
+          "from": {
+            "type": "string",
+            "description": "Only transactions at or after this ISO 8601 instant."
+          },
+          "to": {
+            "type": "string",
+            "description": "Only transactions at or before this ISO 8601 instant."
           }
         },
         "required": [
@@ -393,7 +401,7 @@
         "method": "GET",
         "path": "/maple/api/accounts/{id}/transactions"
       },
-      "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
+      "srcHash": "sha256:b50277e9a0bd24246df5abb17b4577b238bf45fc88ad8d6384bc641fe7b429f4"
     },
     {
       "name": "host_listCards",
@@ -409,17 +417,25 @@
         "method": "GET",
         "path": "/maple/api/cards"
       },
-      "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
+      "srcHash": "sha256:b50277e9a0bd24246df5abb17b4577b238bf45fc88ad8d6384bc641fe7b429f4"
     },
     {
       "name": "host_listCardTransactions",
-      "description": "List recent transactions charged to one card.",
+      "description": "List recent transactions charged to one card. Pass `from`/`to` to bound the ledger by transaction time; every transaction carries an immutable timestamp, so this window is exact.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "id": {
             "type": "string",
             "description": "Card id"
+          },
+          "from": {
+            "type": "string",
+            "description": "Only transactions at or after this ISO 8601 instant."
+          },
+          "to": {
+            "type": "string",
+            "description": "Only transactions at or before this ISO 8601 instant."
           }
         },
         "required": [
@@ -433,7 +449,7 @@
         "method": "GET",
         "path": "/maple/api/cards/{id}/transactions"
       },
-      "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
+      "srcHash": "sha256:b50277e9a0bd24246df5abb17b4577b238bf45fc88ad8d6384bc641fe7b429f4"
     },
     {
       "name": "host_listGoals",
@@ -449,7 +465,7 @@
         "method": "GET",
         "path": "/maple/api/goals"
       },
-      "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
+      "srcHash": "sha256:b50277e9a0bd24246df5abb17b4577b238bf45fc88ad8d6384bc641fe7b429f4"
     },
     {
       "name": "host_listNotifications",
@@ -465,7 +481,7 @@
         "method": "GET",
         "path": "/maple/api/notifications"
       },
-      "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
+      "srcHash": "sha256:b50277e9a0bd24246df5abb17b4577b238bf45fc88ad8d6384bc641fe7b429f4"
     },
     {
       "name": "host_listPayees",
@@ -481,7 +497,7 @@
         "method": "GET",
         "path": "/maple/api/payees"
       },
-      "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
+      "srcHash": "sha256:b50277e9a0bd24246df5abb17b4577b238bf45fc88ad8d6384bc641fe7b429f4"
     },
     {
       "name": "host_listScheduledPayments",
@@ -497,7 +513,7 @@
         "method": "GET",
         "path": "/maple/api/payments/scheduled"
       },
-      "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
+      "srcHash": "sha256:b50277e9a0bd24246df5abb17b4577b238bf45fc88ad8d6384bc641fe7b429f4"
     },
     {
       "name": "host_listTransactions",
@@ -555,7 +571,7 @@
         "method": "GET",
         "path": "/maple/api/transactions"
       },
-      "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
+      "srcHash": "sha256:b50277e9a0bd24246df5abb17b4577b238bf45fc88ad8d6384bc641fe7b429f4"
     },
     {
       "name": "host_proof_list",
@@ -606,7 +622,7 @@
         "method": "POST",
         "path": "/maple/api/transfers"
       },
-      "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
+      "srcHash": "sha256:b50277e9a0bd24246df5abb17b4577b238bf45fc88ad8d6384bc641fe7b429f4"
     },
     {
       "name": "host_voice_create",
