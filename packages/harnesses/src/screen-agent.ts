@@ -321,10 +321,10 @@ export async function assembleScreen(
    * Write one hot-path file and land it.
    *
    * The commit IS the store write and the paint (§1.6), and the seam answers BOTH
-   * questions on the way out: did the write land, and did it reach the screen
-   * (`CommitResult.painted`). The paint verdict is the one this loop could not see
-   * before — `emit` belongs to whoever wrapped the workspace, not to us — and it
-   * is what separates "saved" from "saved and shown".
+   * questions on the way out: did the write land (`CommitResult.status`), and did
+   * it reach the screen (`paintedIn`). The paint verdict is the one this loop
+   * could not see before — `emit` belongs to whoever wrapped the workspace, not to
+   * us — and it is what separates "saved" from "saved and shown".
    */
   const save = async (turn: Turn<unknown>, file: string, content: string): Promise<CommitResult> => {
     await turn.workspace.writeFile(`${directory}/${file}`, content);
