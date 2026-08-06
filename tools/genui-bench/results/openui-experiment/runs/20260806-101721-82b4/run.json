@@ -1,0 +1,31 @@
+{
+  "id": "20260806-101721-82b4",
+  "createdAt": "2026-08-06T04:47:21.737Z",
+  "gitSha": "f51b0d58f6969c0b61bf07b70d8f47a2114305d6",
+  "gitDirty": "8ece79c7213c659a1623fe87d438795073f5f149413dc21d5fbda2d5325b4bff",
+  "request": {
+    "prompt": "show my recent transactions with search",
+    "host": "cadence",
+    "lanes": [
+      "vendo",
+      "openui"
+    ],
+    "packRef": {
+      "pack": "smoke",
+      "index": 2
+    }
+  },
+  "lanes": {
+    "vendo": {
+      "status": "failed",
+      "startedAt": 1785991635456,
+      "durationMs": 1700,
+      "error": "the host refused this ask: Your host has no way to show recent transactions."
+    },
+    "openui": {
+      "status": "ok",
+      "startedAt": 1785991635465,
+      "durationMs": 6253
+    }
+  }
+}

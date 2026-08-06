@@ -1,0 +1,12 @@
+[
+  {
+    "severity": "block",
+    "where": "query \"accountsList\"",
+    "message": "names unknown tool \"accounts.list\"; the host tools are: host_createOrder, host_getAccount, host_getBudgets, host_getCashflowInsights, host_getProfile, host_getRecurringInsights, host_getSpendingInsights, host_getTransaction, host_listAccounts, host_listAccountTransactions, host_listCards, host_listCardTransactions, host_listGoals, host_listNotifications, host_listPayees, host_listScheduledPayments, host_listTransactions, host_transferMoney"
+  },
+  {
+    "severity": "warn",
+    "where": "Query accounts",
+    "message": "The 'accounts' query is defined but not used in the app."
+  }
+]

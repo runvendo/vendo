@@ -34,6 +34,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import {
   conductCreate,
   type ConductedResult,
@@ -51,8 +52,9 @@ import {
 } from "@vendoai/core";
 import {
   MAX_OUTPUT_TOKENS,
-  PRODUCTION_MODEL,
+  defaultModelId,
   findModel,
+  providerKeyFor,
   validateModelChoice,
   type BenchModel,
   type RunModel,
@@ -71,9 +73,6 @@ export interface VendoAdapterOverrides {
   /** Test seam: build a provider model for an id (default: Anthropic from root .env). */
   createModel?: (id: string) => GenerationDependencies["model"];
 }
-
-/** Keep in sync with runner/models.ts PRODUCTION_MODEL. */
-const DEFAULT_MODEL_ID = PRODUCTION_MODEL.id;
 
 /** Source-only root .env load (cli.ts pattern, duplicated because cli.ts runs
  *  its main on import): fills unset process.env keys, never prints values. */
@@ -103,9 +102,20 @@ function requireFromApps(specifier: string): unknown {
   return createRequire(appsEntry)(specifier);
 }
 
-/** The real model: @ai-sdk/anthropic for the given id. */
-function resolveAnthropicModel(id: string): GenerationDependencies["model"] {
+/** The real model for the given id, provider routed by prefix (see
+ *  runner/models.ts defaultModelId): `gemini*` rides @ai-sdk/google (this
+ *  app's own dependency — the Gemini fallback is bench plumbing, not an
+ *  engine seam), everything else the Anthropic provider from @vendoai/apps's
+ *  module space. */
+function resolveProviderModel(id: string): GenerationDependencies["model"] {
   loadRootEnv();
+  if (providerKeyFor(id) === "GEMINI_API_KEY") {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (apiKey === undefined || apiKey === "") {
+      throw new Error("GEMINI_API_KEY missing — set it in the repo-root .env");
+    }
+    return createGoogleGenerativeAI({ apiKey })(id) as unknown as GenerationDependencies["model"];
+  }
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (apiKey === undefined || apiKey === "") {
     throw new Error("ANTHROPIC_API_KEY missing — set it in the repo-root .env");
@@ -177,11 +187,14 @@ function modelFor(
   choice: RunModel | undefined,
   overrides: VendoAdapterOverrides,
 ): GenerationDependencies["model"] {
-  const create = overrides.createModel ?? resolveAnthropicModel;
+  const create = overrides.createModel ?? resolveProviderModel;
   if (!choice) {
-    // No per-run choice: exactly what ships (GENUI_BENCH_MODEL stays the
-    // headless override), and no middleware in the path.
-    return overrides.model ?? create(process.env.GENUI_BENCH_MODEL ?? DEFAULT_MODEL_ID);
+    // No per-run choice: the shared default resolver (GENUI_BENCH_MODEL stays
+    // the headless override; a keyless-Anthropic machine falls back to the
+    // root .env's Gemini model), and no middleware in the path. Root .env is
+    // loaded first so the resolver sees GEMINI_MODEL outside the CLI path.
+    loadRootEnv();
+    return overrides.model ?? create(defaultModelId());
   }
   const invalid = validateModelChoice(choice);
   if (invalid) throw new Error(invalid);

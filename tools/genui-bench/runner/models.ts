@@ -56,6 +56,29 @@ export const PRODUCTION_MODEL: BenchModel =
  */
 export const MAX_OUTPUT_TOKENS = 64_000;
 
+/**
+ * The model id a run with NO per-run choice actually uses — one resolver so
+ * the lanes and the CLI summary line can never disagree about what ran.
+ * `GENUI_BENCH_MODEL` wins; otherwise, on a machine with no Anthropic key but
+ * a Gemini key + model in the root .env, the bench falls back to that Gemini
+ * model for every generating lane (same model everywhere keeps lane
+ * comparisons fair); otherwise the engine's production default. The provider
+ * is inferred from the id prefix (`gemini*` → @ai-sdk/google, else
+ * @ai-sdk/anthropic) — see lanes/vendo.ts and lanes/openui.ts.
+ */
+export function defaultModelId(): string {
+  const override = process.env.GENUI_BENCH_MODEL;
+  if (override) return override;
+  const gemini = process.env.GEMINI_MODEL;
+  if (!process.env.ANTHROPIC_API_KEY && process.env.GEMINI_API_KEY && gemini) return gemini;
+  return PRODUCTION_MODEL.id;
+}
+
+/** Which env key the given model id's provider needs (id-prefix routing). */
+export function providerKeyFor(id: string): "GEMINI_API_KEY" | "ANTHROPIC_API_KEY" {
+  return /^gemini/i.test(id) ? "GEMINI_API_KEY" : "ANTHROPIC_API_KEY";
+}
+
 /** Per-run model choice; absence on a RunRequest means the engine default. */
 export interface RunModel {
   id: string;

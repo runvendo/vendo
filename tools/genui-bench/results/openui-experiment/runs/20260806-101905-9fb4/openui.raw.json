@@ -1,0 +1,14 @@
+{
+  "model": "gemini-2.5-flash",
+  "responseText": "root = Stack([title, outstandingClientsTable])\ntitle = TextContent(\"Outstanding Items for Month-End Close\", \"large-heavy\")\ndeadlines = Query(\"host_listDeadlines\", {}, [])\noutstandingClientsTable = Table([\n    Col(\"Client Name\", deadlines.businessName),\n    Col(\"Filing Deadline\", deadlines.filingDeadline),\n    Col(\"Progress\", @Each(deadlines, \"item\", TextContent(item.progress.received + \"/\" + item.progress.total))),\n    Col(\"Status\", deadlines.status),\n    Col(\"Missing Documents\", @Each(deadlines, \"item\", TagBlock(item.missingDocKinds)))\n])",
+  "program": "root = Stack([title, outstandingClientsTable])\ntitle = TextContent(\"Outstanding Items for Month-End Close\", \"large-heavy\")\ndeadlines = Query(\"host_listDeadlines\", {}, [])\noutstandingClientsTable = Table([\n    Col(\"Client Name\", deadlines.businessName),\n    Col(\"Filing Deadline\", deadlines.filingDeadline),\n    Col(\"Progress\", @Each(deadlines, \"item\", TextContent(item.progress.received + \"/\" + item.progress.total))),\n    Col(\"Status\", deadlines.status),\n    Col(\"Missing Documents\", @Each(deadlines, \"item\", TagBlock(item.missingDocKinds)))\n])",
+  "toolsReferenced": [
+    "host_listDeadlines"
+  ],
+  "toolsUnknown": [],
+  "parseMeta": {
+    "statementCount": 4,
+    "unresolved": [],
+    "orphaned": []
+  }
+}

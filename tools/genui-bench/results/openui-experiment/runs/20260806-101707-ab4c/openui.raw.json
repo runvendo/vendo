@@ -1,0 +1,12 @@
+{
+  "model": "gemini-2.5-flash",
+  "responseText": "root = Stack([checkingCard, savingsCard, investmentsCard, creditCard], \"row\", \"m\", \"stretch\", \"start\", true)\ncheckingCard = Card([checkingHeader, checkingBalance], \"card\", \"column\", \"s\")\ncheckingHeader = CardHeader(\"Checking Account\", \"Primary operational funds\")\ncheckingBalance = TextContent(\"$1,234.56\", \"large-heavy\")\nsavingsCard = Card([savingsHeader, savingsBalance], \"card\", \"column\", \"s\")\nsavingsHeader = CardHeader(\"Savings Account\", \"Emergency and long-term funds\")\nsavingsBalance = TextContent(\"$5,678.90\", \"large-heavy\")\ninvestmentsCard = Card([investmentsHeader, investmentsBalance], \"card\", \"column\", \"s\")\ninvestmentsHeader = CardHeader(\"Investment Portfolio\", \"Stocks and bonds\")\ninvestmentsBalance = TextContent(\"$12,345.67\", \"large-heavy\")\ncreditCard = Card([creditHeader, creditBalance], \"card\", \"column\", \"s\")\ncreditHeader = CardHeader(\"Credit Card\", \"Outstanding balance\")\ncreditBalance = TextContent(\"-$500.00\", \"large-heavy\")",
+  "program": "root = Stack([checkingCard, savingsCard, investmentsCard, creditCard], \"row\", \"m\", \"stretch\", \"start\", true)\ncheckingCard = Card([checkingHeader, checkingBalance], \"card\", \"column\", \"s\")\ncheckingHeader = CardHeader(\"Checking Account\", \"Primary operational funds\")\ncheckingBalance = TextContent(\"$1,234.56\", \"large-heavy\")\nsavingsCard = Card([savingsHeader, savingsBalance], \"card\", \"column\", \"s\")\nsavingsHeader = CardHeader(\"Savings Account\", \"Emergency and long-term funds\")\nsavingsBalance = TextContent(\"$5,678.90\", \"large-heavy\")\ninvestmentsCard = Card([investmentsHeader, investmentsBalance], \"card\", \"column\", \"s\")\ninvestmentsHeader = CardHeader(\"Investment Portfolio\", \"Stocks and bonds\")\ninvestmentsBalance = TextContent(\"$12,345.67\", \"large-heavy\")\ncreditCard = Card([creditHeader, creditBalance], \"card\", \"column\", \"s\")\ncreditHeader = CardHeader(\"Credit Card\", \"Outstanding balance\")\ncreditBalance = TextContent(\"-$500.00\", \"large-heavy\")",
+  "toolsReferenced": [],
+  "toolsUnknown": [],
+  "parseMeta": {
+    "statementCount": 13,
+    "unresolved": [],
+    "orphaned": []
+  }
+}

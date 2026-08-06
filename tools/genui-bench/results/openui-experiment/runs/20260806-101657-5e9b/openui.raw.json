@@ -1,0 +1,14 @@
+{
+  "model": "gemini-2.5-flash",
+  "responseText": "root = Stack([searchCard, transactionsCard])\n\n$search = \"\"\n\ntransactions = Query(\"host_listTransactions\", { search: $search }, { data: [], total: 0 }, 10)\n\nsearchCard = Card([\n    TextContent(\"Search Transactions\", \"large-heavy\"),\n    FormControl(\"Search by merchant or descriptor\", Input(\"search\", \"Enter search term...\", \"text\", null, $search))\n])\n\ntransactionsCard = Card([\n    TextContent(\"Recent Transactions\", \"large-heavy\"),\n    @Count(transactions.data) > 0 ? Table([\n        Col(\"Merchant\", transactions.data.merchant),\n        Col(\"Descriptor\", transactions.data.descriptor),\n        Col(\"Amount\", @Each(transactions.data, \"tx\", TextContent(\"$\" + tx.amount, \"default\")), \"number\"),\n        Col(\"Category\", transactions.data.category),\n        Col(\"Date\", @Each(transactions.data, \"tx\", TextContent(@First(tx.timestamp.split(\"T\")), \"default\")))\n    ]) : TextContent(\"No transactions found for '\" + $search + \"'. Try a different search term.\")\n])",
+  "program": "root = Stack([searchCard, transactionsCard])\n\n$search = \"\"\n\ntransactions = Query(\"host_listTransactions\", { search: $search }, { data: [], total: 0 }, 10)\n\nsearchCard = Card([\n    TextContent(\"Search Transactions\", \"large-heavy\"),\n    FormControl(\"Search by merchant or descriptor\", Input(\"search\", \"Enter search term...\", \"text\", null, $search))\n])\n\ntransactionsCard = Card([\n    TextContent(\"Recent Transactions\", \"large-heavy\"),\n    @Count(transactions.data) > 0 ? Table([\n        Col(\"Merchant\", transactions.data.merchant),\n        Col(\"Descriptor\", transactions.data.descriptor),\n        Col(\"Amount\", @Each(transactions.data, \"tx\", TextContent(\"$\" + tx.amount, \"default\")), \"number\"),\n        Col(\"Category\", transactions.data.category),\n        Col(\"Date\", @Each(transactions.data, \"tx\", TextContent(@First(tx.timestamp.split(\"T\")), \"default\")))\n    ]) : TextContent(\"No transactions found for '\" + $search + \"'. Try a different search term.\")\n])",
+  "toolsReferenced": [
+    "host_listTransactions"
+  ],
+  "toolsUnknown": [],
+  "parseMeta": {
+    "statementCount": 5,
+    "unresolved": [],
+    "orphaned": []
+  }
+}

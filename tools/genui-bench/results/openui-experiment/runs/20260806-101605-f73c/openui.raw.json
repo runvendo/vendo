@@ -1,0 +1,14 @@
+{
+  "model": "gemini-2.5-flash",
+  "responseText": "root = Stack([title, clientTable])\nclients = Query(\"host_listClients\", {}, [])\ntitle = TextContent(\"Your Clients\", \"large-heavy\")\nclientTable = Table([\n    Col(\"Business Name\", clients.businessName),\n    Col(\"Contact Name\", clients.contactName),\n    Col(\"Filing Deadline\", clients.filingDeadline),\n    Col(\"Status\", @Each(clients.status, \"status\", Tag(status, null, \"sm\", status == \"Ahead\" ? \"success\" : status == \"On Track\" ? \"info\" : \"danger\")))\n])",
+  "program": "root = Stack([title, clientTable])\nclients = Query(\"host_listClients\", {}, [])\ntitle = TextContent(\"Your Clients\", \"large-heavy\")\nclientTable = Table([\n    Col(\"Business Name\", clients.businessName),\n    Col(\"Contact Name\", clients.contactName),\n    Col(\"Filing Deadline\", clients.filingDeadline),\n    Col(\"Status\", @Each(clients.status, \"status\", Tag(status, null, \"sm\", status == \"Ahead\" ? \"success\" : status == \"On Track\" ? \"info\" : \"danger\")))\n])",
+  "toolsReferenced": [
+    "host_listClients"
+  ],
+  "toolsUnknown": [],
+  "parseMeta": {
+    "statementCount": 4,
+    "unresolved": [],
+    "orphaned": []
+  }
+}

@@ -1,0 +1,149 @@
+{
+  "format": "vendo/app@1",
+  "name": "Monthly closing checklist",
+  "tree": {
+    "formatVersion": "vendo-genui/v2",
+    "root": "app",
+    "nodes": [
+      {
+        "id": "app",
+        "component": "Stack",
+        "source": "prewired",
+        "children": [
+          "group-0",
+          "group-1"
+        ]
+      },
+      {
+        "id": "group-0",
+        "component": "Surface",
+        "source": "prewired",
+        "children": [
+          "group-0-title",
+          "group-0-body"
+        ]
+      },
+      {
+        "id": "group-0-title",
+        "component": "Text",
+        "source": "prewired",
+        "props": {
+          "text": "Overall Document Status",
+          "variant": "heading"
+        }
+      },
+      {
+        "id": "group-0-body",
+        "component": "Stack",
+        "source": "prewired",
+        "children": [
+          "group-0-body-cadencemissingdocshero-1"
+        ]
+      },
+      {
+        "id": "group-0-body-cadencemissingdocshero-1",
+        "component": "CadenceMissingDocsHero",
+        "source": "host",
+        "props": {
+          "missingCount": {
+            "$path": "/dashboardData/clientsMissingDocs"
+          },
+          "clientCount": {
+            "$path": "/dashboardData/clientsTotal"
+          }
+        }
+      },
+      {
+        "id": "group-1",
+        "component": "Surface",
+        "source": "prewired",
+        "children": [
+          "group-1-title",
+          "group-1-body"
+        ]
+      },
+      {
+        "id": "group-1-title",
+        "component": "Text",
+        "source": "prewired",
+        "props": {
+          "text": "Deadlines This Month",
+          "variant": "heading"
+        }
+      },
+      {
+        "id": "group-1-body",
+        "component": "Stack",
+        "source": "prewired",
+        "children": [
+          "group-1-body-datatable-1"
+        ]
+      },
+      {
+        "id": "group-1-body-datatable-1",
+        "component": "DataTable",
+        "source": "prewired",
+        "props": {
+          "rows": {
+            "$path": "/deadlines"
+          },
+          "sortBy": "filingDeadline asc",
+          "emptyState": "No deadlines approaching this month.",
+          "caption": "Client deadlines approaching this month",
+          "columns": [
+            {
+              "key": "businessName",
+              "label": "Client"
+            },
+            {
+              "key": "entityType",
+              "label": "Entity Type"
+            },
+            {
+              "key": "filingDeadline",
+              "label": "Due Date",
+              "format": "date"
+            },
+            {
+              "key": "status",
+              "label": "Status"
+            },
+            {
+              "key": "assignee.name",
+              "label": "Assignee"
+            },
+            {
+              "key": "progress.received",
+              "label": "Received Docs",
+              "format": "number"
+            },
+            {
+              "key": "progress.total",
+              "label": "Total Docs",
+              "format": "number"
+            },
+            {
+              "key": "missingDocKinds",
+              "label": "Missing Docs"
+            }
+          ]
+        }
+      }
+    ],
+    "queries": [
+      {
+        "name": "dashboardData",
+        "tool": "host_getDashboard",
+        "input": {}
+      },
+      {
+        "name": "deadlines",
+        "tool": "host_listDeadlines",
+        "input": {
+          "due_before": "2026-08-31"
+        }
+      }
+    ]
+  },
+  "id": "app_bench_msh1ctd1"
+}

@@ -22,22 +22,22 @@
  * still-wrong-on-the-shipped-app vocabulary the Vendo lane's checking layer
  * uses (the CLI summary and pane header already count findings per lane).
  *
- * Model: same Anthropic path and key as the Vendo/CopilotKit lanes, pinned to
- * the engine's default id for family parity (`GENUI_BENCH_MODEL` overrides;
- * per-run `--model` stays Vendo-only, see README "Model controls"). No
- * sampling params are set: the Claude 5 line rejects `temperature`, and a
- * knob silently dropped for some models would make comparisons lie.
+ * Model: the same default resolver the Vendo lane uses (runner/models.ts
+ * `defaultModelId` — `GENUI_BENCH_MODEL` override, Gemini fallback on a
+ * keyless-Anthropic machine, engine default otherwise), so the lane
+ * comparison always holds the model constant; per-run `--model` stays
+ * Vendo-only, see README "Model controls". No sampling params are set: the
+ * Claude 5 line rejects `temperature`, and a knob silently dropped for some
+ * models would make comparisons lie.
  */
 import { createRequire } from "node:module";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createParser, type ToolSpec } from "@openuidev/lang-core";
 import { openuiLibrary, openuiPromptOptions } from "@openuidev/react-ui";
 import type { Finding } from "@vendoai/apps";
 import type { ShapeType } from "@vendoai/core";
-import { MAX_OUTPUT_TOKENS } from "../runner/models";
+import { MAX_OUTPUT_TOKENS, defaultModelId, providerKeyFor } from "../runner/models";
 import type { HostFixture, LaneAdapter, LaneResult } from "../runner/types";
-
-// Same GENUI_BENCH_MODEL override the Vendo/CopilotKit lanes honor.
-export const OPENUI_MODEL = process.env.GENUI_BENCH_MODEL ?? "claude-sonnet-4-6";
 
 interface HostToolLike {
   name: string;
@@ -118,15 +118,14 @@ export type OpenUIGenerate = (args: {
   prompt: string;
 }) => Promise<string>;
 
-/** Default generation: @ai-sdk/anthropic + generateText resolved through
- *  @vendoai/apps's module space (vendo lane pattern — this app declares no
- *  model SDK). The key is checked by the adapter before this runs. */
+/** Default generation: generateText from @vendoai/apps's module space (the
+ *  same "ai" instance the engine runs on), with the provider routed by id
+ *  prefix — `gemini*` through this app's own @ai-sdk/google, anything else
+ *  through the Anthropic provider in apps's module space (vendo lane
+ *  pattern). The key is checked by the adapter before this runs. */
 const runGeneration: OpenUIGenerate = async ({ modelId, system, prompt }) => {
   const appsEntry = createRequire(import.meta.url).resolve("@vendoai/apps");
   const appsRequire = createRequire(appsEntry);
-  const { createAnthropic } = appsRequire("@ai-sdk/anthropic") as {
-    createAnthropic: (options: { apiKey: string }) => (id: string) => unknown;
-  };
   const { generateText } = appsRequire("ai") as {
     generateText: (options: {
       model: unknown;
@@ -135,7 +134,15 @@ const runGeneration: OpenUIGenerate = async ({ modelId, system, prompt }) => {
       maxOutputTokens: number;
     }) => Promise<{ text: string }>;
   };
-  const model = createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY as string })(modelId);
+  let model: unknown;
+  if (providerKeyFor(modelId) === "GEMINI_API_KEY") {
+    model = createGoogleGenerativeAI({ apiKey: process.env.GEMINI_API_KEY as string })(modelId);
+  } else {
+    const { createAnthropic } = appsRequire("@ai-sdk/anthropic") as {
+      createAnthropic: (options: { apiKey: string }) => (id: string) => unknown;
+    };
+    model = createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY as string })(modelId);
+  }
   const { text } = await generateText({ model, system, prompt, maxOutputTokens: MAX_OUTPUT_TOKENS });
   return text;
 };
@@ -150,12 +157,13 @@ export function createOpenUIAdapter(deps: OpenUIDeps = {}): LaneAdapter {
   return {
     name: "openui",
     async generate(prompt: string, host: HostFixture): Promise<LaneResult> {
-      if (!process.env.ANTHROPIC_API_KEY) return { status: "no-key" };
+      const modelId = defaultModelId();
+      if (!process.env[providerKeyFor(modelId)]) return { status: "no-key" };
       const startedAt = Date.now();
       try {
         const system = openuiLibrary.prompt({ ...openuiPromptOptions, tools: toToolSpecs(host) });
         const responseText = await (deps.generate ?? runGeneration)({
-          modelId: OPENUI_MODEL,
+          modelId,
           system,
           prompt,
         });
@@ -172,7 +180,7 @@ export function createOpenUIAdapter(deps: OpenUIDeps = {}): LaneAdapter {
             startedAt,
             durationMs: Date.now() - startedAt,
             error: `their parser rejected the program: ${reasons.join(" | ")}`,
-            raw: { model: OPENUI_MODEL, responseText, program, parseErrors },
+            raw: { model: modelId, responseText, program, parseErrors },
           };
         }
 
@@ -188,7 +196,7 @@ export function createOpenUIAdapter(deps: OpenUIDeps = {}): LaneAdapter {
         }));
 
         const raw: OpenUIRaw = {
-          model: OPENUI_MODEL,
+          model: modelId,
           responseText,
           program,
           toolsReferenced,

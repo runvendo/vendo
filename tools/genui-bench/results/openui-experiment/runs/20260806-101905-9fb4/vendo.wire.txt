@@ -1,0 +1,16 @@
+<App name="Monthly closing checklist">
+  <Query id="dashboardData" tool="host_getDashboard" input={{}}/>
+  <Query id="deadlines" tool="host_listDeadlines" input={{ due_before: "2026-08-31" }}/>
+  <Surface id="group-0">
+    <Text id="group-0-title" text="Overall Document Status" variant="heading"/>
+    <Stack id="group-0-body">
+      <CadenceMissingDocsHero id="group-0-body-cadencemissingdocshero-1" missingCount={dashboardData.clientsMissingDocs} clientCount={dashboardData.clientsTotal}/>
+    </Stack>
+  </Surface>
+  <Surface id="group-1">
+    <Text id="group-1-title" text="Deadlines This Month" variant="heading"/>
+    <Stack id="group-1-body">
+      <DataTable id="group-1-body-datatable-1" rows={deadlines} sortBy="filingDeadline asc" emptyState="No deadlines approaching this month." caption="Client deadlines approaching this month" columns={[{ key: "businessName", label: "Client" }, { key: "entityType", label: "Entity Type" }, { key: "filingDeadline", label: "Due Date", format: "date" }, { key: "status", label: "Status" }, { key: "assignee.name", label: "Assignee" }, { key: "progress.received", label: "Received Docs", format: "number" }, { key: "progress.total", label: "Total Docs", format: "number" }, { key: "missingDocKinds", label: "Missing Docs" }]}/>
+    </Stack>
+  </Surface>
+</App>

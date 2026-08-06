@@ -1,0 +1,31 @@
+{
+  "id": "20260806-101930-8299",
+  "createdAt": "2026-08-06T04:49:30.643Z",
+  "gitSha": "f51b0d58f6969c0b61bf07b70d8f47a2114305d6",
+  "gitDirty": "8ece79c7213c659a1623fe87d438795073f5f149413dc21d5fbda2d5325b4bff",
+  "request": {
+    "prompt": "build me a deadline board for the next 30 days",
+    "host": "cadence",
+    "lanes": [
+      "vendo",
+      "openui"
+    ],
+    "packRef": {
+      "pack": "cadence",
+      "index": 5
+    }
+  },
+  "lanes": {
+    "vendo": {
+      "status": "failed",
+      "startedAt": 1785991758693,
+      "durationMs": 2256,
+      "error": "the host refused this ask: Your host has no way to filter deadlines to a specific date range like \"next 30 days\"."
+    },
+    "openui": {
+      "status": "ok",
+      "startedAt": 1785991758702,
+      "durationMs": 11902
+    }
+  }
+}

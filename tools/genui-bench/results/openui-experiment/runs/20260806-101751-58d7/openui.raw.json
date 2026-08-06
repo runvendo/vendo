@@ -1,0 +1,14 @@
+{
+  "model": "gemini-2.5-flash",
+  "responseText": "root = Stack([title, clientsTable])\ntitle = TextContent(\"Clients with Outstanding Documents (Oldest Deadline First)\", \"large-heavy\")\nclientsQuery = Query(\"host_listClients\", {filter: \"missing_docs\"}, [])\nsortedClients = @Sort(clientsQuery, \"filingDeadline\", \"asc\")\nclientsTable = Table([\n    Col(\"Client Name\", sortedClients.businessName),\n    Col(\"Contact\", sortedClients.contactName),\n    Col(\"Filing Deadline\", sortedClients.filingDeadline),\n    Col(\"Status\", sortedClients.status)\n])",
+  "program": "root = Stack([title, clientsTable])\ntitle = TextContent(\"Clients with Outstanding Documents (Oldest Deadline First)\", \"large-heavy\")\nclientsQuery = Query(\"host_listClients\", {filter: \"missing_docs\"}, [])\nsortedClients = @Sort(clientsQuery, \"filingDeadline\", \"asc\")\nclientsTable = Table([\n    Col(\"Client Name\", sortedClients.businessName),\n    Col(\"Contact\", sortedClients.contactName),\n    Col(\"Filing Deadline\", sortedClients.filingDeadline),\n    Col(\"Status\", sortedClients.status)\n])",
+  "toolsReferenced": [
+    "host_listClients"
+  ],
+  "toolsUnknown": [],
+  "parseMeta": {
+    "statementCount": 5,
+    "unresolved": [],
+    "orphaned": []
+  }
+}

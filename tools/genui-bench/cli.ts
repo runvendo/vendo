@@ -15,6 +15,7 @@ import { executeRun } from "./runner/run";
 import {
   EFFORT_LEVELS,
   PRODUCTION_MODEL,
+  defaultModelId,
   findModel,
   modelChoices,
   validateModelChoice,
@@ -75,8 +76,9 @@ async function main(): Promise<void> {
     console.log(join(runsDir, record.id, "run.json"));
 
     // The summary always names the model that actually ran, so an agent
-    // reading the line never has to know what the engine default is.
-    const entry: Record<string, unknown> = { prompt, model: model ?? { id: PRODUCTION_MODEL.id } };
+    // reading the line never has to know what the engine default is — the
+    // resolver covers GENUI_BENCH_MODEL and the Gemini fallback too.
+    const entry: Record<string, unknown> = { prompt, model: model ?? { id: defaultModelId() } };
     for (const lane of lanes) {
       const result = record.lanes[lane];
       if (!result) continue;

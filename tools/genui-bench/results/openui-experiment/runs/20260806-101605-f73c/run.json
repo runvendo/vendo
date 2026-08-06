@@ -1,0 +1,27 @@
+{
+  "id": "20260806-101605-f73c",
+  "createdAt": "2026-08-06T04:46:05.012Z",
+  "gitSha": "f51b0d58f6969c0b61bf07b70d8f47a2114305d6",
+  "gitDirty": "8ece79c7213c659a1623fe87d438795073f5f149413dc21d5fbda2d5325b4bff",
+  "request": {
+    "prompt": "show my clients",
+    "host": "cadence",
+    "lanes": [
+      "vendo",
+      "openui"
+    ]
+  },
+  "lanes": {
+    "vendo": {
+      "status": "failed",
+      "startedAt": 1785991562415,
+      "durationMs": 1903,
+      "error": "generation failed: node \"datatable-1\" sets unknown prop \"query\" on prewired component \"DataTable\"; the renderer drops it. Allowed props: rows, columns, sortBy, limit, filterableBy, searchable, paginate, emptyState, caption | node \"datatable-1\" sets unknown prop \"purpose\" on prewired component \"DataTable\"; the renderer drops it. Allowed props: rows, columns, sortBy, limit, filterableBy, searchable, paginate, emptyState, caption"
+    },
+    "openui": {
+      "status": "ok",
+      "startedAt": 1785991562425,
+      "durationMs": 2568
+    }
+  }
+}

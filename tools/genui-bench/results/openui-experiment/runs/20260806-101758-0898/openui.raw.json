@@ -1,0 +1,12 @@
+{
+  "model": "gemini-2.5-flash",
+  "responseText": "root = Stack([title, spendingSummary, pieChartCard, spendingTableCard])\ntitle = TextContent(\"Your Spending Last Quarter\", \"large-heavy\")\nspendingSummary = TextContent(\"Total spending: **$\" + @Sum(spendingValues) + \"**\")\nspendingCategories = [\"Rent\", \"Groceries\", \"Utilities\", \"Dining Out\", \"Transport\", \"Entertainment\", \"Shopping\"]\nspendingValues = [6000, 1200, 450, 600, 300, 300, 450]\npieChartCard = Card([pieChartHeader, spendingPieChart])\npieChartHeader = CardHeader(\"Spending Distribution\", \"Breakdown by Category\")\nspendingPieChart = PieChart(spendingCategories, spendingValues, \"donut\")\nspendingTableCard = Card([spendingTableHeader, spendingTable])\nspendingTableHeader = CardHeader(\"Detailed Spending\", \"Category-wise expenditure\")\nspendingTable = Table([categoryCol, amountCol])\ncategoryCol = Col(\"Category\", spendingCategories)\namountCol = Col(\"Amount\", @Each(spendingValues, \"value\", TextContent(\"$\" + value)), \"number\")",
+  "program": "root = Stack([title, spendingSummary, pieChartCard, spendingTableCard])\ntitle = TextContent(\"Your Spending Last Quarter\", \"large-heavy\")\nspendingSummary = TextContent(\"Total spending: **$\" + @Sum(spendingValues) + \"**\")\nspendingCategories = [\"Rent\", \"Groceries\", \"Utilities\", \"Dining Out\", \"Transport\", \"Entertainment\", \"Shopping\"]\nspendingValues = [6000, 1200, 450, 600, 300, 300, 450]\npieChartCard = Card([pieChartHeader, spendingPieChart])\npieChartHeader = CardHeader(\"Spending Distribution\", \"Breakdown by Category\")\nspendingPieChart = PieChart(spendingCategories, spendingValues, \"donut\")\nspendingTableCard = Card([spendingTableHeader, spendingTable])\nspendingTableHeader = CardHeader(\"Detailed Spending\", \"Category-wise expenditure\")\nspendingTable = Table([categoryCol, amountCol])\ncategoryCol = Col(\"Category\", spendingCategories)\namountCol = Col(\"Amount\", @Each(spendingValues, \"value\", TextContent(\"$\" + value)), \"number\")",
+  "toolsReferenced": [],
+  "toolsUnknown": [],
+  "parseMeta": {
+    "statementCount": 13,
+    "unresolved": [],
+    "orphaned": []
+  }
+}

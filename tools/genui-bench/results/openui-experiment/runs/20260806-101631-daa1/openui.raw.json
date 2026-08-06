@@ -1,0 +1,20 @@
+{
+  "model": "gemini-2.5-flash",
+  "responseText": "root = Stack([title, totalNetWorthCard, accountsStack])\naccounts = Query(\"host_listAccounts\", {}, [])\nprofile = Query(\"host_getProfile\", {}, {\"name\":\"\",\"email\":\"\",\"netWorth\":0,\"accountCount\":0,\"avatarInitials\":\"\"})\ntitle = TextContent(\"Account Balances\", \"large-heavy\")\ntotalNetWorthCard = Card([TextContent(\"Net Worth\", \"small\"), TextContent(\"$\" + @Round(profile.netWorth), \"large-heavy\")])\naccountsStack = Stack(@Each(accounts, \"account\", Card([accountName, accountBalance, accountDetails])))\naccountName = TextContent(account.name, \"large-heavy\")\naccountBalance = TextContent(\"$\" + @Round(account.balance), \"large\")\naccountDetails = TextContent(account.kind + \" ending in \" + account.mask, \"small\")",
+  "program": "root = Stack([title, totalNetWorthCard, accountsStack])\naccounts = Query(\"host_listAccounts\", {}, [])\nprofile = Query(\"host_getProfile\", {}, {\"name\":\"\",\"email\":\"\",\"netWorth\":0,\"accountCount\":0,\"avatarInitials\":\"\"})\ntitle = TextContent(\"Account Balances\", \"large-heavy\")\ntotalNetWorthCard = Card([TextContent(\"Net Worth\", \"small\"), TextContent(\"$\" + @Round(profile.netWorth), \"large-heavy\")])\naccountsStack = Stack(@Each(accounts, \"account\", Card([accountName, accountBalance, accountDetails])))\naccountName = TextContent(account.name, \"large-heavy\")\naccountBalance = TextContent(\"$\" + @Round(account.balance), \"large\")\naccountDetails = TextContent(account.kind + \" ending in \" + account.mask, \"small\")",
+  "toolsReferenced": [
+    "host_getProfile",
+    "host_listAccounts"
+  ],
+  "toolsUnknown": [],
+  "parseMeta": {
+    "statementCount": 9,
+    "unresolved": [
+      "account",
+      "account",
+      "account",
+      "account"
+    ],
+    "orphaned": []
+  }
+}

@@ -1,0 +1,10 @@
+<App name="Account balances">
+  <Query id="accounts" tool="host_listAccounts" input={{}}/>
+  <Query id="accountsList" tool="accounts.list" input={{}}/>
+  <Surface id="group-0">
+    <Text id="group-0-title" text="Your accounts" variant="heading"/>
+    <Stack id="group-0-body">
+      <CardList id="group-0-body-cardlist-1" items={accountsList.data} titleField="name" badgeField="kind" fields={[{ key: "balance", label: "Balance", format: "money" }, { key: "mask", label: "Account Mask" }]} emptyState="No accounts found."/>
+    </Stack>
+  </Surface>
+</App>

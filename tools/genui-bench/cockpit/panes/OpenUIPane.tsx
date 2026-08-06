@@ -57,14 +57,22 @@ export default function OpenUIPane({ result, host }: PaneProps) {
   return (
     <div data-pane="openui">
       {result.status === "ok" && raw ? (
-        <ThemeProvider>
-          <Renderer
-            response={raw.program}
-            library={openuiLibrary}
-            isStreaming={false}
-            toolProvider={toolProvider}
-          />
-        </ThemeProvider>
+        /* Their LIGHT theme, scoped to this pane (a top-level ThemeProvider
+         * targets `body`, which would repaint the cockpit): auto mode
+         * inherits the cockpit's dark chrome and renders their components
+         * near-invisible on a canvas they never styled. Pinning their own
+         * light theme on a plain light canvas is still their rendering,
+         * not a re-skin. */
+        <div data-openui-canvas style={{ background: "#ffffff", borderRadius: 8, padding: 12 }}>
+          <ThemeProvider mode="light" cssSelector="[data-openui-canvas]">
+            <Renderer
+              response={raw.program}
+              library={openuiLibrary}
+              isStreaming={false}
+              toolProvider={toolProvider}
+            />
+          </ThemeProvider>
+        </div>
       ) : (
         <PaneNonOk result={result} />
       )}

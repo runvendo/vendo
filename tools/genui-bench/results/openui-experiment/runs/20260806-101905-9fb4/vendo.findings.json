@@ -1,0 +1,7 @@
+[
+  {
+    "severity": "block",
+    "where": "deadlines query",
+    "message": "The 'due_before' parameter is hardcoded to '2026-08-31'; it should dynamically reflect the end of the current month to answer the user's request for 'this month'."
+  }
+]

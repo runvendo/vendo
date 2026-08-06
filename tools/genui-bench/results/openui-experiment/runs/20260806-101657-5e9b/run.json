@@ -1,0 +1,31 @@
+{
+  "id": "20260806-101657-5e9b",
+  "createdAt": "2026-08-06T04:46:57.848Z",
+  "gitSha": "f51b0d58f6969c0b61bf07b70d8f47a2114305d6",
+  "gitDirty": "8ece79c7213c659a1623fe87d438795073f5f149413dc21d5fbda2d5325b4bff",
+  "request": {
+    "prompt": "show my recent transactions with search",
+    "host": "maple",
+    "lanes": [
+      "vendo",
+      "openui"
+    ],
+    "packRef": {
+      "pack": "smoke",
+      "index": 2
+    }
+  },
+  "lanes": {
+    "vendo": {
+      "status": "failed",
+      "startedAt": 1785991614932,
+      "durationMs": 2899,
+      "error": "generation failed: wire unknown-reference: \"input_search.value\" does not name a declared <Query> or state | wire wire-id-ignored: wire-supplied id attributes are ignored (ids are compiler-owned) | node \"datatable-1\" sets unknown prop \"query\" on prewired component \"DataTable\"; the renderer drops it. Allowed props: rows, columns, sortBy, limit, filterableBy, searchable, paginate, emptyState, caption | node \"datatable-1\" sets unknown prop \"purpose\" on prewired component \"DataTable\"; the renderer drops it. Allowed props: rows, columns, sortBy, limit, filterableBy, searchable, paginate, emptyState, caption"
+    },
+    "openui": {
+      "status": "ok",
+      "startedAt": 1785991614941,
+      "durationMs": 2862
+    }
+  }
+}

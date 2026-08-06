@@ -1,0 +1,269 @@
+{
+ "rows": [
+  {
+   "id": "20260806-101605-f73c",
+   "host": "cadence",
+   "pack": "(single)",
+   "prompt": "show my clients",
+   "vendo_status": "failed",
+   "vendo_ms": 1903,
+   "vendo_findings": null,
+   "vendo_error": "generation failed: node \"datatable-1\" sets unknown prop \"query\" on prewired component \"DataTable\"; the rendere",
+   "openui_status": "ok",
+   "openui_ms": 2568,
+   "openui_findings": 0,
+   "openui_tools": [
+    "host_listClients"
+   ],
+   "openui_unknown": [],
+   "model": "gemini-2.5-flash"
+  },
+  {
+   "id": "20260806-101631-daa1",
+   "host": "maple",
+   "pack": "smoke",
+   "prompt": "show my account balances at a glance",
+   "vendo_status": "ok",
+   "vendo_ms": 12653,
+   "vendo_findings": 2,
+   "vendo_error": "",
+   "openui_status": "ok",
+   "openui_ms": 2891,
+   "openui_findings": 0,
+   "openui_tools": [
+    "host_getProfile",
+    "host_listAccounts"
+   ],
+   "openui_unknown": [],
+   "model": "gemini-2.5-flash"
+  },
+  {
+   "id": "20260806-101654-e826",
+   "host": "maple",
+   "pack": "smoke",
+   "prompt": "let me transfer money between my accounts",
+   "vendo_status": "failed",
+   "vendo_ms": 17260,
+   "vendo_findings": null,
+   "vendo_error": "generation failed: the Form leaf's \"onSubmit\" is an arrangement hint like col=\"2\", and an object cannot be one",
+   "openui_status": "ok",
+   "openui_ms": 23078,
+   "openui_findings": 0,
+   "openui_tools": [
+    "host_listAccounts",
+    "host_transferMoney"
+   ],
+   "openui_unknown": [],
+   "model": "gemini-2.5-flash"
+  },
+  {
+   "id": "20260806-101657-5e9b",
+   "host": "maple",
+   "pack": "smoke",
+   "prompt": "show my recent transactions with search",
+   "vendo_status": "failed",
+   "vendo_ms": 2899,
+   "vendo_findings": null,
+   "vendo_error": "generation failed: wire unknown-reference: \"input_search.value\" does not name a declared <Query> or state | wi",
+   "openui_status": "ok",
+   "openui_ms": 2862,
+   "openui_findings": 0,
+   "openui_tools": [
+    "host_listTransactions"
+   ],
+   "openui_unknown": [],
+   "model": "gemini-2.5-flash"
+  },
+  {
+   "id": "20260806-101707-ab4c",
+   "host": "cadence",
+   "pack": "smoke",
+   "prompt": "show my account balances at a glance",
+   "vendo_status": "failed",
+   "vendo_ms": 2466,
+   "vendo_findings": null,
+   "vendo_error": "the host refused this ask: Your host has no way to show account balances.",
+   "openui_status": "ok",
+   "openui_ms": 4394,
+   "openui_findings": 0,
+   "openui_tools": [],
+   "openui_unknown": [],
+   "model": "gemini-2.5-flash"
+  },
+  {
+   "id": "20260806-101715-b8da",
+   "host": "cadence",
+   "pack": "smoke",
+   "prompt": "let me transfer money between my accounts",
+   "vendo_status": "failed",
+   "vendo_ms": 1270,
+   "vendo_findings": null,
+   "vendo_error": "the host refused this ask: Your host has no way to transfer money between accounts.",
+   "openui_status": "ok",
+   "openui_ms": 7539,
+   "openui_findings": 0,
+   "openui_tools": [],
+   "openui_unknown": [],
+   "model": "gemini-2.5-flash"
+  },
+  {
+   "id": "20260806-101721-82b4",
+   "host": "cadence",
+   "pack": "smoke",
+   "prompt": "show my recent transactions with search",
+   "vendo_status": "failed",
+   "vendo_ms": 1700,
+   "vendo_findings": null,
+   "vendo_error": "the host refused this ask: Your host has no way to show recent transactions.",
+   "openui_status": "ok",
+   "openui_ms": 6253,
+   "openui_findings": 0,
+   "openui_tools": [],
+   "openui_unknown": [],
+   "model": "gemini-2.5-flash"
+  },
+  {
+   "id": "20260806-101751-58d7",
+   "host": "cadence",
+   "pack": "cadence",
+   "prompt": "which clients still owe me money, oldest first",
+   "vendo_status": "failed",
+   "vendo_ms": 2241,
+   "vendo_findings": null,
+   "vendo_error": "the host refused this ask: Your host has no way to list clients who owe you money.",
+   "openui_status": "ok",
+   "openui_ms": 3322,
+   "openui_findings": 0,
+   "openui_tools": [
+    "host_listClients"
+   ],
+   "openui_unknown": [],
+   "model": "gemini-2.5-flash"
+  },
+  {
+   "id": "20260806-101758-0898",
+   "host": "cadence",
+   "pack": "cadence",
+   "prompt": "show me where my money went last quarter",
+   "vendo_status": "failed",
+   "vendo_ms": 2022,
+   "vendo_findings": null,
+   "vendo_error": "the host refused this ask: Your host has no way to track where your money went.",
+   "openui_status": "ok",
+   "openui_ms": 6547,
+   "openui_findings": 0,
+   "openui_tools": [],
+   "openui_unknown": [],
+   "model": "gemini-2.5-flash"
+  },
+  {
+   "id": "20260806-101838-4f83",
+   "host": "cadence",
+   "pack": "cadence",
+   "prompt": "let me chase every overdue invoice in one go",
+   "vendo_status": "failed",
+   "vendo_ms": 2028,
+   "vendo_findings": null,
+   "vendo_error": "the host refused this ask: Your host has no way to list invoices, so we cannot identify which ones are overdue",
+   "openui_status": "ok",
+   "openui_ms": 39987,
+   "openui_findings": 0,
+   "openui_tools": [
+    "host_listClients",
+    "host_sendClientMessage"
+   ],
+   "openui_unknown": [],
+   "model": "gemini-2.5-flash"
+  },
+  {
+   "id": "20260806-101905-9fb4",
+   "host": "cadence",
+   "pack": "cadence",
+   "prompt": "what's missing before I can close the books this month",
+   "vendo_status": "ok",
+   "vendo_ms": 27361,
+   "vendo_findings": 1,
+   "vendo_error": "",
+   "openui_status": "ok",
+   "openui_ms": 4754,
+   "openui_findings": 0,
+   "openui_tools": [
+    "host_listDeadlines"
+   ],
+   "openui_unknown": [],
+   "model": "gemini-2.5-flash"
+  },
+  {
+   "id": "20260806-101918-4114",
+   "host": "cadence",
+   "pack": "cadence",
+   "prompt": "show revenue by client with a chart, and let me drill into one",
+   "vendo_status": "failed",
+   "vendo_ms": 1672,
+   "vendo_findings": null,
+   "vendo_error": "the host refused this ask: Your host has no way to show revenue by client.",
+   "openui_status": "ok",
+   "openui_ms": 13207,
+   "openui_findings": 0,
+   "openui_tools": [
+    "host_getClient",
+    "host_listClients"
+   ],
+   "openui_unknown": [],
+   "model": "gemini-2.5-flash"
+  },
+  {
+   "id": "20260806-101930-8299",
+   "host": "cadence",
+   "pack": "cadence",
+   "prompt": "build me a deadline board for the next 30 days",
+   "vendo_status": "failed",
+   "vendo_ms": 2256,
+   "vendo_findings": null,
+   "vendo_error": "the host refused this ask: Your host has no way to filter deadlines to a specific date range like \"next 30 day",
+   "openui_status": "ok",
+   "openui_ms": 11902,
+   "openui_findings": 0,
+   "openui_tools": [
+    "host_listDeadlines"
+   ],
+   "openui_unknown": [],
+   "model": "gemini-2.5-flash"
+  },
+  {
+   "id": "20260806-101954-7df4",
+   "host": "cadence",
+   "pack": "cadence",
+   "prompt": "which clients are least profitable once I account for time spent",
+   "vendo_status": "failed",
+   "vendo_ms": 2536,
+   "vendo_findings": null,
+   "vendo_error": "the host refused this ask: Your host has no way to account for time spent per client, so it cannot calculate p",
+   "openui_status": "ok",
+   "openui_ms": 24070,
+   "openui_findings": 0,
+   "openui_tools": [],
+   "openui_unknown": [],
+   "model": "gemini-2.5-flash"
+  },
+  {
+   "id": "20260806-102003-cdf0",
+   "host": "cadence",
+   "pack": "cadence",
+   "prompt": "one screen that answers: can I afford to hire someone",
+   "vendo_status": "failed",
+   "vendo_ms": 1717,
+   "vendo_findings": null,
+   "vendo_error": "the host refused this ask: Your host has no way to track income, expenses, or cash flow, so it cannot tell you",
+   "openui_status": "ok",
+   "openui_ms": 8690,
+   "openui_findings": 0,
+   "openui_tools": [
+    "host_getDashboard",
+    "host_listClients"
+   ],
+   "openui_unknown": [],
+   "model": "gemini-2.5-flash"
+  }
+ ]
+}

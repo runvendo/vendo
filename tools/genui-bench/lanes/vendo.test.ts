@@ -6,7 +6,7 @@
  * throws, and both land as status:"failed" with their sentences on the error;
  * a genuine crash resolves (never rejects) to status:"failed" too.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { VendoError, VENDO_APP_FORMAT, VENDO_TREE_FORMAT } from "@vendoai/core";
 import type { Finding, GeneratedAppDocument, GenerationDependencies } from "@vendoai/apps";
 import {
@@ -166,10 +166,26 @@ describe("vendo lane model controls", () => {
   }
 
   it("no model on the request → the engine's production default, untouched", async () => {
+    // Pin the resolver's env: the developer machine's root .env (a Gemini
+    // fallback key) must not leak into what this test asserts.
+    vi.stubEnv("GEMINI_API_KEY", "");
+    vi.stubEnv("GEMINI_MODEL", "");
     const { seen, adapter } = adapterCapturingId();
     const result = await adapter.generate("hi", fixture);
     expect(result.status).toBe("ok");
     expect(seen).toEqual([PRODUCTION_MODEL.id]);
+    vi.unstubAllEnvs();
+  });
+
+  it("keyless-Anthropic machine + Gemini env → the Gemini fallback id, same resolver", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    vi.stubEnv("GEMINI_API_KEY", "test-key");
+    vi.stubEnv("GEMINI_MODEL", "gemini-2.5-flash");
+    const { seen, adapter } = adapterCapturingId();
+    const result = await adapter.generate("hi", fixture);
+    expect(result.status).toBe("ok");
+    expect(seen).toEqual(["gemini-2.5-flash"]);
+    vi.unstubAllEnvs();
   });
 
   it("threads the chosen model id into the provider call", async () => {

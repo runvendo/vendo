@@ -1,0 +1,31 @@
+{
+  "id": "20260806-101751-58d7",
+  "createdAt": "2026-08-06T04:47:51.438Z",
+  "gitSha": "f51b0d58f6969c0b61bf07b70d8f47a2114305d6",
+  "gitDirty": "8ece79c7213c659a1623fe87d438795073f5f149413dc21d5fbda2d5325b4bff",
+  "request": {
+    "prompt": "which clients still owe me money, oldest first",
+    "host": "cadence",
+    "lanes": [
+      "vendo",
+      "openui"
+    ],
+    "packRef": {
+      "pack": "cadence",
+      "index": 0
+    }
+  },
+  "lanes": {
+    "vendo": {
+      "status": "failed",
+      "startedAt": 1785991668073,
+      "durationMs": 2241,
+      "error": "the host refused this ask: Your host has no way to list clients who owe you money."
+    },
+    "openui": {
+      "status": "ok",
+      "startedAt": 1785991668084,
+      "durationMs": 3322
+    }
+  }
+}

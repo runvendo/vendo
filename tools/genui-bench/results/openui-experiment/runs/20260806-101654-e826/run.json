@@ -1,0 +1,31 @@
+{
+  "id": "20260806-101654-e826",
+  "createdAt": "2026-08-06T04:46:54.931Z",
+  "gitSha": "f51b0d58f6969c0b61bf07b70d8f47a2114305d6",
+  "gitDirty": "8ece79c7213c659a1623fe87d438795073f5f149413dc21d5fbda2d5325b4bff",
+  "request": {
+    "prompt": "let me transfer money between my accounts",
+    "host": "maple",
+    "lanes": [
+      "vendo",
+      "openui"
+    ],
+    "packRef": {
+      "pack": "smoke",
+      "index": 1
+    }
+  },
+  "lanes": {
+    "vendo": {
+      "status": "failed",
+      "startedAt": 1785991591819,
+      "durationMs": 17260,
+      "error": "generation failed: the Form leaf's \"onSubmit\" is an arrangement hint like col=\"2\", and an object cannot be one. It was dropped. | the Form leaf's \"fields\" is an arrangement hint like col=\"2\", and a list cannot be one. It was dropped. | the Form leaf's \"submitButton\" is an arrangement hint like col=\"2\", and an object cannot be one. It was dropped."
+    },
+    "openui": {
+      "status": "ok",
+      "startedAt": 1785991591828,
+      "durationMs": 23078
+    }
+  }
+}

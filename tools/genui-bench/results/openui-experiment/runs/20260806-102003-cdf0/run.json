@@ -1,0 +1,31 @@
+{
+  "id": "20260806-102003-cdf0",
+  "createdAt": "2026-08-06T04:50:03.491Z",
+  "gitSha": "f51b0d58f6969c0b61bf07b70d8f47a2114305d6",
+  "gitDirty": "8ece79c7213c659a1623fe87d438795073f5f149413dc21d5fbda2d5325b4bff",
+  "request": {
+    "prompt": "one screen that answers: can I afford to hire someone",
+    "host": "cadence",
+    "lanes": [
+      "vendo",
+      "openui"
+    ],
+    "packRef": {
+      "pack": "cadence",
+      "index": 7
+    }
+  },
+  "lanes": {
+    "vendo": {
+      "status": "failed",
+      "startedAt": 1785991794762,
+      "durationMs": 1717,
+      "error": "the host refused this ask: Your host has no way to track income, expenses, or cash flow, so it cannot tell you if you can afford to hire someone."
+    },
+    "openui": {
+      "status": "ok",
+      "startedAt": 1785991794771,
+      "durationMs": 8690
+    }
+  }
+}

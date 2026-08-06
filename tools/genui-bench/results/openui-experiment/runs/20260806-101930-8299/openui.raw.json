@@ -1,0 +1,14 @@
+{
+  "model": "gemini-2.5-flash",
+  "responseText": "root = Stack([\n  title,\n  deadlineCards\n], \"column\", \"l\")\n\ntitle = TextContent(\"Upcoming Client Deadlines\", \"large-heavy\")\n\ndeadlinesQuery = Query(\"host_listDeadlines\", {}, [])\n\ndeadlineCards = @Count(deadlinesQuery) > 0 ? Stack(\n  @Each(deadlinesQuery, \"client\",\n    Card([\n      TextContent(client.businessName, \"large-heavy\"),\n      TextContent(\"Deadline: \" + client.filingDeadline, \"default\"),\n      TextContent(\"Assigned to: \" + client.assignee.name, \"default\"),\n      TextContent(\"Documents: \" + client.progress.received + \" / \" + client.progress.total + \" received\", \"default\"),\n      TextContent(\"Status: \" + client.status, \"default\"),\n      @Count(client.missingDocKinds) > 0 ? Stack([\n        TextContent(\"Missing Documents:\", \"small-heavy\"),\n        TagBlock(client.missingDocKinds)\n      ], \"column\", \"s\") : null\n    ], \"card\", \"column\", \"s\")\n  ), \"row\", \"m\", \"start\", \"start\", true) : TextContent(\"No upcoming deadlines found.\", \"default\")",
+  "program": "root = Stack([\n  title,\n  deadlineCards\n], \"column\", \"l\")\n\ntitle = TextContent(\"Upcoming Client Deadlines\", \"large-heavy\")\n\ndeadlinesQuery = Query(\"host_listDeadlines\", {}, [])\n\ndeadlineCards = @Count(deadlinesQuery) > 0 ? Stack(\n  @Each(deadlinesQuery, \"client\",\n    Card([\n      TextContent(client.businessName, \"large-heavy\"),\n      TextContent(\"Deadline: \" + client.filingDeadline, \"default\"),\n      TextContent(\"Assigned to: \" + client.assignee.name, \"default\"),\n      TextContent(\"Documents: \" + client.progress.received + \" / \" + client.progress.total + \" received\", \"default\"),\n      TextContent(\"Status: \" + client.status, \"default\"),\n      @Count(client.missingDocKinds) > 0 ? Stack([\n        TextContent(\"Missing Documents:\", \"small-heavy\"),\n        TagBlock(client.missingDocKinds)\n      ], \"column\", \"s\") : null\n    ], \"card\", \"column\", \"s\")\n  ), \"row\", \"m\", \"start\", \"start\", true) : TextContent(\"No upcoming deadlines found.\", \"default\")",
+  "toolsReferenced": [
+    "host_listDeadlines"
+  ],
+  "toolsUnknown": [],
+  "parseMeta": {
+    "statementCount": 4,
+    "unresolved": [],
+    "orphaned": []
+  }
+}

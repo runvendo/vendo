@@ -8,12 +8,15 @@ import { MODELS, PRODUCTION_MODEL } from "./runner/models";
 const APP_DIR = __dirname;
 const TSX = join(APP_DIR, "node_modules", ".bin", "tsx");
 
-function runCli(args: string[]) {
+function runCli(args: string[], env: Record<string, string> = {}) {
   return spawnSync(TSX, ["cli.ts", ...args], {
     cwd: APP_DIR,
     encoding: "utf8",
-    // Stub adapters: the CLI must never call a model in tests.
-    env: { ...process.env, GENUI_BENCH_FAKE_LANES: "1" },
+    // Stub adapters: the CLI must never call a model in tests. The Gemini
+    // fallback vars are pinned empty so a developer machine's root .env
+    // cannot change what these tests assert (loadRootEnv fills UNSET keys
+    // only); the fallback itself is tested with an explicit env below.
+    env: { ...process.env, GENUI_BENCH_FAKE_LANES: "1", GEMINI_API_KEY: "", GEMINI_MODEL: "", ...env },
   });
 }
 
@@ -82,6 +85,24 @@ describe("cli", () => {
 
     const pathLine = lines.find((line) => line.endsWith("run.json"))!.trim();
     // Absent on the request: an untouched run measures what ships.
+    expect(JSON.parse(readFileSync(pathLine, "utf8")).request.model).toBeUndefined();
+  }, 30_000);
+
+  it("names the Gemini fallback model in the summary on a keyless-Anthropic machine", () => {
+    const runsDir = mkdtempSync(join(tmpdir(), "genui-bench-cli-"));
+    const result = runCli(["run", "--host", "maple", "--prompt", "hi", "--runs-dir", runsDir], {
+      ANTHROPIC_API_KEY: "",
+      GEMINI_API_KEY: "test-key",
+      GEMINI_MODEL: "gemini-2.5-flash",
+    });
+
+    expect(result.status).toBe(0);
+    const lines = result.stdout.trim().split("\n");
+    const summary = JSON.parse(lines[lines.length - 1]);
+    // The summary names what actually ran, so the fallback is never silent.
+    expect(summary.runs[0].model).toEqual({ id: "gemini-2.5-flash" });
+    // Still absent on the request: the fallback is a default, not a choice.
+    const pathLine = lines.find((line) => line.endsWith("run.json"))!.trim();
     expect(JSON.parse(readFileSync(pathLine, "utf8")).request.model).toBeUndefined();
   }, 30_000);
 

@@ -70,6 +70,16 @@ model accepts; every history-rail entry shows the model its run used.
 `GENUI_BENCH_MODEL` still works as the headless override for the default
 path — it sets the id used when a run carries no model choice.
 
+**Keyless-Anthropic fallback.** When no `ANTHROPIC_API_KEY` is available but
+the root `.env` carries `GEMINI_API_KEY` + `GEMINI_MODEL`, every generating
+lane (vendo, copilotkit excepted — it needs the Anthropic runtime — and
+openui) resolves that Gemini model instead, through `@ai-sdk/google`
+(provider inferred from the id prefix). One resolver
+(`runner/models.ts defaultModelId`) feeds the lanes AND the JSON summary
+line, so what ran is always what is reported; the same model drives every
+lane, keeping the comparison fair. `--model` (the Anthropic A/B table) still
+requires an Anthropic key.
+
 ## Lane keys
 
 Keys load from the repo-root `.env` (source-only; a missing key marks that
