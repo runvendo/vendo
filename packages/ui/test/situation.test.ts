@@ -51,6 +51,17 @@ describe("captureScreen (spec 2026-08-05 §2)", () => {
     expect(screen!.length).toBeLessThanOrEqual(8192);
     expect(screen).toContain("…[truncated]");
   });
+
+  // A header long enough to leave a positive budget SMALLER than the truncation
+  // marker: `budget - marker` then goes negative, and a negative `slice` end
+  // counts from the END of the tree — keeping nearly all of it instead of none.
+  it("still caps the payload when the budget is smaller than the truncation marker", () => {
+    document.title = "T".repeat(8160); // budget === 8, marker is 13 chars
+    const noise = Array.from({ length: 400 }, (_, i) => `<p>main filler line ${i} ${"y".repeat(40)}</p>`).join("");
+    document.body.innerHTML = `<main>${noise}</main>`;
+    const screen = captureScreen();
+    expect(screen!.length).toBeLessThanOrEqual(8192);
+  });
 });
 
 describe("the published-situation registry (spec 2026-08-05 §3)", () => {

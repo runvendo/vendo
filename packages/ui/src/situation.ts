@@ -16,6 +16,10 @@ const SNAPSHOT_CAP = 8192;
     chrome roots carry it too (decision 4 — the widget excludes itself). */
 const IGNORE_SELECTOR = "[data-vendo-ignore]";
 
+/** Appended in place of what a hard truncation dropped. Its own length is the
+    budget floor below which there is no room to say anything at all. */
+const TRUNCATION_MARKER = "\n…[truncated]";
+
 const published = new Map<symbol, Record<string, unknown>>();
 
 /** useVendoContext's write half: one entry per mounted hook instance. */
@@ -54,13 +58,18 @@ export function captureScreen(): string | undefined {
   if (typeof document === "undefined") return undefined;
   const header = `${document.location.href}\n${document.title}`;
   const budget = SNAPSHOT_CAP - header.length - 1;
-  if (budget <= 0) return header.slice(0, SNAPSHOT_CAP);
+  // A budget under the marker's own length would make `budget - marker` a
+  // NEGATIVE slice end, which counts from the end of the tree and would keep
+  // nearly all of it — so a header that leaves no room goes out on its own.
+  if (budget <= TRUNCATION_MARKER.length) return header.slice(0, SNAPSHOT_CAP);
   let tree = snapshotExcludingIgnored(document.body);
   if (tree.length > budget) {
     const main = document.querySelector("main");
     if (main !== null) tree = snapshotExcludingIgnored(main);
   }
-  if (tree.length > budget) tree = `${tree.slice(0, budget - 13)}\n…[truncated]`;
+  if (tree.length > budget) {
+    tree = `${tree.slice(0, budget - TRUNCATION_MARKER.length)}${TRUNCATION_MARKER}`;
+  }
   return `${header}\n${tree}`;
 }
 
