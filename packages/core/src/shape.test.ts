@@ -161,6 +161,14 @@ describe("describeShape", () => {
     expect(text).toContain("…");
     expect(text.length).toBeLessThan(2_000);
   });
+
+  it("renders a declared enum as its values, not as the bare kind", () => {
+    expect(describeShape({ kind: "string", enum: ["paid", "void"] })).toBe('"paid" | "void"');
+    expect(describeShape({
+      kind: "object",
+      fields: { status: { kind: "string", enum: ["open"] }, total: { kind: "number" } },
+    })).toBe('{ status: "open", total: number }');
+  });
 });
 
 describe("shape cards", () => {

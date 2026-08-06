@@ -175,19 +175,31 @@ export const describeSemantic = (semantic: FieldSemantic): string => {
 
 const DESCRIBE_MAX_DEPTH = 6;
 
-const describeAt = (shape: ShapeType, semantics: ToolSemantics, path: string, depth: number): string => {
+const describeAt = (
+  shape: ShapeType,
+  semantics: ToolSemantics,
+  path: string,
+  depth: number,
+  renderEnum: boolean,
+): string => {
   if (depth <= 0) return "…";
   if (shape.kind === "json") return "Json";
-  if (shape.kind === "array") return `${describeAt(shape.items, semantics, path, depth - 1)}[]`;
+  if (shape.kind === "array") return `${describeAt(shape.items, semantics, path, depth - 1, renderEnum)}[]`;
   if (shape.kind === "object") {
     const optional = new Set(shape.optional ?? []);
     const entries = Object.entries(shape.fields).map(([key, field]) => {
       const childPath = path === "" ? key : `${path}.${key}`;
       const semantic = Object.prototype.hasOwnProperty.call(semantics, childPath) ? semantics[childPath] : undefined;
-      const annotation = semantic === undefined || semantic.kind === "plain" ? "" : `:${describeSemantic(semantic)}`;
-      return `${key}${optional.has(key) ? "?" : ""}: ${describeAt(field, semantics, childPath, depth - 1)}${annotation}`;
+      const claimed = semantic !== undefined && semantic.kind !== "plain";
+      const annotation = claimed ? `:${describeSemantic(semantic)}` : "";
+      // A claimed field is described by its semantic; only an UNCLAIMED one
+      // falls back to spelling its schema enum out.
+      return `${key}${optional.has(key) ? "?" : ""}: ${describeAt(field, semantics, childPath, depth - 1, !claimed)}${annotation}`;
     });
     return entries.length === 0 ? "{}" : `{ ${entries.join(", ")} }`;
+  }
+  if (renderEnum && shape.enum !== undefined && shape.enum.length > 0) {
+    return shape.enum.map((value) => JSON.stringify(value)).join(" | ");
   }
   return shape.kind;
 };
@@ -197,7 +209,7 @@ const describeAt = (shape: ShapeType, semantics: ToolSemantics, path: string, de
  *  semantics apply. */
 export function describeShapeWithSemantics(shape: ShapeType, semantics: ToolSemantics): string {
   if (Object.keys(semantics).length === 0) return describeShape(shape);
-  return describeAt(shape, semantics, "", DESCRIBE_MAX_DEPTH);
+  return describeAt(shape, semantics, "", DESCRIBE_MAX_DEPTH, true);
 }
 
 /** The Kit value-format token a semantic implies (DataTable column format,

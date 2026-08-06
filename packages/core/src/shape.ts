@@ -196,6 +196,14 @@ export function shapeAtPointer(shape: ShapeType, pointer: string): ShapeType | u
  *  card while keeping prompt context bounded. */
 const DESCRIBE_MAX_DEPTH = 6;
 
+/** A declared enum prints its VALUES: the closed vocabulary is the useful fact,
+ *  and a model that reads `string` where the host declared `"paid" | "void"`
+ *  invents values the host will reject. */
+const enumText = (values: readonly Json[] | undefined): string | undefined =>
+  values === undefined || values.length === 0
+    ? undefined
+    : values.map((value) => JSON.stringify(value)).join(" | ");
+
 const describeShapeAt = (shape: ShapeType, depth: number): string => {
   if (depth <= 0) return "…";
   if (shape.kind === "json") return "Json";
@@ -206,7 +214,7 @@ const describeShapeAt = (shape: ShapeType, depth: number): string => {
       `${key}${optional.has(key) ? "?" : ""}: ${describeShapeAt(field, depth - 1)}`);
     return entries.length === 0 ? "{}" : `{ ${entries.join(", ")} }`;
   }
-  return shape.kind;
+  return enumText(shape.enum) ?? shape.kind;
 };
 
 /** v2 spec §3 — the compact notation the engine embeds in the model's tool

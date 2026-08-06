@@ -7,7 +7,7 @@ import {
   semanticFormatToken,
   type ToolSemantics,
 } from "./semantics.js";
-import { deriveShape } from "./shape.js";
+import { deriveShape, type ShapeType } from "./shape.js";
 
 const invoiceRows = {
   data: [
@@ -107,6 +107,17 @@ describe("describeShapeWithSemantics", () => {
   it("matches describeShape exactly when no semantics apply", () => {
     const shape = deriveShape({ note: "x" });
     expect(describeShapeWithSemantics(shape, {})).toBe("{ note: string }");
+  });
+
+  it("renders a schema enum when no semantic claims the path, and yields to one that does", () => {
+    const shape: ShapeType = {
+      kind: "object",
+      fields: { status: { kind: "string", enum: ["paid", "void"] } },
+    };
+    expect(describeShapeWithSemantics(shape, { total: { kind: "money", unit: "cents" } }))
+      .toBe('{ status: "paid" | "void" }');
+    expect(describeShapeWithSemantics(shape, { status: { kind: "enum", labels: { paid: "Paid", void: "Void" } } }))
+      .toBe("{ status: string:enum(paid|void) }");
   });
 });
 
