@@ -85,7 +85,8 @@
         "pages": [
           "connect/theming",
           "connect/host-components",
-          "connect/instructions"
+          "connect/instructions",
+          "connect/context"
         ]
       },
       {
