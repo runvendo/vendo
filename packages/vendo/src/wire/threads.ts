@@ -7,11 +7,43 @@ import { json, requestJson, route, string, type RouteEntry } from "./shared.js";
 /** The effective thread id the agent stamps on every turn response (03 §1). */
 const THREAD_ID_HEADER = "x-vendo-thread-id";
 
+/** Decision 3 (spec 2026-08-05): the situation channel is capped at 8 KB on
+    BOTH ends. The client truncates before sending; this is the server's own
+    enforcement on whatever actually arrives — entries land in body order until
+    the budget runs out, the entry that crosses it survives truncated when it
+    is a string, and everything after is dropped. Non-object bodies are not a
+    situation and are dropped whole (the channel is best-effort observation,
+    never a validation surface). */
+const SITUATION_CAP_BYTES = 8192;
+
+function cappedSituation(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const capped: Record<string, unknown> = {};
+  let budget = SITUATION_CAP_BYTES;
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    const rendered = typeof entry === "string" ? entry : JSON.stringify(entry) ?? "";
+    if (key.length + rendered.length <= budget) {
+      capped[key] = entry;
+      budget -= key.length + rendered.length;
+      continue;
+    }
+    if (typeof entry === "string" && budget > key.length) {
+      capped[key] = entry.slice(0, budget - key.length);
+    }
+    break;
+  }
+  return Object.keys(capped).length > 0 ? capped : undefined;
+}
+
 /** 09 §3 — the /threads wire area: chat streaming plus thread list/get/delete. */
 export const threadRoutes: RouteEntry[] = [
   route("POST", "/threads", async ({ request, deps, context }) => {
     const body = await requestJson(request);
     const ctx = await context("chat");
+    // Spec 2026-08-05 §2 — the client's situation rides the message POST and
+    // lives exactly one turn: onto THIS request's ctx (prompt assembly reads
+    // ctx.context), never onto anything the store writes.
+    const situation = cappedSituation(body["context"]);
     void deps.telemetry?.track("agent_run", {});
     // AGENT-3 (fast path): a propagated client disconnect aborts the request,
     // which cancels the agent loop — provider calls stop instead of running to
@@ -38,7 +70,7 @@ export const threadRoutes: RouteEntry[] = [
     const turn = await runTurn.stream({
       ...(body["threadId"] === undefined ? {} : { threadId: string(body["threadId"], "threadId") }),
       message: body["message"] as never,
-      ctx,
+      ctx: situation === undefined ? ctx : { ...ctx, context: situation },
       signal: turnAbort.signal,
     });
     const threadId = turn.headers.get(THREAD_ID_HEADER);
