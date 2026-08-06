@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { buildFailureReason, createApps, type AppsRuntime } from "./index.js";
 import { basicLanguageModel, guardFixture, memoryStore, scriptedAssembler } from "./testing/index.js";
 
-// Incident (runvendo/vendo#492): vendo_create_app returns fast with a
+// Incident (runvendo/vendo#492): the pack's vendo_make returns fast with a
 // vendo/app-ref@1 while the build streams server-side. When the build turn
 // THROWS (model error / quota / timeout) the app record never landed, so
 // open() kept answering not-found → the embed spun to APP_BUILD_DEADLINE_MS

@@ -293,7 +293,7 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
       resolveFailed({ reason: "the build never finished" });
     }, APP_BUILD_DEADLINE_MS);
     // Self-scheduling poll (useResource's pacing rule): the next attempt is
-    // armed only after the current one settles. `vendo_create_app` returns
+    // armed only after the current one settles. `vendo_make` returns
     // fast and the build streams server-side, so until there is an app to
     // serve the flagged poll answers a quiet `{kind:"pending"}` (a wire that
     // predates the flag still 404s — the catch arm keeps the same cadence, so
