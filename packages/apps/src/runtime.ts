@@ -1975,11 +1975,32 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
    * and `edit` reports it verbatim rather than stamping a second `new Date()`:
    * two clock reads agree only inside one millisecond, so the version handed to
    * the caller otherwise differs from the one history holds whenever the two
-   * straddle a tick. Cleared at the top of every `assembleEdit` so a previous
-   * edit's row can never be reported as this one's, and taken (not read) by
-   * `edit`.
+   * straddle a tick.
+   *
+   * Keyed by app, like `editIntents` — so two OVERLAPPING edits of one app share
+   * a slot, and the WORDS decide whose row it is (`takeEditVersion`): an edit
+   * takes the entry only when its intent is the instruction that edit was given,
+   * and otherwise leaves the sibling's row where it is and stamps its own
+   * version exactly as this door did before any row was captured. Both misses
+   * degrade to that stamp — the millisecond skew this fix removes in the
+   * ordinary case — and neither can hand a caller someone else's version.
    */
   const editVersions = new Map<AppId, VersionEntry>();
+
+  /**
+   * THIS edit's captured row, or nothing.
+   *
+   * The intent match is the correlation: `edit` reports a version, and the only
+   * version it may report is one recorded under the words it was asked to carry
+   * out. A row belonging to an overlapping edit of the same app is left in the
+   * map for that edit to take.
+   */
+  const takeEditVersion = (appId: AppId, instruction: string): VersionEntry | undefined => {
+    const recorded = editVersions.get(appId);
+    if (recorded?.intent !== instruction) return undefined;
+    editVersions.delete(appId);
+    return recorded;
+  };
 
   /**
    * ONE instruction through the ONE builder.
@@ -2015,6 +2036,12 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     const before = await apps.get(appId).catch(() => null);
     const memory = appMemoryBrief(before === null ? undefined : rowFromRecord(before).doc.memory);
     editIntents.set(appId, instruction);
+    // Kept even though `takeEditVersion` matches on the words: an entry no edit
+    // ever took (an assembler that saved and then reported unavailable, a
+    // `rebind` inside the ladder) would otherwise sit here until some later edit
+    // of this app said exactly the same thing and reported that OLD row as its
+    // own. Clearing can only cost a concurrent edit its captured row, and losing
+    // a row means stamping the version the way this door always did.
     editVersions.delete(appId);
     let outcome: Awaited<ReturnType<ScreenAssembler["assemble"]>>;
     try {
@@ -3477,12 +3504,11 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // (see `editIntents`), so the version reported here IS that row — read
       // back rather than re-stamped, because a second clock read tells the
       // caller a millisecond history does not hold. Nothing else is written.
-      const version: VersionEntry = editVersions.get(appId) ?? {
+      const version: VersionEntry = takeEditVersion(appId, instruction) ?? {
         at: new Date().toISOString(),
         intent: instruction,
         rung: rungFor(app),
       };
-      editVersions.delete(appId);
       return withPinDrift({
         app,
         version,
