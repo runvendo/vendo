@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProp
 import { ChromeRoot } from "../chrome/chrome-root.js";
 import { ConnectCard } from "../chrome/connect-card.js";
 import { developmentMode } from "../chrome/dev-mode.js";
-import { useVendoContext } from "../context.js";
+import { useVendoProvider } from "../context.js";
 import { PayloadView } from "../tree/renderer.js";
 import type { VoiceDriverError, VoiceSessionView, VoiceState } from "./driver.js";
 import { useVoiceApprovals } from "./use-voice-approvals.js";
@@ -80,7 +80,7 @@ export interface VendoStageProps {
     captions (S-C), idle invitation (S-E), attention vignette (S-F), spoken-yes
     consent (C-A) and the connect-during-voice slot (Cn-A). */
 export function VendoStage({ onSessionEnd, suggestions }: VendoStageProps) {
-  const { client } = useVendoContext();
+  const { client } = useVendoProvider();
   const voice = useVoice();
   const active = ACTIVE_STATES.has(voice.state);
   const approvals = useVoiceApprovals(client, active);
@@ -318,7 +318,7 @@ export function VendoStage({ onSessionEnd, suggestions }: VendoStageProps) {
 }
 
 function VoiceFeed({ views }: { views: VoiceSessionView[] }) {
-  const { client, components } = useVendoContext();
+  const { client, components } = useVendoProvider();
   const feedRef = useRef<HTMLDivElement>(null);
   const focusFrameRef = useRef<number | undefined>(undefined);
   const settleTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);

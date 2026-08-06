@@ -22,7 +22,7 @@ export {
   // context.ts
   VendoProvider,
   hostComponentMap,
-  useVendoContext,
+  useVendoProvider,
   useVendoDiscoverability,
   useVendoGreeting,
   useVendoTheme,
@@ -64,6 +64,7 @@ export {
   useVendoOverlay,
   type VendoOverlayController,
   useVendoStatus,
+  useVendoContext,
   useVendoThread,
   type VendoThreadApproval,
   ScriptedTransport,

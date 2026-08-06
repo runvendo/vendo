@@ -19,5 +19,6 @@ export { useSlotApp } from "./use-slot-app.js";
 export { useThreads } from "./use-threads.js";
 export { useVendoOverlay, type VendoOverlayController } from "./use-vendo-overlay.js";
 export { useVendoStatus } from "./use-vendo-status.js";
+export { useVendoContext } from "./use-vendo-context.js";
 export { useVendoThread, type VendoThreadApproval } from "./use-vendo-thread.js";
 export { ScriptedTransport, type DirectorCue, type DirectorScript } from "./scripted-transport.js";

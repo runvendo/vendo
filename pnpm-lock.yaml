@@ -1454,6 +1454,9 @@ importers:
       '@vendoai/core':
         specifier: workspace:*
         version: link:../core
+      aria-snapshot:
+        specifier: 0.2.0
+        version: 0.2.0
       clsx:
         specifier: 2.1.1
         version: 2.1.1
@@ -6433,6 +6436,10 @@ packages:
   aria-query@5.3.2:
     resolution: {integrity: sha512-COROpnaoap1E2F000S62r6A60uHZnmlvomhfyT2DlTcrY1OrBKn2UhH7qn5wTC9zMvD0AY7csdPSNwKP+7WiQw==}
     engines: {node: '>= 0.4'}
+
+  aria-snapshot@0.2.0:
+    resolution: {integrity: sha512-APIYA8PH3vqnWTF0nIhrNA4syiwU2c2czOQTfY7HbHWrZwfbSkwN5fzKbFF6gyUCEQqaFuEY3cCAIfLN+azNhQ==}
+    engines: {node: '>=22'}
 
   array-buffer-byte-length@1.0.2:
     resolution: {integrity: sha512-LHE+8BuR7RYGDKvnrmcuSq3tDcKv9OFEXQt/HpbZhY7V6h0zlUXutnAD82GiFx9rdieCMjkvtcsPqBwgUl1Iiw==}
@@ -16898,6 +16905,8 @@ snapshots:
       dequal: 2.0.3
 
   aria-query@5.3.2: {}
+
+  aria-snapshot@0.2.0: {}
 
   array-buffer-byte-length@1.0.2:
     dependencies:

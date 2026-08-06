@@ -11,7 +11,7 @@
  * own; every path needs a click.
  */
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
-import { useVendoContext } from "../context.js";
+import { useVendoProvider } from "../context.js";
 import { useAttention } from "../hooks/use-approvals.js";
 import { toolTitle } from "./humanize.js";
 import {
@@ -61,7 +61,7 @@ export function useLauncherStatus({ open, threadId, onOpen }: {
   threadId?: string;
   onOpen(): void;
 }): LauncherStatus {
-  const { tools } = useVendoContext();
+  const { tools } = useVendoProvider();
   const activity = useSyncExternalStore(subscribeRunActivity, runActivity, () => IDLE_RUN_ACTIVITY);
   const result = useSyncExternalStore(subscribeRunActivity, unseenRunResult, NO_RESULT);
   const { askCount } = useAttention({ pollMs: ASK_POLL_MS });

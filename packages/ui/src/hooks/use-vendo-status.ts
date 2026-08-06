@@ -1,6 +1,6 @@
 /** Live guard posture probe (08-ui §3, §6). */
 import { useEffect, useState } from "react";
-import { useVendoContext } from "../context.js";
+import { useVendoProvider } from "../context.js";
 import type { Membership } from "@vendoai/core";
 import type { GuardPosture } from "../wire-types.js";
 
@@ -24,7 +24,7 @@ const OFFLINE: StatusState = {
 };
 
 export function useVendoStatus(): StatusState {
-  const { client } = useVendoContext();
+  const { client } = useVendoProvider();
   const [state, setState] = useState<StatusState>(OFFLINE);
 
   useEffect(() => {

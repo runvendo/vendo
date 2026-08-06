@@ -80,6 +80,7 @@
     "@ai-sdk/react": "3.0.30",
     "@tanstack/react-table": "^8.20.0",
     "@vendoai/core": "workspace:*",
+    "aria-snapshot": "0.2.0",
     "clsx": "2.1.1",
     "fluidkit": "^0.5.0",
     "motion": "^11.11.0",

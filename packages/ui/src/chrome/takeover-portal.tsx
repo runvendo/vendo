@@ -31,6 +31,7 @@ export function TakeoverPortal({ active, children }: { active: boolean; children
     <div
       ref={wrapper}
       className="vendo-root fl-overlay-portal"
+      data-vendo-ignore=""
       data-vendo-motion={theme.motion}
       data-vendo-density={theme.density}
       style={{ ...themeCssVariables(theme), fontFamily: "var(--vendo-font-family)", fontSize: "var(--vendo-font-size)" } as CSSProperties}

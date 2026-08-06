@@ -1,7 +1,7 @@
 import type { UIPayload } from "@vendoai/core";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type ComponentType, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { useVendoContext, useVendoDiscoverability, useVendoTheme } from "../context.js";
+import { useVendoProvider, useVendoDiscoverability, useVendoTheme } from "../context.js";
 import { useMobileTakeover } from "../hooks/use-mobile-takeover.js";
 import { themeCssVariables } from "../theme.js";
 import { PayloadView } from "../tree/renderer.js";
@@ -222,7 +222,7 @@ export function VendoOverlay({
   const [conversationEpoch, setConversationEpoch] = useState(0);
   const theme = useVendoTheme();
   const takeover = useMobileTakeover();
-  const { client, components } = useVendoContext();
+  const { client, components } = useVendoProvider();
   const pin = usePinAction();
 
   // 2026-07 demo feedback — the expandable split-view workspace (split-view.tsx
@@ -608,6 +608,7 @@ export function VendoOverlay({
     <div
       ref={portalRoot}
       className="vendo-root fl-overlay-portal"
+      data-vendo-ignore=""
       data-vendo-motion={theme.motion}
       data-vendo-density={theme.density}
       // Closed = hidden, NOT unmounted (ENG-221): inline display:none beats the

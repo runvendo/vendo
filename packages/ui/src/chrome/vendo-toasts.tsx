@@ -10,7 +10,7 @@
       raises an approval-required toast, decidable in place. */
 import { useEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { useVendoContext } from "../context.js";
+import { useVendoProvider } from "../context.js";
 import { useApprovals } from "../hooks/use-approvals.js";
 import { themeCssVariables } from "../theme.js";
 import { ensureChromeStyles } from "./chrome-root.js";
@@ -134,7 +134,7 @@ function useToastQueue(): ToastRecord[] {
     mount (the pre-existing backlog belongs to the WaitingQueue, not to a toast
     storm on page load), and withdraws it once decided elsewhere. */
 function ApprovalToasts({ pollMs }: { pollMs: number }) {
-  const { tools } = useVendoContext();
+  const { tools } = useVendoProvider();
   const { pending, isLoading, decide } = useApprovals({ pollMs });
   // null until the first fetch settles — that first batch is baseline, not news.
   const seenRef = useRef<Set<string> | null>(null);
@@ -199,7 +199,7 @@ export interface VendoToastsProps {
 
 /** 08-ui §4 chrome — mount once per page. */
 export function VendoToasts({ placement = "bottom-right", approvals = false, pollMs = 5_000 }: VendoToastsProps = {}): ReactNode {
-  const { theme } = useVendoContext();
+  const { theme } = useVendoProvider();
   const toasts = useToastQueue();
   // The stack portals out of any ChromeRoot subtree, so it owns its own style
   // injection — a page that mounts ONLY VendoToasts still renders styled.
@@ -211,6 +211,7 @@ export function VendoToasts({ placement = "bottom-right", approvals = false, pol
       {toasts.length > 0 ? createPortal(
         <div
           className="vendo-root"
+          data-vendo-ignore=""
           // H-2 — the toast stack lives ABOVE the modal layer: it portals to
           // <body> with no dialog semantics, so `inertBehind` (overlay panel,
           // mobile takeover) inerted it and every toast raised while one was

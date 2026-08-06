@@ -2,7 +2,7 @@
     with, and what the caller themselves may do with it. */
 import type { AccessLevel, AppGrantRecord, AppId, ResolvedPerson } from "@vendoai/core";
 import { useCallback } from "react";
-import { useVendoContext } from "../context.js";
+import { useVendoProvider } from "../context.js";
 import { type PollOptions, useResource } from "./use-resource.js";
 
 interface AppGrantsState {
@@ -34,7 +34,7 @@ export function useAppGrants(appId: AppId | undefined, options?: PollOptions): A
       know them; the grant is then never written, and the app never moves. */
   resolvePerson(query: string): Promise<ResolvedPerson | null>;
 } {
-  const { client } = useVendoContext();
+  const { client } = useVendoProvider();
   const load = useCallback(
     async () => appId === undefined ? EMPTY : await client.apps.grants(appId),
     [client, appId],

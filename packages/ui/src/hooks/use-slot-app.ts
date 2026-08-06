@@ -9,7 +9,7 @@
  *  here already split. */
 import type { AppDocument, AppId } from "@vendoai/core";
 import { useCallback } from "react";
-import { useVendoContext } from "../context.js";
+import { useVendoProvider } from "../context.js";
 import { useRefreshOnPin } from "./use-pin-refresh.js";
 import { type PollOptions, useResource } from "./use-resource.js";
 
@@ -28,7 +28,7 @@ export function useSlotApp(slotId: string, options: PollOptions & {
   isLoading: boolean;
   refresh(): Promise<void>;
 } {
-  const { client } = useVendoContext();
+  const { client } = useVendoProvider();
   const enabled = options.enabled ?? true;
   const list = useCallback(
     () => (enabled ? client.apps.list() : Promise.resolve(NO_APPS)),

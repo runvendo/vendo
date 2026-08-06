@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isPlainObject as isRecord } from "@vendoai/core";
-import { useVendoContext } from "../context.js";
+import { useVendoProvider } from "../context.js";
 import type {
   VoiceConnectRequest,
   VoiceDriverEvent,
@@ -36,7 +36,7 @@ const SESSION_STATES = new Set<VoiceSessionState>(["connecting", "reconnecting",
  * it fails soft as `unavailable` and `start()` is intentionally a no-op.
  */
 export function useVoice(): UseVoiceResult {
-  const driver = useVendoContext().voice?.driver;
+  const driver = useVendoProvider().voice?.driver;
   const [state, setState] = useState<VoiceState>(() => (driver ? "idle" : "unavailable"));
   const [transcript, setTranscript] = useState<VoiceTranscriptEntry[]>([]);
   const [error, setError] = useState<{ message: string } | null>(null);

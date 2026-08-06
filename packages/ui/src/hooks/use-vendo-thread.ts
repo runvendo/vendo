@@ -10,7 +10,8 @@ import {
   type UIMessage,
 } from "ai";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useVendoContext } from "../context.js";
+import { useVendoProvider } from "../context.js";
+import { currentSituation } from "../situation.js";
 import { publishThreadRun, retireThreadRun, type VendoBeat } from "../chrome/run-activity.js";
 
 export type VendoThreadApproval = ToolUIPart | DynamicToolUIPart | VendoApprovalPart;
@@ -136,7 +137,7 @@ function vendoApproval(part: UIMessage["parts"][number]): VendoApprovalPart | un
 
 /** 08-ui §3 */
 export function useVendoThread(threadId?: string) {
-  const { client, transport: transportOverride } = useVendoContext();
+  const { client, transport: transportOverride, captureScreen } = useVendoProvider();
   const suppliedThreadIdRef = useRef(threadId);
   const activeThreadIdRef = useRef(threadId);
   const [effectiveThreadId, setEffectiveThreadId] = useState(threadId);
@@ -183,8 +184,16 @@ export function useVendoThread(threadId?: string) {
           const message = messages.at(-1);
           if (!message) throw new Error("Cannot send an empty Vendo turn.");
           const activeThreadId = activeThreadIdRef.current;
+          // Spec 2026-08-05 §2/§3 — the [Situation] channel rides the send:
+          // published host data plus the screen snapshot, this turn only. The
+          // server re-caps it at the same 8 KB and puts it on ctx.context.
+          const situation = currentSituation(captureScreen);
           return {
-            body: activeThreadId === undefined ? { message } : { threadId: activeThreadId, message },
+            body: {
+              ...(activeThreadId === undefined ? {} : { threadId: activeThreadId }),
+              message,
+              ...(situation === undefined ? {} : { context: situation }),
+            },
             // No Content-Type here: the transport already sets application/json,
             // and a second value would double the header ("application/json,
             // application/json"), which the wire's CSRF floor rejects (09 §3).
@@ -192,7 +201,7 @@ export function useVendoThread(threadId?: string) {
           };
         },
       }),
-    [client, transportOverride],
+    [client, transportOverride, captureScreen],
   );
   const [beats, setBeats] = useState<readonly VendoBeat[]>(NO_BEATS);
   const chat = useChat<UIMessage>({
