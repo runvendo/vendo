@@ -3,6 +3,7 @@ import * as React from "react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { ChevronLeft, Pencil, Check, Flag, Split, ReceiptText, FileQuestion } from "lucide-react"
+import { useVendoContext } from "@vendoai/ui"
 import { VendoTrigger } from "@vendoai/ui/chrome"
 import type { Category } from "@/server/types"
 import { useTransaction, useAccounts } from "@/lib/hooks"
@@ -57,6 +58,28 @@ export default function TransactionDetailPage() {
   const { data: accounts } = useAccounts()
 
   const [categoryOverride, setCategoryOverride] = React.useState<{ id: string; category: Category } | null>(null)
+
+  // The structured half of the agent's [Situation]: its automatic screen
+  // snapshot reads rendered text only, so it never sees these IDs or the exact
+  // cents — the things it needs to act on this record rather than describe it.
+  // Memoized because useVendoContext republishes on object identity.
+  const transactionContext = React.useMemo(
+    () =>
+      t
+        ? {
+            transaction: {
+              id: t.id,
+              accountId: t.accountId,
+              merchant: t.merchant,
+              amount: t.amount,
+              timestamp: t.timestamp,
+              status: t.status,
+            },
+          }
+        : {},
+    [t],
+  )
+  useVendoContext(transactionContext)
 
   if (isLoading || (!t && !error)) {
     return (
