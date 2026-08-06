@@ -10,6 +10,7 @@
 import type { HarnessEvent, Json, ToolDescriptor, Turn } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { vendo, type HarnessHand } from "./vendo.js";
+import { createTurnState } from "../harness-state.js";
 import { createTurnTools } from "../turn-tools.js";
 import type { HireRecord } from "../runtime.js";
 import {
@@ -71,7 +72,7 @@ async function drive(options: {
     skills: options.skills ?? testSkills(),
     workspace,
     models: options.models,
-    state: { get: () => undefined, set: () => undefined, clear: () => undefined },
+    state: createTurnState(undefined),
     options: options.options ?? {},
     signal: options.signal ?? new AbortController().signal,
     interactive: options.interactive ?? true,
@@ -143,7 +144,7 @@ describe("vendo() — the loop", () => {
       skills: testSkills(),
       workspace: testWorkspace(),
       models,
-      state: { get: () => undefined, set: () => undefined, clear: () => undefined },
+      state: createTurnState(undefined),
       options: { model: override },
       signal: new AbortController().signal,
       interactive: true,

@@ -18,6 +18,7 @@
 import { ASK_USER_TOOL, type Json, type ToolOutcome, type ToolRegistry, type Turn } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { vendo } from "./vendo.js";
+import { createTurnState } from "../harness-state.js";
 import { createTurnTools } from "../turn-tools.js";
 import {
   ctx,
@@ -52,7 +53,7 @@ async function askAndCount(outcome: ToolOutcome): Promise<number> {
     skills: testSkills(),
     workspace: testWorkspace(),
     models: seats(model),
-    state: { get: () => undefined, set: () => undefined, clear: () => undefined },
+    state: createTurnState(undefined),
     options: {},
     signal: new AbortController().signal,
     interactive: true,
