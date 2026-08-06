@@ -20,7 +20,7 @@ describe.skipIf(process.env.VENDO_LIVE_JOURNEY !== "1")("full journey: examples/
     const result = await runJourney({
       example: "mastra-agent",
       port: Number(process.env.VENDO_JOURNEY_PORT ?? 4311),
-      prompt: "Use vendo_create_app to make me a dashboard comparing the weather in Paris, London and Tokyo.",
+      prompt: "Use vendo_make to make me a dashboard comparing the weather in Paris, London and Tokyo.",
       env: {
         ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
         OPENAI_API_KEY: process.env.OPENAI_API_KEY,

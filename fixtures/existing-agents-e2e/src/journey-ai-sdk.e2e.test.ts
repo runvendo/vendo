@@ -10,7 +10,7 @@ import { packOnce, runJourney, workspaceRoot } from "./journey.js";
  * stripping its `--- vendo` fences) → local Vendo pack + npm install → the
  * CURRENT `vendo init --yes` → the example's marked BYO diff applied
  * programmatically → `next dev` → one live Anthropic turn that lands
- * `vendo_create_app` → the generated app served over the wire. */
+ * `vendo_make` → the generated app served over the wire. */
 describe.skipIf(process.env.VENDO_LIVE_JOURNEY !== "1")("full journey: examples/ai-sdk-agent", () => {
   it("starter → vendo init → marked diff → boot → live turn → served app", async () => {
     expect(process.env.ANTHROPIC_API_KEY, "VENDO_LIVE_JOURNEY=1 needs ANTHROPIC_API_KEY").toBeTruthy();
@@ -19,7 +19,7 @@ describe.skipIf(process.env.VENDO_LIVE_JOURNEY !== "1")("full journey: examples/
     const result = await runJourney({
       example: "ai-sdk-agent",
       port: Number(process.env.VENDO_JOURNEY_PORT ?? 4310),
-      prompt: "Use vendo_create_app to make me a dashboard comparing the weather in Paris, London and Tokyo.",
+      prompt: "Use vendo_make to make me a dashboard comparing the weather in Paris, London and Tokyo.",
       env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY },
       artifactsDir: path.join(artifactsDir, "ai-sdk-agent"),
       packed: await packOnce(),
