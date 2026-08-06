@@ -1,6 +1,7 @@
 import type { Json, ToolOutcome, UIPayload } from "@vendoai/core";
-import { useEffect, useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useVendoProvider } from "../context.js";
+import { announcePin } from "../pin-events.js";
 import { noteSlot } from "../slot-notes.js";
 import { useApp } from "../hooks/use-app.js";
 import { useSlotApp } from "../hooks/use-slot-app.js";
@@ -11,6 +12,7 @@ import { defaultSlotSuggestions } from "./discoverability.js";
 import { developmentMode } from "./dev-mode.js";
 import { openVendoConversation } from "./overlay-registry.js";
 import { openVendoPalette } from "./palette-hotkey.js";
+import { BUILD_FAILURE_COPY } from "./thread/message-data.js";
 
 /** A slot id is a code identifier ("net-worth-card"); the person choosing a
  *  destination in the picker reads words. */
@@ -78,6 +80,85 @@ function SlotLoadFailed({ reason, onRetry }: { reason: Error; onRetry(): void })
         <span className="fl-slot-cta-label">This view didn’t load</span>
         <small>{loadFailureCopy(reason)}</small>
         <button type="button" className="fl-invite-btn" onClick={onRetry}>Try again</button>
+      </span>
+    </div>
+  );
+}
+
+/**
+ * The terminal BUILD failure of the app placed here.
+ *
+ * Two remedies, both honest: ask again — offered ONLY when the failed record
+ * kept the original request, because re-issuing anything else is a different
+ * build wearing this one's name — and clear the slot, which is the unplace the
+ * host's own markup comes back from.
+ *
+ * The wire's `reason` never reaches this page (§16 law 3, same law as the
+ * embed's): every one of those sentences names a component, an expression or an
+ * env var, and this is a host's own page. The developer sentence keeps the home
+ * it has — the server's `[vendo] app build failed (app_…)` log line.
+ */
+function SlotBuildFailed({ appId, slotId, onChanged }: {
+  appId: string;
+  slotId: string;
+  onChanged(): void;
+}) {
+  const { client } = useVendoProvider();
+  const [failure, setFailure] = useState<{ retryable?: boolean; prompt?: string }>();
+  const [busy, setBusy] = useState(false);
+
+  // ONE read, not a poll: the record is terminal. The status already came from
+  // the placements read; this is only the retry affordance's evidence.
+  useEffect(() => {
+    let cancelled = false;
+    setFailure(undefined);
+    void client.apps.open(appId, { pending: true }).then(
+      surface => { if (!cancelled && surface.kind === "failed") setFailure(surface); },
+      () => { /* the record is failed either way; without detail there is no retry */ },
+    );
+    return () => { cancelled = true; };
+  }, [appId, client]);
+
+  const retry = async () => {
+    const prompt = failure?.prompt;
+    if (prompt === undefined) return;
+    setBusy(true);
+    try {
+      const created = await client.apps.create({ prompt });
+      // The affordance AWAITS the placement itself, so the slot showing the new
+      // build is a fact rather than a hope.
+      await client.apps.place(created.id, slotId);
+      announcePin(created.id);
+    } finally {
+      setBusy(false);
+      onChanged();
+    }
+  };
+
+  const clear = async () => {
+    setBusy(true);
+    try {
+      await client.apps.unplace(appId, slotId);
+    } finally {
+      setBusy(false);
+      onChanged();
+    }
+  };
+
+  return (
+    <div className="fl-slot-ghost">
+      <GhostSkeleton />
+      <span className="fl-slot-cta" role="alert">
+        <span className="fl-slot-cta-label">This view didn’t build</span>
+        <small>{BUILD_FAILURE_COPY}</small>
+        {failure?.retryable === true && failure.prompt !== undefined ? (
+          <button type="button" className="fl-invite-btn" disabled={busy} onClick={() => void retry()}>
+            Try again
+          </button>
+        ) : null}
+        <button type="button" className="fl-invite-own" disabled={busy} onClick={() => void clear()}>
+          Clear this slot
+        </button>
       </span>
     </div>
   );
@@ -168,17 +249,22 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, discover = true
   // guaranteed "this view didn't load". The host's own children stay up until
   // there is something real to swap in.
   const appId = appIdProp ?? (pin === undefined && discovery.status === "ready" ? discovery.appId : undefined);
-  // The placed app's own build status. Only discovery carries one: an explicit
-  // `appId`/`pin` prop is the host asserting the slot's contents, and that path
-  // is unchanged.
-  const status = appIdProp === undefined && pin === undefined ? discovery.status : undefined;
+  // An explicit `appId`/`pin` prop is the host asserting the slot's contents:
+  // it carries no build status of its own, and a placement written into it
+  // would never be read.
+  const resolvesItself = appIdProp === undefined && pin === undefined;
+  // The placed app's own build status — discovery's, and only discovery's.
+  const status = resolvesItself ? discovery.status : undefined;
 
   // A slot id lives in the host's markup and nowhere else, so a surface that is
   // not on this page (the embed's "Add to…" picker) can only learn this slot
-  // exists from here. Every state notes it, including the untouched-children one.
+  // exists from here. Every state of a self-resolving slot notes it, including
+  // the untouched-children one; a host-asserted one stays out of the picker
+  // rather than promising a landing the person would never see.
   useEffect(() => {
+    if (!resolvesItself) return;
     noteSlot({ id, label: slotLabel(id) });
-  }, [id]);
+  }, [id, resolvesItself]);
 
   const author = () => {
     if (onAuthor) {
@@ -201,6 +287,18 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, discover = true
       console.warn(`[vendo] VendoSlot "${id}": suggestions open the conversation surface — mount a VendoOverlay for them to land in.`);
     }
   };
+
+  // A build that will never land. `discovery.appId`, not `appId`: only a READY
+  // placement resolves into a mountable app id, and this one never will.
+  if (status === "failed" && discovery.appId !== undefined) {
+    return (
+      <ChromeRoot>
+        <div className="fl-slot" data-vendo-slot={id}>
+          <SlotBuildFailed appId={discovery.appId} slotId={id} onChanged={() => void discovery.refresh()} />
+        </div>
+      </ChromeRoot>
+    );
+  }
 
   // A placement row is written the moment the app id is minted, so the slot
   // knows it is about to be filled while the build is still streaming. It says
