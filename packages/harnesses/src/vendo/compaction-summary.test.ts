@@ -133,6 +133,38 @@ describe("the cut point", () => {
     const messages = [say("user", "short"), say("assistant", "also short")];
     expect(findCutIndex(messages, 20_000)).toBe(0);
   });
+
+  it("cuts ABOVE a message too big for the tail, rather than giving up on the thread", () => {
+    // The dead path. The walk used to ABSORB the message that tipped the budget,
+    // so one message bigger than the whole tail — a pasted statement, a 300KB
+    // tool result — put the cut on index 0 and `compactContext` read that as
+    // "nothing to summarize". The single thread shape compaction exists for was
+    // the one shape it never touched, on every turn, forever. The tipping
+    // message belongs to the SUMMARY.
+    const giant = say("user", `PASTED ${"g".repeat(400_000)}`);
+    for (const tail of [2, 10]) {
+      const messages = [
+        giant,
+        ...Array.from({ length: tail }, (_, index) =>
+          say(index % 2 === 0 ? "assistant" : "user", `small ${index}`)),
+      ];
+      expect(findCutIndex(messages, 20_000), `tail=${tail}`).toBeGreaterThan(0);
+    }
+  });
+
+  it("keeps the newest message verbatim even when IT is the oversized one", () => {
+    // The tail is never empty: a cut at the end would summarize the ask the turn
+    // is answering and project a prompt with nothing to answer.
+    const messages = [say("user", "older ask"), say("assistant", "older reply"), say("user", "P".repeat(400_000))];
+    expect(findCutIndex(messages, 20_000)).toBe(messages.length - 1);
+  });
+
+  it("returns 0 when the ONLY message is oversized — there is nothing above it", () => {
+    // Nothing to summarize and nothing to shed: one message larger than the
+    // window is the one case no projection can fix, so the floor sends it and the
+    // provider's own refusal is the honest answer.
+    expect(findCutIndex([say("user", "g".repeat(400_000))], 20_000)).toBe(0);
+  });
 });
 
 // ── the projection ───────────────────────────────────────────────────────────

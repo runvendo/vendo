@@ -187,23 +187,38 @@ function isSafeCutBoundary(message: ModelMessage): boolean {
  *
  * Ported from cline `compaction-shared.ts:326-359` (Apache-2.0). Three rules,
  * applied in order, and each of them is a bug somebody already shipped:
- *  1. walk back from the newest message until `preserveRecentTokens` of recent
- *     conversation is accounted for — the tail is a token budget, not a message
- *     count, because one tool result can outweigh forty exchanges;
+ *  1. walk back from the newest message taking every one that still FITS inside
+ *     `preserveRecentTokens` — the tail is a token budget, not a message count,
+ *     because one tool result can outweigh forty exchanges;
  *  2. never cut past the newest user turn's start, so the ask the user is in the
  *     middle of survives verbatim however small the budget is;
  *  3. walk back to a safe boundary, so no tool pair is split.
+ *
+ * Rule 1 stops BEFORE the message that tips the budget, and that word is the
+ * whole of a defect this shipped with. The walk used to absorb the tipping
+ * message, so one message bigger than the entire tail — a pasted statement, a
+ * 300KB tool result — put the cut on index 0 and `compactContext` read that as
+ * "nothing to summarize". On a thread whose bulk is one message, which is the
+ * single shape compaction exists for, the trigger then fired every turn and the
+ * projection never changed. An oversized message belongs to the SUMMARY.
+ *
+ * The tail is never empty: the newest message is kept verbatim even when it
+ * alone is oversized, because a cut past it would summarize the ask the turn is
+ * answering. A thread that is nothing BUT one oversized message therefore cuts
+ * at 0 — there is nothing above it to summarize, and the shed floor underneath
+ * (which cannot drop a thread's last message either) sends it and lets the
+ * provider's own refusal be the honest answer.
  */
 export function findCutIndex(
   messages: readonly ModelMessage[],
   preserveRecentTokens: number,
 ): number {
   let total = 0;
-  let candidate = messages.length;
+  let candidate = messages.length - 1;
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     total += tokensFor(JSON.stringify(messages[index]).length);
+    if (total > preserveRecentTokens) break;
     candidate = index;
-    if (total >= preserveRecentTokens) break;
   }
   if (candidate <= 0) return 0;
   let lastUserIndex = -1;
