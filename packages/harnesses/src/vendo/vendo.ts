@@ -46,7 +46,7 @@ const HIRE_SUBAGENT = "hire_subagent";
 /**
  * The per-turn knobs — the TYPE is the whole declaration.
  *
- * There was a `Harness.optionsSchema` here too, restating these six as zod. It
+ * There was a `Harness.optionsSchema` here too, restating these knobs as zod. It
  * was never parsed: nothing in the stack validates a harness's options schema,
  * and the one path that could have (`HarnessTurns.stream` → `runtime.run`) is
  * typed `<never>` and forwards no options at all. So the schema was a second,
@@ -67,6 +67,7 @@ export interface VendoHarnessOptions {
   historyWindow?: number;
   contextTokenBudget?: number;
   maxOutputTokens?: number;
+  maxRetries?: number;
   /** Override the window this seat is assumed to have. The BYO escape for a
    *  model {@link contextWindowTokens}'s table cannot name. */
   contextWindowTokens?: number;
@@ -79,8 +80,24 @@ const CONTEXT_KNOBS = [
   "historyWindow",
   "contextTokenBudget",
   "maxOutputTokens",
+  "maxRetries",
   "contextWindowTokens",
 ] as const;
+
+// …and that promise ENFORCED rather than restated, in the `config-keys.ts`
+// pattern: the assertions live in a source file because tsconfig excludes tests
+// from typecheck, so an assertion in a test is compiled by nothing.
+//
+// Every listed knob has both doors…
+const _knobsHaveBothDoors: ReadonlyArray<keyof VendoHarnessOptions & keyof VendoHarnessDeps>
+  = CONTEXT_KNOBS;
+void _knobsHaveBothDoors;
+// …and every knob the shipped loop takes is listed, or this resolves to
+// something other than `never` and fails right here, by name. One direction
+// only: `contextWindowTokens` rides the list without being a `TurnContext`
+// member, because it configures COMPACTION (see the destructure in `run`).
+type AssertNever<T extends never> = T;
+type _NoKnobLeftBehind = AssertNever<Exclude<keyof TurnContext, (typeof CONTEXT_KNOBS)[number]>>;
 
 export interface VendoHarnessDeps {
   /**
@@ -99,6 +116,9 @@ export interface VendoHarnessDeps {
   historyWindow?: number;
   contextTokenBudget?: number;
   maxOutputTokens?: number;
+  /** How many times the SDK re-issues a failed provider call ({@link
+   *  DEFAULT_MAX_RETRIES}); `0` spends nothing. */
+  maxRetries?: number;
   /** The window this deployment's seat is assumed to have, when the shipped
    *  table is wrong about it. Q1a: this lives on the harness and nowhere else —
    *  it is a fact about a model, not a product decision a host composes. */

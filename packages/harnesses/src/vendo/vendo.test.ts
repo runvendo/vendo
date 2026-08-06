@@ -8,6 +8,8 @@
  * measured is the lift.
  */
 import type { HarnessEvent, Json, ToolDescriptor, Turn } from "@vendoai/core";
+import { APICallError } from "ai";
+import { MockLanguageModelV3 } from "ai/test";
 import { describe, expect, it } from "vitest";
 import { vendo, type HarnessHand } from "./vendo.js";
 import { createTurnState } from "../harness-state.js";
@@ -525,6 +527,31 @@ describe("vendo() passes the WHOLE context to the shipped loop", () => {
     const sent = JSON.stringify(model.prompts[0]);
     expect(sent).toContain(NEWEST);
     expect(sent).not.toContain(OLDEST);
+  });
+
+  /** A provider failure the SDK is willing to retry — what makes the retry budget
+   *  observable at all (the shape `failover.test.ts` uses for the same reason). */
+  const overloaded = (): APICallError => new APICallError({
+    message: "Overloaded",
+    url: "https://api.example.test/v1/messages",
+    requestBodyValues: {},
+    statusCode: 503,
+  });
+  const alwaysOverloaded = () => new MockLanguageModelV3({
+    doStream: () => Promise.reject(overloaded()),
+  });
+
+  it("honours a retry budget from either door — 0 spends nothing", async () => {
+    // The bug this pins: `maxRetries` was declared on the loop's `TurnContext`
+    // and missing from `CONTEXT_KNOBS`, so neither door reached the loop and both
+    // spent DEFAULT_MAX_RETRIES instead — three calls where the host asked for one.
+    const fromDeps = alwaysOverloaded();
+    await drive({ harness: vendo({ maxRetries: 0 }), models: seats(fromDeps) });
+    expect(fromDeps.doStreamCalls).toHaveLength(1);
+
+    const fromTurn = alwaysOverloaded();
+    await drive({ harness: vendo(), models: seats(fromTurn), options: { maxRetries: 0 } });
+    expect(fromTurn.doStreamCalls).toHaveLength(1);
   });
 
   it("sends the whole thread when nothing is configured", async () => {
