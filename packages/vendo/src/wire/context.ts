@@ -138,7 +138,19 @@ export function createContextResolver(
   anon: AnonSession,
 ): (req: Request, venue: RunContext["venue"]) => Promise<RunContext> {
   return async (req, venue) => {
-    const resolved = await deps.principal(req);
+    let resolved: Principal | null;
+    try {
+      resolved = await deps.principal(req);
+    } catch (error) {
+      if (error instanceof VendoError) throw error;
+      // #872 — the resolver's own message is actionable host-facing copy (the
+      // presets write it to be shown); the catch-all's generic "Internal Vendo
+      // error" cost a debugging session per config mistake.
+      throw new VendoError(
+        "not-implemented",
+        `principal resolution failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
     let principal: Principal;
     // Host-resolved principals keep the process-wide fallback sessionId; only
     // anonymous requests fall back to their per-client cookie id (below).
