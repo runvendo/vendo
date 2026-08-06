@@ -3,7 +3,7 @@
 // descriptors (name, schema, risk) live in `.vendo/tools.json`, exactly where
 // `vendo init` extracts them in a real app.
 import { anthropic } from "@ai-sdk/anthropic";
-import { createVendo } from "@vendoai/vendo/server";
+import { createVendo, guard } from "@vendoai/vendo/server";
 
 /** The quickstart's weather lookup, registered as a Vendo action
  *  (`host_get_weather`, risk `read` — the cautious policy runs it and audits
@@ -44,7 +44,7 @@ export const vendo = createVendo({
   principal: async () => demoUser,
   // Ask before write/destructive actions, run reads: the gate that turns
   // `host_send_trip_report` into an approval card in your own chat.
-  policy: "cautious",
+  guard: guard({ policy: "cautious" }),
   // In-process dispatch for the two actions declared in .vendo/tools.json.
   serverActions: {
     "lib/vendo.ts#getWeather": getWeather,

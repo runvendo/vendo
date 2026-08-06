@@ -128,15 +128,15 @@ beforeAll(async () => {
 async function compose(
   connectors: Connector[],
   rules?: PolicyRule[],
-  agent?: { toolOutputCap?: number },
+  overrides: { toolOutputCap?: number } = {},
 ): Promise<Vendo> {
   return createVendo({
     model: {} as LanguageModel,
     principal: async () => principal,
     store: shared!,
     connectors,
-    ...(rules === undefined ? {} : { policy: { rules } }),
-    ...(agent === undefined ? {} : { agent }),
+    ...(rules === undefined ? {} : { guard: { policy: { rules } } }),
+    ...overrides,
   });
 }
 

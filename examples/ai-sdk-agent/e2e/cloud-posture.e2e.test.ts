@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createStore } from "@vendoai/store";
 import { vendoTools } from "@vendoai/vendo/ai-sdk";
-import { createVendo, type Vendo } from "@vendoai/vendo/server";
+import { createVendo, guard, type Vendo } from "@vendoai/vendo/server";
 import {
   convertToModelMessages,
   stepCountIs,
@@ -175,7 +175,7 @@ describe.skipIf(!LIVE)("examples/ai-sdk-agent — full Vendo Cloud posture (VEND
     // VENDO_API_KEY defaults the lot.
     const vendo = createVendo({
       principal: async () => demoUser,
-      policy: "cautious",
+      guard: guard({ policy: "cautious" }),
       serverActions,
     });
     await vendo.store.ensureSchema();
@@ -214,7 +214,7 @@ describe.skipIf(!LIVE)("examples/ai-sdk-agent — full Vendo Cloud posture (VEND
         model: explicitGenerationModel(),
         store,
         principal: async () => demoUser,
-        policy: "cautious",
+        guard: guard({ policy: "cautious" }),
         serverActions,
       });
       const report = await status(vendo);

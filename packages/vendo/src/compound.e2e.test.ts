@@ -448,7 +448,7 @@ describe("the real createVendo composition wires the seam", () => {
       model: {} as LanguageModel,
       principal: async () => principal,
       store,
-      policy: { rules: [{ match: { tool: "host_send" }, action: "ask" }] },
+      guard: { policy: { rules: [{ match: { tool: "host_send" }, action: "ask" }] } },
     });
 
     expect((await vendo.actions.descriptors()).map((descriptor) => descriptor.name)).toContain("host_flow");

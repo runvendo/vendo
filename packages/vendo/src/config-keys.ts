@@ -19,6 +19,7 @@
  * It also does real work at runtime: {@link warnDeprecatedConfigKeys} is what
  * tells a host on the old shape where the key went.
  */
+import { VendoError } from "@vendoai/core";
 import type { CreateVendoConfig } from "./server.js";
 
 /**
@@ -38,19 +39,17 @@ export const CREATE_VENDO_CONFIG_KEYS = [
   "skills",
   "catalog",
   "theme",
-  "brief",
+  "instructions",
   "store",
   "files",
   "sandbox",
   "harness",
   "knowledge",
   "connectors",
-  "connectorApps",
   "connections",
   "actAs",
   "serverActions",
-  "policy",
-  "judge",
+  "guard",
   "secrets",
   "telemetry",
   "development",
@@ -61,7 +60,9 @@ export const CREATE_VENDO_CONFIG_KEYS = [
   "oauth",
   "agent",
   "sessions",
-  "approvals",
+  "toolOutputCap",
+  "maxInitialTools",
+  "loadout",
   "apps",
   "automations",
   "tours",
@@ -90,6 +91,64 @@ export const DEPRECATED_CONFIG_KEYS: Readonly<Record<string, string>> = {
     "`profile.tools` is deprecated: use the `tools:` slot, which is the same in-memory host-tool "
     + "declarations under their §10 name. It still works for one more minor.",
 };
+
+/**
+ * Keys that are GONE, mapped to the sentence naming their replacement.
+ *
+ * Unlike {@link DEPRECATED_CONFIG_KEYS} these do not work at all, so the
+ * response is a boot error rather than a warning. TypeScript already rejects
+ * every one of them; this is for the JavaScript host, where a dropped `policy`
+ * would mean an unconfigured guard running wide open and a dropped `brief`
+ * would mean an agent that forgot what the product is. A config change must
+ * never fail that way quietly.
+ */
+export const REMOVED_CONFIG_KEYS: Readonly<Record<string, string>> = {
+  brief: "`brief` is gone: use `instructions` — one prose key, the same `.vendo/brief.md` surface behind it.",
+  policy: "`policy` is gone: use `guard: guard({ policy })` from @vendoai/vendo/server.",
+  judge: "`judge` is gone: use `guard: guard({ judge })` from @vendoai/vendo/server.",
+  approvals: "`approvals` is gone: use `guard: guard({ approvals })` from @vendoai/vendo/server.",
+  connectorApps:
+    "`connectorApps` is gone: name the toolkits in `connectors` itself — `connectors: [\"gmail\", \"slack\"]` "
+    + "(strings and connector objects are one list now).",
+};
+
+/** The `agent:` grab-bag members, and where each one went. Reported together
+ *  when a host still passes the options object, because a config on the old
+ *  shape usually carries several of them. */
+export const REMOVED_AGENT_OPTION_KEYS: Readonly<Record<string, string>> = {
+  instructions: "the top-level `instructions` key",
+  toolOutputCap: "the top-level `toolOutputCap` key",
+  maxInitialTools: "the top-level `maxInitialTools` key",
+  loadout: "the top-level `loadout` key",
+  maxSteps: "`harness: vendo({ maxSteps })`",
+  historyWindow: "`harness: vendo({ historyWindow })`",
+  maxOutputTokens: "`harness: vendo({ maxOutputTokens })`",
+};
+
+/**
+ * Refuse a config still written against a removed key, naming the replacement.
+ * Called from `createVendo` before anything is constructed.
+ */
+export function rejectRemovedConfigKeys(config: Partial<Record<string, unknown>>): void {
+  for (const [key, message] of Object.entries(REMOVED_CONFIG_KEYS)) {
+    if (config[key] !== undefined) throw new VendoError("validation", message);
+  }
+  // `agent:` survives as the composed-agent slot, so it is the VALUE that says
+  // whether this is the old knobs object: an agent from `agent()` has a
+  // `session`, and the knobs object never did.
+  const agent = config["agent"] as Record<string, unknown> | undefined;
+  if (agent === undefined || typeof agent["session"] === "function") return;
+  const moved = Object.keys(REMOVED_AGENT_OPTION_KEYS)
+    .filter((key) => agent[key] !== undefined)
+    .map((key) => `\`agent.${key}\` → ${REMOVED_AGENT_OPTION_KEYS[key]}`);
+  throw new VendoError(
+    "validation",
+    "`agent:` now takes only a whole agent built by `agent()` from @vendoai/agents. "
+    + (moved.length === 0
+      ? "The chat-knobs object is gone."
+      : `Move ${moved.join(", ")}.`),
+  );
+}
 
 /** Keys already warned about in THIS process. A deployment composes once, but a
  *  test file or a multi-tenant venue composes many times, and repeating the same

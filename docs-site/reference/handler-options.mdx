@@ -21,19 +21,17 @@ model, anonymous ephemeral sessions, and default persistence;
 | `tools` | the host's own tool declarations in memory — the same `ExtractedTool[]` `vendo init` / `vendo sync` write to `.vendo/tools.json`. The explicit override, not the quickstart: reach for it when the declarations cannot live on a filesystem (a Worker, a per-tenant venue, a test). Wins over the deprecated `profile.tools`, which wins over the `profileDir` / cwd file |
 | `catalog` | `ComponentCatalog` or the name-keyed `ComponentRegistry` of host components exposed to the generation prompt; merged with any `.vendo/catalog.json` written by `vendo sync`, with explicit entries winning by name — see [Host components](/connect/host-components) |
 | `theme` | programmatic override for the theme surface; an explicit theme wins over `.vendo/theme.json`. Resolved once at compose (it feeds app generation and the system-prompt summary), so unlike design rules it is not re-read live |
-| `brief` | programmatic override for the product brief — the same prose `.vendo/brief.md` carries. A non-blank string wins over the file; blank falls through |
+| `instructions` | THE prose the deployment puts in front of the agent every turn: what this product is, who uses it, the house voice, what to emphasize. Programmatic override for the same `.vendo/brief.md` surface `vendo init` writes — a non-blank string wins over the file; blank falls through. It rides the assembled prompt's Product section. (`brief` and `agent.instructions` were two names for this knob and are gone) |
 | `store` | defaults to PGlite at `.vendo/data`; with `VENDO_API_KEY` set and no `store` passed, the Cloud hosted store fills the slot instead — see [Persistence](/deploy/persistence) |
 | `files` | where workspace file CONTENT lives once it outgrows a database row. Unset is a documented default, not a gap: the store's own blobs back it up to 5 MiB and the first over-cap write fails naming this key. `s3({ bucket, … })` covers S3/R2/Supabase/MinIO |
 | `sandbox` | unlocks machine-backed apps (layers 2 and 3); with no adapter passed, `E2B_API_KEY` (with the `e2b` package installed) or `VENDO_API_KEY` fills the slot, and with none of the three, apps stay tree-only |
 | `harness` | who thinks: the built-in `vendo()` (the default), `claudeCode()` (the builder, on a sandbox machine), or your own via `defineHarness`. Every chat turn runs through the harness runtime; a harness declaring `requires: { sandbox: true }` with no `sandbox` adapter is a boot error, never a turn that dies in front of a user |
 | `knowledge` | the product knowledge-base adapter. Configured, it composes the `vendo_knowledge_search` tool; unset, that tool does not exist |
-| `connectors` | adds external connector tool registries |
-| `connectorApps` | toolkit scoping for the auto-composed Cloud connector: with `VENDO_API_KEY` and no explicit `connectors`, discovery, the executable tools and the connect catalog are all bound to exactly these toolkits. Ignored when `connectors` or `connections` is passed explicitly — scope those adapters directly |
+| `connectors` | where outside-service tools come from, as ONE mixed list. A **string** names a Vendo Cloud toolkit (`["gmail", "slack"]`): discovery, the executable tools and the connect catalog all bind to exactly those toolkits, and it needs `VENDO_API_KEY` — without one the toolkits mount nothing and the connect surface refuses by naming the key. A **`Connector` object** is an explicit provider, used verbatim. Unset lets `VENDO_API_KEY` default the unscoped Cloud connector; `[]` means no connectors |
 | `connections` | explicit connections adapter for the connected-accounts surface; always wins over the composed defaults |
 | `actAs` | escape hatch: supplies scoped auth material for away host API execution. Mutually exclusive with `auth` — see [actAs presets](/connect/act-as-presets) |
 | `serverActions` | the server-action registration map emitted by the generated wiring file, keyed `"<module>#<exportName>"`; server-action tools dispatch in-process through it, and a missing key fails closed at execution |
-| `policy` | named preset (`"cautious"`, `"readonly"`, `"autopilot"`), inline rules and directions, a policy file, or a code escape hatch; `policy: {}` reads the default `.vendo/policy.json` (what `vendo init` scaffolds; read fail-soft — a missing default file also auto-runs, with no notice). Omit the key entirely and every call auto-runs |
-| `judge` | contextual guard judge |
+| `guard` | the deployment's choke point, as one value. `guard({ policy, judge, approvals })` declares the rules and this composition completes them with the store, the app/service risk grading and the org-policy layer; a built `VendoGuard` from `createGuard({ store, … })` is taken verbatim instead. `policy` is a named preset (`"cautious"`, `"readonly"`, `"autopilot"`), inline rules and directions, a policy file, or a code escape hatch — `guard({ policy: {} })` reads the default `.vendo/policy.json` (what `vendo init` scaffolds; read fail-soft, so a missing default file also auto-runs with no notice). `judge` is the contextual guard judge. `approvals.parkedCallTtlMs` is the idle timeout for a guarded call parked from a [BYO agent loop](/existing-agents) (default 60 min; `0` disables expiry) — past it the sweep denies the approval and `<VendoApprovalEmbed>` reads "expired"; Vendo-thread approvals are untouched. Omit the key entirely and every call auto-runs |
 | `secrets` | defaults to environment-backed secret lookup |
 | `telemetry` | wires build and development telemetry |
 | `development` | development-only injection seams (e.g. `/dev/inclient-approval`, the remix review-queue routes); `NODE_ENV=development` enables them, `false` disables the environment default |
@@ -42,9 +40,11 @@ model, anonymous ephemeral sessions, and default persistence;
 | `profile` | the `.vendo/` pieces as in-memory compose-time inputs, for venues with no filesystem: `{ overrides?, theme?, brief?, catalog?, policy?, designRules? }`, each independent and each winning over its file. `profile.tools` is **deprecated** — use the `tools:` slot |
 | `mcp` | opens the [MCP door](/capabilities/mcp) so outside agents reach host tools through the guarded path; `true` for defaults, or an object carrying `{ baseUrl?, remoteAs?, federation? }` when door-specific settings need to flow through the umbrella (see [Configure the door through the umbrella](/capabilities/mcp#configure-the-door-through-the-umbrella)); off by default |
 | `oauth` | escape hatch: `HostOAuthAdapter` used by the door for session lookup and principal resolution; required when `mcp` is enabled and `auth` supplies no oauth half. Mutually exclusive with `auth`. The door renders consent when the adapter uses `session`, or hands off the whole page when it supplies `authorize` instead — see [MCP door](/capabilities/mcp) |
-| `agent` | chat context controls: `instructions`, `toolOutputCap`, `maxOutputTokens`, `historyWindow`, `maxInitialTools`, `loadout`, `maxSteps` (see [Agent context](#agent-context)) |
+| `agent` | a whole agent built by `agent()` from `@vendoai/agents`; this deployment adopts its harness, store, blob adapter, sandbox and instructions — see [Use with your existing agent](/existing-agents). The chat-knobs object is gone: see [Turn context](#turn-context) |
 | `sessions` | ephemeral (anonymous) session lifecycle: `ttlMs` idle timeout before a session is swept (default 30 minutes; `0` disables eviction) and `sweepIntervalMs` sweep cadence (default 60 seconds) |
-| `approvals` | approval lifecycle knobs: `parkedCallTtlMs` is the idle timeout for a guarded call parked from a [BYO agent loop](/existing-agents) (default 60 min; `0` disables expiry). Past it, the sweep denies the approval and `<VendoApprovalEmbed>` reads "expired". Vendo-thread approvals are untouched |
+| `toolOutputCap` | how much of one tool result reaches the model, in characters (default `32000`; `0` disables) — see [Turn context](#turn-context) |
+| `maxInitialTools` | cap on the uncurated initial tool loadout; the rest stay discoverable via `find_tools` (default `128`) — see [Turn context](#turn-context) |
+| `loadout` | explicit curated initial loadout, by tool name — see [Turn context](#turn-context) |
 | `skills` | SKILL.md values mounted at `/host/skills` for the harness to list cheaply and load on demand, beside the ones the deployment's own subsystems bring. Names are global as authored and a collision with another contributor fails at boot naming both |
 | `automations` | `false` unmounts automations: the `/automations`, `/runs` and `/webhooks` surfaces answer not-found, `vendo.emit` refuses, and the unattended-irreversibility rule leaves the reviewer's rubric. Mounted by default |
 | `apps` | `false` unmounts app generation entirely — `vendo_make` and the `vendo_apps_*` tools are absent from the registry, the `building-apps` skill is absent from the mount, and the `/apps` surface answers not-found. Otherwise, apps-block options: `designRules` sets host design rules programmatically, and `pipeline` enables the opt-in generation-pipeline flags (`exemplarContract`, `structuredRepair`, `regionParallel`, `endPass`, and `rebind` — the data-sighted verify's strict rebind arm, requires `endPass`) — see [Generated UI](/concepts/generated-ui). Machine-backed (layer-2) apps have no flag: they are gated by a configured `sandbox` adapter alone, and layer-3 served apps additionally need the mounted wire plus `VENDO_BASE_URL` |
@@ -52,10 +52,10 @@ model, anonymous ephemeral sessions, and default persistence;
 
 Named presets: `"cautious"` lets reads run and asks before writes or
 destructive calls, `"readonly"` lets reads run and blocks everything else,
-`"autopilot"` runs everything. Omitting the `policy` key entirely surfaces an
+`"autopilot"` runs everything. Omitting the `guard` key entirely surfaces an
 unconfigured-policy notice in the shipped chrome; a missing
-`.vendo/policy.json` file with `policy: {}` still set does not; keep the
-file in version control.
+`.vendo/policy.json` file with `guard({ policy: {} })` still set does not; keep
+the file in version control.
 
 The umbrella also ships two subpath exports for hosts that keep their own
 agent loop: `@vendoai/vendo/ai-sdk` (`vendoTools`) and `@vendoai/vendo/mastra`
@@ -63,39 +63,40 @@ agent loop: `@vendoai/vendo/ai-sdk` (`vendoTools`) and `@vendoai/vendo/mastra`
 agents. See [Use with your existing agent](/existing-agents) and the
 [server API reference](/reference/server-api#byo-agent-subpaths).
 
-## Agent context
+## Turn context
 
-Pass an `agent` block to tune what the chat loop sends to the model. All
-fields are optional.
+Two owners, and the split is the point. What the deployment CURATES — the
+prose, the tool surface, the size of a tool result — is composition's, and sits
+at the top level. What the THINKER decides — how many steps it may take, how
+much history it re-reads, how many tokens it may emit — belongs to whoever
+thinks, and is set where the thinker is named. There is no `agent: { … }`
+options object: it was one bag holding both, so a host configured the thinker
+through a key the thinker never saw.
 
 ```ts
 createVendo({
   principal,
-  agent: {
-    instructions: "Answer in the product's voice; never invent account numbers.",
-    toolOutputCap: 32_000, // char cap per tool result before it reaches the model; 0 disables
+  instructions: "Answer in the product's voice; never invent account numbers.",
+  toolOutputCap: 32_000,  // char cap per tool result before it reaches the model; 0 disables
+  maxInitialTools: 128,   // cap on host tools shown to the model at turn start; the rest stay discoverable via search
+  loadout: ["issues_list", "issues_create"], // explicit initial host tools; overrides the default policy
+  harness: vendo({
+    maxSteps: 20,         // max agent steps per turn before Vendo stops the loop
+    historyWindow: 20,    // last N whole messages re-sent per turn; omit to send the full thread
     maxOutputTokens: 4_000, // upper bound on tokens the model may emit per turn
-    historyWindow: 20,      // last N whole messages re-sent per turn; omit to send the full thread
-    maxInitialTools: 128,   // cap on host tools shown to the model at turn start; the rest stay discoverable via search
-    loadout: ["issues_list", "issues_create"], // explicit initial host tools; overrides the default policy
-    maxSteps: 20,           // max agent steps per turn before Vendo stops the loop
-  },
+  }),
 });
 ```
 
-- `instructions` is the host's voice and standing guidance, appended to the
-  agent's system prompt every turn: tone, formatting, what to emphasize.
+- `instructions` is the deployment's prose — what this product is, who uses it,
+  the house voice, what to emphasize — placed in the assembled prompt's Product
+  section every turn. It is the programmatic override for `.vendo/brief.md`,
+  which is what `vendo init` writes and most deployments use instead.
   Policy belongs in guard directions, not here.
 - `toolOutputCap` caps a single tool result before it reaches the model, so a
   runaway host response can't blow the context window. Defaults to `32000`
   characters. Pass `0` to disable the cap. Persistence and the streamed
   thread are unaffected; only the copy sent to the model is truncated.
-- `maxOutputTokens` bounds tokens the model may emit per turn. Omit to defer
-  to the model default.
-- `historyWindow` bounds how many past messages are re-sent to the model
-  each turn. Vendo keeps whole messages so tool-call/result pairs stay
-  paired. Omit to send the full thread (current behavior). The stored
-  thread is untouched; only the per-turn model context shrinks.
 - `maxInitialTools` bounds how many host tools the model sees at the start
   of a turn. Hosts that expose hundreds of tools would otherwise flood the
   model's context. When the enabled host surface exceeds the cap, Vendo
@@ -111,11 +112,24 @@ createVendo({
   Anything omitted from the list is still discoverable via
   `find_tools`. Every tool, initial or searched-in, still
   executes through the same guard binding.
+The thinker's own knobs ride `vendo({ … })` (import it from
+`@vendoai/vendo/server`):
+
 - `maxSteps` caps how many agent steps (model call + tool round-trip) run in
   a single turn. Defaults to `20`. When the cap is hit, Vendo stops the loop
   and emits a step-limit notice on the stream so the client can render a
   visible signal; the thread stays consistent and the user can send another
   message to continue. Raise it for long tool chains; lower it to fail fast.
+- `historyWindow` bounds how many past messages are re-sent to the model
+  each turn. Vendo keeps whole messages so tool-call/result pairs stay
+  paired. Omit to send the full thread. The stored thread is untouched; only
+  the per-turn model context shrinks.
+- `maxOutputTokens` bounds tokens the model may emit per turn. Omit to defer
+  to the model default.
+- `contextTokenBudget` bounds the assembled context the loop sends.
+
+A harness you named yourself carries its own equivalents; these three are
+`vendo()`'s.
 
 ## Turn cancellation
 

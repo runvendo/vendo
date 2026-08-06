@@ -86,10 +86,12 @@ async function setup(options: { parkedCallTtlMs?: number; clock?: () => number }
     model: {} as LanguageModel,
     principal: async () => principal,
     store,
-    policy: { rules: [{ match: { risk: "write" }, action: "ask" }] },
-    ...(options.parkedCallTtlMs === undefined
-      ? {}
-      : { approvals: { parkedCallTtlMs: options.parkedCallTtlMs } }),
+    guard: {
+      policy: { rules: [{ match: { risk: "write" }, action: "ask" }] },
+      ...(options.parkedCallTtlMs === undefined
+        ? {}
+        : { approvals: { parkedCallTtlMs: options.parkedCallTtlMs } }),
+    },
     ...(options.clock === undefined
       ? {}
       : { sessions: { ttlMs: 0, sweepIntervalMs: 1, now: options.clock } }),

@@ -84,7 +84,7 @@ write. The scaffold looks like this:
 // app/api/vendo/[...vendo]/route.ts — equivalent to what `vendo init` writes
 // (init emits a relative registry import; the `@/*` alias reads better here)
 import { authJs } from "@vendoai/vendo/auth/auth-js";
-import { createVendo, nextVendoHandler } from "@vendoai/vendo/server";
+import { createVendo, guard, nextVendoHandler } from "@vendoai/vendo/server";
 import { serverActions } from "./vendo-actions";
 import { registry } from "@/vendo/registry";
 
@@ -92,7 +92,7 @@ const vendo = createVendo({
   auth: authJs(),    // detected from package.json
   catalog: registry, // the components the agent may render
   serverActions,     // generated when "use server" actions are detected
-  policy: {},        // .vendo/policy.json: destructive asks, reads run
+  guard: guard({ policy: {} }), // .vendo/policy.json: destructive asks, reads run
 });
 
 export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);

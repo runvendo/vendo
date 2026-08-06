@@ -303,7 +303,7 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     },
     store,
     actAs: fixtureActAs,
-    policy: { file: ".vendo/policy.json" },
+    guard: { policy: { file: ".vendo/policy.json" } },
     ...(options.telemetry === true ? { telemetry: true } : {}),
     ...(options.connectors === undefined ? {} : { connectors: options.connectors }),
     // A configured sandbox IS the opt-in to machine-backed execution; a stack

@@ -3,7 +3,7 @@ import { memoryKnowledgeAdapter } from "@vendoai/core/conformance";
 import { vendoAutoJudge } from "@vendoai/guard";
 import { createStore } from "@vendoai/store";
 import { authJs } from "@vendoai/vendo/auth/auth-js";
-import { createVendo, vendoModel } from "@vendoai/vendo/server";
+import { createVendo, guard, vendoModel } from "@vendoai/vendo/server";
 import { authSecret, primaryMapleUser, resolveMaplePerson, resolveMapleSubject } from "@/server/users";
 import { mapleKnowledgeDocs } from "./knowledge";
 import { mapleMcpConfig } from "./mcp-config";
@@ -80,20 +80,14 @@ export const vendo = createVendo({
   // The shared registry (01 §14): the server reads only the data fields;
   // <VendoRoot> takes the same object and reads only component references.
   catalog: mapleRegistry,
-  // Guard auto-judge on unconditionally (demo-refresh Part 2): run/ask/block
-  // rulings on tool calls ride the vendo model family's judge lane —
-  // vendo-judge on the Cloud gateway, the provider's fast pick on BYO rungs.
-  judge: vendoAutoJudge({ model: vendoModel("vendo-judge") }),
-  // The Maple voice (03 §3 agent.instructions) — rides the agent prompt every turn.
-  agent: {
-    instructions: [
-      "You are Maple's money assistant. Speak calmly and plainly; no hype.",
-      "No emojis, ever — not in prose, not in generated UI text.",
-      "Format money as currency (e.g. $1,234.56), never raw cents.",
-      "When you render a view, let it carry the data — don't restate it in prose.",
-      "For a recurring or scheduled payment/task, use vendo_make — describe the schedule in the request; the automation is armed automatically. There is no separate automations tool.",
-    ].join("\n"),
-  },
+  // The Maple voice (03 §3) — rides the agent prompt every turn.
+  instructions: [
+    "You are Maple's money assistant. Speak calmly and plainly; no hype.",
+    "No emojis, ever — not in prose, not in generated UI text.",
+    "Format money as currency (e.g. $1,234.56), never raw cents.",
+    "When you render a view, let it carry the data — don't restate it in prose.",
+    "For a recurring or scheduled payment/task, use vendo_make — describe the schedule in the request; the automation is armed automatically. There is no separate automations tool.",
+  ].join("\n"),
   // Machine-backed execution (layers 2 and 3) is gated by the `sandbox` slot
   // above and nothing else: configure one and Maple can build boxes, leave it
   // out and it cannot. There is no flag here to flip.
@@ -117,7 +111,14 @@ export const vendo = createVendo({
   // Maple's own help-center corpus so citation chips and refusal still demo
   // with no account. The host never constructs a Cloud client itself.
   ...(process.env.VENDO_API_KEY ? {} : { knowledge: memoryKnowledgeAdapter({ docs: mapleKnowledgeDocs }) }),
-  policy: { file: ".vendo/policy.json" },
+  // The deployment's rules, in one value. Guard auto-judge on unconditionally
+  // (demo-refresh Part 2): run/ask/block rulings on tool calls ride the vendo
+  // model family's judge lane — vendo-judge on the Cloud gateway, the
+  // provider's fast pick on BYO rungs.
+  guard: guard({
+    policy: { file: ".vendo/policy.json" },
+    judge: vendoAutoJudge({ model: vendoModel("vendo-judge") }),
+  }),
   mcp: mapleMcpConfig(),
   // BYO Composio when Maple brings its own key; otherwise the slot stays
   // UNSET so a VENDO_API_KEY deployment composes the Cloud tools connector

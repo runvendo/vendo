@@ -46,13 +46,13 @@ the embeds: Vendo minus the conversation.
 
 ```ts
 // lib/vendo.ts: the same composition as any Vendo host
-import { createVendo } from "@vendoai/vendo/server";
+import { createVendo, guard } from "@vendoai/vendo/server";
 
 export async function getWeather(city: string) { /* … */ }
 export async function sendTripReport(to: string, body: string) { /* … */ }
 
 export const vendo = createVendo({
-  policy: "cautious",
+  guard: guard({ policy: "cautious" }),
   // in-process dispatch for the actions declared in .vendo/tools.json
   serverActions: {
     "lib/vendo.ts#getWeather": getWeather,
@@ -111,7 +111,8 @@ executes the parked call and the embed resolves in place to the executed
 result. Deny resolves it to "declined" and discards the parked call.
 
 Parked calls expire on a TTL sweep, 60 minutes by default. Tune it with
-`createVendo({ approvals: { parkedCallTtlMs } })`; `0` disables expiry. An
+`createVendo({ guard: guard({ approvals: { parkedCallTtlMs } }) })`; `0`
+disables expiry. An
 expired call resolves the embed to "expired" and never runs.
 
 Your agent learns the outcome on a later turn if it matters. This is the

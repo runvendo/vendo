@@ -54,11 +54,13 @@ async function createKnowledgeUmbrella(): Promise<Umbrella> {
     // The shipped read posture: the call RUNS at the door, so the leg proves
     // zero leakage on execution (init's vendo_knowledge_* → ask hardening is
     // its own test in packages/vendo/src/cli/init.test.ts).
-    policy: {
-      rules: [
-        { match: { risk: "destructive" }, action: "ask" },
-        { match: { risk: "read" }, action: "run" },
-      ],
+    guard: {
+      policy: {
+        rules: [
+          { match: { risk: "destructive" }, action: "ask" },
+          { match: { risk: "read" }, action: "run" },
+        ],
+      },
     },
     oauth,
     knowledge: memoryKnowledgeAdapter({

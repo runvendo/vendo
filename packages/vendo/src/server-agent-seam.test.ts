@@ -152,8 +152,10 @@ describe("createVendo({ agent }) adopts what the agent already composed", () => 
       /already brings `store`, `sandbox`/,
     );
     expect(() => createVendo({ ...base, harness: boxy() })).toThrow(/already brings `harness`/);
-    // The chat-knob arm and the agent arm are one key, so instructions cannot
-    // conflict at all — the union is what makes that structural.
+    // Prose is a slot the adopted agent owns too, now that there is exactly one
+    // key for it: filling both is the same conflict, not a silent loser.
+    expect(() => createVendo({ ...base, instructions: "a second voice" }))
+      .toThrow(/already brings `instructions`/);
     expect(() => createVendo(base)).not.toThrow();
   });
 

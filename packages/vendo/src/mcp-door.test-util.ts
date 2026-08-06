@@ -210,7 +210,7 @@ export async function composedHost(
     model: model ?? ({} as LanguageModel),
     principal: async () => principal,
     store,
-    policy: "cautious",
+    guard: { policy: "cautious" },
     harness: harness as never,
     mcp: true,
     oauth: {
@@ -267,7 +267,7 @@ export async function composedHostOverDoor(
     model: model ?? ({} as LanguageModel),
     principal: async () => principal,
     store,
-    policy: "cautious",
+    guard: { policy: "cautious" },
     harness: harness as never,
     mcp: true,
     ...(extracted === undefined ? {} : { tools: extracted }),

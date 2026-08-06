@@ -586,7 +586,7 @@ describe("rail parity: find_tools, the loadout, the menu, capability miss", () =
       // A curated menu of exactly ONE tool: the long tail is off the initial
       // loadout, so `list()` must not offer `maple_invoices_list` until it is
       // searched in. This is the host's `surfaces.agent` menu in effect.
-      agent: { loadout: ["maple_reports_read"] },
+      loadout: ["maple_reports_read"],
       harness: scriptedHarness(async function* (turn) {
         before.push((await turn.tools.list()).map((entry) => entry.name));
         const search = await turn.tools.call("find_tools", { query: "invoices" });

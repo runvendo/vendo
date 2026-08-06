@@ -72,7 +72,7 @@ const app = (id = "app_wire"): AppDocument => ({
 
 async function setup(
   resolver = vi.fn(async () => principal),
-  options: Pick<Partial<CreateVendoConfig>, "policy" | "development"> = {},
+  options: Pick<Partial<CreateVendoConfig>, "guard" | "development"> = {},
 ): Promise<{ vendo: Vendo; resolver: typeof resolver }> {
   const store = await tempStore("vendo-wire-");
   const vendo = createVendo({
@@ -841,7 +841,7 @@ describe("09 §3 public wire", () => {
     expect(explicitNames).not.toContain("gmail_GMAIL_SEND_EMAIL");
   });
 
-  it("connectorApps scopes the auto-composed cloud connector AND the connect catalog (criterion 9)", async () => {
+  it("a toolkit STRING in connectors scopes the auto-composed cloud connector AND the connect catalog (criterion 9)", async () => {
     // Same stub-console pattern as the connectors-seam test above: the wire
     // serves a 3-toolkit catalog; the host scopes to gmail only.
     const { createServer } = await import("node:http");
@@ -886,7 +886,7 @@ describe("09 §3 public wire", () => {
       model: {} as LanguageModel,
       principal: vi.fn(async () => principal),
       store,
-      connectorApps: ["gmail"],
+      connectors: ["gmail"],
     });
     await vendo.handler(request("GET", "/status"));
 
@@ -1413,11 +1413,13 @@ describe("09 §2 composition", () => {
 
   it("projects app-edit risk consistently across chat and MCP venues", async () => {
     const { vendo } = await setup(vi.fn(async () => principal), {
-      policy: {
-        rules: [
-          { match: { risk: "write" }, action: "ask" },
-          { match: { risk: "read" }, action: "run" },
-        ],
+      guard: {
+        policy: {
+          rules: [
+            { match: { risk: "write" }, action: "ask" },
+            { match: { risk: "read" }, action: "run" },
+          ],
+        },
       },
     });
     expect((await vendo.handler(request("GET", "/status"))).status).toBe(200);
@@ -2485,7 +2487,7 @@ describe("09 §3 conversational turn against the real composed store", () => {
       model: model as unknown as LanguageModel,
       principal: async () => principal,
       store,
-      policy: { rules: [{ match: { tool: "vendo_apps_*", presence: "present" }, action: "run" }] },
+      guard: { policy: { rules: [{ match: { tool: "vendo_apps_*", presence: "present" }, action: "run" }] } },
     });
 
     const response = await vendo.handler(request("POST", "/threads", {
@@ -2563,7 +2565,7 @@ describe("ENG-252 agent.loadout through createVendo", () => {
       principal: async () => principal,
       store,
       connectors: [connector],
-      agent: { loadout: ["host_beta"] },
+      loadout: ["host_beta"],
     });
 
     const turn = await vendo.handler(request("POST", "/threads", {
@@ -2710,7 +2712,7 @@ describe("surfaces.agent through createVendo", () => {
       principal: async () => principal,
       store,
       // The host names BOTH tools in its explicit loadout; the menu still wins.
-      agent: { loadout: ["host_listAccounts", "host_exportLedger"] },
+      loadout: ["host_listAccounts", "host_exportLedger"],
     });
     const turn = await vendo.handler(request("POST", "/threads", {
       threadId: "thr_surface_loadout",
@@ -3813,7 +3815,7 @@ describe("unified try surface (Task 15a) — in-memory profile", () => {
       model: {} as LanguageModel,
       principal: async () => principal,
       store: await tempStore("vendo-profile-policy-prec-"),
-      policy: { rules: [{ match: {}, action: "block", note: "explicit config wins" }] },
+      guard: { policy: { rules: [{ match: {}, action: "block", note: "explicit config wins" }] } },
       profile: {
         tools: [profileTool("host_invoices_list")],
         policy: { format: VENDO_POLICY_FORMAT, rules: [{ match: {}, action: "run" }] },
