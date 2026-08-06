@@ -34,8 +34,10 @@ import {
   type UIMessage,
 } from "ai";
 import {
+  compactContext,
   estimatePromptTokens,
   shouldCompact,
+  summaryMessage,
   triggerTokens,
   type CompactionConfig,
   type CompactionState,
@@ -268,6 +270,10 @@ export interface TurnPromptInput {
    *  and never summarized, so a retry CONTINUES the turn instead of re-running
    *  its tool calls — each one a real guarded effect. */
   resume?: readonly ModelMessage[];
+  /** The turn's own signal. Building a projection is normally pure, but the
+   *  summarizer pass is a provider call, and a caller that hung up before the
+   *  first token must not keep paying for one (AGENT-3). */
+  signal?: AbortSignal;
 }
 
 export interface TurnPrompt {
@@ -296,13 +302,11 @@ function reportedThrough(messages: readonly ModelMessage[]): number {
 
 /**
  * The provider messages for one turn: the system prompt, the optionally windowed
- * and budgeted history, and the cache breakpoints that keep a growing thread from
- * re-billing.
- *
- * `resume` is accepted and not yet read.
+ * and budgeted history, the summary standing in for whatever no longer fits, and
+ * the cache breakpoints that keep a growing thread from re-billing.
  */
 export async function turnModelMessages(input: TurnPromptInput): Promise<TurnPrompt> {
-  const { messages, system, historyWindow, tokenBudget, compaction } = input;
+  const { messages, system, historyWindow, tokenBudget, compaction, resume } = input;
   // History windowing: bound what is re-sent per turn to the last N whole messages.
   // Slicing whole UIMessages keeps each turn's tool-call/result pairing intact.
   const history = historyWindow !== undefined && messages.length > historyWindow
@@ -319,6 +323,7 @@ export async function turnModelMessages(input: TurnPromptInput): Promise<TurnPro
   // no rail here has ever counted and the part that never shrinks. The host's
   // own `historyWindow` slice is already applied above and is not negotiable
   // (Q2b): what the host cut is gone, and this decides about what is left.
+  let compacted: CompactionState | undefined;
   if (compaction !== undefined) {
     const lastPromptTokens = compaction.state?.lastPromptTokens;
     const promptTokens = estimatePromptTokens({
@@ -329,17 +334,38 @@ export async function turnModelMessages(input: TurnPromptInput): Promise<TurnPro
         ? {}
         : { lastPromptTokens, reportedThrough: reportedThrough(converted) }),
     });
-    // INTERIM, until the summarizer lands: a trip falls straight to the shed,
-    // which drops reasoning, then tool payloads, then the oldest messages, with
-    // no summary and no notice to the model. The budget bounds the MESSAGES, so
-    // a trip caused by the tools block alone sheds nothing — the tools are not
-    // sheddable, and the floor does not pretend otherwise.
-    if (shouldCompact(promptTokens, compaction)) {
-      converted = shedToBudget(converted, system, triggerTokens(compaction));
+    // `force` is the overflow retry's re-entry: the provider has already said no,
+    // so the estimate has nothing left to decide.
+    if (compaction.force === true || shouldCompact(promptTokens, compaction)) {
+      // ONE pass, on the thread's own seat, at the start of the turn. Its own
+      // failure is not the turn's: a summarizer that 500s, times out or refuses
+      // leaves the shed underneath, which is the entire reason the shed stayed.
+      const result = await compactContext({
+        messages: converted,
+        model: compaction.model,
+        config: compaction,
+        ...(compaction.state?.summary === undefined ? {} : { summary: compaction.state.summary }),
+        ...(input.signal === undefined ? {} : { signal: input.signal }),
+      }).catch(() => undefined);
+      if (result === undefined || result.cutIndex === 0 || result.summary === "") {
+        // The floor. Drops reasoning, then tool payloads, then the oldest
+        // messages, with no summary and no notice to the model. The budget bounds
+        // the MESSAGES, so a trip caused by the tools block alone sheds nothing —
+        // the tools are not sheddable and the floor does not pretend otherwise.
+        converted = shedToBudget(converted, system, triggerTokens(compaction));
+      } else {
+        converted = [summaryMessage(result.summary), ...converted.slice(result.cutIndex)];
+        compacted = { version: 1, summary: result.summary };
+      }
     }
   }
-  // Whatever the window and the shed left behind, the prompt still has to be one
-  // a provider will accept — and this is the last place that is knowable.
+  // What this turn has ALREADY produced, appended after everything the projection
+  // decided: never summarized and never shed, because each tool call in it is a
+  // real guarded effect that a re-run would perform twice.
+  if (resume !== undefined && resume.length > 0) converted = [...converted, ...resume];
+  // Whatever the window, the summary and the shed left behind, the prompt still
+  // has to be one a provider will accept — and this is the last place that is
+  // knowable.
   converted = wellFormed(converted);
   // Cache the stable history prefix (everything but the final message) alongside the
   // static system prompt below, so Anthropic re-reads the cached prefix instead of
@@ -353,6 +379,7 @@ export async function turnModelMessages(input: TurnPromptInput): Promise<TurnPro
       { role: "system", content: system, providerOptions: CACHE_BREAKPOINT },
       ...converted,
     ],
+    ...(compacted === undefined ? {} : { compacted }),
   };
 }
 
@@ -470,7 +497,7 @@ function turnModel(options: TurnLoopOptions): LanguageModel {
 
 export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
   const maxSteps = options.context?.maxSteps ?? DEFAULT_MAX_STEPS;
-  const { messages: modelMessages } = await turnModelMessages({
+  const { messages: modelMessages, compacted } = await turnModelMessages({
     messages: options.messages,
     system: options.system,
     // The live toolset, because the trigger has to count what the prompt
@@ -480,6 +507,7 @@ export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
     tokenBudget: options.context?.contextTokenBudget,
     ...(options.compaction === undefined ? {} : { compaction: options.compaction }),
     ...(options.resume === undefined ? {} : { resume: options.resume }),
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
   });
   const { toolSearch } = options;
   const result = streamText({
@@ -513,6 +541,8 @@ export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
   return {
     result,
     maxSteps,
+    // DATA out: what this turn compacted, for whoever owns the state slot.
+    ...(compacted === undefined ? {} : { compacted }),
     async stepLimitPart() {
       try {
         const [finishReason, steps] = await Promise.all([result.finishReason, result.steps]);

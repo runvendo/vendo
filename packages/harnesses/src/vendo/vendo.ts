@@ -523,10 +523,17 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
       // §1.3's slot, which the runtime persists at turn end (`runtime.ts`
       // `onFinish` → `saveHarnessState`). Written only after a turn that
       // finished: a measurement from a turn that died describes a prompt the
-      // thread never actually sent. Whatever else the slot carries is spread
-      // through, so a later slice's summary is not erased by a token count.
-      if (lastPromptTokens !== undefined) {
-        turn.state.set(writeCompactionState({ ...carried, version: 1, lastPromptTokens }));
+      // thread never actually sent, and a summary from one describes history the
+      // thread never actually sent either. Whatever the slot already carried is
+      // spread through first, so a token count does not erase a summary or the
+      // other way round.
+      if (lastPromptTokens !== undefined || loop.compacted !== undefined) {
+        turn.state.set(writeCompactionState({
+          ...carried,
+          ...loop.compacted,
+          version: 1,
+          ...(lastPromptTokens === undefined ? {} : { lastPromptTokens }),
+        }));
       }
 
       const stepLimit = await loop.stepLimitPart();
