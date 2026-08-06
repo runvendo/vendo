@@ -42,11 +42,20 @@ vendo knowledge sync             # ingest → diff → push changed docs
 `sync` is the only verb that moves content. It parses and chunks your files,
 diffs against the sha256 hash manifest (`.vendo/knowledge-manifest.json` —
 regenerable, add it to `.gitignore`), upserts exactly the documents that
-changed, removes the ones that vanished, and rewrites the manifest last. With
-no engine configured it targets the local lexical engine over the project's
-default store (`.vendo/data` — the dev server's ENG-351 single-writer lock
-applies, so stop the dev server first or point the engines at your own
-Postgres). Re-running with no changes pushes nothing.
+changed, removes the ones that vanished, and rewrites the manifest last.
+Re-running with no changes pushes nothing.
+
+`sync` pushes to the engine your **server** would read, so the docs land where
+the agent will look for them: with `VENDO_API_KEY` set that is Vendo Cloud,
+and without it the local lexical engine over the project's default store
+(`.vendo/data` — the dev server's ENG-351 single-writer lock applies, so stop
+the dev server first or point the engines at your own Postgres). Every run
+says which one it chose, and `--dry-run` names the target it would push to:
+
+```
+Synced: 3 upserted, 1 removed, 128 unchanged → Vendo Cloud (console.vendo.run)
+Synced: 3 upserted, 1 removed, 128 unchanged → local store (.vendo/data)
+```
 
 The agent side needs no wiring beyond the knowledge slot on `createVendo`:
 `knowledge: vendoKnowledge()` — the composed store is injected for you, and

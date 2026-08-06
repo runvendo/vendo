@@ -10,6 +10,7 @@ import {
 } from "@vendoai/core";
 import {
   VENDO_KNOWLEDGE_CONFIG_FORMAT,
+  cloudKnowledge,
   ingestSources,
   knowledgeConfigSchema,
   knowledgeSourceConfigSchema,
@@ -17,6 +18,8 @@ import {
   type KnowledgeConfig,
 } from "@vendoai/knowledge";
 import { createStore } from "@vendoai/store";
+import { resolveCloudBaseUrl } from "../../cloud-key-fetch.js";
+import { environment } from "../../wire/shared.js";
 import { formatTable } from "../cloud/output.js";
 import { consoleOutput, withCommandRun, type Output, type TelemetryOptions } from "../shared.js";
 
@@ -61,8 +64,9 @@ export interface KnowledgeCliOptions {
   output?: Output;
   /** Injectable telemetry deps (matches init/doctor). */
   telemetry?: TelemetryOptions;
-  /** The engine sync targets. Default: the local lexical engine over the
-      project store (deferred to ENG-363); tests inject a double. */
+  /** The engine sync targets. Default: whichever engine the composed server
+      would use for this project (see chooseSyncEngine); tests inject a
+      double, and an injected adapter always wins. */
   adapter?: KnowledgeAdapter;
 }
 
@@ -267,7 +271,10 @@ async function runSyncVerb(
   const removes = Object.keys(manifest?.docs ?? {}).filter((id) => !hashes.has(id));
   const unchanged = docs.length - upserts.length;
 
-  output.log(`Plan: ${upserts.length} to upsert, ${removes.length} to remove, ${unchanged} unchanged (${docs.length} docs total).`);
+  // Named before the plan prints: a developer must be able to see WHERE the
+  // docs are going without running the sync to find out.
+  const engine = chooseSyncEngine(dir, options.adapter);
+  output.log(`Plan: ${upserts.length} to upsert, ${removes.length} to remove, ${unchanged} unchanged (${docs.length} docs total) → ${engine.target}.`);
   if (dryRun) {
     for (const doc of upserts) output.log(`  upsert ${doc.id}`);
     for (const id of removes) output.log(`  remove ${id}`);
@@ -275,7 +282,7 @@ async function runSyncVerb(
     return 0;
   }
 
-  const resolved = options.adapter === undefined ? await defaultSyncAdapter(dir) : { adapter: options.adapter };
+  const resolved = await engine.open();
   const adapter = resolved.adapter;
   try {
     if (!adapter.posture.write || adapter.upsert === undefined || adapter.remove === undefined) {
@@ -294,22 +301,70 @@ async function runSyncVerb(
       updatedAt: new Date().toISOString(),
     };
     await writeFile(manifestPath(dir), `${JSON.stringify(next, null, 2)}\n`, "utf8");
-    output.log(`Synced: ${upserts.length} upserted, ${removes.length} removed, ${unchanged} unchanged.`);
+    output.log(`Synced: ${upserts.length} upserted, ${removes.length} removed, ${unchanged} unchanged → ${engine.target}.`);
     return 0;
   } finally {
     await resolved.close?.();
   }
 }
 
-/** The zero-config engine when none is injected: the local lexical engine
-    over the project's local store (`.vendo/data`, the same createStore
-    default the composed server uses when no store is configured — ENG-351
-    single-writer discipline applies, so a running dev server on the same
-    data dir makes this fail loudly rather than corrupt). */
-async function defaultSyncAdapter(dir: string): Promise<{ adapter: KnowledgeAdapter; close?: () => Promise<void> }> {
-  const store = createStore({ dataDir: join(dir, ".vendo", "data") });
-  await store.ensureSchema();
-  return { adapter: vendoKnowledge({ store }), close: () => store.close() };
+/** What sync is about to push to, chosen and NAMED before anything moves.
+    `open()` is deferred so `--dry-run` can print the target without building
+    an engine (opening the local store would take its single-writer lock). */
+interface SyncEngine {
+  /** Human phrase for the output line — the whole point is that a developer
+      can see WHERE their docs went without reading this file. */
+  target: string;
+  open: () => Promise<{ adapter: KnowledgeAdapter; close?: () => Promise<void> }>;
+}
+
+/** Which engine sync targets, mirroring the composed server's
+    `selectKnowledge` seam (server.ts) restricted to what a CLI can know:
+
+      1. an injected adapter always wins (the adapter rule — tests and hosts
+         driving the CLI directly);
+      2. a Cloud key means Vendo Cloud, so `sync` pushes over the same
+         `vendo/knowledge-wire@1` /upsert + /remove the server would read
+         from — the key is read exactly the way the server reads it
+         (cloudKeyOptions: VENDO_API_KEY, repointed by VENDO_CLOUD_URL);
+      3. no key: the local lexical engine over the project store
+         (`.vendo/data`, the same createStore default the server falls back
+         to — ENG-351 single-writer discipline applies, so a running dev
+         server on the same data dir makes this fail loudly, never corrupt).
+
+    Syncing into a store the server never reads is the failure this closes:
+    before, a Cloud-keyed project pushed its docs into a local store while its
+    agent searched Cloud, and nothing said so. */
+function chooseSyncEngine(dir: string, injected: KnowledgeAdapter | undefined): SyncEngine {
+  if (injected !== undefined) {
+    return { target: "the configured engine", open: async () => ({ adapter: injected }) };
+  }
+  const apiKey = environment("VENDO_API_KEY");
+  if (apiKey !== undefined) {
+    const baseUrl = resolveCloudBaseUrl();
+    return {
+      target: `Vendo Cloud (${hostLabel(baseUrl)})`,
+      open: async () => ({ adapter: cloudKnowledge({ apiKey, baseUrl }) }),
+    };
+  }
+  return {
+    target: "local store (.vendo/data)",
+    open: async () => {
+      const store = createStore({ dataDir: join(dir, ".vendo", "data") });
+      await store.ensureSchema();
+      return { adapter: vendoKnowledge({ store }), close: () => store.close() };
+    },
+  };
+}
+
+/** The console's host, so the line reads "Vendo Cloud (console.vendo.run)"
+    rather than repeating a full URL nobody needs to read. */
+function hostLabel(baseUrl: string): string {
+  try {
+    return new URL(baseUrl).host;
+  } catch {
+    return baseUrl;
+  }
 }
 
 export async function runKnowledge(args: string[], options: KnowledgeCliOptions = {}): Promise<number> {
