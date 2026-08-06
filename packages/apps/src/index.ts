@@ -123,7 +123,6 @@ export {
   UNKNOWN_MODEL_MAX_OUTPUT_TOKENS,
 } from "./model-params.js";
 export {
-  UNSTORED_APP_ID,
   type GeneratedAppDocument,
   type GenerationDependencies,
 } from "./generation/engine.js";
@@ -138,12 +137,10 @@ export { buildingAppsSkill } from "./skills/building-apps.js";
 // screen agent's in `@vendoai/harnesses`, the builder's in composition — and a
 // second rendering of the same two config keys is how they start to disagree.
 export { hostDesignBrief } from "./generation/contracts/sections.js";
-// `conductCreate` / `conductEdit` and their result types were public here for
-// "external bench harnesses". A reverse-dependency walk (2026-08-05) found no
-// caller anywhere — in this repo, the examples, the corpus harness or the docs —
-// so the quarantined pipeline no longer has a public surface to be extended
-// through. `createApps()` still drives it internally; new work uses the lean
-// loop and the checks floor at the paint seam.
+// The conductor, the brain, the deterministic fill and their public surface are
+// GONE (2026-08-06). There is one builder — the screen assembler in the
+// `apps.screen` slot — and one escape from it, the server lane an escalated plan
+// declares. `skeletonFromPlan` below is what paints that plan.
 // Contract §3.2 — the checkout/commit seam. Public because the workspace half of
 // it lives outside this package: a sandboxed harness holds a `WorkspaceFs` and
 // never a store, so composition binds the store side once and hands these to

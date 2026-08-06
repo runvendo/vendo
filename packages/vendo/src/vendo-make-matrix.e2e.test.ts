@@ -19,11 +19,12 @@
  *  5. assembler unavailable    → a failed receipt that says so, and nothing else runs
  *  6. the MCP door             → an outside agent gets words, and a screen lands
  *
- * Case 3 is the one this PR adds a receiving end for, and it is the one proven
- * able to fail: with `escalatedPlan` unwired in composition the build stops
- * anchoring on the plan the person is already looking at, and with the
- * `runtime.machine.available()` gate inverted the escalation falls back to a
- * failed receipt. Both are re-checked by hand before every push (see the PR).
+ * There is ONE engine behind all six. The brain that used to sit between an
+ * escalation and the box is gone, so case 3's proof is now the absence of a
+ * middleman: the escalated plan reaches the in-box builder verbatim, the ask
+ * travels beside it, and NOT ONE brain prompt is spent deciding what to build.
+ * Case 2 is the same engine again — an edit is the screen agent opening the
+ * app's own document and saving it back.
  */
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -65,20 +66,13 @@ const ESCALATED_PLAN = `<Plan name="Invoice matcher">
   </Group>
 </Plan>`;
 
-/** What the conductor's brain answers for an escalated ask: the same shape,
- *  plus the server work only a box can do. */
-const BOX_PLAN = `<Plan name="Invoice matcher">
-  <Group title="Matches">
-    <Leaf component="Text" purpose="the matched invoices"/>
-  </Group>
-  <Server kind="box" why="Fuzzy-matching invoices against payments is real code no tool composition can express."/>
-</Plan>`;
-
-const FILL = '<Text text="Matched 12 invoices"/>';
-
-/** The brain's edit answer: an old/new text pair over the app as it was printed
- *  — the shipped edit dialect, not a shortcut around it. */
-const EDIT_THIS_TO_LAST = "<Edit><Old>This month</Old><New>Last month</New></Edit>";
+/** The same app, after the edit ask — a screen edit is the whole document saved
+ *  again, which is the only write path there is. */
+const SPENDING_EDITED = `<App name="Spending">
+  <Stack>
+    <Text text="Last month" />
+  </Stack>
+</App>`;
 
 // ── the fake box ─────────────────────────────────────────────────────────────
 // Modelled on a real v2 box, not on what the host wishes one did: the control
@@ -218,27 +212,18 @@ const speak = (text: string): Chunk[] => [
   { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
 ];
 
-/** The screen agent's own brief, verbatim from `environmentNote`. The one
- *  marker that says "this prompt is the assembly loop's" without counting calls
- *  — the pipeline interleaves brain turns, fill workers and the reviewer, so
- *  call order is not a routing signal. */
+/** The screen agent's own brief, verbatim from `environmentNote`. The one marker
+ *  that says "this prompt is the assembly loop's" without counting calls. */
 const SCREEN_BRIEF_MARKER = "# In this loop";
+/** The brain's own marker. It is asserted ABSENT: the brain is deleted, and a
+ *  prompt carrying this again would mean a second engine came back. */
 const BRAIN_MARKER = "THEY ARE ASKING NOW:";
-const FILL_MARKER = "YOUR SECTION";
-/** The brain's edit prompt prints the app it is amending; a create's never
- *  can. That print is the only thing telling the two apart, since both end on
- *  the same `THEY ARE ASKING NOW:` marker. */
-const EDIT_MARKER = "THE APP AS IT STANDS";
 
 interface ScriptOptions {
-  /** The screen agent's steps, in order. Exhausted → it stops talking. */
+  /** The screen agent's steps, in order, across every run in the walk. A create
+   *  and an edit are the SAME loop, so one FIFO feeds both. Exhausted → it stops
+   *  talking. */
   screenTurns: Chunk[][];
-  /** What the conductor's brain answers. */
-  brain?: string;
-  /** What a fill worker answers for its group. */
-  fill?: string;
-  /** What the tree-edit dialect answers. */
-  edit?: string;
 }
 
 interface ScriptedModel {
@@ -263,9 +248,9 @@ function scripted(options: ScriptOptions): ScriptedModel {
     if (prompt.includes(SCREEN_BRIEF_MARKER)) {
       return screen.shift() ?? speak("nothing more to do");
     }
-    if (prompt.includes(FILL_MARKER)) return speak(options.fill ?? FILL);
-    if (prompt.includes(EDIT_MARKER)) return speak(options.edit ?? EDIT_THIS_TO_LAST);
-    return speak(options.brain ?? SPENDING);
+    // Anything else is a model call this matrix does not expect. Answering it
+    // with a document would hide a second engine; a bare sentence cannot.
+    return speak("nothing here answers that");
   };
   const textOf = (call_: { prompt?: unknown }): string => JSON.stringify(call_.prompt ?? "");
   const model = {
@@ -334,6 +319,11 @@ interface Walked {
   prompts: string[];
   box: BoxLog;
 }
+
+/** Every prompt that was NOT the assembly loop's — the middleman detector. A
+ *  brain prompt here is a second engine reappearing. */
+const nonScreenPrompts = (prompts: readonly string[]): string[] =>
+  prompts.filter((prompt) => !prompt.includes(SCREEN_BRIEF_MARKER));
 
 /**
  * One real turn whose harness does exactly what a calling agent does: ask
@@ -437,9 +427,14 @@ describe("the six-type matrix — every `vendo_make` ask type, one deployment", 
         { request: "show me what I spent this month" },
         { request: "say last month instead", app: (previous) => previous[0]!.id },
       ],
-      // Only the FIRST ask reaches the screen agent: `vendo_make` with `app` set
-      // is an edit of a named app, and edits ride the dialect edit path.
-      screenTurns: [call("save_app", { content: SPENDING }, "c1"), speak("saved")],
+      // BOTH asks reach the screen agent: an edit is the same loop, asked to
+      // open this app's document and save it back. There is no second dialect.
+      screenTurns: [
+        call("save_app", { content: SPENDING }, "c1"),
+        speak("saved"),
+        call("save_app", { content: SPENDING_EDITED }, "c2"),
+        speak("edited"),
+      ],
       openAfter: true,
     });
 
@@ -458,6 +453,8 @@ describe("the six-type matrix — every `vendo_make` ask type, one deployment", 
       .toEqual(new Set([`vendo-view:${created!.id}`]));
     // The repaint is a real second paint, not the first one counted twice.
     expect(walked.views.length).toBeGreaterThan(1);
+    // ONE ENGINE: no brain answered either half of this.
+    expect(nonScreenPrompts(walked.prompts)).toHaveLength(0);
   }, 60_000);
 
   it("TYPE 3 · an escalation WITH a sandbox builds, and the outline becomes the app", async () => {
@@ -465,21 +462,25 @@ describe("the six-type matrix — every `vendo_make` ask type, one deployment", 
       sandbox: true,
       asks: [{ request: "match my invoices against payments and show me what didn't clear" }],
       screenTurns: [call("escalate", { plan: ESCALATED_PLAN, why: "this needs real matching code" }, "c1")],
-      brain: BOX_PLAN,
     });
 
     const receipt = walked.receipts[0]!;
     // Not a failure and not a fall-through apology: the build ran.
     expect(receipt.status).toBe("ready");
 
-    // THE PLAN WAS THE BRIEF. The person is already looking at this outline, so
-    // a build that re-planned from the ask alone would swap the thing they are
-    // watching for a different app under the same card.
-    const brainPrompts = walked.prompts.filter((prompt) => prompt.includes(BRAIN_MARKER));
-    expect(brainPrompts.length).toBeGreaterThan(0);
-    expect(brainPrompts.join("\n")).toContain("Invoice matcher");
-    // …and the ask still travelled verbatim beside it.
-    expect(brainPrompts.join("\n")).toContain("match my invoices against payments");
+    // THE PLAN IS THE BRIEF, AND NOTHING SITS BETWEEN THEM. The person is
+    // already looking at this outline, so a build that re-planned from the ask
+    // alone would swap the thing they are watching for a different app under the
+    // same card. The plan reaches the in-box builder as its task, the ask travels
+    // verbatim beside it, and the plan's own `<Server>` — absent here, so the
+    // escalation itself says "box" — is what chose this lane.
+    const task = walked.box.tasks.join("\n");
+    expect(task).toContain("Invoice matcher");
+    expect(task).toContain("match my invoices against payments");
+    // THE MIDDLEMAN IS GONE. Not one prompt outside the assembly loop, so no
+    // brain re-planned this and no fill worker wrote into it.
+    expect(nonScreenPrompts(walked.prompts)).toHaveLength(0);
+    expect(walked.prompts.filter((prompt) => prompt.includes(BRAIN_MARKER))).toHaveLength(0);
 
     // THE MACHINE. A box was provisioned and the in-box agent really wrote to
     // its disk — the fake is a box, not a promise that one happened.
@@ -508,8 +509,6 @@ describe("the six-type matrix — every `vendo_make` ask type, one deployment", 
     const walked = await walk({
       asks: [{ request: "match my invoices against payments and show me what didn't clear" }],
       screenTurns: [call("escalate", { plan: ESCALATED_PLAN, why: "this needs real matching code" }, "c1")],
-      // If the conductor ran, THIS is what it would have built. It must not.
-      brain: SPENDING,
     });
 
     const receipt = walked.receipts[0]!;
@@ -523,10 +522,9 @@ describe("the six-type matrix — every `vendo_make` ask type, one deployment", 
     // is only possible because the plan was read back on THIS path too.
     expect(receipt.title).toBe("Invoice matcher");
 
-    // THE CONDUCTOR NEVER RAN. It is assembly too, so it cannot serve an ask that
-    // assembly just escalated — and it would have spent a whole build's latency
-    // to arrive at a worse version of the screen the person already saw.
-    expect(walked.prompts.filter((prompt) => prompt.includes(BRAIN_MARKER))).toHaveLength(0);
+    // NOTHING RAN BEHIND IT. There is no second engine to spend a whole build's
+    // latency arriving at a worse version of the screen the person already saw.
+    expect(nonScreenPrompts(walked.prompts)).toHaveLength(0);
     expect(JSON.stringify(walked.views)).not.toContain("This month");
 
     // NO ORPHAN. The plan's skeleton is the only paint, it is on this app's own
@@ -541,15 +539,12 @@ describe("the six-type matrix — every `vendo_make` ask type, one deployment", 
 
   it("TYPE 5 · an assembler that produces nothing renderable fails honestly — nothing rescues it", async () => {
     // The control case, inverted. The screen agent saved bytes the compiler cannot
-    // render, so the seam painted nothing and `authored` stored no row. That used
-    // to fall through to the conductor; the conductor is gone from this route, and
-    // an unwired or unserving assembler is a composition bug that has to surface
-    // rather than be quietly served by an engine nobody chose.
+    // render, so the seam painted nothing and `authored` stored no row. There is
+    // no engine left to fall through to, and an unwired or unserving assembler is
+    // a composition bug that has to surface rather than be quietly served.
     const walked = await walk({
       asks: [{ request: "show me what I spent this month" }],
       screenTurns: [call("save_app", { content: "not a document at all" }, "c1"), speak("saved")],
-      // What a fall-through WOULD have built. It must not appear anywhere.
-      brain: SPENDING,
     });
 
     const receipt = walked.receipts[0]!;
@@ -557,8 +552,8 @@ describe("the six-type matrix — every `vendo_make` ask type, one deployment", 
     // The say is plain, and it is about this ask.
     expect(receipt.say).toContain("couldn't put that screen together");
     expect(receipt.title).toBe("show me what I spent this month");
-    // NOTHING generated behind it: not one brain prompt, no row, no paint.
-    expect(walked.prompts.filter((prompt) => prompt.includes(BRAIN_MARKER))).toHaveLength(0);
+    // NOTHING generated behind it: not one prompt outside the loop, no row, no paint.
+    expect(nonScreenPrompts(walked.prompts)).toHaveLength(0);
     expect(await walked.vendo.apps.get(receipt.id, ctx)).toBeNull();
     expect(JSON.stringify(walked.views)).not.toContain("This month");
   }, 60_000);

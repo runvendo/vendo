@@ -12,7 +12,7 @@
  * audit trail exists for, and the thread's card renders the armed state as
  * fact.
  */
-import { VENDO_APP_FORMAT, type AppDocument, type RunContext, type ToolRegistry } from "@vendoai/core";
+import { VENDO_APP_FORMAT, type AppDocument, type RunContext, type ScreenAssembler, type ToolRegistry } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { createApps } from "./index.js";
 import { guardFixture, memoryStore, scriptedLanguageModel, seedAppRow } from "./testing/index.js";
@@ -52,18 +52,24 @@ const seedDoc: AppDocument = {
   },
 };
 
-/** The brain's amendment: the ask is server-shaped, so the plan declares one. */
-const AMENDMENT = `<Plan name="Invoice board">
+/** The plan the escalating screen agent left behind: the ask is server-shaped,
+ *  so the plan declares one, and the ladder runs exactly what it declared. */
+const ESCALATED_PLAN = `<Plan name="Invoice board">
   <Group title="Nudges">
     <Leaf component="Text" purpose="One line saying the nudge automation runs daily"/>
   </Group>
   <Server kind="agentic" schedule="every day" why="Each invoice needs a judgment call on how firm the nudge should be."/>
 </Plan>`;
 
-const FILL = '<Text text="Nudges are drafted every morning."/>';
+/** The one builder's answer to an ask no arrangement of components can serve:
+ *  it asks for the builder, and the plan above is what it left behind. */
+const escalatingScreen: ScreenAssembler = {
+  assemble: async () => ({ kind: "escalate", why: "nudging every day happens while nobody is watching" }),
+};
 
 /** The automation planner's answer: agentic, so there is no results collection
- *  and therefore no board rewire to script. */
+ *  and therefore no board rewire to script. The planner is the ONE thing on this
+ *  path that still runs on the model. */
 const PLAN = JSON.stringify({
   name: "Invoice nudge triage",
   trigger: {
@@ -72,14 +78,8 @@ const PLAN = JSON.stringify({
   },
 });
 
-const respond = (prompt: string): string => {
-  if (prompt.includes("You are the Vendo automation planner")) return PLAN;
-  if (prompt.includes("YOUR SECTION")) return FILL;
-  // Only BRAIN turns are answered; the AI reviewer rides the same model and
-  // reports nothing.
-  if (!prompt.includes("THEY ARE ASKING NOW:")) return "";
-  return AMENDMENT;
-};
+const respond = (prompt: string): string =>
+  prompt.includes("You are the Vendo automation planner") ? PLAN : "";
 
 const setup = (armAutomation?: () => Promise<{ enabled: boolean; missing: never[] }>) => {
   const store = memoryStore();
@@ -96,6 +96,8 @@ const setup = (armAutomation?: () => Promise<{ enabled: boolean; missing: never[
           : message.content.map((part) => part.text ?? "").join(""))
         .join("\n"),
     )),
+    screen: escalatingScreen,
+    escalatedPlan: async () => ESCALATED_PLAN,
     ...(armAutomation === undefined ? {} : { armAutomation }),
   });
   return { store, guard, runtime };

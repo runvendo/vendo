@@ -1,18 +1,18 @@
 // Gesture-owned forking (2026-07-21) — the fork executes DETERMINISTICALLY
 // when the user acts on a remixable slot (pins.fork): the engine copies the
-// captured source and records the pin with NO model call. The model lost the
-// fork decision entirely; an instruction riding the gesture reaches the model
-// already scoped to an ordinary island edit on the existing fork.
-import type { AppDocument, RunContext, StoreAdapter, ToolRegistry } from "@vendoai/core";
+// captured source and records the pin with NO builder call. The generator lost
+// the fork decision entirely; an instruction riding the gesture reaches the
+// builder already scoped to an ordinary island edit on the existing fork.
+import type { AppDocument, RunContext, ScreenAssembler, StoreAdapter, ToolRegistry } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
-import { createApps, type AppsConfig, type PinBaseline } from "./index.js";
+import { createApps, type AppsConfig, type AppsRuntime, type PinBaseline } from "./index.js";
 import { pinComponentName } from "./pins.js";
 import {
+  basicLanguageModel,
   guardFixture,
   memoryStore,
+  scriptedAssembler,
   seedAppRow,
-  scriptedLanguageModel,
-  type ScriptedModelCall,
 } from "./testing/index.js";
 
 const ctx: RunContext = {
@@ -64,19 +64,35 @@ const runtimeWith = (store: StoreAdapter, overrides: Partial<AppsConfig> = {}) =
   ...overrides,
 });
 
-const promptText = (call: ScriptedModelCall): string => call.prompt.map((message) => {
-  if (typeof message.content === "string") return message.content;
-  return message.content.map((part) => part.text ?? "").join("");
-}).join("\n");
+/** The one line the pinned card renders, rewritten. */
+const relabelled = (source: string, label: string): string => source.replace(/\$1\.2M[^<]*/, label);
 
-/** A brain turn, as opposed to the AI reviewer's strict tool call that rides
- *  the same model afterwards: only the brain is handed what the person said. */
-const isBrainTurn = (call: ScriptedModelCall): boolean => promptText(call).includes("THEY ARE ASKING NOW:");
+/** What an instruction asks that card to say — the whole change these tests are
+ *  about, read out of the person's own words. */
+const labelAsked = (instruction: string): string | undefined => {
+  const colour = /\b(blue|green)\b/i.exec(instruction)?.[1];
+  return colour === undefined ? undefined : `$1.2M in ${colour.toLowerCase()}`;
+};
 
-/** The brain's edit for a pinned component: its island source is printed into
- *  the app as one `<Island>` element, so swapping it is one old/new text edit. */
-const islandEdit = (from: string, to: string): string =>
-  `<Edit><Old><Island name="${COMPONENT}">${from}</Island></Old><New><Island name="${COMPONENT}">${to}</Island></New></Edit>`;
+/**
+ * The ONE builder, as a fixture: it opens the app's own document, rewrites the
+ * pinned island in it and saves the whole thing back through `authored`. Only
+ * the choice of new source stands in for a live screen agent — the write, the
+ * undo point and the recorded pin intent are the runtime's own.
+ */
+const relabelScreen = (runtime: () => AppsRuntime, seen: string[] = []): ScreenAssembler =>
+  scriptedAssembler(runtime, (request, current) => {
+    seen.push(request.request);
+    const source = current?.components?.[COMPONENT];
+    const label = labelAsked(request.request);
+    if (source === undefined || label === undefined) {
+      return { kind: "unavailable", why: `nothing in "${request.request}" names a change I can make to ${COMPONENT}` };
+    }
+    return `<App name="${current?.name ?? "My corner"}">
+  <${COMPONENT} />
+  <Island name="${COMPONENT}">${relabelled(source, label)}</Island>
+</App>`;
+  });
 
 describe("06-apps §8 — gesture-owned deterministic fork (pins.fork)", () => {
   it("forks into an existing app with NO model call and records the pin trail", async () => {
@@ -144,12 +160,11 @@ describe("06-apps §8 — gesture-owned deterministic fork (pins.fork)", () => {
     const store = memoryStore();
     const app = seedDoc();
     await seedAppRow(store, app, ctx.principal.subject);
-    const calls: ScriptedModelCall[] = [];
-    const runtime = runtimeWith(store, {
-      model: scriptedLanguageModel((call) => {
-        if (isBrainTurn(call)) calls.push(call);
-        return islandEdit(SOURCE, SOURCE.replace("$1.2M", "$1.2M in blue"));
-      }),
+    const asked: string[] = [];
+    let runtime: AppsRuntime;
+    runtime = runtimeWith(store, {
+      model: basicLanguageModel(),
+      screen: relabelScreen(() => runtime, asked),
     });
 
     const forked = await runtime.pins.fork(
@@ -159,13 +174,12 @@ describe("06-apps §8 — gesture-owned deterministic fork (pins.fork)", () => {
     expect(forked.edit?.failure).toBeUndefined();
     expect(forked.app.components?.[COMPONENT]).toContain("$1.2M in blue");
     expect(forked.app.pins).toEqual([{ slot: SLOT, base: "sha256:maple-base" }]);
-    // Exactly one model call, and it was scoped: the fork already exists.
-    expect(calls.length).toBe(1);
-    const prompt = promptText(calls[0]!);
-    expect(prompt).toContain(`already forked into the generated component "${COMPONENT}"`);
-    expect(prompt).toContain("make the number blue");
-    // The dialect no longer teaches the model to fork.
-    expect(prompt).not.toContain("<ForkPin");
+    // Exactly one turn of the builder, and it was scoped: the fork already exists.
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toContain(`already forked into the generated component "${COMPONENT}"`);
+    expect(asked[0]).toContain("make the number blue");
+    // The gesture asks for an ordinary island edit, never for a fork.
+    expect(asked[0]).not.toContain("<ForkPin");
   });
 
   it("keeps the faithful fork when the scoped instruction edit fails", async () => {
@@ -173,7 +187,8 @@ describe("06-apps §8 — gesture-owned deterministic fork (pins.fork)", () => {
     const app = seedDoc();
     await seedAppRow(store, app, ctx.principal.subject);
     const runtime = runtimeWith(store, {
-      model: scriptedLanguageModel("not an edit document", "still not an edit document"),
+      model: basicLanguageModel(),
+      screen: { assemble: async () => ({ kind: "unavailable", why: "I could not write that change" }) },
     });
 
     const forked = await runtime.pins.fork(
@@ -238,8 +253,10 @@ describe("06-apps §8 — gesture-owned deterministic fork (pins.fork)", () => {
     const store = memoryStore();
     const app = seedDoc();
     await seedAppRow(store, app, ctx.principal.subject);
-    const forkRuntime = runtimeWith(store, {
-      model: scriptedLanguageModel(islandEdit(SOURCE, SOURCE.replace("$1.2M", "$1.2M in blue"))),
+    let forkRuntime: AppsRuntime;
+    forkRuntime = runtimeWith(store, {
+      model: basicLanguageModel(),
+      screen: relabelScreen(() => forkRuntime),
     });
     const forked = await forkRuntime.pins.fork(
       { appId: app.id, slot: SLOT, instruction: "make the number blue" },
@@ -249,13 +266,11 @@ describe("06-apps §8 — gesture-owned deterministic fork (pins.fork)", () => {
 
     // The host updates the component and resyncs: same store, new baseline.
     const NEW_SOURCE = SOURCE.replace("NetWorthCard()", "NetWorthCard() /* v2 */");
-    const replayed: string[] = [];
-    const rebaseRuntime = runtimeWith(store, {
+    let rebaseRuntime: AppsRuntime;
+    rebaseRuntime = runtimeWith(store, {
       pinBaselines: [{ ...baseline, source: NEW_SOURCE, hash: "sha256:maple-new" }],
-      model: scriptedLanguageModel((call) => {
-        if (isBrainTurn(call)) replayed.push(promptText(call));
-        return islandEdit(NEW_SOURCE, NEW_SOURCE.replace("$1.2M", "$1.2M in blue"));
-      }),
+      model: basicLanguageModel(),
+      screen: relabelScreen(() => rebaseRuntime),
     });
     await expect(rebaseRuntime.pins.drift(app.id, ctx)).resolves.toEqual([
       expect.objectContaining({ slot: SLOT, reason: "baseline-changed" }),
@@ -264,7 +279,7 @@ describe("06-apps §8 — gesture-owned deterministic fork (pins.fork)", () => {
     expect(rebase.status).toBe("rebased");
     if (rebase.status !== "rebased") throw new Error("expected rebased");
     // Only the LATER modification replays — the gesture fork itself is
-    // mechanical (intents[0] by construction), never re-sent to the model.
+    // mechanical (intents[0] by construction), never re-sent to the builder.
     expect(rebase.replayed.length).toBe(1);
     expect(rebase.replayed[0]).toContain("make the number blue");
     expect(rebase.app.pins).toEqual([{ slot: SLOT, base: "sha256:maple-new" }]);

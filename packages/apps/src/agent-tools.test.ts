@@ -14,6 +14,7 @@ import {
   bindTools,
   guardFixture,
   memoryStore,
+  scriptedAssembler,
   seedAppRow,
   scriptedLanguageModel,
 } from "./testing/index.js";
@@ -35,12 +36,14 @@ const generated = '<App name="Tool-built dashboard"><Text text="Ready"/><Disclai
 
 describe("apps agent tools", () => {
   it("exposes exactly provider-safe draft-2020-12 descriptors with closed object inputs", async () => {
-    const runtime = createApps({
+    let runtime: AppsRuntime;
+    runtime = createApps({
       store: memoryStore(),
       guard: guardFixture(),
       tools: hostTools,
       catalog: [],
       model: scriptedLanguageModel(generated),
+      screen: authoringAssembler(() => runtime, generated),
     });
 
     const descriptors = await runtime.agentTools().descriptors();
@@ -101,12 +104,14 @@ describe("apps agent tools", () => {
    */
   it("asks no approval for app self-mutation: no risk projection, on any shape of call", async () => {
     const store = memoryStore();
-    const runtime = createApps({
+    let runtime: AppsRuntime;
+    runtime = createApps({
       store,
       guard: guardFixture(),
       tools: hostTools,
       catalog: [],
       model: scriptedLanguageModel(generated),
+      screen: authoringAssembler(() => runtime, generated),
     });
     const created = await runtime.create({ prompt: "Build a dashboard" }, ctx);
     await seedAppRow(store, { ...created, id: "app_foreign" }, "user_other");
@@ -136,15 +141,19 @@ describe("apps agent tools", () => {
   });
 
   it("answers a rejected change with an honest failed receipt, never implying the app changed", async () => {
-    // An <Old> the printed app does not hold: the brain quoted text that is
-    // missing, which is an error and never a guess.
-    const broken = '<Edit><Old><Text text="missing card"/></Old><New><Text text="Renamed"/></New></Edit>';
-    const runtime = createApps({
+    // The change asks for something the assembler cannot make out of components
+    // and cannot escalate either, so it comes back `unavailable`: nothing was
+    // written, and the app stands exactly as it was.
+    let runtime: AppsRuntime;
+    runtime = createApps({
       store: memoryStore(),
       guard: guardFixture(),
       tools: hostTools,
       catalog: [],
-      model: scriptedLanguageModel(generated, broken),
+      model: scriptedLanguageModel(generated),
+      screen: scriptedAssembler(() => runtime, (_request, current) => (current === null
+        ? generated
+        : { kind: "unavailable", why: "there is no card by that name on this app" })),
     });
     const created = await runtime.create({ prompt: "Build a dashboard" }, ctx);
 
@@ -175,12 +184,15 @@ describe("apps agent tools", () => {
     // The whole ask died there. The `app` slot already carries the aim, so it
     // takes the name the person says out loud too.
     const store = memoryStore();
-    const runtime = createApps({
+    const updated = '<App name="Tool-built dashboard"><Text text="Updated"/><Disclaimer reason="Fixture app."/></App>';
+    let runtime: AppsRuntime;
+    runtime = createApps({
       store,
       guard: guardFixture(),
       tools: hostTools,
       catalog: [],
-      model: scriptedLanguageModel(generated, '<App name="Tool-built dashboard"><Text text="Updated"/><Disclaimer reason="Fixture app."/></App>'),
+      model: scriptedLanguageModel(generated),
+      screen: scriptedAssembler(() => runtime, (_request, current) => (current === null ? generated : updated)),
     });
     const created = await runtime.create({ prompt: "Build a dashboard" }, ctx);
     expect(created.name).toBe("Tool-built dashboard");
@@ -200,12 +212,14 @@ describe("apps agent tools", () => {
 
   it("asks which one when a name matches two apps, and changes neither", async () => {
     const store = memoryStore();
-    const runtime = createApps({
+    let runtime: AppsRuntime;
+    runtime = createApps({
       store,
       guard: guardFixture(),
       tools: hostTools,
       catalog: [],
       model: scriptedLanguageModel(generated),
+      screen: authoringAssembler(() => runtime, generated),
     });
     const first = await runtime.create({ prompt: "Build a dashboard" }, ctx);
     const second = await runtime.create({ prompt: "Build another dashboard" }, ctx);
@@ -231,12 +245,14 @@ describe("apps agent tools", () => {
     // `vendo_apps_open`, which took a raw id. It burned its attempts there and
     // concluded the app did not exist, while an exact name match sat in the
     // caller's own list. Both doors take the same aim or neither does.
-    const runtime = createApps({
+    let runtime: AppsRuntime;
+    runtime = createApps({
       store: memoryStore(),
       guard: guardFixture(),
       tools: hostTools,
       catalog: [],
       model: scriptedLanguageModel(generated),
+      screen: authoringAssembler(() => runtime, generated),
     });
     const created = await runtime.create({ prompt: "Build a dashboard" }, ctx);
 
@@ -249,12 +265,14 @@ describe("apps agent tools", () => {
   });
 
   it("asks which one when the name it was asked to open matches two apps", async () => {
-    const runtime = createApps({
+    let runtime: AppsRuntime;
+    runtime = createApps({
       store: memoryStore(),
       guard: guardFixture(),
       tools: hostTools,
       catalog: [],
       model: scriptedLanguageModel(generated),
+      screen: authoringAssembler(() => runtime, generated),
     });
     const first = await runtime.create({ prompt: "Build a dashboard" }, ctx);
     const second = await runtime.create({ prompt: "Build another dashboard" }, ctx);
@@ -273,12 +291,14 @@ describe("apps agent tools", () => {
   });
 
   it("leaves an id that resolves to nothing exactly as it was: the runtime's own answer", async () => {
-    const runtime = createApps({
+    let runtime: AppsRuntime;
+    runtime = createApps({
       store: memoryStore(),
       guard: guardFixture(),
       tools: hostTools,
       catalog: [],
       model: scriptedLanguageModel(generated),
+      screen: authoringAssembler(() => runtime, generated),
     });
 
     const outcome = await runtime.agentTools().execute({
@@ -366,12 +386,14 @@ describe("apps agent tools", () => {
   });
 
   it("contains runtime and input errors while preserving VendoError codes", async () => {
-    const runtime = createApps({
+    let runtime: AppsRuntime;
+    runtime = createApps({
       store: memoryStore(),
       guard: guardFixture(),
       tools: hostTools,
       catalog: [],
       model: scriptedLanguageModel(generated),
+      screen: authoringAssembler(() => runtime, generated),
     });
     const registry = runtime.agentTools();
 
@@ -413,12 +435,14 @@ describe("apps agent tools", () => {
 
   it("ownership-checks and round-trips declared data collections", async () => {
     const store = memoryStore();
-    const runtime = createApps({
+    let runtime: AppsRuntime;
+    runtime = createApps({
       store,
       guard: guardFixture(),
       tools: hostTools,
       catalog: [],
       model: scriptedLanguageModel(generated),
+      screen: authoringAssembler(() => runtime, generated),
     });
     const created = await runtime.create({ prompt: "Data tools" }, ctx);
     await seedAppRow(store, {
@@ -474,12 +498,14 @@ describe("§9.4 — a refused EDIT hands the model the fork offer, not the raw c
   // "…but here's what I can do".
   const setup = async (): Promise<{ tools: ToolRegistry; appId: string }> => {
     const store = memoryStore();
-    const runtime = createApps({
+    let runtime: AppsRuntime;
+    runtime = createApps({
       store,
       guard: guardFixture(),
       tools: hostTools,
       catalog: [],
       model: scriptedLanguageModel(generated),
+      screen: authoringAssembler(() => runtime, generated),
       appAccess: storeAccessFixture(store),
     });
     // Held by the org, with this caller a VIEWER — the one shape `forbidden`

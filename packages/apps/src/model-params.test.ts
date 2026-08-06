@@ -6,12 +6,9 @@
  * rule actually reaches the model layer through the real engine — with no live
  * API calls.
  */
-import type { NormalizedCatalog } from "@vendoai/core";
 import type { LanguageModel } from "ai";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
-import { runBrainTurn } from "./generation/brain.js";
-import type { GenerationDependencies } from "./generation/engine.js";
+import { askModel } from "./generation/engine.js";
 import {
   UNKNOWN_MODEL_MAX_OUTPUT_TOKENS,
   acceptsSamplingParams,
@@ -133,19 +130,6 @@ describe("explicit caller sampling", () => {
 // engine and assert on what the model layer was actually called with.
 // ---------------------------------------------------------------------------
 
-const catalog: NormalizedCatalog = [{
-  name: "MetricCard",
-  description: "Use for a single important metric with a short label and display value.",
-  propsSchema: z.object({ label: z.string(), value: z.string() }),
-  propsJsonSchema: {
-    type: "object",
-    properties: { label: { type: "string" }, value: { type: "string" } },
-    required: ["label", "value"],
-    additionalProperties: false,
-  },
-  examples: ['{"label":"Revenue","value":"$42k"}'],
-}];
-
 const WIRE = '<App name="Revenue board"><MetricCard label="Revenue" value="$42k"/></App>';
 
 interface RecordedCall { temperature?: number; maxOutputTokens?: number }
@@ -193,14 +177,19 @@ const recordingModel = (modelId: string): { model: LanguageModel; calls: Recorde
   return { model: model as unknown as LanguageModel, calls };
 };
 
-/** One brain turn is the smallest real generation call there is: the model
- *  answers with the finished app, so the params under test are the ones a
- *  create actually sends. */
+/** `askModel` is the one funnel every generation actor speaks through (the
+ *  screen assembler, the automation planner, the AI reviewer), so the params it
+ *  sends are the params a real generation sends. */
 const createWith = async (model: LanguageModel): Promise<void> => {
-  await runBrainTurn(
-    { instruction: "Show my account balances at a glance" },
-    { model, catalog } as unknown as GenerationDependencies,
+  const answer = await askModel(
+    model,
+    "You write Vendo apps.",
+    "Show my account balances at a glance",
   );
+  // A model call that never reached the provider would record nothing, and the
+  // per-call assertions below would then vacuously pass.
+  expect(answer.issues).toEqual([]);
+  expect(answer.text).toBe(WIRE);
 };
 
 describe("engine model calls (integration)", () => {

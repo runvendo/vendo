@@ -9,8 +9,8 @@
 import type { AppId, RunContext } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { APP_MEMORY_DECISIONS_MAX_BYTES, APP_MEMORY_MAX_ASKS } from "./app-memory.js";
-import { createApps } from "./index.js";
-import { basicLanguageModel, guardFixture, memoryStore } from "./testing/index.js";
+import { createApps, type AppsRuntime } from "./index.js";
+import { authoringAssembler, basicLanguageModel, guardFixture, memoryStore } from "./testing/index.js";
 
 const ctx: RunContext = {
   principal: { kind: "user", subject: "user_memory" },
@@ -19,11 +19,14 @@ const ctx: RunContext = {
   sessionId: "session_memory",
 };
 
+const WIRE = '<App name="Spending"><Text text="Spending"/><Disclaimer reason="Scripted fixture app."/></App>';
+
 const runtimeWithApp = async (): Promise<{
-  runtime: ReturnType<typeof createApps>;
+  runtime: AppsRuntime;
   appId: AppId;
 }> => {
-  const runtime = createApps({
+  let runtime: AppsRuntime;
+  runtime = createApps({
     store: memoryStore(),
     guard: guardFixture(),
     tools: {
@@ -32,6 +35,9 @@ const runtimeWithApp = async (): Promise<{
     },
     catalog: [],
     model: basicLanguageModel(),
+    // The ONE engine: the app under test is landed by the real `authored` write
+    // path, so `remember` writes onto a row a real create produced.
+    screen: authoringAssembler(() => runtime, WIRE),
   });
   const app = await runtime.create({ prompt: "Show my spending" }, ctx);
   return { runtime, appId: app.id };

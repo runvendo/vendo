@@ -208,6 +208,18 @@ sentence into the thing that fires:
 - \`kind="agentic"\` — **each firing needs judgment.** Which of these actually
   matter, what to say about them. It costs a model call every time it fires, so
   only choose it when a fixed recipe genuinely cannot decide.
+- \`kind="box"\` — **the work is real code.** A machine gets provisioned and a
+  builder writes an actual program in it: fuzzy matching, parsing a file format,
+  talking to a third-party API, anything no arrangement of this product's tools
+  can express. This is the rung you reach for when you HAND THE PLAN OVER rather
+  than assemble it yourself — so if you are escalating, this is almost always the
+  \`kind\`, and a plan that escalates with no \`<Server>\` at all is read as
+  \`kind="box"\` for exactly that reason.
+- \`kind="box" served\` — **the box owns the whole surface.** The bare \`served\`
+  flag (never \`served="yes"\`, and legal only with \`kind="box"\`) says the app is
+  not a tree of components at all: the machine serves its own web pages. Last
+  resort of all — the person loses everything the generated view gives them for
+  free — and only when a hand-built frontend is genuinely the ask.
 - \`why\` is required and it is one sentence: why this cannot happen in the
   browser. Without it the whole thing is dropped.
 - \`schedule\` is the cadence **the way the person said it** — "every Friday

@@ -1,13 +1,12 @@
 /**
- * The generation engine's shared plumbing: the model-call helpers every actor
- * uses (the brain, the fill workers, the island lane, the reviewer) and the
+ * The generation engine's shared plumbing: the model-call helpers the remaining
+ * actors use (the automation planner, the AI reviewer) and the
  * {@link GenerationDependencies} every generation module speaks.
  *
- * There is no create/edit loop here any more. The ORDER of a generation lives in
- * ./conductor.ts — one brain turn, a deterministic skeleton, parallel fill
- * workers, the checking layer — and the runtime wraps that with the store, the
- * screen, and the sandbox. What the model is TOLD lives in ./prompts and
- * ./contracts; what is ENFORCED lives in ./validation and ../checking.
+ * There is no create/edit loop here, and no longer one anywhere in this package.
+ * The ORDER of a build is the screen assembler's own loop
+ * (`harnesses/screen-agent.ts`) and, when it escalates, the server lane in
+ * ./lanes.ts. What is ENFORCED lives in ./validation and ../checking.
  */
 import {
   type AppDocument,
@@ -58,23 +57,6 @@ export interface GenerationDependencies extends FloorDependencies {
   /** Per-tool field semantics from `.vendo/semantics.json`: annotated shape
    *  cards and Kit format defaults. Keyed by tool name. */
   semantics?: Readonly<Record<string, ToolSemantics>>;
-  /** 06-apps §5 — additive, optional partial-tree streaming seam. */
-  onPartial?: (partial: GeneratedPartial) => void | Promise<void>;
-  /**
-   * The fast fill tier. `model` is the no-think switch — point it at a
-   * thinking-disabled model instance and the group workers run on it while the
-   * brain keeps the main (thinking) model. Absent → workers share `model`.
-   */
-  fill?: {
-    model?: LanguageModel;
-  };
-  /**
-   * What this host CANNOT do, stated to the brain as FACT before it plans
-   * (runtime `laneGates`). A lane the host does not have becomes a `<Cannot>`
-   * line the person reads in seconds, instead of a build that runs, escalates,
-   * and only then discovers a flag is off.
-   */
-  hostCannot?: readonly string[];
   /**
    * The island smoke-render gate: every generated island renders once in a
    * headless DOM before it ships, so a crashing island never reaches a screen.
@@ -86,15 +68,6 @@ export interface GenerationDependencies extends FloorDependencies {
 }
 
 export type GeneratedAppDocument = Omit<AppDocument, "id">;
-
-/**
- * A placeholder id for a document that is being generated and has not been
- * stored yet. Nothing keys off it — it exists because `AppDocument` carries an
- * id, the checks floor takes a whole `AppDocument` (build contract §5), and a
- * freshly generated app has no id until the runtime mints one. Named once here
- * so the mid-fill checks and the finished-app checks use the same one.
- */
-export const UNSTORED_APP_ID = "app_conducted";
 
 /**
  * A stored document's `tree` (the open UIPayload the store speaks) and the

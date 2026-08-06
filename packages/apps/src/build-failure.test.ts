@@ -1,9 +1,8 @@
-import type { LanguageModel } from "ai";
-import type { RunContext, ToolRegistry } from "@vendoai/core";
+import type { RunContext, ScreenAssembler, ToolRegistry } from "@vendoai/core";
 import { VendoError } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
-import { buildFailureReason, createApps } from "./index.js";
-import { guardFixture, memoryStore, scriptedLanguageModel } from "./testing/index.js";
+import { buildFailureReason, createApps, type AppsRuntime } from "./index.js";
+import { basicLanguageModel, guardFixture, memoryStore, scriptedAssembler } from "./testing/index.js";
 
 // Incident (runvendo/vendo#492): vendo_create_app returns fast with a
 // vendo/app-ref@1 while the build streams server-side. When the build turn
@@ -28,21 +27,37 @@ const context = (subject: string): RunContext => ({
   sessionId: `session_${subject}`,
 });
 
-/** A model whose every turn throws — the provider-error build path. */
-const throwingModel = (message: string): LanguageModel =>
-  scriptedLanguageModel(() => {
-    throw new Error(message);
-  });
+/**
+ * The build is the ONE engine — the assembler in the `screen` slot — so every
+ * failure class below arrives from THERE now: a throw, an `unavailable`, or an
+ * assemble that never settles. The brain that used to own these is gone.
+ */
+const throwingAssembler = (message: string): ScreenAssembler => ({
+  assemble: async () => { throw new Error(message); },
+});
 
-const setup = (model: LanguageModel) => {
+/** A throw carrying the engine's own issue lines, the way a failed generation
+ *  inside the assembler reports itself. */
+const failingAssembler = (issues: string[]): ScreenAssembler => ({
+  assemble: async () => { throw new VendoError("validation", issues[0]!, issues); },
+});
+
+const setup = (screen: ScreenAssembler) => {
   const store = memoryStore();
-  const runtime = createApps({ store, guard: guardFixture(), tools, catalog: [], model });
+  const runtime = createApps({
+    store,
+    guard: guardFixture(),
+    tools,
+    catalog: [],
+    model: basicLanguageModel(),
+    screen,
+  });
   return { store, runtime };
 };
 
 describe("build-failure lifecycle (#492)", () => {
   it("persists a terminal failed record when the build turn throws, and open() resolves to {kind:\"failed\"}", async () => {
-    const { runtime, store } = setup(throwingModel("boom"));
+    const { runtime, store } = setup(throwingAssembler("boom"));
     const ctx = context("user_ada");
 
     let appId: string | undefined;
@@ -78,7 +93,7 @@ describe("build-failure lifecycle (#492)", () => {
     // swallowed issues, so the precise quota/timeout CLASS is asserted by the
     // buildFailureReason unit tests below; here we assert the record is always
     // persisted as a terminal failure open() resolves promptly.
-    const { runtime, store } = setup(throwingModel("insufficient quota (402)"));
+    const { runtime, store } = setup(throwingAssembler("insufficient quota (402)"));
     const ctx = context("user_grace");
     await expect(runtime.create({ prompt: "Dashboard" }, ctx)).rejects.toBeInstanceOf(VendoError);
     const rows = await store.records("vendo_apps").list({});
@@ -88,7 +103,7 @@ describe("build-failure lifecycle (#492)", () => {
   });
 
   it("still throws not-found (→ the wire's {kind:\"pending\"}) for an app that never persisted", async () => {
-    const { runtime } = setup(throwingModel("boom"));
+    const { runtime } = setup(throwingAssembler("boom"));
     await expect(runtime.open("app_never", context("user_ada"))).rejects.toMatchObject({ code: "not-found" });
   });
 
@@ -98,7 +113,7 @@ describe("build-failure lifecycle (#492)", () => {
     // silent — the reason must ride the thrown error and the operator log.
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
-      const { runtime } = setup(throwingModel("boom"));
+      const { runtime } = setup(throwingAssembler("boom"));
       const rejection = await runtime.create({ prompt: "Dashboard" }, context("user_ada"))
         .then(() => undefined, (error: unknown) => error);
       expect(rejection).toBeInstanceOf(VendoError);
@@ -120,7 +135,12 @@ describe("build-failure lifecycle (#492)", () => {
     // helper now names the real failure class.
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
-      const { runtime } = setup(scriptedLanguageModel(""));
+      // The model call now lives inside the assembler, so this door's job is to
+      // carry the engine's own line out UNREWRITTEN: a build failure's `issues`
+      // are what the engine reported, never a compile artifact invented here.
+      const { runtime } = setup(failingAssembler([
+        "the model answered with no text at all (an empty or reasoning-only response from the provider).",
+      ]));
       const rejection = await runtime.create({ prompt: "Track invoice statuses" }, context("user_ada"))
         .then(() => undefined, (error: unknown) => error);
       expect(rejection).toBeInstanceOf(VendoError);
@@ -139,7 +159,7 @@ describe("build-failure lifecycle (#492)", () => {
     const line = "OPENAI_API_KEY is set but @ai-sdk/openai is not installed in this app; install it (`npm install ai@^6 @ai-sdk/openai@^3`).";
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
-      const { runtime, store } = setup(throwingModel(line));
+      const { runtime, store } = setup(throwingAssembler(line));
       const ctx = context("user_ada");
       const rejection = await runtime.create({ prompt: "Dashboard" }, ctx)
         .then(() => undefined, (error: unknown) => error);
@@ -162,12 +182,13 @@ describe("build-failure lifecycle (#492)", () => {
 // polled {kind:"pending"} past every deadline.
 describe("defect D — silent degenerate/hung builds fail loudly", () => {
   it("fails a refused build terminally: record persisted, open() answers the refusal, create() throws it", async () => {
-    // The brain's own sentences ARE the reason: an impossible ask comes back as
-    // <Cannot> lines, and those are what the person reads.
+    // The engine's own sentence IS the reason: an impossible ask comes back as an
+    // `unavailable` whose `why` is what the person reads, verbatim — a generic
+    // apology is nothing anyone can act on.
     const reason = "Your host has no way to read account balances, so nothing here can show one.";
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
-      const { runtime, store } = setup(scriptedLanguageModel(`<Cannot>${reason}</Cannot>`));
+      const { runtime, store } = setup({ assemble: async () => ({ kind: "unavailable", why: reason }) });
       const ctx = context("user_ada");
       const rejection = await runtime.create({ prompt: "one stat tile that says hello" }, ctx)
         .then(() => undefined, (error: unknown) => error);
@@ -176,7 +197,10 @@ describe("defect D — silent degenerate/hung builds fail loudly", () => {
       const rows = await store.records("vendo_apps").list({});
       expect(rows.records).toHaveLength(1);
       const surface = await runtime.open(rows.records[0]!.id, ctx);
-      expect(surface).toEqual({ kind: "failed", reason, retryable: false, prompt: "one stat tile that says hello" });
+      // Retryable: assembly coming back empty is not a claim that the ask is
+      // impossible forever — only a throw the classifier recognises (quota, a
+      // dead key) is non-retryable.
+      expect(surface).toEqual({ kind: "failed", reason, retryable: true, prompt: "one stat tile that says hello" });
       expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("app build failed"));
     } finally {
       errorSpy.mockRestore();
@@ -187,10 +211,10 @@ describe("defect D — silent degenerate/hung builds fail loudly", () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     process.env["VENDO_APP_BUILD_WATCHDOG_MS"] = "60";
     try {
-      // A model stream that never settles: the build turn hangs forever, the
+      // An assemble that never settles: the build turn hangs forever, the
       // create catch never runs, and without the watchdog nothing would ever
       // be persisted for the minted app id.
-      const { runtime, store } = setup(scriptedLanguageModel(() => new Promise<never>(() => undefined)));
+      const { runtime, store } = setup({ assemble: () => new Promise<never>(() => undefined) });
       void runtime.create({ prompt: "Dashboard" }, context("user_ada")).catch(() => undefined);
       await vi.waitFor(async () => {
         const rows = await store.records("vendo_apps").list({});
@@ -218,10 +242,13 @@ describe("defect D — silent degenerate/hung builds fail loudly", () => {
     try {
       let releaseBuild!: () => void;
       const gate = new Promise<void>((resolve) => { releaseBuild = resolve; });
-      const { runtime, store } = setup(scriptedLanguageModel(async () => {
+      let runtime!: AppsRuntime;
+      const composed = setup(scriptedAssembler(() => runtime, async () => {
         await gate;
         return `<App name="Late board"><Text text="Late board"/><Disclaimer reason="Fixture app."/></App>`;
       }));
+      runtime = composed.runtime;
+      const store = composed.store;
       const ctx = context("user_ada");
       const pendingCreate = runtime.create({ prompt: "Late board" }, ctx);
       // Watchdog fires first: the terminal failed record lands.

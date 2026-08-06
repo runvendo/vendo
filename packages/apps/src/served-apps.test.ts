@@ -1,9 +1,9 @@
-import { VENDO_APP_FORMAT, VendoError, type AppDocument, type RunContext, type ToolRegistry, type VendoTheme } from "@vendoai/core";
+import { VENDO_APP_FORMAT, VendoError, type AppDocument, type RunContext, type ScreenAssembler, type ToolRegistry, type VendoTheme } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { createAppHistory } from "./history.js";
 import { createApps } from "./index.js";
 import { fakeBoxSandbox, type FakeBoxAgent } from "./testing/fake-box.js";
-import { guardFixture, memoryStore, scriptedLanguageModel, seedAppRow } from "./testing/index.js";
+import { basicLanguageModel, guardFixture, memoryStore, seedAppRow } from "./testing/index.js";
 
 /**
  * execution-v2 Wave 4 — layer 3 (machine-everything), experimental, on the
@@ -53,23 +53,15 @@ const kanbanAgent: FakeBoxAgent = ({ box }) => {
 };
 
 /**
- * The model for these tests, driven by what it is asked rather than by call
- * order (the pipeline interleaves brain turns, fill workers and the reviewer).
+ * The plan the escalating screen agent leaves behind, driven by what was asked.
  *
- * Layer 3 is declared in the PLAN now: the brain writes `<Server kind="box"
- * served>` for an interaction no component can express, and a plain
- * `<Server kind="box">` for ordinary custom server work. That declaration is one
- * of the two signals the surface flip needs — the host's own `GET /` check is
- * the other.
+ * Layer 3 is declared in the PLAN: `<Server kind="box" served>` for an
+ * interaction no component can express, and a plain `<Server kind="box">` for
+ * ordinary custom server work. That declaration is one of the two signals the
+ * surface flip needs — the host's own `GET /` check is the other.
  */
-const servedAppsBrain = (call: { prompt: Array<{ content: string | Array<{ text?: string }> }> }): string => {
-  const text = call.prompt
-    .map(({ content }) => typeof content === "string" ? content : content.map(({ text: part }) => part ?? "").join(""))
-    .join("\n");
-  // A fill worker writes one group's markup; it never sees an instruction.
-  if (text.includes("YOUR SECTION")) return '<Text text="Board"/>';
-  const said = text.split("THEY ARE ASKING NOW:").pop() ?? "";
-  const server = /kanban|drag-and-drop/i.test(said)
+const escalatedPlanFor = (request: string): string => {
+  const server = /kanban|drag-and-drop/i.test(request)
     ? '<Server kind="box" served why="Dragging cards between columns is an interaction no component can express."/>'
     : '<Server kind="box" why="Custom matching logic no tool composition can express."/>';
   return `<Plan name="Invoice board">
@@ -83,7 +75,6 @@ const PROXY_PATH = (appId: string): string => `/api/vendo/apps/${appId}/serve/`;
 const setup = (options: {
   agent?: FakeBoxAgent;
   theme?: VendoTheme;
-  edit?: string;
   /** Compose WITHOUT the wire's authenticated served door (an unmounted wire). */
   proxy?: boolean;
   /** Re-compose over an existing world, to say the same store two ways. */
@@ -93,12 +84,26 @@ const setup = (options: {
   const store = options.store ?? memoryStore();
   const guard = guardFixture();
   const sandbox = options.sandbox ?? fakeBoxSandbox({ agent: options.agent ?? kanbanAgent });
+  /** The ask the screen agent last escalated: `escalatedPlan` is read per app,
+   *  so the plan handed to the ladder is the one THIS ask left behind. */
+  let escalated = "";
+  const screen: ScreenAssembler = {
+    assemble: async (request) => {
+      escalated = request.request;
+      return { kind: "escalate", why: "this needs real code, not an arrangement of components" };
+    },
+  };
   const runtime = createApps({
     store,
     guard,
     tools,
     catalog: [],
-    model: scriptedLanguageModel(options.edit ?? servedAppsBrain),
+    // Nothing on these paths generates: the screen agent escalates, and the box
+    // is what builds. The model is here because a runtime without one refuses to
+    // edit at all.
+    model: basicLanguageModel(),
+    screen,
+    escalatedPlan: async () => escalatedPlanFor(escalated),
     ...(options.theme === undefined ? {} : { theme: options.theme }),
     machine: { sandbox, buildEnv: () => ({ PORT: "8080" }), implicitDomains: ["host.vendo.test"], boxEditPollMs: 5 },
     // The wire fills this with its own base path; the runtime never invents it.
@@ -368,16 +373,20 @@ describe("serving through the door + the keepalive ride", () => {
         rung: 3,
       });
     }
-    expect(await runtime.history("app_served", ctx()).list()).toHaveLength(50);
+    const before = await runtime.history("app_served", ctx()).list();
+    expect(before).toHaveLength(50);
+    // The flip's own undo point is the oldest entry, so it is the one this
+    // edit's version has to push out.
+    expect(before.at(-1)?.intent).toBe(LAYER3_INSTRUCTION);
 
     const result = await runtime.edit("app_served", "Make the board header blue", ctx());
     expect(result.failure).toBeUndefined();
 
     const versions = await runtime.history("app_served", ctx()).list();
     // The cap held with this edit's version in it, and the oldest undo point in
-    // the log — one of the two the 2→3 flip left — is what paid for it.
+    // the log — the one the 2→3 flip left — is what paid for it.
     expect(versions).toHaveLength(50);
     expect(versions[0]?.intent).toBe("Make the board header blue");
-    expect(versions.filter(({ intent }) => intent === LAYER3_INSTRUCTION)).toHaveLength(1);
+    expect(versions.filter(({ intent }) => intent === LAYER3_INSTRUCTION)).toEqual([]);
   });
 });

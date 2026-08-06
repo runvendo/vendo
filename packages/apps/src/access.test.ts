@@ -10,37 +10,20 @@ import {
   type ToolRegistry,
 } from "@vendoai/core";
 import { appAccessConformance } from "@vendoai/core/conformance";
-import type { LanguageModel } from "ai";
 import { describe, expect, it } from "vitest";
 import { createApps, type AppsConfig, type AppsRuntime } from "./index.js";
 import {
+  basicLanguageModel,
   guardFixture,
   memoryStore,
-  scriptedLanguageModel,
+  scriptedAssembler,
   seedAppRow,
-  type ScriptedModelCall,
 } from "./testing/index.js";
 // One copy of the AppAccess stand-in, shared with served-orgs.test.ts.
 import { seedGrantRows as seedGrants, storeAccessFixture as storeAccess } from "./testing/app-access-fixture.js";
 
 /** Build contract §9.3–§9.6 — the apps runtime is level-aware through ONE
     `can()`; the wire and the MCP door inherit it rather than re-deriving it. */
-
-/** The brain, scripted: it answers every ask whole and names the app after what
- *  was said, so a create and an edit both land through the real persist path
- *  without a model call. Same fixture shape as lifecycle.test.ts. */
-const brainModel = (): LanguageModel => scriptedLanguageModel((call: ScriptedModelCall) => {
-  const prompt = call.prompt.map((message) => (
-    typeof message.content === "string"
-      ? message.content
-      : message.content.map((part) => part.text ?? "").join("")
-  )).join("\n");
-  const marker = "THEY ARE ASKING NOW: ";
-  const at = prompt.lastIndexOf(marker);
-  const said = (at === -1 ? "Untitled app" : prompt.slice(at + marker.length).split("\n")[0]?.trim() ?? "")
-    .slice(0, 40).replaceAll('"', "'") || "Untitled app";
-  return `<App name="${said}"><Text text="${said}"/><Disclaimer reason="Scripted fixture app."/></App>`;
-});
 
 const tools: ToolRegistry = {
   async descriptors() { return []; },
@@ -56,15 +39,28 @@ const ctx = (subject: string): RunContext => ({
   sessionId: `s_${subject}`,
 });
 
+/** The ONE engine, scripted: it answers every ask whole and names the app after
+ *  what was said, so a create and an edit both land through the real `authored`
+ *  persist path. Same fixture shape as lifecycle.test.ts. */
+const screenFor = (runtime: () => AppsRuntime) =>
+  scriptedAssembler(runtime, ({ request }) => {
+    // An EDIT's brief leads with the app's memory block, so the ask is its last line.
+    const line = request.split("\n").map((part) => part.trim()).filter((part) => part !== "").at(-1) ?? "";
+    const said = line.slice(0, 40).replaceAll('"', "'") || "Untitled app";
+    return `<App name="${said}"><Text text="${said}"/><Disclaimer reason="Scripted fixture app."/></App>`;
+  });
+
 const setup = (
   over: Partial<AppsConfig> = {},
 ): { runtime: AppsRuntime; store: ReturnType<typeof memoryStore> } => {
   const store = memoryStore();
-  const runtime = createApps({
+  let runtime: AppsRuntime;
+  runtime = createApps({
     store,
     guard: guardFixture(),
     tools,
     catalog: [],
+    screen: screenFor(() => runtime),
     appAccess: storeAccess(store),
     multiParty: true,
     // The umbrella fills this with `appStore().promote` + the workspace move
@@ -428,7 +424,7 @@ describe("§9.9 — the onDocumentEdit choke point", () => {
 
   it("rings once per landed edit, with previous, next, and the editor", async () => {
     const { state, onDocumentEdit } = sponsoredBy("dana");
-    const { runtime } = setup({ onDocumentEdit, model: brainModel() });
+    const { runtime } = setup({ onDocumentEdit, model: basicLanguageModel() });
     const app = await runtime.create({ prompt: "Before" }, ctx("dana"));
     await runtime.edit(app.id, "After", ctx("dana"));
 
@@ -444,7 +440,7 @@ describe("§9.9 — the onDocumentEdit choke point", () => {
     // back was the one way to change what an app IS without the sponsorship
     // hearing about it. Silently skipping the invalidation lane H exists for.
     const { state, onDocumentEdit } = sponsoredBy("dana");
-    const { runtime, store } = setup({ onDocumentEdit, model: brainModel() });
+    const { runtime, store } = setup({ onDocumentEdit, model: basicLanguageModel() });
     const app = await runtime.create({ prompt: "Before" }, ctx("dana"));
     await runtime.edit(app.id, "After", ctx("dana"));
     expect(state.active).toBe(true);
@@ -459,7 +455,7 @@ describe("§9.9 — the onDocumentEdit choke point", () => {
 
   it("leaves the sponsorship alone when the SPONSOR rolls their own app back", async () => {
     const { state, onDocumentEdit } = sponsoredBy("dana");
-    const { runtime } = setup({ onDocumentEdit, model: brainModel() });
+    const { runtime } = setup({ onDocumentEdit, model: basicLanguageModel() });
     const app = await runtime.create({ prompt: "Before" }, ctx("dana"));
     await runtime.edit(app.id, "After", ctx("dana"));
 

@@ -1,50 +1,38 @@
 /**
- * The rare lanes (generation pipeline rebuild, Task 8): the two things a plan
- * can declare that no fill worker can write — a generated ISLAND, and SERVER
- * work.
+ * The server lane: the one thing a plan can declare that assembly cannot write —
+ * work that does not happen in the browser.
  *
- * Both are EARNED escapes. The brain decided in the plan that a component
- * cannot express the need, or that the work cannot happen in the browser;
- * these runners just execute what it declared. Nothing here re-judges the
- * escape, and nothing here rebuilds the machinery it drives: island source is
- * screened by `prepareIslands` and the smoke render, automations ride
- * `planAutomation` and the automations engine's own arming, and the box is the
- * existing machine lifecycle plus the in-box agent.
+ * It is an EARNED escape. The escalating agent decided in its plan that the work
+ * cannot happen in the browser; this runner just executes what the plan declared.
+ * Nothing here re-judges the escape, and nothing here rebuilds the machinery it
+ * drives: automations ride `planAutomation` and the automations engine's own
+ * arming, and the box is the existing machine lifecycle plus the in-box agent.
  *
  * The box lane is where the bind-after-build law lives: NOTHING pre-declares
- * the functions a box will serve. The lane hands the box the plan's reason and
- * the app's intent, the box writes whatever code the job needs, and only then
- * does it report the interface it actually serves — with real sampled output.
- * The groups the plan marked `waitsForServer` fill against those samples. A
- * pre-declared signature would be the app promising something no one has
- * written yet.
+ * the functions a box will serve. The lane hands the box the plan it is building
+ * and the person's own words, the box writes whatever code the job needs, and
+ * only then does it report the interface it actually serves — with real sampled
+ * output. A pre-declared signature would be the app promising something no one
+ * has written yet.
  *
- * Every failure here is SECTION-sized, never app-sized: a failed island or a
- * failed box comes back as `warn` findings with the document unchanged, and the
- * rest of the app stands.
+ * Every failure here is SECTION-sized, never app-sized: a failed box comes back
+ * as `warn` findings with the document unchanged, and the rest of the app stands.
  */
 import {
   DEFAULT_TRIGGER_ID,
   TRIGGER_ID_PATTERN,
-  compileWire,
-  describeShapeWithSemantics,
   type AppDocument,
   type AppId,
   type AppPlan,
   type ApprovalRequest,
   type Json,
-  type PlanIsland,
   type PlanServer,
   type RunContext,
   type Trigger,
 } from "@vendoai/core";
 import { planAutomation, type AutomationPlan } from "../automation-plan.js";
 import type { Finding } from "../checking/types.js";
-import { composePromptSections, hostToolSections, islandContract } from "./contracts/sections.js";
-import { askModel, type GeneratedAppDocument, type GenerationDependencies } from "./engine.js";
-import { prepareIslands } from "./validation/islands.js";
-import { smokeRenderIslands } from "./validation/smoke-render.js";
-import { wireCompileOptionsFor } from "../wire-options.js";
+import type { GeneratedAppDocument, GenerationDependencies } from "./engine.js";
 
 /** What a lane leaves behind. `document` is byte-identical to the input when
  *  the lane failed honestly — a lane never ships half of itself. */
@@ -54,219 +42,6 @@ export interface LaneResult {
 }
 
 const warn = (where: string, message: string): Finding => ({ severity: "warn", where, message });
-
-// ---------------------------------------------------------------------------
-// Flag gating — stated as fact BEFORE the plan exists
-// ---------------------------------------------------------------------------
-
-/** The slice of `AppsConfig` the gates read (structurally satisfied by it; the
- *  lanes never import the runtime). */
-export interface LaneGateConfig {
-  /** The machine seams. No sandbox adapter → nothing can be provisioned at
-   *  all, and that presence is the WHOLE gate: a configured sandbox is the
-   *  deliberate opt-in, so there is no second flag beside it. */
-  machine?: { sandbox?: unknown };
-  /** Build contract §9.8 — the authenticated door a served app is answered on.
-   *  Unset means this deployment has no way to serve one, so the served lane is
-   *  shut: the alternative is a box built, a surface flipped, and an app no
-   *  caller can open. */
-  servedProxyPath?: unknown;
-}
-
-export interface LaneGates {
-  /** May a plan declare `server.kind: "box"`? */
-  box: boolean;
-  /** May this host serve the app surface from a machine (layer 3)? */
-  served: boolean;
-  /**
-   * What the brain hears as FACT before it plans. A lane this host does not
-   * have must become a `<Cannot>` line in the plan — an honest refusal the
-   * person reads in seconds — instead of a build that runs, escalates, and
-   * only then discovers the flag is off.
-   */
-  cannot: string[];
-}
-
-/**
- * What a machine-less host still HAS, said in the same breath as what it lacks.
- *
- * Only the box rung needs a machine: a steps firing is tool calls on the
- * automations engine and an agentic firing is one harness run on the agents
- * runtime. Stating the missing lane without this sentence is why "watch this and
- * judge it every morning" came back as "This host has no sandbox configured" —
- * the brain had one escape left for judgment work and it was the one that needs
- * a machine.
- */
-const AUTOMATIONS_NEED_NO_MACHINE = 'Scheduled or triggered work still runs on the automations engine and needs no machine: kind="steps" when every firing does the same thing, kind="agentic" when a firing needs a judgment call.';
-
-/**
- * The lanes this host actually has. Task 10's brain-facts assembly passes
- * `cannot` into the plan call, so "this host has machines disabled" is
- * something the brain KNOWS rather than something it finds out afterwards.
- */
-export const laneGates = (config: LaneGateConfig): LaneGates => {
-  const box = config.machine?.sandbox !== undefined;
-  // Layer 3 is a machine surface served through an authenticated door, so served
-  // is a NARROWING of box: no box can never be served, and a box with no door to
-  // serve through cannot either. Stated as the shape of the expression rather
-  // than as two flags that have to agree with each other.
-  const served = box && config.servedProxyPath !== undefined;
-  const cannot: string[] = [];
-  if (!box) {
-    cannot.push(`This host has no sandbox configured, so no machine can be provisioned: custom server code is out of reach. ${AUTOMATIONS_NEED_NO_MACHINE}`);
-  }
-  if (!served) {
-    cannot.push("This host cannot serve its own web pages for an app: the app is the generated view, so anything that needs a hand-built page or a custom frontend is out of reach.");
-  }
-  return { box, served, cannot };
-};
-
-// ---------------------------------------------------------------------------
-// The island lane
-// ---------------------------------------------------------------------------
-
-export interface IslandLaneDeps extends GenerationDependencies {
-  /** The person's own words. Threaded into the island law-1 scan so their own
-   *  numbers are never refused as invented data (see prepareIslands). */
-  request?: string;
-}
-
-/** One retry, and only one. An island that fails its screening twice is a real
- *  failure; a third big-model call costs the person time for a class the second
- *  attempt already reproduced (the brain's rule, same reason). */
-const ISLAND_ATTEMPTS = 2;
-
-const hostComponentNames = (deps: GenerationDependencies): string[] =>
-  deps.catalog.map(({ name }) => name);
-
-const islandLaneContract = (deps: IslandLaneDeps): string => composePromptSections([{
-  id: "role",
-  content: "You are the Vendo island specialist. The app's plan asked for ONE generated component because no host, Kit, or prewired component can express what it needs. Write that component and nothing else: reply with exactly one <Island name=\"...\">TSX</Island> element — the name you are given — with no prose, no markdown fences, no <App> wrapper, and no other markup.",
-}, {
-  id: "tree-contract",
-  content: islandContract(),
-}, ...hostToolSections(deps)]);
-
-/** The queries this island's own leaves read. An island binds against REAL
- *  shapes or it invents fields, so the plan's own query declarations — tool,
- *  input, and sampled shape card — travel with the purpose. */
-const islandQueryLines = (plan: AppPlan, island: PlanIsland, deps: IslandLaneDeps): string[] => {
-  const referenced = new Set(plan.groups.flatMap(({ leaves }) => leaves
-    .filter((leaf) => leaf.component === island.name && leaf.query !== undefined)
-    .map((leaf) => leaf.query as string)));
-  return plan.queries.filter(({ id }) => referenced.has(id)).map(({ id, tool, input }) => {
-    const shape = deps.toolShapes?.[tool];
-    const card = shape === undefined ? "shape unknown" : describeShapeWithSemantics(shape, deps.semantics?.[tool] ?? {});
-    return `- ${id}: ${tool}(${JSON.stringify(input)}) → ${card}`;
-  });
-};
-
-const islandLaneMessage = (
-  plan: AppPlan,
-  island: PlanIsland,
-  deps: IslandLaneDeps,
-  previous: { source: string; issues: string[] } | undefined,
-): string => {
-  const queries = islandQueryLines(plan, island, deps);
-  return [
-    `APP: ${plan.name}`,
-    `ISLAND: ${island.name}`,
-    `WHAT IT IS FOR: ${island.purpose}`,
-    ...(queries.length === 0 ? [] : [`THE DATA IT SHOWS (the plan's queries this island reads — bind against these fields, never invent one):\n${queries.join("\n")}`]),
-    ...(previous === undefined ? [] : [
-      `YOUR LAST ISLAND DID NOT PASS:\n${previous.source}`,
-      `WHAT WAS WRONG WITH IT:\n${previous.issues.map((issue) => `- ${issue}`).join("\n")}\nWrite the whole island again, fixed.`,
-    ]),
-  ].join("\n\n");
-};
-
-/** The island source out of one answer. Models wrap bare elements in fences or
- *  an <App> anyway, and the wire compiler extracts islands from either shape —
- *  the same tolerance the engine's island repair relies on. */
-const islandSourceFrom = (text: string, name: string, deps: IslandLaneDeps): string | undefined => {
-  const markup = text.replaceAll(/```[a-z]*\n?/gi, "");
-  const start = markup.indexOf("<App");
-  const close = markup.lastIndexOf("</App>");
-  const wire = start !== -1 && close > start
-    ? markup.slice(start, close + "</App>".length)
-    : `<App name="__island_lane__">${markup}</App>`;
-  const compiled = compileWire(wire, wireCompileOptionsFor(deps));
-  const source = compiled.components[name];
-  return typeof source === "string" && source.trim() !== "" ? source : undefined;
-};
-
-/** The screening every island in the product goes through, in the same order
- *  create validation runs it: the static contract first (imports, network,
- *  host tags, law 1, the tools manifest), then — only on an otherwise-clean
- *  island — one headless render, which is the only thing that sees a crash. */
-const screenIsland = async (
-  name: string,
-  source: string,
-  deps: IslandLaneDeps,
-): Promise<{ source: string; tools: string[]; issues: string[] }> => {
-  const prepared = await prepareIslands({ [name]: source }, deps.tools, hostComponentNames(deps), deps.request);
-  const canonical = prepared.components[name] ?? source;
-  const tools = prepared.componentTools[name] ?? [];
-  if (prepared.issues.length > 0) return { source: canonical, tools, issues: prepared.issues };
-  const issues = deps.pipeline?.smokeRender === false ? [] : await smokeRenderIslands({
-    components: { [name]: canonical },
-    componentTools: prepared.componentTools,
-    tools: deps.tools,
-    toolShapes: deps.toolShapes,
-  });
-  return { source: canonical, tools, issues };
-};
-
-/**
- * Write the island the plan declared, screen it, and stamp it onto the
- * document. A screening failure buys exactly one fix-it retry carrying the
- * issues; after that the app ships WITHOUT the island and says why — a broken
- * island renders as an error box where a section should be, which is worse
- * than a missing section.
- */
-export const runIslandLane = async (
-  plan: AppPlan,
-  document: GeneratedAppDocument,
-  deps: IslandLaneDeps,
-): Promise<LaneResult> => {
-  const island = plan.island;
-  if (island === undefined) return { document, findings: [] };
-  const where = `island "${island.name}"`;
-  const system = islandLaneContract(deps);
-  let previous: { source: string; issues: string[] } | undefined;
-  for (let attempt = 0; attempt < ISLAND_ATTEMPTS; attempt += 1) {
-    const answer = await askModel(deps.model, system, islandLaneMessage(plan, island, deps, previous));
-    if (answer.text === undefined) {
-      // A failed call is not a bad island: there is nothing to show on a
-      // retry, so the reason stands as the failure.
-      return { document, findings: answer.issues.map((issue) => warn(where, issue)) };
-    }
-    const source = islandSourceFrom(answer.text, island.name, deps);
-    if (source === undefined) {
-      previous = {
-        source: answer.text,
-        issues: [`no island came through: reply with exactly one <Island name="${island.name}">TSX</Island> element holding plain TSX with an \`export default\` component, and nothing else.`],
-      };
-      continue;
-    }
-    const screened = await screenIsland(island.name, source, deps);
-    if (screened.issues.length === 0) {
-      return {
-        document: {
-          ...document,
-          components: { ...document.components, [island.name]: screened.source },
-          componentTools: { ...document.componentTools, [island.name]: screened.tools },
-        },
-        findings: [],
-      };
-    }
-    previous = { source: screened.source, issues: screened.issues };
-  }
-  return {
-    document,
-    findings: (previous?.issues ?? []).map((issue) => warn(where, issue)),
-  };
-};
 
 // ---------------------------------------------------------------------------
 // The automation arm's reusable internals (shared with runtime.ts automate())
@@ -502,9 +277,21 @@ export interface ServerLaneDeps extends GenerationDependencies {
    */
   request?: string;
   /**
+   * The escalated `plan.vendo` as the escalating agent WROTE it.
+   *
+   * The box's brief is the plan itself, not a summary of it: the person is
+   * already looking at this plan's skeleton, and the compiled `AppPlan` has
+   * dropped everything the compiler had no field for — the prose in a group's
+   * title, the ordering, the `<Cannot>` lines. Absent → the brief falls back to
+   * the compiled plan's own fields, which is all a caller with no plan file has.
+   */
+  planText?: string;
+  /**
    * Rewire the app to surface something new (the automation's results rows).
-   * Task 10 wires this to a brain edit turn. Absent → the automation still
-   * arms and the missing board is a `warn`, exactly as a failed rewire is.
+   * Wired to one turn of the screen assembler — the one builder — so the board
+   * that appears is written by the same thing that writes every other screen.
+   * Absent → the automation still arms and the missing board is a `warn`,
+   * exactly as a failed rewire is.
    */
   rebind?: (
     instruction: string,
@@ -652,22 +439,34 @@ const runAutomationArm = async (
 };
 
 /**
- * What the box is told — the bind-after-build law in one function. The box
- * hears WHY the work cannot happen in the browser and WHAT the app intends to
- * show; it never hears a function name, a signature, or a shape to implement.
- * It decides its own interface, verifies its own code, and reports what it
- * actually serves. A pre-declared signature here would be the app binding to a
- * promise, and every mismatch afterwards would be invisible.
+ * What the box is told — the bind-after-build law in one function.
+ *
+ * The brief is the ESCALATED PLAN plus the person's own words, and nothing was
+ * re-planned to produce either: the plan is the file the escalating agent wrote
+ * and the person is already watching its skeleton, and the ask is what they
+ * typed. (The app's own MEMORY joins them one layer down, where every box task
+ * gets it — `editServerViaBox` in the runtime.)
+ *
+ * The box hears WHY the work cannot happen in the browser and WHAT the app
+ * intends to show; it never hears a function name, a signature, or a shape to
+ * implement. It decides its own interface, verifies its own code, and reports
+ * what it actually serves. A pre-declared signature here would be the app
+ * binding to a promise, and every mismatch afterwards would be invisible.
  */
-const boxInstruction = (plan: AppPlan, server: PlanServer): string => {
+const boxInstruction = (plan: AppPlan, server: PlanServer, deps: ServerLaneDeps): string => {
   const waiting = plan.groups
     .filter(({ waitsForServer }) => waitsForServer === true)
     .flatMap(({ leaves }) => leaves.map(({ purpose }) => purpose));
+  const ask = deps.request?.trim();
   return [
     `Build the server work this app needs, then report what you built.`,
     `APP: ${plan.name}`,
+    ...(ask === undefined || ask === "" ? [] : [`WHAT THEY ASKED FOR, IN THEIR OWN WORDS: ${ask}`]),
     `WHY THIS CANNOT HAPPEN IN THE BROWSER: ${server.why}`,
     ...(server.schedule === undefined ? [] : [`WHEN IT RUNS: ${server.schedule}`]),
+    ...(deps.planText === undefined || deps.planText.trim() === "" ? [] : [
+      `THE PLAN THIS BUILD IS ANCHORED ON (already on the person's screen as an outline):\n${deps.planText.trim()}`,
+    ]),
     ...(waiting.length === 0 ? [] : [
       `WHAT THE APP INTENDS TO SHOW FROM IT (intent, NOT an interface to match — you decide the functions):\n${waiting.map((purpose) => `- ${purpose}`).join("\n")}`,
     ]),
@@ -693,7 +492,7 @@ const runBoxArm = async (
     };
   }
   await box.provision();
-  const outcome = await box.instruct(boxInstruction(plan, server));
+  const outcome = await box.instruct(boxInstruction(plan, server, deps));
   if (!outcome.ok) {
     // The machine is already discarded without a snapshot (the box seam's
     // rollback), so there is nothing to inherit and nothing to undo here: the
@@ -723,10 +522,29 @@ const runBoxArm = async (
 };
 
 /**
+ * Which lane an ESCALATED plan runs in — the `<Server kind>` the escalating
+ * agent declared, or the box.
+ *
+ * The tag is the whole decision and nothing re-derives it: the agent that could
+ * not assemble the screen is the one that knows why, and it says so in the plan
+ * (`<Server kind="steps"|"agentic"|"box" [served] why="…"/>`, taught by the
+ * building-apps skill).
+ *
+ * A plan with NO `<Server>` that escalated anyway defaults to `kind="box"`. The
+ * escalation is itself the claim that assembly cannot serve this ask, and the box
+ * is the only lane that can find out what can: steps and agentic author an
+ * automation over tools that assembly already had, so a plan that needed only
+ * those would not have had to leave. Defaulting the other way would answer an
+ * escalation with the rung it already ruled out.
+ */
+export const escalatedServer = (plan: AppPlan, why: string): PlanServer =>
+  plan.server ?? { kind: "box", why };
+
+/**
  * Run the server work the plan declared. `steps` and `agentic` author an
  * automation on the existing automations engine (seconds, no machine); `box`
  * provisions a machine and lets the in-box agent write real code, then reports
- * back the interface it built so the waiting groups can bind to it.
+ * back the interface it built.
  */
 export const runServerLane = async (
   plan: AppPlan,

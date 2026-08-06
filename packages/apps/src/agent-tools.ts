@@ -19,7 +19,7 @@ import {
   type VendoViewStreamingToolCall,
 } from "@vendoai/core";
 import type { AppDataAccess } from "./app-data.js";
-import type { AppsRuntime } from "./runtime.js";
+import { NO_ASSEMBLER, NOTHING_RENDERABLE, NO_MACHINE, type AppsRuntime } from "./runtime.js";
 
 const DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema";
 
@@ -330,8 +330,6 @@ const unbuiltSay = (why: string): string =>
     ? "I couldn't put that screen together."
     : `I couldn't put that screen together — ${why.trim()}`;
 
-const NO_ASSEMBLER = "nothing in this deployment builds screens.";
-const NOTHING_RENDERABLE = "what came back wasn't something I could show.";
 
 const errorOutcome = (error: unknown): ToolOutcome => {
   if (error instanceof VendoError) {
@@ -471,7 +469,7 @@ export const createAgentTools = (
               // the card are about the same thing.
               title: nameForUnbuilt(plan, ask),
               status: "failed",
-              say: "That one needs a real build — code running on a server — and I can't do that here.",
+              say: NO_MACHINE,
             });
           }
           let unsaved: string | undefined;

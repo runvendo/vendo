@@ -6,8 +6,8 @@ import {
   APP_RECORD_MAX_BYTES,
   createAppData,
 } from "./app-data.js";
-import { createApps } from "./index.js";
-import { basicLanguageModel, guardFixture, memoryStore, seedAppRow } from "./testing/index.js";
+import { createApps, type AppsRuntime } from "./index.js";
+import { basicLanguageModel, guardFixture, memoryStore, scriptedAssembler, seedAppRow } from "./testing/index.js";
 
 const tools: ToolRegistry = {
   async descriptors() {
@@ -27,10 +27,32 @@ const ctx: RunContext = {
 
 const model = basicLanguageModel();
 
+/** The app under test is landed by the ONE engine — the assembler in the `screen`
+ *  slot — through the real `authored` write path, so the storage declarations
+ *  these cases hang off a real row rather than a hand-built document. The wire is
+ *  named after whatever was asked, so an edit is a rename and lands a version. */
+const appsWith = (store: ReturnType<typeof memoryStore>): AppsRuntime => {
+  let runtime: AppsRuntime;
+  runtime = createApps({
+    store,
+    guard: guardFixture(),
+    tools,
+    catalog: [],
+    model,
+    screen: scriptedAssembler(() => runtime, ({ request }) => {
+      // An EDIT's brief leads with the app's memory block, so the ask is its last line.
+      const line = request.split("\n").map((part) => part.trim()).filter((part) => part !== "").at(-1) ?? "";
+      const name = line.slice(0, 40).replaceAll('"', "'") || "Untitled app";
+      return `<App name="${name}"><Text text="${name}"/><Disclaimer reason="Scripted fixture app."/></App>`;
+    }),
+  });
+  return runtime;
+};
+
 describe("app data persistence", () => {
   it("gates record and file collections on declarations and reserves state", async () => {
     const store = memoryStore();
-    const runtime = createApps({ store, guard: guardFixture(), tools, catalog: [], model });
+    const runtime = appsWith(store);
     const created = await runtime.create({ prompt: "Declared storage" }, ctx);
     const app: AppDocument = {
       ...created,
@@ -51,7 +73,7 @@ describe("app data persistence", () => {
 
   it("round-trips records with refs filters and validates declared refs", async () => {
     const store = memoryStore();
-    const runtime = createApps({ store, guard: guardFixture(), tools, catalog: [], model });
+    const runtime = appsWith(store);
     const created = await runtime.create({ prompt: "Referenced records" }, ctx);
     const app: AppDocument = {
       ...created,
@@ -81,7 +103,7 @@ describe("app data persistence", () => {
 
   it("enforces the 256 KB record cap and documented 5 MB blob cap", async () => {
     const store = memoryStore();
-    const runtime = createApps({ store, guard: guardFixture(), tools, catalog: [], model });
+    const runtime = appsWith(store);
     const created = await runtime.create({ prompt: "Bounded storage" }, ctx);
     const app: AppDocument = {
       ...created,
@@ -106,7 +128,7 @@ describe("app data persistence", () => {
 
   it("deletes declared records, state, file collections, and the app blob namespace", async () => {
     const store = memoryStore();
-    const runtime = createApps({ store, guard: guardFixture(), tools, catalog: [], model });
+    const runtime = appsWith(store);
     const created = await runtime.create({ prompt: "Data owner" }, ctx);
     const withStorage: AppDocument = {
       ...created,
@@ -136,7 +158,7 @@ describe("app data persistence", () => {
 
   it("deletes collections declared only by a historical app version", async () => {
     const store = memoryStore();
-    const runtime = createApps({ store, guard: guardFixture(), tools, catalog: [], model });
+    const runtime = appsWith(store);
     const created = await runtime.create({ prompt: "Renamed storage" }, ctx);
     const oldVersion: AppDocument = {
       ...created,
@@ -160,7 +182,7 @@ describe("app data persistence", () => {
 
   it("round-trips the illustrative spec document after correcting its tree and trigger shapes", async () => {
     const store = memoryStore();
-    const runtime = createApps({ store, guard: guardFixture(), tools, catalog: [], model });
+    const runtime = appsWith(store);
     const app: AppDocument = {
       format: VENDO_APP_FORMAT,
       id: "app_7f3k",

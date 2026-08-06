@@ -385,10 +385,10 @@ export interface CreateVendoConfig {
       then VENDO_API_KEY → Vendo Cloud managed inference — and fails honestly
       with instructions when none exists (precedence: resolveModels). */
   model?: LanguageModel;
-  /** @deprecated The `model` half is superseded by `models.paint`. There is ONE
-      generation pipeline now, so `disabled` no longer disables a lane — it means
-      "compose no separate fast tier", and the group fill workers then run on the
-      agent model instead of a cheaper one. */
+  /** @deprecated Superseded by `models.paint`. The group fill workers it fed
+      are gone with the generation pipeline, so nothing reads this any more; it
+      is still accepted, and ignored, so a host config does not have to change
+      in the same release. */
   paint?: ResolveModelsInput["paint"];
   /** Models spec 2026-07-22 (DX surface 3) — the models block, keyed by slot,
       valued by a model-name string (resolved through vendoModel's credential
@@ -2424,11 +2424,6 @@ export function createVendo(input: CreateVendoConfig): Vendo {
       }
       return automationsForArming.enable(appId, triggerId, armCtx);
     },
-    // The fast fill tier (models spec 2026-07-22, `models.paint` on the public
-    // surface): the family fast pick when the agent slot rides the ladder, the
-    // deprecated paint.model otherwise. There is ONE pipeline now, so the old
-    // single-lane `disabled` switch has nothing left to disable.
-    ...(inference.paint?.model === undefined ? {} : { fill: { model: inference.paint.model } }),
     ...(config.apps?.pipeline === undefined ? {} : { pipeline: config.apps.pipeline }),
     // The floor's plugged checks: the host's own, then the ones a mounted
     // subsystem brings. Appended, never replacing — and a judgment rule rides

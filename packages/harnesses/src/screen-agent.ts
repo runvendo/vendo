@@ -223,7 +223,11 @@ through two tools.
   product's components is all you can do; anything that needs real code, its own
   server, a file the person uploads, or a surface these components cannot express
   goes through it. Write the plan when you escalate — that plan becomes the first
-  thing the person sees while the builder works, so it is not a formality.
+  thing the person sees while the builder works, AND it is the builder's whole
+  brief. Nothing re-plans it, so say which lane the work runs in with the
+  \`<Server kind="steps"|"agentic"|"box" [served] why="…"/>\` line the skill above
+  teaches. Leave it out and the builder reads the escalation itself as the answer:
+  \`kind="box"\`, a machine and real code.
 - \`${SCREEN_STEPS}\` steps is the whole budget. Escalate rather than run out of it.
 
 Never look for a tool that builds the app for you. There isn't one, and that is
