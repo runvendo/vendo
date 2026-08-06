@@ -1,7 +1,5 @@
 /**
- * The agent-suite doubles — a scripted model, a test guard, a guard-bound
- * registry — as the tool-pack and registry suites that moved here already used
- * them.
+ * The doubles the tool-pack suites need: a test guard and a guard-bound registry.
  *
  * A copy, deliberately: `@vendoai/harnesses` keeps its own equivalent
  * (`test-doubles.test-util.ts`) rather than either package publishing a
@@ -21,90 +19,6 @@ import type {
   ToolOutcome,
   ToolRegistry,
 } from "@vendoai/core";
-import type { UIMessage } from "ai";
-import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
-import { expect } from "vitest";
-
-type LanguageModelV3Prompt = Parameters<MockLanguageModelV3["doStream"]>[0]["prompt"];
-type LanguageModelV3StreamPart = Awaited<
-  ReturnType<MockLanguageModelV3["doStream"]>
->["stream"] extends ReadableStream<infer Part> ? Part : never;
-type LanguageModelV3GenerateResult = Awaited<ReturnType<MockLanguageModelV3["doGenerate"]>>;
-type LanguageModelV3Content = LanguageModelV3GenerateResult["content"][number];
-
-export const ZERO_USAGE = {
-  inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
-  outputTokens: { total: 0, text: 0, reasoning: 0 },
-} as const;
-
-export function textTurn(text: string, id = "text_1"): LanguageModelV3StreamPart[] {
-  return [
-    { type: "text-start", id },
-    { type: "text-delta", id, delta: text },
-    { type: "text-end", id },
-    { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
-  ];
-}
-
-export function toolCallTurn(
-  toolName: string,
-  input: unknown,
-  toolCallId = "call_1",
-): LanguageModelV3StreamPart[] {
-  return [
-    { type: "tool-call", toolCallId, toolName, input: JSON.stringify(input) },
-    { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "tool-calls", raw: undefined } },
-  ];
-}
-
-export type ScriptedModel = MockLanguageModelV3 & {
-  prompts: LanguageModelV3Prompt[];
-  /** The tool names offered to the model on each call, in order — i.e. the
-   *  effective loadout after `activeTools`/`prepareStep` filtering (ENG-252). */
-  toolNamesPerCall: string[][];
-};
-
-export function scriptedModel(turns: LanguageModelV3StreamPart[][]): ScriptedModel {
-  const remaining = turns.map((turn) => [...turn]);
-  const prompts: LanguageModelV3Prompt[] = [];
-  const toolNamesPerCall: string[][] = [];
-  const shift = (request: { prompt: LanguageModelV3Prompt; tools?: Array<{ name: string }> }): LanguageModelV3StreamPart[] => {
-    prompts.push(structuredClone(request.prompt));
-    toolNamesPerCall.push((request.tools ?? []).map((tool) => tool.name));
-    const chunks = remaining.shift();
-    if (chunks === undefined) throw new Error("scripted model exhausted");
-    return chunks;
-  };
-  const model = new MockLanguageModelV3({
-    doStream: async (request) => {
-      const chunks = shift(request);
-      return { stream: simulateReadableStream({ chunks }) };
-    },
-    doGenerate: async (request): Promise<LanguageModelV3GenerateResult> => {
-      const chunks = shift(request);
-      const finish = chunks.find((part) => part.type === "finish");
-      const content: LanguageModelV3Content[] = [];
-      const text = chunks
-        .filter((part): part is Extract<LanguageModelV3StreamPart, { type: "text-delta" }> => part.type === "text-delta")
-        .map((part) => part.delta)
-        .join("");
-      if (text.length > 0) content.push({ type: "text", text });
-      for (const part of chunks) {
-        if (part.type === "tool-call") content.push(structuredClone(part));
-      }
-      return {
-        content,
-        finishReason: finish?.finishReason ?? { unified: "stop", raw: undefined },
-        usage: finish?.usage ?? ZERO_USAGE,
-        warnings: [],
-      };
-    },
-  }) as ScriptedModel;
-  model.prompts = prompts;
-  model.toolNamesPerCall = toolNamesPerCall;
-  return model;
-}
-
 export type TestGuard = Guard & {
   events: AuditEvent[];
   directionValues: string[];
@@ -268,27 +182,6 @@ export function boundRegistry(
 
 // The core conformance kit ships the reference in-memory StoreAdapter; tests
 // exercise the same double every other block will use.
-export { memoryStoreAdapter as memoryStore } from "@vendoai/core/conformance";
-
-export async function readSse(response: Response): Promise<{
-  rawFrames: string[];
-  parts: Array<Record<string, unknown>>;
-}> {
-  const raw = await response.text();
-  expect(raw.endsWith("\n\n")).toBe(true);
-  // The wire carries SSE keepalive COMMENT frames now (core/sse-keepalive.ts) —
-  // transport framing the SSE grammar ignores, so a real client never sees them.
-  // Dropped here for the same reason: they are not part of the message sequence
-  // these suites assert on. Every remaining block must still be a lone data frame.
-  const blocks = raw.slice(0, -2).split("\n\n").filter((block) => !block.startsWith(":"));
-  expect(blocks.length).toBeGreaterThan(0);
-  expect(blocks.every((block) => block.startsWith("data: ") && !block.includes("\n"))).toBe(true);
-  const rawFrames = blocks.map((block) => `${block}\n\n`);
-  expect(rawFrames.at(-1)).toBe("data: [DONE]\n\n");
-  const parts = blocks.slice(0, -1).map((block) => JSON.parse(block.slice("data: ".length)) as Record<string, unknown>);
-  return { rawFrames, parts };
-}
-
 export function ctx(overrides: Partial<RunContext> = {}): RunContext {
   return {
     principal: { kind: "user", subject: "u1" },
@@ -297,14 +190,4 @@ export function ctx(overrides: Partial<RunContext> = {}): RunContext {
     sessionId: "s1",
     ...overrides,
   };
-}
-
-/** A minimal single-text-part user UIMessage — the shape every suite feeds stream(). */
-export function userMessage(id: string, text: string): UIMessage {
-  return { id, role: "user", parts: [{ type: "text", text }] };
-}
-
-/** The first assembled UIMessage part of a given type (e.g. "data-vendo-view"). */
-export function partOfType(message: UIMessage, type: string): Record<string, unknown> | undefined {
-  return message.parts.find((part) => part.type === type) as Record<string, unknown> | undefined;
 }
