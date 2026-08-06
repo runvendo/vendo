@@ -19,7 +19,7 @@ import { z } from "zod";
 import { modelToolDescription, type Harness, type HarnessEvent, type Json, type ToolDescriptor, type Turn } from "@vendoai/core";
 import { readCompactionState, writeCompactionState } from "./compaction.js";
 import { startTurn, type TurnCompaction, type TurnContext } from "./loop.js";
-import { contextWindowTokens } from "./model-windows.js";
+import { contextWindowTokens, rememberResolvedModelId } from "./model-windows.js";
 import { isContextOverflow } from "./overflow.js";
 import { wireErrorMessage } from "../wire-error.js";
 import { reportHire, type HireRecord, type UsageTotals } from "../runtime.js";
@@ -508,6 +508,9 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
                 // Last step wins: it sent the biggest prompt of the turn, and it
                 // is the one the next turn grows from.
                 lastPromptTokens = part.usage.inputTokens ?? lastPromptTokens;
+                // …and which model actually served it, which a lazy seat cannot
+                // say before the call and the provider says on every one.
+                rememberResolvedModelId(model, part.response.modelId);
                 break;
               case "error":
                 // A prompt that did not fit is the ONE provider failure this loop

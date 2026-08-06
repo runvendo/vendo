@@ -44,6 +44,33 @@ export const MODEL_CONTEXT_WINDOWS: readonly (readonly [match: string, tokens: n
 ];
 
 /**
+ * What the provider said a seat actually is.
+ *
+ * A seat does not have to know its own model id. Vendo's own seat is LAZY —
+ * `packages/vendo/src/dev-creds/model.ts` answers `vendo-env` (or `dev-env`) and
+ * picks the credential rung on the first call — so the table above matched
+ * nothing on every dev and demo seat, and every one of them ran the 128k default
+ * against Claude's real 200k. Measured on a `claude-sonnet-4-6` seat:
+ * `window=128000 trigger=103680`, i.e. compaction firing 58k tokens early for
+ * the life of the deployment.
+ *
+ * The resolved id is not knowable before the call and IS reported after it, in
+ * `finish-step`'s `response.modelId` — the same ledger the prompt count comes
+ * from. So it is remembered, per seat object, rather than guessed: one turn on
+ * the default window, then right for the life of the process. Keyed weakly
+ * because the key is the host's model object and this must not be the reason it
+ * stays alive.
+ */
+const resolvedIds = new WeakMap<object, string>();
+
+/** Record what the provider reported for `model`, from the turn that called it. */
+export function rememberResolvedModelId(model: LanguageModel, reported: string | undefined): void {
+  // A string seat already IS its id, and an empty report says nothing.
+  if (typeof model === "string" || reported === undefined || reported === "") return;
+  resolvedIds.set(model, reported);
+}
+
+/**
  * THE one new public knob of this shipment.
  *
  * `override` is the BYO escape and it wins outright, table hit or not: a host on
@@ -66,7 +93,9 @@ export const MODEL_CONTEXT_WINDOWS: readonly (readonly [match: string, tokens: n
  */
 export function contextWindowTokens(model: LanguageModel, override?: number): number {
   if (override !== undefined && Number.isInteger(override) && override > 0) return override;
-  const id = (typeof model === "string" ? model : model.modelId).toLowerCase();
+  const id = (typeof model === "string"
+    ? model
+    : resolvedIds.get(model) ?? model.modelId).toLowerCase();
   let matched: readonly [string, number] | undefined;
   for (const entry of MODEL_CONTEXT_WINDOWS) {
     if (!id.includes(entry[0])) continue;
