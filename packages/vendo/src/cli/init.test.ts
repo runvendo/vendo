@@ -1204,12 +1204,17 @@ describe("vendo init (zero-question)", () => {
         .resolves.toMatchObject({ action: "run", decidedBy: "rule" });
 
       // The documented edge (quickstart/install): deleting the init-written
-      // file while keeping `policy: {}` degrades to auto-run WITHOUT the
-      // unconfigured notice — the default file is read fail-soft, and
-      // status() reads any policy object as configured.
+      // file while keeping `policy: {}` degrades to the guard's own blank
+      // state WITHOUT the unconfigured notice — the default file is read
+      // fail-soft, and status() reads any policy object as configured. What
+      // the blank state means is the guard's to say, and for a destructive
+      // tool it says ask (`default`, not the file's `rule`) — so losing the
+      // file costs the audit trail's attribution, never the consent.
       await rm(join(root, ".vendo", "policy.json"));
       const fileless = createGuard({ store, policy: {} });
       await expect(fileless.check({ id: "call_3", tool: destructive.name, args: {} }, destructive, ctx))
+        .resolves.toMatchObject({ action: "ask", decidedBy: "default" });
+      await expect(fileless.check({ id: "call_4", tool: read.name, args: {} }, read, ctx))
         .resolves.toMatchObject({ action: "run", decidedBy: "default" });
       expect(fileless.status()).toEqual({ posture: "rules" });
     } finally {
