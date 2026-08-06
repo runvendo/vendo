@@ -509,18 +509,26 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
                   break;
                 case "error":
                   failure = { message: event.message, ...(event.code === undefined ? {} : { code: event.code }) };
-                  // The SCREEN's failure affordance — the same ai-SDK error chunk
-                  // `createAgent` raises, so the host renders its banner, its
-                  // Retry and its detail line. Splicing the sentence into the
-                  // assistant's prose instead would read as the agent talking and
-                  // would offer the user nothing to act on.
                   text.break();
                   surfaced = event.message;
-                  writeError(writer, event.message);
-                  // …and the TRANSCRIPT's. The chunk above belongs to no
-                  // message, so without this the reload of a failed turn shows
-                  // the question answered by a blank reply.
+                  // The TRANSCRIPT's failure affordance, and it goes FIRST. The
+                  // chunk below belongs to no message, so without this the reload
+                  // of a failed turn shows the question answered by a blank reply
+                  // — but writing that chunk re-enters the stream's own `onError`
+                  // (which knows it: see the note there), and by then this
+                  // sentence is a formatted STRING, not the `VendoError` it came
+                  // from. `onError` therefore records the generic constant and
+                  // takes the one-per-turn slot with it, leaving the record below
+                  // a no-op. The banner said "run `vendo login`" and the reload
+                  // said "something went wrong". Claiming the slot first is what
+                  // keeps the two the same sentence.
                   recordTurnError(event.message, (part) => writer.write(part as never));
+                  // …and the SCREEN's — the same ai-SDK error chunk `createAgent`
+                  // raised, so the host renders its banner, its Retry and its
+                  // detail line. Splicing the sentence into the assistant's prose
+                  // instead would read as the agent talking and would offer the
+                  // user nothing to act on.
+                  writeError(writer, event.message);
                   break;
                 case "usage":
                   // Audit/metering only — never the screen, never the transcript.

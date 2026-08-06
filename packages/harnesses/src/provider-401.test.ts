@@ -16,13 +16,16 @@
 import { VendoError, type ThreadId } from "@vendoai/core";
 import { APICallError } from "ai";
 import type { UIMessage } from "ai";
+import { MockLanguageModelV3 } from "ai/test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { defineHarness } from "./define.js";
 import { createHarnessRuntime } from "./runtime.js";
+import { vendo } from "./vendo/vendo.js";
 import {
   boundRegistry,
   ctx,
   readSse,
+  seats,
   testGuard,
   testSkills,
   testTranscript,
@@ -147,5 +150,65 @@ describe("the credential ladder's fix survives the fold", () => {
       expect(turn.streamed, where).toBe(`Vendo: ${KEYLESS.message} (validation)`);
       expect(turn.persisted, where).toBe(`Vendo: ${KEYLESS.message} (validation)`);
     }
+  });
+});
+
+/**
+ * …and the path the cases above cannot reach.
+ *
+ * Both `failedTurn` shapes THROW, which lands in the runtime's catch, where
+ * `specificWireErrorMessage` still holds the real `VendoError`. The SHIPPED
+ * harness never throws: `vendo()` catches a model failure and YIELDS
+ * `{ type: "error", message: wireErrorMessage(error) }` (vendo.ts). By then the
+ * sentence is a formatted STRING, and the runtime's error case wrote it to the
+ * wire before recording it — which re-entered the stream's own `onError` with a
+ * plain Error, so the generic constant claimed the once-per-turn slot and the
+ * specific record became a no-op.
+ *
+ * Live banner right, persisted line generic: a keyless host reloaded the page
+ * and lost the one sentence that says what to do. Found by a cold walk of the
+ * real browser, not by this suite, because this suite mocked the harness — the
+ * seam the whole feature turns on.
+ */
+async function keylessOnTheShippedHarness(): Promise<{ streamed?: string; persisted?: string }> {
+  vi.spyOn(console, "error").mockImplementation(() => undefined);
+  const guard = testGuard();
+  const transcript = testTranscript();
+  const runtime = createHarnessRuntime({
+    tools: boundRegistry({}, guard),
+    guard,
+    skills: testSkills(),
+    transcript,
+  });
+  const parts = await readSse(await runtime.run({
+    // The real one. A double that throws proves the other branch.
+    harness: vendo(),
+    threadId: THREAD,
+    messages: [userMessage("m1", "go")] as UIMessage[],
+    ctx: ctx(),
+    workspace: testWorkspace(),
+    // What a keyless deployment hits: the credential ladder's VendoError, raised
+    // where the loop reaches for the model — inside `vendo()`'s own try.
+    models: seats(new MockLanguageModelV3({ doStream: async () => { throw KEYLESS; } })),
+    interactive: true,
+  }));
+  const stored = await transcript.list(ctx().principal, THREAD);
+  const notice = stored
+    .flatMap((message) => message.parts)
+    .find((part) => part.type === "data-vendo-turn-error");
+  return {
+    streamed: parts.find((part) => part.type === "error")?.errorText as string | undefined,
+    persisted: (notice as { data?: { message?: string } } | undefined)?.data?.message,
+  };
+}
+
+describe("a yielded turn error keeps its sentence", () => {
+  it("persists what the banner said on the SHIPPED harness, not the generic constant", async () => {
+    const turn = await keylessOnTheShippedHarness();
+    const guidance = `Vendo: ${KEYLESS.message} (validation)`;
+    // The banner was always right — this is the half that regressed.
+    expect(turn.streamed).toBe(guidance);
+    expect(turn.persisted).toBe(guidance);
+    expect(turn.persisted).not.toBe(UNNAMEABLE);
   });
 });
