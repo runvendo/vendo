@@ -4,9 +4,15 @@
  * The delete blocker named in §7.3 — "the floor's types must be freed first" — is
  * GONE: `checking/` now owns `FloorDependencies` and imports nothing from this
  * directory, and the checks it runs are reachable from the paint seam through
- * `AppFloor`, for every author rather than only for apps this pipeline built. What
- * keeps the file alive is its five `runtime.ts` call sites and the public re-export
- * in `index.ts` — all of which still work, unchanged.
+ * `AppFloor`, for every author rather than only for apps this pipeline built.
+ *
+ * Two of the three things keeping it alive are gone as of 2026-08-05. The public
+ * re-export in `index.ts` had no caller anywhere and was deleted, and `vendo_make`
+ * no longer falls through here when assembly comes back empty — an `unavailable`,
+ * an unwired assembler, a throw and an `assembled` with no row all answer with a
+ * failed receipt now. What remains is the five `runtime.ts` call sites: this is
+ * still the engine behind `AppsRuntime.create` and `AppsRuntime.edit`, which have
+ * no replacement builder yet, so it cannot be deleted without one.
  *
  * The replacement is the LEAN loop plus the floor at the seam (§4.1, §7.1): a
  * builder writes `plan.vendo` / `app.vendo` with its own hands, the seam compiles

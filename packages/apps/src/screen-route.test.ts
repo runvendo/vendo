@@ -1,12 +1,12 @@
 /**
  * The front door's routing seam — blueprint §1 point 2 and §4.5.
  *
- * `vendo_make` starts every request in the screen agent. `unavailable`, a throw
- * and an `assembled` that left no row fall through to the conductor; `escalate`
- * does NOT — it is a request for the builder, and what it gets depends on one
- * thing, whether this deployment has a sandbox to build in. Three properties make
- * that safe rather than merely intended, and all three are asserted here against
- * the REAL conductor:
+ * `vendo_make` starts every request in the screen agent, and the answer it gets
+ * back is the answer the person gets. `escalate` is a request for the builder,
+ * and what it gets depends on one thing — whether this deployment has a sandbox
+ * to build in. Everything else is assembly coming back empty, which is now the
+ * end of the ask rather than a quiet hand-off to a second engine. Three
+ * properties make that safe rather than merely intended:
  *
  * 1. **One app id, whichever way an escalation lands.** An escalation has already
  *    written `plan.vendo` at the id it was handed and its skeleton is already
@@ -14,12 +14,13 @@
  *    paint the finished app onto a SECOND stream and leave that skeleton beside it
  *    as a card that builds forever; a failure reported against a different id
  *    would leave the same orphan.
- * 2. **A deployment that cannot build says so.** No sandbox means no machine, and
- *    the conductor cannot serve what assembly just escalated — it is assembly too.
- *    So the receipt fails honestly instead of spending a build's latency on a
- *    worse version of the screen the person was already shown.
- * 3. **An unwired or unserving assembler changes nothing.** The conductor path is
- *    not amputated by this seam; it is what the seam falls through to.
+ * 2. **A deployment that cannot build says so.** No sandbox means no machine, so
+ *    the receipt fails honestly instead of spending a build's latency on a worse
+ *    version of the screen the person was already shown.
+ * 3. **An unwired or unserving assembler surfaces LOUDLY.** Composition forgetting
+ *    the slot, an assembler that threw, an `unavailable`, and an `assembled` that
+ *    left no row are four different bugs and four failed receipts — never a
+ *    "ready" served by an engine nobody chose.
  */
 import type { AppId, RunContext, ScreenAssembler, ScreenRequest, ToolRegistry, VendoViewPart } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
@@ -40,8 +41,8 @@ const tools: ToolRegistry = {
   async execute() { return { status: "error", error: { code: "not-found", message: "no tools" } }; },
 };
 
-/** Every prompt the conductor's brain was handed, so the escalated plan reaching
- *  the build brief is proved by what the model READ rather than by a comment. */
+/** Every prompt the build was handed, so the escalated plan reaching the build
+ *  brief is proved by what the model READ rather than by a comment. */
 const briefs: string[] = [];
 
 const runtimeWith = (screen?: ScreenAssembler, options: {
@@ -131,10 +132,10 @@ describe("an escalation and the build that finishes it share ONE app id", () => 
     expect(briefs.join("\n")).toContain("Show my spending by category");
   });
 
-  it("with no sandbox the escalation FAILS honestly at the same id, and the conductor never runs", async () => {
-    // The conductor is assembly too, so it cannot serve an ask that assembly just
-    // escalated. Falling through would spend a full build's latency to arrive at a
-    // worse version of the screen the person already saw.
+  it("with no sandbox the escalation FAILS honestly at the same id, and nothing is generated", async () => {
+    // An escalation asks for a machine. Answering it with a second pass at
+    // assembly would spend a full build's latency to arrive at a worse version of
+    // the screen the person already saw.
     const { seen, assembler } = recordingAssembler({ kind: "escalate", why: "this needs real code" });
     const { agentTools, briefs } = runtimeWith(assembler);
 
@@ -164,41 +165,61 @@ describe("an escalation and the build that finishes it share ONE app id", () => 
   });
 });
 
-describe("the conductor is what the seam falls through to", () => {
-  it("an unwired assembler leaves vendo_make exactly as it was", async () => {
-    const { agentTools } = runtimeWith();
-    const outcome = await make(agentTools);
+/** The four ways assembly comes back with no screen. Each one used to be
+ *  absorbed by a second engine; each one is now the answer. */
+describe("assembly that produces no screen fails honestly", () => {
+  const unbuilt = (outcome: Awaited<ReturnType<typeof make>>) => {
     expect(outcome.status).toBe("ok");
-    expect((outcome as { output: { status: string } }).output.status).toBe("ready");
+    return (outcome as { output: { id: string; status: string; title: string; say: string } }).output;
+  };
+
+  it("an unwired assembler is a composition bug, and it says so", async () => {
+    const { agentTools, briefs } = runtimeWith();
+
+    const receipt = unbuilt(await make(agentTools));
+
+    expect(receipt.status).toBe("failed");
+    expect(receipt.say).toContain("nothing in this deployment builds screens");
+    // The ask, so the sentence and the card are about the same thing.
+    expect(receipt.title).toBe("Show my spending by category");
+    // Nothing was generated behind the person's back: not one model call.
+    expect(briefs).toHaveLength(0);
   });
 
-  it("an assembler that cannot serve is not a failed request", async () => {
+  it("an `unavailable` hands the assembler's own `why` to the person", async () => {
     const { assembler } = recordingAssembler({ kind: "unavailable", why: "no workspace here" });
-    const { agentTools } = runtimeWith(assembler);
-    const outcome = await make(agentTools);
-    expect(outcome.status).toBe("ok");
-    expect((outcome as { output: { status: string } }).output.status).toBe("ready");
+    const { agentTools, briefs } = runtimeWith(assembler);
+
+    const receipt = unbuilt(await make(agentTools));
+
+    expect(receipt.status).toBe("failed");
+    // Verbatim — a generic apology is nothing the person can act on.
+    expect(receipt.say).toContain("no workspace here");
+    expect(briefs).toHaveLength(0);
   });
 
-  it("an assembler that THROWS is not a failed request either", async () => {
+  it("an assembler that THROWS reports the throw, not a rescue", async () => {
     const throwing: ScreenAssembler = { assemble: async () => { throw new Error("assembler exploded"); } };
-    const { agentTools } = runtimeWith(throwing);
-    const outcome = await make(agentTools);
-    expect(outcome.status).toBe("ok");
-    expect((outcome as { output: { status: string } }).output.status).toBe("ready");
+    const { agentTools, briefs } = runtimeWith(throwing);
+
+    const receipt = unbuilt(await make(agentTools));
+
+    expect(receipt.status).toBe("failed");
+    expect(receipt.say).toContain("assembler exploded");
+    expect(briefs).toHaveLength(0);
   });
 
-  it("an `assembled` that left no ROW behind falls through — a picture of an app is not an app", async () => {
+  it("an `assembled` that left no ROW behind is not an app — a picture of one is not one", async () => {
     // The screen agent said it assembled, but nothing renderable ever reached the
     // store, so `authored` upserted no row. The front door checks the row rather
-    // than trusting the answer, and the conductor takes the ask.
+    // than trusting the answer.
     const { assembler } = recordingAssembler({ kind: "assembled" });
-    const { agentTools } = runtimeWith(assembler);
-    const outcome = await make(agentTools);
-    expect(outcome.status).toBe("ok");
-    const receipt = (outcome as { output: { status: string; title: string } }).output;
-    expect(receipt.status).toBe("ready");
-    // The conductor's own document, not an invented title over an absent app.
-    expect(receipt.title.length).toBeGreaterThan(0);
+    const { agentTools, briefs } = runtimeWith(assembler);
+
+    const receipt = unbuilt(await make(agentTools));
+
+    expect(receipt.status).toBe("failed");
+    expect(receipt.say).toContain("wasn't something I could show");
+    expect(briefs).toHaveLength(0);
   });
 });

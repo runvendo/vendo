@@ -283,23 +283,23 @@ export interface AppsConfig {
    *  generation (execution still answers `connect-required` on its own). */
   connectedToolkits?: (ctx: RunContext) => Promise<string[]>;
   /**
-   * UI-generation blueprint §1 point 2 — the screen agent, in front of the
-   * conductor. "The seam routes, not the caller": every `vendo_make` request
-   * starts in the cheap assembly loop, and this block never decides which engine
-   * a request deserves.
+   * UI-generation blueprint §1 point 2 — the screen agent. "The seam routes, not
+   * the caller": every `vendo_make` request starts in the cheap assembly loop,
+   * and this block never decides which engine a request deserves.
    *
    * An ADAPTER SLOT, for the reason every other one here is: the screen agent is a
    * lean loop in `@vendoai/harnesses` and this block depends on `core` alone, so
    * the two sides meet on core's `ScreenAssembler` and composition is the only
-   * place that fills it. Explicitly passed always wins; unfilled changes nothing.
+   * place that fills it. Explicitly passed always wins.
    *
-   * DEFAULT-SAFE by construction. `vendo_make` routes here first and falls
-   * through to `conductCreate` on every answer but `assembled` — an `unavailable`,
-   * an assembler that could not run, a throw, and (the check that makes the
-   * promise true rather than merely intended) an `assembled` that left no app ROW
-   * behind. An `escalate` is the one answer that is NOT a fall-through: it is a
-   * request for the build, and the build is what it gets (see `vendo_make` in
-   * agent-tools.ts).
+   * REQUIRED for `vendo_make`, as of the conductor's retirement. There is no
+   * second engine behind this seam: an `unavailable`, an assembler that could not
+   * run, a throw, an `assembled` that left no app ROW behind, and an unfilled slot
+   * all answer with a FAILED receipt that says what happened. A quiet fall-through
+   * is how a composition bug ships — the deployment reads all-green while every
+   * ask is served by an engine nobody chose. An `escalate` is the one answer that
+   * is neither: it is a request for the build, and the build is what it gets (see
+   * `vendo_make` in agent-tools.ts).
    */
   screen?: ScreenAssembler;
   /**

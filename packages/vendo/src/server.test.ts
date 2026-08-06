@@ -2424,10 +2424,10 @@ describe("09 §3 conversational turn against the real composed store", () => {
       outputTokens: { total: 0, text: 0, reasoning: 0 },
     } as const;
     let agentCalls = 0;
-    // A plan — the ask is normal, so the brain plans it and fast workers write
-    // the groups. That is what makes the create arrive in pieces: the plan IS
-    // the layout, on screen before a single group has been written, and each
-    // group lands as its own view.
+    // The screen agent assembles in PASSES: it saves the app as it grows, and
+    // every save paints through the render seam. That is what makes the create
+    // arrive in pieces — a first section on screen before the second is written
+    // — and each save lands as its own view on the app's own stream.
     const generation = (delta: string) => ({
       stream: simulateReadableStream({ chunks: [
         { type: "text-start" as const, id: "generation" },
@@ -2436,22 +2436,29 @@ describe("09 §3 conversational turn against the real composed store", () => {
         { type: "finish" as const, usage, finishReason: { unified: "stop" as const, raw: undefined } },
       ] }),
     });
+    const saveApp = (content: string, id: string) => ({
+      stream: simulateReadableStream({ chunks: [
+        { type: "tool-call" as const, toolCallId: id, toolName: "save_app", input: JSON.stringify({ content }) },
+        { type: "finish" as const, usage, finishReason: { unified: "tool-calls" as const, raw: undefined } },
+      ] }),
+    });
+    const section = (count: number) => `<App name="SSE app">\n  <Stack>\n${
+      Array.from({ length: count }, (_, index) => `    <Text text="Section ${index + 1} ready" />`).join("\n")
+    }\n  </Stack>\n</App>`;
+    const screenTurns = [
+      saveApp(section(1), "c1"),
+      saveApp(section(2), "c2"),
+      saveApp(section(3), "c3"),
+      generation("done"),
+    ];
     const model = new MockLanguageModelV3({
       doStream: async ({ prompt }) => {
         const serialized = JSON.stringify(prompt);
-        if (serialized.includes("THEY ARE ASKING NOW:")) {
-          return generation(`<Plan name="SSE app">
-  <Group>
-    <Leaf component="Text" purpose="A one-line status for the first section"/>
-  </Group>
-  <Group>
-    <Leaf component="Text" purpose="A one-line status for the second section"/>
-  </Group>
-</Plan>`);
+        // The screen agent's own brief. The one marker that says "this prompt is
+        // the assembly loop's" without counting calls.
+        if (serialized.includes("# In this loop")) {
+          return screenTurns.shift() ?? generation("nothing more to do");
         }
-        // One fill worker per group, and the AI reviewer, all ride this model.
-        if (serialized.includes("YOUR SECTION")) return generation('<Text text="Ready"/>');
-        if (serialized.includes("You are the last reader")) return generation("");
 
         agentCalls += 1;
         if (agentCalls === 1) {
@@ -2505,23 +2512,17 @@ describe("09 §3 conversational turn against the real composed store", () => {
 
     expect(response.status).toBe(200);
     expect(views.length).toBeGreaterThanOrEqual(3);
-    // The first view IS the plan's geometry, every leaf still pending.
-    expect(views[0]?.data.payload).toMatchObject({
-      streaming: true,
-      nodes: [
-        { id: "app" },
-        { id: "group-0" },
-        { id: "group-0-body" },
-        { id: "group-0-leaf-0" },
-        { id: "group-1" },
-        { id: "group-1-body" },
-        { id: "group-1-leaf-0" },
-      ],
-    });
+    // The app ARRIVES IN PIECES: each save is its own view, and each one carries
+    // more of the app than the last. This is the property the SSE handler exists
+    // for — the person watches it fill in rather than waiting for one blob.
+    const nodeCounts = views.map((view) => view.data.payload.nodes.length);
+    expect(nodeCounts.at(-1)).toBeGreaterThan(nodeCounts[0] as number);
+    // ONE reconciliation id across every piece, so the card updates in place
+    // instead of a second card appearing beside it.
     expect(new Set(views.map((view) => view.id))).toEqual(new Set([`vendo-view:${views[0]?.data.appId}`]));
-    // Both placeholders are gone, replaced by what their workers wrote.
-    expect(views.at(-1)?.data.payload.nodes).toHaveLength(7);
-    expect(views.at(-1)?.data.payload.streaming).toBeUndefined();
+    // …and the last word SETTLES. While `streaming` is on, the card never
+    // reaches a verdict and stays on "Building your view…".
+    expect(views.at(-1)?.data.payload.streaming).not.toBe(true);
   });
 });
 

@@ -63,25 +63,29 @@ function hostAgentModel(toolName: string, input: unknown): LanguageModel {
   }) as unknown as LanguageModel;
 }
 
-/** Vendo's own model seam: answers `vendo_create_app` generation requests with
- *  a minimal valid tree so the build streams for real. The ask is tiny, so the
- *  brain writes the whole app on the spot (`THEY ARE ASKING NOW:` is the brain's marker). */
+const WEATHER_APP = '<App name="Weather dashboard"><Stack><Text text="Paris, London, and Tokyo at a glance"/><Disclaimer reason="Fixture app."/></Stack></App>';
+
+/** Vendo's own model seam: answers the screen agent's turns so the build
+ *  streams for real. `# In this loop` is the assembly loop's own brief — the
+ *  one marker that says "this prompt is the screen agent's" without counting
+ *  calls — and `save_app` is how that loop lands an app. */
 function generationModel(): LanguageModel {
+  let assembled = false;
   return new MockLanguageModelV3({
     doStream: async ({ prompt }) => {
       const serialized = JSON.stringify(prompt);
-      if (serialized.includes("THEY ARE ASKING NOW:")) {
+      if (serialized.includes("# In this loop") && !assembled) {
+        assembled = true;
         return {
           stream: simulateReadableStream({
             chunks: [
-              { type: "text-start", id: "g1" } as const,
               {
-                type: "text-delta",
-                id: "g1",
-                delta: '<App name="Weather dashboard"><Stack><Text text="Paris, London, and Tokyo at a glance"/><Disclaimer reason="Fixture app."/></Stack></App>',
+                type: "tool-call",
+                toolCallId: "call_save_app",
+                toolName: "save_app",
+                input: JSON.stringify({ content: WEATHER_APP }),
               } as const,
-              { type: "text-end", id: "g1" } as const,
-              finish("stop"),
+              finish("tool-calls"),
             ],
           }),
         };

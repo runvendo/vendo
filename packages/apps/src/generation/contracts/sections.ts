@@ -1,49 +1,25 @@
 /**
- * Shared prompt sections — the pieces every generation contract (create,
- * exemplar-led create, edit, instant paint) composes from: role lines, the
- * clock, component styling, the catalog/theme/design-rules trio, the host
- * tool/shape sections, the generated COMPONENTS section, and the
- * island contract.
+ * Shared prompt sections — the pieces every generation contract composes from:
+ * the theme/design-rules pair, the host tool/shape sections, the generated
+ * COMPONENTS section, and the island contract.
+ *
+ * `generationPromptSections` — one monolithic JSON-era contract covering the
+ * role line, the v2 tree contract, the clock, component styling and the catalog
+ * — lived here with no caller left; the dialect contracts each compose their own
+ * sections now. Deleted 2026-08-05 rather than left to rot into a second,
+ * silently diverging source of truth about the tree.
  */
 import {
   KIT_WIRE_COMPONENT_NAMES,
-  RESERVED_COMPONENT_NAMES,
-  TREE_MAX_COMPONENT_SOURCE_BYTES,
-  TREE_MAX_GENERATED_COMPONENTS,
-  TREE_MAX_NODES,
-  TREE_MAX_QUERIES,
-  TREE_MAX_TOTAL_COMPONENT_BYTES,
   describeShapeWithSemantics,
   kitPrompt,
   ISLAND_AMBIENT_KIT_NAMES,
-  type NormalizedCatalog,
 } from "@vendoai/core";
-import { pinComponentName, type PinBaseline } from "../../pins.js";
 import { prewiredSchemaPrompt } from "../../prewired-schema.js";
 import type { GenerationDependencies } from "../engine.js";
 
-const catalogPrompt = (catalog: NormalizedCatalog): string => JSON.stringify(
-  catalog.map(({ name, description, propsJsonSchema, examples }) => ({
-    name,
-    whenToUse: description,
-    propsJsonSchema: propsJsonSchema ?? null,
-    examples: examples ?? [],
-  })),
-  null,
-  2,
-);
-
-const pinBaselinesPrompt = (baselines: readonly PinBaseline[] = []): string => JSON.stringify(
-  baselines.map((baseline) => ({
-    slot: baseline.slot,
-    componentName: pinComponentName(baseline.slot),
-  })),
-  null,
-  2,
-);
-
 export interface GenerationPromptSection {
-  id: "role" | "tree-contract" | "clock" | "component-styling" | "catalog" | "theme" | "design-rules" | "remixable-slots" | "prewired-props" | "limits";
+  id: "role" | "tree-contract" | "clock" | "catalog" | "theme" | "design-rules" | "limits";
   content: string;
 }
 
@@ -76,60 +52,6 @@ export const hostThemeSection = (deps: GenerationDependencies): GenerationPrompt
     id: "theme" as const,
     content: `THEME TOKENS:\n${JSON.stringify(deps.theme, null, 2)}`,
   }];
-
-export const generationPromptSections = (deps: GenerationDependencies): GenerationPromptSection[] => [{
-  id: "role",
-  content: "You are the Vendo app generation engine. Return JSON only, with no markdown.",
-}, {
-  id: "tree-contract",
-  content: `TREE CONTRACT (vendo-genui/v2):
-- At rest the app is {name, description?, tree, components?}; never emit id, server, secrets, egress, storage, or authority.
-- tree.formatVersion is "vendo-genui/v2" and tree contains root, nodes, optional data and queries. Generated component sources live at the DOCUMENT level in components — the tree itself never carries them.
-- Maximums: ${TREE_MAX_NODES} nodes, ${TREE_MAX_QUERIES} queries, ${TREE_MAX_GENERATED_COMPONENTS} generated components, ${TREE_MAX_COMPONENT_SOURCE_BYTES} bytes per generated component source, ${TREE_MAX_TOTAL_COMPONENT_BYTES} bytes of generated-component source in total.
-- Reserved prewired primitive names: ${RESERVED_COMPONENT_NAMES.join(", ")}.
-- Every node is exactly {id, component, source?, props?, children?}. "component" is a REQUIRED non-empty string on EVERY node, including layout containers — use a prewired primitive (e.g. Stack, Row, Grid) as the component for containers; children is an array of node ids. Never emit a node without a component.
-- "nodes" is a FLAT array of every node; nesting is expressed only through "children" id references, never by inlining child objects. "root" is the id of the top node.
-- A node source is "prewired", "host", or "generated". Generated names are PascalCase, non-reserved, and require a document components[name] ESM React source.
-- Prefer a host component whenever it covers the need. Matching the host brand is a hard goal.
-- Prop bindings are exactly {"$path":"/json/pointer"} and {"$state":"clientStateKey"}. A query's result lives at "/" + its name.
-- Queries are {name, tool, input?}; name is a bare identifier. Actions embedded in props are {action,payload?}.
-- Query tools and action names are host tool names, or fn:<name> where name matches [A-Za-z_][A-Za-z0-9_-]*. A rung-1 tree cannot use fn: because it has no server.
-`,
-}, {
-  // Without a clock the model guesses the year and hardcodes it into
-  // filters/headers ("Top 10 in 2025" over 2026 data = a false empty state).
-  // Computed per call, never cached.
-  id: "clock",
-  content: `CURRENT DATE: ${new Date().toISOString().slice(0, 10)} — this is "now" for the host's data. Resolve every relative period the user asks for ("this year", "this month", "next 90 days") from this date; never assume or hardcode a different year or period.`,
-}, {
-  id: "component-styling",
-  content: `GENERATED COMPONENT STYLING:
-- The component renders in a sandbox that sits directly on the host page's background (THEME TOKENS colors.background when provided; otherwise assume a light background). Never design for an imaginary dark backdrop; give the component's own containers explicit backgrounds.
-- The host's brand tokens are available as CSS custom properties: --vendo-color-background, --vendo-color-surface, --vendo-color-text, --vendo-color-muted, --vendo-color-accent, --vendo-color-accent-text, --vendo-color-danger, --vendo-color-border, --vendo-font-family, --vendo-heading-family, --vendo-font-size, --vendo-radius-small/medium/large. Prefer them (e.g. color: "var(--vendo-color-text)") so the view matches the host brand.
-`,
-}, {
-  id: "catalog",
-  content: `HOST CATALOG (names, when-to-use guidance, props JSON schemas, and usage examples):\n${catalogPrompt(deps.catalog)}\nWhen a host catalog entry fits any part of the request, you MUST use a source:"host" node with its exact name and props schema; do not generate an equivalent component. Compose host, prewired, and generated nodes when needed.`,
-}, {
-  id: "theme",
-  content: `THEME TOKENS:\n${JSON.stringify(deps.theme ?? null, null, 2)}`,
-}, {
-  id: "design-rules",
-  content: `HOST DESIGN RULES:\n${(typeof deps.designRules === "function" ? deps.designRules() : deps.designRules)?.trim() || "(none provided)"}`,
-}, {
-  // Gesture-owned forking (2026-07-21): the fork is executed DETERMINISTICALLY
-  // by the engine when the user acts on a remixable slot — the model never
-  // decides to fork, so the edit dialect no longer teaches <ForkPin> (the op
-  // keeps compiling for stored apps). This section teaches only what edits on
-  // EXISTING forks need.
-  id: "remixable-slots",
-  content: (deps.pinBaselines ?? []).length === 0 ? "" : `REMIXABLE HOST SLOTS (slot -> the generated component a user fork ships under):
-${pinBaselinesPrompt(deps.pinBaselines)}
-- Forking a slot is a USER GESTURE the engine executes deterministically — never fork a slot yourself, and never copy or imitate captured host source in a new island.
-- A slot the user has forked appears as the generated component named above (its pin is listed in APP_META.pins) with its full source in CURRENT_APP. When the instruction asks to change THAT forked component itself, declare the target and re-declare its island in the same patch: <EditPin name="componentName"/> plus <Island name="componentName">...complete updated source...</Island> with the SMALLEST change the instruction needs — keep the original structure, styling, behavior, and every comment intact (the fork is reviewed as a diff against the host's source; wholesale rewrites and stripped comments are review noise). An <Island> that changes a pinned component without its <EditPin> declaration is rejected.
-- Content the instruction wants NEAR a fork (next to, below, beside, above it) is NOT a change to the fork: leave the pinned component's source untouched and compose the new content as a SIBLING node — <Insert> next to the pinned node, with a NEW <Island> under a different name when it needs custom source.
-- Never remove or rename a pinned component, and never invent or alter baseline hashes.`,
-}];
 
 /** The COMPONENTS section is GENERATED from the component schemas (kitPrompt
  *  over the Kit specs + the legacy primitive signatures); no hand-written

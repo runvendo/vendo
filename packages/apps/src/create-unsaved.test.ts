@@ -1,7 +1,8 @@
-import type { RunContext, ToolRegistry, VendoViewPart } from "@vendoai/core";
+import type { RunContext, ScreenAssembler, ToolRegistry, VendoViewPart } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { createAgentTools } from "./agent-tools.js";
 import { createApps } from "./index.js";
+import { fakeBoxSandbox } from "./testing/fake-box.js";
 import { basicLanguageModel, guardFixture, memoryStore } from "./testing/index.js";
 
 /**
@@ -83,16 +84,26 @@ describe("a create the store refuses to persist", () => {
   });
 
   it("reads to the agent as success with an honest note — never a failure it would retry", async () => {
+    // Through the front door, which reaches `create` by ESCALATION: the screen
+    // agent asks for the builder and this deployment has a sandbox to build in.
+    // (It used to reach it by falling through from an unwired assembler; that
+    // fall-through is gone, and an unwired assembler now fails loudly.)
+    const escalating: ScreenAssembler = {
+      assemble: async () => ({ kind: "escalate", why: "this needs a real build" }),
+    };
     const runtime = createApps({
       store: storeRefusingAppWrites(),
       guard: guardFixture(),
       tools,
       catalog: [],
       model: basicLanguageModel(),
+      machine: { sandbox: fakeBoxSandbox(), buildEnv: () => ({ PORT: "8080" }), boxEditPollMs: 5 },
+      screen: escalating,
     });
     const agentTools = createAgentTools(runtime, {
       data: {} as never,
       requireOwned: async () => { throw new Error("unused"); },
+      screen: escalating,
     });
 
     const outcome = await agentTools.execute(
