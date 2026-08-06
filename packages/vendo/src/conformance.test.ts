@@ -30,7 +30,7 @@ describe("tool-pack conformance — every pack tool routes through the guard", (
     },
   };
   const inputFor = (name: string): unknown => {
-    if (name === VENDO_MAKE_TOOL) return { prompt: "an approval-gated app" };
+    if (name === VENDO_MAKE_TOOL) return { request: "an approval-gated app" };
     if (name === VENDO_DELEGATE_TOOL) return { task: "send the report" };
     return {};
   };

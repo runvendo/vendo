@@ -172,26 +172,25 @@ function wrapHostTool(registry: ToolRegistry, descriptor: ToolDescriptor): Vendo
 function makeAppTool(registry: ToolRegistry, descriptor: ToolDescriptor): VendoPackTool {
   return {
     name: VENDO_MAKE_TOOL,
-    description: "Create a Vendo app (generated UI) from a natural-language prompt. Returns fast with a vendo/app-ref@1 envelope carrying status \"building\" — the build was only ACCEPTED and is still streaming; you have not seen its contents and do not know yet whether it will succeed. Say only that you're building it (present tense, no specifics) and stop there. Never say it is created/ready/done, and never describe, list, or invent anything it will contain (no tables, no numbers, no chart data) — the embed shows real build progress and the true final result, including a build failure, and it will contradict anything you claim. If the build later fails, you will not be told in this reply; do not assume or claim success in a later turn either — check with the user or a read tool before describing this app again.",
+    description: "Create a Vendo app (generated UI) from a plain-language request. Returns fast with a vendo/app-ref@1 envelope carrying status \"building\" — the build was only ACCEPTED and is still streaming; you have not seen its contents and do not know yet whether it will succeed. Say only that you're building it (present tense, no specifics) and stop there. Never say it is created/ready/done, and never describe, list, or invent anything it will contain (no tables, no numbers, no chart data) — the embed shows real build progress and the true final result, including a build failure, and it will contradict anything you claim. If the build later fails, you will not be told in this reply; do not assume or claim success in a later turn either — check with the user or a read tool before describing this app again.",
     inputSchema: {
       $schema: DRAFT_2020_12,
       type: "object",
-      properties: { prompt: { type: "string", minLength: 1 } },
-      required: ["prompt"],
+      properties: {
+        request: { type: "string", minLength: 1 },
+        context: { type: "string", minLength: 1 },
+        app: { type: "string", minLength: 1 },
+      },
+      required: ["request"],
       additionalProperties: false,
     },
     async execute(input, options) {
-      const args = input as { prompt?: unknown };
-      const fallbackTitle = titleFromPrompt(args?.prompt);
+      const fallbackTitle = titleFromPrompt((input as { request?: unknown })?.request);
       const call: VendoViewStreamingToolCall = {
         id: options.callId ?? mintCallId(),
         tool: VENDO_MAKE_TOOL,
-        // This pack tool's OWN surface is `prompt`, and it stays that way: it is a
-        // separate public tool from `vendo_make` (different name, different return
-        // shape — an app-ref envelope, not a receipt), so the front door's rename
-        // is not its rename. Only the inner call speaks the new contract, which is
-        // why the argument is mapped here rather than forwarded.
-        args: { request: args?.prompt },
+        // Same tool, same arguments: what the model sent goes through untouched.
+        args: input as Json,
       };
       let resolveFast!: (ref: VendoAppRef) => void;
       const fast = new Promise<VendoAppRef>((resolve) => { resolveFast = resolve; });
