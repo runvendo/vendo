@@ -41,8 +41,11 @@ describe("Rehearse availability", () => {
 
   const rehearse = () => screen.queryByRole("button", { name: "Rehearse" }) as HTMLButtonElement | null;
 
+  /** The fixture automation's one (schedule) trigger row. */
+  const scheduleRow = () => wire.state.automations[0]!.triggers[0]!;
+
   it("offers Rehearse when the automation acts", async () => {
-    wire.state.automations[0]!.rehearsal = {
+    scheduleRow().rehearsal = {
       supported: true, actingSteps: 1, readSteps: 1, historicalReads: 1,
     };
     renderPanel();
@@ -51,7 +54,7 @@ describe("Rehearse availability", () => {
   });
 
   it("disables Rehearse when nothing would be simulated", async () => {
-    wire.state.automations[0]!.rehearsal = {
+    scheduleRow().rehearsal = {
       supported: true, actingSteps: 0, readSteps: 2, historicalReads: 2,
     };
     renderPanel();
@@ -62,7 +65,7 @@ describe("Rehearse availability", () => {
   });
 
   it("removes Rehearse entirely when the shape cannot be rehearsed", async () => {
-    wire.state.automations[0]!.rehearsal = {
+    scheduleRow().rehearsal = {
       supported: false, actingSteps: 1, readSteps: 1, historicalReads: 0,
     };
     renderPanel();
@@ -73,7 +76,7 @@ describe("Rehearse availability", () => {
   });
 
   it("keeps offering Rehearse when the server sends no outlook at all", async () => {
-    delete wire.state.automations[0]!.rehearsal;
+    delete scheduleRow().rehearsal;
     renderPanel();
     await waitFor(() => expect(rehearse()).not.toBeNull());
     expect(rehearse()!.disabled).toBe(false);

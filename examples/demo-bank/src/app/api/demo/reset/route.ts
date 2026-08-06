@@ -3,6 +3,7 @@ import type { HostedStore } from "@vendoai/vendo/server";
 import { seedDemoScript } from "@/demo-script/seed";
 import { pregenerateChips } from "@/vendo/chips-seed";
 import { __reseed } from "@/server/store";
+import { MAPLE_SCENARIOS, type MapleScenario } from "@/server/seed";
 import { ok } from "@/server/http";
 import { mapleDemoUsers } from "@/server/users";
 import { demoRequestAllowed } from "@/vendo/request";
@@ -30,7 +31,22 @@ export async function POST(req: Request) {
   if (!demoRequestAllowed(req)) {
     return Response.json({ error: "reset is restricted to the demo's own origin" }, { status: 403 });
   }
-  __reseed(new Date());
+  // Optional scenario lever: {"scenario": "low-balance"} stages a specific
+  // story. Unknown names are a 400, never a silent fall-through to the
+  // default seed — a demo script must not think it staged a scenario it
+  // didn't. Absent body/scenario = the standard seed.
+  let scenario: MapleScenario | undefined;
+  const body = await req.json().catch(() => null);
+  if (body !== null && body.scenario !== undefined) {
+    if (!MAPLE_SCENARIOS.includes(body.scenario)) {
+      return Response.json(
+        { error: `unknown scenario "${body.scenario}" — known: ${MAPLE_SCENARIOS.join(", ")}` },
+        { status: 400 },
+      );
+    }
+    scenario = body.scenario;
+  }
+  __reseed(new Date(), scenario);
   // Demo-refresh 2026-07-23: reset also erases the demo subjects' Vendo state
   // (threads, generated apps, pins, grants) through the store's sanctioned
   // erase cascade, so slots and conversations return to out-of-the-box.

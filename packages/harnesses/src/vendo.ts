@@ -18,7 +18,7 @@
  */
 import { z } from "zod";
 import { modelToolDescription, type Harness, type HarnessEvent, type Json, type ToolDescriptor, type Turn } from "@vendoai/core";
-import { startTurn, wireErrorMessage } from "@vendoai/agent/internal";
+import { startTurn, wireErrorMessage, type TurnContext } from "@vendoai/agent/internal";
 import { reportHire } from "./runtime.js";
 import { jsonSchema, stepCountIs, streamText, tool, type LanguageModel, type ToolSet } from "ai";
 import { defineHarness } from "./define.js";
@@ -38,12 +38,27 @@ const optionsSchema = z.object({
   /** Overrides the `default` seat for this turn only. */
   model: z.unknown().optional(),
   maxSteps: z.number().int().positive().optional(),
+  historyWindow: z.number().int().positive().optional(),
+  contextTokenBudget: z.number().int().positive().optional(),
+  maxOutputTokens: z.number().int().positive().optional(),
 });
 
 export interface VendoHarnessOptions {
   model?: LanguageModel;
   maxSteps?: number;
+  /** The shipped loop's context knobs, per turn. They were declared on the loop
+   *  and on `createAgent` but not here, and this file passed `maxSteps` alone —
+   *  so a deployment on the default harness (which is every deployment whose
+   *  store can serve harness turns) could not reach the history window or the
+   *  token budget at all. */
+  historyWindow?: number;
+  contextTokenBudget?: number;
+  maxOutputTokens?: number;
 }
+
+/** The knobs a per-turn option may override, and the deployment defaults they
+ *  override. One list, so a new knob cannot reach one half and not the other. */
+const CONTEXT_KNOBS = ["maxSteps", "historyWindow", "contextTokenBudget", "maxOutputTokens"] as const;
 
 export interface VendoHarnessDeps {
   /**
@@ -56,6 +71,12 @@ export interface VendoHarnessDeps {
    */
   system?: string | (() => string | undefined | Promise<string | undefined>);
   maxSteps?: number;
+  /** The deployment's defaults for the loop's context knobs; a per-turn option of
+   *  the same name wins. `maxSteps` stays above for back-compat and reads the
+   *  same either way. */
+  historyWindow?: number;
+  contextTokenBudget?: number;
+  maxOutputTokens?: number;
   /**
    * Called once per hired specialist. Defaults to the runtime's own
    * {@link reportHire}, which writes the audit row and the transcript receipt — a
@@ -69,6 +90,39 @@ export interface VendoHarnessDeps {
     summary: string;
     usage: { inputTokens: number; outputTokens: number };
   }) => void;
+  /**
+   * The CLOSED toolbox. Set, the equipped set is EXACTLY this list: a string
+   * equips that registry tool (guarded, via `turn.tools.call`, same as today); a
+   * {@link HarnessHand} is the harness's own hand, invisible to every other
+   * consumer. No discovery rail (`find_tools` is not mounted — a fixed loadout has
+   * nothing to discover), no `vendo_*` always-active exemption (the list is
+   * total), no `hire_subagent` unless named. Unset = today's behaviour, unchanged.
+   *
+   * This is what lets a specialist BE `vendo()` plus configuration rather than a
+   * second copy of the loop: the step cap, the seat resolution, `wireErrorMessage`
+   * and the system precedence are the ones above, not a fork of them.
+   */
+  tools?: readonly (string | HarnessHand)[];
+}
+
+/**
+ * A tool the harness itself provides — the other half of a closed loadout.
+ *
+ * `execute` receives the TURN, which is what lets a hand be declared once at boot
+ * (where a `Harness` value is built, with no run in sight) while its effects are
+ * per-run: `turn.workspace` is this run's files and `turn.state` is this run's
+ * scratch. A hand never reaches the registry, so nothing else can discover it and
+ * the guard has nothing to decide about it — a hand that touches host data does it
+ * by calling `turn.tools.call` like anyone else.
+ */
+export interface HarnessHand {
+  /** What the model calls it. Never `vendo_`-prefixed: those names are the
+   *  product's, and the loadout rail treats them as always-active. */
+  name: string;
+  description: string;
+  /** JSON Schema, the same dialect a `ToolListing.inputSchema` carries. */
+  inputSchema: Record<string, unknown>;
+  execute(input: Json, turn: Turn<unknown>): Promise<Json>;
 }
 
 /** A tool with no declared input still needs a schema the provider will accept. */
@@ -112,6 +166,51 @@ async function refreshEquipped(
     });
   }
   return listings.map((listing) => listing.name);
+}
+
+/**
+ * Mount a CLOSED loadout: this list, resolved once, and nothing else.
+ *
+ * The listing is read one time and never re-read — a fixed loadout has nothing to
+ * discover, so `find_tools` is not mounted and there is no `afterCall` refresh. A
+ * name the listing does not carry is simply NOT OFFERED: the list is written at
+ * boot against a listing that legitimately varies per deployment (an optional
+ * host tool, a pack that is not installed), so an absence is a fact about the
+ * deployment rather than a fault in the harness — and the model is never told
+ * about a tool it could not have called anyway.
+ */
+async function equipClosedLoadout(
+  turn: Turn<unknown>,
+  tools: ToolSet,
+  loadout: readonly (string | HarnessHand)[],
+  hireSubagent: ToolSet[string],
+): Promise<string[]> {
+  const listings = new Map((await turn.tools.list()).map((listing) => [listing.name, listing]));
+  for (const entry of loadout) {
+    if (typeof entry !== "string") {
+      tools[entry.name] = tool({
+        description: entry.description,
+        inputSchema: jsonSchema(entry.inputSchema as Parameters<typeof jsonSchema>[0]),
+        execute: async (input: unknown) => await entry.execute(input as Json, turn),
+      });
+      continue;
+    }
+    if (entry === HIRE_SUBAGENT) {
+      tools[entry] = hireSubagent;
+      continue;
+    }
+    const listing = listings.get(entry);
+    if (listing === undefined) continue;
+    tools[entry] = tool({
+      description: modelToolDescription(listing),
+      inputSchema: jsonSchema((listing.inputSchema ?? NO_INPUT_SCHEMA) as Parameters<typeof jsonSchema>[0]),
+      // The same one line as the open loadout: the guard, the audit row, the view
+      // channel, the transcript mirror and §1.4's approval block live behind
+      // `call()`, closed list or not.
+      execute: async (input: unknown) => await turn.tools.call(listing.name, input as Json),
+    });
+  }
+  return Object.keys(tools);
 }
 
 interface SubagentReport {
@@ -169,6 +268,17 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
       if (turn.signal.aborted) return;
 
       const model = turn.options?.model ?? turn.models.default;
+      // Seats are required only where a harness reads them (contract §4,
+      // relaxed) — and THIS harness reads `default`, so a turn without it is
+      // the caller's composition bug, named loudly rather than limped past.
+      if (model === undefined) {
+        throw new Error("vendo() thinks with `turn.models.default`, and this turn carries no default seat");
+      }
+      const context: TurnContext = {};
+      for (const knob of CONTEXT_KNOBS) {
+        const value = turn.options?.[knob] ?? deps[knob];
+        if (value !== undefined) context[knob] = value;
+      }
       const system =
         (typeof deps.system === "function" ? await deps.system() : deps.system)
         ?? turn.system
@@ -179,50 +289,61 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
       // the curated, equipped set, and re-reading it is how a tool searched in
       // through `find_tools` becomes callable in the SAME turn. One object, never
       // a copy — `streamText` re-reads it per step, so a copy would freeze the
-      // toolset at step one and strand every discovery.
+      // toolset at step one and strand every discovery. (A closed loadout has
+      // nothing to discover, so it fills the same object once and stops.)
       const residentTools: ToolSet = {};
       let equipped: string[] = [];
-      const refresh = async (): Promise<void> => {
-        equipped = await refreshEquipped(turn, residentTools, refresh);
-      };
-      await refresh();
       /** Subagent tokens, drained onto the turn's usage after the stream ends. */
       const hiredUsage: Array<{ inputTokens: number; outputTokens: number }> = [];
-      Object.assign(residentTools, {
-        [HIRE_SUBAGENT]: tool({
-          description:
-            "Hire a specialist for one big job (building or editing an app, a long research pass). "
-            + "Name a skill to give it the full instructions. It reports back a short summary.",
-          inputSchema: z.object({
-            instructions: z.string().describe("What the specialist should accomplish."),
-            skill: z.string().optional().describe("A skill name from your skill list."),
-          }),
-          execute: async (input) => {
-            try {
-              // The specialist gets the same hands as the resident has RIGHT NOW —
-              // searched-in tools included — minus the hiring tool, so depth is
-              // bounded at one and a helper cannot spawn a tree.
-              const { [HIRE_SUBAGENT]: _hiring, ...hands } = residentTools;
-              const report = await runSubagent(turn, model, input, hands);
-              hiredUsage.push(report.usage);
-              (deps.onHire ?? reportHire)({
-                purpose: input.instructions,
-                ...(input.skill === undefined ? {} : { skill: input.skill }),
-                summary: report.summary,
-                usage: report.usage,
-              });
-              return { summary: report.summary };
-            } catch (error) {
-              // A failed hire is one tool result the resident can react to — never
-              // the turn's death.
-              console.error("[vendo] harness: subagent failed", {
-                error: error instanceof Error ? error.message : String(error),
-              });
-              return { error: "The specialist could not be reached for that job." };
-            }
-          },
+      const hireSubagent = tool({
+        description:
+          "Hire a specialist for one big job (building or editing an app, a long research pass). "
+          + "Name a skill to give it the full instructions. It reports back a short summary.",
+        inputSchema: z.object({
+          instructions: z.string().describe("What the specialist should accomplish."),
+          skill: z.string().optional().describe("A skill name from your skill list."),
         }),
+        execute: async (input) => {
+          try {
+            // The specialist gets the same hands as the resident has RIGHT NOW —
+            // searched-in tools included — minus the hiring tool, so depth is
+            // bounded at one and a helper cannot spawn a tree.
+            const { [HIRE_SUBAGENT]: _hiring, ...hands } = residentTools;
+            const report = await runSubagent(turn, model, input, hands);
+            hiredUsage.push(report.usage);
+            (deps.onHire ?? reportHire)({
+              purpose: input.instructions,
+              ...(input.skill === undefined ? {} : { skill: input.skill }),
+              summary: report.summary,
+              usage: report.usage,
+            });
+            return { summary: report.summary };
+          } catch (error) {
+            // A failed hire is one tool result the resident can react to — never
+            // the turn's death.
+            console.error("[vendo] harness: subagent failed", {
+              error: error instanceof Error ? error.message : String(error),
+            });
+            return { error: "The specialist could not be reached for that job." };
+          }
+        },
       });
+
+      // The closed list is TOTAL: what it names is what the model gets, hiring
+      // included only if it is named. The open path keeps the discovery rail — the
+      // listing re-read after every call — and hires by default.
+      let activeToolNames: () => string[];
+      if (deps.tools === undefined) {
+        const refresh = async (): Promise<void> => {
+          equipped = await refreshEquipped(turn, residentTools, refresh);
+        };
+        await refresh();
+        residentTools[HIRE_SUBAGENT] = hireSubagent;
+        activeToolNames = () => [...equipped, HIRE_SUBAGENT];
+      } else {
+        equipped = await equipClosedLoadout(turn, residentTools, deps.tools, hireSubagent);
+        activeToolNames = () => equipped;
+      }
 
       let loop: Awaited<ReturnType<typeof startTurn>>;
       try {
@@ -234,19 +355,21 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
           messages: [...turn.messages],
           tools: residentTools,
           signal: turn.signal,
+          // §3.5 — the runtime already minted it and put it on the Turn, so
+          // passing it is simply true.
+          turnId: turn.turnId,
           // The loadout, in the shipped loop's own vocabulary: `prepareStep`
           // re-reads this each step and restricts what the model may PICK, so a
           // tool the runtime equipped mid-turn is choosable on the next step and a
           // curated-off tool never is. `attach` is a no-op because the runtime —
           // not the harness — owns `find_tools`: that is the dividing line, and it
           // is what gives a third-party harness the same rail for free.
-          toolSearch: {
-            activeToolNames: () => [...equipped, HIRE_SUBAGENT],
-            attach: () => {},
-          },
-          ...(turn.options?.maxSteps ?? deps.maxSteps) === undefined
-            ? {}
-            : { context: { maxSteps: turn.options?.maxSteps ?? deps.maxSteps } },
+          toolSearch: { activeToolNames, attach: () => {} },
+          // The WHOLE context, not just `maxSteps`. Passing one knob is what made
+          // every other knob unreachable from `vendo()` — the loop declared them,
+          // `createAgent` passed them, and this caller silently dropped them, so
+          // the two thinkers disagreed about a host's own configuration.
+          ...(Object.keys(context).length === 0 ? {} : { context }),
         });
       } catch (error) {
         yield { type: "error", message: wireErrorMessage(error), code: "model" };

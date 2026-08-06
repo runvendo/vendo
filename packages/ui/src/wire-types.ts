@@ -18,6 +18,7 @@ import type {
   RiskLabel,
   RunId,
   ThreadId,
+  Trigger,
   TriggerSource,
   ToolOutcome,
   UIPayload,
@@ -82,6 +83,10 @@ export type InClientVenue =
  */
 export interface AdoptionVenue {
   appId: AppId;
+  /** WHICH trigger of the app stopped. Sponsorship is per (app, trigger), so a
+   *  card is about one trigger and `adopt` has to be told which one to take on —
+   *  the app's other triggers may still be running perfectly well. */
+  triggerId: string;
   /** The automation's user-visible name. */
   automation: string;
   /** Who it used to run as, named as they asserted themselves. ABSENT once that
@@ -222,20 +227,27 @@ export interface ConnectableToolkit {
   description?: string;
 }
 
-/** 07-automations §5 */
-export type RunStatus = "running" | "ok" | "error" | "stopped" | "pending-approval";
+/** 07-automations §5. No waiting state: a run that meets a permission nobody
+ *  granted fails LOUDLY (`error`, code `needs-permission`) and the person grants
+ *  it and runs it again. */
+export type RunStatus = "running" | "ok" | "error" | "stopped";
 
 /** 07-automations §5 — what `/runs` routes return. */
 export interface RunRecord {
   id: RunId;
   appId: AppId;
+  /** WHICH trigger of the app fired this run. An app has a list of them, so the
+   *  app id alone no longer says what ran. */
+  triggerId: string;
   trigger: { kind: TriggerSource["kind"]; event?: string };
   status: RunStatus;
   startedAt: IsoDateTime;
   finishedAt?: IsoDateTime;
   steps: Array<{ id: string; tool: string; outcome: ToolOutcome["status"]; at: IsoDateTime; detail?: string }>;
   summary?: string;
-  error?: { code: string; message: string };
+  /** `needs-permission` is the code a surface acts on: `tool`/`slug` name what
+   *  the run needed, so the row can offer Grant & re-run. */
+  error?: { code: string; message: string; tool?: string; slug?: string };
 }
 
 /** 07-automations §1 — what `POST /automations/:id/dry-run` returns. */
@@ -284,6 +296,8 @@ export interface RehearsalFiring {
 /** Additive — what `POST /automations/:id/rehearse` returns. */
 export interface RehearsalReport {
   appId: AppId;
+  /** The trigger this report replays — rehearsal is per trigger. */
+  triggerId: string;
   /** The resolved trailing window this report replays (7 or 30 days); the UI
    *  renders "last N days" and the toggle's selected state from this. */
   windowDays: 7 | 30;
@@ -315,6 +329,18 @@ export interface RehearsalOutlook {
  *  asks so panels can render "waiting on N permissions" reload-safely. */
 export interface AutomationEntry {
   app: AppDocument;
+  /** An automation is an app with a LIST of triggers, and everything a person
+   *  decides is per trigger: armed, who it runs as, whether it stopped, what it
+   *  is still waiting to be allowed. Only `editors` is per app. */
+  triggers: AutomationTriggerEntry[];
+  /** How many principals hold a grant on the app, when the deployment has an
+   *  access seam at all — the wider editor set the label names. */
+  editors?: number;
+}
+
+/** One trigger of an automation, as the panel renders it. */
+export interface AutomationTriggerEntry {
+  trigger: Trigger;
   enabled: boolean;
   pendingGrants?: number;
   grantSetId?: string;
@@ -323,15 +349,12 @@ export interface AutomationEntry {
    *  sponsor: Vendo holds no directory, so a name for anyone else would be
    *  invented; the subject is the honest fallback. */
   sponsor?: { subject: string; display?: string };
-  /** Build contract §9.9 — set exactly while the automation is STOPPED and
+  /** Build contract §9.9 — set exactly while this trigger is STOPPED and
    *  waiting to be adopted. `summary` is the same consumer sentence the adoption
    *  card and the stopped run row carry, so the list is a route back to a paused
    *  automation instead of the one place it vanished from. It never names the
    *  sponsor: anyone who can edit the app reads it. */
   stopped?: { reason: "edit" | "departure" | "grants"; summary: string };
-  /** How many principals hold a grant on the app, when the deployment has an
-   *  access seam at all — the wider editor set the label names. */
-  editors?: number;
 }
 
 /** 07-automations §1 — what `POST /automations/:id/enable` returns.

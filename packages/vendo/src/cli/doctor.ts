@@ -746,11 +746,14 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     }
   }
 
-  // execution-v2 Lane D — machine + schedule REPORTING (no new subcommand):
-  // which apps carry a machine, whether a schedule caller is configured for
-  // the authenticated /tick surface, and each schedule's last-fired time.
-  // /doctor/machines is a dev-only route, so an unreachable or older host
-  // simply skips the section (reporting must never break doctor).
+  // Machine + schedule REPORTING (no new subcommand): which apps carry a
+  // machine, what their manifests declare, and whether a schedule caller is
+  // configured for the authenticated /tick surface. Declarations only — when a
+  // schedule last ran is the automation's run records now, and printing "never
+  // fired" from a payload that no longer carries last-fired state would be a
+  // doctor telling you something untrue. /doctor/machines is a dev-only route,
+  // so an unreachable or older host simply skips the section (reporting must
+  // never break doctor).
   if (liveComposition) {
     try {
       const response = await fetchImpl(`${statusUrl}/doctor/machines`, { headers: { accept: "application/json" } });
@@ -761,7 +764,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
             appId?: string;
             name?: string;
             awake?: boolean;
-            schedules?: Array<{ cron?: string; fn?: string; lastFiredAt?: string; lastStatus?: string }>;
+            schedules?: Array<{ cron?: string; fn?: string }>;
           }>;
         };
         const machines = Array.isArray(body.machines) ? body.machines : [];
@@ -771,10 +774,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
         for (const machine of machines) {
           note(`  ${machine.appId ?? "?"} (${machine.name ?? "unnamed"}): ${machine.awake === true ? "awake" : "asleep"}`);
           for (const schedule of machine.schedules ?? []) {
-            const lastFired = schedule.lastFiredAt === undefined
-              ? "never fired"
-              : `last fired ${schedule.lastFiredAt}${schedule.lastStatus === "error" ? " (error)" : ""}`;
-            note(`    ${schedule.cron ?? "?"} -> POST /fn/${schedule.fn ?? "?"} — ${lastFired}`);
+            note(`    ${schedule.cron ?? "?"} -> POST /fn/${schedule.fn ?? "?"}`);
           }
         }
         const declaresSchedules = machines.some((machine) => (machine.schedules?.length ?? 0) > 0);

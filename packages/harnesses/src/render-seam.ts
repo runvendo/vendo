@@ -22,17 +22,27 @@
  * names exactly the paths that reached the store. Hooking the write instead would
  * emit views for content that never landed, and would miss the sandbox sync-back
  * path, which commits without ever calling `writeFile` on this façade.
+ *
+ * That last clause is why the app's own SOURCE is persisted from here too
+ * (contract §2.2/§3.2, the `commitSource` seam): a builder working inside a box
+ * reaches the store through this same `commit()`, so this is the one place that
+ * sees its files at all. Before it, an app's code lived only in the sandbox
+ * snapshot behind `machine.snapshotRef` — lose the snapshot, lose the app.
  */
 import {
   compilePlan,
   compileWire,
   safeErrorMessage,
+  screenDescriptionSchema,
   vendoViewPartSchema,
   vendoViewStreamId,
+  type AppFloor,
   type AppId,
+  type Finding,
   type CommitResult,
   type Json,
   type Tree,
+  type TurnId,
   type UIPayload,
   type VendoViewPart,
   type WireCompileResult,
@@ -46,12 +56,23 @@ import { assembleTree, stripServerAuthoritativeFields } from "@vendoai/apps/inte
 /** §1.6 — the two files that sync mid-turn. Everything else waits for turn end. */
 export const HOT_PATH_FILES = ["app.vendo", "plan.vendo"] as const;
 
-/** §3.1, frozen: `/user/apps/<appId>/app.vendo` and — since wave 3 (§9.7) —
- *  `/orgs/<orgId>/apps/<appId>/app.vendo`. `appId` is the store's app id
- *  verbatim in BOTH, which is exactly why one regex can read either: a path's
- *  meaning never depends on who wrote it, so a promoted app's hot paths must
- *  keep painting the skeleton mid-turn like a personal one's. */
-const HOT_PATH = /^\/(?:user|orgs\/[^/]+)\/apps\/(app_[^/]+)\/(app\.vendo|plan\.vendo)$/;
+/** §3.1, frozen: `/user/apps/<appId>/**` and — since wave 3 (§9.7) —
+ *  `/orgs/<orgId>/apps/<appId>/**`. `appId` is the store's app id verbatim in
+ *  BOTH, which is exactly why one regex can read either: a path's meaning never
+ *  depends on who wrote it, so a promoted app's hot paths must keep painting the
+ *  skeleton mid-turn like a personal one's.
+ *
+ *  ONE regex for the whole layout, with the file left as a tail: the hot paths and
+ *  the source tree are the same two addresses with different names hanging off
+ *  them, and two regexes would be two answers to "which app is this?". */
+const APP_PATH = /^\/(?:user|orgs\/[^/]+)\/apps\/(app_[^/]+)\/(.+)$/;
+
+/** The appId a write ANYWHERE inside an app's directory belongs to, hot path or
+ *  not — what source persistence asks of a commit's changed list. */
+const appPathAppId = (path: string): AppId | undefined => {
+  const match = APP_PATH.exec(path);
+  return match === null ? undefined : (match[1] as AppId);
+};
 
 /**
  * §3.5's hot paths as WATCH SHAPES — what a machine's mid-turn collect asks for,
@@ -69,16 +90,15 @@ const HOT_PATH = /^\/(?:user|orgs\/[^/]+)\/apps\/(app_[^/]+)\/(app\.vendo|plan\.
 export const HOT_PATH_WATCH: readonly string[] = ["/user/apps/*", "/orgs/*/apps/*"]
   .flatMap((prefix) => HOT_PATH_FILES.map((name) => `${prefix}/${name}`));
 
+const hotPathFile = (path: string): (typeof HOT_PATH_FILES)[number] | undefined => {
+  const tail = APP_PATH.exec(path)?.[2];
+  return HOT_PATH_FILES.find((name) => name === tail);
+};
+
 /** The appId a hot-path write belongs to, or undefined if this is not one. */
 export function hotPathAppId(path: string): AppId | undefined {
-  const match = HOT_PATH.exec(path);
-  return match === null ? undefined : (match[1] as AppId);
+  return hotPathFile(path) === undefined ? undefined : appPathAppId(path);
 }
-
-const hotPathFile = (path: string): (typeof HOT_PATH_FILES)[number] | undefined => {
-  const match = HOT_PATH.exec(path);
-  return match === null ? undefined : (match[2] as (typeof HOT_PATH_FILES)[number]);
-};
 
 /**
  * Did this content parse into something worth putting on screen?
@@ -97,6 +117,25 @@ export interface RenderSeamOptions {
   /** Write the part on the stable per-app stream id, so successive views
    *  reconcile in place instead of stacking. */
   emit: (streamId: string, part: VendoViewPart) => void;
+  /**
+   * The checks floor (§7.1) — the production compile dialect, and the
+   * deterministic fact checks over what it compiled.
+   *
+   * INJECTED rather than imported. The floor's implementation needs a catalog,
+   * tool shapes and a model, and pulling it in statically would put a pipeline
+   * body in `packages/harnesses`, which the layering forbids. Composition builds
+   * it — `AppsRuntime.floor(ctx)` — which is also the only layer that HAS those
+   * things. The pure tree-assembly edge to `@vendoai/apps` that already exists is
+   * deliberately not widened.
+   *
+   * Unwired, the seam behaves exactly as it did before this option existed: a bare
+   * `compileWire` and no checks. That is not a mode anyone should ship — it is
+   * what made every files-first paint speak a different dialect than the
+   * conductor, so an inline tool reference silently lost its binding and
+   * `bindingErrors` was `[]` by construction — but a `WorkspaceFs` wrapped
+   * outside composition still has to work.
+   */
+  floor?: AppFloor;
   /**
    * The live tool/component names, for the plan compiler's fact check. Facts only
    * shape `issues` — never whether a plan parses — so omitting them costs the
@@ -122,6 +161,37 @@ export interface RenderSeamOptions {
     data: Record<string, Json>;
     dataUnavailable?: boolean;
   } | undefined>;
+  /**
+   * Contract §2.2/§3.2 — persist the app's own SOURCE for a commit that landed.
+   *
+   * The same interception point as a view, for the same reason plus one: the
+   * sandbox sync-back path (`materialize.ts`) commits without ever calling
+   * `writeFile` on this façade, so a builder working inside a box reaches the
+   * store HERE and nowhere else. Hooking the write instead would persist content
+   * that never landed and miss the box entirely.
+   *
+   * `changed` is `CommitResult.changed` verbatim — the paths that actually reached
+   * the store. Called once per APP the commit touched, because `commitApp` is
+   * per-app and one commit can carry several; it does its own prefix filtering, so
+   * the whole list rides every call. `workspace` is the real façade underneath this
+   * wrapper, which is what the diff reads the landed bytes back through.
+   *
+   * Composition injects `AppsRuntime.commitSource` (see `packages/vendo/server.ts`),
+   * which binds `commitApp` to the app row's ownership, its compare-and-swap
+   * update, and the deployment's files adapter for blob spill.
+   *
+   * UNWIRED, source is not persisted: `machine.snapshotRef` stays the only home an
+   * app's code has, which is exactly today's behaviour — so no host regresses, and
+   * no host is protected either.
+   */
+  commitSource?: (input: {
+    appId: AppId;
+    changed: readonly string[];
+    workspace: WorkspaceFs;
+  }) => Promise<void>;
+  /** The turn this seam is painting inside, stamped on every view it emits so a
+   *  screen joins back to the exchange that made it. Absent outside a turn. */
+  turnId?: TurnId;
 }
 
 /** The view part for a payload, or undefined when the renderer's own gate would
@@ -137,6 +207,7 @@ const viewPart = (
   appId: AppId,
   payload: UIPayload,
   streaming: boolean,
+  turnId?: TurnId,
 ): { streamId: string; part: VendoViewPart } | undefined => {
   const parsed = vendoViewPartSchema.safeParse({
     type: "data-vendo-view",
@@ -144,6 +215,7 @@ const viewPart = (
     // Spread, never mutated in place: the emitted part must not change under the
     // consumer when this function's caller fills the data in afterwards.
     payload: { ...payload, streaming },
+    ...(turnId === undefined ? {} : { turnId }),
   });
   if (!parsed.success) return undefined;
   return { streamId: vendoViewStreamId(appId), part: parsed.data };
@@ -167,13 +239,55 @@ export async function viewForWrite(
     // compileWire is TOTAL and valid-while-partial: every prefix of a wire
     // compiles, which is what makes a mid-generation save renderable. Only a
     // `compile-failed` issue means it truly did not parse.
-    const compiled = compileWire(content);
+    //
+    // Through the FLOOR, so this compile speaks the production dialect — the same
+    // one `conductor.ts`, `fill.ts` and `lanes.ts` speak. Bare, an inline tool
+    // reference does not expand (its binding is dropped and its query never
+    // minted, and the tree still has children, so the seam paints an app with a
+    // blank value) and `bindingErrors` is `[]` by construction.
+    const compiled = options.floor === undefined
+      ? compileWire(content)
+      : await options.floor.compile(content);
     // `missing-app` means there was no `<App>` document to read at all, and
     // `compile-failed` means the compiler itself gave up: both are "unparseable".
     if (compiled.issues.some((issue) => issue.code === "compile-failed" || issue.code === "missing-app")) {
       return undefined;
     }
     if (!renders(compiled.tree)) return undefined;
+    // The floor, on EVERY commit, for every author — our loop, Claude Code, a
+    // human with an editor (§7.1). A `block` means this must not reach a screen,
+    // and it says so the only way this seam knows how to: it emits nothing, and
+    // the last good view stays. No new failure channel; the brokenness reaches the
+    // author through `validate`, exactly like content that does not compile.
+    if (options.floor !== undefined) {
+      let findings: readonly Finding[] = [];
+      try {
+        findings = await options.floor.check({ appId, compiled });
+      } catch (error) {
+        // A floor that could not RUN is not a finding. The layer already decided
+        // this question for the checks it runs — one that throws degrades to a
+        // `warn` naming it, "so a broken check never takes the app down with it" —
+        // and the same reasoning holds one level up: refusing every paint because
+        // the host's tool probe failed would blank the pane for the whole turn,
+        // which is what §1.6's skeleton exists to prevent. Loud for the operator,
+        // silent for the user.
+        console.error(
+          `[vendo] the checks floor could not run for ${appId}, so this paint was not checked — ${safeErrorMessage(error)}`,
+        );
+      }
+      const blocking = findings.filter((finding) => finding.severity === "block");
+      if (blocking.length > 0) {
+        console.error(
+          `[vendo] ${appId} did not pass the checks floor; nothing painted and the last good view stays — `
+          + blocking.map(({ check, where, message }) => [
+            check === undefined ? undefined : `[${check}]`,
+            where,
+            message,
+          ].filter((part) => part !== undefined).join(" ")).join("; "),
+        );
+        return undefined;
+      }
+    }
     compiledApp = compiled;
     payload = stripServerAuthoritativeFields(
       assembleTree({ tree: compiled.tree, components: compiled.components }),
@@ -198,16 +312,30 @@ export async function viewForWrite(
     })) as unknown as UIPayload;
   }
 
+  // Contract §3.3 — nothing paints that is not a valid `ScreenDescription`. This
+  // is where the view channel's shape becomes enforced rather than described: an
+  // emission that does not parse emits NOTHING, which is the law this seam
+  // already lives by for content that does not compile.
+  const description = screenDescriptionSchema.safeParse(payload);
+  if (!description.success) {
+    console.error(
+      `[vendo] ${appId}'s compiled screen is not a valid description; nothing painted — ${
+        description.error.issues[0]?.message ?? "unknown"
+      }`,
+    );
+    return undefined;
+  }
+
   // A plan IS the mid-build state: its skeleton stays streaming until the app
   // document itself lands.
-  if (compiledApp === undefined) return viewPart(appId, payload, true);
+  if (compiledApp === undefined) return viewPart(appId, payload, true, options.turnId);
   // "The skeleton renders the moment the plan file exists" is a promise about
   // SECONDS, and the app half runs real host queries. So the skeleton goes out
   // first and the same stream id is written again when the data lands — the
   // engine's own progressive behavior, and the reason successive views reconcile
   // in place instead of stacking.
   if (options.authoredApp !== undefined) {
-    const skeleton = viewPart(appId, payload, true);
+    const skeleton = viewPart(appId, payload, true, options.turnId);
     if (skeleton !== undefined) options.emit(skeleton.streamId, skeleton.part);
   }
   let data: Record<string, Json> | undefined;
@@ -239,9 +367,14 @@ export async function viewForWrite(
   // The app half has run: this is the finished paint, so it SETTLES.
   return viewPart(appId, {
     ...payload,
+    // §3.3's `data` law is about the DESCRIPTION, which was gated above without
+    // it. This resolved data is the shipped first-paint fill, and it rides
+    // BESIDE the description until Track A moves the query path into the slot —
+    // at which point this spread is the thing that gets deleted, and the gate
+    // above is already the wall that stops it coming back.
     ...(data === undefined ? {} : { data }),
     ...(dataUnavailable ? { dataUnavailable: true } : {}),
-  }, false);
+  }, false, options.turnId);
 }
 
 /**
@@ -262,6 +395,37 @@ export function wrapWorkspaceForRender(workspace: WorkspaceFs, options: RenderSe
     } catch {
       // A view is a courtesy on top of a landed commit. It can never fail one.
       return false;
+    }
+  };
+
+  /**
+   * Land the source of every app this commit touched — AFTER the views, for two
+   * reasons. §1.6 is a promise about seconds, and — the load-bearing one — an
+   * `app.vendo` commit is the moment a files-first app BECOMES an app: the
+   * `authoredApp` seam above is what upserts its row. Running source persistence
+   * first would look for a row that does not exist yet.
+   *
+   * It can never fail the commit either, for the same reason a view cannot. But
+   * unlike a view, a silently dropped source file is a LOST APP — the snapshot
+   * being the only other home is the whole problem this closes — so the failure is
+   * LOUD, in the same voice as the runtime's own commit failure.
+   */
+  const persistSource = async (changed: readonly string[]): Promise<void> => {
+    if (options.commitSource === undefined) return;
+    const apps = new Set<AppId>();
+    for (const path of changed) {
+      const appId = appPathAppId(path);
+      if (appId !== undefined) apps.add(appId);
+    }
+    for (const appId of apps) {
+      try {
+        await options.commitSource({ appId, changed, workspace });
+      } catch (error) {
+        console.error("[vendo] render seam: source did not reach the store", {
+          appId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
   };
 
@@ -304,6 +468,7 @@ export function wrapWorkspaceForRender(workspace: WorkspaceFs, options: RenderSe
         for (const { path, appId } of plans) {
           if (!painted.has(appId)) await emitFor(path);
         }
+        await persistSource(result.changed);
         return result;
       };
     },

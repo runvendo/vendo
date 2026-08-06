@@ -1,5 +1,7 @@
 import { VendoError, type FilesAdapter } from "@vendoai/core";
-import type { VendoStore } from "./store.js";
+import { createBlobStore } from "./blobs.js";
+import type { Db } from "./db-postgres.js";
+import { dbFor, type VendoStore } from "./store.js";
 
 /** Build contract §3.4 — the cap on the no-adapter path, matching today's
     app-blob cap. Past it the host must wire a real files adapter. */
@@ -20,7 +22,14 @@ export const WORKSPACE_BLOB_NAMESPACE = "workspace";
  * the fix rather than silently succeeding until Postgres complains.
  */
 export function storeFiles(store: VendoStore): FilesAdapter {
-  const blobs = store.blobs(WORKSPACE_BLOB_NAMESPACE);
+  return storeFilesForDb(dbFor(store));
+}
+
+/** The same adapter bound to an explicit Db handle — ops.ts hands it the
+ *  transaction-scoped query so a blob touched inside a verb's transaction
+ *  rides that transaction instead of deadlocking PGlite's single connection. */
+export function storeFilesForDb(db: Db): FilesAdapter {
+  const blobs = createBlobStore(db, WORKSPACE_BLOB_NAMESPACE);
   return {
     async put(key, bytes, meta) {
       if (bytes.byteLength > FILES_STORE_MAX_BYTES) {

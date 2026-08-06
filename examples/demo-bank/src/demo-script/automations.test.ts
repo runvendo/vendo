@@ -18,7 +18,7 @@ const docs = () => mapleDemoAutomations(SUBJECT);
 const sweep = () => docs().find(d => d.id === demoAppId("sweep", SUBJECT))!;
 
 const stepsOf = (doc: ReturnType<typeof sweep>): Step[] => {
-  const run = doc.trigger!.run;
+  const run = doc.triggers![0]!.run;
   if (run.kind !== "steps") throw new Error(`${doc.id} is not a steps automation`);
   return run.steps;
 };
@@ -49,8 +49,8 @@ describe("mapleDemoAutomations", () => {
 
   it("is rehearsable: schedule triggers, steps runs, host tools only", () => {
     for (const doc of docs()) {
-      expect(doc.trigger?.on.kind).toBe("schedule");
-      expect(doc.trigger?.run.kind).toBe("steps");
+      expect(doc.triggers?.[0]?.on.kind).toBe("schedule");
+      expect(doc.triggers?.[0]?.run.kind).toBe("steps");
       for (const step of stepsOf(doc)) {
         // fn: steps report "app function calls don't execute in rehearsal".
         expect(step.tool.startsWith("host_")).toBe(true);

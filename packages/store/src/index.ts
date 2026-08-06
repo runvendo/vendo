@@ -3,6 +3,9 @@
  *  keep the PGlite wasm engine out of the bundle graph. */
 export { createStore } from "./create-store.js";
 export { type VendoStore } from "./store.js";
+// The StoreOps local backend (02-store): the 32-op named-operation contract
+// served off this store's own Postgres, transactions at verb boundaries.
+export { createStoreOps } from "./ops.js";
 // The reserved-collection map (02-store §2): exported so remote StoreAdapters
 // (the umbrella's hostedStore) can mirror this engine's per-collection
 // capability shape — claim on non-routed collections, atomic on generic
@@ -55,5 +58,4 @@ export {
 } from "./workspace.js";
 export { storeFiles, FILES_STORE_MAX_BYTES } from "./files-store.js";
 export { s3, type S3FilesOptions } from "./files-s3.js";
-export { workspaceBash, type BashRun, type WorkspaceBashSetup } from "./workspace-bash.js";
 export { harnessStateStore } from "./harness-state.js";

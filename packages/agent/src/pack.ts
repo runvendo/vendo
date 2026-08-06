@@ -1,9 +1,10 @@
 import {
-  VENDO_APPS_CREATE_TOOL,
   VENDO_APPROVAL_REF_KIND,
   VENDO_APP_REF_KIND,
+  VENDO_MAKE_TOOL,
   VENDO_VIEW_STREAM,
   canonicalJson,
+  makeReceiptSchema,
   type AgentRunner,
   type Json,
   type RunContext,
@@ -102,15 +103,23 @@ function titleFromPrompt(prompt: unknown): string {
   return collapsed.length > TITLE_CAP ? `${collapsed.slice(0, TITLE_CAP - 1)}…` : collapsed;
 }
 
-function appRefFromDocument(output: unknown, fallbackTitle: string): VendoAppRef | null {
-  const document = typeof output === "object" && output !== null
-    ? output as { id?: unknown; name?: unknown }
-    : undefined;
-  if (typeof document?.id !== "string" || !document.id.startsWith("app_")) return null;
+/**
+ * A `MakeReceipt` carries its own honest status (`"ready" | "building" |
+ * "failed"`, `packages/core/src/make-receipt.ts`) and a speakable `say` line
+ * — exactly the two fields a failed edit needs to be reported as failed. A
+ * failed receipt must NEVER become a ref: the ref schema has no room for
+ * failure (runvendo/flowlet#822 defect 2, generalized) — an id and a title
+ * are the whole shape of "this exists and is fine". Returning null here lets
+ * the caller fall back to the receipt itself, `status` and `say` intact.
+ */
+function appRefFromReceipt(output: unknown, fallbackTitle: string): VendoAppRef | null {
+  const receipt = makeReceiptSchema.safeParse(output);
+  if (!receipt.success || receipt.data.status === "failed") return null;
   return {
     kind: VENDO_APP_REF_KIND,
-    appId: document.id,
-    title: typeof document.name === "string" && document.name.length > 0 ? document.name : fallbackTitle,
+    appId: receipt.data.id,
+    title: receipt.data.title || fallbackTitle,
+    status: "building",
   };
 }
 
@@ -164,7 +173,7 @@ function wrapHostTool(registry: ToolRegistry, descriptor: ToolDescriptor): Vendo
 function createAppTool(registry: ToolRegistry, descriptor: ToolDescriptor): VendoPackTool {
   return {
     name: VENDO_CREATE_APP_TOOL,
-    description: "Create a Vendo app (generated UI) from a natural-language prompt. Returns fast with a vendo/app-ref@1 envelope meaning the build was ACCEPTED and is still streaming — the app is NOT built yet. Do not tell the user the app is created/ready/done; the embed shows live build progress and the final result (including any build failure) itself, so never wait for or report on build completion.",
+    description: "Create a Vendo app (generated UI) from a natural-language prompt. Returns fast with a vendo/app-ref@1 envelope carrying status \"building\" — the build was only ACCEPTED and is still streaming; you have not seen its contents and do not know yet whether it will succeed. Say only that you're building it (present tense, no specifics) and stop there. Never say it is created/ready/done, and never describe, list, or invent anything it will contain (no tables, no numbers, no chart data) — the embed shows real build progress and the true final result, including a build failure, and it will contradict anything you claim. If the build later fails, you will not be told in this reply; do not assume or claim success in a later turn either — check with the user or a read tool before describing this app again.",
     inputSchema: {
       $schema: DRAFT_2020_12,
       type: "object",
@@ -177,8 +186,13 @@ function createAppTool(registry: ToolRegistry, descriptor: ToolDescriptor): Vend
       const fallbackTitle = titleFromPrompt(args?.prompt);
       const call: VendoViewStreamingToolCall = {
         id: options.callId ?? mintCallId(),
-        tool: VENDO_APPS_CREATE_TOOL,
-        args: input,
+        tool: VENDO_MAKE_TOOL,
+        // This pack tool's OWN surface is `prompt`, and it stays that way: it is a
+        // separate public tool from `vendo_make` (different name, different return
+        // shape — an app-ref envelope, not a receipt), so the front door's rename
+        // is not its rename. Only the inner call speaks the new contract, which is
+        // why the argument is mapped here rather than forwarded.
+        args: { request: args?.prompt },
       };
       let resolveFast!: (ref: VendoAppRef) => void;
       const fast = new Promise<VendoAppRef>((resolve) => { resolveFast = resolve; });
@@ -186,13 +200,13 @@ function createAppTool(registry: ToolRegistry, descriptor: ToolDescriptor): Vend
         value: (update: { id: string; part: { appId?: unknown } }) => {
           const appId = update?.part?.appId;
           if (typeof appId === "string" && appId.startsWith("app_")) {
-            resolveFast({ kind: VENDO_APP_REF_KIND, appId, title: fallbackTitle });
+            resolveFast({ kind: VENDO_APP_REF_KIND, appId, title: fallbackTitle, status: "building" });
           }
         },
       });
       const settled = guardedExecute(registry, call, options.ctx).then((outcome) => {
         if (outcome.status === "ok") {
-          return appRefFromDocument(outcome.output, fallbackTitle) ?? outcome.output;
+          return appRefFromReceipt(outcome.output, fallbackTitle) ?? outcome.output;
         }
         return mapOutcome(outcome, descriptor, input);
       });
@@ -235,8 +249,8 @@ function delegateTool(registry: ToolRegistry, runner: AgentRunner): VendoPackToo
         descriptors: (ctx) => registry.descriptors(ctx),
         async execute(call, runCtx) {
           const outcome = await registry.execute(call, runCtx);
-          if (call.tool === VENDO_APPS_CREATE_TOOL && outcome.status === "ok") {
-            const ref = appRefFromDocument(outcome.output, titleFromPrompt((call.args as { prompt?: unknown })?.prompt));
+          if (call.tool === VENDO_MAKE_TOOL && outcome.status === "ok") {
+            const ref = appRefFromReceipt(outcome.output, titleFromPrompt((call.args as { request?: unknown })?.request));
             if (ref !== null) refs.push(ref);
           } else if (outcome.status === "pending-approval") {
             const descriptor = (await descriptorsByName.catch(() => undefined))?.get(call.tool)
@@ -283,9 +297,9 @@ export async function buildVendoToolPack(options: VendoToolPackCoreOptions): Pro
   }
   // Built-ins land last: a host tool whose namespaced name collides with one
   // can never shadow the pack's own doors.
-  const appsCreate = descriptors.find((descriptor) => descriptor.name === VENDO_APPS_CREATE_TOOL);
-  if (appsCreate !== undefined) {
-    byName.set(VENDO_CREATE_APP_TOOL, createAppTool(options.registry, appsCreate));
+  const makeTool = descriptors.find((descriptor) => descriptor.name === VENDO_MAKE_TOOL);
+  if (makeTool !== undefined) {
+    byName.set(VENDO_CREATE_APP_TOOL, createAppTool(options.registry, makeTool));
   }
   byName.set(VENDO_DELEGATE_TOOL, delegateTool(options.registry, options.runner));
   const included = applyFilter([...byName.keys()], options);

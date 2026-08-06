@@ -1,9 +1,15 @@
 import {
+  STORE_WIRE_PATHS,
+  VendoError,
+  parseStoreWireError,
+  storeWireStatusSchema,
   vendoRecordSchema,
   type BlobStore,
   type RecordInput,
   type RecordQuery,
   type RecordStore,
+  type StoreOps,
+  type StoreWireStatus,
   type VendoRecord,
 } from "@vendoai/core";
 import {
@@ -56,6 +62,10 @@ export interface HostedStore extends VendoStore {
     stale(idleMs: number, now?: number): Promise<string[]>;
     claim(subject: string, idleMs: number, now?: number): Promise<boolean>;
   };
+  /** The 32-op named-operation surface over the same mount and the same key —
+   * `vendo/store-wire@1` (see {@link hostedStoreOps}). Additive: the
+   * StoreAdapter doors above are unchanged and keep their own routes. */
+  ops: StoreOps;
 }
 
 /** Console garbage on a 2xx is the SERVICE misbehaving, never the caller's
@@ -119,6 +129,17 @@ function parseNullableRecord(value: unknown): VendoRecord | null {
   return parseRecord(value);
 }
 
+/** The console's records door is PER COLLECTION: the collection rides the
+ * path, the method is the next segment (`/records/{collection}/put`). */
+const recordsPath = (collection: string): string => `/records/${encodeURIComponent(collection)}`;
+
+const blobsPath = (namespace: string): string => `/blobs/${encodeURIComponent(namespace)}`;
+
+/** Blob keys are paths ("images/a.png"); encode per segment so the key's own
+ * separators survive as URL structure while each segment stays safe. */
+const blobKeyPath = (namespace: string, key: string): string =>
+  `${blobsPath(namespace)}/${key.split("/").map(encodeURIComponent).join("/")}`;
+
 /** The Cloud hosted-store adapter — the OSS side of the hosted-store seam
  * (docs/superpowers/specs/2026-07-18-hosted-store-onepager.md): a plain
  * StoreAdapter speaking RPC-over-HTTP to the console's /api/v1/store routes,
@@ -170,7 +191,7 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
   const sendSessionsJson = postJson(sendSessions);
 
   const records = (collection: string): RecordStore => {
-    const prefix = `/records/${encodeURIComponent(collection)}`;
+    const prefix = recordsPath(collection);
     const store: RecordStore = {
       async get(id) {
         const payload = await sendJson(`${prefix}/get`, { id }) as { record?: unknown };
@@ -236,11 +257,8 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
   };
 
   const blobs = (namespace: string): BlobStore => {
-    const prefix = `/blobs/${encodeURIComponent(namespace)}`;
-    // Blob keys are paths ("images/a.png"); encode per segment so the key's
-    // own separators survive as URL structure while each segment stays safe.
-    const keyPath = (key: string): string =>
-      `${prefix}/${key.split("/").map(encodeURIComponent).join("/")}`;
+    const prefix = blobsPath(namespace);
+    const keyPath = (key: string): string => blobKeyPath(namespace, key);
     return {
       async put(key, bytes, meta) {
         await send(keyPath(key), {
@@ -335,6 +353,7 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
   return {
     records,
     blobs,
+    ops: hostedStoreOps(options),
     sessions: {
       async register(subject, now) {
         await sendSessionsJson("/sessions/register", { subject, ...(now === undefined ? {} : { now }) });
@@ -380,6 +399,332 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
       throw new Error(
         "[vendo] hostedStore has no local database handle — raw() requires a local createStore store",
       );
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The 32-op StoreOps client — store design v1, `vendo/store-wire@1`
+// ---------------------------------------------------------------------------
+
+/** The 32 named ops — STORE_WIRE_PATHS' keys ARE the op names, and stay the
+ * op names even where the console's door sits at a different path. */
+type StoreWireOp = keyof typeof STORE_WIRE_PATHS;
+
+/** ONE key per LOGICAL mutation. The retry below replays it verbatim — that
+ * replay is the only reason the server can tell "do it again" from "you
+ * already did it"; a fresh key per attempt would double-apply the write. */
+const newIdempotencyKey = (): string => `idm_${globalThis.crypto.randomUUID()}`;
+
+/** Blob bytes are base64 on the wire (storeWireBlobsPutRequestSchema) —
+ * Buffer-free so the client stays runnable on edge runtimes. */
+const bytesToBase64 = (bytes: Uint8Array): string => {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+};
+
+const base64ToBytes = (value: string): Uint8Array => Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
+
+/** `AbortSignal.timeout` rejects with a DOMException named TimeoutError (a
+ * caller-side abort surfaces as AbortError): no answer came back, so the
+ * mutation may or may not have landed — exactly the Idempotency-Key's case. */
+const isTimeout = (error: unknown): boolean =>
+  error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+
+/** The protocol's own client half owns the mapping (parseStoreWireError): an
+ * enveloped code wins, recognized statuses map, everything else degrades to
+ * not-implemented rather than blaming the caller. */
+const raiseWireError = async (response: Response): Promise<never> => {
+  let payload: unknown;
+  try {
+    payload = JSON.parse(await response.text());
+  } catch {
+    payload = undefined;
+  }
+  throw parseStoreWireError(response.status, payload);
+};
+
+/**
+ * The Cloud client for the whole 32-op store contract, speaking
+ * `vendo/store-wire@1` over the console's store mount: bearer key, deployment
+ * identity and per-request abort budget shared with {@link hostedStore}, the
+ * same adapter rule (behavior comes ONLY from the constructor arguments),
+ * cursors passed through untouched (the server paginates, never the client),
+ * and ONE Idempotency-Key per logical mutation, replayed verbatim on a retry.
+ *
+ * Records and blobs speak the EXPORTED contract: STORE_WIRE_PATHS routes with
+ * the storeWire*RequestSchema bodies — collection/namespace/key ride the JSON
+ * body and blob bytes are base64 on the wire — so any conforming Store Wire v1
+ * service (the console's wire mount, a BYO httpStore) accepts them verbatim.
+ * Transcripts, harness, workspace, `lifecycle.promote` and `/status` answer at
+ * their STORE_WIRE_PATHS path too. Erase keeps `/erase`, and adopt + the
+ * session verbs keep `/sessions/*` — T5's own note: they "keep their existing
+ * doors until the cloud client moves them".
+ */
+export function hostedStoreOps(options: HostedStoreOptions): StoreOps {
+  const base = (options.baseUrl ?? "https://console.vendo.run").replace(/\/$/, "");
+  const send = consoleSender({
+    base,
+    mountPath: CONSOLE_STORE_PATH,
+    apiKey: options.apiKey,
+    timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    fetchImpl: options.fetch ?? defaultFetch,
+    raise: raiseWireError,
+  });
+
+  const call = async (op: StoreWireOp, path: string, init?: RequestInit): Promise<Response> => {
+    const attempt = (): Promise<Response> => send(path, init);
+    try {
+      // The retry sends the SAME init — same key, same body — so a mutation
+      // the server already applied is deduped instead of applied twice.
+      return await attempt().catch((error: unknown) => (isTimeout(error) ? attempt() : Promise.reject(error)));
+    } catch (error) {
+      // A 501 (or an enveloped not-implemented) means this mount does not
+      // serve this op: name it, and let it surface as a failure — never a
+      // silent fallback, never a half-applied local mutation.
+      if (error instanceof VendoError && error.code === "not-implemented") {
+        throw new VendoError(
+          "not-implemented",
+          `Vendo Cloud store does not support the "${op}" operation — ${error.message}`,
+        );
+      }
+      throw error;
+    }
+  };
+
+  const json = async (response: Response): Promise<unknown> => response.json().catch(() => ({}));
+  const get = async (op: StoreWireOp, path: string): Promise<unknown> => json(await call(op, path));
+  const post = async (op: StoreWireOp, path: string, body: unknown, idempotencyKey?: string): Promise<unknown> =>
+    json(await call(op, path, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(idempotencyKey === undefined ? {} : { "idempotency-key": idempotencyKey }),
+      },
+      body: JSON.stringify(body),
+    }));
+
+  /** Every mutation gets its key here, at the logical operation's one call. */
+  const mutate = (op: StoreWireOp, path: string, body: unknown, idempotencyKey = newIdempotencyKey()): Promise<unknown> =>
+    post(op, path, body, idempotencyKey);
+
+  const field = <T>(payload: unknown, name: string, what: string, ok: (value: unknown) => boolean): T => {
+    const value = (payload as Record<string, unknown> | null | undefined)?.[name];
+    if (!ok(value)) invalidResponse(what);
+    return value as T;
+  };
+  const recordOf = (payload: unknown): VendoRecord =>
+    parseRecord(field(payload, "record", "invalid record", (value) => value !== undefined && value !== null));
+  const nullableRecordOf = (payload: unknown): VendoRecord | null =>
+    parseNullableRecord(field(payload, "record", "invalid record", (value) => value !== undefined));
+  const cursorOf = (payload: unknown): { cursor?: string } => {
+    const cursor = (payload as { cursor?: unknown }).cursor;
+    return typeof cursor === "string" ? { cursor } : {};
+  };
+  const listOf = (payload: unknown): { records: VendoRecord[]; cursor?: string } => ({
+    records: field<unknown[]>(payload, "records", "invalid list", Array.isArray).map(parseRecord),
+    ...cursorOf(payload),
+  });
+  const entriesOf = (payload: unknown): { entries: unknown[]; cursor?: string } => ({
+    entries: field<unknown[]>(payload, "entries", "invalid entries", Array.isArray),
+    ...cursorOf(payload),
+  });
+  const claimedOf = (payload: unknown): boolean =>
+    field<boolean>(payload, "claimed", "invalid claim", (value) => typeof value === "boolean");
+  const reportOf = (payload: unknown): unknown =>
+    field(payload, "report", "invalid report", (value) => value !== undefined);
+
+  const cursorQuery = (query?: { cursor?: string; limit?: number }): Record<string, unknown> => ({ ...query });
+
+  const P = STORE_WIRE_PATHS;
+
+  return {
+    records: {
+      async get(collection, id) {
+        return nullableRecordOf(await post("records.get", P["records.get"], { collection, id }));
+      },
+      async put(collection, record) {
+        return recordOf(await mutate("records.put", P["records.put"], { collection, record }));
+      },
+      async delete(collection, id) {
+        await mutate("records.delete", P["records.delete"], { collection, id });
+      },
+      async list(collection, query) {
+        return listOf(await post("records.list", P["records.list"], { collection, query: query ?? {} }));
+      },
+      async claim(collection, expected, replacement) {
+        return claimedOf(await mutate("records.claim", P["records.claim"], {
+          collection,
+          expected,
+          ...(replacement === undefined ? {} : { replacement }),
+        }));
+      },
+      async insertIfAbsent(collection, record) {
+        return nullableRecordOf(
+          await mutate("records.insertIfAbsent", P["records.insertIfAbsent"], { collection, record }),
+        );
+      },
+      async compareAndSwap(collection, record, expectedRevision) {
+        return nullableRecordOf(
+          await mutate("records.compareAndSwap", P["records.compareAndSwap"], {
+            collection,
+            record,
+            expectedRevision,
+          }),
+        );
+      },
+    },
+    blobs: {
+      async put(namespace, key, bytes, meta) {
+        await mutate("blobs.put", P["blobs.put"], {
+          namespace,
+          key,
+          bytes: bytesToBase64(bytes),
+          ...(meta?.contentType === undefined ? {} : { contentType: meta.contentType }),
+        });
+      },
+      async get(namespace, key) {
+        let payload: unknown;
+        try {
+          payload = await post("blobs.get", P["blobs.get"], { namespace, key });
+        } catch (error) {
+          // A missing blob is null at the seam (01-core §12), whether the
+          // service answers `{blob: null}` or an ENVELOPED not-found. A bare
+          // 404 has already degraded to not-implemented and stays loud: a
+          // misdeployed base URL must not read as an empty blob store forever.
+          if (error instanceof VendoError && error.code === "not-found") return null;
+          throw error;
+        }
+        const blob = field<Record<string, unknown> | null>(
+          payload,
+          "blob",
+          "invalid blob",
+          (value) => value === null || (typeof value === "object" && value !== null && typeof (value as { bytes?: unknown }).bytes === "string"),
+        );
+        if (blob === null) return null;
+        return {
+          bytes: base64ToBytes(blob["bytes"] as string),
+          ...(typeof blob["contentType"] === "string" ? { contentType: blob["contentType"] } : {}),
+        };
+      },
+      async delete(namespace, key) {
+        await mutate("blobs.delete", P["blobs.delete"], { namespace, key });
+      },
+      async list(namespace, prefix) {
+        return field<string[]>(
+          await post("blobs.list", P["blobs.list"], {
+            namespace,
+            ...(prefix === undefined || prefix === "" ? {} : { prefix }),
+          }),
+          "keys",
+          "invalid blob list",
+          (value) => Array.isArray(value) && value.every((key) => typeof key === "string"),
+        );
+      },
+    },
+    transcripts: {
+      async putThread(thread) {
+        return recordOf(await mutate("transcripts.putThread", P["transcripts.putThread"], { thread }));
+      },
+      async getThread(id, opts) {
+        return nullableRecordOf(await post("transcripts.getThread", P["transcripts.getThread"], { id, ...cursorQuery(opts) }));
+      },
+      async listThreads(query) {
+        return listOf(await post("transcripts.listThreads", P["transcripts.listThreads"], { ...query }));
+      },
+      async deleteThread(id) {
+        await mutate("transcripts.deleteThread", P["transcripts.deleteThread"], { id });
+      },
+      async putMessage(threadId, message) {
+        return recordOf(await mutate("transcripts.putMessage", P["transcripts.putMessage"], { threadId, message }));
+      },
+      async recordAnswer(threadId, answer) {
+        return recordOf(await mutate("transcripts.recordAnswer", P["transcripts.recordAnswer"], { threadId, answer }));
+      },
+    },
+    harness: {
+      async get(appId, subject) {
+        return field(
+          await post("harness.get", P["harness.get"], { appId, subject }),
+          "state",
+          "invalid harness state",
+          (value) => value !== undefined,
+        );
+      },
+      async set(appId, subject, state) {
+        await mutate("harness.set", P["harness.set"], { appId, subject, state });
+      },
+      async clear(appId, subject) {
+        await mutate("harness.clear", P["harness.clear"], { appId, subject });
+      },
+    },
+    workspace: {
+      async index(query) {
+        return entriesOf(await post("workspace.index", P["workspace.index"], cursorQuery(query)));
+      },
+      async read(paths) {
+        return field<Record<string, unknown>>(
+          await post("workspace.read", P["workspace.read"], { paths }),
+          "files",
+          "invalid workspace read",
+          (value) => typeof value === "object" && value !== null && !Array.isArray(value),
+        );
+      },
+      async commit(entries, opts) {
+        // The caller may own the key (a resumed job replaying its own commit);
+        // otherwise `mutate` mints the one key for this operation.
+        await mutate("workspace.commit", P["workspace.commit"], { entries }, opts?.idempotencyKey);
+      },
+      async history(query) {
+        return entriesOf(await post("workspace.history", P["workspace.history"], cursorQuery(query)));
+      },
+      async undo(commitId) {
+        await mutate("workspace.undo", P["workspace.undo"], { commitId });
+      },
+    },
+    lifecycle: {
+      // The erase door takes the target FLAT (exactly one of subject/appId);
+      // adopt and the session verbs are the console's registry doors.
+      async erase(target) {
+        return reportOf(await mutate("lifecycle.erase", "/erase", target));
+      },
+      async adopt(from, to) {
+        return reportOf(await mutate("lifecycle.adopt", "/sessions/adopt", { from, to }));
+      },
+      async promote(appId, orgId) {
+        await mutate("lifecycle.promote", P["lifecycle.promote"], { appId, orgId });
+      },
+      async sessionRegister(subject, now) {
+        await mutate("lifecycle.session.register", "/sessions/register", {
+          subject,
+          ...(now === undefined ? {} : { now }),
+        });
+      },
+      async sessionStale(idleMs, now) {
+        const payload = await post("lifecycle.session.stale", "/sessions/stale", {
+          idleMs,
+          ...(now === undefined ? {} : { now }),
+        });
+        return field<string[]>(
+          payload,
+          "subjects",
+          "invalid stale",
+          (value) => Array.isArray(value) && value.every((subject) => typeof subject === "string"),
+        );
+      },
+      async sessionClaim(subject, idleMs, now) {
+        return claimedOf(await mutate("lifecycle.session.claim", "/sessions/claim", {
+          subject,
+          idleMs,
+          ...(now === undefined ? {} : { now }),
+        }));
+      },
+    },
+    async status(): Promise<StoreWireStatus> {
+      const parsed = storeWireStatusSchema.safeParse(await get("status", P.status));
+      if (!parsed.success) invalidResponse("invalid status");
+      return parsed.data as StoreWireStatus;
     },
   };
 }

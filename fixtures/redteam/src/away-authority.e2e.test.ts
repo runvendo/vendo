@@ -2,9 +2,10 @@
  *
  * An unattended (presence "away") run is authorized ONLY by a grant whose
  * source is "automation" AND whose appId is the running app. A present chat
- * grant never reaches across; a revoked grant is honored at run time; and an
- * approved CRITICAL away call is single-use — it executes once and a replay
- * parks again.
+ * grant never reaches across; a revoked grant is honored at run time; and a
+ * CRITICAL (confirm-each) away call never executes unattended at all — every
+ * firing asks again, and a run that has to ask FAILS LOUDLY (S2: no parking, no
+ * resumption, so no approval can be replayed into an away run).
  */
 import { beforeEach, describe, expect, it } from "vitest";
 import { UNATTENDED_DESTRUCTIVE_REASON } from "@vendoai/core";
@@ -60,11 +61,14 @@ describe("away runs hold only app-bound automation grants", () => {
           },
         }),
       );
-      await stack.automations.enable(appId, ownerCtx(ADA.subject, appId));
+      await stack.automations.enable(appId, "main", ownerCtx(ADA.subject, appId));
 
       const [runId] = await stack.automations.emit("chatgrant.away", { id: "inv_0003" }, ADA);
       const run = await stack.automations.runs.get(runId!, ownerCtx(ADA.subject, appId));
-      expect(run?.status).toBe("pending-approval");
+      // The chat grant does not reach an away run, so the run has to ask — and a
+      // run that has to ask fails LOUDLY, naming what it needed.
+      expect(run?.status).toBe("error");
+      expect(run?.error).toMatchObject({ code: "needs-permission", tool: "host_invoices_send" });
       const awayApproval = (await stack.guard.approvals.pending(ADA)).find(
         (entry) =>
           entry.call.tool === "host_invoices_send"
@@ -107,7 +111,7 @@ describe("away runs hold only app-bound automation grants", () => {
   // Revocation is the subject here, so the run must be one an automation may
   // legally complete unattended: THE LAW (design §12) would stop a send before
   // revocation could be shown to matter. Hence the non-destructive write.
-  it("parks once an app-bound grant is revoked", async () => {
+  it("fails loud once an app-bound grant is revoked", async () => {
     const stack = await createStack();
     try {
       const appId = "app_away_revoke";
@@ -134,7 +138,7 @@ describe("away runs hold only app-bound automation grants", () => {
       expect((await waitForRun(stack, firstRun!, ownerCtx(ADA.subject, appId), "ok")).status).toBe("ok");
       expect((await fixtureInvoices()).find((invoice) => invoice.id === "inv_0003")?.memo).toBe("revoke-leg");
 
-      // Revoke the write grant; the next away run parks at that step.
+      // Revoke the write grant; the next away run fails loud at that step.
       const sendGrant = (await stack.guard.grants.list(ADA)).find(
         (grant) => grant.tool === "host_invoices_update" && grant.appId === appId,
       );
@@ -143,14 +147,17 @@ describe("away runs hold only app-bound automation grants", () => {
 
       const [secondRun] = await stack.automations.emit("revoke.away", { id: "inv_0006" }, ADA);
       const run = await stack.automations.runs.get(secondRun!, ownerCtx(ADA.subject, appId));
-      expect(run?.status).toBe("pending-approval");
-      const parkedSend = (await stack.guard.approvals.pending(ADA)).find(
+      expect(run?.status).toBe("error");
+      expect(run?.error).toMatchObject({ code: "needs-permission", tool: "host_invoices_update" });
+      // The read before it still ran: an automation is stopped short, not crippled.
+      expect(run?.steps.map((step) => step.outcome)).toEqual(["ok", "pending-approval"]);
+      const askedAgain = (await stack.guard.approvals.pending(ADA)).find(
         (entry) =>
           entry.call.tool === "host_invoices_update"
           && entry.ctx.presence === "away"
           && entry.ctx.appId === appId,
       );
-      expect(parkedSend).toBeDefined();
+      expect(askedAgain).toBeDefined();
       // inv_0006 was never touched by the revoked run.
       expect((await fixtureInvoices()).find((invoice) => invoice.id === "inv_0006")?.memo).not.toBe("revoke-leg");
     } finally {
@@ -158,7 +165,19 @@ describe("away runs hold only app-bound automation grants", () => {
     }
   });
 
-  it("executes an approved critical away call ONCE and parks the replay", async () => {
+  /**
+   * A CRITICAL (confirm-each) call in an away run fails loud every time, and the
+   * send never happens — not once, and certainly not twice.
+   *
+   * This used to read "executes once, replay parks": the parked run REPLAYED the
+   * exact approved call, and the guard let that one dispatch through
+   * (`sameParkedCall` matches an approval to a call by its call ID). S2 deletes
+   * parking, so there is no replay door left — and a re-run is a fresh run whose
+   * calls carry fresh ids, which that same function refuses. The consequence is
+   * deliberate and worth stating plainly: a call that requires a person present
+   * cannot be completed while nobody is, which is what confirm-each means.
+   */
+  it("never executes a critical away call — every firing fails loud and nothing is sent", async () => {
     const stack = await createStack();
     try {
       const appId = "app_away_critical_replay";
@@ -179,26 +198,35 @@ describe("away runs hold only app-bound automation grants", () => {
       await enableAndApprove(stack, appId, ownerCtx(ADA.subject, appId));
 
       const [firstRun] = await stack.automations.emit("critical.replay", { id: "inv_0003" }, ADA);
-      const firstParked = await stack.automations.runs.get(firstRun!, ownerCtx(ADA.subject, appId));
-      expect(firstParked?.status).toBe("pending-approval");
+      const firstFailed = await stack.automations.runs.get(firstRun!, ownerCtx(ADA.subject, appId));
+      expect(firstFailed?.status).toBe("error");
+      expect(firstFailed?.error).toMatchObject({
+        code: "needs-permission",
+        tool: "host_invoices_send_critical",
+      });
       const approval = (await stack.guard.approvals.pending(ADA)).find(
         (entry) => entry.call.tool === "host_invoices_send_critical" && entry.ctx.appId === appId,
       );
       expect(approval).toBeDefined();
 
-      // Approve → the run resumes and sends exactly once.
+      // Approving it settles the ask — and runs NOTHING: the failed run stays
+      // failed, and the invoice is untouched.
       await stack.guard.approvals.decide(approval!.id, { approve: true }, ADA);
-      expect((await waitForRun(stack, firstRun!, ownerCtx(ADA.subject, appId), "ok")).status).toBe("ok");
-      expect((await fixtureInvoices()).find((invoice) => invoice.id === "inv_0003")?.status).toBe("open");
+      expect((await stack.automations.runs.get(firstRun!, ownerCtx(ADA.subject, appId)))?.status).toBe("error");
+      expect((await fixtureInvoices()).find((invoice) => invoice.id === "inv_0003")?.status).toBe("draft");
 
-      // A second, identical firing parks AGAIN — the approval was single-use.
+      // Even the re-run — the remedy for every other missing permission — cannot
+      // complete a confirm-each call: it is a fresh call, so it asks again.
+      const rerunId = await stack.automations.runs.rerun(firstRun!, ownerCtx(ADA.subject, appId));
+      const rerun = await waitForRun(stack, rerunId, ownerCtx(ADA.subject, appId), "error");
+      expect(rerun.error).toMatchObject({ code: "needs-permission" });
+      expect((await fixtureInvoices()).find((invoice) => invoice.id === "inv_0003")?.status).toBe("draft");
+
+      // A second, identical firing fails loud again — and the send has now been
+      // attempted three times without ever happening once.
       const [secondRun] = await stack.automations.emit("critical.replay", { id: "inv_0006" }, ADA);
-      const secondParked = await stack.automations.runs.get(secondRun!, ownerCtx(ADA.subject, appId));
-      expect(secondParked?.status).toBe("pending-approval");
-      const replayApproval = (await stack.guard.approvals.pending(ADA)).find(
-        (entry) => entry.call.tool === "host_invoices_send_critical" && entry.ctx.appId === appId,
-      );
-      expect(replayApproval).toBeDefined();
+      const secondFailed = await stack.automations.runs.get(secondRun!, ownerCtx(ADA.subject, appId));
+      expect(secondFailed?.status).toBe("error");
       expect((await fixtureInvoices()).find((invoice) => invoice.id === "inv_0006")?.status).toBe("draft");
     } finally {
       await stack.close();
@@ -265,7 +293,7 @@ describe("away runs reach a connector only through a granted service action", ()
       // with the second still pending — armed, and ungranted for that slug.
       // Both slugs grade `read`, so the two calls carry the SAME descriptor
       // hash: the only thing that can refuse the second one is its slug.
-      const enabled = await stack.automations.enable(appId, ownerCtx(ADA.subject, appId));
+      const enabled = await stack.automations.enable(appId, "main", ownerCtx(ADA.subject, appId));
       const fetchAsk = enabled.missing.find(
         (request) => (request.call.args as { slug?: string }).slug === "GMAIL_FETCH_EMAILS",
       );
@@ -276,15 +304,16 @@ describe("away runs reach a connector only through a granted service action", ()
 
       const [runId] = await stack.automations.emit(`${appId}.fire`, {}, ADA);
       const run = await stack.automations.runs.get(runId!, ownerCtx(ADA.subject, appId));
-      expect(run?.status).toBe("pending-approval");
       // The grant bought its own action and nothing beside it: the second slug
-      // parks with a person, exactly as an ungranted away step always has.
+      // fails the run LOUDLY, naming the service action it needed.
+      expect(run?.status).toBe("error");
+      expect(run?.error).toMatchObject({ code: "needs-permission", slug: "GMAIL_LIST_LABELS" });
       expect(run?.steps.map((step) => step.outcome)).toEqual(["ok", "pending-approval"]);
       expect(serviceToolCalls.map((entry) => entry.slug)).toEqual(["GMAIL_FETCH_EMAILS"]);
-      const parked = (await stack.guard.approvals.pending(ADA)).find(
+      const asked = (await stack.guard.approvals.pending(ADA)).find(
         (entry) => entry.ctx.presence === "away" && entry.ctx.appId === appId,
       );
-      expect((parked?.call.args as { slug?: string } | undefined)?.slug).toBe("GMAIL_LIST_LABELS");
+      expect((asked?.call.args as { slug?: string } | undefined)?.slug).toBe("GMAIL_LIST_LABELS");
     } finally {
       await stack.close();
     }

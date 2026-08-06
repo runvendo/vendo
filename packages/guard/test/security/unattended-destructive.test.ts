@@ -48,16 +48,34 @@ describe("THE LAW: unattended destructive calls are refused at the guard", () =>
     expect(projected.map((d) => d.name)).toEqual(["maple_invoices_list"]);
   });
 
-  it("refuses a MISLABELLED destructive tool: the second mechanical vote wins", async () => {
+  it("runs a dev-labelled READ whatever its name sounds like — the declared label is final", async () => {
     const store = createMemoryStore();
-    // Labelled `write`, but named like a deletion. Disagreement resolves against
-    // the tool, so this must not run unattended either.
-    const mislabelled = descriptor("write", { name: "maple_customer_delete" });
-    await seedGrant(store, { descriptor: mislabelled, appId: "app_1", source: "automation" });
-    const tools = new FixtureTools([mislabelled]);
+    // Two-vote grading is removed: no mechanical vote second-guesses the label
+    // the dev shipped and reviewed. Named like a deletion, declared `read`, and
+    // grant-authorized for this away run (05 §6 — an ungranted away call parks,
+    // reads included), so it runs; the old vote refused exactly this call with
+    // THE LAW's reason despite the same grant.
+    const labelled = descriptor("read", { name: "maple_customer_delete" });
+    await seedGrant(store, { descriptor: labelled, appId: "app_1", source: "automation" });
+    const tools = new FixtureTools([labelled]);
     const bound = createGuard({ store }).bind(tools);
 
-    const outcome = await bound.execute(call(mislabelled.name, { id: "cus_1" }), awayCtx());
+    const outcome = await bound.execute(call(labelled.name, { id: "cus_1" }), awayCtx());
+
+    expect(outcome.status).toBe("ok");
+    expect(tools.executions).toHaveLength(1);
+  });
+
+  it("withholds an UNGRADED tool from an unattended run by its declared label", async () => {
+    const store = createMemoryStore();
+    // Unlabeled means ungraded, and ungraded needs a person — an unattended run
+    // has none, so a standing grant cannot authorize it either.
+    const ungraded = descriptor("ungraded", { name: "maple_frobnicate_widget" });
+    await seedGrant(store, { descriptor: ungraded, appId: "app_1", source: "automation" });
+    const tools = new FixtureTools([ungraded]);
+    const bound = createGuard({ store }).bind(tools);
+
+    const outcome = await bound.execute(call(ungraded.name, { id: "w_1" }), awayCtx());
 
     expect(outcome).toEqual({ status: "blocked", reason: UNATTENDED_DESTRUCTIVE_REASON });
     expect(tools.executions).toHaveLength(0);
@@ -174,9 +192,11 @@ describe("THE LAW: unattended destructive calls are refused at the guard", () =>
   // an ORed venue would hide from them.
   //
   // The away sweep also covers the real callers the venue label would have let
-  // out: `packages/apps/src/schedules.ts` fires genuine unattended work as
-  // `{ venue: "app", presence: "away" }`, so a venue-keyed predicate would put
-  // every scheduled app fn outside the law.
+  // out: `packages/automations/src/engine.ts` fires genuine unattended work as
+  // `{ venue: "automation", presence: "away" }` — including a machine app's own
+  // `vendo.json` schedules, which `packages/apps/src/manifest-triggers.ts` folds
+  // into document triggers that same engine fires — so a venue-keyed predicate
+  // would put every scheduled firing outside the law.
   it.each(VENUES)("refuses an away destructive call in venue %s", async (venue) => {
     const store = createMemoryStore();
     const send = descriptor("destructive", { name: "maple_payments_send" });

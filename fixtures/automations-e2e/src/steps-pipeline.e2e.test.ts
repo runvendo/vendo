@@ -79,15 +79,22 @@ describe("deterministic steps pipelines", () => {
       ))[0]?.count)).toBeGreaterThanOrEqual(2);
 
       // Audit enrichment (ENG-264): every guard tool-call event from a
-      // trigger-fired away run carries the trigger ref { runId, kind } into
-      // the persisted audit row's event jsonb.
-      const triggered = await stack.sql<{ trigger: { runId?: string; kind?: string } | null }>(
+      // trigger-fired away run carries the trigger ref
+      // { runId, kind, id, lineageId } into the persisted audit row's event
+      // jsonb. `id` names WHICH trigger of the app fired — the dimension the
+      // guard matches an away grant on — so the trail says which trigger's
+      // authority each call ran under, and `lineageId` names the FIRING the
+      // effect ledger keys receipts on (this run is nobody's re-run, so it is
+      // its own root).
+      const triggered = await stack.sql<{
+        trigger: { runId?: string; kind?: string; id?: string; lineageId?: string } | null;
+      }>(
         "SELECT event->'trigger' AS trigger FROM vendo_audit WHERE kind = 'tool-call' AND app_id = $1",
         [appId],
       );
       expect(triggered.length).toBeGreaterThanOrEqual(3);
       for (const row of triggered) {
-        expect(row.trigger).toEqual({ runId, kind: "host-event" });
+        expect(row.trigger).toEqual({ runId, kind: "host-event", id: "main", lineageId: runId });
       }
     } finally {
       await stack.close();
@@ -250,12 +257,15 @@ describe("deterministic steps pipelines", () => {
           on: { kind: "host-event", event: "invoice.policy" },
           run: {
             kind: "steps",
-            steps: [{ id: "blocked", tool: "host_invoices_send", args: { id: "'inv_0003'" } }],
+            // A declared WRITE, so the block rule above is what stops it — the
+            // send tool is declared destructive now and would be refused by THE
+            // LAW before any policy rule got a say.
+            steps: [{ id: "blocked", tool: "host_invoices_update", args: { id: "'inv_0003'" } }],
           },
         },
       }));
       const ctx = ownerCtx(ADA.subject, appId);
-      await stack.automations.enable(appId, ctx);
+      await stack.automations.enable(appId, "main", ctx);
       const ids = await stack.automations.emit("invoice.policy", {}, ADA);
       const id = ids[0];
       if (!id) throw new Error("emit did not return a run id");

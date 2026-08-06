@@ -7,12 +7,16 @@ import { createVendo } from "@vendoai/vendo/server";
 
 /** The quickstart's weather lookup, registered as a Vendo action
  *  (`host_get_weather`, risk `read` — the cautious policy runs it and audits
- *  it). Same fake data as the AI SDK quickstart's inline tool. */
+ *  it). Fake data like the AI SDK quickstart's inline tool, but deterministic
+ *  per city: the generated app re-runs this query at build time, and the gen
+ *  checks block any app whose live data contradicts what the model already
+ *  told the user — random data failed the README's dashboard step on nearly
+ *  every run. */
 export async function getWeather(city: string) {
-  const temperature = Math.round(Math.random() * (90 - 32) + 32);
-  const conditions = ["sunny", "cloudy", "rainy", "snowy"][
-    Math.floor(Math.random() * 4)
-  ];
+  let hash = 0;
+  for (const ch of city.toLowerCase()) hash = (hash * 31 + ch.charCodeAt(0)) % 1009;
+  const temperature = 32 + (hash % 59);
+  const conditions = ["sunny", "cloudy", "rainy", "snowy"][hash % 4];
   return { city, temperature, conditions };
 }
 

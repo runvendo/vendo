@@ -233,6 +233,11 @@ export function grantFromRow(row: Record<string, unknown>): PermissionGrant {
     duration: text(row["duration"]) as PermissionGrant["duration"],
     ...(row["context_key"] == null ? {} : { contextKey: text(row["context_key"]) }),
     ...(row["app_id"] == null ? {} : { appId: text(row["app_id"]) }),
+    // Which TRIGGER of that app the grant was minted for. Load-bearing, not
+    // metadata: the automations engine refuses a grant whose trigger id does not
+    // match the one firing, so dropping it here would silently make every
+    // automation grant app-wide again.
+    ...(row["trigger_id"] == null ? {} : { triggerId: text(row["trigger_id"]) }),
     source: text(row["source"]) as PermissionGrant["source"],
     grantedAt: iso(row["granted_at"]),
     ...(expiresAt === undefined ? {} : { expiresAt }),
@@ -247,17 +252,18 @@ export async function putGrantRow(db: Db, grant: PermissionGrant): Promise<void>
   // means a foreign row holds the id — refuse the flip.
   const result = await db.query(
     `INSERT INTO vendo_grants
-     (id, subject, tool, descriptor_hash, scope, duration, context_key, app_id, source, granted_at, expires_at, revoked_at)
-     VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12)
+     (id, subject, tool, descriptor_hash, scope, duration, context_key, app_id, trigger_id, source, granted_at, expires_at, revoked_at)
+     VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12, $13)
      ON CONFLICT (id) DO UPDATE SET tool = EXCLUDED.tool,
        descriptor_hash = EXCLUDED.descriptor_hash, scope = EXCLUDED.scope,
        duration = EXCLUDED.duration, context_key = EXCLUDED.context_key,
-       app_id = EXCLUDED.app_id, source = EXCLUDED.source, granted_at = EXCLUDED.granted_at,
+       app_id = EXCLUDED.app_id, trigger_id = EXCLUDED.trigger_id,
+       source = EXCLUDED.source, granted_at = EXCLUDED.granted_at,
        expires_at = EXCLUDED.expires_at, revoked_at = EXCLUDED.revoked_at
        WHERE vendo_grants.subject = EXCLUDED.subject
      RETURNING id`,
     [grant.id, grant.subject, grant.tool, grant.descriptorHash, JSON.stringify(grant.scope), grant.duration,
-      grant.contextKey ?? null, grant.appId ?? null, grant.source, grant.grantedAt,
+      grant.contextKey ?? null, grant.appId ?? null, grant.triggerId ?? null, grant.source, grant.grantedAt,
       grant.expiresAt ?? null, grant.revokedAt ?? null],
   );
   if (result.rows[0] === undefined) {

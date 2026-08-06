@@ -27,7 +27,7 @@ const WRITE_TOOLS = ["host_setDocumentStatus", "host_simulateClientUpload", "hos
 const DESTRUCTIVE_TOOLS = ["host_sendClientMessage", "host_resetDemo"]
 
 const stepsOf = (doc: ReturnType<typeof byKey>) => {
-  const run = doc.trigger!.run
+  const run = doc.triggers![0]!.run
   if (run.kind !== "steps") throw new Error(`${doc.id} is not a steps automation`)
   return run.steps
 }
@@ -45,8 +45,8 @@ describe("cadenceDemoAutomations", () => {
 
   it("every automation is rehearsable: schedule trigger + steps run, no fn: steps", () => {
     for (const doc of docs()) {
-      expect(doc.trigger?.on.kind).toBe("schedule")
-      expect(doc.trigger?.run.kind).toBe("steps")
+      expect(doc.triggers?.[0]?.on.kind).toBe("schedule")
+      expect(doc.triggers?.[0]?.run.kind).toBe("steps")
       for (const step of stepsOf(doc)) {
         // fn: steps report "app function calls don't execute in rehearsal".
         expect(step.tool.startsWith("fn:")).toBe(false)
@@ -57,7 +57,7 @@ describe("cadenceDemoAutomations", () => {
 
   it("uses weekly crons, so a 30-day replay stays well under the 30-firing cap", () => {
     for (const doc of docs()) {
-      const on = doc.trigger!.on
+      const on = doc.triggers![0]!.on
       expect(on.kind).toBe("schedule")
       const cron = on.kind === "schedule" ? on.cron : undefined
       expect(cron).toBeDefined()

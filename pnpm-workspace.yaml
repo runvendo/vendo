@@ -5,18 +5,6 @@ packages:
   - "corpus/harness"
   - "corpus/hosts/*"
   - "bench"
-  - "spikes/*"
-  # tools/ is NOT globbed: tools/demo-router is deliberately standalone (its own
-  # zero-dependency deploy). The video harness and genui-bench are listed
-  # explicitly instead — they render the real @vendoai/* components, so they
-  # must resolve them through the workspace rather than a published range.
-  - "tools/video-studio"
-  - "tools/genui-bench"
-  # install-dx-creds is evidence-only and needs zod ^4 (Claude Agent SDK peer);
-  # keeping it in the workspace flips zod peer resolution to 4.x for every
-  # ai-SDK consumer (packages/agent, packages/ui, fixtures, ...). It installs
-  # standalone with its own lockfile instead — see spikes/install-dx-creds/README.md.
-  - "!spikes/install-dx-creds"
 
 # pnpm 9 ran every dependency build script; pnpm 11 (strictDepBuilds) requires
 # an explicit allowlist. These five are the deps with build scripts in the
@@ -32,9 +20,6 @@ allowBuilds:
   # fails a cold install that merely ignores them. Flip to true the day a
   # bash-native harness needs `tar -z`.
   '@mongodb-js/zstd': false
-  # Scarf is install telemetry riding in via @copilotkit/runtime (genui-bench
-  # only); its postinstall phones home, so it stays denied.
-  '@scarf/scarf': false
   cbor-extract: true
   esbuild: true
   node-liblzma: false
@@ -124,8 +109,7 @@ overrides:
   # 2026-08-03 advisory: undici cross-user information disclosure + parse-time
   # crash via degenerate private cache directives, GHSA-4cwx-7wf7-3272
   # (>=7.0.0 <7.29.0). Scoped to the 7.x line (the only one in the tree, via
-  # demo-bank>e2b and genui-bench>@copilotkit/runtime>vitest>jsdom) so a 6.x
-  # consumer would not be dragged across a major.
+  # demo-bank>e2b) so a 6.x consumer would not be dragged across a major.
   "undici@>=7 <7.29.0": ">=7.29.0 <8"
   # 2026-08-03 advisory: ip-address parses leading-zero octets as decimal while
   # resolvers read them as octal, giving an SSRF / trust-boundary bypass,

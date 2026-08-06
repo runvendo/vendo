@@ -175,6 +175,120 @@ describe("the pin ceremony (Keystone graduates B8)", () => {
     expect(ring()).toBeTruthy();
   });
 
+  /** The Apps shelf, as `AppShelf` renders it live (center/home.tsx). */
+  function shelf(ghost = false): HTMLElement {
+    const section = document.createElement("section");
+    section.className = ghost ? "fl-shelf fl-shelf--ghost" : "fl-shelf";
+    section.setAttribute("aria-label", ghost ? "What you could build" : "Your apps");
+    document.body.append(section);
+    return section;
+  }
+
+  it("lands in the Apps shelf when no host slot resolves — the pin used to vanish", async () => {
+    // The silent no-op this closes: zero slots mounted (or several and none
+    // named) dismissed the panel and then played NOTHING, so the user's pin
+    // disappeared. The shelf is where a pinned app shows up, so it is the floor.
+    const { panel } = stage();
+    document.querySelector("[data-vendo-slot]")!.remove();
+    stubRects([
+      { selector: "[data-vendo-app-embed]", rect: { left: 400, top: 120, width: 600, height: 400 } },
+      { selector: ".fl-shelf", rect: { left: 40, top: 600, width: 300, height: 200 } },
+    ]);
+    shelf();
+    playPinCeremony({ appId: "app_1", slot: "hero", dismiss: () => panel.remove() });
+
+    await flushFrames();
+    expect(flight()!.keyframes[1]!.transform).toBe("translate(-360px, 480px) scale(0.5)");
+    flight()!.animation.onfinish!();
+    expect(ring()).toBeTruthy();
+  });
+
+  it("a mounted host slot still wins over the shelf", async () => {
+    stage();
+    stubRects([
+      { selector: "[data-vendo-app-embed]", rect: { left: 400, top: 120, width: 600, height: 400 } },
+      { selector: "[data-vendo-slot]", rect: { left: 40, top: 600, width: 300, height: 200 } },
+      { selector: ".fl-shelf", rect: { left: 900, top: 20, width: 120, height: 120 } },
+    ]);
+    shelf();
+    playPinCeremony({ appId: "app_1", slot: "hero" });
+
+    await flushFrames();
+    // The slot's geometry, not the shelf's — host slots keep priority.
+    expect(flight()!.keyframes[1]!.transform).toBe("translate(-360px, 480px) scale(0.5)");
+  });
+
+  it("prefers the live shelf over the day-zero ghost one, which holds no apps", async () => {
+    const { panel } = stage();
+    document.querySelector("[data-vendo-slot]")!.remove();
+    stubRects([
+      { selector: "[data-vendo-app-embed]", rect: { left: 400, top: 120, width: 600, height: 400 } },
+      // Matched in order: the ghost carries both classes.
+      { selector: ".fl-shelf--ghost", rect: { left: 900, top: 20, width: 120, height: 120 } },
+      { selector: ".fl-shelf", rect: { left: 40, top: 600, width: 300, height: 200 } },
+    ]);
+    shelf(true);
+    shelf();
+    playPinCeremony({ appId: "app_1", dismiss: () => panel.remove() });
+
+    await flushFrames();
+    expect(flight()!.keyframes[1]!.transform).toBe("translate(-360px, 480px) scale(0.5)");
+  });
+
+  it("inks the ring with the ACCENT when it lands in our own chrome", async () => {
+    const { panel } = stage();
+    document.querySelector("[data-vendo-slot]")!.remove();
+    stubRects([
+      { selector: "[data-vendo-app-embed]", rect: { left: 400, top: 120, width: 600, height: 400 } },
+      { selector: ".fl-shelf", rect: { left: 40, top: 600, width: 300, height: 200 } },
+    ]);
+    const section = shelf();
+    section.style.color = "rgb(20, 21, 26)";
+    section.style.setProperty("--vendo-accent", "rgb(10, 125, 85)");
+    playPinCeremony({ appId: "app_1", slot: "hero", dismiss: () => panel.remove() });
+
+    await flushFrames();
+    flight()!.animation.onfinish!();
+    // The shelf's `color` is body text, so borrowing it drew a near-black box
+    // around the whole shelf — a debug outline where the payoff should be.
+    expect(ring()!.getAttribute("style")).toContain("rgb(10, 125, 85)");
+    expect(ring()!.getAttribute("style")).not.toContain("rgb(20, 21, 26)");
+  });
+
+  it("blooms instead of outlining when it lands in our own chrome", async () => {
+    const { panel } = stage();
+    document.querySelector("[data-vendo-slot]")!.remove();
+    stubRects([
+      { selector: "[data-vendo-app-embed]", rect: { left: 400, top: 120, width: 600, height: 400 } },
+      { selector: ".fl-shelf", rect: { left: 40, top: 600, width: 300, height: 200 } },
+    ]);
+    shelf().style.setProperty("--vendo-accent", "rgb(10, 125, 85)");
+    playPinCeremony({ appId: "app_1", slot: "hero", dismiss: () => panel.remove() });
+
+    await flushFrames();
+    flight()!.animation.onfinish!();
+    // The accent alone was not enough: this theme's accent IS near-black, so a
+    // full-strength 1.5px line still drew a box around the whole shelf. The
+    // shelf is a WIDE band of our own chrome — it takes a soft bloom, and the
+    // crisp hairline stays where it reads as a highlight (a host's slot).
+    const style = ring()!.getAttribute("style")!;
+    expect(style).not.toContain("1.5px");
+    expect(style).toContain("color-mix");
+  });
+
+  it("a HOST slot still lends the ring its own ink, and keeps its crisp hairline", async () => {
+    stage();
+    (document.querySelector("[data-vendo-slot]") as HTMLElement).style.color = "rgb(180, 40, 40)";
+    playPinCeremony({ appId: "app_1", slot: "hero" });
+
+    await flushFrames();
+    flight()!.animation.onfinish!();
+    const style = ring()!.getAttribute("style")!;
+    expect(style).toContain("rgb(180, 40, 40)");
+    expect(style).toContain("1.5px");
+    expect(style).not.toContain("color-mix");
+  });
+
   it("dismisses and strands nothing when the destination is not mounted", async () => {
     const { panel } = stage();
     document.querySelector("[data-vendo-slot]")!.remove();

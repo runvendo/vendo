@@ -43,23 +43,3 @@ describe("the collision a real host can actually create is a boot error", () => 
     expect(() => resolveModels({ models: { agent: "opus", judge: "haiku" } }, makeModel)).not.toThrow();
   });
 });
-
-describe("the verifier seat is resolvable and independent (finding 2)", () => {
-  it("exposes a verifier model without touching the agent model", () => {
-    const resolved = resolveModels({ models: { knowledgeVerifier: "haiku" } }, makeModel);
-
-    expect(resolved.verifier?.model).toEqual(named("haiku"));
-    // The agent model must still be the ladder default, NOT haiku.
-    expect(resolved.agent.model).toEqual(named("ladder-default"));
-  });
-
-  it("keeps both when both are set", () => {
-    const resolved = resolveModels({ models: { default: "opus", verifier: "haiku" } }, makeModel);
-    expect(resolved.agent.model).toEqual(named("opus"));
-    expect(resolved.verifier?.model).toEqual(named("haiku"));
-  });
-
-  it("leaves the verifier unset when the host never asked for one", () => {
-    expect(resolveModels({ models: { default: "opus" } }, makeModel).verifier).toBeUndefined();
-  });
-});

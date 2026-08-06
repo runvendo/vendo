@@ -6,42 +6,62 @@ import { type PollOptions, useResource } from "./use-resource.js";
 import type { AutomationEntry, EnableResult, RehearsalReport, RunPlan, RunRecord, RunStatus } from "../wire-types.js";
 
 export function useAutomations(options?: PollOptions): {
-  /** Back-compat alias for `data` (contract §3). */
   automations: AutomationEntry[];
-  data: AutomationEntry[];
   error: Error | undefined;
   isLoading: boolean;
   refresh(): Promise<void>;
-  enable(id: AppId): Promise<EnableResult>;
-  disable(id: AppId): Promise<void>;
-  runs(filter?: { appId?: AppId; status?: RunStatus; cursor?: string }): Promise<{ runs: RunRecord[]; cursor?: string }>;
-  dryRun(id: AppId): Promise<RunPlan>;
-  rehearse(id: AppId, windowDays?: 7 | 30): Promise<RehearsalReport>;
+  /** Arm/disarm ONE trigger of an app: an automation is an app with a LIST of
+   *  triggers, and each is armed on its own. */
+  enable(id: AppId, triggerId: string): Promise<EnableResult>;
+  disable(id: AppId, triggerId: string): Promise<void>;
+  runs(filter?: {
+    appId?: AppId;
+    triggerId?: string;
+    status?: RunStatus;
+    cursor?: string;
+  }): Promise<{ runs: RunRecord[]; cursor?: string }>;
+  dryRun(id: AppId, triggerId: string): Promise<RunPlan>;
+  rehearse(id: AppId, triggerId: string, windowDays?: 7 | 30): Promise<RehearsalReport>;
   stopRun(runId: RunId): Promise<void>;
+  /** Run it again — a FRESH run of the same automation on the same triggering
+   *  event (07 §1 `runs.rerun`). The remedy for a run that failed, and the second
+   *  half of Grant & re-run: allow the permission, then this. Answers with the
+   *  new run's id, and refreshes the list so its row is live. */
+  rerun(runId: RunId): Promise<RunId>;
 } {
   const { client } = useVendoContext();
   const list = useCallback(() => client.automations.list(), [client]);
   const { data, error, isLoading, refresh } = useResource(list, [] as AutomationEntry[], options);
 
   const enable = useCallback(
-    async (id: AppId) => {
-      const result = await client.automations.enable(id);
+    async (id: AppId, triggerId: string) => {
+      const result = await client.automations.enable(id, triggerId);
       await refresh();
       return result;
     },
     [client, refresh],
   );
   const disable = useCallback(
-    async (id: AppId) => {
-      await client.automations.disable(id);
+    async (id: AppId, triggerId: string) => {
+      await client.automations.disable(id, triggerId);
       await refresh();
+    },
+    [client, refresh],
+  );
+
+  const rerun = useCallback(
+    async (runId: RunId) => {
+      const id = await client.runs.rerun(runId);
+      // The fresh run is live from this moment: the list carries the row states
+      // a caller renders, so it must not lag behind its own action.
+      await refresh();
+      return id;
     },
     [client, refresh],
   );
 
   return {
     automations: data,
-    data,
     error,
     isLoading,
     refresh,
@@ -51,5 +71,6 @@ export function useAutomations(options?: PollOptions): {
     dryRun: client.automations.dryRun,
     rehearse: client.automations.rehearse,
     stopRun: client.runs.stop,
+    rerun,
   };
 }

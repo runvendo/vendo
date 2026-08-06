@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { isoDateTimeSchema, type IsoDateTime } from "./ids.js";
-import { principalSchema, type Principal } from "./principal.js";
+import { type Principal } from "./principal.js";
 
 /** Knowledge design v2 (2026-07-22) R1 — the doc-hash manifest version tag. */
 export const VENDO_KNOWLEDGE_HASH_FORMAT = "vendo/knowledge-hash@1" as const;
@@ -106,11 +106,6 @@ export interface KnowledgeContext {
   principal: Principal;
   includeInternal?: boolean;
 }
-
-export const knowledgeContextSchema = z.object({
-  principal: principalSchema,
-  includeInternal: z.boolean().optional(),
-}).passthrough() satisfies z.ZodType<KnowledgeContext>;
 
 /** Knowledge design v2 (2026-07-22) R3/R4. */
 export interface KnowledgeHit {
@@ -218,29 +213,12 @@ export interface KnowledgeChunk {
   heading?: string;
 }
 
-export const knowledgeChunkSchema = z.object({
-  docId: z.string().min(1),
-  chunkId: z.string().min(1),
-  text: z.string(),
-  index: z.number().int().nonnegative(),
-  heading: z.string().optional(),
-}).passthrough() satisfies z.ZodType<KnowledgeChunk>;
-
 /** Knowledge design v2 (2026-07-22) R1 — structural chunking only in v1
     (semantic chunking cut 2026-07-22). Bumping `version` obliges the local
     engine to re-chunk stored docs (the engine owns re-index versioning). */
 export interface KnowledgeChunker {
   version: number;
   chunk(doc: KnowledgeDoc): KnowledgeChunk[];
-}
-
-/** Knowledge design v2 (2026-07-22) R3 — the minimal embedding client: exists
-    solely because hybrid RRF needs a vector list to fuse. Local-engine
-    internal; Anthropic-only hosts never invoke it. A changed `model` obliges
-    re-embedding from stored docs. */
-export interface KnowledgeEmbedder {
-  model: string;
-  embed(texts: string[]): Promise<number[][]>;
 }
 
 /** Knowledge design v2 (2026-07-22) R1 — sync's doc-level content-hash

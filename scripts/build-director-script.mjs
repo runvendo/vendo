@@ -199,8 +199,8 @@ const script = {
         cue(300, { type: "tool-input-available", toolCallId: "call_docs", toolName: "host_listClients", input: { filter: "missing_docs" } }),
         cue(900, { type: "tool-output-available", toolCallId: "call_docs", output: { ok: true } }),
         // Beat: building — the view forms in stages.
-        cue(400, { type: "tool-input-start", toolCallId: "call_build", toolName: "vendo_apps_create" }),
-        cue(300, { type: "tool-input-available", toolCallId: "call_build", toolName: "vendo_apps_create", input: { prompt: "document chases" } }),
+        cue(400, { type: "tool-input-start", toolCallId: "call_build", toolName: "vendo_make" }),
+        cue(300, { type: "tool-input-available", toolCallId: "call_build", toolName: "vendo_make", input: { request: "document chases" } }),
         cue(700, view(true, undefined)),
         cue(1500, view(true, { ChaseHero: heroSource })),
         cue(2100, view(true, { ChaseHero: heroSource, ChaseList: listSource })),

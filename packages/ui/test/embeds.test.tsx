@@ -19,7 +19,7 @@ import { createWireServer } from "./wire-server.js";
 // use. The wire owns approval state; the embed renders it in place with the
 // existing failed/expired vocabulary — never a silent blank.
 
-const appRef: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_1", title: "Invoices" };
+const appRef: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_1", title: "Invoices", status: "building" };
 const approvalRef: VendoApprovalRef = {
   kind: "vendo/approval-ref@1",
   approvalId: "apr_1",
@@ -176,14 +176,14 @@ describe("existing-agents embeds", () => {
     });
 
     it("shows the build beat while the app is not yet servable", async () => {
-      const building: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_building", title: "Weather board" };
+      const building: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_building", title: "Weather board", status: "building" };
       mount(<VendoAppEmbed refValue={building} />);
       await waitFor(() => expect(screen.getByText(/Building/)).toBeDefined());
       expect(screen.getByText("Weather board")).toBeDefined();
     });
 
     it("polls the build window under the pending flag, so a miss is a 200 envelope and never a console 404", async () => {
-      const building: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_building", title: "Weather board" };
+      const building: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_building", title: "Weather board", status: "building" };
       mount(<VendoAppEmbed refValue={building} />);
       await waitFor(() => {
         const polls = wire.requests.filter(item => item.path.startsWith("/apps/app_building/open"));
@@ -195,7 +195,7 @@ describe("existing-agents embeds", () => {
     });
 
     it("resolves the failed vocabulary WITH the reason promptly when the build terminally fails (#492)", async () => {
-      const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_doomed", title: "Budget tracker" };
+      const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_doomed", title: "Budget tracker", status: "building" };
       // The build turn threw server-side: open() now answers {kind:"failed"}
       // instead of an eternal pending, so the embed resolves on the FIRST poll
       // rather than waiting for APP_BUILD_DEADLINE_MS.
@@ -246,7 +246,7 @@ describe("existing-agents embeds", () => {
       "says the CONSUMER sentence, never the developer's, for: %s",
       async (reason) => {
         const appId = `app_voice_${developerReasons.indexOf(reason)}`;
-        const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId, title: "Spending board" };
+        const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId, title: "Spending board", status: "building" };
         wire.state.failedApps.set(appId, { reason, retryable: true, prompt: "A spending board" });
         mount(<VendoAppEmbed refValue={doomed} />);
         await waitFor(() => expect(screen.getByText(BUILD_FAILURE_COPY)).toBeDefined());
@@ -268,7 +268,7 @@ describe("existing-agents embeds", () => {
     );
 
     it("shows a retry BUTTON when the terminal failure is retryable — never a dead embed (speed-core, criterion 8)", async () => {
-      const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_retry", title: "Retry tracker" };
+      const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_retry", title: "Retry tracker", status: "building" };
       // The shape the build watchdog persists: terminal, retryable, with the
       // original prompt riding the record so the retry re-issues it exactly.
       wire.state.failedApps.set("app_retry", {
@@ -285,7 +285,7 @@ describe("existing-agents embeds", () => {
     });
 
     it("retry re-issues the create with the persisted prompt and resolves into the fresh build", async () => {
-      const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_retry2", title: "Net worth…" };
+      const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_retry2", title: "Net worth…", status: "building" };
       wire.state.failedApps.set("app_retry2", {
         reason: "the build never finished",
         retryable: true,
@@ -307,7 +307,7 @@ describe("existing-agents embeds", () => {
     });
 
     it("actions on the retried app target the REPLACEMENT app id, never the dead record (checker F5)", async () => {
-      const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_dead", title: "Refresh board" };
+      const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_dead", title: "Refresh board", status: "building" };
       wire.state.failedApps.set("app_dead", {
         reason: "the build never finished",
         retryable: true,
@@ -327,7 +327,7 @@ describe("existing-agents embeds", () => {
     });
 
     it("retry falls back to the embed title when the failed record predates the prompt field", async () => {
-      const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_retry3", title: "Budget board" };
+      const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_retry3", title: "Budget board", status: "building" };
       wire.state.failedApps.set("app_retry3", { reason: "generation failed", retryable: true });
       mount(<VendoAppEmbed refValue={doomed} />);
       fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
@@ -337,7 +337,7 @@ describe("existing-agents embeds", () => {
     });
 
     it("a failed retry resolves back to the failed vocabulary with the retry button, never a blank", async () => {
-      const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_retry4", title: "Alerts inbox" };
+      const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_retry4", title: "Alerts inbox", status: "building" };
       wire.state.failedApps.set("app_retry4", { reason: "generation failed", retryable: true, prompt: "An alerts inbox" });
       wire.state.failures.push({
         method: "POST",
@@ -354,7 +354,7 @@ describe("existing-agents embeds", () => {
     });
 
     it("resolves the build beat into the app when the build lands mid-poll", async () => {
-      const late: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_late", title: "Late app" };
+      const late: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_late", title: "Late app", status: "building" };
       mount(<VendoAppEmbed refValue={late} />);
       await waitFor(() => expect(screen.getByText(/Building/)).toBeDefined());
       // The build lands: the app becomes servable on a later poll.
@@ -378,7 +378,7 @@ describe("existing-agents embeds", () => {
       // eternal pending into the failed beat at its bound.
       vi.useFakeTimers();
       try {
-        const masked: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_masked", title: "Masked app" };
+        const masked: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_masked", title: "Masked app", status: "building" };
         const pendingClient: VendoClient = {
           ...client,
           apps: {
@@ -408,7 +408,7 @@ describe("existing-agents embeds", () => {
       // absolute deadline timer depends on nothing but the clock.
       vi.useFakeTimers();
       try {
-        const hung: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_hung", title: "Hung app" };
+        const hung: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_hung", title: "Hung app", status: "building" };
         const hangingClient: VendoClient = {
           ...client,
           apps: {

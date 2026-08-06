@@ -19,7 +19,6 @@ import { convertPayload } from "./convert-payload.js";
 import {
   useCallback,
   useMemo,
-  useRef,
   useState,
   type ComponentType,
   type ReactNode,
@@ -36,6 +35,7 @@ import { InClientMount } from "./host-mount.js";
 import { JailedComponent, type JailFurnishing } from "./jail/JailedComponent.js";
 import { ContainedNotice } from "./notice.js";
 import { KIT_COMPONENTS } from "../kit/registry.js";
+import { useKeyedState } from "../kit/state.js";
 import { PREWIRED_COMPONENTS } from "./primitives.js";
 
 export interface TreeViewProps {
@@ -578,6 +578,9 @@ function StatefulTreeView({
   const adoptionRaw = (tree as WalkTree & Record<string, unknown>)[ADOPTION_VENUE_KEY];
   const adoption = typeof adoptionRaw === "object" && adoptionRaw !== null
     && typeof (adoptionRaw as AdoptionVenue).automation === "string"
+    // The trigger id is load-bearing, not decoration: adopt() acts on ONE
+    // trigger, so a card without it could only guess which.
+    && typeof (adoptionRaw as AdoptionVenue).triggerId === "string"
     && Array.isArray((adoptionRaw as AdoptionVenue).needs)
     ? adoptionRaw as AdoptionVenue
     : undefined;
@@ -602,16 +605,10 @@ function StatefulTreeView({
         .map((node) => [node.component, tree.components?.[node.component] ?? ""]),
     ]),
   } : tree);
-  const [viewState, setViewState] = useState<Record<string, Json>>({});
-  const stateRef = useRef(viewState);
+  // The keyed `$state` store lives in the Kit bundle, shared with code-land's
+  // `useVendoState` (kit/state.ts) — one implementation, two venues.
+  const [viewState, updateState] = useKeyedState(onStateChange);
   const [outcomes, setOutcomes] = useState<Record<string, ToolOutcome | undefined>>({});
-
-  const updateState = useCallback((key: string, value: Json) => {
-    const next = { ...stateRef.current, [key]: value };
-    stateRef.current = next;
-    setViewState(next);
-    onStateChange?.(next);
-  }, [onStateChange]);
 
   const runAction = useCallback(async (nodeId: string, action: string, payload?: Json) => {
     let outcome: ToolOutcome;

@@ -21,48 +21,7 @@ run is a separate explicit command.
   (scripted model, memory store, tool registry). Those fixtures are not exported
   via a package subpath, so they are re-implemented here rather than imported.
 - `src/benches/*` — one file per suite; `src/run.ts` — the CLI.
-- `demo-capture/` — README and gitignored output for the four UI-generation
-  demo GIF beats; the TypeScript capture driver lives in `src/demo-capture/`.
-- `src/demo-creator/` — the per-prospect demo tooling: two commands,
-  `demo:pipeline` (screenshots → live demo) and `demo:fix` (free-text
-  feedback → re-shipped demo). The Slack driver skill lives in the
-  `runvendo/vendo-skills` repo (`shared/demo-creator/`) — agent-facing docs
-  are skills, not repo code.
-
-  **A generated demo is never a file in this repo.** It carries a prospect's
-  logo, palette, copy and seeded data, so it is a folder
-  (`demos/<slug>/`) in the PRIVATE `runvendo/vendo-demos` host repo — cloned
-  to `~/.vendo/vendo-demos` by default, overridable with `--demos-repo`. All
-  the demos share ONE multi-tenant Next host in that repo, which discovers
-  them at BUILD time (`host/scripts/gen-manifest.mjs` writes static imports —
-  no runtime filesystem scanning), so shipping a demo is a commit plus one
-  `railway up` of the host.
-
-  The six stages, one module each:
-
-  - `evidence.ts` (+ `context-dev.ts`) — copies the operator's screenshots
-    into `RESEARCH/` and gathers brand evidence from context.dev (brand +
-    logo, rendered colours, fonts, site markdown). Every call fails SOFT and
-    is named in the brief.
-  - `brief.ts` — ONE vision call over the screenshots + evidence. Writes
-    `theme.json` (hexes are COPIED from the evidence; the model only assigns
-    roles) and `BRIEF.md`, the digest every build agent reads first.
-  - `build.ts` — three parallel headless `claude` agents (server + openapi,
-    screens, beats), then `vendo sync` for the real tool surface, then chip
-    grounding (`chips.ts`) so no pill names a capability the demo lacks.
-  - `assemble.ts` / `host-boot.ts` — manifest, host build (a demo that does
-    not build is never pushed), boot, and ONE smoke turn that gates on hard
-    error only (the turn errored, or never settled) — never on content.
-  - `judge.ts` — ONE fidelity pass, five pinned dimensions, printed as a
-    `SCORES:` line. It records; it does not gate. Ship regardless.
-  - `ship.ts` — commit the folder, push, `railway up` the host (with the
-    measured 6× BadRecordMac retry), poll the public URL, print `LIVE:`.
-
-  The creator harness itself runs on `ANTHROPIC_API_KEY` (the brief, the
-  judge, and the `claude` CLI build agents) plus `CONTEXT_DEV_API_KEY`, even
-  though the demo it generates runs on the host's `VENDO_API_KEY`.
 - `budgets.json` — the permanent gate thresholds.
-- `RESULTS.md` — a full captured run (deterministic + live) from a real machine.
 
 ## Running
 
@@ -91,7 +50,7 @@ Deterministic (CI-gated):
 | --- | --- |
 | `tree-validate` | `@vendoai/core` `validateTree` at 10 / 100 / 1000 / 5000 nodes (5000 = the 01 §8 cap). |
 | `tree-render` | `@vendoai/ui` `TreeView` via `react-dom/server` `renderToString`; render-only and validate+render per size. Prewired primitives only, so no jsdom is needed. |
-| `store` | `@vendoai/store` on PGlite (temp dir): record `put`/`get`/`list`, N=200. Also runs the Postgres leg when `POSTGRES_URL` is set (the 02 gating convention); the Postgres leg is not budget-gated. |
+| `store` | `@vendoai/store` on PGlite (temp dir): record `put`/`get`/`list`, N=200. Also runs a Postgres leg when `POSTGRES_URL` is set (the 02 gating convention) — a local-only capability; it is not budget-gated and CI does not provision Postgres. |
 | `guard-call` | `createGuard` over PGlite, `guard.bind()` a no-op registry, N calls through the bound registry — the 05 §2 decide → execute → report choke point, with an audit row written per call. |
 | `apps-api` | `createApps` (memory store + guard-bound registry + scripted model): `open()` and `call()` p50/p95. Measured at the API seam — the HTTP wire routes (09) live in the umbrella built in a parallel wave and get added when it lands. |
 | `gen-scripted` | `create()` total latency with the scripted model — deterministic engine overhead only (parse → validate → persist → audit), no LLM. |
@@ -128,9 +87,10 @@ Live-gated (never in CI; skip cleanly with a printed reason when the key is abse
 `"<suite>:<case>"`. Only the render-only tree metrics, the PGlite store leg, and
 the single-call/seam metrics are gated (not validate+render, not Postgres).
 
-Ceilings were seeded from a dev-machine measured p95 (Apple M4 Pro; see
-RESULTS.md for the run they were seeded from), and **per-metric headroom
-deliberately varies** — there is no single multiplier:
+Ceilings were seeded from a dev-machine measured p95 (Apple M4 Pro) and have
+since been recalibrated against real CI runs — the git history of
+`budgets.json` and the PRs that changed it are the calibration record.
+**Per-metric headroom deliberately varies** — there is no single multiplier:
 
 - **Millisecond-scale metrics** (tree-render, guard-call) carry roughly **5–7x**
   headroom over measured p95. Enough to absorb a slower CI runner; tight enough
@@ -142,8 +102,7 @@ deliberately varies** — there is no single multiplier:
   microsecond scales — a single scheduler blip is 100x the signal. The floor is
   the smallest value that won't false-positive on a noisy runner.
 
-RESULTS.md lists the actual measured p95, ceiling, and resulting multiplier for
-every gated metric. The gate is meant to catch **real** regressions — an
+The gate is meant to catch **real** regressions — an
 accidental O(n²), a dropped index, a renderer that stopped memoizing — not
 scheduler noise. A metric that suddenly takes an order of magnitude longer trips
 the gate; one that wobbles between runs does not.
@@ -156,20 +115,14 @@ silently turn its budget into dead config and the gate would stop gating.
 (Partial runs — `--check --suite <name>` — skip the dead-config check by design;
 it only applies to the full deterministic set, which is what CI runs.)
 
-### Follow-up: recalibrate against real CI samples
+### Recalibrating against real CI samples
 
-The current ceilings are provisional, derived from one dev machine. Once
-`perf.yml` has run on main a handful of times:
-
-1. Collect the p95 values from the last ~5 job summaries (the tables are in
-   each run's `$GITHUB_STEP_SUMMARY`).
-2. For each gated metric, take the worst CI p95 observed and set the ceiling to
-   ~3x that value (or keep the existing absolute floor if it is larger).
-3. Land the recalibration as a single PR editing `budgets.json`, citing the CI
-   runs sampled.
-
-This replaces dev-machine guesswork with runner-derived headroom and should
-tighten most ceilings considerably.
+When a ceiling looks miscalibrated, collect the p95 values from recent
+`perf.yml` job summaries (the tables are in each run's `$GITHUB_STEP_SUMMARY`),
+take the worst CI p95 observed, and set the ceiling to ~3x that value (or keep
+the existing absolute floor if it is larger). Land the recalibration as a
+single PR editing `budgets.json`, citing the CI runs sampled — those PRs are
+the calibration record.
 
 ## Raising a budget
 

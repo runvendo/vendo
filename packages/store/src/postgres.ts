@@ -33,6 +33,7 @@ export function createStore(config: PostgresStoreConfig): VendoStore {
 
 // The rest of the store surface is engine-agnostic — the same modules the
 // main entry exports (keep this list in lockstep with index.ts).
+export { createStoreOps } from "./ops.js";
 export {
   DEDICATED_RECORD_COLLECTIONS,
   RESERVED_COLLECTIONS,
@@ -78,5 +79,4 @@ export {
 } from "./workspace.js";
 export { storeFiles, FILES_STORE_MAX_BYTES } from "./files-store.js";
 export { s3, type S3FilesOptions } from "./files-s3.js";
-export { workspaceBash, type BashRun, type WorkspaceBashSetup } from "./workspace-bash.js";
 export { harnessStateStore } from "./harness-state.js";

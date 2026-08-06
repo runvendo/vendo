@@ -38,10 +38,11 @@ function automation(): AppDocument {
     format: VENDO_APP_FORMAT,
     id: "app_import_placeholder",
     name: "Invoice refresh",
-    trigger: {
+    triggers: [{
+      id: "main",
       on: { kind: "host-event", event: "sync-impact.refresh" },
       run: { kind: "steps", steps: [{ id: "list", tool: TOOL }] },
-    },
+    }],
   };
 }
 

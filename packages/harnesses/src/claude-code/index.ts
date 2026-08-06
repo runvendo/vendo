@@ -15,30 +15,71 @@
  * (materialization), and design §3 / §8 / §9.
  */
 import {
-  VENDO_APPS_CREATE_TOOL,
-  VENDO_APPS_EDIT_TOOL,
+  VENDO_MAKE_TOOL,
+  type BeatPhase,
   type Harness,
   type HarnessEvent,
   type Turn,
 } from "@vendoai/core";
-import type { ClaudeTurnEvent } from "@vendoai/apps/claude-turn";
+import type { BeatPhase as LoopBeatPhase, ClaudeTurnEvent } from "@vendoai/apps/claude-turn";
 import type { UIMessage } from "ai";
 import { z } from "zod";
 import { defineHarness } from "../define.js";
 import { harnessAdapters, type ToolDoorPort } from "../harness-sandbox.js";
 import { checkoutWorkspace, type SyncFile } from "../materialize.js";
 import { HOT_PATH_WATCH } from "../render-seam.js";
+import { repairInstruction, validateWrittenApps } from "../validate-gate.js";
 import type { SessionMachine } from "./machine.js";
 import { localMachine } from "./local.js";
 import { boxMachine, type SandboxAdapterLike } from "./box.js";
 
+/** The knobs a TURN may still carry (harness-declared; see optionsSchema). */
+export interface ClaudeCodeTurnOptions {
+  maxTurns?: number;
+}
+
+/**
+ * The beat phase union is declared TWICE, and this is what makes that safe.
+ *
+ * Core owns `BeatPhase` (contract §3.4). `claude-turn.ts` restates it
+ * structurally because that file imports NOTHING — its module header explains
+ * why: the emitted `dist/claude-turn.js` is copied verbatim into a machine image,
+ * and a module that named its dependencies was reachable from every composed
+ * host's build graph.
+ *
+ * The `yield event` below already compares the two unions, but only in ONE
+ * direction: a mirror that is a SUBSET of core stays assignable, so a seventh
+ * phase added to core would leave the box silently unable to ever emit it, with
+ * nothing failing anywhere (verified: adding one to core left every typecheck
+ * green). This map closes that direction — its keys are required by CORE's union
+ * and its values are typed as the LOOP's, so drift either way fails here, by
+ * name, instead of as an inference error 200 lines down.
+ */
+export const BEAT_PHASES: Record<BeatPhase, LoopBeatPhase> = {
+  understanding: "understanding",
+  planning: "planning",
+  assembling: "assembling",
+  building: "building",
+  checking: "checking",
+  finishing: "finishing",
+};
+
 /** v1 options, exactly (design §3): nothing else until asked. */
-export interface ClaudeCodeOptions {
+export interface ClaudeCodeOptions extends ClaudeCodeTurnOptions {
+  /** Construction-time only (agents spec 2026-08-04 cut per-turn model/effort):
+   *  which model thinks binds when the harness is built, never per request. */
   model?: string;
   effort?: "low" | "medium" | "high";
-  maxTurns?: number;
   /** Run the SDK on the host's own server instead of a sandbox. Never default. */
   machine?: "local";
+  /**
+   * Provider template the conversation box boots from; defaults to
+   * `VENDO_BOX_TEMPLATE`. Construction-time like `machine`: which image a box
+   * runs is a deployment decision, never a request's.
+   *
+   * Sandbox path only: `machine: "local"` has no box to template.
+   */
+  template?: string;
   /**
    * Extra outbound domains the box may reach, ADDED to the minimum set
    * ({@link boxEgress}). Bare hostnames, as `vendo.json`'s `egress` writes them.
@@ -69,10 +110,13 @@ export interface ClaudeCodeOptions {
  * `egress` is absent for a harder version of the same reason: it IS the box's
  * network boundary, so a per-turn override would let request text — which is
  * where prompt injection lives — name the host it wants to be reachable.
+ *
+ * `model` and `effort` left too (agents spec 2026-08-04, feature cut): which
+ * model thinks — and how hard — binds at construction, like every other
+ * harness knob. The per-turn path was declared and never enforced, and a knob
+ * that big must not ride request payloads.
  */
 const optionsSchema = z.object({
-  model: z.string().optional(),
-  effort: z.enum(["low", "medium", "high"]).optional(),
   maxTurns: z.number().int().positive().optional(),
 });
 
@@ -87,8 +131,8 @@ export interface ClaudeCodeDeps {
  *  model to think, and that is the ONLY credential in the machine. */
 export function inferenceEnv(): Record<string, string> {
   const source = globalThis.process?.env ?? {};
-  const key = source["ANTHROPIC_API_KEY"] ?? source["VENDO_INFERENCE_KEY"];
-  const url = source["ANTHROPIC_BASE_URL"] ?? source["VENDO_INFERENCE_URL"];
+  let key = source["ANTHROPIC_API_KEY"] ?? source["VENDO_INFERENCE_KEY"];
+  let url = source["ANTHROPIC_BASE_URL"] ?? source["VENDO_INFERENCE_URL"];
   const env: Record<string, string> = {
     // Nothing the CLI reaches for on the side: its telemetry and update hosts are
     // not on the box's allowlist (`boxEgress` below), so those calls fail rather
@@ -96,6 +140,24 @@ export function inferenceEnv(): Record<string, string> {
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
     DISABLE_AUTOUPDATER: "1",
   };
+  // The third rung, mirroring server.ts's `boxInference()`: no Anthropic
+  // credential and no pre-resolved gateway means VENDO_API_KEY — the same key
+  // that provisions the Cloud machine — funds the box's model through the
+  // console's Anthropic-compatible gateway at `<console>/api/v1`. The gateway
+  // serves the vendo model family as literal ids, so the DEFAULT model is
+  // pinned to the family name — the SDK's own default is a raw claude-* id the
+  // gateway would grace-remap. Only the default: an explicit `options.model`
+  // rides the session-open payload, which beats ANTHROPIC_MODEL.
+  const cloudKey = source["VENDO_API_KEY"];
+  if ((key === undefined || key === "") && (url === undefined || url === "")
+    && cloudKey !== undefined && cloudKey !== "") {
+    const cloudUrl = source["VENDO_CLOUD_URL"];
+    const base = (cloudUrl === undefined || cloudUrl === "" ? "https://console.vendo.run" : cloudUrl)
+      .replace(/\/+$/, "");
+    key = cloudKey;
+    url = base.endsWith("/api/v1") ? base : `${base}/api/v1`;
+    env["ANTHROPIC_MODEL"] = "vendo";
+  }
   if (key !== undefined && key !== "") env["ANTHROPIC_API_KEY"] = key;
   if (url !== undefined && url !== "") {
     env["ANTHROPIC_BASE_URL"] = url.replace(/\/+$/, "").replace(/\/v1$/, "");
@@ -197,24 +259,6 @@ export function promptFor(messages: readonly UIMessage[], resuming: boolean): st
     + `The user now says:\n\n${spoken}`;
 }
 
-/**
- * The few lines the co-trained preset does NOT already know: where it is, who it
- * is talking to, and which hands touch reality.
- *
- * This replaced a ~14-line wall that re-explained the mount layout, the copy
- * semantics, the save timing and the refusal etiquette. Claude Code already knows
- * how to work in a directory — that is what the preset IS. What it cannot know is
- * the EMBEDDING, so that is all this says.
- */
-function embeddingBrief(root: string): string {
-  return `\n\nYou are embedded in this product, talking to one of its customers — plain language, no file paths, no tool names.`
-    + `\n\nTheir files are in ${root}. Real-world actions — the product's own operations, their data — are the \`vendo\` tools;`
-    + ` if one comes back refused, say so plainly and move on.`
-    + ` Anything they want to look at, track, or keep using is an app you build in \`app.vendo\` —`
-    + ` the \`building-apps\` skill is the manual.`
-    + ` This session stays open for the whole conversation, so what you already read and built is still here.`;
-}
-
 /** `turn.state` — the opaque blob (§1.3). Ours to shape, nobody else's to read. */
 interface ClaudeState {
   /**
@@ -270,7 +314,7 @@ const readState = (raw: string | undefined): ClaudeState => {
  * Not per turn, because the session's `mcpServers` headers are fixed when the
  * SDK session opens and a warm machine never reopens. That is safe because the
  * credential's AUTHORITY is per turn regardless: it resolves to the turn in
- * flight on this thread and to nothing between turns (`turn-credentials.ts`).
+ * flight on this thread and to nothing between turns (mcp/turn-credential.ts).
  * A machine that is not carrying a session is about to open a fresh one, so its
  * old credential is revoked here rather than left to the registry's idle sweep.
  */
@@ -325,8 +369,8 @@ function eventQueue<T>() {
 
 export function claudeCode(
   options: ClaudeCodeOptions & ClaudeCodeDeps = {},
-): Harness<ClaudeCodeOptions> {
-  const harness: Harness<ClaudeCodeOptions> = defineHarness<ClaudeCodeOptions>({
+): Harness<ClaudeCodeTurnOptions> {
+  const harness: Harness<ClaudeCodeTurnOptions> = defineHarness<ClaudeCodeTurnOptions>({
     name: "claude-code",
     optionsSchema: optionsSchema as never,
     // The factory reads its OWN arg; the compose gate stays dumb (§9: a
@@ -339,20 +383,17 @@ export function claudeCode(
     // loadout that hides tools behind a search is friction it does not need — the
     // ctx safety projection still decides what may be projected at all. And app
     // generation leaves this surface: the model builds and edits apps by writing
-    // `plan.vendo` / `app.vendo` with its own hands, so the two engine tools are
+    // `plan.vendo` / `app.vendo` with its own hands, so the one engine tool is
     // withheld rather than left as a second, coin-flip path to the same outcome.
     // Lifecycle tools (`vendo_apps_open`, the pin and data verbs) stay.
-    toolSurface: { curated: false, withhold: [VENDO_APPS_CREATE_TOOL, VENDO_APPS_EDIT_TOOL] },
+    toolSurface: { curated: false, withhold: [VENDO_MAKE_TOOL] },
 
-    async *run(turn: Turn<ClaudeCodeOptions>): AsyncGenerator<HarnessEvent, void, void> {
-      // Per-turn options may override the model knobs and NOTHING else: `machine`
-      // is read off the constructor, so a request can never move the SDK onto the
-      // host's server.
+    async *run(turn: Turn<ClaudeCodeTurnOptions>): AsyncGenerator<HarnessEvent, void, void> {
+      // Everything about the brain — model, effort, machine, template, egress —
+      // is the CONSTRUCTOR's; a turn may only bound its own length.
       const resolved = {
         ...options,
-        ...(turn.options ?? {}),
-        machine: options.machine,
-        egress: options.egress,
+        ...(turn.options?.maxTurns === undefined ? {} : { maxTurns: turn.options.maxTurns }),
       };
       const state = readState(turn.state.get());
 
@@ -425,6 +466,7 @@ export function claudeCode(
           threadId: threadOf(turn),
           env: boxEnv,
           allowedDomains: boxEgress(boxEnv, doorPort?.url, resolved.egress),
+          ...(resolved.template === undefined ? {} : { template: resolved.template }),
         });
       }
 
@@ -464,7 +506,6 @@ export function claudeCode(
         if (token !== undefined) door = { url: doorUrl, token };
       }
 
-      const events = eventQueue<ClaudeTurnEvent>();
       /** One sync at a time: the façade stages in memory, and two overlapping
        *  commits would race each other's staging set. */
       let syncing: Promise<unknown> = Promise.resolve();
@@ -489,15 +530,23 @@ export function claudeCode(
         // "one box per conversation" exists to prevent.
         if (!machine.carriesSession) await machine.materialize(checkout.files);
 
+        /** Every hot path this turn actually LANDED in the store — what the
+         *  validate gate below checks. Accumulated from the syncs' own answers
+         *  rather than from the box's disk, because a path the sync refused (a
+         *  revoked org grant) is not this turn's work to gate. */
+        const landed = new Set<string>();
+
         /** Sync on WRITE, not on a tick — the native PostToolUse hook drives this.
          *  Still by SHAPE, because the app whose plan lands first may have an id
          *  the turn only just invented. */
+        const syncHot = async (): Promise<void> => {
+          const hot = await machine.collect(HOT_PATH_WATCH);
+          for (const path of await checkout.syncHot(hot)) landed.add(path);
+        };
+
         const syncHotNow = (): void => {
           if (finished) return;
-          void serialize(async () => {
-            const hot = await machine.collect(HOT_PATH_WATCH);
-            await checkout.syncHot(hot);
-          }).catch(() => undefined);
+          void serialize(syncHot).catch(() => undefined);
         };
 
         // `Turn.skills` finally reaches this harness. Before cc-native the pack
@@ -507,42 +556,89 @@ export function claudeCode(
         // rather than saying "all" is what stops the MACHINE's own skills (an
         // operator's ~/.claude/skills, on the local path) from joining the set.
         const skillNames = (await turn.skills.list().catch(() => [])).map((skill) => skill.name);
-        const running = machine.send({
-          prompt: promptFor(turn.messages, sessionId !== undefined),
-          systemPrompt: `${turn.system ?? ""}${embeddingBrief(rootHintFor(resolved))}`,
-          ...(door === undefined ? {} : { toolDoor: door }),
-          ...(resolved.model === undefined ? {} : { model: resolved.model }),
-          ...(resolved.effort === undefined ? {} : { effort: resolved.effort }),
-          ...(resolved.maxTurns === undefined ? {} : { maxTurns: resolved.maxTurns }),
-          ...(sessionId === undefined ? {} : { resume: sessionId }),
-          // A truncation on a WARM machine has to close the session it is holding
-          // open, or the model keeps the answer the user deleted.
-          ...(stale && machine.carriesSession ? { reopen: true } : {}),
-          // The `/host` mount doubles as the SDK plugin root, so the pack skills
-          // already on this disk are discovered natively — no projection. No
-          // skills, no plugin: an empty plugin is a directory nobody reads.
-          ...(skillNames.length === 0
-            ? {}
-            : { pluginPath: machine.pluginPath, skillNames }),
-          emit: (event) => events.push(event),
-          onFileWritten: () => syncHotNow(),
-          signal: turn.signal,
-        }).then(() => events.close(), (error: unknown) => {
-          // The thinker failed; the user hears one plain sentence and the turn
-          // still lands whatever work reached the disk.
-          console.error("[vendo] claude-code turn failed", error);
-          events.push({ type: "error", message: "Something went wrong while I was working on that." });
-          events.close();
-        });
+        // Mid-build steering (§10.2). Registered BEFORE the send so nothing typed
+        // early is lost, and it is the machine's own answer that travels back —
+        // this harness decides nothing about whether the words fit. Registered
+        // ONCE here, outside `round`, so the validate fix round below does not
+        // double-subscribe to the same steer channel.
+        turn.onSteer?.((text) => machine.steer(text));
+        /**
+         * One exchange with the session: send, drain what it emits, wait for it.
+         *
+         * Extracted because the validate gate below needs a SECOND one, and a fix
+         * round that went through different code than the turn would be a second
+         * way to drive the same session.
+         */
+        const round = async function* (prompt: string): AsyncGenerator<HarnessEvent, void, void> {
+          const events = eventQueue<ClaudeTurnEvent>();
+          const running = machine.send({
+            prompt,
+            // The host's composed brief, WHOLE and ALONE: what the box thinks with
+            // is the host's prompt seam, never lines this harness appends after it.
+            systemPrompt: turn.system ?? "",
+            ...(door === undefined ? {} : { toolDoor: door }),
+            ...(resolved.model === undefined ? {} : { model: resolved.model }),
+            ...(resolved.effort === undefined ? {} : { effort: resolved.effort }),
+            ...(resolved.maxTurns === undefined ? {} : { maxTurns: resolved.maxTurns }),
+            ...(sessionId === undefined ? {} : { resume: sessionId }),
+            // A truncation on a WARM machine has to close the session it is holding
+            // open, or the model keeps the answer the user deleted.
+            ...(stale && machine.carriesSession ? { reopen: true } : {}),
+            // The `/host` mount doubles as the SDK plugin root, so the pack skills
+            // already on this disk are discovered natively — no projection. No
+            // skills, no plugin: an empty plugin is a directory nobody reads.
+            ...(skillNames.length === 0
+              ? {}
+              : { pluginPath: machine.pluginPath, skillNames }),
+            emit: (event) => events.push(event),
+            onFileWritten: () => syncHotNow(),
+            signal: turn.signal,
+          }).then(() => events.close(), (error: unknown) => {
+            // The thinker failed; the user hears one plain sentence and the turn
+            // still lands whatever work reached the disk.
+            console.error("[vendo] claude-code turn failed", error);
+            events.push({ type: "error", message: "Something went wrong while I was working on that." });
+            events.close();
+          });
 
-        for await (const event of events.drain()) {
-          if (event.type === "session") {
-            sessionId = event.sessionId;
-            continue;
+          for await (const event of events.drain()) {
+            if (event.type === "session") {
+              sessionId = event.sessionId;
+              continue;
+            }
+            yield event;
           }
-          yield event;
+          await running;
+        };
+
+        yield* round(promptFor(turn.messages, sessionId !== undefined));
+
+        /**
+         * VALIDATE MUST PASS BEFORE DONE — blueprint §7.1 item 4.
+         *
+         * The verb was registered, on this harness's surface, and taught by the
+         * building-apps skill; whether the model called it was the model's
+         * business. A builder that skipped it reported success over a broken app,
+         * and the only thing that noticed was the paint seam declining to paint —
+         * which from the model's side is silence. So the loop asks, with the SAME
+         * registered verb through the same guarded path.
+         *
+         * ONE round, for the brain's own reason (the conductor's `FIX_ROUNDS`
+         * comment): being shown exactly what is wrong fixes it on the first try or
+         * not at all, and a second round is the person waiting longer for the same
+         * answer. Whatever survives it is reported as it stands — the seam already
+         * refuses to paint a lie, so an unfixed app costs a screen, never the truth.
+         */
+        if (!turn.signal.aborted) {
+          await serialize(syncHot).catch(() => undefined);
+          const failures = await validateWrittenApps({
+            tools: turn.tools,
+            workspace: turn.workspace,
+            paths: [...landed],
+          });
+          const instruction = repairInstruction(failures);
+          if (instruction !== undefined) yield* round(instruction);
         }
-        await running;
       } finally {
         finished = true;
         // Turn end: the whole writable tree, deletions included (§3.5).
@@ -592,16 +688,11 @@ export function claudeCode(
  * conversations because both happened to have no identity is the one outcome
  * that must never happen.
  */
-function threadOf(turn: Turn<ClaudeCodeOptions>): string {
+function threadOf(turn: Turn<ClaudeCodeTurnOptions>): string {
   const named: unknown = turn.threadId;
   if (typeof named === "string" && named !== "") return named;
   const first = turn.messages[0]?.id;
   if (typeof first === "string" && first !== "") return first;
   return `anon_${globalThis.crypto.randomUUID()}`;
 }
-
-/** What the workspace brief calls the root. The box path pins it; local mints a
- *  temp dir, and naming it exactly is not worth a round trip. */
-const rootHintFor = (resolved: ClaudeCodeOptions): string =>
-  resolved.machine === "local" ? "your working directory" : "/workspace";
 

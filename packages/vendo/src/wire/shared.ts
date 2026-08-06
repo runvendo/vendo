@@ -1,4 +1,5 @@
 import type { AppsRuntime, AppTokens } from "@vendoai/apps";
+import type { SandboxVenue } from "@vendoai/apps/sandbox-ladder";
 import type { AutomationsEngine } from "@vendoai/automations";
 import {
   VendoError,
@@ -28,7 +29,9 @@ import type { ConnectionsService } from "../connections.js";
 export const VERSION = "0.7.0";
 export const BASE_PATH = "/api/vendo";
 
-export type SandboxVenue = "e2b" | "cloud" | "custom" | false;
+/** Re-exported, not redeclared: the venue tag is what the ONE sandbox ladder
+    returns (@vendoai/apps/sandbox-ladder), and /status reports it verbatim. */
+export type { SandboxVenue };
 
 /** How inference is served: "custom" (a host-passed model) or "ladder" (the
     composed vendoModel default — provider env key, then VENDO_API_KEY via the
@@ -76,6 +79,11 @@ export interface WireDeps {
       which needs neither table. */
   harness?: Pick<HarnessTurns, "stream">;
   guard: VendoGuard;
+  /** Which optional subsystems this deployment mounted (`createVendo({ apps:
+      false })` / `{ automations: false }`). An unmounted subsystem's routes are
+      not in the table at all, so its surface answers not-found rather than
+      answering as an empty version of itself. */
+  mounted: { apps: boolean; automations: boolean };
   apps: AppsRuntime;
   /** execution-v2 Lane C — the guard-bound registry (the SAME binding chat and
       automations execute through); the /box tools callback rides it so

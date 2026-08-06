@@ -212,15 +212,15 @@ describe("headless hooks", () => {
 
     let enabled: Awaited<ReturnType<typeof result.current.enable>> | undefined;
     await act(async () => {
-      enabled = await result.current.enable("app_auto");
+      enabled = await result.current.enable("app_auto", "main");
     });
     expect(enabled).toMatchObject({ enabled: true });
-    expect(result.current.automations[0]?.enabled).toBe(true);
+    expect(result.current.automations[0]?.triggers[0]?.enabled).toBe(true);
     await act(async () => {
-      await result.current.disable("app_auto");
+      await result.current.disable("app_auto", "main");
     });
-    expect(result.current.automations[0]?.enabled).toBe(false);
-    await expect(result.current.dryRun("app_auto")).resolves.toMatchObject({ grantsMissing: [] });
+    expect(result.current.automations[0]?.triggers[0]?.enabled).toBe(false);
+    await expect(result.current.dryRun("app_auto", "main")).resolves.toMatchObject({ grantsMissing: [] });
     await expect(result.current.runs({ appId: "app_auto", status: "running" })).resolves.toMatchObject({
       runs: [expect.objectContaining({ id: "run_1" })],
     });
@@ -236,7 +236,7 @@ describe("headless hooks", () => {
     await waitFor(() => expect(result.current.events.map(event => event.id)).toEqual(["aud_1", "aud_2"]));
     await act(() => result.current.loadMore());
     // ⚠️ FIXTURE WIDENED (CR-2): the wire now serves a fourth audit row — the
-    // real `vendo_apps_edit` shape, whose args carry an app id. The page
+    // real `vendo_make` change shape, whose args carry an app id. The page
     // arithmetic is unchanged; there is simply one more row behind the cursor.
     expect(result.current.events.map(event => event.id)).toEqual(["aud_1", "aud_2", "aud_3", "aud_edit"]);
     expect(wire.requests).toContainEqual(expect.objectContaining({ method: "GET", path: "/activity?cursor=eyJjIjoiMjAyNi0wNy0xMVQxMjowMDowMC4wMDBaIiwiaSI6ImF1ZF8yIn0" }));
@@ -295,6 +295,9 @@ describe("headless hooks", () => {
       .toEqual([
         expect.objectContaining({ path: "/threads" }),
         expect.objectContaining({ path: "/threads/thr_1" }),
+        // No resume probe: thr_1 ends on a COMPLETED assistant reply, so there
+        // is nothing in flight to rejoin. Resume fires only for a transcript
+        // that ends on the user's turn (see the resume-probe test below).
       ]);
 
     await act(() => result.current.sendMessage({ text: "Send the email" }));
@@ -430,23 +433,24 @@ describe("ENG-219 — consistent { data, error, isLoading, refresh } + polling +
     return <VendoProvider client={client}>{children}</VendoProvider>;
   }
 
-  it("exposes data, error, isLoading, and refresh on every data hook", () => {
-    const hooks = [
-      () => useApps(),
-      () => useApprovals(),
-      () => useGrants(),
-      () => useActivity(),
-      () => useConnections(),
-      () => useAutomations(),
-      () => useApp("app_1"),
-      () => useThreads(),
+  it("exposes the named collection, error, isLoading, and refresh on every data hook", () => {
+    const hooks: Array<[() => unknown, string]> = [
+      [() => useApps(), "apps"],
+      [() => useApprovals(), "pending"],
+      [() => useGrants(), "grants"],
+      [() => useActivity(), "events"],
+      [() => useConnections(), "connections"],
+      [() => useAutomations(), "automations"],
+      [() => useApp("app_1"), "app"],
+      [() => useThreads(), "threads"],
     ];
-    for (const hook of hooks) {
+    for (const [hook, named] of hooks) {
       const { result, unmount } = renderHook(hook, { wrapper });
-      expect(result.current).toHaveProperty("data");
-      expect(result.current).toHaveProperty("error");
-      expect(result.current.isLoading).toBe(true);
-      expect(typeof result.current.refresh).toBe("function");
+      const current = result.current as { isLoading: boolean; refresh: unknown };
+      expect(current).toHaveProperty(named);
+      expect(current).toHaveProperty("error");
+      expect(current.isLoading).toBe(true);
+      expect(typeof current.refresh).toBe("function");
       unmount();
     }
   });
@@ -466,47 +470,45 @@ describe("ENG-219 — consistent { data, error, isLoading, refresh } + polling +
     wire.state.failures.push({ method: "GET", path: "/grants", code: "boom", message: "kaboom", status: 500 });
     const { result } = renderHook(() => useGrants(), { wrapper });
     await waitFor(() => expect(result.current.error).toBeInstanceOf(Error));
-    expect(result.current.data).toEqual([]);
     expect(result.current.grants).toEqual([]);
     expect(result.current.isLoading).toBe(false);
   });
 
   it("clears a prior error and finishes loading on a successful first fetch", async () => {
     const { result } = renderHook(() => useApps(), { wrapper });
-    await waitFor(() => expect(result.current.data).toHaveLength(2));
+    await waitFor(() => expect(result.current.apps).toHaveLength(2));
     expect(result.current.error).toBeUndefined();
     expect(result.current.isLoading).toBe(false);
-    expect(result.current.apps).toEqual(result.current.data);
   });
 
   it("refresh re-fetches the collection", async () => {
     const { result } = renderHook(() => useApps(), { wrapper });
-    await waitFor(() => expect(result.current.data).toHaveLength(2));
+    await waitFor(() => expect(result.current.apps).toHaveLength(2));
     wire.state.apps.push(extraApp);
     await act(() => result.current.refresh());
-    expect(result.current.data).toHaveLength(3);
+    expect(result.current.apps).toHaveLength(3);
   });
 
   it("re-fetches on the opt-in polling interval without a remount", async () => {
     const { result } = renderHook(() => useApprovals({ pollMs: 25 }), { wrapper });
-    await waitFor(() => expect(result.current.data).toHaveLength(1));
+    await waitFor(() => expect(result.current.pending).toHaveLength(1));
     // A new pending approval appears server-side after the initial fetch.
     wire.state.approvals.push({ ...wire.state.approvals[0]!, id: "apr_2" });
-    await waitFor(() => expect(result.current.data).toHaveLength(2));
+    await waitFor(() => expect(result.current.pending).toHaveLength(2));
   });
 
   it("lists, gets, and deletes threads headlessly", async () => {
     const { result } = renderHook(() => useThreads(), { wrapper });
-    await waitFor(() => expect(result.current.data.map(thread => thread.id)).toEqual(["thr_1"]));
+    await waitFor(() => expect(result.current.threads.map(thread => thread.id)).toEqual(["thr_1"]));
     await expect(result.current.get("thr_1")).resolves.toMatchObject({ id: "thr_1" });
     await act(() => result.current.remove("thr_1"));
-    expect(result.current.data).toEqual([]);
+    expect(result.current.threads).toEqual([]);
     expect(wire.requests).toContainEqual(expect.objectContaining({ method: "DELETE", path: "/threads/thr_1" }));
   });
 
   it("exposes app export and import via the hook", async () => {
     const { result } = renderHook(() => useApps(), { wrapper });
-    await waitFor(() => expect(result.current.data).toHaveLength(2));
+    await waitFor(() => expect(result.current.apps).toHaveLength(2));
 
     const bytes = await result.current.exportApp("app_1");
     expect(Array.from(bytes)).toEqual([0, 1, 255]);
@@ -516,6 +518,6 @@ describe("ENG-219 — consistent { data, error, isLoading, refresh } + polling +
       imported = await result.current.importApp(new Uint8Array([9, 9]));
     });
     expect(imported).toMatchObject({ id: "app_imported" });
-    expect(result.current.data).toHaveLength(3);
+    expect(result.current.apps).toHaveLength(3);
   });
 });

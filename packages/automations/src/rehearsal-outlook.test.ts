@@ -14,6 +14,7 @@
  * where the shape is supported, checks it against what rehearse() really does.
  */
 import {
+  DEFAULT_TRIGGER_ID,
   VENDO_APP_FORMAT,
   type AppDocument,
   type ApprovalId,
@@ -21,6 +22,7 @@ import {
   type Guard,
   type StoreAdapter,
   type ToolDescriptor,
+  type Trigger,
   type ToolOutcome,
   type ToolRegistry,
   type RunContext,
@@ -71,8 +73,8 @@ const ctx = (subject = "user_a"): RunContext => ({
   sessionId: `session_${subject}`,
 });
 
-const app = (id: string, trigger: NonNullable<AppDocument["trigger"]>): AppDocument =>
-  ({ format: VENDO_APP_FORMAT, id, name: id, trigger });
+const app = (id: string, trigger: Omit<Trigger, "id">): AppDocument =>
+  ({ format: VENDO_APP_FORMAT, id, name: id, triggers: [{ id: DEFAULT_TRIGGER_ID, ...trigger } as Trigger] });
 
 const seedApp = async (
   store: StoreAdapter,
@@ -83,7 +85,7 @@ const seedApp = async (
   await store.records("vendo_apps").put({
     id: doc.id,
     data: { subject, enabled, doc },
-    refs: { subject, ...(doc.trigger === undefined ? {} : { trigger_kind: doc.trigger.on.kind }) },
+    refs: { subject, ...(doc.triggers?.[0] === undefined ? {} : { trigger_kind: doc.triggers[0].on.kind }) },
   });
 };
 
@@ -115,7 +117,7 @@ const outlookOf = async (doc: AppDocument, descriptors: ToolDescriptor[], enable
   const store = memoryStoreAdapter();
   await seedApp(store, doc, "user_a", enabled);
   const rows = await engine(store, descriptors).list(ctx());
-  return rows.find(row => row.app.id === doc.id)!.rehearsal!;
+  return rows.find(row => row.app.id === doc.id)!.triggers[0]!.rehearsal!;
 };
 
 describe("rehearsal outlook", () => {
@@ -194,7 +196,7 @@ describe("rehearsal outlook", () => {
 
     const store = memoryStoreAdapter();
     await seedApp(store, doc);
-    await expect(engine(store, [balanceTool]).rehearse(doc.id, ctx()))
+    await expect(engine(store, [balanceTool]).rehearse(doc.id, DEFAULT_TRIGGER_ID, ctx()))
       .rejects.toThrow(/steps automations only/);
   });
 
@@ -207,7 +209,7 @@ describe("rehearsal outlook", () => {
 
     const store = memoryStoreAdapter();
     await seedApp(store, doc);
-    await expect(engine(store, [balanceTool]).rehearse(doc.id, ctx()))
+    await expect(engine(store, [balanceTool]).rehearse(doc.id, DEFAULT_TRIGGER_ID, ctx()))
       .rejects.toThrow(/schedule triggers only/);
   });
 
@@ -250,7 +252,7 @@ describe("rehearsal outlook", () => {
 
     const store = memoryStoreAdapter();
     await seedApp(store, doc);
-    await expect(engine(store, [ledgerTool]).rehearse(doc.id, ctx()))
+    await expect(engine(store, [ledgerTool]).rehearse(doc.id, DEFAULT_TRIGGER_ID, ctx()))
       .rejects.toThrow(/unknown tool/);
   });
 
@@ -285,7 +287,7 @@ describe("rehearsal outlook", () => {
     // …and rehearse() really does replay nothing for it.
     const store = memoryStoreAdapter();
     await seedApp(store, stale);
-    const report = await engine(store, [ledgerTool]).rehearse(stale.id, ctx());
+    const report = await engine(store, [ledgerTool]).rehearse(stale.id, DEFAULT_TRIGGER_ID, ctx());
     expect(report.firings).toHaveLength(0);
 
     // A future instant can never have "would have fired" either.
@@ -324,7 +326,7 @@ describe("rehearsal outlook", () => {
       store,
       now: () => NOW,
     });
-    const outlook = (await automations.list(ctx())).find(row => row.app.id === doc.id)!.rehearsal!;
+    const outlook = (await automations.list(ctx())).find(row => row.app.id === doc.id)!.triggers[0]!.rehearsal!;
     expect(outlook).toEqual({ supported: true, actingSteps: 1, readSteps: 0, historicalReads: 0 });
   });
 
@@ -340,7 +342,7 @@ describe("rehearsal outlook", () => {
 
     const store = memoryStoreAdapter();
     await seedApp(store, doc, "user_a", true);
-    await expect(engine(store, [ledgerTool]).rehearse(doc.id, ctx()))
+    await expect(engine(store, [ledgerTool]).rehearse(doc.id, DEFAULT_TRIGGER_ID, ctx()))
       .rejects.toThrow(/pre-enable/);
   });
 });

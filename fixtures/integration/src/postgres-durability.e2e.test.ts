@@ -22,7 +22,7 @@ import {
   ADA,
   createStack,
   decideApprovals,
-  generationTurn,
+  screenAgentCreateTurns,
   importAutomation,
   readSse,
   resetFixture,
@@ -85,9 +85,10 @@ describe.skipIf(!POSTGRES_URL)("J9: core journeys on Postgres survive a serving-
     stack = await createStack({
       storeUrl: url,
       turns: [
-        toolCallTurn("vendo_apps_create", { prompt: "Build a durable card" }, "call_app"),
-        generationTurn(CREATE_DIALECT),
-        generationTurn(CREATE_DIALECT, "gen_2"),
+        toolCallTurn("vendo_make", { request: "Build a durable card" }, "call_app"),
+        // The screen agent answers this ask itself (it is THE engine for a
+        // `vendo_make` now), so the conductor spends no generation turns.
+        ...screenAgentCreateTurns(CREATE_DIALECT),
         textTurn("Created your durable app.", "t1"),
       ],
     });

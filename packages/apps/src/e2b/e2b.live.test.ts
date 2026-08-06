@@ -61,14 +61,13 @@ http.createServer((request, response) => {
 }).listen(Number(process.env.PORT || 8080));
 `;
 
-/** Install and start the conformance app through the ADAPTER-PRIVATE surface
-    (in production the in-box agent owns the inside of the box). */
+/** Install the conformance app through the seam's `files`, and start it through
+    the ADAPTER-PRIVATE exec (in production the in-box agent starts the app). */
 const bootstrap = async (machine: SandboxMachine): Promise<void> => {
   const box = machine as unknown as {
     exec(cmd: string, opts?: { cwd?: string; timeoutMs?: number }): Promise<{ code: number; stdout: string; stderr: string }>;
-    files: { write(path: string, bytes: Uint8Array | string): Promise<void> };
   };
-  await box.files.write("/app/server.js", CONFORMANCE_SERVER_SOURCE);
+  await machine.files.write("/app/server.js", CONFORMANCE_SERVER_SOURCE);
   const started = await box.exec(
     [
       "i=0",

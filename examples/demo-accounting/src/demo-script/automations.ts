@@ -29,7 +29,7 @@
  * scheduled time (src/server/asof.ts). That is what makes the firings differ
  * from one another rather than four identical replays of today.
  */
-import type { AppDocument } from "@vendoai/core"
+import { DEFAULT_TRIGGER_ID, type AppDocument } from "@vendoai/core"
 
 export type DemoAutomationKey = "digest" | "review" | "chase"
 
@@ -49,7 +49,8 @@ function deadlineDigestDocument(id: string): AppDocument {
     name: "Monday deadline digest",
     description:
       "Every Monday at 8:00 AM, review the filing calendar and the week's document activity.",
-    trigger: {
+    triggers: [{
+      id: DEFAULT_TRIGGER_ID,
       on: { kind: "schedule", cron: "0 8 * * 1" },
       run: {
         kind: "steps",
@@ -58,7 +59,7 @@ function deadlineDigestDocument(id: string): AppDocument {
           { id: "activity", tool: "host_listActivity", args: { limit: "20" } },
         ],
       },
-    },
+    }],
   }
 }
 
@@ -77,7 +78,8 @@ function pendingUploadReviewDocument(id: string): AppDocument {
     name: "Verify pending uploads",
     description:
       "Every Tuesday at 9:00 AM, verify Blue Bottle Coffee's uploads that are still awaiting firm review.",
-    trigger: {
+    triggers: [{
+      id: DEFAULT_TRIGGER_ID,
       on: { kind: "schedule", cron: "0 9 * * 2" },
       run: {
         kind: "steps",
@@ -98,7 +100,7 @@ function pendingUploadReviewDocument(id: string): AppDocument {
           },
         ],
       },
-    },
+    }],
   }
 }
 
@@ -113,7 +115,8 @@ function documentChaseDocument(id: string): AppDocument {
     name: "Friday document chase",
     description:
       "Every Friday at 5:00 PM, message the three clients closest to their filing deadline who still owe documents.",
-    trigger: {
+    triggers: [{
+      id: DEFAULT_TRIGGER_ID,
       on: { kind: "schedule", cron: "0 17 * * 5" },
       run: {
         kind: "steps",
@@ -134,7 +137,7 @@ function documentChaseDocument(id: string): AppDocument {
           },
         ],
       },
-    },
+    }],
   }
 }
 

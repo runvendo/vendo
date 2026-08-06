@@ -35,6 +35,7 @@ export const CREATE_VENDO_CONFIG_KEYS = [
   "auth",
   "principal",
   "tools",
+  "skills",
   "catalog",
   "theme",
   "brief",
@@ -62,7 +63,7 @@ export const CREATE_VENDO_CONFIG_KEYS = [
   "sessions",
   "approvals",
   "apps",
-  "packs",
+  "automations",
   "tours",
 ] as const;
 

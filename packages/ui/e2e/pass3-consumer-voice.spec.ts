@@ -16,10 +16,10 @@ import { openScenario } from "./helpers.js";
  * POSITIVE CONTROL: the pre-fix string, asserted to FAIL that same audit. An
  * audit that cannot fail proves nothing.
  *
- * Screenshots land in docs/superpowers/evidence/2026-08-03-ui-redesign/pass3/.
+ * Screenshots land in e2e/test-results/pass3/ (gitignored).
  */
 
-const SHOTS = new URL("../../../docs/superpowers/evidence/2026-08-03-ui-redesign/pass3/", import.meta.url).pathname;
+const SHOTS = new URL("./test-results/pass3/", import.meta.url).pathname;
 
 /** The exact sentence demo-bank shipped for the MODEL, seen live on
  *  `standing-01-pending.png` during this wave. */
@@ -32,8 +32,8 @@ const MODEL_INSTRUCTION =
 const ROUTE_FALLBACK = "POST /api/demo/pin";
 
 /** The scheduler's own refusal, as the run-history row used to print it. */
-const RUN_FAILURE_WIRE = "meter-exhausted: blocked by allowance: Vendo Cloud paused automation"
-  + " runs — the allowance for this billing period is used up (resets 2026-08-01)."
+const RUN_FAILURE_WIRE = "meter-exhausted: blocked by allowance: Vendo Cloud paused usage"
+  + " — the $49.00 included this billing period is used up (resets 2026-08-01)."
   + " Upgrade your plan (https://console.vendo.run/billing).";
 
 /** The card's ask, applied to the WIRE's own pending approval so the queue row
@@ -61,7 +61,7 @@ const FAILED_RUN = {
   steps: [],
   error: {
     code: "meter-exhausted",
-    message: "blocked by allowance: Vendo Cloud paused automation runs — the allowance for this"
+    message: "blocked by allowance: Vendo Cloud paused usage — the $49.00 included this"
       + " billing period is used up (resets 2026-08-01). Upgrade your plan"
       + " (https://console.vendo.run/billing) or bring your own infrastructure"
       + " (https://docs.vendo.run/byo).",

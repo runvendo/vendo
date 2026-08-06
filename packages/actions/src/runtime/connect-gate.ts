@@ -1,4 +1,4 @@
-import { canonicalJson, type AuditEvent, type RunContext, type ToolCall, type ToolOutcome, type ToolRegistry } from "@vendoai/core";
+import { auditContext, canonicalJson, type AuditEvent, type RunContext, type ToolCall, type ToolOutcome, type ToolRegistry } from "@vendoai/core";
 
 /** Discovery-discipline 2026-07-25 (criterion 11): the connect check runs
  * BEFORE any guard decision. Without it, a call to an unconnected brokered
@@ -74,11 +74,10 @@ export function createConnectGate(options: ConnectGateOptions): ConnectGate {
         id: "",
         at: "",
         kind: "tool-call",
-        principal: ctx.principal,
-        venue: ctx.venue,
-        presence: ctx.presence,
-        ...(ctx.appId === undefined ? {} : { appId: ctx.appId }),
-        ...(ctx.trigger === undefined ? {} : { trigger: ctx.trigger }),
+        // This is the ONLY row a gated call produces — the gate reports it
+        // itself, and the guard never sees the call — so a hand-copied ctx here
+        // is a turn's unconnected-connector attempt going unjoinable.
+        ...auditContext(ctx),
         tool: call.tool,
         inputPreview: preview(call),
         outcome: outcome.status,

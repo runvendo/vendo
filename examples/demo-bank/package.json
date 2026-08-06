@@ -10,6 +10,7 @@
     "build": "next build",
     "start": "next start",
     "mcp:e2e": "tsx scripts/mcp-e2e.ts",
+    "seed:console": "tsx scripts/seed-console.ts",
     "lint": "eslint",
     "test": "vitest run"
   },

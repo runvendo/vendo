@@ -1,0 +1,20 @@
+{
+  "//": "STANDALONE, deliberately: this file ships into a box that has no monorepo, so it must not `extends` anything outside its own directory. Extending ../../tsconfig.base.json broke `vite build` at provision time — esbuild resolves a source file's tsconfig, followed the extends, and failed on the missing base. The options below are tsconfig.base.json's, inlined.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": false,
+    "types": ["node", "vite/client"]
+  },
+  "include": ["src", "vite.config.ts", "provision.mjs", "scripts"]
+}

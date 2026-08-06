@@ -11,14 +11,14 @@ generated UI in a sandboxed, brand-native surface.
   (read `00-overview.md` first); layering enforced by `scripts/dependency-guard.mjs`
   in `pnpm lint`
 - `examples/` — the two demo hosts, `demo-bank` (Maple) and `demo-accounting`
-  (Cadence), `demo-template` (the skeleton the demo-creator clones per prospect),
-  and the framework integration examples (`ai-sdk-agent`, `mastra-agent`)
+  (Cadence), and the framework integration examples (`ai-sdk-agent`,
+  `mastra-agent`, `claude-code-plugin`, `mcp-agent`)
 - `corpus/` — init-extraction corpus harness (`pnpm corpus`)
 - `docs/` — integration docs; `docs-site/` — the public docs site
 
 ## Commands
 
-- `pnpm install` · `pnpm build` · `pnpm test` · `pnpm typecheck` · `pnpm lint` (turbo-cached)
+- `pnpm install` · `pnpm build` · `pnpm test` · `pnpm test:affected` (scoped to changed packages — the local default) · `pnpm typecheck` · `pnpm lint` (turbo-cached)
 - Demos: `pnpm --filter demo-bank dev` (Maple) · `pnpm --filter demo-accounting dev` (Cadence)
 
 ## Vendo Cloud
@@ -44,11 +44,15 @@ generated UI in a sandboxed, brand-native surface.
 
 ## Rules
 
+- Use Yousef's Vendo Cloud account for any and all testing.
+- Vendo-facing API/SDK/CLI design additionally routes through the
+  **vendo-dx** skill (on top of api-design-dx).
 - Never commit to `main`; branch and open a PR.
 - UI-affecting changes are verified in a real browser with screenshots in the
   PR. Tests and typecheck alone don't count.
-- `pnpm build && pnpm test && pnpm typecheck && pnpm lint` must be green
-  before any PR.
+- Local gate = `pnpm build && pnpm test:affected && pnpm typecheck && pnpm lint`
+  on the touched scope. The FULL suite runs only in CI — the PR's green `ci`
+  check is the gate of record; never run the full suite locally.
 
 ## Tests
 
@@ -70,10 +74,26 @@ generated UI in a sandboxed, brand-native surface.
   test's own timeout. The test timeout is the hang-detector; a tighter inner
   budget is a second, invisible speed limit that reports a product bug when
   the machine is merely busy.
-- `pnpm test` runs turbo with `--continue` and `--concurrency=4`, the same
-  bound CI has used since #340. `--continue` so one red package never hides
-  every other package's result; the bound because unbounded parallelism runs
-  ~27 vitest workers at once on a 12-core laptop (load average ~150) and the
-  full-stack suites in `packages/vendo` then miss their 30s budget on work
-  that takes 5s alone. A timeout is a hang-detector; do not raise one to buy
-  headroom the machine never had.
+- The full suite (`pnpm test`) is CI's job now — sharded into 8 vitest shards
+  for the big three (vendo×3, store×3, ui×2), 2 turbo groups for the remaining
+  packages, and a `hermetic-extras` job for the orphan suites. It still runs
+  with `--continue` and `--concurrency=4`, the same bound CI has used since
+  #340: `--continue` so one red package never hides every other package's
+  result; the bound because unbounded parallelism runs ~27 vitest workers at
+  once on a 12-core laptop (load average ~150) and the full-stack suites in
+  `packages/vendo` then miss their 30s budget on work that takes 5s alone. A
+  timeout is a hang-detector; do not raise one to buy headroom the machine
+  never had. Locally, run `pnpm test:affected` instead — same caps, scoped to
+  changed packages; never run the full suite on a laptop.
+- Turbo's bound is only the OUTER layer. Each package's vitest sizes its own
+  worker pool to the CPU count, so 4 packages at a time meant ~60 processes and
+  ~13GB on a 12-core laptop, and an OOM kill on a 15GB runner — the PGlite
+  suites (`store`, `guard`, the fixtures) boot an embedded Postgres per worker.
+  `VITEST_MIN_FORKS/MAX_FORKS` and `VITEST_MIN_THREADS/MAX_THREADS` in the root
+  `test` and `test:coverage` scripts cap the inner layer at 4 x 2 workers, which
+  is why CI runs those scripts instead of calling turbo itself. Set them in any
+  new script or workflow that runs the suite. The MIN half is not optional:
+  vitest 2.1 defaults `minThreads` to the CPU count independently of the max, so
+  a max-only cap makes Tinypool throw `minThreads and maxThreads must not
+  conflict` before a single test runs. `fileParallelism: false` still wins where
+  a package sets it, so the serial suites stay serial.

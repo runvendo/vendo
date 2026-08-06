@@ -46,7 +46,7 @@ function hostFiles(projection: HostProjection | undefined): Map<string, Uint8Arr
  */
 export function workspaceStore(store: VendoStore, options: { files?: FilesAdapter } = {}): {
   /** One workspace, one turn. Writes stage until `commit()`. `host` projects
-      the read-only mount (pack skills, host knowledge) for this turn. */
+      the read-only mount (skills, host knowledge) for this turn. */
   open(
     principal: Principal,
     opts?: {

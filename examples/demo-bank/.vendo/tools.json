@@ -151,7 +151,7 @@
         "path": "/maple/api/demo/reset",
         "argsIn": "body"
       },
-      "srcHash": "sha256:02d9438f66a05b4f5776fb8b727bc8aefdf7fac787f96d4a41afe60682a4dc1c"
+      "srcHash": "sha256:9edce63de2e9e6c0bdaa55bbeef09065974c855c0b4706a390e9a53c363b330d"
     },
     {
       "name": "host_getAccount",

@@ -1,6 +1,7 @@
 import { createActions, VENDO_OVERRIDES_FORMAT, type ExtractedTool, type OverridesFile } from "@vendoai/actions";
 import { createAutomations } from "@vendoai/automations";
 import {
+  DEFAULT_TRIGGER_ID,
   VENDO_APP_FORMAT,
   type AppDocument,
   type ApprovalId,
@@ -21,10 +22,17 @@ import { describe, expect, it } from "vitest";
 // engine's `continueSteps` — automations is the reference implementation.
 // One fixture table of step programs runs through BOTH implementations;
 // the invoke sequences (tool, args), output propagation (visible through
-// later-step args), and halt/park behavior must be identical. The only
-// sanctioned divergence is the root binding name: automations binds the
-// trigger payload as `event`, compounds bind the call arguments as `args`
-// (decision 7) — fixtures write `$ROOT` and each side substitutes its name.
+// later-step args), and halt behavior must be identical. The sanctioned
+// divergences are two:
+//   - the root binding name: automations binds the trigger payload as `event`,
+//     compounds bind the call arguments as `args` (decision 7) — fixtures write
+//     `$ROOT` and each side substitutes its name;
+//   - what happens AFTER a mid-walk ask. A compound runs with its caller
+//     PRESENT, so the ask is answered and the same call re-issued, resuming the
+//     walk. An away run has no waiting state at all (07 §5): it fails LOUDLY at
+//     that step (`error` / `needs-permission`), a decision resumes nothing, and
+//     the remedy is `runs.rerun`. The two therefore share a call sequence only
+//     through the asking step, and each side's own ending is asserted below.
 
 const principal: Principal = { kind: "user", subject: "user_parity" };
 const presentCtx: RunContext = {
@@ -44,9 +52,10 @@ interface Fixture {
   root: Record<string, Json>;
   /** Scripted outcomes, shared by both sides; index is the global invoke ordinal. */
   respond: Respond;
-  /** For park fixtures: outcomes after the approval is granted. */
+  /** For ask fixtures: outcomes after the approval is granted. Only the COMPOUND
+   *  side ever reaches these — an away run is not resumed by a decision. */
   respondAfterResume?: Respond;
-  expected: "ok" | "halt" | "park-resume";
+  expected: "ok" | "halt" | "asks";
 }
 
 const ok = (output: Json): ToolOutcome => ({ status: "ok", output });
@@ -110,7 +119,7 @@ const fixtures: Fixture[] = [
     expected: "halt",
   },
   {
-    name: "a mid-walk park resumes to completion without re-running finished steps",
+    name: "a mid-walk ask: the compound resumes without re-running finished steps, the away run fails loud",
     steps: [
       { id: "first", tool: "tool_a" },
       { id: "asks", tool: "tool_b", args: { from: "steps.first.value" } },
@@ -121,7 +130,7 @@ const fixtures: Fixture[] = [
       ? { status: "pending-approval", approvalId: "apr_parity_1" }
       : ok({ value: 7 })),
     respondAfterResume: () => ok({ value: 8 }),
-    expected: "park-resume",
+    expected: "asks",
   },
 ];
 
@@ -177,7 +186,7 @@ async function runCompound(fixture: Fixture): Promise<{ trace: Trace; outcomes: 
   });
   const call: ToolCall = { id: "call_parity_1", tool: "compound_fixture", args: fixture.root };
   const outcomes: ToolOutcome[] = [await actions.execute(call, presentCtx)];
-  if (fixture.expected === "park-resume") {
+  if (fixture.expected === "asks") {
     resumed = true;
     outcomes.push(await actions.execute(call, presentCtx));
   }
@@ -225,10 +234,11 @@ async function runAutomations(fixture: Fixture): Promise<{ trace: Trace; finalSt
     format: VENDO_APP_FORMAT,
     id: "app_parity",
     name: "parity",
-    trigger: {
+    triggers: [{
+      id: DEFAULT_TRIGGER_ID,
       on: { kind: "host-event", event: "go" },
       run: { kind: "steps", steps: substituteRoot(fixture.steps, "event") },
-    },
+    }],
   };
   await store.records("vendo_apps").put({
     id: doc.id,
@@ -274,9 +284,15 @@ async function runAutomations(fixture: Fixture): Promise<{ trace: Trace; finalSt
   expect(runIds).toHaveLength(1);
   const runCtx: RunContext = { ...presentCtx, venue: "automation" };
 
-  if (fixture.expected === "park-resume") {
-    const parked = await engine.runs.get(runIds[0]!, runCtx);
-    expect(parked?.status).toBe("pending-approval");
+  if (fixture.expected === "asks") {
+    // There is no waiting state away: the walk met a permission nobody had
+    // granted, so the run is already TERMINAL, naming the tool it needed.
+    const asked = await engine.runs.get(runIds[0]!, runCtx);
+    expect(asked).toMatchObject({
+      status: "error",
+      error: { code: "needs-permission", tool: fixture.steps.find((step) => step.id === "asks")!.tool },
+    });
+    // Deciding it afterwards is still exercised — to show it runs NOTHING.
     resumed = true;
     guard.decide("apr_parity_1" as ApprovalId, true);
     await flush();
@@ -292,9 +308,14 @@ describe("compound walker parity with the automations engine", () => {
       const compoundResult = await runCompound(fixture);
       const automationsResult = await runAutomations(fixture);
 
-      // The theorem: both implementations issue the IDENTICAL call sequence.
-      expect(compoundResult.trace.invokes.map(({ tool, args }) => ({ tool, args })))
-        .toEqual(automationsResult.trace.invokes.map(({ tool, args }) => ({ tool, args })));
+      // The theorem: both implementations issue the IDENTICAL call sequence —
+      // through the asking step, past which the two no longer have a shared
+      // story to tell (see the header note). Everything before the ask, and
+      // every non-asking fixture, is compared whole.
+      const askIndex = fixture.steps.findIndex((step) => step.id === "asks");
+      const shared = fixture.expected === "asks" ? askIndex + 1 : compoundResult.trace.invokes.length;
+      expect(compoundResult.trace.invokes.slice(0, shared).map(({ tool, args }) => ({ tool, args })))
+        .toEqual(automationsResult.trace.invokes.slice(0, shared).map(({ tool, args }) => ({ tool, args })));
 
       if (fixture.expected === "ok") {
         expect(compoundResult.outcomes[0]!.status).toBe("ok");
@@ -304,16 +325,18 @@ describe("compound walker parity with the automations engine", () => {
         expect(compoundResult.outcomes[0]!.status).toBe("error");
         expect(automationsResult.finalStatus).toBe("error");
       }
-      if (fixture.expected === "park-resume") {
+      if (fixture.expected === "asks") {
+        // The compound's caller is PRESENT: it parks, the approval is answered,
+        // and re-issuing the same call finishes the walk.
         expect(compoundResult.outcomes[0]).toEqual({ status: "pending-approval", approvalId: "apr_parity_1" });
         expect(compoundResult.outcomes[1]!.status).toBe("ok");
-        expect(automationsResult.finalStatus).toBe("ok");
-        // Verbatim re-issue on BOTH sides: the parked call reappears with its original id and args.
+        // Verbatim re-issue: the parked call reappears with its original id and args.
         const compoundIds = compoundResult.trace.invokes.map(({ id }) => id);
-        const automationIds = automationsResult.trace.invokes.map(({ id }) => id);
-        const parkedIndex = fixture.steps.findIndex((step) => step.id === "asks");
-        expect(compoundIds[parkedIndex + 1]).toBe(compoundIds[parkedIndex]);
-        expect(automationIds[parkedIndex + 1]).toBe(automationIds[parkedIndex]);
+        expect(compoundIds[askIndex + 1]).toBe(compoundIds[askIndex]);
+        // The away run stays failed through the decision, and issues nothing
+        // more: the approval bought authority for the NEXT run, not this one.
+        expect(automationsResult.finalStatus).toBe("error");
+        expect(automationsResult.trace.invokes).toHaveLength(askIndex + 1);
       }
     });
   }

@@ -221,21 +221,6 @@ const LOOPS = {
       await wait(4200);
     },
   },
-  "loop-overlay-grow": {
-    source: "playground",
-    path: "/?embed=1#overlay-launcher",
-    trim: 0.8,
-    speed: 1.6,
-    async play(page) {
-      await page.locator('button[aria-controls="vendo-overlay-dialog"]').click();
-      await wait(700);
-      const box = page.locator("form.fl-composer textarea");
-      await box.waitFor();
-      await box.fill("Which renewals are at risk?");
-      await box.press("Enter");
-      await wait(5200);
-    },
-  },
   "loop-voice-stage": {
     source: "harness",
     path: "/stage",
@@ -247,22 +232,6 @@ const LOOPS = {
       await startVoice(page);
       await page.getByRole("button", { name: "Approve" }).waitFor({ timeout: 15_000 });
       await wait(2500);
-    },
-  },
-  "loop-theme-retheme": {
-    source: "playground",
-    path: "/#activities",
-    trim: 1.2,
-    speed: 1,
-    async play(page) {
-      await page.getByRole("button", { name: "Open theme editor" }).click();
-      await page.getByRole("dialog", { name: "Theme editor" }).waitFor();
-      await wait(600);
-      for (const preset of ["Ultramarine", "Dark violet", "Playful round", "Default black"]) {
-        await page.getByRole("button", { name: preset }).click();
-        await wait(900);
-      }
-      await wait(400);
     },
   },
 };

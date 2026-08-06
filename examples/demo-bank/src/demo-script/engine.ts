@@ -20,6 +20,7 @@
  * Any prompt that doesn't match passes through to the real agent untouched.
  */
 import {
+  DEFAULT_TRIGGER_ID,
   toVendoWirePart,
   vendoViewStreamId,
   type ApprovalRequest,
@@ -350,7 +351,7 @@ async function enableAutomation(
   key: AutomationKey,
 ): Promise<{ enabled: boolean; missing: ApprovalRequest[]; grantSetId?: string }> {
   try {
-    return await vendo.automations.enable(demoAppId(key, ctx.principal.subject), ctx);
+    return await vendo.automations.enable(demoAppId(key, ctx.principal.subject), DEFAULT_TRIGGER_ID, ctx);
   } catch {
     return { enabled: false, missing: [] };
   }
@@ -366,14 +367,18 @@ async function automationCardPart(writer: Writer, ctx: RunContext, key: Automati
   if (app === null) return;
   const entries = await vendo.automations.list(ctx);
   const entry = entries.find((candidate) => candidate.app.id === appId);
+  // Arming is per trigger; the seeded demo automations declare exactly one,
+  // which reads back under DEFAULT_TRIGGER_ID.
+  const armed = entry?.triggers.find((candidate) => candidate.trigger.id === DEFAULT_TRIGGER_ID);
+  const trigger = app.triggers?.find((candidate) => candidate.id === DEFAULT_TRIGGER_ID);
   write(writer, toVendoWirePart({
     type: "data-vendo-automation",
     appId,
     name: app.name,
-    enabled: entry?.enabled === true,
-    ...(app.trigger === undefined ? {} : { trigger: app.trigger }),
+    enabled: armed?.enabled === true,
+    ...(trigger === undefined ? {} : { trigger }),
     ...(app.description === undefined ? {} : { description: app.description }),
-    ...(entry?.pendingGrants === undefined ? {} : { pendingGrants: entry.pendingGrants }),
+    ...(armed?.pendingGrants === undefined ? {} : { pendingGrants: armed.pendingGrants }),
   }, `vendo-automation:${appId}`) as UIMessageChunk);
 }
 

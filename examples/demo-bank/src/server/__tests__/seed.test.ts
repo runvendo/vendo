@@ -6,16 +6,16 @@ const anchor = new Date("2026-06-29T12:00:00-07:00")
 describe("buildSeed", () => {
   const data = buildSeed(anchor)
 
-  it("creates four accounts including checking and savings", () => {
+  it("creates seven accounts including checking and savings", () => {
     const kinds = data.accounts.map(a => a.kind)
     expect(kinds).toContain("checking")
     expect(kinds).toContain("savings")
-    expect(data.accounts.length).toBe(4)
+    expect(data.accounts.length).toBe(7)
   })
 
   it("generates a substantial, deterministic transaction history", () => {
     const a = buildSeed(anchor); const b = buildSeed(anchor)
-    expect(a.transactions.length).toBeGreaterThanOrEqual(120)
+    expect(a.transactions.length).toBeGreaterThanOrEqual(900)
     expect(a.transactions.map(t => t.id)).toEqual(b.transactions.map(t => t.id))
   })
 
@@ -41,5 +41,25 @@ describe("buildSeed", () => {
     expect(data.payees.length).toBeGreaterThan(0)
     expect(data.goals.length).toBeGreaterThan(0)
     expect(data.notifications.length).toBeGreaterThan(0)
+  })
+})
+
+describe("buildSeed low-balance scenario", () => {
+  const data = buildSeed(anchor, "low-balance")
+
+  it("lands net worth exactly at $54,907.15 — below the $55,000 watcher threshold", () => {
+    const net = data.accounts.reduce((sum, a) => sum + a.balance, 0)
+    expect(net).toBe(5490715)
+  })
+
+  it("keeps all seven accounts and the checking/savings pins", () => {
+    expect(data.accounts).toHaveLength(7)
+    expect(data.accounts.find(a => a.id === "acc_checking")!.balance).toBe(941220)
+    expect(data.accounts.find(a => a.id === "acc_savings")!.balance).toBe(2814135)
+  })
+
+  it("keeps the DoorDash plant as the most recent transaction", () => {
+    const sorted = [...data.transactions].sort((x, y) => +new Date(y.timestamp) - +new Date(x.timestamp))
+    expect(sorted[0].merchant).toBe("DoorDash")
   })
 })

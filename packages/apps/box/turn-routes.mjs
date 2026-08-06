@@ -357,7 +357,7 @@ export const createSessionRoutes = (options = {}) => {
         return { status: 202, body: { messageId: await startMessage(payload) } };
       }
 
-      const match = /^\/session\/([^/]+)\/(poll|interrupt)$/.exec(pathname);
+      const match = /^\/session\/([^/]+)\/(poll|interrupt|steer)$/.exec(pathname);
       if (match === null) return { status: 404, body: { error: `unknown route: ${pathname}` } };
       const state = messages.get(match[1]);
       if (state === undefined) return { status: 404, body: { error: `unknown message: ${match[1]}` } };
@@ -365,6 +365,20 @@ export const createSessionRoutes = (options = {}) => {
       if (match[2] === "poll") {
         const cursor = Number.isInteger(payload?.cursor) ? payload.cursor : 0;
         return { status: 200, body: await poll(state, cursor, payload?.waitMs) };
+      }
+      if (match[2] === "steer") {
+        // The user typed while this message was being answered. Straight into
+        // the live session, which hands it to the model at its next step — the
+        // box queues nothing, because the SDK's own input stream already does.
+        if (typeof payload?.prompt !== "string" || payload.prompt.trim() === "") {
+          return { status: 400, body: { error: "prompt must be a non-empty string" } };
+        }
+        // Only the message IN FLIGHT can take one: a finished message has no turn
+        // to fold the words into, and the host's own queue is the fallback. Said
+        // as an answer rather than an error — "it did not land" is a fact the
+        // host acts on, not a failure.
+        const landed = state === current && session?.steer(payload.prompt) === true;
+        return { status: 200, body: { landed } };
       }
       // The user hit stop. The SESSION survives — only this turn is cut short,
       // which is the whole reason a live session interrupts instead of aborting.

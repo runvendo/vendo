@@ -15,6 +15,7 @@ import { describe, expect, test } from "vitest";
 import {
   createClaudeSession,
   VENDO_MCP_SERVER,
+  type ClaudeSession,
   type ClaudeTurnEvent,
   type ClaudeTurnTool,
   type GuardedCall,
@@ -23,6 +24,9 @@ import {
 interface ScriptedTurn {
   say?: string;
   use?: { name: string; input: Record<string, unknown> };
+  /** Hold this step until the test lets it go — the only way to observe that a
+   *  caller's promise is still PENDING while the session is still working. */
+  gate?: () => Promise<void>;
 }
 
 interface SessionRecord {
@@ -68,6 +72,7 @@ function fakeSessionSdk(
               : String(message.message.content?.[0]?.text ?? "");
             record.prompts.push(text);
             for (const step of script(text, index)) {
+              if (step.gate !== undefined) await step.gate();
               if (step.say !== undefined) {
                 yield {
                   type: "assistant",
@@ -347,5 +352,208 @@ describe("the four channels the live session opens", () => {
     await session.end();
     expect(events.filter((event) => event.type === "text").map((event) => (event as { delta: string }).delta))
       .toEqual(["only the block"]);
+  });
+});
+
+/** A promise plus the handle that settles it. */
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((settle) => { resolve = settle; });
+  return { promise, resolve };
+}
+
+describe("steering the turn in flight", () => {
+  test("the words ride the SAME open input stream — one query(), two prompts, one turn", async () => {
+    const record: SessionRecord = { queries: 0, prompts: [], options: {}, used: [] };
+    const events: ClaudeTurnEvent[] = [];
+    let session: ClaudeSession | undefined;
+    session = createClaudeSession({
+      cwd: "/workspace",
+      env: {},
+      emit: (event) => {
+        events.push(event);
+        // The user types mid-build. `emit` is called from INSIDE the SDK's drain
+        // of message 1, so this push lands while message 1's turn is running —
+        // which is the whole situation `steer` exists for.
+        if (event.type === "text" && event.delta === "building it") {
+          expect(session!.steer("group by client instead")).toBe(true);
+        }
+      },
+      sdk: fakeSessionSdk(
+        (_prompt, index) => [{ say: index === 0 ? "building it" : "Got it — regrouping by client." }],
+        record,
+      ) as never,
+    } as never);
+
+    await session.send("build me a reconciliation workbench");
+    await session.end();
+
+    // ONE query for the conversation: a steer is a PUSH into an inbox that never
+    // closed, never a second session and never a second turn.
+    expect(record.queries).toBe(1);
+    expect(record.prompts).toEqual(["build me a reconciliation workbench", "group by client instead"]);
+    expect(events.filter((event) => event.type === "text").map((event) => (event as { delta: string }).delta))
+      .toEqual(["building it", "Got it — regrouping by client."]);
+  });
+
+  test("a steer does NOT settle the caller's turn early", async () => {
+    // THE EARLY-SETTLE TRAP. Every extra user message the SDK answers produces
+    // its own `result`, and `send()` settles on the next one it sees. A naive
+    // steer therefore resolves the ORIGINAL send() at message 1's result — the
+    // box door then marks the message done, the poll loop returns, and the turn
+    // ends on the wire while the box is still working on the steer.
+    const record: SessionRecord = { queries: 0, prompts: [], options: {}, used: [] };
+    const gate = deferred();
+    const entered = deferred();
+    let session: ClaudeSession | undefined;
+    session = createClaudeSession({
+      cwd: "/workspace",
+      env: {},
+      emit: (event) => {
+        if (event.type === "text" && event.delta === "building it") session!.steer("group by client instead");
+      },
+      sdk: fakeSessionSdk(
+        (_prompt, index) => (index === 0
+          ? [{ say: "building it" }]
+          // Message 2's turn is HELD open, so "is send() still pending?" has a
+          // deterministic answer rather than a microtask race.
+          : [{ gate: async () => { entered.resolve(); await gate.promise; }, say: "Got it" }]),
+        record,
+      ) as never,
+    } as never);
+
+    const sending = session.send("build me a reconciliation workbench");
+    let settled = false;
+    void sending.then(() => { settled = true; });
+
+    await entered.promise;
+    // Drain every microtask and macrotask that can run while the steer's turn is
+    // held. Nothing left to do but wait on the gate.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(settled).toBe(false);
+
+    gate.resolve();
+    await sending;
+    expect(record.prompts).toEqual(["build me a reconciliation workbench", "group by client instead"]);
+    await session.end();
+  });
+
+  test("N steers swallow exactly N extra results — the turn ends when the LAST one does", async () => {
+    const record: SessionRecord = { queries: 0, prompts: [], options: {}, used: [] };
+    let session: ClaudeSession | undefined;
+    session = createClaudeSession({
+      cwd: "/workspace",
+      env: {},
+      emit: (event) => {
+        if (event.type !== "text") return;
+        if (event.delta === "one") session!.steer("second thought");
+        if (event.delta === "two") session!.steer("third thought");
+      },
+      sdk: fakeSessionSdk((_prompt, index) => [{ say: ["one", "two", "three"][index] ?? "done" }], record) as never,
+    } as never);
+
+    await session.send("start");
+    expect(record.prompts).toEqual(["start", "second thought", "third thought"]);
+    await session.end();
+  });
+
+  test("a steer with no turn in flight is refused — there would be nobody to settle it", async () => {
+    const { session } = openSession(() => [{ say: "ok" }]);
+    expect(session.steer("too early")).toBe(false);
+    await session.send("hi");
+    expect(session.steer("too late")).toBe(false);
+    await session.end();
+  });
+
+  test("stop after a steer still ends the turn — a swallowed result must not outlive an interrupt", async () => {
+    // The interrupt cuts the session's remaining work short, so the extra
+    // `result` a steer was counting on may never arrive. Left counted, the
+    // caller's promise would hang to the message budget (15 minutes).
+    const record: SessionRecord = { queries: 0, prompts: [], options: {}, used: [] };
+    let session: ClaudeSession | undefined;
+    session = createClaudeSession({
+      cwd: "/workspace",
+      env: {},
+      emit: (event) => {
+        if (event.type === "text" && event.delta === "building it") {
+          session!.steer("group by client instead");
+          // Stop, before the SDK ever reaches the steered message.
+          void session!.interrupt();
+        }
+      },
+      sdk: {
+        query: ({ prompt }: { prompt: unknown }) => ({
+          async *[Symbol.asyncIterator]() {
+            yield { type: "system", subtype: "init", session_id: "s" };
+            for await (const _message of prompt as AsyncIterable<unknown>) {
+              record.prompts.push("m");
+              yield { type: "assistant", uuid: "a1", message: { content: [{ type: "text", text: "building it" }] } };
+              // An interrupted session answers ONE result and stops reading its
+              // input — the steered message is never picked up.
+              yield { type: "result", subtype: "success", session_id: "s" };
+              return;
+            }
+          },
+          interrupt: async () => undefined,
+        }),
+      } as never,
+    } as never);
+
+    await expect(session.send("build me a reconciliation workbench")).resolves.toBeUndefined();
+    await session.end();
+  });
+
+  test("the steer × beats seam: no `finishing` on a steered result, and the rework re-narrates its phase", async () => {
+    // The seam #810 (beats) and this PR (steer) create together, which neither
+    // tested alone. A steered result is an INTERMEDIATE boundary, so:
+    //   - `finishing` must fire ONCE, on the FINAL result — never on the steered
+    //     one, or the build claims to be done while the correction's rework is
+    //     still ahead (§3.4, no progress-lie);
+    //   - a phase beat must fire AGAIN in the rework, because the steer carries
+    //     the turn on and `narrated.clear()` frees it to re-narrate — that IS the
+    //     mockup's scene 3 ("Regrouping by client" as a fresh beat).
+    const events: ClaudeTurnEvent[] = [];
+    let session: ClaudeSession | undefined;
+    session = createClaudeSession({
+      cwd: "/workspace",
+      env: {},
+      emit: (event) => {
+        events.push(event);
+        if (event.type === "text" && event.delta === "building it") {
+          session!.steer("group by client instead");
+        }
+      },
+      sdk: {
+        query: ({ prompt }: { prompt: unknown }) => ({
+          async *[Symbol.asyncIterator]() {
+            yield { type: "system", subtype: "init", session_id: "s" };
+            let index = 0;
+            for await (const _message of prompt as AsyncIterable<unknown>) {
+              // Both the first pass and the rework hit a WRITING tool, so each
+              // SHOULD produce a `building` beat — the second only if narration
+              // was cleared on the steered result in between.
+              yield { type: "assistant", uuid: `w${index}`, message: { content: [{ type: "tool_use", name: "Write" }] } };
+              yield {
+                type: "assistant",
+                uuid: `t${index}`,
+                message: { content: [{ type: "text", text: index === 0 ? "building it" : "regrouping" }] },
+              };
+              yield { type: "result", subtype: "success", session_id: "s" };
+              index += 1;
+            }
+          },
+        }),
+      } as never,
+    } as never);
+
+    await session.send("build me a reconciliation workbench");
+    await session.end();
+
+    const phases = events.filter((event) => event.type === "status").map((event) => (event as { phase: string }).phase);
+    // `finishing` exactly once — the final result only, never the steered one.
+    expect(phases.filter((phase) => phase === "finishing")).toEqual(["finishing"]);
+    // `building` twice — the rework re-narrated, which only happens if the
+    // steered result cleared narration. Without that clear this would be one.
+    expect(phases.filter((phase) => phase === "building")).toEqual(["building", "building"]);
   });
 });

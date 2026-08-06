@@ -14,6 +14,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  DEFAULT_TRIGGER_ID,
   VENDO_APP_FORMAT,
   VENDO_TREE_FORMAT,
   type AppDocument,
@@ -202,11 +203,12 @@ describe("schedule", () => {
     const { vendo } = await compose();
     await vendo.apps.importApp(
       app("app_sched", {
-        trigger: {
+        triggers: [{
+          id: DEFAULT_TRIGGER_ID,
           on: { kind: "schedule", cron: "0 9 * * *" },
           run: { kind: "agentic", prompt: "summarise yesterday" },
-        },
-      } as Partial<AppDocument>),
+        }],
+      }),
       ctx,
     );
     const [stored] = await vendo.apps.list(ctx);
@@ -220,7 +222,7 @@ describe("schedule", () => {
 
     // The stored document really changed — the verb is a write, not a report.
     const after = await vendo.apps.get(stored?.id as never, ctx);
-    expect(after?.trigger?.on).toEqual({ kind: "schedule", cron: "30 7 * * 1" });
+    expect(after?.triggers?.[0]?.on).toEqual({ kind: "schedule", cron: "30 7 * * 1" });
   });
 
   it("refuses an app with no automation to schedule, and says what to do instead", async () => {

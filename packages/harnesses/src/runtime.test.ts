@@ -5,7 +5,7 @@
  * frozen routing table. Harness adapters contain no persistence and no wire code.
  */
 import { defineHarness } from "./define.js";
-import type { Harness, HarnessEvent, ThreadId, Turn } from "@vendoai/core";
+import { SSE_KEEPALIVE_FRAME, type Harness, type HarnessEvent, type ThreadId, type Turn } from "@vendoai/core";
 import type { UIMessage } from "ai";
 import { describe, expect, it, vi } from "vitest";
 import { createHarnessRuntime, type TurnRunInput } from "./runtime.js";
@@ -42,6 +42,9 @@ function fixture(options: {
   tools?: Record<string, { descriptor: ReturnType<typeof readTool>; execute: () => unknown }>;
   transcript?: ReturnType<typeof testTranscript>;
   harnessState?: ReturnType<typeof memoryHarnessStateStore>;
+  /** Composition's publish hook — how the process's own doors (and the steer
+   *  route) reach the turn in flight. */
+  liveTurn?: Parameters<typeof createHarnessRuntime>[0]["liveTurn"];
 } = {}) {
   const guard = options.guard ?? testGuard();
   const registry = boundRegistry(
@@ -63,6 +66,7 @@ function fixture(options: {
     skills: testSkills([{ name: "building-apps", description: "how to build an app", body: "# body" }]),
     transcript: countingTranscript,
     harnessState: options.harnessState ?? memoryHarnessStateStore(),
+    ...(options.liveTurn === undefined ? {} : { liveTurn: options.liveTurn }),
   });
   /** Run a turn AND drain the response, exactly as a host route does. The
    *  stream's onFinish (persistence, state, audit) only fires on consumption —
@@ -131,6 +135,39 @@ describe("turn assembly", () => {
     await expect(seen!.skills.load("building-apps")).resolves.toBe("# body");
   });
 
+  it("attaches the turn's transcript to the ctx the guard reads (RunContext.messages)", async () => {
+    // Agents spec 2026-08-04: guards and judges weigh a call against what the
+    // user actually asked, so the ctx that reaches `guard.check` carries a
+    // transcript accessor — the SAME frozen view the harness holds.
+    const seen: Parameters<TestGuard["check"]>[2][] = [];
+    const base = testGuard();
+    const guard: TestGuard = {
+      ...base,
+      check: async (call, descriptor, runCtx) => {
+        seen.push(runCtx);
+        return base.check(call, descriptor, runCtx);
+      },
+    };
+    const f = fixture({
+      guard,
+      tools: { ping: { descriptor: readTool("ping"), execute: () => ({ ok: true }) } },
+    });
+    const harness = defineHarness({
+      name: "caller",
+      async *run(turn) {
+        await turn.tools.call("ping", {});
+      },
+    });
+    await f.run(harness, { messages: [userMessage("m1", "first"), userMessage("m2", "second")] });
+    // Every check this call produced (preview and execute both consult the
+    // guard) saw the same enriched ctx.
+    expect(seen.length).toBeGreaterThan(0);
+    for (const runCtx of seen) {
+      expect(runCtx.messages?.().map((message) => message.id)).toEqual(["m1", "m2"]);
+    }
+    expect(Object.isFrozen(seen[0]!.messages?.())).toBe(true);
+  });
+
   it("gives the harness a live abort signal", async () => {
     const f = fixture();
     const controller = new AbortController();
@@ -150,8 +187,10 @@ describe("turn assembly", () => {
     const f = fixture();
     // Empty but well-formed is the established behaviour (today's agent closes
     // the same way on a pre-turn abort): the terminator is what a client needs.
+    // The keepalive rides in front of it (core/sse-keepalive.ts) — an SSE comment
+    // frame, so "empty" now means "one frame of nothing, then the terminator".
     const raw = await (await f.runRaw(scripted([]))).text();
-    expect(raw).toBe("data: [DONE]\n\n");
+    expect(raw).toBe(`${SSE_KEEPALIVE_FRAME}data: [DONE]\n\n`);
   });
 });
 
@@ -598,5 +637,126 @@ describe("the runtime never lets a harness reach the wire itself", () => {
       }),
     );
     expect(unsubscribe).toHaveBeenCalled();
+  });
+});
+
+describe("mid-build steering — the user's words joining a turn already running (§10.2)", () => {
+  it("the steered words land in the transcript exactly once, in order, at their own seq", async () => {
+    // TRAP 2. `persistTurn` writes one row per message at ITS INDEX in the turn's
+    // own message array, at turn end. A side-channel write to the store cannot
+    // know that index — it lands at the seq the ASSISTANT message will claim, and
+    // `seq` is the only ordering authority the transcript has (store schema.ts).
+    // Two rows at one seq is an undefined read order: the user's steer can render
+    // after the reply it caused. So the message must join the in-flight turn's own
+    // list and be persisted by the same pass as everything else.
+    let steer: ((text: string, messageId: string) => Promise<boolean>) | undefined;
+    const f = fixture({
+      liveTurn: (published) => {
+        steer = published.steer;
+        return () => undefined;
+      },
+    });
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => { release = resolve; });
+    const heard: string[] = [];
+    const harness = defineHarness({
+      name: "steerable",
+      async *run(turn) {
+        turn.onSteer?.(async (text) => {
+          heard.push(text);
+          return true;
+        });
+        yield { type: "text", delta: "building it" };
+        await released;
+        yield { type: "text", delta: " — regrouping by client." };
+      },
+    });
+
+    const running = f.run(harness, { messages: [userMessage("m1", "build me a workbench")] });
+    await vi.waitFor(() => expect(steer).toBeDefined());
+    await expect(steer!("group by client instead", "m_steer")).resolves.toBe(true);
+    release();
+    await running;
+
+    // The harness heard it — same turn, no second send.
+    expect(heard).toEqual(["group by client instead"]);
+    // The transcript reads user · steer · assistant, and every seq is distinct.
+    const rows = await persisted(f);
+    expect(rows.map((message) => message.id)).toEqual(["m1", "m_steer", expect.any(String)]);
+    expect(rows.map((message) => message.role)).toEqual(["user", "user", "assistant"]);
+    const seqs = f.upserts.filter((row) => row.id === "m_steer" || row.id === "m1");
+    expect(seqs).toEqual([{ id: "m1", seq: 0 }, { id: "m_steer", seq: 1 }]);
+    // Exactly once: no duplicate row, from either the checkpoint pass or onFinish.
+    expect(f.upserts.filter((row) => row.id === "m_steer")).toHaveLength(1);
+    // Nothing shares the assistant's seq.
+    const assistantSeq = f.upserts.find((row) => row.id !== "m1" && row.id !== "m_steer")!.seq;
+    expect(assistantSeq).toBe(2);
+  });
+
+  it("a harness that never registers a handler makes the steer NOT land, and nothing is written", async () => {
+    // No capability protocol anywhere: not registering IS the answer, and the
+    // caller's own queue is the fallback.
+    let steer: ((text: string, messageId: string) => Promise<boolean>) | undefined;
+    const f = fixture({
+      liveTurn: (published) => {
+        steer = published.steer;
+        return () => undefined;
+      },
+    });
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => { release = resolve; });
+    const harness = defineHarness({
+      name: "deaf",
+      async *run() {
+        yield { type: "text", delta: "working" };
+        await released;
+      },
+    });
+    const running = f.run(harness, { messages: [userMessage("m1", "hello")] });
+    await vi.waitFor(() => expect(steer).toBeDefined());
+    await expect(steer!("are you there", "m_steer")).resolves.toBe(false);
+    release();
+    await running;
+
+    expect((await persisted(f)).map((message) => message.id)).toEqual(["m1", expect.any(String)]);
+    expect(f.upserts.filter((row) => row.id === "m_steer")).toHaveLength(0);
+  });
+
+  it("a steer rides the SAME turn — same turnId, same ctx, same audit context (§3.5)", async () => {
+    let steer: ((text: string, messageId: string) => Promise<boolean>) | undefined;
+    let publishedTurnId: string | undefined;
+    let harnessTurnId: string | undefined;
+    const f = fixture({
+      liveTurn: (published) => {
+        steer = published.steer;
+        publishedTurnId = published.ctx.turnId;
+        return () => undefined;
+      },
+    });
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => { release = resolve; });
+    let seenAtSteer: string | undefined;
+    const harness = defineHarness({
+      name: "same-turn",
+      async *run(turn) {
+        harnessTurnId = turn.turnId;
+        turn.onSteer?.(async () => {
+          // Read INSIDE the steer: whatever answers it must be this turn.
+          seenAtSteer = turn.turnId;
+          return true;
+        });
+        yield { type: "text", delta: "working" };
+        await released;
+      },
+    });
+    const running = f.run(harness, { messages: [userMessage("m1", "hello")] });
+    await vi.waitFor(() => expect(steer).toBeDefined());
+    await steer!("and group by client", "m_steer");
+    release();
+    await running;
+
+    expect(harnessTurnId).toMatch(/^trn_[0-9a-f]{32}$/);
+    expect(seenAtSteer).toBe(harnessTurnId);
+    expect(publishedTurnId).toBe(harnessTurnId);
   });
 });

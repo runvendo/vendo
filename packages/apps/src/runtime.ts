@@ -1,4 +1,5 @@
 import {
+  auditContext,
   VENDO_APP_BUILD_FAILED_PREFIX,
   VENDO_TREE_FORMAT,
   VendoError,
@@ -12,17 +13,19 @@ import {
   type AccessLevel,
   type AppAccess,
   type AppDocument,
+  type AppFloor,
   type AppGrantRecord,
   type AppId,
   type AppPlan,
+  type FilesAdapter,
   type Guard,
-  type Membership,
   type Principal,
   type IsoDateTime,
   type Json,
   type NormalizedCatalog,
   type PlanDisplay,
   type RunContext,
+  type ScreenAssembler,
   type ApprovalId,
   type ApprovalRequest,
   type RiskLabel,
@@ -41,14 +44,17 @@ import {
   type VendoTheme,
   type VendoRecord,
   type WireCompileResult,
+  type WorkspaceFs,
 } from "@vendoai/core";
 import type { LanguageModel } from "ai";
 import { createAgentTools } from "./agent-tools.js";
 import { createAppData } from "./app-data.js";
+import { commitApp } from "./app-source.js";
 import { appLifecycleEvent } from "./audit.js";
 import { createAppCaller } from "./call.js";
 import { createParkedActions } from "./parked-action.js";
 import type { Check } from "./checking/types.js";
+import { createAppFloor } from "./checking/floor.js";
 import type {
   CloudAppsClient,
   PublishRecord,
@@ -79,9 +85,11 @@ import type { Finding } from "./checking/types.js";
 // The `validate` verb IS the shipped floor plus the shipped create validation,
 // called rather than re-derived — so the verb and generation can never disagree
 // about whether a document is sound.
-import { createCheckingLayer } from "./checking/layer.js";
+import { screenTypesCheck } from "./checking/facts.js";
+import { createCheckingLayer, judgmentRules } from "./checking/layer.js";
+import { reviewerCheck } from "./checking/reviewer.js";
 import { validateCompiledCreate } from "./generation/validation/validate.js";
-import { wireCompileOptionsFor } from "./generation/wire-options.js";
+import { wireCompileOptionsFor } from "./wire-options.js";
 import type { BrainTurn } from "./generation/brain.js";
 import { createAppHistory, type PinIntentKind } from "./history.js";
 import { createInClientApprovals, type InClientVerdict } from "./inclient.js";
@@ -100,7 +108,7 @@ import {
   type BoxEditResult,
 } from "./box-agent.js";
 import { parseVendoManifest } from "./manifest.js";
-import { createAppOpener, createProgressiveQueryResolver, machinesDisabledError, servedAppsDisabledError, stripServerAuthoritativeFields } from "./open.js";
+import { createAppOpener, createProgressiveQueryResolver, stripServerAuthoritativeFields } from "./open.js";
 import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, listAllRecords, nextEnvStaleAt, rowFromRecord, sessionOf, updateAppRow, withoutSession, type AppRecordWrite } from "./persistence.js";
 import { classifyLegacyPlacements, detectPinDrift, hasDefaultExport, pinComponentName, pinForkSource, type InClientApproval, type PinBaseline, type PinDrift } from "./pins.js";
 import { createReviewLifecycle, type RemixRejection, type ReviewQueueEntry } from "./review.js";
@@ -112,11 +120,10 @@ import {
   unapprovedEgress,
 } from "./egress-approval.js";
 import {
-  createScheduleEngine,
-  type AppScheduleState,
-  type AppScheduleStatus,
-  type ScheduleTickReport,
-} from "./schedules.js";
+  createManifestTriggers,
+  type AppMachineStatus,
+  type ManifestTriggerSync,
+} from "./manifest-triggers.js";
 import { createSecretExposure, type SecretExposureGrant } from "./secret-exposure.js";
 import { computeShipDiff, type ShipDiff } from "./ship-diff.js";
 import { appVersionHash } from "./version-hash.js";
@@ -157,17 +164,6 @@ export interface AppsConfig {
     boxEditTimeoutMs?: number;
   };
   /**
-   * execution-v2 Wave 4 — the layer-3 (machine serves the app surface)
-   * experimental opt-in. OFF by default: layer-3 generation, the 2→3 surface
-   * flip, and open() on a served app all refuse with a typed VendoError naming
-   * this flag. The host enables it per project
-   * (`createVendo({ apps: { experimentalServedApps: true } })`).
-   * Layer 3 is a machine surface, so this flag REQUIRES
-   * {@link AppsConfig.experimentalMachines}; createApps refuses the
-   * combination `experimentalServedApps` without `experimentalMachines`.
-   */
-  experimentalServedApps?: boolean;
-  /**
    * Build contract §9.2–§9.6 — the multi-party half. `appAccess` is `can()`
    * over whatever store the host wired (the umbrella composes it at the
    * composition seam); `multiParty` is the Cloud gate, filled from
@@ -180,9 +176,6 @@ export interface AppsConfig {
    */
   appAccess?: AppAccess;
   multiParty?: boolean;
-  /** Build contract §9.1 — the host's org query, forwarded to the schedule
-   *  engine so an unattended fire asserts the same orgs a request does. */
-  memberships?: (principal: Principal) => Promise<Membership[]>;
   /**
    * Build contract §9.5 — promote's ROW half. A promote crosses subjects, which
    * 02-store §2 otherwise forbids, and it moves the app's workspace documents
@@ -217,20 +210,6 @@ export interface AppsConfig {
    */
   venueState?: (app: AppDocument, ctx: RunContext) => Promise<Record<string, unknown> | undefined>;
   /**
-   * execution-v2 Wave 9 — the layer-2 (machine-backed execution) experimental
-   * opt-in, gating ALL of the box machinery for NEW graduation: machine
-   * provisioning, box-agent delegation, and fn: generation targeting a new
-   * machine. OFF by default: when the escalation ladder concludes only a box
-   * can express a request (rung c), the create/edit refuses with a typed
-   * VendoError naming this flag — NEVER a silent degrade to a broken
-   * automation. Rungs (a) steps and (b) agentic automations need no machine
-   * and work regardless of this flag. Apps that ALREADY carry a machine are
-   * never stranded: every runtime path over an existing machine (wake, sleep,
-   * fn: calls, schedules, box edits, open) keeps working with the flag off —
-   * only NEW graduation/provisioning is gated.
-   */
-  experimentalMachines?: boolean;
-  /**
    * execution-v2 Wave 9 — the arming seam for ladder-authored automations
    * (the same seam pattern as AutomationsConfig.runner: this block never
    * imports the automations engine). When set, a freshly authored trigger is
@@ -240,15 +219,21 @@ export interface AppsConfig {
    * runtime arms the stored row directly and grant capture stays lazy: the
    * first away run's ungranted step parks the normal approval card.
    */
-  armAutomation?: (appId: AppId, ctx: RunContext) => Promise<{ enabled: boolean; missing: ApprovalRequest[] }>;
+  armAutomation?: (appId: AppId, triggerId: string, ctx: RunContext) => Promise<{ enabled: boolean; missing: ApprovalRequest[] }>;
+  /**
+   * Contract §3.2 — the workspace's OWN blob seam, for source past
+   * {@link WORKSPACE_INLINE_MAX_BYTES}. The SAME `FilesAdapter` the workspace rows
+   * spill to (the umbrella's `selectFiles`), never a second spill mechanism: a
+   * source file and a workspace file are the same bytes in two projections.
+   *
+   * Unset, `commitSource` is inline-only and an oversized file is refused LOUDLY
+   * rather than dropped — a silently missing source file is a lost app.
+   */
+  files?: FilesAdapter;
   model?: LanguageModel;
   /** The fast fill tier: `model` is the no-think switch (a thinking-disabled
    *  model instance) the group workers run on while the brain keeps `model`. */
   fill?: GenerationDependencies["fill"];
-  /** Groups filled at the same time. Two by default — the point is parallelism,
-   *  but every worker is a model call against the same key and a burst of them
-   *  is what trips a provider's rate limit mid-build. */
-  fillConcurrency?: number;
   /** The island smoke-render gate (on unless explicitly `false`): every
    *  generated island renders once headless before it can reach a screen. */
   pipeline?: GenerationDependencies["pipeline"];
@@ -297,6 +282,41 @@ export interface AppsConfig {
    *  skip, host tools are unaffected, and the tools stay LISTED for
    *  generation (execution still answers `connect-required` on its own). */
   connectedToolkits?: (ctx: RunContext) => Promise<string[]>;
+  /**
+   * UI-generation blueprint §1 point 2 — the screen agent, in front of the
+   * conductor. "The seam routes, not the caller": every `vendo_make` request
+   * starts in the cheap assembly loop, and this block never decides which engine
+   * a request deserves.
+   *
+   * An ADAPTER SLOT, for the reason every other one here is: the screen agent is a
+   * lean loop in `@vendoai/harnesses` and this block depends on `core` alone, so
+   * the two sides meet on core's `ScreenAssembler` and composition is the only
+   * place that fills it. Explicitly passed always wins; unfilled changes nothing.
+   *
+   * DEFAULT-SAFE by construction. `vendo_make` routes here first and falls
+   * through to `conductCreate` on every answer but `assembled` — an `unavailable`,
+   * an assembler that could not run, a throw, and (the check that makes the
+   * promise true rather than merely intended) an `assembled` that left no app ROW
+   * behind. An `escalate` is the one answer that is NOT a fall-through: it is a
+   * request for the build, and the build is what it gets (see `vendo_make` in
+   * agent-tools.ts).
+   */
+  screen?: ScreenAssembler;
+  /**
+   * §4.5's other half — the plan an escalating screen agent left behind, read
+   * back so the build ANCHORS on it instead of re-planning from the ask alone.
+   *
+   * The plan is a FILE (`/user/apps/<appId>/plan.vendo`, written through the same
+   * `commit()` that painted its skeleton), and this block holds no workspace
+   * (§3.5 — a sandboxed harness holds a workspace and never a store). So the seam
+   * is the same shape as `screen` above and composition, which already built the
+   * workspace the assembler wrote through, is the one place that reads it back.
+   *
+   * Best-effort by design: `undefined` — unfilled slot, no plan file, an
+   * unreadable workspace — means the build plans from the ask, which is exactly
+   * what it did before this seam existed. A build is never lost to a missing brief.
+   */
+  escalatedPlan?: (appId: AppId, ctx: RunContext) => Promise<string | undefined>;
 }
 
 /** 06-apps §1 */
@@ -652,6 +672,28 @@ export interface AuthoredAppResult {
 export interface AppsRuntime {
   create(input: {
     prompt: string;
+    /**
+     * The id this build must use, when the caller already minted one.
+     *
+     * The front door mints before it routes to the screen agent (§4.5): an
+     * escalation's `plan.vendo` is already written at `/user/apps/<appId>/` and
+     * its skeleton is already on `vendoViewStreamId(appId)`, so a conductor that
+     * minted its own id would paint the finished app onto a SECOND stream and
+     * leave the plan's skeleton stranded beside it as a permanently-building
+     * card. Absent — every caller but the front door — one is minted here.
+     */
+    appId?: AppId;
+    /**
+     * §4.5 — the plan the escalating screen agent already wrote, verbatim.
+     *
+     * The build ANCHORS on it: the person is already looking at its skeleton, so
+     * re-planning from the ask alone is how the outline they are watching turns
+     * into a different app. It is a brief for the brain, never a substitute for
+     * one — the ask still travels verbatim, and the brain is free to say the plan
+     * is wrong. Absent — every caller but an escalation — the brain plans from
+     * the ask exactly as it always has.
+     */
+    plan?: string;
     /** Additive per-call stream hook used by the agent bridge. */
     onView?: (part: VendoViewPart) => void;
     /** Called when the app was generated and STREAMED to the surface but the
@@ -688,6 +730,46 @@ export interface AppsRuntime {
     input: { appId: AppId; compiled: WireCompileResult },
     ctx: RunContext,
   ): Promise<AuthoredAppResult>;
+  /**
+   * Contract §3.2/§2.2 — the app's own SOURCE, landed in its row.
+   *
+   * The sibling of {@link AppsRuntime.authored}, on the same interception point and
+   * with the same one caller: the render seam's `commit()` proxy. `changed` is
+   * `CommitResult.changed` verbatim, and this is the store half of it —
+   * `commitApp` diffs the paths inside THIS app's directory back into
+   * `doc.source`, leaving everything else in the document (`trigger` above all)
+   * untouched. A commit is not a generation.
+   *
+   * This exists because `machine.snapshotRef` was an app's only home: the box's
+   * writes reach the store through the workspace façade and nowhere else, so this
+   * is where the row becomes the truth. Without it, losing a snapshot loses the
+   * customer's app.
+   *
+   * `workspace` is passed in rather than held: this block never owns a workspace
+   * (§3.5 — a sandboxed harness holds a workspace and never a store), and the
+   * caller is the one with the façade whose commit just landed.
+   */
+  commitSource(
+    input: { appId: AppId; changed: readonly string[]; workspace: WorkspaceFs },
+    ctx: RunContext,
+  ): Promise<void>;
+
+  /**
+   * The checks floor bound to this caller's host surface (§7.1) — the production
+   * compile dialect, and the deterministic fact checks over what it compiled.
+   *
+   * The render seam is the caller, for the same reason it is `authored`'s: it is
+   * the one place that sees every write to `app.vendo`, whoever made it. Handing it
+   * the floor is what makes the checks run for EVERY author instead of only for
+   * apps our own conductor built — the seam used to compile with no options at
+   * all, so a lying binding was invisible and an inline tool reference lost its
+   * binding silently.
+   *
+   * Its `deps` are resolved lazily and once per returned floor: building them
+   * probes the host's read tools for shape cards, and a floor is built per turn but
+   * called per commit.
+   */
+  floor(ctx: RunContext): AppFloor;
   /** Speed lane — best-effort page-open warm-up of the generation model(s)
    *  (full + paint), so the first create reuses a live connection. Safe to
    *  call on surface mount; never throws. */
@@ -879,6 +961,19 @@ export interface AppsRuntime {
    * (known v2 limit — the last sleep's CAS wins).
    */
   machine: {
+    /**
+     * Can this deployment run a machine at all — i.e. is a `sandbox` adapter
+     * configured?
+     *
+     * The ONE gate on machine-backed execution, and deliberately not a
+     * capability boolean: a host configures a sandbox or it does not, and the
+     * presence of the adapter IS the deliberate opt-in (CLAUDE.md — "gating is
+     * valid key + meter, nothing else: no capability booleans"). Exposed because
+     * the front door has to answer an escalation honestly BEFORE it starts a
+     * build it cannot finish (agent-tools.ts); everything downstream of that
+     * decision still fails loudly on its own (`sandbox-unavailable`).
+     */
+    available(): boolean;
     /** Create the machine from the base template, snapshot it, store the ref. Idempotent. */
     provision(appId: AppId, ctx: RunContext): Promise<AppDocument>;
     /** Resume the stored snapshot; concurrent wakes coalesce to one machine. */
@@ -906,21 +1001,19 @@ export interface AppsRuntime {
      * shared is theirs to send, and it grants no more than seeing the app does.
      */
     ping(appId: AppId, ctx: RunContext): Promise<{ state: "awake" | "woke" }>;
-  };
-  /**
-   * execution-v2 Wave 2 Lane D — additive BYO schedule-execution surface (same
-   * additive precedent as `machine`/`box`). `tick` is what the host's
-   * authenticated scheduler endpoint calls on every external-cron hit: it
-   * fires due `vendo.json` schedules exactly once per cron window (see
-   * schedules.ts for the store-claimed idempotency rule). `sync` is the
-   * editor-scoped manifest re-read (the Wave-3 in-box agent's edit-complete
-   * hook — re-reading a shared app's manifest is part of editing it);
-   * `report` feeds the doctor's machine/schedule reporting.
-   */
-  schedules: {
-    tick(at?: Date): Promise<ScheduleTickReport>;
-    sync(appId: AppId, ctx: RunContext): Promise<AppScheduleState>;
-    report(): Promise<AppScheduleStatus[]>;
+    /**
+     * Re-read the box's `vendo.json` and fold its `schedules` into the app's
+     * doc triggers (manifest-triggers.ts): each declaration becomes a schedule
+     * trigger running `fn:<name>`, armed through the arming seam and fired by
+     * the automations tick — the ONE scheduler. Editor-scoped, like every other
+     * edit: re-reading a shared app's manifest is part of editing it. Called
+     * automatically after a box server-edit; exposed because a manifest edited
+     * inside the box (an agent session, a layer-3 app) has no other way in.
+     */
+    syncManifest(appId: AppId, ctx: RunContext): Promise<ManifestTriggerSync>;
+    /** Dev-only reporting for the doctor: which apps carry a machine, whether
+     *  they are awake, and what their manifests schedule. */
+    report(): Promise<AppMachineStatus[]>;
   };
   /**
    * ENG-345 — additive guarded per-secret in-sandbox exposure surface (same
@@ -947,6 +1040,24 @@ export interface AppsRuntime {
     ): Promise<SetExposureResult>;
   };
 }
+
+/**
+ * §4.5 — the build's brief when a screen agent escalated: the ask VERBATIM,
+ * then the plan it already wrote.
+ *
+ * The ask leads because it is the only thing the person actually said; the plan
+ * follows as what has already been promised on screen. Fenced rather than merged
+ * for the same reason `vendo_make`'s own `context` is (agent-tools.ts): the two
+ * are different kinds of input and running them together turns a plan's prose
+ * into words the person appears to have typed. No plan — every caller but an
+ * escalation — and the brief IS the ask, byte for byte.
+ */
+const escalationBrief = (prompt: string, plan: string | undefined): string =>
+  plan === undefined || plan.trim() === ""
+    ? prompt
+    : `${prompt}\n\n<escalated-plan>\nA screen agent already tried to assemble this out of existing components, could not,`
+      + ` and wrote the plan below. Its skeleton is ALREADY on the person's screen, so build this plan — amend it only`
+      + ` where it is wrong for the ask above.\n\n${plan}\n</escalated-plan>`;
 
 const allRecords = (store: StoreAdapter, refs: Record<string, string>): Promise<VendoRecord[]> =>
   listAllRecords(store.records("vendo_apps"), { refs });
@@ -1003,7 +1114,6 @@ const conductorOptions = (
   config: AppsConfig,
   runQuery: ConductorOptions["runQuery"],
 ): ConductorOptions => ({
-  ...(config.fillConcurrency === undefined ? {} : { fillConcurrency: config.fillConcurrency }),
   ...(config.checks === undefined ? {} : { checks: config.checks }),
   ...(runQuery === undefined ? {} : { runQuery }),
 });
@@ -1118,15 +1228,6 @@ const touchedPinSlots = (previous: AppDocument, next: AppDocument): string[] => 
 
 /** 06-apps §1 — construct the app lifecycle, generation, execution, and interchange surface. */
 export const createApps = (config: AppsConfig): AppsRuntime => {
-  // Wave 9 — the experimental-flag relationship: a served (layer-3) surface
-  // lives in a machine, so layer 3 cannot be enabled without layer 2. Refuse
-  // the combination at composition time, loudly, instead of at first use.
-  if (config.experimentalServedApps === true && config.experimentalMachines !== true) {
-    throw new VendoError(
-      "validation",
-      "experimentalServedApps requires experimentalMachines: a served (layer-3) app surface is served BY a machine, so enable both — createVendo({ apps: { experimentalServedApps: true, experimentalMachines: true } })",
-    );
-  }
   const apps = config.store.records("vendo_apps");
   const data = createAppData(config.store);
   const history = createAppHistory(config.store);
@@ -1145,7 +1246,11 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   const reportGuard = async (
     principalSubject: string,
     appId: AppId,
-    ctx: Pick<RunContext, "venue" | "presence"> & { trigger?: RunContext["trigger"] },
+    // Every field the ROW depends on is named here. It used to stop at
+    // venue/presence/trigger, and `turnId` survived only because every caller
+    // happens to hand over a whole ctx — so the first caller to pass a literal
+    // would have dropped it silently. Naming it makes that a typecheck failure.
+    ctx: Pick<RunContext, "venue" | "presence" | "trigger" | "turnId">,
     detail: Record<string, Json>,
   ): Promise<void> => {
     await config.guard.report(
@@ -1225,24 +1330,6 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     const record = await apps.get(appId);
     if (record === null || !(await holds(appId, ctx, level, record))) return null;
     return classifyLegacyPlacements(documentFromRecord(record), config.pinBaselines);
-  };
-
-  /** Build contract §9.5/§9.8 — must this app be served through the proxy
-      rather than handed the provider's URL? The question is the one `can()`
-      answers, not a second opinion: the caller reaches the app, and the app is
-      not their own (§9.5 — a promoted app's row subject IS the org id).
-      Matching the subject against ASSERTED MEMBERSHIPS instead missed the
-      caller `can()` admits on a bare `user:` grant with no membership, which is
-      precisely what "share with one person" writes: that viewer passed `open()`
-      and received the provider's raw ingress URL — a bearer-by-obscurity
-      capability with no per-request check, which is what this proxy exists to
-      prevent. Their own app is the ONLY thing that keeps the provider URL. */
-  const servedThroughProxy = async (appId: AppId, ctx: RunContext): Promise<boolean> => {
-    const record = await apps.get(appId);
-    const subject = record?.refs?.subject;
-    return subject !== undefined
-      && subject !== ctx.principal.subject
-      && await holds(appId, ctx, "viewer", record);
   };
 
   /** Build contract §9.6 — the ONE Cloud gate on this block. Sharing is
@@ -1610,15 +1697,11 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   // every other ref on the existing caller. Queries hit this at open(),
   // actions at call().
   const fnCaller = createFnCaller({ wake: (app) => lifecycle.wake(app) });
-  const scheduleEngine = createScheduleEngine({
+  const manifestTriggers = createManifestTriggers({
     store: config.store,
     lifecycle,
-    callFn: fnCaller.callFn,
-    audit: (event) => config.guard.report(event),
-    // Build contract §9.1 — an unattended fire asserts the SAME orgs a request
-    // does, or `can()` would answer differently attended and unattended (a
-    // promoted app would be invisible to its own schedule).
-    ...(config.memberships === undefined ? {} : { memberships: config.memberships }),
+    updateDocument: updateAppDocument,
+    ...(config.armAutomation === undefined ? {} : { armAutomation: config.armAutomation }),
   });
   const caller = fnCaller.wrap(createAppCaller(config.tools, {
     // W0 — remember every mutating in-app action the guard parks, so the
@@ -1636,46 +1719,39 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     // lifecycle, the provider's public ingress URL for $PORT, and the theming
     // handoff (host theme tokens as a query param the served app MAY consume).
     {
-      enabled: config.experimentalServedApps === true,
-      urlFor: async (app, ctx) => {
-        // Build contract §9.8 — an ORG-owned served app is a WIRE DOOR, not a
-        // snapshot handed to viewers: the registered URL is this deployment's
-        // proxy, which re-checks `can(viewer)` against live rows on every
-        // request. Personal served apps keep the provider URL exactly as before.
-        if (await servedThroughProxy(app.id, ctx)) {
-          const proxy = config.servedProxyPath;
-          if (proxy === undefined) {
-            throw new VendoError(
-              "not-implemented",
-              "this org app is served by a machine, and serving it needs the wire's authenticated proxy — mount the Vendo wire (createVendo().handler) so /apps/:appId/serve/** is reachable",
-            );
-          }
-          // No wake here: the proxy wakes the machine on the first forwarded
-          // request, AFTER it has re-checked access. Waking first would spend a
-          // machine on a caller the very next check might refuse.
-          //
-          // Theme parity with the personal branch below: the served app MAY
-          // consume the host's tokens, and the proxy forwards the query string
-          // into the box, so a shared app renders in the host's brand exactly
-          // as the owner's own copy does.
-          const orgTheme = resolveProvider(config.theme);
-          return orgTheme === undefined
-            ? proxy(app.id)
-            : `${proxy(app.id)}?vendoTheme=${encodeURIComponent(JSON.stringify(orgTheme))}`;
+      urlFor: async (app) => {
+        // Build contract §9.8 — a served app is a WIRE DOOR, never a snapshot
+        // handed out: the registered URL is this deployment's proxy, which
+        // re-checks `can(viewer)` against live rows on every request.
+        //
+        // The OWNER is no exception, and used to be. Their own app was answered
+        // with the sandbox provider's raw public ingress URL, on the reasoning
+        // that a capability URL is harmless for the person who owns the thing.
+        // It is not: that URL carries no per-request check, so it keeps working
+        // for anyone it reaches — a shared screen, a copied link, a log line, a
+        // pasted bug report — and it outlives the grant, the revoke, and the
+        // app. One door, checked, for every caller.
+        const proxy = config.servedProxyPath;
+        if (proxy === undefined) {
+          // Two ways to get here, so the sentence names both: no wire mounted at
+          // all, or a wire with no public origin to build an absolute URL from
+          // (the umbrella supplies this seam only once VENDO_BASE_URL is set).
+          throw new VendoError(
+            "not-implemented",
+            "this app is served by a machine, and serving it needs the wire's authenticated proxy — mount the Vendo wire (createVendo().handler) so /apps/:appId/serve/** is reachable, and set VENDO_BASE_URL to this deployment's public origin so the app's URL can be absolute",
+          );
         }
-        const machine = await lifecycle.wake(app);
-        // Absorb the fresh-boot 502 race server-side so the iframe's first
-        // paint is the app, not a provider error (the wake latency is the
-        // accepted loading state — no v1 cover machinery).
-        await requestAppWithBootRetry(machine, { method: "GET", path: "/" }).catch(() => undefined);
-        const url = new URL(await machine.url());
-        // Resolve the theme provider (cse lane 3) before serializing it into the
-        // served-app URL — config.theme may now be a value OR a lazy provider.
-        const resolvedTheme = resolveProvider(config.theme);
-        if (resolvedTheme !== undefined) {
-          url.searchParams.set("vendoTheme", JSON.stringify(resolvedTheme));
-        }
-        return url.toString();
+        // No wake here: the proxy wakes the machine on the first forwarded
+        // request, AFTER it has re-checked access. Waking first would spend a
+        // machine on a caller the very next check might refuse.
+        //
+        // The served app MAY consume the host's tokens, and the proxy forwards
+        // the query string into the box, so it renders in the host's brand —
+        // the same handoff the provider-URL branch used to do inline.
+        const theme = resolveProvider(config.theme);
+        return theme === undefined
+          ? proxy(app.id)
+          : `${proxy(app.id)}?vendoTheme=${encodeURIComponent(JSON.stringify(theme))}`;
       },
     },
     // §9.9 — the additive, ctx-aware venue-state slot lane H's adoption card
@@ -1707,7 +1783,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       code: "edit-rejected",
       retryable,
       message: retryable
-        ? "Edit was not applied. Retry vendo_apps_edit on the same app with a narrower instruction; do not rebuild the app."
+        ? "Edit was not applied. Retry vendo_make with the same `app` and a narrower request; do not rebuild the app."
         : "Edit was not applied and cannot be retried until the reported blocker is resolved.",
     },
   });
@@ -1829,7 +1905,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     try {
       const wasEnabled = await assertCurrent();
       // A changed trigger must be re-armed — enable() re-captures and re-mints trigger state.
-      const enabled = options.armTrigger === true && app.trigger !== undefined
+      const enabled = options.armTrigger === true && (app.triggers ?? []).length > 0
         ? true
         : enabledAfterDocumentEdit(previous, app, wasEnabled);
       appRow = appRecordInput(app, rowSubject, enabled, session ?? sessionOf(previous));
@@ -1896,9 +1972,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       id: `aud_${globalThis.crypto.randomUUID()}`,
       at: new Date().toISOString(),
       kind: "share",
-      principal: ctx.principal,
-      venue: ctx.venue,
-      presence: ctx.presence,
+      ...auditContext(ctx),
       appId,
       detail,
     });
@@ -2023,11 +2097,12 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
    *  surface flip. */
   const servedAppContractPrompt = (): string => [
     "THIS TASK BUILDS THE APP SURFACE ITSELF (layer 3):",
-    "- START WARM: a served-app scaffold is pre-baked at /opt/vendo-box/scaffold (zero-dep Node server with the /fn envelopes, vendo.json serving, a themed entry page, and the .vendo/run entry already wired and tested). Your FIRST action: run exactly `cp -a /opt/vendo-box/scaffold/. /app/` (one command; it copies .vendo/run too — no ls, no second cp), then go straight to editing fns.js + index.html (touch server.js only for extra routes). Only if that cp fails (older box) build from scratch.",
-    "- Serve a REAL web app on the non-/fn paths of $PORT. GET / is the entry page and must answer 200 with text/html. Any framework or plain HTML+JS; keep it self-contained (no CDN dependencies unless their domains are declared egress).",
-    "- Keep every POST /fn/<name> endpoint working beside the pages; the page's own JavaScript may call relative /fn/<name> endpoints for data and actions.",
-    "- The page may read the OPTIONAL `vendoTheme` query param (JSON host theme tokens: colors/typography/radius/density) to match the host brand. Ignore it if absent.",
-    "- Verify by curling your own pages (GET / and every route you serve) until they answer 200 with the real content, then report servesUi: true.",
+    "- START WARM: the universal app template is pre-baked at /opt/vendo-box/template — Vite + React 19 with @vendoai/kit (the whole Kit) already installed, the /fn envelopes and vendo.json serving already wired, and the .vendo/run entry already written. Your FIRST action: run exactly `cp -a /opt/vendo-box/template/. /app/` (one command; it copies .vendo/run and the node_modules link too — no ls, no second cp), then go straight to editing src/App.tsx and fns.js. Only if that cp fails (older box) build from scratch.",
+    "- Write real TypeScript and React — the full language, no restricted subset. `npm run typecheck` (tsc), `npm run build` (vite) and the dev server's own errors are your code validators, and all three run here in the box. Import components from \"@vendoai/kit\", never from a CDN.",
+    "- src/App.tsx is the app. src/main.tsx is the wiring (brand, provider, frame protocol) and you should not need to touch it. fns.js holds your POST /fn/<name> handlers; the page reaches them with `callFn` from src/fn.ts.",
+    "- Serve a REAL web app on the non-/fn paths of $PORT. GET / is the entry page and must answer 200 with text/html; `node server.js` already does that from the Vite build. Keep it self-contained — the box's egress is deny-by-default, so a CDN reference is a guaranteed failed fetch.",
+    "- The host's brand is applied for you (the `vendoTheme` query param and the provisioned .vendo/host/theme.json both flow through src/provision.ts onto the --vendo-* CSS variables the Kit reads). Style with those variables, never with hardcoded brand colors.",
+    "- Before you report done: run `npm run validate`. Exit 0 means shippable; any other exit prints its findings on stdout and you fix them first. Then curl GET / until it answers 200 with the real content and report servesUi: true.",
   ].join("\n");
 
   /**
@@ -2041,7 +2116,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   const editServerViaBox = async (
     app: AppDocument,
     instruction: string,
-    _ctx: RunContext,
+    ctx: RunContext,
     options: { served?: boolean } = {},
   ): Promise<{ ok: true; result: BoxEditResult; doc: AppDocument; servedOk: boolean } | { ok: false; result: BoxEditResult }> => {
     const machine = await lifecycle.wake(app);
@@ -2076,9 +2151,14 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         && contentType.includes("text/html")
         && root.body.length > 0;
     }
-    // Sync schedule state while the box is awake and its egress declaration is
-    // not yet on the doc (so this wake's allowlist still passes).
-    await scheduleEngine.syncManifest(app).catch(() => undefined);
+    // Fold the manifest's schedules into doc triggers while the box is awake and
+    // its egress declaration is not yet on the doc (so this wake's allowlist
+    // still passes). Best-effort — a manifest the converter cannot honor must
+    // not roll back an edit that already succeeded inside the box — but never
+    // SILENT: the reason is the only thing that says why nothing is scheduled.
+    await manifestTriggers.sync(app, ctx).catch((error: unknown) => {
+      console.warn(`[vendo] vendo.json schedules for ${app.id} were not folded into triggers: ${safeErrorMessage(error)}`);
+    });
     // Sync the egress DECLARATION (mirrors vendo.json) onto the doc; the
     // owner-approval grant is a separate, guard-gated step (Lane E).
     let egressDecl: string[] = [];
@@ -2116,7 +2196,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
    * and the same call a query-bound fn makes the moment the app opens.
    */
   const boxSeamFor = (appId: AppId, ctx: RunContext, wantsServed: boolean): BoxSeam => ({
-    available: () => lifecycle.available() && config.experimentalMachines === true,
+    available: () => lifecycle.available(),
     provision: async () => {
       const app = await requireOwned(appId, ctx);
       if (app.machine !== undefined) return;
@@ -2194,6 +2274,10 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       ...deps,
       appId,
       ctx,
+      // The words that started this. The automation planner decides whether the
+      // ask is one MORE automation or a new version of one the app already has,
+      // and the plan's `why` alone cannot tell those apart.
+      request: input.request,
       box: boxSeamFor(appId, ctx, wantsServed),
       ...(config.armAutomation === undefined ? {} : { armAutomation: config.armAutomation }),
       land: async (document, options) => {
@@ -2251,9 +2335,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       return { document, findings, failed: findings.map(({ message }) => message) };
     }
     if (lane.server !== undefined && (wantsServed || lane.server.servesUi === true)) {
-      if (config.experimentalServedApps !== true) {
-        issues.push("the box declared a served web app, but experimentalServedApps is disabled — the surface flip was refused and the tree keeps serving (enable createVendo({ apps: { experimentalServedApps: true } }))");
-      } else if (!wantsServed) {
+      if (!wantsServed) {
         issues.push("the box declared a served web app, but this app's plan never asked for one — the surface flip was refused and the tree keeps serving");
       } else if (lane.server.servesUi === true && lane.server.servedOk === true) {
         const base = await requireOwned(appId, ctx);
@@ -2357,8 +2439,10 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       if (config.model === undefined) {
         throw new VendoError("not-implemented", "generation requires a model");
       }
-      // Mint before generation so every partial already carries its permanent id.
-      const appId = `app_${globalThis.crypto.randomUUID()}`;
+      // Mint before generation so every partial already carries its permanent id
+      // — unless the front door already did, in which case an escalated plan's
+      // skeleton and this build's paints share one stream.
+      const appId = input.appId ?? `app_${globalThis.crypto.randomUUID()}`;
       const createStartedAt = Date.now();
       // The build's dead-man switch. The catch below persists a terminal failure
       // when the build turn THROWS, but a build task that hangs (a provider
@@ -2441,7 +2525,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       let conducted: ConductedResult;
       try {
         conducted = await conductCreate(
-          { prompt: input.prompt },
+          { prompt: escalationBrief(input.prompt, input.plan) },
           generationDeps,
           conductorOptions(config, queryRunnerFor(queryApp, ctx)),
         );
@@ -2568,6 +2652,23 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         }
       }
       return structuredClone(app);
+    },
+
+    floor(ctx) {
+      return createAppFloor({
+        // Exactly the four fields the floor reads, built directly rather than
+        // through `generationDependencies`: none of the pipeline's other knobs
+        // (theme, design rules, fill tiers, the partial-tree seam) is a fact about
+        // an app, so none of them belongs in a check's inputs. `model` rides along
+        // when the deployment has one and is absent when it does not — the seam
+        // never spends it either way, and the AI reviewer is `validate`'s.
+        deps: async () => ({
+          catalog: config.catalog,
+          ...(config.model === undefined ? {} : { model: config.model }),
+          ...await generationToolContext(ctx),
+        }),
+        ...(config.checks === undefined ? {} : { checks: config.checks }),
+      });
     },
 
     async authored(input, ctx) {
@@ -2697,6 +2798,26 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       return { data, ...(queries.dataUnavailable() ? { dataUnavailable: true as const } : {}) };
     },
 
+    async commitSource(input, ctx) {
+      await commitApp(input.appId, input.changed, input.workspace, ctx, {
+        requireOwned,
+        update: (appId, mutate) => updateAppDocument(appId, mutate),
+        // §9.7 — the app's ADDRESS comes from its OWNER, and the row's subject is
+        // the authoritative answer (§9.5: a promoted app's row subject IS the org
+        // id, verbatim). Read here, never remembered: permission cannot choose an
+        // address, because an org app's editor can usually write their own `/user`
+        // mount too.
+        ownerOf: async (appId) => {
+          const subject = (await apps.get(appId))?.refs?.subject;
+          if (subject === undefined) {
+            throw new VendoError("not-found", `${appId} has no row to hold its source`);
+          }
+          return subject;
+        },
+        ...(config.files === undefined ? {} : { blobs: config.files }),
+      });
+    },
+
     async get(appId, ctx) {
       // The brain's conversation is server-authoritative, on the same footing as
       // pinDrift and buildFailed: it is read server-side through sessionOf and
@@ -2736,7 +2857,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // graduated tree's fn: refs would fail a machine-cleared re-validation
       // and otherwise strand the provider snapshot.
       await lifecycle.destroyResources(app);
-      await scheduleEngine.clearForApp(appId);
+      await manifestTriggers.clearLegacyState(appId);
       await data.clear(app, ctx.principal.subject, await history.documents(appId));
       await history.clear(appId);
       await inClientApprovals.clear(appId);
@@ -2936,7 +3057,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         // sentences a model can act on.
         const compiled = compileWire(
           input.document,
-          wireCompileOptionsFor(deps, deps.catalog.map(({ name }) => name)),
+          wireCompileOptionsFor(deps),
         );
         const { issues } = await validateCompiledCreate(compiled, deps);
         return {
@@ -2951,21 +3072,40 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // Editor-scoped, like edit itself: checking the shape of an app you may
       // change is part of changing it, and a mere viewer is masked as ever.
       const document = await requireOwned(input.appId, ctx);
-      // The SAME floor create and edit run, with the host's and every pack's
-      // plugged checks. `request` is empty because a verb call carries no user
-      // text — the checks that read it treat that as "no carve-out", which is the
-      // conservative direction.
+      // The SAME floor create and edit run — the seven fact checks, the host's and
+      // every plugged check, AND the AI reviewer. The reviewer was the
+      // piece this door was missing: without it `validate` could not see invented
+      // data, dishonest tool use, dead controls or dropped work, and could not
+      // apply a single one of the host's own judgment RULES, which are not code and
+      // which the reviewer is the only thing that can read. The skill teaches
+      // "validate after every edit — faster and surer than re-reading your own
+      // work", so half a checker answering "ok" was the worst lie available here.
+      //
+      // Composed exactly as `conductor.ts`'s `checkingFor` composes it, including
+      // deriving the rubric with the same function the layer exposes it with, so the
+      // rubric the reviewer reads and `layer.rubric` cannot diverge. Fail-open is
+      // unchanged: silence, a refusal and a failed request all mean no findings.
+      // No `samples` — a verb call has run no queries, so there is no resolved data
+      // to check literals against, and the reviewer's prompt simply omits that
+      // section rather than pretending to have it.
+      //
+      // `request` is empty because a verb call carries no user text — the checks
+      // that read it treat that as "no carve-out", which is the conservative
+      // direction.
+      const plugged = config.checks ?? [];
       const findings = await createCheckingLayer({
         deps,
-        ...(config.checks === undefined ? {} : { checks: config.checks }),
+        // The thorough door: the compiler static half AND the reviewer. Off the
+        // scripted-create hot path, so the tsc pass is affordable here (§7.1).
+        checks: [screenTypesCheck(deps), reviewerCheck(deps, undefined, judgmentRules(plugged)), ...plugged],
       }).run({ document, request: "" });
       return { ok: !findings.some(({ severity }) => severity === "block"), findings };
     },
 
     async schedule(appId, cron, ctx) {
       const previous = await requireOwned(appId, ctx);
-      const trigger = previous.trigger;
-      if (trigger === undefined || trigger.on.kind !== "schedule") {
+      const trigger = (previous.triggers ?? []).find((candidate) => candidate.on.kind === "schedule");
+      if (trigger === undefined) {
         throw new VendoError(
           "validation",
           `app ${appId} has no schedule to change. Ask for the automation itself first — a schedule needs `
@@ -2979,14 +3119,15 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // knows the parser.
       await updateAppDocument(appId, (document) => ({
         ...document,
-        trigger: { ...trigger, on: { kind: "schedule", cron } },
+        triggers: (document.triggers ?? []).map((candidate) =>
+          candidate.id === trigger.id ? { ...candidate, on: { kind: "schedule" as const, cron } } : candidate),
       }));
       if (config.armAutomation === undefined) {
         // No automations engine composed: the cron is stored, and saying it is
         // armed would be a lie.
         return { appId, cron, enabled: false, missing: 0 };
       }
-      const armed = await config.armAutomation(appId, ctx);
+      const armed = await config.armAutomation(appId, trigger.id, ctx);
       return { appId, cron, enabled: armed.enabled, missing: armed.missing.length };
     },
 
@@ -3003,7 +3144,6 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // to the in-box agent instead, through the same conversation the person is
       // already having with the app.
       if (previous.ui === "http" && previous.machine !== undefined) {
-        if (config.experimentalServedApps !== true) throw servedAppsDisabledError();
         const box = await editServerViaBox(previous, instruction, ctx, { served: true });
         if (!box.ok) {
           return failedEdit(previous, instruction, [
@@ -3163,7 +3303,22 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // A host-tool ref goes straight to the guard-bound registry; an fn: ref
       // settles as a contained not-implemented outcome until the in-runtime
       // fn path lands (see call.ts).
-      return caller.call(app, ref, args, ctx);
+      //
+      // A READ takes the QUERY arm. This is the only door a code-land app has
+      // (@vendoai/kit's useToolQuery), so sending every call through the action
+      // arm gave a read a random uuid per invocation — and the guard's approved
+      // replay PINS the call id (05 §2), so an ungraded read that parked could
+      // never be satisfied: approve, refetch, new id, park again, forever.
+      // `callQuery` derives the id from (app, tool, args), which is exactly a
+      // query's identity. The discriminator is the tool's own authored risk
+      // grade, the server's existing classification of what a call does;
+      // everything else keeps the action arm, because two identical mutations
+      // are two separate acts and each has to earn its own approval.
+      const descriptor = (await config.tools.descriptors(ctx).catch(() => []))
+        .find((candidate) => candidate.name === ref);
+      return descriptor?.risk === "read"
+        ? caller.callQuery(app, ref, args, ctx)
+        : caller.call(app, ref, args, ctx);
     },
 
     async exportApp(appId, ctx) {
@@ -3198,7 +3353,12 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     },
 
     agentTools() {
-      return createAgentTools(runtime, { data, requireOwned });
+      return createAgentTools(runtime, {
+        data,
+        requireOwned,
+        ...(config.screen === undefined ? {} : { screen: config.screen }),
+        ...(config.escalatedPlan === undefined ? {} : { escalatedPlan: config.escalatedPlan }),
+      });
     },
 
     inClient: {
@@ -3583,15 +3743,17 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     },
 
     machine: {
+      available: () => lifecycle.available(),
       async provision(appId, ctx) {
         const app = await requireOwned(appId, ctx);
         const alreadyProvisioned = app.machine !== undefined;
-        // Wave 9 — provisioning a NEW machine is experimental (typed refusal
-        // while the flag is off); an already-provisioned app stays idempotent
-        // here so existing apps are never stranded.
-        if (!alreadyProvisioned && config.experimentalMachines !== true) {
-          throw machinesDisabledError();
-        }
+        // `experimentalMachines` used to gate NEW provisioning here with a second
+        // error explaining the flag. The flag is gone, and so is that error: with
+        // the sandbox adapter as the whole gate, "there is nothing to provision
+        // in" is exactly what the lifecycle's own `sandbox-unavailable` already
+        // says, and the escalation ladder never reaches this line — `laneGates`
+        // states the missing lane to the brain BEFORE it plans. An
+        // already-provisioned app stays idempotent, so it is never stranded.
         // Lane E — first provision is the "approve once" moment: unapproved
         // declared egress parks the approval card and refuses loudly here.
         await ensureEgressApproved(app, ctx);
@@ -3651,20 +3813,16 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       async destroy(appId, ctx) {
         const app = await requireOwned(appId, ctx, "owner");
         const cleared = await lifecycle.destroyMachine(app);
-        // De-graduation retires the cached schedule state with the machine.
-        await scheduleEngine.clearForApp(appId);
+        // De-graduation retires the old scheduler's leftover row with the machine.
+        await manifestTriggers.clearLegacyState(appId);
         if (app.machine !== undefined) await reportLifecycle("machine-destroy", appId, ctx);
         return cleared;
       },
-    },
-
-    schedules: {
-      tick: (at) => scheduleEngine.tick(at),
-      async sync(appId, ctx) {
+      async syncManifest(appId, ctx) {
         const app = await requireOwned(appId, ctx);
-        return scheduleEngine.syncManifest(app);
+        return manifestTriggers.sync(app, ctx);
       },
-      report: () => scheduleEngine.report(),
+      report: () => manifestTriggers.report(),
     },
 
     secrets: {

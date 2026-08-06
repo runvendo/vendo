@@ -20,6 +20,7 @@ import type {
   Principal,
   ResolvedModels,
   RunContext,
+  SeatModels,
   SkillListing,
   ThreadId,
   ToolDescriptor,
@@ -257,15 +258,11 @@ export function testTranscript() {
   };
 }
 
-/** A `ResolvedModels` whose seats are never actually called — for the runtime
- *  suites, where the harness under test is scripted rather than a real loop. */
-export function unusedModels(): ResolvedModels {
-  const unreachable = new Proxy({}, {
-    get() {
-      throw new Error("the model seat was not expected to be used by this test");
-    },
-  });
-  return { default: unreachable, reviewer: unreachable, judge: unreachable, fill: unreachable } as ResolvedModels;
+/** No seats at all — for the runtime suites, where the harness under test is
+ *  scripted rather than a real loop. Honest now that `Turn.models` is a subset
+ *  (`SeatModels`): a harness that DOES read a seat names the gap itself. */
+export function unusedModels(): SeatModels<LanguageModel> {
+  return {};
 }
 
 type StreamPart = Awaited<ReturnType<MockLanguageModelV3["doStream"]>>["stream"] extends ReadableStream<
@@ -295,16 +292,30 @@ export function toolCallTurn(toolName: string, input: unknown, toolCallId = "cal
   ];
 }
 
-export type ScriptedModel = LanguageModel & { toolNamesPerCall: string[][]; calls: number };
+export type ScriptedModel = LanguageModel & {
+  toolNamesPerCall: string[][];
+  /** What each call actually SENT — the only place a suite can prove what the
+   *  loop's history assembly did or did not include. */
+  prompts: unknown[];
+  /** The system message of each call, so a suite can assert on the BRIEF a loop
+   *  assembled without reaching into the loop to get it. */
+  systemPrompts: string[];
+  calls: number;
+};
 
 /** A model that replays scripted provider chunks — so the harness's loop, not a
  *  real model, is what the suite measures. */
 export function scriptedModel(turns: StreamPart[][]): ScriptedModel {
   const remaining = turns.map((turn) => [...turn]);
   const toolNamesPerCall: string[][] = [];
+  const prompts: unknown[] = [];
+  const systemPrompts: string[] = [];
   const model = new MockLanguageModelV3({
     doStream: async (request) => {
       toolNamesPerCall.push((request.tools ?? []).map((tool) => tool.name));
+      prompts.push(structuredClone(request.prompt));
+      const system = request.prompt.find((message) => message.role === "system");
+      systemPrompts.push(typeof system?.content === "string" ? system.content : "");
       (model as ScriptedModel).calls += 1;
       const chunks = remaining.shift();
       if (chunks === undefined) throw new Error("scripted model exhausted");
@@ -312,12 +323,14 @@ export function scriptedModel(turns: StreamPart[][]): ScriptedModel {
     },
   }) as unknown as ScriptedModel;
   model.toolNamesPerCall = toolNamesPerCall;
+  model.prompts = prompts;
+  model.systemPrompts = systemPrompts;
   model.calls = 0;
   return model;
 }
 
 /** `ResolvedModels` whose every seat is one scripted model. */
-export function seats(model: LanguageModel): ResolvedModels {
+export function seats(model: LanguageModel): ResolvedModels<LanguageModel> {
   return { default: model, reviewer: model, judge: model, fill: model };
 }
 

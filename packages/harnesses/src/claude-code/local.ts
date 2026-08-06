@@ -152,7 +152,12 @@ async function walk(directory: string, out: string[] = []): Promise<string[]> {
  *  "one box per conversation". */
 interface LocalSession {
   /** The live `ClaudeSession`, once the first message has opened it. */
-  session?: { send(prompt: string): Promise<void>; interrupt(): Promise<void>; end(): Promise<void> };
+  session?: {
+    send(prompt: string): Promise<void>;
+    steer(prompt: string): boolean;
+    interrupt(): Promise<void>;
+    end(): Promise<void>;
+  };
   /** Has this thread's workspace been materialized in this process? */
   warm: boolean;
   /** What this thread's disk holds — the sync-back baseline, per conversation. */
@@ -207,6 +212,13 @@ export async function localMachine(options: LocalMachineOptions): Promise<Sessio
     pluginPath: path.join(root, "host"),
 
     tree: held.tree,
+
+    // Loopback, because on this path the machine IS the host: a dev server the
+    // session starts binds here, and the browser asking for the preview is on
+    // the same box by definition (that is what `machine: "local"` means).
+    async url(port: number) {
+      return `http://127.0.0.1:${port}`;
+    },
 
     async materialize(files) {
       for (const file of files) {
@@ -311,6 +323,13 @@ export async function localMachine(options: LocalMachineOptions): Promise<Sessio
         // The turn is over; nothing may be attributed to it from here on.
         held.live = undefined;
       }
+    },
+
+    async steer(prompt: string) {
+      // No hop: the live session IS in this process. It refuses when no turn is
+      // in flight, which is the same answer the box door gives — one rule, two
+      // homes, exactly like `send`.
+      return held.session?.steer(prompt) === true;
     },
 
     async release() {

@@ -4,10 +4,11 @@ import type { SuiteResult } from "./types.js";
 
 /**
  * budgets.json shape. Ceilings are keyed "<suite>:<case>" and are the maximum
- * allowed p95 (ms) for that metric. Only deterministic suites are gated.
+ * allowed p95 (ms) for that metric. Only deterministic suites are gated. The
+ * calibration story behind each ceiling lives in the file's git history and
+ * the PRs that changed it.
  */
 export interface BudgetsFile {
-  toleranceRationale: string;
   ceilings: Record<string, number>;
 }
 

@@ -2,8 +2,7 @@ import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeF
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
-  VENDO_APPS_CREATE_TOOL,
-  VENDO_APPS_EDIT_TOOL,
+  VENDO_MAKE_TOOL,
   VendoError,
   type HarnessEvent,
   type Json,
@@ -74,6 +73,13 @@ interface FakeBox extends SandboxMachineLike {
   destroyed: boolean;
   /** How many messages this box's live session has answered. */
   messages: number;
+  /** ⚠️ TEST EDIT — every word the live session was STEERED with, in order.
+   *  The real session pushes these into its open SDK input stream; this is the
+   *  only place a test can see that they arrived. */
+  steers: string[];
+  /** ⚠️ TEST EDIT — did the live session get INTERRUPTED? Stop reaches it
+   *  through the door, so this is where the whole chain becomes observable. */
+  interrupted: boolean;
   env: Record<string, string>;
 }
 
@@ -117,7 +123,11 @@ function makeBox(
     env,
     destroyed: false,
     messages: 0,
+    steers: [],
+    interrupted: false,
   } as FakeBox;
+  /** Is the doubled session inside a `send()` right now? */
+  let inFlight = false;
 
   const routes = createSessionRoutes({
     root,
@@ -133,9 +143,19 @@ function makeBox(
       systemPrompt?: string;
       toolDoor?: { url: string; token: string };
     }) => ({
+      // ⚠️ TEST EDIT — the double speaks the whole `ClaudeSession` port now that
+      // `steer` joined it, and mirrors the real session's refusal when no turn is
+      // in flight (there would be nobody for the extra `result` to settle).
+      steer(prompt: string) {
+        if (box.messages === 0 || inFlight === false) return false;
+        box.steers.push(prompt);
+        return true;
+      },
       async send(prompt: string) {
         box.messages += 1;
-        await script({
+        inFlight = true;
+        try {
+          await script({
           prompt,
           ...(input.toolDoor === undefined ? {} : { toolDoor: input.toolDoor }),
           emit: input.emit,
@@ -161,10 +181,16 @@ function makeBox(
               return undefined;
             }
           },
-          ...(input.resume === undefined ? {} : { resume: input.resume }),
-        });
+            ...(input.resume === undefined ? {} : { resume: input.resume }),
+          });
+        } finally {
+          inFlight = false;
+        }
       },
-      async interrupt() { /* the turn is cut short; the session lives */ },
+      async interrupt() {
+        // ⚠️ TEST EDIT — the turn is cut short; the session lives.
+        box.interrupted = true;
+      },
       async end() { /* the box is going away */ },
     }),
   }) as {
@@ -173,6 +199,10 @@ function makeBox(
   };
 
   box.destroy = async () => { box.destroyed = true; };
+  // ⚠️ TEST EDIT — the widened `SandboxMachineLike` requires it. Shaped like
+  // e2b's per-port public hostname (`https://<host-for-port>`), which is the
+  // provider behaviour the shared adapter conformance suite certifies.
+  box.url = async (port?: number) => `https://${box.id}-${port ?? 8080}.fake-provider.test`;
   box.request = async (req) => {
     if (box.destroyed) throw new VendoError("not-found", "machine is gone");
     const payload = req.body === undefined
@@ -322,24 +352,25 @@ describe("the boot gate — a spawned harness with no machine to live on (design
 });
 
 describe("the tool surface it asks for (design §D2/§D4)", () => {
-  test("uncurated, with both app-generation tools withheld", () => {
+  test("uncurated, with app generation withheld", () => {
     // Exact, not `toMatchObject`: an extra withheld name is a capability this
     // harness silently lost, and the loadout coming back is the friction §D2
     // removed. Both legs declare it — the surface is the harness's, not the
-    // machine's.
+    // machine's. ONE name now covers both generation paths, so a second entry
+    // creeping back in means a door reopened that this harness closed.
     for (const harness of [claudeCode(), claudeCode({ machine: "local" })]) {
       expect(harness.toolSurface).toEqual({
         curated: false,
-        withhold: [VENDO_APPS_CREATE_TOOL, VENDO_APPS_EDIT_TOOL],
+        withhold: [VENDO_MAKE_TOOL],
       });
     }
   });
 });
 
 describe("options — declared, then overridable per turn", () => {
-  test("only the model knobs are per-turn overridable", () => {
+  test("only `maxTurns` is per-turn overridable — model and effort are construction-time (agents spec 2026-08-04 cut)", () => {
     const shape = (claudeCode().optionsSchema as never as { shape: Record<string, unknown> }).shape;
-    expect(Object.keys(shape).sort()).toEqual(["effort", "maxTurns", "model"]);
+    expect(Object.keys(shape).sort()).toEqual(["maxTurns"]);
   });
 
   test("m1 · `machine` is construction-time only — a per-turn option cannot move the SDK onto the host", async () => {
@@ -388,12 +419,94 @@ describe("E7 · the credential law — build list item 8", () => {
       ANTHROPIC_BASE_URL: undefined,
       VENDO_INFERENCE_KEY: undefined,
       VENDO_INFERENCE_URL: undefined,
+      VENDO_API_KEY: undefined,
       E2B_API_KEY: "e2b-should-never-travel",
     }, inferenceEnv);
     expect(Object.keys(env).sort()).toEqual([
       "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
       "DISABLE_AUTOUPDATER",
     ]);
+  });
+
+  test("VENDO_API_KEY is the third rung — the box thinks through the Vendo Cloud gateway", () => {
+    const env = withEnv({
+      ANTHROPIC_API_KEY: undefined,
+      ANTHROPIC_BASE_URL: undefined,
+      VENDO_INFERENCE_KEY: undefined,
+      VENDO_INFERENCE_URL: undefined,
+      VENDO_API_KEY: "vnd-key",
+      VENDO_CLOUD_URL: undefined,
+    }, inferenceEnv);
+    expect(env["ANTHROPIC_API_KEY"]).toBe("vnd-key");
+    // `<console>/api/v1`, through the same trim as every other rung's URL: the
+    // SDK re-appends the /v1.
+    expect(env["ANTHROPIC_BASE_URL"]).toBe("https://console.vendo.run/api");
+    // The gateway serves the vendo model FAMILY as literal ids and would
+    // grace-remap the SDK's raw claude-* default, so the default is pinned —
+    // env only, which an explicit `options.model` on the session payload beats.
+    expect(env["ANTHROPIC_MODEL"]).toBe("vendo");
+  });
+
+  test("VENDO_CLOUD_URL overrides the console base on the Cloud rung", () => {
+    const env = withEnv({
+      ANTHROPIC_API_KEY: undefined,
+      ANTHROPIC_BASE_URL: undefined,
+      VENDO_INFERENCE_KEY: undefined,
+      VENDO_INFERENCE_URL: undefined,
+      VENDO_API_KEY: "vnd-key",
+      VENDO_CLOUD_URL: "https://cloud.example/",
+    }, inferenceEnv);
+    expect(env["ANTHROPIC_BASE_URL"]).toBe("https://cloud.example/api");
+  });
+
+  test("the Cloud rung yields to every higher rung — and an empty string counts as absent", () => {
+    // An explicit Anthropic key wins; no gateway pin rides along.
+    const anthropic = withEnv({
+      ANTHROPIC_API_KEY: "sk-test",
+      ANTHROPIC_BASE_URL: undefined,
+      VENDO_INFERENCE_KEY: undefined,
+      VENDO_INFERENCE_URL: undefined,
+      VENDO_API_KEY: "vnd-key",
+    }, inferenceEnv);
+    expect(anthropic["ANTHROPIC_API_KEY"]).toBe("sk-test");
+    expect(anthropic["ANTHROPIC_MODEL"]).toBeUndefined();
+
+    // So does a pre-resolved VENDO_INFERENCE_* gateway.
+    const preResolved = withEnv({
+      ANTHROPIC_API_KEY: undefined,
+      ANTHROPIC_BASE_URL: undefined,
+      VENDO_INFERENCE_KEY: "gw-key",
+      VENDO_INFERENCE_URL: "https://console.vendo.run/api/v1",
+      VENDO_API_KEY: "vnd-key",
+    }, inferenceEnv);
+    expect(preResolved["ANTHROPIC_API_KEY"]).toBe("gw-key");
+    expect(preResolved["ANTHROPIC_MODEL"]).toBeUndefined();
+
+    // A bare BYO endpoint (URL, no key — mTLS/proxy auth) is an own credential
+    // too: routing it through Vendo's gateway would silently rebill the org.
+    const byoEndpoint = withEnv({
+      ANTHROPIC_API_KEY: undefined,
+      ANTHROPIC_BASE_URL: "https://gateway.example",
+      VENDO_INFERENCE_KEY: undefined,
+      VENDO_INFERENCE_URL: undefined,
+      VENDO_API_KEY: "vnd-key",
+    }, inferenceEnv);
+    expect(byoEndpoint["ANTHROPIC_API_KEY"]).toBeUndefined();
+    expect(byoEndpoint["ANTHROPIC_MODEL"]).toBeUndefined();
+    expect(byoEndpoint["ANTHROPIC_BASE_URL"]).toBe("https://gateway.example");
+
+    // "" is absent, exactly as the higher rungs already treat it.
+    const blanks = withEnv({
+      ANTHROPIC_API_KEY: "",
+      ANTHROPIC_BASE_URL: "",
+      VENDO_INFERENCE_KEY: "",
+      VENDO_INFERENCE_URL: "",
+      VENDO_API_KEY: "vnd-key",
+      VENDO_CLOUD_URL: "",
+    }, inferenceEnv);
+    expect(blanks["ANTHROPIC_API_KEY"]).toBe("vnd-key");
+    expect(blanks["ANTHROPIC_BASE_URL"]).toBe("https://console.vendo.run/api");
+    expect(blanks["ANTHROPIC_MODEL"]).toBe("vendo");
   });
 });
 
@@ -407,6 +520,7 @@ describe("the box's egress allowlist — what the provider is asked to filter", 
     ANTHROPIC_BASE_URL: undefined,
     VENDO_INFERENCE_KEY: undefined,
     VENDO_INFERENCE_URL: undefined,
+    VENDO_API_KEY: undefined,
   };
   const DOOR = "https://app.example.com/api/vendo/mcp";
 
@@ -466,6 +580,38 @@ describe("the box's egress allowlist — what the provider is asked to filter", 
     (turn as unknown as { options: unknown }).options = { egress: ["evil.example.net"] };
     await withEnvAsync(NO_INFERENCE, async () => { await drain(claudeCode({ sandbox }), turn); });
     expect(sandbox.specs[0]?.allowedDomains).toEqual(["api.anthropic.com"]);
+  });
+
+  test("the Cloud rung's gateway host rides the allowlist, read off the env the box is handed", async () => {
+    const sandbox = fakeSandbox(async () => undefined);
+    const harness = claudeCode({ sandbox });
+    provideHarnessAdapters(harness, {
+      toolDoor: { url: DOOR, mint: () => "vtk_3", revoke: () => undefined },
+    });
+    await withEnvAsync({ ...NO_INFERENCE, VENDO_API_KEY: "vnd-key", VENDO_CLOUD_URL: undefined }, async () => {
+      await drain(harness, makeTurn({ threadId: "thr_egress_cloud" }).turn);
+    });
+    // The gateway host and the door — NOT api.anthropic.com, which this box
+    // never dials.
+    expect(sandbox.specs[0]?.allowedDomains).toEqual(["console.vendo.run", "app.example.com"]);
+  });
+});
+
+describe("`template` — which image the conversation box boots from", () => {
+  test("construction-time option reaches sandbox.create", async () => {
+    const sandbox = fakeSandbox(async () => undefined);
+    await withEnvAsync({ VENDO_BOX_TEMPLATE: undefined }, async () => {
+      await drain(claudeCode({ sandbox, template: "tpl_convo" }), makeTurn({ threadId: "thr_template" }).turn);
+    });
+    expect(sandbox.specs[0]?.template).toBe("tpl_convo");
+  });
+
+  test("unset falls back to VENDO_BOX_TEMPLATE, like every box", async () => {
+    const sandbox = fakeSandbox(async () => undefined);
+    await withEnvAsync({ VENDO_BOX_TEMPLATE: "tpl_env" }, async () => {
+      await drain(claudeCode({ sandbox }), makeTurn({ threadId: "thr_template_env" }).turn);
+    });
+    expect(sandbox.specs[0]?.template).toBe("tpl_env");
   });
 });
 
@@ -591,6 +737,17 @@ describe("one box per conversation, destroyed when it goes idle (design §9)", (
     await machine.send({ prompt: "p", emit: () => undefined });
     // Three times the idle budget later, the box is still there.
     expect(sandbox.boxes[0]!.destroyed).toBe(false);
+  });
+});
+
+describe("the build's own dev server is reachable from the browser (blueprint §10.2)", () => {
+  test("the box hands out its provider ingress URL for a port its own traffic never uses", async () => {
+    // A coded build's preview is the TEMPLATE's dev server, on a second listener
+    // in the same box. `request()` already reaches any port from the HOST side;
+    // this is the browser→box side, which the session seam could not express.
+    const sandbox = fakeSandbox(async () => undefined);
+    const machine = await boxMachine({ sandbox, threadId: "thr_preview", env: {}, allowedDomains: [] });
+    expect(await machine.url(5173)).toBe("https://box_0-5173.fake-provider.test");
   });
 });
 
@@ -820,21 +977,17 @@ describe("a turn on a real box wire", () => {
     });
   });
 
-  test("D2 · Turn.system reaches the box WHOLE, with the embedding note after it", async () => {
+  test("D2 · Turn.system reaches the box WHOLE and ALONE — nothing appended after it", async () => {
     // The D2 plumbing question, measured rather than read: the composed brief
     // (which carries "Never claim a tool ran unless its result confirms that it
     // did") is what `vendo()` thinks with, and it must be what the box thinks
-    // with too. It is — so D2's invented automation is not a dropped brief.
+    // with too. EXACTLY: the hard-coded embedding briefing this harness used to
+    // append after the host's prompt is gone — that voice belongs to the host's
+    // prompt seam, which a trailing append could never be overridden through.
     let brief: string | undefined;
     const sandbox = fakeSandbox(async (box) => { brief = box.systemPrompt; });
     await drain(claudeCode({ sandbox }), makeTurn().turn);
-    expect(brief).toContain("PRODUCT BRIEF");
-    // Ours first, the embedding note after — never the other way round, and
-    // never instead. The note is now a few lines, not the old wall: Claude Code
-    // already knows how to work in a directory, so all we add is the EMBEDDING.
-    expect(brief?.startsWith("PRODUCT BRIEF")).toBe(true);
-    expect(brief).toContain("embedded in this product");
-    expect(brief).toContain("app.vendo");
+    expect(brief).toBe("PRODUCT BRIEF");
   });
 
   test("NO tool listing travels to the box any more — the door lists live, so nothing can go stale", async () => {
@@ -1189,5 +1342,184 @@ describe("a turn on a real box wire", () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ type: "error" });
     expect(JSON.stringify(events[0])).not.toMatch(/sandbox|adapter|undefined/i);
+  });
+});
+
+describe("mid-build steering — the user's words into the turn already in flight (§10.2)", () => {
+  test("the words reach the SESSION answering this message, over the real door", async () => {
+    // The whole chain, no stub on either side: the harness registers a steer
+    // handler on the turn, the runtime calls it, `boxMachine` posts
+    // /session/<in-flight>/steer to the REAL box door, and the door hands it to
+    // the live session — which is the fake box's scripted stand-in for the SDK.
+    let release: (() => void) | undefined;
+    const sandbox = fakeSandbox(async (box) => {
+      box.emit({ type: "text", delta: "building it" });
+      await new Promise<void>((resolve) => { release = resolve; });
+      box.emit({ type: "text", delta: "Got it — regrouping by client." });
+    });
+    const { turn } = makeTurn({ threadId: "thr_steer_box" });
+    let handOver: ((text: string) => Promise<boolean>) | undefined;
+    (turn as unknown as { onSteer: unknown }).onSteer = (handler: (text: string) => Promise<boolean>) => {
+      handOver = handler;
+    };
+
+    const events: HarnessEvent[] = [];
+    const running = (async () => {
+      for await (const event of claudeCode({ sandbox }).run(turn as never)) events.push(event);
+    })();
+
+    // Wait for the build to be under way, then steer it.
+    await vi.waitFor(() => expect(events).toContainEqual({ type: "text", delta: "building it" }));
+    expect(handOver).toBeDefined();
+    await expect(handOver!("group by client instead")).resolves.toBe(true);
+
+    release?.();
+    await running;
+
+    expect(sandbox.boxes[0]!.steers).toEqual(["group by client instead"]);
+    expect(events).toContainEqual({ type: "text", delta: "Got it — regrouping by client." });
+    // ONE box, ONE message: a steer is never a second send.
+    expect(sandbox.boxes).toHaveLength(1);
+    expect(sandbox.boxes[0]!.messages).toBe(1);
+  });
+
+  test("a steer with nothing in flight does not land", async () => {
+    const sandbox = fakeSandbox(async () => undefined);
+    const { turn } = makeTurn({ threadId: "thr_steer_idle" });
+    let handOver: ((text: string) => Promise<boolean>) | undefined;
+    (turn as unknown as { onSteer: unknown }).onSteer = (handler: (text: string) => Promise<boolean>) => {
+      handOver = handler;
+    };
+    await drain(claudeCode({ sandbox }), turn);
+    // The turn is over; the machine has no message to fold words into.
+    await expect(handOver!("too late")).resolves.toBe(false);
+  });
+
+  test("a harness turn whose runtime offers no steering channel still runs", async () => {
+    // `onSteer` is OPTIONAL by construction: every harness and every driver that
+    // predates steering is unchanged.
+    const sandbox = fakeSandbox(async (box) => { box.emit({ type: "text", delta: "hi" }); });
+    expect(await drain(claudeCode({ sandbox }), makeTurn({ threadId: "thr_no_steer" }).turn))
+      .toContainEqual({ type: "text", delta: "hi" });
+  });
+});
+
+describe("stop is still the only thing that cancels — steering never does", () => {
+  test("an aborted turn reaches ClaudeSession.interrupt() through the door, unchanged", async () => {
+    // `interrupt()` is NOT unused and never was: Stop → `thread.stop()` → the
+    // request abort → `turn.signal`, which the poll loop turns into
+    // POST /session/<id>/interrupt, which the door hands to the live session.
+    // This pins that chain so steering cannot quietly become the stop path.
+    const abort = new AbortController();
+    let release: (() => void) | undefined;
+    const sandbox = fakeSandbox(async (box) => {
+      box.emit({ type: "text", delta: "building it" });
+      // A real build is not silent, and that matters here: the poll loop checks
+      // the abort at the TOP of each pass, and the door holds a poll open for up
+      // to POLL_WAIT_MS when it has nothing to say. A talking box returns each
+      // poll promptly, which is what lets Stop land promptly. (A SILENT box waits
+      // out the poll window — real, pre-existing, and not this lane's to change.)
+      const beat = setInterval(() => box.emit({ type: "text", delta: "." }), 20);
+      try {
+        await new Promise<void>((resolve) => { release = resolve; });
+      } finally {
+        clearInterval(beat);
+      }
+    });
+    const { turn } = makeTurn({ threadId: "thr_stop" });
+    (turn as unknown as { signal: AbortSignal }).signal = abort.signal;
+
+    const events: HarnessEvent[] = [];
+    const running = (async () => {
+      for await (const event of claudeCode({ sandbox }).run(turn as never)) events.push(event);
+    })();
+    await vi.waitFor(() => expect(events).toContainEqual({ type: "text", delta: "building it" }));
+
+    abort.abort();
+    await vi.waitFor(() => expect(sandbox.boxes[0]!.interrupted).toBe(true));
+    release?.();
+    await running;
+  });
+
+  test("a steer never interrupts — the turn it joined keeps running", async () => {
+    let release: (() => void) | undefined;
+    const sandbox = fakeSandbox(async (box) => {
+      box.emit({ type: "text", delta: "building it" });
+      await new Promise<void>((resolve) => { release = resolve; });
+    });
+    const { turn } = makeTurn({ threadId: "thr_steer_no_stop" });
+    let handOver: ((text: string) => Promise<boolean>) | undefined;
+    (turn as unknown as { onSteer: unknown }).onSteer = (handler: (text: string) => Promise<boolean>) => {
+      handOver = handler;
+    };
+
+    const events: HarnessEvent[] = [];
+    const running = (async () => {
+      for await (const event of claudeCode({ sandbox }).run(turn as never)) events.push(event);
+    })();
+    await vi.waitFor(() => expect(events).toContainEqual({ type: "text", delta: "building it" }));
+    await handOver!("group by client instead");
+
+    expect(sandbox.boxes[0]!.interrupted).toBe(false);
+    release?.();
+    await running;
+    expect(sandbox.boxes[0]!.interrupted).toBe(false);
+  });
+});
+
+/**
+ * §4.4's loadout, items 2 and 3: the builder's two REFERENCES, on disk, where the
+ * `building-apps` skill tells it to look.
+ *
+ * Both already exist and are already generated — `hostComponentFiles(catalog)`
+ * writes `/host/components/<Name>.md` and `buildingAppsSkill.files` carries
+ * `references/format.md`, which is `kitPrompt()`'s output, not a hand-written
+ * second copy. What nothing proved is the HOP: that the projection composition
+ * assembles actually reaches the machine's disk, at a path the skill's own
+ * workspace-relative instructions resolve against.
+ *
+ * That is precisely the producer/consumer seam this repo shipped four times green
+ * and dead, so it is tested through the REAL box door with nothing stubbed on
+ * either side: a real checkout, a real materialize, a real in-box walk.
+ */
+describe("the builder's references reach the box's disk (§4.4 loadout)", () => {
+  /** Exactly what `hostSkillFiles` + `hostComponentFiles` project, in shape. */
+  const HOST_FILES = {
+    "/host/components/DataTable.md": "# DataTable\n\nRows of things.\n\n## Props\n\n```json\n{}\n```\n",
+    "/host/skills/building-apps/SKILL.md": "---\nname: building-apps\ndescription: Build an app.\n---\n\nbody\n",
+    "/host/skills/building-apps/references/format.md": "# The .vendo format\n\n<App>…</App>\n",
+  };
+
+  test("the component reference and the format reference are both readable in the box", async () => {
+    const seen: Record<string, string | undefined> = {};
+    const sandbox = fakeSandbox(async (box) => {
+      // The skill body sends the builder to `host/components/` and
+      // `host/skills/building-apps/references/format.md`, RELATIVE to its cwd.
+      // The box's cwd is the workspace root, so these are the resolved paths.
+      for (const path of Object.keys(HOST_FILES)) seen[path] = box.read(path);
+    });
+    const { turn } = makeTurn({ files: { ...HOST_FILES, "/user/apps/app_1/app.vendo": "<App/>" } });
+    await drain(claudeCode({ sandbox }), turn);
+
+    expect(seen).toEqual(HOST_FILES);
+  });
+
+  // "the references are never carried home" is NOT tested here on purpose:
+  // `/user/scratch never leaves the box, and /host is never written back` above
+  // already pins it through the same real door, and a second copy of it would be
+  // a test that has to be kept in step with nothing.
+
+  test("the /host mount IS the SDK plugin root — one skills mechanism, not two", async () => {
+    let pluginRoot: string | undefined;
+    const sandbox = fakeSandbox(async (box) => { pluginRoot = box.read("/host/skills/building-apps/SKILL.md"); });
+    const { turn } = makeTurn({
+      files: HOST_FILES,
+      skills: [{ name: "building-apps", description: "Build an app." }],
+    });
+    await drain(claudeCode({ sandbox }), turn);
+
+    // The plugin path the driver hands the SDK and the mount the skill file lands
+    // on are the same directory, which is why no projection or copy exists.
+    expect(pluginRoot).toBe(HOST_FILES["/host/skills/building-apps/SKILL.md"]);
   });
 });

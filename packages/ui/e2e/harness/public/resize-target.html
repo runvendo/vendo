@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Served app that reports its own height</title>
+    <style>
+      html, body { margin: 0; }
+      body { font: 16px/1.4 system-ui, sans-serif; color: #102a43; }
+      main {
+        box-sizing: border-box; padding: 20px; display: flex; flex-direction: column;
+        background: linear-gradient(#e3f0ff, #cfe4ff);
+        border: 2px solid #2680c2; border-radius: 12px;
+      }
+      h1 { margin: 0; font-size: 20px; }
+      p { margin: 6px 0 0; color: #486581; }
+      .bottom { margin-top: auto; font-weight: 700; color: #0b4f79; }
+    </style>
+  </head>
+  <body>
+    <!--
+      The app half of the frame resize protocol, as a fixture. The real app half
+      ships in the served-app template; this stands in for it so the HOST half can
+      be verified in a browser on its own: it reports `?h=` as its natural height
+      over the jail's exact message shape and renders exactly that much content,
+      so a frame clipped by the host's bounds is visible as clipped.
+    -->
+    <main id="app">
+      <h1 id="claim">reports …</h1>
+      <p>Served app fixture — the app reports, the host decides.</p>
+      <span class="bottom" id="bottom">BOTTOM of the app's content</span>
+    </main>
+    <script>
+      var height = Number(new URLSearchParams(location.search).get("h")) || 480;
+      document.getElementById("app").style.height = height + "px";
+      document.getElementById("claim").textContent = "reports " + height + "px";
+      document.getElementById("bottom").textContent = "BOTTOM of " + height + "px of content";
+      // Exactly the jail runtime's wire: stamped `vendo: true`, kind "resize",
+      // a numeric height, posted to the parent.
+      parent.postMessage({ vendo: true, kind: "resize", height: height }, "*");
+    </script>
+  </body>
+</html>

@@ -592,6 +592,21 @@ describe("compilePlan", () => {
       expect(result.plan?.server?.served).toBeUndefined();
       expect(result.issues.join(" ")).toContain("bare flag");
     });
+
+    it("accepts a box-served plan with zero groups — the whole surface is the box", () => {
+      const result = compilePlan(
+        `<Plan name="Board">
+           <Server kind="box" served why="Drag-and-drop between columns is an interaction no component can express."/>
+         </Plan>`,
+        FACTS,
+      );
+      expect(result.issues).toEqual([]);
+      expect(result.plan?.server).toEqual({
+        kind: "box",
+        served: true,
+        why: "Drag-and-drop between columns is an interaction no component can express.",
+      });
+    });
   });
 
   describe("the display hint (redesign spec §5)", () => {

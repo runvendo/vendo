@@ -107,29 +107,6 @@ describe("agent citations bridge (Knowledge K1)", () => {
     expect(found[0]!.data).toMatchObject({ outcome: "unavailable", citations: [] });
   });
 
-  it("K15: carries the unverified mark so the thread can say the answer was not checked", async () => {
-    const found = await citationsPartsFor({
-      kind: VENDO_KNOWLEDGE_RESULT_KIND,
-      outcome: "answered",
-      unverified: true,
-      hits: [{ docId: "doc-transfers", title: "Wire transfer limits", kind: "docs", visibility: "public", snippet: "s" }],
-    });
-    expect(found).toHaveLength(1);
-    expect(found[0]!.data).toMatchObject({ outcome: "answered", unverified: true });
-    expect(
-      vendoCitationsPartSchema.safeParse({ type: "data-vendo-citations", ...found[0]!.data }).success,
-    ).toBe(true);
-  });
-
-  it("K15: leaves the mark off a verified result — it means 'could not check', not 'not checked'", async () => {
-    const found = await citationsPartsFor({
-      kind: VENDO_KNOWLEDGE_RESULT_KIND,
-      outcome: "answered",
-      hits: [{ docId: "doc-transfers", title: "Wire transfer limits", kind: "docs", visibility: "public", snippet: "s" }],
-    });
-    expect(found[0]!.data.unverified).toBeUndefined();
-  });
-
   it("falls back to the docId when a hit carries no title", async () => {
     const found = await citationsPartsFor({
       kind: VENDO_KNOWLEDGE_RESULT_KIND,

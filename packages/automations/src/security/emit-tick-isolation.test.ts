@@ -1,5 +1,6 @@
 import {
   VENDO_APP_FORMAT,
+  triggerKindRefs,
   type AppDocument,
   type ApprovalId,
   type AuditEvent,
@@ -7,6 +8,7 @@ import {
   type RunContext,
   type StoreAdapter,
   type ToolRegistry,
+  type Trigger,
 } from "@vendoai/core";
 import { memoryStoreAdapter } from "@vendoai/core/conformance";
 import type { AppsRuntime } from "@vendoai/apps";
@@ -28,11 +30,11 @@ const ctx = (subject: string): RunContext => ({
   sessionId: `session_${subject}`,
 });
 
-const app = (id: string, trigger: NonNullable<AppDocument["trigger"]>): AppDocument =>
-  ({ format: VENDO_APP_FORMAT, id, name: id, trigger });
+const app = (id: string, trigger: Omit<Trigger, "id">): AppDocument =>
+  ({ format: VENDO_APP_FORMAT, id, name: id, triggers: [{ id: "main", ...trigger }] });
 
 const seedApp = async (store: StoreAdapter, doc: AppDocument, subject: string, enabled = true): Promise<void> => {
-  await store.records("vendo_apps").put({ id: doc.id, data: { subject, enabled, doc }, refs: { subject, ...(doc.trigger === undefined ? {} : { trigger_kind: doc.trigger.on.kind }) } });
+  await store.records("vendo_apps").put({ id: doc.id, data: { subject, enabled, doc }, refs: { subject, ...triggerKindRefs(doc.triggers) } });
 };
 
 class GuardDouble implements Guard {
@@ -95,14 +97,14 @@ describe("emit / tick cross-principal isolation", () => {
   });
 
   it("tick fires each due schedule under its own owner and scopes visibility per owner", async () => {
-    const scheduleTrigger = (): NonNullable<AppDocument["trigger"]> => ({
+    const scheduleTrigger = (): Omit<Trigger, "id"> => ({
       on: { kind: "schedule", every: "15m" },
       run: { kind: "steps", steps: [{ id: "s", tool: "fn:main", args: { event: "event" } }] },
     });
     await seedApp(store, app("app_sched_a", scheduleTrigger()), "user_a");
     await seedApp(store, app("app_sched_b", scheduleTrigger()), "user_b");
     for (const id of ["app_sched_a", "app_sched_b"]) {
-      await store.records("automations:schedule").put({ id, data: { lastFiredAt: "2026-07-12T08:00:00.000Z" } });
+      await store.records("automations:schedule").put({ id: `${id}:main`, data: { lastFiredAt: "2026-07-12T08:00:00.000Z" } });
     }
     const engine = createAutomations({ apps: appsDouble(), tools: registry(), guard, store, now: () => NOW });
 
@@ -122,7 +124,7 @@ describe("emit / tick cross-principal isolation", () => {
       run: { kind: "steps", steps: [{ id: "s", tool: "fn:main" }] },
     }), "user_a");
     // Cursor is 4 hours behind — many windows were "missed".
-    await store.records("automations:schedule").put({ id: "app_every", data: { lastFiredAt: "2026-07-12T08:00:00.000Z" } });
+    await store.records("automations:schedule").put({ id: "app_every:main", data: { lastFiredAt: "2026-07-12T08:00:00.000Z" } });
     const engine = createAutomations({ apps: appsDouble(), tools: registry(), guard, store, now: () => NOW });
 
     const first = await engine.tick();

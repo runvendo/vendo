@@ -1,5 +1,7 @@
-import { VendoError } from "@vendoai/core";
-import { registerActiveTurn, touchActiveTurn, trackTurnResponse } from "../turn-liveness.js";
+import { VendoError, withSseKeepalive } from "@vendoai/core";
+import { UI_MESSAGE_STREAM_HEADERS } from "ai";
+import { registerActiveTurn, steerActiveTurn, touchActiveTurn, trackTurnResponse } from "../turn-liveness.js";
+import { recordResumableTurn, resumableTurnStream } from "../turn-resume.js";
 import { json, requestJson, route, string, type RouteEntry } from "./shared.js";
 
 /** The effective thread id the agent stamps on every turn response (03 §1). */
@@ -46,7 +48,36 @@ export const threadRoutes: RouteEntry[] = [
       subject: ctx.principal.subject,
       abort: () => turnAbort.abort(),
     });
-    return trackTurnResponse(turn, unregister);
+    // Stream resume (blueprint §4.1 item 5): the turn's bytes are recorded so a
+    // client whose connection died can rejoin through `GET /threads/:id/stream`.
+    // Recorded HERE because this is the one place both engines' turns converge
+    // and the turn's identity (thread + subject) already exists.
+    //
+    // Recorder INSIDE, liveness OUTSIDE, and the order is load-bearing: ENG-353's
+    // registration must end when THIS CLIENT stops reading, not when the turn's
+    // bytes run out. The recorder drains its own branch, so the turn still
+    // completes for a reader who left — but the watchdog keeps watching a turn
+    // whose client is merely slow.
+    return trackTurnResponse(
+      recordResumableTurn(turn, { threadId, subject: ctx.principal.subject }),
+      unregister,
+    );
+  }),
+  // The SERVER half of `ChatTransport.reconnectToStream` (ai@6): the URL, the
+  // method and the 204 are the SDK's, not ours. 204 = nothing in flight, so the
+  // client goes back to ready on its persisted transcript.
+  route("GET", "/threads/:id/stream", async ({ context, params }) => {
+    const ctx = await context("chat");
+    const id = string(params["id"], "thread id");
+    const replay = resumableTurnStream({ threadId: id, subject: ctx.principal.subject });
+    if (replay === null) return new Response(null, { status: 204 });
+    const response = withSseKeepalive(new Response(replay, { headers: UI_MESSAGE_STREAM_HEADERS }));
+    // The resumed consumer takes over the turn's liveness beat: the panel's
+    // `withTurnHeartbeat` arms itself off this header, so a turn whose first
+    // client vanished is kept alive by the one that rejoined instead of being
+    // idle-aborted out from under it.
+    response.headers.set(THREAD_ID_HEADER, id);
+    return response;
   }),
   // ENG-353 — turn-liveness beat. Principal-scoped: it refreshes only the
   // caller's own in-flight turns, and unknown/foreign ids answer
@@ -55,6 +86,29 @@ export const threadRoutes: RouteEntry[] = [
     const ctx = await context("chat");
     const id = string(params["id"], "thread id");
     return json({ active: touchActiveTurn(id, ctx.principal.subject) });
+  }),
+  // §10.2 — mid-build steering. Modelled on the beat above and scoped the same
+  // way: it can only reach the caller's OWN turn in flight, and an unknown or
+  // foreign id answers `landed: false`, which is also what an idle thread
+  // answers (no oracle). The answer is the ONLY signal the client needs — there
+  // is no capability to ask about and nothing to validate up front.
+  //
+  // Independent of stream-resume above: a steer INJECTS input into the running
+  // turn via the registry, while resume REPLAYS the recorded byte stream — so a
+  // client that rejoins through `GET /threads/:id/stream` sees the steered
+  // output for free, because it flows through the same recorded Response.
+  route("POST", "/threads/:id/steer", async ({ request, context, params }) => {
+    const ctx = await context("chat");
+    const id = string(params["id"], "thread id");
+    const body = await requestJson(request);
+    return json({
+      landed: await steerActiveTurn(
+        id,
+        ctx.principal.subject,
+        string(body["text"], "text"),
+        string(body["messageId"], "messageId"),
+      ),
+    });
   }),
   route("GET", "/threads", async ({ deps, context }) => {
     return json(await deps.agent.threads.list(await context("chat")));

@@ -23,7 +23,6 @@ describe("event allowlist", () => {
       "init_completed",
       "init_failed",
       "doctor_run",
-      "extract_completed",
       "command_run",
       "star_prompt",
       "agent_run",
@@ -66,22 +65,6 @@ describe("event allowlist", () => {
     );
   });
 
-  it("extract_completed permits exactly the documented result metrics", () => {
-    expect([...EVENT_ALLOWLIST.extract_completed].sort()).toEqual(
-      [
-        ...BASE_PROP_KEYS,
-        "framework",
-        "method",
-        "routeCount",
-        "toolCount",
-        "ok",
-        "durationMs",
-        "frameworkVersion",
-        "zodVersion",
-      ].sort(),
-    );
-  });
-
   it("command_run permits exactly the closed command-outcome shape", () => {
     expect([...EVENT_ALLOWLIST.command_run].sort()).toEqual(
       [...BASE_PROP_KEYS, "command", "ok", "failedStep", "errorClass", "durationMs"].sort(),
@@ -105,15 +88,10 @@ describe("cloud prop keys", () => {
         "projectName",
         "errorDetail",
         "repoHost",
-        "connectionsConfigured",
-        "toolkitsEnabled",
-        "servedApps",
-        "experimentalFlags",
         "detectMs",
         "engineMs",
         "themeMs",
         "wiringMs",
-        "componentsMs",
       ].sort(),
     );
   });

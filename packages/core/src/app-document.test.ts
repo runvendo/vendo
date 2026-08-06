@@ -52,7 +52,8 @@ const invoiceChaser = () => ({
     attachments: { about: "Supporting documents", kind: "files" as const },
   },
   server: "e2b:snap_x91",
-  trigger: {
+  triggers: [{
+    id: "chase",
     on: { kind: "schedule" as const, cron: "0 9 * * 1" },
     run: {
       kind: "steps" as const,
@@ -61,7 +62,7 @@ const invoiceChaser = () => ({
         { id: "send", tool: "fn:send_reminders", if: "$count(steps.load) > 0" },
       ],
     },
-  },
+  }],
   egress: ["api.stripe.com", "api.resend.com"],
   secrets: ["RESEND_API_KEY"],
   pins: [{ slot: "invoice-card", base: "sha256:abc123" }],
@@ -85,6 +86,43 @@ describe("appDocumentSchema and validateAppDocument", () => {
     const document = invoiceChaser();
     expect(appDocumentSchema.parse(document)).toEqual(document);
     expect(validateAppDocument(document)).toEqual({ ok: true, app: document });
+  });
+
+  it("normalizes a pre-list single `trigger` document into the triggers list", () => {
+    // Documents stored before an app had a LIST of triggers carry one `trigger`
+    // object and no trigger id. They must load and validate unchanged, as the
+    // one-element list they always meant, or every automation armed before this
+    // shape existed goes dark.
+    const legacy = {
+      ...minimal(),
+      trigger: {
+        on: { kind: "host-event", event: "invoice.paid" },
+        run: { kind: "steps", steps: [{ id: "load", tool: "host_invoices_list" }] },
+      },
+    };
+    const expected = {
+      ...minimal(),
+      triggers: [{
+        id: "main",
+        on: { kind: "host-event", event: "invoice.paid" },
+        run: { kind: "steps", steps: [{ id: "load", tool: "host_invoices_list" }] },
+      }],
+    };
+    // The legacy key does not survive: a normalized document never carries both.
+    expect(appDocumentSchema.parse(legacy)).toEqual(expected);
+    expect(validateAppDocument(legacy)).toEqual({ ok: true, app: expected });
+  });
+
+  it("rejects two triggers sharing one id", () => {
+    // The id is the key for this trigger's grants, sponsorship, schedule cursor
+    // and runs, so a duplicate would silently share all of them.
+    expectValidation({
+      ...minimal(),
+      triggers: [
+        { id: "main", on: { kind: "host-event", event: "a" }, run: { kind: "agentic", prompt: "x" } },
+        { id: "main", on: { kind: "host-event", event: "b" }, run: { kind: "agentic", prompt: "y" } },
+      ],
+    });
   });
 
   it("accepts unknown UI formats as opaque payloads", () => {
@@ -417,5 +455,37 @@ describe("placements", () => {
     const result = validateAppDocument({ ...minimal(), placements: [""] });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe("validation");
+  });
+});
+
+// Contract §3.2 — a checkout writes each `source` key to disk, so the key space
+// is a security surface: `../` or a leading slash would put one app's checkout in
+// another app's files. The document validator is the gate every stored document
+// passes, so the rule lives there rather than at the write.
+describe("source", () => {
+  const file = { hash: `sha256:${"a".repeat(64)}`, bytes: 3, text: "abc" };
+
+  it("round-trips a relative path", () => {
+    const withSource = { ...minimal(), source: { "src/App.tsx": file } };
+    expect(appDocumentSchema.parse(withSource)).toEqual(withSource);
+    expect(validateAppDocument(withSource)).toEqual({ ok: true, app: withSource });
+  });
+
+  it("refuses a path that escapes the app's directory", () => {
+    for (const path of ["../other/App.tsx", "/etc/passwd", "src/../../x.ts", "src//App.tsx", "./App.tsx"]) {
+      const result = validateAppDocument({ ...minimal(), source: { [path]: file } });
+      expect(result.ok, path).toBe(false);
+    }
+  });
+
+  it("refuses a file carrying both text and a blobRef, or neither", () => {
+    expect(validateAppDocument({
+      ...minimal(),
+      source: { "a.ts": { ...file, blobRef: "wsb_1" } },
+    }).ok).toBe(false);
+    expect(validateAppDocument({
+      ...minimal(),
+      source: { "a.ts": { hash: file.hash, bytes: 3 } },
+    }).ok).toBe(false);
   });
 });

@@ -240,12 +240,36 @@ const ADDITIVE_DDL = [
   "CREATE INDEX IF NOT EXISTS vendo_knowledge_docs_created_idx ON vendo_knowledge_docs (created_at DESC, id DESC)",
   "CREATE INDEX IF NOT EXISTS vendo_knowledge_chunks_created_idx ON vendo_knowledge_chunks (created_at DESC, id DESC)",
   // The automations tick and vendo.emit fetch apps by trigger kind (schedule / host-event).
-  // A STORED generated column projects doc->trigger->on->kind into an indexable value so
-  // those paths query only the matching apps instead of scanning every app for every subject.
+  // A STORED generated column projects the kind into an indexable value so those paths query
+  // only the matching apps instead of scanning every app for every subject.
   // ADD COLUMN ... GENERATED ALWAYS AS ... STORED backfills existing rows on ALTER, so no
   // separate data migration is needed (mirrors the vendo_state.id generated column above).
-  "ALTER TABLE vendo_apps ADD COLUMN IF NOT EXISTS trigger_kind text GENERATED ALWAYS AS (doc->'trigger'->'on'->>'kind') STORED",
-  "CREATE INDEX IF NOT EXISTS vendo_apps_subject_trigger_idx ON vendo_apps (subject, trigger_kind)",
+  //
+  // ONE COLUMN PER KIND, because an app has a LIST of triggers: "which kind does this app
+  // fire on" is a set, and a ref is matched by equality. The single `trigger_kind` column
+  // this replaces could only hold one, so an app with a schedule AND a host-event trigger
+  // would have gone dark on one of them. Each column reads BOTH document shapes — the
+  // `triggers` list and the pre-list `trigger` object — because the generated column sees
+  // the doc exactly as stored, and read-time normalization happens above the store: a
+  // legacy row that nobody has re-armed yet must still be found by the tick.
+  ...(["schedule", "host-event", "external"] as const).flatMap((kind) => [
+    `ALTER TABLE vendo_apps ADD COLUMN IF NOT EXISTS trigger_kind_${kind.replace(/-/g, "_")} text `
+    + `GENERATED ALWAYS AS (CASE WHEN doc->'triggers' @> '[{"on":{"kind":"${kind}"}}]'::jsonb `
+    + `OR doc->'trigger'->'on'->>'kind' = '${kind}' THEN '1' END) STORED`,
+  ]),
+  // Indexed where a ref-filtered query actually exists: the tick asks for schedule apps
+  // deployment-wide, `emit` asks for one subject's host-event apps. External triggers arrive
+  // through `webhook`, which verifies a signature per row and still scans; it gets a column
+  // for symmetry (so the ref key exists the day it stops scanning) and no index it never uses.
+  // An automation grant is consented to per (app, TRIGGER): the engine refuses a grant whose
+  // trigger id is not the one firing, so this column is authority, not metadata. NULL on every
+  // grant that is not an automation's, and on automation grants minted before an app had a
+  // trigger list — the engine reads a missing value as the `main` those documents normalize to.
+  "ALTER TABLE vendo_grants ADD COLUMN IF NOT EXISTS trigger_id text",
+  "DROP INDEX IF EXISTS vendo_apps_subject_trigger_idx",
+  "ALTER TABLE vendo_apps DROP COLUMN IF EXISTS trigger_kind",
+  "CREATE INDEX IF NOT EXISTS vendo_apps_trigger_schedule_idx ON vendo_apps (trigger_kind_schedule)",
+  "CREATE INDEX IF NOT EXISTS vendo_apps_subject_trigger_host_event_idx ON vendo_apps (subject, trigger_kind_host_event)",
   // Thread listing derives a title without loading the full messages array (routing.ts uses a
   // messages-less listSelect once a row has a stored title). NULLable; populated on next write.
   "ALTER TABLE vendo_threads ADD COLUMN IF NOT EXISTS title text",

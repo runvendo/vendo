@@ -27,7 +27,7 @@ import { createStore, type VendoStore } from "@vendoai/store";
 import { createGuard, type PolicyConfig, type VendoGuard } from "@vendoai/guard";
 import { createActions } from "@vendoai/actions";
 import { connectorDiscoveryRegistry } from "@vendoai/agent";
-import { createApps, type AppsRuntime } from "@vendoai/apps";
+import { createApps, type AppsRuntime, type SandboxAdapter } from "@vendoai/apps";
 import { createAutomations, type AutomationsEngine } from "@vendoai/automations";
 
 export const fixtureBaseUrl = (): string => inject("fixtureBaseUrl");
@@ -87,7 +87,9 @@ export const hostTools = [
     name: "host_invoices_send",
     description: "Send invoice",
     inputSchema: { type: "object" },
-    risk: "write",
+    // Sending reaches a human, so the dev labels it destructive — the label is
+    // final (two-vote grading removed), and THE LAW's away-run refusals rest on it.
+    risk: "destructive",
     binding: { kind: "route", method: "POST", path: "/api/invoices/{id}/send", argsIn: "body" },
   },
   {
@@ -191,8 +193,9 @@ export interface Stack {
 
 export interface StackOptions {
   runner?: AgentRunner;
-  /** Build the runner from the stack's own parts — the live leg builds
-   *  agent.asRunner() over the same guard + bound registry. Wins over runner. */
+  /** Build the runner from the stack's own parts — the live leg builds the
+   *  `@vendoai/agents` away runner over the same guard and store the engine got.
+   *  Wins over runner. */
   runnerFrom?: (parts: { guard: VendoGuard; bound: ToolRegistry; store: VendoStore }) => AgentRunner;
   now?: () => Date;
   policy?: PolicyConfig;
@@ -206,6 +209,10 @@ export interface StackOptions {
    *  (The v1 fn:-step sandbox vehicle died with execution-v2 Wave 1.5; fn
    *  execution returns over the box door with the fn/schedules lane.) */
   wrapTools?: (bound: ToolRegistry) => ToolRegistry;
+  /** A v2 box adapter, for suites about MACHINE apps. Composes the apps runtime
+   *  with machines enabled and its arming seam bound to this stack's own
+   *  automations engine — the umbrella's wiring, not a stand-in for it. */
+  sandbox?: SandboxAdapter;
 }
 
 export async function createStack(options: StackOptions = {}): Promise<Stack> {
@@ -228,11 +235,26 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     actions.add(connectorDiscoveryRegistry(serviceToolPorts()));
   }
   const bound = options.wrapTools === undefined ? guard.bind(actions) : options.wrapTools(guard.bind(actions));
+  // The arming seam closes over the engine composed BELOW: arming only ever
+  // happens inside a call, which is after createStack returns — the umbrella
+  // does exactly this (`automationsForArming` in packages/vendo/src/server.ts).
+  let automationsForArming: AutomationsEngine | undefined;
   const apps = createApps({
     store,
     guard,
     tools: bound,
     catalog: [],
+    ...(options.sandbox === undefined ? {} : {
+      machine: {
+        sandbox: options.sandbox,
+        // Idle auto-sleep is irrelevant here; a no-op clock keeps boxes awake.
+        clock: { setTimeout: () => 0, clearTimeout: () => undefined },
+      },
+      armAutomation: async (appId: AppId, triggerId: string, ctx: RunContext) => {
+        if (automationsForArming === undefined) throw new Error("arming before the stack was composed");
+        return await automationsForArming.enable(appId, triggerId, ctx);
+      },
+    }),
   });
   const runner = options.runnerFrom === undefined
     ? options.runner
@@ -246,6 +268,7 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     ...(options.now === undefined ? {} : { now: options.now }),
     ...(options.serviceTools === true ? { resolveRisk: serviceToolRiskResolver } : {}),
   });
+  automationsForArming = automations;
 
   return {
     store,
@@ -272,16 +295,23 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
   };
 }
 
+/** An automation document. `trigger` is the one-trigger shorthand every suite
+ *  here uses — it lands as the single `main` trigger, which is exactly what a
+ *  pre-list document normalizes to. Pass `triggers` when the suite is ABOUT
+ *  having more than one. */
 export function automationDoc(input: {
   id: AppId;
   name?: string;
-  trigger: Trigger;
+  trigger?: Omit<Trigger, "id">;
+  triggers?: Trigger[];
 }): AppDocument {
+  const triggers = input.triggers
+    ?? (input.trigger === undefined ? [] : [{ id: "main", ...input.trigger }]);
   return {
     format: "vendo/app@1",
     id: input.id,
     name: input.name ?? input.id,
-    trigger: input.trigger,
+    triggers,
   };
 }
 

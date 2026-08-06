@@ -18,7 +18,7 @@ envelope discriminated by `kind`:
 | Output | Meaning | Render with |
 | --- | --- | --- |
 | plain data | the guarded call executed cleanly; your model consumes it like any tool output | nothing |
-| `vendo/app-ref@1` `{ appId, title }` | an app is building; the build streams over the wire | `<VendoAppEmbed>` |
+| `vendo/app-ref@1` `{ appId, title, status: "building" }` | an app is building; the build streams over the wire | `<VendoAppEmbed>` |
 | `vendo/approval-ref@1` `{ approvalId, summary }` | the call parked for approval | `<VendoApprovalEmbed>` |
 
 You rarely dispatch on `kind` yourself: `<VendoToolResult output={...}>`

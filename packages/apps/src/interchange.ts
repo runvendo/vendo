@@ -29,7 +29,7 @@ const APP_DOCUMENT_FIELDS = [
   "storage",
   "server",
   "machine",
-  "trigger",
+  "triggers",
   "egress",
   "secrets",
   "pins",
@@ -76,6 +76,15 @@ const withoutExportIdentity = (app: AppDocument): Omit<AppDocument, "id"> =>
 
 const withFreshIdentity = (input: unknown, id: AppId): Record<string, unknown> => {
   const copy = allowedDocumentFields(input, new Set(["id", "server", "machine", "forkedFrom"]));
+  // An archive written before triggers were a LIST carries the singular
+  // `trigger`, which core's read normalization migrates — but only if it
+  // survives this copy. The field list above is the new spelling only, so
+  // without this an old export imported "fine" and silently never fired.
+  // Same precedence normalizeTriggers uses: a document that already has the
+  // list keeps it, and the legacy key is never re-emitted on export.
+  if (isRecord(input) && copy.triggers === undefined && input.trigger !== undefined) {
+    copy.trigger = structuredClone(input.trigger);
+  }
   copy.id = id;
   return copy;
 };

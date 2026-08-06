@@ -24,6 +24,8 @@
  * rest of the app stands.
  */
 import {
+  DEFAULT_TRIGGER_ID,
+  TRIGGER_ID_PATTERN,
   compileWire,
   describeShapeWithSemantics,
   type AppDocument,
@@ -42,7 +44,7 @@ import { composePromptSections, hostToolSections, islandContract } from "./contr
 import { askModel, type GeneratedAppDocument, type GenerationDependencies } from "./engine.js";
 import { prepareIslands } from "./validation/islands.js";
 import { smokeRenderIslands } from "./validation/smoke-render.js";
-import { wireCompileOptionsFor } from "./wire-options.js";
+import { wireCompileOptionsFor } from "../wire-options.js";
 
 /** What a lane leaves behind. `document` is byte-identical to the input when
  *  the lane failed honestly — a lane never ships half of itself. */
@@ -60,11 +62,15 @@ const warn = (where: string, message: string): Finding => ({ severity: "warn", w
 /** The slice of `AppsConfig` the gates read (structurally satisfied by it; the
  *  lanes never import the runtime). */
 export interface LaneGateConfig {
-  experimentalMachines?: boolean;
-  experimentalServedApps?: boolean;
   /** The machine seams. No sandbox adapter → nothing can be provisioned at
-   *  all, flag or no flag. */
+   *  all, and that presence is the WHOLE gate: a configured sandbox is the
+   *  deliberate opt-in, so there is no second flag beside it. */
   machine?: { sandbox?: unknown };
+  /** Build contract §9.8 — the authenticated door a served app is answered on.
+   *  Unset means this deployment has no way to serve one, so the served lane is
+   *  shut: the alternative is a box built, a surface flipped, and an app no
+   *  caller can open. */
+  servedProxyPath?: unknown;
 }
 
 export interface LaneGates {
@@ -82,21 +88,32 @@ export interface LaneGates {
 }
 
 /**
+ * What a machine-less host still HAS, said in the same breath as what it lacks.
+ *
+ * Only the box rung needs a machine: a steps firing is tool calls on the
+ * automations engine and an agentic firing is one harness run on the agents
+ * runtime. Stating the missing lane without this sentence is why "watch this and
+ * judge it every morning" came back as "This host has no sandbox configured" —
+ * the brain had one escape left for judgment work and it was the one that needs
+ * a machine.
+ */
+const AUTOMATIONS_NEED_NO_MACHINE = 'Scheduled or triggered work still runs on the automations engine and needs no machine: kind="steps" when every firing does the same thing, kind="agentic" when a firing needs a judgment call.';
+
+/**
  * The lanes this host actually has. Task 10's brain-facts assembly passes
  * `cannot` into the plan call, so "this host has machines disabled" is
  * something the brain KNOWS rather than something it finds out afterwards.
  */
 export const laneGates = (config: LaneGateConfig): LaneGates => {
-  const sandbox = config.machine?.sandbox !== undefined;
-  const box = sandbox && config.experimentalMachines === true;
-  // Layer 3 is a machine surface, so served implies box (createApps refuses the
-  // other combination outright).
-  const served = box && config.experimentalServedApps === true;
+  const box = config.machine?.sandbox !== undefined;
+  // Layer 3 is a machine surface served through an authenticated door, so served
+  // is a NARROWING of box: no box can never be served, and a box with no door to
+  // serve through cannot either. Stated as the shape of the expression rather
+  // than as two flags that have to agree with each other.
+  const served = box && config.servedProxyPath !== undefined;
   const cannot: string[] = [];
-  if (!sandbox) {
-    cannot.push("This host has no sandbox configured, so no machine can be provisioned: custom server code is out of reach. Scheduled or triggered work the host's own tools can express still runs on the automations engine.");
-  } else if (config.experimentalMachines !== true) {
-    cannot.push("This host has machines disabled, so custom server code cannot run for it. Scheduled or triggered work the host's own tools can express still runs on the automations engine.");
+  if (!box) {
+    cannot.push(`This host has no sandbox configured, so no machine can be provisioned: custom server code is out of reach. ${AUTOMATIONS_NEED_NO_MACHINE}`);
   }
   if (!served) {
     cannot.push("This host cannot serve its own web pages for an app: the app is the generated view, so anything that needs a hand-built page or a custom frontend is out of reach.");
@@ -173,7 +190,7 @@ const islandSourceFrom = (text: string, name: string, deps: IslandLaneDeps): str
   const wire = start !== -1 && close > start
     ? markup.slice(start, close + "</App>".length)
     : `<App name="__island_lane__">${markup}</App>`;
-  const compiled = compileWire(wire, wireCompileOptionsFor(deps, hostComponentNames(deps)));
+  const compiled = compileWire(wire, wireCompileOptionsFor(deps));
   const source = compiled.components[name];
   return typeof source === "string" && source.trim() !== "" ? source : undefined;
 };
@@ -258,19 +275,112 @@ export const runIslandLane = async (
 /** The host's arming seam (`AppsConfig.armAutomation`). */
 export type ArmAutomationSeam = (
   appId: AppId,
+  triggerId: string,
   ctx: RunContext,
 ) => Promise<{ enabled: boolean; missing: ApprovalRequest[] }>;
 
-/** Put a planned automation onto a document: the trigger the automations
- *  engine fires, plus the results collection its last step publishes into.
- *  Idempotent, so re-stamping it over a rewired document (which must never
- *  drop the just-authored fields) is the same call. */
-export const applyAutomationPlan = <Doc extends Pick<AppDocument, "trigger" | "storage">>(
+/** The id-less plan trigger as the document carries it, under the id the app's
+ *  own list gives it ({@link plannedTriggerId}). */
+const stampedTrigger = (plan: AutomationPlan, id: string): Trigger =>
+  ({ id, ...structuredClone(plan.trigger) });
+
+/** The id a nameless plan lands under. A plan the model gave no name has no
+ *  identity of its own, so it takes the one id reserved for that — and the next
+ *  nameless plan is read as the same automation said again. */
+const UNNAMED_TRIGGER_ID = "automation";
+
+/** An automation's name as a trigger id: the bare-identifier grammar of
+ *  `TRIGGER_ID_PATTERN`, which a trigger id obeys because it is read back in
+ *  URLs, wire payloads and store refs. Undefined when the name holds nothing an
+ *  identifier can be made of. */
+const idFromName = (name: string | undefined): string | undefined => {
+  const bare = (name ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  if (bare === "") return undefined;
+  return TRIGGER_ID_PATTERN.test(bare) ? bare : `_${bare}`;
+};
+
+/**
+ * The ask says "one MORE", in the words people actually use for it.
+ *
+ * This is the mechanical half of create-vs-edit, and it exists because the
+ * judgment half cannot be trusted with the destructive direction: the planner is
+ * its own model call, and an existing entry in front of it is an invitation to
+ * tidy up. In-thread, "add a second schedule alongside" came back as one
+ * trigger. When the person said "another one", no plan — however it points — may
+ * land on an automation they already have.
+ *
+ * Deliberately one-way: it can only ever force an ADD. A false positive costs a
+ * second entry the person can delete; the miss it prevents costs them an
+ * automation they cannot get back.
+ */
+const ADDS_ANOTHER = /\b(also|another|second|third|too|as well|alongside|additionally|additional|in addition|on top of)\b/i;
+
+/** The first id in the `base`, `base_2`, `base_3` … series the app does not
+ *  already hold. Safe to search occupancy because the id is decided ONCE per
+ *  authoring, before anything is stamped. */
+const freeTriggerId = (base: string, taken: ReadonlySet<string>): string => {
+  if (!taken.has(base)) return base;
+  let suffix = 2;
+  while (taken.has(`${base}_${suffix}`)) suffix += 1;
+  return `${base}_${suffix}`;
+};
+
+/**
+ * Which entry of the app's list a planned automation lands on.
+ *
+ * An app carries a LIST of triggers, so "add an alert to my dashboard" adds an
+ * ENTRY: the first automation an app gets is {@link DEFAULT_TRIGGER_ID} — the id
+ * everything pre-list normalizes to, and the one adoption, sponsorship and grant
+ * defaults key on — and every automation after it is named after ITSELF. That is
+ * what makes "also remind me weekly" a second automation instead of a rewrite of
+ * the first.
+ *
+ * A trigger id IS the automation's name inside its app (core `triggers.ts`), so a
+ * plan whose name derives to an id the app already holds is that same automation
+ * said again — an edit — and it replaces its own entry, never a sibling's. The
+ * app's FIRST automation has no name in its id, so an edit of that one says which
+ * entry it means outright: `plan.replaces`, which the planner sets from the app's
+ * own list.
+ *
+ * And an ask that says "another one" outranks both: {@link ADDS_ANOTHER} makes
+ * APPEND the default direction, so neither a lazy `replaces` nor a name reused
+ * from the existing entry can land on an automation the person already has.
+ *
+ * Called ONCE per authoring, before anything is stamped — which is what makes
+ * the occupancy search safe and keeps the two stamps of one plan (before the
+ * board rewire, and over the rewired document) on the same entry.
+ */
+export const plannedTriggerId = (
+  triggers: readonly Pick<Trigger, "id">[] | undefined,
+  plan: AutomationPlan,
+  /** The person's own words, when the caller has them. */
+  ask?: string,
+): string => {
+  const existing = triggers ?? [];
+  if (existing.length === 0) return DEFAULT_TRIGGER_ID;
+  const taken = new Set(existing.map(({ id }) => id));
+  const named = idFromName(plan.name) ?? UNNAMED_TRIGGER_ID;
+  if (ask !== undefined && ADDS_ANOTHER.test(ask)) return freeTriggerId(named, taken);
+  if (plan.replaces !== undefined && taken.has(plan.replaces)) return plan.replaces;
+  return named;
+};
+
+/** Put a planned automation onto a document: the trigger the automations engine
+ *  fires, plus the results collection its last step publishes into. The entry is
+ *  replaced IN PLACE when the app already holds that id (the rewire re-stamp, and
+ *  an edit of that same automation), and appended when it does not — so every
+ *  other automation the app has keeps its own place in the list. */
+export const applyAutomationPlan = <Doc extends Pick<AppDocument, "triggers" | "storage">>(
   document: Doc,
   plan: AutomationPlan,
+  triggerId: string,
 ): Doc => {
   const automated = structuredClone(document);
-  automated.trigger = structuredClone(plan.trigger);
+  const stamped = stampedTrigger(plan, triggerId);
+  const existing = automated.triggers ?? [];
+  automated.triggers = existing.some((trigger) => trigger.id === triggerId)
+    ? existing.map((trigger) => (trigger.id === triggerId ? stamped : trigger))
+    : [...existing, stamped];
   if (plan.resultsCollection !== undefined && automated.storage?.[plan.resultsCollection] === undefined) {
     automated.storage = {
       ...automated.storage,
@@ -307,12 +417,12 @@ export const automationResultsInstruction = (input: {
 export const armAutomationTrigger = async (
   seam: ArmAutomationSeam | undefined,
   appId: AppId,
+  triggerId: string,
   ctx: RunContext,
 ): Promise<{ enabled: boolean; pendingGrants?: ApprovalRequest[]; issues: string[] }> => {
-  // No seam means the stored row was armed by the persist itself.
   if (seam === undefined) return { enabled: true, issues: [] };
   try {
-    const armed = await seam(appId, ctx);
+    const armed = await seam(appId, triggerId, ctx);
     return {
       enabled: armed.enabled,
       ...(armed.missing.length === 0 ? {} : { pendingGrants: structuredClone(armed.missing) }),
@@ -382,6 +492,16 @@ export interface ServerLaneDeps extends GenerationDependencies {
   appId: AppId;
   ctx: RunContext;
   /**
+   * The person's own words for this change.
+   *
+   * The plan's `why` is the BRAIN's sentence about the away work, and it says
+   * nothing about whether this is one more automation or a new version of one
+   * they already have. The planner decides that, so it gets the request itself —
+   * and {@link plannedTriggerId} reads the same words as the mechanical floor
+   * under that decision.
+   */
+  request?: string;
+  /**
    * Rewire the app to surface something new (the automation's results rows).
    * Task 10 wires this to a brain edit turn. Absent → the automation still
    * arms and the missing board is a `warn`, exactly as a failed rewire is.
@@ -432,11 +552,18 @@ export interface ServerLaneResult extends LaneResult {
   };
 }
 
-/** The plan's `why` IS the instruction: the brain wrote that sentence to
- *  explain what has to happen away from the browser, which is exactly what the
- *  automation planner reads. */
-const automationInstruction = (server: PlanServer): string =>
-  server.schedule === undefined ? server.why : `${server.why}\nWHEN: ${server.schedule}`;
+/** What the planner is answering: the person's own words first when the caller
+ *  has them — "another one" and "move it to 9am" are the same shape of sentence
+ *  to everything downstream, and only the request tells them apart — then the
+ *  plan's `why`, the brain's sentence about what has to happen away from the
+ *  browser. */
+const automationInstruction = (server: PlanServer, request: string | undefined): string => [
+  ...(request === undefined || request.trim() === ""
+    ? []
+    : [`WHAT THEY ASKED FOR, IN THEIR OWN WORDS: ${request}`]),
+  server.why,
+  ...(server.schedule === undefined ? [] : [`WHEN: ${server.schedule}`]),
+].join("\n");
 
 const runAutomationArm = async (
   plan: AppPlan,
@@ -449,10 +576,16 @@ const runAutomationArm = async (
   const planned = await planAutomation({
     appId: deps.appId,
     appName: plan.name,
-    instruction: automationInstruction(server),
+    instruction: automationInstruction(server, deps.request),
     mode,
     tools: deps.tools ?? [],
     ...(deps.toolShapes === undefined ? {} : { toolShapes: deps.toolShapes }),
+    // What this app already runs. Without it the planner cannot say "this is a
+    // new version of THAT one", and every re-plan of an existing automation
+    // would land beside itself.
+    ...(document.triggers === undefined || document.triggers.length === 0
+      ? {}
+      : { existing: document.triggers }),
   }, deps.model);
   if (planned.kind === "failure") {
     return {
@@ -465,7 +598,11 @@ const runAutomationArm = async (
   }
   const { plan: automation } = planned;
   const findings: Finding[] = [];
-  let landed = applyAutomationPlan(document, automation);
+  // Decided ONCE, off the app as it stands: everything below — the re-stamp over
+  // the rewired document, the arming, the trigger the caller's card renders —
+  // has to mean the same entry.
+  const triggerId = plannedTriggerId(document.triggers, automation, deps.request);
+  let landed = applyAutomationPlan(document, automation, triggerId);
   // Bind the board to the results rows BEFORE landing, so one write carries the
   // whole change. A failed rewire never blocks the automation: the trigger
   // still lands and the miss is reported for a retry.
@@ -481,7 +618,7 @@ const runAutomationArm = async (
       findings.push(...rebound.issues.map((issue) => warn(where, issue)));
     } else {
       // Re-stamp: the rewire must never drop the just-authored automation.
-      landed = applyAutomationPlan(rebound.document, automation);
+      landed = applyAutomationPlan(rebound.document, automation, triggerId);
     }
   }
   let pendingGrants: ApprovalRequest[] | undefined;
@@ -494,7 +631,7 @@ const runAutomationArm = async (
   let armingIssues: string[] = [];
   if (deps.land !== undefined) {
     await deps.land(landed, { armTrigger: deps.armAutomation === undefined });
-    const armed = await armAutomationTrigger(deps.armAutomation, deps.appId, deps.ctx);
+    const armed = await armAutomationTrigger(deps.armAutomation, deps.appId, triggerId, deps.ctx);
     pendingGrants = armed.pendingGrants;
     enabled = armed.enabled;
     armingIssues = armed.issues;
@@ -506,7 +643,7 @@ const runAutomationArm = async (
     ...(armingIssues.length === 0 ? {} : { armingIssues }),
     automation: {
       mode,
-      trigger: structuredClone(automation.trigger),
+      trigger: stampedTrigger(automation, triggerId),
       enabled,
       ...(automation.resultsCollection === undefined ? {} : { resultsCollection: automation.resultsCollection }),
       ...(pendingGrants === undefined ? {} : { pendingGrants }),

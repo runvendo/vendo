@@ -31,10 +31,11 @@ describe("THE LAW: the enable ceremony sees the tools it asks about", () => {
       format: "vendo/app@1",
       id: "app_import_placeholder",
       name: "Law predicate automation",
-      trigger: {
+      triggers: [{
+        id: "main",
         on: { kind: "host-event", event: "law.predicate" },
         run: { kind: "steps", steps: [{ id: "send", tool: SEND, args: { id: "event.id" } }] },
-      },
+      }],
     };
     const { id: appId } = await importAutomation(stack, doc, ADA);
 

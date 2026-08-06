@@ -1,5 +1,5 @@
 import {
-  VENDO_APPS_CREATE_TOOL,
+  VENDO_MAKE_TOOL,
   VENDO_VIEW_STREAM,
   parseVendoToolEnvelope,
   vendoAppRefSchema,
@@ -43,11 +43,12 @@ function hostTools(): Record<string, TestToolImplementation> {
   };
 }
 
-/** An apps-create double mirroring the real agent-tools implementation: it
- *  streams view parts through the call's VENDO_VIEW_STREAM bridge and returns
- *  the finished AppDocument. `gate` (when provided) holds completion open so
- *  tests can observe the fast-return path. */
-function appsCreateTool(options: {
+/** A `vendo_make` double mirroring the real agent-tools implementation: it
+ *  streams view parts through the call's VENDO_VIEW_STREAM bridge and answers
+ *  with a MakeReceipt — never the AppDocument, which no longer travels on the
+ *  tool channel at all. `gate` (when provided) holds completion open so tests
+ *  can observe the fast-return path. */
+function makeTool(options: {
   appId: string;
   name: string;
   stream?: boolean;
@@ -56,13 +57,16 @@ function appsCreateTool(options: {
 }): TestToolImplementation {
   return {
     descriptor: {
-      name: VENDO_APPS_CREATE_TOOL,
-      description: "Create a Vendo app from a natural-language prompt.",
+      name: VENDO_MAKE_TOOL,
+      description: "Make the user something to look at, from a plain-language request.",
       inputSchema: {
         $schema: DRAFT_2020_12,
         type: "object",
-        properties: { prompt: { type: "string", minLength: 1 } },
-        required: ["prompt"],
+        properties: {
+          request: { type: "string", minLength: 1 },
+          app: { type: "string", minLength: 1 },
+        },
+        required: ["request"],
         additionalProperties: false,
       },
       risk: "read",
@@ -77,7 +81,12 @@ function appsCreateTool(options: {
       }
       if (options.gate !== undefined) await options.gate;
       options.onFinish?.();
-      return { format: "vendo/app@1", id: options.appId, name: options.name, ui: "tree" } as unknown as Json;
+      return {
+        id: options.appId,
+        title: options.name,
+        status: "ready",
+        say: `${options.name} is on your screen.`,
+      } as unknown as Json;
     },
   };
 }
@@ -112,7 +121,7 @@ describe("buildVendoToolPack — composition and namespacing", () => {
     const { tools } = await pack({
       implementations: {
         ...hostTools(),
-        [VENDO_APPS_CREATE_TOOL]: appsCreateTool({ appId: "app_composed", name: "unused" }),
+        [VENDO_MAKE_TOOL]: makeTool({ appId: "app_composed", name: "unused" }),
       },
     });
     const names = tools.map((tool) => tool.name).sort();
@@ -215,7 +224,7 @@ describe("vendo_create_app", () => {
     let finished = false;
     const implementations = {
       ...hostTools(),
-      [VENDO_APPS_CREATE_TOOL]: appsCreateTool({
+      [VENDO_MAKE_TOOL]: makeTool({
         appId: "app_fast",
         name: "Weather dashboard",
         gate,
@@ -239,7 +248,7 @@ describe("vendo_create_app", () => {
     const gate = new Promise<void>((resolve) => { release = resolve; });
     const implementations = {
       ...hostTools(),
-      [VENDO_APPS_CREATE_TOOL]: appsCreateTool({ appId: "app_long", name: "ignored", gate }),
+      [VENDO_MAKE_TOOL]: makeTool({ appId: "app_long", name: "ignored", gate }),
     };
     const { byName } = await pack({ implementations });
     const prompt = `build me a dashboard ${"with lots of panels ".repeat(10)}`;
@@ -250,10 +259,10 @@ describe("vendo_create_app", () => {
     release();
   });
 
-  it("without a streamed view part, returns the app-ref from the finished document", async () => {
+  it("without a streamed view part, returns the app-ref built from the finished RECEIPT", async () => {
     const implementations = {
       ...hostTools(),
-      [VENDO_APPS_CREATE_TOOL]: appsCreateTool({ appId: "app_done", name: "Trip planner", stream: false }),
+      [VENDO_MAKE_TOOL]: makeTool({ appId: "app_done", name: "Trip planner", stream: false }),
     };
     const { byName } = await pack({ implementations });
     const output = await byName.get(VENDO_CREATE_APP_TOOL)!.execute(
@@ -261,29 +270,98 @@ describe("vendo_create_app", () => {
       { ctx: ctx() },
     );
     const envelope = vendoAppRefSchema.parse(output);
+    // `title` is the receipt's, not the prompt-derived fallback ("plan my
+    // trip") — which is the proof the ref was read off the receipt rather than
+    // off a document that no longer arrives.
     expect(envelope).toMatchObject({ appId: "app_done", title: "Trip planner" });
+  });
+
+  it("a receipt-shaped answer is the ONLY thing the ref is built from", async () => {
+    // A registry that answers with the old AppDocument gets no ref: the pack
+    // hands its output straight back rather than inventing an envelope from a
+    // shape the contract no longer produces.
+    const implementations = {
+      ...hostTools(),
+      [VENDO_MAKE_TOOL]: {
+        descriptor: makeTool({ appId: "app_legacy", name: "Legacy" }).descriptor,
+        execute: () => ({ format: "vendo/app@1", id: "app_legacy", name: "Legacy", ui: "tree" }),
+      },
+    };
+    const { byName } = await pack({ implementations });
+    const output = await byName.get(VENDO_CREATE_APP_TOOL)!.execute(
+      { prompt: "plan my trip" },
+      { ctx: ctx() },
+    );
+    expect(vendoAppRefSchema.safeParse(output).success).toBe(false);
   });
 
   it("an ask-policy create parks and returns the approval-ref envelope", async () => {
     const implementations = {
       ...hostTools(),
-      [VENDO_APPS_CREATE_TOOL]: appsCreateTool({ appId: "app_asked", name: "unused" }),
+      [VENDO_MAKE_TOOL]: makeTool({ appId: "app_asked", name: "unused" }),
     };
     const { byName, registry } = await pack({
       implementations,
-      policy: { [VENDO_APPS_CREATE_TOOL]: "ask" },
+      policy: { [VENDO_MAKE_TOOL]: "ask" },
     });
     const output = await byName.get(VENDO_CREATE_APP_TOOL)!.execute(
       { prompt: "make a dashboard" },
       { ctx: ctx() },
     );
     vendoApprovalRefSchema.parse(output);
-    expect(registry.invocations[VENDO_APPS_CREATE_TOOL]).toBe(0);
+    expect(registry.invocations[VENDO_MAKE_TOOL]).toBe(0);
   });
 
-  it("is absent from the pack when the registry has no vendo_apps_create", async () => {
+  it("is absent from the pack when the registry has no vendo_make", async () => {
     const { byName } = await pack({ implementations: hostTools() });
     expect(byName.has(VENDO_CREATE_APP_TOOL)).toBe(false);
+  });
+
+  // runvendo/flowlet#822 defect 2: the fast ref wins the race against the
+  // build's real outcome on essentially every generation that streams any
+  // content before failing (the common case for a wire-validation failure).
+  // A calling model narrated three fabricated successes off an envelope that
+  // carried only an appId and a title — nothing distinguishing "accepted,
+  // outcome unknown" from "done". The envelope must say so itself, in a field
+  // a model cannot skim past, on BOTH the fast path and the (rarer) case
+  // where the build's own success outruns the stream.
+  it("the fast-path ref is machine-readable as still-building, not a finished resource", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const implementations = {
+      ...hostTools(),
+      [VENDO_MAKE_TOOL]: makeTool({ appId: "app_fast", name: "Weather dashboard", gate }),
+    };
+    const { byName } = await pack({ implementations });
+    const output = await byName.get(VENDO_CREATE_APP_TOOL)!.execute(
+      { prompt: "Compare weather in 3 cities" },
+      { ctx: ctx() },
+    );
+    const envelope = vendoAppRefSchema.parse(output);
+    expect(envelope.status).toBe("building");
+    release();
+  });
+
+  it("without a streamed view part, the ref built from the finished receipt is STILL marked building — this tool never tells the model a build is done", async () => {
+    const implementations = {
+      ...hostTools(),
+      [VENDO_MAKE_TOOL]: makeTool({ appId: "app_done", name: "Trip planner", stream: false }),
+    };
+    const { byName } = await pack({ implementations });
+    const output = await byName.get(VENDO_CREATE_APP_TOOL)!.execute(
+      { prompt: "plan my trip" },
+      { ctx: ctx() },
+    );
+    expect(vendoAppRefSchema.parse(output).status).toBe("building");
+  });
+
+  it("the tool description forbids narrating a build as done or inventing its contents", async () => {
+    const { byName } = await pack({
+      implementations: { ...hostTools(), [VENDO_MAKE_TOOL]: makeTool({ appId: "app_x", name: "x" }) },
+    });
+    const description = byName.get(VENDO_CREATE_APP_TOOL)!.description;
+    expect(description).toContain("building");
+    expect(description).toMatch(/never describe|never say it is created/i);
   });
 });
 
@@ -291,12 +369,12 @@ describe("vendo_delegate", () => {
   it("returns the run report as VendoDelegateResult with refs to everything the run produced", async () => {
     const implementations = {
       ...hostTools(),
-      [VENDO_APPS_CREATE_TOOL]: appsCreateTool({ appId: "app_delegated", name: "Report app", stream: false }),
+      [VENDO_MAKE_TOOL]: makeTool({ appId: "app_delegated", name: "Report app", stream: false }),
     };
     // A runner double that drives the task's OWN registry — the seam the real
     // agent.asRunner() uses — so ref capture is observed at the registry wrap.
     const runner: AgentRunner = async (task, runCtx) => {
-      await task.tools.execute({ id: "call_d1", tool: VENDO_APPS_CREATE_TOOL, args: { prompt: "report" } }, runCtx);
+      await task.tools.execute({ id: "call_d1", tool: VENDO_MAKE_TOOL, args: { request: "report" } }, runCtx);
       const parked = await task.tools.execute({ id: "call_d2", tool: "host_send", args: { to: "x" } }, runCtx);
       expect(parked.status).toBe("pending-approval");
       return { status: "ok", summary: "Made a report app; one send awaits approval.", toolCalls: [] };
@@ -327,6 +405,45 @@ describe("vendo_delegate", () => {
       { ctx: ctx() },
     ) as { status: string; refs: unknown[] };
     expect(output.status).toBe("error");
+    expect(output.refs).toEqual([]);
+  });
+
+  // runvendo/flowlet#822 defect 2, generalized: `vendo_make` answers a failed
+  // EDIT with an ok outcome whose MakeReceipt carries status:"failed" and a
+  // speakable `say` (agent-tools.ts's vendo_make handler) — a soft failure,
+  // never a throw, by design. Ref capture must not launder that failure into
+  // a bare {kind, appId, title} ref: an appId and a title are indistinguishable
+  // from a completed edit, so the delegate's caller would read this as one
+  // more successful change.
+  it("never turns a failed EDIT's receipt into a success-shaped ref", async () => {
+    const implementations = {
+      ...hostTools(),
+      [VENDO_MAKE_TOOL]: {
+        descriptor: makeTool({ appId: "app_edit", name: "Report app" }).descriptor,
+        execute: () => ({
+          id: "app_edit",
+          title: "Report app",
+          status: "failed",
+          say: "I couldn't make that change to Report app.",
+        } as unknown as Json),
+      },
+    };
+    const runner: AgentRunner = async (task, runCtx) => {
+      const outcome = await task.tools.execute(
+        { id: "call_edit", tool: VENDO_MAKE_TOOL, args: { request: "add a column", app: "app_edit" } },
+        runCtx,
+      );
+      expect(outcome.status).toBe("ok");
+      return { status: "ok", summary: "Couldn't make that change to Report app.", toolCalls: [] };
+    };
+    const { byName } = await pack({ implementations, runner });
+    const output = await byName.get(VENDO_DELEGATE_TOOL)!.execute(
+      { task: "add a column to the report" },
+      { ctx: ctx() },
+    ) as { status: string; refs: unknown[] };
+    expect(output.status).toBe("ok");
+    // No ref at all beats a false one: refs are read as "this exists and is
+    // fine", and a failed edit is neither.
     expect(output.refs).toEqual([]);
   });
 });

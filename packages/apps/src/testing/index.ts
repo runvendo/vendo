@@ -1,3 +1,4 @@
+export * from "./box-files.js";
 export * from "./fake-sandbox.js";
 export * from "./fake-sandbox-stateful.js";
 export * from "./fake-box.js";

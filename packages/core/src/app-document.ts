@@ -6,7 +6,7 @@ import { VENDO_APP_FORMAT, VENDO_TREE_FORMAT } from "./formats.js";
 import { appIdSchema, isoDateTimeSchema, type AppId, type IsoDateTime } from "./ids.js";
 import { TOOL_NAME_PATTERN } from "./tools.js";
 import { validateTree } from "./genui/tree.js";
-import { triggerSchema, type Trigger } from "./triggers.js";
+import { DEFAULT_TRIGGER_ID, triggerSchema, type Trigger } from "./triggers.js";
 import { uiPayloadSchema, type TreeNode, type UIPayload } from "./genui/tree-node.js";
 
 /** 01-core §9 */
@@ -40,6 +40,38 @@ export interface AppBuildFailure {
    *  too lossy to replay). Absent on records from before this field. */
   prompt?: string;
 }
+
+/**
+ * One file of an app's own code, at rest in the document (contract §3.2).
+ *
+ * Today an app's code lives in three places — island TSX in `components`, the
+ * wire surface in workspace file rows, and the whole served app only inside the
+ * E2B snapshot behind `machine.snapshotRef`. Lose the snapshot and the customer's
+ * app is gone, because the store never had it. This is the one home: the row
+ * becomes the truth and a workspace becomes a working copy of it.
+ *
+ * `hash` is the CAS base a checkout stamps and a commit diffs against, so a
+ * commit lands exactly the paths that changed. `text` and `blobRef` are exclusive:
+ * inline up to {@link WORKSPACE_INLINE_MAX_BYTES}, and past it the same blob seam
+ * the workspace rows already spill to — never a second spill mechanism.
+ */
+export interface AppSourceFile {
+  /** `"sha256:<hex>"` of the bytes. */
+  hash: string;
+  bytes: number;
+  /** Inline iff `bytes <= WORKSPACE_INLINE_MAX_BYTES`. */
+  text?: string;
+  /** Else: the key in the app's blob namespace. */
+  blobRef?: string;
+}
+
+/** Contract §3.2 */
+export const appSourceFileSchema = z.object({
+  hash: z.string().regex(/^sha256:[0-9a-f]{64}$/),
+  bytes: z.number().int().nonnegative(),
+  text: z.string().optional(),
+  blobRef: z.string().min(1).optional(),
+}).passthrough() satisfies z.ZodType<AppSourceFile>;
 
 /** 01-core §9 */
 export interface Pin {
@@ -105,9 +137,25 @@ export interface AppDocument {
    */
   componentTools?: Record<string, string[]>;
   storage?: Record<string, StorageDecl>;
+  /**
+   * Contract §3.2 — the app's own code, at rest. Keys are POSIX-relative paths
+   * inside the app directory ("src/App.tsx", "vendo.json"). The wire surface
+   * (`app.vendo`) is NOT here: it stays {@link AppDocument.tree}, which is what
+   * the render seam paints from.
+   *
+   * With this present, `machine.snapshotRef` is a CACHE: an app can always be
+   * rebuilt from here onto a fresh box, and nothing may read a snapshot to
+   * recover source.
+   */
+  source?: Record<string, AppSourceFile>;
   server?: string;
   machine?: AppMachine;
-  trigger?: Trigger;
+  /** An automation is an app with a LIST of triggers, each keyed by its own
+   *  `id`. Documents stored before the list existed carry a single `trigger`
+   *  object; {@link appDocumentSchema} normalizes those on READ into a
+   *  one-element list under {@link DEFAULT_TRIGGER_ID}, so an old row loads and
+   *  fires unchanged. Writes always write `triggers`. */
+  triggers?: Trigger[];
   egress?: string[];
   /**
    * execution-v2 Lane E — the outbound domains the OWNER has approved for this
@@ -147,7 +195,7 @@ export interface AppDocument {
  * is the normative gate. A `parse()` alone can accept a semantically invalid
  * document.
  */
-export const appDocumentSchema = z.object({
+const appDocumentShapeSchema = z.object({
   format: z.literal(VENDO_APP_FORMAT),
   id: appIdSchema,
   name: z.string(),
@@ -157,9 +205,10 @@ export const appDocumentSchema = z.object({
   components: z.record(z.string()).optional(),
   componentTools: z.record(z.array(z.string())).optional(),
   storage: z.record(storageDeclSchema).optional(),
+  source: z.record(appSourceFileSchema).optional(),
   server: z.string().optional(),
   machine: appMachineSchema.optional(),
-  trigger: triggerSchema.optional(),
+  triggers: z.array(triggerSchema).optional(),
   egress: z.array(z.string()).optional(),
   egressApproved: z.array(z.string()).optional(),
   secrets: z.array(z.string()).optional(),
@@ -168,6 +217,33 @@ export const appDocumentSchema = z.object({
   forkedFrom: appIdSchema.optional(),
   buildFailed: appBuildFailureSchema.optional(),
 }).passthrough() satisfies z.ZodType<AppDocument>;
+
+/**
+ * READ-TIME normalization of the pre-list document shape: a stored `trigger`
+ * object becomes the one-element `triggers` list it always meant, under
+ * {@link DEFAULT_TRIGGER_ID}.
+ *
+ * It runs before validation rather than after, so the legacy object is checked
+ * by the SAME `triggerSchema` the new shape is — including the required `id`,
+ * which no stored document has. The legacy key is dropped so a normalized
+ * document never carries both, and a document that already has `triggers` is
+ * left alone: writes always write the list, so re-reading one is the common case
+ * and must not pay for the old one.
+ */
+const normalizeTriggers = (input: unknown): unknown => {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) return input;
+  const doc = input as Record<string, unknown>;
+  const legacy = doc["trigger"];
+  if (doc["triggers"] !== undefined || typeof legacy !== "object" || legacy === null || Array.isArray(legacy)) {
+    return input;
+  }
+  const { trigger: _dropped, ...rest } = doc;
+  return { ...rest, triggers: [{ id: DEFAULT_TRIGGER_ID, ...legacy as Record<string, unknown> }] };
+};
+
+/** 01-core §9 — see {@link appDocumentShapeSchema} for the shape and
+ *  {@link normalizeTriggers} for the one thing this door does beyond parsing. */
+export const appDocumentSchema = z.preprocess(normalizeTriggers, appDocumentShapeSchema);
 
 type AppDocumentValidation =
   | { ok: true; app: AppDocument }
@@ -261,8 +337,17 @@ const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
     }
   }
 
-  if (app.trigger?.run.kind === "steps") {
-    for (const step of app.trigger.run.steps) {
+  // A trigger id is what everything per-trigger is keyed by (grants, sponsorship,
+  // schedule cursors, runs), so two triggers sharing one would silently share all
+  // of it. The grammar is the schema's; uniqueness is cross-field and lives here.
+  const triggerIds = new Set<string>();
+  for (const trigger of app.triggers ?? []) {
+    if (triggerIds.has(trigger.id)) {
+      return fail("validation", `duplicate trigger id "${trigger.id}"`);
+    }
+    triggerIds.add(trigger.id);
+    if (trigger.run.kind !== "steps") continue;
+    for (const step of trigger.run.steps) {
       if (step.tool.startsWith("fn:")) {
         fnReferences.push(step.tool);
       } else if (!TOOL_NAME_PATTERN.test(step.tool)) {
@@ -281,6 +366,22 @@ const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
   // dying v1 `server` snapshot until its execution path is fully removed.
   if (fnReferences.length > 0 && app.server === undefined && app.machine === undefined) {
     return fail("validation", "fn: references require a machine (or legacy app server)");
+  }
+
+  // Contract §3.2 — a source key is a POSIX-relative path inside the app
+  // directory. Checked HERE because a checkout writes each key to disk: `../` or
+  // a leading slash would put one app's checkout in another app's files, and the
+  // document validator is the gate every stored document passes.
+  for (const [path, file] of Object.entries(app.source ?? {})) {
+    if (path.length === 0 || path.startsWith("/")) {
+      return fail("validation", `source path "${path}" must be relative to the app directory`);
+    }
+    if (path.split("/").some((segment) => segment === "" || segment === "." || segment === "..")) {
+      return fail("validation", `source path "${path}" must not contain empty or dot segments`);
+    }
+    if ((file.text === undefined) === (file.blobRef === undefined)) {
+      return fail("validation", `source file "${path}" must carry exactly one of text or blobRef`);
+    }
   }
 
   for (const [name, declaration] of Object.entries(app.storage ?? {})) {

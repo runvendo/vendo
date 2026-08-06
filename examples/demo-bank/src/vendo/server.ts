@@ -91,17 +91,13 @@ export const vendo = createVendo({
       "No emojis, ever — not in prose, not in generated UI text.",
       "Format money as currency (e.g. $1,234.56), never raw cents.",
       "When you render a view, let it carry the data — don't restate it in prose.",
-      "For a recurring or scheduled payment/task, use vendo_apps_create (or vendo_apps_edit on an existing app) — describe the schedule in the prompt; the automation is armed automatically. There is no separate automations tool.",
+      "For a recurring or scheduled payment/task, use vendo_make — describe the schedule in the request; the automation is armed automatically. There is no separate automations tool.",
     ].join("\n"),
   },
-  // execution-v2 Waves 4+9 — the layer-2 (machines) and layer-3 (served apps)
-  // experimental opt-ins are host decisions; Maple flips them via its own env
-  // so demos can gate on/off. Served apps require machines, so the served
-  // flag implies the machines flag here.
+  // Machine-backed execution (layers 2 and 3) is gated by the `sandbox` slot
+  // above and nothing else: configure one and Maple can build boxes, leave it
+  // out and it cannot. There is no flag here to flip.
   apps: {
-    experimentalServedApps: process.env.VENDO_EXPERIMENTAL_SERVED_APPS === "1",
-    experimentalMachines: process.env.VENDO_EXPERIMENTAL_MACHINES === "1"
-      || process.env.VENDO_EXPERIMENTAL_SERVED_APPS === "1",
     // Remix review (round-2 hardening 2026-08-02): Mia is Maple's host
     // reviewer — this assertion is what lets her read the full review queue,
     // reject, and approve review-kind remixes; a user can never approve

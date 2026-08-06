@@ -62,7 +62,7 @@
     "zod": "^3.25.0"
   },
   "peerDependencies": {
-    "@auth/core": "^0.34.3",
+    "@auth/core": ">=0.41.3",
     "next": ">=14"
   },
   "peerDependenciesMeta": {
@@ -74,7 +74,7 @@
     }
   },
   "devDependencies": {
-    "@auth/core": "^0.34.3",
+    "@auth/core": "^0.41.3",
     "@types/node": "^22.0.0",
     "graphql": "^16.9.0",
     "jose": "^6.2.3",

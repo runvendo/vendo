@@ -33,13 +33,13 @@ import type {
   ActAs, ActionsRegistry, AppsRuntime, AutomationsEngine, CatalogFile,
   ComponentCatalog, ComponentRegistry, Connector, ExtractedTool, FilesAdapter,
   Harness, HostOAuthAdapter, Json, Judge, KnowledgeAdapter, OverridesFile,
-  PackProvider, PolicyConfig, PolicyFile, Principal, RunContext, RunId,
-  SandboxAdapter, SecretsProvider, ToolRegistry,
+  PolicyConfig, PolicyFile, Principal, RunContext, RunId,
+  SandboxAdapter, SecretsProvider, Skill, ToolDefinition, ToolRegistry,
   VendoAgent, VendoGuard, VendoStore, VendoTheme,
 } from "../index.js";
 import type {
-  AppsConfig, ConnectionsService, HarnessTurns, HostAuthPreset, ModelsConfig,
-  PackContext, ServerActionHandler, TourEntry,
+  AgentOptions, AppsConfig, ComposedAgent, ConnectionsService, HarnessTurns,
+  HostAuthPreset, ModelsConfig, ServerActionHandler, TourEntry,
 } from "../server.js";
 import type { LanguageModel } from "ai";
 
@@ -48,17 +48,18 @@ export interface CreateVendoConfig {
   model?: LanguageModel;
   /** @deprecated the model half is superseded by `models.fill`; `disabled` stays. */
   paint?: { model?: LanguageModel; disabled?: boolean };
-  models?: ModelsConfig;      // seats: default, reviewer, judge, fill, verifier
+  models?: ModelsConfig;      // seats: default, reviewer, judge, fill
   auth?: HostAuthPreset;      // one preset fills principal + actAs + oauth
   principal?: (req: Request) => Promise<Principal | null>; // escape hatch
-  tools?: ExtractedTool[];    // `vendo init`/`vendo sync` declarations, in memory
+  tools?: readonly (ExtractedTool | ToolDefinition)[]; // `vendo sync` declarations, and/or executable tools
+  skills?: readonly Skill[];  // SKILL.md values mounted at /host/skills
   catalog?: ComponentCatalog | ComponentRegistry;          // registry.tsx, or the array form
   theme?: VendoTheme;         // programmatic override for .vendo/theme.json
   brief?: string;             // programmatic override for .vendo/brief.md
   store?: VendoStore;
   files?: FilesAdapter;       // workspace file content; unset → blobs in the store, 5 MiB cap
   sandbox?: SandboxAdapter;
-  harness?: Harness<never>;   // WHO THINKS. unset → vendo(). also: instant(), claudeCode()
+  harness?: Harness<never>;   // WHO THINKS. unset → vendo(). also: claudeCode()
   knowledge?: KnowledgeAdapter; // unset → no vendo_knowledge_search tool
   connectors?: Connector[];
   connectorApps?: string[];   // toolkit scope for the auto-composed Cloud connector
@@ -87,29 +88,18 @@ export interface CreateVendoConfig {
     federation?: { secret: string };
   };
   oauth?: HostOAuthAdapter;   // escape hatch; required when `mcp` is true and `auth` is absent
-  agent?: {
-    instructions?: string;
-    toolOutputCap?: number;
-    maxOutputTokens?: number;
-    historyWindow?: number;
-    maxInitialTools?: number;
-    loadout?: string[];
-    maxSteps?: number;
-  };
+  agent?: AgentOptions | ComposedAgent; // the chat knobs, OR a whole agent() from @vendoai/agents
   sessions?: { ttlMs?: number; sweepIntervalMs?: number; now?: () => number };
   approvals?: { parkedCallTtlMs?: number };
-  apps?: {
-    experimentalServedApps?: boolean;
-    experimentalMachines?: boolean;
+  apps?: false | {            // false unmounts app generation: no tools, skill or /apps routes
     review?: {                // review-kind remixes: who may review (queue/reject/approve)
       reviewer?(ctx: RunContext): boolean | Promise<boolean>;
     };
     pipeline?: AppsConfig["pipeline"];                 // { smokeRender } — the island render gate
-    fillConcurrency?: AppsConfig["fillConcurrency"];   // groups filled at once (default 2)
     checks?: AppsConfig["checks"];                     // the host's own checks, appended to the built-ins
     designRules?: string;
   };
-  packs?: readonly PackProvider<PackContext>[]; // where capability comes from. unset → [apps()]
+  automations?: false;        // false unmounts automations: no /automations, /runs or /webhooks routes
   tours?: readonly TourEntry[];
 }
 

@@ -108,9 +108,10 @@ Authorization: Bearer <secret>
 ```
 
 The `/tick` endpoint is outside cookie auth and requires this bearer secret
-(`VENDO_TICK_SECRET`). One tick drives both schedulers: automation schedules
-and graduated apps' `vendo.json` machine schedules (each due target fires as
-`POST /fn/<name>` on the app's machine, exactly once per cron window).
+(`VENDO_TICK_SECRET`). One tick drives the ONE scheduler — the automations
+engine, which fires every due trigger, including the `vendo.json` schedules a
+graduated app declares (folded into its document triggers at manifest sync, each
+firing as `POST /fn/<name>` on the app's machine, exactly once per cron window).
 Registration is just pointing a caller at the endpoint: any external cron
 works (Vercel cron, a GitHub Actions schedule, crontab), and Vendo Cloud's
 hosted broker is another caller of the same surface, not a separate protocol.
@@ -131,9 +132,10 @@ via the box's `/box/rows` callback surface (rows land in `vendo_records`
 under `app:<appId>:box:<collection>`) or a guarded host tool. The machine's
 disk is scratch: caches, working files, build artifacts. Snapshots are not a
 database; a provider sweep can cost scratch state written since the last
-snapshot, and durable rows are what survive by design. Schedule last-fired
-state is host-cached in the `vendo_app_schedules` record collection so a tick
-never wakes a sleeping machine just to check due-ness.
+snapshot, and durable rows are what survive by design. A machine app's
+`vendo.json` schedules are folded into its document triggers at manifest sync,
+so the automations engine's per-trigger schedule cursor is what keeps a tick
+from waking a sleeping machine just to check due-ness.
 
 ## Host events and webhooks
 

@@ -22,9 +22,10 @@
  * turn persists through the same path a model turn does.
  */
 import {
+  makeReceiptSchema,
   toVendoWirePart,
   vendoViewStreamId,
-  VENDO_APPS_CREATE_TOOL,
+  VENDO_MAKE_TOOL,
   type AppDocument,
   type AppId,
   type RunContext,
@@ -235,9 +236,9 @@ function emitView(writer: Writer, appId: string, payload: unknown): void {
  * shape a real generation streams.
  *
  * Importing rather than emitting view parts alone is what makes the tour's own
- * follow-up work. A real generation leaves a finished AppDocument, id included,
- * in the `vendo_apps_create` output; the agent reads the id from there and can
- * edit the app on the NEXT turn — the one that falls through to the live model.
+ * follow-up work. A real generation names the app, id included, in the
+ * `vendo_make` output; the agent reads the id from there and can change the app
+ * on the NEXT turn — the one that falls through to the live model.
  * A replay that only painted pixels would leave the transcript naming no app
  * anywhere, and "make the late markers purple" would land on an agent with
  * nothing to target. (Measured on production 2026-07-31: asked with no appId in
@@ -270,15 +271,15 @@ async function replayApp(input: {
   const toolCallId = `call_${globalThis.crypto.randomUUID()}`;
   // `dynamic: true` on all three, because the agent registers EVERY tool
   // through the ai-SDK's `dynamicTool` — without it the client assembles a
-  // static `tool-vendo_apps_create` part where a live turn produces a
-  // `dynamic-tool` one, and the chrome renders the two differently.
-  write(writer, { type: "tool-input-start", toolCallId, toolName: VENDO_APPS_CREATE_TOOL, dynamic: true });
+  // static `tool-vendo_make` part where a live turn produces a `dynamic-tool`
+  // one, and the chrome renders the two differently.
+  write(writer, { type: "tool-input-start", toolCallId, toolName: VENDO_MAKE_TOOL, dynamic: true });
   await sleep(roll(60, 140));
   write(writer, {
     type: "tool-input-available",
     toolCallId,
-    toolName: VENDO_APPS_CREATE_TOOL,
-    input: { prompt: imported.description ?? imported.name },
+    toolName: VENDO_MAKE_TOOL,
+    input: { request: imported.description ?? imported.name },
     dynamic: true,
   });
   const prefixes = progressivePayloads(payload);
@@ -292,12 +293,20 @@ async function replayApp(input: {
   }
   await at(readyAt);
   emitView(writer, imported.id, payload); // no `streaming` flag — the bar flips ready, the pin appears
-  // Shaped exactly like the runtime's own outcome, so nothing downstream can
-  // tell this apart from a real create.
+  // Shaped exactly like the runtime's own outcome — a `MakeReceipt`, never the
+  // document — so nothing downstream can tell this apart from a real call.
   write(writer, {
     type: "tool-output-available",
     toolCallId,
-    output: { status: "ok", output: imported },
+    output: {
+      status: "ok",
+      output: makeReceiptSchema.parse({
+        id: imported.id,
+        title: imported.name,
+        status: "ready",
+        say: `${imported.name} is on your screen.`,
+      }),
+    },
     dynamic: true,
   });
 }

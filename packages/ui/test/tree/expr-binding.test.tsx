@@ -17,7 +17,7 @@ const nodes: WalkTree["nodes"] = [
   {
     id: "headline",
     component: "Text",
-    props: { text: { $expr: "sum(invoices.amount_cents) / count(invoices)" } },
+    props: { text: { $expr: 'sum(invoices, "amount_cents") / count(invoices)' } },
   },
 ];
 
@@ -55,7 +55,7 @@ describe("$expr bindings in the renderer", () => {
   it("shows the contained data-shape notice when the expression cannot compute", () => {
     const mismatched: WalkTree["nodes"] = [
       { id: "root", component: "Stack", children: ["headline"] },
-      { id: "headline", component: "Text", props: { text: { $expr: "sum(invoices.client_name)" } } },
+      { id: "headline", component: "Text", props: { text: { $expr: 'sum(invoices, "client_name")' } } },
     ];
 
     render(

@@ -17,7 +17,6 @@ export type { KnowledgeAdapter } from "@vendoai/core";
     policy, structured refusal, read-more) over any adapter. */
 export {
   createKnowledgeTools,
-  KNOWLEDGE_VERIFY_TURN_BUDGET_MS,
   toCitation,
   VENDO_KNOWLEDGE_RESULT_KIND,
   VENDO_KNOWLEDGE_SEARCH_TOOL,
@@ -38,15 +37,11 @@ export {
   type KnowledgeConfig,
   type KnowledgeSourceConfig,
 } from "./ingest/index.js";
-export { bindKnowledgeStore, lexicalKnowledge } from "./local/lexical.js";
-/** Knowledge K14 — the verifier pass itself (cheap model, capped, fail-open). */
+export { bindKnowledgeStore, vendoKnowledge } from "./local/lexical.js";
+/** Knowledge k8 — the static prompt index (boot + sync-state refresh). */
 export {
-  entailmentVerifier,
-  KNOWLEDGE_VERIFY_TIMEOUT_MS,
-  type EntailmentVerifierOptions,
-  type KnowledgeVerdict,
-  type KnowledgeVerifier,
-  type KnowledgeVerifierInput,
-  type KnowledgeVerifierPassage,
-  type KnowledgeVerifyOptions,
-} from "./verifier.js";
+  knowledgeIndexResolver,
+  knowledgeIndexSummary,
+  parseKnowledgeConfig,
+  type KnowledgeIndexReaders,
+} from "./prompt-note.js";

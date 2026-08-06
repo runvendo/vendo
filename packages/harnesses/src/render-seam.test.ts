@@ -504,6 +504,157 @@ describe("saves that are not hot paths", () => {
   });
 });
 
+/**
+ * Contract §2.2/§3.2 — the SAME interception point, for the app's own source.
+ *
+ * `commit()` is the store-write moment for source exactly as it is for a view, and
+ * for the extra reason stated in this file's header: the sandbox sync-back path
+ * commits without ever calling `writeFile` on this façade, so a builder working in
+ * a box reaches the store here and nowhere else. Until this seam existed
+ * `checkoutApp`/`commitApp` had zero production callers and every built app's code
+ * lived only inside its sandbox snapshot.
+ */
+describe("source persistence", () => {
+  const OTHER = "app_2";
+
+  function sourceSeam() {
+    const inner = testWorkspace();
+    const calls: Array<{ appId: string; changed: readonly string[]; sameWorkspace: boolean }> = [];
+    let fail: string | undefined;
+    const workspace = wrapWorkspaceForRender(inner, {
+      emit: () => undefined,
+      commitSource: async (input) => {
+        calls.push({
+          appId: input.appId,
+          changed: input.changed,
+          sameWorkspace: input.workspace === inner,
+        });
+        if (fail !== undefined) throw new Error(fail);
+      },
+    });
+    return { workspace, inner, calls, failWith: (message: string) => { fail = message; } };
+  }
+
+  it("runs for a commit that lands an app's source file", async () => {
+    const { workspace, calls } = sourceSeam();
+    await workspace.writeFile(`/user/apps/${APP}/src/App.tsx`, "export const App = () => null;\n");
+    await workspace.commit();
+    expect(calls).toEqual([{
+      appId: APP,
+      changed: [`/user/apps/${APP}/src/App.tsx`],
+      sameWorkspace: true,
+    }]);
+  });
+
+  it("hands over CommitResult.changed verbatim — the paths that actually landed", async () => {
+    const { workspace, calls } = sourceSeam();
+    await workspace.writeFile(`/user/apps/${APP}/src/App.tsx`, "a\n");
+    await workspace.writeFile(`/user/apps/${APP}/vendo.json`, "{}\n");
+    await workspace.writeFile("/user/memory/notes.md", "mine\n");
+    const result = await workspace.commit();
+    expect(result.status).toBe("ok");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.changed).toEqual(result.status === "ok" ? result.changed : []);
+  });
+
+  it("runs once per APP when one commit touches several", async () => {
+    const { workspace, calls } = sourceSeam();
+    await workspace.writeFile(`/user/apps/${APP}/src/App.tsx`, "one\n");
+    await workspace.writeFile(`/orgs/maple/apps/${OTHER}/src/App.tsx`, "two\n");
+    await workspace.writeFile(`/user/apps/${APP}/vendo.json`, "{}\n");
+    await workspace.commit();
+    expect(calls.map((call) => call.appId).sort()).toEqual([APP, OTHER]);
+  });
+
+  it("reads the app out of BOTH mounts — a team app's source is source too", async () => {
+    const { workspace, calls } = sourceSeam();
+    await workspace.writeFile(`/orgs/maple/apps/${OTHER}/src/App.tsx`, "team\n");
+    await workspace.commit();
+    expect(calls.map((call) => call.appId)).toEqual([OTHER]);
+  });
+
+  it("does not run for a commit that landed nothing — a conflict is not a write", async () => {
+    const { workspace, inner, calls } = sourceSeam();
+    await workspace.writeFile(`/user/apps/${APP}/src/App.tsx`, "a\n");
+    inner.conflictOn = [`/user/apps/${APP}/src/App.tsx`];
+    expect(await workspace.commit()).toEqual({
+      status: "conflict",
+      paths: [`/user/apps/${APP}/src/App.tsx`],
+    });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("does not run for paths that are not inside an app's directory", async () => {
+    const { workspace, calls } = sourceSeam();
+    await workspace.writeFile("/user/memory/notes.md", "mine\n");
+    await workspace.writeFile("/user/files/report.pdf", "pdf\n");
+    await workspace.writeFile("/user/apps/nope/src/App.tsx", "not an appId\n");
+    await workspace.commit();
+    expect(calls).toHaveLength(0);
+  });
+
+  /**
+   * The seam's standing rule, inherited: "a view is a courtesy on top of a landed
+   * commit; it can never fail one." Source persistence gets the same treatment —
+   * but unlike a view, a silently dropped source file is a LOST APP, so the
+   * failure is loud.
+   */
+  it("never fails the commit it rides on, and says so loudly", async () => {
+    const { workspace, inner, calls, failWith } = sourceSeam();
+    const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    failWith("the store said no");
+    await workspace.writeFile(`/user/apps/${APP}/src/App.tsx`, "a\n");
+    await expect(workspace.commit()).resolves.toEqual({
+      status: "ok",
+      changed: [`/user/apps/${APP}/src/App.tsx`],
+    });
+    expect(calls).toHaveLength(1);
+    // The commit itself landed, exactly once.
+    expect(inner.commits).toHaveLength(1);
+    expect(spy).toHaveBeenCalledWith(
+      expect.stringContaining("source did not reach the store"),
+      expect.objectContaining({ appId: APP, error: "the store said no" }),
+    );
+    spy.mockRestore();
+  });
+
+  it("unwired, a commit behaves exactly as it did — the snapshot stays the only home", async () => {
+    const inner = testWorkspace();
+    const workspace = wrapWorkspaceForRender(inner, { emit: () => undefined });
+    await workspace.writeFile(`/user/apps/${APP}/src/App.tsx`, "a\n");
+    await expect(workspace.commit()).resolves.toEqual({
+      status: "ok",
+      changed: [`/user/apps/${APP}/src/App.tsx`],
+    });
+  });
+
+  /**
+   * Views go FIRST for two reasons. §1.6 is a promise about seconds, and — the
+   * load-bearing one — an `app.vendo` commit is the moment a files-first app
+   * BECOMES an app: the `authoredApp` seam is what upserts its row. Persisting
+   * source before that would look for a row that does not exist yet.
+   */
+  it("runs AFTER the view — the app half is what makes the row it writes to", async () => {
+    const inner = testWorkspace();
+    const order: string[] = [];
+    const workspace = wrapWorkspaceForRender(inner, {
+      emit: () => order.push("view"),
+      authoredApp: async () => {
+        order.push("authored");
+        return { data: {} };
+      },
+      commitSource: async () => {
+        order.push("source");
+      },
+    });
+    await workspace.writeFile(APP_VENDO, GOOD_APP);
+    await workspace.writeFile(`/user/apps/${APP}/src/App.tsx`, "a\n");
+    await workspace.commit();
+    expect(order.at(-1)).toBe("source");
+    expect(order).toContain("authored");
+  });
+});
+
 describe("the wrapper", () => {
   it("leaves every other filesystem operation untouched", async () => {
     const { workspace } = seam({ "/user/memory/a.md": "alpha" });

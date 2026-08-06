@@ -90,40 +90,45 @@ export const devRoutes: RouteEntry[] = [
   }),
 ];
 
-/** The machine-facing surfaces: webhook ingress, the authenticated scheduler
-    tick, and the dev-only sync impact probe. All match on the RAW path
-    (prefix or exact) ahead of any segment decoding, exactly like the old
-    chain. (The v1 run-token apps proxy mount died with execution-v2 Wave 1.5;
-    the box callback surface at /box/ is its replacement.) */
-export const systemRoutes: RouteEntry[] = [
+/** External-event ingress. Mounted with the automations subsystem, and absent
+    without it — a delivery to a deployment that does not run automations is a
+    404 rather than a door that accepts the event and drops it. */
+export const webhookRoutes: RouteEntry[] = [
   prefixRoute("POST", "/webhooks/", async ({ request, deps }) => {
     return await deps.automations.webhook(request);
   }),
+];
+
+/** The machine-facing surfaces: the authenticated scheduler tick and the
+    dev-only sync impact probe. Both match on the RAW path (prefix or exact)
+    ahead of any segment decoding, exactly like the old chain. The tick is here
+    rather than with the webhook door because it also drives the hosted session
+    sweep, which every deployment needs. (The v1 run-token apps proxy mount died
+    with execution-v2 Wave 1.5; the box callback surface at /box/ is its
+    replacement.) */
+export const systemRoutes: RouteEntry[] = [
   route("POST", "/tick", async ({ request, deps, sweep }) => {
     if (!await tickAuthorized(request)) {
       return json({ error: { code: "blocked", message: "invalid tick credential" } }, 401);
     }
-    // execution-v2 Lane D — one authenticated tick drives BOTH schedulers: the
-    // automations engine and the machine-app vendo.json schedules (additive
-    // `schedules` field), plus the hosted TTL sweep (sweepOnTick). Point any
-    // external cron here (Vercel cron, GitHub Actions, crontab); the Cloud
-    // broker calls this same surface. The legs settle independently so one
-    // failing can never suppress the others; any failure still answers 500 so
-    // a retrying cron comes back (all three are idempotent within their
-    // windows).
-    const [runs, schedules, sessions] = await Promise.allSettled([
+    // One authenticated tick drives the ONE scheduler — the automations engine,
+    // which fires every trigger including the schedules a machine app declares
+    // in its vendo.json (folded into doc triggers at manifest sync) — plus the
+    // hosted TTL sweep (sweepOnTick). Point any external cron here (Vercel cron,
+    // GitHub Actions, crontab); the Cloud broker calls this same surface. The
+    // legs settle independently so one failing can never suppress the other; any
+    // failure still answers 500 so a retrying cron comes back (both are
+    // idempotent within their windows).
+    const [runs, sessions] = await Promise.allSettled([
       deps.automations.tick(),
-      deps.apps.schedules.tick(),
       deps.sweepOnTick ? sweep() : Promise.resolve(),
     ]);
     const errors = [
       ...(runs.status === "rejected" ? [`automations: ${runs.reason instanceof Error ? runs.reason.message : "tick failed"}`] : []),
-      ...(schedules.status === "rejected" ? [`schedules: ${schedules.reason instanceof Error ? schedules.reason.message : "tick failed"}`] : []),
       ...(sessions.status === "rejected" ? [`sessions: ${sessions.reason instanceof Error ? sessions.reason.message : "sweep failed"}`] : []),
     ];
     return json({
       ...(runs.status === "fulfilled" ? { runIds: runs.value } : {}),
-      ...(schedules.status === "fulfilled" ? { schedules: schedules.value } : {}),
       ...(errors.length === 0 ? {} : { errors }),
     }, errors.length === 0 ? 200 : 500);
   }),

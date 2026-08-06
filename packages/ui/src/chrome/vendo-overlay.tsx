@@ -1,16 +1,18 @@
 import type { UIPayload } from "@vendoai/core";
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type ComponentType, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type ComponentType, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useVendoContext, useVendoDiscoverability, useVendoTheme } from "../context.js";
 import { useMobileTakeover } from "../hooks/use-mobile-takeover.js";
 import { themeCssVariables } from "../theme.js";
 import { PayloadView } from "../tree/renderer.js";
+import { BeatRail } from "./build-beat.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { hasSeen, markSeen, type VendoDiscoverability, type VendoGreeting } from "./discoverability.js";
 import { inertBehind } from "./inert-behind.js";
 import { LauncherFace, LauncherToast, useLauncherStatus } from "./launcher-status.js";
 import { deliverPrefill, PrefillScopeContext, registerOverlayOpener } from "./overlay-registry.js";
-import { usePinAction } from "./pin-ceremony.js";
+import { usePinAction, usePinNudge } from "./pin-ceremony.js";
+import { IDLE_RUN_ACTIVITY, runActivity, subscribeRunActivity } from "./run-activity.js";
 import {
   escapeIntent,
   expandedStageRect,
@@ -231,6 +233,9 @@ export function VendoOverlay({
   const [splitState, dispatchSplit] = useReducer(splitViewReducer, initialSplitViewState);
   const expanded = splitState.expanded && !takeover.active;
   const featured = featuredEmbed(splitState);
+  // The workspace IS the mockup's pin: one app on the stage at a time, so its
+  // pin invites until the user takes it (§10.1 — the user pins, never the agent).
+  const stageNudge = usePinNudge(featured?.appId ?? "", featured !== undefined);
   // The collapse ANIMATES: like the connect tray's exit walk, the stage stays
   // mounted through expanded → collapsing → collapsed so the featured app
   // doesn't blink out before the panes finish sliding. Render-phase state
@@ -426,6 +431,12 @@ export function VendoOverlay({
   const portalRoot = useRef<HTMLDivElement>(null);
   const opener = useRef<HTMLElement | null>(null);
   const wasOpen = useRef(false);
+  // The registry opener effect only re-registers on a later passive flush, so a
+  // ⌘K landing between the hide-commit and that flush reached a closure with a
+  // stale `open` and toggled a closed overlay shut (the dialog never mounted).
+  // The ref always reads the committed value, independent of re-registration.
+  const openRef = useRef(open);
+  openRef.current = open;
 
   const setOpen = useCallback((next: boolean) => {
     if (next && !open && document.activeElement instanceof HTMLElement && document.activeElement !== document.body) {
@@ -499,12 +510,12 @@ export function VendoOverlay({
   useEffect(() => registerOverlayOpener(options => {
     // The one-surface ⌘K path: a toggle request closes an open overlay instead
     // of no-opping; every other affordance strictly opens.
-    if (options?.toggle === true && open) {
+    if (options?.toggle === true && openRef.current) {
       setOpen(false);
       return;
     }
     if (options?.close === true) {
-      if (open) setOpen(false);
+      if (openRef.current) setOpen(false);
       return;
     }
     setOpen(true);
@@ -523,7 +534,7 @@ export function VendoOverlay({
         { scope: prefillScope.current, defer: fresh },
       );
     }
-  }), [setOpen, open]);
+  }), [setOpen]);
 
   // LANE D (spec §2, §3, §4) — what the pill says while the user is elsewhere:
   // the live beat of a run that kept going after they left, the result toast
@@ -531,6 +542,24 @@ export function VendoOverlay({
   // results. The panel's own thread id scopes the toast to runs this panel can
   // actually show.
   const [panelThreadId, setPanelThreadId] = useState<string>();
+  // §3.4 + §10.2 — the running turn's beats, for the stage's rail. The thread
+  // lives in the OTHER pane's React tree, so this rides the run-activity store
+  // the launcher pill already reads — the one channel for what a surface
+  // outside the conversation may know about a turn inside it.
+  //
+  // SCOPED, because that store answers for whichever surface is running and a
+  // host may mount several (`/concurrent` mounts an embedded thread beside this
+  // overlay): unscoped, an idle workspace narrated somebody else's build.
+  //
+  // Stricter than the toast's rule two lines below, deliberately. A toast is news
+  // the user might otherwise miss, so it fails toward SHOWING and lets an
+  // unidentified run through; a rail claims "this is what YOUR workspace is
+  // doing", so it fails toward SILENCE — an unidentifiable turn narrates nowhere
+  // rather than in the wrong panel.
+  const activity = useSyncExternalStore(subscribeRunActivity, runActivity, () => IDLE_RUN_ACTIVITY);
+  const beats = activity.threadId !== undefined && activity.threadId === panelThreadId
+    ? activity.beats
+    : IDLE_RUN_ACTIVITY.beats;
   const status = useLauncherStatus({
     open,
     ...(panelThreadId === undefined ? {} : { threadId: panelThreadId }),
@@ -655,7 +684,8 @@ export function VendoOverlay({
           <div className="fl-split">
             <div className="fl-split-stage" key="stage" {...(expanded ? {} : { "aria-hidden": true })}>
               {stagePhase !== "collapsed" ? (
-                featured ? (
+                <>
+                {featured ? (
                   <div className="fl-stage" key={featured.appId}>
                     <div className="fl-stage-bar">
                       <span className="fl-appcard-dot" aria-hidden="true" />
@@ -668,6 +698,7 @@ export function VendoOverlay({
                         <button
                           type="button"
                           className="fl-barpin fl-stage-pin"
+                          {...(stageNudge === undefined ? {} : { "data-vendo-pin": stageNudge })}
                           onClick={() => {
                             pin({ appId: featured.appId, payload: featured.payload });
                             dispatchSplit({ type: "collapse" });
@@ -697,7 +728,12 @@ export function VendoOverlay({
                     <p>Views you build land here.</p>
                     <p>Ask for a view in the conversation and it renders large on this stage.</p>
                   </div>
-                )
+                )}
+                {/* The build's own progress, under whatever the stage is
+                    showing: the empty stage while the first view is still
+                    being made, the view itself once it lands. */}
+                <BeatRail beats={beats} />
+                </>
               ) : null}
             </div>
             <div className="fl-split-rail" key="rail">

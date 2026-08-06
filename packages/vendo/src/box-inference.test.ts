@@ -89,8 +89,6 @@ async function provisionedEnv(rungs: Record<string, string> = {}): Promise<Recor
     principal: async () => ADA,
     store,
     sandbox: captureSandbox(specs),
-    // Wave 9 — machine provisioning is flag-gated.
-    apps: { experimentalMachines: true },
   });
   await vendo.apps.machine.provision("app_box", {
     principal: ADA,

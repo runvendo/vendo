@@ -1,4 +1,5 @@
 import {
+  DEFAULT_TRIGGER_ID,
   VENDO_APP_FORMAT,
   VendoError,
   type AppDocument,
@@ -10,6 +11,7 @@ import {
   type StoreAdapter,
   type ToolCall,
   type ToolDescriptor,
+  type Trigger,
   type ToolOutcome,
   type ToolRegistry,
 } from "@vendoai/core";
@@ -68,14 +70,14 @@ const ctx = (subject = "user_a"): RunContext => ({
   requestHeaders: { cookie: "session=live" },
 });
 
-const app = (id: string, trigger: NonNullable<AppDocument["trigger"]>): AppDocument =>
-  ({ format: VENDO_APP_FORMAT, id, name: id, trigger });
+const app = (id: string, trigger: Omit<Trigger, "id">): AppDocument =>
+  ({ format: VENDO_APP_FORMAT, id, name: id, triggers: [{ id: DEFAULT_TRIGGER_ID, ...trigger } as Trigger] });
 
 const seedApp = async (store: StoreAdapter, doc: AppDocument, subject = "user_a"): Promise<void> => {
   await store.records("vendo_apps").put({
     id: doc.id,
     data: { subject, enabled: false, doc },
-    refs: { subject, ...(doc.trigger === undefined ? {} : { trigger_kind: doc.trigger.on.kind }) },
+    refs: { subject, ...(doc.triggers?.[0] === undefined ? {} : { trigger_kind: doc.triggers[0].on.kind }) },
   });
 };
 
@@ -156,7 +158,7 @@ describe("rehearse() fire-time enumeration", () => {
     });
     await seedApp(store, doc);
     const automations = engine(store, guardBoundRegistry([balanceTool]));
-    const report = await automations.rehearse("app_daily", ctx(), 7);
+    const report = await automations.rehearse("app_daily", DEFAULT_TRIGGER_ID, ctx(), 7);
     // Window: 2026-07-05T12:00Z → 2026-07-12T12:00Z; 08:00 firings land on
     // Jul 6 … Jul 12 (Jul 5 08:00 precedes the window start).
     expect(report.windowDays).toBe(7);
@@ -176,7 +178,7 @@ describe("rehearse() fire-time enumeration", () => {
     });
     await seedApp(store, doc);
     const automations = engine(store, guardBoundRegistry([transactionsTool]));
-    const report = await automations.rehearse("app_weekly", ctx(), 7);
+    const report = await automations.rehearse("app_weekly", DEFAULT_TRIGGER_ID, ctx(), 7);
     expect(report.firings.map((firing) => firing.scheduledFor)).toEqual([
       "2026-07-10T17:00:00.000Z",
     ]);
@@ -197,12 +199,12 @@ describe("rehearse() fire-time enumeration", () => {
       run: { kind: "steps", steps: [{ id: "balance", tool: "host_listAccounts" }] },
     }));
     const automations = engine(store, guardBoundRegistry([balanceTool]));
-    const every = await automations.rehearse("app_every", ctx(), 7);
+    const every = await automations.rehearse("app_every", DEFAULT_TRIGGER_ID, ctx(), 7);
     expect(every.firings).toHaveLength(7);
     expect(every.firings.at(-1)?.scheduledFor).toBe("2026-07-11T12:00:00.000Z");
-    expect((await automations.rehearse("app_at", ctx(), 7)).firings.map((firing) => firing.scheduledFor))
+    expect((await automations.rehearse("app_at", DEFAULT_TRIGGER_ID, ctx(), 7)).firings.map((firing) => firing.scheduledFor))
       .toEqual(["2026-07-08T09:00:00.000Z"]);
-    expect((await automations.rehearse("app_at_past", ctx(), 7)).firings).toHaveLength(0);
+    expect((await automations.rehearse("app_at_past", DEFAULT_TRIGGER_ID, ctx(), 7)).firings).toHaveLength(0);
   });
 
   it("caps dense schedules at the most recent firings and says so", async () => {
@@ -213,7 +215,7 @@ describe("rehearse() fire-time enumeration", () => {
     });
     await seedApp(store, doc);
     const automations = engine(store, guardBoundRegistry([balanceTool]));
-    const report = await automations.rehearse("app_hourly", ctx(), 7);
+    const report = await automations.rehearse("app_hourly", DEFAULT_TRIGGER_ID, ctx(), 7);
     expect(report.truncated).toBe(true);
     // 168 hourly firings in the 7-day window, capped to the most recent 30.
     expect(report.firings).toHaveLength(30);
@@ -232,7 +234,7 @@ describe("rehearse() fire-time enumeration", () => {
       run: { kind: "steps", steps: [{ id: "transactions", tool: "host_listTransactions" }] },
     }));
     const automations = engine(store, guardBoundRegistry([transactionsTool]));
-    const cron = await automations.rehearse("app_hourly_windowed", ctx(), 7);
+    const cron = await automations.rehearse("app_hourly_windowed", DEFAULT_TRIGGER_ID, ctx(), 7);
     expect(cron.truncated).toBe(true);
     // Most recent 30 of 168: the last is 12:00 Jul 12, so the first kept is
     // 29 hours earlier.
@@ -242,7 +244,7 @@ describe("rehearse() fire-time enumeration", () => {
       from: "2026-07-11T06:00:00.000Z",
       to: "2026-07-11T07:00:00.000Z",
     });
-    const every = await automations.rehearse("app_every_dense", ctx(), 7);
+    const every = await automations.rehearse("app_every_dense", DEFAULT_TRIGGER_ID, ctx(), 7);
     expect(every.truncated).toBe(true);
     // `every` anchors at the window END, so its most recent firing is 11:00
     // (one interval before `to`) and the 30th back is 06:00 Jul 11.
@@ -277,7 +279,7 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
       () => ({ status: "ok", output: { balance: 1500 } }),
     );
     const automations = engine(store, tools);
-    const report = await automations.rehearse("app_alert", ctx());
+    const report = await automations.rehearse("app_alert", DEFAULT_TRIGGER_ID, ctx());
     expect(report.firings.length).toBeGreaterThan(0);
     for (const firing of report.firings) {
       expect(firing.status).toBe("fired");
@@ -320,7 +322,7 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
       () => ({ status: "ok", output: {} }),
       (call) => ({ wouldAsk: true, grantsMissing: [call.tool] }),
     );
-    const firing = (await engine(store, tools).rehearse("app_verdict", ctx())).firings[0];
+    const firing = (await engine(store, tools).rehearse("app_verdict", DEFAULT_TRIGGER_ID, ctx())).firings[0];
     const step = firing?.steps[0];
     expect(step).toMatchObject({
       id: "alert",
@@ -343,7 +345,7 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
       () => ({ status: "ok", output: {} }),
       () => ({ wouldAsk: false, grantsMissing: [], wouldBlock: "writes are off in this app" }),
     );
-    const step = (await engine(store, tools).rehearse("app_blocked", ctx())).firings[0]?.steps[0];
+    const step = (await engine(store, tools).rehearse("app_blocked", DEFAULT_TRIGGER_ID, ctx())).firings[0]?.steps[0];
     expect(step).toMatchObject({ status: "simulated", wouldBlock: "writes are off in this app" });
     expect(step?.wouldAsk).toBeUndefined();
     expect(step?.grantsMissing).toBeUndefined();
@@ -357,7 +359,7 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
     });
     await seedApp(store, doc);
     // Default double: no verdict → wouldAsk:false/grantsMissing:[] not emitted.
-    const step = (await engine(store, guardBoundRegistry([emailTool])).rehearse("app_plain", ctx())).firings[0]?.steps[0];
+    const step = (await engine(store, guardBoundRegistry([emailTool])).rehearse("app_plain", DEFAULT_TRIGGER_ID, ctx())).firings[0]?.steps[0];
     expect(step).toMatchObject({ status: "simulated" });
     expect(step?.wouldAsk).toBeUndefined();
     expect(step?.grantsMissing).toBeUndefined();
@@ -377,7 +379,7 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
     }));
     const semantics = { host_listAccounts: { count: { kind: "plain" } } } as const;
     const step = (await engine(store, tools, new GuardDouble(), semantics)
-      .rehearse("app_count", ctx())).firings[0]?.steps[0];
+      .rehearse("app_count", DEFAULT_TRIGGER_ID, ctx())).firings[0]?.steps[0];
     // The one shared numeric field is `count`, which the host's sync classified
     // as anything but money — so no headline (this once rendered $1.20/$0.43).
     expect(step?.result).toBeUndefined();
@@ -398,7 +400,7 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
     }));
     const semantics = { host_listAccounts: { amount: { kind: "money", unit: "cents" } } } as const;
     const step = (await engine(store, tools, new GuardDouble(), semantics)
-      .rehearse("app_amount", ctx())).firings[0]?.steps[0];
+      .rehearse("app_amount", DEFAULT_TRIGGER_ID, ctx())).firings[0]?.steps[0];
     // Two shared numerics (amount, count); only `amount` is declared money, so
     // it's the unambiguous headline field — count is ignored, not summed.
     expect(step?.result?.totalCents).toBe(7_500);
@@ -420,7 +422,7 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
     }));
     const semantics = { host_listAccounts: { amount: { kind: "money", unit: "dollars" } } } as const;
     const step = (await engine(store, tools, new GuardDouble(), semantics)
-      .rehearse("app_dollars", ctx())).firings[0]?.steps[0];
+      .rehearse("app_dollars", DEFAULT_TRIGGER_ID, ctx())).firings[0]?.steps[0];
     // `result` is minor units by contract, so dollars scale here — without the
     // synced unit this read would have rendered $0.50 instead of $50.25.
     expect(step?.result?.totalCents).toBe(7_525);
@@ -444,13 +446,13 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
     });
     const semantics = { host_listAccounts: { notional: { kind: "money", unit: "cents" } } } as const;
     const declared = (await engine(store, guardBoundRegistry([balanceTool], read), new GuardDouble(), semantics)
-      .rehearse("app_declared", ctx())).firings[0]?.steps[0];
+      .rehearse("app_declared", DEFAULT_TRIGGER_ID, ctx())).firings[0]?.steps[0];
     expect(declared?.result?.totalCents).toBe(200_000);
     // The SAME read with no synced semantics summarizes nothing at all: two
     // shared numerics and no authority on which is money, so the row carries a
     // preview and no total. It never falls back to summing `total`.
     const unsynced = (await engine(store, guardBoundRegistry([balanceTool], read))
-      .rehearse("app_declared", ctx())).firings[0]?.steps[0];
+      .rehearse("app_declared", DEFAULT_TRIGGER_ID, ctx())).firings[0]?.steps[0];
     expect(unsynced?.result).toBeUndefined();
     expect(unsynced?.preview).toContain("notional");
   });
@@ -474,7 +476,7 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
       },
     } as const;
     const step = (await engine(store, tools, new GuardDouble(), semantics)
-      .rehearse("app_enum", ctx())).firings[0]?.steps[0];
+      .rehearse("app_enum", DEFAULT_TRIGGER_ID, ctx())).firings[0]?.steps[0];
     expect(step?.result?.breakdown).toEqual([
       { label: "Past due", cents: 4_000 },
       { label: "On time", cents: 6_000 },
@@ -501,7 +503,7 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
       },
     } as const;
     const step = (await engine(store, tools, new GuardDouble(), semantics)
-      .rehearse("app_new_enum", ctx())).firings[0]?.steps[0];
+      .rehearse("app_new_enum", DEFAULT_TRIGGER_ID, ctx())).firings[0]?.steps[0];
     expect(step?.result?.breakdown).toEqual([
       { label: "Past due", cents: 4_000 },
       { label: "In review", cents: 6_000 },
@@ -526,7 +528,7 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
       return { host_listAccounts: { notional: { kind: "money", unit: "cents" } } };
     });
     expect(reads).toBe(0);
-    const step = (await automations.rehearse("app_provider", ctx())).firings[0]?.steps[0];
+    const step = (await automations.rehearse("app_provider", DEFAULT_TRIGGER_ID, ctx())).firings[0]?.steps[0];
     expect(reads).toBe(1);
     expect(step?.result?.totalCents).toBe(1_500);
   });
@@ -547,7 +549,7 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
     // a `saved` entry in overrides.json, which corrects generation too.
     const semantics = { host_listAccounts: { id: { kind: "id" } } } as const;
     const step = (await engine(store, tools, new GuardDouble(), semantics)
-      .rehearse("app_goals", ctx())).firings[0]?.steps[0];
+      .rehearse("app_goals", DEFAULT_TRIGGER_ID, ctx())).firings[0]?.steps[0];
     expect(step?.result).toBeUndefined();
     expect(step?.preview).toContain("saved");
   });
@@ -568,7 +570,7 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
       ],
     }));
     const semantics = { host_listAccounts: { balance: { kind: "money", unit: "cents" } } } as const;
-    const report = await engine(store, tools, new GuardDouble(), semantics).rehearse("app_headline", ctx());
+    const report = await engine(store, tools, new GuardDouble(), semantics).rehearse("app_headline", DEFAULT_TRIGGER_ID, ctx());
     const step = report.firings[0]?.steps[0];
     expect(step?.status).toBe("ok");
     // Total sums the one DECLARED money field (balance); apy is absent on Maple
@@ -596,7 +598,7 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
     // Wrapper key included, since semantics are keyed by collapsed dot path.
     const semantics = { host_listAccounts: { "data.amount": { kind: "money", unit: "cents" } } } as const;
     const step = (await engine(store, tools, new GuardDouble(), semantics)
-      .rehearse("app_spending", ctx())).firings[0]?.steps[0];
+      .rehearse("app_spending", DEFAULT_TRIGGER_ID, ctx())).firings[0]?.steps[0];
     expect(step?.result?.totalCents).toBe(58_720 + 44_140);
     // No enum semantic on `data.category`, so labels stay the raw values.
     expect(step?.result?.breakdown).toEqual([
@@ -625,7 +627,7 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
       },
     } as const;
     const step = (await engine(store, tools, new GuardDouble(), semantics)
-      .rehearse("app_ambiguous", ctx())).firings[0]?.steps[0];
+      .rehearse("app_ambiguous", DEFAULT_TRIGGER_ID, ctx())).firings[0]?.steps[0];
     expect(step?.result).toBeUndefined();
     // The resolved output still reaches the client through `preview` — only the
     // one-number headline is withheld, never invented.
@@ -647,7 +649,7 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
     await seedApp(store, doc);
     const tools = guardBoundRegistry([balanceTool, transactionsTool]);
     const automations = engine(store, tools);
-    const report = await automations.rehearse("app_digest", ctx(), 7);
+    const report = await automations.rehearse("app_digest", DEFAULT_TRIGGER_ID, ctx(), 7);
     const second = report.firings[1];
     expect(second?.scheduledFor).toBe("2026-07-06T17:00:00.000Z");
     const [balance, transactions] = second?.steps ?? [];
@@ -684,7 +686,7 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
     });
     await seedApp(store, doc);
     const automations = engine(store, guardBoundRegistry([balanceTool]));
-    const report = await automations.rehearse("app_conditional", ctx(), 7);
+    const report = await automations.rehearse("app_conditional", DEFAULT_TRIGGER_ID, ctx(), 7);
     const early = report.firings.filter((firing) => firing.scheduledFor.startsWith("2026-07-0"));
     const late = report.firings.filter((firing) => firing.scheduledFor.startsWith("2026-07-1"));
     expect(early).toHaveLength(4);
@@ -719,7 +721,7 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
       () => ({ status: "ok", output: { accounts: [{ id: "acc_1", balance: 1500 }] } }),
     );
     const automations = engine(store, tools);
-    const report = await automations.rehearse("app_fanout", ctx(), 7);
+    const report = await automations.rehearse("app_fanout", DEFAULT_TRIGGER_ID, ctx(), 7);
     expect(report.firings.length).toBeGreaterThan(0);
     for (const firing of report.firings) {
       // The read still ran, so the firing fired — but the fan-out step must
@@ -745,7 +747,7 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
     });
     await seedApp(store, doc);
     const automations = engine(store, guardBoundRegistry([balanceTool]));
-    const report = await automations.rehearse("app_daily", ctx(), 7);
+    const report = await automations.rehearse("app_daily", DEFAULT_TRIGGER_ID, ctx(), 7);
     expect(report.firings).toHaveLength(7);
     expect((await store.records("vendo_runs").list({})).records).toHaveLength(0);
     expect((await store.records("vendo_grants").list({})).records).toHaveLength(0);
@@ -767,7 +769,7 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
         : { status: "ok", output: {} };
     });
     const automations = engine(store, tools);
-    const report = await automations.rehearse("app_blocked", ctx());
+    const report = await automations.rehearse("app_blocked", DEFAULT_TRIGGER_ID, ctx());
     expect(report.firings[0]).toMatchObject({ status: "error" });
     expect(report.firings[0]?.steps[0]).toMatchObject({ status: "blocked", detail: "not now" });
     expect(report.firings.slice(1).every((firing) => firing.status === "fired")).toBe(true);
@@ -784,7 +786,7 @@ describe("rehearse() window selection", () => {
     const store = memoryStoreAdapter();
     await seedApp(store, dailyApp());
     const automations = engine(store, guardBoundRegistry([balanceTool]));
-    const report = await automations.rehearse("app_daily", ctx());
+    const report = await automations.rehearse("app_daily", DEFAULT_TRIGGER_ID, ctx());
     expect(report.windowDays).toBe(30);
     // NOW − 30 days.
     expect(report.from).toBe("2026-06-12T12:00:00.000Z");
@@ -795,8 +797,8 @@ describe("rehearse() window selection", () => {
     const store = memoryStoreAdapter();
     await seedApp(store, dailyApp());
     const automations = engine(store, guardBoundRegistry([balanceTool]));
-    const week = await automations.rehearse("app_daily", ctx(), 7);
-    const month = await automations.rehearse("app_daily", ctx(), 30);
+    const week = await automations.rehearse("app_daily", DEFAULT_TRIGGER_ID, ctx(), 7);
+    const month = await automations.rehearse("app_daily", DEFAULT_TRIGGER_ID, ctx(), 30);
     expect(week.windowDays).toBe(7);
     expect(month.windowDays).toBe(30);
     expect(week.from).toBe("2026-07-05T12:00:00.000Z");
@@ -827,12 +829,12 @@ describe("rehearse() server-side cooldown", () => {
     const clock = { ms: NOW.getTime() };
     const automations = clockedEngine(store, clock);
     // First replay runs.
-    await expect(automations.rehearse("app_daily", ctx(), 30)).resolves.toBeDefined();
+    await expect(automations.rehearse("app_daily", DEFAULT_TRIGGER_ID, ctx(), 30)).resolves.toBeDefined();
     // An immediate repeat of the SAME window is a clear error, not a silent no-op.
-    await expect(automations.rehearse("app_daily", ctx(), 30)).rejects.toThrow(/cooling down/);
+    await expect(automations.rehearse("app_daily", DEFAULT_TRIGGER_ID, ctx(), 30)).rejects.toThrow(/cooling down/);
     // Once the cooldown elapses, the same window is allowed again.
     clock.ms += 3_000;
-    await expect(automations.rehearse("app_daily", ctx(), 30)).resolves.toBeDefined();
+    await expect(automations.rehearse("app_daily", DEFAULT_TRIGGER_ID, ctx(), 30)).resolves.toBeDefined();
   });
 
   it("does NOT throttle a legitimate 7d/30d toggle in the same instant (keyed per window)", async () => {
@@ -840,11 +842,11 @@ describe("rehearse() server-side cooldown", () => {
     await seedApp(store, dailyApp());
     const clock = { ms: NOW.getTime() };
     const automations = clockedEngine(store, clock);
-    await expect(automations.rehearse("app_daily", ctx(), 30)).resolves.toBeDefined();
+    await expect(automations.rehearse("app_daily", DEFAULT_TRIGGER_ID, ctx(), 30)).resolves.toBeDefined();
     // Toggling to the other window immediately is fine — different key.
-    await expect(automations.rehearse("app_daily", ctx(), 7)).resolves.toBeDefined();
+    await expect(automations.rehearse("app_daily", DEFAULT_TRIGGER_ID, ctx(), 7)).resolves.toBeDefined();
     // But re-clicking the SAME window is still throttled.
-    await expect(automations.rehearse("app_daily", ctx(), 7)).rejects.toThrow(/cooling down/);
+    await expect(automations.rehearse("app_daily", DEFAULT_TRIGGER_ID, ctx(), 7)).rejects.toThrow(/cooling down/);
   });
 });
 
@@ -860,9 +862,9 @@ describe("rehearse() scope guards", () => {
       run: { kind: "agentic", prompt: "watch my balance" },
     }));
     const automations = engine(store, guardBoundRegistry([balanceTool]));
-    await expect(automations.rehearse("app_event", ctx())).rejects.toThrow(VendoError);
-    await expect(automations.rehearse("app_event", ctx())).rejects.toThrow(/schedule triggers only/);
-    await expect(automations.rehearse("app_agentic", ctx())).rejects.toThrow(/steps automations only/);
+    await expect(automations.rehearse("app_event", DEFAULT_TRIGGER_ID, ctx())).rejects.toThrow(VendoError);
+    await expect(automations.rehearse("app_event", DEFAULT_TRIGGER_ID, ctx())).rejects.toThrow(/schedule triggers only/);
+    await expect(automations.rehearse("app_agentic", DEFAULT_TRIGGER_ID, ctx())).rejects.toThrow(/steps automations only/);
   });
 
   it("is owner-scoped: a foreign subject gets not-found", async () => {
@@ -872,7 +874,7 @@ describe("rehearse() scope guards", () => {
       run: { kind: "steps", steps: [{ id: "balance", tool: "host_listAccounts" }] },
     }));
     const automations = engine(store, guardBoundRegistry([balanceTool]));
-    await expect(automations.rehearse("app_daily", ctx("user_b"))).rejects.toThrow(/not found/);
+    await expect(automations.rehearse("app_daily", DEFAULT_TRIGGER_ID, ctx("user_b"))).rejects.toThrow(/not found/);
   });
 
   it("rejects an unknown tool up front", async () => {
@@ -882,6 +884,6 @@ describe("rehearse() scope guards", () => {
       run: { kind: "steps", steps: [{ id: "x", tool: "host_missing" }] },
     }));
     const automations = engine(store, guardBoundRegistry([balanceTool]));
-    await expect(automations.rehearse("app_unknown", ctx())).rejects.toThrow(/unknown tool/);
+    await expect(automations.rehearse("app_unknown", DEFAULT_TRIGGER_ID, ctx())).rejects.toThrow(/unknown tool/);
   });
 });

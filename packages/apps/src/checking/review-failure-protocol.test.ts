@@ -37,16 +37,23 @@
  *     `../generation/conductor.ts` re-invokes the brain on blocking findings — a
  *     PRE-land loop inside generation, two rounds rather than one, and whatever
  *     survives it lands unflagged.
- *  4. `Finding` (`packages/core/src/pack.ts`) is `{ severity, where?, message }`
- *     with no source or origin, and host judgment rules are folded into the
- *     reviewer's single rubric (`./reviewer.ts`). So a host-check failure is
- *     INDISTINGUISHABLE from a reviewer finding at any would-be waive point:
- *     §7's carve-out is not merely unimplemented, it is currently unrepresentable.
+ *  4. Check PROVENANCE now exists (2026-08-05, `./checking.test.ts`). `Finding`
+ *     carries `check`, stamped by `./layer.ts` — the one place that knows the
+ *     answer for every check at once — and overriding whatever the check itself
+ *     wrote there, since a check is untrusted code. So a host-check failure IS
+ *     identifiable now, and §7's carve-out is representable. What is still absent
+ *     is everything the carve-out would be applied AT: there is no accept-flagged
+ *     path and no override to refuse. One caveat remains inside the reviewer: a
+ *     host JUDGMENT RULE is still folded into the reviewer's single rubric, so it
+ *     comes back stamped `reviewer` rather than as the host's own — a plugged
+ *     `Pack.checks` entry is distinguishable, a plugged rubric line is not.
  *
  * The floor itself is real and good — the reviewer, the pack checks, the judgment
- * rubric and the fix rounds all work, and a `block` now stops the write. It is
- * the protocol AFTER a FAIL — the flagged version, its remediation round, its
- * card and its override — that is absent.
+ * rubric and the fix rounds all work, a `block` now stops the write, and since
+ * 2026-08-05 the floor runs at the PAINT SEAM for every author (blueprint §7.1),
+ * so a `block` also means the view never reaches the user. It is the protocol
+ * AFTER a FAIL — the flagged version, its remediation round, its card and its
+ * override — that is absent.
  */
 import { describe, expect, it } from "vitest";
 
@@ -85,10 +92,11 @@ describe.skip("review failure protocol (design §7) — NOT IMPLEMENTED", () => 
   });
 
   it("refuses an owner override of a HOST-check failure", () => {
-    // MUST BE BUILT FIRST: provenance on `Finding`. Until a finding says which
-    // check produced it, "except host-check failures" cannot be evaluated at all —
-    // host judgment rules currently come back as ordinary reviewer findings, and
-    // fact-check findings flatten into one anonymous `Finding[]` in `./layer.ts`.
-    expect.fail("Finding carries no check provenance, so a host-check failure cannot be identified");
+    // Provenance is BUILT: `Finding.check` names the check that produced it, so
+    // "except host-check failures" is now a question this code can answer (see
+    // "every finding says which check produced it" in `./checking.test.ts`).
+    // STILL MISSING is the thing it would be answered FOR: the accept-flagged path
+    // from the test above. There is no override to refuse.
+    expect.fail("provenance exists, but no accept-flagged path and no owner role do");
   });
 });

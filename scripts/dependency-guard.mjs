@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Dependency guard — the wave-3 CI gate (docs/contracts/00-overview.md).
+ * Dependency guard — the wave-3 CI gate (docs/archive/contracts/00-overview.md).
  *
  * Enforces, for every package in the active workspace (packages/*):
  *
@@ -70,12 +70,50 @@ const LAYERS = {
   // core's KnowledgeAdapter contract; core-only, like the other engine blocks
   "@vendoai/knowledge": ["@vendoai/core"],
   "@vendoai/automations": ["@vendoai/core", "@vendoai/apps"],
+  // the code-land runtime shim (blueprint §5.4): what a generated app imports
+  // inside its box — the Kit re-exported, the reshape/aggregate vocabulary
+  // delegated to core, and the guarded data/action hooks. core + ui only: it
+  // ships into a browser bundle, so it must never reach a server block.
+  "@vendoai/kit": ["@vendoai/core", "@vendoai/ui"],
   // the harness runtime (build contract 2026-07-30 §2): the second multi-block
   // package after the umbrella. It runs any Harness — building the Turn, mapping
   // the guard's outcomes, mirroring onto today's wire, and emitting hot-path
   // views — so it reaches core (the contract), agent (the vendo() loop), apps
   // (the plan skeleton) and guard. It is NOT the umbrella: no store, no actions.
   "@vendoai/harnesses": ["@vendoai/core", "@vendoai/agent", "@vendoai/apps", "@vendoai/guard"],
+  // the standalone agent runtime (agents-v0 spec, 2026-08-04): the open-source
+  // front door Vendo's embed consumes across a real seam. It assembles what the
+  // umbrella assembles — harness runtime (harnesses), guard, store, host tools
+  // and MCP connectors (actions), knowledge, and the e2b sandbox adapter (apps)
+  // — but it is NOT the umbrella: no @vendoai/vendo, ever (the spec's
+  // dependency law; the embed consumes agents, never the reverse).
+  //
+  // mcp joined for the TOOL DOOR (Amendment 2, 2026-08-05): a harness declaring
+  // `requires.toolDoor` thinks outside this process and reaches the host's
+  // tools by dialling back, so the standalone runtime has to mount the door's
+  // SERVER half (`createMcpDoor({ internal: true })`) exactly as the umbrella
+  // does. mcp depends on core alone, so there is no cycle and the umbrella is
+  // not dragged in; the cost is that a standalone install now carries
+  // @modelcontextprotocol/sdk and jose, which is accepted.
+  "@vendoai/agents": [
+    "@vendoai/core",
+    "@vendoai/actions",
+    "@vendoai/apps",
+    "@vendoai/guard",
+    "@vendoai/harnesses",
+    "@vendoai/knowledge",
+    "@vendoai/mcp",
+    "@vendoai/store",
+  ],
+  // the universal box app template (blueprint §11): what every generated app is
+  // built FROM inside its box, baked once per Vendo release. Private, never
+  // published, and deliberately reaches ONLY the code-land shim — an app in a
+  // box must never be able to import a server block.
+  // core joins for the DECLARED port contract (VENDO_DEV_PORT): the host that
+  // mints the preview URL and the template that binds the socket must read one
+  // constant, and they sit in different layers. core is the contract layer, not a
+  // server block, so this does not weaken "an app in a box imports no server".
+  "@vendoai/box-template": ["@vendoai/core", "@vendoai/kit"],
   // the canonical umbrella is the only package allowed to depend on every block
   "@vendoai/vendo": "*",
   // the unscoped compatibility package is a thin alias of the canonical umbrella
@@ -267,7 +305,7 @@ if (errors.length > 0) {
   console.error("dependency-guard: FAILED\n");
   for (const e of errors) console.error("  ✗ " + e);
   console.error(
-    "\nThe layering contract lives in docs/contracts/00-overview.md (\"The dependency rule\").",
+    "\nThe layering contract lives in docs/archive/contracts/00-overview.md (\"The dependency rule\").",
   );
   process.exit(1);
 }

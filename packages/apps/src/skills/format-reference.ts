@@ -129,7 +129,7 @@ One \`<App>\` document and nothing else; anything after \`</App>\` is dropped.
 
   <Text variant="heading">Invoices</Text>
   <Grid columns={2}>
-    <Stat label="Outstanding" value={sum(invoices.data.amount_cents)} format="money"/>
+    <Stat label="Outstanding" value={sum(invoices.data, "amount_cents")} format="money"/>
     <Stat label="Open invoices" value={count(invoices.data)}/>
   </Grid>
   <DataTable rows={invoices.data} columns={[{key:"client",label:"Client"},{key:"amount_cents",format:"money",align:"end"}]} emptyState="Nothing outstanding"/>
@@ -143,7 +143,7 @@ One \`<App>\` document and nothing else; anything after \`</App>\` is dropped.
 - Every other element is a component. Names are PascalCase; a lowercase tag
   (\`<div>\`, \`<span>\`) drops the element **and everything inside it**.
 - Text typed between tags becomes text on screen.
-- \`<!-- comments -->\` are skipped.
+- \`{/* comments */}\` are skipped.
 - Never write \`id=\` — ids are minted for you, and an \`id\` attribute is ignored.
 - At most 5000 elements.
 
@@ -160,8 +160,10 @@ searchable                       a bare flag, meaning true
 - Inside a string the only escapes are a backslash before a double quote and a
   backslash before a backslash. Every other backslash is literal text.
 - A repeated attribute keeps the last one.
-- There is **no string interpolation**. \`label="Total: {invoices.total}"\` renders
-  the braces literally and fails validation — give the value its own attribute.
+- There is **no string interpolation**, in a string or between tags.
+  \`label="Total: {invoices.total}"\` renders the braces literally and fails
+  validation, and \`<Text>Total: {invoices.total}</Text>\` is refused outright.
+  Give the value its own attribute: \`<Text text={invoices.total}/>\`.
 
 ### Actions
 
@@ -184,11 +186,12 @@ Kit's charts already render their own empty state.
 
 ---
 
-## Braces: two grammars
+## Braces: one grammar
 
-\`{…}\` is either a READ of the data or a CALCULATION over it, and the compiler
-tells them apart by what is inside. Both are evaluated in the browser, fresh, on
-every render — which is why you never compute a value and type it in.
+\`{…}\` is a READ of the data, a RESHAPE of what it read, or a CALCULATION over it
+— one grammar, one set of functions, all of it plain function calls. Everything is
+evaluated in the browser, fresh, on every render, which is why you never compute a
+value and type it in.
 
 ### Reading: paths, state, literals
 
@@ -207,50 +210,52 @@ limit={20}   flag={true}   empty={null}   text={"literal"}
   arrays and objects, with trailing commas allowed. \`true\`, \`false\` and \`null\`
   win over a query of the same name.
 
-### Reshaping what you read: \`{path | op(…)}\`
+### Reshaping what you read: the value comes first
 
-A pipe is legal **only** directly after a path or \`state\` read, up to eight steps.
+A reshape is a call whose FIRST argument is the value and whose remaining
+arguments are quoted field names. Calls nest, up to eight deep, and the value at
+the centre is always a query or \`state\` read.
 
-| op | arguments | what it does |
+| call | arguments after the value | what it does |
 |---|---|---|
 | \`pick\` | one or more field names | keep only those fields (per row, over rows) |
 | \`rename\` | old/new pairs | rename fields |
 | \`asPoints\` | label field, value field | rows to \`{label, value}\` points |
 | \`format\` | \`"number"\` / \`"currency"\` / \`"percent"\` / \`"date"\` | format the value |
 | \`format\` | field, kind | format that field in every row |
-| \`sum\` \`avg\` \`min\` \`max\` | one numeric field | one number out of the rows |
-| \`count\` | none | how many rows |
 
 \`\`\`
-points={invoices.data | asPoints("month", "total_cents")}
-total={invoices.data | sum("amount_cents")}
-rows={invoices.data | pick("client", "amount_cents") | format("amount_cents", "currency")}
+points={asPoints(invoices.data, "month", "total_cents")}
+rows={format(pick(invoices.data, "client", "amount_cents"), "amount_cents", "currency")}
+note={format(state.rate, "percent")}
 \`\`\`
 
-The pipe's aggregate is \`avg\`. The calculation grammar below calls it \`average\`.
-They are not interchangeable, and the wrong one drops the attribute.
+Reading the nesting from the inside out reads the steps in order: \`pick\` first,
+then \`format\`.
 
 ### Calculating: functions and arithmetic
 
 | function | arguments | what it does |
 |---|---|---|
-| \`sum(path)\` | 1 | adds up a numeric field over the rows |
-| \`count(path)\` | 1 | how many rows |
-| \`average(path)\` | 1 | the mean |
-| \`min(path)\` \`max(path)\` | 1 | smallest / largest |
+| \`sum(rows, "field")\` | 2 | adds up one numeric field over the rows |
+| \`count(rows)\` | 1 | how many rows |
+| \`average(rows, "field")\` | 2 | the mean |
+| \`min(rows, "field")\` \`max(rows, "field")\` | 2 | smallest / largest |
 | \`difference(a, b)\` | 2 | a minus b |
 | \`days_until(path)\` | 1 | whole days from today to an ISO date |
-| \`group_by(path, bucket, aggregate)\` | 3 | buckets rows by a date field |
+| \`group_by(rows, "dateField", bucket, aggregate)\` | 4 | buckets rows by a date field |
 
-\`group_by\` is strict: the first argument is a path, the second is the quoted
-string \`"day"\`, \`"month"\` or \`"year"\`, and the third is \`sum\`, \`average\`, \`min\`,
-\`max\` or \`count\` over a field of the **same** rows.
+Every aggregate NAMES the field it reads — there is no implicit field, and the
+rows come first. \`group_by\` is strict: the rows, then the quoted date field, then
+the quoted bucket \`"day"\`, \`"month"\` or \`"year"\`, then the aggregate written as
+\`sum.of("field")\`, \`average.of("field")\`, \`min.of("field")\`, \`max.of("field")\`
+or \`count.of()\`.
 
 \`\`\`
-value={sum(payments.data.amount_cents) - sum(refunds.data.amount_cents)}
+value={sum(payments.data, "amount_cents") - sum(refunds.data, "amount_cents")}
 value={difference(budget.data.planned_cents, budget.data.spent_cents)}
 value={days_until(invoice.data.due_at)}
-data={group_by(invoices.data.issued_at, "month", sum(invoices.data.total_cents))}
+data={group_by(invoices.data, "issued_at", "month", sum.of("total_cents"))}
 \`\`\`
 
 Operators are \`+ - * /\`, a leading \`-\`, and \`( )\`. Values are numbers and quoted
@@ -262,11 +267,15 @@ nulls are skipped by the aggregates — so you never write a guard for either.
 Dividing by zero, and arithmetic on something that is not a number, are reported
 rather than rendered as nonsense.
 
-### Never mix them
+### A reshape reshapes a READ, never a calculation
 
-\`{sum(invoices.data.total_cents) | format("currency")}\` is rejected outright. Let
-the component format the number: \`Stat\` takes \`format="money"\`, \`Money\` takes
-\`cents\`, a \`DataTable\` column takes \`format:"money"\`.
+There is exactly one \`sum\`, one \`count\`, one \`average\`, one \`min\` and one
+\`max\`, and each takes rows. A reshape works on what a query read, so the value at
+the centre of the nesting is a path — \`format(sum(invoices.data, "amount_cents"),
+"currency")\` is refused, because \`sum(...)\` already produced a number and there
+is nothing left to reshape. Let the component format it: \`Stat\` takes
+\`format="money"\`, \`Money\` takes \`cents\`, a \`DataTable\` column takes
+\`format:"money"\`.
 
 ---
 
@@ -281,8 +290,8 @@ one dialect:
 
 \`\`\`
 <Edit>
-  <Old><Stat label="Total" value={sum(invoices.data.amount_cents)}/></Old>
-  <New><Stat label="Total outstanding" value={sum(invoices.data.amount_cents)} format="money"/></New>
+  <Old><Stat label="Total" value={sum(invoices.data, "amount_cents")}/></Old>
+  <New><Stat label="Total outstanding" value={sum(invoices.data, "amount_cents")} format="money"/></New>
 </Edit>
 \`\`\`
 
@@ -350,8 +359,8 @@ The ask: "show me where my spend is going, and which invoices are late."
     <Stack>
       <Text variant="heading">Where it goes</Text>
       <Grid columns={2}>
-        <Stat label="Total spend" value={sum(expenses.data.amount_cents)} format="money"/>
-        <BarChart data={group_by(expenses.data.spent_at, "month", sum(expenses.data.amount_cents))} xKey="key" series={["value"]} format="money" emptyState="No spend in this window"/>
+        <Stat label="Total spend" value={sum(expenses.data, "amount_cents")} format="money"/>
+        <BarChart data={group_by(expenses.data, "spent_at", "month", sum.of("amount_cents"))} xKey="key" series={["value"]} format="money" emptyState="No spend in this window"/>
       </Grid>
       <DataTable rows={expenses.data} sortBy="amount_cents desc" searchable columns={[{key:"vendor",label:"Vendor"},{key:"spent_at",format:"date"},{key:"amount_cents",format:"money",align:"end"}]} emptyState="No expenses yet"/>
     </Stack>

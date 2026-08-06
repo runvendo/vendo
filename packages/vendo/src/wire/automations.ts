@@ -1,5 +1,5 @@
 import type { RunStatus } from "@vendoai/automations";
-import { VendoError } from "@vendoai/core";
+import { DEFAULT_TRIGGER_ID, VendoError } from "@vendoai/core";
 import { json, requestJson, route, string, type RouteEntry } from "./shared.js";
 
 /** Rehearsal window crosses an HTTP boundary, so clamp it server-side to the
@@ -13,26 +13,31 @@ export const automationRoutes: RouteEntry[] = [
   route("GET", "/automations", async ({ deps, context }) => {
     return json(await deps.automations.list(await context("automation")));
   }),
-  // Grouped like the old if-chain arm (`segments.length === 3 && POST`):
-  // context resolves before the operation check, and an unknown operation
-  // falls through to the table's not-found.
-  route("POST", "/automations/:appId/:op", async ({ request, deps, context, params, segments }) => {
+  // The trigger id rides a trailing rest segment (the same optional-trailing
+  // shape the /runs/:runId/* route below uses), so a caller that names no
+  // trigger gets the legacy single-trigger app's id. Context resolves before
+  // the operation check, and an unknown operation (or a deeper path) falls
+  // through to the table's not-found.
+  route("POST", "/automations/:appId/:op/*", async ({ request, deps, context, params, segments }) => {
+    if (segments.length > 4) return undefined;
     const appId = string(params["appId"], "app id");
+    const triggerId = segments[3] ?? DEFAULT_TRIGGER_ID;
     const ctx = await context("automation");
-    if (segments[2] === "enable") return json(await deps.automations.enable(appId, ctx));
-    if (segments[2] === "disable") {
-      await deps.automations.disable(appId, ctx);
+    const operation = params["op"];
+    if (operation === "enable") return json(await deps.automations.enable(appId, triggerId, ctx));
+    if (operation === "disable") {
+      await deps.automations.disable(appId, triggerId, ctx);
       return json({});
     }
-    if (segments[2] === "dry-run") return json(await deps.automations.dryRun(appId, ctx));
-    if (segments[2] === "rehearse") {
+    if (operation === "dry-run") return json(await deps.automations.dryRun(appId, triggerId, ctx));
+    if (operation === "rehearse") {
       const body = await requestJson(request);
-      return json(await deps.automations.rehearse(appId, ctx, rehearsalWindowDays(body["windowDays"])));
+      return json(await deps.automations.rehearse(appId, triggerId, ctx, rehearsalWindowDays(body["windowDays"])));
     }
     // Build contract §9.9 — take on a stopped automation. Editor gating and
     // the CAS live in the engine; the door just carries the caller's context,
     // because the grants minted here are the CALLER's own.
-    if (segments[2] === "adopt") return json(await deps.automations.adopt(appId, ctx));
+    if (operation === "adopt") return json(await deps.automations.adopt(appId, triggerId, ctx));
     return undefined;
   }),
 ];
@@ -41,12 +46,13 @@ export const automationRoutes: RouteEntry[] = [
 export const runRoutes: RouteEntry[] = [
   route("GET", "/runs", async ({ url, deps, context }) => {
     const status = url.searchParams.get("status") ?? undefined;
-    const allowed: RunStatus[] = ["running", "ok", "error", "stopped", "pending-approval"];
+    const allowed: RunStatus[] = ["running", "ok", "error", "stopped"];
     if (status !== undefined && !allowed.includes(status as RunStatus)) {
       throw new VendoError("validation", "run status is invalid");
     }
     const filter = {
       ...(url.searchParams.get("appId") === null ? {} : { appId: url.searchParams.get("appId")! }),
+      ...(url.searchParams.get("triggerId") === null ? {} : { triggerId: url.searchParams.get("triggerId")! }),
       ...(status === undefined ? {} : { status: status as RunStatus }),
       ...(url.searchParams.get("cursor") === null ? {} : { cursor: url.searchParams.get("cursor")! }),
     };
@@ -65,6 +71,11 @@ export const runRoutes: RouteEntry[] = [
     if (request.method === "POST" && segments[2] === "stop" && segments.length === 3) {
       await deps.automations.runs.stop(runId, ctx);
       return json({});
+    }
+    // The remedy behind a fail-loud run: a FRESH run of the same trigger on the
+    // same event, so the door hands back the new run's id.
+    if (request.method === "POST" && segments[2] === "rerun" && segments.length === 3) {
+      return json({ runId: await deps.automations.runs.rerun(runId, ctx) });
     }
     return undefined;
   }),

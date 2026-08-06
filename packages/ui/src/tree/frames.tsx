@@ -1,6 +1,7 @@
-import { Component, useEffect, useRef, useState, type ComponentType, type ErrorInfo, type ReactNode } from "react";
+import { Component, useEffect, useRef, type ComponentType, type ErrorInfo, type ReactNode } from "react";
 import type { Json, ToolOutcome, UIPayload } from "@vendoai/core";
 import type { OpenSurface } from "../wire-types.js";
+import { applyFrameResize, FRAME_MAX_HEIGHT_CSS } from "./frame-resize.js";
 import { ContainedNotice } from "./notice.js";
 import { PayloadView } from "./renderer.js";
 import { Skeleton } from "./primitives.js";
@@ -8,14 +9,17 @@ import { Skeleton } from "./primitives.js";
 /**
  * Wave 7 H2 — the served-surface keepalive seam. An embedded served app dies
  * under the user when its machine idles out; `ping` (client.apps.pingMachine)
- * is the host-proxied activity signal that keeps it awake, and a "woke" ping
- * means the machine had slept — the current URL is stale, so the frame shows
- * the existing resuming cover and calls `reopen` (useApp().refresh) for the
- * fresh one. One re-open per detection; no reconnect daemon.
+ * is the host-proxied activity signal that keeps it awake. Activity is the gate,
+ * not the timer: a machine costs money by the second, so an embed nobody is
+ * using is allowed to sleep.
+ *
+ * That is the whole seam. A woken machine used to mint a new ingress URL, so the
+ * frame also had to detect the wake and re-open for the fresh address; served-app
+ * URLs are stable proxy URLs now, so a wake is invisible to the frame and the
+ * re-open dance is gone.
  */
 export interface AppFrameKeepalive {
   ping(): Promise<{ state: "awake" | "woke" }>;
-  reopen(): Promise<unknown>;
   /** Activity-check cadence (default 60s) — pings are at most one per tick. */
   intervalMs?: number;
 }
@@ -60,8 +64,7 @@ function httpFrameSandbox(url: string): string {
   return base;
 }
 
-/** The dimmed, non-interactive wake/loading state — the `resuming` surface,
- *  and what an http frame shows while a keepalive re-open is in flight. */
+/** The dimmed, non-interactive wake/loading state — the `resuming` surface. */
 function ResumingCover({ cover }: { cover?: string }) {
   return (
     <div
@@ -92,12 +95,10 @@ function ResumingCover({ cover }: { cover?: string }) {
   );
 }
 
-/** The embedded served app (Wave 7 H2): the iframe plus its keepalive loop. */
+/** The embedded served app (Wave 7 H2): the iframe, its keepalive ping, and the
+ *  resize protocol it shares with the jail frame. */
 function HttpFrame({ url, keepalive }: { url: string; keepalive?: AppFrameKeepalive }) {
-  const [reopening, setReopening] = useState(false);
   const frameRef = useRef<HTMLIFrameElement | null>(null);
-  // A fresh surface URL is the re-open landing: show the new frame.
-  useEffect(() => setReopening(false), [url]);
   useEffect(() => {
     if (keepalive === undefined || typeof window === "undefined") return undefined;
     let activity = false;
@@ -111,22 +112,18 @@ function HttpFrame({ url, keepalive }: { url: string; keepalive?: AppFrameKeepal
       // page; the frame holding focus is that activity's observable signal.
       const active = activity || document.activeElement === frameRef.current;
       activity = false;
+      // Nothing keeps an UNUSED machine awake. A sandbox machine is paid for by
+      // the second, so an embed nobody is using has to be allowed to sleep —
+      // a tab left open is not use, and pinging on the timer alone would keep
+      // every abandoned tab's machine warm forever.
       if (!active) return;
       busy = true;
       try {
-        // An unreachable ping is the same stale-frame symptom as a woke one.
-        const { state } = await keepalive.ping().catch(() => ({ state: "woke" as const }));
-        if (state === "woke") {
-          // The machine had slept: every wake mints a new ingress URL, so
-          // this one is stale. Cover the frame and swap in the re-opened
-          // one. Exactly ONE re-open per detection, its failure absorbed —
-          // never a retry loop, never a second re-open.
-          setReopening(true);
-          await keepalive.reopen().catch(() => undefined);
-        }
+        // An unreachable ping is the machine's problem, not the frame's — the
+        // URL is stable either way, so there is nothing here to recover.
+        await keepalive.ping().catch(() => undefined);
       } finally {
         busy = false;
-        setReopening(false);
       }
     };
     const timer = window.setInterval(() => { void tick(); }, keepalive.intervalMs ?? 60_000);
@@ -135,15 +132,28 @@ function HttpFrame({ url, keepalive }: { url: string; keepalive?: AppFrameKeepal
       for (const name of events) window.removeEventListener(name, mark);
     };
   }, [keepalive]);
-  if (reopening) return <ResumingCover />;
+  // The served app reports its own natural height; the frame fits it inside the
+  // host's bounds. Same wire, same gate, same clamp as the jail (frame-resize.ts).
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const onMessage = (event: MessageEvent) => { applyFrameResize(frameRef.current, event); };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
   return (
     <iframe
+      // A fresh URL is a fresh app: remount so no reported height carries over.
       key={url}
       ref={frameRef}
       title="Vendo app"
       src={url}
       sandbox={httpFrameSandbox(url)}
-      style={{ width: "100%", minHeight: "var(--vendo-app-frame-height, 320px)", border: 0 }}
+      style={{
+        width: "100%",
+        minHeight: "var(--vendo-app-frame-height, 320px)",
+        maxHeight: FRAME_MAX_HEIGHT_CSS,
+        border: 0,
+      }}
     />
   );
 }

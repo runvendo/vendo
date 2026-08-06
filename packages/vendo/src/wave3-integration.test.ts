@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  DEFAULT_TRIGGER_ID,
   VENDO_APP_FORMAT,
   type AppDocument,
   type Membership,
@@ -9,6 +10,7 @@ import {
   type RunContext,
   type ToolRegistry,
 } from "@vendoai/core";
+import { triggerKey } from "@vendoai/automations";
 import { ADOPTION_VENUE_KEY } from "@vendoai/ui/chrome";
 import { createStore, eraseStore, storeFiles, type VendoStore } from "@vendoai/store";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -66,19 +68,21 @@ const automationApp = (id: string): AppDocument => ({
     root: "root",
     nodes: [{ id: "root", component: "Stack", source: "prewired" }],
   },
-  trigger: {
+  triggers: [{
+    id: DEFAULT_TRIGGER_ID,
     on: { kind: "schedule", every: "1h" },
     run: { kind: "steps", steps: [{ id: "read", tool: READ_TOOL }] },
-  },
+  }],
 });
 
 /** The same automation on a HOST EVENT, for the emit path. */
 const eventAutomationApp = (id: string): AppDocument => ({
   ...automationApp(id),
-  trigger: {
+  triggers: [{
+    id: DEFAULT_TRIGGER_ID,
     on: { kind: "host-event", event: "invoice.paid" },
     run: { kind: "steps", steps: [{ id: "read", tool: READ_TOOL }] },
-  },
+  }],
 });
 
 /** A plain app: no trigger, so nothing to adopt and nothing to look up. */
@@ -193,7 +197,9 @@ const seedApp = async (store: VendoStore, app: AppDocument, subject: string): Pr
     data: { subject, enabled: false, doc: app },
     refs: {
       subject,
-      ...(app.trigger === undefined ? {} : { trigger_kind: app.trigger.on.kind }),
+      ...(app.triggers === undefined || app.triggers.length === 0
+        ? {}
+        : { trigger_kind: app.triggers[0]!.on.kind }),
     },
   });
 };
@@ -215,7 +221,7 @@ async function sharedAutomation(
     principal: "user:omar",
     level: "viewer",
   })).status).toBe(200);
-  const armed = await booted.vendo.automations.enable(id, ctxOf(sponsor));
+  const armed = await booted.vendo.automations.enable(id, DEFAULT_TRIGGER_ID, ctxOf(sponsor));
   expect(armed.enabled).toBe(true);
   return app;
 }
@@ -253,7 +259,7 @@ describe("F7(b) — a third party's edit through the real apps path invalidates 
     const booted = await boot();
     const app = await sharedAutomation(booted, "app_hook");
     const sponsorship = async () =>
-      (await booted.store.records("automations:sponsorships").get(app.id))?.data as
+      (await booted.store.records("automations:sponsorships").get(triggerKey(app.id, "main")))?.data as
         { sponsor: string; status: string; reason?: string } | undefined;
     expect(await sponsorship()).toMatchObject({ sponsor: dana.subject, status: "active" });
 
@@ -275,7 +281,7 @@ describe("F7(c) — the automations engine's can(editor) is the real one", () =>
     // to ownership — "maple" !== "kim" — and the very first fire would stop.
     const app = await sharedAutomation(booted, "app_seam", kim);
     const sponsorship = async () =>
-      (await booted.store.records("automations:sponsorships").get(app.id))?.data as
+      (await booted.store.records("automations:sponsorships").get(triggerKey(app.id, "main")))?.data as
         { sponsor: string; status: string; reason?: string } | undefined;
     expect(await sponsorship()).toMatchObject({ sponsor: kim.subject, status: "active" });
 
@@ -354,8 +360,8 @@ describe("F8(b) — a member's erase against an org-owned automation", () => {
     expect(report.vendo_apps).toBe(1);
     // The sponsorship row NAMED her, so it goes with her (refs.subject) — while
     // the era marker, which names nobody, stays.
-    expect(await booted.store.records("automations:sponsorships").get(app.id)).toBeNull();
-    expect(await booted.store.records("automations:sponsored").get(app.id)).not.toBeNull();
+    expect(await booted.store.records("automations:sponsorships").get(triggerKey(app.id, "main"))).toBeNull();
+    expect(await booted.store.records("automations:sponsored").get(triggerKey(app.id, "main"))).not.toBeNull();
     // Her access to the org's app goes too (§9.2's `user:` encoding).
     expect((await booted.store.records("vendo_app_grants").list({ refs: { app_id: app.id } }))
       .records.map((record) => (record.data as { principal: string }).principal))
@@ -390,15 +396,23 @@ describe("ruling — vendo.emit fires an ORG-owned automation for a member", () 
       level: "editor",
     })).status).toBe(200);
     // Kim takes it on, so the run's identity is hers and not the org's.
-    expect((await booted.vendo.automations.enable(app.id, ctxOf(kim))).enabled).toBe(true);
+    expect((await booted.vendo.automations.enable(app.id, DEFAULT_TRIGGER_ID, ctxOf(kim))).enabled).toBe(true);
 
     // A member of the same org emits the event: the org's automation fires.
     const fired = await booted.vendo.emit("invoice.paid", {}, omar);
     expect(fired).toHaveLength(1);
     const run = await booted.vendo.automations.runs.get(fired[0]!, ctxOf(kim));
     // It got PAST the fire-time gate and into its first step, where the real
-    // guard asks for the standing grant Kim has not yet approved.
-    expect(run).toMatchObject({ appId: app.id, status: "pending-approval" });
+    // guard asks for the standing grant Kim has not yet approved. There is no
+    // waiting state left to land in: the run ends LOUDLY on the trigger that
+    // fired, naming the tool whose permission it needed, and `runs.rerun` is how
+    // it runs again once she allows it.
+    expect(run).toMatchObject({
+      appId: app.id,
+      triggerId: DEFAULT_TRIGGER_ID,
+      status: "error",
+      error: { code: "needs-permission", tool: READ_TOOL },
+    });
 
     // ...and it is KIM who is being asked — the sponsor, never the org and never
     // the member whose event happened to trigger it.

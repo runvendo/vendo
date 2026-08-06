@@ -26,7 +26,11 @@ const DAY_NAMES = ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", 
 
 /** "0 17 * * 5" → "Fridays at 5:00 PM"; "0 8 * * *" → "Daily at 8:00 AM".
     Only the simple fixed-time forms humanize — anything else (ranges, lists,
-    step values) returns null and the raw cron stays the honest label. */
+    step values) returns null and the raw cron stays the honest label.
+
+    The clock this returns is BARE, with no zone: the engine evaluates every
+    cron in UTC, and naming the zone is the render site's job (see
+    {@link triggerLabel}) so the mapping itself stays a pure cron→clock read. */
 export function humanizeCron(cron: string): string | null {
   const match = /^(\d{1,2})\s+(\d{1,2})\s+\*\s+\*\s+(\*|\d)$/.exec(cron.trim());
   if (!match) return null;
@@ -44,7 +48,17 @@ export function triggerLabel(trigger: Trigger): { title: string; sub: string } {
   if (source.kind === "schedule") {
     if (source.every) return { title: `Every ${source.every}`, sub: "Schedule" };
     if (source.at) return { title: source.at, sub: "Scheduled once" };
-    if (source.cron) return { title: humanizeCron(source.cron) ?? source.cron, sub: "Schedule" };
+    // The zone is named because the automation does not fire in the reader's:
+    // the engine builds every cron with `{ timezone: "UTC" }`, so an 8 AM
+    // Pacific request is stored as 16:00 and an unlabelled "Mondays at 4:00 PM"
+    // reads as the reader's own afternoon — eight hours off, with nothing on
+    // screen to say so. Only the humanized CLOCK is labelled; a raw cron
+    // expression shows no hour to misplace, and `at` is an ISO instant that
+    // carries its own zone.
+    if (source.cron) {
+      const clock = humanizeCron(source.cron);
+      return { title: clock === null ? source.cron : `${clock} UTC`, sub: "Schedule" };
+    }
     return { title: "Scheduled", sub: "Schedule" };
   }
   if (source.kind === "external") {

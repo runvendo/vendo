@@ -16,11 +16,7 @@ import { describe, expect, it } from "vitest";
 import { createCheckingLayer, judgmentRules } from "./layer.js";
 import { reviewerCheck } from "./reviewer.js";
 import type { CheckInput } from "./types.js";
-import {
-  UNSTORED_APP_ID,
-  type GenerationDependencies,
-  type HostToolInfo,
-} from "../generation/engine.js";
+import type { FloorDependencies, HostToolInfo } from "./deps.js";
 import { scriptedLanguageModel, type ScriptedModelCall } from "../testing/scripted-model.js";
 
 const tools: HostToolInfo[] = [{
@@ -51,14 +47,14 @@ const toolShapes: Record<string, ShapeType> = {
 
 const catalog: NormalizedCatalog = [];
 
-const deps = (model: GenerationDependencies["model"]): GenerationDependencies =>
+const deps = (model: FloorDependencies["model"]): FloorDependencies =>
   ({ model, catalog, tools, toolShapes });
 
 const documentFrom = (wire: string): AppDocument => {
   const compiled = compileWire(wire, { toolShapes });
   return {
     format: VENDO_APP_FORMAT,
-    id: UNSTORED_APP_ID,
+    id: "app_reviewer_test",
     name: compiled.name ?? "Untitled",
     ui: "tree",
     tree: compiled.tree as AppDocument["tree"],
@@ -269,6 +265,7 @@ describe("the AI reviewer", () => {
       severity: "block",
       where: '<Button> labeled "Remind client"',
       message: 'the button calls host_listInvoices, which only reads invoices — it sends no reminder; drop the button or say so honestly',
+      check: "reviewer",
     });
     expect(findings.some(({ where, message }) =>
       where === 'query "invoices"' && message.includes('unknown tool "host_getInvoices"'))).toBe(true);

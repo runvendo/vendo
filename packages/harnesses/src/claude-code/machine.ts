@@ -102,8 +102,38 @@ export interface SessionMachine {
    * only.
    */
   collect(paths?: readonly string[]): Promise<SyncFile[]>;
+  /**
+   * The BROWSER-reachable URL for a listener on this machine — the build's own
+   * dev server, so a coded build previews through HMR instead of a
+   * save→rebuild→reload protocol of ours (blueprint §10.2).
+   *
+   * `port` is required, unlike the adapter's `url(port?)` underneath: this seam
+   * has no notion of a default listener (the session's own traffic names the
+   * control port explicitly on every request), and the only reason the member
+   * exists is a SECOND listener the machine did not boot with.
+   *
+   * The URL is browser→machine DIRECT, and has to be: HMR is a WebSocket, while
+   * the wire's `/apps/:id/serve/**` proxy relays ONE request and one response
+   * carrying method, path, content-type and body — it has no upgrade path. So a
+   * preview URL is a capability on the provider's public ingress with no
+   * per-request check, unlike a shared served app's proxied URL. What keeps that
+   * acceptable is the scope: the owner's own build, alive only as long as its box
+   * (`BOX_IDLE_TTL_MS`), never persisted on a document.
+   */
+  url(port: number): Promise<string>;
   /** Push one user message into the live session and settle when its turn ends. */
   send(message: SessionMessage): Promise<void>;
+  /**
+   * Hand the user's words to the message this machine is answering RIGHT NOW —
+   * mid-build steering (§10.2). Not a second `send()`: the same turn, the same
+   * session, the same `send()` still awaiting.
+   *
+   * Answers whether the words LANDED. `false` when nothing is in flight, which is
+   * a fact the caller acts on (its own queue is the fallback) rather than a
+   * failure — so this never throws for the ordinary race of a user typing as a
+   * turn ends.
+   */
+  steer(prompt: string): Promise<boolean>;
   /**
    * The turn is over. Local keeps its session for the next turn; the sandbox path
    * keeps the box warm on an idle timer and destroys it when that expires.

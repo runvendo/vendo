@@ -48,9 +48,15 @@ export {
   type BuiltBoxEnv,
   type InferenceResolver,
 } from "./box-env.js";
-// execution-v2 Lane D — the BYO schedule engine's state collection (the wire
-// tests pin its name).
-export { SCHEDULE_STATE_COLLECTION } from "./schedules.js";
+// A machine app's vendo.json schedules are doc triggers: the shapes
+// `AppsRuntime.machine`'s syncManifest and report answer with. The converter's
+// own constants stay internal to it — nothing outside needs them yet, and an
+// export is additive the day something does.
+export type {
+  AppMachineStatus,
+  ManifestTriggerResult,
+  ManifestTriggerSync,
+} from "./manifest-triggers.js";
 export {
   shareSnapshotSchema,
   publishRecordSchema,
@@ -86,17 +92,9 @@ export {
   type ShipDiffGenerated,
   type ShipDiffPin,
 } from "./ship-diff.js";
-// The bench host surface (tools/genui-bench): the demo-bank catalog/tool/shape
-// loaders the live harnesses already share, exported because the exports map
-// closes deep imports. Data-only helpers — no engine behavior rides on them.
-// HostToolInfo is the tool slice those loaders (and GenerationDependencies)
-// speak.
+// HostToolInfo is the tool slice GenerationDependencies (and external
+// harnesses) speak.
 export type { HostToolInfo } from "./generation/engine.js";
-export {
-  demoBankToolShapes,
-  loadDemoBankCatalog,
-  loadDemoBankTools,
-} from "./bench/demo-bank-surface.js";
 // The checking layer's contract: the shape a host writes an AppsConfig.checks
 // entry in, and the finding shape every check reports (checking/types.ts).
 export type {
@@ -110,6 +108,10 @@ export type {
 // function of the public AppPlan, so demo/harness surfaces can render a plan's
 // skeleton without booting the engine.
 export { skeletonFromPlan, type Skeleton } from "./generation/skeleton.js";
+// The automation planner, exported for the same reason as the skeleton above: it
+// is one model call over public inputs, so a harness can author (and prove the
+// refusal of) an automation plan without booting the generation pipeline.
+export { planAutomation, type AutomationPlan, type AutomationPlanInput } from "./automation-plan.js";
 // The model-capability rule (model-params.ts): which Claude ids still accept
 // sampling params, and the output cap for ids a sampling-era provider registry
 // does not know. Exported for the umbrella's model ladder — its lazy wrapper
@@ -125,15 +127,20 @@ export {
   type GeneratedAppDocument,
   type GenerationDependencies,
 } from "./generation/engine.js";
-// The apps PACK's raw materials: the tools it declares through `Pack.tools` and
-// the skill it teaches the pattern with. The pack itself is assembled in the
-// umbrella (`vendo/src/packs/apps.ts`), which is the only layer that has both
-// the runtime and `definePack` in scope.
+// What app generation mounts itself with: the tools it declares and the skill
+// it teaches the pattern with. The umbrella composes them (`server.ts`), which
+// is the only layer holding both these values and the live runtime they act
+// through.
 export { agentToolDescriptors } from "./agent-tools.js";
 export { buildingAppsSkill } from "./skills/building-apps.js";
-// The generation seam for the genui-bench vendo lane: the SAME conductor
+// The generation seam for external bench harnesses: the SAME conductor
 // createApps() rides, driven directly against a host fixture with no store
 // behind it. Additive export — generation behavior is identical.
+//
+// QUARANTINED (blueprint §14.2) — see the header of `generation/conductor.ts`. The
+// export stays so bench harnesses and the five `runtime.ts` call sites keep working;
+// it is frozen, not extended. New work uses the lean loop and the checks floor at
+// the paint seam.
 export {
   conductCreate,
   conductEdit,
@@ -141,3 +148,14 @@ export {
   type ConductedResult,
   type ConductorOptions,
 } from "./generation/conductor.js";
+// Contract §3.2 — the checkout/commit seam. Public because the workspace half of
+// it lives outside this package: a sandboxed harness holds a `WorkspaceFs` and
+// never a store, so composition binds the store side once and hands these to
+// whoever is materializing an app.
+export {
+  appMountFor,
+  checkoutApp,
+  commitApp,
+  invalidSourcePath,
+  type AppSourceSeam,
+} from "./app-source.js";

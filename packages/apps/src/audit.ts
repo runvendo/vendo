@@ -5,6 +5,7 @@ import type {
   Principal,
   RunContext,
   TriggerRef,
+  TurnId,
 } from "@vendoai/core";
 
 /**
@@ -15,7 +16,7 @@ import type {
  */
 export const appLifecycleEvent = (
   principal: Principal,
-  ctx: Pick<RunContext, "venue" | "presence"> & { trigger?: TriggerRef },
+  ctx: Pick<RunContext, "venue" | "presence"> & { trigger?: TriggerRef; turnId?: TurnId },
   appId: AppId,
   detail: Record<string, Json>,
   outcome: AuditEvent["outcome"] = "ok",
@@ -28,6 +29,7 @@ export const appLifecycleEvent = (
   presence: ctx.presence,
   appId,
   ...(ctx.trigger === undefined ? {} : { trigger: { ...ctx.trigger } }),
+  ...(ctx.turnId === undefined ? {} : { turnId: ctx.turnId }),
   outcome,
   detail,
 });

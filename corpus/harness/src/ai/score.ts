@@ -20,8 +20,8 @@ import { aiExpectedToolIdentity, type AiExpectedTool, type RepoAiExpectations } 
  * hand — a judgment whose binding moved is INERT, and `pending` loosenings are
  * never merged.
  *
- * That is the state the CHANNEL decided — the same state `vendo doctor` and
- * `vendo try` display, and the same one the runtime resolves once the layer's
+ * That is the state the CHANNEL decided — the same state `vendo doctor`
+ * displays, and the same one the runtime resolves once the layer's
  * applier is in the tree (`effectiveHostTool` in
  * `packages/actions/src/runtime/registry.ts`, which composes
  * `mergeOverride(applyJudgment(extracted, judgment), override)`).

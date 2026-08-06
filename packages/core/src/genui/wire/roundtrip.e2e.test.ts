@@ -54,6 +54,15 @@ const HOSTILE = FIXTURE.replace(
   "<Widget a='> <Island name=\"Fake\">x</Island> <Query id=\"ghost\" tool=\"t\"/> '/><RevenueNote/>",
 );
 
+/** v3 §5 (D4/D5) — the brace forms in text position. Both are cursor moves that
+ *  can retract a text node if they are read one character too late: a settled
+ *  Text run ahead of `{` must survive whatever the brace run turns out to be
+ *  (a comment, a forbidden interpolation, or a truncated prefix of either). */
+const BRACES = FIXTURE.replace(
+  "Cash is healthy this month.",
+  "Cash is healthy this month. {/* an aside */} Totals: {revenue.total} and } alone.",
+);
+
 const sweepPrefixes = (wire: string): void => {
   const problems: string[] = [];
   let previousNodeCount = 0;
@@ -104,6 +113,10 @@ describe("compileWire valid-while-partial property (D6)", () => {
 
   it("holds across every prefix with the injected hostile single-quoted segment", () => {
     sweepPrefixes(HOSTILE);
+  });
+
+  it("holds across every prefix with JSX comments and forbidden braces in text", () => {
+    sweepPrefixes(BRACES);
   });
 
   it("keeps the hostile segment inert at full length (no phantom declarations)", () => {

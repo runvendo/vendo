@@ -5,9 +5,7 @@ import { type PollOptions, useResource } from "./use-resource.js";
 import type { ConnectionAccount } from "../wire-types.js";
 
 export function useConnections(options?: PollOptions): {
-  /** Back-compat alias for `data` (contract §3). */
   connections: ConnectionAccount[];
-  data: ConnectionAccount[];
   error: Error | undefined;
   isLoading: boolean;
   refresh(): Promise<void>;
@@ -25,5 +23,5 @@ export function useConnections(options?: PollOptions): {
     [client, refresh],
   );
 
-  return { connections: data, data, error, isLoading, refresh, disconnect };
+  return { connections: data, error, isLoading, refresh, disconnect };
 }

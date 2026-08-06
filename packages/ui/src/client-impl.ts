@@ -1,5 +1,5 @@
 /** Fetch/SSE bindings for the public wire route table (08-ui §2, 09-vendo §3). */
-import { VendoError, type VendoErrorCode } from "@vendoai/core";
+import { VendoError, type RunId, type VendoErrorCode } from "@vendoai/core";
 import type { VendoClient, VendoClientConfig } from "./client.js";
 import type { ConnectableToolkit, ConnectionAccount } from "./wire-types.js";
 
@@ -228,17 +228,20 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
     },
     automations: {
       list: () => readJson("/automations"),
-      enable: id => json(`/automations/${idPath(id)}/enable`, "POST"),
-      disable: id => json(`/automations/${idPath(id)}/disable`, "POST"),
-      dryRun: id => json(`/automations/${idPath(id)}/dry-run`, "POST"),
-      rehearse: (id, windowDays) =>
-        json(`/automations/${idPath(id)}/rehearse`, "POST", windowDays === undefined ? {} : { windowDays }),
-      adopt: id => json(`/automations/${idPath(id)}/adopt`, "POST"),
+      // The trigger id is a PATH segment after the verb: an automation is an
+      // app with a list of triggers, and each verb acts on exactly one of them.
+      enable: (id, triggerId) => json(`/automations/${idPath(id)}/enable/${idPath(triggerId)}`, "POST"),
+      disable: (id, triggerId) => json(`/automations/${idPath(id)}/disable/${idPath(triggerId)}`, "POST"),
+      dryRun: (id, triggerId) => json(`/automations/${idPath(id)}/dry-run/${idPath(triggerId)}`, "POST"),
+      rehearse: (id, triggerId, windowDays) =>
+        json(`/automations/${idPath(id)}/rehearse/${idPath(triggerId)}`, "POST", windowDays === undefined ? {} : { windowDays }),
+      adopt: (id, triggerId) => json(`/automations/${idPath(id)}/adopt/${idPath(triggerId)}`, "POST"),
     },
     runs: {
       list: filter => {
         const params = new URLSearchParams();
         if (filter?.appId !== undefined) params.set("appId", filter.appId);
+        if (filter?.triggerId !== undefined) params.set("triggerId", filter.triggerId);
         if (filter?.status !== undefined) params.set("status", filter.status);
         if (filter?.cursor !== undefined) params.set("cursor", filter.cursor);
         const query = params.size > 0 ? `?${params.toString()}` : "";
@@ -246,6 +249,7 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
       },
       get: id => readJson(`/runs/${idPath(id)}`),
       stop: id => json(`/runs/${idPath(id)}/stop`, "POST"),
+      rerun: async id => (await json<{ runId: RunId }>(`/runs/${idPath(id)}/rerun`, "POST")).runId,
     },
     activity: {
       list: params => {

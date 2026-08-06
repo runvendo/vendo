@@ -160,23 +160,34 @@ export interface VendoClient {
 
   automations: {
     list(): Promise<AutomationEntry[]>;
-    enable(id: AppId): Promise<EnableResult>;
-    disable(id: AppId): Promise<void>;
-    dryRun(id: AppId): Promise<RunPlan>;
-    /** POST /automations/:id/rehearse — replay the schedule's firings over the
-     *  trailing `windowDays` (7 or 30, defaulting to 30) window; reads run for
-     *  real, writes come back as simulated cards. */
-    rehearse(id: AppId, windowDays?: 7 | 30): Promise<RehearsalReport>;
+    /** Arm/disarm/preview ONE trigger of an app — an automation is an app with
+     *  a LIST of triggers, and each is decided on its own. */
+    enable(id: AppId, triggerId: string): Promise<EnableResult>;
+    disable(id: AppId, triggerId: string): Promise<void>;
+    dryRun(id: AppId, triggerId: string): Promise<RunPlan>;
+    /** POST /automations/:id/rehearse/:triggerId — replay ONE trigger's
+     *  schedule firings over the trailing `windowDays` (7 or 30, defaulting to
+     *  30) window; reads run for real, writes come back as simulated cards. */
+    rehearse(id: AppId, triggerId: string, windowDays?: 7 | 30): Promise<RehearsalReport>;
     /** POST /automations/:id/adopt — build contract §9.9: take a stopped
      *  automation on, approving its reads and writes as YOURSELF. Editors+
      *  only; the first to complete wins. */
-    adopt(id: AppId): Promise<AdoptResult>;
+    adopt(id: AppId, triggerId: string): Promise<AdoptResult>;
   };
 
   runs: {
-    list(filter?: { appId?: AppId; status?: RunStatus; cursor?: string }): Promise<{ runs: RunRecord[]; cursor?: string }>;
+    list(filter?: {
+      appId?: AppId;
+      triggerId?: string;
+      status?: RunStatus;
+      cursor?: string;
+    }): Promise<{ runs: RunRecord[]; cursor?: string }>;
     get(id: RunId): Promise<RunRecord>;
     stop(id: RunId): Promise<void>;
+    /** POST /runs/:id/rerun — run it again: a FRESH run of the same automation
+     *  on the same triggering event. The remedy a failed run leaves behind (07
+     *  §1 `runs.rerun`); answers with the new run's id. */
+    rerun(id: RunId): Promise<RunId>;
   };
 
   activity: {

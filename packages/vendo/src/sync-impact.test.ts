@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  DEFAULT_TRIGGER_ID,
   VENDO_APP_FORMAT,
   VENDO_TREE_FORMAT,
   type AppDocument,
@@ -40,10 +41,11 @@ function automation(id: string, name: string, tool: string): AppDocument {
     format: VENDO_APP_FORMAT,
     id,
     name,
-    trigger: {
+    triggers: [{
+      id: DEFAULT_TRIGGER_ID,
       on: { kind: "schedule", every: "1h" },
       run: { kind: "steps", steps: [{ id: "load", tool }] },
-    },
+    }],
   };
 }
 
@@ -96,6 +98,41 @@ describe("computeImpact", () => {
         grants: 1,
       },
       { tool: "host_absent", apps: [], automations: [], grants: 0 },
+    ]);
+  });
+
+  it("counts a pre-list automation, whose document still carries the single `trigger`", async () => {
+    const store = await setup();
+    // Raw SQL on purpose: the record door normalizes a document on the way IN, so
+    // going through it would prove nothing about the rows sitting in a deployment
+    // today. This is the pre-list shape byte for byte.
+    const raw = store.raw() as { query(q: string, p?: unknown[]): Promise<unknown> };
+    const now = new Date().toISOString();
+    await raw.query(
+      `INSERT INTO vendo_apps (id, subject, enabled, doc, created_at, updated_at)
+       VALUES ($1, $2, true, $3::jsonb, $4, $4)`,
+      ["app_legacy_refresh", principal.subject, JSON.stringify({
+        format: VENDO_APP_FORMAT,
+        id: "app_legacy_refresh",
+        name: "Legacy refresh",
+        trigger: {
+          on: { kind: "schedule", every: "1h" },
+          run: { kind: "steps", steps: [{ id: "load", tool: "host_get_widgets" }] },
+        },
+      }), now],
+    );
+
+    // `sync` tells a person what their change will hit. Reading `doc.triggers`
+    // off an unnormalized row reports "0 automations affected" for a deployment
+    // whose automations all predate the trigger list — the most dangerous
+    // possible answer, since it reads as "nothing to worry about".
+    await expect(computeImpact(store, ["host_get_widgets"])).resolves.toEqual([
+      {
+        tool: "host_get_widgets",
+        apps: [],
+        automations: [{ id: "app_legacy_refresh", title: "Legacy refresh" }],
+        grants: 0,
+      },
     ]);
   });
 });

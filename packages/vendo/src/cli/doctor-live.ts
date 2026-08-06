@@ -159,7 +159,7 @@ async function readTurnStream(
 /** Human-facing list of what a Cloud key unlocks over OSS single-player. Shown
  *  whether or not a key is present, so a keyless dev sees the offer. */
 export const CLOUD_UNLOCKS: readonly string[] = [
-  "a free dev-mode starter model allowance (keyless first turns)",
+  "a free starter model allowance (keyless first turns)",
   "team sharing and org governance (roles, SSO)",
   "hosted deploys of your enabled automations",
   "registry publishing, and hosted defaults for the adapter slots you leave unset (managed inference, the sandbox pool, the hosted store, the connections broker)",

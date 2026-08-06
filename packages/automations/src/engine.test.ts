@@ -1,6 +1,7 @@
 import {
   VENDO_APP_FORMAT,
   descriptorHash,
+  triggerKindRefs,
   type AgentRunner,
   type AppDocument,
   type ApprovalId,
@@ -13,6 +14,7 @@ import {
   type ToolDescriptor,
   type ToolOutcome,
   type ToolRegistry,
+  type Trigger,
 } from "@vendoai/core";
 import { memoryStoreAdapter } from "@vendoai/core/conformance";
 import type { AppsRuntime } from "@vendoai/apps";
@@ -52,9 +54,9 @@ const ctx = (subject = "user_a"): RunContext => ({
 
 const app = (
   id: string,
-  trigger: NonNullable<AppDocument["trigger"]>,
+  trigger: Omit<Trigger, "id">,
   name = id,
-): AppDocument => ({ format: VENDO_APP_FORMAT, id, name, trigger });
+): AppDocument => ({ format: VENDO_APP_FORMAT, id, name, triggers: [{ id: "main", ...trigger }] });
 
 const seedApp = async (
   store: StoreAdapter,
@@ -65,9 +67,9 @@ const seedApp = async (
   await store.records("vendo_apps").put({
     id: doc.id,
     data: { subject, enabled, doc },
-    // Mirror the reserved store's derived trigger_kind ref so the memory double the tests use
+    // Mirror the reserved store's derived trigger-kind refs so the memory double the tests use
     // matches how the tick/emit filter apps in production.
-    refs: { subject, ...(doc.trigger === undefined ? {} : { trigger_kind: doc.trigger.on.kind }) },
+    refs: { subject, ...triggerKindRefs(doc.triggers) },
   });
 };
 
@@ -76,7 +78,31 @@ class GuardDouble implements Guard {
   /** The optional spend seam (05 §2 amendment), scripted. Left unset by default
    *  so every existing case still exercises the pre-seam fallback path. */
   spendApproval?: (id: ApprovalId) => Promise<"spent" | "already-spent" | "taken-back">;
+  /** Ids passed to {@link abandonApprovals}, in order. */
+  readonly abandoned: ApprovalId[] = [];
+  /** The store this double writes abandonment through, so a test can read the
+   *  approval row back and see the ask actually closed rather than trusting that
+   *  the seam was called. Set by the tests that exercise abandonment. */
+  store?: StoreAdapter;
   private readonly callbacks = new Set<(id: ApprovalId, approved: boolean) => void>();
+
+  /** AGENT-6, the real guard's contract in miniature: deny as `system` (never a
+   *  standing no), idempotent, mint nothing, then fire the decision callbacks
+   *  the same way an explicit denial does. */
+  async abandonApprovals(ids: ApprovalId[]): Promise<void> {
+    for (const id of ids) {
+      this.abandoned.push(id);
+      const record = await this.store?.records("vendo_approvals").get(id);
+      if (record == null) continue;
+      const data = record.data as Record<string, unknown>;
+      if (data.status !== "pending") continue;
+      await this.store!.records("vendo_approvals").put({
+        id,
+        data: { ...data, status: "denied", deniedBy: "system" },
+      });
+      for (const callback of this.callbacks) callback(id, false);
+    }
+  }
 
   async check(): Promise<{ action: "run"; decidedBy: "default" }> {
     return { action: "run", decidedBy: "default" };
@@ -169,7 +195,7 @@ describe("automations enable and grant capture", () => {
       apps: appsDouble(), tools: registry([readTool, writeTool]), guard, store, now: () => NOW,
     });
 
-    const result = await engine.enable(doc.id, ctx());
+    const result = await engine.enable(doc.id, "main", ctx());
 
     expect(result.enabled).toBe(true);
     expect(result.missing.map((request) => request.call.tool)).toEqual([readTool.name, writeTool.name]);
@@ -195,7 +221,7 @@ describe("automations enable and grant capture", () => {
     const engine = createAutomations({
       apps: appsDouble(), tools: registry([readTool, writeTool]), guard, store, now: () => NOW,
     });
-    const { missing } = await engine.enable(doc.id, ctx());
+    const { missing } = await engine.enable(doc.id, "main", ctx());
 
     guard.decide(missing[0]!.id, true);
     guard.decide(missing[1]!.id, false);
@@ -237,12 +263,12 @@ describe("automations enable and grant capture", () => {
     const engine = createAutomations({
       apps: appsDouble(), tools: registry([readTool]), guard, store, now: () => NOW,
     });
-    expect((await engine.enable(schedule.id, ctx())).missing.map(({ call }) => call.tool)).toEqual([readTool.name]);
-    const cursor = await store.records("automations:schedule").get(schedule.id);
+    expect((await engine.enable(schedule.id, "main", ctx())).missing.map(({ call }) => call.tool)).toEqual([readTool.name]);
+    const cursor = await store.records("automations:schedule").get(`${schedule.id}:main`);
     expect(cursor?.data).toEqual({ lastFiredAt: NOW.toISOString() });
-    await engine.disable(schedule.id, ctx());
+    await engine.disable(schedule.id, "main", ctx());
     expect((await store.records("vendo_apps").get(schedule.id))?.data).toMatchObject({ enabled: false });
-    expect(await store.records("automations:schedule").get(schedule.id)).toEqual(cursor);
+    expect(await store.records("automations:schedule").get(`${schedule.id}:main`)).toEqual(cursor);
   });
 
   it("mints next-firing authority for an approved agentic call with no parked continuation", async () => {
@@ -326,7 +352,7 @@ describe("grant sets: one set per enable, dedupe against pending, list projectio
 
   it("returns one grantSetId spanning both missing asks and projects pendingGrants via list()", async () => {
     const engine = makeEngine();
-    const result = await engine.enable(weekly.id, ctx());
+    const result = await engine.enable(weekly.id, "main", ctx());
 
     expect(result.enabled).toBe(true);
     expect(result.missing).toHaveLength(2);
@@ -340,19 +366,17 @@ describe("grant sets: one set per enable, dedupe against pending, list projectio
     const listed = await engine.list(ctx());
     expect(listed).toHaveLength(1);
     expect(listed[0]).toMatchObject({
-      enabled: true,
-      pendingGrants: 2,
-      grantSetId: result.grantSetId,
+      triggers: [{ enabled: true, pendingGrants: 2, grantSetId: result.grantSetId }],
     });
   });
 
   it("re-running enable() reuses the pending ask — no duplicate ApprovalRequest per (appId, tool)", async () => {
     const engine = makeEngine();
-    const first = await engine.enable(weekly.id, ctx());
+    const first = await engine.enable(weekly.id, "main", ctx());
     guard.decide(first.missing[0]!.id, true);
     await flush();
 
-    const second = await engine.enable(weekly.id, ctx());
+    const second = await engine.enable(weekly.id, "main", ctx());
 
     expect(second.missing.map((ask) => ask.call.tool)).toEqual([transactionsTool.name]);
     expect(second.missing[0]!.id).toBe(first.missing[1]!.id);
@@ -364,8 +388,7 @@ describe("grant sets: one set per enable, dedupe against pending, list projectio
     });
     expect(pendingForPair).toHaveLength(1);
     expect((await engine.list(ctx()))[0]).toMatchObject({
-      pendingGrants: 1,
-      grantSetId: first.grantSetId,
+      triggers: [{ pendingGrants: 1, grantSetId: first.grantSetId }],
     });
   });
 
@@ -387,15 +410,15 @@ describe("grant sets: one set per enable, dedupe against pending, list projectio
     });
     await store.records("automations:captures").put({
       id: legacyRequest.id,
-      data: { appId: weekly.id, subject: "user_a", tool: insightsTool.name, descriptorHash: descriptorHash(insightsTool) },
+      data: { appId: weekly.id, triggerId: "main", subject: "user_a", tool: insightsTool.name, descriptorHash: descriptorHash(insightsTool) },
     });
     const engine = makeEngine();
 
     const listed = await engine.list(ctx());
-    expect(listed[0]).toMatchObject({ pendingGrants: 1 });
-    expect(listed[0]?.grantSetId).toBeUndefined();
+    expect(listed[0]).toMatchObject({ triggers: [{ pendingGrants: 1 }] });
+    expect(listed[0]?.triggers[0]?.grantSetId).toBeUndefined();
 
-    const result = await engine.enable(weekly.id, ctx());
+    const result = await engine.enable(weekly.id, "main", ctx());
     expect(result.missing.map((ask) => ask.id)).toEqual(["apr_legacy", result.missing[1]!.id]);
     expect(result.grantSetId).toEqual(expect.stringMatching(/^gset_/));
     expect((await store.records("automations:captures").get("apr_legacy"))?.data).toMatchObject({
@@ -405,7 +428,7 @@ describe("grant sets: one set per enable, dedupe against pending, list projectio
 
   it("a fully denied set disarms the automation in the same decision — deny is transactional server-side", async () => {
     const engine = makeEngine();
-    const { missing } = await engine.enable(weekly.id, ctx());
+    const { missing } = await engine.enable(weekly.id, "main", ctx());
     expect((await store.records("vendo_apps").get(weekly.id))?.data).toMatchObject({ enabled: true });
 
     guard.decide(missing[0]!.id, false);
@@ -417,13 +440,13 @@ describe("grant sets: one set per enable, dedupe against pending, list projectio
     expect((await store.records("vendo_apps").get(weekly.id))?.data).toMatchObject({ enabled: false });
     expect((await store.records("vendo_grants").list()).records).toHaveLength(0);
     const listed = await engine.list(ctx());
-    expect(listed[0]).toMatchObject({ enabled: false });
-    expect(listed[0]?.pendingGrants).toBeUndefined();
+    expect(listed[0]).toMatchObject({ triggers: [{ enabled: false }] });
+    expect(listed[0]?.triggers[0]?.pendingGrants).toBeUndefined();
   });
 
-  it("a PARTIALLY granted automation stays armed on deny — the ungranted step parks at fire time (05 §6, J5)", async () => {
+  it("a PARTIALLY granted automation stays armed on deny — the ungranted step fails loud at fire time (05 §6, J5)", async () => {
     const engine = makeEngine();
-    const { missing } = await engine.enable(weekly.id, ctx());
+    const { missing } = await engine.enable(weekly.id, "main", ctx());
 
     guard.decide(missing[0]!.id, true);
     guard.decide(missing[1]!.id, false);
@@ -434,13 +457,13 @@ describe("grant sets: one set per enable, dedupe against pending, list projectio
     expect((await store.records("vendo_apps").get(weekly.id))?.data).toMatchObject({ enabled: true });
     expect((await store.records("vendo_grants").list()).records).toHaveLength(1);
     const listed = await engine.list(ctx());
-    expect(listed[0]).toMatchObject({ enabled: true });
-    expect(listed[0]?.pendingGrants).toBeUndefined();
+    expect(listed[0]).toMatchObject({ triggers: [{ enabled: true }] });
+    expect(listed[0]?.triggers[0]?.pendingGrants).toBeUndefined();
   });
 
   it("deny order does not matter for partial grants: deny first, approve second still stays armed", async () => {
     const engine = makeEngine();
-    const { missing } = await engine.enable(weekly.id, ctx());
+    const { missing } = await engine.enable(weekly.id, "main", ctx());
 
     guard.decide(missing[1]!.id, false);
     guard.decide(missing[0]!.id, true);
@@ -452,16 +475,16 @@ describe("grant sets: one set per enable, dedupe against pending, list projectio
 
   it("clears the projection once every ask in the set is decided and omits grantSetId when nothing is missing", async () => {
     const engine = makeEngine();
-    const { missing } = await engine.enable(weekly.id, ctx());
+    const { missing } = await engine.enable(weekly.id, "main", ctx());
     guard.decide(missing[0]!.id, true);
     guard.decide(missing[1]!.id, true);
     await flush();
 
     const listed = await engine.list(ctx());
-    expect(listed[0]?.pendingGrants).toBeUndefined();
-    expect(listed[0]?.grantSetId).toBeUndefined();
+    expect(listed[0]?.triggers[0]?.pendingGrants).toBeUndefined();
+    expect(listed[0]?.triggers[0]?.grantSetId).toBeUndefined();
 
-    const again = await engine.enable(weekly.id, ctx());
+    const again = await engine.enable(weekly.id, "main", ctx());
     expect(again.missing).toHaveLength(0);
     expect(again.grantSetId).toBeUndefined();
   });
@@ -476,7 +499,7 @@ describe("grant sets: one set per enable, dedupe against pending, list projectio
   it("arms nothing when the person took the yes back before the callback could spend it", async () => {
     const engine = makeEngine();
     guard.spendApproval = async () => "taken-back";
-    const { missing } = await engine.enable(weekly.id, ctx());
+    const { missing } = await engine.enable(weekly.id, "main", ctx());
 
     guard.decide(missing[0]!.id, true);
     await flush();
@@ -487,7 +510,7 @@ describe("grant sets: one set per enable, dedupe against pending, list projectio
   it("arms nothing when someone else already spent the yes", async () => {
     const engine = makeEngine();
     guard.spendApproval = async () => "already-spent";
-    const { missing } = await engine.enable(weekly.id, ctx());
+    const { missing } = await engine.enable(weekly.id, "main", ctx());
 
     guard.decide(missing[0]!.id, true);
     await flush();
@@ -498,7 +521,7 @@ describe("grant sets: one set per enable, dedupe against pending, list projectio
   it("arms exactly one grant per won spend, and leaves the approval row to the guard", async () => {
     const engine = makeEngine();
     guard.spendApproval = async () => "spent";
-    const { missing } = await engine.enable(weekly.id, ctx());
+    const { missing } = await engine.enable(weekly.id, "main", ctx());
 
     guard.decide(missing[0]!.id, true);
     await flush();
@@ -516,7 +539,7 @@ describe("grant sets: one set per enable, dedupe against pending, list projectio
     // take-back it can see — and must not strip `voidedAt`/`deniedBy` off the
     // row (the parse used to drop both).
     const engine = makeEngine();
-    const { missing } = await engine.enable(weekly.id, ctx());
+    const { missing } = await engine.enable(weekly.id, "main", ctx());
     const takenBack = missing[0]!.id;
     const row = (await store.records("vendo_approvals").get(takenBack))?.data as Record<string, unknown>;
     await store.records("vendo_approvals").put({
@@ -534,7 +557,7 @@ describe("grant sets: one set per enable, dedupe against pending, list projectio
   });
 });
 
-describe("steps execution, parking, and resumption", () => {
+describe("steps execution and hard failures", () => {
   it("evaluates JSONata args, if, forEach, and cross-step outputs sequentially", async () => {
     const store = memoryStoreAdapter();
     const guard = new GuardDouble();
@@ -589,363 +612,21 @@ describe("steps execution, parking, and resumption", () => {
     });
   });
 
-  it("parks the exact call, resumes it after approval, mints a grant, and continues", async () => {
-    const baseStore = memoryStoreAdapter();
-    let resumeClaims = 0;
-    const store: StoreAdapter = {
-      ensureSchema: () => baseStore.ensureSchema(),
-      blobs: (namespace) => baseStore.blobs(namespace),
-      records(collection) {
-        const records = baseStore.records(collection);
-        if (collection !== "automations:resume-claims" || records.atomic === undefined) return records;
-        return {
-          ...records,
-          atomic: {
-            async insertIfAbsent(record) {
-              resumeClaims += 1;
-              return await records.atomic!.insertIfAbsent(record);
-            },
-            compareAndSwap: (record, expectedRevision) =>
-              records.atomic!.compareAndSwap(record, expectedRevision),
-          },
-        };
-      },
-    };
-    const guard = new GuardDouble();
-    let attempt = 0;
-    let firstCall: ToolCall | undefined;
-    const tools = registry([writeTool], async (call, runCtx) => {
-      const currentAttempt = attempt++;
-      if (currentAttempt === 0) {
-        firstCall = structuredClone(call);
-        const request = {
-          id: "apr_park",
-          call: structuredClone(call),
-          descriptor: writeTool,
-          inputPreview: "write",
-          ctx: {
-            principal: runCtx.principal,
-            venue: runCtx.venue,
-            presence: runCtx.presence,
-            appId: runCtx.appId,
-            trigger: runCtx.trigger,
-          },
-          createdAt: NOW.toISOString(),
-        };
-        await store.records("vendo_approvals").put({ id: request.id, data: { request, status: "pending" } });
-        return { status: "pending-approval", approvalId: request.id };
-      }
-      if (currentAttempt === 1) expect(call).toEqual(firstCall);
-      return { status: "ok", output: "approved" };
-    });
-    const doc = app("app_park", {
-      on: { kind: "host-event", event: "go" },
-      run: { kind: "steps", steps: [
-        { id: "needs", tool: writeTool.name, args: { value: "event.value" } },
-        { id: "after", tool: writeTool.name, args: { value: "steps.needs" } },
-      ] },
-    });
-    await seedApp(store, doc, "user_a", true);
-    const engine = createAutomations({ apps: appsDouble(), tools, guard, store, now: () => NOW });
-    const peer = createAutomations({ apps: appsDouble(), tools, guard: new GuardDouble(), store, now: () => NOW });
-    const [runId] = await engine.emit("go", { value: 4 }, ctx().principal);
-
-    expect(await engine.runs.get(runId!, ctx())).toMatchObject({ status: "pending-approval" });
-    expect((await storedRun(store, runId!)).record).toMatchObject({
-      __resume: { stepIndex: 0, call: firstCall, approvalId: "apr_park", event: { value: 4 } },
-    });
-    await store.records("vendo_approvals").put({
-      id: "apr_park",
-      data: {
-        ...((await store.records("vendo_approvals").get("apr_park"))?.data as object),
-        status: "approved",
-        decidedAt: NOW.toISOString(),
-      },
-    });
-    await Promise.all([engine.tick(), peer.tick()]);
-
-    expect(resumeClaims).toBeGreaterThan(0);
-    expect(attempt).toBe(3);
-    expect(await engine.runs.get(runId!, ctx())).toMatchObject({
-      status: "ok",
-      summary: "2 steps ok",
-      steps: [{ id: "needs", outcome: "ok" }, { id: "after", outcome: "ok" }],
-    });
-    expect((await store.records("vendo_grants").list()).records[0]?.data).toMatchObject({
-      tool: writeTool.name, appId: doc.id, source: "automation",
-    });
-    expect(await store.records("automations:parked").get("apr_park")).toBeNull();
-  });
-
-  /**
-   * Checker round 6, finding 1 — the resume path reads the approval, then arms a
-   * standing grant from it. A take-back landing in that window used to arm the
-   * grant anyway: the replay refused, but `#matchingGrant` accepted the brand new
-   * grant and the tool ran on the next fire. The replay is the spend, so the
-   * grant is armed only after that spend won.
-   */
-  it("arms nothing when a take-back lands between the resume read and the grant", async () => {
+  it("contains oversized forEach fan-out", async () => {
     const store = memoryStoreAdapter();
-    const guard = new GuardDouble();
-    let attempt = 0;
-    const tools = registry([writeTool], async (call, runCtx) => {
-      const currentAttempt = attempt++;
-      const request = {
-        id: `apr_window_${currentAttempt}`,
-        call: structuredClone(call),
-        descriptor: writeTool,
-        inputPreview: "write",
-        ctx: { principal: runCtx.principal, venue: runCtx.venue, presence: runCtx.presence, appId: runCtx.appId, trigger: runCtx.trigger },
-        createdAt: NOW.toISOString(),
-      };
-      await store.records("vendo_approvals").put({ id: request.id, data: { request, status: "pending" } });
-      if (currentAttempt === 1) {
-        // The person hits "take that back" while the resume is in flight: the
-        // guard voids the row and REFUSES the replay, which is all the engine
-        // ever gets to see.
-        const held = (await store.records("vendo_approvals").get("apr_window_0"))?.data as object;
-        await store.records("vendo_approvals").put({
-          id: "apr_window_0",
-          data: { ...held, voidedAt: NOW.toISOString() },
-        });
-      }
-      return { status: "pending-approval", approvalId: request.id };
-    });
-    const doc = app("app_resume_window", {
-      on: { kind: "host-event", event: "go" },
-      run: { kind: "steps", steps: [{ id: "needs", tool: writeTool.name }] },
-    });
-    await seedApp(store, doc, "user_a", true);
-    const engine = createAutomations({ apps: appsDouble(), tools, guard, store, now: () => NOW });
-    const [runId] = await engine.emit("go", {}, ctx().principal);
-    await store.records("vendo_approvals").put({
-      id: "apr_window_0",
-      data: {
-        ...((await store.records("vendo_approvals").get("apr_window_0"))?.data as object),
-        status: "approved",
-        decidedAt: NOW.toISOString(),
-      },
-    });
-
-    guard.decide("apr_window_0", true);
-    await flush();
-
-    // No standing grant from a yes that was taken back…
-    expect((await store.records("vendo_grants").list()).records).toHaveLength(0);
-    // …the run says what happened (it is asking again, on the new approval)…
-    expect(await engine.runs.get(runId!, ctx())).toMatchObject({
-      status: "pending-approval",
-      steps: [{ id: "needs", outcome: "pending-approval", detail: "apr_window_1" }],
-    });
-    // …and the take-back marker is intact.
-    expect((await store.records("vendo_approvals").get("apr_window_0"))?.data).toMatchObject({
-      voidedAt: NOW.toISOString(),
-    });
-  });
-
-  /**
-   * Checker round 7, finding 1 — the same law for a THROW. A dispatch that dies
-   * (store hiccup, a VendoError out of the registry) never spent the yes either,
-   * so the grant minted moments earlier must not outlive the failed resume.
-   */
-  it("takes the grant back when the resumed dispatch throws", async () => {
-    const store = memoryStoreAdapter();
-    const guard = new GuardDouble();
-    let attempt = 0;
-    const tools = registry([writeTool], async (call, runCtx) => {
-      const currentAttempt = attempt++;
-      if (currentAttempt > 0) throw new Error("the host went away mid-resume");
-      const request = {
-        id: "apr_throws",
-        call: structuredClone(call),
-        descriptor: writeTool,
-        inputPreview: "write",
-        ctx: { principal: runCtx.principal, venue: runCtx.venue, presence: runCtx.presence, appId: runCtx.appId, trigger: runCtx.trigger },
-        createdAt: NOW.toISOString(),
-      };
-      await store.records("vendo_approvals").put({ id: request.id, data: { request, status: "pending" } });
-      return { status: "pending-approval", approvalId: request.id };
-    });
-    const doc = app("app_resume_throws", {
-      on: { kind: "host-event", event: "go" },
-      run: { kind: "steps", steps: [{ id: "needs", tool: writeTool.name }] },
-    });
-    await seedApp(store, doc, "user_a", true);
-    const engine = createAutomations({ apps: appsDouble(), tools, guard, store, now: () => NOW });
-    const [runId] = await engine.emit("go", {}, ctx().principal);
-    await store.records("vendo_approvals").put({
-      id: "apr_throws",
-      data: {
-        ...((await store.records("vendo_approvals").get("apr_throws"))?.data as object),
-        status: "approved",
-        decidedAt: NOW.toISOString(),
-      },
-    });
-
-    guard.decide("apr_throws", true);
-    await flush();
-
-    expect((await store.records("vendo_grants").list()).records).toHaveLength(0);
-    expect(await engine.runs.get(runId!, ctx())).toMatchObject({
-      status: "error",
-      summary: "stopped at resume: the host went away mid-resume",
-    });
-    expect(await store.records("automations:parked").get("apr_throws")).toBeNull();
-  });
-
-  it("turns a denied parked call into a blocked hard failure and tick sweeps decided rows", async () => {
-    const store = memoryStoreWithoutAtomic();
-    const guard = new GuardDouble();
-    const tools = registry([writeTool], async (call, runCtx) => {
-      const request = {
-        id: "apr_deny",
-        call,
-        descriptor: writeTool,
-        inputPreview: "write",
-        ctx: { principal: runCtx.principal, venue: runCtx.venue, presence: runCtx.presence, appId: runCtx.appId, trigger: runCtx.trigger },
-        createdAt: NOW.toISOString(),
-      };
-      await store.records("vendo_approvals").put({ id: request.id, data: { request, status: "pending" } });
-      return { status: "pending-approval", approvalId: request.id };
-    });
-    const doc = app("app_deny", {
-      on: { kind: "host-event", event: "go" },
-      run: { kind: "steps", steps: [{ id: "needs", tool: writeTool.name }] },
-    });
-    await seedApp(store, doc, "user_a", true);
-    const engine = createAutomations({ apps: appsDouble(), tools, guard, store, now: () => NOW });
-    const [runId] = await engine.emit("go", {}, ctx().principal);
-    const approval = await store.records("vendo_approvals").get("apr_deny");
-    await store.records("vendo_approvals").put({
-      id: "apr_deny",
-      data: { ...(approval?.data as object), status: "denied", decidedAt: NOW.toISOString() },
-    });
-
-    await engine.tick();
-
-    expect(await engine.runs.get(runId!, ctx())).toMatchObject({
-      status: "error",
-      error: { code: "blocked", message: "the user declined the approval" },
-      steps: [{ outcome: "blocked", detail: "user declined approval" }],
-    });
-  });
-
-  it("stops instead of resuming after the automation is disabled", async () => {
-    const store = memoryStoreAdapter();
-    const guard = new GuardDouble();
     let calls = 0;
-    const tools = registry([writeTool], async (call, runCtx) => {
+    const tools = registry([writeTool], async () => {
       calls += 1;
-      const request = {
-        id: "apr_disabled",
-        call,
-        descriptor: writeTool,
-        inputPreview: "write",
-        ctx: { principal: runCtx.principal, venue: runCtx.venue, presence: runCtx.presence, appId: runCtx.appId, trigger: runCtx.trigger },
-        createdAt: NOW.toISOString(),
-      };
-      await store.records("vendo_approvals").put({ id: request.id, data: { request, status: "pending" } });
-      return { status: "pending-approval", approvalId: request.id };
-    });
-    const doc = app("app_disabled_resume", {
-      on: { kind: "host-event", event: "go" },
-      run: { kind: "steps", steps: [{ id: "write", tool: writeTool.name }] },
-    });
-    await seedApp(store, doc, "user_a", true);
-    const engine = createAutomations({ apps: appsDouble(), tools, guard, store, now: () => NOW });
-    const [runId] = await engine.emit("go", {}, ctx().principal);
-    await engine.disable(doc.id, ctx());
-    const approval = await store.records("vendo_approvals").get("apr_disabled");
-    await store.records("vendo_approvals").put({
-      id: "apr_disabled",
-      data: { ...(approval?.data as object), status: "approved", decidedAt: NOW.toISOString() },
-    });
-
-    guard.decide("apr_disabled", true);
-    await flush();
-
-    expect(calls).toBe(1);
-    expect(await engine.runs.get(runId!, ctx())).toMatchObject({
-      status: "stopped",
-      summary: "automation disabled before resume",
-    });
-    expect(await store.records("automations:parked").get("apr_disabled")).toBeNull();
-  });
-
-  it("terminates a parked run instead of stranding it when the trigger changed before resume", async () => {
-    const store = memoryStoreAdapter();
-    const guard = new GuardDouble();
-    const tools = registry([writeTool], async (call, runCtx) => {
-      const request = {
-        id: "apr_reshaped",
-        call,
-        descriptor: writeTool,
-        inputPreview: "write",
-        ctx: { principal: runCtx.principal, venue: runCtx.venue, presence: runCtx.presence, appId: runCtx.appId, trigger: runCtx.trigger },
-        createdAt: NOW.toISOString(),
-      };
-      await store.records("vendo_approvals").put({ id: request.id, data: { request, status: "pending" } });
-      return { status: "pending-approval", approvalId: request.id };
-    });
-    const doc = app("app_reshaped_resume", {
-      on: { kind: "host-event", event: "go" },
-      run: { kind: "steps", steps: [{ id: "write", tool: writeTool.name }] },
-    });
-    await seedApp(store, doc, "user_a", true);
-    const engine = createAutomations({ apps: appsDouble(), tools, guard, store, now: () => NOW });
-    const [runId] = await engine.emit("go", {}, ctx().principal);
-
-    // The user edits the trigger to agentic (auto-disable), re-enables the app, and
-    // only then approves the stale parked approval — the parked steps state no longer
-    // matches the trigger, so resume must fail the run cleanly, not strand it.
-    await seedApp(store, app(doc.id, {
-      on: { kind: "host-event", event: "go" },
-      run: { kind: "agentic", prompt: "work" },
-    }), "user_a", true);
-    const approval = await store.records("vendo_approvals").get("apr_reshaped");
-    await store.records("vendo_approvals").put({
-      id: "apr_reshaped",
-      data: { ...(approval?.data as object), status: "approved", decidedAt: NOW.toISOString() },
-    });
-
-    await engine.tick();
-
-    expect(await engine.runs.get(runId!, ctx())).toMatchObject({
-      status: "error",
-      summary: "stopped at resume: parked agentic run is invalid",
-      error: { code: "validation", message: "parked agentic run is invalid" },
-    });
-    expect(await store.records("automations:parked").get("apr_reshaped")).toBeNull();
-  });
-
-  it("contains oversized forEach fan-out and persisted resume state", async () => {
-    const store = memoryStoreAdapter();
-    const guard = new GuardDouble();
-    let calls = 0;
-    const tools = registry([writeTool], async (call, runCtx) => {
-      calls += 1;
-      const request = {
-        id: "apr_large_resume",
-        call,
-        descriptor: writeTool,
-        inputPreview: "write",
-        ctx: { principal: runCtx.principal, venue: runCtx.venue, presence: runCtx.presence, appId: runCtx.appId, trigger: runCtx.trigger },
-        createdAt: NOW.toISOString(),
-      };
-      await store.records("vendo_approvals").put({ id: request.id, data: { request, status: "pending" } });
-      return { status: "pending-approval", approvalId: request.id };
+      return { status: "ok", output: {} };
     });
     const fanout = app("app_fanout_cap", {
       on: { kind: "host-event", event: "fan" },
       run: { kind: "steps", steps: [{ id: "fan", tool: writeTool.name, forEach: "event.items" }] },
     });
-    const resume = app("app_resume_cap", {
-      on: { kind: "host-event", event: "resume" },
-      run: { kind: "steps", steps: [{ id: "write", tool: writeTool.name }] },
-    });
     await seedApp(store, fanout, "user_a", true);
-    await seedApp(store, resume, "user_a", true);
-    const engine = createAutomations({ apps: appsDouble(), tools, guard, store, now: () => NOW });
+    const engine = createAutomations({
+      apps: appsDouble(), tools, guard: new GuardDouble(), store, now: () => NOW,
+    });
 
     const [fanoutId] = await engine.emit("fan", { items: Array.from({ length: 1001 }, (_, index) => index) }, ctx().principal);
     expect(await engine.runs.get(fanoutId!, ctx())).toMatchObject({
@@ -953,13 +634,6 @@ describe("steps execution, parking, and resumption", () => {
       error: { code: "validation", message: "step fan forEach exceeds 1000 items" },
     });
     expect(calls).toBe(0);
-
-    const [resumeId] = await engine.emit("resume", { payload: "x".repeat(512 * 1024) }, ctx().principal);
-    expect(await engine.runs.get(resumeId!, ctx())).toMatchObject({
-      status: "error",
-      error: { code: "validation", message: "persisted resume state exceeds 512 KiB" },
-    });
-    expect(await store.records("automations:parked").get("apr_large_resume")).toBeNull();
   });
 
   it("keeps a stopped terminal row when a slow deterministic step returns", async () => {
@@ -993,6 +667,353 @@ describe("steps execution, parking, and resumption", () => {
   });
 });
 
+/** S2 — fail-loud consent. A run that meets a permission it does not hold
+ *  stops LOUDLY at that step: the ask is captured (so the ONE existing decision
+ *  path mints the standing grant), the run lands on a terminal `error` row
+ *  naming what it needed, and the person taps Grant & re-run. Nothing is parked,
+ *  nothing is resumed, nothing is replayed. */
+describe("fail-loud consent and re-run", () => {
+  /** A registry whose `write_data` answers pending-approval the first N times it
+   *  is called — the guard's own answer for a call with no standing grant — and
+   *  runs afterwards. Every call is recorded so a test can prove what executed. */
+  const missingPermission = (store: StoreAdapter, misses = 1) => {
+    const calls: ToolCall[] = [];
+    let seen = 0;
+    const tools = registry([readTool, writeTool], async (call, runCtx) => {
+      calls.push(structuredClone(call));
+      if (call.tool !== writeTool.name) return { status: "ok", output: { read: true } };
+      seen += 1;
+      if (seen > misses) return { status: "ok", output: "granted" };
+      const request = {
+        id: `apr_miss_${seen}`,
+        call: structuredClone(call),
+        descriptor: writeTool,
+        inputPreview: "write",
+        ctx: {
+          principal: runCtx.principal,
+          venue: runCtx.venue,
+          presence: runCtx.presence,
+          appId: runCtx.appId,
+          trigger: runCtx.trigger,
+        },
+        createdAt: NOW.toISOString(),
+      };
+      await store.records("vendo_approvals").put({ id: request.id, data: { request, status: "pending" } });
+      return { status: "pending-approval", approvalId: request.id };
+    });
+    return { tools, calls };
+  };
+
+  const twoStepApp = (id: string): AppDocument => app(id, {
+    on: { kind: "host-event", event: "go" },
+    run: { kind: "steps", steps: [
+      { id: "read", tool: readTool.name },
+      { id: "write", tool: writeTool.name, args: { value: "event.value" } },
+      { id: "after", tool: readTool.name },
+    ] },
+  });
+
+  it("stops the run at the missing permission, names the tool, and captures the ask", async () => {
+    const store = memoryStoreAdapter();
+    const guard = new GuardDouble();
+    const { tools, calls } = missingPermission(store);
+    const doc = twoStepApp("app_miss");
+    await seedApp(store, doc, "user_a", true);
+    const engine = createAutomations({ apps: appsDouble(), tools, guard, store, now: () => NOW });
+
+    const [runId] = await engine.emit("go", { value: 4 }, ctx().principal);
+
+    // The run is TERMINAL and loud: a person can see what it needed and that
+    // nothing after it ran.
+    expect(await engine.runs.get(runId!, ctx())).toMatchObject({
+      status: "error",
+      error: { code: "needs-permission", tool: writeTool.name },
+      steps: [
+        { id: "read", outcome: "ok" },
+        { id: "write", outcome: "pending-approval", detail: "apr_miss_1" },
+      ],
+    });
+    expect((await engine.runs.get(runId!, ctx()))?.error?.message).toContain(writeTool.name);
+    expect(calls.map((call) => call.tool)).toEqual([readTool.name, writeTool.name]);
+    // …and the ask is a CAPTURE, the same shape arming writes, so the standing
+    // grant is minted by the one decision path both doors share.
+    const capture = await store.records("automations:captures").get("apr_miss_1");
+    expect(capture?.data).toMatchObject({
+      appId: doc.id,
+      triggerId: "main",
+      subject: "user_a",
+      tool: writeTool.name,
+      descriptorHash: descriptorHash(writeTool),
+    });
+    expect((capture?.data as { grantSetId?: string }).grantSetId).toMatch(/^gset_/);
+    // The projection a surface renders "waiting on 1 permission" from.
+    expect((await engine.list(ctx()))[0]?.triggers[0]).toMatchObject({ pendingGrants: 1 });
+  });
+
+  it("supersedes the arming ask with the away ask the run raised for the same permission", async () => {
+    // The state a real deployment reaches constantly, and the one `seedApp`
+    // cannot: the person armed the automation and left the consent card
+    // undecided, so an arming ask for `write_data` is pending — and THEN the
+    // schedule fired and the run met the same permission.
+    //
+    // One thing to allow is one question, so only one of the pair may stay
+    // pending. WHICH one is not a toss-up. The away ask is raised inside the run
+    // and carries `presence: "away"`, the `appId`, and its run id; the arming
+    // ask is a present-time chat-venue row with none of that. Keeping the
+    // arming one and closing the away one erases away provenance from the
+    // approvals record — the thing every away-authority rule is enforced
+    // against — so the away ask is the survivor and the arming ask is what
+    // gets superseded.
+    const store = memoryStoreAdapter();
+    const guard = new GuardDouble();
+    guard.store = store;
+    const { tools } = missingPermission(store);
+    const doc = twoStepApp("app_orphan");
+    await seedApp(store, doc, "user_a");
+    const engine = createAutomations({ apps: appsDouble(), tools, guard, store, now: () => NOW });
+
+    const { missing } = await engine.enable(doc.id, "main", ctx());
+    const armingWrite = missing.find((request) => request.call.tool === writeTool.name);
+    const armingRead = missing.find((request) => request.call.tool === readTool.name);
+    expect(armingWrite).toBeDefined();
+    expect(armingRead).toBeDefined();
+
+    const [runId] = await engine.emit("go", { value: 4 }, ctx().principal);
+    await flush();
+
+    // The run still fails loudly for the right reason — that part was never wrong.
+    expect(await engine.runs.get(runId!, ctx())).toMatchObject({
+      status: "error",
+      error: { code: "needs-permission", tool: writeTool.name },
+    });
+
+    // The AWAY ask survives, still pending, still answerable — it is the row a
+    // surface renders the failed run's card from, and the only one that says
+    // this permission was met while nobody was watching.
+    expect(await store.records("vendo_approvals").get("apr_miss_1"))
+      .toMatchObject({ data: { status: "pending" } });
+    const away = (await store.records("vendo_approvals").get("apr_miss_1"))!.data as {
+      request: { ctx: { presence?: string; appId?: string; venue?: string } };
+    };
+    expect(away.request.ctx).toMatchObject({ presence: "away", venue: "automation", appId: doc.id });
+
+    // The redundant ARMING ask is the one closed, as `system` so it can never
+    // read as the person having said no to this tool.
+    expect(guard.abandoned).toEqual([armingWrite!.id]);
+    expect(await store.records("vendo_approvals").get(armingWrite!.id))
+      .toMatchObject({ data: { status: "denied", deniedBy: "system" } });
+
+    // The capture MOVED rather than being dropped or duplicated: the question is
+    // still outstanding, still in the same grant set, now keyed by the away ask.
+    // A capture left on the closed arming ask would keep a settled question open;
+    // no capture at all would orphan a pending ask no surface counts.
+    const moved = await store.records("automations:captures").get("apr_miss_1");
+    expect(moved?.data).toMatchObject({ appId: doc.id, triggerId: "main", tool: writeTool.name });
+    expect(await store.records("automations:captures").get(armingWrite!.id)).toBeNull();
+
+    // Still TWO questions outstanding (the untouched read ask + this one), never
+    // three and never one: the count must not double-count the pair or orphan it.
+    expect((await engine.list(ctx()))[0]?.triggers[0]).toMatchObject({ pendingGrants: 2 });
+    expect(await store.records("vendo_approvals").get(armingRead!.id))
+      .toMatchObject({ data: { status: "pending" } });
+    // Superseding grants nothing, and the automation stays armed — a deny that
+    // disarmed here would switch off an automation nobody said no to.
+    expect((await store.records("vendo_grants").list()).records).toHaveLength(0);
+    expect((await engine.list(ctx()))[0]?.triggers[0]).toMatchObject({ enabled: true });
+  });
+
+  it("mints the standing grant on approval and re-runs the automation fresh", async () => {
+    const store = memoryStoreAdapter();
+    const guard = new GuardDouble();
+    const { tools, calls } = missingPermission(store);
+    const doc = twoStepApp("app_rerun");
+    await seedApp(store, doc, "user_a", true);
+    const engine = createAutomations({ apps: appsDouble(), tools, guard, store, now: () => NOW });
+    const [runId] = await engine.emit("go", { value: 4 }, ctx().principal);
+
+    await store.records("vendo_approvals").put({
+      id: "apr_miss_1",
+      data: {
+        ...((await store.records("vendo_approvals").get("apr_miss_1"))?.data as object),
+        status: "approved",
+        decidedAt: NOW.toISOString(),
+      },
+    });
+    guard.decide("apr_miss_1", true);
+    await flush();
+
+    expect((await store.records("vendo_grants").list()).records[0]?.data).toMatchObject({
+      subject: "user_a",
+      tool: writeTool.name,
+      appId: doc.id,
+      triggerId: "main",
+      source: "automation",
+      duration: "standing",
+    });
+    expect(await store.records("automations:captures").get("apr_miss_1")).toBeNull();
+
+    const rerunId = await engine.runs.rerun(runId!, ctx());
+
+    // A FRESH run: its own row, its own id, the original triggering event.
+    expect(rerunId).not.toBe(runId);
+    expect(await engine.runs.get(rerunId, ctx())).toMatchObject({
+      appId: doc.id,
+      triggerId: "main",
+      status: "ok",
+      summary: "3 steps ok",
+    });
+    // The failed run stays exactly as it was — a re-run is a new attempt, not an
+    // edit of the record of what happened.
+    expect(await engine.runs.get(runId!, ctx())).toMatchObject({ status: "error" });
+    // The write ran with the event of the run being re-run.
+    expect(calls.at(-2)).toMatchObject({ tool: writeTool.name, args: { value: 4 } });
+  });
+
+  it("re-runs the trigger that FIRED, so editing the steps cannot move a completed call's identity", async () => {
+    // The effect ledger tells "this call again" from "another call just like it"
+    // by call id, and a steps call id is positional. That is only stable if the
+    // re-run reads the same step list — so the re-run has to fire the definition
+    // that actually fired, not whatever the document says now. Otherwise
+    // inserting a step ahead of one that already completed renumbers it, its
+    // receipt is never found, and work that already landed happens twice.
+    const store = memoryStoreAdapter();
+    const guard = new GuardDouble();
+    const { tools, calls } = missingPermission(store);
+    const doc = twoStepApp("app_rerun_edited");
+    await seedApp(store, doc, "user_a", true);
+    const engine = createAutomations({ apps: appsDouble(), tools, guard, store, now: () => NOW });
+    const [runId] = await engine.emit("go", { value: 4 }, ctx().principal);
+
+    // Step 0 completed before step 1 asked for a permission nobody held.
+    const completed = calls.find((call) => call.tool === readTool.name);
+    expect(completed).toBeDefined();
+
+    await store.records("vendo_approvals").put({
+      id: "apr_miss_1",
+      data: {
+        ...((await store.records("vendo_approvals").get("apr_miss_1"))?.data as object),
+        status: "approved",
+        decidedAt: NOW.toISOString(),
+      },
+    });
+    guard.decide("apr_miss_1", true);
+    await flush();
+
+    // The author inserts a step AHEAD of the one that already ran, between the
+    // failure and the re-run.
+    await seedApp(store, app("app_rerun_edited", {
+      on: { kind: "host-event", event: "go" },
+      run: { kind: "steps", steps: [
+        { id: "inserted", tool: readTool.name },
+        { id: "read", tool: readTool.name },
+        { id: "write", tool: writeTool.name, args: { value: "event.value" } },
+        { id: "after", tool: readTool.name },
+      ] },
+    }), "user_a", true);
+
+    const before = calls.length;
+    await engine.runs.rerun(runId!, ctx());
+
+    const rerunIds = calls.slice(before).map((call) => call.id);
+    expect(rerunIds).toContain(completed!.id);
+  });
+
+  it("refuses a re-run for a caller who cannot edit the app, and an unknown run", async () => {
+    const store = memoryStoreAdapter();
+    const guard = new GuardDouble();
+    const { tools } = missingPermission(store);
+    const doc = twoStepApp("app_rerun_gate");
+    await seedApp(store, doc, "user_a", true);
+    const engine = createAutomations({ apps: appsDouble(), tools, guard, store, now: () => NOW });
+    const [runId] = await engine.emit("go", { value: 1 }, ctx().principal);
+
+    await expect(engine.runs.rerun(runId!, ctx("user_b"))).rejects.toMatchObject({ code: "not-found" });
+    await expect(engine.runs.rerun("run_nope", ctx())).rejects.toMatchObject({ code: "not-found" });
+  });
+
+  it("refuses a re-run of a trigger nobody has armed", async () => {
+    const store = memoryStoreAdapter();
+    const guard = new GuardDouble();
+    const { tools } = missingPermission(store);
+    const doc = twoStepApp("app_rerun_off");
+    await seedApp(store, doc, "user_a", true);
+    const engine = createAutomations({ apps: appsDouble(), tools, guard, store, now: () => NOW });
+    const [runId] = await engine.emit("go", { value: 1 }, ctx().principal);
+    await engine.disable(doc.id, "main", ctx());
+
+    await expect(engine.runs.rerun(runId!, ctx())).rejects.toMatchObject({ code: "conflict" });
+  });
+
+  it("mints nothing when the yes was taken back before the capture could spend it", async () => {
+    const store = memoryStoreAdapter();
+    const guard = new GuardDouble();
+    guard.spendApproval = async () => "taken-back";
+    const { tools } = missingPermission(store);
+    await seedApp(store, twoStepApp("app_miss_takeback"), "user_a", true);
+    const engine = createAutomations({ apps: appsDouble(), tools, guard, store, now: () => NOW });
+    const [runId] = await engine.emit("go", { value: 4 }, ctx().principal);
+
+    guard.decide("apr_miss_1", true);
+    await flush();
+
+    expect((await store.records("vendo_grants").list()).records).toHaveLength(0);
+    // The run's own verdict is untouched by the decision either way.
+    expect(await engine.runs.get(runId!, ctx())).toMatchObject({
+      status: "error",
+      error: { code: "needs-permission" },
+    });
+  });
+
+  it("leaves the run in error and mints nothing when the ask is denied", async () => {
+    const store = memoryStoreAdapter();
+    const guard = new GuardDouble();
+    const { tools } = missingPermission(store);
+    await seedApp(store, twoStepApp("app_miss_deny"), "user_a", true);
+    const engine = createAutomations({ apps: appsDouble(), tools, guard, store, now: () => NOW });
+    const [runId] = await engine.emit("go", { value: 4 }, ctx().principal);
+
+    guard.decide("apr_miss_1", false);
+    await flush();
+
+    expect((await store.records("vendo_grants").list()).records).toHaveLength(0);
+    expect(await store.records("automations:captures").get("apr_miss_1")).toBeNull();
+    expect(await engine.runs.get(runId!, ctx())).toMatchObject({
+      status: "error",
+      error: { code: "needs-permission" },
+    });
+  });
+
+  /** A row written while parking existed can never resume — park is gone. It
+   *  reads back as the loud failure it always was, so one legacy row cannot make
+   *  runs.list throw for a whole app. */
+  it("reads a legacy parked run row back as an error", async () => {
+    const store = memoryStoreAdapter();
+    const doc = twoStepApp("app_legacy_parked");
+    await seedApp(store, doc, "user_a", true);
+    const engine = createAutomations({
+      apps: appsDouble(), tools: registry([readTool, writeTool]), guard: new GuardDouble(), store, now: () => NOW,
+    });
+    const record = {
+      id: "run_legacy",
+      appId: doc.id,
+      triggerId: "main",
+      trigger: { kind: "host-event", event: "go" },
+      status: "pending-approval",
+      startedAt: NOW.toISOString(),
+      steps: [{ id: "write", tool: writeTool.name, outcome: "pending-approval", at: NOW.toISOString() }],
+      __resume: { stepIndex: 0, event: {}, stepOutputs: {}, call: { id: "call_x", tool: writeTool.name, args: {} }, approvalId: "apr_legacy" },
+    };
+    await store.records("vendo_runs").put({
+      id: record.id,
+      data: { appId: doc.id, trigger: record.trigger, status: "pending-approval", record, startedAt: record.startedAt },
+      refs: { app_id: doc.id, status: "pending-approval" },
+    });
+
+    expect(await engine.runs.get("run_legacy", ctx())).toMatchObject({ status: "error" });
+    expect((await engine.runs.list({ appId: doc.id }, ctx())).runs.map((run) => run.status)).toEqual(["error"]);
+  });
+});
+
 describe("schedule, webhook, and host triggers", () => {
   it("fires due cron/every/at schedules once, collapses missed windows, and never backfills", async () => {
     const store = memoryStoreAdapter();
@@ -1002,7 +1023,7 @@ describe("schedule, webhook, and host triggers", () => {
       calls.push({ appId, args });
       return { status: "ok", output: {} };
     });
-    const schedules: Array<[string, NonNullable<AppDocument["trigger"]>["on"]]> = [
+    const schedules: Array<[string, Trigger["on"]]> = [
       ["app_cron", { kind: "schedule", cron: "* * * * *" }],
       ["app_every", { kind: "schedule", every: "15m" }],
       ["app_at", { kind: "schedule", at: "2026-07-12T10:00:00.000Z" }],
@@ -1010,7 +1031,7 @@ describe("schedule, webhook, and host triggers", () => {
     for (const [appId, on] of schedules) {
       await seedApp(store, app(appId, { on, run: { kind: "steps", steps: [{ id: "run", tool: "fn:main", args: { event: "event" } }] } }), "user_a", true);
       await store.records("automations:schedule").put({
-        id: appId,
+        id: `${appId}:main`,
         data: { lastFiredAt: "2026-07-12T08:00:00.000Z" },
       });
     }
@@ -1022,7 +1043,7 @@ describe("schedule, webhook, and host triggers", () => {
     expect(calls).toHaveLength(3);
     expect((calls[0]?.args as { event: { firedAt: string } }).event.firedAt).toBe(NOW.toISOString());
     expect(calls).toHaveLength(3);
-    expect((await store.records("automations:schedule").get("app_at"))?.data).toMatchObject({ firedAt: NOW.toISOString() });
+    expect((await store.records("automations:schedule").get("app_at:main"))?.data).toMatchObject({ firedAt: NOW.toISOString() });
   });
 
   it("retains single-instance schedule behavior when the atomic capability is absent", async () => {
@@ -1033,7 +1054,7 @@ describe("schedule, webhook, and host triggers", () => {
     });
     await seedApp(store, doc, "user_a", true);
     await store.records("automations:schedule").put({
-      id: doc.id,
+      id: `${doc.id}:main`,
       data: { lastFiredAt: "2026-07-12T08:00:00.000Z" },
     });
     const engine = createAutomations({
@@ -1058,7 +1079,7 @@ describe("schedule, webhook, and host triggers", () => {
     });
 
     await expect(engine.tick()).resolves.toEqual([]);
-    expect((await store.records("automations:schedule").get(doc.id))?.data).toEqual({
+    expect((await store.records("automations:schedule").get(`${doc.id}:main`))?.data).toEqual({
       lastFiredAt: NOW.toISOString(),
     });
   });
@@ -1082,7 +1103,7 @@ describe("schedule, webhook, and host triggers", () => {
 
     expect(ticks.flat()).toHaveLength(1);
     expect(calls).toBe(1);
-    expect((await store.records("automations:schedule").get(doc.id))?.data).toEqual({
+    expect((await store.records("automations:schedule").get(`${doc.id}:main`))?.data).toEqual({
       lastFiredAt: NOW.toISOString(),
       firedAt: NOW.toISOString(),
     });
@@ -1108,8 +1129,8 @@ describe("schedule, webhook, and host triggers", () => {
     await seedApp(store, host, "user_a", true);
     const engine = createAutomations({ apps: appsDouble(), tools, guard, store, now: () => NOW });
     const peer = createAutomations({ apps: appsDouble(), tools, guard: new GuardDouble(), store, now: () => NOW });
-    await engine.enable(external.id, ctx());
-    const secret = ((await store.records("automations:webhook").get(external.id))?.data as { secret: string }).secret;
+    await engine.enable(external.id, "main", ctx());
+    const secret = ((await store.records("automations:webhook").get(`${external.id}:main`))?.data as { secret: string }).secret;
     const body = JSON.stringify({ answer: 42 });
     const timestamp = String(NOW.getTime() / 1_000);
     const signature = await sign(secret, "delivery_1", timestamp, body);
@@ -1181,8 +1202,8 @@ describe("schedule, webhook, and host triggers", () => {
     const engine = createAutomations({
       apps: appsDouble(), tools: registry(), guard: new GuardDouble(), store, now: () => NOW,
     });
-    await engine.enable(external.id, ctx());
-    const secret = ((await store.records("automations:webhook").get(external.id))?.data as { secret: string }).secret;
+    await engine.enable(external.id, "main", ctx());
+    const secret = ((await store.records("automations:webhook").get(`${external.id}:main`))?.data as { secret: string }).secret;
     const body = JSON.stringify({ answer: 42 });
     const timestamp = String(NOW.getTime() / 1_000);
     const deliveryId = "delivery_fallback";
@@ -1203,8 +1224,9 @@ describe("schedule, webhook, and host triggers", () => {
     expect(await first.json()).toMatchObject({ runIds: [expect.stringMatching(/^run_/)] });
     expect(await duplicate.json()).toEqual({ deduped: true });
     expect((await store.records("vendo_runs").list()).records).toHaveLength(1);
-    expect((await store.records("automations:deliveries").get(`${external.id}:${deliveryId}`))?.data).toEqual({
+    expect((await store.records("automations:deliveries").get(`${external.id}:main:${deliveryId}`))?.data).toEqual({
       appId: external.id,
+      triggerId: "main",
       deliveryId,
       receivedAt: NOW.toISOString(),
     });
@@ -1230,7 +1252,7 @@ describe("localTriggerKinds: deferring schedule/external firing to another autho
     });
     await seedApp(store, doc, "user_a", true);
     await store.records("automations:schedule").put({
-      id: doc.id,
+      id: `${doc.id}:main`,
       data: { lastFiredAt: "2026-07-12T08:00:00.000Z" },
     });
     const engine = createAutomations({
@@ -1241,7 +1263,7 @@ describe("localTriggerKinds: deferring schedule/external firing to another autho
     await expect(engine.tick()).resolves.toEqual([]);
     expect(calls).toBe(0);
     expect((await store.records("vendo_runs").list()).records).toHaveLength(0);
-    expect((await store.records("automations:schedule").get(doc.id))?.data).toEqual({
+    expect((await store.records("automations:schedule").get(`${doc.id}:main`))?.data).toEqual({
       lastFiredAt: "2026-07-12T08:00:00.000Z",
     });
   });
@@ -1259,8 +1281,8 @@ describe("localTriggerKinds: deferring schedule/external firing to another autho
       apps: appsDouble(), tools, guard, store, now: () => NOW,
       localTriggerKinds: new Set(),
     });
-    await engine.enable(external.id, ctx());
-    const secret = ((await store.records("automations:webhook").get(external.id))?.data as { secret: string }).secret;
+    await engine.enable(external.id, "main", ctx());
+    const secret = ((await store.records("automations:webhook").get(`${external.id}:main`))?.data as { secret: string }).secret;
     const body = JSON.stringify({ answer: 42 });
     const timestamp = String(NOW.getTime() / 1_000);
     const signature = await sign(secret, "delivery_1", timestamp, body);
@@ -1321,7 +1343,7 @@ describe("localTriggerKinds: deferring schedule/external firing to another autho
       });
       const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
       try {
-        await engine.enable(doc.id, ctx());
+        await engine.enable(doc.id, "main", ctx());
         return warn.mock.calls
           .map(([message]) => (typeof message === "string" ? message : ""))
           .filter((message) => message.includes("fn: steps"));
@@ -1383,7 +1405,7 @@ describe("dry runs, run visibility, agentic execution, and stopping", () => {
     });
     const beforeApprovals = await store.records("vendo_approvals").list();
 
-    const plan = await engine.dryRun(doc.id, ctx(), { items: [1, 2] });
+    const plan = await engine.dryRun(doc.id, "main", ctx(), { items: [1, 2] });
 
     expect(plan.steps).toEqual([
       { id: "fan", tool: readTool.name, wouldAsk: true },
@@ -1418,6 +1440,7 @@ describe("dry runs, run visibility, agentic execution, and stopping", () => {
     const record = {
       id: "run_blocked",
       appId: doc.id,
+      triggerId: "main",
       trigger: { kind: "schedule" as const },
       status: "error" as const,
       startedAt: NOW.toISOString(),

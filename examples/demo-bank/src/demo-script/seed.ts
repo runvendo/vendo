@@ -13,13 +13,13 @@
  * Existing rows are left untouched (a user's recorded pins survive), so
  * seeding is safe to run on every boot.
  */
-import type { AppDocument } from "@vendoai/core";
+import { type AppDocument } from "@vendoai/core";
 import { mapleDemoUsers } from "@/server/users";
 import { vendo } from "@/vendo/server";
 import { demoAppId, mapleDemoAutomations } from "./automations";
+import { seedConsoleData } from "./console-seed";
 import moneyHqFixture from "./fixtures/money-hq.json";
 import spendingFixture from "./fixtures/spending-breakdown.json";
-
 function fixtureDocument(fixture: unknown, id: string): AppDocument {
   return { ...(fixture as Omit<AppDocument, "id">), id, format: "vendo/app@1" };
 }
@@ -44,6 +44,7 @@ export async function seedDemoScript(): Promise<void> {
       await apps.put({ id: doc.id, data: { subject: user.subject, enabled: false, doc } });
     }
   }
+  await seedConsoleData(vendo.store);
 }
 
 // The scripted turn engine references app ids from here (./engine imports

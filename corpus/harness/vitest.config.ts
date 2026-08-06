@@ -15,13 +15,6 @@ export default defineConfig({
         "src/**/*.test.ts",
         "src/**/*.test-util.ts",
         "src/**/*.live.test.ts",
-        // Live-only source, same standing as *.live.test.ts: these execute
-        // only against real Agentset/Anthropic credentials, which CI does not
-        // have, so CI coverage of them is 0 by construction — their proof is
-        // the committed artifacts that verifier-live.test.ts recomputes. The
-        // 98-line floor over the deterministic module is unchanged.
-        "src/knowledge-eval/verifier-live.ts",
-        "src/knowledge-eval/agentset-engine.ts",
       ],
       // Ratcheted line-coverage floor (guard convention): set at/just below
       // the measured value (98.98 at introduction) so it can only rise;

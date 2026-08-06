@@ -133,14 +133,22 @@ test("a stopped automation is findable, with the reason in the consumer's words"
   await page.route("**/api/vendo/automations", async (route) => {
     const answer = await route.fetch();
     const entries = await answer.json() as Array<Record<string, unknown>>;
+    // Per TRIGGER, not per app: sponsorship is held by one trigger of an app,
+    // so a lapse stops that trigger and leaves its siblings running.
     const stopped = entries.map((item, index) => index === 0
       ? {
           ...item,
-          enabled: false,
-          stopped: {
-            reason: "departure",
-            summary: "This stopped because the person it ran as no longer has access to the app.",
-          },
+          triggers: (item["triggers"] as Array<Record<string, unknown>>).map((row, position) =>
+            position === 0
+              ? {
+                  ...row,
+                  enabled: false,
+                  stopped: {
+                    reason: "departure",
+                    summary: "This stopped because the person it ran as no longer has access to the app.",
+                  },
+                }
+              : row),
         }
       : item);
     await route.fulfill({ response: answer, json: stopped });

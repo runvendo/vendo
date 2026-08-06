@@ -72,18 +72,20 @@ describe("apps lifecycle", () => {
       format: VENDO_APP_FORMAT,
       id: "app_trigger_arm",
       name: "Trigger arm",
-      trigger: {
+      triggers: [{
+        id: "main",
         on: { kind: "host-event", event: "invoice.created" },
         run: { kind: "steps", steps: [{ id: "read", tool: "host_read" }] },
-      },
+      }],
     };
     const renamed = { ...original, name: "Renamed" };
     const changed: AppDocument = {
       ...renamed,
-      trigger: {
+      triggers: [{
+        id: "main",
         on: { kind: "host-event", event: "invoice.updated" },
         run: { kind: "steps", steps: [{ id: "read", tool: "host_read" }] },
-      },
+      }],
     };
 
     expect(enabledAfterDocumentEdit(original, renamed, true)).toBe(true);
@@ -99,7 +101,7 @@ describe("apps lifecycle", () => {
     await history.surface(original.id).undo();
     expect((await store.records("vendo_apps").get(original.id))?.data).toMatchObject({
       enabled: false,
-      doc: { trigger: original.trigger },
+      doc: { triggers: original.triggers },
     });
   });
 

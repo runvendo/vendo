@@ -467,7 +467,7 @@ describe("vendo doctor", () => {
             appId: "app_cron",
             name: "Cron app",
             awake: false,
-            schedules: [{ cron: "0 8 * * *", fn: "chase", lastFiredAt: "2026-07-19T08:00:00.000Z" }],
+            schedules: [{ cron: "0 8 * * *", fn: "chase" }],
           }],
         });
       }
@@ -481,7 +481,7 @@ describe("vendo doctor", () => {
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0); // reporting only — a missing caller warns, never fails
     expect(messages.logs).toContain("ok: 1 machine-bearing app");
-    expect(messages.logs.join("\n")).toContain("0 8 * * * -> POST /fn/chase — last fired 2026-07-19T08:00:00.000Z");
+    expect(messages.logs.join("\n")).toContain("0 8 * * * -> POST /fn/chase");
     expect(messages.errors.join("\n")).toContain("set VENDO_TICK_SECRET");
   });
 

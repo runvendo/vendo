@@ -62,7 +62,7 @@ describe("delegation is advice in the body, never machinery", () => {
   });
 
   it("carries no property, flag, or key that we would have to interpret", () => {
-    // A pack skill is {name, description, body} plus companion FILES — data the
+    // A skill is {name, description, body} plus companion FILES — data the
     // projection copies to disk, never a directive we read. If delegation ever
     // became a field, this is what would catch it.
     expect(Object.keys(buildingAppsSkill).sort()).toEqual(["body", "description", "files", "name"]);
@@ -116,7 +116,7 @@ describe("it carries the v2 pattern", () => {
 
   it("teaches never inventing data and never doing the arithmetic itself", () => {
     expect(body).toMatch(/Never do the arithmetic yourself/i);
-    expect(body).toContain("sum(transactions.amount_cents)");
+    expect(body).toContain('sum(transactions, "amount_cents")');
     expect(body).toMatch(/made-up figure/i);
   });
 
@@ -178,7 +178,7 @@ describe("it points at the references instead of inlining them", () => {
 
   it("says the builder's own hands are the mechanism, so no app tool is hunted for", () => {
     // Live 2026-08-03 the model spent a tool search looking for an app-creation
-    // tool. `claudeCode()` withholds `vendo_apps_create`/`_edit` on purpose
+    // tool. `claudeCode()` withholds `vendo_make` on purpose
     // (toolSurface.withhold) — and `vendo()` does NOT, so the sentence is
     // conditional, like the delegation one: an absolute "there is no such tool"
     // would be a lie to the other reader of this same body.

@@ -58,7 +58,6 @@ describe("the served-app machine's egress policy fails CLOSED", () => {
       guard: guardFixture(),
       tools: { async descriptors() { return []; }, async execute() { return { status: "error", error: { code: "not-found", message: "none" } }; } },
       catalog: [],
-      experimentalMachines: true,
       // No implicitDomains, no declared egress: the emptiest possible deployment.
       machine: { sandbox, buildEnv: () => ({ PORT: "8080" }) },
     });

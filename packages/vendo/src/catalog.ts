@@ -192,9 +192,7 @@ function normalizeEntry(entry: RegisteredComponent, source: string): NormalizedC
  */
 export function normalizeCatalogConfig(
   config: ComponentCatalog | ComponentRegistry | undefined,
-  /** What a bad entry's error names as its origin. The other caller is
-   *  `normalizeCatalogConfig(packs.components)`, which cannot reach a bad name:
-   *  `mergePacks` ran the same grammar first and its error names the PACK. */
+  /** What a bad entry's error names as its origin. */
   source = "createVendo({ catalog })",
 ): NormalizedCatalog {
   if (config === undefined) return [];

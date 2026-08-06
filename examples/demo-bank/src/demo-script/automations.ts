@@ -14,7 +14,7 @@
  *
  * All are seeded DISABLED: rehearsal is the pre-enable confidence step.
  */
-import type { AppDocument } from "@vendoai/core";
+import { DEFAULT_TRIGGER_ID, type AppDocument } from "@vendoai/core";
 
 /** Deterministic per-user app ids (app row ids are global, one subject each). */
 export function demoAppId(
@@ -41,8 +41,9 @@ function weeklySummaryDocument(id: string): AppDocument {
     id,
     name: "Weekly spending summary",
     description:
-      "Every Friday at 5:00 PM, compile a digest of that week's spending by category to review.",
-    trigger: {
+      "Every Friday at 5:00 PM, prepare a digest of that week's spending by category, drafted and ready for you to send.",
+    triggers: [{
+      id: DEFAULT_TRIGGER_ID,
       on: { kind: "schedule", cron: "0 17 * * 5" },
       // Steps run model: the capture surface stays exactly these host reads
       // (an agentic run would conservatively capture EVERY bound tool).
@@ -53,7 +54,7 @@ function weeklySummaryDocument(id: string): AppDocument {
           { id: "transactions", tool: "host_listTransactions" },
         ],
       },
-    },
+    }],
   };
 }
 
@@ -61,19 +62,20 @@ function lowBalanceAlertDocument(id: string): AppDocument {
   return {
     format: "vendo/app@1",
     id,
-    name: "Low balance check",
+    name: "Low balance alert",
     description:
-      "Every morning at 8:00 AM, check your Maple Checking balance so a low balance is easy to catch.",
-    trigger: {
+      "Every morning at 8:00 AM, check Maple Checking and draft an alert if the balance is below $2,000, ready for you to send.",
+    triggers: [{
+      id: DEFAULT_TRIGGER_ID,
       on: { kind: "schedule", cron: "0 8 * * *" },
       // One host read keeps the standing-grant surface to a single consent
-      // moment in the scripted beat (a read-only morning balance check, like
-      // the weekly digest above).
+      // moment in the scripted beat (the email is the delivery story, exactly
+      // like the weekly digest above).
       run: {
         kind: "steps",
         steps: [{ id: "balance", tool: "host_listAccounts" }],
       },
-    },
+    }],
   };
 }
 
@@ -108,7 +110,8 @@ function savingsSweepDocument(id: string): AppDocument {
     name: "Friday savings sweep",
     description:
       "Every Friday at 6:00 PM, move 10% of that week's spending into Maple Savings.",
-    trigger: {
+    triggers: [{
+      id: DEFAULT_TRIGGER_ID,
       on: { kind: "schedule", cron: "0 18 * * 5" },
       run: {
         kind: "steps",
@@ -132,7 +135,7 @@ function savingsSweepDocument(id: string): AppDocument {
           },
         ],
       },
-    },
+    }],
   };
 }
 

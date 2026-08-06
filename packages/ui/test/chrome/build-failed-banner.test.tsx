@@ -176,10 +176,10 @@ describe("a failed build narrates ONCE (M20)", () => {
       parts: [
         { type: "text", text: "Building your invoice tracker now." },
         {
-          type: "tool-vendo_apps_create",
+          type: "tool-vendo_make",
           toolCallId: "call_1",
           state: "output-error",
-          input: { intent: "invoice tracker" },
+          input: { request: "an invoice tracker" },
           errorText: "generation failed",
         } as unknown as UIMessage["parts"][number],
         {

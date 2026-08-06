@@ -43,10 +43,9 @@ import { readFile, mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { BASE_PATH } from "@/lib/base-path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { resolvedRisk, UNATTENDED_DESTRUCTIVE_REASON } from "@vendoai/core";
+import { DEFAULT_TRIGGER_ID, UNATTENDED_DESTRUCTIVE_REASON } from "@vendoai/core";
 import type { AppDocument, Principal, Step, ToolDescriptor, ToolRegistry } from "@vendoai/core";
 import { createActions } from "@vendoai/actions";
 import { authJsPreset } from "@vendoai/actions/presets/auth-js";
@@ -56,7 +55,9 @@ import { createGuard, type VendoGuard } from "@vendoai/guard";
 import { createStore, type VendoStore } from "@vendoai/store";
 import { mapleDemoUsers } from "@/server/users";
 
-const appDir = fileURLToPath(new URL("../..", import.meta.url));
+// Vitest's root IS the app dir, so cwd names it without `import.meta` — which
+// the app's NodeNext tsconfig reads as CommonJS and rejects.
+const appDir = process.cwd();
 const AUTH_SECRET = "maple-away-drill-secret";
 const BOOT_MS = 240_000;
 
@@ -222,10 +223,11 @@ function oneStepAutomation(id: string, name: string, step: Step): AppDocument {
     format: "vendo/app@1",
     id,
     name,
-    trigger: {
+    triggers: [{
+      id: DEFAULT_TRIGGER_ID,
       on: { kind: "host-event", event: "maple.payday" },
       run: { kind: "steps", steps: [step] },
-    },
+    }],
   };
 }
 
@@ -262,7 +264,7 @@ async function enableAndApprove(stack: Stack, subject: string, doc: AppDocument)
     data: { subject, enabled: false, doc },
     refs: { subject },
   });
-  const enabled = await stack.automations.enable(appId, ownerCtx(principal, appId));
+  const enabled = await stack.automations.enable(appId, DEFAULT_TRIGGER_ID, ownerCtx(principal, appId));
   expect(enabled.enabled).toBe(true);
   if (enabled.missing.length > 0) {
     await stack.guard.approvals.decide(
@@ -383,16 +385,12 @@ describe("Maple away drill (ENG-260)", () => {
       const appId = "app_away_whoami";
 
       // The drill's subject is the authority mechanic, so the tool it runs must
-      // be one an automation may legally run unattended. Pin that against the
-      // REAL resolution (both votes, including the binding axis), so relabelling
-      // or repointing this step fails here loudly instead of silently turning
-      // the drill into a law test. `read` is the honest answer for a GET-bound
-      // `host_getProfile` and, since 2026-07-31, the answer the vote actually
-      // reaches: its read axis matched only the TRAILING token until then, so
-      // every `verb_noun` host read voted `write` on the fail-closed default.
+      // be one an automation may legally run unattended. Pin the declared label
+      // (overrides.json — the dev's label is final; two-vote grading removed),
+      // so relabelling or repointing this step fails here loudly instead of
+      // silently turning the drill into a law test.
       const profile = await descriptorFor(stack, DRILL_TOOL);
-      expect(profile.bindingRisk).toBeUndefined(); // GET, not DELETE
-      expect(resolvedRisk(profile)).toBe("read");
+      expect(profile.risk).toBe("read");
 
       await enableAndApprove(stack, subject, whoamiAutomation(appId));
 
@@ -449,7 +447,7 @@ describe("Maple away drill (ENG-260)", () => {
       const subject = GRANTING_USER.subject;
       const appId = "app_away_payday";
       const pay = await descriptorFor(stack, MONEY_TOOL);
-      expect(resolvedRisk(pay)).toBe("destructive");
+      expect(pay.risk).toBe("destructive");
 
       // Enable + approve while present: the ceremony sees the tool and mints the
       // strongest authority that exists (app-bound, automation-source). The law

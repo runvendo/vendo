@@ -45,8 +45,7 @@ describe("apps agent tools", () => {
     const descriptors = await runtime.agentTools().descriptors();
 
     expect(descriptors.map((descriptor) => descriptor.name)).toEqual([
-      "vendo_apps_create",
-      "vendo_apps_edit",
+      "vendo_make",
       "vendo_apps_rebase_pin",
       "vendo_apps_open",
       "vendo_apps_data_list",
@@ -63,14 +62,34 @@ describe("apps agent tools", () => {
       });
       expect(() => JSON.stringify(descriptor.inputSchema)).not.toThrow();
     }
-    // Creating OR editing a document is a rung-1-only, jailed UI operation: it
-    // cannot reach host tools, a server machine, or the network. Yousef's ruling
-    // (2026-07-28): an app edit does not need approval — rearranging your own
-    // view is not an act on the world, and history/undo are the safety net.
+    // Making a document is a rung-1-only, jailed UI operation whichever way it
+    // routes: it cannot reach host tools, a server machine, or the network.
+    // Yousef's ruling (2026-07-28): an app edit does not need approval —
+    // rearranging your own view is not an act on the world, and history/undo are
+    // the safety net.
     expect(descriptors.map((descriptor) => descriptor.risk)).toEqual([
-      "read", "read", "write", "read", "read", "write", "write",
+      "read", "write", "read", "read", "write", "write",
     ]);
-    expect(descriptors.find(({ name }) => name === "vendo_apps_edit")?.description).toMatch(/retry.*same app/i);
+    // The one-narrower-retry instruction survived the merge onto `vendo_make`:
+    // without it the model's answer to a rejected change was to rebuild the app
+    // from scratch.
+    const make = descriptors.find(({ name }) => name === "vendo_make");
+    expect(make?.description).toMatch(/try once more on the same/i);
+    expect(make?.description).toMatch(/narrower/i);
+    // And the routing rule the merge exists for: `app` is how a caller aims at
+    // one existing app, never a "new or change?" decision it has to make first.
+    expect(make?.description).toMatch(/Pass `app` only to change one specific existing app/);
+    // An app holds a LIST of automations, and the planner has landed a second
+    // one beside the first since #818. The description never said so, so the
+    // model answered "I can't set two separate schedules on the same app" from
+    // prior belief — without ever calling the tool that would have done it.
+    expect(make?.description).toMatch(/hold SEVERAL automations/i);
+    // Both doors that aim at an existing app say the same thing about the aim:
+    // the id, or the name the person said. A model that only knows the name
+    // reached for open() first and gave up there.
+    expect(make?.description).toMatch(/its id, or its name/i);
+    const open = descriptors.find(({ name }) => name === "vendo_apps_open");
+    expect(open?.description).toMatch(/name/i);
   });
 
   /**
@@ -95,17 +114,17 @@ describe("apps agent tools", () => {
       ["call_null_edit", null],
       ["call_array_edit", []],
       ["call_primitive_edit", "invalid"],
-      ["call_real_edit", { appId: created.id, instruction: "Make the heading blue" }],
-      ["call_foreign_edit", { appId: "app_foreign", instruction: "Make the heading blue" }],
+      ["call_real_edit", { app: created.id, request: "Make the heading blue" }],
+      ["call_foreign_edit", { app: "app_foreign", request: "Make the heading blue" }],
     ] as const) {
-      await expect(runtime.agentToolRisk({ id, tool: "vendo_apps_edit", args }, ctx))
+      await expect(runtime.agentToolRisk({ id, tool: "vendo_make", args }, ctx))
         .resolves.toBeUndefined();
     }
-    // Creating one is the same act, and equally unprompted.
+    // Creating one is the same act through the same door, and equally unprompted.
     await expect(runtime.agentToolRisk({
       id: "call_create",
-      tool: "vendo_apps_create",
-      args: { prompt: "Build a dashboard" },
+      tool: "vendo_make",
+      args: { request: "Build a dashboard" },
     }, ctx)).resolves.toBeUndefined();
 
     // The ceremony still belongs on what an app DOES: writing and deleting the
@@ -115,7 +134,7 @@ describe("apps agent tools", () => {
     expect(descriptors.find(({ name }) => name === "vendo_apps_data_delete")?.risk).toBe("write");
   });
 
-  it("surfaces a structured retryable edit failure instead of implying the app changed", async () => {
+  it("answers a rejected change with an honest failed receipt, never implying the app changed", async () => {
     // An <Old> the printed app does not hold: the brain quoted text that is
     // missing, which is an error and never a guess.
     const broken = '<Edit><Old><Text text="missing card"/></Old><New><Text text="Renamed"/></New></Edit>';
@@ -130,22 +149,146 @@ describe("apps agent tools", () => {
 
     const outcome = await runtime.agentTools().execute({
       id: "call_edit_failure",
-      tool: "vendo_apps_edit",
-      args: { appId: created.id, instruction: "Change a missing card" },
+      tool: "vendo_make",
+      args: { app: created.id, request: "Change a missing card" },
+    }, ctx);
+
+    // An OK outcome — a rejected change is an answer, not a broken tool — whose
+    // receipt says "failed" in words the agent can utter. The structured detail
+    // (issues, the retry code) stays server-side: what the model needs is one
+    // true sentence and the id to retry against.
+    expect(outcome).toEqual({
+      status: "ok",
+      output: {
+        id: created.id,
+        title: created.name,
+        status: "failed",
+        say: expect.stringMatching(/couldn't make that change/i),
+      },
+    });
+  });
+
+  it("aims `app` by NAME as well as by id, so a fresh thread can reach the app the user named", async () => {
+    // A fresh-thread agent hears "add a weekly one to the transactions app" and
+    // holds no id: `vendo_apps_open` takes an id, and nothing lists or searches.
+    // The whole ask died there. The `app` slot already carries the aim, so it
+    // takes the name the person says out loud too.
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools: hostTools,
+      catalog: [],
+      model: scriptedLanguageModel(generated, '<App name="Tool-built dashboard"><Text text="Updated"/><Disclaimer reason="Fixture app."/></App>'),
+    });
+    const created = await runtime.create({ prompt: "Build a dashboard" }, ctx);
+    expect(created.name).toBe("Tool-built dashboard");
+
+    const outcome = await runtime.agentTools().execute({
+      id: "call_edit_by_name",
+      tool: "vendo_make",
+      // Said the way a person says it — including the case they used.
+      args: { app: "tool-BUILT dashboard", request: "Say Updated instead" },
     }, ctx);
 
     expect(outcome).toMatchObject({
       status: "ok",
-      output: {
-        app: created,
-        failure: {
-          code: "edit-rejected",
-          retryable: true,
-          message: expect.stringMatching(/same app/i),
-        },
-        issues: expect.arrayContaining([expect.stringContaining("missing")]),
-      },
+      output: { id: created.id, title: created.name, status: "ready" },
     });
+  });
+
+  it("asks which one when a name matches two apps, and changes neither", async () => {
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools: hostTools,
+      catalog: [],
+      model: scriptedLanguageModel(generated),
+    });
+    const first = await runtime.create({ prompt: "Build a dashboard" }, ctx);
+    const second = await runtime.create({ prompt: "Build another dashboard" }, ctx);
+    expect(first.id).not.toBe(second.id);
+
+    const outcome = await runtime.agentTools().execute({
+      id: "call_edit_ambiguous",
+      tool: "vendo_make",
+      args: { app: "Tool-built dashboard", request: "Say Updated instead" },
+    }, ctx);
+
+    // Never a guess: the answer names the candidates so the model can ask.
+    expect(outcome.status).toBe("error");
+    if (outcome.status !== "error") return;
+    expect(outcome.error.code).toBe("validation");
+    expect(outcome.error.message).toContain("Tool-built dashboard");
+    expect(outcome.error.message).toContain(first.id);
+    expect(outcome.error.message).toContain(second.id);
+  });
+
+  it("OPENS by name too — the door a model reaches for first when it holds no id", async () => {
+    // The walk: asked for "my transactions app", the model's first move was
+    // `vendo_apps_open`, which took a raw id. It burned its attempts there and
+    // concluded the app did not exist, while an exact name match sat in the
+    // caller's own list. Both doors take the same aim or neither does.
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools: hostTools,
+      catalog: [],
+      model: scriptedLanguageModel(generated),
+    });
+    const created = await runtime.create({ prompt: "Build a dashboard" }, ctx);
+
+    await expect(runtime.agentTools().execute({
+      id: "call_open_by_name",
+      tool: "vendo_apps_open",
+      args: { appId: "tool-BUILT dashboard" },
+    }, ctx)).resolves.toMatchObject({ status: "ok", output: { kind: "tree" } });
+    expect(created.name).toBe("Tool-built dashboard");
+  });
+
+  it("asks which one when the name it was asked to open matches two apps", async () => {
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools: hostTools,
+      catalog: [],
+      model: scriptedLanguageModel(generated),
+    });
+    const first = await runtime.create({ prompt: "Build a dashboard" }, ctx);
+    const second = await runtime.create({ prompt: "Build another dashboard" }, ctx);
+
+    const outcome = await runtime.agentTools().execute({
+      id: "call_open_ambiguous",
+      tool: "vendo_apps_open",
+      args: { appId: "Tool-built dashboard" },
+    }, ctx);
+
+    expect(outcome.status).toBe("error");
+    if (outcome.status !== "error") return;
+    expect(outcome.error.code).toBe("validation");
+    expect(outcome.error.message).toContain(first.id);
+    expect(outcome.error.message).toContain(second.id);
+  });
+
+  it("leaves an id that resolves to nothing exactly as it was: the runtime's own answer", async () => {
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools: hostTools,
+      catalog: [],
+      model: scriptedLanguageModel(generated),
+    });
+
+    const outcome = await runtime.agentTools().execute({
+      id: "call_edit_missing",
+      tool: "vendo_make",
+      args: { app: "app_not_here", request: "Say Updated instead" },
+    }, ctx);
+
+    expect(outcome.status).toBe("error");
+    if (outcome.status !== "error") return;
+    expect(outcome.error.code).toBe("not-found");
   });
 
   it("creates and opens an app through the guard-bound fixture", async () => {
@@ -162,16 +305,26 @@ describe("apps agent tools", () => {
 
     const created = await bound.execute({
       id: "call_create",
-      tool: "vendo_apps_create",
-      args: { prompt: "Build a dashboard" },
+      tool: "vendo_make",
+      args: { request: "Build a dashboard" },
     }, ctx);
     expect(created).toMatchObject({
       status: "ok",
-      output: { id: expect.stringMatching(/^app_/), name: "Tool-built dashboard" },
+      output: {
+        id: expect.stringMatching(/^app_/),
+        title: "Tool-built dashboard",
+        status: "ready",
+        say: expect.stringMatching(/on your screen/i),
+      },
     });
     if (created.status !== "ok" || typeof created.output !== "object" || created.output === null) {
       throw new Error("Expected a created app");
     }
+    // Contract §3.1, and the whole reason the receipt exists: the document does
+    // NOT travel. A model handed a tree will eventually describe the tree, so
+    // pixels go server → slot and the agent only ever gets words.
+    expect(Object.keys(created.output as Record<string, unknown>).sort())
+      .toEqual(["id", "say", "status", "title"]);
     const appId = (created.output as { id: string }).id;
     expect(await runtime.get(appId, ctx)).not.toBeNull();
 
@@ -185,7 +338,7 @@ describe("apps agent tools", () => {
 
   it("keeps the raw registry unbound while the umbrella wrapper blocks and audits", async () => {
     const store = memoryStore();
-    const guard = guardFixture({ rules: { vendo_apps_create: "block" } });
+    const guard = guardFixture({ rules: { vendo_make: "block" } });
     const runtime = createApps({
       store,
       guard,
@@ -195,8 +348,8 @@ describe("apps agent tools", () => {
     });
     const call = {
       id: "call_unbound_create",
-      tool: "vendo_apps_create",
-      args: { prompt: "Build directly" },
+      tool: "vendo_make",
+      args: { request: "Build directly" },
     };
 
     await expect(runtime.agentTools().execute(call, ctx)).resolves.toMatchObject({ status: "ok" });
@@ -204,7 +357,7 @@ describe("apps agent tools", () => {
     expect(guard.audit.filter((event) => event.kind === "tool-call")).toEqual([]);
 
     await expect(bindTools(guard, runtime.agentTools()).execute({ ...call, id: "call_bound_create" }, ctx))
-      .resolves.toEqual({ status: "blocked", reason: "Programmed block for vendo_apps_create" });
+      .resolves.toEqual({ status: "blocked", reason: "Programmed block for vendo_make" });
     expect(await runtime.list(ctx)).toHaveLength(1);
     expect(guard.audit.filter((event) => event.kind === "tool-call")).toHaveLength(1);
   });
@@ -229,8 +382,8 @@ describe("apps agent tools", () => {
     });
     await expect(registry.execute({
       id: "call_bad_input",
-      tool: "vendo_apps_create",
-      args: { prompt: "ok", extra: true },
+      tool: "vendo_make",
+      args: { request: "ok", extra: true },
     }, ctx)).resolves.toMatchObject({
       status: "error",
       error: { code: "validation" },
@@ -337,8 +490,8 @@ describe("§9.4 — a refused EDIT hands the model the fork offer, not the raw c
     const { tools, appId } = await setup();
     const outcome = await tools.execute({
       id: "call_denied",
-      tool: "vendo_apps_edit",
-      args: { appId, instruction: "add last quarter" },
+      tool: "vendo_make",
+      args: { app: appId, request: "add last quarter" },
     }, { ...ctx, memberships: [{ org: "acme" }] });
 
     expect(outcome.status).toBe("error");
@@ -356,8 +509,8 @@ describe("§9.4 — a refused EDIT hands the model the fork offer, not the raw c
     const { tools } = await setup();
     const outcome = await tools.execute({
       id: "call_missing",
-      tool: "vendo_apps_edit",
-      args: { appId: "app_absent", instruction: "anything" },
+      tool: "vendo_make",
+      args: { app: "app_absent", request: "anything" },
     }, ctx);
     expect(outcome).toEqual({
       status: "error",

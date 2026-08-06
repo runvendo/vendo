@@ -1,6 +1,7 @@
 import { createAutomations } from "@vendoai/automations";
 import { createGuard } from "@vendoai/guard";
 import type { AppsRuntime } from "@vendoai/apps";
+import { triggerKindRefs } from "@vendoai/core";
 import type { AppDocument, Principal, ToolRegistry } from "@vendoai/core";
 import { measure, summarize } from "../stats.js";
 import { memoryStore } from "../fixtures/memory-store.js";
@@ -9,7 +10,7 @@ import type { CaseResult, Suite, SuiteResult } from "../types.js";
 /**
  * @vendoai/automations at the tick/emit seam. Measures the per-invocation SCAN + read
  * overhead the P0 fix targets: `tick` fetches only schedule-triggered apps (indexed
- * trigger_kind ref) and batches every schedule cursor in one query instead of scanning
+ * per-kind trigger ref) and batches every schedule cursor in one query instead of scanning
  * every app for every subject and doing an N+1 cursor get; `emit` fetches only the
  * subject's host-event apps. Apps are seeded so nothing is due / nothing matches, so the
  * measurement is pure dispatch overhead, free of run-execution noise.
@@ -34,21 +35,32 @@ const scheduleDoc = (index: number): AppDocument => ({
   id: `app_sched_${index}`,
   name: `Scheduled ${index}`,
   // Never due within a tick: every-1h with a cursor freshly set on the first (warmup) tick.
-  trigger: { on: { kind: "schedule", every: "1h" }, run: { kind: "agentic", prompt: "noop" } },
+  triggers: [{
+    id: "main",
+    on: { kind: "schedule", every: "1h" },
+    run: { kind: "agentic", prompt: "noop" },
+  }],
 });
 
 const hostEventDoc = (index: number): AppDocument => ({
   format: "vendo/app@1",
   id: `app_host_${index}`,
   name: `HostEvent ${index}`,
-  trigger: { on: { kind: "host-event", event: "bench.never" }, run: { kind: "agentic", prompt: "noop" } },
+  triggers: [{
+    id: "main",
+    on: { kind: "host-event", event: "bench.never" },
+    run: { kind: "agentic", prompt: "noop" },
+  }],
 });
 
 async function seed(store: ReturnType<typeof memoryStore>): Promise<void> {
   const put = (doc: AppDocument): Promise<unknown> => store.records("vendo_apps").put({
     id: doc.id,
     data: { subject: OWNER, enabled: true, doc },
-    refs: { subject: OWNER, trigger_kind: doc.trigger?.on.kind ?? "" },
+    // Mirror the reserved store's derived trigger-kind refs, the way the real suites do:
+    // this memory double honors caller refs verbatim, so a key the tick no longer queries
+    // would fetch zero apps and the bench would measure dispatch over an empty store.
+    refs: { subject: OWNER, ...triggerKindRefs(doc.triggers) },
   });
   for (let i = 0; i < SCHEDULE_APPS; i += 1) await put(scheduleDoc(i));
   for (let i = 0; i < HOST_EVENT_APPS; i += 1) await put(hostEventDoc(i));

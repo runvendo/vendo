@@ -6,7 +6,7 @@ import {
   type AppId,
   type IsoDateTime,
 } from "@vendoai/core";
-import { z } from "zod";
+import { z, type ZodTypeDef } from "zod";
 
 /** 06-apps §1 — frozen copy created by Vendo Cloud sharing. */
 export interface ShareSnapshot {
@@ -20,7 +20,7 @@ export const shareSnapshotSchema = z.object({
   id: z.string(),
   doc: appDocumentSchema,
   createdAt: isoDateTimeSchema,
-}).passthrough() satisfies z.ZodType<ShareSnapshot>;
+}).passthrough() satisfies z.ZodType<ShareSnapshot, ZodTypeDef, unknown>;
 
 /** 06-apps §1 — registry record for a published app copy. */
 export interface PublishRecord {

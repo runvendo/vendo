@@ -110,7 +110,7 @@ export function toolingTelemetry(options: TelemetryOptions & {
     let env = options.env ?? process.env;
     // Cloud-lane key sourcing widens to the project's .env.local — exactly
     // where `vendo login` / cloud-init / --cloud-key land the key — because
-    // a dev-mode key almost never lives in the process env. Only
+    // a Cloud-minted key almost never lives in the process env. Only
     // VENDO_API_KEY widens: consent vars (DO_NOT_TRACK, CI, …) keep coming
     // from the caller's env untouched, and an explicit non-blank env value
     // always wins over .env.local (the same precedence init's credential
@@ -145,7 +145,6 @@ export function errorClass(error: unknown): string {
     same ceremony stays "cloud-init". */
 export type CommandName =
   | "login"
-  | "try"
   | "extract"
   | "theme"
   | "eject"
@@ -174,10 +173,9 @@ export async function cloudProjectProps(root: string | undefined): Promise<Recor
  * Run a CLI command body with one `command_run` telemetry row: ok is the
  * exit code (0 = true), a throw records the error class and rethrows, and a
  * body can name the step it failed at via the mutable `failure` argument.
- * The body also receives the telemetry client for extra events (extract's
- * `extract_completed`). Telemetry NEVER changes command behavior or exit
- * codes — the client never throws, and this wrapper's own prop assembly is
- * guarded too.
+ * The body also receives the telemetry client for extra events. Telemetry
+ * NEVER changes command behavior or exit codes — the client never throws,
+ * and this wrapper's own prop assembly is guarded too.
  */
 export async function withCommandRun(
   input: {

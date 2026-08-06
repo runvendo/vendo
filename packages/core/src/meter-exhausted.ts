@@ -15,6 +15,10 @@ export interface MeterExhausted {
   /** The refused meter's canonical id (e.g. `ai_tokens`) — or undefined when
    *  the body carried none / an unprintable value (the format falls back). */
   meter?: string;
+  /** `"usd"` means every figure in this refusal is dollars — render currency.
+   *  Absent means counts, so a host pinned to an older @vendoai/core still
+   *  renders a correct (if unit-less) sentence against a new server. */
+  unit?: "usd";
   used?: number;
   limit?: number;
   /** ISO timestamp; kept verbatim (format renders just the date part). */
@@ -27,18 +31,6 @@ export interface MeterExhausted {
 
 /** The console's stable refusal code (one shape, all services). */
 export const METER_EXHAUSTED_CODE = "meter-exhausted";
-
-/** The six canonical meters' human labels. An unknown meter falls back to its
- *  raw id (new Cloud meters stay nameable without an OSS release) — and to
- *  plain "usage" when the body carried nothing printable. */
-const METER_LABELS: Record<string, string> = {
-  ai_tokens: "AI tokens",
-  sandbox_minutes: "sandbox minutes",
-  storage_gb: "storage",
-  knowledge_gb: "knowledge storage",
-  automation_runs: "automation runs",
-  active_connections: "active connections",
-};
 
 /** Only short machine-token strings from the body are ever rendered — the
  *  message stays operator-grade even against a garbled body. */
@@ -91,6 +83,7 @@ export function parseMeterExhausted(payload: unknown): MeterExhausted | undefine
   const result: MeterExhausted = {};
   const meter = asToken(read("meter"));
   if (meter !== undefined) result.meter = meter;
+  if (read("unit") === "usd") result.unit = "usd";
   const used = asCount(read("used"));
   if (used !== undefined) result.used = used;
   const limit = asCount(read("limit"));
@@ -129,6 +122,7 @@ export function meterExhaustedFromError(error: unknown): MeterExhausted | undefi
 }
 
 const count = new Intl.NumberFormat("en-US");
+const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 
 const resetDate = (resetsAt: string | undefined): string | undefined => {
   if (resetsAt === undefined) return undefined;
@@ -145,12 +139,23 @@ const resetDate = (resetsAt: string | undefined): string | undefined => {
  * CLI, and doctor all print exactly this.
  */
 export function formatMeterExhausted(refusal: MeterExhausted): string {
-  const label = refusal.meter === undefined ? "usage" : METER_LABELS[refusal.meter] ?? refusal.meter;
-  const head = refusal.reason === "spend-cap"
-    ? `Vendo Cloud paused ${label} — your spend cap is reached`
-    : `Vendo Cloud paused ${label} — the allowance for this billing period is used up`;
+  // Cloud sends one meter now — `usage`, the org's dollar pool. Any other meter
+  // renders its raw id, so a future Cloud meter stays nameable without an OSS release.
+  const label = refusal.meter ?? "usage";
+  const dollars = refusal.unit === "usd";
+  const amount = (value: number): string => (dollars ? money.format(value) : count.format(value));
+  // The console sends `spend_cap`; this formatter historically only tested
+  // `spend-cap`, so the spend-cap head never rendered in production. Both
+  // tokens are accepted on purpose — do not collapse to one.
+  let cause = "the allowance for this billing period is used up";
+  if (refusal.reason === "spend-cap" || refusal.reason === "spend_cap") {
+    cause = "your spend cap is reached";
+  } else if (dollars && refusal.limit !== undefined) {
+    cause = `the ${money.format(refusal.limit)} included this billing period is used up`;
+  }
+  const head = `Vendo Cloud paused ${label} — ${cause}`;
   const figures = refusal.used !== undefined && refusal.limit !== undefined
-    ? `${count.format(refusal.used)} of ${count.format(refusal.limit)} used`
+    ? `${amount(refusal.used)} of ${amount(refusal.limit)} used`
     : undefined;
   const resets = resetDate(refusal.resetsAt);
   const clauses = [figures, resets === undefined ? undefined : `resets ${resets}`]

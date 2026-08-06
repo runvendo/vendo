@@ -1,6 +1,7 @@
 import {
   VendoError,
   canonicalJson,
+  triggerKindRefs,
   validateAppDocument,
   type AppDocument,
   type AppId,
@@ -49,16 +50,14 @@ export interface AppRowData {
 }
 
 /** Trigger edits invalidate enable-time capture, cursor, and webhook state.
- *  Canonical comparison — key order must not cause a spurious disarm. */
+ *  Canonical comparison over the whole list — key order (or trigger order)
+ *  must not cause a spurious disarm. */
 export const enabledAfterDocumentEdit = (
   previous: AppDocument,
   next: AppDocument,
   enabled: boolean,
-): boolean => {
-  const canon = (trigger: AppDocument["trigger"]): string =>
-    trigger === undefined ? "" : canonicalJson(trigger);
-  return canon(previous.trigger) === canon(next.trigger) && enabled;
-};
+): boolean =>
+  canonicalJson(previous.triggers ?? []) === canonicalJson(next.triggers ?? []) && enabled;
 
 export const rowFromRecord = (record: VendoRecord): AppRowData => {
   const data = record.data as Partial<AppRowData> | null;
@@ -83,7 +82,7 @@ export const documentFromRecord = (record: VendoRecord): AppDocument =>
 export interface AppRecordWrite {
   id: AppId;
   data: AppRowData;
-  refs: { subject: string; trigger_kind?: string };
+  refs: { subject: string } & Record<string, string>;
 }
 
 /**
@@ -148,9 +147,11 @@ export const appRecordInput = (
   return {
     id: app.id,
     data: { subject, enabled, doc },
-    // trigger_kind indexes apps by trigger kind for the automations tick/emit. The reserved
-    // vendo_apps store derives the same value from a column; a generic StoreAdapter keeps this.
-    refs: { subject, ...(app.trigger === undefined ? {} : { trigger_kind: app.trigger.on.kind }) },
+    // trigger_kind_<kind> indexes apps by trigger kind for the automations tick/emit — one ref
+    // key per kind, because an app's triggers are a LIST and may span more than one kind. The
+    // reserved vendo_apps store derives the same value from a column; a generic StoreAdapter
+    // keeps this.
+    refs: { subject, ...triggerKindRefs(app.triggers) },
   };
 };
 

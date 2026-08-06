@@ -244,6 +244,57 @@ export const sandboxAdapterConformance = (
       TEST_TIMEOUT_MS,
     );
 
+    it("writes, reads back byte-for-byte, lists one level, and rejects what it does not hold", async () => {
+      const adapter = await harness.makeAdapter();
+      const machine = track(await adapter.create({ env: { PORT: "8080" } }));
+      // /tmp, not the app root: every provider's box has it and it is writable
+      // without bootstrap, so the file seam is provable on a bare machine.
+      const dir = "/tmp/vendo-conformance-files";
+      // Deliberately hostile bytes: a NUL, a CRLF, a lone CR, and three
+      // sequences that are not valid UTF-8. Box content is UNTRUSTED — the
+      // layer above verifies a built app's source against the hash in its row,
+      // which it can only do if this seam hands back the bytes UNCHANGED. No
+      // text decode, no BOM strip, no line-ending normalization.
+      const hostile = new Uint8Array([0, 13, 10, 13, 0xff, 0xfe, 0x80, 65, 13, 0]);
+
+      await machine.files.write(`${dir}/one.txt`, "first");
+      await machine.files.write(`${dir}/nested/two.bin`, hostile);
+
+      const read = await machine.files.read(`${dir}/one.txt`);
+      expect(read).toBeInstanceOf(Uint8Array);
+      expect(decoder.decode(read)).toBe("first");
+      expect(await machine.files.read(`${dir}/nested/two.bin`)).toEqual(hostile);
+
+      // A second write REPLACES the file whole; it never appends.
+      await machine.files.write(`${dir}/one.txt`, "second");
+      expect(decoder.decode(await machine.files.read(`${dir}/one.txt`))).toBe("second");
+
+      // list is ONE level and names only: the subdirectory's own name, never
+      // the file inside it and never a path.
+      expect([...await machine.files.list(dir)].sort()).toEqual(["nested", "one.txt"]);
+
+      // The seam's one answer for a path the box does not hold: it rejects.
+      // Answering empty bytes would turn a lost source file into a silently
+      // empty one.
+      await expect(machine.files.read(`${dir}/absent.txt`)).rejects.toThrow();
+
+      // …and the same answer for a DIRECTORY it does not hold. Probed against
+      // real e2b, which reports `[not_found] lstat …: no such file or
+      // directory`; both in-memory fakes used to answer `[]` instead, which is
+      // how a mistyped source directory reads as "this app has no files".
+      await expect(machine.files.list(`${dir}/nope`)).rejects.toThrow();
+
+      // The ROOT is a directory like any other, and it EXISTS on every box —
+      // it must never answer empty on a box that demonstrably holds files.
+      // An in-memory impl that treats the root prefix as "" instead of "/"
+      // slices nothing off an absolute path and drops every name as blank.
+      // Asserted by containment, not equality: a real box's root also holds
+      // bin, etc, home…
+      const rootNames = await machine.files.list("/");
+      expect(rootNames).toContain("tmp");
+      expect(rootNames.filter((name) => name === "" || name.includes("/"))).toEqual([]);
+    }, TEST_TIMEOUT_MS);
+
     it("exposes a public ingress URL, defaulting to the app's $PORT", async () => {
       const adapter = await harness.makeAdapter();
       const machine = track(await adapter.create({

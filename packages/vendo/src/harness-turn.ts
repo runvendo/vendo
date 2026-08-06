@@ -21,7 +21,7 @@ import {
   type Harness,
   type Membership,
   type NormalizedCatalog,
-  type PackSkill,
+  type Skill,
   type Principal,
   type ResolvedModels,
   type RunContext,
@@ -76,8 +76,8 @@ export interface HarnessTurnsConfig {
   /** The guard-bound registry — the one choke point, already carrying the
    *  connect gate and unique-title assertion. */
   tools: ToolRegistry;
-  /** Merged pack skills, projected into the read-only `/host/skills` mount. */
-  packSkills: readonly PackSkill[];
+  /** Every merged skill, projected into the read-only `/host/skills` mount. */
+  skills: readonly Skill[];
   /** The resolved component catalog — the SAME normalized value the prompt
    *  summary is built from — projected into `/host/components` as one reference
    *  file per entry. Unset ⇒ no component reference on the mount. */
@@ -206,7 +206,7 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
     return sql;
   };
   /**
-   * The `/host` mount for this deployment: pack skills as SKILL.md files (plus
+   * The `/host` mount for this deployment: skills as SKILL.md files (plus
    * their companion files), and the component catalog as one reference file each.
    *
    * A plain value recomputed per turn rather than stored rows — both halves are
@@ -214,7 +214,7 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
    * invalidate, or erase (core `skills.ts`, `host-components.ts`).
    */
   const hostProjection = (): Record<string, string> => ({
-    ...hostSkillFiles(config.packSkills),
+    ...hostSkillFiles(config.skills),
     ...hostComponentFiles(config.catalog ?? []),
   });
 

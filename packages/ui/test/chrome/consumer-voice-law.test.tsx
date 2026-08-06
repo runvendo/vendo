@@ -136,6 +136,7 @@ describe("LEAK 1 — the standing-access card rendered model instructions", () =
         <AdoptionCard
           card={{
             appId: "app_1",
+            triggerId: "main",
             automation: "Spending watcher",
             reason: "departure",
             sponsor: "Dana",
@@ -504,6 +505,7 @@ describe("the widened audit — no chrome surface renders a developer string", (
     ["automation", <AutomationCard name="Low balance alert" enabled description="Emails you when checking dips." />],
     ["paused adoption", <AdoptionCard card={{
       appId: "app_7f3a2b41",
+      triggerId: "main",
       automation: "Weekly sweep",
       reason: "grants",
       sponsor: "Dana",
@@ -540,11 +542,11 @@ describe("the widened audit — no chrome surface renders a developer string", (
     ["waiting strip", <WaitingQueue pollMs={0} />],
     ["activity", <ActivityPanel />],
     // RULING 21 — the panel above only ever paints the wire's FIRST page, so
-    // the audit shape that carries an id (`vendo_apps_edit`: an app id and the
-    // person's instruction) could not reach the sweep through it. The ledger is
-    // the shared component both activity surfaces render, so the class is
-    // audited on the component, from the same fixture the wire serves.
-    ["activity ledger, the vendo_apps_edit shape", <ActivityLedger events={[appEditAudit()]} />],
+    // the audit shape that carries an id (`vendo_make` changing an app: an app
+    // id and the person's request) could not reach the sweep through it. The
+    // ledger is the shared component both activity surfaces render, so the class
+    // is audited on the component, from the same fixture the wire serves.
+    ["activity ledger, the vendo_make change shape", <ActivityLedger events={[appEditAudit()]} />],
     ["automations panel", <AutomationsPanel />],
     ["connected accounts", <ConnectedAccountsPanel />],
   ];

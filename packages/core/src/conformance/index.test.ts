@@ -331,10 +331,11 @@ describe("memoryStoreAdapter reserved routing", () => {
     format: VENDO_APP_FORMAT,
     id: "app_memory_projection",
     name: "Memory projection",
-    trigger: {
+    triggers: [{
+      id: "main",
       on: { kind: "host-event" as const, event: "memory.changed" },
       run: { kind: "steps" as const, steps: [] },
-    },
+    }],
   };
   const grant: PermissionGrant = {
     id: "grt_memory_projection",
@@ -397,7 +398,7 @@ describe("memoryStoreAdapter reserved routing", () => {
         collection: "vendo_apps",
         id: app.id,
         data: { subject: principal.subject, enabled: true, doc: app, ignored: true },
-        refs: { subject: principal.subject, trigger_kind: "host-event" },
+        refs: { subject: principal.subject, trigger_kind_host_event: "1" },
         createdAt: "2026-07-11T16:01:00.000Z",
       },
       {
@@ -419,7 +420,7 @@ describe("memoryStoreAdapter reserved routing", () => {
       expect(stored.createdAt, testCase.collection).toBe(testCase.createdAt);
       expect((stored.data as Record<string, unknown>)["ignored"], testCase.collection).toBeUndefined();
     }
-    expect((await adapter.records("vendo_apps").list({ refs: { trigger_kind: "host-event" } })).records)
+    expect((await adapter.records("vendo_apps").list({ refs: { trigger_kind_host_event: "1" } })).records)
       .toHaveLength(1);
   });
 

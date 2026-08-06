@@ -19,6 +19,8 @@
 import {
   toVendoWirePart,
   vendoViewStreamId,
+  type AppId,
+  type BeatPhase,
   type ToolOutcome,
   type ToolResult,
   type VendoViewPart,
@@ -71,9 +73,24 @@ export class TextChannel {
   }
 }
 
-/** §1.5 `status` → screen only. */
-export function writeStatus(writer: Writer, label: string): void {
-  writer.write({ type: VENDO_STATUS_PART, data: { label }, transient: true } as never);
+/**
+ * §1.5 `status` → screen only — one BEAT.
+ *
+ * `phase` and `appId` ride the same transient part rather than a second channel:
+ * a beat with a phase is still a beat, and the receiver reads one part type. Both
+ * are omitted when absent, so a harness that only says `label` puts the exact
+ * chunk on the wire it always did.
+ */
+export function writeStatus(writer: Writer, beat: { label: string; phase?: BeatPhase; appId?: AppId }): void {
+  writer.write({
+    type: VENDO_STATUS_PART,
+    data: {
+      label: beat.label,
+      ...(beat.phase === undefined ? {} : { phase: beat.phase }),
+      ...(beat.appId === undefined ? {} : { appId: beat.appId }),
+    },
+    transient: true,
+  } as never);
 }
 
 /** §1.6 hot-path render seam — today's part, today's stable per-app stream id. */

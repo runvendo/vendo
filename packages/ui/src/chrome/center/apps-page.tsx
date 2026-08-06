@@ -51,8 +51,8 @@ export function OpenApp({ appId, name, onClose }: { appId: string; name?: string
   const { app, surface, error, isLoading, refresh } = useApp(appId);
   // Wave 7 H2 — same keepalive as VendoSlot's MountedApp (see frames.tsx).
   const keepalive = useMemo(
-    () => ({ ping: () => client.apps.pingMachine(appId), reopen: refresh }),
-    [appId, client, refresh],
+    () => ({ ping: () => client.apps.pingMachine(appId) }),
+    [appId, client],
   );
   const body = surface
     ? (
@@ -263,7 +263,7 @@ export function AppsPage({ api, opened, onOpened }: AppsPageProps) {
                 namesPeople={namesPeople}
                 // §9.5 — an app that declares a trigger loses it in the move;
                 // the dialog says so before and after.
-                automation={app.trigger !== undefined}
+                automation={(app.triggers ?? []).length > 0}
                 onClose={() => setSharing(undefined)}
               />
             ) : null}

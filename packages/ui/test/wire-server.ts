@@ -5,6 +5,7 @@ import {
   type UIMessageChunk,
 } from "ai";
 import {
+  DEFAULT_TRIGGER_ID,
   sha256Hex,
   type AppDocument,
   type ApprovalRequest,
@@ -86,10 +87,16 @@ function app(id: string, name: string, automation = false): AppDocument {
       // replays a schedule at its own cadence — a weekly cron here would
       // advertise a timeline (windowDays daily firings) production could
       // never return for this app.
-      ? { trigger: { on: { kind: "schedule" as const, cron: "0 9 * * *" }, run: { kind: "steps" as const, steps: [
-          { id: "renewals", tool: "host_listRenewals" },
-          { id: "notify", tool: "slack_SLACK_SEND_MESSAGE" },
-        ] } } }
+      ? {
+        triggers: [{
+          id: DEFAULT_TRIGGER_ID,
+          on: { kind: "schedule" as const, cron: "0 9 * * *" },
+          run: { kind: "steps" as const, steps: [
+            { id: "renewals", tool: "host_listRenewals" },
+            { id: "notify", tool: "slack_SLACK_SEND_MESSAGE" },
+          ] },
+        }],
+      }
       : {}),
   };
 }
@@ -237,13 +244,13 @@ function audit(id: string): AuditEvent {
 /** RULING 21 — the fixture above still could not express CR-2's class: every
  *  VALUE in it is a number or a plain word, so a ledger that humanized only the
  *  LABELS still passed the law sweep. This is the real audit shape of the tool
- *  a person's rail sees most — `vendo_apps_edit`, whose args are an APP ID and
- *  the instruction the person typed. */
+ *  a person's rail sees most — `vendo_make` asked to CHANGE an app, whose args
+ *  are an APP ID and the request the person typed. */
 export function appEditAudit(): AuditEvent {
   return {
     ...audit("aud_edit"),
-    tool: "vendo_apps_edit",
-    inputPreview: 'vendo_apps_edit {"appId":"app_9a3f2b1c","instruction":"add a chart"}',
+    tool: "vendo_make",
+    inputPreview: 'vendo_make {"app":"app_9a3f2b1c","request":"add a chart"}',
   };
 }
 
@@ -323,7 +330,9 @@ export async function createWireServer(options: WireServerOptions = {}) {
       { toolkit: "gmail", connector: "composio" },
       { toolkit: "slack", connector: "composio" },
     ],
-    automations: [{ app: automationApp, enabled: false }] satisfies AutomationEntry[],
+    automations: [
+      { app: automationApp, triggers: [{ trigger: automationApp.triggers![0]!, enabled: false }] },
+    ] satisfies AutomationEntry[],
     runs: [run()],
     events: [audit("aud_1"), audit("aud_2"), audit("aud_3"), appEditAudit()],
     threads: new Map<string, Thread>([
@@ -362,6 +371,18 @@ export async function createWireServer(options: WireServerOptions = {}) {
     streamFailureText: undefined as string | undefined,
     posture: "rules" as "unconfigured" | "rules" | "judge" | "rules+judge",
     threadReplyGate: undefined as Promise<void> | undefined,
+    /** ⚠️ TEST EDIT (infrastructure) — threads whose turn TAKES a mid-build
+     *  steer, opted in by a `[steerable]` marker on the turn's own prompt (the
+     *  house pattern for every other fixture behaviour). Opt-in matters: without
+     *  it every suite written against the turn-end flush would change meaning. */
+    steerableThreads: new Set<string>(),
+    /** ⚠️ TEST EDIT (infrastructure) — threads whose in-flight `[stream-long]`
+     *  turn should emit a FRESH `building` beat, because a steer just landed on
+     *  them. This models what a real box does — the steered rework hits a Write
+     *  tool and `beat("building")` fires into the OPEN turn stream — so the
+     *  browser can show the build visibly change course. The fixture cannot
+     *  re-plan; it can only faithfully mirror the causal chain steer → new beat. */
+    steerBeats: new Set<string>(),
     // ENG-217 — optional pacing gates for the canned turn so specs can observe
     // exact streaming moments: before ANY chunk (generating skeleton), after
     // text-start but before the first delta (lone caret on an empty streamed
@@ -437,6 +458,16 @@ export async function createWireServer(options: WireServerOptions = {}) {
         const sentText = input.message.parts
           .map(part => (part.type === "text" ? part.text : ""))
           .join(" ");
+        // ⚠️ TEST EDIT (infrastructure) — §10.2. A turn whose prompt carries
+        // `[steerable]` is one this fixture's "box" can take a mid-build message
+        // into. Opt-in per turn, like every other marker here, so the suites
+        // written against the turn-end flush keep meaning what they meant.
+        //
+        // The LATEST turn on a thread decides, which is why the else-branch is
+        // not optional: steerability belongs to a turn, not to a conversation, so
+        // a plain turn after a steerable one must not inherit it.
+        if (sentText.includes("[steerable]")) state.steerableThreads.add(threadId);
+        else state.steerableThreads.delete(threadId);
         if (state.streamFailures > 0) {
           state.streamFailures -= 1;
           const failingChunks = createUIMessageStream<UIMessage>({
@@ -610,6 +641,68 @@ export async function createWireServer(options: WireServerOptions = {}) {
           await sendFetchResponse(settledGapResponse, response);
           return;
         }
+        if (sentText.includes("[beats]")) {
+          // §3.4 — the STATUS channel: transient `data-vendo-status` chunks, the
+          // exact shape `writeStatus` (packages/harnesses/src/wire.ts) puts on
+          // the wire. Written here as the literal part name because @vendoai/ui
+          // may depend on core only (scripts/dependency-guard.mjs), so the
+          // producer's constant cannot be imported; the producer side pins the
+          // same literal in packages/harnesses/src/runtime.test.ts.
+          //
+          // The script is the settled-gap shape (prose, then a call that
+          // settles, then the busy gap) with beats riding through it: two
+          // carrying phase/appId, two bare, and malformed chunks interleaved —
+          // a beat channel that has to survive junk without a receiver-side
+          // schema is the whole point of validating on arrival.
+          const beat = (data: unknown) => ({ type: "data-vendo-status", data, transient: true });
+          const beatChunks = createUIMessageStream<UIMessage>({
+            originalMessages: [input.message],
+            generateId: () => "msg_assistant_beats",
+            execute: async ({ writer }) => {
+              writer.write({ type: "text-start", id: "text_plan" });
+              writer.write({ type: "text-delta", id: "text_plan", delta: "Here is the plan — building your workbench now." });
+              writer.write({ type: "text-end", id: "text_plan" });
+              writer.write(beat({ label: "Reading what you asked for", phase: "understanding", appId: "app_1" }) as UIMessageChunk);
+              writer.write({
+                type: "tool-input-available",
+                toolCallId: "call_beats",
+                toolName: "host_list_transactions",
+                input: {},
+                dynamic: true,
+              });
+              writer.write({
+                type: "tool-output-available",
+                toolCallId: "call_beats",
+                output: { rows: [] },
+                dynamic: true,
+              } as UIMessageChunk);
+              writer.write(beat({ label: "Laying out the matching table", phase: "assembling" }) as UIMessageChunk);
+              // Bare label — the shape a harness that says nothing else emits.
+              writer.write(beat({ label: "Wiring up your transactions" }) as UIMessageChunk);
+              // Malformed: an empty label, a non-string label, no data at all.
+              writer.write(beat({ label: "   " }) as UIMessageChunk);
+              writer.write(beat({ label: 7 }) as UIMessageChunk);
+              writer.write(beat(null) as UIMessageChunk);
+              // A real label carrying junk in the optional fields: the beat
+              // still renders, the two unusable fields simply do not.
+              writer.write(beat({ label: "Adding drag and drop", phase: "polishing", appId: 42 }) as UIMessageChunk);
+              // Last chunk before the gap is junk, so the ribbon's "latest
+              // beat" can never be a malformed one.
+              writer.write(beat({ label: "" }) as UIMessageChunk);
+              // The gate is the unit suite's deterministic release. A browser has
+              // no way to resolve one, so the harness gets a real-timer hold
+              // instead — long enough to read the live frame and photograph it.
+              await (state.threadReplyGate ?? new Promise(resolve => setTimeout(resolve, 6_000)));
+              writer.write({ type: "text-start", id: "text_done" });
+              writer.write({ type: "text-delta", id: "text_done", delta: "All done." });
+              writer.write({ type: "text-end", id: "text_done" });
+            },
+          });
+          const beatsResponse = createUIMessageStreamResponse({ stream: beatChunks });
+          beatsResponse.headers.set("x-vendo-thread-id", threadId);
+          await sendFetchResponse(beatsResponse, response);
+          return;
+        }
         if (sentText.includes("[smoke-build]")) {
           // The smoke pack's one scripted turn (checklist 11): two tool steps
           // that settle into beats, then an app BUILD that holds the floor —
@@ -644,8 +737,8 @@ export async function createWireServer(options: WireServerOptions = {}) {
               writer.write({
                 type: "tool-input-available",
                 toolCallId: "call_smoke_build",
-                toolName: "vendo_apps_create",
-                input: { prompt: "a board showing where my money goes" },
+                toolName: "vendo_make",
+                input: { request: "a board showing where my money goes" },
                 dynamic: true,
               });
               // Same stream id both times, exactly as the real emitter does
@@ -679,10 +772,13 @@ export async function createWireServer(options: WireServerOptions = {}) {
                 id: "vendo-view:app_smoke",
                 data: { appId: "app_smoke", payload: SMOKE_VIEW },
               } as UIMessageChunk);
+              // The receipt, never the document: `vendo_make` hands back four
+              // words-only fields and the screen arrives on its own channel
+              // (the `data-vendo-view` parts above).
               writer.write({
                 type: "tool-output-available",
                 toolCallId: "call_smoke_build",
-                output: { kind: "tree", appId: "app_smoke" },
+                output: { id: "app_smoke", title: "Where my money goes", status: "ready", say: "It's on your screen." },
                 dynamic: true,
               } as UIMessageChunk);
               writer.write({ type: "text-start", id: "text_smoke" });
@@ -743,6 +839,15 @@ export async function createWireServer(options: WireServerOptions = {}) {
                   id: "text_long",
                   delta: `Streamed paragraph ${index + 1}: the long answer keeps arriving so the list keeps growing while the reader watches.\n\n`,
                 });
+                // A steer landed mid-build: emit ONE fresh `building` beat into
+                // this open stream, exactly as a real box's steered rework would.
+                if (state.steerBeats.delete(threadId)) {
+                  writer.write({
+                    type: "data-vendo-status",
+                    data: { label: "Regrouping by client", phase: "building" },
+                    transient: true,
+                  } as UIMessageChunk);
+                }
                 await new Promise(resolve => setTimeout(resolve, 80));
               }
               writer.write({ type: "text-delta", id: "text_long", delta: "Long turn complete." });
@@ -813,6 +918,30 @@ export async function createWireServer(options: WireServerOptions = {}) {
         json(response, summaries);
         return;
       }
+      // ⚠️ TEST EDIT (infrastructure) — §10.2 mid-build steering. Mirrors the real
+      // route: it answers whether the words LANDED, and on a landing it appends
+      // them to the thread as a normal user turn under the id the client minted,
+      // so a reload reads the same transcript the live screen showed.
+      const steerMatch = method === "POST" ? url.pathname.match(/^\/threads\/([^/]+)\/steer$/) : null;
+      if (steerMatch) {
+        const id = decodeURIComponent(steerMatch[1] ?? "");
+        const body = parsedBody as { text?: string; messageId?: string };
+        if (!state.steerableThreads.has(id)
+          || typeof body?.text !== "string" || typeof body?.messageId !== "string") {
+          json(response, { landed: false });
+          return;
+        }
+        // Landing is the TURN's answer, so it does not depend on a stored row —
+        // some browser scenarios hold their thread client-side only. Where a row
+        // does exist it gains the message, which is what a reload reads back.
+        state.threads.get(id)?.messages
+          .push({ id: body.messageId, role: "user", parts: [{ type: "text", text: body.text }] });
+        // Tell an in-flight `[stream-long]` turn to narrate its course-change.
+        state.steerBeats.add(id);
+        json(response, { landed: true });
+        return;
+      }
+
       const threadMatch = url.pathname.match(/^\/threads\/([^/]+)$/);
       if (threadMatch) {
         const id = decodeURIComponent(threadMatch[1] ?? "");
@@ -855,7 +984,7 @@ export async function createWireServer(options: WireServerOptions = {}) {
               !ids.includes(item.id) && item.ctx.venue === "automation" && item.ctx.appId === appId);
             if (remaining) continue;
             const entry = state.automations.find(item => item.app.id === appId);
-            if (entry) entry.enabled = false;
+            if (entry) for (const row of entry.triggers) row.enabled = false;
           }
         }
         state.approvals = state.approvals.filter(item => !ids.includes(item.id));
@@ -974,7 +1103,14 @@ export async function createWireServer(options: WireServerOptions = {}) {
           componentName,
         });
       }
-      if (url.pathname === "/apps" && method === "GET") return json(response, state.apps);
+      // ⚠️ FIXTURE EDIT (D5) — NEWEST FIRST, which is what the real wire returns.
+      // `runtime.list()` sorts createdAt DESCENDING (packages/apps/src/runtime.ts,
+      // pinned by its "newest-first list" case in lifecycle.test.ts) and
+      // AppDocument carries no timestamp at all — so list ORDER is the only
+      // newness signal a client has. This fixture served insertion order, the
+      // exact opposite, which is how `.at(-1)` shipped in use-slot-app.ts under a
+      // "latest placement wins" comment while it resolved the OLDEST placed app.
+      if (url.pathname === "/apps" && method === "GET") return json(response, [...state.apps].reverse());
       if (url.pathname === "/apps" && method === "POST") {
         const prompt = (parsedBody as { prompt: string }).prompt;
         const created = app(`app_${state.apps.length + 1}`, prompt);
@@ -1082,23 +1218,31 @@ export async function createWireServer(options: WireServerOptions = {}) {
       if (method === "GET" && url.pathname === "/automations") {
         if (state.legacyAutomationsPayload) return json(response, state.automations);
         // The engine's pending-captures projection: an entry with undecided
-        // standing asks carries pendingGrants + the set id (reload survival).
+        // standing asks carries pendingGrants + the set id (reload survival),
+        // landed on the ONE trigger actually waiting (the fixture's automation
+        // apps carry exactly one trigger, so that is always the first).
         return json(response, state.automations.map(entry => {
           const pending = state.approvals.filter(item =>
             item.ctx.venue === "automation" && item.ctx.appId === entry.app.id).length;
-          return pending === 0 ? entry : { ...entry, pendingGrants: pending, grantSetId: GRANT_SET_ID };
+          if (pending === 0) return entry;
+          return {
+            ...entry,
+            triggers: entry.triggers.map((row, index) =>
+              index === 0 ? { ...row, pendingGrants: pending, grantSetId: GRANT_SET_ID } : row),
+          };
         }));
       }
-      const rehearseMatch = url.pathname.match(/^\/automations\/([^/]+)\/rehearse$/);
+      const rehearseMatch = url.pathname.match(/^\/automations\/([^/]+)\/rehearse\/([^/]+)$/);
       if (method === "POST" && rehearseMatch) {
         const id = decodeURIComponent(rehearseMatch[1] ?? "");
+        const triggerId = decodeURIComponent(rehearseMatch[2] ?? "");
         const entry = state.automations.find(item => item.app.id === id);
         if (!entry) return wireError(response, "not-found", "Automation not found", 404);
         // Mirror production's support predicate (07-automations §1): rehearse()
-        // takes schedule + steps triggers only. The double rejects anything else
-        // exactly as the real engine does, so a test can never rehearse a shape
-        // production would refuse.
-        const trig = entry.app.trigger;
+        // takes schedule + steps triggers only, per TRIGGER. The double rejects
+        // anything else exactly as the real engine does, so a test can never
+        // rehearse a shape production would refuse.
+        const trig = entry.app.triggers?.find(candidate => candidate.id === triggerId);
         if (trig?.on.kind !== "schedule" || trig.run.kind !== "steps") {
           return wireError(response, "validation", "rehearsal supports schedule triggers only", 400);
         }
@@ -1148,22 +1292,25 @@ export async function createWireServer(options: WireServerOptions = {}) {
             ],
           });
         }
-        return json(response, { appId: id, windowDays, from: new Date(from).toISOString(), to: NOW, firings } satisfies RehearsalReport);
+        return json(response, { appId: id, triggerId, windowDays, from: new Date(from).toISOString(), to: NOW, firings } satisfies RehearsalReport);
       }
-      const automationMatch = url.pathname.match(/^\/automations\/([^/]+)\/(enable|disable|dry-run)$/);
+      const automationMatch = url.pathname.match(/^\/automations\/([^/]+)\/(enable|disable|dry-run)\/([^/]+)$/);
       if (method === "POST" && automationMatch) {
         const id = decodeURIComponent(automationMatch[1] ?? "");
+        const triggerId = decodeURIComponent(automationMatch[3] ?? "");
         const entry = state.automations.find(item => item.app.id === id);
         if (!entry) return wireError(response, "not-found", "Automation not found", 404);
+        const row = entry.triggers.find(item => item.trigger.id === triggerId);
+        if (!row) return wireError(response, "not-found", "Trigger not found", 404);
         const action = automationMatch[2];
         if (action === "enable") {
-          entry.enabled = true;
+          row.enabled = true;
           const missing = mintGrantSet(state.approvals);
           if (state.legacyAutomationsPayload) return json(response, { enabled: true, missing });
           return json(response, { enabled: true, missing, grantSetId: GRANT_SET_ID });
         }
         if (action === "disable") {
-          entry.enabled = false;
+          row.enabled = false;
           return empty(response);
         }
         return json(response, { steps: [{ id: "step_1", tool: "host_invoices_list", wouldAsk: false }], grantsMissing: [] });

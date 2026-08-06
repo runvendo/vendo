@@ -22,9 +22,9 @@
  * Lifted from the Keystone demo's `pin-flight.ts`, which is where the sequence
  * was designed and proven on stage.
  */
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useVendoContext } from "../context.js";
-import { announcePin } from "../pin-events.js";
+import { announcePin, onPinAnnounced, pinTaken } from "../pin-events.js";
 import { openVendoConversation } from "./overlay-registry.js";
 
 /** 300 + 180 = 480ms end to end (the design budget is "under half a second"). */
@@ -39,6 +39,9 @@ const ABOVE_OVERLAY = "2147483002";
 /** A slot is often a short banner while the source card is a tall panel; fitting
  *  both axes would shrink the ghost to an unreadable speck. */
 const MIN_GHOST_SCALE = 0.34;
+/** The destinations that are OURS rather than the host's page — the Apps shelf,
+ *  live or day-zero. They are themed, so the ring lands in the accent. */
+const OUR_CHROME = ".fl-shelf";
 
 export interface PinCeremonyOptions {
   /** The app being pinned — its in-thread card is the ghost's source. */
@@ -64,22 +67,52 @@ function boxOf(element: Element | null): DOMRect | null {
 /** The destination the pin lands in — a mounted VendoSlot, or a `<Remixable>`
  *  wrapper (the fork's in-place mount boundary, 2026-08-02 final shape). A
  *  named destination is exact; unnamed, the only mounted one is unambiguous
- *  and every host with one dashboard slot gets the ceremony for free. Two or
- *  more and this returns null — better no animation than one that flies to
- *  the wrong place. */
+ *  and every host with one dashboard slot gets the ceremony for free. Host
+ *  slots keep priority; with none resolvable the Apps shelf is the floor. */
 function destinationOf(slot: string | undefined): Element | null {
   // Matched by attribute VALUE rather than an interpolated selector: slot and
   // app ids come from the host, and a quote in one would break the selector.
   const mounted = [...document.querySelectorAll("[data-vendo-slot], [data-vendo-remixable]")];
-  if (slot === undefined) return mounted.length === 1 ? mounted[0]! : null;
-  return mounted.find(element =>
-    element.getAttribute("data-vendo-slot") === slot || element.getAttribute("data-vendo-remixable") === slot,
-  ) ?? null;
+  const named = slot === undefined
+    ? (mounted.length === 1 ? mounted[0]! : null)
+    : mounted.find(element =>
+      element.getAttribute("data-vendo-slot") === slot || element.getAttribute("data-vendo-remixable") === slot,
+    ) ?? null;
+  // No slot resolved — none mounted, or several with no name to choose by. This
+  // used to return null, and since the dismiss had already fired the user's pin
+  // appeared to VANISH: no flight, no ring, nothing. The Apps shelf is where a
+  // pinned app shows up, so it is where the pin lands. The day-zero ghost shelf
+  // is the last resort: it advertises what to build and holds no apps.
+  return named
+    ?? document.querySelector(`${OUR_CHROME}:not(.fl-shelf--ghost)`)
+    ?? document.querySelector(OUR_CHROME);
+}
+
+/**
+ * The settle ring's shadow.
+ *
+ * A HOST SLOT gets a crisp hairline in the slot's OWN `color`: it is a small,
+ * defined region in someone else's page, the line reads as "here", and
+ * borrowing the ink is what makes a pin look like it belongs to the host.
+ *
+ * OUR OWN Apps shelf gets a soft bloom instead, because the same treatment drew
+ * a debug border around it. Two things had to change, and the first alone was
+ * not enough: the shelf's `color` is body text (so the ring was inked in body
+ * text), AND a full-strength hairline around a WIDE band reads as a border
+ * whatever its hue — this theme's accent is itself near-black, so switching
+ * token changed almost nothing on screen. A wide destination takes a glow.
+ */
+function ringShadow(destination: Element, style: CSSStyleDeclaration): string {
+  if (!destination.matches(OUR_CHROME)) {
+    return `0 0 0 1.5px ${style.color}, 0 12px 40px -14px ${style.color}`;
+  }
+  const accent = style.getPropertyValue("--vendo-accent").trim() || style.color;
+  return `0 0 0 3px color-mix(in srgb, ${accent} 16%, transparent),`
+    + ` 0 10px 34px -12px color-mix(in srgb, ${accent} 40%, transparent)`;
 }
 
 /** The settle pulse: a ring drawn OVER the destination, never a style written
- *  onto it — this module animates surfaces it does not own. Its ink is the
- *  destination's own colour, because a pin lands in the host's page. */
+ *  onto it — this module animates surfaces it does not own. */
 function pulse(destination: Element): void {
   const box = boxOf(destination);
   if (box === null) return;
@@ -94,7 +127,7 @@ function pulse(destination: Element): void {
     width: `${box.width}px`,
     height: `${box.height}px`,
     borderRadius: style.borderRadius,
-    boxShadow: `0 0 0 1.5px ${style.color}, 0 12px 40px -14px ${style.color}`,
+    boxShadow: ringShadow(destination, style),
     pointerEvents: "none",
     zIndex: ABOVE_OVERLAY,
   });
@@ -243,6 +276,32 @@ export function playPinCeremony({ appId, slot, dismiss = () => {} }: PinCeremony
  *  announcement that lets the slot show the result without waiting for a poll.
  *  Returns undefined when the host wired no `onPin` — which is what hides the
  *  affordances in the first place. */
+/**
+ * The pin affordance's nudge state (mockup 2026-08-04): a settled build whose
+ * pin has not been taken INVITES it with a quiet infinite pulse, and the moment
+ * it is taken the affordance resolves to a settled accent state. `undefined` is
+ * the quiet default.
+ *
+ * "Not taken yet" is the pin bus, NOT a placements read: placements live on the
+ * app document, which no pin affordance holds, so knowing it for certain costs a
+ * list fetch per card — a request to render one boolean. The honest cost of that
+ * choice is that a pin made in an earlier session invites once more.
+ *
+ * `invited` is the CALLER's — whether this surface's build just landed (the
+ * in-thread card is `restored === false`) — because only the caller knows.
+ */
+export function usePinNudge(appId: string, invited: boolean): "invite" | "pinned" | undefined {
+  const [taken, setTaken] = useState(() => pinTaken(appId));
+  useEffect(() => {
+    setTaken(pinTaken(appId));
+    return onPinAnnounced(pinned => {
+      if (pinned === appId) setTaken(true);
+    });
+  }, [appId]);
+  if (taken) return "pinned";
+  return invited ? "invite" : undefined;
+}
+
 export function usePinAction(): ((app: { appId: string; payload: unknown }) => void) | undefined {
   const { onPin, pinSlot } = useVendoContext();
   const pin = useCallback(
