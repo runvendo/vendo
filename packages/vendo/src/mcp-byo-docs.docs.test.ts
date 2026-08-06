@@ -128,3 +128,28 @@ describe("the HTTP reference carries the placement routes", () => {
     expect(text).toContain("evicted");
   });
 });
+
+describe("the plugin skill teaches slot targeting and pin etiquette", () => {
+  const SKILL = "examples/claude-code-plugin/skills/make-a-screen/SKILL.md";
+
+  it("keeps its frontmatter", async () => {
+    const text = await read(SKILL);
+    expect(text.startsWith("---\n")).toBe(true);
+    expect(text).toMatch(/^name: make-a-screen$/m);
+    expect(text).toMatch(/^description: /m);
+  });
+
+  it("teaches the slot argument and forbids inventing an id", async () => {
+    const text = await read(SKILL);
+    expect(text).toMatch(/`slot`/);
+    expect(text).toMatch(/never invent/i);
+  });
+
+  it("teaches pinning as an explicit instruction that replaces", async () => {
+    const text = await read(SKILL);
+    expect(text).toContain("vendo_apps_pin");
+    expect(text).toContain("vendo_apps_unpin");
+    expect(text).toMatch(/explicit/i);
+    expect(text).toMatch(/replace|evict/i);
+  });
+});

@@ -45,6 +45,13 @@ Pass `app` **only** to change one specific existing app you already have the id
 for. Leaving it out lets the product decide whether to continue the last thing
 or start something new — which is usually the right call.
 
+Pass `slot` **only** when the person names a place in the product *and* you have
+that place's exact id — they said it, or an earlier answer carried it. The screen
+then lands in that spot on their own page instead of their apps list. Slot ids
+belong to the product, not to you: **never invent one.** A made-up id puts the
+screen somewhere nobody is looking, and nothing about that looks like an error.
+No id, no `slot` — the default destination is always a safe answer.
+
 ## What comes back, and what does not
 
 You get a receipt: an id, a title, a status, and `say` — one line written in the
@@ -64,3 +71,18 @@ So:
   request. If it fails again, say so plainly and stop.
 - If `status` is `"building"`, that is the honest answer: it is on its way.
   Say the line and move on.
+
+## Moving something they already have
+
+`vendo_apps_pin` puts an existing app into one of those same slots, and
+`vendo_apps_unpin` clears one. Both are writes, so both can stop for the
+person's approval inside the product.
+
+- **Only on an explicit instruction.** "Put the renewals radar on my dashboard"
+  is one. Anything you inferred from the conversation is not.
+- **Pinning replaces.** A slot holds one app; whatever was there is evicted. If
+  they did not name the slot, ask which one rather than guessing.
+- **Never invent a slot id here either** — same rule as `slot` above.
+- Unpin only when they ask for the spot to be cleared.
+- These take an app id, not a description. If you do not have one, you are
+  making a new screen, not moving an old one.
