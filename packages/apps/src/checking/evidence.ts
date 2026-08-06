@@ -45,14 +45,19 @@ export const queryEvidence = async (
   ctx: RunContext,
 ): Promise<Record<string, unknown> | undefined> => {
   const tree = treeOf(document);
-  const queries = (tree?.queries ?? []).slice(0, MAX_QUERIES);
-  if (queries.length === 0) return undefined;
+  const declared = tree?.queries ?? [];
+  if (declared.length === 0) return undefined;
   const descriptors = await tools.descriptors(ctx).catch(() => []);
   const readable = new Set(descriptors.filter(({ risk }) => risk === "read").map(({ name }) => name));
-  const results = await Promise.all(queries
+  // Eligibility FIRST, then the budget. Capped the other way round, eight leading
+  // `fn:` queries would eat the whole allowance and the reviewer would be handed
+  // nothing at all — the very state this module exists to end.
+  const queries = declared
     // `fn:` is the app's own server code, not a host tool — there is nothing on
     // the registry to call.
     .filter(({ tool }) => !tool.startsWith("fn:") && readable.has(tool))
+    .slice(0, MAX_QUERIES);
+  const results = await Promise.all(queries
     .map(async ({ name, tool, input }) => {
       const outcome = await tools.execute(
         { id: `call_${globalThis.crypto.randomUUID()}`, tool, args: input ?? {} },
