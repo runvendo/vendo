@@ -6,6 +6,7 @@ import {
   checkBindingShapes,
   compileWire,
   deriveShapeCard,
+  effectiveAppBuildUiDeadlineMs,
   effectiveBuildWatchdogMs,
   encodeGrantPrincipal,
   safeErrorMessage,
@@ -53,6 +54,7 @@ import { commitApp } from "./app-source.js";
 import { appLifecycleEvent } from "./audit.js";
 import { createAppCaller } from "./call.js";
 import { createParkedActions } from "./parked-action.js";
+import { placementStore, type PlacementRow } from "./placements.js";
 import type { Check } from "./checking/types.js";
 import { createAppFloor } from "./checking/floor.js";
 import type {
@@ -669,6 +671,18 @@ export interface AuthoredAppResult {
   dataUnavailable?: true;
 }
 
+/** One slot's answer: what is in it, and where that app's build stands.
+ *  `status` is derived from the app record every read — never stored, so a
+ *  build that lands (or fails) needs no second write to correct the slot. */
+export interface PlacementEntry {
+  slot: string;
+  app: AppId;
+  /** The app's name, or "" while the build has not landed (there is no
+   *  document yet to take a title from). */
+  title: string;
+  status: "ready" | "building" | "failed";
+}
+
 /** 06-apps §1 */
 export interface AppsRuntime {
   create(input: {
@@ -695,6 +709,13 @@ export interface AppsRuntime {
      * the ask exactly as it always has.
      */
     plan?: string;
+    /**
+     * The host slot this build is FOR. The placement row is written the moment
+     * the id is minted — before a single token is generated — so the slot shows
+     * the build forming instead of staying empty until it lands, and shows the
+     * failure if it never does.
+     */
+    slot?: string;
     /** Additive per-call stream hook used by the agent bridge. */
     onView?: (part: VendoViewPart) => void;
     /** Called when the app was generated and STREAMED to the surface but the
@@ -779,6 +800,21 @@ export interface AppsRuntime {
   list(ctx: RunContext): Promise<AppDocument[]>;
   delete(appId: AppId, ctx: RunContext): Promise<void>;
   fork(appId: AppId, ctx: RunContext): Promise<AppDocument>;
+  /**
+   * Placement (2026-08-05) — "show this app in that slot", as a ROW keyed by
+   * (subject, slot) rather than a string on the document.
+   *
+   * Viewer-scoped: placing an app in YOUR OWN slot is part of seeing it. One
+   * app per slot — the write replaces whatever held it, and the displaced app
+   * comes back as `evicted` so the surface can say so.
+   */
+  place(input: { app: AppId; slot: string }, ctx: RunContext): Promise<{ evicted?: string }>;
+  /** Clear the slot — but only when it is still THIS app that holds it, so a
+   *  stale client can never evict the app that replaced it. Idempotent. */
+  unplace(input: { app: AppId; slot: string }, ctx: RunContext): Promise<void>;
+  /** What is in the caller's slots. `slots` narrows the answer to the slots a
+   *  surface actually has mounted; omitted, every placement the caller holds. */
+  placements(input: { slots?: readonly string[] }, ctx: RunContext): Promise<PlacementEntry[]>;
   /**
    * Build contract §9.5 — the second of sharing's two verbs. Moves the
    * canonical app into an org the caller is asserted a member of: the row
@@ -1248,6 +1284,7 @@ const touchedPinSlots = (previous: AppDocument, next: AppDocument): string[] => 
 /** 06-apps §1 — construct the app lifecycle, generation, execution, and interchange surface. */
 export const createApps = (config: AppsConfig): AppsRuntime => {
   const apps = config.store.records("vendo_apps");
+  const placementRows = placementStore(config.store);
   const data = createAppData(config.store);
   const history = createAppHistory(config.store);
   // ENG-345 — per-secret × per-app in-sandbox exposure grants. A dedicated store
@@ -1977,12 +2014,46 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   };
 
   const reportLifecycle = async (
-    operation: "create" | "delete" | "fork" | "promote" | "in-client-approve" | "pin-fork" | "pin-rebase" | "machine-provision" | "machine-destroy",
+    operation: "create" | "delete" | "fork" | "promote" | "in-client-approve" | "pin-fork" | "pin-rebase" | "machine-provision" | "machine-destroy" | "place" | "unplace",
     appId: AppId,
     ctx: RunContext,
     extra: Record<string, Json> = {},
   ): Promise<void> => {
     await config.guard.report(appLifecycleEvent(ctx.principal, ctx, appId, { operation, ...extra }));
+  };
+
+  /** A slot name is host-authored and arrives from a wire body or a tool call,
+   *  so it is checked here — the one place every caller passes through. */
+  const requireSlot = (slot: string): string => {
+    const trimmed = slot.trim();
+    if (trimmed.length === 0) throw new VendoError("validation", "slot must be a non-empty string");
+    return trimmed;
+  };
+
+  /** Where a placed app's build stands, read off its record every time.
+   *
+   *  NO RECORD is the build still running — `create` writes the placement row
+   *  at mint and the app record only at completion. Past the UI build window
+   *  that stops being true: either the watchdog would have landed a terminal
+   *  record by now, or the app was deleted out from under the row. Either way
+   *  it is not forming, and a slot that says "building" forever is the exact
+   *  failure the build watchdog exists to prevent. */
+  const entryFor = async (row: PlacementRow): Promise<PlacementEntry> => {
+    const record = await apps.get(row.appId);
+    if (record === null) {
+      const forming = Date.now() - Date.parse(row.placedAt) < effectiveAppBuildUiDeadlineMs();
+      return { slot: row.slot, app: row.appId, title: "", status: forming ? "building" : "failed" };
+    }
+    // Two fields off the raw row, deliberately without document validation:
+    // one unparseable app must not take down every other slot's answer (the
+    // same read the wire's ?pending=1 probe does).
+    const doc = (record.data as { doc?: { name?: unknown; buildFailed?: unknown } } | null)?.doc;
+    return {
+      slot: row.slot,
+      app: row.appId,
+      title: typeof doc?.name === "string" ? doc.name : "",
+      status: doc?.buildFailed === undefined || doc.buildFailed === null ? "ready" : "failed",
+    };
   };
 
   /** The one mint for the `share` kind. It has existed in core since 01 §7 and
@@ -2901,6 +2972,12 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       await egressApprovals.clearForApp(appId);
       await parkedActions.clearForApp(appId);
       await apps.delete(appId);
+      // A deleted app can never mount again, so its placement rows are dead
+      // weight — and a row with no app record reads as a build in flight, which
+      // would park a skeleton in the slot until the build window elapsed.
+      for (const row of await placementRows.list(ctx.principal.subject)) {
+        if (row.appId === appId) await placementRows.delete(ctx.principal.subject, row.slot);
+      }
       await reportLifecycle("delete", appId, ctx);
     },
 
@@ -2936,6 +3013,43 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       await apps.put(appRecordInput(fork, ctx.principal.subject));
       await reportLifecycle("fork", fork.id, ctx, { sourceAppId: source.id });
       return withoutSession(structuredClone(fork));
+    },
+
+    async place(input, ctx) {
+      const slot = requireSlot(input.slot);
+      // Viewer: seeing the app is enough to put it in your own slot. This also
+      // masks an app the caller cannot see (§9.4) before any row is written.
+      await requireOwned(input.app, ctx, "viewer");
+      const subject = ctx.principal.subject;
+      const previous = await placementRows.get(subject, slot);
+      await placementRows.put(subject, {
+        slot,
+        appId: input.app,
+        placedBy: subject,
+        placedAt: new Date().toISOString(),
+      });
+      const evicted = previous !== undefined && previous.appId !== input.app ? previous.appId : undefined;
+      await reportLifecycle("place", input.app, ctx, {
+        slot,
+        ...(evicted === undefined ? {} : { evicted }),
+      });
+      return evicted === undefined ? {} : { evicted };
+    },
+
+    async unplace(input, ctx) {
+      const slot = requireSlot(input.slot);
+      const subject = ctx.principal.subject;
+      const row = await placementRows.get(subject, slot);
+      // Not this app's slot (any more): nothing to clear, and clearing what
+      // replaced it would be a silent eviction nobody asked for.
+      if (row === undefined || row.appId !== input.app) return;
+      await placementRows.delete(subject, slot);
+      await reportLifecycle("unplace", input.app, ctx, { slot });
+    },
+
+    async placements(input, ctx) {
+      const rows = await placementRows.list(ctx.principal.subject, input.slots);
+      return await Promise.all(rows.map(entryFor));
     },
 
     async promote(appId, orgId, ctx) {

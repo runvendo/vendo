@@ -22,6 +22,7 @@ export {
   type EditResult,
   type MachineEditResult,
   type OpenSurface,
+  type PlacementEntry,
   type PinForkInput,
   type PinForkResult,
   type PinRebaseResult,
