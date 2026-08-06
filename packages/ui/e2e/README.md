@@ -5,7 +5,7 @@ Three tiers, and the difference between them matters:
 | Tier | Command | Runs in CI | What it is |
 |---|---|---|---|
 | **smoke** | `pnpm --filter @vendoai/ui test:ui` | yes, and in `pnpm test` | `smoke.spec.ts` only. 15 tests, ~35s. The things that must never silently stop working. |
-| **CI browser gate** | the `UI solidity + stress suite` step in `.github/workflows/ci.yml` | yes | smoke + 15 more spec files. |
+| **CI browser gate** | the `UI solidity + stress suite` step in `.github/workflows/ci.yml` | yes | smoke + 29 more spec files (15 pre-existing + 14 hermetic specs added in PR ci-cache-shards). |
 | **local pre-PR** | `pnpm --filter @vendoai/ui test:browser` | no | everything in `e2e/`. |
 
 The harness is served **production-built** (`vite build` + `vite preview`, ~3.4s).
@@ -56,9 +56,12 @@ assertion in a real Chromium:
 |---|---|
 | `keyboard.spec.ts` | `workspace tabs rove with arrows and open an app by keyboard` is RED on this branch: the Automations tab's `aria-selected` stays `"false"` after Enter. A product defect, owned by the defects worker — not a CI-environment issue. The focus-order coverage CI needed is in `center-a11y.spec.ts`, which is green. |
 | `screenshots.spec.ts` | writes PNGs; a capture job, not a gate. |
-| `live-voice.spec.ts` | needs `OPENAI_API_KEY` and a real model. |
+| `live-voice.spec.ts` | needs `OPENAI_API_KEY` and a real model; runs as its own leg in `nightly.yml` instead. |
 | `mcp-shim.spec.ts` | runs in CI under its own config (`test:mcp-shim`). |
-| `containment.spec.ts`, `exfil-probe.spec.ts`, `appframe-isolation.spec.ts`, `byo-embeds.spec.ts`, `pin-drift.spec.ts`, `review-standing.spec.ts`, `inclient.spec.ts`, `voice-approval-overlap.spec.ts`, `eng-222.spec.ts`, `composer.spec.ts`, `chrome-behavior.spec.ts`, `verification-eng218.spec.ts`, `verification-eng223.spec.ts` | not triaged in this round. They are the local pre-PR gate. Two of them (`eng-222`) are currently red on a product defect — see below. |
+| `verification-eng218.spec.ts`, `verification-eng223.spec.ts` | capture jobs, not gates. |
+| `eng-222.spec.ts` | RED on a real product defect (`New conversation` never appears in the page thread's sidebar) — tracked, not fixed here; see "Currently RED" below. |
+| `cdn-packages.spec.ts` | depends on `examples/demo-bank/.vendo/components/` existing as tracked files in the checkout (probation — see PR ci-cache-shards). |
+| `appframe-devserver.spec.ts` | boots a real Vite dev server; inclusion depends on it running green in under 2 minutes locally (probation — see PR ci-cache-shards). |
 
 ### Currently RED on this branch (product defects, not spec bugs)
 
