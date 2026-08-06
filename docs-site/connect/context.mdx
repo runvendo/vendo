@@ -15,6 +15,14 @@ ask. Vendo fills two prompt blocks so it does not have to:
 With both, "move $200 to savings" and "explain this charge" become answerable
 without a round of questions.
 
+<Warning>
+  This page describes a release later than `0.7.0`. On `0.7.0` the channel is
+  inert: `facts` type-checks and is silently dropped, and `useVendoContext` is
+  still the zero-argument provider-reading hook, so the call below fails to
+  compile with `TS2554: Expected 0 arguments, but got 1`. That error means your
+  installed version predates this feature — upgrade before wiring any of it.
+</Warning>
+
 ## Assert facts about the user
 
 Facts come from the `user` resolver inside an
@@ -26,10 +34,12 @@ Facts come from the `user` resolver inside an
     Facts are a preset-only channel: pass `auth`, not the per-seam
     `principal`/`actAs`/`oauth` trio. The preset already decodes the session
     once per request, and facts ride that same decode, so they cost no second
-    verify.
+    verify. If `vendo init` detected no auth provider it wrote a `principal:`
+    demo line into your composition — delete it, or `createVendo` throws
+    `VendoError("validation")` for supplying both.
 
     ```ts
-    // vendo/server.ts
+    // Next.js: app/api/vendo/[...vendo]/route.ts — elsewhere: vendo/server.ts
     import { authJs } from "@vendoai/vendo/auth/auth-js";
     import { createVendo } from "@vendoai/vendo/server";
 
@@ -39,9 +49,10 @@ Facts come from the `user` resolver inside an
   <Step title="Return facts from the user resolver">
     Values are any JSON. Returning `null` still means "subject unknown to the
     host" — the principal resolves to anonymous and no facts are asserted.
+    Edit the `auth:` line in the composition init already generated; keep its
+    other keys, such as `catalog`.
 
     ```ts
-    // vendo/server.ts
     export const vendo = createVendo({
       auth: authJs({
         user: async (subject) => {

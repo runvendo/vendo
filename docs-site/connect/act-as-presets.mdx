@@ -35,6 +35,12 @@ name/email session-token claims:
 | `auth0()` | `AUTH0_DOMAIN` / `AUTH0_ISSUER_BASE_URL` (tenant JWKS) | `Authorization: Bearer` |
 | `jwt({ secret })` | none (a host-owned scheme has no vendor env, so `secret` is required) | `Authorization: Bearer` |
 
+Each preset lazy-loads its provider's runtime SDK — `@auth/core` for
+`authJs`, `@clerk/backend` for `clerk`, `jose` for `supabase` and `auth0`.
+Install it as a direct dependency of your app. A copy npm has nested under
+another package is not resolvable from Vendo, and every request to the wire
+then fails with `Module not found: Can't resolve '@auth/core/jwt'`.
+
 `jwt` shares the presets' options type, so `jwt()` type-checks — and then
 throws at construction telling you to pass `{ secret }`. A `secret` that is
 present but resolves empty passes construction and throws later, on the first
