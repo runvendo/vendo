@@ -31,6 +31,8 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - name: Turbo remote cache (GitHub-cache backed)
+        uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       # Runs every package's suite WITH v8 coverage and enforces each package's
@@ -82,6 +84,8 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - name: Turbo remote cache (GitHub-cache backed)
+        uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
       - run: pnpm install --frozen-lockfile
       # Build only the workspace deps the integration suites need (the `...`
       # suffix pulls each fixture package's transitive workspace deps;
@@ -150,6 +154,8 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - name: Turbo remote cache (GitHub-cache backed)
+        uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
       - run: pnpm install --frozen-lockfile
       - run: pnpm conformance
       # Vite's generated bundle differs byte-for-byte between macOS and Linux,
@@ -257,6 +263,8 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - name: Turbo remote cache (GitHub-cache backed)
+        uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
       - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0
         with:
           # Matches the version the config/seed were verified against.

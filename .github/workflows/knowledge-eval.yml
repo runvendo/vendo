@@ -25,6 +25,8 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - name: Turbo remote cache (GitHub-cache backed)
+        uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Knowledge eval (memory engine, strict)
