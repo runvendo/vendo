@@ -3027,7 +3027,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // change is part of changing it, and a mere viewer is masked as ever.
       const document = await requireOwned(input.appId, ctx);
       // The SAME floor create and edit run — the seven fact checks, the host's and
-      // every pack's plugged checks, AND the AI reviewer. The reviewer was the
+      // every plugged check, AND the AI reviewer. The reviewer was the
       // piece this door was missing: without it `validate` could not see invented
       // data, dishonest tool use, dead controls or dropped work, and could not
       // apply a single one of the host's own judgment RULES, which are not code and

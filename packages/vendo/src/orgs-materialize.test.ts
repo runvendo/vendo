@@ -324,7 +324,7 @@ describe("a team file reaches the claudeCode() sandbox", () => {
     const before = await (await vendo.harness.workspace(kim)).readFile(HOST_PATH);
     await turnAs(vendo, kim, "thr_host", "rewrite the host skill");
 
-    // `/host` is a per-turn projection of code-defined pack skills, never store
+    // `/host` is a per-turn projection of code-defined skills, never store
     // rows: it materializes read-only, and nothing written there comes home.
     expect(mode).toBe(0o444);
     acting = kim;

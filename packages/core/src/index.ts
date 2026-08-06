@@ -28,7 +28,7 @@ export * from "./knowledge-wire.js";
 export * from "./meter-exhausted.js";
 export * from "./model-seats.js";
 export * from "./kit/index.js";
-export * from "./pack.js";
+export * from "./capability.js";
 export * from "./principal.js";
 export * from "./reshape.js";
 export * from "./product-slug.js";

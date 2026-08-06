@@ -274,7 +274,7 @@ describe("normalizeCatalogConfig (01 §14 registry form + derivation)", () => {
     // `hostComponentFiles` builds `/host/components/<Name>.md` through core's
     // `componentPath`, per TURN. So a name core rejects used to normalize fine,
     // boot green, and throw for the whole life of the deployment — once per turn.
-    // Same defect the pack merge closes for a pack's components; this is the HOST
+    // Same defect the composition merge closes for a contributed name; this is the HOST
     // half of it, and both ends call the same builder so they cannot drift.
     for (const name of ["Data-Table", "9Lives", "Data Table", "../x", "data.table"]) {
       it(`rejects the registered name ${JSON.stringify(name)}`, () => {

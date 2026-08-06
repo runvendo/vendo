@@ -25,10 +25,10 @@ import { inject } from "vitest";
 import { zipSync } from "fflate";
 import type { Connector } from "@vendoai/actions";
 import type { SandboxAdapter } from "@vendoai/apps";
-import type { AppDocument, PackProvider, Principal, ToolRegistry } from "@vendoai/core";
+import type { AppDocument, Principal, ToolRegistry } from "@vendoai/core";
 import { createMcpDoor, type AppsPort, type HostOAuthAdapter, type McpDoor } from "@vendoai/mcp";
 import { createStore, type VendoStore } from "@vendoai/store";
-import { createVendo, type PackContext, type Vendo } from "@vendoai/vendo/server";
+import { createVendo, type CreateVendoConfig, type Vendo } from "@vendoai/vendo/server";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import type { LanguageModel } from "ai";
 
@@ -214,10 +214,18 @@ export interface StackOptions {
   /** A sandbox adapter composed into the umbrella (explicit adapter always
    * wins, the adapter rule) — the machine-skin journey passes a fake box. */
   sandbox?: SandboxAdapter;
-  /** Packs composed into the umbrella (architecture §5) — the external-pack
-   * journey passes a pack authored outside `packages/` through this one key,
-   * which is the whole install story. Unset keeps the default `[apps()]`. */
-  packs?: readonly PackProvider<PackContext>[];
+  /** `createVendo({ tools })` — the third-party install story: capability
+   * authored outside `packages/` arrives as plain tool definitions on the same
+   * key the host's own declarations use. */
+  tools?: CreateVendoConfig["tools"];
+  /** `createVendo({ skills })` — SKILL.md values mounted at /host/skills. */
+  skills?: CreateVendoConfig["skills"];
+  /** `createVendo({ apps: { checks } })` — checks appended to the floor. */
+  checks?: NonNullable<Exclude<CreateVendoConfig["apps"], false>>["checks"];
+  /** `createVendo({ catalog })` — host components generated apps may render. */
+  catalog?: CreateVendoConfig["catalog"];
+  /** `createVendo({ apps: false })` — app generation unmounted entirely. */
+  apps?: false;
   /** `createVendo({ profileDir })` — the `.vendo` config root. Either the host
    * root or the `.vendo` directory itself; the external-pack journey passes both
    * forms to prove the boot gates resolve it the way the registry does. */
@@ -282,8 +290,14 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     ...(options.connectors === undefined ? {} : { connectors: options.connectors }),
     // Wave 9 — machine provisioning is flag-gated; a stack composed WITH a
     // sandbox is here to exercise the box machinery, so opt in.
-    ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox, apps: { experimentalMachines: true } }),
-    ...(options.packs === undefined ? {} : { packs: options.packs }),
+    ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }),
+    apps: options.apps === false ? false : {
+      ...(options.sandbox === undefined ? {} : { experimentalMachines: true }),
+      ...(options.checks === undefined ? {} : { checks: options.checks }),
+    },
+    ...(options.tools === undefined ? {} : { tools: options.tools }),
+    ...(options.skills === undefined ? {} : { skills: options.skills }),
+    ...(options.catalog === undefined ? {} : { catalog: options.catalog }),
     ...(options.profileDir === undefined ? {} : { profileDir: options.profileDir }),
   });
 

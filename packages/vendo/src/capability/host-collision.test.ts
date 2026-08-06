@@ -1,30 +1,28 @@
 /**
- * The two things composition has to SAY about packs: a name a pack claimed that
- * something else in the deployment already owns (F4), and a `packs:` list that
- * quietly leaves the agent unable to build apps (F6).
+ * The one thing composition has to SAY about a contributed tool: it claimed a
+ * name the deployment's own host tools already own (F4).
  */
 import { VendoError } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
-import { APPS_PACK_NAME } from "./apps.js";
-import { hostPackToolCollision, hostToolNamesIn, missingAppsPackWarning, vendoDirOf } from "./boot.js";
+import { hostToolCollision, hostToolNamesIn, vendoDirOf } from "./host-collision.js";
 
-const owners = new Map([["check_report", "compliance-reports"]]);
+const owners = new Map([["check_report", "compliance reports"]]);
 
-describe("hostPackToolCollision (F4)", () => {
-  it("names the pack, the tool, and the host as the other claimant", () => {
-    const error = hostPackToolCollision(owners, ["host_listInvoices", "check_report"]);
+describe("hostToolCollision (F4)", () => {
+  it("names the contributor, the tool, and the host as the other claimant", () => {
+    const error = hostToolCollision(owners, ["host_listInvoices", "check_report"]);
 
     expect(error).toBeInstanceOf(VendoError);
     expect(error?.code).toBe("conflict");
-    expect(error?.message).toContain("compliance-reports");
+    expect(error?.message).toContain("compliance reports");
     expect(error?.message).toContain("check_report");
     expect(error?.message).toMatch(/host tools/);
   });
 
   it("offers only the remedy that actually works", () => {
-    const message = hostPackToolCollision(owners, ["check_report"])?.message ?? "";
+    const message = hostToolCollision(owners, ["check_report"])?.message ?? "";
 
-    expect(message).toMatch(/rename it in the pack/);
+    expect(message).toMatch(/rename it/);
     // NOT "rename the host tool in overrides.json": ToolOverride has no `name`
     // field, so that is not a thing a host can do. And NOT "disable it" either:
     // a disabled tool still reserves its name (registry.ts `register`), so the
@@ -33,20 +31,20 @@ describe("hostPackToolCollision (F4)", () => {
     expect(message).not.toMatch(/disable/i);
   });
 
-  it("says nothing when no host tool name is claimed by a pack", () => {
-    expect(hostPackToolCollision(owners, ["host_listInvoices", "host_sendEmail"])).toBeUndefined();
+  it("says nothing when no host tool name is claimed", () => {
+    expect(hostToolCollision(owners, ["host_listInvoices", "host_sendEmail"])).toBeUndefined();
   });
 
   it("says nothing when the host has no tools at all", () => {
-    expect(hostPackToolCollision(owners, [])).toBeUndefined();
+    expect(hostToolCollision(owners, [])).toBeUndefined();
   });
 
-  it("does not mistake a name that merely CONTAINS a pack tool name", () => {
-    expect(hostPackToolCollision(owners, ["check_report_v2", "precheck_report"])).toBeUndefined();
+  it("does not mistake a name that merely CONTAINS a contributed tool name", () => {
+    expect(hostToolCollision(owners, ["check_report_v2", "precheck_report"])).toBeUndefined();
   });
 
-  it("says nothing when no pack declared any tool", () => {
-    expect(hostPackToolCollision(new Map(), ["check_report"])).toBeUndefined();
+  it("says nothing when nobody contributed any tool", () => {
+    expect(hostToolCollision(new Map(), ["check_report"])).toBeUndefined();
   });
 });
 
@@ -101,28 +99,5 @@ describe("hostToolNamesIn — the names the gate compares against", () => {
   it("skips entries with no usable name", () => {
     expect(hostToolNamesIn(JSON.stringify({ tools: [{ name: "ok" }, {}, { name: 7 }, null] })))
       .toEqual(["ok"]);
-  });
-});
-
-describe("missingAppsPackWarning (F6)", () => {
-  it("warns when an explicit packs list has no apps pack", () => {
-    const warning = missingAppsPackWarning(["compliance-reports"]);
-
-    expect(warning).toContain("compliance-reports");
-    expect(warning).toMatch(/apps\(\)/);
-    // The consequence, said plainly — this is the whole point of the warning.
-    expect(warning).toMatch(/cannot build|no longer build|build apps/i);
-  });
-
-  it("says nothing when the list includes the apps pack", () => {
-    expect(missingAppsPackWarning([APPS_PACK_NAME, "compliance-reports"])).toBeUndefined();
-  });
-
-  it("says nothing when packs was never configured — the default already includes apps()", () => {
-    expect(missingAppsPackWarning(undefined)).toBeUndefined();
-  });
-
-  it("warns for an explicitly empty list", () => {
-    expect(missingAppsPackWarning([])).toMatch(/apps\(\)/);
   });
 });

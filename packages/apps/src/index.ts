@@ -127,10 +127,10 @@ export {
   type GeneratedAppDocument,
   type GenerationDependencies,
 } from "./generation/engine.js";
-// The apps PACK's raw materials: the tools it declares through `Pack.tools` and
-// the skill it teaches the pattern with. The pack itself is assembled in the
-// umbrella (`vendo/src/packs/apps.ts`), which is the only layer that has both
-// the runtime and `definePack` in scope.
+// What app generation mounts itself with: the tools it declares and the skill
+// it teaches the pattern with. The umbrella composes them (`server.ts`), which
+// is the only layer holding both these values and the live runtime they act
+// through.
 export { agentToolDescriptors } from "./agent-tools.js";
 export { buildingAppsSkill } from "./skills/building-apps.js";
 // The generation seam for external bench harnesses: the SAME conductor

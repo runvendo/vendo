@@ -16,7 +16,6 @@ import { vendo as vendoHarness } from "@vendoai/harnesses";
 import { defineHarness } from "@vendoai/harnesses";
 import type { LanguageModel, UIMessage } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
-import { apps, definePack } from "./packs/index.js";
 import { createVendo, type Vendo } from "./server.js";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -119,7 +118,7 @@ async function compose(
     ...overrides,
   } as Parameters<typeof createVendo>[0]);
   // Host tools arrive on the ONE registry through the shipped door, exactly as
-  // `actions.add(packs.tools)` does in composition — so what the harness sees is
+  // `actions.add(capability.tools)` does in composition — so what the harness sees is
   // guard-bound and connect-gated like anything else.
   vendo.actions.add(host.tools);
   return { vendo, store, host };
@@ -199,20 +198,16 @@ describe("createVendo({ harness }) — a turn served through the composed runtim
     expect(seen).toEqual(["the user prefers tables\n"]);
   });
 
-  it("mounts pack skills at /host/skills so TurnSkills serves them", async () => {
+  it("mounts createVendo({ skills }) at /host/skills so TurnSkills serves them", async () => {
     const listing: Array<{ name: string; description: string }> = [];
     let body = "";
-    const housePack = definePack({
-      name: "house",
+
+    const { vendo } = await compose({
       skills: [{
         name: "house-style",
         description: "How this product talks to its customers.",
         body: "Say the amount and the recipient. Never say 'a payment'.\n",
       }],
-    });
-
-    const { vendo } = await compose({
-      packs: [apps(), housePack],
       harness: scriptedHarness(async function* (turn) {
         listing.push(...await turn.skills.list());
         body = await turn.skills.load("house-style");
@@ -226,7 +221,7 @@ describe("createVendo({ harness }) — a turn served through the composed runtim
 
     expect(listing).toEqual(expect.arrayContaining([
       { name: "house-style", description: "How this product talks to its customers." },
-      // The apps pack's own skill rides the same mount — nothing registers
+      // App generation's own skill rides the same mount — nothing registers
       // anywhere, the mount IS the source of truth.
       expect.objectContaining({ name: "building-apps" }),
     ]));

@@ -23,7 +23,7 @@
  *    every commit. Judgment belongs to `validate`.
  */
 import type { AppId } from "./ids.js";
-import type { Finding } from "./pack.js";
+import type { Finding } from "./capability.js";
 import type { WireCompileResult } from "./genui/wire/compile.js";
 
 export interface AppFloor {

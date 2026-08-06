@@ -125,8 +125,7 @@ const sampleLines = (samples: Readonly<Record<string, unknown>>): string => {
 };
 
 /**
- * The host's and packs' judgment rules, appended to the rubric as their own
- * lines.
+ * Every plugged judgment rule, appended to the rubric as its own line.
  *
  * One line per rule, never concatenated: a joined blob reads as a single garbled
  * rule. They are appended rather than woven in, so a host rule can add a reason

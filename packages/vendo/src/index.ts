@@ -50,12 +50,6 @@ export type { VendoClient, VendoClientConfig } from "@vendoai/ui";
 // umbrella-internal — the Vendo interface exposes no `mcp` handle (09 §2) — so
 // only this host-facing seam belongs on the root.
 export type { HostOAuthAdapter } from "@vendoai/mcp";
-// Packs (architecture §5). `definePack` lives on the ROOT entry, not `/server`,
-// because a pack module is imported twice — once by the server for its tools,
-// checks and skills, once by the client root to mount its components — so the
-// function that authors one has to be import-safe in both. It has no server
-// dependencies at all; it is a typing handle.
-export { definePack } from "./packs/define.js";
 // Existing-agents Lane B — the wire's per-approval resolution for a parked BYO
 // guarded call (what GET /approvals/:id answers; the ui client mirrors it).
 export type { ByoApprovalResolution } from "./byo-approvals.js";

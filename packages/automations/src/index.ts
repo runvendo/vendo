@@ -31,6 +31,7 @@ import type { AdoptionCard } from "./adoption.js";
 
 export type { AdoptionCard, AdoptionNeed } from "./adoption.js";
 export { appIntentOf, SPONSORSHIPS, triggerKey, type Sponsorship } from "./sponsorship.js";
+export { UNATTENDED_IRREVERSIBILITY_RULE, unattendedIrreversibilityCheck } from "./law.js";
 
 /** Build contract §9.3's `can()`, as much of it as the engine needs — taken as
  *  config so this package never reaches sideways into the store. Lane G's

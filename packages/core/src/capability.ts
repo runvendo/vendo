@@ -1,15 +1,14 @@
 /**
- * The pack contract (build contract §5): capability arrives as a plain value
- * contributing to four slots that already exist — tools → the one registry,
- * skills → the workspace mount, checks → the checking floor, components → the
- * catalog. Nothing else extends Vendo.
+ * The shapes capability arrives in. Each one goes to a slot that already
+ * exists — a tool to the one registry, a skill to the workspace mount, a check
+ * to the checking floor — and there is no wrapper around them: a host passes
+ * the values themselves to `createVendo`.
  *
  * Type-only, and here in core, so every block may speak these shapes without
  * reaching sideways (build contract §2). The implementations live where the
- * slots do: `definePack` and the boot merge in the umbrella, the floor in
+ * slots do: the composition merge in the umbrella, the floor in
  * `@vendoai/apps`, the skills store next door in `./skills.ts`.
  */
-import type { ComponentRegistry } from "./catalog.js";
 import type { AppDocument } from "./app-document.js";
 import type { AppPlan } from "./genui/plan/types.js";
 import type { Json } from "./ids.js";
@@ -17,13 +16,13 @@ import type { RunContext } from "./run-context.js";
 import type { ToolCall, ToolDescriptor } from "./tools.js";
 
 /**
- * A tool a pack contributes: the frozen neutral {@link ToolDescriptor} the whole
- * system already speaks, plus the one thing a descriptor lacks — how to run it.
+ * An executable tool: the frozen neutral {@link ToolDescriptor} the whole system
+ * already speaks, plus the one thing a descriptor lacks — how to run it.
  *
  * Execution is always on our side, and the guard wraps it identically to every
- * other tool, so a pack author writes only the work: return the output, or
- * throw. The denial outcomes (`pending-approval`, `blocked`,
- * `connect-required`) are the guard's to author; a pack tool never fakes one.
+ * other tool, so the author writes only the work: return the output, or throw.
+ * The denial outcomes (`pending-approval`, `blocked`, `connect-required`) are
+ * the guard's to author; a tool definition never fakes one.
  */
 export interface ToolDefinition extends ToolDescriptor {
   /**
@@ -32,18 +31,18 @@ export interface ToolDefinition extends ToolDescriptor {
    * @param call the whole call. Present for the one class of tool that reads
    *   something riding on the call itself rather than on its arguments — the
    *   app-create view-stream bridge (`VENDO_VIEW_STREAM`) is the only one — and
-   *   for re-expressing an existing `ToolRegistry` as pack tools without
+   *   for re-expressing an existing `ToolRegistry` as tool definitions without
    *   dropping that rider. Ignore it otherwise.
    */
   execute(input: Json, context: RunContext, call: ToolCall): Promise<Json>;
 }
 
 /**
- * A skill a pack contributes. `description` is what a harness reads in the
- * ~30-token listing; `body` is the full SKILL.md text it loads on demand, and
- * it is copied to disk verbatim — never rewritten per harness.
+ * A skill. `description` is what a harness reads in the ~30-token listing;
+ * `body` is the full SKILL.md text it loads on demand, and it is copied to disk
+ * verbatim — never rewritten per harness.
  */
-export interface PackSkill {
+export interface Skill {
   name: string;
   description: string;
   body: string;
@@ -56,6 +55,10 @@ export interface PackSkill {
    */
   files?: Record<string, string>;
 }
+
+/** @deprecated renamed to {@link Skill} — packs are gone, and a skill was never
+ *  a pack's to own. Kept for one release so an existing import keeps compiling. */
+export type PackSkill = Skill;
 
 /**
  * One thing wrong with an app.
@@ -116,27 +119,3 @@ export interface CheckInput {
 export type Check =
   | { name: string; kind?: "fact"; run(input: CheckInput): Promise<Finding[]> }
   | { name: string; kind: "judgment"; rule: string };
-
-export interface Pack {
-  name: string;
-  tools?: ToolDefinition[];
-  skills?: PackSkill[];
-  checks?: Check[];
-  /** Today's catalog vocabulary, unchanged: the server ignores `component`,
-   *  the client mounts it. A pack module is imported twice — once server-side
-   *  for the other three slots, once client-side for this one — so it must be
-   *  import-safe on the server. */
-  components?: ComponentRegistry;
-}
-
-/**
- * What a host puts in `createVendo({ packs })`.
- *
- * A pack that needs nothing from us is the plain value. A pack whose tools need
- * a platform handle (the apps runtime, the automations engine) is authored as a
- * plain function of the boot context that returns that value — exactly how a
- * harness needing host dependencies is authored (build contract §1). There is
- * no third shape, and no privileged path: `apps()` and `automations()` are
- * functions of this same context, and so is anyone else's pack.
- */
-export type PackProvider<Context = unknown> = Pack | ((context: Context) => Pack);

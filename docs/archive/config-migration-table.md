@@ -65,7 +65,8 @@ truth about the code as it stands.
 | `models` | **slot** `models` | unchanged; five seats (`default`/`reviewer`/`judge`/`fill`/`verifier`), `agent`→`default`, `paint`→`fill`, `knowledgeVerifier`→`verifier` |
 | `auth` | **slot** `auth` | unchanged |
 | `principal` | **adapter family** (`auth`'s per-seam escape hatch) | unchanged. `auth` is the preset over the `principal`/`actAs`/`oauth` trio, and mixing them is already a boot error; the trio is what a host with an unusual identity story reaches for |
-| `tools` | **slot** `tools` — NEW | added. In-memory `ExtractedTool[]`, the same declarations `.vendo/tools.json` carries. Precedence: `tools:` → `profile.tools` (deprecated) → the `profileDir`/cwd file |
+| `tools` | **slot** `tools` — NEW | added. In-memory `ExtractedTool[]`, the same declarations `.vendo/tools.json` carries. Precedence: `tools:` → `profile.tools` (deprecated) → the `profileDir`/cwd file. Since the pack removal the same key also takes executable `ToolDefinition` entries |
+| `skills` | **slot** `skills` | added by the pack removal: SKILL.md values mounted at `/host/skills`, where a pack's `skills` slot used to land |
 | `catalog` | **pack option** (`apps()`'s `components`, build contract §5) | unchanged. Host components are the apps pack's input, but they also feed `<VendoRoot>` on the client, so the top-level key is what a host writes once and passes both ways |
 | `theme` | **adapter family** (deployment identity) | unchanged. Not generation-only — the chrome, the client and the prompt summary all read it |
 | `brief` | **adapter family** (deployment identity) | unchanged; the prose `.vendo/brief.md` carries, programmatically |
@@ -93,7 +94,7 @@ truth about the code as it stands.
 | `sessions` | **venue plumbing** (ephemeral session lifecycle) | unchanged |
 | `approvals` | **adapter family** (the guard's approval lifecycle) | unchanged |
 | `apps` | **pack option** → `apps({ … })` | unchanged. `designRules`, `fillConcurrency`, `checks`, `pipeline` are generation options; `experimentalMachines` / `experimentalServedApps` are project-level opt-ins. Deliberately NOT given a second spelling in wave 2: `apps: {…}` works, no host asked for `apps({…})`, and two spellings for one thing is the cost, not the feature |
-| `packs` | **slot** `packs` | unchanged; unset means `[apps()]` |
+| `automations` | **subsystem switch** | added by the pack removal: `false` unmounts automations (routes, `emit`, and its judgment rule). `packs` is gone with the same change — capability arrives on `tools`, `skills`, `apps.checks` and `catalog` |
 | `tours` | **venue plumbing** (tour mode's scripted-turn seam) | unchanged. Plain OSS config, arrived on main after this table was written (#713): an ordered list of `{ prompt, respond }` entries replayed in front of the live agent. It composes the agent's `scripted` hook and nothing else, so it has no slot to move into |
 
 ## Deleted keys

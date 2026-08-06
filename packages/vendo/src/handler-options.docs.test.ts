@@ -15,7 +15,7 @@ import { CREATE_VENDO_CONFIG_KEYS, docsTableDiff, tableKeys } from "./config-key
  *
  * The list now lives in `./config-keys.ts`, inside the typecheck include, where
  * both directions of the assertion are real (proven red: removing a key from the
- * list errors `Type '"packs"' does not satisfy the constraint 'never'`; adding an
+ * list errors `Type '"automations"' does not satisfy the constraint 'never'`; adding an
  * invented one errors `Type '"notAKey"' is not assignable to keyof
  * CreateVendoConfig`). This file is the RUNTIME half.
  */
@@ -57,9 +57,9 @@ describe("the gate can still FAIL", () => {
     ["## Composition configuration", "", "| Option | Behavior |", "| --- | --- |", ...keys.map(row), "", "## Next"].join("\n");
 
   it("catches a key the docs forgot", () => {
-    const documented = CREATE_VENDO_CONFIG_KEYS.filter((key) => key !== "packs");
+    const documented = CREATE_VENDO_CONFIG_KEYS.filter((key) => key !== "automations");
     const diff = docsTableDiff(tableKeys(compositionTable(pageOf(documented))));
-    expect(diff.missing).toEqual(["packs"]);
+    expect(diff.missing).toEqual(["automations"]);
   });
 
   it("catches a key the docs invented", () => {
@@ -80,12 +80,12 @@ describe("the gate can still FAIL", () => {
       "",
       "| Option | Behavior |",
       "| --- | --- |",
-      ...CREATE_VENDO_CONFIG_KEYS.filter((key) => key !== "packs").map(row),
+      ...CREATE_VENDO_CONFIG_KEYS.filter((key) => key !== "automations").map(row),
       "",
-      "## Packs",
+      "## Automations",
       "",
-      `| \`packs\` | documented in the WRONG section |`,
+      `| \`automations\` | documented in the WRONG section |`,
     ].join("\n");
-    expect(docsTableDiff(tableKeys(compositionTable(page))).missing).toEqual(["packs"]);
+    expect(docsTableDiff(tableKeys(compositionTable(page))).missing).toEqual(["automations"]);
   });
 });

@@ -62,7 +62,7 @@ describe("delegation is advice in the body, never machinery", () => {
   });
 
   it("carries no property, flag, or key that we would have to interpret", () => {
-    // A pack skill is {name, description, body} plus companion FILES — data the
+    // A skill is {name, description, body} plus companion FILES — data the
     // projection copies to disk, never a directive we read. If delegation ever
     // became a field, this is what would catch it.
     expect(Object.keys(buildingAppsSkill).sort()).toEqual(["body", "description", "files", "name"]);

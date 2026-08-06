@@ -1,5 +1,5 @@
 /**
- * The skills store: pack and host skills as files on the workspace's read-only
+ * The skills store: every skill as a file on the workspace's read-only
  * `/host/` mount, and the cheap two-call surface a harness reads them through.
  *
  * The on-disk format is agentskills.io's SKILL.md — the format Claude Code and
@@ -8,21 +8,21 @@
  * global as authored (build contract §5): a rewritten body would point the
  * model at a tool that does not exist.
  *
- * `/host/**` is a PER-TURN PROJECTION, not stored rows: a pack skill is a code
- * value that `definePack` declared, so the host's own deploy IS its update path
- * and there is nothing to migrate, invalidate, or erase. {@link hostSkillFiles}
- * turns the merged pack skills into the path→content map the workspace is opened
- * with; the mount is read-only through the façade, and this module never writes.
+ * `/host/**` is a PER-TURN PROJECTION, not stored rows: a composed skill is a
+ * plain code value, so the host's own deploy IS its update path and there is
+ * nothing to migrate, invalidate, or erase. {@link hostSkillFiles} turns the
+ * merged skills into the path→content map the workspace is opened with; the
+ * mount is read-only through the façade, and this module never writes.
  *
  * Whatever ends up on the mount is the one source of truth for what exists,
- * which is why a host's own hand-authored SKILL.md lists beside a pack's without
- * registering anywhere.
+ * which is why a host's own hand-authored SKILL.md lists beside a composed one
+ * without registering anywhere.
  */
-import type { PackSkill } from "./pack.js";
+import type { Skill } from "./capability.js";
 
-export type { PackSkill };
+export type { Skill };
 
-/** Build contract §3.1 — host + pack skills, read-only for everyone. */
+/** Build contract §3.1 — every skill, read-only for everyone. */
 export const HOST_SKILLS_MOUNT = "/host/skills";
 
 /**
@@ -35,9 +35,9 @@ export const SAFE_SKILL_NAME = /^[a-zA-Z0-9_-]{1,64}$/;
 /**
  * The file one skill lives in. The directory name is the skill's name.
  *
- * Validated HERE, not only at the pack merge: this and {@link hostSkillFiles} are
+ * Validated HERE, not only at the composition merge: this and {@link hostSkillFiles} are
  * public exports, and the runtime builds the `/host` projection through them — so
- * the guard belongs where the path is built, not only where packs are configured.
+ * the guard belongs where the path is built, not only where skills are configured.
  */
 const skillDir = (name: string): string => {
   if (!SAFE_SKILL_NAME.test(name)) {
@@ -127,7 +127,7 @@ const unquoted = (value: string): string => {
 
 /** One skill as its SKILL.md text: agentskills.io frontmatter, then the body
  *  exactly as authored. */
-export const renderSkillMd = ({ name, description, body }: PackSkill): string =>
+export const renderSkillMd = ({ name, description, body }: Skill): string =>
   `---\nname: ${quoted(name)}\ndescription: ${quoted(description)}\n---\n\n${body}`;
 
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n\r?\n?/;
@@ -151,15 +151,15 @@ const describe = (text: string): string => {
 const bodyOf = (text: string): string => text.replace(FRONTMATTER, "");
 
 /**
- * The merged pack skills as the `/host/skills` half of the workspace's host
+ * The merged skills as the `/host/skills` half of the workspace's host
  * projection: path → content, ready to hand to the workspace open call. Each
  * skill contributes its SKILL.md and whatever companion files it declared.
  *
  * It is a plain value because the projection is per turn. Nothing is persisted,
  * so a skill renamed or reworded between deploys cannot leave a stale copy
- * behind — the configured packs are simply what exists, every turn.
+ * behind — the composed skills are simply what exists, every turn.
  */
-export const hostSkillFiles = (skills: readonly PackSkill[]): Record<string, string> =>
+export const hostSkillFiles = (skills: readonly Skill[]): Record<string, string> =>
   Object.fromEntries(skills.flatMap((skill): Array<[string, string]> => [
     [skillPath(skill.name), renderSkillMd(skill)],
     ...Object.entries(skill.files ?? {}).map(

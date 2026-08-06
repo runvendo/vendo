@@ -1,12 +1,11 @@
 /**
- * What composition says out loud about the configured packs.
+ * The boot-time half of the tool-name collision check: a contributor claiming a
+ * name the deployment's OWN extracted host tools already own.
  *
- * Both of these are pure functions of what boot already knows, so the messages
- * are testable on their own rather than only observable as console noise from a
- * booted server.
+ * Pure functions of what boot already knows, so the message is testable on its
+ * own rather than only observable as console noise from a booted server.
  */
 import { VendoError } from "@vendoai/core";
-import { APPS_PACK_NAME } from "./apps.js";
 
 /**
  * The `.vendo` directory a configured `profileDir` means — the SAME rule the tool
@@ -54,49 +53,35 @@ export const hostToolNamesIn = (raw: string | undefined): string[] => {
 };
 
 /**
- * A pack claiming a tool name the HOST's own tools already own.
+ * A contributor claiming a tool name the HOST's own tools already own.
  *
  * The registry refuses this collision on its own — it throws `conflict` — but
  * only when it first loads, on some later request, and its message names just
- * the second arrival ("from added registry"): nothing says which pack, or what
- * it hit. This is the boot-time half, and it throws, so the deployment never
- * starts in a state where every tool call is going to fail.
+ * the second arrival ("from added registry"): nothing says which contributor, or
+ * what it hit. This is the boot-time half, and it throws, so the deployment
+ * never starts in a state where every tool call is going to fail.
  *
  * It compares against the host tool names composition already has WITHOUT doing
  * any I/O. Connector tools are not here on purpose: knowing them means a network
  * round trip, and making `createVendo` reach the network to compose would be a
  * far worse trade than leaving that rarer collision to the registry.
  */
-export const hostPackToolCollision = (
+export const hostToolCollision = (
   toolOwners: ReadonlyMap<string, string>,
   hostToolNames: readonly string[],
 ): VendoError | undefined => {
   for (const name of hostToolNames) {
-    const pack = toolOwners.get(name);
-    if (pack !== undefined) {
+    const owner = toolOwners.get(name);
+    if (owner !== undefined) {
       return new VendoError(
         "conflict",
         // ONE remedy, and it is the one that works. A host cannot rename its own
         // tool through `.vendo/overrides.json` (ToolOverride carries no `name`),
         // and disabling it does not help either — a disabled tool still reserves
         // its name in the registry, so the collision would outlive the fix.
-        `the pack "${pack}" declares the tool "${name}", but this deployment's own host tools already claim that name. Tool names are global as authored — nothing is auto-prefixed, because a skill body naming a tool is copied verbatim — so rename it in the pack.`,
+        `${owner} declares the tool "${name}", but this deployment's own host tools already claim that name. Tool names are global as authored — nothing is auto-prefixed, because a skill body naming a tool is copied verbatim — so rename it there.`,
       );
     }
   }
   return undefined;
-};
-
-/**
- * An explicit `packs:` list with no apps pack in it.
- *
- * App generation is what the agent is FOR, and dropping it is silent otherwise:
- * the agent simply answers that it cannot build apps, with nothing anywhere
- * saying why. A warning rather than an error, because running without it is a
- * legitimate (if unusual) choice — a host embedding only its own pack.
- */
-export const missingAppsPackWarning = (configured: readonly string[] | undefined): string | undefined => {
-  if (configured === undefined || configured.includes(APPS_PACK_NAME)) return undefined;
-  const listed = configured.length === 0 ? "(none)" : configured.join(", ");
-  return `[vendo] createVendo({ packs }) is set to [${listed}] and does not include apps(), so this agent cannot build apps at all — the app tools, the building-apps skill, and the app checks are all absent. Add apps() to the list if that was not deliberate: packs: [apps(), ...].`;
 };
