@@ -40,7 +40,7 @@ const descriptors = [
     // live host data itself. The retry one: a rejected change is worth one
     // narrower attempt on the same app, and was worth saying because the
     // alternative the model reached for was rebuilding it from scratch.
-    description: "Make the user something to look at — a screen, or a full app — from a plain-language request. Say what they want in your own words; Vendo decides whether to assemble a screen or build an app, and it arrives on the user's own page. Pass `app` only to change one specific existing app — its id, or its name exactly as the user said it, which is resolved against their own apps (if two share that name you are told both, so ask which one); leave it out and Vendo decides whether to continue the last one or start something new. A recurring or scheduled task belongs here too: describe the schedule and the action in the request and it is armed as part of the same call; there is no separate automations tool. One app can hold SEVERAL automations, so to add another one to an app it already has, name that app in `app` and describe the new schedule — never refuse a second schedule. Never bake data values you computed or fetched (counts, totals, amounts) into the request — it binds live host data itself and hardcoded figures fail its checks. Never specify fonts, colors, or branding — it inherits the host theme. You get back a one-line receipt to say out loud, never the screen itself; if the receipt says \"failed\", try once more on the same `app` with a narrower request rather than rebuilding it.",
+    description: "Make the user something to look at — a screen, or a full app — from a plain-language request. Say what they want in your own words; Vendo decides whether to assemble a screen or build an app, and it arrives on the user's own page. Pass `app` only to change one specific existing app — its id, or its name exactly as the user said it, which is resolved against their own apps (if two share that name you are told both, so ask which one); leave it out and Vendo decides whether to continue the last one or start something new. A recurring or scheduled task belongs here too: describe the schedule and the action in the request and it is armed as part of the same call; there is no separate automations tool. One app can hold SEVERAL automations, so to add another one to an app it already has, name that app in `app` and describe the new schedule — never refuse a second schedule. Never bake data values you computed or fetched (counts, totals, amounts) into the request — it binds live host data itself and hardcoded figures fail its checks. Never specify fonts, colors, or branding — it inherits the host theme. You get back a one-line receipt to say out loud, never the screen itself; if the receipt says \"failed\", try once more on the same `app` with a narrower request rather than rebuilding it. Pass `slot` only when the request names a particular place on the user's page for it to land — the host publishes those slot ids, so pass one you were told rather than one you invented, and whatever held that place is replaced. `slot` is for something NEW: to move an app that already exists, use the pin tool instead.",
     inputSchema: {
       $schema: DRAFT_2020_12,
       type: "object",
@@ -48,6 +48,7 @@ const descriptors = [
         request: { type: "string", minLength: 1 },
         app: { type: "string", minLength: 1 },
         context: { type: "string", minLength: 1 },
+        slot: { type: "string", minLength: 1 },
       },
       required: ["request"],
       additionalProperties: false,
@@ -360,8 +361,9 @@ export const createAgentTools = (
   async execute(call, ctx: RunContext): Promise<ToolOutcome> {
     try {
       if (call.tool === VENDO_MAKE_TOOL) {
-        const args = input(call.args, ["request"], ["app", "context"]);
+        const args = input(call.args, ["request"], ["app", "context", "slot"]);
         const app = optionalString(args.app, "app");
+        const slot = optionalString(args.slot, "slot");
         const stream = (call as VendoViewStreamingToolCall)[VENDO_VIEW_STREAM];
         const request = args.request as string;
         const ask = withContext(request, optionalString(args.context, "context"));
@@ -423,6 +425,11 @@ export const createAgentTools = (
             const stored = await runtime.get(appId, ctx).catch(() => null);
             if (stored !== null) {
               await remember(appId);
+              // B1, on the engine that serves most asks. `place()` gates on the
+              // app record (§9.4) and assembly is what writes that record, so
+              // this is the FIRST instant the claim can legally be made — and
+              // the last instant it is still part of the call the person made.
+              if (slot !== undefined) await runtime.place({ app: stored.id, slot }, ctx);
               return receipt({
                 id: stored.id,
                 title: stored.name,
@@ -479,6 +486,11 @@ export const createAgentTools = (
             appId,
             prompt: ask,
             ...(plan === undefined ? {} : { plan }),
+            // B1 — `create` claims the slot at MINT, so a build that is still
+            // running (or that never lands) occupies the place the caller aimed
+            // at instead of appearing out of nowhere minutes later. This tool
+            // only aims; the runtime owns the row.
+            ...(slot === undefined ? {} : { slot }),
             onUnsaved: (reason) => { unsaved = reason; },
             ...(stream === undefined ? {} : {
               onView: (part) => stream({ id: vendoViewStreamId(part.appId), part }),
@@ -501,6 +513,17 @@ export const createAgentTools = (
               ? `${created.name} is on your screen.`
               : `${created.name} is on your screen, though I couldn't save it to your apps.`,
           });
+        }
+        // `slot` says where a NEW app lands. On a change it would have to mean
+        // "and also move it", which evicts whatever holds that slot off the back
+        // of an edit nobody aimed there — so it is refused, by name, at the one
+        // tool that does the moving. Refused before the ref is resolved: the
+        // answer does not depend on which app was meant.
+        if (slot !== undefined) {
+          throw new VendoError(
+            "validation",
+            "`slot` says where a new app lands. To move an app that already exists, call vendo_apps_pin with that app and slot.",
+          );
         }
         const appId = await resolveAppRef(runtime, app, ctx);
         const result = await runtime.edit(appId, ask, ctx);
