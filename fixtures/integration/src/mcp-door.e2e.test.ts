@@ -41,9 +41,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   ADA,
   createStack,
-  generationTurn,
   hostFetch,
   resetFixture,
+  screenAgentCreateTurns,
   type Stack,
 } from "./harness.js";
 import { connectWithSdk, descriptorShape, textOf } from "./mcp-support.js";
@@ -58,7 +58,7 @@ afterEach(async () => {
 describe("J6: MCP door round-trip composed around the umbrella", () => {
   it("discovers, authenticates, lists verbatim, parks in-band, shares one approvals plane with the wire, and opens an app", async () => {
     await resetFixture();
-    stack = await createStack({ mcp: true, turns: [generationTurn(CREATE_DIALECT)] });
+    stack = await createStack({ mcp: true, turns: screenAgentCreateTurns(CREATE_DIALECT) });
     const { origin, endpoint } = stack.mcp!;
 
     // A wire-created app to ride along over the door (store-only, no host auth).

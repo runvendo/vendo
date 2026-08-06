@@ -113,8 +113,10 @@ export function generationTurn(dialect: unknown, id = "gen_1"): LanguageModelV3S
 }
 
 /**
- * The screen agent's two turns for one `vendo_make` create: save the document
- * with its own hands, then stop.
+ * The screen agent's two turns for one `vendo_make` ask: save the whole
+ * document with its own hands, then stop. A CREATE and an EDIT are the same
+ * loop — an edit is the assembler opening this app's own document and saving it
+ * back — so one helper scripts either.
  *
  * Every `vendo_make` ask starts in the assembly loop now — that used to be
  * behind `apps.experimentalScreenAgent` and the flag is gone — so a script that
@@ -130,15 +132,36 @@ export function screenAgentCreateTurns(dialect: string): LanguageModelV3StreamPa
   ];
 }
 
+/**
+ * One scripted turn: the chunks, or a function of the prompt that was handed to
+ * the model.
+ *
+ * The function form exists for the ids a journey cannot know in advance — the
+ * front door mints an app's id at request time and writes it into the screen
+ * agent's brief, so a turn that has to NAME that app (`validate({ appId })`)
+ * reads it off the brief exactly as the model it stands in for would.
+ */
+export type ScriptedTurn =
+  | LanguageModelV3StreamPart[]
+  | ((prompt: LanguageModelV3Prompt) => LanguageModelV3StreamPart[]);
+
+/** The app id the composed server put in the prompt it just sent, if any. */
+export function appIdInPrompt(prompt: LanguageModelV3Prompt): string {
+  const found = /app_[0-9a-f-]{8,}/.exec(JSON.stringify(prompt));
+  if (found === null) throw new Error("no app id in the prompt the model was handed");
+  return found[0];
+}
+
 export type ScriptedModel = MockLanguageModelV3 & { prompts: LanguageModelV3Prompt[] };
 
-export function scriptedModel(turns: LanguageModelV3StreamPart[][]): ScriptedModel {
-  const remaining = turns.map((turn) => [...turn]);
+export function scriptedModel(turns: readonly ScriptedTurn[]): ScriptedModel {
+  const remaining = turns.map((turn) => (typeof turn === "function" ? turn : [...turn]));
   const prompts: LanguageModelV3Prompt[] = [];
   const shift = (prompt: LanguageModelV3Prompt): LanguageModelV3StreamPart[] => {
     prompts.push(structuredClone(prompt));
-    const chunks = remaining.shift();
-    if (chunks === undefined) throw new Error("scripted model exhausted");
+    const turn = remaining.shift();
+    if (turn === undefined) throw new Error("scripted model exhausted");
+    const chunks = typeof turn === "function" ? turn(prompt) : turn;
     return chunks;
   };
   const model = new MockLanguageModelV3({
@@ -214,7 +237,7 @@ export async function hostFetch(path: string, subject: string, init: RequestInit
 
 export interface StackOptions {
   /** Ordered scripted turns consumed by doStream (agent) + doGenerate (engine). */
-  turns?: LanguageModelV3StreamPart[][];
+  turns?: readonly ScriptedTurn[];
   model?: LanguageModel;
   /** Mount the MCP door (J6) beside `vendo.handler` on the same loopback origin,
    * composed from the umbrella's OWN parts — the way a host must today until the

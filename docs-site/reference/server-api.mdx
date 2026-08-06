@@ -41,7 +41,6 @@ export function createVendo(config: {
     default?: LanguageModel | string;         // the thinker; every unset seat borrows this
     reviewer?: LanguageModel | string;        // generated-app review
     judge?: LanguageModel | string;           // the guard's judgment channel
-    fill?: LanguageModel | string;            // the fast tier that writes an app's groups
     verifier?: LanguageModel | string;        // the knowledge check
   };
   store?: VendoStore;                         // default: createStore() (PGlite, .vendo/data)

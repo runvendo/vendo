@@ -70,6 +70,67 @@ const app = (id = "app_wire"): AppDocument => ({
   },
 });
 
+/**
+ * Any prompt, as one flat string — every string leaf of it, in order.
+ *
+ * Leaves rather than text parts alone: a tool RESULT is what the assembly loop
+ * reads its own floor's verdict from, and that verdict is structured output, not
+ * a text part. Quotes survive, which a `JSON.stringify` of the prompt would not
+ * (`"DiskMetric"` becomes `\"DiskMetric\"`).
+ */
+const promptTextOf = (prompt: unknown): string => {
+  const leaves = (value: unknown): string[] => {
+    if (typeof value === "string") return [value];
+    if (Array.isArray(value)) return value.flatMap(leaves);
+    if (typeof value === "object" && value !== null) return Object.values(value).flatMap(leaves);
+    return [];
+  };
+  return leaves(prompt).join("\n");
+};
+
+const ZERO_USAGE = {
+  inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+  outputTokens: { total: 0, text: 0, reasoning: 0 },
+} as const;
+
+/** One turn of the assembly loop: one of its hands, or the closing word. */
+type ScreenTurn = { tool: string; input: unknown } | { say: string };
+
+const screenChunks = (turn: ScreenTurn, index: number): Array<Record<string, unknown>> =>
+  "say" in turn
+    ? [
+      { type: "text-start", id: `t${index}` },
+      { type: "text-delta", id: `t${index}`, delta: turn.say },
+      { type: "text-end", id: `t${index}` },
+      { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
+    ]
+    : [
+      { type: "tool-call", toolCallId: `c${index}`, toolName: turn.tool, input: JSON.stringify(turn.input) },
+      { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "tool-calls", raw: undefined } },
+    ];
+
+/**
+ * A model that plays THE builder.
+ *
+ * There is one engine behind `apps.create` and `apps.edit`: the screen
+ * assembler's loop. So a fixture answers with its hands — `save_app`,
+ * `validate`, `escalate` — in order, and `prompts` collects every brief it was
+ * handed (the loop's system message is the deployment's own prompt, then the
+ * shipped building-apps skill, its format reference, and the environment note).
+ */
+async function screenModel(turns: ScreenTurn[], prompts?: string[]): Promise<LanguageModel> {
+  const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
+  const remaining = turns.map((turn, index) => screenChunks(turn, index));
+  const model = new MockLanguageModelV3({
+    doStream: async ({ prompt }: { prompt?: unknown }) => {
+      prompts?.push(promptTextOf(prompt));
+      const chunks = remaining.shift() ?? screenChunks({ say: "done" }, remaining.length);
+      return { stream: simulateReadableStream({ chunks: chunks as never }) };
+    },
+  });
+  return model as unknown as LanguageModel;
+}
+
 async function setup(
   resolver = vi.fn(async () => principal),
   options: Pick<Partial<CreateVendoConfig>, "guard" | "development"> = {},
@@ -1882,42 +1943,59 @@ describe("XCUT-3 — umbrella runtime store surface", () => {
 });
 
 describe("app design rules (spec 2026-07-20)", () => {
-  /** Minimal scripted model (mirrors @vendoai/apps' internal test
-   *  helper, which is not exported): captures every prompt as flat text and
-   *  answers with fixed wire markup so runtime.create completes. */
-  const appGenModel = (prompts: string[]): LanguageModel => ({
-    specificationVersion: "v2" as const,
-    provider: "vendo-test",
-    modelId: "vendo-test-appgen",
-    supportedUrls: {},
-    async doGenerate(call: { prompt: Array<{ content: string | Array<{ text?: string }> }> }) {
-      prompts.push(flatPrompt(call.prompt));
-      return {
-        content: [{ type: "text" as const, text: APP_WIRE }],
-        finishReason: "stop" as const,
-        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-      };
-    },
-    async doStream(call: { prompt: Array<{ content: string | Array<{ text?: string }> }> }) {
-      prompts.push(flatPrompt(call.prompt));
-      return {
-        stream: new ReadableStream({
-          start(controller) {
-            controller.enqueue({ type: "stream-start", warnings: [] });
-            controller.enqueue({ type: "text-start", id: "text_1" });
-            controller.enqueue({ type: "text-delta", id: "text_1", delta: APP_WIRE });
-            controller.enqueue({ type: "text-end", id: "text_1" });
-            controller.enqueue({
-              type: "finish",
-              finishReason: "stop",
-              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-            });
-            controller.close();
-          },
-        }),
-      };
-    },
-  }) as unknown as LanguageModel;
+  /** `save_app`'s own reply — its presence says THIS assembly run already saved,
+   *  which is how one model answers several runs without counting calls. */
+  const SAVED_MARKER = "Run validate on it now.";
+
+  /** Minimal scripted model (mirrors @vendoai/apps' internal test helper, which
+   *  is not exported): captures every prompt as flat text and plays the ONE
+   *  builder — one `save_app` of fixed wire markup per run, then a closing word
+   *  — so `runtime.create` completes. */
+  const appGenModel = (prompts: string[]): LanguageModel => {
+    const turnFor = (prompt: unknown): ScreenTurn => promptTextOf(prompt).includes(SAVED_MARKER)
+      ? { say: "done" }
+      : { tool: "save_app", input: { content: APP_WIRE } };
+    return {
+      specificationVersion: "v2" as const,
+      provider: "vendo-test",
+      modelId: "vendo-test-appgen",
+      supportedUrls: {},
+      async doGenerate(call: { prompt: Array<{ content: string | Array<{ text?: string }> }> }) {
+        prompts.push(flatPrompt(call.prompt));
+        const turn = turnFor(call.prompt);
+        if ("say" in turn) {
+          return {
+            content: [{ type: "text" as const, text: turn.say }],
+            finishReason: "stop" as const,
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          };
+        }
+        return {
+          content: [{
+            type: "tool-call" as const,
+            toolCallId: "c_save_app",
+            toolName: turn.tool,
+            input: JSON.stringify(turn.input),
+          }],
+          finishReason: "tool-calls" as const,
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        };
+      },
+      async doStream(call: { prompt: Array<{ content: string | Array<{ text?: string }> }> }) {
+        prompts.push(flatPrompt(call.prompt));
+        const chunks = screenChunks(turnFor(call.prompt), 0);
+        return {
+          stream: new ReadableStream({
+            start(controller) {
+              controller.enqueue({ type: "stream-start", warnings: [] });
+              for (const chunk of chunks) controller.enqueue(chunk);
+              controller.close();
+            },
+          }),
+        };
+      },
+    } as unknown as LanguageModel;
+  };
 
   const APP_WIRE = '<App name="Design check"><Text text="ok"/><Disclaimer reason="Fixture app."/></App>';
   const flatPrompt = (prompt: Array<{ content: string | Array<{ text?: string }> }>): string =>
@@ -2068,28 +2146,18 @@ describe("app design rules (spec 2026-07-20)", () => {
     const store = await tempStore("vendo-cloud-overrides-store-");
     await store.ensureSchema();
     const prompts: string[] = [];
-    // The semantics annotations live in the FILL WORKER's query brief now (the
-    // brain plans off tool names; shape cards travel with the query to the
-    // worker that binds against them), so the fake model must walk the whole
-    // conduction: a plan with a query on host_ledger, a worker fill, and an
-    // empty reviewer pass.
+    // The semantics annotations reach whoever BINDS against the query, so the
+    // fake model walks the ONE builder: a document with a query on host_ledger
+    // and a node reading it, saved as a whole.
+    const LEDGER_APP = '<App name="Ledger"><Query id="ledger" tool="host_ledger"/>'
+      + "<Text text={ledger.amount}/></App>";
     const planModel = ((): LanguageModel => {
-      const reply = (flat: string): string => {
-        if (flat.includes("THEY ARE ASKING NOW:")) {
-          return `<Plan name="Ledger">
-  <Query id="ledger" tool="host_ledger"/>
-  <Group>
-    <Leaf component="Text" query="ledger" purpose="Ledger rows at a glance"/>
-  </Group>
-</Plan>`;
-        }
-        if (flat.includes("YOUR SECTION")) return '<Text text="ok"/>';
-        return "";
-      };
-      const capture = (call: { prompt: Array<{ content: string | Array<{ text?: string }> }> }): string => {
-        const flat = flatPrompt(call.prompt);
-        prompts.push(flat);
-        return reply(flat);
+      const turnFor = (prompt: unknown): ScreenTurn => promptTextOf(prompt).includes(SAVED_MARKER)
+        ? { say: "done" }
+        : { tool: "save_app", input: { content: LEDGER_APP } };
+      const capture = (call: { prompt: Array<{ content: string | Array<{ text?: string }> }> }): ScreenTurn => {
+        prompts.push(flatPrompt(call.prompt));
+        return turnFor(call.prompt);
       };
       return {
         specificationVersion: "v2" as const,
@@ -2097,26 +2165,32 @@ describe("app design rules (spec 2026-07-20)", () => {
         modelId: "vendo-test-plan",
         supportedUrls: {},
         async doGenerate(call: { prompt: Array<{ content: string | Array<{ text?: string }> }> }) {
+          const turn = capture(call);
+          if ("say" in turn) {
+            return {
+              content: [{ type: "text" as const, text: turn.say }],
+              finishReason: "stop" as const,
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          }
           return {
-            content: [{ type: "text" as const, text: capture(call) }],
-            finishReason: "stop" as const,
+            content: [{
+              type: "tool-call" as const,
+              toolCallId: "c_save_app",
+              toolName: turn.tool,
+              input: JSON.stringify(turn.input),
+            }],
+            finishReason: "tool-calls" as const,
             usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
           };
         },
         async doStream(call: { prompt: Array<{ content: string | Array<{ text?: string }> }> }) {
-          const text = capture(call);
+          const chunks = screenChunks(capture(call), 0);
           return {
             stream: new ReadableStream({
               start(controller) {
                 controller.enqueue({ type: "stream-start", warnings: [] });
-                controller.enqueue({ type: "text-start", id: "text_1" });
-                controller.enqueue({ type: "text-delta", id: "text_1", delta: text });
-                controller.enqueue({ type: "text-end", id: "text_1" });
-                controller.enqueue({
-                  type: "finish",
-                  finishReason: "stop",
-                  usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-                });
+                for (const chunk of chunks) controller.enqueue(chunk);
                 controller.close();
               },
             }),
@@ -2750,26 +2824,9 @@ describe("surfaces.agent through createVendo", () => {
 
 describe("09 §2 apps composition", () => {
   it("passes host-component catalog registrations to createApps", { timeout: 120_000 }, async () => {
-    const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
     const store = await tempStore("vendo-catalog-");
     const generated = '<App name="Catalog app"><MetricCard label="Revenue"/></App>';
-    const model = new MockLanguageModelV3({
-      doStream: async () => ({
-        stream: simulateReadableStream({ chunks: [
-          { type: "text-start", id: "generation" },
-          { type: "text-delta", id: "generation", delta: generated },
-          { type: "text-end", id: "generation" },
-          {
-            type: "finish",
-            usage: {
-              inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
-              outputTokens: { total: 0, text: 0, reasoning: 0 },
-            },
-            finishReason: { unified: "stop", raw: undefined },
-          },
-        ] }),
-      }),
-    });
+    const model = await screenModel([{ tool: "save_app", input: { content: generated } }, { say: "done" }]);
     const catalog: ComponentCatalog = [{
       name: "MetricCard",
       description: "Use for a single headline metric.",
@@ -2789,26 +2846,9 @@ describe("09 §2 apps composition", () => {
   });
 
   it("accepts the name-keyed registry catalog form and ignores component references", { timeout: 120_000 }, async () => {
-    const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
     const store = await tempStore("vendo-registry-catalog-");
     const generated = '<App name="Registry app"><MetricCard label="Revenue"/></App>';
-    const model = new MockLanguageModelV3({
-      doStream: async () => ({
-        stream: simulateReadableStream({ chunks: [
-          { type: "text-start", id: "generation" },
-          { type: "text-delta", id: "generation", delta: generated },
-          { type: "text-end", id: "generation" },
-          {
-            type: "finish",
-            usage: {
-              inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
-              outputTokens: { total: 0, text: 0, reasoning: 0 },
-            },
-            finishReason: { unified: "stop", raw: undefined },
-          },
-        ] }),
-      }),
-    });
+    const model = await screenModel([{ tool: "save_app", input: { content: generated } }, { say: "done" }]);
     // 01 §14: the server MUST IGNORE the component reference — a trap proves
     // it is never touched or executed.
     const registry: ComponentRegistry = {
@@ -2837,7 +2877,6 @@ describe("09 §2 apps composition", () => {
   });
 
   it("loads catalog@1 from .vendo and plumbs it through to createApps", { timeout: 120_000 }, async () => {
-    const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
     const root = await mkdtemp(join(tmpdir(), "vendo-disk-catalog-"));
     const dataDir = join(root, "data");
     await mkdir(join(root, ".vendo"), { recursive: true });
@@ -2856,23 +2895,7 @@ describe("09 §2 apps composition", () => {
     const store = createStore({ dataDir });
     cleanups.push(async () => { await store.close(); await rm(root, { recursive: true, force: true }); });
     const generated = '<App name="Disk catalog app"><DiskMetric level={42}/></App>';
-    const model = new MockLanguageModelV3({
-      doStream: async () => ({
-        stream: simulateReadableStream({ chunks: [
-          { type: "text-start", id: "generation" },
-          { type: "text-delta", id: "generation", delta: generated },
-          { type: "text-end", id: "generation" },
-          {
-            type: "finish",
-            usage: {
-              inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
-              outputTokens: { total: 0, text: 0, reasoning: 0 },
-            },
-            finishReason: { unified: "stop", raw: undefined },
-          },
-        ] }),
-      }),
-    });
+    const model = await screenModel([{ tool: "save_app", input: { content: generated } }, { say: "done" }]);
     const previousCwd = process.cwd();
     const vendo = (() => {
       try {
@@ -2893,7 +2916,6 @@ describe("09 §2 apps composition", () => {
     // 04 §1 gap closure end-to-end: ajvIssuePath → standardIssuePath →
     // pathTargetsRuntimeBinding. The disk schema says value must be a number;
     // a {$path} binding at that prop must be exempted, a plain wrong type not.
-    const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
     const root = await mkdtemp(join(tmpdir(), "vendo-disk-catalog-binding-"));
     const dataDir = join(root, "data");
     await mkdir(join(root, ".vendo"), { recursive: true });
@@ -2918,30 +2940,20 @@ describe("09 §2 apps composition", () => {
     // against the live descriptor list at create (verify-v2 fixes).
     const bound = '<App name="Disk binding app"><Query id="metrics" tool="vendo_apps_data_list"/><DiskMetric value={metrics.value}/></App>';
     const bad = '<App name="Disk binding app"><DiskMetric value="not a number"/></App>';
-    const outputs = [
-      bound,
-      // The second bad output feeds the engine's 2-attempt repair loop so the
-      // second create fails on both attempts.
-      bad,
-      bad,
-    ];
-    const model = new MockLanguageModelV3({
-      doStream: async () => ({
-        stream: simulateReadableStream({ chunks: [
-          { type: "text-start", id: "generation" },
-          { type: "text-delta", id: "generation", delta: outputs.shift() ?? "" },
-          { type: "text-end", id: "generation" },
-          {
-            type: "finish",
-            usage: {
-              inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
-              outputTokens: { total: 0, text: 0, reasoning: 0 },
-            },
-            finishReason: { unified: "stop", raw: undefined },
-          },
-        ] }),
-      }),
-    });
+    /** Every brief the builder was handed — the `validate` run below reports the
+     *  ajv violation back into one of them, which is where a real author reads
+     *  it. */
+    const prompts: string[] = [];
+    const model = await screenModel([
+      // The FIRST create: the bound document, saved and left alone.
+      { tool: "save_app", input: { content: bound } },
+      { say: "done" },
+      // The SECOND: the literal violation. It saves, the floor refuses to paint
+      // it, and `validate` is how the author hears why.
+      { tool: "save_app", input: { content: bad } },
+      { tool: "validate", input: { document: bad } },
+      { say: "I could not make that one work." },
+    ], prompts);
     const previousCwd = process.cwd();
     const vendo = (() => {
       try {
@@ -2965,17 +2977,18 @@ describe("09 §2 apps composition", () => {
         ]),
       },
     });
-    // A genuine type violation against the same disk schema still fails.
-    // Wave 2 — create() re-throws with the classified reason in the message;
-    // the raw issue list rides detail.issues for in-process callers.
+    // A genuine type violation against the same disk schema still fails: the
+    // floor refuses to paint it, no row lands, and `create` re-throws with the
+    // classified reason in the message and the issue list on detail.
     await expect(vendo.apps.create({ prompt: "Show the broken metric" }, ctx)).rejects.toMatchObject({
       code: "validation",
-      detail: {
-        issues: expect.arrayContaining([
-          expect.stringContaining('props invalid for host component "DiskMetric"'),
-        ]),
-      },
+      detail: { issues: expect.any(Array) },
     });
+    // …and the refusal is the DISK SCHEMA's, named as such. `validate` is the
+    // review floor for the one builder, so the ajv violation reaches the author
+    // in its own words — a create that merely failed would not tell them which
+    // prop was wrong.
+    expect(prompts.join("\n")).toContain('props invalid for host component "DiskMetric"');
   });
 
   it("warns loudly when createVendo finds a malformed .vendo/catalog.json", async () => {

@@ -1,10 +1,11 @@
 /** J3 — APP EDIT + HISTORY through the composed wire.
  *
- * Create an app (POST /apps — a tiny ask, so the brain writes the whole app on
- * the spot), then edit it (POST /apps/:id/edit — the brain quotes the app's own
- * printed text and says what replaces it, which the composed engine applies and
- * re-validates). The wire returns an EditResult; history surfaces the prior
- * version; undo restores it.
+ * Create an app (POST /apps — the screen agent saves the whole `<App …>`
+ * document with its own hands), then edit it (POST /apps/:id/edit — the SAME
+ * loop, asked to rewrite that app's document, answering with another whole-
+ * document `save_app`). Both saves land through the real render seam and
+ * `AppsRuntime.authored`. The wire returns an EditResult; history surfaces the
+ * prior version; undo restores it.
  *
  * History note: the frozen history surface (06 §1) lists RESTORABLE prior
  * snapshots (the undo targets), appended only on edit — so one edit yields
@@ -14,8 +15,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   ADA,
   createStack,
-  generationTurn,
   resetFixture,
+  screenAgentCreateTurns,
   type Stack,
 } from "./harness.js";
 
@@ -30,15 +31,12 @@ interface AppDoc {
 
 const CREATE_DIALECT = '<App name="Greeting"><Text text="Hello"/><Disclaimer reason="Fixture app."/></App>';
 
-// The small-change answer: the exact text as the app prints it (a bare-text
-// <Text> node prints as its own text) and what replaces it. Identity carries by
-// edit span, so the greeting node keeps the id the screen already mounted.
-const EDIT_DIALECT = '<Edit><Old>Hello</Old><New>Goodbye</New></Edit>';
-
-// The AI reviewer rides the same scripted model once per landed document. It is
-// asked for a strict `report_findings` tool call, so prose is how a reviewer with
-// nothing to say says it.
-const REVIEW_SILENT = "Nothing to report.";
+// The edit answer: the whole document again, with the greeting changed. There is
+// no quoted old/new pair and no edit-in-place tool — a screen edit IS the app's
+// own document saved back, which is the only write path there is. Identity is
+// carried by the document's own shape, so the greeting node keeps the id the
+// screen already mounted.
+const EDIT_DIALECT = '<App name="Greeting"><Text text="Goodbye"/><Disclaimer reason="Fixture app."/></App>';
 
 const greetingText = (doc: AppDoc): string | undefined =>
   doc.tree.nodes.find((node) => node.id === "text-1")?.props?.text;
@@ -49,14 +47,12 @@ afterEach(async () => {
 });
 
 describe("J3: app edit + history through the composed wire", () => {
-  it("creates, edits by quoting the app's own text, lists the prior version, and undoes to restore it", async () => {
+  it("creates, edits by saving the app's own document back, lists the prior version, and undoes to restore it", async () => {
     await resetFixture();
     stack = await createStack({
       turns: [
-        generationTurn(CREATE_DIALECT),
-        generationTurn(REVIEW_SILENT, "review_1"),
-        generationTurn(EDIT_DIALECT, "gen_2"),
-        generationTurn(REVIEW_SILENT, "review_2"),
+        ...screenAgentCreateTurns(CREATE_DIALECT),
+        ...screenAgentCreateTurns(EDIT_DIALECT),
       ],
     });
 
@@ -75,6 +71,8 @@ describe("J3: app edit + history through the composed wire", () => {
       body: JSON.stringify({ instruction: "Change the greeting text to Goodbye" }),
     }, ADA)).json()) as { app: AppDoc; version: { rung: number } };
     expect(edited.version.rung).toBe(1);
+    // IN PLACE: the same app, not a second one.
+    expect(edited.app.id).toBe(appId);
     expect(greetingText(edited.app)).toBe("Goodbye");
 
     // Current app now reads the edited text.
@@ -87,6 +85,10 @@ describe("J3: app edit + history through the composed wire", () => {
       intent: string;
     }>;
     expect(history).toHaveLength(1);
+    // The undo point is filed under the PERSON's words, not "Saved app.vendo":
+    // an edit lands through `authored` like any other commit, and the intent is
+    // what makes the trail replayable.
+    expect(history[0]?.intent).toBe("Change the greeting text to Goodbye");
 
     // --- Undo restores the original ---------------------------------------
     const restored = (await (await stack.wireFetch(`/apps/${appId}/history`, {

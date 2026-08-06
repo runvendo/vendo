@@ -7,6 +7,7 @@ import {
   compilePlan,
   compileWire,
   deriveShapeCard,
+  describeShapeWithSemantics,
   effectiveBuildWatchdogMs,
   encodeGrantPrincipal,
   safeErrorMessage,
@@ -746,6 +747,30 @@ export interface AppsRuntime {
    * called per commit.
    */
   floor(ctx: RunContext): AppFloor;
+  /**
+   * What every tool a binding may name really RETURNS, annotated with this
+   * host's own field semantics — the `:money.cents`, `:date.iso`, `:enum(a|b)`
+   * marks that decide whether a number is dollars or cents on screen.
+   *
+   * A documented host seam (`.vendo/semantics.json` plus the cloud-owned
+   * overrides) that used to reach the model through the fill worker's query
+   * brief and nowhere else. The fill worker is gone, so this is how the
+   * annotations reach the one thing that writes bindings now. Composition reads
+   * it off the runtime and fills the assembler's `system` slot, the same shape as
+   * every other seam here — this block depends on `core` alone and cannot reach
+   * a harness.
+   *
+   * The host's DESIGN configuration is a different key with a different owner:
+   * `apps.designRules` and the theme ride `hostDesignBrief` into the assembler's
+   * `design` slot and the `claudeCode()` builder's prompt, so both writers read
+   * one rendering of them. Nothing about design belongs here.
+   *
+   * Resolved PER CALL, never memoized: the semantics provider is re-resolved so a
+   * local `tools.json` edit and the cloud-owned overrides both keep merging live.
+   *
+   * `undefined` when no tool declares a shape — an empty section is noise.
+   */
+  toolShapeBrief(ctx: RunContext): Promise<string | undefined>;
   /** Speed lane — best-effort page-open warm-up of the generation model(s)
    *  (full + paint), so the first create reuses a live connection. Safe to
    *  call on surface mount; never throws. */
@@ -2637,6 +2662,23 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       }
       console.info(`[vendo] gen create complete app=${appId} total=${((Date.now() - createStartedAt) / 1000).toFixed(1)}s`);
       return structuredClone(app);
+    },
+
+    async toolShapeBrief(ctx) {
+      // Re-resolved on every call, which is the whole contract: the provider form
+      // of `semantics` re-merges the local `tools.json` with the cloud-owned
+      // overrides, and memoizing it would lock a host's annotations for the
+      // lifetime of the process.
+      const semantics = resolveProvider(config.semantics) ?? {};
+      const { toolShapes } = await generationToolContext(ctx);
+      const cards = Object.entries(toolShapes ?? {})
+        .map(([tool, shape]) => `- ${tool} — shape: ${describeShapeWithSemantics(shape, semantics[tool] ?? {})}`);
+      if (cards.length === 0) return undefined;
+      return "TOOL RESPONSE SHAPES (what each tool really returns, with this host's own field semantics)."
+        + " Bind only to fields these name, and read the annotations: :money.cents is integer CENTS,"
+        + " :money.dollars whole dollars, :date.iso and :date.epoch machine dates, :enum(a|b) a closed"
+        + " vocabulary, :id an opaque host identifier, :percent.ratio 0..1.\n"
+        + cards.join("\n");
     },
 
     floor(ctx) {

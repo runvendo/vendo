@@ -2399,18 +2399,28 @@ export function createVendo(input: CreateVendoConfig): Vendo {
       remember: async (appId, decisions, memoryCtx) => {
         await apps.remember({ appId, decisions }, memoryCtx);
       },
-      // `system` is deliberately unset. The screen agent's brief is the shipped
-      // `building-apps` skill plus the host's own tool shapes, and the
-      // deployment prompt's job — voice, venue gate, guard directions, the
-      // discovery rail — belongs to the thinker talking to the PERSON. This loop
-      // talks to nobody: the front door speaks its one-line receipt.
+      // The deployment's CONVERSATIONAL prompt is deliberately unset: voice, the
+      // venue gate, guard directions and the discovery rail belong to the thinker
+      // talking to the PERSON, and this loop talks to nobody — the front door
+      // speaks its one-line receipt.
       //
-      // `design` is NOT part of that. `apps.designRules` and the theme tokens are
-      // documented seams a host sets and expects a generated screen to obey, and
-      // this loop is the thing that generates it — a brief without them makes
-      // those two config keys silently do nothing on the route that serves every
-      // ask.
+      // What a writer does need is the host's own configuration, and it arrives on
+      // two slots because it is two different things with two different owners:
+      //
+      //  - `design` — `apps.designRules` and the theme tokens. Documented seams a
+      //    host sets and expects a generated screen to obey, rendered by
+      //    `hostDesignBrief` so this loop and the `claudeCode()` builder cannot be
+      //    taught different design.
+      //  - `system` — the semantics-annotated SHAPE CARD for every tool a binding
+      //    may name (`.vendo/semantics.json` plus the cloud-owned overrides). A
+      //    different fact about a different key: what a tool really returns, and
+      //    in what units. It reached the fill worker and nothing else, and the
+      //    fill worker is gone, so without this the `:money.cents` annotations a
+      //    host authored would silently stop reaching the only thing that writes
+      //    bindings. Read off the runtime per call, so a local `tools.json` edit
+      //    and a cloud override both apply without a restart.
       design: writerDesignBrief,
+      system: (screenCtx) => apps.toolShapeBrief(screenCtx),
     }),
     // Round-2 hardening — the host's reviewer assertion for the review-kind
     // remix lifecycle, threaded verbatim (see the CreateVendoConfig comment).

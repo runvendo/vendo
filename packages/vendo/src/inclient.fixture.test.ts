@@ -3,11 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { vendoSync } from "@vendoai/actions/sync";
 import { appVersionHash, pinComponentName } from "@vendoai/apps";
-import { VENDO_APP_FORMAT, type AppDocument, type Principal } from "@vendoai/core";
+import { VENDO_APP_FORMAT, printWire, type AppDocument, type Principal } from "@vendoai/core";
 import { createStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
-import { createVendo } from "./server.js";
+import { createVendo, type Vendo } from "./server.js";
 
 interface ModelCall {
   prompt: Array<{
@@ -16,57 +16,74 @@ interface ModelCall {
   }>;
 }
 
-const promptText = (call: ModelCall): string => call.prompt
-  .map((message) => typeof message.content === "string"
-    ? message.content
-    : message.content.map((part) => part.text ?? "").join(""))
-  .join("\n");
+/** The WHOLE prompt as text — tool results included. A `save_app` reply is a
+ *  tool-result part, not a text part, and it is what tells this model that the
+ *  current run has already saved. */
+const promptText = (call: ModelCall): string => JSON.stringify(call.prompt ?? "");
 
-const APP_AS_IT_STANDS = "THE APP AS IT STANDS — the only true copy of it, and what an <Old> must quote:\n";
+/** The screen agent's own brief (`environmentNote`), verbatim — the one marker
+ *  that says a prompt belongs to the assembly loop. An EDIT rides the same loop
+ *  now: the assembler opens this app's document, rewrites it, and saves the
+ *  whole thing back. */
+const SCREEN_BRIEF_MARKER = "# In this loop";
+/** `save_app`'s own reply. Its presence in the prompt means THIS run already
+ *  saved, which is how one model answers a multi-step loop without counting
+ *  calls across runs. */
+const SAVED_MARKER = "Run validate on it now.";
 
-/** The app exactly as the brain was shown it — the text every answer is built
- *  from. */
-const printedApp = (prompt: string): string => {
-  const at = prompt.indexOf(APP_AS_IT_STANDS);
-  if (at === -1) return "";
-  return prompt.slice(at + APP_AS_IT_STANDS.length).split("\n\nTHEY ARE ASKING NOW:")[0] ?? "";
-};
-
-/** What this turn was ASKED to do. The live ask carries its own marker, so it is
- *  unambiguous even though the carried conversation quotes earlier turns. */
-const instructionOf = (prompt: string): string => {
-  const marker = "THEY ARE ASKING NOW: ";
-  const at = prompt.lastIndexOf(marker);
-  return at === -1 ? "" : (prompt.slice(at + marker.length).split("\n")[0] ?? "");
-};
-
-const scriptedModel = (respond: (prompt: string) => string): LanguageModel => {
+/**
+ * A model that plays the screen agent: one `save_app` carrying the whole
+ * rewritten document, then a closing word.
+ *
+ * `rewrite` gets the prompt and answers with the complete new `.vendo` document
+ * — which is the only edit dialect there is now.
+ */
+const screenModel = (rewrite: (prompt: string) => Promise<string>): LanguageModel => {
+  const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
+  const saving = (prompt: string): boolean =>
+    prompt.includes(SCREEN_BRIEF_MARKER) && !prompt.includes(SAVED_MARKER);
   return {
     specificationVersion: "v2",
     provider: "vendo-inclient-fixture",
     modelId: "vendo-inclient-fixture-v1",
     supportedUrls: {},
     async doGenerate(call: ModelCall) {
+      const prompt = promptText(call);
+      if (!saving(prompt)) {
+        return { content: [{ type: "text" as const, text: "done" }], finishReason: "stop" as const, usage };
+      }
       return {
-        content: [{ type: "text" as const, text: respond(promptText(call)) }],
-        finishReason: "stop" as const,
-        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        content: [{
+          type: "tool-call" as const,
+          toolCallId: "call_save_app",
+          toolName: "save_app",
+          input: JSON.stringify({ content: await rewrite(prompt) }),
+        }],
+        finishReason: "tool-calls" as const,
+        usage,
       };
     },
     async doStream(call: ModelCall) {
-      const text = respond(promptText(call));
+      const prompt = promptText(call);
+      const content = saving(prompt) ? await rewrite(prompt) : undefined;
       return {
         stream: new ReadableStream({
           start(controller) {
             controller.enqueue({ type: "stream-start", warnings: [] });
-            controller.enqueue({ type: "text-start", id: "text_1" });
-            controller.enqueue({ type: "text-delta", id: "text_1", delta: text });
-            controller.enqueue({ type: "text-end", id: "text_1" });
-            controller.enqueue({
-              type: "finish",
-              finishReason: "stop",
-              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-            });
+            if (content === undefined) {
+              controller.enqueue({ type: "text-start", id: "text_1" });
+              controller.enqueue({ type: "text-delta", id: "text_1", delta: "done" });
+              controller.enqueue({ type: "text-end", id: "text_1" });
+              controller.enqueue({ type: "finish", finishReason: "stop", usage });
+            } else {
+              controller.enqueue({
+                type: "tool-call",
+                toolCallId: "call_save_app",
+                toolName: "save_app",
+                input: JSON.stringify({ content }),
+              });
+              controller.enqueue({ type: "finish", finishReason: "tool-calls", usage });
+            }
             controller.close();
           },
         }),
@@ -113,18 +130,33 @@ export default function Page() {
     expect(synced.pins.captured).toEqual(["MapleNetWorthCard"]);
 
     const componentName = pinComponentName("MapleNetWorthCard");
-    // The brain, scripted. Only BRAIN turns are answered ("THEY ARE ASKING NOW:" is its
-    // marker); the AI reviewer rides the same model and reports nothing.
-    const model = scriptedModel((prompt) => {
-      if (!prompt.includes("THEY ARE ASKING NOW:")) return "";
+    const ctx = { principal, venue: "app" as const, presence: "present" as const, sessionId: "session_journey" };
+    let composed: Vendo | undefined;
+    /** The app under edit. Set once it is imported — `importApp` mints the id,
+     *  it never keeps the one in the source document. */
+    let appUnderEdit: string | undefined;
+    /** The app's own document, printed exactly as a checkout prints it — the
+     *  text the assembler opens before it rewrites anything. */
+    const asItStands = async (): Promise<string> => {
+      const app = await composed!.apps.get(appUnderEdit!, ctx);
+      if (app === null) throw new Error("no app row to rewrite");
+      return printWire(
+        { tree: app.tree as never, components: app.components ?? {}, name: app.name },
+        { includeIds: true },
+      );
+    };
+    // The screen agent, scripted. There is one builder now, so an edit is the
+    // assembly loop rewriting this app's WHOLE document and saving it back.
+    const model = screenModel(async (prompt) => {
+      const document = await asItStands();
       // Any content change after approval — must invalidate the pin. The app's
       // name is printed on its opening <App> line, so a rename is one edit.
-      if (instructionOf(prompt).startsWith("Rename")) {
-        return '<Edit><Old><App name="Maple overview"></Old><New><App name="Net worth (renamed)"></New></Edit>';
+      if (prompt.includes("Rename the app")) {
+        return document.replace('<App name="Maple overview">', '<App name="Net worth (renamed)">');
       }
-      // Change the fork — the reviewable delta the ship-diff must show. Written
-      // WHOLE (a finished <App>, the tiny-ask answer) off the app as it stands.
-      return printedApp(prompt).replace("$1.2M", "$1.2M — remixed");
+      // Change the fork — the reviewable delta the ship-diff must show, written
+      // into the pinned island's own source.
+      return document.replace("$1.2M", "$1.2M — remixed");
     });
 
     const store = createStore({ dataDir: join(root, ".data") });
@@ -137,7 +169,7 @@ export default function Page() {
       store,
       development: true,
     });
-    const ctx = { principal, venue: "app" as const, presence: "present" as const, sessionId: "session_journey" };
+    composed = vendo;
 
     const imported = await vendo.apps.importApp({
       format: VENDO_APP_FORMAT,
@@ -150,6 +182,7 @@ export default function Page() {
         nodes: [{ id: "root", component: "Stack", source: "prewired" }],
       },
     } as AppDocument, ctx);
+    appUnderEdit = imported.id;
 
     // The fork is the user's Remix GESTURE, executed deterministically by the
     // engine (the captured source is copied, the pin recorded, no model call).

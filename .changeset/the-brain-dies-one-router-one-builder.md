@@ -28,12 +28,15 @@ the React client, a seed script) gets it.
 
 ## Breaking
 
-- **`apps.fill` (`{ model }`) is gone**, and so is the fast fill tier it named.
-  The group fill workers it pointed at do not exist any more. `createVendo`'s
-  deprecated `paint.model` / `models.paint` are still accepted and now ignored;
-  remove them at your convenience. **Migration:** delete `apps: { fill: … }` from
-  your composition. Nothing replaces it — there is one model seat for generation
-  (`apps.model`, `models.agent`), plus whatever the assembler's own harness uses.
+- **`apps.fill` (`{ model }`) is gone**, and so is the fast fill tier it named:
+  the group fill workers it pointed at do not exist any more. `createVendo`'s
+  `models.fill` seat (and its deprecated `paint.model` predecessor) are still
+  accepted and validated, and are now **ignored** — nothing reads them — so a host
+  config does not have to change in the same release. **Migration:** delete
+  `apps: { fill: … }` from a direct `createApps(...)` composition, and drop
+  `models.fill` / `paint` from `createVendo(...)` at your convenience. Nothing
+  replaces them: there is one generation seat (`apps.model` / `models.default`),
+  plus whatever the assembler's own harness uses.
 - **`apps.screen` is required for `create` and `edit`, not only for `vendo_make`.**
   A deployment that composes `@vendoai/apps` without a `ScreenAssembler` now fails
   those doors loudly instead of quietly serving them from a second engine.

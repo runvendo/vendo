@@ -53,6 +53,23 @@ const SPENDING_REFINED = `<App name="Spending">
   </Stack>
 </App>`;
 
+/** The first edit's whole rewritten document — "say last month instead". There
+ *  is no edit-in-place dialect any more: the one builder saves the full
+ *  document each time. */
+const SPENDING_LAST_MONTH = `<App name="Spending">
+  <Stack>
+    <Text text="Last month" />
+    <Text text="Trip only" />
+  </Stack>
+</App>`;
+
+/** The second edit's — "and drop the trip-only line". */
+const SPENDING_WITHOUT_TRIP = `<App name="Spending">
+  <Stack>
+    <Text text="Last month" />
+  </Stack>
+</App>`;
+
 const DECISIONS_FIRST = "Started from the full account list.";
 const DECISIONS_LAST = "Filtered to 2 accounts — the ask was trip-only. Ruled out a chart: one number.";
 
@@ -81,18 +98,14 @@ const speak = (text: string): Chunk[] => [
   { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
 ];
 
-/** The screen agent's own brief, verbatim from `environmentNote`. */
+/** The screen agent's own brief, verbatim from `environmentNote`. An EDIT rides
+ *  the SAME loop now — one builder — so this marker is on every assembly run,
+ *  create or edit. */
 const SCREEN_BRIEF_MARKER = "# In this loop";
-/** The brain's edit prompt prints the app it is amending; a create's never can. */
-const EDIT_MARKER = "THE APP AS IT STANDS";
-/** The memory block's own first words (`appMemoryBrief`). */
+/** The memory block's own first words (`appMemoryBrief`). It is also what tells
+ *  an edit's brief apart from a create's: only an app that already exists has a
+ *  memory to open with. */
 const MEMORY_MARKER = "THIS APP'S MEMORY";
-
-/** The two edits, in order, so the second amends what the first landed. */
-const EDITS = [
-  "<Edit><Old>This month</Old><New>Last month</New></Edit>",
-  "<Edit><Old>Trip only</Old><New>Everything</New></Edit>",
-];
 
 interface Scripted {
   model: LanguageModel;
@@ -100,13 +113,16 @@ interface Scripted {
   prompts: string[];
 }
 
+/**
+ * The assembly loop's steps, in order, across EVERY run of a walk — a create and
+ * each edit are all the same loop, so one FIFO drives them all and a run simply
+ * takes the next turns until it stops.
+ */
 function scripted(screenTurns: Chunk[][]): Scripted {
   const prompts: string[] = [];
   const screen = screenTurns.map((turn) => [...turn]);
-  const edits = [...EDITS];
   const answer = (prompt: string): Chunk[] => {
     if (prompt.includes(SCREEN_BRIEF_MARKER)) return screen.shift() ?? speak("nothing more to do");
-    if (prompt.includes(EDIT_MARKER)) return speak(edits.shift() ?? "<Cannot><Reason>no more edits</Reason></Cannot>");
     return speak(SPENDING);
   };
   const textOf = (request: { prompt?: unknown }): string => JSON.stringify(request.prompt ?? "");
@@ -215,12 +231,19 @@ async function walk(options: {
 describe("an app remembers what it was asked for, and what was decided", () => {
   it("create → edit → edit lands the three asks verbatim and in order, with the last save's decisions", async () => {
     const walked = await walk({
-      // TWO saves in the one assembly run: the second's `decisions` is what the
-      // app must end up with — a run that refines its own answer must not leave
-      // the superseded note behind.
       screenTurns: [
+        // The CREATE run. TWO saves in the one run: the second's `decisions` is
+        // what the app must end up with — a run that refines its own answer must
+        // not leave the superseded note behind.
         call("save_app", { content: SPENDING, decisions: DECISIONS_FIRST }, "c1"),
         call("save_app", { content: SPENDING_REFINED, decisions: DECISIONS_LAST }, "c2"),
+        speak("done"),
+        // EDIT 1, through the same loop: the whole document, rewritten.
+        call("save_app", { content: SPENDING_LAST_MONTH }, "c3"),
+        speak("done"),
+        // EDIT 2, likewise. Neither edit carries `decisions`, which is "nothing
+        // to add" — the create's block must survive both rewrites.
+        call("save_app", { content: SPENDING_WITHOUT_TRIP }, "c4"),
         speak("done"),
       ],
       asks: [
@@ -248,7 +271,11 @@ describe("an app remembers what it was asked for, and what was decided", () => {
   it("the edit brief OPENS with the memory — every earlier ask, and the decisions verbatim", async () => {
     const walked = await walk({
       screenTurns: [
+        // The create.
         call("save_app", { content: SPENDING, decisions: DECISIONS_LAST }, "c1"),
+        speak("done"),
+        // Edit 1 lands, so edit 2's editor is reading a live app.
+        call("save_app", { content: SPENDING_LAST_MONTH }, "c2"),
         speak("done"),
       ],
       asks: [
@@ -258,8 +285,11 @@ describe("an app remembers what it was asked for, and what was decided", () => {
       ],
     });
 
-    // The REAL brief the edit loop was handed, not a rendering of it.
-    const editBriefs = walked.prompts.filter((prompt) => prompt.includes(EDIT_MARKER));
+    // The REAL brief the edit loop was handed, not a rendering of it. An edit is
+    // the same loop as a create, and the memory block is what tells them apart:
+    // only an app that already exists has one.
+    const editBriefs = walked.prompts.filter((prompt) =>
+      prompt.includes(SCREEN_BRIEF_MARKER) && prompt.includes(MEMORY_MARKER));
     expect(editBriefs.length).toBeGreaterThan(1);
     const last = editBriefs.at(-1)!;
 
@@ -271,9 +301,9 @@ describe("an app remembers what it was asked for, and what was decided", () => {
     expect(last).toContain(ASK_EDIT_1);
     // …and the decisions the assembly run recorded, verbatim.
     expect(last).toContain("the ask was trip-only");
-    // BEFORE the document: the reader meets the filter as a choice, not as a bug
-    // to fix. (Both markers are in this one prompt, so the order is the claim.)
-    expect(last.indexOf(MEMORY_MARKER)).toBeLessThan(last.indexOf(EDIT_MARKER));
+    // BEFORE the instruction: the reader meets the filter as a choice, not as a
+    // bug to fix. (Both are in this one prompt, so the order is the claim.)
+    expect(last.indexOf(MEMORY_MARKER)).toBeLessThan(last.indexOf(ASK_EDIT_2));
   }, 60_000);
 
   it("the memory holds what the PERSON said — never the calling agent's `<context>`", async () => {
