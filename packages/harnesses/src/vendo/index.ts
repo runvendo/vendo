@@ -19,5 +19,7 @@ export {
   type TurnContext,
   type TurnLoop,
   type TurnLoopOptions,
+  type TurnPrompt,
+  type TurnPromptInput,
 } from "./loop.js";
 export { failoverModel, type ResolvedModel } from "./failover.js";

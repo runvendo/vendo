@@ -181,16 +181,91 @@ function shedToBudget(
 }
 
 /**
+ * Well-formedness, applied to EVERY projection whatever produced it.
+ *
+ * Two prompts a provider rejects outright, and this file can build both. A
+ * tool-call whose result is missing (or a result whose call is): the window
+ * slice above cannot cause it, but a part left at `input-available` by an
+ * abandoned approval arrives that way from the conversion — which is why
+ * `runtime.ts` has to flip those parts upstream before the projection ever runs.
+ * And a prompt whose first non-system message is the assistant's: {@link
+ * shedToBudget}'s last band drops from the FRONT, so it walks into one the
+ * moment a budget lands mid-history.
+ *
+ * Fixing it here rather than at each caller is the point: a projection is the
+ * only thing the provider sees, so well-formedness is a property of the
+ * projection, not a courtesy each producer has to remember.
+ */
+function wellFormed(messages: readonly ModelMessage[]): ModelMessage[] {
+  const called = new Set<string>();
+  const answered = new Set<string>();
+  for (const message of messages) {
+    if (typeof message.content === "string") continue;
+    for (const part of message.content) {
+      if (part.type === "tool-call") called.add(part.toolCallId);
+      if (part.type === "tool-result") answered.add(part.toolCallId);
+    }
+  }
+  const paired = messages.flatMap<ModelMessage>((message) => {
+    if (typeof message.content === "string") return [message];
+    const content = message.content.filter((part) => {
+      if (part.type === "tool-call") return answered.has(part.toolCallId);
+      if (part.type === "tool-result") return called.has(part.toolCallId);
+      return true;
+    });
+    // A message that was nothing but an orphan is no longer a message.
+    if (content.length === 0) return [];
+    return [{ ...message, content } as ModelMessage];
+  });
+  // The ask always survives (see {@link shedToBudget}), so there is normally a
+  // user message to anchor on; a history with none at all cannot be repaired by
+  // dropping more of it, so it is left alone for the caller's error to be the
+  // one that surfaces.
+  const firstUser = paired.findIndex((message) => message.role === "user");
+  if (firstUser === -1) return paired;
+  const firstNonSystem = paired.findIndex((message) => message.role !== "system");
+  return [...paired.slice(0, firstNonSystem), ...paired.slice(firstUser)];
+}
+
+/**
+ * One turn's prompt inputs. This was four positionals; the shipment's window
+ * table, compaction and overflow retry add three more, and a seventh positional
+ * is unreadable at the call site — so the shape is declared once, whole, before
+ * three slices fill it.
+ *
+ * BREAKING: `turnModelMessages` is public (`vendo/index.ts`).
+ */
+export interface TurnPromptInput {
+  messages: UIMessage[];
+  system: string;
+  /** The live toolset, so the trigger can count the tools block. */
+  tools?: ToolSet;
+  historyWindow?: number;
+  tokenBudget?: number;
+  /** `TurnCompaction`, once it exists. */
+  compaction?: unknown;
+  /** Model messages this turn ALREADY produced: appended after the projection
+   *  and never summarized, so a retry CONTINUES the turn instead of re-running
+   *  its tool calls — each one a real guarded effect. */
+  resume?: readonly ModelMessage[];
+}
+
+export interface TurnPrompt {
+  messages: ModelMessage[];
+  /** `CompactionState`, once it exists — carried out as DATA, because the loop
+   *  does not know where the caller's state slot is. */
+  compacted?: unknown;
+}
+
+/**
  * The provider messages for one turn: the system prompt, the optionally windowed
  * and budgeted history, and the cache breakpoints that keep a growing thread from
  * re-billing.
+ *
+ * `tools`, `compaction` and `resume` are accepted and not yet read.
  */
-export async function turnModelMessages(
-  messages: UIMessage[],
-  system: string,
-  historyWindow: number | undefined,
-  tokenBudget?: number,
-): Promise<ModelMessage[]> {
+export async function turnModelMessages(input: TurnPromptInput): Promise<TurnPrompt> {
+  const { messages, system, historyWindow, tokenBudget } = input;
   // History windowing: bound what is re-sent per turn to the last N whole messages.
   // Slicing whole UIMessages keeps each turn's tool-call/result pairing intact.
   const history = historyWindow !== undefined && messages.length > historyWindow
@@ -202,6 +277,9 @@ export async function turnModelMessages(
   // bills, and it runs before the breakpoints below because shedding changes
   // which message is the stable prefix's last one.
   if (tokenBudget !== undefined) converted = shedToBudget(converted, system, tokenBudget);
+  // Whatever the window and the shed left behind, the prompt still has to be one
+  // a provider will accept — and this is the last place that is knowable.
+  converted = wellFormed(converted);
   // Cache the stable history prefix (everything but the final message) alongside the
   // static system prompt below, so Anthropic re-reads the cached prefix instead of
   // re-billing the whole growing thread each turn.
@@ -209,10 +287,12 @@ export async function turnModelMessages(
     const prefixEnd = converted[converted.length - 2] as ModelMessage;
     prefixEnd.providerOptions = { ...prefixEnd.providerOptions, ...CACHE_BREAKPOINT };
   }
-  return [
-    { role: "system", content: system, providerOptions: CACHE_BREAKPOINT },
-    ...converted,
-  ];
+  return {
+    messages: [
+      { role: "system", content: system, providerOptions: CACHE_BREAKPOINT },
+      ...converted,
+    ],
+  };
 }
 
 export interface TurnLoopOptions {
@@ -284,12 +364,12 @@ function turnModel(options: TurnLoopOptions): LanguageModel {
 
 export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
   const maxSteps = options.context?.maxSteps ?? DEFAULT_MAX_STEPS;
-  const modelMessages = await turnModelMessages(
-    options.messages,
-    options.system,
-    options.context?.historyWindow,
-    options.context?.contextTokenBudget,
-  );
+  const { messages: modelMessages } = await turnModelMessages({
+    messages: options.messages,
+    system: options.system,
+    historyWindow: options.context?.historyWindow,
+    tokenBudget: options.context?.contextTokenBudget,
+  });
   const { toolSearch } = options;
   const result = streamText({
     model: turnModel(options),
