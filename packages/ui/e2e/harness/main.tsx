@@ -2199,6 +2199,47 @@ function ByoEmbedScenario({ appId, title }: { appId: string; title: string }) {
   );
 }
 
+/** A placement written at mint time, narrating itself: the skeleton while the
+ *  build streams, then the app in place. ALONE on its page — every mounted slot
+ *  shares one poller, so a page of five would burn the fixture's build window
+ *  in the mount burst. No host markup either: a slot that has its own content
+ *  keeps it while a build forms, so the beat belongs to the empty one. */
+function SlotBuildingScenario() {
+  return <VendoSlot id="slot-building" />;
+}
+
+/** The rest of the slot's build vocabulary over the real wire: both ready
+ *  surface kinds (tree and http) and a terminally failed build.
+ *  `slot-failed-clear` is seeded by the spec itself, so the destructive case is
+ *  idempotent under retries. */
+function SlotStatesScenario() {
+  return (
+    <div style={{ display: "grid", gap: 16 }}>
+      <section aria-label="Slot ready tree"><VendoSlot id="slot-ready"><p>Host hero (tree)</p></VendoSlot></section>
+      <section aria-label="Slot ready http"><VendoSlot id="slot-http"><p>Host hero (served)</p></VendoSlot></section>
+      <section aria-label="Slot failed"><VendoSlot id="slot-failed"><p>Host hero (failed)</p></VendoSlot></section>
+      <section aria-label="Slot failed clear"><VendoSlot id="slot-failed-clear"><p>Host hero (clear me)</p></VendoSlot></section>
+    </div>
+  );
+}
+
+/** "Add to…": a chat page's embed writing a placement into a slot mounted on the
+ *  SAME page. The slot renders first so its note lands before the picker reads
+ *  the list. */
+function SlotPickerScenario() {
+  return (
+    <VendoProvider client={baseClient} components={components}>
+      <div style={{ display: "grid", gap: 16 }}>
+        <VendoSlot id="picker-target"><p>Host hero (empty)</p></VendoSlot>
+        <p style={{ margin: 0 }}>AI: here is the view you asked for.</p>
+        {/* The envelope always says "building"; app_1 is servable, so the wire
+            answers with the surface and the bar flips to the app's name. */}
+        <VendoToolResult output={{ kind: "vendo/app-ref@1", appId: "app_1", title: "Invoices", status: "building" }} />
+      </div>
+    </VendoProvider>
+  );
+}
+
 function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme>; content: ReactNode; ownProvider?: boolean } {
   switch (pathname) {
     case "/thread": return { title: "Thread — dark theme", theme: darkTheme, content: <VendoThread threadId="thr_1" /> };
@@ -2264,6 +2305,9 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/slot-empty-dark": return { title: "Inline slot — empty CTA (dark)", theme: darkTheme, content: <><VendoSlot id="hero" /><VendoPalette /><VendoOverlay launcher="none" /></> };
     case "/slot-pinned": return { title: "Inline slot — pinned component", theme: mapleTheme, content: <VendoSlot id="hero" pin={{ payload: pinnedViewTree }}><section aria-label="Original host component"><h2>Original host hero</h2></section></VendoSlot> };
     case "/slot-fallback": return { title: "Slot pin fallback", content: <SlotFallbackScenario />, ownProvider: true };
+    case "/slot-building": return { title: "Inline slot — a build landing in place", content: <SlotBuildingScenario /> };
+    case "/slot-states": return { title: "Inline slot — ready / failed", content: <SlotStatesScenario /> };
+    case "/slot-picker": return { title: "Add to… — embed writes a placement", content: <SlotPickerScenario />, ownProvider: true };
     case "/pin-shelf": return { title: "Pin — nudge, ceremony, Apps shelf", content: <PinShelfScenario />, ownProvider: true };
     case "/appframe": return { title: "App execution planes", content: <AppFrameScenario /> };
     case "/appframe-resize": return { title: "App frame resize — the host's bounds win", content: <AppFrameResizeScenario /> };

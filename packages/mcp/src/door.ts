@@ -175,6 +175,25 @@ export interface McpDoorConfig {
    */
   menuTools?: string[] | (() => string[] | undefined | Promise<string[] | undefined>);
   /**
+   * Names this door NEVER offers, whatever else says otherwise.
+   *
+   * The MENU curates the host's API and deliberately cannot touch Vendo's own
+   * `vendo_*` plumbing. This is the other decision: what THIS door, as deployed,
+   * does not do. It is checked BEFORE the prefix bypass, so a deployment can
+   * hold back a runtime tool (the placement pair, for a door whose client has no
+   * page to place anything on) without inventing a second menu.
+   *
+   * Same posture as the menu: curation, not security. A withheld name is neither
+   * listed nor callable, and the refusal is the SAME in-band not-found an
+   * unknown name gets — it leaks nothing and grants nothing. The guard, not this
+   * list, is what stops a call that IS offered.
+   *
+   * A plain list rather than a provider: unlike the menu (which is read from a
+   * file that changes under a running process), this is authored in composition
+   * and cannot change without one.
+   */
+  withholdTools?: string[];
+  /**
    * The product name shown to PEOPLE (the connect page) and advertised on the
    * server card. Wins over the `package.json` name the door otherwise reads,
    * which is a package id and is often not what the product is called. Set it
@@ -242,6 +261,9 @@ export function createMcpDoorWithState(config: McpDoorConfig, state: McpDoorStat
 
 class Door {
   readonly #config: McpDoorConfig;
+  /** {@link McpDoorConfig.withholdTools}, resolved once — config is fixed at
+   *  construction, so unlike the menu there is nothing to re-read. */
+  readonly #withheld: ReadonlySet<string>;
   /** The OUTSIDE credential space, as this door holds it: the protocol server
    *  and the host's own adapter, present or absent TOGETHER. Both are undefined
    *  on an `internal` door — which is the whole of what "internal" means, and
@@ -269,6 +291,7 @@ class Door {
   constructor(config: McpDoorConfig, state: McpDoorState) {
     this.#config = config;
     this.#state = state;
+    this.#withheld = new Set(config.withholdTools ?? []);
     // `internal` WINS, and it wins here rather than at each route, so there is
     // exactly one place that can decide whether an outside space exists. An
     // adapter passed alongside it is dropped rather than rejected: the flag is
@@ -717,7 +740,7 @@ class Door {
     state.server.setRequestHandler(ListToolsRequestSchema, async () => {
       const tools = state.turn === undefined
         ? await this.#listedTools(state)
-        : await turnTools(state.turn);
+        : await turnTools(state.turn, this.#withheld);
       return { tools };
     });
     state.server.setRequestHandler(CallToolRequestSchema, async (request) =>
@@ -764,7 +787,7 @@ class Door {
     // `mcpContext` hardcodes `presence: "present"` and is a hole the moment any
     // context here can say otherwise. Not projected has to mean not projected.
     const descriptors = (await this.#config.tools.descriptors(state.context))
-      .filter((descriptor) => offeredAtDoor(menu, descriptor.name));
+      .filter((descriptor) => offeredAtDoor(menu, descriptor.name, this.#withheld));
     const appsConfigured = this.#config.apps !== undefined;
     const compiles = wireSchemaCompiler();
     // The bound registry's descriptors are served VERBATIM — name, description,
@@ -797,7 +820,7 @@ class Door {
     // verbatim descriptor (with door `_meta` attached above) and is not duplicated.
     if (appsConfigured) {
       const taken = new Set(tools.map((tool) => tool.name));
-      tools.push(...appTools().filter((tool) => !taken.has(tool.name)));
+      tools.push(...appTools().filter((tool) => !taken.has(tool.name) && !this.#withheld.has(tool.name)));
     }
     return tools;
   }
@@ -814,7 +837,12 @@ class Door {
     // parity by construction rather than a second implementation of it. The
     // turn's own curation (the loadout, `surfaces.agent`, §12) already decided
     // what is callable, and an unknown name comes back as its own error.
+    //
+    // A WITHHELD name is the exception, because it is not curation: it is what
+    // this door does not do, so it is refused here exactly as the OAuth leg
+    // refuses it — not offered has to mean not callable on either leg.
     if (state.turn !== undefined) {
+      if (this.#withheld.has(name)) return inBandError(`not-found: Tool ${name} was not found`);
       const turn = state.turn;
       return turnResult(await turn.tools.call(name, args as Json));
     }
@@ -822,8 +850,12 @@ class Door {
     // An off-menu name answers exactly like a name that does not exist: the
     // menu decides what this door OFFERS, and offering nothing is the whole
     // refusal (the guard, not the menu, is what stops a call that IS offered).
-    if (!offeredAtDoor(await this.#menu(), name) || !descriptors.some((descriptor) => descriptor.name === name)) {
-      if (this.#config.apps !== undefined && APP_TOOL_NAMES.has(name)) {
+    if (!offeredAtDoor(await this.#menu(), name, this.#withheld)
+      || !descriptors.some((descriptor) => descriptor.name === name)) {
+      // The apps ride-along path answers names the registry does not own, so it
+      // has to honour the same withholding — otherwise a withheld viewer name
+      // would be invisible on the listing and callable anyway.
+      if (this.#config.apps !== undefined && APP_TOOL_NAMES.has(name) && !this.#withheld.has(name)) {
         return this.#callAppsTool(name, args, state, identity);
       }
       return inBandError(`not-found: Tool ${name} was not found`);
@@ -1251,8 +1283,13 @@ const VENDO_RESULT_PREFIX = "vendo_";
 const VENDO_RESULT_VALUE = `${VENDO_RESULT_PREFIX}value`;
 
 /** Whether a curated door offers `name`. Asked by BOTH the listing and the call
- *  path, so a curated door cannot advertise one surface and answer to another. */
-function offeredAtDoor(menu: Set<string> | undefined, name: string): boolean {
+ *  path, so a curated door cannot advertise one surface and answer to another.
+ *
+ *  `withheld` is checked FIRST, ahead of the `vendo_` bypass: the bypass exists
+ *  so a HOST's menu cannot delete Vendo's plumbing, while the withhold list is
+ *  the deployment's own decision about its own door. */
+function offeredAtDoor(menu: Set<string> | undefined, name: string, withheld: ReadonlySet<string>): boolean {
+  if (withheld.has(name)) return false;
   return menu === undefined || name.startsWith(VENDO_TOOL_PREFIX) || menu.has(name);
 }
 
@@ -1507,12 +1544,15 @@ function bearerOf(req: Request): string | undefined {
  * re-applying its own `surfaces.mcp` menu here would curate a CHAT turn's tools
  * by the MCP door's list, which is the wrong menu for the wrong surface.
  *
+ * `withheld` is the exception, and it is not a menu: it is what THIS door, as
+ * deployed, does not do, so it holds on every leg of the mount.
+ *
  * Asked fresh on every `tools/list`, so a tool `find_tools` equipped mid-turn is
  * visible without reopening anything — the limitation that made the in-process
  * projection snapshot its tool set at session open dies here.
  */
-async function turnTools(turn: LiveTurn): Promise<Tool[]> {
-  const listings = await turn.tools.list();
+async function turnTools(turn: LiveTurn, withheld: ReadonlySet<string>): Promise<Tool[]> {
+  const listings = (await turn.tools.list()).filter((listing) => !withheld.has(listing.name));
   const compiles = wireSchemaCompiler();
   return listings.map((listing) => {
     const label = listing.title === undefined || listing.title.trim() === "" ? undefined : listing.title;

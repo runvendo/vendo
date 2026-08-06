@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   isVendoAppsTool,
   modelToolDescription,
+  PRESENCE_ONLY_TOOLS,
   TOOL_NAME_PATTERN,
+  VENDO_APPS_PIN_TOOL,
   VENDO_APPS_TOOL_PREFIX,
+  VENDO_APPS_UNPIN_TOOL,
   VENDO_MAKE_TOOL,
   VENDO_TOOL_TITLES,
 } from "./index.js";
@@ -73,5 +76,30 @@ describe("modelToolDescription — the model can only speak a title it was told"
     // `ToolListing.title` falls back to the NAME; repeating the identifier as a
     // label would teach the model exactly the wrong vocabulary.
     expect(modelToolDescription({ name: "host_x", title: "host_x", description: "Does a thing." })).toBe("Does a thing.");
+  });
+});
+
+describe("the placement pair — one name, read by three packages", () => {
+  it("pins both names inside the apps family, so the family's laws apply to them", () => {
+    expect(VENDO_APPS_PIN_TOOL).toBe("vendo_apps_pin");
+    expect(VENDO_APPS_UNPIN_TOOL).toBe("vendo_apps_unpin");
+    expect(isVendoAppsTool(VENDO_APPS_PIN_TOOL)).toBe(true);
+    expect(isVendoAppsTool(VENDO_APPS_UNPIN_TOOL)).toBe(true);
+    expect(TOOL_NAME_PATTERN.test(VENDO_APPS_PIN_TOOL)).toBe(true);
+    expect(TOOL_NAME_PATTERN.test(VENDO_APPS_UNPIN_TOOL)).toBe(true);
+  });
+
+  it("titles both in the consumer voice — a model may only say a label it was told", () => {
+    // The apps package asserts `descriptor.title === VENDO_TOOL_TITLES[name]`
+    // for EVERY descriptor, so a missing entry here is a titleless tool there.
+    expect(VENDO_TOOL_TITLES[VENDO_APPS_PIN_TOOL]).toBe("Pin the app to your page");
+    expect(VENDO_TOOL_TITLES[VENDO_APPS_UNPIN_TOOL]).toBe("Take the app off your page");
+    for (const title of [VENDO_TOOL_TITLES[VENDO_APPS_PIN_TOOL], VENDO_TOOL_TITLES[VENDO_APPS_UNPIN_TOOL]]) {
+      expect(title).not.toMatch(/vendo|_/i);
+    }
+  });
+
+  it("names them as the presence-only set the projection reads", () => {
+    expect([...PRESENCE_ONLY_TOOLS].sort()).toEqual(["vendo_apps_pin", "vendo_apps_unpin"]);
   });
 });

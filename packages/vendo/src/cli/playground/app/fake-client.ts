@@ -18,6 +18,8 @@ export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
     approvals: [...fixtures.approvals],
     approvalResolutions: new Map<string, ApprovalResolution>(),
     grants: [...fixtures.grants],
+    /** Placement rows (2026-08-05) — one per slot, as the wire keeps them. */
+    placements: [] as Array<{ slot: string; appId: string }>,
     runs: [...fixtures.runs],
   };
 
@@ -203,6 +205,25 @@ export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
         baseHash: "sha256:playground",
         replayed: [],
       }),
+      // Placement (2026-08-05) — one app per slot, and every placed app in the
+      // playground is already built, so the status is always "ready".
+      place: async (id, slot) => {
+        const held = state.placements.find((row) => row.slot === slot);
+        state.placements = [...state.placements.filter((row) => row.slot !== slot), { slot, appId: id }];
+        return held === undefined || held.appId === id ? {} : { evicted: held.appId };
+      },
+      unplace: async (id, slot) => {
+        const held = state.placements.find((row) => row.slot === slot);
+        if (held?.appId === id) state.placements = state.placements.filter((row) => row.slot !== slot);
+      },
+      placements: async (slots) => state.placements
+        .filter((row) => slots === undefined || slots.length === 0 || slots.includes(row.slot))
+        .map((row) => ({
+          slot: row.slot,
+          app: row.appId,
+          title: state.apps.find((candidate) => candidate.id === row.appId)?.name ?? "",
+          status: "ready" as const,
+        })),
     },
 
     automations: {

@@ -1,7 +1,12 @@
 import { canonicalJson } from "./jcs.js";
 import { sha256Hex } from "./sha256.js";
 import type { Json } from "./ids.js";
-import { USE_SERVICE_TOOL, type ToolDescriptor } from "./tools.js";
+import {
+  PRESENCE_ONLY_TOOLS,
+  USE_SERVICE_TOOL,
+  type ToolCall,
+  type ToolDescriptor,
+} from "./tools.js";
 import type { RunContext } from "./run-context.js";
 
 /** Build contract §7 — a grant set is per person, bound to an app's INTENT
@@ -117,7 +122,12 @@ export function projectableForRun(
 ): ToolDescriptor[] {
   if (!isUnattended(ctx)) return [...descriptors];
   return descriptors.filter(
-    (descriptor) => !withheldFromUnattended(descriptor) || isGrantedDispatcher(descriptor, ctx),
+    (descriptor) =>
+      // A tool whose whole effect is on a person's screen has nothing to act on
+      // when nobody is there — see {@link PRESENCE_ONLY_TOOLS}. Named, not
+      // graded: these are honest `write`s.
+      !PRESENCE_ONLY_TOOLS.has(descriptor.name)
+      && (!withheldFromUnattended(descriptor) || isGrantedDispatcher(descriptor, ctx)),
   );
 }
 
@@ -175,6 +185,23 @@ function isGrantedDispatcher(
  */
 export function withheldFromUnattended(descriptor: ToolDescriptor): boolean {
   return descriptor.risk === "destructive" || descriptor.risk === "ungraded";
+}
+
+/**
+ * The presence-only half of the law, as a CALL rather than as a name.
+ *
+ * {@link PRESENCE_ONLY_TOOLS} names the two tools whose WHOLE effect is on a
+ * person's screen; refusing them unattended costs nothing else.
+ *
+ * `vendo_make` is not one of them, even carrying a `slot`. Ruled 2026-08-06:
+ * placement is what needs somebody there, creation is not, and refusing the
+ * call outright would silently break the automations that legitimately build
+ * screens. An unattended make BUILDS and simply does not take the slot — the
+ * drop is at the tool's own door (`apps/agent-tools.ts`), where the app that
+ * was asked for still gets made.
+ */
+export function presenceOnlyCall(call: Pick<ToolCall, "tool">): boolean {
+  return PRESENCE_ONLY_TOOLS.has(call.tool);
 }
 
 /** §12 — "Whole-registry declarations are rejected, not bundled; a declared set

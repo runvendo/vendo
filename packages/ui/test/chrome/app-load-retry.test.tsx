@@ -20,7 +20,6 @@ const pinned: AppDocument = {
     root: "root",
     nodes: [{ id: "root", component: "Text", props: { text: "Invoices app surface" } }],
   },
-  placements: ["hero"],
 };
 
 describe("useApp load retry (Keystone graduates A5)", () => {
@@ -30,7 +29,12 @@ describe("useApp load retry (Keystone graduates A5)", () => {
   beforeEach(async () => {
     wire = await createWireServer();
     client = createVendoClient({ baseUrl: wire.url });
-    vi.spyOn(client.apps, "list").mockResolvedValue([pinned]);
+    // Discovery is placement ROWS now (2026-08-05): the slot reads
+    // GET /apps/placements, not the app list. The document below still drives
+    // apps.open — which is what this file is actually about.
+    vi.spyOn(client.apps, "placements").mockResolvedValue([
+      { slot: "hero", app: "app_1", title: "Invoices", status: "ready" },
+    ]);
   });
 
   afterEach(async () => {

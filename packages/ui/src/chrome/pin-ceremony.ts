@@ -26,6 +26,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useVendoProvider } from "../context.js";
 import { announcePin, onPinAnnounced, pinTaken } from "../pin-events.js";
 import { openVendoConversation } from "./overlay-registry.js";
+import { developmentMode } from "./dev-mode.js";
 
 /** 300 + 180 = 480ms end to end (the design budget is "under half a second"). */
 const FLIGHT_MS = 300;
@@ -302,23 +303,48 @@ export function usePinNudge(appId: string, invited: boolean): "invite" | "pinned
   return invited ? "invite" : undefined;
 }
 
+/**
+ * Every pin affordance's one path: ceremony, THEN the placement write, then
+ * the announcement that lets every mounted slot show the result without
+ * waiting for a poll, then the host's optional `onPin`.
+ *
+ * The write is Vendo's now (2026-08-05): a pin is `apps.place`, awaited, so
+ * "the app is in the slot" is true before anything is announced. `onPin`
+ * survives as a side-effect seam for hosts that mirror the pin into their own
+ * product state — it is no longer what makes a pin happen, and a host that
+ * wires only `pinSlot` gets the whole feature with no server code at all.
+ *
+ * Returns undefined when the host wired NEITHER — which is what hides the
+ * affordances in the first place.
+ */
 export function usePinAction(): ((app: { appId: string; payload: unknown }) => void) | undefined {
-  const { onPin, pinSlot } = useVendoProvider();
+  // `useVendoProvider` since #852 — the file already imports it under that name.
+  const { client, onPin, pinSlot } = useVendoProvider();
   const pin = useCallback(
     (app: { appId: string; payload: unknown }) => {
-      if (onPin === undefined) return;
       playPinCeremony({
         appId: app.appId,
         ...(pinSlot === undefined ? {} : { slot: pinSlot }),
         dismiss: () => void openVendoConversation({ close: true }),
       });
-      // onPin is fire-and-forget by contract (it returns void), so this
-      // re-read can beat the host's write to the server — the slot covers that
-      // with a second read as the ghost lands, and its poll is the floor.
-      onPin(app);
-      announcePin(app.appId);
+      void (async () => {
+        if (pinSlot !== undefined) {
+          try {
+            await client.apps.place(app.appId, pinSlot);
+          } catch (reason) {
+            // The ceremony already played and the host's own seam still runs:
+            // a failed write must not swallow the rest of the path, and the
+            // slot's next read is the truth either way.
+            if (developmentMode()) {
+              console.warn(`[vendo] pin: placing ${app.appId} in "${pinSlot}" failed — ${String(reason)}`);
+            }
+          }
+        }
+        announcePin(app.appId);
+        onPin?.(app);
+      })();
     },
-    [onPin, pinSlot],
+    [client, onPin, pinSlot],
   );
-  return onPin === undefined ? undefined : pin;
+  return pinSlot === undefined && onPin === undefined ? undefined : pin;
 }

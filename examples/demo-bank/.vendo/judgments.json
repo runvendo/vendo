@@ -82,31 +82,6 @@
       },
       "evidence": "  const user = await resolveMapleSession(request);\n  if (user === null) return ok({ chips: [] });\n  const chips = await readChipManifest(user.subject);\n  return ok({ chips: chips.map(({ key, prompt }) => ({ key, prompt })) });"
     },
-    "host_demo_pin_create": {
-      "binding": "POST /maple/api/demo/pin",
-      "srcHash": "sha256:2b2382a49fa37795b8d0c105ee6d8a1d8b6c58133d4de957e7fd858b034cb4f1",
-      "fields": {
-        "description": "Place an app the signed-in user owns into the host \"home-hero\" slot (the only accepted slot). Writes doc.placements on the stored app row and clears that slot from the user's other apps; requires a session and app ownership, else 400/404.",
-        "title": "Pin a view to your home screen",
-        "risk": "write",
-        "semantics": {
-          "data.pinned": {
-            "kind": "plain"
-          },
-          "data.appId": {
-            "kind": "id",
-            "entity": "app"
-          },
-          "data.slot": {
-            "kind": "enum",
-            "labels": {
-              "home-hero": "Home hero"
-            }
-          }
-        }
-      },
-      "evidence": "  const placements = [...(row.data.doc.placements ?? []).filter((name) => name !== slot), slot];\n  await apps.put({ id: appId, data: { ...row.data, doc: { ...row.data.doc, placements } } });\n  return ok({ pinned: true, appId, slot });"
-    },
     "host_demo_reset_create": {
       "binding": "POST /maple/api/demo/reset",
       "srcHash": "sha256:3f7f5ad1b2866abc1333c37150ad0798424ca4708b223c4e700ef0f9cf05cf0e",

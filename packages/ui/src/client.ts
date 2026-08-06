@@ -37,6 +37,7 @@ import type {
   PinDrift,
   PinForkResult,
   PinRebaseResult,
+  PlacementEntry,
   RunPlan,
   RunRecord,
   RunStatus,
@@ -155,6 +156,17 @@ export interface VendoClient {
      * means the machine had slept — the embed's URL is stale; re-open.
      */
     pingMachine(id: AppId): Promise<{ state: "awake" | "woke" }>;
+    /**
+     * Placement (2026-08-05) — "show this app in that slot". `POST
+     * /apps/:id/place`; one app per slot, so the answer names whatever the
+     * write displaced (`evicted`).
+     */
+    place(id: AppId, slot: string): Promise<{ evicted?: string }>;
+    /** `POST /apps/:id/unplace` — clear the slot, if this app still holds it. */
+    unplace(id: AppId, slot: string): Promise<void>;
+    /** `GET /apps/placements` — what is in the caller's slots. Pass the slots
+     *  actually mounted so one request answers the whole page. */
+    placements(slots?: readonly string[]): Promise<PlacementEntry[]>;
   };
 
   automations: {

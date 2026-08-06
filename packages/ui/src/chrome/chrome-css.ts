@@ -1873,6 +1873,21 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--vendo-accent) 26%, transparent); }
   45% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--vendo-accent) 10%, transparent); } }
 
+/* "Add to…" on the embed's app-card bar: the picker that writes a placement
+   from a chat page. The trigger is the existing .fl-barpin; the menu borrows
+   the ✦ popover's glass look (.fl-remix-menu). */
+.fl-slotpick { position: relative; margin-left: auto; display: inline-flex; flex-shrink: 0; }
+.fl-slotpick .fl-barpin { margin-left: 0; }
+.fl-slotpick-menu { position: absolute; top: 28px; right: 0; z-index: 8; min-width: 172px; padding: 6px;
+  display: flex; flex-direction: column; gap: 2px; text-align: left;
+  border: 1px solid var(--vendo-border-strong); border-radius: 12px;
+  background: var(--vendo-surface); box-shadow: var(--vendo-shadow-float); }
+.fl-slotpick-menu button { text-align: left; font: 500 12.5px/1.2 var(--vendo-font); padding: 7px 9px;
+  border: 0; border-radius: 8px; background: transparent; color: var(--vendo-fg); cursor: pointer; }
+.fl-slotpick-menu button:hover { background: var(--vendo-accent-soft); }
+.fl-slotpick-menu button:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 1px; }
+.fl-slotpick-note { padding: 6px 9px; font: 500 11px/1.4 var(--vendo-font); color: var(--vendo-fg-muted); }
+
 /* 2B — Send now on the queued pill. */
 .fl-queued-now { flex-shrink: 0; border: 0; background: none; cursor: pointer; padding: 3px 6px;
   border-radius: 6px; font: 600 11px/1.2 var(--vendo-font); color: var(--vendo-accent); }

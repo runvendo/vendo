@@ -297,8 +297,6 @@ describe("06-apps §8 — fork idempotency (appId-less dedupe)", () => {
     const runtime = runtimeWith(store);
 
     const first = await runtime.pins.fork({ slot: SLOT }, ctx);
-    // The empty-slot mint records the placement slot discovery mounts by.
-    expect(first.app.placements).toEqual([SLOT]);
     const second = await runtime.pins.fork({ slot: SLOT }, ctx);
     expect(second.app.id).toBe(first.app.id);
     expect(second.app).toEqual(first.app);
