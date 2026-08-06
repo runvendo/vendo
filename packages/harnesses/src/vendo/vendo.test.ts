@@ -11,6 +11,7 @@ import type { HarnessEvent, Json, ToolDescriptor, Turn } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { vendo, type HarnessHand } from "./vendo.js";
 import { createTurnTools } from "../turn-tools.js";
+import type { HireRecord } from "../runtime.js";
 import {
   boundRegistry,
   ctx,
@@ -335,7 +336,7 @@ describe("vendo() — subagent hiring (build-list item 4)", () => {
     expect(texts(events)).toContain("couldn't find");
   });
 
-  it("counts the specialist's tokens into the turn's usage (billing, not the story layer)", async () => {
+  it("reports the specialist's tokens as the SPECIALIST's, never folded into the turn's", async () => {
     const model = scriptedModel([
       toolCallTurn("hire_subagent", { instructions: "big job" }),
       // The specialist's own turn spends the bulk of the tokens.
@@ -348,7 +349,7 @@ describe("vendo() — subagent hiring (build-list item 4)", () => {
         outputTokens: { total: 100, text: 100, reasoning: 0 },
       }),
     ]);
-    const hires: Array<{ usage: { inputTokens: number; outputTokens: number } }> = [];
+    const hires: HireRecord[] = [];
     const { events } = await drive({
       harness: vendo({ onHire: (record) => hires.push(record) }),
       models: seats(model),
@@ -357,12 +358,15 @@ describe("vendo() — subagent hiring (build-list item 4)", () => {
     const usage = events.find((event) => event.type === "usage") as
       | Extract<HarnessEvent, { type: "usage" }>
       | undefined;
-    // The resident alone would report 1,000/100 — 91% of the spend unmetered.
-    expect(usage?.inputTokens).toBe(91_000);
-    expect(usage?.outputTokens).toBe(4_100);
-    // And the hire itself is reported, so composition can audit that it happened.
+    // The resident loop's own spend. Adding the hire's 90,000 here as well is
+    // what over-billed: the hire is ALSO reported below, and the runtime writes
+    // each report as its own audit row, so a host summing rows paid twice.
+    expect(usage?.inputTokens).toBe(1_000);
+    expect(usage?.outputTokens).toBe(100);
+    // The hire's spend, once, in full — cache split included, because its row is
+    // the only row that carries it. (The rows themselves: ./ledger.test.ts.)
     expect(hires).toHaveLength(1);
-    expect(hires[0]!.usage).toEqual({ inputTokens: 90_000, outputTokens: 4_000 });
+    expect(hires[0]!.usage).toMatchObject({ inputTokens: 90_000, outputTokens: 4_000 });
   });
 
   it("a subagent cannot hire a subagent — depth is bounded", async () => {
