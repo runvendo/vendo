@@ -273,4 +273,32 @@ describe("two hires in one step, and one ledger between them", () => {
     expect(hires.map((record) => record.usage.outputTokens)).toEqual([2_000, 2_000]);
     expect(hires.map((record) => record.purpose).sort()).toEqual(["job one", "job two"]);
   });
+
+  it("hands back the finished work even when the receipt cannot be booked", async () => {
+    const model = scriptedModel([
+      toolCallTurn(HIRE_SUBAGENT, { instructions: "the big job" }),
+      textTurn("the big job is done"),
+      textTurn("All set."),
+    ]);
+
+    const events = await driveTurn({
+      // `onHire` is a public knob a host overrides to observe hires somewhere of
+      // its own, so its failures are the host's, not the specialist's.
+      harness: vendo({
+        onHire: () => {
+          throw new Error("receipt sink is down");
+        },
+      }),
+      registry: NO_TOOLS,
+      model,
+    });
+
+    // The specialist ran and its tokens are already spent. Reporting a bookkeeping
+    // failure as "could not be reached" invites the one reaction that costs real
+    // money — hiring again for a job that is already done and already paid for.
+    const afterTheHire = JSON.stringify(model.prompts[2]);
+    expect(afterTheHire).toContain("the big job is done");
+    expect(afterTheHire).not.toContain("could not be reached");
+    expect(texts(events)).toBe("All set.");
+  });
 });

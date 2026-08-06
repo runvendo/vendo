@@ -333,6 +333,7 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
           skill: z.string().optional().describe("A skill name from your skill list."),
         }),
         execute: async (input) => {
+          let report: SubagentReport;
           try {
             // The specialist gets the same hands as the resident has RIGHT NOW —
             // searched-in tools included — minus the hiring tool, so depth is
@@ -342,7 +343,16 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
             // time, so the loadout has to be too or it could name a tool the
             // specialist was never handed.
             const loadout = equipped.filter((name) => name !== HIRE_SUBAGENT);
-            const report = await runSubagent(turn, model, input, hands, loadout);
+            report = await runSubagent(turn, model, input, hands, loadout);
+          } catch (error) {
+            // A failed hire is one tool result the resident can react to — never
+            // the turn's death.
+            console.error("[vendo] harness: subagent failed", {
+              error: error instanceof Error ? error.message : String(error),
+            });
+            return { error: "The specialist could not be reached for that job." };
+          }
+          try {
             // The ONLY place a hire's spend is reported. The turn's `usage` event
             // stays the resident's own, so the run row and the hire rows partition
             // the turn instead of overlapping — see `reportRun`.
@@ -352,15 +362,17 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
               summary: report.summary,
               usage: report.usage,
             });
-            return { summary: report.summary };
           } catch (error) {
-            // A failed hire is one tool result the resident can react to — never
-            // the turn's death.
-            console.error("[vendo] harness: subagent failed", {
+            // The work is DONE and its tokens are already spent, so a receipt
+            // that cannot be booked must never read as a hire that failed: the
+            // resident's sane reply to a failed hire is to hire again, and the
+            // same job would then be paid for twice. `onHire` is a host's knob;
+            // its bugs cost the host a receipt, not a second specialist.
+            console.error("[vendo] harness: hire receipt failed to book", {
               error: error instanceof Error ? error.message : String(error),
             });
-            return { error: "The specialist could not be reached for that job." };
           }
+          return { summary: report.summary };
         },
       });
 
