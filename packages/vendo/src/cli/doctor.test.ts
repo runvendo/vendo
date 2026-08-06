@@ -451,6 +451,64 @@ describe("vendo doctor", () => {
     expect(fetchImpl.mock.calls[4]?.[0]).toBe("http://localhost:3000/api/vendo/doctor/machines");
   });
 
+  it("a declined actAs mint warns E-AUTH-008 instead of claiming actAs is unconfigured (#873)", async () => {
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.endsWith("/status")) {
+        return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
+      }
+      if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
+      if (url.endsWith("/doctor/act-as")) {
+        return Response.json(
+          { ok: false, error: { code: "act-as-declined", message: "the host declined away execution for this action" } },
+          { status: 409 },
+        );
+      }
+      if (url.endsWith("/doctor/machines")) return Response.json({ scheduleCallerConfigured: false, machines: [] });
+      return Response.json({ error: { message: "unexpected probe" } }, { status: 404 });
+    });
+    const messages = output();
+    // A declined synthetic principal is a correctly wired host, not a failure:
+    // warn, keep exit 0.
+    expect(await doctor({
+      targetDir: await healthy(),
+      fetchImpl,
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    const everything = [...messages.logs, ...messages.errors].join("\n");
+    expect(everything).toContain("declined the doctor's synthetic principal");
+    expect(everything).not.toContain("actAs is not configured");
+  });
+
+  it("E-AUTH-004 carries the wire's own failure message instead of a generic line (#873)", async () => {
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.endsWith("/status")) {
+        return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
+      }
+      if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
+      if (url.endsWith("/doctor/act-as")) {
+        return Response.json(
+          { ok: false, error: { code: "act-as-verification-failed", message: "actAs round-trip failed: the mint exploded with boom-detail" } },
+          { status: 409 },
+        );
+      }
+      if (url.endsWith("/doctor/machines")) return Response.json({ scheduleCallerConfigured: false, machines: [] });
+      return Response.json({ error: { message: "unexpected probe" } }, { status: 404 });
+    });
+    const messages = output();
+    expect(await doctor({
+      targetDir: await healthy(),
+      fetchImpl,
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(1);
+    const everything = [...messages.logs, ...messages.errors].join("\n");
+    expect(everything).toContain("actAs mint + host verification failed");
+    expect(everything).toContain("boom-detail");
+  });
+
   // execution-v2 Lane D — machine/schedule reporting (dev-only wire surface).
   it("reports machine-bearing apps and warns when schedules have no caller", async () => {
     const fetchImpl = successfulProbeFetch();
@@ -630,7 +688,7 @@ describe("vendo doctor", () => {
     })).toBe(0);
     expect(messages.logs).toEqual(expect.arrayContaining([
       "ok: present credentials reach the host API",
-      "ok: actAs mint + host verification live round-trip",
+      "ok: actAs mint round-trip verified by the composition's own principal resolver — host middleware is not exercised, real away calls still depend on it",
     ]));
     expect(host.actAs).toHaveBeenCalledOnce();
     const [syntheticPrincipal, syntheticGrant] = host.actAs.mock.calls[0] as [Principal, PermissionGrant];

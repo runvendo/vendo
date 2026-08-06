@@ -434,15 +434,20 @@ runs once `/status` answers.
 
 ### E-AUTH-004 {#E-AUTH-004}
 
-**Symptom:** actAs mint + host verification failed.
+**Symptom:** actAs mint + host verification failed. The doctor line carries
+the wire's own failure reason (a missing module, the mint's error) when the
+probe surfaced one.
 
-**Cause:** The composition minted an away credential but the host did not
-verify it. The verifier middleware is missing, or the secret the preset signs
-with differs from the one the host verifies with.
+**Cause:** The composition minted an away credential but the composition's own
+principal resolver did not accept it over the wire — or the mint itself
+errored. Note the probe's scope: it verifies against the composition's
+resolver, not the host app's session middleware, so a pass still depends on
+the host verifying real away calls.
 
-**Fix:** Check `createVendo({ auth })` (or the hand-wired `actAs`), its
-verifier middleware on the host API, and the host principal resolver. For
-Clerk/Auth0, `VENDO_AWAY_TOKEN_SECRET` must be the same value on both sides.
+**Fix:** Start from the reason in the doctor line. Then check
+`createVendo({ auth })` (or the hand-wired `actAs`), its verifier middleware
+on the host API, and the host principal resolver. For Clerk/Auth0,
+`VENDO_AWAY_TOKEN_SECRET` must be the same value on both sides.
 See [Host auth](/agents/host-auth).
 
 ### E-AUTH-005 {#E-AUTH-005}
@@ -469,11 +474,27 @@ preset), and re-run doctor.
 
 **Cause:** The composition has neither an `auth` preset nor an `actAs` seam,
 so the agent cannot act through the host API while the user is away. Present
-(user-in-the-room) calls still work.
+(user-in-the-room) calls still work. (A configured seam that *declines* the
+probe is a different state — see [E-AUTH-008](#E-AUTH-008).)
 
 **Fix:** Wire an auth preset (`auth: authJs()` and friends fill `actAs`) or
 pass `createVendo({ actAs })` before enabling away host actions. Acceptable to
 leave for a present-only install; this never blocks doctor.
+
+### E-AUTH-008 {#E-AUTH-008}
+
+**Symptom (warning):** actAs is configured but declined the doctor probe's
+synthetic principal.
+
+**Cause:** The actAs seam is wired and answered — with a no. Expected when a
+`subject→user` resolver only mints for subjects in the host's real user table
+(the doctor's synthetic subject is not one), or when the preset's secret is
+unset so the mint declines. The doctor line carries the wire's reason.
+
+**Fix:** Nothing, if the decline is your resolver refusing unknown subjects —
+that is the fail-closed behavior working; real away runs depend on the
+resolver accepting real subjects. If the reason names a missing secret,
+set it (`AUTH_SECRET` / the preset's documented variable) and re-run.
 
 ## MCP door
 
