@@ -1,4 +1,4 @@
-import type { BlobStore, RecordStore, StoreAdapter } from "@vendoai/core";
+import type { BlobStore, RecordStore, StoreAdapter, StoreOps } from "@vendoai/core";
 import { createBlobStore } from "./blobs.js";
 import { validateEncryptionKey } from "#store/crypto";
 // Type-only — erased at compile time. This module is the engine-agnostic
@@ -15,6 +15,11 @@ export interface VendoStore extends StoreAdapter {
   ensureSchema(): Promise<void>;
   close(): Promise<void>;
   raw(): unknown;
+  /** The 32-op named-operation surface, when this store carries one (the Cloud
+   *  hosted store does; a local store's lives behind `createStoreOps`). It is
+   *  what lets the helpers that need a transcript, a workspace or harness state
+   *  serve a store with no SQL handle — see `backendOf`. */
+  ops?: StoreOps;
 }
 
 /** Per-handle internals kept OFF the public store object (02-store §4 keeps
@@ -31,6 +36,14 @@ export function dbFor(store: VendoStore): Db {
   const found = internals.get(store);
   if (!found) throw new Error("Unknown VendoStore handle");
   return found.db;
+}
+
+/** The SQL handle behind a store, or `undefined` when this handle is not one
+ *  this package minted — a hosted store, or a host's own adapter. The asking
+ *  form of `dbFor`, for the callers that have a second way to serve the read
+ *  (`backendOf`) instead of nothing to say but "unknown handle". */
+export function maybeDbFor(store: VendoStore): Db | undefined {
+  return internals.get(store)?.db;
 }
 
 /** Package-internal (secrets.ts): the secrets configuration bound to a store

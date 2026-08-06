@@ -1133,15 +1133,17 @@ function selectFiles(configured: FilesAdapter | undefined, store: VendoStore): F
 }
 
 /**
- * Can this store serve a harness turn? The transcript (build contract §6) and the
- * workspace (§3.3) are SQL tables; `threadMessageStore` resolves the handle as its
- * first act and throws for a store that has none — the Cloud hosted store, or a
- * host's own non-SQL adapter. Probing is a WeakMap lookup, never I/O, so it is
- * safe where `createVendo` runs at module init (Workers).
+ * Can this store serve a harness turn? The transcript (build contract §6) and
+ * the workspace (§3.3) need a home: a SQL handle, or the store's own 32-op
+ * StoreOps surface, which is what the Cloud hosted store carries.
+ * `threadMessageStore` picks between them (`backendOf`) as its first act and
+ * throws only for a store with neither. Probing stays a WeakMap lookup plus a
+ * property read, never I/O, so it is safe where `createVendo` runs at module
+ * init (Workers).
  *
  * This is the ONE thing that keeps the wave-2 default-route flip honest: a
  * deployment that cannot serve harness turns keeps the shipped `agent.stream`
- * path, which needs neither table, instead of failing every chat turn.
+ * path, which needs neither, instead of failing every chat turn.
  */
 function storeServesHarnessTurns(store: VendoStore): boolean {
   try {
@@ -3311,12 +3313,13 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // harness improvement shipped to nobody.
     //
     // ONE exception, and it is a capability fact rather than a preference: serving
-    // a turn through a harness needs the transcript and workspace TABLES (build
-    // contract §3.3/§6). A store with no SQL handle — the Cloud hosted store in
-    // wave 1, or a host's own non-SQL adapter — cannot serve them, and flipping
-    // such a deployment would turn every chat turn into a boot-shaped error. Those
-    // stay on `agent.stream`, which needs neither table. The probe is a WeakMap
-    // lookup inside @vendoai/store, not I/O, so it is safe at module init.
+    // a turn through a harness needs somewhere to keep the transcript and the
+    // workspace (build contract §3.3/§6) — a SQL handle, or the store's own
+    // StoreOps surface, which the Cloud hosted store carries. A store with
+    // NEITHER (a host's own bare adapter) cannot serve them, and flipping such a
+    // deployment would turn every chat turn into a boot-shaped error. Those stay
+    // on `agent.stream`, which needs neither. The probe is a WeakMap lookup
+    // inside @vendoai/store, not I/O, so it is safe at module init.
     ...(storeServesHarnessTurns(store) ? { harness: harnessDoor } : {}),
     guard,
     apps,
