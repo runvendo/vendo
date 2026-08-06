@@ -68,20 +68,66 @@ export function workspaceJsonToBytes(data: unknown): Uint8Array {
   return encoder.encode(JSON.stringify(data));
 }
 
-/** S3 wires per-path history and undo over the wire's `path` legs. Until it
-    lands, a hosted workspace says so instead of pretending there is nothing to
-    restore — a silent `{status:"empty"}` would read as "no history" forever. */
+/** Promote's workspace half is one transaction with the app-row flip, so a
+    hosted store runs the whole move server-side (`lifecycle.promote`) and never
+    reaches this backend — but a silent no-op would strand an app's documents. */
 const notWiredYet = (verb: string): never => {
   throw new VendoError(
     "not-implemented",
-    `a hosted workspace cannot ${verb} yet: per-path history rides the store wire's path legs`,
+    `a hosted workspace cannot ${verb}: that move runs server-side, through lifecycle.promote`,
   );
+};
+
+/** One commit from the wire's path-scoped history. `revision` is the revision
+    the path held BEFORE that commit — absent when the commit created it, which
+    is a version boundary with nothing behind it (the SQL backend has no history
+    row for a create either, which is why both answer `empty` there). */
+interface PathCommit {
+  commitId: string;
+  revision?: number;
+  at: string;
+}
+
+const pathCommitOf = (entry: unknown): PathCommit | undefined => {
+  const row = entry as Record<string, unknown> | null;
+  if (typeof row?.["commitId"] !== "string") return undefined;
+  const revision = row["revision"];
+  return {
+    commitId: row["commitId"],
+    ...(typeof revision === "number" ? { revision } : {}),
+    at: iso(row["at"] ?? new Date(0).toISOString()),
+  };
 };
 
 export function workspaceOpsRows(ops: StoreOps): WorkspaceRows {
   const readOne = async (owner: string, path: string): Promise<unknown | undefined> => {
     const files = await ops.workspace.read([path], { owner });
     return path in files ? files[path] : undefined;
+  };
+
+  /** The commits that touched one path, newest first. `stopAfter` short-circuits
+      the walk for undo, which only ever needs the newest one. */
+  const pathCommits = async (
+    owner: string,
+    path: string,
+    stopAfter?: number,
+  ): Promise<PathCommit[]> => {
+    const commits: PathCommit[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await ops.workspace.history({
+        owner,
+        path,
+        ...(cursor === undefined ? {} : { cursor }),
+      });
+      for (const entry of page.entries) {
+        const commit = pathCommitOf(entry);
+        if (commit !== undefined) commits.push(commit);
+      }
+      if (stopAfter !== undefined && commits.length >= stopAfter) return commits;
+      cursor = page.cursor;
+    } while (cursor !== undefined);
+    return commits;
   };
 
   return {
@@ -176,17 +222,33 @@ export function workspaceOpsRows(ops: StoreOps): WorkspaceRows {
     },
 
     async moveApp() {
-      // Promote's workspace half is one transaction with the app-row flip, so a
-      // hosted store runs the whole move server-side (`lifecycle.promote`).
       return notWiredYet("move an app between mounts");
     },
 
-    async history(): Promise<WorkspaceHistoryEntry[]> {
-      return notWiredYet("list a path's history");
+    async history(owner, path): Promise<WorkspaceHistoryEntry[]> {
+      const entries: WorkspaceHistoryEntry[] = [];
+      for (const commit of await pathCommits(owner, path)) {
+        // A commit that created the path is not a version you can go back TO,
+        // so it is not one of the path's superseded revisions.
+        if (commit.revision === undefined) continue;
+        // The wire carries no commit message, so the label is the commit id —
+        // which is exactly what the ops backend stamps its writes with.
+        entries.push({ revision: commit.revision, intent: commit.commitId, at: commit.at });
+      }
+      return entries;
     },
 
-    async undo(): Promise<UndoOutcome> {
-      return notWiredYet("undo a path");
+    async undo(owner, path): Promise<UndoOutcome> {
+      const newest = (await pathCommits(owner, path, 1))[0];
+      // Nothing has touched the path, or the only thing that did created it:
+      // either way there is no older version to walk back to.
+      if (newest?.revision === undefined) return { status: "empty" };
+      const { revision } = await ops.workspace.undo({ path }, { owner });
+      // The restore landed but the wire did not name the revision it wrote,
+      // which is the ops backend's answer when the content behind that
+      // revision could not be read back. Naming it beats claiming an `ok`.
+      if (revision === undefined) return { status: "content-missing", revisions: [newest.revision] };
+      return { status: "ok", revision };
     },
   };
 }

@@ -62,6 +62,37 @@ function parseWorkspaceEntries(entries: unknown[]): WorkspaceEntry[] {
   });
 }
 
+const commitEntries = (commit: VendoRecord): WorkspaceEntry[] =>
+  (commit.data as { entries?: WorkspaceEntry[] }).entries ?? [];
+
+const commitCreated = (commit: VendoRecord): string[] =>
+  (commit.data as { created?: string[] }).created ?? [];
+
+const commitTouches = (commit: VendoRecord, path: string): boolean =>
+  commitEntries(commit).some((entry) => entry.path === path);
+
+/** The newest commit in one owner's ledger that touched `path` — the unit a
+ *  per-path undo walks back. The ledger pages newest-first, so the first hit
+ *  is the answer; a path nobody has touched walks the whole ledger and says
+ *  so, rather than undoing something else. */
+async function newestCommitTouching(
+  ledger: RecordStore,
+  owner: string,
+  path: string,
+): Promise<VendoRecord | undefined> {
+  let cursor: string | undefined;
+  do {
+    const page = await ledger.list({
+      refs: { subject: owner },
+      ...(cursor === undefined ? {} : { cursor }),
+    });
+    const hit = page.records.find((record) => commitTouches(record, path));
+    if (hit !== undefined) return hit;
+    cursor = page.cursor;
+  } while (cursor !== undefined);
+  return undefined;
+}
+
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -99,6 +130,19 @@ export function createStoreOps(
 
   const recordsDoor = (d: Db, collection: string): RecordStore =>
     createReservedRecordStore(d, collection) ?? createRecordStore(d, collection);
+
+  /** commit id → the revision that commit superseded at `path`. Every write a
+   *  commit lands stamps the commit id as its intent, so the workspace history
+   *  rows ARE this index; a commit with no row here created the path (or wrote
+   *  the bytes it already held), and has no older version behind it. */
+  const supersededRevisions = async (owner: string, path: string): Promise<Map<string, number>> => {
+    const result = await db.query(
+      `SELECT revision, intent FROM vendo_workspace_history
+       WHERE path = $1 AND owner = $2 AND intent IS NOT NULL ORDER BY revision ASC`,
+      [path, owner],
+    );
+    return new Map(result.rows.map((row) => [text(row["intent"]), Number(row["revision"])]));
+  };
 
   /** Reassemble one thread as its door record (shared read shape). */
   const readThread = async (d: Db, id: string): Promise<VendoRecord | null> => {
@@ -472,44 +516,96 @@ export function createStoreOps(
       },
       async history(query) {
         const owner = ownerFor(query);
+        const path = query?.path;
         const page = await createRecordStore(db, WORKSPACE_COMMITS).list({
           refs: { subject: owner },
           ...(query?.limit === undefined ? {} : { limit: query.limit }),
           ...(query?.cursor === undefined ? {} : { cursor: query.cursor }),
         });
+        // A path narrows the page in place, so the ledger's keyset cursor keeps
+        // meaning exactly what it meant: follow it for the next page, which may
+        // hold more of this path's commits (or none).
+        const records = path === undefined
+          ? page.records
+          : page.records.filter((record) => commitTouches(record, path));
+        // The before-revision the entry restores to. It is not in the ledger —
+        // it is the revision the write superseded, which every commit stamped
+        // with its own id as the intent when it landed.
+        const superseded = path === undefined
+          ? new Map<string, number>()
+          : await supersededRevisions(owner, path);
         return {
-          entries: page.records.map((record) => ({
+          entries: records.map((record) => ({
             commitId: record.id,
-            entries: (record.data as { entries?: unknown }).entries ?? [],
+            entries: commitEntries(record),
+            at: record.createdAt,
+            ...(superseded.has(record.id) ? { revision: superseded.get(record.id) } : {}),
           })),
           ...(page.cursor === undefined ? {} : { cursor: page.cursor }),
         };
       },
       /** Land the restore and consume the history it walked in ONE transaction. */
-      async undo(commitId, opts) {
+      async undo(target, opts) {
         const owner = ownerFor(opts);
-        await db.transaction(async (q) => {
+        return await db.transaction(async (q) => {
           const tdb = txDb(q);
           const ledger = createRecordStore(tdb, WORKSPACE_COMMITS);
-          const commit = await ledger.get(commitId);
-          // Another owner's commit is not this owner's to undo, and saying so
-          // would make the door an existence oracle: it is simply not found.
-          if (commit === null || commit.refs?.["subject"] !== owner) {
-            throw new VendoError("not-found", `commit ${commitId} not found`);
-          }
-          const data = commit.data as { entries?: WorkspaceEntry[]; created?: string[] };
-          const created = new Set(data.created ?? []);
           const txRows = workspaceRows(tdb, filesFor(tdb));
-          for (const entry of data.entries ?? []) {
-            if (created.has(entry.path)) {
-              // The commit created this path — undoing removes it (recorded to
-              // history, §3.3's append-only law, so it stays recoverable).
-              await txRows.remove(owner, entry.path, `undo ${commitId}`);
-            } else {
-              await txRows.undo(owner, entry.path);
+          /** The commit created this path, so undoing it removes the file
+              (recorded to history, §3.3's append-only law, so it stays
+              recoverable); otherwise the superseded revision comes back. */
+          const undoOne = async (
+            commitId: string,
+            path: string,
+            created: Set<string>,
+          ): Promise<number | undefined> => {
+            if (created.has(path)) {
+              await txRows.remove(owner, path, `undo ${commitId}`);
+              return undefined;
             }
+            const outcome = await txRows.undo(owner, path);
+            return outcome.status === "ok" ? outcome.revision : undefined;
+          };
+
+          if (typeof target === "string") {
+            const commit = await ledger.get(target);
+            // Another owner's commit is not this owner's to undo, and saying so
+            // would make the door an existence oracle: it is simply not found.
+            if (commit === null || commit.refs?.["subject"] !== owner) {
+              throw new VendoError("not-found", `commit ${target} not found`);
+            }
+            const created = new Set(commitCreated(commit));
+            for (const entry of commitEntries(commit)) {
+              await undoOne(target, entry.path, created);
+            }
+            await ledger.delete(target);
+            return {};
           }
-          await ledger.delete(commitId);
+
+          const { path } = target;
+          const commit = await newestCommitTouching(ledger, owner, path);
+          if (commit === undefined) {
+            throw new VendoError("not-found", `no commit has touched ${path}`);
+          }
+          const created = new Set(commitCreated(commit));
+          const revision = await undoOne(commit.id, path, created);
+          // Consume ONLY this path: the rest of the commit is still undoable,
+          // and a later whole-commit undo must not restore this path twice.
+          const rest = commitEntries(commit).filter((entry) => entry.path !== path);
+          if (rest.length === 0) {
+            await ledger.delete(commit.id);
+          } else {
+            await ledger.put({
+              id: commit.id,
+              data: {
+                ...(commit.data as Record<string, Json>),
+                entries: rest as unknown as Json,
+                created: [...created].filter((each) => each !== path),
+              },
+              ...(commit.refs === undefined ? {} : { refs: commit.refs }),
+            });
+          }
+          return revision === undefined ? {} : { revision };
         });
       },
     },

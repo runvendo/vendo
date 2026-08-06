@@ -237,12 +237,24 @@ export const storeWireWorkspaceCommitRequestSchema = z.object({
   entries: z.array(storeWireWorkspaceEntrySchema).min(1),
 }).passthrough();
 
-export const storeWireWorkspaceHistoryRequestSchema = cursorQuerySchema.extend(ownerField);
+/** `path` narrows the page to the commits that touched it (newest first, same
+    keyset cursor); without it the page is the whole commit ledger. */
+export const storeWireWorkspaceHistoryRequestSchema = cursorQuerySchema.extend({
+  ...ownerField,
+  path: z.string().min(1).optional(),
+});
 
+/** Exactly ONE of commitId/path: undo the whole commit, or undo one path's
+    newest change. Both set is two different mutations in one call, and neither
+    is an undo with no target. */
 export const storeWireWorkspaceUndoRequestSchema = z.object({
   ...ownerField,
-  commitId: z.string().min(1),
-}).passthrough();
+  commitId: z.string().min(1).optional(),
+  path: z.string().min(1).optional(),
+}).passthrough().refine(
+  (body) => (body.commitId === undefined) !== (body.path === undefined),
+  { message: "undo takes exactly one of commitId or path" },
+);
 
 // ---------------------------------------------------------------------------
 // lifecycle

@@ -694,8 +694,13 @@ export function hostedStoreOps(options: HostedStoreOptions): StoreOps {
       async history(query) {
         return entriesOf(await post("workspace.history", P["workspace.history"], { ...query }));
       },
-      async undo(commitId, opts) {
-        await mutate("workspace.undo", P["workspace.undo"], { commitId, ...owned(opts) });
+      async undo(target, opts) {
+        const answer = await mutate("workspace.undo", P["workspace.undo"], {
+          ...(typeof target === "string" ? { commitId: target } : { path: target.path }),
+          ...owned(opts),
+        });
+        const revision = (answer as { revision?: unknown } | null)?.revision;
+        return typeof revision === "number" ? { revision } : {};
       },
     },
     lifecycle: {

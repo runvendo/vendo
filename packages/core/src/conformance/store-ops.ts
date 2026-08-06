@@ -575,6 +575,123 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         );
       }),
 
+      // ---------------------------------------------------------------------
+      // the path legs of history/undo — surgical per-file undo. Without them a
+      // user who wanted one file back had to undo whole commits, taking every
+      // other file in them along.
+      // ---------------------------------------------------------------------
+
+      opsCase(opts, "workspace.history narrows to the commits that touched one path", async (ops) => {
+        await ops.workspace.commit([{ path: "p-mine.json", data: { v: 1 } }]);
+        await ops.workspace.commit([{ path: "p-other.json", data: { v: 1 } }]);
+        await ops.workspace.commit([{ path: "p-mine.json", data: { v: 2 } }]);
+
+        const commitsOf = async (path: string): Promise<unknown[]> =>
+          (await ops.workspace.history({ path })).entries;
+        const mine = await commitsOf("p-mine.json");
+        assert(mine.length === 2, `path history should hold this path's two commits, got ${mine.length}`);
+        assert(
+          (await commitsOf("p-other.json")).length === 1,
+          "path history returned commits that did not touch the path",
+        );
+        assertDeepEqual(await commitsOf("p-never.json"), [], "path history invented commits for an untouched path");
+
+        // Newest first, and the newest one names the revision it superseded —
+        // the version a per-path undo walks back to. The commit that CREATED
+        // the path superseded nothing, so it names no revision.
+        const newest = mine[0];
+        assert(
+          numberField(newest, "revision", "workspace.history") > 0,
+          "the overwriting commit did not name the revision it superseded",
+        );
+        assert(
+          (mine[1] as Record<string, unknown>)["revision"] === undefined,
+          "the commit that created the path claimed to have superseded a revision",
+        );
+      }),
+
+      opsCase(opts, "workspace.undo by path restores that path and leaves the rest of its commit", async (ops) => {
+        await ops.workspace.commit([{ path: "u-one.json", data: { v: 1 } }, { path: "u-two.json", data: { v: 1 } }]);
+        await ops.workspace.commit([{ path: "u-one.json", data: { v: 2 } }, { path: "u-two.json", data: { v: 2 } }]);
+
+        await ops.workspace.undo({ path: "u-one.json" });
+        const after = await ops.workspace.read(["u-one.json", "u-two.json"]);
+        assertDeepEqual(after["u-one.json"], { v: 1 }, "the path undo did not restore the previous version");
+        assertDeepEqual(after["u-two.json"], { v: 2 }, "the path undo touched a path it was not asked about");
+
+        await assertThrowsCode(
+          () => ops.workspace.undo({ path: "u-never.json" }),
+          "not-found",
+          "undoing a path nothing has touched",
+        );
+      }),
+
+      opsCase(opts, "workspace.undo by path deletes a file its commit created", async (ops) => {
+        await ops.workspace.commit([{ path: "u-new.json", data: { v: 1 } }]);
+        await ops.workspace.undo({ path: "u-new.json" });
+        assertDeepEqual(
+          await ops.workspace.read(["u-new.json"]),
+          {},
+          "undoing the commit that created a file left the file behind",
+        );
+      }),
+
+      /** The bookkeeping that makes the two legs coexist: a path already undone
+          is CONSUMED from its commit, so undoing that whole commit afterwards
+          steps over it instead of restoring it a second time. */
+      opsCase(opts, "a whole-commit undo skips a path an earlier path undo consumed", async (ops) => {
+        await ops.workspace.commit([{ path: "c-one.json", data: { v: 1 } }, { path: "c-two.json", data: { v: 1 } }]);
+        await ops.workspace.commit([{ path: "c-one.json", data: { v: 2 } }, { path: "c-two.json", data: { v: 2 } }]);
+        const newest = stringField(
+          (await ops.workspace.history()).entries[0],
+          "commitId",
+          "workspace.history",
+        );
+
+        await ops.workspace.undo({ path: "c-one.json" });
+        // Someone puts the file back where the path undo left it from.
+        await ops.workspace.commit([{ path: "c-one.json", data: { v: 3 } }]);
+        await ops.workspace.undo(newest);
+
+        const after = await ops.workspace.read(["c-one.json", "c-two.json"]);
+        assertDeepEqual(after["c-one.json"], { v: 3 }, "the whole-commit undo restored a path already undone by path");
+        assertDeepEqual(after["c-two.json"], { v: 1 }, "the whole-commit undo did not restore its remaining path");
+      }),
+
+      opsCase(opts, "the path legs keep two owners' drawers apart", async (ops) => {
+        const path = "p-shared.json";
+        for (const owner of ["pown_a", "pown_b"]) {
+          await ops.workspace.commit([{ path, data: { who: owner, v: 1 } }], { owner });
+          await ops.workspace.commit([{ path, data: { who: owner, v: 2 } }], { owner });
+        }
+        assert(
+          (await ops.workspace.history({ path, owner: "pown_a" })).entries.length === 2,
+          "one owner's path history did not hold that owner's two commits",
+        );
+        assertDeepEqual(
+          (await ops.workspace.history({ path, owner: "pown_c" })).entries,
+          [],
+          "an owner with no files read another owner's path history",
+        );
+        await assertThrowsCode(
+          () => ops.workspace.undo({ path }, { owner: "pown_c" }),
+          "not-found",
+          "undoing a path in a drawer that has none",
+        );
+
+        await ops.workspace.undo({ path }, { owner: "pown_a" });
+        assertDeepEqual(
+          (await ops.workspace.read([path], { owner: "pown_a" }))[path],
+          { who: "pown_a", v: 1 },
+          "one owner's path undo did not restore their own file",
+        );
+        assertDeepEqual(
+          (await ops.workspace.read([path], { owner: "pown_b" }))[path],
+          { who: "pown_b", v: 2 },
+          "one owner's path undo reached into another owner's drawer",
+        );
+      }),
+
       /** The `/orgs` mounts commit under strict compare-and-swap: a write built
           on a revision that has moved must be refused, not silently applied
           over a colleague's edit. */

@@ -148,8 +148,20 @@ export interface StoreOps {
     index(query?: { cursor?: string; limit?: number; owner?: string }): Promise<{ entries: unknown[]; cursor?: string }>;
     read(paths: string[], opts?: { owner?: string }): Promise<Record<string, unknown>>;
     commit(entries: unknown[], opts?: { idempotencyKey?: string; owner?: string }): Promise<void>;
-    history(query?: { cursor?: string; limit?: number; owner?: string }): Promise<{ entries: unknown[]; cursor?: string }>;
-    undo(commitId: string, opts?: { owner?: string }): Promise<void>;
+    /** Naming a `path` narrows history to the commits that touched it, newest
+        first, and each entry then also carries the `revision` that path held
+        BEFORE the commit — absent when the commit created it, which is exactly
+        the difference between "there is an older version to go back to" and
+        "there is nothing behind this file". */
+    history(query?: { cursor?: string; limit?: number; owner?: string; path?: string }): Promise<{ entries: unknown[]; cursor?: string }>;
+    /** Undo a whole commit by id, or — with `{ path }` — only that path's
+        newest change: the path's stored before-image comes back (a path the
+        commit CREATED is removed), and only that path is consumed, so undoing
+        the whole commit afterwards does not restore it twice. A path nothing
+        has touched is `not-found`, the same answer an unknown commit gets.
+        `revision` is the restored file's new revision, absent when the undo
+        removed the file. */
+    undo(target: string | { path: string }, opts?: { owner?: string }): Promise<{ revision?: number }>;
   };
   lifecycle: {
     erase(target: EraseTarget): Promise<unknown>;

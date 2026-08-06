@@ -44,6 +44,9 @@ for (const backend of backends()) {
 
     /** The façade a hosted deployment gets. */
     const hosted = () => workspaceStore(opsBacked(made.store));
+    /** The SAME façade over the SAME rows with a database handle instead of
+        the 32 ops — the local answer every hosted answer is compared against. */
+    const local = () => workspaceStore(made.store);
 
     it("commits through the ops backend into the ordinary workspace rows", async () => {
       const path = "/user/notes/plan.md";
@@ -126,17 +129,109 @@ for (const backend of backends()) {
       expect(await (await hosted().open(dana, { memberships: acme })).readFile(path)).toBe("v2 from kim");
     });
 
-    it("says per-path history and undo are not wired yet instead of answering empty", async () => {
-      const path = "/user/history.md";
-      const fs = await hosted().open(dana);
-      await fs.writeFile(path, "v1");
-      await fs.commit();
-
-      const workspace = hosted();
+    /** S3 — the path legs. The claim is not "undo works over the wire" but
+        "the hosted façade answers what the SQL façade answers", so every
+        assertion here is checked against `local()`, the same façade over the
+        same rows with a database handle instead of the 32 ops. */
+    it("walks one path back through its versions, exactly as the SQL façade does", async () => {
+      const path = "/user/notes/history.md";
+      for (const content of ["v1", "v2", "v3"]) {
+        const fs = await hosted().open(dana);
+        await fs.writeFile(path, content);
+        await fs.commit({ message: `wrote ${content}` });
+      }
       const caller = { principal: dana };
-      await expect(workspace.history(caller, path)).rejects.toThrow(VendoError);
-      await expect(workspace.history(caller, path)).rejects.toThrow(/not wired|per-path history/);
-      await expect(workspace.undo(caller, path)).rejects.toThrow(/per-path history/);
+
+      // Two superseded versions behind the head, newest first — the same count
+      // and order the SQL façade reports for the same three commits.
+      const versions = await hosted().history(caller, path);
+      expect(versions).toHaveLength(2);
+      expect(versions.map((entry) => entry.revision)).toEqual([2, 1]);
+      expect(await local().history(caller, path)).toHaveLength(2);
+
+      expect(await hosted().undo(caller, path)).toMatchObject({ status: "ok" });
+      expect(await (await hosted().open(dana)).readFile(path)).toBe("v2");
+      expect(await hosted().undo(caller, path)).toMatchObject({ status: "ok" });
+      expect(await (await hosted().open(dana)).readFile(path)).toBe("v1");
+
+      // One step past the oldest version there is nothing left to restore, and
+      // the file keeps what the last undo put there.
+      expect(await hosted().undo(caller, path)).toEqual({ status: "empty" });
+      expect(await (await hosted().open(dana)).readFile(path)).toBe("v1");
+      expect(await hosted().history(caller, path)).toEqual([]);
+    });
+
+    it("undoes one path without disturbing the others in the same commit", async () => {
+      const [kept, undone] = ["/user/pair/kept.md", "/user/pair/undone.md"];
+      for (const version of ["v1", "v2"]) {
+        const fs = await hosted().open(dana);
+        await fs.writeFile(kept, `${kept} ${version}`);
+        await fs.writeFile(undone, `${undone} ${version}`);
+        await fs.commit();
+      }
+
+      expect(await hosted().undo({ principal: dana }, undone)).toMatchObject({ status: "ok" });
+      const next = await hosted().open(dana);
+      expect(await next.readFile(undone)).toBe(`${undone} v1`);
+      expect(await next.readFile(kept)).toBe(`${kept} v2`);
+    });
+
+    /** A file with one version has nothing behind it — the SQL backend records
+        no history row for a create, so both façades say `empty` and the file
+        stays. (The commit-ledger level below the façade DOES remove it: that is
+        `ops.workspace.undo({ path })`, and the conformance suite pins it.) */
+    it("answers empty for a file that has only ever been created", async () => {
+      const path = "/user/fresh.md";
+      const fs = await hosted().open(dana);
+      await fs.writeFile(path, "only version");
+      await fs.commit();
+      const caller = { principal: dana };
+
+      expect(await hosted().history(caller, path)).toEqual(await local().history(caller, path));
+      expect(await hosted().undo(caller, path)).toEqual({ status: "empty" });
+      expect(await local().undo(caller, path)).toEqual({ status: "empty" });
+      expect(await (await hosted().open(dana)).readFile(path)).toBe("only version");
+    });
+
+    it("brings back a file the agent deleted", async () => {
+      const path = "/user/deleted.md";
+      const seed = await hosted().open(dana);
+      await seed.writeFile(path, "still needed");
+      await seed.commit();
+      const cleaner = await hosted().open(dana);
+      await cleaner.rm(path);
+      await cleaner.commit();
+
+      expect(await hosted().undo({ principal: dana }, path)).toMatchObject({ status: "ok" });
+      expect(await (await hosted().open(dana)).readFile(path)).toBe("still needed");
+    });
+
+    it("keeps one owner's path history and undo out of another's", async () => {
+      const path = "/user/private.md";
+      for (const [who, text] of [[dana, "dana"], [kim, "kim"]] as const) {
+        for (const version of ["v1", "v2"]) {
+          const fs = await hosted().open(who);
+          await fs.writeFile(path, `${text} ${version}`);
+          await fs.commit();
+        }
+      }
+
+      expect(await hosted().history({ principal: dana }, path)).toHaveLength(1);
+      expect(await hosted().undo({ principal: dana }, path)).toMatchObject({ status: "ok" });
+      expect(await (await hosted().open(dana)).readFile(path)).toBe("dana v1");
+      // The other drawer did not move.
+      expect(await (await hosted().open(kim)).readFile(path)).toBe("kim v2");
+
+      // And a stranger's undo of the same path finds nothing of theirs to undo.
+      const sam = { kind: "user", subject: "sam" } as const;
+      expect(await hosted().undo({ principal: sam }, path)).toEqual({ status: "empty" });
+      expect(await (await hosted().open(dana)).readFile(path)).toBe("dana v1");
+    });
+
+    it("still refuses to move an app between mounts — that runs server-side", async () => {
+      await expect(
+        hosted().moveApp("app_1", { kind: "user", subject: "dana" }, { kind: "org", org: "acme" }),
+      ).rejects.toThrow(VendoError);
     });
   });
 }

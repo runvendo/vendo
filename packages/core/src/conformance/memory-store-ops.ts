@@ -73,7 +73,18 @@ export function memoryStoreOps(): StoreOps {
   // local backend does.
   type WsEntry = { path: string; data?: unknown; delete?: true; expectedRevision?: number };
   type WsFile = { data: unknown; revision: number; updatedAt: IsoDateTime };
-  type WsCommit = { id: string; owner: string; entries: WsEntry[]; before: Map<string, unknown> };
+  /** `before` is what each path held before the commit (absent = the commit
+      created it), and `beforeRevision` which revision that was — the pair a
+      per-path undo restores, and the pair it consumes so a later whole-commit
+      undo does not restore the same path twice. */
+  type WsCommit = {
+    id: string;
+    owner: string;
+    at: IsoDateTime;
+    entries: WsEntry[];
+    before: Map<string, unknown>;
+    beforeRevision: Map<string, number>;
+  };
   const BOUND_OWNER = "user_local";
   const drawers = new Map<string, Map<string, WsFile>>();
   const drawer = (owner: string): Map<string, WsFile> => {
@@ -365,25 +376,44 @@ export function memoryStoreOps(): StoreOps {
       }
       wsCommitSeq += 1;
       const before = new Map<string, unknown>();
+      const beforeRevision = new Map<string, number>();
       for (const e of entries as WsEntry[]) {
-        before.set(e.path, files.get(e.path)?.data);
+        const current = files.get(e.path);
+        before.set(e.path, current?.data);
+        if (current !== undefined) beforeRevision.set(e.path, current.revision);
         if (e.delete === true) {
           files.delete(e.path);
           continue;
         }
         files.set(e.path, {
           data: jsonCopy(e.data),
-          revision: (files.get(e.path)?.revision ?? 0) + 1,
+          revision: (current?.revision ?? 0) + 1,
           updatedAt: isoNow(),
         });
       }
-      wsCommits.push({ id: String(wsCommitSeq), owner, entries: entries as WsEntry[], before });
+      wsCommits.push({
+        id: String(wsCommitSeq),
+        owner,
+        at: isoNow(),
+        entries: entries as WsEntry[],
+        before,
+        beforeRevision,
+      });
     },
     async history(query) {
       const owner = query?.owner ?? BOUND_OWNER;
+      const path = query?.path;
       const all = wsCommits
-        .filter((c) => c.owner === owner)
-        .map((c) => ({ commitId: c.id, entries: c.entries }));
+        .filter((c) => c.owner === owner
+          && (path === undefined || c.entries.some((e) => e.path === path)))
+        .map((c) => ({
+          commitId: c.id,
+          entries: c.entries,
+          at: c.at,
+          ...(path !== undefined && c.beforeRevision.has(path)
+            ? { revision: c.beforeRevision.get(path)! }
+            : {}),
+        }));
       all.reverse(); // newest first
       const offset = query?.cursor ? Math.max(0, Number.parseInt(query.cursor, 10)) : 0;
       const end = Math.min(offset + pageLimit(query?.limit), all.length);
@@ -392,19 +422,45 @@ export function memoryStoreOps(): StoreOps {
         ...(end < all.length ? { cursor: String(end) } : {}),
       };
     },
-    async undo(commitId, opts) {
+    async undo(target, opts) {
       const owner = opts?.owner ?? BOUND_OWNER;
-      // Another owner's commit is not this owner's to undo — and saying so
-      // would make the door an existence oracle.
-      const idx = wsCommits.findIndex((c) => c.id === commitId && c.owner === owner);
-      if (idx === -1) throw new VendoError("not-found", `commit ${commitId} not found`);
-      const commit = wsCommits[idx]!;
       const files = drawer(owner);
-      for (const [path, prev] of commit.before) {
-        if (prev === undefined) files.delete(path);
-        else files.set(path, { data: prev, revision: (files.get(path)?.revision ?? 0) + 1, updatedAt: isoNow() });
+      /** Put one path back the way the commit found it: absent means the commit
+          created it, so undoing removes it again. */
+      const restore = (path: string, prev: unknown): number | undefined => {
+        if (prev === undefined) {
+          files.delete(path);
+          return undefined;
+        }
+        const revision = (files.get(path)?.revision ?? 0) + 1;
+        files.set(path, { data: prev, revision, updatedAt: isoNow() });
+        return revision;
+      };
+      if (typeof target === "string") {
+        // Another owner's commit is not this owner's to undo — and saying so
+        // would make the door an existence oracle.
+        const idx = wsCommits.findIndex((c) => c.id === target && c.owner === owner);
+        if (idx === -1) throw new VendoError("not-found", `commit ${target} not found`);
+        for (const [path, prev] of wsCommits[idx]!.before) restore(path, prev);
+        wsCommits.splice(idx, 1);
+        return {};
       }
-      wsCommits.splice(idx, 1);
+      const { path } = target;
+      let idx = wsCommits.length - 1;
+      while (idx >= 0) {
+        const c = wsCommits[idx]!;
+        if (c.owner === owner && c.entries.some((e) => e.path === path)) break;
+        idx -= 1;
+      }
+      if (idx === -1) throw new VendoError("not-found", `no commit has touched ${path}`);
+      const commit = wsCommits[idx]!;
+      const revision = restore(path, commit.before.get(path));
+      // Consume ONLY this path — the rest of the commit stays undoable.
+      commit.entries = commit.entries.filter((e) => e.path !== path);
+      commit.before.delete(path);
+      commit.beforeRevision.delete(path);
+      if (commit.entries.length === 0) wsCommits.splice(idx, 1);
+      return revision === undefined ? {} : { revision };
     },
   };
 
