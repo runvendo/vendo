@@ -45,10 +45,30 @@ afterEach(async () => {
 
 const principal: Principal = { kind: "user", subject: "user_screen" };
 
-/** A document the compiler renders and the seam paints — the smallest honest one. */
+/** A document the compiler renders and the seam paints — the smallest honest one.
+ *
+ *  `text`, not `value`: with the checks floor on this route (it was missing, which
+ *  is the bug the case below pins) `components-exist` refuses a prop the renderer
+ *  would silently drop, so a fixture that spoke the wrong prop name only ever
+ *  painted because nothing was checking it. */
 const SPENDING = `<App name="Spending">
   <Stack>
-    <Text value="This month" />
+    <Text text="This month" />
+  </Stack>
+</App>`;
+
+/**
+ * The same document with a `<Query>` naming a tool this deployment has not got.
+ *
+ * It COMPILES and it RENDERS — the tree has children, so the seam's own gate waves
+ * it through — and only the checks floor's `tools-exist` fact refuses it. That is
+ * what makes it the right probe for §7.1 at a route: if it paints, the floor is
+ * not on that route.
+ */
+const LYING = `<App name="Spending">
+  <Query id="spend" tool="nope_notATool" />
+  <Stack>
+    <Text text="Last month" />
   </Stack>
 </App>`;
 
@@ -114,6 +134,9 @@ async function walk(options: {
   turns: Chunk[][];
   screenAgent: boolean;
   request?: string;
+  /** Skip `vendo_make` entirely and write the documents with the harness's own
+   *  hands — the OTHER route into the same seam. */
+  writes?: string[];
 }): Promise<Walked> {
   const store = await tempStore();
   const model = scripted(options.turns);
@@ -121,6 +144,14 @@ async function walk(options: {
   const harness = defineHarness({
     name: "make-probe",
     async *run(turn) {
+      if (options.writes !== undefined) {
+        for (const [index, content] of options.writes.entries()) {
+          await turn.workspace.writeFile(`/user/apps/app_written/app.vendo`, content);
+          await turn.workspace.commit({ message: `save ${index}` });
+        }
+        yield { type: "text", delta: "ok" };
+        return;
+      }
       result = await turn.tools.call(VENDO_MAKE_TOOL, {
         request: options.request ?? "show me what I spent this month",
       });
@@ -199,6 +230,46 @@ describe("vendo_make routed through the screen agent (blueprint §1 point 2)", (
     // A conductor create is a plan call plus a fill call per group on top of that,
     // so a routed request is measurably the cheap path and not both paths.
     expect(walked.model.calls).toBe(3);
+  }, 60_000);
+
+  it("refuses to paint a document the checks floor blocks, and the last good view stays", async () => {
+    // THE BUG THIS PINS. The screen slot wired the render seam WITHOUT the floor,
+    // so a screen assembled through `vendo_make` compiled with a bare
+    // `compileWire`: no fact checks, no binding gate, no tsc. A query naming a
+    // tool the host has not got painted anyway — an app promising data it can
+    // never load — while the very same document written on the harness-turn route
+    // was refused. One seam, two answers.
+    const walked = await walk({
+      screenAgent: true,
+      turns: [
+        call("save_app", { content: SPENDING }, "c1"),
+        call("save_app", { content: LYING }, "c2"),
+        speak("done"),
+      ],
+    });
+
+    const views = walked.chunks.filter((chunk) => chunk["type"] === "data-vendo-view");
+    expect(views.length).toBeGreaterThan(0);
+    const painted = JSON.stringify(views);
+    // The honest save is on screen…
+    expect(painted).toContain("This month");
+    // …and the blocked one never reached it: no view carries the lie, so the last
+    // good view is what the person still sees. The bytes DID land — the floor
+    // refuses the paint, never the commit — and `validate` is how the model hears
+    // about it.
+    expect(painted).not.toContain("Last month");
+    expect(painted).not.toContain("nope_notATool");
+  }, 60_000);
+
+  it("the harness-turn route answers the same, which is the point of one seam", async () => {
+    // The control. This route already carried the floor, so it is the definition
+    // of correct behaviour — and the two routes must not disagree about the same
+    // bytes.
+    const walked = await walk({ screenAgent: true, turns: [], writes: [SPENDING, LYING] });
+    const painted = JSON.stringify(walked.chunks.filter((chunk) => chunk["type"] === "data-vendo-view"));
+    expect(painted).toContain("This month");
+    expect(painted).not.toContain("Last month");
+    expect(painted).not.toContain("nope_notATool");
   }, 60_000);
 
   it("is OFF by default — an unwired slot leaves vendo_make exactly as it was", async () => {

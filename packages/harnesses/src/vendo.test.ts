@@ -7,9 +7,9 @@
  * These suites assert the LOOP, not a model: the thinker is scripted so what is
  * measured is the lift.
  */
-import type { HarnessEvent, ToolDescriptor, Turn } from "@vendoai/core";
+import type { HarnessEvent, Json, ToolDescriptor, Turn } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
-import { vendo } from "./vendo.js";
+import { vendo, type HarnessHand } from "./vendo.js";
 import { createTurnTools } from "./turn-tools.js";
 import {
   boundRegistry,
@@ -54,11 +54,21 @@ async function drive(options: {
     interactive: options.interactive ?? true,
     mirror: (event) => mirrored.push(event.kind),
   });
+  /** How many times the loop re-read the equipped listing — the discovery rail's
+   *  only observable, and what a closed loadout must not do more than once. */
+  const listCalls = { count: 0 };
+  const workspace = testWorkspace();
   const turn: Turn = {
     messages: options.messages ?? [userMessage("m1", "hello")],
-    tools: turnTools,
+    tools: {
+      call: (name, args) => turnTools.call(name, args),
+      list: async () => {
+        listCalls.count += 1;
+        return await turnTools.list();
+      },
+    },
     skills: options.skills ?? testSkills(),
-    workspace: testWorkspace(),
+    workspace,
     models: options.models,
     state: { get: () => undefined, set: () => undefined, clear: () => undefined },
     options: options.options ?? {},
@@ -68,7 +78,7 @@ async function drive(options: {
   const events: HarnessEvent[] = [];
   for await (const event of options.harness.run(turn)) events.push(event);
   turnTools.dispose();
-  return { events, registry, guard, mirrored };
+  return { events, registry, guard, mirrored, workspace, listCalls };
 }
 
 const texts = (events: HarnessEvent[]): string =>
@@ -365,6 +375,120 @@ describe("vendo() — subagent hiring (build-list item 4)", () => {
     // Turn 1 = resident (has the hiring tool), turn 2 = subagent (must not).
     expect(model.toolNamesPerCall[0]).toContain("hire_subagent");
     expect(model.toolNamesPerCall[1]).not.toContain("hire_subagent");
+  });
+});
+
+describe("vendo() — the closed loadout (`tools`)", () => {
+  const hostTools = {
+    maple_invoices_list: { descriptor: readTool("maple_invoices_list"), execute: () => ({ count: 2 }) },
+    maple_pay: { descriptor: readTool("maple_pay", "destructive"), execute: () => ({ ok: true }) },
+  };
+
+  /** A hand the harness itself provides. It reaches THIS run's workspace through
+   *  the turn, which is the whole reason `execute` takes one. */
+  const saveApp: HarnessHand = {
+    name: "save_app",
+    description: "Save the document.",
+    inputSchema: {
+      type: "object",
+      properties: { content: { type: "string" } },
+      required: ["content"],
+      additionalProperties: false,
+    },
+    execute: async (input, turn) => {
+      await turn.workspace.writeFile("/user/apps/app_1/app.vendo", (input as { content: string }).content);
+      const result = await turn.workspace.commit({ message: "app.vendo" });
+      return { saved: result.status === "ok" } as Json;
+    },
+  };
+
+  it("equips EXACTLY the list: no unnamed host tool, no hire_subagent", async () => {
+    const model = scriptedModel([textTurn("nothing to do")]);
+    await drive({
+      harness: vendo({ tools: ["maple_invoices_list", saveApp] }),
+      tools: hostTools,
+      models: seats(model),
+    });
+    expect(model.toolNamesPerCall[0]).toEqual(["maple_invoices_list", "save_app"]);
+  });
+
+  it("a named registry tool still runs through the guard-bound call path", async () => {
+    const model = scriptedModel([toolCallTurn("maple_invoices_list", {}), textTurn("You have 2.")]);
+    const { registry, mirrored } = await drive({
+      harness: vendo({ tools: ["maple_invoices_list"] }),
+      tools: hostTools,
+      models: seats(model),
+    });
+    expect(registry.invocations.maple_invoices_list).toBe(1);
+    // The guard, the audit row and the transcript mirror are not this file's
+    // business — which is only true while the call goes through `turn.tools`.
+    expect(mirrored).toEqual(["call", "result"]);
+  });
+
+  it("an inline hand acts on THIS run's turn, and is invisible to the registry", async () => {
+    const model = scriptedModel([toolCallTurn("save_app", { content: "<App name=\"x\" />" }), textTurn("saved")]);
+    const { workspace, registry } = await drive({
+      harness: vendo({ tools: [saveApp] }),
+      tools: hostTools,
+      models: seats(model),
+    });
+    expect(await workspace.readFile("/user/apps/app_1/app.vendo")).toBe("<App name=\"x\" />");
+    expect(workspace.commits).toHaveLength(1);
+    // A hand is the harness's own: no listing, no registry execution, nothing for
+    // another consumer to discover.
+    expect(registry.invocations["save_app"]).toBeUndefined();
+  });
+
+  it("names a listing that a legit deployment lacks: the tool is simply not offered", async () => {
+    // The list is written once, at boot, against a listing that varies per
+    // deployment — so a name the host has not got is an ABSENCE, not a fault. It
+    // costs nothing at turn time and the model is never told about a tool it
+    // cannot call. (Failing loudly here would take down every host that does not
+    // ship the optional tool.)
+    const model = scriptedModel([textTurn("ok")]);
+    await drive({
+      harness: vendo({ tools: ["maple_invoices_list", "no_such_tool"] }),
+      tools: hostTools,
+      models: seats(model),
+    });
+    expect(model.toolNamesPerCall[0]).toEqual(["maple_invoices_list"]);
+  });
+
+  it("hires only when hiring is on the list", async () => {
+    const closed = scriptedModel([textTurn("ok")]);
+    await drive({ harness: vendo({ tools: ["maple_invoices_list"] }), tools: hostTools, models: seats(closed) });
+    expect(closed.toolNamesPerCall[0]).not.toContain("hire_subagent");
+
+    const named = scriptedModel([textTurn("ok")]);
+    await drive({
+      harness: vendo({ tools: ["maple_invoices_list", "hire_subagent"] }),
+      tools: hostTools,
+      models: seats(named),
+    });
+    expect(named.toolNamesPerCall[0]).toContain("hire_subagent");
+  });
+
+  it("has no discovery rail: the listing is read ONCE, never re-read after a call", async () => {
+    const model = scriptedModel([
+      toolCallTurn("maple_invoices_list", {}, "c1"),
+      toolCallTurn("maple_invoices_list", {}, "c2"),
+      textTurn("done"),
+    ]);
+    const { listCalls } = await drive({
+      harness: vendo({ tools: ["maple_invoices_list"] }),
+      tools: hostTools,
+      models: seats(model),
+    });
+    expect(listCalls.count).toBe(1);
+  });
+
+  it("leaves the open loadout exactly as it was when `tools` is unset", async () => {
+    const model = scriptedModel([textTurn("ok")]);
+    await drive({ harness: vendo(), tools: hostTools, models: seats(model) });
+    const offered = model.toolNamesPerCall[0] ?? [];
+    expect(offered).toContain("maple_invoices_list");
+    expect(offered).toContain("maple_pay");
+    expect(offered).toContain("hire_subagent");
   });
 });
 

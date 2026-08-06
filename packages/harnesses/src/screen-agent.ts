@@ -1,29 +1,28 @@
 /**
  * The screen agent — UI-generation blueprint §4.2 and §4.5.
  *
- * The same `startTurn` loop `vendo()` and `instant()` drive, with a SMALL loadout
- * and a tight step budget: assembly tools only, the catalog and the host's own
- * declared result shapes in the brief, its own file hands, and one `escalate`
- * tool. It is the cheap first pass in front of the conductor — "every request
- * starts in the screen agent" (§1 point 2) — and nothing about it is new
- * machinery:
+ * It is `vendo()` with a CLOSED loadout and a tight step budget, not a harness of
+ * its own: the assembly verbs and the host's read tools by name, two hands of its
+ * own, and one door out. There is no second drive of `startTurn` here — the step
+ * cap, the seat resolution, `wireErrorMessage`, the history knobs and the system
+ * precedence are the default harness's, so a rail cannot be fixed in one loop and
+ * stay broken in the other. What this file holds is the CONFIGURATION: the brief,
+ * the loadout, the two hands, and the outcome the front door reads.
  *
  * - **The write path is `turn.workspace`.** The `claudeCode()` harness already
  *   builds apps this way: the model writes `plan.vendo` / `app.vendo` with its own
  *   hands and the runtime's commit is what makes it real
  *   (`claude-code/index.ts:338`, `skills/building-apps.ts:68`). This agent has no
- *   disk and no shell, so the two files it may write are two tools over the same
+ *   disk and no shell, so the two files it may write are two hands over the same
  *   `WorkspaceFs`. There is no third writer.
  * - **The paint path is the render seam.** `wrapWorkspaceForRender` intercepts
  *   `commit()`, compiles, and emits `data-vendo-view`. This file never emits a
  *   view and never compiles anything — that is exactly why a screen it assembles
  *   passes the same floor a `claudeCode()` app does.
  * - **`vendo_make` is withheld, not merely unused.** The screen agent IS what
- *   `vendo_make` calls, so leaving it callable is a loop. The `Harness` door
- *   withholds it at `toolSurface` (the runtime answers a withheld name with the
- *   same `not-found` a typo gets); the assembler door never projects it. Both
- *   matter, because `isAlwaysActive` in the loadout is `name.startsWith("vendo_")`
- *   — a `vendo_`-prefixed tool cannot be gated by `activeTools` at all.
+ *   `vendo_make` calls, so leaving it callable is a loop. A closed loadout excludes
+ *   it by omission; the `Harness` door withholds it at `toolSurface` as well, so
+ *   the runtime answers the name with the same `not-found` a typo gets.
  * - **The job description is the shipped skill.** `buildingAppsSkill` plus its
  *   `references/format.md` are the same text `claudeCode()` reads. This file adds
  *   one short block that corrects the ENVIRONMENT (no disk, no delegation, two
@@ -35,8 +34,8 @@
  */
 import {
   VENDO_MAKE_TOOL,
+  mintTurnId,
   type AppId,
-  type Json,
   type SeatModels,
   type RunContext,
   type ScreenAssembler,
@@ -44,17 +43,19 @@ import {
   type ScreenRequest,
   type ToolListing,
   type ToolRegistry,
+  type TurnId,
+  type TurnSkills,
+  type TurnState,
   type TurnTools,
   type WorkspaceFs,
   type Harness,
   type Turn,
   modelToolDescription,
 } from "@vendoai/core";
-import { startTurn, wireErrorMessage } from "@vendoai/agent/internal";
 import { buildingAppsSkill } from "@vendoai/apps";
-import { jsonSchema, tool, type LanguageModel, type ToolSet } from "ai";
-import { z } from "zod";
+import type { LanguageModel } from "ai";
 import { defineHarness } from "./define.js";
+import { vendo, type HarnessHand, type VendoHarnessOptions } from "./vendo.js";
 import { wrapWorkspaceForRender, type RenderSeamOptions } from "./render-seam.js";
 
 /**
@@ -96,16 +97,14 @@ const ASSEMBLY_TOOLS: readonly string[] = [
   "ask_user",
 ];
 
-/** A tool with no declared input still needs a schema the provider will accept. */
-const NO_INPUT_SCHEMA = { type: "object", properties: {}, additionalProperties: false };
-
 /**
  * What the lean loop needs, and nothing else.
  *
  * A `Turn` satisfies this by construction — structurally, with no adapter and no
  * wrapper — which is what lets the `Harness` door and the `vendo_make` door share
  * ONE loop instead of growing a second copy of it. Composition's door builds the
- * same four fields out of the pieces it already holds.
+ * same fields out of the pieces it already holds; the two identities are optional
+ * because only the harness door is inside a turn that already has them.
  */
 export interface ScreenSurface {
   readonly models: SeatModels<LanguageModel>;
@@ -113,6 +112,8 @@ export interface ScreenSurface {
   /** Wrapped by the render seam before it gets here, so `commit()` paints. */
   readonly workspace: WorkspaceFs;
   readonly signal: AbortSignal;
+  readonly threadId?: string;
+  readonly turnId?: TurnId;
 }
 
 export interface ScreenInput {
@@ -220,6 +221,40 @@ function screenBrief(input: ScreenInput, listings: readonly ToolListing[]): stri
     .join("\n\n---\n\n");
 }
 
+/** What the two hands recorded, for THIS run. A collector on the run rather than
+ *  module state: the hands are built per run and closed over it, so two concurrent
+ *  assemblies cannot read each other's verdict. */
+interface RunRecord {
+  /** Did an `app.vendo` save ever reach the store? */
+  assembled: boolean;
+  title?: string;
+  escalated?: string;
+}
+
+/** Nothing to hire and nothing to load: the job description is already the whole
+ *  brief, and `hire_subagent` is not on this loadout. */
+const NO_SKILLS: TurnSkills = {
+  async list() {
+    return [];
+  },
+  async load(name: string) {
+    throw new Error(`the screen agent carries no skills, so it cannot load ${name}`);
+  },
+};
+
+const runState = (): TurnState => {
+  let value: string | undefined;
+  return {
+    get: () => value,
+    set: (next: string) => {
+      value = next;
+    },
+    clear: () => {
+      value = undefined;
+    },
+  };
+};
+
 /**
  * ONE assembly run, over any surface a `Turn` satisfies.
  *
@@ -233,8 +268,17 @@ export async function assembleScreen(
 ): Promise<ScreenResult> {
   if (surface.signal.aborted) return { kind: "unavailable", why: "the caller hung up" };
 
+  // Seats are required only where a harness reads them (contract §4, relaxed) —
+  // and the screen agent thinks with `default`, so a turn without it is the
+  // caller's composition bug, named loudly rather than limped past. Same posture
+  // as `vendo()`, which reads the same seat.
+  if (surface.models.default === undefined) {
+    throw new Error("the screen agent thinks with `turn.models.default`, and this turn carries no default seat");
+  }
+
   const directory = appDirectory(input.appId);
   const listings = await surface.tools.list().catch(() => [] as ToolListing[]);
+  const record: RunRecord = { assembled: false };
 
   /**
    * Write one hot-path file and land it.
@@ -247,120 +291,119 @@ export async function assembleScreen(
    * floor by design, exactly as `AppsRuntime.authored` says — and the front door
    * checks the app's ROW before it promises the person a screen.
    */
-  const save = async (file: string, content: string): Promise<boolean> => {
-    await surface.workspace.writeFile(`${directory}/${file}`, content);
-    const result = await surface.workspace.commit({ message: `${file} (${input.appId})` });
+  const save = async (turn: Turn<unknown>, file: string, content: string): Promise<boolean> => {
+    await turn.workspace.writeFile(`${directory}/${file}`, content);
+    const result = await turn.workspace.commit({ message: `${file} (${input.appId})` });
     return result.status === "ok";
   };
 
-  let escalated: string | undefined;
-  let title: string | undefined;
-  /** Did an `app.vendo` save ever reach the store? */
-  let assembled = false;
-
-  const tools: ToolSet = {};
-  for (const listing of listings) {
-    // The small loadout: the assembly verbs by name, plus the host's read tools
-    // so a query's real values can be learned when a tool declares no shape.
-    // `vendo_make` is excluded by name — it is what called this loop — and a
-    // mutating host tool is not an assembly tool.
-    if (!ASSEMBLY_TOOLS.includes(listing.name) && listing.risk !== "read") continue;
-    if (listing.name === VENDO_MAKE_TOOL) continue;
-    tools[listing.name] = tool({
-      description: modelToolDescription(listing),
-      inputSchema: jsonSchema((listing.inputSchema ?? NO_INPUT_SCHEMA) as Parameters<typeof jsonSchema>[0]),
-      execute: async (args: unknown) => surface.tools.call(listing.name, args as Json),
-    });
-  }
-
-  tools[SAVE_APP_TOOL] = tool({
+  const saveApp: HarnessHand = {
+    name: SAVE_APP_TOOL,
     description:
       "Save this app's whole document. The person's screen repaints on every save that parses, so save "
       + "as you go rather than once at the end. Returns whether the save landed.",
-    inputSchema: z.object({
-      content: z.string().min(1).describe("The complete app document, in the .vendo format."),
-    }),
-    execute: async ({ content }) => {
-      const landed = await save(APP_FILE, content);
+    inputSchema: {
+      type: "object",
+      properties: { content: { type: "string", description: "The complete app document, in the .vendo format." } },
+      required: ["content"],
+      additionalProperties: false,
+    },
+    execute: async (args, turn) => {
+      const content = (args as { content: string }).content;
+      const landed = await save(turn, APP_FILE, content);
       if (!landed) {
         return { saved: false, note: "The save did not land — someone else changed this app. Save again." };
       }
-      assembled = true;
-      title = nameOf(content) ?? title;
+      record.assembled = true;
+      record.title = nameOf(content) ?? record.title;
       return { saved: true, note: "Run validate on it now." };
     },
-  });
+  };
 
-  tools[ESCALATE_TOOL] = tool({
+  const escalate: HarnessHand = {
+    name: ESCALATE_TOOL,
     description:
       "Hand this ask to the builder, which has real code, a real machine and no step budget. Use it when "
       + "assembling a document out of this product's components genuinely cannot serve the ask. Write the "
       + "plan: it becomes the skeleton the person watches while the builder fills it in. This ends your turn.",
-    inputSchema: z.object({
-      plan: z.string().min(1).describe("The plan document, in the .vendo plan format."),
-      why: z.string().min(1).describe("One plain sentence: what assembly cannot do here."),
-    }),
-    execute: async ({ plan, why }) => {
+    inputSchema: {
+      type: "object",
+      properties: {
+        plan: { type: "string", description: "The plan document, in the .vendo plan format." },
+        why: { type: "string", description: "One plain sentence: what assembly cannot do here." },
+      },
+      required: ["plan", "why"],
+      additionalProperties: false,
+    },
+    execute: async (args, turn) => {
+      const { plan, why } = args as { plan: string; why: string };
       // §4.5: no consent step and no ceremony. The plan lands, its skeleton
       // paints in seconds, and the work proceeds — so the only thing this
       // returns is the fact that it happened.
-      const landed = await save(PLAN_FILE, plan);
-      escalated = why;
+      const landed = await save(turn, PLAN_FILE, plan);
+      record.escalated = why;
       return { handedOver: true, planSaved: landed };
     },
+  };
+
+  // The small loadout, resolved where the listings are: the assembly verbs by
+  // name, plus the host's read tools so a query's real values can be learned when
+  // a tool declares no shape. `vendo_make` is excluded by name — it is what called
+  // this loop — and a mutating host tool is not an assembly tool. Names, not a
+  // risk filter passed downward: the closed list stays a list, and the one place
+  // that can decide "is this an assembly tool" is the one holding the listing.
+  const loadout: Array<string | HarnessHand> = listings
+    .filter((listing) => listing.name !== VENDO_MAKE_TOOL)
+    .filter((listing) => ASSEMBLY_TOOLS.includes(listing.name) || listing.risk === "read")
+    .map((listing) => listing.name);
+  loadout.push(saveApp, escalate);
+
+  const turn: Turn<VendoHarnessOptions> = {
+    messages: [{ id: `screen_${input.appId}`, role: "user", parts: [{ type: "text", text: input.request }] }],
+    // The listings are read ONCE and handed back verbatim: a closed loadout has
+    // nothing to discover, so re-reading them mid-run would be a second projection
+    // of the same static menu.
+    tools: { call: (name, args) => surface.tools.call(name, args), list: async () => listings },
+    skills: NO_SKILLS,
+    workspace: surface.workspace,
+    models: surface.models,
+    state: runState(),
+    options: {},
+    signal: surface.signal,
+    // This loop talks to nobody: the front door speaks the receipt, and an
+    // approval it cannot show is a denial with a reason (see `registryTools`).
+    interactive: false,
+    threadId: surface.threadId ?? `screen_${input.appId}`,
+    turnId: surface.turnId ?? mintTurnId(),
+  };
+
+  /** The first thing that went wrong, in the shipped loop's own words
+   *  (`wireErrorMessage`, applied inside `vendo()`). */
+  let failure: string | undefined;
+  const harness = vendo({
+    tools: loadout,
+    maxSteps: SCREEN_STEPS,
+    // The brief WINS over `turn.system`: it already folds the deployment's prompt
+    // in as its first section, so letting the turn's copy through would say it
+    // twice.
+    system: () => screenBrief(input, listings),
   });
-
-  const equipped = Object.keys(tools);
-  // Seats are required only where a harness reads them (contract §4, relaxed) —
-  // and the screen agent thinks with `default`, so a turn without it is the
-  // caller's composition bug, named loudly rather than limped past. Same posture
-  // as `vendo()`, which reads the same seat.
-  const model = surface.models.default;
-  if (model === undefined) {
-    throw new Error("the screen agent thinks with `turn.models.default`, and this turn carries no default seat");
-  }
-  let loop: Awaited<ReturnType<typeof startTurn>>;
-  try {
-    loop = await startTurn({
-      model,
-      system: screenBrief(input, listings),
-      messages: [{ id: `screen_${input.appId}`, role: "user", parts: [{ type: "text", text: input.request }] }],
-      tools,
-      signal: surface.signal,
-      // The shipped loadout rail. `attach` is a no-op for `instant()`'s reason:
-      // `find_tools` is the RUNTIME's, and a screen agent has a fixed loadout —
-      // there is nothing for it to discover mid-run.
-      toolSearch: { activeToolNames: () => equipped, attach: () => {} },
-      context: { maxSteps: SCREEN_STEPS },
-    });
-  } catch (error) {
-    return { kind: "unavailable", why: wireErrorMessage(error) };
+  // The events MUST be drained or nothing runs. Nothing is teed and nothing is
+  // buffered: this loop produces no prose for a person — the screen is the answer
+  // and the front door speaks the receipt.
+  for await (const event of harness.run(turn)) {
+    if (event.type === "error") failure ??= event.message;
   }
 
-  try {
-    // The stream MUST be drained or nothing runs. Nothing is teed and nothing is
-    // buffered: this loop produces no prose for a person — the screen is the
-    // answer and the front door speaks the receipt.
-    for await (const part of loop.result.fullStream) {
-      if (part.type === "abort") return { kind: "unavailable", why: "the caller hung up" };
-      if (part.type === "error") {
-        // A model failure after a screen already painted is not a failed screen.
-        if (!assembled && escalated === undefined) {
-          return { kind: "unavailable", why: wireErrorMessage(part.error) };
-        }
-      }
-    }
-  } catch (error) {
-    if (!assembled && escalated === undefined) return { kind: "unavailable", why: wireErrorMessage(error) };
-  }
-
+  if (surface.signal.aborted) return { kind: "unavailable", why: "the caller hung up" };
   // Escalation wins over a partial paint: the builder is finishing this app, and
   // saying "ready" over a half-assembled document would be the lie §4.5 exists
   // to avoid. `status: "building"` is the honest receipt, and the front door
   // stamps it.
-  if (escalated !== undefined) return { kind: "escalate", why: escalated };
-  if (assembled) return { kind: "assembled", ...(title === undefined ? {} : { title }) };
-  return { kind: "unavailable", why: "assembly produced nothing that renders" };
+  if (record.escalated !== undefined) return { kind: "escalate", why: record.escalated };
+  // A model failure AFTER a screen already painted is not a failed screen.
+  if (record.assembled) return { kind: "assembled", ...(record.title === undefined ? {} : { title: record.title }) };
+  return { kind: "unavailable", why: failure ?? "assembly produced nothing that renders" };
 }
 
 // ─── Door 1: the harness ─────────────────────────────────────────────────────
@@ -429,7 +472,10 @@ export interface ScreenAssemblerDeps {
   /** This principal's workspace, unwrapped. The assembler wraps it with the
    *  render seam itself, so composition never has to know that it must. */
   workspace: (ctx: RunContext) => Promise<WorkspaceFs>;
-  /** The seam's optional halves — plan facts and the app half (`AppsRuntime.authored`). */
+  /** The seam's optional halves — the checks floor, plan facts, the app half
+   *  (`AppsRuntime.authored`) and source persistence. The SAME options the
+   *  harness-turn route passes: a screen assembled here compiles in the production
+   *  dialect and passes the same floor, or it does not paint. */
   render?: (ctx: RunContext) => Omit<RenderSeamOptions, "emit">;
   /** The deployment's assembled prompt for this ctx, when composition has one. */
   system?: (ctx: RunContext) => Promise<string | undefined>;
@@ -456,6 +502,9 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
   return {
     async assemble(request: ScreenRequest, ctx: RunContext): Promise<ScreenOutcome> {
       const base = await deps.workspace(ctx);
+      // ONE wrap for the whole screen path, here: composition hands the seam's
+      // options and never has to know that a workspace must be wrapped before an
+      // assembly writes to it.
       const workspace = wrapWorkspaceForRender(base, {
         ...deps.render?.(ctx),
         ...(ctx.turnId === undefined ? {} : { turnId: ctx.turnId }),
@@ -470,6 +519,7 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
           // The front door owns cancellation: `vendo_make` resolves or it does
           // not, and the tool bridge is what a caller aborts.
           signal: new AbortController().signal,
+          ...(ctx.turnId === undefined ? {} : { turnId: ctx.turnId }),
         },
         {
           appId: request.appId,

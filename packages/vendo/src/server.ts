@@ -2332,10 +2332,22 @@ export function createVendo(config: CreateVendoConfig): Vendo {
             screenCtx.memberships === undefined ? undefined : { memberships: screenCtx.memberships },
           );
         },
-        // §1.6's app half, the SAME one the harness turns pass the seam below:
-        // the row that makes a written file an app, and the queries that put real
-        // data behind its bindings.
-        render: (screenCtx) => ({ authoredApp: (input) => apps.authored(input, screenCtx) }),
+        // The SAME seam options the harness turns pass below — every one of them,
+        // because a screen assembled here lands on the same store through the same
+        // `commit()`. §1.6's app half (the row that makes a written file an app,
+        // and the queries that put real data behind its bindings), §3.2's source
+        // half, and §7.1's floor.
+        //
+        // The floor was the one that was missing, and its absence was invisible: a
+        // screen assembled through `vendo_make` compiled with a bare `compileWire`
+        // — no fact checks, no binding gate, no tsc — so a lying binding painted
+        // here and was refused one route over. One seam cannot have two answers
+        // about the same bytes.
+        render: (screenCtx) => ({
+          authoredApp: (input) => apps.authored(input, screenCtx),
+          commitSource: (input) => apps.commitSource(input, screenCtx),
+          floor: apps.floor(screenCtx),
+        }),
         // `system` is deliberately unset. The screen agent's brief is the shipped
         // `building-apps` skill plus the host's own tool shapes, and the
         // deployment prompt's job — voice, venue gate, guard directions, the

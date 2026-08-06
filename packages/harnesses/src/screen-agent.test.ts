@@ -182,6 +182,28 @@ describe("the loadout (§4.2 — assembly tools only)", () => {
     expect(SCREEN_STEPS).toBe(10);
   });
 
+  it("spends the budget and no more — the cap is the shipped loop's, not a comment", async () => {
+    // The screen agent IS `vendo()` with a closed loadout, so the cap it declares
+    // has to reach the loop that enforces it. A model that never stops is what
+    // measures that: the default resident budget is 20, so an unpassed cap runs
+    // every one of these turns.
+    const screen = harness({
+      turns: Array.from({ length: SCREEN_STEPS + 1 }, () => saveApp(GOOD_APP)),
+    });
+    await screen.assemble("show me my spending");
+    expect(screen.model.calls).toBe(SCREEN_STEPS);
+  });
+
+  it("offers no hiring and no discovery — a closed list is total", async () => {
+    const screen = harness({ turns: [saveApp(GOOD_APP), textTurn("done")] });
+    await screen.assemble("show me my spending");
+    const offered = screen.model.toolNamesPerCall[0] ?? [];
+    // `vendo()`'s own two additions to any loadout. A fixed menu has nothing to
+    // discover, and a cheap first pass does not staff a build.
+    expect(offered).not.toContain("hire_subagent");
+    expect(offered).not.toContain("find_tools");
+  });
+
   it("carries the host's DECLARED result shape into the brief, not a sampled guess", async () => {
     const screen = harness({ turns: [saveApp(GOOD_APP), textTurn("done")] });
     await screen.assemble("show me my spending");

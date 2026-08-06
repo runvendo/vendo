@@ -29,7 +29,7 @@ export {
   type TranscriptStore,
   type TurnRunInput,
 } from "./runtime.js";
-export { vendo, type VendoHarnessDeps, type VendoHarnessOptions } from "./vendo.js";
+export { vendo, type HarnessHand, type VendoHarnessDeps, type VendoHarnessOptions } from "./vendo.js";
 export {
   assembleScreen,
   screenAgent,
