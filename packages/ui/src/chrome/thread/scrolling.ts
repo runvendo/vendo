@@ -1,5 +1,6 @@
 import type { UIMessage } from "ai";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { isAgentContext } from "./message-data.js";
 
 /** ENG-218 — windowing for long threads. Rendering a reopened 200-turn thread
     mounts every turn's DOM (and runs every entrance animation) at once. Instead
@@ -204,10 +205,14 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
   }, []);
 
   // 3A snippet: trailing text of the newest message (bounded; presentational).
+  // Agent-context parts are hidden turns the surfaces send on the person's
+  // behalf (the remix grounding, the connect card's continuations) — quoting
+  // one here would print machinery to a reader who is merely scrolled away.
   const lastMessage = messages.at(-1);
   const snippet = unseen && lastMessage
     ? lastMessage.parts
-        .filter((part): part is Extract<typeof part, { type: "text" }> => part.type === "text")
+        .filter((part): part is Extract<typeof part, { type: "text" }> =>
+          part.type === "text" && !isAgentContext(part))
         .map(part => part.text)
         .join(" ")
         .trim()

@@ -65,6 +65,15 @@ export async function completeConnection(
   onRedirect?: (redirectUrl: string) => void,
 ): Promise<void> {
   const initiated = await client.connections.initiate(input);
+  // The redirect URL is the ONE field of the initiate response the third-party
+  // broker writes, and every branch below navigates a window we opened (no
+  // `noopener`, so it shares this origin) or offers it as a link. A
+  // `javascript:` URL there runs in our own document. Refuse anything that is
+  // not http(s) at this single choke point, before it can reach any of them.
+  if (!/^https?:\/\//i.test(initiated.redirectUrl)) {
+    popup?.close();
+    throw new Error(`The ${input.toolkit} connection returned a sign-in URL we won’t open — try again.`);
+  }
   onRedirect?.(initiated.redirectUrl);
   if (popup === undefined) window.open(initiated.redirectUrl, "_blank", "noopener");
   else if (popup !== null) popup.location.replace(initiated.redirectUrl);
