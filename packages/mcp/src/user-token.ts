@@ -50,7 +50,7 @@ export async function vendoUserToken(input: VendoUserTokenInput): Promise<VendoU
   // The budget is a property of every call the helper makes, so it is bound
   // once here rather than threaded through discovery.
   const call: typeof fetch = (url, init) => transport(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
-  const tokenEndpoint = await discoverTokenEndpoint(call, input.url);
+  const { tokenEndpoint, resource } = await discoverTokenEndpoint(call, input.url);
   const response = await call(tokenEndpoint, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
@@ -60,6 +60,7 @@ export async function vendoUserToken(input: VendoUserTokenInput): Promise<VendoU
       client_secret: input.key,
       subject_token: input.user,
       subject_token_type: SERVICE_SUBJECT_TOKEN_TYPE,
+      ...(resource === undefined ? {} : { resource }),
     }),
   });
   if (!response.ok) throw new Error(await exchangeFailure(response, tokenEndpoint));
@@ -78,23 +79,42 @@ export async function vendoUserToken(input: VendoUserTokenInput): Promise<VendoU
  * `{resource}/token`. A door that trusts an external one names that issuer
  * instead, and the issuer publishes where its token endpoint really is.
  */
-async function discoverTokenEndpoint(call: typeof fetch, mcpUrl: string): Promise<string> {
-  const url = new URL(mcpUrl);
+async function discoverTokenEndpoint(
+  call: typeof fetch,
+  mcpUrl: string,
+): Promise<{ tokenEndpoint: string; resource?: string }> {
   const metadata = await getJson<{ resource: string; authorization_servers?: string[] }>(
     call,
-    `${url.origin}${PRM_PREFIX}${url.pathname === "/" ? "" : url.pathname}`,
+    wellKnown(PRM_PREFIX, mcpUrl),
   );
   const issuer = metadata.authorization_servers?.[0];
   if (issuer === undefined) {
     throw new Error(`${mcpUrl} names no authorization server, so there is no token endpoint to exchange at`);
   }
   const issuerBase = trimSlash(issuer);
-  if (issuerBase === trimSlash(metadata.resource)) return `${issuerBase}/token`;
-  const server = await getJson<{ token_endpoint?: string }>(call, `${issuerBase}${AS_PREFIX}`);
+  // RFC 8707 `resource` names the audience the token is FOR, in the door's own
+  // spelling of itself rather than the string the caller typed. Naming it turns
+  // a token endpoint reached under some other mount into `invalid_target`
+  // instead of a token bound to the wrong resource. An EXTERNAL authorization
+  // server picks the audience by its own policy — asking it for this
+  // deployment's resource is a refusal, not a pin — so only the door's own
+  // token endpoint is asked.
+  if (issuerBase === trimSlash(metadata.resource)) {
+    return { tokenEndpoint: `${issuerBase}/token`, resource: metadata.resource };
+  }
+  const server = await getJson<{ token_endpoint?: string }>(call, wellKnown(AS_PREFIX, issuerBase));
   if (server.token_endpoint === undefined) {
     throw new Error(`The authorization server ${issuer} publishes no token_endpoint`);
   }
-  return server.token_endpoint;
+  return { tokenEndpoint: server.token_endpoint };
+}
+
+/** RFC 8414 §3 / RFC 9728 §3.1: the well-known segment goes BETWEEN the origin
+ *  and the path, so an issuer or resource mounted under a path is still found.
+ *  Suffixing it names a path on the server instead of a document. */
+function wellKnown(prefix: string, base: string): string {
+  const url = new URL(base);
+  return `${url.origin}${prefix}${url.pathname === "/" ? "" : url.pathname}`;
 }
 
 async function getJson<T>(call: typeof fetch, url: string): Promise<T> {

@@ -14,6 +14,7 @@ import {
   SERVICE_CLIENT_ID,
   SERVICE_SUBJECT_TOKEN_TYPE,
   TOKEN_EXCHANGE_GRANT_TYPE,
+  assertServiceKeys,
   verifyServiceKey,
 } from "./service-keys.js";
 
@@ -160,6 +161,7 @@ export class OAuthServer {
     this.#store = config.store;
     this.#guard = config.guard;
     this.#theme = config.theme;
+    if (config.serviceAuth !== undefined) assertServiceKeys(config.serviceAuth.keys);
     this.#serviceKeys = config.serviceAuth?.keys;
   }
 
@@ -651,6 +653,13 @@ export class OAuthServer {
     }
     if (form.get("subject_token_type") !== SERVICE_SUBJECT_TOKEN_TYPE) {
       return oauthJsonError("invalid_request", `subject_token_type must be ${SERVICE_SUBJECT_TOKEN_TYPE}`);
+    }
+    // The subject is a bare wire string that lands in the grant, its refs and an
+    // audit row. Postgres jsonb cannot hold a NUL, so a subject with control
+    // characters fails the WRITE mid-exchange — a 501 with a query in it rather
+    // than the OAuth refusal the caller can read.
+    if (/\p{Cc}/u.test(subject)) {
+      return oauthJsonError("invalid_request", "subject_token must not contain control characters");
     }
     // ONE answer for a wrong client_id, an unknown key, a malformed key and a
     // retired one. Anything narrower tells whoever is guessing which half of

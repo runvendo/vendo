@@ -2929,6 +2929,38 @@ describe("createMcpDoor first-party service auth", () => {
       token_endpoint_auth_methods_supported: ["none", "client_secret_post"],
     });
   });
+
+  it("refuses a key list that cannot ever match, LOUDLY, at composition", () => {
+    // A key the door can never match is not a security posture, it is a
+    // deployment that advertises the grant and answers every exchange with
+    // `invalid_client` — the most expensive possible way to learn about a typo.
+    // The realistic spelling of the mistake is first: an unset env var.
+    expect(() => makeHarness({ serviceAuth: { keys: [undefined as unknown as string] } }))
+      .toThrow(/serviceAuth\.keys/);
+    expect(() => makeHarness({ serviceAuth: { keys: ["not-a-service-key"] } }))
+      .toThrow(/serviceAuth\.keys/);
+    expect(() => makeHarness({ serviceAuth: { keys: [SERVICE_KEY.toUpperCase()] } }))
+      .toThrow(/serviceAuth\.keys/);
+    // An empty list is the same failure with nothing to point at.
+    expect(() => makeHarness({ serviceAuth: { keys: [] } })).toThrow(/serviceAuth\.keys/);
+    // A good key beside a bad one still fails: a rotation list with a broken
+    // entry is a rotation that will silently strand whoever holds that key.
+    expect(() => makeHarness({ serviceAuth: { keys: [SERVICE_KEY, "vsk_0a1b2c3d_short"] } }))
+      .toThrow(/serviceAuth\.keys/);
+  });
+
+  it("never puts the rejected key in the message", () => {
+    // A malformed key is usually a REAL key with a typo. Echoing it writes a
+    // live credential into whatever collects the crash.
+    const typo = `${SERVICE_KEY}x`;
+    expect(() => makeHarness({ serviceAuth: { keys: [typo] } })).toThrow();
+    try {
+      makeHarness({ serviceAuth: { keys: [typo] } });
+    } catch (error) {
+      expect((error as Error).message).not.toContain(typo);
+      expect((error as Error).message).not.toContain(SERVICE_KEY.slice(13));
+    }
+  });
 });
 
 /** A host response model that references itself by OBJECT — what an inliner

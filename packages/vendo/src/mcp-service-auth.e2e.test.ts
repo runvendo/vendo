@@ -104,4 +104,29 @@ describe("first-party service auth, end to end through the composed door", () =>
     expect(rows.find((row) => row.kind === "door-auth")?.detail)
       .toEqual({ clientId: SERVICE_CLIENT, event: "exchange" });
   });
+
+  it("answers a subject_token the store cannot hold with an OAuth error, not a crash", async () => {
+    const { vendo, store } = await composedHost();
+
+    // `subject_token` is a bare wire string that goes straight onto a grant's
+    // `refs` and an audit row. Postgres jsonb cannot hold a NUL, so the REAL
+    // store rejects the write mid-exchange — and only the real store can show
+    // it, which is why this lives here and not in the in-memory door harness.
+    const response = await vendo.handler(new Request(`${MOUNT}/token`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
+        client_id: "vendo-service",
+        client_secret: KEY,
+        subject_token: `${SUBJECT}\u0000admin`,
+        subject_token_type: "urn:vendo:params:oauth:token-type:user-id",
+        resource: MOUNT,
+      }),
+    }));
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: "invalid_request" });
+    expect((await store.records("vendo_mcp_grants").list({})).records).toEqual([]);
+  });
 });

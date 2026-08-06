@@ -22,9 +22,31 @@ export const SERVICE_SUBJECT_TOKEN_TYPE = "urn:vendo:params:oauth:token-type:use
 /** RFC 8693 §2.1. */
 export const TOKEN_EXCHANGE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:token-exchange";
 
+/**
+ * Every configured key can actually be presented, checked where the door is
+ * composed. A key no presented key can ever equal is not a stricter door: it is
+ * one that ADVERTISES the exchange and answers every attempt `invalid_client`,
+ * which is the most expensive possible way to learn about an unset env var or a
+ * typo. The offending value never reaches the message — a malformed key is
+ * usually a real key with a character wrong.
+ */
+export function assertServiceKeys(keys: readonly string[]): void {
+  if (keys.length === 0) {
+    throw new TypeError(
+      "serviceAuth.keys is empty; list a key from `vendo service-key new`, or drop `serviceAuth` to close the exchange",
+    );
+  }
+  const index = keys.findIndex((key) => !SERVICE_KEY_PATTERN.test(key));
+  if (index !== -1) {
+    throw new TypeError(
+      `serviceAuth.keys[${index}] is not a service key: expected the \`vsk_<8 hex>_<40 hex>\` shape `
+      + "`vendo service-key new` mints. The value is not echoed here.",
+    );
+  }
+}
+
 /** The name the presented key wears in audit and on a grant, or null if no
- *  configured key matches it. A malformed configured key simply never matches,
- *  so one bad entry in a rotation list cannot take the deployment down. */
+ *  configured key matches it. */
 export async function verifyServiceKey(presented: string, keys: readonly string[]): Promise<string | null> {
   if (!SERVICE_KEY_PATTERN.test(presented)) return null;
   const hash = await sha256Hex(presented);

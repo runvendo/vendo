@@ -17,6 +17,9 @@ import { vendoUserToken } from "./user-token.js";
 
 const BASE = "https://product.example/api/vendo/mcp";
 const BROKER = "https://tenant.mcp.vendo.run";
+/** The same broker, mounted under a PATH — the shape an own-AS deployment uses
+ *  (`packages/vendo/src/server.test.ts` issues from `…/api/vendo/mcp`). */
+const PATH_BROKER = "https://broker.example/api/vendo/mcp";
 const SERVICE_KEY = "vsk_0a1b2c3d_0123456789abcdef0123456789abcdef01234567";
 const SERVICE_KEY_B = "vsk_5f6e7d8c_fedcba9876543210fedcba9876543210fedcba98";
 
@@ -70,6 +73,51 @@ describe("vendoUserToken", () => {
       `${BROKER}/.well-known/oauth-authorization-server`,
       `${BROKER}/token`,
     ]);
+  });
+
+  it("finds a PATH-MOUNTED authorization server's metadata where RFC 8414 puts it", async () => {
+    // RFC 8414 §3: for an issuer that carries a path, the well-known segment is
+    // INSERTED between the origin and the path — it is not suffixed. A Vendo
+    // door serves its own AS metadata at that insertion spelling and at no
+    // other, so suffixing names an MCP path rather than a document. Both doors
+    // here are real; nothing is hand-written.
+    const deployment = makeDoor({ remoteAs: { issuer: PATH_BROKER, audience: BASE } });
+    const broker = makeDoor({ serviceAuth: { keys: [SERVICE_KEY] } });
+    const seen: string[] = [];
+
+    const token = await vendoUserToken({
+      url: BASE,
+      key: SERVICE_KEY,
+      user: "user_1",
+      fetch: doorFetch({ "https://product.example": deployment, "https://broker.example": broker }, seen),
+    });
+
+    expect(token.accessToken).toMatch(/^vmat_/);
+    expect(seen).toEqual([
+      "https://product.example/.well-known/oauth-protected-resource/api/vendo/mcp",
+      "https://broker.example/.well-known/oauth-authorization-server/api/vendo/mcp",
+      `${PATH_BROKER}/token`,
+    ]);
+  });
+
+  it("names the resource the token is for, so nothing else decides the audience", async () => {
+    const door = makeDoor({ serviceAuth: { keys: [SERVICE_KEY] } });
+    const answer = doorFetch({ "https://product.example": door });
+    const posted: URLSearchParams[] = [];
+    const record: typeof fetch = async (input, init) => {
+      const request = new Request(input as RequestInfo, init);
+      if (request.method === "POST") posted.push(new URLSearchParams(await request.clone().text()));
+      return answer(request);
+    };
+
+    await vendoUserToken({ url: BASE, key: SERVICE_KEY, user: "user_1", fetch: record });
+
+    // RFC 8693 §2.1 `resource` is the audience the caller is asking for, and the
+    // door validates it (`invalid_target`). Leaving it off makes the token
+    // endpoint's own mount decide — which on the broker path is the BROKER, not
+    // the deployment the backend actually wants to talk to.
+    expect(posted).toHaveLength(1);
+    expect(posted[0]!.get("resource")).toBe(BASE);
   });
 
   it("surfaces the door's OAuth error", async () => {
