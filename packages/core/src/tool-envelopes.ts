@@ -13,7 +13,7 @@ import { appIdSchema, approvalIdSchema, type AppId, type ApprovalId } from "./id
 export const VENDO_APP_REF_KIND = "vendo/app-ref@1" as const;
 export const VENDO_APPROVAL_REF_KIND = "vendo/approval-ref@1" as const;
 
-/** `vendo_create_app` returned fast: the build was ACCEPTED and is still
+/** `vendo_make` returned fast: the build was ACCEPTED and is still
  *  streaming over the wire — the app is NOT built yet. `<VendoAppEmbed>` mounts
  *  it by this ref and shows live build progress, the finished app, or the build
  *  failure itself, so the model must not claim the app is created/ready/done.

@@ -165,10 +165,10 @@ describe.sequential("examples/ai-sdk-agent — one real turn per value prop", ()
     expect(output).toHaveProperty("temperature");
   });
 
-  it("generated UI: vendo_create_app returns the app-ref envelope fast and the wire serves the built app", async () => {
+  it("generated UI: vendo_make returns the app-ref envelope fast and the wire serves the built app", async () => {
     const vendo = await compose();
-    const output = await turn(vendo, "vendo_create_app", {
-      prompt: "A dashboard comparing weather in Paris, London and Tokyo",
+    const output = await turn(vendo, "vendo_make", {
+      request: "A dashboard comparing weather in Paris, London and Tokyo",
     });
     const envelope = vendoAppRefSchema.parse(output);
     expect(envelope.kind).toBe("vendo/app-ref@1");

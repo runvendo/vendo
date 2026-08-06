@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig, type ViteDevServer } from "vite";
-import { createWireServer } from "../../test/wire-server.ts";
+import { createWireServer, fixtureApp } from "../../test/wire-server.ts";
 
 const harnessRoot = fileURLToPath(new URL(".", import.meta.url));
 
@@ -31,6 +31,25 @@ export default defineConfig(async ({ command }) => {
       retryable: true,
       prompt: "a board showing where my money goes each month",
     });
+    // (/slot-states, /slot-building) — the slot's own build vocabulary over the
+    // real wire. `app_slot_building` lands on the second placements read; the
+    // spec places it itself so each attempt rewinds that window. `slot-ready`
+    // and `slot-http` are the two surface kinds a ready slot must mount; and
+    // `slot-failed` carries the same developer sentence the embed must not
+    // print, so the audit is over the real thing.
+    wire.state.landingApps.set("app_slot_building", { after: 2, seen: 0, name: "Trip planner" });
+    wire.state.placements.push({ slot: "slot-ready", appId: "app_1" });
+    wire.state.apps.push(fixtureApp("app_slot_http", "Served dashboard"));
+    wire.state.httpApps.set("app_slot_http", "/frame-target.html");
+    wire.state.placements.push({ slot: "slot-http", appId: "app_slot_http" });
+    wire.state.failedApps.set("app_slot_failed", {
+      reason: "This app wasn't created, because it didn't pass the checks that keep an app honest:"
+        + " the `value` expression is a declarative string that the DataTable does not evaluate,"
+        + " not JavaScript: amount / sum(spending.data.amount)",
+      retryable: true,
+      prompt: "a board showing where my money goes each month",
+    });
+    wire.state.placements.push({ slot: "slot-failed", appId: "app_slot_failed" });
   }
 
   // Ephemeral by default so parallel lanes never collide; playwright.config

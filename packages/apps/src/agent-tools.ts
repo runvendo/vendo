@@ -1,7 +1,10 @@
 import {
+  VENDO_APPS_PIN_TOOL,
+  VENDO_APPS_UNPIN_TOOL,
   VENDO_MAKE_TOOL,
   VENDO_TOOL_TITLES,
   appIdSchema,
+  isUnattended,
   VENDO_VIEW_STREAM,
   VendoError,
   makeReceiptSchema,
@@ -40,7 +43,7 @@ const descriptors = [
     // live host data itself. The retry one: a rejected change is worth one
     // narrower attempt on the same app, and was worth saying because the
     // alternative the model reached for was rebuilding it from scratch.
-    description: "Make the user something to look at — a screen, or a full app — from a plain-language request. Say what they want in your own words; Vendo decides whether to assemble a screen or build an app, and it arrives on the user's own page. Pass `app` only to change one specific existing app — its id, or its name exactly as the user said it, which is resolved against their own apps (if two share that name you are told both, so ask which one); leave it out and Vendo decides whether to continue the last one or start something new. A recurring or scheduled task belongs here too: describe the schedule and the action in the request and it is armed as part of the same call; there is no separate automations tool. One app can hold SEVERAL automations, so to add another one to an app it already has, name that app in `app` and describe the new schedule — never refuse a second schedule. Never bake data values you computed or fetched (counts, totals, amounts) into the request — it binds live host data itself and hardcoded figures fail its checks. Never specify fonts, colors, or branding — it inherits the host theme. You get back a one-line receipt to say out loud, never the screen itself; if the receipt says \"failed\", try once more on the same `app` with a narrower request rather than rebuilding it.",
+    description: "Make the user something to look at — a screen, or a full app — from a plain-language request. Say what they want in your own words; Vendo decides whether to assemble a screen or build an app, and it arrives on the user's own page. Pass `app` only to change one specific existing app — its id, or its name exactly as the user said it, which is resolved against their own apps (if two share that name you are told both, so ask which one); leave it out and Vendo decides whether to continue the last one or start something new. A recurring or scheduled task belongs here too: describe the schedule and the action in the request and it is armed as part of the same call; there is no separate automations tool. One app can hold SEVERAL automations, so to add another one to an app it already has, name that app in `app` and describe the new schedule — never refuse a second schedule. Never bake data values you computed or fetched (counts, totals, amounts) into the request — it binds live host data itself and hardcoded figures fail its checks. Never specify fonts, colors, or branding — it inherits the host theme. You get back a one-line receipt to say out loud, never the screen itself; if the receipt says \"failed\", try once more on the same `app` with a narrower request rather than rebuilding it. Pass `slot` only when the request names a particular place on the user's page for it to land — the host publishes those slot ids, so pass one you were told rather than one you invented, and whatever held that place is replaced. `slot` is for something NEW: to move an app that already exists, use the pin tool instead.",
     inputSchema: {
       $schema: DRAFT_2020_12,
       type: "object",
@@ -48,6 +51,7 @@ const descriptors = [
         request: { type: "string", minLength: 1 },
         app: { type: "string", minLength: 1 },
         context: { type: "string", minLength: 1 },
+        slot: { type: "string", minLength: 1 },
       },
       required: ["request"],
       additionalProperties: false,
@@ -93,6 +97,56 @@ const descriptors = [
       additionalProperties: false,
     },
     risk: "read",
+  },
+  {
+    name: VENDO_APPS_PIN_TOOL,
+    description: "Put one of the user's own apps into a named slot on the page they are looking at, where it stays until they move it. `app` is the app's id, or its name exactly as the user said it, resolved against their own apps (if two share that name you are told both, so ask which one they mean). `slot` is a slot id the host published for that place on the page — pass one you were told rather than one you invented. Whatever held that slot is replaced, and the reply names it as `evicted` so you can say what moved.",
+    inputSchema: {
+      $schema: DRAFT_2020_12,
+      type: "object",
+      properties: {
+        app: {
+          type: "string",
+          minLength: 1,
+          description: "The app's id, or its name as the user says it.",
+        },
+        slot: {
+          type: "string",
+          minLength: 1,
+          description: "The slot id the host published for that place on the page.",
+        },
+      },
+      required: ["app", "slot"],
+      additionalProperties: false,
+    },
+    // A `write`, and only a write: one small row saying where an app the user
+    // already owns sits on their own page. It is reversible by the tool below,
+    // and history is the safety net. What keeps it away from an unattended run
+    // is `PRESENCE_ONLY_TOOLS`, not an inflated grade.
+    risk: "write",
+  },
+  {
+    name: VENDO_APPS_UNPIN_TOOL,
+    description: "Take an app back out of a slot on the user's page. The app itself is untouched — it stays in their apps and can be put back any time. `app` is the app's id or its name as the user said it; `slot` is the slot it is in.",
+    inputSchema: {
+      $schema: DRAFT_2020_12,
+      type: "object",
+      properties: {
+        app: {
+          type: "string",
+          minLength: 1,
+          description: "The app's id, or its name as the user says it.",
+        },
+        slot: {
+          type: "string",
+          minLength: 1,
+          description: "The slot the app is in.",
+        },
+      },
+      required: ["app", "slot"],
+      additionalProperties: false,
+    },
+    risk: "write",
   },
   {
     name: "vendo_apps_data_list",
@@ -231,6 +285,14 @@ const optionalLimit = (value: Json | undefined): number | undefined => {
 export interface AgentToolsDataDependencies {
   data: AppDataAccess;
   requireOwned(appId: AppId, ctx: RunContext): Promise<AppDocument>;
+  /** B1 — claim the slot for an id this door just minted, before either engine
+   *  runs. `AppsRuntime.place` cannot: it gates on an app record, and there is
+   *  none yet. Filled by the runtime that constructs this registry. */
+  claimSlot(appId: AppId, slot: string, ctx: RunContext): Promise<void>;
+  /** B1's other end — the terminal record for an id assembly never landed, so a
+   *  claimed slot reads as the honest failure card instead of a skeleton that
+   *  ages out. The same tombstone a failed build leaves. */
+  markUnbuilt(appId: AppId, name: string, reason: string, ctx: RunContext): Promise<void>;
   /** UI-generation blueprint §1 point 2 — the screen agent. Threaded from
    *  `AppsConfig.screen`, which composition fills; see the routing block in the
    *  `vendo_make` handler below. Unfilled, `vendo_make` has nothing to assemble
@@ -358,8 +420,17 @@ export const createAgentTools = (
   async execute(call, ctx: RunContext): Promise<ToolOutcome> {
     try {
       if (call.tool === VENDO_MAKE_TOOL) {
-        const args = input(call.args, ["request"], ["app", "context"]);
+        const args = input(call.args, ["request"], ["app", "context", "slot"]);
         const app = optionalString(args.app, "app");
+        const slot = optionalString(args.slot, "slot");
+        // The slot, and ONLY the slot, needs a person there: it claims a place
+        // on somebody's page and evicts whatever held it. Creation does not, so
+        // an unattended run still builds what it was asked for and simply takes
+        // no slot — this is the whole of that rule (ruled 2026-08-06; the
+        // guard's presence-only refusal covers the pin tools, never make).
+        // The refusal below still reads `slot`, because "you aimed a new app at
+        // a slot on an EDIT" is wrong however present the person is.
+        const claimed = isUnattended(ctx) ? undefined : slot;
         const stream = (call as VendoViewStreamingToolCall)[VENDO_VIEW_STREAM];
         const request = args.request as string;
         const ask = withContext(request, optionalString(args.context, "context"));
@@ -403,6 +474,21 @@ export const createAgentTools = (
           // coming back empty, and assembly coming back empty is the ANSWER —
           // there is no second engine behind this seam to rescue it with.
           const appId = `app_${globalThis.crypto.randomUUID()}` as AppId;
+          // B1 — the claim rides the MINT, not the landing, for BOTH engines.
+          // Claiming after assembly returned left the slot empty for the whole
+          // of a fast make, and left nothing at all behind a failed one, so the
+          // slot stayed empty and the person heard about the failure only in the
+          // conversation. The builder route has always claimed here (`create`'s
+          // own `slot`, which this door no longer needs to pass).
+          if (claimed !== undefined) await dependencies.claimSlot(appId, claimed, ctx);
+          /** The one exit for an ask no engine landed: the tombstone that turns
+           *  the claimed slot into the honest failure card, then the receipt
+           *  that says so — the record's reason is the sentence the person is
+           *  told, verbatim, because there is nothing else true to record. */
+          const failUnbuilt = async (title: string, say: string): Promise<ToolOutcome> => {
+            if (claimed !== undefined) await dependencies.markUnbuilt(appId, title, say, ctx);
+            return receipt({ id: appId, title, status: "failed", say });
+          };
           let threw: string | undefined;
           const routed = dependencies.screen === undefined
             ? undefined
@@ -421,6 +507,8 @@ export const createAgentTools = (
             const stored = await runtime.get(appId, ctx).catch(() => null);
             if (stored !== null) {
               await remember(appId);
+              // No claim here: the slot has held this id since the mint above,
+              // and the row already names it.
               return receipt({
                 id: stored.id,
                 title: stored.name,
@@ -452,31 +540,29 @@ export const createAgentTools = (
             // Assembly produced no screen. Said plainly, at the id whose stream
             // the person is looking at, instead of quietly restarting the ask in
             // a different engine.
-            return receipt({
-              id: appId,
-              title: nameForUnbuilt(undefined, ask),
-              status: "failed",
-              say: unbuiltSay(
+            return await failUnbuilt(
+              nameForUnbuilt(undefined, ask),
+              unbuiltSay(
                 dependencies.screen === undefined ? NO_ASSEMBLER
                   : threw ?? (routed?.kind === "unavailable" ? routed.why : NOTHING_RENDERABLE),
               ),
-            });
+            );
           }
           if (!runtime.machine.available()) {
-            return receipt({
-              id: appId,
+            return await failUnbuilt(
               // The name on the skeleton they are looking at, so the sentence and
               // the card are about the same thing.
-              title: nameForUnbuilt(plan, ask),
-              status: "failed",
-              say: NO_MACHINE,
-            });
+              nameForUnbuilt(plan, ask),
+              NO_MACHINE,
+            );
           }
           let unsaved: string | undefined;
           const created = await runtime.create({
             appId,
             prompt: ask,
             ...(plan === undefined ? {} : { plan }),
+            // No `slot`: the claim went down at the mint above, which is the
+            // same instant `create` would have made it for an id of its own.
             onUnsaved: (reason) => { unsaved = reason; },
             ...(stream === undefined ? {} : {
               onView: (part) => stream({ id: vendoViewStreamId(part.appId), part }),
@@ -499,6 +585,17 @@ export const createAgentTools = (
               ? `${created.name} is on your screen.`
               : `${created.name} is on your screen, though I couldn't save it to your apps.`,
           });
+        }
+        // `slot` says where a NEW app lands. On a change it would have to mean
+        // "and also move it", which evicts whatever holds that slot off the back
+        // of an edit nobody aimed there — so it is refused, by name, at the one
+        // tool that does the moving. Refused before the ref is resolved: the
+        // answer does not depend on which app was meant.
+        if (slot !== undefined) {
+          throw new VendoError(
+            "validation",
+            "`slot` says where a new app lands. To move an app that already exists, call vendo_apps_pin with that app and slot.",
+          );
         }
         const appId = await resolveAppRef(runtime, app, ctx);
         const result = await runtime.edit(appId, ask, ctx);
@@ -551,6 +648,23 @@ export const createAgentTools = (
         // "no such app" while that app sat in the caller's own list.
         const appId = await resolveAppRef(runtime, args.appId as string, ctx);
         return { status: "ok", output: await runtime.open(appId, ctx) as unknown as Json };
+      }
+      if (call.tool === VENDO_APPS_PIN_TOOL) {
+        const args = input(call.args, ["app", "slot"]);
+        const appId = await resolveAppRef(runtime, args.app as string, ctx);
+        const slot = args.slot as string;
+        const { evicted } = await runtime.place({ app: appId, slot }, ctx);
+        return {
+          status: "ok",
+          output: { app: appId, slot, ...(evicted === undefined ? {} : { evicted }) },
+        };
+      }
+      if (call.tool === VENDO_APPS_UNPIN_TOOL) {
+        const args = input(call.args, ["app", "slot"]);
+        const appId = await resolveAppRef(runtime, args.app as string, ctx);
+        const slot = args.slot as string;
+        await runtime.unplace({ app: appId, slot }, ctx);
+        return { status: "ok", output: { app: appId, slot } };
       }
       if (call.tool === "vendo_apps_data_list") {
         const args = input(call.args, ["appId", "collection"], ["refs", "limit", "cursor"]);

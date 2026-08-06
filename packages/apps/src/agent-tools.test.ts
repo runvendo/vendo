@@ -4,14 +4,17 @@ import {
   VENDO_TOOL_TITLES,
   toolDescriptorSchema,
   type RunContext,
+  type ScreenAssembler,
   type ToolRegistry,
 } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { agentToolDescriptors } from "./agent-tools.js";
-import { createApps, type AppsRuntime } from "./index.js";
+import { createApps, type AppsRuntime, type PlacementEntry } from "./index.js";
 import {
   authoringAssembler,
+  basicLanguageModel,
   bindTools,
+  fakeBoxSandbox,
   guardFixture,
   memoryStore,
   scriptedAssembler,
@@ -52,6 +55,8 @@ describe("apps agent tools", () => {
       "vendo_make",
       "vendo_apps_rebase_pin",
       "vendo_apps_open",
+      "vendo_apps_pin",
+      "vendo_apps_unpin",
       "vendo_apps_data_list",
       "vendo_apps_data_put",
       "vendo_apps_data_delete",
@@ -72,7 +77,7 @@ describe("apps agent tools", () => {
     // rearranging your own view is not an act on the world, and history/undo are
     // the safety net.
     expect(descriptors.map((descriptor) => descriptor.risk)).toEqual([
-      "read", "write", "read", "read", "write", "write",
+      "read", "write", "read", "write", "write", "read", "write", "write",
     ]);
     // The one-narrower-retry instruction survived the merge onto `vendo_make`:
     // without it the model's answer to a rejected change was to rebuild the app
@@ -560,5 +565,321 @@ describe("§3 consumer voice — every apps tool carries a title", () => {
       // The title is what a person reads; it must not be the identifier again.
       expect(descriptor.title, descriptor.name).not.toMatch(/vendo|_/i);
     }
+  });
+});
+
+describe("vendo_make — the slot a new app lands in", () => {
+  /** The front door with one answer or another behind the seam. `self` is the
+   *  same compose-time knot `packages/vendo` ties: the assembler writes through
+   *  the runtime that composing returns. */
+  const assemblingWith = (screen: (self: () => AppsRuntime) => ScreenAssembler): AppsRuntime => {
+    const runtime: AppsRuntime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools: hostTools,
+      catalog: [],
+      model: scriptedLanguageModel(generated),
+      screen: screen(() => runtime),
+    });
+    return runtime;
+  };
+
+  /** The ASSEMBLY engine — the one that serves most asks. `authoringAssembler`
+   *  compiles with core's own compiler and lands the row through
+   *  `runtime.authored`, which is the shipped write path, not a stub. */
+  const assembling = (): AppsRuntime =>
+    assemblingWith((self) => authoringAssembler(self, generated));
+
+  /** The BUILDER engine — assembly escalates and this deployment has somewhere
+   *  to build. Same front door, same minted id, a different engine behind it,
+   *  which is exactly why the placement is asserted on both. */
+  const escalating = (): AppsRuntime => createApps({
+    store: memoryStore(),
+    guard: guardFixture(),
+    tools: hostTools,
+    catalog: [],
+    model: basicLanguageModel(),
+    machine: { sandbox: fakeBoxSandbox(), buildEnv: () => ({ PORT: "8080" }), boxEditPollMs: 5 },
+    screen: { async assemble() { return { kind: "escalate", why: "this needs real code" }; } },
+  });
+
+  it("takes request, app, context and slot — request required, nothing else allowed", async () => {
+    const descriptors = await assembling().agentTools().descriptors();
+    const schema = descriptors.find(({ name }) => name === "vendo_make")!.inputSchema as {
+      properties: Record<string, unknown>;
+      required: string[];
+      additionalProperties: boolean;
+    };
+
+    expect(Object.keys(schema.properties).sort()).toEqual(["app", "context", "request", "slot"]);
+    expect(schema.required).toEqual(["request"]);
+    expect(schema.additionalProperties).toBe(false);
+  });
+
+  it("lands an ASSEMBLED screen in the slot the caller aimed at", async () => {
+    // The SEAM, not a stub on either side: the tool writes through the real
+    // assembly path, and the assertion reads back through the runtime's real
+    // placements path. Nothing here knows how a placement row is stored.
+    const runtime = assembling();
+
+    const outcome = await runtime.agentTools().execute({
+      id: "call_make_slot",
+      tool: "vendo_make",
+      args: { request: "my spending this month", slot: "dashboard.hero" },
+    }, ctx);
+
+    expect(outcome.status).toBe("ok");
+    const receipt = (outcome as { output: { id: string; status: string } }).output;
+    expect(receipt.status).toBe("ready");
+    expect(await runtime.placements({}, ctx)).toEqual([
+      expect.objectContaining({ slot: "dashboard.hero", app: receipt.id, status: "ready" }),
+    ]);
+  });
+
+  it("claims the slot at MINT, so the slot shows the build while assembly is still running", async () => {
+    // B1 on the FAST engine. The row used to go down only after assembly
+    // RETURNED, so a slot the person was already looking at stayed empty for the
+    // whole of the make and the skeleton it exists to show never appeared. The
+    // reading is taken from inside the assembler, mid-flight, through the
+    // runtime's own placements path.
+    let inFlight: PlacementEntry[] = [];
+    const runtime = assemblingWith((self) => ({
+      async assemble(request, runCtx) {
+        inFlight = await self().placements({}, runCtx);
+        return authoringAssembler(self, generated).assemble(request, runCtx);
+      },
+    }));
+
+    const outcome = await runtime.agentTools().execute({
+      id: "call_make_slot_inflight",
+      tool: "vendo_make",
+      args: { request: "my spending this month", slot: "dashboard.hero" },
+    }, ctx);
+
+    const receipt = (outcome as { output: { id: string } }).output;
+    expect(inFlight).toEqual([
+      { slot: "dashboard.hero", app: receipt.id, title: "", status: "building" },
+    ]);
+    // The same row, unmoved, is what goes READY when assembly lands.
+    expect(await runtime.placements({}, ctx)).toEqual([
+      expect.objectContaining({ slot: "dashboard.hero", app: receipt.id, status: "ready" }),
+    ]);
+  });
+
+  it("leaves the honest failure IN the slot when assembly fails terminally", async () => {
+    // B1's other half. A make that died in assembly wrote no row at all, so the
+    // slot showed nothing and the failure lived only in the conversation.
+    const runtime = assemblingWith(() => ({
+      async assemble() { return { kind: "unavailable", why: "the screen agent is down" }; },
+    }));
+
+    const outcome = await runtime.agentTools().execute({
+      id: "call_make_slot_failed",
+      tool: "vendo_make",
+      args: { request: "my spending this month", slot: "dashboard.hero" },
+    }, ctx);
+
+    const receipt = (outcome as { output: { id: string; status: string; title: string } }).output;
+    expect(receipt.status).toBe("failed");
+    // FAILED now, read back through the real placements path — not a skeleton
+    // that only ages into a failure once the build window elapses.
+    expect(await runtime.placements({}, ctx)).toEqual([
+      { slot: "dashboard.hero", app: receipt.id, title: receipt.title, status: "failed" },
+    ]);
+    // The terminal record is a tombstone, exactly as a failed build's is: it
+    // answers the slot and never joins the user's apps.
+    expect(await runtime.list(ctx)).toEqual([]);
+    // Dismiss = unplace, and it leaves nothing behind.
+    await runtime.unplace({ app: receipt.id, slot: "dashboard.hero" }, ctx);
+    expect(await runtime.placements({}, ctx)).toEqual([]);
+  });
+
+  it("lands an ESCALATED build in it too — one front door, two engines, one row", async () => {
+    // The engine the ask is routed to is Vendo's decision, never the caller's.
+    // If only one of the two left a row, `slot` would be a coin toss the caller
+    // cannot see — and it would have shipped green, because each engine has its
+    // own tests.
+    const runtime = escalating();
+
+    const outcome = await runtime.agentTools().execute({
+      id: "call_make_slot_built",
+      tool: "vendo_make",
+      args: { request: "match my invoices to payments", slot: "dashboard.hero" },
+    }, ctx);
+
+    expect(outcome.status).toBe("ok");
+    const receipt = (outcome as { output: { id: string; status: string } }).output;
+    expect(receipt.status).toBe("ready");
+    expect(await runtime.placements({}, ctx)).toEqual([
+      expect.objectContaining({ slot: "dashboard.hero", app: receipt.id }),
+    ]);
+  });
+
+  it("leaves no placement at all when no slot was named", async () => {
+    const runtime = assembling();
+
+    await runtime.agentTools().execute({
+      id: "call_make_no_slot",
+      tool: "vendo_make",
+      args: { request: "my spending this month" },
+    }, ctx);
+
+    expect(await runtime.placements({}, ctx)).toEqual([]);
+  });
+
+  it("refuses a slot on a CHANGE, and names the tool that does move an app", async () => {
+    // Silently ignoring it would be worse, and silently PLACING it would evict
+    // whatever holds that slot off the back of an edit nobody aimed there.
+    const runtime = assembling();
+    const created = await runtime.create({ prompt: "Build a dashboard" }, ctx);
+
+    const outcome = await runtime.agentTools().execute({
+      id: "call_edit_slot",
+      tool: "vendo_make",
+      args: { app: created.id, request: "Make the heading blue", slot: "dashboard.hero" },
+    }, ctx);
+
+    expect(outcome).toEqual({
+      status: "error",
+      error: {
+        code: "validation",
+        message: expect.stringContaining("vendo_apps_pin") as unknown as string,
+      },
+    });
+  });
+
+  it("refuses an empty slot string", async () => {
+    const outcome = await assembling().agentTools().execute({
+      id: "call_make_blank_slot",
+      tool: "vendo_make",
+      args: { request: "my spending", slot: "  " },
+    }, ctx);
+
+    expect(outcome).toEqual({
+      status: "error",
+      error: { code: "validation", message: "slot must be a non-empty string" },
+    });
+  });
+});
+
+describe("vendo_apps_pin / vendo_apps_unpin — putting an app on the page", () => {
+  // These two tools only ever move an app that already exists, so the assembler
+  // is here only to make one: there is ONE engine, and `create` starts at
+  // assembly for every caller.
+  const makeRuntime = (): AppsRuntime => {
+    let runtime: AppsRuntime;
+    runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools: hostTools,
+      catalog: [],
+      model: scriptedLanguageModel(generated),
+      screen: authoringAssembler(() => runtime, generated),
+    });
+    return runtime;
+  };
+
+  it("takes exactly app and slot, both required", async () => {
+    const descriptors = await makeRuntime().agentTools().descriptors();
+
+    for (const name of ["vendo_apps_pin", "vendo_apps_unpin"]) {
+      const schema = descriptors.find((descriptor) => descriptor.name === name)!.inputSchema as {
+        properties: Record<string, unknown>;
+        required: string[];
+        additionalProperties: boolean;
+      };
+      expect(Object.keys(schema.properties).sort(), name).toEqual(["app", "slot"]);
+      expect(schema.required.slice().sort(), name).toEqual(["app", "slot"]);
+      expect(schema.additionalProperties, name).toBe(false);
+    }
+  });
+
+  it("pins an existing app into a slot, and the placement reads back", async () => {
+    const runtime = makeRuntime();
+    const created = await runtime.create({ prompt: "Build a dashboard" }, ctx);
+
+    const outcome = await runtime.agentTools().execute({
+      id: "call_pin",
+      tool: "vendo_apps_pin",
+      args: { app: created.id, slot: "dashboard.hero" },
+    }, ctx);
+
+    expect(outcome).toEqual({ status: "ok", output: { app: created.id, slot: "dashboard.hero" } });
+    expect(await runtime.placements({}, ctx)).toEqual([
+      expect.objectContaining({ slot: "dashboard.hero", app: created.id }),
+    ]);
+  });
+
+  it("names what it replaced, so the model can say so", async () => {
+    const runtime = makeRuntime();
+    const first = await runtime.create({ prompt: "Build a dashboard" }, ctx);
+    const second = await runtime.create({ prompt: "Build a second dashboard" }, ctx);
+    await runtime.agentTools().execute({
+      id: "call_pin_first",
+      tool: "vendo_apps_pin",
+      args: { app: first.id, slot: "dashboard.hero" },
+    }, ctx);
+
+    const outcome = await runtime.agentTools().execute({
+      id: "call_pin_second",
+      tool: "vendo_apps_pin",
+      args: { app: second.id, slot: "dashboard.hero" },
+    }, ctx);
+
+    expect(outcome).toEqual({
+      status: "ok",
+      output: { app: second.id, slot: "dashboard.hero", evicted: first.id },
+    });
+    expect(await runtime.placements({}, ctx)).toEqual([
+      expect.objectContaining({ slot: "dashboard.hero", app: second.id }),
+    ]);
+  });
+
+  it("aims by the NAME the user said, not only by id", async () => {
+    const runtime = makeRuntime();
+    const created = await runtime.create({ prompt: "Build a dashboard" }, ctx);
+
+    const outcome = await runtime.agentTools().execute({
+      id: "call_pin_by_name",
+      tool: "vendo_apps_pin",
+      args: { app: created.name, slot: "dashboard.hero" },
+    }, ctx);
+
+    expect(outcome).toEqual({ status: "ok", output: { app: created.id, slot: "dashboard.hero" } });
+  });
+
+  it("unpins, leaving the app itself alone", async () => {
+    const runtime = makeRuntime();
+    const created = await runtime.create({ prompt: "Build a dashboard" }, ctx);
+    await runtime.agentTools().execute({
+      id: "call_pin_before_unpin",
+      tool: "vendo_apps_pin",
+      args: { app: created.id, slot: "dashboard.hero" },
+    }, ctx);
+
+    const outcome = await runtime.agentTools().execute({
+      id: "call_unpin",
+      tool: "vendo_apps_unpin",
+      args: { app: created.id, slot: "dashboard.hero" },
+    }, ctx);
+
+    expect(outcome).toEqual({ status: "ok", output: { app: created.id, slot: "dashboard.hero" } });
+    expect(await runtime.placements({}, ctx)).toEqual([]);
+    // The app is still the user's; only its place on the page is gone.
+    expect((await runtime.list(ctx)).map((app) => app.id)).toContain(created.id);
+  });
+
+  it("refuses a missing slot", async () => {
+    const runtime = makeRuntime();
+    const created = await runtime.create({ prompt: "Build a dashboard" }, ctx);
+
+    expect(await runtime.agentTools().execute({
+      id: "call_pin_no_slot",
+      tool: "vendo_apps_pin",
+      args: { app: created.id },
+    }, ctx)).toEqual({
+      status: "error",
+      error: { code: "validation", message: "slot must be a non-empty string" },
+    });
   });
 });

@@ -362,38 +362,67 @@ export function memoryStoreAdapter(
     async ensureSchema(): Promise<void> {},
     records(collection: string): RecordStore {
       const records = recordMap(collection);
+      const write = (input: MemoryRecordInput): VendoRecord => {
+        const previous = records.get(input.id);
+        const projected = projectMemoryRecord(collection, input, previous, timestamp());
+        sequence += 1;
+        const record: VendoRecord & { seq: number } = {
+          id: input.id,
+          data: jsonCopy(projected.data),
+          refs: projected.refs === undefined ? undefined : { ...projected.refs },
+          createdAt: projected.createdAt,
+          updatedAt: projected.updatedAt,
+          revision: String(BigInt(previous?.revision ?? "0") + 1n),
+          seq: previous?.seq ?? sequence,
+        };
+        records.set(record.id, record);
+        return copyRecord(record);
+      };
+      const erase = (id: string): void => {
+        // Mirrors the store routing's append-only refusal (02-store §2):
+        // audit rows are erased only via the store erase API (02-store §5).
+        if (collection === "vendo_audit") {
+          throw new VendoError(
+            "blocked",
+            "vendo_audit is append-only; rows are erased only via the store erase API (02-store §5)",
+          );
+        }
+        if (collection === "vendo_state") splitMemoryStateId(id);
+        records.delete(id);
+      };
       return {
         async get(id) {
           const record = records.get(id);
           return record === undefined ? null : copyRecord(record);
         },
         async put(input) {
-          const previous = records.get(input.id);
-          const projected = projectMemoryRecord(collection, input, previous, timestamp());
-          sequence += 1;
-          const record: VendoRecord & { seq: number } = {
-            id: input.id,
-            data: jsonCopy(projected.data),
-            refs: projected.refs === undefined ? undefined : { ...projected.refs },
-            createdAt: projected.createdAt,
-            updatedAt: projected.updatedAt,
-            revision: String(BigInt(previous?.revision ?? "0") + 1n),
-            seq: previous?.seq ?? sequence,
-          };
-          records.set(record.id, record);
-          return copyRecord(record);
+          return write(input);
+        },
+        // 01-core §12 compare-and-claim: replace or delete a row only while it
+        // still equals `expected`. Both shipped adapters carry it (the local
+        // store's `records.ts`, the hosted client's wire mirror), and code that
+        // must not clobber a racer's write feature-detects on it — a reference
+        // adapter without it would send every unit test down the degraded
+        // read-then-write path the real ones never take. Nothing here yields
+        // between the compare and the write, so the pair is atomic.
+        async claim(expected, replacement) {
+          const current = records.get(expected.id);
+          if (current === undefined) return false;
+          if (JSON.stringify(current.data) !== JSON.stringify(expected.data)) return false;
+          if (JSON.stringify(current.refs ?? {}) !== JSON.stringify(expected.refs ?? {})) return false;
+          if (replacement === undefined) {
+            erase(expected.id);
+            return true;
+          }
+          write({
+            id: expected.id,
+            data: replacement.data,
+            ...(replacement.refs === undefined ? {} : { refs: replacement.refs }),
+          });
+          return true;
         },
         async delete(id) {
-          // Mirrors the store routing's append-only refusal (02-store §2):
-          // audit rows are erased only via the store erase API (02-store §5).
-          if (collection === "vendo_audit") {
-            throw new VendoError(
-              "blocked",
-              "vendo_audit is append-only; rows are erased only via the store erase API (02-store §5)",
-            );
-          }
-          if (collection === "vendo_state") splitMemoryStateId(id);
-          records.delete(id);
+          erase(id);
         },
         async list(query = {}) {
           const reservedRefKeys = RESERVED_REF_KEYS[collection];

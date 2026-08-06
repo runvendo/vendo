@@ -58,6 +58,18 @@ async function probeUnownedAppRecord(store: VendoStore, appId: string): Promise<
   }
 }
 
+/** One slot id out of the comma-separated `?slots=` list. Each id is
+ *  percent-encoded on its OWN before the join (`client-impl.ts` slotsQuery), so
+ *  a "," that belongs to a slot id can never read as the separator. Text that
+ *  is not valid percent-encoding is a hand-written URL and stands for itself. */
+function decodeSlot(slot: string): string {
+  try {
+    return decodeURIComponent(slot);
+  } catch {
+    return slot;
+  }
+}
+
 /** 06-apps / 09 §3 — the /apps wire area: CRUD, open/call/edit, history,
     ship-diff, pin drift/rebase, the gesture fork (fork-pin), export/import,
     fork (whole-app copy — a different feature from fork-pin). */
@@ -121,6 +133,19 @@ export const appRoutes: RouteEntry[] = [
     // under the host's reviewer assertion (apps.review.reviewer); any other
     // host-resolved caller sees just their own submissions.
     return json(await deps.apps.review.queue(ctx));
+  }),
+  // Placement (2026-08-05) — the slots' own read: what is in each of the
+  // caller's mounted slots, and where each of those builds stands. ONE request
+  // for every slot on the page, which is why the slot list is a query param.
+  // ORDER IS LOAD-BEARING, exactly like /apps/fork-pin above: the
+  // "/apps/:appId/*" catch-all would otherwise capture appId="placements".
+  route("GET", "/apps/placements", async ({ url, deps, context }) => {
+    const ctx = await context("app");
+    const slots = (url.searchParams.get("slots") ?? "")
+      .split(",")
+      .map((slot) => decodeSlot(slot.trim()))
+      .filter((slot) => slot.length > 0);
+    return json(await deps.apps.placements(slots.length === 0 ? {} : { slots }, ctx));
   }),
   route("POST", "/apps/import", async ({ request, deps, context }) => {
     // The CSRF floor exempts import (binary body), so it must instead require
@@ -265,6 +290,18 @@ export const appRoutes: RouteEntry[] = [
         slot: string(body["slot"], "slot"),
         ...(body["instruction"] === undefined ? {} : { instruction: string(body["instruction"], "instruction") }),
       }, ctx));
+    }
+    // Placement (2026-08-05) — one app per slot. The level lives in the
+    // runtime (viewer: putting an app you can see into your own slot), and
+    // `evicted` names whatever held the slot before.
+    if (request.method === "POST" && operation === "place" && segments.length === 3) {
+      const body = await requestJson(request);
+      return json(await deps.apps.place({ app: appId, slot: string(body["slot"], "slot") }, ctx));
+    }
+    if (request.method === "POST" && operation === "unplace" && segments.length === 3) {
+      const body = await requestJson(request);
+      await deps.apps.unplace({ app: appId, slot: string(body["slot"], "slot") }, ctx);
+      return json({});
     }
     // Remix final shape (2026-08-02) — the reviewer's rejection of the app's
     // CURRENT review-kind version: the note is REQUIRED (it is what the

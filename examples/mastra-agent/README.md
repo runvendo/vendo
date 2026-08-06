@@ -7,7 +7,7 @@ agent keeps its own loop, model, and UI — Vendo adds, through that same loop:
 
 1. **Guarded host actions** — every `vendo_*` call routes policy → approval →
    audit (`vendo_send_trip_report` here asks for approval before "sending").
-2. **Generated UI in your chat** — `vendo_create_app` returns fast with an
+2. **Generated UI in your chat** — `vendo_make` returns fast with an
    app ref; the build streams into `<VendoAppEmbed>` over the Vendo wire.
 3. **Whole-task delegation** — `vendo_delegate` hands Vendo's own agent a task.
 
@@ -53,7 +53,7 @@ generation and the delegate.
 
 1. "What's the weather in Paris?" — the starter's own `weatherTool`, untouched.
 2. "Make me a dashboard comparing weather in Paris, Tokyo and NYC" — the agent
-   calls `vendo_create_app`; the app builds live inline in the chat.
+   calls `vendo_make`; the app builds live inline in the chat.
 3. "Email the report to ops@example.com" — `vendo_send_trip_report` parks on
    the cautious policy; an approval card renders inline; approving executes
    the parked call in place.

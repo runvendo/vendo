@@ -16,8 +16,8 @@ import type { Vendo } from "./server.js";
  */
 
 export {
-  VENDO_CREATE_APP_TOOL,
   VENDO_DELEGATE_TOOL,
+  VENDO_MAKE_TOOL,
   VENDO_TOOL_PACK_PREFIX,
   type VendoDelegateResult,
   type VendoToolPackFilter,

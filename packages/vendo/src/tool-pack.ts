@@ -13,9 +13,11 @@ import type { AgentRunReport, Principal, VendoToolEnvelope } from "@vendoai/core
  *  `vendo_host_x`; the built-ins below are already prefixed. */
 export const VENDO_TOOL_PACK_PREFIX = "vendo_" as const;
 
-/** Generate UI. Returns fast with a `vendo/app-ref@1`; the build streams over
- *  the wire, so the host loop is never blocked on generation. */
-export const VENDO_CREATE_APP_TOOL = "vendo_create_app" as const;
+/** Generate UI. The pack's app door is Vendo's OWN make tool, under its own
+ *  name — one contract in-process and over the MCP door, never a BYO-only
+ *  alias. Returns fast with a `vendo/app-ref@1`; the build streams over the
+ *  wire, so the host loop is never blocked on generation. */
+export { VENDO_MAKE_TOOL } from "@vendoai/core";
 
 /** Whole-task delegation via `agent.asRunner()`; returns `VendoDelegateResult`. */
 export const VENDO_DELEGATE_TOOL = "vendo_delegate" as const;

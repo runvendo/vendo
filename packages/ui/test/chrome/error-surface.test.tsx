@@ -7,6 +7,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
 import { VendoThread } from "../../src/chrome/index.js";
+import { CHROME_CSS } from "../../src/chrome/chrome-css.js";
 import { turnErrorSentence } from "../../src/chrome/thread/message-data.js";
 import { createWireServer } from "../wire-server.js";
 
@@ -194,6 +195,22 @@ describe("visible error surface + retry (ENG-214)", () => {
     // The wire's "Vendo: " marker is plumbing, never shown to the reader.
     expect(notice.textContent).not.toContain("Vendo: ");
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
+  it("keeps the persisted failure's headline WHOLE, never ellipsized (jsdom can't measure layout, so pin the stylesheet contract)", () => {
+    // The failure rendered its headline through `.fl-beat-label` — nowrap +
+    // ellipsis, right for a progress line, wrong for content — inside a block
+    // whose `max-width: 92%` resolved against the shrink-to-fit turn its OWN
+    // text had just sized. The box came out narrower than the headline every
+    // time, so a reloaded failure with no detail line under it read "The
+    // response didn't f…" (PR #864 proof, measured at 144px).
+    const block = /\.fl-buildfail \{[^}]*\}/.exec(CHROME_CSS)?.[0];
+    expect(block, "expected a .fl-buildfail rule in CHROME_CSS").toBeTruthy();
+    expect(block).not.toContain("max-width");
+    const label = /\.fl-buildfail \.fl-beat-label \{[^}]*\}/.exec(CHROME_CSS)?.[0];
+    expect(label, "expected the failure block to override the beat label's clip").toBeTruthy();
+    expect(label).toContain("white-space: normal");
+    expect(label).toContain("overflow: visible");
   });
 
   it("retries a mid-stream failure through Regenerate, without duplicating messages", async () => {

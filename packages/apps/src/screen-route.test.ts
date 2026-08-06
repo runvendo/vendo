@@ -105,6 +105,8 @@ const runtimeWith = (screen?: ScreenAssembler, options: {
     agentTools: createAgentTools(runtime, {
       data: {} as never,
       requireOwned: async () => { throw new Error("unused"); },
+      claimSlot: async () => { throw new Error("unused"); },
+      markUnbuilt: async () => { throw new Error("unused"); },
       ...(screen === undefined ? {} : { screen }),
       ...(escalatedPlan === undefined ? {} : { escalatedPlan }),
     }),

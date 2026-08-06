@@ -148,6 +148,26 @@ export interface WireIssue {
   index?: number;
 }
 
+/**
+ * The ADVISORY codes: the compiler normalized something and the tree it produced
+ * is already what the author meant, so there is nothing to repair and no
+ * validation door may refuse a document over one.
+ *
+ * `wire-id-ignored` is the reason this exists. It is what our OWN printer
+ * produces — an app's `app.vendo` is written with
+ * `printWire(…, { includeIds: true })` (`@vendoai/apps` app-source.ts), so every
+ * element of a checked-out app carries an id the compiler then ignores. The paint
+ * seam waved that through and painted it; the create/edit validators turned every
+ * wire issue into a block and refused the same bytes. Every OTHER code drops
+ * something the author actually wrote, so it stays blocking.
+ */
+export const WIRE_ADVISORY_ISSUE_CODES: readonly WireIssueCode[] = ["wire-id-ignored"];
+
+/** True for an issue no door may block on — the one classification all four
+ *  share (see {@link WIRE_ADVISORY_ISSUE_CODES}). */
+export const isAdvisoryWireIssue = ({ code }: WireIssue): boolean =>
+  WIRE_ADVISORY_ISSUE_CODES.includes(code);
+
 /** v2 spec §2 — the declared `<Query>` names in scope for binding resolution. */
 export interface ExpressionContext {
   queryNames: ReadonlySet<string>;

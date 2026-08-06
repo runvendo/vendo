@@ -22,6 +22,7 @@ export {
   type EditResult,
   type MachineEditResult,
   type OpenSurface,
+  type PlacementEntry,
   type PinForkInput,
   type PinForkResult,
   type PinRebaseResult,
@@ -29,6 +30,14 @@ export {
   type SetExposureResult,
   type VersionEntry,
 } from "./runtime.js";
+// Placement rows (2026-08-05) — "show this app in that slot", off the document
+// and in the generic records collection.
+export {
+  placementStore,
+  PLACEMENTS_COLLECTION,
+  type PlacementRow,
+  type PlacementStore,
+} from "./placements.js";
 export type { SandboxAdapter, SandboxMachine, SandboxResumePolicy } from "./sandbox.js";
 // execution-v2 skin contract (Lane C): the manifest gate, the per-app box
 // token, and the box env assembly Lane B consumes at provision.

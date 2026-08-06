@@ -483,8 +483,15 @@ What each revocation retires, and how the endpoint answers, is specified in
 The door exposes your saved apps as MCP Apps. `tools/list` includes
 `vendo_apps_list`, `vendo_apps_open`, and `vendo_apps_call`, and opened apps
 render through a static HTML shim. Interactions inside a rendered app route back
-through the same guard-bound path. The door is a viewer and runner: app creation
-and editing stay in-product.
+through the same guard-bound path.
+
+The door also *makes* them. `vendo_make` is on the same list, so an outside
+agent asks for a screen in plain language exactly as your own agent does, and
+`vendo_apps_pin` / `vendo_apps_unpin` put a saved app into one of your product's
+slots. None of it hands the agent any UI: `vendo_make` answers with a four-field
+receipt of words, and the screen arrives on the person's own page in your
+product, on a channel the agent is not on. The full walkthrough is
+[Bring your own agent over MCP](/existing-agents/mcp).
 
 ### HTTP apps open in-product
 

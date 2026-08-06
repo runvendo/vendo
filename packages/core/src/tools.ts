@@ -33,6 +33,39 @@ export const VENDO_APPS_TOOL_PREFIX = "vendo_apps_";
 export const VENDO_MAKE_TOOL = "vendo_make";
 
 /**
+ * The two tools that put one of a person's own apps into a named place on the
+ * HOST'S page, and take it back out.
+ *
+ * Named here for the same reason `VENDO_MAKE_TOOL` is: three sides read them and
+ * a security-relevant name with three spellings drifts silently — the apps
+ * registry that implements them, the projection below that withholds them from
+ * an unattended run, and any door that names them in `withholdTools`.
+ */
+export const VENDO_APPS_PIN_TOOL = "vendo_apps_pin";
+export const VENDO_APPS_UNPIN_TOOL = "vendo_apps_unpin";
+
+/**
+ * Tools whose whole effect is on a PERSON'S SCREEN.
+ *
+ * §12's projection withholds these from an unattended run exactly as it
+ * withholds a destructive one, for a reason of the same shape: there is no page
+ * and nobody looking at it. A firing that rearranged someone's dashboard while
+ * they were away would be a change they never asked for and never saw being
+ * made — and, because a placement EVICTS whatever held that slot, one they would
+ * come back to without knowing what happened.
+ *
+ * Keyed on the NAME rather than on the grade, because the grade is honestly
+ * `write`: with a person right there, putting your own app on your own page is a
+ * small reversible write that needs no ceremony. Grading them `destructive` to
+ * buy the withholding would lie to every other reader of the label (policy
+ * rules, the consent card, the automations planner).
+ */
+export const PRESENCE_ONLY_TOOLS: ReadonlySet<string> = new Set<string>([
+  VENDO_APPS_PIN_TOOL,
+  VENDO_APPS_UNPIN_TOOL,
+]);
+
+/**
  * 01-core §16 — is this one of the app runtime's own tools?
  *
  * The prefix was the test in four places (two through the constant, two by
@@ -67,6 +100,8 @@ export const VENDO_TOOL_TITLES: Readonly<Record<string, string>> = {
   vendo_make: "Make you a screen",
   vendo_apps_open: "Open the app",
   vendo_apps_rebase_pin: "Refresh a remixed piece",
+  vendo_apps_pin: "Pin the app to your page",
+  vendo_apps_unpin: "Take the app off your page",
   vendo_apps_data_list: "Read the app's saved items",
   vendo_apps_data_put: "Save an item in the app",
   vendo_apps_data_delete: "Remove an item from the app",

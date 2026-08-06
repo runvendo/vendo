@@ -12,7 +12,7 @@ import {
 } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { buildVendoToolPack, type VendoPackTool } from "./pack.js";
-import { VENDO_CREATE_APP_TOOL, VENDO_DELEGATE_TOOL } from "./tool-pack.js";
+import { VENDO_DELEGATE_TOOL } from "./tool-pack.js";
 import { boundRegistry, ctx, testGuard, type TestToolImplementation } from "./agent-doubles.test-util.js";
 
 const DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema";
@@ -35,7 +35,7 @@ function hostTools(): Record<string, TestToolImplementation> {
       execute: () => ({ sent: true }),
     },
     // Vendo-internal registry tools (vendo_-prefixed) must NOT be wrapped as
-    // vendo_vendo_* — the pack's app door is the vendo_create_app built-in.
+    // vendo_vendo_* — the pack's app door is the vendo_make built-in itself.
     vendo_doctor_present: {
       descriptor: descriptor("vendo_doctor_present"),
       execute: () => ({ ok: true }),
@@ -126,10 +126,10 @@ describe("buildVendoToolPack — composition and namespacing", () => {
     });
     const names = tools.map((tool) => tool.name).sort();
     expect(names).toEqual([
-      VENDO_CREATE_APP_TOOL,
       VENDO_DELEGATE_TOOL,
       "vendo_host_lookup",
       "vendo_host_send",
+      VENDO_MAKE_TOOL,
     ]);
   });
 
@@ -217,7 +217,7 @@ describe("buildVendoToolPack — guard-bound execution", () => {
   });
 });
 
-describe("vendo_create_app", () => {
+describe("vendo_make (the pack's app door)", () => {
   it("returns the app-ref envelope from the FIRST streamed view part, before the build completes", async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
@@ -232,8 +232,8 @@ describe("vendo_create_app", () => {
       }),
     };
     const { byName } = await pack({ implementations });
-    const output = await byName.get(VENDO_CREATE_APP_TOOL)!.execute(
-      { prompt: "Compare weather in 3 cities" },
+    const output = await byName.get(VENDO_MAKE_TOOL)!.execute(
+      { request: "Compare weather in 3 cities" },
       { ctx: ctx() },
     );
     const envelope = vendoAppRefSchema.parse(output);
@@ -243,7 +243,7 @@ describe("vendo_create_app", () => {
     release();
   });
 
-  it("derives the fast-path title from the prompt, capped to one 80-char line", async () => {
+  it("derives the fast-path title from the request, capped to one 80-char line", async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
     const implementations = {
@@ -251,8 +251,8 @@ describe("vendo_create_app", () => {
       [VENDO_MAKE_TOOL]: makeTool({ appId: "app_long", name: "ignored", gate }),
     };
     const { byName } = await pack({ implementations });
-    const prompt = `build me a dashboard ${"with lots of panels ".repeat(10)}`;
-    const output = await byName.get(VENDO_CREATE_APP_TOOL)!.execute({ prompt }, { ctx: ctx() });
+    const request = `build me a dashboard ${"with lots of panels ".repeat(10)}`;
+    const output = await byName.get(VENDO_MAKE_TOOL)!.execute({ request }, { ctx: ctx() });
     const envelope = vendoAppRefSchema.parse(output);
     expect(envelope.title.length).toBeLessThanOrEqual(80);
     expect(envelope.title.endsWith("…")).toBe(true);
@@ -265,12 +265,12 @@ describe("vendo_create_app", () => {
       [VENDO_MAKE_TOOL]: makeTool({ appId: "app_done", name: "Trip planner", stream: false }),
     };
     const { byName } = await pack({ implementations });
-    const output = await byName.get(VENDO_CREATE_APP_TOOL)!.execute(
-      { prompt: "plan my trip" },
+    const output = await byName.get(VENDO_MAKE_TOOL)!.execute(
+      { request: "plan my trip" },
       { ctx: ctx() },
     );
     const envelope = vendoAppRefSchema.parse(output);
-    // `title` is the receipt's, not the prompt-derived fallback ("plan my
+    // `title` is the receipt's, not the request-derived fallback ("plan my
     // trip") — which is the proof the ref was read off the receipt rather than
     // off a document that no longer arrives.
     expect(envelope).toMatchObject({ appId: "app_done", title: "Trip planner" });
@@ -288,8 +288,8 @@ describe("vendo_create_app", () => {
       },
     };
     const { byName } = await pack({ implementations });
-    const output = await byName.get(VENDO_CREATE_APP_TOOL)!.execute(
-      { prompt: "plan my trip" },
+    const output = await byName.get(VENDO_MAKE_TOOL)!.execute(
+      { request: "plan my trip" },
       { ctx: ctx() },
     );
     expect(vendoAppRefSchema.safeParse(output).success).toBe(false);
@@ -304,8 +304,8 @@ describe("vendo_create_app", () => {
       implementations,
       policy: { [VENDO_MAKE_TOOL]: "ask" },
     });
-    const output = await byName.get(VENDO_CREATE_APP_TOOL)!.execute(
-      { prompt: "make a dashboard" },
+    const output = await byName.get(VENDO_MAKE_TOOL)!.execute(
+      { request: "make a dashboard" },
       { ctx: ctx() },
     );
     vendoApprovalRefSchema.parse(output);
@@ -314,7 +314,7 @@ describe("vendo_create_app", () => {
 
   it("is absent from the pack when the registry has no vendo_make", async () => {
     const { byName } = await pack({ implementations: hostTools() });
-    expect(byName.has(VENDO_CREATE_APP_TOOL)).toBe(false);
+    expect(byName.has(VENDO_MAKE_TOOL)).toBe(false);
   });
 
   // runvendo/flowlet#822 defect 2: the fast ref wins the race against the
@@ -333,8 +333,8 @@ describe("vendo_create_app", () => {
       [VENDO_MAKE_TOOL]: makeTool({ appId: "app_fast", name: "Weather dashboard", gate }),
     };
     const { byName } = await pack({ implementations });
-    const output = await byName.get(VENDO_CREATE_APP_TOOL)!.execute(
-      { prompt: "Compare weather in 3 cities" },
+    const output = await byName.get(VENDO_MAKE_TOOL)!.execute(
+      { request: "Compare weather in 3 cities" },
       { ctx: ctx() },
     );
     const envelope = vendoAppRefSchema.parse(output);
@@ -348,8 +348,8 @@ describe("vendo_create_app", () => {
       [VENDO_MAKE_TOOL]: makeTool({ appId: "app_done", name: "Trip planner", stream: false }),
     };
     const { byName } = await pack({ implementations });
-    const output = await byName.get(VENDO_CREATE_APP_TOOL)!.execute(
-      { prompt: "plan my trip" },
+    const output = await byName.get(VENDO_MAKE_TOOL)!.execute(
+      { request: "plan my trip" },
       { ctx: ctx() },
     );
     expect(vendoAppRefSchema.parse(output).status).toBe("building");
@@ -359,9 +359,48 @@ describe("vendo_create_app", () => {
     const { byName } = await pack({
       implementations: { ...hostTools(), [VENDO_MAKE_TOOL]: makeTool({ appId: "app_x", name: "x" }) },
     });
-    const description = byName.get(VENDO_CREATE_APP_TOOL)!.description;
+    const description = byName.get(VENDO_MAKE_TOOL)!.description;
     expect(description).toContain("building");
     expect(description).toMatch(/never describe|never say it is created/i);
+  });
+
+  it("takes vendo_make's own arguments: request required, context/app optional", async () => {
+    const { byName } = await pack({
+      implementations: { ...hostTools(), [VENDO_MAKE_TOOL]: makeTool({ appId: "app_schema", name: "x" }) },
+    });
+    expect(byName.get(VENDO_MAKE_TOOL)!.inputSchema).toEqual({
+      $schema: DRAFT_2020_12,
+      type: "object",
+      properties: {
+        request: { type: "string", minLength: 1 },
+        context: { type: "string", minLength: 1 },
+        app: { type: "string", minLength: 1 },
+      },
+      required: ["request"],
+      additionalProperties: false,
+    });
+  });
+
+  it("forwards the caller's arguments to vendo_make verbatim — nothing is translated", async () => {
+    const seen: Json[] = [];
+    const implementations = {
+      ...hostTools(),
+      [VENDO_MAKE_TOOL]: {
+        descriptor: makeTool({ appId: "app_fwd", name: "Forwarded" }).descriptor,
+        execute: (args: Json): Json => {
+          seen.push(args);
+          return { id: "app_fwd", title: "Forwarded", status: "ready", say: "Forwarded is on your screen." };
+        },
+      },
+    };
+    const { byName } = await pack({ implementations });
+    await byName.get(VENDO_MAKE_TOOL)!.execute(
+      { request: "add a column", app: "app_fwd", context: "the invoices table" },
+      { ctx: ctx() },
+    );
+    expect(seen).toEqual([
+      { request: "add a column", app: "app_fwd", context: "the invoices table" },
+    ]);
   });
 });
 

@@ -5,7 +5,7 @@
   "description": "Connect Claude Code to a product running Vendo: act through its API as the signed-in user, and make that user a screen instead of typing the answer out.",
   "version": "0.1.0",
   "author": { "name": "Vendo", "url": "https://vendo.run" },
-  "homepage": "https://docs.vendo.run/capabilities/mcp",
+  "homepage": "https://docs.vendo.run/existing-agents/mcp",
   "repository": "https://github.com/runvendo/vendo",
   "license": "Apache-2.0",
   "keywords": ["vendo", "mcp", "generated-ui"]

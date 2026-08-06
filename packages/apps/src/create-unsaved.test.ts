@@ -129,6 +129,8 @@ describe("a create the store refuses to persist", () => {
     const agentTools = createAgentTools(runtime, {
       data: {} as never,
       requireOwned: async () => { throw new Error("unused"); },
+      claimSlot: async () => { throw new Error("unused"); },
+      markUnbuilt: async () => { throw new Error("unused"); },
       screen: escalating,
     });
 

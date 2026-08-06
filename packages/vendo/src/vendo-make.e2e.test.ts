@@ -92,11 +92,11 @@ describe("vendo_make (contract §3.1)", () => {
     expect(make!.title).toBe(VENDO_TOOL_TITLES[VENDO_MAKE_TOOL]);
   });
 
-  it("takes exactly request, app and context — request required", async () => {
+  it("takes exactly request, app, context and slot — request required", async () => {
     let listed: ToolListing[] = [];
     await turn(async (tools) => { listed = await tools.list(); });
     const schema = listed.find((listing) => listing.name === VENDO_MAKE_TOOL)!.inputSchema!;
-    expect(Object.keys(schema["properties"] as object).sort()).toEqual(["app", "context", "request"]);
+    expect(Object.keys(schema["properties"] as object).sort()).toEqual(["app", "context", "request", "slot"]);
     expect(schema["required"]).toEqual(["request"]);
     // `additionalProperties: false` is what makes the three-param surface a
     // promise rather than a suggestion.

@@ -4,6 +4,7 @@ import {
   DEFAULT_TRIGGER_ID,
   descriptorHash,
   isUnattended,
+  presenceOnlyCall,
   projectableForRun,
   serviceToolSlug,
   withheldFromUnattended,
@@ -663,9 +664,23 @@ class GuardImplementation implements VendoGuard {
         // here), and the approved replay that follows is exempt above. What
         // cannot happen any more is a standing grant silently running an
         // unjudged tool with nobody watching.
+        //
+        // `presenceOnlyCall` is the second layer of the OTHER half of the law.
+        // `projectableForRun` hides the placement tools from an unattended
+        // listing, but a projection only decides what the model is offered: a
+        // standing automation grant, a resumed step, or a harness that calls
+        // without listing reaches `execute()` by name regardless. Those tools
+        // are honestly `write`, so the risk-keyed test above never spoke for
+        // them and the projection was their whole law.
+        //
+        // It refuses the PIN tools and nothing else. `vendo_make` carrying a
+        // `slot` is not refused here (ruled 2026-08-06): creation does not need
+        // a person present, only placement does, and blocking the call would
+        // break every automation that legitimately builds a screen. The slot is
+        // dropped at the tool's own door instead (`apps/agent-tools.ts`).
         if (
-          decision.action === "run" && !replayApproved
-          && isUnattended(ctx) && withheldFromUnattended(completed.descriptor)
+          decision.action === "run" && !replayApproved && isUnattended(ctx)
+          && (withheldFromUnattended(completed.descriptor) || presenceOnlyCall(call))
         ) {
           const refused: ToolOutcome = { status: "blocked", reason: UNATTENDED_DESTRUCTIVE_REASON };
           await this.report(

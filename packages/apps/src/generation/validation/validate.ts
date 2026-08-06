@@ -11,6 +11,7 @@
  * at it are gone.
  */
 import {
+  isAdvisoryWireIssue,
   VENDO_APP_FORMAT,
   VENDO_TREE_FORMAT,
   validateAppDocument,
@@ -49,6 +50,19 @@ import { withoutPlanVocabulary } from "../skeleton.js";
  *  whole `AppDocument`. */
 export const UNSTORED_APP_ID = "app_generation_validation";
 
+/** The compile issues a door must REFUSE, as the sentences it speaks.
+ *
+ *  Advisory codes drop out here, from the one classification every door shares
+ *  (`isAdvisoryWireIssue`) rather than a list per door. Mapping EVERY wire issue
+ *  to a block is what made these two doors disagree with the paint seam, which
+ *  refuses only what did not parse: `wire-id-ignored` is what our own
+ *  `printWire({ includeIds: true })` stamps on an app's `app.vendo`, so the seam
+ *  painted that source and `validate({ document })` refused the same bytes. */
+const blockingWireIssues = ({ issues }: WireCompileResult): string[] =>
+  issues
+    .filter((issue) => !isAdvisoryWireIssue(issue))
+    .map(({ code, message }) => `wire ${code}: ${message}`);
+
 /** Create validation: the compile must be complete and clean, the tree
  *  catalog-consistent and renderable, islands syntactically sound, queries
  *  aimed at real host tools, bindings shape-checked, and the assembled
@@ -63,7 +77,7 @@ export const validateCompiledCreate = async (
 ): Promise<{ document?: GeneratedAppDocument; issues: string[] }> => {
   const issues: string[] = [];
   if (!compiled.complete) issues.push("wire did not parse to a complete <App> document");
-  issues.push(...compiled.issues.map(({ code, message }) => `wire ${code}: ${message}`));
+  issues.push(...blockingWireIssues(compiled));
   const name = compiled.name?.trim() ?? "";
   if (name === "") {
     issues.push('App must carry a non-empty name="..." attribute');
@@ -168,7 +182,7 @@ export const documentFromEdit = async (
 ): Promise<{ document?: AppDocument; issues: string[] }> => {
   const structural = [
     ...(compiled.complete ? [] : ["the edited app did not parse to a complete <App> document; the change was dropped."]),
-    ...compiled.issues.map(({ code, message }) => `wire ${code}: ${message}`),
+    ...blockingWireIssues(compiled),
     ...compiled.bindingErrors.map((error) =>
       `binding ${error.path} on node "${error.nodeId}" prop "${error.prop}": ${error.message}${error.available === undefined ? "" : ` (available: ${error.available.join(", ")})`}`),
   ];

@@ -17,7 +17,6 @@ import {
   type VendoViewStreamingToolCall,
 } from "@vendoai/core";
 import {
-  VENDO_CREATE_APP_TOOL,
   VENDO_DELEGATE_TOOL,
   VENDO_TOOL_PACK_PREFIX,
   type VendoDelegateResult,
@@ -166,33 +165,32 @@ function wrapHostTool(registry: ToolRegistry, descriptor: ToolDescriptor): Vendo
   };
 }
 
-/** `vendo_create_app` — generate UI, returning fast: the FIRST streamed view
- *  part already carries the app's permanent id, so the app-ref envelope goes
- *  back to the loop while the build keeps streaming over the wire. Without a
- *  streamed part the finished document supplies the ref. */
-function createAppTool(registry: ToolRegistry, descriptor: ToolDescriptor): VendoPackTool {
+/** `vendo_make` — the pack's app door is Vendo's own make tool, returning fast:
+ *  the FIRST streamed view part already carries the app's permanent id, so the
+ *  app-ref envelope goes back to the loop while the build keeps streaming over
+ *  the wire. Without a streamed part the finished document supplies the ref. */
+function makeAppTool(registry: ToolRegistry, descriptor: ToolDescriptor): VendoPackTool {
   return {
-    name: VENDO_CREATE_APP_TOOL,
-    description: "Create a Vendo app (generated UI) from a natural-language prompt. Returns fast with a vendo/app-ref@1 envelope carrying status \"building\" — the build was only ACCEPTED and is still streaming; you have not seen its contents and do not know yet whether it will succeed. Say only that you're building it (present tense, no specifics) and stop there. Never say it is created/ready/done, and never describe, list, or invent anything it will contain (no tables, no numbers, no chart data) — the embed shows real build progress and the true final result, including a build failure, and it will contradict anything you claim. If the build later fails, you will not be told in this reply; do not assume or claim success in a later turn either — check with the user or a read tool before describing this app again.",
+    name: VENDO_MAKE_TOOL,
+    description: "Create a Vendo app (generated UI) from a plain-language request. Returns fast with a vendo/app-ref@1 envelope carrying status \"building\" — the build was only ACCEPTED and is still streaming; you have not seen its contents and do not know yet whether it will succeed. Say only that you're building it (present tense, no specifics) and stop there. Never say it is created/ready/done, and never describe, list, or invent anything it will contain (no tables, no numbers, no chart data) — the embed shows real build progress and the true final result, including a build failure, and it will contradict anything you claim. If the build later fails, you will not be told in this reply; do not assume or claim success in a later turn either — check with the user or a read tool before describing this app again.",
     inputSchema: {
       $schema: DRAFT_2020_12,
       type: "object",
-      properties: { prompt: { type: "string", minLength: 1 } },
-      required: ["prompt"],
+      properties: {
+        request: { type: "string", minLength: 1 },
+        context: { type: "string", minLength: 1 },
+        app: { type: "string", minLength: 1 },
+      },
+      required: ["request"],
       additionalProperties: false,
     },
     async execute(input, options) {
-      const args = input as { prompt?: unknown };
-      const fallbackTitle = titleFromPrompt(args?.prompt);
+      const fallbackTitle = titleFromPrompt((input as { request?: unknown })?.request);
       const call: VendoViewStreamingToolCall = {
         id: options.callId ?? mintCallId(),
         tool: VENDO_MAKE_TOOL,
-        // This pack tool's OWN surface is `prompt`, and it stays that way: it is a
-        // separate public tool from `vendo_make` (different name, different return
-        // shape — an app-ref envelope, not a receipt), so the front door's rename
-        // is not its rename. Only the inner call speaks the new contract, which is
-        // why the argument is mapped here rather than forwarded.
-        args: { request: args?.prompt },
+        // Same tool, same arguments: what the model sent goes through untouched.
+        args: input as Json,
       };
       let resolveFast!: (ref: VendoAppRef) => void;
       const fast = new Promise<VendoAppRef>((resolve) => { resolveFast = resolve; });
@@ -283,7 +281,7 @@ function delegateTool(registry: ToolRegistry, runner: AgentRunner): VendoPackToo
  * Build the pack: every registered host tool guard-wrapped under `vendo_`,
  * plus the two built-ins. Vendo-internal registry tools (names already under
  * `vendo_` — the apps runtime's `vendo_apps_*`, doctor probes) are never
- * double-wrapped: the pack's door to app creation is `vendo_create_app`, and
+ * double-wrapped: the pack's door to app creation is `vendo_make` itself, and
  * in-app interaction rides the wire, not the host loop. `include`/`exclude`
  * match FINAL namespaced names exactly; exclude wins.
  */
@@ -299,7 +297,7 @@ export async function buildVendoToolPack(options: VendoToolPackCoreOptions): Pro
   // can never shadow the pack's own doors.
   const makeTool = descriptors.find((descriptor) => descriptor.name === VENDO_MAKE_TOOL);
   if (makeTool !== undefined) {
-    byName.set(VENDO_CREATE_APP_TOOL, createAppTool(options.registry, makeTool));
+    byName.set(VENDO_MAKE_TOOL, makeAppTool(options.registry, makeTool));
   }
   byName.set(VENDO_DELEGATE_TOOL, delegateTool(options.registry, options.runner));
   const included = applyFilter([...byName.keys()], options);

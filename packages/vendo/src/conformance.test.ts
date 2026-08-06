@@ -6,7 +6,7 @@ import {
 } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { buildVendoToolPack } from "./pack.js";
-import { VENDO_CREATE_APP_TOOL, VENDO_DELEGATE_TOOL } from "./tool-pack.js";
+import { VENDO_DELEGATE_TOOL } from "./tool-pack.js";
 import {
   boundRegistry,
   ctx,
@@ -30,7 +30,7 @@ describe("tool-pack conformance — every pack tool routes through the guard", (
     },
   };
   const inputFor = (name: string): unknown => {
-    if (name === VENDO_CREATE_APP_TOOL) return { prompt: "an approval-gated app" };
+    if (name === VENDO_MAKE_TOOL) return { request: "an approval-gated app" };
     if (name === VENDO_DELEGATE_TOOL) return { task: "send the report" };
     return {};
   };
@@ -55,10 +55,10 @@ describe("tool-pack conformance — every pack tool routes through the guard", (
     });
     const pack = await buildVendoToolPack({ registry, runner });
     expect(pack.map((tool) => tool.name).sort()).toEqual([
-      VENDO_CREATE_APP_TOOL,
       VENDO_DELEGATE_TOOL,
       "vendo_host_lookup",
       "vendo_host_send",
+      VENDO_MAKE_TOOL,
     ]);
 
     for (const tool of pack) {

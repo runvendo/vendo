@@ -9,7 +9,7 @@ answer wants to be looked at rather than read, and how to ask.
 | --- | --- |
 | [`.claude-plugin/plugin.json`](.claude-plugin/plugin.json) | the manifest |
 | [`.mcp.json`](.mcp.json) | the connection — one remote HTTP MCP server, the product's door |
-| [`skills/make-a-screen/SKILL.md`](skills/make-a-screen/SKILL.md) | when and how to call `vendo_make` |
+| [`skills/make-a-screen/SKILL.md`](skills/make-a-screen/SKILL.md) | when and how to call `vendo_make`, and where to put what it makes |
 
 No door code, no second tool surface, no client. `vendo_make` and every host
 tool arrive through the door's own `tools/list`.
@@ -57,6 +57,15 @@ receipt, and says it. The screen itself never touches the conversation — it
 arrives on your own page in the product, on a channel the agent is not on. That
 separation is the point: pixels go server → slot, words go to the agent.
 
+```
+> put that on my dashboard
+```
+
+It calls `vendo_apps_pin` with the app and the slot id the product gave it, and
+the screen moves into that spot on your own page. A slot holds one app, so a pin
+replaces whatever was there — which is why the skill only pins when you asked it
+to, and never invents a slot id.
+
 ## The skill's job
 
 An agent that has `vendo_make` in its tool list will still use it wrongly: for
@@ -64,3 +73,7 @@ answers that were one sentence, with numbers it computed pasted into the
 request, or by inventing a description of a screen it never saw. The skill is
 the fix for all three, and it is one screen of text because it gets read
 mid-conversation.
+
+The host-side story — opening the door, the tool contract, and the
+`<VendoSlot>` that receives the screen — is
+[Bring your own agent over MCP](https://docs.vendo.run/existing-agents/mcp).

@@ -71,6 +71,11 @@ export {
   // own control instead of a Vendo surface.
   announcePin,
   onPinAnnounced,
+  // slot-notes.ts — the destinations the embed's "Add to…" picker offers; a
+  // mounted VendoSlot is the only thing that knows a slot exists.
+  knownSlots,
+  noteSlot,
+  type SlotNote,
   // theme.ts
   defaultVendoTheme,
   resolveTheme,

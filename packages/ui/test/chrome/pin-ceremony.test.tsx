@@ -4,11 +4,10 @@
 // poll happened to fire. Now the panel dismisses first, a ghost of the card
 // flies into the slot (300ms) and the slot settles with a pulse (180ms), and
 // the slot re-reads on the pin itself instead of waiting for a tick.
-import type { AppDocument } from "@vendoai/core";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
-import { VendoSlot, playPinCeremony, usePinAction } from "../../src/chrome/index.js";
+import { VendoSlot, VendoToasts, playPinCeremony, usePinAction, usePinNudge } from "../../src/chrome/index.js";
 import { createWireServer } from "../wire-server.js";
 
 interface Recorded {
@@ -302,19 +301,6 @@ describe("the pin ceremony (Keystone graduates B8)", () => {
   });
 });
 
-const pinnedApp: AppDocument = {
-  format: "vendo/app@1",
-  id: "app_1",
-  name: "Invoices",
-  ui: "tree",
-  tree: {
-    formatVersion: "vendo-genui/v2",
-    root: "root",
-    nodes: [{ id: "root", component: "Text", props: { text: "Invoices app surface" } }],
-  },
-  placements: ["hero"],
-};
-
 describe("the slot refreshes on the pin, not on the next poll tick", () => {
   let wire: Awaited<ReturnType<typeof createWireServer>>;
   let client: VendoClient;
@@ -330,16 +316,30 @@ describe("the slot refreshes on the pin, not on the next poll tick", () => {
     await wire.close();
   });
 
+  /** The affordance's own reading of whether the pin landed, next to the button
+   *  that takes it — `usePinNudge` is what settles a pin card into "pinned". */
+  function PinAndNudge({ appId }: { appId: string }) {
+    const pin = usePinAction();
+    const nudge = usePinNudge(appId, true);
+    return (
+      <>
+        {pin ? <button type="button" onClick={() => pin({ appId, payload: {} })}>Pin</button> : null}
+        <span data-testid="nudge">{nudge ?? "none"}</span>
+      </>
+    );
+  }
+
   function PinButton() {
     const pin = usePinAction();
     return pin ? <button type="button" onClick={() => pin({ appId: "app_1", payload: {} })}>Pin</button> : null;
   }
 
-  it("shows the pinned app immediately instead of waiting out the 5s poll", async () => {
-    const list = vi.spyOn(client.apps, "list").mockResolvedValue([]);
-    const onPin = vi.fn(async () => {
-      list.mockResolvedValue([pinnedApp]);
-    });
+  it("writes the placement itself, then announces — the slot fills without waiting out the poll", async () => {
+    // Both spies call THROUGH to the fixture wire: the write and the read back
+    // are the real ones, which is the only way this proves anything.
+    const place = vi.spyOn(client.apps, "place");
+    const placements = vi.spyOn(client.apps, "placements");
+    const onPin = vi.fn();
 
     render(
       <VendoProvider client={client} onPin={onPin} pinSlot="hero">
@@ -347,17 +347,63 @@ describe("the slot refreshes on the pin, not on the next poll tick", () => {
         <PinButton />
       </VendoProvider>,
     );
-    await waitFor(() => expect(list).toHaveBeenCalled());
+    // The slot is polling (and empty) before the pin.
+    await waitFor(() => expect(placements).toHaveBeenCalled());
 
     fireEvent.click(screen.getByRole("button", { name: "Pin" }));
 
-    expect(onPin).toHaveBeenCalledWith({ appId: "app_1", payload: {} });
+    await waitFor(() => expect(place).toHaveBeenCalledWith("app_1", "hero"));
+    // The host seam still fires — after the write, never instead of it.
+    await waitFor(() => expect(onPin).toHaveBeenCalledWith({ appId: "app_1", payload: {} }));
     // The default poll is 5000ms; this has to land long before that.
-    expect(await screen.findByText("Invoices app surface", undefined, { timeout: 1500 })).toBeTruthy();
+    expect(await screen.findByText("Invoices app surface", undefined, { timeout: 2500 })).toBeTruthy();
   });
 
-  it("hides the affordance when the host wired no onPin", () => {
+  it("offers the affordance on a host that wired a pinSlot and no onPin at all", async () => {
+    const place = vi.spyOn(client.apps, "place");
+    render(
+      <VendoProvider client={client} pinSlot="hero"><PinButton /></VendoProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Pin" }));
+    await waitFor(() => expect(place).toHaveBeenCalledWith("app_1", "hero"));
+  });
+
+  it("hides the affordance when the host wired neither onPin nor a pinSlot", () => {
     render(<VendoProvider client={client}><PinButton /></VendoProvider>);
     expect(screen.queryByRole("button", { name: "Pin" })).toBeNull();
+  });
+
+  it("says so and stays unpinned when the placement write does not go through", async () => {
+    // The write is what makes a pin real, so a rejected one must not be
+    // announced: announcing settles every affordance into its pinned state and
+    // tells every mounted slot to re-read a placement that was never written.
+    // The failure is REAL — the client is pointed at a wire that has since shut
+    // down, so `apps.place` rejects the way it would against one that refused
+    // the write. Nothing about the pin path is stubbed.
+    const gone = await createWireServer();
+    const goneUrl = gone.url;
+    await gone.close();
+    const dead = createVendoClient({ baseUrl: goneUrl });
+    const place = vi.spyOn(dead.apps, "place");
+    const onPin = vi.fn();
+
+    render(
+      <VendoProvider client={dead} onPin={onPin} pinSlot="hero">
+        <PinAndNudge appId="app_unwritten" />
+        <VendoToasts />
+      </VendoProvider>,
+    );
+    expect(screen.getByTestId("nudge").textContent).toBe("invite");
+
+    fireEvent.click(screen.getByRole("button", { name: "Pin" }));
+
+    await waitFor(() => expect(place).toHaveBeenCalledWith("app_unwritten", "hero"));
+    // One honest line, the same sentence the "Add to…" picker uses when its own
+    // `apps.place` is refused.
+    expect(await screen.findByText("That didn’t go through — try again.")).toBeTruthy();
+    // The affordance never claims the slot was filled, and the host's mirror of
+    // a pin never fires on a pin that did not happen.
+    expect(screen.getByTestId("nudge").textContent).toBe("invite");
+    expect(onPin).not.toHaveBeenCalled();
   });
 });

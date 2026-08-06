@@ -69,6 +69,18 @@ describe("createVendoClient", () => {
     expect((await client.apps.forkPin({ slot: "hero" })).componentName).toMatch(/^PinnedHero[0-9a-f]{8}$/);
     expect((await client.apps.forkPin({ slot: "hero2", props: { title: "Mine" } })).slot).toBe("hero2");
     expect(await client.apps.pingMachine("app_1")).toEqual({ state: "awake" });
+    // Placement (2026-08-05): place → read back → evict → unplace → gone.
+    // A slot of its own: the appId-less forkPin calls above already placed
+    // their mints in "hero" and "hero2".
+    expect(await client.apps.place("app_1", "shelf")).toEqual({});
+    // "Undone", not "Invoices": the undo above renamed app_1, and the title
+    // is derived from the CURRENT document on every read, never stored.
+    expect(await client.apps.placements(["shelf"])).toEqual([
+      { slot: "shelf", app: "app_1", title: "Undone", status: "ready" },
+    ]);
+    expect(await client.apps.place("app_auto", "shelf")).toEqual({ evicted: "app_1" });
+    await client.apps.unplace("app_auto", "shelf");
+    expect(await client.apps.placements(["shelf"])).toEqual([]);
     await client.apps.delete(created.id);
 
     expect(await client.automations.list()).toHaveLength(1);

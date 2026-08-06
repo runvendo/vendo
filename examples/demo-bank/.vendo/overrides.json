@@ -16,10 +16,6 @@
       "title": "Read Maple's own records",
       "description": "Reads Maple's internal record of what happened in this workspace."
     },
-    "host_demo_pin_create": {
-      "title": "Pin a view to your home page",
-      "description": "Pins one of your views onto your Maple home page, where it stays."
-    },
     "host_demo_reset_create": {
       "title": "Start Maple over",
       "description": "Erases everything in this Maple workspace and starts it fresh. This cannot be undone."

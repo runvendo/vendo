@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { VendoRoot as UmbrellaVendoRoot, type ToolMetaMap } from "@vendoai/vendo/react";
 import { withBasePath } from "@/lib/base-path";
 import { mapleRegistry } from "@/vendo/registry";
@@ -27,16 +27,6 @@ export function VendoRoot({
   children: ReactNode;
   threadId?: string;
 }) {
-  // The thread embed's "Pin to dashboard" affordance: record the pin on the
-  // app row server-side; the home-hero VendoSlot self-discovers it on its
-  // own poll (useSlotApp), so the pinned view lands on Home within seconds.
-  const onPin = useCallback((app: { appId: string; payload: unknown }) => {
-    void fetch(withBasePath("/api/demo/pin"), {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ appId: app.appId, slot: "home-hero" }),
-    });
-  }, []);
   return (
     <UmbrellaVendoRoot
       // The Vendo door under the mount point. The provider's default is the
@@ -45,7 +35,10 @@ export function VendoRoot({
       components={mapleRegistry}
       theme={mapleTheme}
       voice={{ driver: mapleRealtimeVoiceDriver }}
-      onPin={onPin}
+      // "Pin to dashboard" lands here. Maple used to answer that with its own
+      // /api/demo/pin route writing doc.placements by hand; placement is a
+      // first-class Vendo write now, so naming the slot is the whole wiring.
+      pinSlot="home-hero"
       tools={mapleToolMeta}
     >
       {/* VENDO-MIGRATION: thread selection moved from the provider to each
