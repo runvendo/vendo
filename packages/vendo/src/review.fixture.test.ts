@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { vendoSync } from "@vendoai/actions/sync";
 import { appVersionHash, pinComponentName } from "@vendoai/apps";
-import type { AppDocument, Principal } from "@vendoai/core";
+import { printWire, type AppDocument, type Principal } from "@vendoai/core";
 import { createStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
@@ -16,29 +16,32 @@ interface ModelCall {
   }>;
 }
 
+/** The screen agent's own brief (`environmentNote`), verbatim — the one marker
+ *  that says a prompt belongs to the assembly loop. An EDIT rides that loop now:
+ *  there is one builder, and it answers by saving the whole rewritten document. */
+const SCREEN_BRIEF_MARKER = "# In this loop";
+/** `save_app`'s own reply, which is a tool RESULT rather than text — its presence
+ *  is how this model knows the current run already saved. */
+const SAVED_MARKER = "Run validate on it now.";
+
+/** The whole prompt as text, tool results included. */
+const promptText = (call: ModelCall): string => JSON.stringify(call.prompt ?? "");
+
 /**
- * Renames, in the brain's edit dialect. The conductor replaced the `<SetName>`
- * op compiler this fixture was written against, so an edit is now: quote the
- * app's opening <App> line exactly as the prompt printed it, and hand back the
- * renamed one. The LAST match is the printed app — the prompt's own
- * instructions carry a literal `<App name="...">` placeholder before it.
+ * Renames, as the one builder performs them: open this app's document, put the
+ * new name on its opening `<App>` line, save the whole thing back. One save per
+ * assembly run, then a closing word.
  */
-const scriptedModel = (renames: string[]): LanguageModel => {
-  let call = 0;
-  const flatten = (prompt: ModelCall["prompt"]): string => prompt
-    .map((message) => typeof message.content === "string"
-      ? message.content
-      : message.content.map((part) => part.text ?? "").join(""))
-    .join("\n");
-  const next = (prompt: string): string => {
-    const rename = renames[Math.min(call, renames.length - 1)];
-    call += 1;
+const screenModel = (renames: string[], document: () => Promise<string>): LanguageModel => {
+  let saves = 0;
+  const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
+  const saving = (prompt: string): boolean =>
+    prompt.includes(SCREEN_BRIEF_MARKER) && !prompt.includes(SAVED_MARKER);
+  const rewrite = async (): Promise<string> => {
+    const rename = renames[Math.min(saves, renames.length - 1)];
+    saves += 1;
     if (rename === undefined) throw new Error("scripted model exhausted");
-    const opening = [...prompt.matchAll(/<App name="[^"]*">/g)]
-      .map((match) => match[0])
-      .filter((candidate) => candidate !== '<App name="...">')
-      .at(-1) ?? '<App name="Untitled">';
-    return `<Edit><Old>${opening}</Old><New><App name="${rename}"></New></Edit>`;
+    return (await document()).replace(/^<App name="[^"]*"/, `<App name="${rename}"`);
   };
   return {
     specificationVersion: "v2",
@@ -46,26 +49,40 @@ const scriptedModel = (renames: string[]): LanguageModel => {
     modelId: "vendo-review-fixture-v1",
     supportedUrls: {},
     async doGenerate(modelCall: ModelCall) {
+      if (!saving(promptText(modelCall))) {
+        return { content: [{ type: "text" as const, text: "done" }], finishReason: "stop" as const, usage };
+      }
       return {
-        content: [{ type: "text" as const, text: next(flatten(modelCall.prompt)) }],
-        finishReason: "stop" as const,
-        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        content: [{
+          type: "tool-call" as const,
+          toolCallId: "call_save_app",
+          toolName: "save_app",
+          input: JSON.stringify({ content: await rewrite() }),
+        }],
+        finishReason: "tool-calls" as const,
+        usage,
       };
     },
     async doStream(modelCall: ModelCall) {
-      const text = next(flatten(modelCall.prompt));
+      const content = saving(promptText(modelCall)) ? await rewrite() : undefined;
       return {
         stream: new ReadableStream({
           start(controller) {
             controller.enqueue({ type: "stream-start", warnings: [] });
-            controller.enqueue({ type: "text-start", id: "text_1" });
-            controller.enqueue({ type: "text-delta", id: "text_1", delta: text });
-            controller.enqueue({ type: "text-end", id: "text_1" });
-            controller.enqueue({
-              type: "finish",
-              finishReason: "stop",
-              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-            });
+            if (content === undefined) {
+              controller.enqueue({ type: "text-start", id: "text_1" });
+              controller.enqueue({ type: "text-delta", id: "text_1", delta: "done" });
+              controller.enqueue({ type: "text-end", id: "text_1" });
+              controller.enqueue({ type: "finish", finishReason: "stop", usage });
+            } else {
+              controller.enqueue({
+                type: "tool-call",
+                toolCallId: "call_save_app",
+                toolName: "save_app",
+                input: JSON.stringify({ content }),
+              });
+              controller.enqueue({ type: "finish", finishReason: "tool-calls", usage });
+            }
             controller.close();
           },
         }),
@@ -124,8 +141,25 @@ export default function Page() {
     process.chdir(root);
     const user = "user_ada";
     const reviewer = "host_reviewer";
+    /** The app under edit, and the document the assembler opens: printed exactly
+     *  as a checkout prints it. Read off the ROW (never `open()`, which serves the
+     *  last APPROVED version) because a rewrite amends the pending one. */
+    let appUnderEdit: string | undefined;
+    let composed: ReturnType<typeof createVendo> | undefined;
+    const asItStands = async (): Promise<string> => {
+      const app = await composed!.apps.get(appUnderEdit!, {
+        principal: { kind: "user", subject: user },
+        venue: "app",
+        presence: "present",
+      });
+      if (app === null) throw new Error("no app row to rewrite");
+      return printWire(
+        { tree: app.tree as never, components: app.components ?? {}, name: app.name },
+        { includeIds: true },
+      );
+    };
     const vendo = createVendo({
-      model: scriptedModel(["Transfer remix v2", "Transfer remix v3"]),
+      model: screenModel(["Transfer remix v2", "Transfer remix v3"], asItStands),
       // Host-resolved principal from the fixture header; absent = anonymous
       // (the wire mints an ephemeral session — the "non-admin" caller).
       principal: async (req): Promise<Principal | null> => {
@@ -138,12 +172,14 @@ export default function Page() {
       // assertion — even a dev composition never infers it from a principal.
       apps: { review: { reviewer: (ctx) => ctx.principal.subject === reviewer } },
     });
+    composed = vendo;
 
     // 1. The user's Remix gesture forks the review-kind slot.
     const forkResponse = await vendo.handler(request("POST", "/apps/fork-pin", { as: user, body: { slot: "TransferPanel" } }));
     expect(forkResponse.status).toBe(200);
     const fork = await forkResponse.json() as { app: AppDocument };
     const appId = fork.app.id;
+    appUnderEdit = appId;
     const v1Hash = appVersionHash(fork.app);
 
     // 2. Unapproved: the user gets the pending state and the ORIGINAL — the

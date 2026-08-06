@@ -18,7 +18,7 @@
  * behaves identically with and without VENDO_API_KEY.
  */
 import type { AppDocument, RunContext } from "@vendoai/core";
-import type { ScriptedTurn } from "@vendoai/agent";
+import type { ScriptedTurn } from "../harness-turn.js";
 import type { UIMessage } from "ai";
 import { couldReachTour, matchTour } from "./match.js";
 import { replayTour, type TourApps } from "./replay.js";

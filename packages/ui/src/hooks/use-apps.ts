@@ -1,7 +1,7 @@
 /** App collection transport (08-ui §3). */
 import type { AppDocument, AppId } from "@vendoai/core";
 import { useCallback } from "react";
-import { useVendoContext } from "../context.js";
+import { useVendoProvider } from "../context.js";
 import { type PollOptions, useResource } from "./use-resource.js";
 
 export function useApps(options?: PollOptions): {
@@ -15,7 +15,7 @@ export function useApps(options?: PollOptions): {
   exportApp(id: AppId): Promise<Uint8Array>;
   importApp(bytes: Uint8Array): Promise<AppDocument>;
 } {
-  const { client } = useVendoContext();
+  const { client } = useVendoProvider();
   const list = useCallback(() => client.apps.list(), [client]);
   const { data, error, isLoading, refresh } = useResource(list, [] as AppDocument[], options);
 

@@ -52,6 +52,10 @@ export interface VendoContextValue {
   /** The host's display currency + locale for every Kit formatter — what a
       generated `format:"money"` column or `<Money cents/>` renders in. */
   intl: KitIntl;
+  /** Spec 2026-08-05 §2 — whether sends snapshot the visible host page into
+      the [Situation] channel. Default true; false disables capture entirely
+      (useVendoContext data still rides). */
+  captureScreen: boolean;
 }
 
 /** One connectable toolkit in the connect dock (ENG-225). */
@@ -108,9 +112,11 @@ export function VendoProvider(props: {
   /** Display currency + locale, e.g. `{ currency: "PKR" }` for a Pakistani
       host. Omitted fields fall back to USD / en-US. */
   intl?: Partial<KitIntl>;
+  /** Disable the automatic screen snapshot on send (spec 2026-08-05 §2). */
+  captureScreen?: boolean;
   children: ReactNode;
 }): ReactNode {
-  const { client, components, theme, voice, transport, onPin, pinSlot, tools, connectors, discoverability, greeting, intl, children } = props;
+  const { client, components, theme, voice, transport, onPin, pinSlot, tools, connectors, discoverability, greeting, intl, captureScreen, children } = props;
   const currency = intl?.currency;
   const locale = intl?.locale;
   // Installed during RENDER, not in an effect: the formatters are called while
@@ -134,13 +140,18 @@ export function VendoProvider(props: {
       discoverability: discoverability ?? "default",
       greeting,
       intl: resolvedIntl,
+      captureScreen: captureScreen ?? true,
     }),
-    [client, components, theme, voice, transport, onPin, pinSlot, tools, connectors, discoverability, greeting, resolvedIntl],
+    [client, components, theme, voice, transport, onPin, pinSlot, tools, connectors, discoverability, greeting, resolvedIntl, captureScreen],
   );
   return <VendoContext.Provider value={value}>{children}</VendoContext.Provider>;
 }
 
-export function useVendoContext(): VendoContextValue {
+/** Everything VendoProvider supplies — the seam every hook and surface reads.
+ *  Named `useVendoProvider` (not `useVendoContext`) since 2026-08-05: the
+ *  host-facing `useVendoContext(data)` publishes into the agent's [Situation]
+ *  channel and owns that name. */
+export function useVendoProvider(): VendoContextValue {
   const ctx = useContext(VendoContext);
   if (!ctx) throw new Error("Vendo hooks and surfaces must be rendered inside <VendoProvider>.");
   return ctx;
@@ -148,7 +159,7 @@ export function useVendoContext(): VendoContextValue {
 
 /** Resolved brand tokens (08 §3 — the useVendoTheme hook). */
 export function useVendoTheme(): VendoTheme {
-  return useVendoContext().theme;
+  return useVendoProvider().theme;
 }
 
 /** Host-supplied tool metadata (ENG-216). Provider-optional so surfaces that

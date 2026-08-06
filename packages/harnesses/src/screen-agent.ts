@@ -36,6 +36,7 @@ import {
   VENDO_MAKE_TOOL,
   mintTurnId,
   type AppId,
+  type CommitResult,
   type SeatModels,
   type RunContext,
   type ScreenAssembler,
@@ -55,8 +56,9 @@ import {
 import { buildingAppsSkill } from "@vendoai/apps";
 import type { LanguageModel } from "ai";
 import { defineHarness } from "./define.js";
-import { vendo, type HarnessHand, type VendoHarnessOptions } from "./vendo.js";
-import { wrapWorkspaceForRender, type RenderSeamOptions } from "./render-seam.js";
+import { vendo, type HarnessHand, type VendoHarnessOptions } from "./vendo/vendo.js";
+import { paintedIn, wrapWorkspaceForRender, type RenderSeamOptions } from "./render-seam.js";
+import { repairInstruction, validateWrittenApps } from "./validate-gate.js";
 
 /**
  * The whole budget for assembling one screen.
@@ -125,11 +127,21 @@ export interface ScreenInput {
   /** The deployment's assembled prompt, when there is one — prepended, so the
    *  host's voice and the guard's directions are not lost to the job description. */
   system?: string;
+  /** The host's own theme tokens and design rules (`hostDesignBrief`), when
+   *  composition has them. House rules for the WRITER, so they sit with the job
+   *  description rather than with the deployment's voice. */
+  design?: string;
 }
 
 /** What one assembly run answers. `ScreenOutcome` plus the title an assembled
  *  screen named itself, which the front door turns into a receipt. */
-export type ScreenResult = ScreenOutcome & { title?: string };
+export type ScreenResult = ScreenOutcome & {
+  title?: string;
+  /** What the run chose to record for the next editor (`save_app`'s
+   *  `decisions`). Never a summary this file wrote — only the agent's own words,
+   *  or nothing. */
+  decisions?: string;
+};
 
 const APP_FILE = "app.vendo";
 const PLAN_FILE = "plan.vendo";
@@ -202,13 +214,22 @@ through two tools.
   \`${appId}\`; you never name a path. Every save that parses repaints the person's
   screen, so save as you go — a save is cheap and silence is not. There is no
   edit-in-place tool: save the full document each time.
+  Its \`decisions\` is this app's MEMORY, and the only thing the next editor will
+  have besides the document. Record what reading the document could not tell
+  them — why you narrowed something, a constraint the tools imposed, a shape you
+  ruled out. Never record what you did or in what order; that is narration, and
+  it crowds out the one line that mattered.
 - **\`validate\`** is the floor. Call it on what you saved, fix what it names, save
   again. You are not done until it comes back clean.
 - **\`${ESCALATE_TOOL}\`** is the one door out. Assembling a document out of this
   product's components is all you can do; anything that needs real code, its own
   server, a file the person uploads, or a surface these components cannot express
   goes through it. Write the plan when you escalate — that plan becomes the first
-  thing the person sees while the builder works, so it is not a formality.
+  thing the person sees while the builder works, AND it is the builder's whole
+  brief. Nothing re-plans it, so say which lane the work runs in with the
+  \`<Server kind="steps"|"agentic"|"box" [served] why="…"/>\` line the skill above
+  teaches. Leave it out and the builder reads the escalation itself as the answer:
+  \`kind="box"\`, a machine and real code.
 - \`${SCREEN_STEPS}\` steps is the whole budget. Escalate rather than run out of it.
 
 Never look for a tool that builds the app for you. There isn't one, and that is
@@ -219,12 +240,15 @@ deliberate.
 ${toolBrief(listings)}`;
 
 /** The full brief: the deployment's own prompt, the shipped job description, the
- *  shipped syntax manual, then what is different here. */
+ *  shipped syntax manual, the host's own house rules, then what is different
+ *  here. The design brief sits with the job rather than with the deployment's
+ *  voice — it is configuration the writer obeys, not a thing to say. */
 function screenBrief(input: ScreenInput, listings: readonly ToolListing[]): string {
   return [
     input.system,
     buildingAppsSkill.body,
     buildingAppsSkill.files?.[`references/${"format.md"}`],
+    input.design,
     environmentNote(input.appId, listings),
   ]
     .filter((section): section is string => section !== undefined && section.trim().length > 0)
@@ -239,6 +263,9 @@ interface RunRecord {
   assembled: boolean;
   title?: string;
   escalated?: string;
+  /** The last non-empty `decisions` a save carried — this run's whole memory
+   *  contribution, and what replaces the app's stored block. */
+  decisions?: string;
 }
 
 /** Nothing to hire and nothing to load: the job description is already the whole
@@ -293,18 +320,15 @@ export async function assembleScreen(
   /**
    * Write one hot-path file and land it.
    *
-   * The commit IS the store write and the paint (§1.6). Whether it painted is the
-   * seam's own verdict, reached inside `commit()` and reported to the seam's
-   * `emit` — which belongs to whoever wrapped this workspace, not to us. So this
-   * reports what it can actually know: did the commit land. `validate` is what
-   * tells the model whether what landed is any good — which is this loop's review
-   * floor by design, exactly as `AppsRuntime.authored` says — and the front door
-   * checks the app's ROW before it promises the person a screen.
+   * The commit IS the store write and the paint (§1.6), and the seam answers BOTH
+   * questions on the way out: did the write land (`CommitResult.status`), and did
+   * it reach the screen (`paintedIn`). The paint verdict is the one this loop
+   * could not see before — `emit` belongs to whoever wrapped the workspace, not to
+   * us — and it is what separates "saved" from "saved and shown".
    */
-  const save = async (turn: Turn<unknown>, file: string, content: string): Promise<boolean> => {
+  const save = async (turn: Turn<unknown>, file: string, content: string): Promise<CommitResult> => {
     await turn.workspace.writeFile(`${directory}/${file}`, content);
-    const result = await turn.workspace.commit({ message: `${file} (${input.appId})` });
-    return result.status === "ok";
+    return await turn.workspace.commit({ message: `${file} (${input.appId})` });
   };
 
   const saveApp: HarnessHand = {
@@ -314,18 +338,63 @@ export async function assembleScreen(
       + "as you go rather than once at the end. Returns whether the save landed.",
     inputSchema: {
       type: "object",
-      properties: { content: { type: "string", description: "The complete app document, in the .vendo format." } },
+      properties: {
+        content: { type: "string", description: "The complete app document, in the .vendo format." },
+        decisions: {
+          type: "string",
+          description:
+            "What the next person to edit this app must know: choices you made, constraints you found, things "
+            + "you ruled out. Only what is invisible from the document itself — never a narration of your work. "
+            + "It REPLACES this app's decisions, so write the whole block each time, under 5 lines.",
+        },
+      },
       required: ["content"],
       additionalProperties: false,
     },
     execute: async (args, turn) => {
-      const content = (args as { content: string }).content;
-      const landed = await save(turn, APP_FILE, content);
-      if (!landed) {
+      const { content, decisions } = args as { content: string; decisions?: string };
+      const committed = await save(turn, APP_FILE, content);
+      if (committed.status !== "ok") {
         return { saved: false, note: "The save did not land — someone else changed this app. Save again." };
       }
       record.assembled = true;
       record.title = nameOf(content) ?? record.title;
+      // The last save that had something to say wins the run. An omitted or blank
+      // `decisions` on a later save is "nothing to add", not "forget the earlier
+      // one" — a save-as-you-go loop would otherwise erase its own memory on the
+      // final validate-fix save.
+      if (decisions !== undefined && decisions.trim() !== "") record.decisions = decisions;
+      /**
+       * A SAVE THAT NEVER REACHED THE SCREEN HEARS WHY — the builder's own gate
+       * (`validateWrittenApps`), on the one case this loop had no door for.
+       *
+       * Live 2026-08-06 ("a dashboard for my upcoming bills"): a save the seam
+       * would not paint leaves no ROW — no paint, no `authored` — and
+       * `validate({appId})`, the door this hand's own note sends the model to, is
+       * row-scoped. It answered "app not found" on exactly the document that
+       * needed judging, so the loop heard nothing, saved again, and the screen the
+       * person kept was judged by nothing it could hear from. `{ document }` has
+       * no such hole, which is the gate's own reason for taking it.
+       *
+       * Only when the paint did NOT happen: a painted save is already floored (the
+       * seam runs the same checks before it emits), so running them again would
+       * pay twice and second-guess the seam. `painted` absent means an unwrapped
+       * workspace — nothing known, so nothing claimed.
+       */
+      const painted = paintedIn(committed);
+      if (painted !== undefined && !painted.includes(input.appId)) {
+        const instruction = repairInstruction(await validateWrittenApps({
+          tools: turn.tools,
+          workspace: turn.workspace,
+          paths: [`${directory}/${APP_FILE}`],
+        }));
+        return {
+          saved: true,
+          note: instruction
+            ?? "That save landed but did not reach the person's screen, and validate found nothing to fix."
+            + " Save a simpler document.",
+        };
+      }
       return { saved: true, note: "Run validate on it now." };
     },
   };
@@ -352,7 +421,7 @@ export async function assembleScreen(
       // returns is the fact that it happened.
       const landed = await save(turn, PLAN_FILE, plan);
       record.escalated = why;
-      return { handedOver: true, planSaved: landed };
+      return { handedOver: true, planSaved: landed.status === "ok" };
     },
   };
 
@@ -412,7 +481,13 @@ export async function assembleScreen(
   // stamps it.
   if (record.escalated !== undefined) return { kind: "escalate", why: record.escalated };
   // A model failure AFTER a screen already painted is not a failed screen.
-  if (record.assembled) return { kind: "assembled", ...(record.title === undefined ? {} : { title: record.title }) };
+  if (record.assembled) {
+    return {
+      kind: "assembled",
+      ...(record.title === undefined ? {} : { title: record.title }),
+      ...(record.decisions === undefined ? {} : { decisions: record.decisions }),
+    };
+  }
   return { kind: "unavailable", why: failure ?? "assembly produced nothing that renders" };
 }
 
@@ -489,6 +564,22 @@ export interface ScreenAssemblerDeps {
   render?: (ctx: RunContext) => Omit<RenderSeamOptions, "emit">;
   /** The deployment's assembled prompt for this ctx, when composition has one. */
   system?: (ctx: RunContext) => Promise<string | undefined>;
+  /** The host's theme tokens and design rules (`hostDesignBrief` in
+   *  `@vendoai/apps`). A thunk, not a value: `designRules` resolves per
+   *  generation so a console publish applies to the next screen. */
+  design?: () => string | undefined;
+  /**
+   * Where a run's `decisions` land: the runtime's one memory door
+   * (`AppsRuntime.remember`), which is on the other side of the layering — this
+   * package holds no store — so composition fills the slot exactly as it does
+   * `render` above.
+   *
+   * Called only for an `assembled` run, because that is the only answer whose
+   * row exists by the time this returns. Unfilled, or throwing, and the run's
+   * decisions are simply not recorded: a lost memory write is never worth
+   * failing a screen the person can already see.
+   */
+  remember?: (appId: AppId, decisions: string, ctx: RunContext) => Promise<void>;
 }
 
 /**
@@ -521,6 +612,7 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
         emit: (_streamId, part) => request.onView?.(part),
       });
       const system = await deps.system?.(ctx);
+      const design = deps.design?.();
       const result = await assembleScreen(
         {
           models: deps.models,
@@ -535,9 +627,18 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
           appId: request.appId,
           request: request.request,
           ...(system === undefined ? {} : { system }),
+          ...(design === undefined ? {} : { design }),
         },
       );
-      return result.kind === "assembled" ? { kind: "assembled" } : result;
+      if (result.kind !== "assembled") return result;
+      if (result.decisions !== undefined) {
+        await deps.remember?.(request.appId, result.decisions, ctx).catch((error: unknown) => {
+          console.warn(`[vendo] the screen agent's decisions were not recorded on ${request.appId} — ${
+            error instanceof Error ? error.message : String(error)
+          }`);
+        });
+      }
+      return { kind: "assembled" };
     },
   };
 }

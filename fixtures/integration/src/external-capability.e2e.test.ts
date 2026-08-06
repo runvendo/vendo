@@ -13,12 +13,16 @@
  * interface really is enough to extend Vendo from outside.
  */
 import { createTurnSkills } from "@vendoai/core";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ADA,
+  appIdInPrompt,
   createStack,
   generationTurn,
   resetFixture,
+  screenAgentCreateTurns,
+  textTurn,
+  toolCallTurn,
   type Stack,
   type StackOptions,
 } from "./harness.js";
@@ -39,19 +43,21 @@ const installed: StackOptions = {
   catalog: complianceComponents,
 };
 
-/** A tiny-ask create: the brain writes the whole app on the spot. The account
- *  number is the point — the fact check is what must object to it. */
+/** A tiny-ask create: the screen agent saves the whole document with its own
+ *  hands. Clean, so it lands. */
 const CLEAN_APP = '<App name="Retention"><Text text="Report 2026 is clean"/><Disclaimer reason="Fixture app."/></App>';
-/** The small-change answer: quote the app's own printed text, say what replaces
- *  it. The replacement carries an unmasked account number — the fact check is
- *  what must object. */
-const LEAK_EDIT = '<Edit><Old>Report 2026 is clean</Old><New>Account 4012888888881881 is clean</New></Edit>';
+/** The edit answer — the whole document again, this time carrying an unmasked
+ *  account number. The contributed fact check is what must object to it. */
+const LEAK_APP = '<App name="Retention"><Text text="Account 4012888888881881 is clean"/><Disclaimer reason="Fixture app."/></App>';
 /** A no-op-ish reword: the app stays clean, so `issues` being empty is a real
  *  assertion about the checks rather than about a missing response field. */
-const CLEAN_EDIT = '<Edit><Old>Report 2026 is clean</Old><New>Report 2026 looks clean</New></Edit>';
-/** Edits the contributed component in beside the text. */
-const BADGE_EDIT = '<Edit><Old>Report 2026 is clean</Old><New>Report 2026 is clean<RetentionBadge years={7}/></New></Edit>';
+const REWORDED_APP = '<App name="Retention"><Text text="Report 2026 looks clean"/><Disclaimer reason="Fixture app."/></App>';
+/** The same app with the contributed component saved in beside the text. */
+const BADGE_APP = '<App name="Retention"><Text text="Report 2026 is clean"/><RetentionBadge years={7}/><Disclaimer reason="Fixture app."/></App>';
 const REVIEW_SILENT = "Nothing to report.";
+
+/** The digits the fact check objects to, spelled once. */
+const ACCOUNT_NUMBER = "4012888888881881";
 
 interface CreatedApp { id?: string; issues?: string[] }
 interface EditedApp { app?: { id: string }; issues?: string[] }
@@ -76,6 +82,31 @@ const edit = async (appId: string, instruction: string): Promise<EditedApp> =>
     method: "POST",
     body: JSON.stringify({ instruction }),
   }, ADA)).json()) as EditedApp;
+
+/** The app as the composed store holds it, read back over the wire. */
+const stored = async (appId: string): Promise<string> =>
+  JSON.stringify(await (await running().wireFetch(`/apps/${appId}`, {}, ADA)).json());
+
+/**
+ * Everything the composed server told the OPERATOR while `body` ran.
+ *
+ * A `block` at the paint seam is deliberately NOT a user-facing channel: the
+ * seam emits nothing, no row lands, and the last good view stays on the person's
+ * screen. So the reason the floor refused a save reaches exactly one place, and
+ * this is it (`render-seam.ts`: "Loud for the operator, silent for the user").
+ */
+const operatorLog = async (body: () => Promise<void>): Promise<string> => {
+  const lines: string[] = [];
+  const spy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+    lines.push(args.map((arg) => (typeof arg === "string" ? arg : JSON.stringify(arg))).join(" "));
+  });
+  try {
+    await body();
+  } finally {
+    spy.mockRestore();
+  }
+  return lines.join("\n");
+};
 
 describe("E5: external capability installs through the keys a host already knows", () => {
   it("puts the contributed tool in the ONE guarded registry under the name it authored, and runs it", async () => {
@@ -110,24 +141,35 @@ describe("E5: external capability installs through the keys a host already knows
     stack = await createStack({
       ...installed,
       turns: [
-        // Create a clean app, then edit an account number into it: the edit path
-        // is the one that hands blocking findings back to the caller.
-        generationTurn(CLEAN_APP),
-        generationTurn(REVIEW_SILENT, "review_1"),
-        generationTurn(LEAK_EDIT, "gen_2"),
-        // Two fix rounds: the brain declines to edit, so the finding survives.
-        generationTurn(REVIEW_SILENT, "review_2"),
-        generationTurn("No change.", "fix_1"),
-        generationTurn(REVIEW_SILENT, "review_3"),
-        generationTurn("No change.", "fix_2"),
-        generationTurn(REVIEW_SILENT, "review_4"),
+        // Create a clean app, then save an account number into it. The floor the
+        // pack's check rides is the PAINT SEAM's, and it runs on every commit by
+        // every author — so this is the same gate a hand-written save meets.
+        ...screenAgentCreateTurns(CLEAN_APP),
+        ...screenAgentCreateTurns(LEAK_APP),
       ],
     });
 
     const created = await create("Show me the retention report");
-    const leaky = await edit(created.id as string, "Put the full account number in the heading");
+    const appId = created.id as string;
+    expect(appId).toMatch(/^app_/);
+    // The clean app really landed — the contrast below is about the ACCOUNT
+    // NUMBER, not about generation being broken.
+    expect(await stored(appId)).toContain("Report 2026 is clean");
 
-    expect(leaky.issues?.join(" ") ?? "").toContain(UNMASKED_ACCOUNT);
+    const reported = await operatorLog(async () => {
+      await edit(appId, "Put the full account number in the heading");
+    });
+
+    // WHAT IT FOUND, in the contributed check's own words and under the name it
+    // registered itself with. Nothing else in this deployment knows that an
+    // account number is worth objecting to.
+    expect(reported).toContain(UNMASKED_ACCOUNT);
+    expect(reported).toContain("no-unmasked-accounts");
+    // …and the finding STOPPED the save: a `block` means nothing paints and no
+    // row lands, so the app is still exactly what it was.
+    const after = await stored(appId);
+    expect(after).not.toContain(ACCOUNT_NUMBER);
+    expect(after).toContain("Report 2026 is clean");
   });
 
   it("says nothing about an app the contributed check is happy with", async () => {
@@ -135,13 +177,11 @@ describe("E5: external capability installs through the keys a host already knows
     stack = await createStack({
       ...installed,
       turns: [
-        generationTurn(CLEAN_APP),
-        generationTurn(REVIEW_SILENT, "review_1"),
-        // Edit to a still-clean app: the edit path is the one that RETURNS
-        // issues, so an empty list here is a real assertion rather than a
-        // vacuous one over a field the create response never carries.
-        generationTurn(CLEAN_EDIT, "gen_2"),
-        generationTurn(REVIEW_SILENT, "review_2"),
+        ...screenAgentCreateTurns(CLEAN_APP),
+        // Save a still-clean app: the edit path is the one that RETURNS issues,
+        // so an empty list here is a real assertion rather than a vacuous one
+        // over a field the create response never carries.
+        ...screenAgentCreateTurns(REWORDED_APP),
       ],
     });
 
@@ -150,60 +190,85 @@ describe("E5: external capability installs through the keys a host already knows
 
     expect(edited.app?.id).toBe(created.id);
     expect(edited.issues ?? []).toEqual([]);
+    // The reword really LANDED. Without this, "no issues" would also be what a
+    // refused save looks like from out here.
+    expect(await stored(created.id as string)).toContain("Report 2026 looks clean");
   });
 
-  /** Create, then edit the contributed component in. The edit path is the one
-   *  that RETURNS blocking findings, and "references host component X absent
-   *  from the catalog" is one — so this reports whether the catalog really
-   *  carries it. */
-  const editInTheBadge = async (options: StackOptions): Promise<EditedApp> => {
+  /** Create, then save the contributed component in. The floor's
+   *  `components-exist` fact refuses a component nothing in this deployment
+   *  knows — so whether the badge reaches the row reports whether the catalog
+   *  really carries it. */
+  const editInTheBadge = async (options: StackOptions): Promise<{ edited: EditedApp; reported: string; after: string }> => {
     await resetFixture();
     stack = await createStack({
       ...options,
       turns: [
-        generationTurn(CLEAN_APP),
-        generationTurn(REVIEW_SILENT, "review_1"),
-        generationTurn(BADGE_EDIT, "gen_2"),
-        generationTurn(REVIEW_SILENT, "review_2"),
-        generationTurn("No change.", "fix_1"),
-        generationTurn(REVIEW_SILENT, "review_3"),
-        generationTurn("No change.", "fix_2"),
-        generationTurn(REVIEW_SILENT, "review_4"),
+        ...screenAgentCreateTurns(CLEAN_APP),
+        ...screenAgentCreateTurns(BADGE_APP),
       ],
     });
     const created = await create("Show me the retention report");
-    return edit(created.id as string, "Add the retention badge");
+    const appId = created.id as string;
+    let edited: EditedApp = {};
+    const reported = await operatorLog(async () => {
+      edited = await edit(appId, "Add the retention badge");
+    });
+    return { edited, reported, after: await stored(appId) };
   };
 
   it("registers the contributed component in the catalog the engine builds against", async () => {
-    const edited = await editInTheBadge(installed);
+    const { edited, reported, after } = await editInTheBadge(installed);
 
     expect(edited.issues ?? []).toEqual([]);
+    // The badge reached the ROW, so the catalog the floor measures against
+    // really carries it — the floor never saw an unknown component.
+    expect(after).toContain("RetentionBadge");
+    expect(reported).not.toContain("references unknown component");
   });
 
   it("and the SAME edit is rejected when the component was not registered", async () => {
     // The contrast is what makes the assertion above mean something: without the
     // registration, the identical markup names a component nothing knows, and
     // the floor blocks it.
-    const edited = await editInTheBadge({});
+    const { reported, after } = await editInTheBadge({});
 
-    const reported = edited.issues?.join(" ") ?? "";
     expect(reported).toContain("references unknown component");
     expect(reported).toContain("RetentionBadge");
+    // Refused, not half-applied: nothing painted, no row landed, and the app is
+    // left as it was.
+    expect(after).not.toContain("RetentionBadge");
+    expect(after).toContain("Report 2026 is clean");
   });
 });
 
 describe("E5: the contributed judgment rule reaches the live reviewer", () => {
+  /**
+   * The screen agent's own review floor, scripted: save the app, then `validate`
+   * it — the verb the shipped skill teaches ("call it on what you saved") and the
+   * loadout the assembly loop is built around.
+   *
+   * `{ appId }`, not `{ document }`: the reviewer only runs over a STORED app, so
+   * the appId the front door minted for this ask is read back off the brief the
+   * loop was just handed. The reviewer's own model call sits between the validate
+   * step and the closing one, which is why REVIEW_SILENT is scripted there.
+   */
+  const saveThenValidateTurns = [
+    toolCallTurn("save_app", { content: CLEAN_APP }, "screen_save"),
+    (prompt: Parameters<typeof appIdInPrompt>[0]) =>
+      toolCallTurn("validate", { appId: appIdInPrompt(prompt) }, "screen_validate"),
+    generationTurn(REVIEW_SILENT, "review_1"),
+    textTurn("saved", "screen_done"),
+  ];
+
   it("puts the rule on the reviewer's rubric in the composed server, not just in a list", async () => {
     await resetFixture();
-    // A reviewer that applies whatever rule its rubric carried: it blocks only
-    // if the rule text is in the prompt it was given. Same app either way, so a
-    // finding proves the rule travelled from the config key through the floor
-    // into the reviewer's prompt in the REAL composed umbrella.
-    stack = await createStack({
-      ...installed,
-      turns: [generationTurn(CLEAN_APP), generationTurn(REVIEW_SILENT, "review_1")],
-    });
+    // The reviewer applies whatever rule its rubric carried, and it can only
+    // carry one that reached its prompt. So a rule found in the prompt the
+    // composed umbrella really sent proves it travelled from the config key,
+    // through `AppsRuntime.validate`'s floor, into the live reviewer — on the
+    // path the screen agent itself takes.
+    stack = await createStack({ ...installed, turns: saveThenValidateTurns });
 
     await create("Show me the retention report");
 
@@ -215,9 +280,7 @@ describe("E5: the contributed judgment rule reaches the live reviewer", () => {
 
   it("does not put the rule in a prompt when the check was not configured", async () => {
     await resetFixture();
-    stack = await createStack({
-      turns: [generationTurn(CLEAN_APP), generationTurn(REVIEW_SILENT, "review_1")],
-    });
+    stack = await createStack({ turns: saveThenValidateTurns });
 
     await create("Show me the retention report");
 

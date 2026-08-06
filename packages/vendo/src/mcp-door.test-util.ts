@@ -138,8 +138,13 @@ export interface ComposedHost {
 }
 
 /**
- * A model that answers every generation prompt with one valid screen, so a
- * `vendo_make` call reaches a REAL receipt instead of the no-model failure path.
+ * A model that assembles one valid screen, so a `vendo_make` call reaches a REAL
+ * receipt instead of the no-screen failure path.
+ *
+ * `# In this loop` is the screen agent's own brief — the one marker that says a
+ * prompt belongs to the assembly loop without counting calls — and `save_app` is
+ * how that loop lands an app. Every other prompt gets prose, which is also what
+ * ends the loop once the app is saved.
  *
  * Local rather than `@vendoai/apps`' `scriptedLanguageModel` because `testing/`
  * is not on that package's exports map; same shape as the other fixture doubles
@@ -147,34 +152,55 @@ export interface ComposedHost {
  */
 export const SCREEN_TITLE = "Spending this month";
 const SCREEN = `<App name="${SCREEN_TITLE}"><Text text="Ready"/><Disclaimer reason="Fixture app."/></App>`;
+const SCREEN_BRIEF_MARKER = "# In this loop";
 
 export const screenModel = (): LanguageModel => {
-  const answer = {
-    content: [{ type: "text" as const, text: SCREEN }],
-    finishReason: "stop" as const,
-    usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+  let saved = false;
+  const assembling = (prompt: unknown): boolean => {
+    if (saved || !JSON.stringify(prompt ?? "").includes(SCREEN_BRIEF_MARKER)) return false;
+    saved = true;
+    return true;
   };
+  const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
   return {
     specificationVersion: "v2",
     provider: "vendo-parity-screen",
     modelId: "vendo-parity-screen-v1",
     supportedUrls: {},
-    async doGenerate() {
-      return answer;
+    async doGenerate({ prompt }: { prompt?: unknown }) {
+      return assembling(prompt)
+        ? {
+          content: [{
+            type: "tool-call" as const,
+            toolCallId: "call_save_app",
+            toolName: "save_app",
+            input: JSON.stringify({ content: SCREEN }),
+          }],
+          finishReason: "tool-calls" as const,
+          usage,
+        }
+        : { content: [{ type: "text" as const, text: "done" }], finishReason: "stop" as const, usage };
     },
-    async doStream() {
+    async doStream({ prompt }: { prompt?: unknown }) {
+      const save = assembling(prompt);
       return {
         stream: new ReadableStream({
           start(controller) {
             controller.enqueue({ type: "stream-start", warnings: [] });
-            controller.enqueue({ type: "text-start", id: "text_1" });
-            controller.enqueue({ type: "text-delta", id: "text_1", delta: SCREEN });
-            controller.enqueue({ type: "text-end", id: "text_1" });
-            controller.enqueue({
-              type: "finish",
-              finishReason: "stop",
-              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-            });
+            if (save) {
+              controller.enqueue({
+                type: "tool-call",
+                toolCallId: "call_save_app",
+                toolName: "save_app",
+                input: JSON.stringify({ content: SCREEN }),
+              });
+              controller.enqueue({ type: "finish", finishReason: "tool-calls", usage });
+            } else {
+              controller.enqueue({ type: "text-start", id: "text_1" });
+              controller.enqueue({ type: "text-delta", id: "text_1", delta: "done" });
+              controller.enqueue({ type: "text-end", id: "text_1" });
+              controller.enqueue({ type: "finish", finishReason: "stop", usage });
+            }
             controller.close();
           },
         }),

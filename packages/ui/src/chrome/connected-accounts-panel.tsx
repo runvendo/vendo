@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useVendoContext, type ConnectorOption } from "../context.js";
+import { useVendoProvider, type ConnectorOption } from "../context.js";
 import { useConnections } from "../hooks/use-connections.js";
 import { useConnectorCatalog } from "../hooks/use-connector-catalog.js";
 import type { ConnectionAccount } from "../wire-types.js";
@@ -64,7 +64,7 @@ export interface ConnectedAccountsPanelProps {
  * in-flow (the connect card); the empty state additionally offers connecting
  * ahead of time via the same broker redirect. */
 export function ConnectedAccountsPanel({ undoMs = 10_000 }: ConnectedAccountsPanelProps = {}) {
-  const { client } = useVendoContext();
+  const { client } = useVendoProvider();
   const { options: connectors } = useConnectorCatalog();
   const { connections, disconnect, refresh } = useConnections();
   const [confirming, setConfirming] = useState<Record<string, boolean>>({});

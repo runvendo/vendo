@@ -123,7 +123,6 @@ export {
   UNKNOWN_MODEL_MAX_OUTPUT_TOKENS,
 } from "./model-params.js";
 export {
-  UNSTORED_APP_ID,
   type GeneratedAppDocument,
   type GenerationDependencies,
 } from "./generation/engine.js";
@@ -133,21 +132,15 @@ export {
 // through.
 export { agentToolDescriptors } from "./agent-tools.js";
 export { buildingAppsSkill } from "./skills/building-apps.js";
-// The generation seam for external bench harnesses: the SAME conductor
-// createApps() rides, driven directly against a host fixture with no store
-// behind it. Additive export — generation behavior is identical.
-//
-// QUARANTINED (blueprint §14.2) — see the header of `generation/conductor.ts`. The
-// export stays so bench harnesses and the five `runtime.ts` call sites keep working;
-// it is frozen, not extended. New work uses the lean loop and the checks floor at
-// the paint seam.
-export {
-  conductCreate,
-  conductEdit,
-  type ConductedApp,
-  type ConductedResult,
-  type ConductorOptions,
-} from "./generation/conductor.js";
+// The host's own theme and design rules, as the writers read them. Public
+// because both briefs that carry them are assembled outside this package — the
+// screen agent's in `@vendoai/harnesses`, the builder's in composition — and a
+// second rendering of the same two config keys is how they start to disagree.
+export { hostDesignBrief } from "./generation/contracts/sections.js";
+// The conductor, the brain, the deterministic fill and their public surface are
+// GONE (2026-08-06). There is one builder — the screen assembler in the
+// `apps.screen` slot — and one escape from it, the server lane an escalated plan
+// declares. `skeletonFromPlan` below is what paints that plan.
 // Contract §3.2 — the checkout/commit seam. Public because the workspace half of
 // it lives outside this package: a sandboxed harness holds a `WorkspaceFs` and
 // never a store, so composition binds the store side once and hands these to

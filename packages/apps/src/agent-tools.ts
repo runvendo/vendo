@@ -19,7 +19,7 @@ import {
   type VendoViewStreamingToolCall,
 } from "@vendoai/core";
 import type { AppDataAccess } from "./app-data.js";
-import type { AppsRuntime } from "./runtime.js";
+import { NO_ASSEMBLER, NOTHING_RENDERABLE, NO_MACHINE, type AppsRuntime } from "./runtime.js";
 
 const DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema";
 
@@ -231,9 +231,10 @@ const optionalLimit = (value: Json | undefined): number | undefined => {
 export interface AgentToolsDataDependencies {
   data: AppDataAccess;
   requireOwned(appId: AppId, ctx: RunContext): Promise<AppDocument>;
-  /** UI-generation blueprint §1 point 2 — the screen agent, in front of the
-   *  conductor. Threaded from `AppsConfig.screen`, which composition fills; see
-   *  the routing block in the `vendo_make` handler below. */
+  /** UI-generation blueprint §1 point 2 — the screen agent. Threaded from
+   *  `AppsConfig.screen`, which composition fills; see the routing block in the
+   *  `vendo_make` handler below. Unfilled, `vendo_make` has nothing to assemble
+   *  with and says so. */
   screen?: ScreenAssembler;
   /** §4.5's other half — the escalated `plan.vendo`, read back out of the app's
    *  workspace so the build anchors on it. Threaded from
@@ -312,6 +313,24 @@ const nameForUnbuilt = (plan: string | undefined, ask: string): string => {
   return collapsed === "" ? "Vendo app" : collapsed.slice(0, 60);
 };
 
+/**
+ * What an ask that produced no screen says to the person.
+ *
+ * The seam used to answer this with a second engine, so the four ways assembly
+ * can come back empty — unwired, threw, `unavailable`, or `assembled` with no
+ * row — were all silently absorbed. They are now the answer: an unwired
+ * assembler is a composition bug and a composition bug that quietly swaps
+ * engines is a bug nobody fixes. The reason travels verbatim because every one
+ * of these is authored (a `why`, a thrown message, or the two constants below)
+ * and a person reading "I couldn't put that screen together" alone has nothing
+ * to act on.
+ */
+const unbuiltSay = (why: string): string =>
+  why.trim() === ""
+    ? "I couldn't put that screen together."
+    : `I couldn't put that screen together — ${why.trim()}`;
+
+
 const errorOutcome = (error: unknown): ToolOutcome => {
   if (error instanceof VendoError) {
     return {
@@ -342,25 +361,49 @@ export const createAgentTools = (
         const args = input(call.args, ["request"], ["app", "context"]);
         const app = optionalString(args.app, "app");
         const stream = (call as VendoViewStreamingToolCall)[VENDO_VIEW_STREAM];
-        const ask = withContext(args.request as string, optionalString(args.context, "context"));
+        const request = args.request as string;
+        const ask = withContext(request, optionalString(args.context, "context"));
+        /**
+         * The ask, onto the app's memory — the FRONT DOOR's job, because this is
+         * the one place that sees every request that touched an app whichever
+         * engine served it (assembly, the builder, the conductor fall-through,
+         * an edit).
+         *
+         * `request` and not `ask`: the memory holds what the PERSON said. The
+         * `<context>` fence is one calling agent's background for one call, and
+         * replaying it to every future editor as though the person had typed it
+         * is how a stale aside becomes a standing requirement.
+         *
+         * Best-effort, always. There is no arrangement of a lost memory write
+         * that is worse than failing a make the person can already see.
+         */
+        const remember = async (appId: string): Promise<void> => {
+          await runtime.remember({ appId, ask: request }, ctx).catch((error: unknown) => {
+            console.warn(`[vendo] the ask was not recorded on ${appId}: ${
+              error instanceof Error ? error.message : String(error)
+            }`);
+          });
+        };
         if (app === undefined) {
           // ── THE SEAM (blueprint §1 point 2) ─────────────────────────────────
           // "No agent chooses 'quick screen' vs 'real build'. Every request
           // starts in the cheap screen agent." The id is minted HERE, before the
-          // route, because both engines have to use the same one: an escalation
-          // leaves `plan.vendo` and its painted skeleton at this id, and a
-          // conductor that minted its own would strand that skeleton on a second
-          // stream as a card that builds forever.
+          // route, because both ends have to use the same one: an escalation
+          // leaves `plan.vendo` and its painted skeleton at this id, and a build
+          // that minted its own would strand that skeleton on a second stream as
+          // a card that builds forever.
           //
-          // Only `assembled` WITH A ROW ends the call. The row is the check that
-          // makes default-safety true instead of merely intended: `authored`
+          // Only `assembled` WITH A ROW ends the call happily. The row is the
+          // check that makes that true instead of merely intended: `authored`
           // upserts it iff the seam actually compiled and painted the document,
-          // so a screen agent that saved bytes nobody can render leaves no row
-          // and this falls through to the conductor exactly as if it had never
-          // been composed.
+          // so a screen agent that saved bytes nobody can render leaves no row.
           //
-          // `escalate` is the one answer that is NOT a fall-through — see below.
+          // TWO answers now, and no third. `escalate` is a request for the
+          // builder (§4.5's receiving end, below); everything else is assembly
+          // coming back empty, and assembly coming back empty is the ANSWER —
+          // there is no second engine behind this seam to rescue it with.
           const appId = `app_${globalThis.crypto.randomUUID()}` as AppId;
+          let threw: string | undefined;
           const routed = dependencies.screen === undefined
             ? undefined
             : await dependencies.screen.assemble({
@@ -370,15 +413,14 @@ export const createAgentTools = (
                 onView: (part) => stream({ id: vendoViewStreamId(part.appId), part }),
               }),
             }, ctx).catch((error: unknown) => {
-              // A broken assembler is a slower answer, never a failed one.
-              console.warn(`[vendo] the screen agent could not serve ${appId}; the conductor takes it — ${
-                error instanceof Error ? error.message : String(error)
-              }`);
+              threw = error instanceof Error ? error.message : String(error);
+              console.warn(`[vendo] the screen agent could not serve ${appId} — ${threw}`);
               return undefined;
             });
           if (routed?.kind === "assembled") {
             const stored = await runtime.get(appId, ctx).catch(() => null);
             if (stored !== null) {
+              await remember(appId);
               return receipt({
                 id: stored.id,
                 title: stored.name,
@@ -389,33 +431,45 @@ export const createAgentTools = (
           }
           // ── §4.5's RECEIVING END ────────────────────────────────────────────
           // An escalation is the screen agent asking for the builder by name; it
-          // is not the seam failing, so it is not a fall-through. Two answers,
-          // and the deployment's own shape picks which:
+          // is not the seam failing. Two answers, and the deployment's own shape
+          // picks which:
           //
           //  - A sandbox is configured → the build runs. Same `create` a
           //    server-needing ask has always taken, at the SAME app id, so the
           //    plan's skeleton and the finished app share one stream and the
           //    outline becomes the app. The escalated plan rides in as the
           //    brief; the ask still travels verbatim.
-          //  - No sandbox → say so. Falling to the conductor here would be
-          //    dishonest twice over: the conductor is assembly too, so it cannot
-          //    serve what assembly just escalated, and it would spend a full
-          //    build's latency to arrive at a worse version of the screen the
-          //    person was already shown. The skeleton is left as it is — the UI
-          //    unmounts a still-forming card once the turn is over
+          //  - No sandbox → say so, rather than spending a full build's latency
+          //    to arrive at a worse version of the screen the person was already
+          //    shown. The skeleton is left as it is — the UI unmounts a
+          //    still-forming card once the turn is over
           //    (`chrome/thread/parts.tsx`), so the last word is this receipt.
           const escalated = routed?.kind === "escalate";
           const plan = !escalated
             ? undefined
             : await dependencies.escalatedPlan?.(appId, ctx).catch(() => undefined);
-          if (escalated && !runtime.machine.available()) {
+          if (!escalated) {
+            // Assembly produced no screen. Said plainly, at the id whose stream
+            // the person is looking at, instead of quietly restarting the ask in
+            // a different engine.
+            return receipt({
+              id: appId,
+              title: nameForUnbuilt(undefined, ask),
+              status: "failed",
+              say: unbuiltSay(
+                dependencies.screen === undefined ? NO_ASSEMBLER
+                  : threw ?? (routed?.kind === "unavailable" ? routed.why : NOTHING_RENDERABLE),
+              ),
+            });
+          }
+          if (!runtime.machine.available()) {
             return receipt({
               id: appId,
               // The name on the skeleton they are looking at, so the sentence and
               // the card are about the same thing.
               title: nameForUnbuilt(plan, ask),
               status: "failed",
-              say: "That one needs a real build — code running on a server — and I can't do that here.",
+              say: NO_MACHINE,
             });
           }
           let unsaved: string | undefined;
@@ -428,6 +482,9 @@ export const createAgentTools = (
               onView: (part) => stream({ id: vendoViewStreamId(part.appId), part }),
             }),
           }, ctx);
+          // An unsaved create has no row to remember onto; `remember` says so
+          // and moves on, which is the same non-event every other failure is.
+          await remember(created.id);
           // View-only (the store refused the write): the screen IS on the user's
           // page, so this is a success with a caveat, not a failure. Reporting it
           // as an error made the agent apologize for a rendered view and rebuild
@@ -443,7 +500,12 @@ export const createAgentTools = (
               : `${created.name} is on your screen, though I couldn't save it to your apps.`,
           });
         }
-        const result = await runtime.edit(await resolveAppRef(runtime, app, ctx), ask, ctx);
+        const appId = await resolveAppRef(runtime, app, ctx);
+        const result = await runtime.edit(appId, ask, ctx);
+        // Recorded whether or not the change landed: the person DID ask this of
+        // this app, and the next editor reading "asked for X, then asked for X
+        // again, narrower" is reading the truth.
+        await remember(appId);
         // Wave 9 — a ladder-authored automation raises its own card. Published
         // HERE, by the side that knows, rather than duck-typed out of this tool's
         // return value at the bridge: the receipt carries words only.

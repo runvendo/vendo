@@ -1,11 +1,11 @@
 /**
  * PROOF BAR 1 — "agent → checks → slot proven end to end" (blueprint §15).
  *
- * `vendo_make` is routed through the screen agent instead of straight to the
- * conductor, walked through a REAL composed deployment: real store, real guard,
- * real apps pack, the real render seam, the real `AppsRuntime.authored` app half.
- * Nothing on either side of the seam is stubbed except the MODEL, which is
- * scripted so the routing — not a provider's mood — is what this measures.
+ * `vendo_make` is routed through the screen agent, walked through a REAL composed
+ * deployment: real store, real guard, real apps pack, the real render seam, the
+ * real `AppsRuntime.authored` app half. Nothing on either side of the seam is
+ * stubbed except the MODEL, which is scripted so the routing — not a provider's
+ * mood — is what this measures.
  *
  * The two things a stub could hide, and why they are asserted here rather than in
  * `packages/harnesses`:
@@ -13,9 +13,9 @@
  * 1. **The row.** `authored` is what makes a written file an APP: without it a
  *    screen is a picture of one — absent from the person's list, masked as
  *    `not-found` by `vendo_apps_open`. Only a real store can prove it landed.
- * 2. **The fall-through.** The conductor must still answer when the screen agent
- *    does not, and "still works" is not something a harness-level test can claim:
- *    it needs the real front door with the real `create` behind it.
+ * 2. **The empty answer.** Assembly that produces nothing renderable ends the ask
+ *    with a failed receipt, and "nothing else ran" is not something a
+ *    harness-level test can claim: it needs the real front door.
  *
  * DIALECT NOTE: the `.vendo` literal below is a name, a Stack and a Text with no
  * expressions and no aggregates, so the in-flight dialect change (pipes → nested
@@ -222,10 +222,9 @@ describe("vendo_make routed through the screen agent (blueprint §1 point 2)", (
     const listed = await walked.vendo.apps.list({ principal, venue: "chat", presence: "present" });
     expect(listed.map((app) => app.id)).toContain(receipt.id);
 
-    // ── and the conductor never ran ───────────────────────────────────────────
-    // Two model calls: the save step and the validate step, plus the closing one.
-    // A conductor create is a plan call plus a fill call per group on top of that,
-    // so a routed request is measurably the cheap path and not both paths.
+    // ── and nothing ran behind it ─────────────────────────────────────────────
+    // Exactly three model calls: the save step, the validate step, and the closing
+    // one. A second engine picking the ask up would show here as a fourth.
     expect(walked.model.calls).toBe(3);
   }, 60_000);
 
@@ -276,8 +275,7 @@ describe("vendo_make routed through the screen agent (blueprint §1 point 2)", (
     // Proved by EXHAUSTION rather than by a flag: exactly two turns are scripted,
     // and the model throws on a third. `save_app` exists only inside the screen
     // agent's closed loadout, so a run that lands a ready receipt in two calls can
-    // only have been the assembly loop — a conductor handed a `save_app` call on
-    // its first turn has no plan and fails.
+    // only have been the assembly loop.
     const walked = await walk({
       turns: [call("save_app", { content: SPENDING }, "c1"), speak("done")],
     });
@@ -288,28 +286,31 @@ describe("vendo_make routed through the screen agent (blueprint §1 point 2)", (
     expect(receipt.title).toBe("Spending");
   }, 60_000);
 
-  it("falls through to the conductor when assembly produces nothing that renders", async () => {
+  it("fails honestly when assembly produces nothing that renders — no second engine behind it", async () => {
     // The screen agent saves bytes the compiler cannot render. The seam paints
-    // nothing and `authored` stores no row, so the front door finds no app and the
-    // conductor takes the ask — the fall-through that makes this seam default-safe.
+    // nothing and `authored` stores no row, so there is no app — and that is the
+    // ANSWER. This used to fall through to the conductor, which meant a broken
+    // assembler read as a working deployment.
     const walked = await walk({
       turns: [
         call("save_app", { content: "not a document at all" }, "c1"),
         speak("saved"),
-        // …and then the conductor's own calls, answered with prose it cannot use.
-        speak("I am not a plan either"),
-        speak("nor is this"),
+        // Two spare turns the model must never be asked for: if anything runs
+        // after assembly gives up, `calls` says so.
+        speak("nobody should read this"),
+        speak("nor this"),
       ],
     });
-    // The conductor ran and failed on its own terms — which is exactly what would
-    // have happened with no screen agent composed at all.
-    expect(walked.result?.status).toBe("error");
+
+    // An in-band receipt, not a thrown tool error: the ask was understood and
+    // answered, it just could not be served.
+    expect(walked.result?.status).toBe("ok");
+    const receipt = makeReceiptSchema.parse((walked.result as { output: unknown }).output);
+    expect(receipt.status).toBe("failed");
+    expect(receipt.say).toContain("couldn't put that screen together");
+    // Nothing painted, and nothing generated after the assembly loop's own two
+    // turns — the whole point of cutting the fall-through.
     expect(walked.chunks.filter((chunk) => chunk["type"] === "data-vendo-view")).toHaveLength(0);
-    // More calls than the screen agent's own two: the conductor genuinely ran
-    // after it, so the fall-through is real rather than a swallowed failure. Not
-    // an exact count — how many calls the conductor spends before it gives up is
-    // its business, and pinning it here would make this test a tripwire on the
-    // conductor's internals instead of on the seam.
-    expect(walked.model.calls).toBeGreaterThan(2);
+    expect(walked.model.calls).toBe(2);
   }, 60_000);
 });

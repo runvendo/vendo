@@ -1,4 +1,4 @@
-import { authMaterialSchema, principalSchema, type AuthMaterial, type Membership, type PermissionGrant, type Principal } from "@vendoai/core";
+import { authMaterialSchema, principalSchema, type AuthMaterial, type Json, type Membership, type PermissionGrant, type Principal } from "@vendoai/core";
 import type { ConformanceSuite } from "@vendoai/core/conformance";
 import type { HostAuthPreset } from "./shared.js";
 
@@ -42,6 +42,11 @@ export interface HostAuthPresetConformanceOptions {
       Unset, the memberships case asserts the seam stays cleanly absent (no
       orgs asserted ⇒ `can()` degenerates to ownership). */
   expectedMemberships?: Membership[];
+  /** Spec 2026-08-05 §1 — set when the preset under test was configured with a
+      facts-returning user resolver: what `facts` must resolve for
+      `knownSubject`. Unset, the case asserts the seam exists (every composed
+      preset carries it) and stays cleanly empty. */
+  expectedFacts?: Record<string, Json>;
 }
 
 const assert: (condition: unknown, message: string) => asserts condition = (condition, message) => {
@@ -233,6 +238,18 @@ export function hostAuthPresetConformance(opts: HostAuthPresetConformanceOptions
             await oauth.principal(opts.unknownSubject) === null,
             "oauth.principal resolved a subject the host never issued",
           );
+        },
+      },
+      {
+        name: "spec 2026-08-05 §1 — the facts seam rides the shared composition",
+        async run(): Promise<void> {
+          assert(typeof opts.preset.facts === "function", "preset has no facts seam (composeHostAuthPreset supplies it)");
+          const known = await opts.preset.facts(await opts.sessionRequest(opts.knownSubject));
+          assert(
+            JSON.stringify(known) === JSON.stringify(opts.expectedFacts),
+            `facts were ${JSON.stringify(known)}, expected ${JSON.stringify(opts.expectedFacts)}`,
+          );
+          assert(await opts.preset.facts(anonymousRequest()) === undefined, "facts resolved for an anonymous request");
         },
       },
     ],

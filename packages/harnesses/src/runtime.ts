@@ -32,16 +32,18 @@ import {
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
   abandonPendingApprovals,
+  clearFailedTurnRecord,
   guardApprovalIds,
   validateUpsert,
-  type ToolBridgeOptions,
-} from "@vendoai/agent/internal";
+} from "./transcript-rules.js";
+import type { ToolBridgeOptions } from "./tool-bridge.js";
 import {
   createUIMessageStream,
   createUIMessageStreamResponse,
   readUIMessageStream,
   type LanguageModel,
   type UIMessage,
+  type UIMessageStreamWriter,
 } from "ai";
 import {
   classifyHistory,
@@ -52,7 +54,8 @@ import {
 import type { DiscoveryRails } from "./discovery.js";
 import { wrapWorkspaceForRender, type RenderSeamOptions } from "./render-seam.js";
 import { createTurnTools, type MirrorEvent } from "./turn-tools.js";
-import { TextChannel, writeError, writeMirror, writeStatus, writeView } from "./wire.js";
+import { specificWireErrorMessage } from "./wire-error.js";
+import { TextChannel, writeError, writeMirror, writeStatus, writeTurnError, writeView } from "./wire.js";
 
 /**
  * `turn.messages` is OURS and read-only (§1). A frozen array still hands out live
@@ -84,7 +87,9 @@ export interface HireRecord {
   skill?: string;
   /** The specialist's own report back, as the resident received it. */
   summary: string;
-  usage?: { inputTokens: number; outputTokens: number };
+  /** This hire's spend and nobody else's — the full shape, so its row prices on
+   *  its own. The turn's `usage` event never carries it: see `reportRun`. */
+  usage?: UsageTotals;
 }
 
 /**
@@ -193,7 +198,9 @@ export interface HarnessRuntime {
 
 const mintAuditId = (): string => `aud_${globalThis.crypto.randomUUID()}`;
 
-interface UsageTotals {
+/** The metering figures an audit row carries — the `usage` HarnessEvent's own
+ *  shape, which is why a harness can hand one straight over. */
+export interface UsageTotals {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens?: number;
@@ -279,6 +286,13 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
       // The canonical transcript for this turn: our copy, so the flip below never
       // mutates the caller's objects.
       const messages = input.messages.map((message) => structuredClone(message));
+      // self-serve P: a retry CONTINUES the failed turn's trailing assistant
+      // message, so its notice has to go before the real answer is appended
+      // under it. Done on our copy, which is also what persistence diffs against
+      // `pristine` — so the cleared message is written back over the stored row.
+      // `before` is passed because a `regenerate()` posts the history WITHOUT the
+      // message it is replacing: the record to clear is only in the store.
+      clearFailedTurnRecord(messages, before ?? []);
       // The shipped rule (agent.ts `abandonPendingApprovals`): an approval a fresh
       // turn superseded resolves to its abandoned state. Resolving only the GUARD
       // side would leave the PART at `approval-requested` forever, and
@@ -302,6 +316,19 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
       /** The last message we deliberately put on the error channel, so the
        *  stream's own onError does not log it again. */
       let surfaced: string | undefined;
+      /** self-serve P: the writer, reachable from the stream's own onError so a
+       *  failure thrown BEFORE (or outside) the harness loop is recorded in the
+       *  turn too, instead of persisting a blank assistant reply. */
+      let turnWriter: UIMessageStreamWriter<UIMessage> | undefined;
+      /** ONE notice per turn, from whichever path sees the failure first — a turn
+       *  can only fail once. Needed because the stream's onError runs again for
+       *  the very error chunk we deliberately wrote. */
+      let turnErrorRecorded = false;
+      const recordTurnError = (message: string, write: (part: unknown) => void): void => {
+        if (turnErrorRecorded) return;
+        turnErrorRecorded = true;
+        writeTurnError(write, message);
+      };
       // Hoisted beside them: onFinish audits what execute collected.
       const hires: HireRecord[] = [];
 
@@ -315,7 +342,13 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
       // pinned rather than generated, so `onFinish` upserts OVER this row
       // instead of leaving a second copy of the same reply. (`generateId` is
       // called exactly once by the SDK, for the response message id.)
-      const assistantMessageId = globalThis.crypto.randomUUID();
+      //
+      // A transcript that ENDS in an assistant message is one the SDK continues
+      // instead — it ignores `generateId` and reuses that message's id — so the
+      // checkpoint has to be the same message, or a turn that parks during a
+      // retry checkpoints under an id `onFinish` never writes.
+      const continued = messages.at(-1)?.role === "assistant" ? messages.at(-1) : undefined;
+      const assistantMessageId = continued?.id ?? globalThis.crypto.randomUUID();
       /** Calls already checkpointed — a turn can park more than once, and the
        *  second ask deserves the save the first one got. */
       const checkpointed = new Set<string>();
@@ -350,6 +383,7 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
         originalMessages: messages,
         generateId: () => assistantMessageId,
         execute: async ({ writer }) => {
+          turnWriter = writer;
           const text = new TextChannel(writer);
           const mirror = (event: MirrorEvent): void => {
             // Close the open text part first, so a reply that spans tool calls
@@ -475,13 +509,25 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
                   break;
                 case "error":
                   failure = { message: event.message, ...(event.code === undefined ? {} : { code: event.code }) };
-                  // The SCREEN's failure affordance — the same ai-SDK error chunk
-                  // `createAgent` raises, so the host renders its banner, its
-                  // Retry and its detail line. Splicing the sentence into the
-                  // assistant's prose instead would read as the agent talking and
-                  // would offer the user nothing to act on.
                   text.break();
                   surfaced = event.message;
+                  // The TRANSCRIPT's failure affordance, and it goes FIRST. The
+                  // chunk below belongs to no message, so without this the reload
+                  // of a failed turn shows the question answered by a blank reply
+                  // — but writing that chunk re-enters the stream's own `onError`
+                  // (which knows it: see the note there), and by then this
+                  // sentence is a formatted STRING, not the `VendoError` it came
+                  // from. `onError` therefore records the generic constant and
+                  // takes the one-per-turn slot with it, leaving the record below
+                  // a no-op. The banner said "run `vendo login`" and the reload
+                  // said "something went wrong". Claiming the slot first is what
+                  // keeps the two the same sentence.
+                  recordTurnError(event.message, (part) => writer.write(part as never));
+                  // …and the SCREEN's — the same ai-SDK error chunk `createAgent`
+                  // raised, so the host renders its banner, its Retry and its
+                  // detail line. Splicing the sentence into the assistant's prose
+                  // instead would read as the agent talking and would offer the
+                  // user nothing to act on.
                   writeError(writer, event.message);
                   break;
                 case "usage":
@@ -500,8 +546,21 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
               threadId: input.threadId,
               error: error instanceof Error ? error.message : String(error),
             });
-            failure = { message: HARNESS_FAILED, code: "harness" };
-            text.delta(HARNESS_FAILED);
+            // …unless the error is one Vendo itself crafted (the credential
+            // ladder's `vendo login` guidance, the Cloud meter refusal), which
+            // the legacy door put in front of the user verbatim. Substituting
+            // our constant for those is how a keyless deployment migrated onto
+            // this path lost the one sentence that said what to do about it.
+            const message = specificWireErrorMessage(error) ?? HARNESS_FAILED;
+            failure = { message, code: "harness" };
+            // Same two carriers as a reported `error` event above — the screen's
+            // banner/Retry and the transcript's record. A thrown failure used to
+            // be spoken as prose instead, which read as the agent talking, gave
+            // the user nothing to act on, and left a reload showing a blank reply.
+            text.break();
+            surfaced = message;
+            writeError(writer, message);
+            recordTurnError(message, (part) => writer.write(part as never));
           } finally {
             // FIRST: the turn is over, so the door must stop answering for it.
             // A call arriving during turn-end cleanup has nothing to be judged
@@ -533,7 +592,18 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
         onError: (error) => {
           const text = error instanceof Error ? error.message : String(error);
           if (text !== surfaced) console.error("[vendo] harness stream error:", error);
-          return HARNESS_FAILED;
+          // The record for failures the harness loop can never see: `execute`
+          // itself rejecting (building the toolset, mounting the workspace,
+          // minting a turn credential) — those never become a harness `error`
+          // event, and they are exactly where the credential ladder's own
+          // VendoErrors surface. What the USER was told is what the turn keeps:
+          // Vendo's crafted sentence when there is one, the plain constant
+          // otherwise, and nothing of the internals either way. The SDK's writer
+          // swallows a write past close, so this is safe at any point in the
+          // turn's life.
+          const message = specificWireErrorMessage(error) ?? HARNESS_FAILED;
+          recordTurnError(message, (part) => turnWriter?.write(part as never));
+          return message;
         },
       });
 
@@ -544,7 +614,11 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
       void (async () => {
         try {
           for await (const message of readUIMessageStream<UIMessage>({
-            message: { id: assistantMessageId, role: "assistant", parts: [] },
+            message: {
+              id: assistantMessageId,
+              role: "assistant",
+              parts: continued === undefined ? [] : structuredClone(continued.parts),
+            },
             stream: toCheckpoint,
           })) {
             const parked = message.parts.filter(isParkedApproval)
@@ -607,6 +681,13 @@ function withoutDanglingToolCalls(messages: UIMessage[]): UIMessage[] {
   });
 }
 
+// ENG-309: backoff between persist attempts after a completed stream. Short and
+// bounded — long waits would hold the response open for nothing (the user
+// already has the reply); a store blip that outlives ~600ms is a real outage.
+const PERSIST_RETRY_DELAYS_MS = [100, 500] as const;
+
+const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function persistTurn(
   transcript: TranscriptStore,
   input: TurnRunInput<unknown>,
@@ -614,23 +695,35 @@ async function persistTurn(
   before: readonly UIMessage[] | undefined,
 ): Promise<void> {
   const messages = withoutDanglingToolCalls(rawMessages);
-  try {
-    const unchanged = new Map(
-      (before ?? []).map((message) => [message.id, JSON.stringify(message)]),
-    );
-    for (const [seq, message] of messages.entries()) {
-      if (unchanged.get(message.id) === JSON.stringify(message)) continue;
-      await transcript.upsert(input.ctx.principal, input.threadId, message, seq);
+  const unchanged = new Map(
+    (before ?? []).map((message) => [message.id, JSON.stringify(message)]),
+  );
+  // ENG-309: a store blip must not cost the turn. Each attempt re-walks the
+  // whole diff — `upsert` is per-row and idempotent for an unchanged row, so a
+  // partial first pass costs a repeat write, never a corrupted thread.
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      for (const [seq, message] of messages.entries()) {
+        if (unchanged.get(message.id) === JSON.stringify(message)) continue;
+        await transcript.upsert(input.ctx.principal, input.threadId, message, seq);
+      }
+      return;
+    } catch (error) {
+      const delay = PERSIST_RETRY_DELAYS_MS[attempt];
+      if (delay === undefined) {
+        // By the time onFinish runs the reply is already on the wire, so throwing
+        // here would corrupt a delivered stream. A thread silently vanishing after a
+        // successful reply is data loss, so it is named LOUDLY instead.
+        console.error("[vendo] harness runtime: transcript persist failed — this turn was NOT saved", {
+          threadId: input.threadId,
+          subject: input.ctx.principal.subject,
+          attempts: attempt + 1,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return;
+      }
+      await wait(delay);
     }
-  } catch (error) {
-    // By the time onFinish runs the reply is already on the wire, so throwing
-    // here would corrupt a delivered stream. A thread silently vanishing after a
-    // successful reply is data loss, so it is named LOUDLY instead.
-    console.error("[vendo] harness runtime: transcript persist failed — this turn was NOT saved", {
-      threadId: input.threadId,
-      subject: input.ctx.principal.subject,
-      error: error instanceof Error ? error.message : String(error),
-    });
   }
 }
 
@@ -653,8 +746,18 @@ async function saveHarnessState(
   }
 }
 
-/** One audit row per turn carrying the metering figures and any failure —
- *  `audit ⊇ transcript`, so billing never depends on the story layer. */
+/**
+ * The turn's metering rows — `audit ⊇ transcript`, so billing never depends on
+ * the story layer.
+ *
+ * HOW TO READ THEM, which is the whole rule a host needs: every row counts its
+ * OWN spend and nobody else's. The `run` row's `usage` is the resident loop
+ * alone; each `subagent` row's `usage` is that one hire. No row contains
+ * another, so a turn's total is the SUM over its rows — and a row on its own is
+ * never the total. The harness held the other half of this: it used to fold the
+ * hires into the turn's `usage` event AND report each hire, so the rows
+ * overlapped and every turn that hired over-billed by its hires.
+ */
 async function reportRun(
   guard: Guard,
   input: TurnRunInput<unknown>,

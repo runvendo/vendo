@@ -33,18 +33,88 @@ const WORKSPACE_COMMITS = "vendo_workspace_commits";
 
 interface WorkspaceEntry {
   path: string;
-  data: unknown;
+  data?: unknown;
+  /** A tombstone: the commit removes this path (history keeps the content, so
+   *  undo brings it back). */
+  delete?: true;
+  /** Strict compare-and-swap against the revision the caller read — the
+   *  `/orgs` mounts' commit policy. A stale one refuses the WHOLE commit.
+   *  `null` is the create-only guard: the caller read nothing at this path, so
+   *  the commit must lose to whoever created it first. The absent field is
+   *  unguarded. */
+  expectedRevision?: number | null;
 }
 
 function parseWorkspaceEntries(entries: unknown[]): WorkspaceEntry[] {
+  const seen = new Set<string>();
   return entries.map((entry) => {
     const path = (entry as { path?: unknown } | null)?.path;
     if (typeof path !== "string" || path === "") invalid("workspace entry needs a non-empty path");
-    if ((entry as { data?: unknown }).data === undefined) {
+    const tombstone = (entry as { delete?: unknown }).delete === true;
+    if (!tombstone && (entry as { data?: unknown }).data === undefined) {
       invalid(`workspace entry ${path} needs data`);
     }
-    return { path, data: (entry as { data: unknown }).data };
+    const expectedRevision = (entry as { expectedRevision?: unknown }).expectedRevision;
+    if (expectedRevision !== undefined
+      && expectedRevision !== null
+      && typeof expectedRevision !== "number") {
+      invalid(`workspace entry ${path} has a non-numeric expectedRevision`);
+    }
+    // One commit, one mutation per path. Two entries for the same path leave a
+    // commit with no single before-image, so undoing it walks back to the
+    // INTERMEDIATE state the commit itself wrote rather than to the state the
+    // commit found. There is nothing a duplicate expresses that a second commit
+    // does not, so it is caller nonsense and says so.
+    if (seen.has(path)) invalid(`workspace entry ${path} appears twice in one commit`);
+    seen.add(path);
+    return {
+      path,
+      ...(tombstone ? { delete: true as const } : { data: (entry as { data: unknown }).data }),
+      ...(expectedRevision === undefined ? {} : { expectedRevision }),
+    };
   });
+}
+
+/** The revisions a set of paths currently hold, absent for a path with no row —
+ *  the compare half of a strict commit for the entries `land` never sees. */
+async function headRevisions(db: Db, owner: string, paths: string[]): Promise<Map<string, number>> {
+  if (paths.length === 0) return new Map();
+  const result = await db.query(
+    `SELECT path, revision FROM vendo_workspace_files WHERE owner = $1 AND path = ANY($2::text[])`,
+    [owner, paths],
+  );
+  return new Map(result.rows.map((row) => [text(row["path"]), Number(row["revision"])]));
+}
+
+const commitEntries = (commit: VendoRecord): WorkspaceEntry[] =>
+  (commit.data as { entries?: WorkspaceEntry[] }).entries ?? [];
+
+const commitCreated = (commit: VendoRecord): string[] =>
+  (commit.data as { created?: string[] }).created ?? [];
+
+const commitTouches = (commit: VendoRecord, path: string): boolean =>
+  commitEntries(commit).some((entry) => entry.path === path);
+
+/** The newest commit in one owner's ledger that touched `path` — the unit a
+ *  per-path undo walks back. The ledger pages newest-first, so the first hit
+ *  is the answer; a path nobody has touched walks the whole ledger and says
+ *  so, rather than undoing something else. */
+async function newestCommitTouching(
+  ledger: RecordStore,
+  owner: string,
+  path: string,
+): Promise<VendoRecord | undefined> {
+  let cursor: string | undefined;
+  do {
+    const page = await ledger.list({
+      refs: { subject: owner },
+      ...(cursor === undefined ? {} : { cursor }),
+    });
+    const hit = page.records.find((record) => commitTouches(record, path));
+    if (hit !== undefined) return hit;
+    cursor = page.cursor;
+  } while (cursor !== undefined);
+  return undefined;
 }
 
 const encoder = new TextEncoder();
@@ -64,9 +134,12 @@ export function createStoreOps(
   options: { files?: FilesAdapter; workspaceOwner?: string } = {},
 ): StoreOps {
   const db = dbFor(store);
-  /** Workspace verbs carry no subject on the contract — the backend is bound
-   *  to its caller's mount at construction (the cloud door binds per tenant). */
-  const owner = options.workspaceOwner ?? "user_local";
+  /** Whose drawer a workspace verb addresses. The call names it when the mount
+   *  serves more than one user (`/user/**` is the subject's, `/orgs/<org>/**`
+   *  the org's); with no owner on the call the backend falls back to the one it
+   *  was bound to at construction — today's single-player default. */
+  const boundOwner = options.workspaceOwner ?? "user_local";
+  const ownerFor = (opts?: { owner?: string }): string => opts?.owner ?? boundOwner;
 
   /** The helpers all speak Db but only ever call `query`, so a verb's
    *  transaction hands them the same handle with the tx-scoped query in it. */
@@ -81,6 +154,19 @@ export function createStoreOps(
 
   const recordsDoor = (d: Db, collection: string): RecordStore =>
     createReservedRecordStore(d, collection) ?? createRecordStore(d, collection);
+
+  /** commit id → the revision that commit superseded at `path`. Every write a
+   *  commit lands stamps the commit id as its intent, so the workspace history
+   *  rows ARE this index; a commit with no row here created the path (or wrote
+   *  the bytes it already held), and has no older version behind it. */
+  const supersededRevisions = async (owner: string, path: string): Promise<Map<string, number>> => {
+    const result = await db.query(
+      `SELECT revision, intent FROM vendo_workspace_history
+       WHERE path = $1 AND owner = $2 AND intent IS NOT NULL ORDER BY revision ASC`,
+      [path, owner],
+    );
+    return new Map(result.rows.map((row) => [text(row["intent"]), Number(row["revision"])]));
+  };
 
   /** Reassemble one thread as its door record (shared read shape). */
   const readThread = async (d: Db, id: string): Promise<VendoRecord | null> => {
@@ -316,6 +402,7 @@ export function createStoreOps(
     // -----------------------------------------------------------------------
     workspace: {
       async index(query) {
+        const owner = ownerFor(query);
         const limit = pageLimit(query?.limit);
         const params: unknown[] = [owner];
         let where = "owner = $1";
@@ -342,7 +429,8 @@ export function createStoreOps(
             : {}),
         };
       },
-      async read(paths) {
+      async read(paths, opts) {
+        const owner = ownerFor(opts);
         const rows = workspaceRows(db, files);
         const result: Record<string, unknown> = {};
         for (const path of paths) {
@@ -353,6 +441,7 @@ export function createStoreOps(
         return result;
       },
       async commit(entries, opts) {
+        const owner = ownerFor(opts);
         const parsed = parseWorkspaceEntries(entries);
         const body = JSON.stringify(parsed);
         const key = opts?.idempotencyKey;
@@ -372,6 +461,9 @@ export function createStoreOps(
         let replayed: boolean | undefined;
         try {
           for (const entry of parsed) {
+            // A tombstone stages nothing: the removal is a row delete, and the
+            // content it removes is already stored (history keeps it).
+            if (entry.delete === true) continue;
             prepared.push({
               path: entry.path,
               write: await rows.prepare(owner, entry.path, encoder.encode(JSON.stringify(entry.data))),
@@ -397,9 +489,58 @@ export function createStoreOps(
               return (existing?.data as { body?: unknown } | undefined)?.body === body;
             }
             const txRows = workspaceRows(tdb, filesFor(tdb));
+            // `null` is a guard, so only the ABSENT field stays out of the map —
+            // `get` then tells "must not exist yet" (null) from "unguarded"
+            // (undefined), which a filter on falsiness would collapse.
+            const expected = new Map<string, number | null>(
+              parsed
+                .filter((entry) => entry.expectedRevision !== undefined)
+                .map((entry) => [entry.path, entry.expectedRevision as number | null]),
+            );
+            // Strict entries compare-and-swap against the revision the caller
+            // read. A lost swap throws, so the transaction takes the whole
+            // commit back with it: a conflicting set applies none of itself and
+            // the caller re-reads once.
+            //
+            // `land` performs its own compare, so these heads serve the two
+            // strict entries that never reach it: a TOMBSTONE, and a write whose
+            // bytes already match the head. Both are still commits against a
+            // revision the caller read, and skipping their compare let a stale
+            // delete erase a colleague's newer content outright.
+            const heads = await headRevisions(tdb, owner, [...expected.keys()]);
+            const moved = (path: string): boolean => {
+              const at = expected.get(path);
+              return at !== undefined && heads.get(path) !== at;
+            };
+            const conflicts: string[] = [];
             for (const staged of prepared) {
-              if (staged.write === "unchanged") continue;
-              await txRows.land(owner, staged.write, commitId);
+              if (staged.write === "unchanged") {
+                if (moved(staged.path)) conflicts.push(staged.path);
+                continue;
+              }
+              const at = expected.get(staged.path);
+              const written = await txRows.land(
+                owner,
+                staged.write,
+                commitId,
+                at === undefined ? undefined : { strict: true, expectedRevision: at },
+              );
+              if (written.conflict === true) conflicts.push(staged.path);
+            }
+            for (const entry of parsed) {
+              if (entry.delete !== true) continue;
+              if (moved(entry.path)) {
+                conflicts.push(entry.path);
+                continue;
+              }
+              await txRows.remove(owner, entry.path, commitId);
+            }
+            if (conflicts.length > 0) {
+              throw new VendoError(
+                "conflict",
+                `the workspace moved on under ${conflicts.sort().join(", ")}; nothing was committed`,
+                { conflicts },
+              );
             }
             return undefined;
           });
@@ -419,41 +560,97 @@ export function createStoreOps(
         }
       },
       async history(query) {
+        const owner = ownerFor(query);
+        const path = query?.path;
         const page = await createRecordStore(db, WORKSPACE_COMMITS).list({
           refs: { subject: owner },
           ...(query?.limit === undefined ? {} : { limit: query.limit }),
           ...(query?.cursor === undefined ? {} : { cursor: query.cursor }),
         });
+        // A path narrows the page in place, so the ledger's keyset cursor keeps
+        // meaning exactly what it meant: follow it for the next page, which may
+        // hold more of this path's commits (or none).
+        const records = path === undefined
+          ? page.records
+          : page.records.filter((record) => commitTouches(record, path));
+        // The before-revision the entry restores to. It is not in the ledger —
+        // it is the revision the write superseded, which every commit stamped
+        // with its own id as the intent when it landed.
+        const superseded = path === undefined
+          ? new Map<string, number>()
+          : await supersededRevisions(owner, path);
         return {
-          entries: page.records.map((record) => ({
+          entries: records.map((record) => ({
             commitId: record.id,
-            entries: (record.data as { entries?: unknown }).entries ?? [],
+            entries: commitEntries(record),
+            at: record.createdAt,
+            ...(superseded.has(record.id) ? { revision: superseded.get(record.id) } : {}),
           })),
           ...(page.cursor === undefined ? {} : { cursor: page.cursor }),
         };
       },
       /** Land the restore and consume the history it walked in ONE transaction. */
-      async undo(commitId) {
-        await db.transaction(async (q) => {
+      async undo(target, opts) {
+        const owner = ownerFor(opts);
+        return await db.transaction(async (q) => {
           const tdb = txDb(q);
           const ledger = createRecordStore(tdb, WORKSPACE_COMMITS);
-          const commit = await ledger.get(commitId);
-          if (commit === null) {
-            throw new VendoError("not-found", `commit ${commitId} not found`);
-          }
-          const data = commit.data as { entries?: WorkspaceEntry[]; created?: string[] };
-          const created = new Set(data.created ?? []);
           const txRows = workspaceRows(tdb, filesFor(tdb));
-          for (const entry of data.entries ?? []) {
-            if (created.has(entry.path)) {
-              // The commit created this path — undoing removes it (recorded to
-              // history, §3.3's append-only law, so it stays recoverable).
-              await txRows.remove(owner, entry.path, `undo ${commitId}`);
-            } else {
-              await txRows.undo(owner, entry.path);
+          /** The commit created this path, so undoing it removes the file
+              (recorded to history, §3.3's append-only law, so it stays
+              recoverable); otherwise the superseded revision comes back. */
+          const undoOne = async (
+            commitId: string,
+            path: string,
+            created: Set<string>,
+          ): Promise<number | undefined> => {
+            if (created.has(path)) {
+              await txRows.remove(owner, path, `undo ${commitId}`);
+              return undefined;
             }
+            const outcome = await txRows.undo(owner, path);
+            return outcome.status === "ok" ? outcome.revision : undefined;
+          };
+
+          if (typeof target === "string") {
+            const commit = await ledger.get(target);
+            // Another owner's commit is not this owner's to undo, and saying so
+            // would make the door an existence oracle: it is simply not found.
+            if (commit === null || commit.refs?.["subject"] !== owner) {
+              throw new VendoError("not-found", `commit ${target} not found`);
+            }
+            const created = new Set(commitCreated(commit));
+            for (const entry of commitEntries(commit)) {
+              await undoOne(target, entry.path, created);
+            }
+            await ledger.delete(target);
+            return {};
           }
-          await ledger.delete(commitId);
+
+          const { path } = target;
+          const commit = await newestCommitTouching(ledger, owner, path);
+          if (commit === undefined) {
+            throw new VendoError("not-found", `no commit has touched ${path}`);
+          }
+          const created = new Set(commitCreated(commit));
+          const revision = await undoOne(commit.id, path, created);
+          // Consume ONLY this path: the rest of the commit is still undoable,
+          // and a later whole-commit undo must not restore this path twice.
+          const rest = commitEntries(commit).filter((entry) => entry.path !== path);
+          if (rest.length === 0) {
+            await ledger.delete(commit.id);
+          } else {
+            await ledger.put({
+              id: commit.id,
+              data: {
+                ...(commit.data as Record<string, Json>),
+                entries: rest as unknown as Json,
+                created: [...created].filter((each) => each !== path),
+              },
+              ...(commit.refs === undefined ? {} : { refs: commit.refs }),
+            });
+          }
+          return revision === undefined ? {} : { revision };
         });
       },
     },

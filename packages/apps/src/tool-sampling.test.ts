@@ -1,7 +1,7 @@
 import type { RunContext, ToolCall, ToolDescriptor, ToolOutcome, ToolRegistry } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
-import { createApps } from "./index.js";
-import { guardFixture, memoryStore, scriptedLanguageModel } from "./testing/index.js";
+import { createApps, type AppsRuntime } from "./index.js";
+import { authoringAssembler, guardFixture, memoryStore, scriptedLanguageModel } from "./testing/index.js";
 
 const ctx: RunContext = {
   principal: { kind: "user", subject: "user_sampling" },
@@ -41,6 +41,31 @@ class RecordingTools implements ToolRegistry {
 }
 
 /**
+ * The runtime the sampler runs inside.
+ *
+ * `create` builds its tool context (`generationToolContext`) before it hands the
+ * ask to an engine, so the probes below happen exactly as they always did — but
+ * the create only COMPLETES if something can build a screen, and the ONE engine
+ * is the assembler in the `screen` slot.
+ */
+const sampling = (
+  registry: ToolRegistry,
+  over: Partial<Parameters<typeof createApps>[0]> = {},
+): AppsRuntime => {
+  let runtime: AppsRuntime;
+  runtime = createApps({
+    store: memoryStore(),
+    guard: guardFixture(),
+    tools: registry,
+    catalog: [],
+    model: scriptedLanguageModel(generated),
+    screen: authoringAssembler(() => runtime, generated),
+    ...over,
+  });
+  return runtime;
+};
+
+/**
  * Re-gate 2026-07-26 finding 2 (create-time Composio probes): the shape-card
  * sampler probes every no-arg read tool once per runtime. Connector tools
  * (descriptor.toolkit set) whose toolkit is not CONNECTED for the caller must
@@ -55,14 +80,7 @@ describe("generation tool sampling and connector connectedness", () => {
       readDescriptor("gmail_FETCH_EMAILS", { toolkit: "gmail" }),
       readDescriptor("slack_LIST_CHANNELS", { toolkit: "slack" }),
     ]);
-    const runtime = createApps({
-      store: memoryStore(),
-      guard: guardFixture(),
-      tools,
-      catalog: [],
-      model: scriptedLanguageModel(generated),
-      connectedToolkits: async () => ["slack"],
-    });
+    const runtime = sampling(tools, { connectedToolkits: async () => ["slack"] });
 
     await runtime.create({ prompt: "Build a dashboard" }, ctx);
 
@@ -76,13 +94,7 @@ describe("generation tool sampling and connector connectedness", () => {
       readDescriptor("host_listAccounts"),
       readDescriptor("gmail_FETCH_EMAILS", { toolkit: "gmail" }),
     ]);
-    const runtime = createApps({
-      store: memoryStore(),
-      guard: guardFixture(),
-      tools,
-      catalog: [],
-      model: scriptedLanguageModel(generated),
-    });
+    const runtime = sampling(tools);
 
     await runtime.create({ prompt: "Build a dashboard" }, ctx);
 
@@ -95,20 +107,23 @@ describe("generation tool sampling and connector connectedness", () => {
       readDescriptor("host_listAccounts"),
       readDescriptor("gmail_FETCH_EMAILS", { toolkit: "gmail" }),
     ]);
-    const model = scriptedLanguageModel((call) => {
-      // The generation prompt still names the unprobed connector tool.
-      expect(JSON.stringify(call.prompt)).toContain("gmail_FETCH_EMAILS");
-      return generated;
-    });
-    const runtime = createApps({
-      store: memoryStore(),
-      guard: guardFixture(),
-      tools,
-      catalog: [],
-      model,
-      connectedToolkits: async () => [],
-    });
+    const runtime = sampling(tools, { connectedToolkits: async () => [] });
+
     await runtime.create({ prompt: "Build a dashboard" }, ctx);
+
+    expect(tools.executed).not.toContain("gmail_FETCH_EMAILS");
+    // …and the unprobed connector tool is still IN the tool context the runtime
+    // hands every check and every engine. The brain's create prompt is gone, so
+    // the surviving surface that reads that context is `validate`, whose
+    // unknown-tool finding prints the whole host inventory it measured against.
+    const verdict = await runtime.validate({
+      document: '<App name="Dash"><Query id="q" tool="nope_not_a_tool"/><Text text="hi"/></App>',
+    }, ctx);
+    const inventory = verdict.findings.map(({ message }) => message).join(" ");
+    expect(inventory).toContain("gmail_FETCH_EMAILS");
+    expect(inventory).toContain("host_listAccounts");
+    // The probe never ran, so no shape was learned for it — listing is reach,
+    // not a promise that the tool answered.
     expect(tools.executed).not.toContain("gmail_FETCH_EMAILS");
   });
 
@@ -120,12 +135,7 @@ describe("generation tool sampling and connector connectedness", () => {
       status: "connect-required",
       connect: { connector: "composio", toolkit: "gmail", message: "Connect gmail first." },
     });
-    const runtime = createApps({
-      store: memoryStore(),
-      guard: guardFixture(),
-      tools,
-      catalog: [],
-      model: scriptedLanguageModel(generated),
+    const runtime = sampling(tools, {
       // Connected per the broker, but the account expired server-side: the
       // execute outcome is connect-required. One probe, then settled.
       connectedToolkits: async () => ["gmail"],
@@ -145,14 +155,7 @@ describe("generation tool sampling and connector connectedness", () => {
       status: "connect-required",
       connect: { connector: "composio", toolkit: "gmail", message: "Connect gmail first." },
     });
-    const runtime = createApps({
-      store: memoryStore(),
-      guard: guardFixture(),
-      tools,
-      catalog: [],
-      model: scriptedLanguageModel(generated),
-      connectedToolkits: async () => ["gmail"],
-    });
+    const runtime = sampling(tools, { connectedToolkits: async () => ["gmail"] });
 
     await runtime.create({ prompt: "Build a dashboard" }, ctx);
     // A different principal with a WORKING account: the probe now succeeds
@@ -178,14 +181,7 @@ describe("generation tool sampling and connector connectedness", () => {
         status: "connect-required",
         connect: { connector: "composio", toolkit: "gmail", message: "Connect gmail first." },
       });
-      const runtime = createApps({
-        store: memoryStore(),
-        guard: guardFixture(),
-        tools,
-        catalog: [],
-        model: scriptedLanguageModel(generated),
-        connectedToolkits: async () => ["gmail"],
-      });
+      const runtime = sampling(tools, { connectedToolkits: async () => ["gmail"] });
 
       await runtime.create({ prompt: "Build a dashboard" }, ctx);
       // Within the TTL the dead probe stays quiet.
@@ -207,12 +203,7 @@ describe("generation tool sampling and connector connectedness", () => {
       readDescriptor("host_listAccounts"),
       readDescriptor("slack_LIST_CHANNELS", { toolkit: "slack" }),
     ]);
-    const runtime = createApps({
-      store: memoryStore(),
-      guard: guardFixture(),
-      tools,
-      catalog: [],
-      model: scriptedLanguageModel(generated),
+    const runtime = sampling(tools, {
       connectedToolkits: async () => {
         throw new Error("broker offline");
       },

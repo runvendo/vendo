@@ -90,7 +90,7 @@ import type {
 import type {
   Thread as AgentThread,
   ThreadSummary as AgentThreadSummary,
-} from "@vendoai/agent";
+} from "./src/threads.js";
 
 type AutomationsEntry = Awaited<ReturnType<AutomationsEngine["list"]>>[number];
 type AutomationsEnableResult = Awaited<ReturnType<AutomationsEngine["enable"]>>;

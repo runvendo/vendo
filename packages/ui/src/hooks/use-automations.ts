@@ -1,7 +1,7 @@
 /** Automation and run transport (08-ui §3, 07-automations §1). */
 import type { AppId, RunId } from "@vendoai/core";
 import { useCallback } from "react";
-import { useVendoContext } from "../context.js";
+import { useVendoProvider } from "../context.js";
 import { type PollOptions, useResource } from "./use-resource.js";
 import type { AutomationEntry, EnableResult, RunPlan, RunRecord, RunStatus } from "../wire-types.js";
 
@@ -28,7 +28,7 @@ export function useAutomations(options?: PollOptions): {
    *  new run's id, and refreshes the list so its row is live. */
   rerun(runId: RunId): Promise<RunId>;
 } {
-  const { client } = useVendoContext();
+  const { client } = useVendoProvider();
   const list = useCallback(() => client.automations.list(), [client]);
   const { data, error, isLoading, refresh } = useResource(list, [] as AutomationEntry[], options);
 

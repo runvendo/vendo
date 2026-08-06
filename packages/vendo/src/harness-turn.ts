@@ -30,31 +30,37 @@ import {
   type ToolRegistry,
   type WorkspaceFs,
 } from "@vendoai/core";
-import {
-  latestUserIntent,
-  THREAD_ID_HEADER,
-  ThreadRepository,
-  upsertMessage,
-  validateMessage,
-  validateUpsert,
-  wireErrorMessage,
-  type CapabilityMissConfig,
-  type ScriptedTurn,
-  type ToolBridgeOptions,
-  type ToolSearchConfig,
-} from "@vendoai/agent/internal";
+import { ThreadRepository, type Thread, type ThreadSummary } from "./threads.js";
 import type { VendoGuard } from "@vendoai/guard";
 import { harnessStateStore, threadMessageStore, workspaceStore, type VendoStore } from "@vendoai/store";
 import {
   createDiscoveryRails,
   createHarnessRuntime,
+  latestUserIntent,
   provideHarnessAdapters,
+  THREAD_ID_HEADER,
+  upsertMessage,
+  validateMessage,
+  validateUpsert,
+  wireErrorMessage,
+  type CapabilityMissConfig,
   type ToolDoorPort,
   type DiscoveryRails,
   type HarnessRuntimeDeps,
+  type ToolBridgeOptions,
+  type ToolSearchConfig,
 } from "@vendoai/harnesses";
 import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
-import type { LanguageModel, UIMessage } from "ai";
+import type { LanguageModel, UIMessage, UIMessageStreamWriter } from "ai";
+
+/** One scripted turn's body: everything it writes goes onto the same stream a
+ *  live turn writes to, and is persisted by the same `onFinish`. Tour mode's
+ *  play shape — it lives here because this door is the one that serves the
+ *  turns a tour scripts. */
+export type ScriptedTurn = (input: {
+  writer: UIMessageStreamWriter<UIMessage>;
+  signal?: AbortSignal;
+}) => Promise<void>;
 
 
 export interface HarnessTurnsConfig {
@@ -163,19 +169,33 @@ export interface HarnessTurns {
     principal: Principal,
     opts?: { host?: Record<string, string>; memberships?: Membership[] },
   ): Promise<WorkspaceFs>;
+  /** D4 — the thread LIFECYCLE, on the door that serves the turns. The same
+   *  `ThreadRepository` this door already resolves every turn through, so the
+   *  listing, the read and the delete a client sees are the ones the turn wrote.
+   *  Unlike `stream`, this needs no SQL: the repository is adapter-only, so these
+   *  work on a hosted store too. */
+  threads: {
+    get(id: ThreadId, ctx: RunContext): Promise<Thread | null>;
+    list(ctx: RunContext): Promise<ThreadSummary[]>;
+    /** Also releases the thread's searched-in loadout, so a reused id can never
+     *  inherit stale tools — the cleanup stays glued to the delete. */
+    delete(id: ThreadId, ctx: RunContext): Promise<void>;
+  };
+  /** D6 — drop a subject's threads when its ephemeral session is swept, and
+   *  release each evicted thread's loadout with them. */
+  evictSubject(subject: string): Promise<void>;
 }
 
 export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
   const threads = new ThreadRepository(config.store);
   // LAZY, and the laziness is load-bearing twice over.
   //
-  // `threadMessageStore` and `workspaceStore` both resolve a SQL handle
-  // (`dbFor`) as their first act. Building them at compose would (a) do work
-  // inside `createVendo`, which the common edge wiring calls at module init where
-  // Workers forbids it, and (b) throw "Unknown VendoStore handle" outright for a
-  // hosted store — which has no local SQL and, in wave 1, no workspace or
-  // transcript door of its own. Deferred, a hosted deployment composes exactly as
-  // before and only a host that actually drives a harness turn meets the gap.
+  // These three helpers pick their backend (`backendOf`) as their first act.
+  // Building them at compose would (a) do work inside `createVendo`, which the
+  // common edge wiring calls at module init where Workers forbids it, and (b)
+  // throw outright for a store that offers neither a SQL handle nor a StoreOps
+  // surface. Deferred, such a deployment composes exactly as before and only a
+  // host that actually drives a harness turn meets the gap.
   let sql: {
     transcript: ReturnType<typeof threadMessageStore<UIMessage>>;
     workspaces: ReturnType<typeof workspaceStore>;
@@ -195,10 +215,10 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       } catch (cause) {
         throw new VendoError(
           "not-implemented",
-          "Serving a turn through a harness needs a SQL-backed store: the transcript and the workspace "
-          + "(build contract §3.3 / §6) are tables. The configured store has no SQL handle — the Cloud "
-          + "hosted store does not serve the workspace or per-message transcript doors yet. Pass "
-          + "`store: postgres(url)` (or the local default) to use `harness:`.",
+          "Serving a turn through a harness needs somewhere to keep the transcript and the workspace "
+          + "(build contract §3.3 / §6): it needs a SQL-backed store (`store: postgres(url)`, or the "
+          + "local default) or a StoreOps-capable store (the Cloud hosted store). The configured store "
+          + "is neither.",
           { cause },
         );
       }
@@ -328,6 +348,25 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
   };
 
   return {
+    threads: {
+      get: (id, ctx) => threads.get(id, ctx),
+      list: (ctx) => threads.list(ctx),
+      delete: async (id, ctx) => {
+        loadedTools.delete(id);
+        await threads.delete(id, ctx);
+      },
+    },
+
+    async evictSubject(subject) {
+      // Release each evicted thread's searched-in loadout so a reused id can't
+      // inherit stale tools, and so memory is reclaimed on session sweep. Awaited
+      // rather than fire-and-forget (`createAgent`'s signature was synchronous):
+      // the caller is the sweep, which has somewhere to put a failure.
+      for (const id of await threads.evictSubject(subject)) {
+        loadedTools.delete(id);
+      }
+    },
+
     async workspace(principal, opts) {
       // §9.7 — the mount set is the host's ASSERTIONS for this principal. The
       // seam is keyed on the principal precisely so this door (which has no
@@ -361,6 +400,13 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       // sending its stale copy. The thread becomes permanently unusable for them.
       validateUpsert(thread.messages, input.message);
       upsertMessage(thread.messages, input.message);
+
+      // Before the FIRST write, not after it. `threads.persist` goes through the
+      // adapter seam and so succeeds even on a store that can keep neither the
+      // transcript nor the workspace — so resolving the doors any later makes the
+      // refusal a half-write, leaving a `vendo_threads` row carrying the user's
+      // message on a deployment that can never answer it.
+      const { transcript, workspaces, harnessState } = sqlDoors();
 
       // The thread ROW has to exist before the runtime writes message rows:
       // `threadMessageStore.upsert` sources its INSERT from `vendo_threads`
@@ -396,7 +442,6 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
         return played;
       }
 
-      const { transcript, workspaces, harnessState } = sqlDoors();
       // §9.7 — the turn's façade mounts every org the wire asserted for this
       // request, so an agent turn can read and write the team's files at all.
       const workspace = await workspaces.open(input.ctx.principal, {

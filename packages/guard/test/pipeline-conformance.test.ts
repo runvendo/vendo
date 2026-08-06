@@ -76,9 +76,11 @@ describe("decision pipeline conformance", () => {
             judge: { action: "block", decidedBy: "judge" },
             // 05 §6: away holds only app-bound grants — the default posture
             // auto-runs present calls but parks away ones (reads included: away
-            // execution needs captured authority to act as the user).
+            // execution needs captured authority to act as the user). And the
+            // blank state parks `destructive` at any presence: an effect nobody
+            // can take back needs a person, the same reason `ungraded` parks.
             default:
-              presence === "away"
+              presence === "away" || risk === "destructive"
                 ? { action: "ask", decidedBy: "default" }
                 : { action: "run", decidedBy: "default" },
             // The clamp outranks every draft the pipeline can reach here.
@@ -322,6 +324,10 @@ describe("decision pipeline conformance", () => {
   it("write breaker counts write and destructive runs per trigger run key", async () => {
     const guard = createGuard({
       store: createMemoryStore(),
+      // The blank state parks `destructive`, so the question this pins — does a
+      // destructive RUN spend the budget? — needs a host that opted into the run
+      // in writing before there is a run to charge.
+      policy: { rules: [{ match: { risk: "destructive" }, action: "run" }] },
       breakers: { maxWritesPerRun: 1, maxCallsPerMinute: 100 },
     });
     const read = descriptor("read");

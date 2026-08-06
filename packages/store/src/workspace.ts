@@ -1,7 +1,9 @@
 import { VendoError, type FilesAdapter, type Membership, type Principal, type RunContext, type WorkspaceFs } from "@vendoai/core";
 import { storeFiles } from "./files-store.js";
 import { appAccess, orgOfPath } from "./helpers/app-access.js";
-import { dbFor, type VendoStore } from "./store.js";
+import { backendOf } from "./helpers/backend.js";
+import type { VendoStore } from "./store.js";
+import { workspaceOpsRows } from "./workspace-ops-rows.js";
 import { HOST_MOUNT, normalizePath, pathForbidden, pathNotFound, WorkspaceStoreFs } from "./workspace-fs.js";
 import { workspaceRows, type AppMount, type UndoOutcome, type WorkspaceHistoryEntry } from "./workspace-rows.js";
 
@@ -75,7 +77,17 @@ export function workspaceStore(store: VendoStore, options: { files?: FilesAdapte
       here even though the reads it already served stand. */
   canCommit(caller: WorkspaceCaller, path: string): Promise<boolean>;
 } {
-  const rows = workspaceRows(dbFor(store), options.files ?? storeFiles(store));
+  // T1/D1 — the branch is INSIDE the helper: a store with its own Postgres
+  // keeps today's row helpers, a store with only the 32-op contract (the hosted
+  // one: a key, no database) rides the same façade over the wire. Nothing above
+  // this line can tell the two apart, which is what lets a hosted deployment
+  // serve harness turns with zero caller changes. The permission checks below
+  // are untouched — `can()` reads through the records door, which the hosted
+  // store already serves.
+  const backend = backendOf(store, "the workspace");
+  const rows = backend.kind === "sql"
+    ? workspaceRows(backend.db, options.files ?? storeFiles(store))
+    : workspaceOpsRows(backend.ops);
   const access = appAccess(store);
 
   /** The ctx `can()` reads: it only ever looks at the subject and the asserted

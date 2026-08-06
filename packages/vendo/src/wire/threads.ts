@@ -1,4 +1,4 @@
-import { VendoError, withSseKeepalive } from "@vendoai/core";
+import { defineOwn, isPlainObject, VendoError, withSseKeepalive } from "@vendoai/core";
 import { UI_MESSAGE_STREAM_HEADERS } from "ai";
 import { registerActiveTurn, steerActiveTurn, touchActiveTurn, trackTurnResponse } from "../turn-liveness.js";
 import { recordResumableTurn, resumableTurnStream } from "../turn-resume.js";
@@ -7,11 +7,76 @@ import { json, requestJson, route, string, type RouteEntry } from "./shared.js";
 /** The effective thread id the agent stamps on every turn response (03 §1). */
 const THREAD_ID_HEADER = "x-vendo-thread-id";
 
+/** Decision 3 (spec 2026-08-05): the situation channel is capped at 8 KB on
+    BOTH ends. The client truncates before sending; this is the server's own
+    enforcement on whatever actually arrives. The channel is best-effort
+    observation, never a validation surface — anything that is not an object,
+    and anything past the budget, is dropped rather than refused. */
+const SITUATION_CAP_BYTES = 8192;
+
+const encoder = new TextEncoder();
+const bytesOf = (text: string): number => encoder.encode(text).byteLength;
+
+/** What this entry costs the budget, or `undefined` when it cannot be rendered
+ *  at all — a client can nest an array past `JSON.stringify`'s stack, and this
+ *  channel drops what it cannot use rather than failing the turn over it. The
+ *  prompt assembler stringifies the same value, so an entry that throws here
+ *  must not be carried forward. */
+function rendered(entry: unknown): string | undefined {
+  if (typeof entry === "string") return entry;
+  try {
+    return JSON.stringify(entry) ?? "";
+  } catch {
+    return undefined;
+  }
+}
+
+/** At most `budget` UTF-8 bytes, cut on a CODE POINT boundary: a cut through an
+ *  astral character leaves a lone surrogate no provider's JSON body can carry. */
+function sliceToBytes(text: string, budget: number): string {
+  let spent = 0;
+  let end = 0;
+  for (const char of text) {
+    const size = bytesOf(char);
+    if (spent + size > budget) break;
+    spent += size;
+    end += char.length;
+  }
+  return text.slice(0, end);
+}
+
+function cappedSituation(value: unknown): Record<string, unknown> | undefined {
+  if (!isPlainObject(value)) return undefined;
+  const capped: Record<string, unknown> = {};
+  let budget = SITUATION_CAP_BYTES;
+  for (const [key, entry] of Object.entries(value)) {
+    const text = rendered(entry);
+    if (text === undefined) continue;
+    const cost = bytesOf(key) + bytesOf(text);
+    // defineOwn: a client key named __proto__ must become data, never the
+    // prototype of the bag the host's own guards and tools read.
+    if (cost <= budget) {
+      defineOwn(capped, key, entry);
+      budget -= cost;
+      continue;
+    }
+    if (typeof entry === "string" && budget > bytesOf(key)) {
+      defineOwn(capped, key, sliceToBytes(entry, budget - bytesOf(key)));
+    }
+    break;
+  }
+  return Object.keys(capped).length > 0 ? capped : undefined;
+}
+
 /** 09 §3 — the /threads wire area: chat streaming plus thread list/get/delete. */
 export const threadRoutes: RouteEntry[] = [
   route("POST", "/threads", async ({ request, deps, context }) => {
     const body = await requestJson(request);
     const ctx = await context("chat");
+    // Spec 2026-08-05 §2 — the client's situation rides the message POST and
+    // lives exactly one turn: onto THIS request's ctx (prompt assembly reads
+    // ctx.context), never onto anything the store writes.
+    const situation = cappedSituation(body["context"]);
     void deps.telemetry?.track("agent_run", {});
     // AGENT-3 (fast path): a propagated client disconnect aborts the request,
     // which cancels the agent loop — provider calls stop instead of running to
@@ -23,22 +88,13 @@ export const threadRoutes: RouteEntry[] = [
     const turnAbort = new AbortController();
     if (request.signal.aborted) turnAbort.abort();
     else request.signal.addEventListener("abort", () => turnAbort.abort(), { once: true });
-    // Architecture §3 — one turn, two possible thinkers, ONE request shape. The
-    // harness path takes the same `{ threadId?, message, ctx, signal }` and
-    // returns the same SSE `Response` with the same thread-id header, so nothing
-    // downstream (liveness, abort, the client) can tell which ran.
-    //
-    // Post-flip (wave 2) EVERY host is routed here — `harness:` when the host
-    // named one, `vendo()` when they did not. `deps.harness` is unset for exactly
-    // one reason, and it is a capability fact rather than a preference: a store
-    // with no SQL handle cannot serve the transcript and workspace TABLES a
-    // harness turn needs, so those deployments keep `agent.stream`, which needs
-    // neither. See `storeServesHarnessTurns` in server.ts.
-    const runTurn = deps.harness ?? deps.agent;
-    const turn = await runTurn.stream({
+    // Architecture §3 — ONE thinker's door. `harness:` when the host named one,
+    // `vendo()` when they did not; a store that can keep neither the transcript
+    // nor the workspace refuses the turn inside the door, naming what it needs.
+    const turn = await deps.harness.stream({
       ...(body["threadId"] === undefined ? {} : { threadId: string(body["threadId"], "threadId") }),
       message: body["message"] as never,
-      ctx,
+      ctx: situation === undefined ? ctx : { ...ctx, context: situation },
       signal: turnAbort.signal,
     });
     const threadId = turn.headers.get(THREAD_ID_HEADER);
@@ -110,8 +166,11 @@ export const threadRoutes: RouteEntry[] = [
       ),
     });
   }),
+  // D4 — the thread lifecycle is the HARNESS door's, on every deployment. It
+  // rides the adapter-only ThreadRepository, so unlike `stream` it needs no SQL
+  // handle and a hosted store is served here too.
   route("GET", "/threads", async ({ deps, context }) => {
-    return json(await deps.agent.threads.list(await context("chat")));
+    return json(await deps.harness.threads.list(await context("chat")));
   }),
   // Grouped like the old if-chain arm: ANY method resolves context first, and
   // an unhandled method falls through to the table's not-found.
@@ -119,12 +178,12 @@ export const threadRoutes: RouteEntry[] = [
     const ctx = await context("chat");
     const id = string(params["id"], "thread id");
     if (request.method === "GET") {
-      const thread = await deps.agent.threads.get(id, ctx);
+      const thread = await deps.harness.threads.get(id, ctx);
       if (thread === null) throw new VendoError("not-found", `thread not found: ${id}`);
       return json(thread);
     }
     if (request.method === "DELETE") {
-      await deps.agent.threads.delete(id, ctx);
+      await deps.harness.threads.delete(id, ctx);
       return json({});
     }
     return undefined;

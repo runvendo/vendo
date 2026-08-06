@@ -3,26 +3,23 @@ import {
   type AppPlan,
   type ApprovalRequest,
   type RunContext,
-  type ShapeType,
 } from "@vendoai/core";
 import type { LanguageModel } from "ai";
 import { describe, expect, it } from "vitest";
 import { scriptedLanguageModel, type ScriptedModelCall } from "../testing/index.js";
 import type { GeneratedAppDocument, HostToolInfo } from "./engine.js";
 import {
-  laneGates,
-  runIslandLane,
+  escalatedServer,
   runServerLane,
   type BoxOutcome,
   type BoxSeam,
-  type IslandLaneDeps,
   type ServerLaneDeps,
 } from "./lanes.js";
 
 /**
- * The rare lanes (generation pipeline rebuild, Task 8): the island the plan
- * declares, the automation it declares, and the box — whose whole law is that
- * NOTHING is written against its functions until it says what it built.
+ * The server lane: the automation a plan declares, and the box — whose whole
+ * law is that NOTHING is written against its functions until it says what it
+ * built.
  */
 
 const ctx: RunContext = {
@@ -38,11 +35,6 @@ const tools: HostToolInfo[] = [
   { name: "vendo_apps_data_put", description: "Publish an app record.", risk: "write" },
   { name: "vendo_apps_data_list", description: "Read app records.", risk: "read" },
 ];
-
-const invoiceShape: ShapeType = {
-  kind: "array",
-  items: { kind: "object", fields: { client: { kind: "string" }, amountCents: { kind: "number" } } },
-};
 
 const document = (): GeneratedAppDocument => ({
   format: VENDO_APP_FORMAT,
@@ -65,121 +57,6 @@ const scripted = (calls: ScriptedModelCall[], ...answers: string[]): LanguageMod
 const promptText = (call: ScriptedModelCall | undefined): string => (call?.prompt ?? []).map((message) => (
   typeof message.content === "string" ? message.content : message.content.map((part) => part.text ?? "").join("")
 )).join("\n");
-
-// ---------------------------------------------------------------------------
-// The island lane
-// ---------------------------------------------------------------------------
-
-const islandPlan = (): AppPlan => ({
-  name: "Invoices workspace",
-  queries: [{ id: "invoices", tool: "host_listInvoices", input: { limit: 50 } }],
-  groups: [{
-    tab: "Overview",
-    leaves: [{ component: "SpendHeatmap", query: "invoices", purpose: "Spend by day, darker where more money left" }],
-  }],
-  island: { name: "SpendHeatmap", purpose: "A day-by-day heat grid of spend" },
-  cannot: [],
-});
-
-/** Reaches for the network — the sandbox has none, so this island would render
- *  a permanent empty grid in production. */
-const NETWORK_ISLAND = `<Island name="SpendHeatmap">
-export default function SpendHeatmap() {
-  const [live, setLive] = React.useState([]);
-  React.useEffect(() => { fetch("/api/spend").then((response) => response.json()).then(setLive); }, []);
-  return <div>{live.length}</div>;
-}
-</Island>`;
-
-/** Static reads pass; it crashes the moment it renders without rows. */
-const CRASHING_ISLAND = `<Island name="SpendHeatmap">
-export default function SpendHeatmap({ rows }) {
-  return <div>{rows.map((row, index) => <span key={index}>{fmt.money(row.amountCents)}</span>)}</div>;
-}
-</Island>`;
-
-const GOOD_ISLAND = `<Island name="SpendHeatmap">
-export default function SpendHeatmap({ rows }) {
-  const cells = Array.isArray(rows) ? rows : [];
-  return <div>{cells.map((cell, index) => <span key={index}>{fmt.money(cell.amountCents)}</span>)}</div>;
-}
-</Island>`;
-
-const islandDeps = (model: LanguageModel, overrides: Partial<IslandLaneDeps> = {}): IslandLaneDeps => ({
-  model,
-  catalog: [],
-  tools,
-  toolShapes: { host_listInvoices: invoiceShape },
-  ...overrides,
-});
-
-describe("runIslandLane", () => {
-  it("screens the island through prepareIslands: a network-violating island is rejected with the teaching message", async () => {
-    const calls: ScriptedModelCall[] = [];
-    const before = document();
-    const result = await runIslandLane(islandPlan(), before, islandDeps(scripted(calls, NETWORK_ISLAND)));
-
-    expect(result.findings.map(({ message }) => message).join(" ")).toContain("an island has no network");
-    expect(result.findings.every(({ severity }) => severity === "warn")).toBe(true);
-    expect(result.document).toEqual(before);
-    // The retry is handed the teaching sentence, not just "try again".
-    expect(promptText(calls[1])).toContain("an island has no network");
-  });
-
-  it("writes the island against its plan's purpose and query shapes", async () => {
-    const calls: ScriptedModelCall[] = [];
-    await runIslandLane(islandPlan(), document(), islandDeps(scripted(calls, GOOD_ISLAND), { pipeline: { smokeRender: false } }));
-
-    const prompt = promptText(calls[0]);
-    expect(prompt).toContain("ISLAND: SpendHeatmap");
-    expect(prompt).toContain("A day-by-day heat grid of spend");
-    expect(prompt).toContain("invoices: host_listInvoices");
-    expect(prompt).toContain("amountCents");
-  });
-
-  it("takes one fix-it retry with the issues and lands the corrected island", async () => {
-    const calls: ScriptedModelCall[] = [];
-    const result = await runIslandLane(islandPlan(), document(), islandDeps(scripted(calls, NETWORK_ISLAND, GOOD_ISLAND)));
-
-    expect(calls).toHaveLength(2);
-    expect(result.findings).toEqual([]);
-    expect(result.document.components?.SpendHeatmap).toContain("export default function SpendHeatmap");
-    // The per-island tool manifest is stamped even when it is empty (least
-    // privilege: this island reads no tools of its own).
-    expect(result.document.componentTools?.SpendHeatmap).toEqual([]);
-  });
-
-  it("screens through the smoke render too: a crash no static read can see drives the retry", async () => {
-    const calls: ScriptedModelCall[] = [];
-    const result = await runIslandLane(islandPlan(), document(), islandDeps(scripted(calls, CRASHING_ISLAND, GOOD_ISLAND)));
-
-    expect(promptText(calls[1])).toContain("crashed");
-    expect(result.findings).toEqual([]);
-    expect(result.document.components?.SpendHeatmap).toContain("Array.isArray(rows)");
-  });
-
-  it("fails honestly after the retry: the document is unchanged and the app stands without the island", async () => {
-    const calls: ScriptedModelCall[] = [];
-    const before = document();
-    const result = await runIslandLane(islandPlan(), before, islandDeps(scripted(calls, NETWORK_ISLAND, NETWORK_ISLAND)));
-
-    expect(calls).toHaveLength(2);
-    expect(result.document).toEqual(before);
-    expect(result.document.components).toBeUndefined();
-    expect(result.findings.length).toBeGreaterThan(0);
-    expect(result.findings.every(({ severity, where }) => severity === "warn" && where === 'island "SpendHeatmap"')).toBe(true);
-  });
-
-  it("does nothing at all when the plan declared no island", async () => {
-    const calls: ScriptedModelCall[] = [];
-    const plan = { ...islandPlan(), island: undefined };
-    const before = document();
-    const result = await runIslandLane(plan, before, islandDeps(scripted(calls, GOOD_ISLAND)));
-
-    expect(calls).toEqual([]);
-    expect(result).toEqual({ document: before, findings: [] });
-  });
-});
 
 // ---------------------------------------------------------------------------
 // The server lane — steps / agentic
@@ -714,77 +591,32 @@ describe("runServerLane — the box binds after build", () => {
 });
 
 // ---------------------------------------------------------------------------
-// The gates the brain hears BEFORE it plans
+// Which lane an ESCALATED plan runs in
 // ---------------------------------------------------------------------------
 
-describe("laneGates", () => {
-  it("says a host with no sandbox cannot run server code, and there is no second gate", () => {
-    // The sandbox adapter's PRESENCE is the whole opt-in — no capability
-    // boolean beside it (CLAUDE.md). So this is the only way the box lane is
-    // shut, and it is a fact about the deployment rather than a setting.
-    const gates = laneGates({});
-
-    expect(gates.box).toBe(false);
-    expect(gates.served).toBe(false);
-    expect(gates.cannot.join(" ")).toContain("no sandbox configured");
-    expect(gates.cannot.join(" ")).toContain("automations engine");
-  });
-
-  it("keeps BOTH machine-free automation rungs in reach when no machine can be provisioned", () => {
-    // The escalation ladder is steps -> agentic -> box, box LAST, and only the
-    // box rung needs a machine: an agentic firing is one harness run on the
-    // agents runtime. A sandbox-less host that states its missing lane without
-    // saying that is a host where "watch this and judge it every morning" comes
-    // back as "This host has no sandbox configured" — the refusal the walk found.
-    const said = laneGates({}).cannot.join(" ");
-    expect(said).toContain("automations engine");
-    expect(said).toContain('kind="steps"');
-    expect(said).toContain('kind="agentic"');
-    expect(said).toContain("no machine");
-  });
-
-  it("opens the box lane on the sandbox alone, and served only with a door to serve THROUGH", () => {
-    // A box with no `servedProxyPath` has no authenticated door to answer a
-    // served app on, so it cannot serve one — and the brain hears that as a
-    // <Cannot> BEFORE it plans, instead of after a machine has been built and
-    // the surface flipped to something no caller can open.
-    const unwired = laneGates({ machine: { sandbox: {} } });
-    expect(unwired.box).toBe(true);
-    expect(unwired.served).toBe(false);
-    expect(unwired.cannot.join(" ")).toContain("cannot serve its own web pages");
-
-    const wired = laneGates({
-      machine: { sandbox: {} },
-      servedProxyPath: () => "/api/vendo/apps/a/serve/",
+describe("escalatedServer", () => {
+  it("keeps the kind the escalating agent declared — the tag is the whole decision", () => {
+    // Nothing re-derives the lane: the agent that could not assemble the screen
+    // is the one that knows why, and it said so in the plan.
+    expect(escalatedServer(stepsPlan(), "the escalation's own sentence")).toEqual({
+      kind: "steps",
+      schedule: "fridays at 8am",
+      why: "the digest has to be emailed while nobody is looking at the app",
     });
-    expect(wired.served).toBe(true);
-    expect(wired.cannot).toEqual([]);
+    expect(escalatedServer(agenticPlan(), "the escalation's own sentence").kind).toBe("agentic");
+    expect(escalatedServer(boxPlan(), "the escalation's own sentence").why)
+      .toBe("reconciling the uploads needs custom dedup logic no tool can express");
   });
 
-  /** Served is a MACHINE surface — it is served BY a box. That used to be held
-      by a composition-time refusal on two flags agreeing with each other
-      (`experimentalServedApps requires experimentalMachines`). With every one of
-      those flags gone the relationship is not a rule to remember, it is the
-      shape of the expression: served is a narrowing of box, so no box can never
-      be served. */
-  it("never opens the served lane without the box lane it is served by", () => {
-    const proxy = () => "/api/vendo/apps/a/serve/";
-
-    // No sandbox at all: nothing to provision, door notwithstanding.
-    expect(laneGates({ servedProxyPath: proxy }).served).toBe(false);
-    // A sandbox with no door: a box, but nothing to answer a served app on.
-    expect(laneGates({ machine: { sandbox: {} } }).served).toBe(false);
-    // Both: the only shape that opens it.
-    expect(laneGates({ machine: { sandbox: {} }, servedProxyPath: proxy }).served).toBe(true);
-
-    for (const config of [
-      { servedProxyPath: proxy },
-      { machine: { sandbox: {} } },
-      { machine: { sandbox: {} }, servedProxyPath: proxy },
-    ]) {
-      const gates = laneGates(config);
-      // Served always IMPLIES box; it is never the wider of the two.
-      expect(gates.served && !gates.box).toBe(false);
-    }
+  it("defaults a plan with NO <Server> to the box, on the escalation's own reason", () => {
+    // The escalation is itself the claim that assembly cannot serve this ask,
+    // and steps/agentic only author automations over tools assembly already
+    // had — defaulting there would answer the escalation with the rung it
+    // already ruled out.
+    const plan = { ...stepsPlan(), server: undefined };
+    expect(escalatedServer(plan, "the uploads have to be reconciled outside the browser")).toEqual({
+      kind: "box",
+      why: "the uploads have to be reconciled outside the browser",
+    });
   });
 });

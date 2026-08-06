@@ -224,6 +224,13 @@ export function createContextResolver(
     const memberships = deps.memberships === undefined || principal.ephemeral === true
       ? undefined
       : await deps.memberships(principal);
+    // Spec 2026-08-05 §1 — the host's asserted profile facts for THIS request's
+    // user, refreshed per request (decision 2; the preset shares the session
+    // decode with `principal`, so this costs no second verify). An anonymous
+    // visitor has no host profile, so the seam is not even asked.
+    const user = resolved === null || deps.userFacts === undefined
+      ? undefined
+      : await deps.userFacts(req);
     return {
       principal,
       venue,
@@ -231,6 +238,7 @@ export function createContextResolver(
       sessionId,
       requestHeaders: requestHeaders(req),
       ...(memberships === undefined ? {} : { memberships }),
+      ...(user === undefined ? {} : { user }),
     };
   };
 }

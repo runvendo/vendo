@@ -158,6 +158,10 @@ interface LocalSession {
     interrupt(): Promise<void>;
     end(): Promise<void>;
   };
+  /** The brief the live session was OPENED with. The SDK fixes `systemPrompt`
+   *  at open, so this is the only record of what the session is thinking with —
+   *  and the only way to notice it has gone stale. */
+  brief?: string;
   /** Has this thread's workspace been materialized in this process? */
   warm: boolean;
   /** What this thread's disk holds — the sync-back baseline, per conversation. */
@@ -276,7 +280,14 @@ export async function localMachine(options: LocalMachineOptions): Promise<Sessio
       // away, so it must not survive. It used to ALSO fire on a changed tool
       // listing, because an in-process MCP server's tool set is fixed at open;
       // the door lists live, so that reason is gone.
-      if (held.session !== undefined && message.reopen === true) {
+      //
+      // A CHANGED BRIEF is the other reason, and it is not optional: the SDK
+      // fixes `systemPrompt` when the session opens, so on a warm session turn
+      // 1's [Situation] would BECOME the standing prompt and every later turn's
+      // would be dropped — the spec's "current turn only" false on this machine.
+      // Unlike a truncation this keeps the memory: `resume` rides the reopen.
+      if (held.session !== undefined
+        && (message.reopen === true || held.brief !== message.systemPrompt)) {
         const closing = held.session;
         held.session = undefined;
         await closing.end().catch(() => undefined);
@@ -306,6 +317,7 @@ export async function localMachine(options: LocalMachineOptions): Promise<Sessio
           onFileWritten: (written: string | undefined) => held.live?.onFileWritten?.(written),
           ...(sdk === undefined ? {} : { sdk }),
         });
+        held.brief = message.systemPrompt;
       }
       held.warm = true;
       if (message.signal?.aborted === true) {

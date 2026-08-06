@@ -1,5 +1,5 @@
 ---
-"@vendoai/agent": minor
+"@vendoai/vendo": minor
 "@vendoai/core": minor
 "@vendoai/ui": minor
 ---

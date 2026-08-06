@@ -1,5 +1,5 @@
 import { duplicateToolTitles, VendoError, type ToolDescriptor, type ToolRegistry } from "@vendoai/core";
-import { FIND_TOOLS_TOOL_NAME } from "@vendoai/agent";
+import { FIND_TOOLS_TOOL_NAME } from "@vendoai/harnesses";
 
 /**
  * Design §12 — "two actions must never read identically on a card."

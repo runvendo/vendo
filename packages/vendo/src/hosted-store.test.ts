@@ -907,6 +907,21 @@ describe("hostedStoreOps — the 32-op wire client", () => {
     expect(calls[4]!.body).toEqual({ commitId: "wsc_1" });
   });
 
+  it("workspace: the path legs of history and undo ride the same two doors", async () => {
+    const { calls, ops } = wireFake({
+      ...ALL_BODIES,
+      [door("workspace.undo")]: { ok: true, revision: 7 },
+    });
+
+    await ops.workspace.history({ path: "/a.md", owner: "own_1" });
+    expect(calls[0]!.body).toEqual({ path: "/a.md", owner: "own_1" });
+
+    // A path target is a path on the wire, never a commit id — the door takes
+    // exactly one of the two, and reports the revision it restored.
+    expect(await ops.workspace.undo({ path: "/a.md" }, { owner: "own_1" })).toEqual({ revision: 7 });
+    expect(calls[1]!.body).toEqual({ path: "/a.md", owner: "own_1" });
+  });
+
   it("lifecycle: erase/adopt/promote plus the three session doors", async () => {
     const { calls, ops } = wireFake(ALL_BODIES);
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { jsonPost, scriptedModel, startTestHost, textTurn } from "./harness.js";
+import { jsonPost, scriptedModel, startTestHost, textTurn, toolCallTurn } from "./harness.js";
 
 const generatedApp = [
   '<App name="Relay priority board"><Stack>',
@@ -9,7 +9,13 @@ const generatedApp = [
 
 describe("Relay generated view", () => {
   it("creates and opens a vendo-genui/v2 tree over the Express wire", async () => {
-    const host = await startTestHost(scriptedModel([textTurn(generatedApp)]));
+    // `POST /apps` runs the ONE engine — the screen agent — so the script is that
+    // agent's own turns: save the whole document, then speak. There is no second
+    // dialect and no second builder behind this route.
+    const host = await startTestHost(scriptedModel([
+      toolCallTurn("save_app", { content: generatedApp }, "call_save_app"),
+      textTurn("saved"),
+    ]));
     try {
       const createdResponse = await fetch(`${host.baseUrl}/api/vendo/apps`, jsonPost({ prompt: "Build a Relay priority board" }));
       expect(createdResponse.status).toBe(200);

@@ -1,5 +1,5 @@
 import type { SecretSource } from "@vendoai/actions/presets";
-import type { ActAs, Membership, Principal, ResolvedPerson } from "@vendoai/core";
+import type { ActAs, Json, Membership, Principal, ResolvedPerson } from "@vendoai/core";
 import type { HostOAuthAdapter } from "@vendoai/mcp";
 
 /** 09-vendo §2.1 — one host-identity story, three seams. A HostAuthPreset fills
@@ -32,6 +32,12 @@ export interface HostAuthPreset {
       also gates the door on the asker holding at least one asserted membership,
       but only the host knows its own org chart. */
   resolvePerson?: (query: string, asker: Principal) => Promise<ResolvedPerson | null>;
+  /** Spec 2026-08-05 §1 — the host's asserted profile facts for the request's
+      user, resolved from the SAME session decode as `principal` (the composed
+      presets memoize per Request). The wire stashes the result as `ctx.user`,
+      which the prompt renders as the `[User]` block; absent/undefined → no
+      block. Preset-only: the raw per-seam `principal` trio has no facts channel. */
+  facts?: (req: Request) => Promise<Record<string, Json> | undefined>;
 }
 
 /** What a host's subject→user resolver returns. `display` names the resolved
@@ -39,6 +45,10 @@ export interface HostAuthPreset {
 export interface HostAuthPresetUser {
   display?: string;
   email?: string;
+  /** Arbitrary host-asserted facts about the user (plan, role, tenure, …).
+      Server-trust and MODEL-VISIBLE: they flow to `ctx.user` and render as the
+      prompt's `[User]` block every turn — data only, never secrets. */
+  facts?: Record<string, Json>;
 }
 
 /** Optional subject→user resolver for custom logic (09 §2.1). `claims` carries

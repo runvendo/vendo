@@ -1,6 +1,6 @@
 import { isValidElement, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { sha256Hex, type AppDocument, type Json, type TreeNode } from "@vendoai/core";
-import { useVendoContext } from "../context.js";
+import { useVendoProvider } from "../context.js";
 import { useApp } from "../hooks/use-app.js";
 import { useResource } from "../hooks/use-resource.js";
 import { FluidReveal } from "../tree/fluid-reveal.js";
@@ -119,7 +119,7 @@ const NO_APPS: AppDocument[] = [];
  *  discovery"; slot discovery genuinely meant latest and was reading the oldest
  *  — see use-slot-app.ts. Here the code was right and the comment was wrong.) */
 function useRemixFork(slot: string | null) {
-  const { client } = useVendoContext();
+  const { client } = useVendoProvider();
   const list = useCallback(
     () => (slot === null ? Promise.resolve(NO_APPS) : client.apps.list()),
     [client, slot],
@@ -165,7 +165,7 @@ function RemixedFork({ appId, slot, review, liveProps, menuOpen, onMenuToggle, o
   original: ReactNode;
   onReverted(): Promise<void>;
 }) {
-  const { client, components } = useVendoContext();
+  const { client, components } = useVendoProvider();
   const { surface, error, isLoading } = useApp(appId);
   const menuRef = useRef<HTMLDivElement>(null);
   const [reverting, setReverting] = useState(false);
@@ -304,7 +304,7 @@ function RemixedFork({ appId, slot, review, liveProps, menuOpen, onMenuToggle, o
 }
 
 export function Remixable({ review = false, children }: RemixableProps) {
-  const { client } = useVendoContext();
+  const { client } = useVendoProvider();
   const [revealed, setRevealed] = useState(false);
   const grace = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(grace.current), []);

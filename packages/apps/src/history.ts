@@ -9,7 +9,7 @@ import {
   type VendoRecord,
 } from "@vendoai/core";
 import { z } from "zod";
-import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, listAllRecords, rowFromRecord, sessionOf, validateDocument } from "./persistence.js";
+import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, listAllRecords, rowFromRecord, validateDocument } from "./persistence.js";
 import type { VersionEntry } from "./runtime.js";
 
 const HISTORY_LIMIT = 50;
@@ -238,12 +238,8 @@ export const createAppHistory = (store: StoreAdapter): AppHistoryAccess => {
           const row = rowFromRecord(appRow);
           // A changed trigger must be re-armed — enable() re-captures and re-mints trigger state.
           const enabled = enabledAfterDocumentEdit(row.doc, snapshot.doc, row.enabled);
-          // Undo rewinds what the app IS, not the conversation about it: the
-          // brain's session is the owner's transcript and re-supplying it is what
-          // keeps a rewind from silently wiping every turn (appRecordInput drops
-          // whatever it is not handed).
           await store.records("vendo_apps").put(
-            appRecordInput(snapshot.doc, row.subject, enabled, sessionOf(row.doc)),
+            appRecordInput(snapshot.doc, row.subject, enabled),
           );
           await deleteVersion(appId, latest.id);
           return structuredClone(snapshot.doc);

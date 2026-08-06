@@ -102,7 +102,15 @@ describe("the title collision is a deployment property, not a per-run one", () =
       descriptors: async () => clean,
       execute: async (call) => { executed.push(call.tool); return { status: "ok", output: {} }; },
     };
-    const guard = createGuard({ store: memoryStoreAdapter() });
+    // Consent is not this suite's subject: what is pinned is that a clean
+    // deployment reaches the tool at all. The blank state parks a destructive
+    // call, so the host says in writing that this one may run — otherwise the
+    // "clean" case would be indistinguishable from the collision case, which
+    // also never executes.
+    const guard = createGuard({
+      store: memoryStoreAdapter(),
+      policy: { rules: [{ match: { risk: "destructive" }, action: "run" }] },
+    });
     const connectGate = createConnectGate({ toolkitOf: async () => undefined, isConnected: async () => true });
     const registry = withUniqueToolTitles(connectGate.bind(guard.bind(inner)));
 

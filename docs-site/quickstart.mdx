@@ -27,11 +27,19 @@ npx vendo init
 ```
 
 <Note>
-  Right after a Vendo release, package managers with a release cooldown
-  (pnpm 11 holds new versions for one day by default via
-  `minimumReleaseAge`; npm's `min-release-age` is opt-in) may resolve to
-  nothing and fail with "no versions available". Either wait out your
-  cooldown or exclude Vendo in `pnpm-workspace.yaml`:
+  Right after a Vendo release, package managers with a release cooldown hold
+  the new version back. pnpm 11 (`minimumReleaseAge`, one day by default)
+  fails loud with "no versions available"; npm's opt-in `min-release-age`
+  instead resolves silently to the newest version old enough to pass, and
+  `vendo init` pins that stale version in `package.json`. Check what you
+  actually got:
+
+  ```bash
+  npm ls @vendoai/vendo
+  ```
+
+  To take the current release anyway, pass `--min-release-age=0` on npm, or
+  exclude Vendo in `pnpm-workspace.yaml`:
 
   ```yaml
   minimumReleaseAgeExclude:

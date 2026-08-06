@@ -133,12 +133,35 @@ export interface StoreOps {
     set(appId: string, subject: string, state: unknown): Promise<void>;
     clear(appId: string, subject: string): Promise<void>;
   };
+  /** Every workspace verb names its OWNER — the end user (or org) whose drawer
+      the files live in, exactly as conversations, records and blobs already do.
+      Omitted, the backend falls back to the owner it was constructed with, which
+      is the single-player local default; a multi-user hosted mount always passes
+      one, or its whole user base shares one drawer.
+
+      Entries are `{ path, data?, delete?, expectedRevision? }`: `delete: true` is
+      a tombstone (deletion is otherwise inexpressible), and `expectedRevision` is
+      the strict compare-and-swap the `/orgs` mounts commit under — a stale one
+      refuses the WHOLE commit with `conflict`, so the caller re-reads once.
+      Binary content rides `{"$vendoWorkspaceBytes": base64, contentType?}`. */
   workspace: {
-    index(query?: { cursor?: string; limit?: number }): Promise<{ entries: unknown[]; cursor?: string }>;
-    read(paths: string[]): Promise<Record<string, unknown>>;
-    commit(entries: unknown[], opts?: { idempotencyKey?: string }): Promise<void>;
-    history(query?: { cursor?: string; limit?: number }): Promise<{ entries: unknown[]; cursor?: string }>;
-    undo(commitId: string): Promise<void>;
+    index(query?: { cursor?: string; limit?: number; owner?: string }): Promise<{ entries: unknown[]; cursor?: string }>;
+    read(paths: string[], opts?: { owner?: string }): Promise<Record<string, unknown>>;
+    commit(entries: unknown[], opts?: { idempotencyKey?: string; owner?: string }): Promise<void>;
+    /** Naming a `path` narrows history to the commits that touched it, newest
+        first, and each entry then also carries the `revision` that path held
+        BEFORE the commit — absent when the commit created it, which is exactly
+        the difference between "there is an older version to go back to" and
+        "there is nothing behind this file". */
+    history(query?: { cursor?: string; limit?: number; owner?: string; path?: string }): Promise<{ entries: unknown[]; cursor?: string }>;
+    /** Undo a whole commit by id, or — with `{ path }` — only that path's
+        newest change: the path's stored before-image comes back (a path the
+        commit CREATED is removed), and only that path is consumed, so undoing
+        the whole commit afterwards does not restore it twice. A path nothing
+        has touched is `not-found`, the same answer an unknown commit gets.
+        `revision` is the restored file's new revision, absent when the undo
+        removed the file. */
+    undo(target: string | { path: string }, opts?: { owner?: string }): Promise<{ revision?: number }>;
   };
   lifecycle: {
     erase(target: EraseTarget): Promise<unknown>;

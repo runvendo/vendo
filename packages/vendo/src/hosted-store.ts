@@ -537,6 +537,11 @@ export function hostedStoreOps(options: HostedStoreOptions): StoreOps {
 
   const cursorQuery = (query?: { cursor?: string; limit?: number }): Record<string, unknown> => ({ ...query });
 
+  /** The workspace family's owner, passed through only when the caller named
+      one — a mount that binds its own owner must not be handed `undefined`. */
+  const owned = (opts?: { owner?: string }): Record<string, unknown> =>
+    opts?.owner === undefined ? {} : { owner: opts.owner };
+
   const P = STORE_WIRE_PATHS;
 
   return {
@@ -659,13 +664,18 @@ export function hostedStoreOps(options: HostedStoreOptions): StoreOps {
         await mutate("harness.clear", P["harness.clear"], { appId, subject });
       },
     },
+    // Every workspace call names its OWNER: the mount serves a whole project,
+    // so without one its users would share a single drawer. Entries carry the
+    // wire's tombstones (`delete: true`) and strict-CAS `expectedRevision`
+    // through verbatim — the service reports a lost swap as an enveloped
+    // `conflict`, which the façade reads as the frozen conflict branch.
     workspace: {
       async index(query) {
-        return entriesOf(await post("workspace.index", P["workspace.index"], cursorQuery(query)));
+        return entriesOf(await post("workspace.index", P["workspace.index"], { ...query }));
       },
-      async read(paths) {
+      async read(paths, opts) {
         return field<Record<string, unknown>>(
-          await post("workspace.read", P["workspace.read"], { paths }),
+          await post("workspace.read", P["workspace.read"], { paths, ...owned(opts) }),
           "files",
           "invalid workspace read",
           (value) => typeof value === "object" && value !== null && !Array.isArray(value),
@@ -674,13 +684,23 @@ export function hostedStoreOps(options: HostedStoreOptions): StoreOps {
       async commit(entries, opts) {
         // The caller may own the key (a resumed job replaying its own commit);
         // otherwise `mutate` mints the one key for this operation.
-        await mutate("workspace.commit", P["workspace.commit"], { entries }, opts?.idempotencyKey);
+        await mutate(
+          "workspace.commit",
+          P["workspace.commit"],
+          { entries, ...owned(opts) },
+          opts?.idempotencyKey,
+        );
       },
       async history(query) {
-        return entriesOf(await post("workspace.history", P["workspace.history"], cursorQuery(query)));
+        return entriesOf(await post("workspace.history", P["workspace.history"], { ...query }));
       },
-      async undo(commitId) {
-        await mutate("workspace.undo", P["workspace.undo"], { commitId });
+      async undo(target, opts) {
+        const answer = await mutate("workspace.undo", P["workspace.undo"], {
+          ...(typeof target === "string" ? { commitId: target } : { path: target.path }),
+          ...owned(opts),
+        });
+        const revision = (answer as { revision?: unknown } | null)?.revision;
+        return typeof revision === "number" ? { revision } : {};
       },
     },
     lifecycle: {

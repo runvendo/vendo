@@ -24,8 +24,9 @@ import {
   type ToolRegistry,
 } from "@vendoai/core";
 import { beforeEach, describe, expect, it } from "vitest";
-import { createApps } from "../index.js";
+import { createApps, type AppsRuntime } from "../index.js";
 import {
+  authoringAssembler,
   guardFixture,
   memoryStore,
   scriptedLanguageModel,
@@ -76,6 +77,9 @@ let reviewerCalls = 0;
 let reviewerThrows = false;
 let reviewerRefuses = false;
 
+/** The reviewer, and ONLY the reviewer: the app under test is landed by the
+ *  assembler in the `screen` slot, so every model call this fixture sees is a
+ *  `report_findings` call from the door under test. */
 const model = () => scriptedLanguageModel((call: ScriptedModelCall) => {
   if (call.tools?.some(({ name }) => name === "report_findings") !== true) return APP_WIRE;
   reviewerCalls += 1;
@@ -94,14 +98,19 @@ const model = () => scriptedLanguageModel((call: ScriptedModelCall) => {
   return { tool: "report_findings", input: { findings: reviewerFindings } };
 });
 
-const setup = (checks?: readonly Check[]) => createApps({
-  store: memoryStore(),
-  guard: guardFixture(),
-  tools,
-  catalog: [],
-  model: model(),
-  ...(checks === undefined ? {} : { checks }),
-});
+const setup = (checks?: readonly Check[]): AppsRuntime => {
+  let runtime: AppsRuntime;
+  runtime = createApps({
+    store: memoryStore(),
+    guard: guardFixture(),
+    tools,
+    catalog: [],
+    model: model(),
+    screen: authoringAssembler(() => runtime, APP_WIRE),
+    ...(checks === undefined ? {} : { checks }),
+  });
+  return runtime;
+};
 
 beforeEach(() => {
   reviewerFindings = [];

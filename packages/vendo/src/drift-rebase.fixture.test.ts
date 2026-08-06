@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { vendoSync } from "@vendoai/actions/sync";
 import { appVersionHash, pinBaselineSchema, pinComponentName } from "@vendoai/apps";
-import { VENDO_APP_FORMAT, type AppDocument, type Principal } from "@vendoai/core";
+import { VENDO_APP_FORMAT, printWire, type AppDocument, type Principal } from "@vendoai/core";
 import { createStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
@@ -13,64 +13,70 @@ interface ModelCall {
   prompt: Array<{ role: string; content: string | Array<{ type?: string; text?: string }> }>;
 }
 
-const promptText = (call: ModelCall): string => call.prompt
-  .map((message) => typeof message.content === "string"
-    ? message.content
-    : message.content.map((part) => part.text ?? "").join(""))
-  .join("\n");
+/** The whole prompt as text, tool results included — a `save_app` reply is a
+ *  tool RESULT, and it is what says the current run has already saved. */
+const promptText = (call: ModelCall): string => JSON.stringify(call.prompt ?? "");
 
-const APP_AS_IT_STANDS = "THE APP AS IT STANDS — the only true copy of it, and what an <Old> must quote:\n";
-
-/** The app exactly as the brain was shown it — the text every answer is built
- *  from. */
-const printedApp = (prompt: string): string => {
-  const at = prompt.indexOf(APP_AS_IT_STANDS);
-  if (at === -1) return "";
-  return prompt.slice(at + APP_AS_IT_STANDS.length).split("\n\nTHEY ARE ASKING NOW:")[0] ?? "";
-};
+/** The screen agent's own brief (`environmentNote`), verbatim — the one marker
+ *  that says a prompt belongs to the assembly loop. */
+const SCREEN_BRIEF_MARKER = "# In this loop";
+const SAVED_MARKER = "Run validate on it now.";
 
 /**
- * The brain, scripted. Only BRAIN turns are answered ("THEY ARE ASKING NOW:" is its
- * marker) — the AI reviewer rides the same model and a reviewer that answers
- * nothing reports no findings, which is what a fixture with nothing to say
- * should do.
+ * The screen agent, scripted. There is one builder now, so both the user's edit
+ * and the rebase's REPLAY of that same recorded intent come through here: read
+ * the app's document as it stands, add the remix note to the pinned island's
+ * source, save the whole thing back.
  *
- * The one answer it gives is the app as it stands with the remix note added to
- * the pinned island's source, written WHOLE (a finished `<App>`, the tiny-ask
- * answer) rather than as an old/new pair — so the same script is still correct
- * on the rebase replay, where the island source is the host's NEW baseline.
+ * Reading the document rather than a printed copy in the prompt is what keeps
+ * the same script correct on the replay, where the island source is the host's
+ * NEW baseline.
  */
-const remixNote = (prompt: string): string => prompt.includes("THEY ARE ASKING NOW:")
-  ? printedApp(prompt).replace("$1.2M", "$1.2M — remixed")
-  : "";
-
-const scriptedModel = (respond: (prompt: string) => string): LanguageModel => {
+const screenModel = (document: () => Promise<string>): LanguageModel => {
+  const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
+  const saving = (prompt: string): boolean =>
+    prompt.includes(SCREEN_BRIEF_MARKER) && !prompt.includes(SAVED_MARKER);
+  const rewrite = async (): Promise<string> => (await document()).replace("$1.2M", "$1.2M — remixed");
   return {
     specificationVersion: "v2",
     provider: "vendo-drift-fixture",
     modelId: "vendo-drift-fixture-v1",
     supportedUrls: {},
     async doGenerate(call: ModelCall) {
+      if (!saving(promptText(call))) {
+        return { content: [{ type: "text" as const, text: "done" }], finishReason: "stop" as const, usage };
+      }
       return {
-        content: [{ type: "text" as const, text: respond(promptText(call)) }],
-        finishReason: "stop" as const,
-        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        content: [{
+          type: "tool-call" as const,
+          toolCallId: "call_save_app",
+          toolName: "save_app",
+          input: JSON.stringify({ content: await rewrite() }),
+        }],
+        finishReason: "tool-calls" as const,
+        usage,
       };
     },
     async doStream(call: ModelCall) {
-      const text = respond(promptText(call));
+      const content = saving(promptText(call)) ? await rewrite() : undefined;
       return {
         stream: new ReadableStream({
           start(controller) {
             controller.enqueue({ type: "stream-start", warnings: [] });
-            controller.enqueue({ type: "text-start", id: "text_1" });
-            controller.enqueue({ type: "text-delta", id: "text_1", delta: text });
-            controller.enqueue({ type: "text-end", id: "text_1" });
-            controller.enqueue({
-              type: "finish",
-              finishReason: "stop",
-              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-            });
+            if (content === undefined) {
+              controller.enqueue({ type: "text-start", id: "text_1" });
+              controller.enqueue({ type: "text-delta", id: "text_1", delta: "done" });
+              controller.enqueue({ type: "text-end", id: "text_1" });
+              controller.enqueue({ type: "finish", finishReason: "stop", usage });
+            } else {
+              controller.enqueue({
+                type: "tool-call",
+                toolCallId: "call_save_app",
+                toolName: "save_app",
+                input: JSON.stringify({ content }),
+              });
+              controller.enqueue({ type: "finish", finishReason: "tool-calls", usage });
+            }
             controller.close();
           },
         }),
@@ -127,13 +133,28 @@ export default function Page() {
     process.chdir(root);
     const ctx = { principal, venue: "app" as const, presence: "present" as const, sessionId: "session_drift" };
 
+    /** The composition currently serving, and the app under edit — both are set
+     *  as the journey reaches them, because the assembler opens the app's own
+     *  document and the host redeploys halfway through. */
+    let active: ReturnType<typeof createVendo> | undefined;
+    let appUnderEdit: string | undefined;
+    const asItStands = async (): Promise<string> => {
+      const app = await active!.apps.get(appUnderEdit!, ctx);
+      if (app === null) throw new Error("no app row to rewrite");
+      return printWire(
+        { tree: app.tree as never, components: app.components ?? {}, name: app.name },
+        { includeIds: true },
+      );
+    };
+
     // ONE host process lifetime: fork the pin (gesture, no model) and edit the fork.
     const vendo = createVendo({
-      model: scriptedModel(remixNote),
+      model: screenModel(asItStands),
       principal: async () => principal,
       store,
       development: true,
     });
+    active = vendo;
     const imported = await vendo.apps.importApp({
       format: VENDO_APP_FORMAT,
       id: "app_identity_is_replaced",
@@ -146,6 +167,7 @@ export default function Page() {
       },
     } as AppDocument, ctx);
     const appId = imported.id;
+    appUnderEdit = appId;
     // Gesture-owned forking (2026-07-21): the fork rides its own wire route,
     // executed deterministically by the engine — the model never sees it.
     const forkResponse = await vendo.handler(request("POST", `/apps/${appId}/fork-pin`, { slot }));
@@ -178,13 +200,15 @@ export default function Page() {
     // The host redeploys: a fresh composition loads the NEW baselines over the
     // SAME store. Drift must now be loud on every surface the app rides.
     const redeployed = createVendo({
-      // The rebase replays the ONE recorded pin intent through the same brain,
-      // which now sees the NEW baseline source under the pinned component.
-      model: scriptedModel(remixNote),
+      // The rebase replays the ONE recorded pin intent through the same builder,
+      // which now opens the app with the NEW baseline source under the pinned
+      // component.
+      model: screenModel(asItStands),
       principal: async () => principal,
       store,
       development: true,
     });
+    active = redeployed;
     const expectedDrift = {
       slot,
       component: componentName,

@@ -212,9 +212,29 @@ const AMBIENT_PROPS = "children?: any; pending?: any";
 const componentDeclaration = (name: string, propsText: string): string =>
   `declare const ${name}: (props: ${propsText}) => JSX.Element;`;
 
+/**
+ * A binding `printWire` could not write as a dotted reference, so it printed as a
+ * quoted object literal instead: a numeric-index path (`records.0.summary`), a
+ * stored aggregate reshape, an `$expr` whose source no longer parses — print.ts's
+ * "totality over fidelity" fallback.
+ *
+ * `facts.ts` already names this the subsumption's edge: tsc cannot walk such a
+ * literal, so it carries NO type information, and rejecting it is a false finding
+ * — the renderer resolves the real value at render time. Admitting it costs the
+ * check nothing it was buying, because a binding the wire CAN write prints as a
+ * real member expression and stays fully typed against the query result types.
+ *
+ * This only became load-bearing when V4 retired the legacy prewired components:
+ * their permissive `any` props used to absorb these literals wherever a stored
+ * screen carried one, so no typed prop ever met one.
+ */
+const BINDING_TYPE = "VendoBinding";
+const BINDING_DECLARATION =
+  `declare type ${BINDING_TYPE} = { $path: string } | { $state: string } | { $expr: string };`;
+
 const propsTextFrom = (props: Record<string, PropSpec>): string => {
   const fields = Object.entries(props).map(([name, spec]) =>
-    `${name}${spec.required === true ? "" : "?"}: ${zodTypeText(spec.schema)}`);
+    `${name}${spec.required === true ? "" : "?"}: ${zodTypeText(spec.schema)} | ${BINDING_TYPE}`);
   return `{ ${[...fields, AMBIENT_PROPS].join("; ")} }`;
 };
 
@@ -293,6 +313,7 @@ export function screenTypings(input: ScreenTypingsInput): string {
     "  interface ElementChildrenAttribute { children: {} }",
     "  interface IntrinsicElements { [element: string]: any }",
     "}",
+    BINDING_DECLARATION,
   ];
 
   const push = (name: string, propsText: string): void => {

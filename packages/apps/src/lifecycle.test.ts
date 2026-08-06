@@ -1,17 +1,15 @@
-import type { AppDocument, RunContext, ToolRegistry } from "@vendoai/core";
+import type { AppDocument, RunContext, ScreenAssembler, ToolRegistry } from "@vendoai/core";
 import { VENDO_APP_FORMAT, VendoError } from "@vendoai/core";
-import type { LanguageModel } from "ai";
 import { describe, expect, it, vi } from "vitest";
-import { createApps, type SandboxAdapter } from "./index.js";
+import { createApps, type AppsRuntime } from "./index.js";
 import { createAppHistory } from "./history.js";
 import { enabledAfterDocumentEdit } from "./persistence.js";
 import {
-  fakeSandbox,
+  basicLanguageModel,
   guardFixture,
   memoryStore,
+  scriptedAssembler,
   seedAppRow,
-  scriptedLanguageModel,
-  type ScriptedModelCall,
 } from "./testing/index.js";
 
 const tools: ToolRegistry = {
@@ -30,37 +28,35 @@ const context = (subject: string): RunContext => ({
   sessionId: `session_${subject}`,
 });
 
-const promptText = (call: ScriptedModelCall): string => call.prompt.map((message) => (
-  typeof message.content === "string" ? message.content : message.content.map((part) => part.text ?? "").join("")
-)).join("\n");
-
-/** What the person just said, as the brain hears it. Capped at the create
- *  validator's display-title length, so the derived app name is legal. */
-const lastSaid = (prompt: string): string => {
-  const marker = "THEY ARE ASKING NOW: ";
-  const at = prompt.lastIndexOf(marker);
-  if (at === -1) return "Untitled app";
-  const said = prompt.slice(at + marker.length).split("\n")[0]?.trim() ?? "";
-  return said.slice(0, 40) || "Untitled app";
+/** What the person just said, as a legal display title. An EDIT's brief leads
+ *  with the app's memory block, so the ask itself is the last line of it. Capped
+ *  at the create validator's display-title length (APP_NAME_MAX_CHARS). */
+const titleFor = (request: string): string => {
+  const said = request.split("\n").map((line) => line.trim()).filter((line) => line !== "").at(-1) ?? "";
+  return said.slice(0, 40).replaceAll('"', "'") || "Untitled app";
 };
 
-/** The brain, scripted: every ask is tiny, so it writes the whole app on the
- *  spot and names it after what was said — a create and an edit alike (an edit
- *  answered whole is the same pipeline, just the `direct` branch of it). */
-const brainModel = (): LanguageModel => scriptedLanguageModel((call) => {
-  const said = lastSaid(promptText(call)).replaceAll('"', "'");
-  return `<App name="${said}"><Text text="${said}"/><Disclaimer reason="Scripted fixture app."/></App>`;
-});
+/** The ONE engine, scripted: every ask is tiny, so the assembler writes the whole
+ *  app on the spot and names it after what was said — a create and an edit alike.
+ *  It lands through the real `AppsRuntime.authored`, so the row, the version, the
+ *  audit event and the guard decision are all the shipped ones. */
+const screenFor = (runtime: () => AppsRuntime): ScreenAssembler =>
+  scriptedAssembler(runtime, ({ request }) => {
+    const said = titleFor(request);
+    return `<App name="${said}"><Text text="${said}"/><Disclaimer reason="Scripted fixture app."/></App>`;
+  });
 
 const setup = (withModel = true) => {
   const store = memoryStore();
   const guard = guardFixture();
-  const runtime = createApps({
+  let runtime: AppsRuntime;
+  runtime = createApps({
     store,
     guard,
     tools,
     catalog: [],
-    model: withModel ? brainModel() : undefined,
+    model: withModel ? basicLanguageModel() : undefined,
+    screen: screenFor(() => runtime),
   });
   return { store, guard, runtime };
 };
@@ -140,9 +136,19 @@ describe("apps lifecycle", () => {
 
     const { runtime } = setup();
     const app = await runtime.create({ prompt: `  ${"x".repeat(80)}  ` }, context("user_ada"));
-    // Empty-states batch — the name is a display title capped by the create
-    // validator (APP_NAME_MAX_CHARS), never the ask echoed back at length.
+    // Empty-states batch — the name is a display title, never the ask echoed
+    // back at length.
     expect(app.name).toHaveLength(40);
+    // …and the cap is the PRODUCT's, not the fixture's: the same document with
+    // the ask echoed back whole is a finding at the `validate` door, which is
+    // where the create validator's APP_NAME_MAX_CHARS now bites.
+    const echoed = "x".repeat(80);
+    const verdict = await runtime.validate(
+      { document: `<App name="${echoed}"><Text text="hi"/><Disclaimer reason="Fixture."/></App>` },
+      context("user_ada"),
+    );
+    expect(verdict.ok).toBe(false);
+    expect(verdict.findings.some(({ message }) => message.includes("at most 40 characters"))).toBe(true);
   });
 
   it("forks a fresh validated document without copying history or app data", async () => {
@@ -282,12 +288,14 @@ describe("apps lifecycle", () => {
 
   it("undoes same-millisecond edits in strict LIFO order", async () => {
     const store = memoryStore({ timestamp: () => "2026-07-11T12:00:00.000Z" });
-    const runtime = createApps({
+    let runtime: AppsRuntime;
+    runtime = createApps({
       store,
       guard: guardFixture(),
       tools,
       catalog: [],
-      model: brainModel(),
+      model: basicLanguageModel(),
+      screen: screenFor(() => runtime),
     });
     const app: AppDocument = {
       format: VENDO_APP_FORMAT,

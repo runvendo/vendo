@@ -1,7 +1,7 @@
 /** Single-app transport (08-ui §3). */
 import type { AppDocument, AppId, Json, ToolOutcome } from "@vendoai/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useVendoContext } from "../context.js";
+import { useVendoProvider } from "../context.js";
 import type { EditResult, OpenSurface, VersionEntry } from "../wire-types.js";
 
 /** How many times a load may try before the error becomes the user's problem.
@@ -30,7 +30,7 @@ export function useApp(appId: AppId, { enabled = true }: AppOptions = {}): {
   history: { list(): Promise<VersionEntry[]>; undo(): Promise<AppDocument> };
   refresh(): Promise<void>;
 } {
-  const { client } = useVendoContext();
+  const { client } = useVendoProvider();
   const [app, setApp] = useState<AppDocument>();
   const [surface, setSurface] = useState<OpenSurface>();
   const [error, setError] = useState<Error>();

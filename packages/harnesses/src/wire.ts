@@ -7,8 +7,8 @@
  *
  * The `data-vendo-*` parts are NOT written here: the view channel, the approval
  * card, the connect card, the build-failed banner and the citations part all come
- * from the shipped bridge (`guardedCall`/`previewApproval` in @vendoai/agent), so
- * a harness turn produces the identical wire a `createAgent` turn does.
+ * from the shipped bridge (`guardedCall`/`previewApproval` in ./tool-bridge.ts),
+ * so a harness turn produces the identical wire a `createAgent` turn does.
  *
  * ONE addition, and deliberately NOT in core's stream-parts.ts: `status` (§1.5)
  * has no existing part and must be screen-only. The ai-SDK's own
@@ -34,6 +34,12 @@ import type { MirrorEvent } from "./turn-tools.js";
  * for. It lives here rather than in core because §1.6 freezes stream-parts.ts.
  */
 export const VENDO_STATUS_PART = "data-vendo-status" as const;
+
+/** The effective thread id every turn response carries (03 §1), so a caller
+ *  that began without one can adopt it. Every door that serves a turn stamps the
+ *  SAME header — the wire reads it to register turn liveness — so it is named
+ *  once, here, beside the rest of the wire vocabulary. */
+export const THREAD_ID_HEADER = "x-vendo-thread-id";
 
 type Writer = UIMessageStreamWriter<UIMessage>;
 
@@ -106,6 +112,18 @@ export function writeView(writer: Writer, part: VendoViewPart): void {
  */
 export function writeError(writer: Writer, message: string): void {
   writer.write({ type: "error", errorText: message });
+}
+
+/**
+ * self-serve P — the failure as part of the ASSISTANT MESSAGE, not only of the
+ * client's transient state. The `error` chunk above belongs to no message and is
+ * gone on the next mount, so a reloaded thread showed the user's question
+ * answered by a blank reply. This part persists beside it, carrying the same
+ * gated sentence the screen was given (core `stream-parts.ts` — an existing
+ * name, no new wire format).
+ */
+export function writeTurnError(write: (part: unknown) => void, message: string): void {
+  write(toVendoWirePart({ type: "data-vendo-turn-error", message }));
 }
 
 /**

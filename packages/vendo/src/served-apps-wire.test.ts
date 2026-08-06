@@ -269,19 +269,15 @@ describe("the served lane is offered only where it can actually serve", () => {
     return captured.join("\n=== next call ===\n");
   };
 
-  it("tells the planner it cannot serve web pages when this deployment has no origin", async () => {
-    const told = await whatTheBrainWasTold(undefined);
-
-    expect(told).toContain("WHAT THIS HOST CANNOT DO");
-    expect(told).toContain("cannot serve its own web pages");
-    // And NOT because machines look unavailable — that lane is open here.
-    expect(told).not.toContain("machines disabled");
-    expect(told).not.toContain("no sandbox configured");
-  });
-
+  // The "WHAT THIS HOST CANNOT DO" case that stood here is GONE, and nothing
+  // replaced it: that block was `laneGates` → `hostCannot` → the BRAIN's prompt,
+  // and the brain was its only reader, so it died with the brain. There is no
+  // plan-time telling any more — the capability gap surfaces where the person
+  // meets it instead: on the receipt (`vendo_make` answers "failed" with the
+  // reason) and at the served flip, which refuses without an origin (see the
+  // 501 case above). The negative below still guards the OTHER direction: a
+  // deployment that CAN serve is never told it cannot.
   it("says no such thing when the deployment has an origin — the lane is real", async () => {
-    // The control. Without it the assertion above would also pass on a host that
-    // simply says "cannot serve" to everyone.
     const told = await whatTheBrainWasTold("http://wire.test");
 
     expect(told).not.toContain("cannot serve its own web pages");

@@ -15,7 +15,7 @@ import {
   type ToolRegistry,
   type VendoViewStreamingToolCall,
 } from "@vendoai/core";
-import { wireErrorMessage } from "@vendoai/agent/internal";
+import { wireErrorMessage } from "./wire-error.js";
 import { describe, expect, it, vi } from "vitest";
 import { defineHarness } from "./define.js";
 import { createHarnessRuntime } from "./runtime.js";
@@ -568,5 +568,30 @@ describe("C6 — a parked turn keeps its record", () => {
     // After the first ask the transcript carries one approval; after the second
     // it carries both. A single-shot checkpoint would leave the second at 1.
     expect(saves).toEqual([1, 2]);
+  });
+});
+
+// S5 — the rehomed survivors. `createAgent` is being deleted, so the record its
+// failed turns left behind has to be indistinguishable coming off this door.
+describe("S5 — a failed turn's record is the SAME shape the legacy door wrote", () => {
+  it("puts a data-vendo-turn-error part on the wire in the toVendoWirePart envelope", async () => {
+    const guard = testGuard();
+    const { run } = runtimeFor({ registry: boundRegistry({}, guard), guard });
+    const parts = await run(defineHarness({
+      name: "failer",
+      async *run() {
+        yield { type: "error", message: "Vendo: no model key (validation)" };
+      },
+    }));
+
+    // `createAgent` wrote `toVendoWirePart({ type, message })` — a `data` object
+    // carrying the message, beside (never instead of) the transient error chunk.
+    const notices = parts.filter((part) => part.type === "data-vendo-turn-error");
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toEqual({
+      type: "data-vendo-turn-error",
+      data: { message: "Vendo: no model key (validation)" },
+    });
+    expect(parts.find((part) => part.type === "error")?.errorText).toBe("Vendo: no model key (validation)");
   });
 });

@@ -8,17 +8,17 @@
  * embedded agent, reading its own result back, answered "I can't set two
  * separate schedules on the same app".
  *
- * This rides the real runtime: real store row, real amend → plan → server lane →
- * persist, and the host's own arming seam. Nothing is stubbed on the authoring
- * side except the model, because the model is the only thing that cannot be run
- * here.
+ * This rides the real runtime: real store row, real escalation → plan → server
+ * lane → persist, and the host's own arming seam. Nothing is stubbed on the
+ * authoring side except the screen agent and the model, because neither can be
+ * run here.
  *
  * The host below composes NO sandbox and no machine flags, and both automations
  * are agentic — so this is also the other half of the escalation ladder's law:
  * an agentic automation is one harness run on the agents runtime, and it authors
  * and arms with no machine anywhere.
  */
-import { VENDO_APP_FORMAT, type AppDocument, type AppId, type RunContext, type ToolRegistry } from "@vendoai/core";
+import { VENDO_APP_FORMAT, type AppDocument, type AppId, type RunContext, type ScreenAssembler, type ToolRegistry } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { createApps } from "./index.js";
 import { guardFixture, memoryStore, scriptedLanguageModel, seedAppRow } from "./testing/index.js";
@@ -58,15 +58,15 @@ const seedDoc: AppDocument = {
   },
 };
 
-/** The two asks, and the two amendments the brain answers them with. Both are
- *  agentic, so neither declares a results collection and neither drags a board
- *  rewire into a test about the trigger list. */
+/** The two asks, and the two plans the escalating screen agent leaves behind for
+ *  them. Both are agentic, so neither declares a results collection and neither
+ *  drags a board rewire into a test about the trigger list. */
 const NUDGE_ASK = "nudge everyone with an overdue invoice every day";
 const NUDGE_WHY = "Each invoice needs a judgment call on how firm the nudge should be.";
 const SUMMARY_ASK = "also send me a weekly summary of what got nudged";
 const SUMMARY_WHY = "The week's nudges have to be weighed up while nobody has the app open.";
 
-const amendment = (title: string, purpose: string, schedule: string, why: string): string =>
+const escalatedPlanText = (title: string, purpose: string, schedule: string, why: string): string =>
   `<Plan name="Invoice board">
   <Group title="${title}">
     <Leaf component="Text" purpose="${purpose}"/>
@@ -99,13 +99,7 @@ const respond = (prompt: string): string => {
       ? automationPlan("Weekly nudge summary", "7d", "Weigh up the week's nudges and say what mattered.", "main")
       : automationPlan("Invoice nudge triage", "1d", "Decide who deserves a gentle vs firm nudge.");
   }
-  if (prompt.includes("YOUR SECTION")) return '<Text text="Nudges are drafted every morning."/>';
-  // Only BRAIN turns are answered; the AI reviewer rides the same model and
-  // reports nothing.
-  if (!prompt.includes("THEY ARE ASKING NOW:")) return "";
-  return prompt.includes(SUMMARY_ASK)
-    ? amendment("Weekly summary", "One line saying the weekly summary lands on Fridays", "every Friday", SUMMARY_WHY)
-    : amendment("Nudges", "One line saying the nudge automation runs daily", "every day", NUDGE_WHY);
+  return "";
 };
 
 const authorBoth = async () => {
@@ -114,6 +108,16 @@ const authorBoth = async () => {
   const guard = guardFixture();
   /** Every arming the host's seam was asked for, in order. */
   const armed: Array<{ appId: AppId; triggerId: string }> = [];
+  /** The ask the screen agent escalated last. `escalatedPlan` is read per app,
+   *  not per instruction, so the plan it hands back is the one THIS ask left
+   *  behind — which is exactly how the runtime's own escalating agent works. */
+  let escalated = "";
+  const screen: ScreenAssembler = {
+    assemble: async (request) => {
+      escalated = request.request;
+      return { kind: "escalate", why: "away work no arrangement of components can express" };
+    },
+  };
   const runtime = createApps({
     store,
     guard,
@@ -126,6 +130,10 @@ const authorBoth = async () => {
           : message.content.map((part) => part.text ?? "").join(""))
         .join("\n"),
     )),
+    screen,
+    escalatedPlan: async () => escalated.includes(SUMMARY_ASK)
+      ? escalatedPlanText("Weekly summary", "One line saying the weekly summary lands on Fridays", "every Friday", SUMMARY_WHY)
+      : escalatedPlanText("Nudges", "One line saying the nudge automation runs daily", "every day", NUDGE_WHY),
     armAutomation: async (appId, triggerId) => {
       armed.push({ appId, triggerId });
       return { enabled: true, missing: [] };

@@ -205,21 +205,61 @@ export const storeWireHarnessClearRequestSchema = z.object({
 // workspace
 // ---------------------------------------------------------------------------
 
-export const storeWireWorkspaceIndexRequestSchema = cursorQuerySchema;
+/** The owner whose drawer a workspace op addresses: the end user (or org) the
+    files belong to, the way every other op family already names its subject.
+    Optional here because a single-player mount binds its one owner at
+    construction; a mount serving more than one user always sends it, or its
+    whole user base shares one drawer. */
+const ownerField = { owner: z.string().min(1).optional() };
+
+/** One committed change to one path: new content, or a tombstone that removes
+    it (deletion was otherwise inexpressible over the wire). `expectedRevision`
+    makes the write a strict compare-and-swap against the revision the caller
+    read — the `/orgs` mounts' policy — and a stale one refuses the commit.
+    It has THREE states: a number compares, `null` is the create-only guard
+    ("the caller read nothing here, so this path must not exist yet"), and the
+    absent field is unguarded. Without `null` a caller who checked out before
+    the file existed had no way to say so, and the guard degraded into an
+    unguarded write that silently overwrote whoever created it first.
+    `data` stays unknown: content is the caller's JSON, with binary riding the
+    `{"$vendoWorkspaceBytes": base64}` envelope. */
+export const storeWireWorkspaceEntrySchema = z.object({
+  path: z.string().min(1),
+  data: z.unknown(),
+  delete: z.literal(true).optional(),
+  expectedRevision: z.number().int().min(0).nullable().optional(),
+}).passthrough();
+
+export const storeWireWorkspaceIndexRequestSchema = cursorQuerySchema.extend(ownerField);
 
 export const storeWireWorkspaceReadRequestSchema = z.object({
+  ...ownerField,
   paths: z.array(z.string().min(1)).min(1),
 }).passthrough();
 
 export const storeWireWorkspaceCommitRequestSchema = z.object({
-  entries: z.array(z.unknown()).min(1),
+  ...ownerField,
+  entries: z.array(storeWireWorkspaceEntrySchema).min(1),
 }).passthrough();
 
-export const storeWireWorkspaceHistoryRequestSchema = cursorQuerySchema;
+/** `path` narrows the page to the commits that touched it (newest first, same
+    keyset cursor); without it the page is the whole commit ledger. */
+export const storeWireWorkspaceHistoryRequestSchema = cursorQuerySchema.extend({
+  ...ownerField,
+  path: z.string().min(1).optional(),
+});
 
+/** Exactly ONE of commitId/path: undo the whole commit, or undo one path's
+    newest change. Both set is two different mutations in one call, and neither
+    is an undo with no target. */
 export const storeWireWorkspaceUndoRequestSchema = z.object({
-  commitId: z.string().min(1),
-}).passthrough();
+  ...ownerField,
+  commitId: z.string().min(1).optional(),
+  path: z.string().min(1).optional(),
+}).passthrough().refine(
+  (body) => (body.commitId === undefined) !== (body.path === undefined),
+  { message: "undo takes exactly one of commitId or path" },
+);
 
 // ---------------------------------------------------------------------------
 // lifecycle

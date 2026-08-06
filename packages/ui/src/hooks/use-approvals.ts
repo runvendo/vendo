@@ -1,7 +1,7 @@
 /** Pending approval transport (08-ui §3). */
 import type { ApprovalDecision, ApprovalId, ApprovalRequest } from "@vendoai/core";
 import { useCallback, useSyncExternalStore } from "react";
-import { useVendoContext } from "../context.js";
+import { useVendoProvider } from "../context.js";
 import {
   markRunResultsSeen,
   subscribeRunActivity,
@@ -21,7 +21,7 @@ export function useApprovals(options?: PollOptions): {
   refresh(): Promise<void>;
   decide(ids: ApprovalId | ApprovalId[], decision: ApprovalDecision, decideOptions?: { grantSetId?: string }): Promise<void>;
 } {
-  const { client } = useVendoContext();
+  const { client } = useVendoProvider();
   // H15 — every surface shares ONE poller per client (approvals-feed), so the
   // launcher badge, the waiting strip, the rail and the toast feed cost one
   // request between them instead of one each.

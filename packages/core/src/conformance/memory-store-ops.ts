@@ -68,10 +68,30 @@ export function memoryStoreOps(): StoreOps {
   // harness: Map<"appId:subject", state>
   const harnessState = new Map<string, unknown>();
 
-  // workspace
-  type WsEntry = { path: string; data: unknown };
-  type WsCommit = { id: string; entries: WsEntry[]; before: Map<string, unknown> };
-  const wsFiles = new Map<string, unknown>();
+  // workspace — one drawer per owner (the end user or org the files belong to);
+  // a call with no owner rides the bound single-player default, exactly as the
+  // local backend does.
+  type WsEntry = { path: string; data?: unknown; delete?: true; expectedRevision?: number | null };
+  type WsFile = { data: unknown; revision: number; updatedAt: IsoDateTime };
+  /** `before` is what each path held before the commit (absent = the commit
+      created it), and `beforeRevision` which revision that was — the pair a
+      per-path undo restores, and the pair it consumes so a later whole-commit
+      undo does not restore the same path twice. */
+  type WsCommit = {
+    id: string;
+    owner: string;
+    at: IsoDateTime;
+    entries: WsEntry[];
+    before: Map<string, unknown>;
+    beforeRevision: Map<string, number>;
+  };
+  const BOUND_OWNER = "user_local";
+  const drawers = new Map<string, Map<string, WsFile>>();
+  const drawer = (owner: string): Map<string, WsFile> => {
+    let files = drawers.get(owner);
+    if (!files) { files = new Map(); drawers.set(owner, files); }
+    return files;
+  };
   const wsCommits: WsCommit[] = [];
   let wsCommitSeq = 0;
   // idempotency key -> the body it first carried, so a replay can be told from
@@ -244,10 +264,19 @@ export function memoryStoreOps(): StoreOps {
         if (k.startsWith(`${harnessSlot(id)}:`)) harnessState.delete(k);
       }
     },
+    /** Insert, or EDIT BY ID: a message whose id is already in the thread
+        replaces it in place — that is how an approval flips from pending to
+        answered. Appending it would leave two messages under one id, which
+        every real backend refuses. */
     async putMessage(threadId, message) {
       const entry = threads.get(threadId);
       if (!entry) throw new VendoError("not-found", `thread ${threadId} not found`);
-      entry.thread.messages.push(jsonCopy(message));
+      const id = (message as { id?: unknown } | null)?.id;
+      const at = typeof id === "string" && id !== ""
+        ? entry.thread.messages.findIndex((m) => (m as { id?: unknown } | null)?.id === id)
+        : -1;
+      if (at !== -1) entry.thread.messages[at] = jsonCopy(message);
+      else entry.thread.messages.push(jsonCopy(message));
       const rec = threadRecord(threadId, entry.thread, entry.record);
       threads.set(threadId, { record: rec, thread: entry.thread });
       return copyRecord(rec);
@@ -292,9 +321,18 @@ export function memoryStoreOps(): StoreOps {
   // workspace family
   // ---------------------------------------------------------------------------
 
+  const byteLength = (data: unknown): number =>
+    new TextEncoder().encode(JSON.stringify(data ?? null)).length;
+
   const workspace: StoreOps["workspace"] = {
     async index(query) {
-      const entries = [...wsFiles.entries()].map(([path, data]) => ({ path, data }));
+      const files = drawer(query?.owner ?? BOUND_OWNER);
+      const entries = [...files.entries()].map(([path, file]) => ({
+        path,
+        bytes: byteLength(file.data),
+        revision: file.revision,
+        updatedAt: file.updatedAt,
+      }));
       const offset = query?.cursor ? Math.max(0, Number.parseInt(query.cursor, 10)) : 0;
       const end = Math.min(offset + pageLimit(query?.limit), entries.length);
       return {
@@ -302,15 +340,27 @@ export function memoryStoreOps(): StoreOps {
         ...(end < entries.length ? { cursor: String(end) } : {}),
       };
     },
-    async read(paths) {
+    async read(paths, opts) {
+      const files = drawer(opts?.owner ?? BOUND_OWNER);
       const result: Record<string, unknown> = {};
       for (const p of paths) {
-        const v = wsFiles.get(p);
-        if (v !== undefined) result[p] = jsonCopy(v);
+        const file = files.get(p);
+        if (file !== undefined) result[p] = jsonCopy(file.data);
       }
       return result;
     },
     async commit(entries, opts) {
+      const owner = opts?.owner ?? BOUND_OWNER;
+      // One commit, one mutation per path: two entries for the same path leave
+      // the commit with no single before-image, so undoing it would walk back to
+      // the intermediate state the commit itself wrote.
+      const paths = new Set<string>();
+      for (const entry of entries as WsEntry[]) {
+        if (paths.has(entry.path)) {
+          throw new VendoError("validation", `workspace entry ${entry.path} appears twice in one commit`);
+        }
+        paths.add(entry.path);
+      }
       const key = opts?.idempotencyKey;
       if (key !== undefined) {
         const body = JSON.stringify(entries);
@@ -321,16 +371,61 @@ export function memoryStoreOps(): StoreOps {
         }
         wsIdempotencyKeys.set(key, body);
       }
+      const files = drawer(owner);
+      // Strict compare-and-swap is checked for the WHOLE set first: a commit
+      // that conflicts on one path applies none of itself.
+      // `null` is the create-only guard, so an ABSENT path reads as `null` and
+      // matches it; only the missing field is unguarded.
+      const conflicts = (entries as WsEntry[])
+        .filter((e) => e.expectedRevision !== undefined
+          && (files.get(e.path)?.revision ?? null) !== e.expectedRevision)
+        .map((e) => e.path);
+      if (conflicts.length > 0) {
+        throw new VendoError(
+          "conflict",
+          `the workspace moved on under ${conflicts.sort().join(", ")}; nothing was committed`,
+        );
+      }
       wsCommitSeq += 1;
       const before = new Map<string, unknown>();
+      const beforeRevision = new Map<string, number>();
       for (const e of entries as WsEntry[]) {
-        before.set(e.path, wsFiles.get(e.path));
-        wsFiles.set(e.path, jsonCopy(e.data));
+        const current = files.get(e.path);
+        before.set(e.path, current?.data);
+        if (current !== undefined) beforeRevision.set(e.path, current.revision);
+        if (e.delete === true) {
+          files.delete(e.path);
+          continue;
+        }
+        files.set(e.path, {
+          data: jsonCopy(e.data),
+          revision: (current?.revision ?? 0) + 1,
+          updatedAt: isoNow(),
+        });
       }
-      wsCommits.push({ id: String(wsCommitSeq), entries: entries as WsEntry[], before });
+      wsCommits.push({
+        id: String(wsCommitSeq),
+        owner,
+        at: isoNow(),
+        entries: entries as WsEntry[],
+        before,
+        beforeRevision,
+      });
     },
     async history(query) {
-      const all = wsCommits.map((c) => ({ commitId: c.id, entries: c.entries }));
+      const owner = query?.owner ?? BOUND_OWNER;
+      const path = query?.path;
+      const all = wsCommits
+        .filter((c) => c.owner === owner
+          && (path === undefined || c.entries.some((e) => e.path === path)))
+        .map((c) => ({
+          commitId: c.id,
+          entries: c.entries,
+          at: c.at,
+          ...(path !== undefined && c.beforeRevision.has(path)
+            ? { revision: c.beforeRevision.get(path)! }
+            : {}),
+        }));
       all.reverse(); // newest first
       const offset = query?.cursor ? Math.max(0, Number.parseInt(query.cursor, 10)) : 0;
       const end = Math.min(offset + pageLimit(query?.limit), all.length);
@@ -339,15 +434,45 @@ export function memoryStoreOps(): StoreOps {
         ...(end < all.length ? { cursor: String(end) } : {}),
       };
     },
-    async undo(commitId) {
-      const idx = wsCommits.findIndex((c) => c.id === commitId);
-      if (idx === -1) throw new VendoError("not-found", `commit ${commitId} not found`);
-      const commit = wsCommits[idx]!;
-      for (const [path, prev] of commit.before) {
-        if (prev === undefined) wsFiles.delete(path);
-        else wsFiles.set(path, prev);
+    async undo(target, opts) {
+      const owner = opts?.owner ?? BOUND_OWNER;
+      const files = drawer(owner);
+      /** Put one path back the way the commit found it: absent means the commit
+          created it, so undoing removes it again. */
+      const restore = (path: string, prev: unknown): number | undefined => {
+        if (prev === undefined) {
+          files.delete(path);
+          return undefined;
+        }
+        const revision = (files.get(path)?.revision ?? 0) + 1;
+        files.set(path, { data: prev, revision, updatedAt: isoNow() });
+        return revision;
+      };
+      if (typeof target === "string") {
+        // Another owner's commit is not this owner's to undo — and saying so
+        // would make the door an existence oracle.
+        const idx = wsCommits.findIndex((c) => c.id === target && c.owner === owner);
+        if (idx === -1) throw new VendoError("not-found", `commit ${target} not found`);
+        for (const [path, prev] of wsCommits[idx]!.before) restore(path, prev);
+        wsCommits.splice(idx, 1);
+        return {};
       }
-      wsCommits.splice(idx, 1);
+      const { path } = target;
+      let idx = wsCommits.length - 1;
+      while (idx >= 0) {
+        const c = wsCommits[idx]!;
+        if (c.owner === owner && c.entries.some((e) => e.path === path)) break;
+        idx -= 1;
+      }
+      if (idx === -1) throw new VendoError("not-found", `no commit has touched ${path}`);
+      const commit = wsCommits[idx]!;
+      const revision = restore(path, commit.before.get(path));
+      // Consume ONLY this path — the rest of the commit stays undoable.
+      commit.entries = commit.entries.filter((e) => e.path !== path);
+      commit.before.delete(path);
+      commit.beforeRevision.delete(path);
+      if (commit.entries.length === 0) wsCommits.splice(idx, 1);
+      return revision === undefined ? {} : { revision };
     },
   };
 

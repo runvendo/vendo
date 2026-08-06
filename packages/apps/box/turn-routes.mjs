@@ -122,9 +122,12 @@ export const createSessionRoutes = (options = {}) => {
   // "Not logged in"), so the credential arrives with the first message.
   let sdkEnv = { ...(options.env ?? process.env) };
 
-  /** The live session and the id to resume on reopen. */
+  /** The live session, the id to resume on reopen, and the brief it was OPENED
+   *  with — the SDK fixes `systemPrompt` at open, so this is the only record of
+   *  what the session is actually thinking with. */
   let session;
   let sessionId;
+  let brief;
   /** Every message's buffers, by id. The in-flight one is `current`. */
   const messages = new Map();
   let current;
@@ -183,6 +186,7 @@ export const createSessionRoutes = (options = {}) => {
       emit,
       onFileWritten,
     });
+    brief = payload.systemPrompt;
   };
 
   const startMessage = async (payload) => {
@@ -192,22 +196,28 @@ export const createSessionRoutes = (options = {}) => {
     for (const stale of [...messages.keys()].slice(0, -MESSAGES_RETAINED)) messages.delete(stale);
     current = state;
 
-    if (session === undefined) {
-      await openSession(payload);
-    } else if (payload.reopen === true) {
-      // A TRUNCATION (§1.3): the host says this session remembers an answer the
-      // user threw away, so it must NOT come back with its memory — the fresh
-      // one resumes nothing and the host's prompt carries the re-seed.
-      //
-      // This used to also fire on a CHANGED TOOL LISTING, because an in-process
-      // MCP server's tool set is fixed when the session opens. The door lists
-      // live, so a tool `find_tools` equips mid-conversation costs nothing.
+    // Two reasons to drop a live session before answering.
+    //
+    // A TRUNCATION (§1.3): the host says this session remembers an answer the
+    // user threw away, so it must NOT come back with its memory — the fresh one
+    // resumes nothing and the host's prompt carries the re-seed.
+    //
+    // A CHANGED BRIEF: the SDK fixes `systemPrompt` when the session opens, so
+    // a warm session keeps thinking with whatever it opened with. The host's
+    // [Situation] is composed per turn and is "current turn only", which is
+    // simply false unless the session reopens with it. This one KEEPS the
+    // memory — `sessionId` still resumes.
+    //
+    // Neither used to fire on a CHANGED TOOL LISTING, because an in-process MCP
+    // server's tool set is fixed when the session opens. The door lists live, so
+    // a tool `find_tools` equips mid-conversation costs nothing.
+    if (session !== undefined && (payload.reopen === true || payload.systemPrompt !== brief)) {
       const closing = session;
       session = undefined;
+      if (payload.reopen === true) sessionId = undefined;
       await closing.end().catch(() => undefined);
-      sessionId = undefined;
-      await openSession(payload);
     }
+    if (session === undefined) await openSession(payload);
 
     state.promise = (async () => {
       try {

@@ -23,7 +23,7 @@
  * was designed and proven on stage.
  */
 import { useCallback, useEffect, useState } from "react";
-import { useVendoContext } from "../context.js";
+import { useVendoProvider } from "../context.js";
 import { announcePin, onPinAnnounced, pinTaken } from "../pin-events.js";
 import { openVendoConversation } from "./overlay-registry.js";
 
@@ -303,7 +303,7 @@ export function usePinNudge(appId: string, invited: boolean): "invite" | "pinned
 }
 
 export function usePinAction(): ((app: { appId: string; payload: unknown }) => void) | undefined {
-  const { onPin, pinSlot } = useVendoContext();
+  const { onPin, pinSlot } = useVendoProvider();
   const pin = useCallback(
     (app: { appId: string; payload: unknown }) => {
       if (onPin === undefined) return;

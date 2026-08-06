@@ -13,7 +13,7 @@
     user read our internals. The args are humanized here, client-side, exactly as
     they are in-thread. */
 import type { ApprovalRequest } from "@vendoai/core";
-import { useVendoContext } from "../context.js";
+import { useVendoProvider } from "../context.js";
 import { useAttention } from "../hooks/use-approvals.js";
 import { formatAuditTime } from "./activity-semantics.js";
 import { consentWords, toolPresentation } from "./build-beat.js";
@@ -41,7 +41,7 @@ function WaitingRow({ approval, onDecide }: {
   approval: ApprovalRequest;
   onDecide(approve: boolean): void;
 }) {
-  const { tools } = useVendoContext();
+  const { tools } = useVendoProvider();
   const meta = tools[approval.call.tool];
   const presentation = toolPresentation(
     approval.call.tool,

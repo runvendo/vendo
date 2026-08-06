@@ -2,7 +2,7 @@
  * list that VendoPage previously reached only by calling the client directly. */
 import type { ThreadId } from "@vendoai/core";
 import { useCallback } from "react";
-import { useVendoContext } from "../context.js";
+import { useVendoProvider } from "../context.js";
 import { type PollOptions, useResource } from "./use-resource.js";
 import type { Thread, ThreadSummary } from "../wire-types.js";
 
@@ -14,7 +14,7 @@ export function useThreads(options?: PollOptions): {
   get(id: ThreadId): Promise<Thread>;
   remove(id: ThreadId): Promise<void>;
 } {
-  const { client } = useVendoContext();
+  const { client } = useVendoProvider();
   const list = useCallback(() => client.threads.list(), [client]);
   const { data, error, isLoading, refresh } = useResource(list, [] as ThreadSummary[], options);
 

@@ -92,6 +92,23 @@ describe("the reference only names things that exist", () => {
     expect(VENDO_FORMAT_REFERENCE).toContain("There is no `<Tab>`");
   });
 
+  /** V4 retired the legacy prewired family — the Kit is the ONE component source,
+   *  the tabular component is `DataTable`, and `Skeleton` became private chrome. A
+   *  reference that still writes `Table` teaches a name nothing resolves: the
+   *  compiler leaves it unknown and the node never paints. The examples are
+   *  already covered (they compile against WIRE_COMPONENT_NAMES above); this is
+   *  the PROSE, which nothing else reads. Arrived from the deleted
+   *  `generation/contracts/sections.test.ts`, which asserted the same of a prompt
+   *  section that no longer exists. */
+  it("teaches no retired component name", () => {
+    for (const retired of ["Table", "Skeleton"]) {
+      expect(WIRE_COMPONENT_NAMES).not.toContain(retired);
+      const named = VENDO_FORMAT_REFERENCE.replaceAll("DataTable", "")
+        .match(new RegExp(`\\b${retired}\\b`, "g")) ?? [];
+      expect(named, `the reference names the retired "${retired}" ${named.length}x`).toEqual([]);
+    }
+  });
+
   it("carries the component prop schemas, generated from the specs", () => {
     // The host catalog is on the host/components mount; everything that ships
     // with the format has to be IN here, or its props are unknowable.

@@ -14,7 +14,7 @@
  */
 import type { AppDocument } from "@vendoai/core";
 import { useMemo } from "react";
-import { useVendoContext } from "../../context.js";
+import { useVendoProvider } from "../../context.js";
 import { useApp } from "../../hooks/use-app.js";
 import { useInViewport } from "../../hooks/use-in-viewport.js";
 import { AppFrame } from "../../tree/frames.js";
@@ -38,7 +38,7 @@ const SHELF_LIMIT = 4;
  *  nothing. The gate is sticky (scrolling back past a live app never tears it
  *  down) and it fails OPEN where IntersectionObserver is missing. */
 function TilePreview({ appId }: { appId: string }) {
-  const { components } = useVendoContext();
+  const { components } = useVendoProvider();
   const { ref, seen } = useInViewport<HTMLSpanElement>();
   const { surface, error, isLoading } = useApp(appId, { enabled: seen });
   // No keepalive and no action handler: a preview must not hold a machine warm

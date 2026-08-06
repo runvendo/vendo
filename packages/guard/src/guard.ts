@@ -1339,13 +1339,18 @@ class GuardImplementation implements VendoGuard {
       }
     }
 
-    // Nothing spoke. An `ungraded` tool is one nobody has graded — no human,
-    // no judge, no protocol fact — so not-knowing is felt here rather than
-    // hidden behind a run: it asks, exactly as `destructive` does under the
-    // default policy. Guard-level on purpose, so a hand-wired server with no
-    // policy config at all gets it too. A host that consciously wants these to
-    // run says so in writing, with a `risk: "ungraded"` rule.
-    if (descriptor.risk === "ungraded") {
+    // Nothing spoke. `ungraded` is a tool nobody has graded — no human, no
+    // judge, no protocol fact — and `destructive` is one whose effect cannot be
+    // taken back; both need a PERSON, so neither is hidden behind a run here.
+    // Guard-level on purpose, so a hand-wired server with no policy config at
+    // all gets it too. A host that consciously wants these to run says so in
+    // writing, with a matching `risk` rule.
+    //
+    // `withheldFromUnattended` is the same two grades, and reading them off ONE
+    // list is the point: §12 refuses them where there is nobody to ask, and this
+    // asks where there is — the halves cannot drift apart into a default that
+    // silently ran what the unattended law refuses.
+    if (withheldFromUnattended(descriptor)) {
       return withInvalidated({ decision: { action: "ask", decidedBy: "default" } });
     }
     return withInvalidated({ decision: { action: "run", decidedBy: "default" } });

@@ -1,10 +1,10 @@
 import { VENDO_APP_FORMAT, type AppDocument, type RunContext, type ToolRegistry } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { createInClientApprovals } from "./inclient.js";
-import { createApps } from "./index.js";
+import { createApps, type AppsRuntime } from "./index.js";
 import { pinComponentName, type PinBaseline } from "./pins.js";
 import { createReviewLifecycle } from "./review.js";
-import { guardFixture, memoryStore, scriptedLanguageModel, seedAppRow } from "./testing/index.js";
+import { basicLanguageModel, guardFixture, memoryStore, scriptedAssembler, seedAppRow } from "./testing/index.js";
 import { appVersionHash } from "./version-hash.js";
 
 const tools: ToolRegistry = {
@@ -67,30 +67,25 @@ const doc = (slot: string, overrides: Partial<AppDocument> = {}): AppDocument =>
 const setup = (review: { reviewer?(ctx: RunContext): boolean } = { reviewer: (ctx) => ctx.principal.subject === "host_reviewer" }) => {
   const store = memoryStore();
   const guard = guardFixture();
-  const runtime = createApps({
+  let runtime: AppsRuntime;
+  runtime = createApps({
     store,
     guard,
     tools,
     catalog: [],
     pinBaselines: [reviewedBaseline, instantBaseline],
-    // A rename, in the brain's edit dialect (the conductor replaced the
-    // `<SetName>` op compiler this file was written against): the app's name is
-    // printed on its opening <App> line, so quoting that line back is the whole
-    // edit. Read from the prompt so it holds for every `doc(slot)` name here.
-    model: scriptedLanguageModel((call) => {
-      const prompt = call.prompt
-        .map((message) => typeof message.content === "string"
-          ? message.content
-          : message.content.map((part) => part.text ?? "").join(""))
-        .join("\n");
-      // The LAST match: the prompt's own instructions carry a literal
-      // `<App name="...">` placeholder before the printed app.
-      const openings = [...prompt.matchAll(/<App name="[^"]*">/g)]
-        .map((match) => match[0])
-        .filter((opening) => opening !== '<App name="...">');
-      const opening = openings.at(-1) ?? '<App name="Untitled">';
-      return `<Edit><Old>${opening}</Old><New><App name="Edited name"></New></Edit>`;
+    // A rename, as the ONE builder does it: the assembler opens the app's own
+    // document, writes it out again under a new name and saves the whole thing.
+    // The remixed island travels with it, because a rewrite that dropped the
+    // person's fork would be a different app, not a renamed one.
+    screen: scriptedAssembler(() => runtime, (_request, current) => {
+      const component = pinComponentName(current?.pins?.[0]?.slot ?? "hero-card");
+      const source = current?.components?.[component];
+      return `<App name="Edited name">${source === undefined
+        ? ""
+        : `<${component} /><Island name="${component}">${source}</Island>`}</App>`;
     }),
+    model: basicLanguageModel(),
     review,
   });
   return { store, guard, runtime };

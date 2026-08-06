@@ -28,10 +28,22 @@ export interface PromptInput {
   directions?: readonly string[];
 }
 
+/** Every character a reader ends a line on — the four ECMAScript terminators
+ *  (LF, CR, U+2028, U+2029) plus the three Unicode adds (VT, FF, NEL), with
+ *  `\r\n` leading so a CRLF pair stays ONE break. */
+const LINE_TERMINATOR = /\r\n|[\n\r\u2028\u2029\u0085\v\f]/gu;
+
+/** Continuation lines are INDENTED — the same defence @vendoai/agent's copy
+ *  carries: `situation` is client-supplied and sections join on a blank line, so
+ *  an unindented one inside a value forges a top-level section (a forged
+ *  `Directions` is mandatory policy). An indented blank line is not one, and
+ *  normalizing every terminator to LF is what makes that true for all seven
+ *  rather than only the one `replaceAll("\n", …)` knew. */
 const factLines = (facts: Record<string, unknown>): string[] =>
   Object.entries(facts)
     .filter(([, value]) => typeof value !== "function" && value !== undefined)
-    .map(([key, value]) => `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`);
+    .map(([key, value]) =>
+      `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`.replace(LINE_TERMINATOR, "\n  "));
 
 export function assemblePrompt(input: PromptInput): string {
   const sections: string[] = [BASE_RULES];

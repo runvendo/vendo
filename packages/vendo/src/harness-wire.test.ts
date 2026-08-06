@@ -309,22 +309,23 @@ describe("createVendo({ harness }) — a turn served through the composed runtim
   });
 
   /**
-   * THE FLIP'S ONE EXCEPTION, exercised. A store with no SQL handle — the Cloud
-   * hosted store, or a host's own adapter behind the public `VendoStore` surface —
-   * cannot serve the transcript and workspace TABLES a harness turn needs, so it
-   * keeps `agent.stream`. Untested, that branch is exactly the kind of fallback
-   * that rots into "every chat turn is a boot-shaped error" for the deployments
-   * least able to notice.
+   * THE FLIP'S ONE EXCEPTION, and what became of it. A store that offers NEITHER
+   * a SQL handle nor a StoreOps surface — a host's own adapter behind the public
+   * `VendoStore` surface — cannot keep the transcript and the workspace a harness
+   * turn needs. That deployment used to be routed silently onto `agent.stream`;
+   * with the legacy door deleted there is nothing to fall back TO, so the turn is
+   * refused loudly instead (breaking change: POST /threads on a no-SQL/no-ops
+   * store → not-implemented).
    *
    * Two-sided, so it cannot pass by accident:
-   *  - the harness path is provably IMPOSSIBLE on this store (driving the door
-   *    directly raises the not-implemented refusal), and yet
-   *  - the route answers 200 and writes NO `run` row, the audit row only the
-   *    harness runtime writes — and the marker text of the harness that WAS
-   *    named is absent from the body, which the named-harness case above proves
-   *    would otherwise be there.
+   *  - the route answers the refusal rather than a turn, and the named harness
+   *    never ran (its marker text, which the named-harness case above proves
+   *    would otherwise be there, is absent), and
+   *  - the refusal NAMES BOTH ways to give the deployment a home, because an
+   *    operator who cannot tell which knob to turn is not actually being told
+   *    anything. Boot stays up either way — this is a per-turn refusal.
    */
-  it("keeps POST /threads on agent.stream when the store has no SQL handle", async () => {
+  it("refuses POST /threads loudly when the store has neither SQL nor ops", async () => {
     const backing = await tempStore("vendo-harness-nonsql-");
     const { vendo } = await compose({
       store: nonSqlStore(backing),
@@ -336,18 +337,22 @@ describe("createVendo({ harness }) — a turn served through the composed runtim
     const turn = await vendo.handler(request("/threads", {
       threadId: "thr_nonsql", message: userMessage("m1", "hello"),
     }));
-    expect(turn.status).toBe(200);
-    expect(await turn.text()).not.toContain("HARNESS-RAN");
+    expect(turn.status).toBe(501);
+    const body = await turn.text();
+    expect(body).not.toContain("HARNESS-RAN");
+    expect(body).toMatch(/SQL-backed store/);
+    expect(body).toMatch(/StoreOps-capable store/);
 
+    // Nothing ran, so nothing was audited: no `run` row, the row only the
+    // harness runtime writes.
     const { records } = await backing.records("vendo_audit").list({ refs: { subject: principal.subject } });
     const runs = records
       .map((record) => (record.data as { kind?: string }))
       .filter((row) => row.kind === "run");
     expect(runs).toEqual([]);
 
-    // The other side of the oracle: the harness door is composed and reachable,
-    // and it is the STORE that cannot serve it. So the 200 above is a routing
-    // fact, not a harness that happened to stay silent.
+    // The other side of the oracle: the door is composed and reachable, and it
+    // is the STORE that cannot serve it — the same refusal, raised directly.
     await expect(vendo.harness.stream({
       threadId: "thr_nonsql" as never,
       message: userMessage("m2", "hello"),

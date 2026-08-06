@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useVendoContext } from "../context.js";
+import { useVendoProvider } from "../context.js";
 import { useConnections } from "../hooks/use-connections.js";
 import { useConnectorCatalog } from "../hooks/use-connector-catalog.js";
 import { toolkitLogoUrl } from "./build-beat.js";
@@ -71,7 +71,7 @@ type Phase = "idle" | "connecting" | "popup-blocked" | "timed-out" | "connected"
  * (a blocked popup keeps polling behind a plain link; a timed-out poll says
  * nothing changed). */
 export function ConnectCard({ connector, toolkit, message, onConnected, live = true, access, onDeclined }: ConnectCardProps) {
-  const { client } = useVendoContext();
+  const { client } = useVendoProvider();
   const { options: connectors } = useConnectorCatalog();
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string>();

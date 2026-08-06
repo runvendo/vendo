@@ -1,7 +1,7 @@
 {
   "name": "@vendoai/harnesses",
-  "version": "0.5.0",
-  "description": "The harness runtime: runs any Harness safely, and vendo() \u2014 the default in-process thinker.",
+  "version": "1.0.0",
+  "description": "The harness runtime: runs any Harness safely, and vendo() — the default in-process thinker.",
   "keywords": [
     "ai",
     "agent",
@@ -31,6 +31,10 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./vendo": {
+      "types": "./dist/vendo/index.d.ts",
+      "default": "./dist/vendo/index.js"
+    },
     "./claude-code": {
       "types": "./dist/claude-code/index.d.ts",
       "default": "./dist/claude-code/index.js"
@@ -47,7 +51,6 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@vendoai/agent": "workspace:*",
     "@vendoai/apps": "workspace:*",
     "@vendoai/core": "workspace:*",
     "@vendoai/guard": "workspace:*",
@@ -59,6 +62,9 @@
     "@anthropic-ai/claude-agent-sdk": ">=0.3.0 <1"
   },
   "devDependencies": {
+    "@ai-sdk/anthropic": "3.0.12",
+    "@ai-sdk/openai": "3.0.9",
+    "@ai-sdk/openai-compatible": "2.0.9",
     "@types/node": "^22.0.0",
     "ai": "6.0.28",
     "just-bash": "^3.1.0",

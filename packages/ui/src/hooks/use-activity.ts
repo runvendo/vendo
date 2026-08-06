@@ -1,7 +1,7 @@
 /** Self-scoped audit activity transport (08-ui §3). */
 import type { AuditEvent } from "@vendoai/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useVendoContext } from "../context.js";
+import { useVendoProvider } from "../context.js";
 import { useResource, type PollOptions } from "./use-resource.js";
 
 function dedupe(events: AuditEvent[]): AuditEvent[] {
@@ -33,7 +33,7 @@ export function useActivity(options?: PollOptions): {
   loadMore(): Promise<void>;
   refresh(): Promise<void>;
 } {
-  const { client } = useVendoContext();
+  const { client } = useVendoProvider();
   const list = useCallback(() => client.activity.list(), [client]);
   const { data: firstPage, error, isLoading, refresh } = useResource(list, [] as AuditEvent[], options);
   // Pages appended by loadMore; a refresh (manual or poll) reloads the first

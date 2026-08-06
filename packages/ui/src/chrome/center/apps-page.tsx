@@ -7,7 +7,7 @@
  *  change) — this is a restyle of a capable surface, not a smaller one.
  */
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { useVendoContext } from "../../context.js";
+import { useVendoProvider } from "../../context.js";
 import { useApp } from "../../hooks/use-app.js";
 import { useApps } from "../../hooks/use-apps.js";
 import { useVendoStatus } from "../../hooks/use-vendo-status.js";
@@ -42,7 +42,7 @@ function refusalSentence(reason: unknown): string {
  *  fetch renamed the landmark under the user a moment after they arrived (and
  *  told anyone who had just been moved into it that they were in "Open app"). */
 export function OpenApp({ appId, name, onClose }: { appId: string; name?: string; onClose(): void }) {
-  const { client, components } = useVendoContext();
+  const { client, components } = useVendoProvider();
   // The grid this replaced was where the keyboard was standing. Land in the app
   // that just opened — the region announces itself by name — instead of dropping
   // focus on <body> and making the user Tab in from the top of the page.
@@ -99,7 +99,7 @@ export interface AppsPageProps {
 }
 
 export function AppsPage({ api, opened, onOpened }: AppsPageProps) {
-  const { client } = useVendoContext();
+  const { client } = useVendoProvider();
   const { apps, create, fork, remove, refresh } = api;
   // §9.1 — the orgs the host asserted for this caller; the Share dialog offers
   // them by name. Empty on a single-player deployment, which is the point.

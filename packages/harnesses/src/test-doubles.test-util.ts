@@ -1,13 +1,9 @@
 /**
  * The minimum doubles this package's suites need for the seams siblings own.
  *
- * NOTE for the orchestrator: `packages/agent/src/test-helpers.ts` already holds
- * equivalent `testGuard` / `boundRegistry` / `ctx` doubles, but @vendoai/agent's
- * exports map has no subpath for them, so they are unreachable from another
- * package. Rather than edit a manifest this lane does not own, lane A carries
- * the slice it needs. A `"./test-helpers"` subpath on @vendoai/agent (the idiom
- * @vendoai/core/conformance and @vendoai/apps/adapter-conformance already set)
- * would let every lane share one copy.
+ * The umbrella keeps its own equivalent set (`agent-doubles.test-util.ts`)
+ * rather than either package publishing a test-only subpath: a doubles surface
+ * on a published package is surface nobody asked for.
  */
 import type {
   ApprovalId,

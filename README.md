@@ -138,7 +138,7 @@ Install individual blocks when you want to compose Vendo yourself.
 | --- | --- |
 | `@vendoai/core` | Shared types, schemas, formats, validators, and seams |
 | `@vendoai/store` | Postgres persistence, with PGlite as the default |
-| `@vendoai/agent` | Conversation loop, streaming, tools, and thread context |
+| `@vendoai/harnesses` | The turn runtime: conversation loop, streaming, tools, and thread context |
 | `@vendoai/actions` | Host API and connector tools executed as the signed-in user |
 | `@vendoai/guard` | Policy, approvals, grants, audit, breakers, and safety |
 | `@vendoai/apps` | App generation, editing, execution, interchange, and sandbox adapters |

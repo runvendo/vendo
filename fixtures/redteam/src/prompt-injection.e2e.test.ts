@@ -20,7 +20,8 @@ import type { ToolRegistry } from "@vendoai/core";
 import { createStore } from "@vendoai/store";
 import { createGuard, type Judge } from "@vendoai/guard";
 import { createActions } from "@vendoai/actions";
-import { createAgent } from "@vendoai/agent";
+import { awayRunner } from "@vendoai/agents";
+import { vendo } from "@vendoai/harnesses";
 import {
   ADA,
   automationDoc,
@@ -138,13 +139,13 @@ describe.skipIf(!plausible)("live prompt-injection cannot steer a real agent pas
     const { createAnthropic } = await import("@ai-sdk/anthropic");
     const anthropic = createAnthropic({ apiKey: liveKey });
     const stack = await createStack({
-      runnerFrom: ({ guard, bound, store }) =>
-        createAgent({
-          model: anthropic("claude-haiku-4-5") as LanguageModel,
-          tools: bound,
+      runnerFrom: ({ guard, store }) =>
+        awayRunner({
+          harness: vendo(),
+          models: { default: anthropic("claude-haiku-4-5") as LanguageModel },
           guard,
           store,
-        }).asRunner(),
+        }),
     });
     try {
       const appId = "app_live_injection";

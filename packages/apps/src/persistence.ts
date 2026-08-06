@@ -9,7 +9,6 @@ import {
   type RecordStore,
   type VendoRecord,
 } from "@vendoai/core";
-import type { BrainTurn } from "./generation/brain.js";
 
 /** Drain a cursor-paginated listing. A page that repeats its cursor (or drops
  *  it) terminates the loop, so a misbehaving adapter cannot spin forever. */
@@ -86,64 +85,34 @@ export interface AppRecordWrite {
 }
 
 /**
- * The brain's conversation with the app's owner (generation pipeline rebuild,
- * Task 4) rides the app document: the core schema is passthrough, so it travels
- * with the doc on every read and copy without a schema change.
+ * The same document without its conversation.
  *
- * It is SERVER-AUTHORITATIVE, on the same footing as `pinDrift` and
- * `buildFailed`: {@link appRecordInput} DROPS whatever `session` a document
- * carries in and writes only the session the caller hands it, so a
- * model-written app, an imported `.vendoapp`, or a host-supplied document can
- * never forge one.
+ * `session` was the BRAIN's transcript, carried on the app document so "no, the
+ * other chart" could resolve across turns. The brain is gone and so is the
+ * conversation: the app's own text is the state every editor reads, and an app's
+ * MEMORY (`memory`, the one door in `remember`) is what carries intent forward.
+ *
+ * This survives it as hygiene. Rows written before the brain died still hold a
+ * transcript, and a model-written app or an imported `.vendoapp` can still put
+ * the key there — so it is stripped off every document that leaves the runtime,
+ * and {@link appRecordInput} strips it off every one that enters the store.
  */
-export const SESSION_TURN_CAP = 20;
-
-/** The stored conversation, oldest turn first. Anything unreadable (a
- *  hand-edited row, a forged value) reads as no conversation at all. */
-export const sessionOf = (app: AppDocument): BrainTurn[] => {
-  const stored = (app as { session?: unknown }).session;
-  if (!Array.isArray(stored)) return [];
-  return stored.filter((turn): turn is BrainTurn => {
-    const candidate = turn as Partial<BrainTurn> | null;
-    return typeof candidate === "object" && candidate !== null
-      && (candidate.role === "user" || candidate.role === "brain")
-      && typeof candidate.text === "string" && typeof candidate.at === "string";
-  }).map((turn) => ({ role: turn.role, text: turn.text, at: turn.at }));
-};
-
-/** Append this turn's turns and keep the newest {@link SESSION_TURN_CAP} — the
- *  oldest fall off. Dropping old turns loses conversation, never truth: the
- *  app's own text is re-printed fresh for every brain call. */
-export const appendSessionTurns = (
-  previous: readonly BrainTurn[],
-  added: readonly BrainTurn[],
-): BrainTurn[] => [...previous, ...added].slice(-SESSION_TURN_CAP);
-
-/** The same document without its conversation. Session hygiene mirrors the
- *  `egressApproved` rule: the transcript belongs to the owner who wrote it, so
- *  it never travels with a copy (share, publish) — {@link appRecordInput}
- *  covers the paths that persist a copy. */
 export const withoutSession = <T extends object>(document: T): T => {
   const copy = { ...document } as T & { session?: unknown };
   delete copy.session;
   return copy;
 };
 
-/**
- * The app row to write. `session` is the brain conversation to persist beside
- * the document — a caller rewriting a stored app passes `sessionOf(previous)`
- * (or the brain's own next session) to keep it; omitting it clears the
- * conversation, which is also what strips a forged one.
- */
+/** The app row to write. A `session` the document carries in is dropped — see
+ *  {@link withoutSession}: the brain's transcript has no writer any more, and a
+ *  forged one must never be persisted. */
 export const appRecordInput = (
   app: AppDocument,
   subject: string,
   enabled = false,
-  session?: readonly BrainTurn[],
 ): AppRecordWrite => {
-  const doc = validateDocument(app, app.id) as AppDocument & { session?: BrainTurn[] };
+  const doc = validateDocument(app, app.id) as AppDocument & { session?: unknown };
   delete doc.session;
-  if (session !== undefined && session.length > 0) doc.session = appendSessionTurns([], session);
   return {
     id: app.id,
     data: { subject, enabled, doc },
@@ -181,9 +150,7 @@ export const updateAppRow = async (
     if (record === null) throw new VendoError("not-found", `app not found: ${appId}`, { appId });
     const row = rowFromRecord(record);
     const next = mutate(structuredClone(row.doc));
-    // The mutation sees (and may change) the stored conversation; re-supplying
-    // it is what keeps a row update from silently clearing it.
-    const input = appRecordInput(next, row.subject, row.enabled, sessionOf(next));
+    const input = appRecordInput(next, row.subject, row.enabled);
     if (records.atomic === undefined || record.revision === undefined) {
       await records.put(input);
       return next;

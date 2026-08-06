@@ -14,7 +14,7 @@
  * or loads but predates the API this module calls, the check returns NO
  * findings and never fails a build — the same posture as the smoke-render gate
  * ("Environment failures … skip the gate silently — the esbuild lazy-load
- * precedent", generation/validation/smoke-render.ts:26-30) and as extraction's
+ * precedent", checking/smoke-render.ts:26-30) and as extraction's
  * "extraction never fails your build" floor (actions/sync/compiler-gate.ts).
  *
  * The lazy `createRequire` resolution is not a style choice: `typescript@` is

@@ -3,6 +3,7 @@ import type { SandboxVenue } from "@vendoai/apps/sandbox-ladder";
 import type { AutomationsEngine } from "@vendoai/automations";
 import {
   VendoError,
+  type Json,
   type Membership,
   type Principal,
   type ResolvedPerson,
@@ -15,7 +16,6 @@ import type { VendoGuard } from "@vendoai/guard";
 import type { McpDoor } from "@vendoai/mcp";
 import type { SubjectMergeReport, VendoStore } from "@vendoai/store";
 import type { Telemetry } from "@vendoai/telemetry";
-import type { VendoAgent } from "@vendoai/agent";
 import type { ByoApprovalResolution } from "../byo-approvals.js";
 import type { HarnessTurns } from "../harness-turn.js";
 import type { ConnectionsService } from "../connections.js";
@@ -26,7 +26,7 @@ import type { ConnectionsService } from "../connections.js";
     wire/context.ts; server.ts assembles the table from the per-area modules
     under src/wire/. */
 
-export const VERSION = "0.7.0";
+export const VERSION = "1.0.0";
 export const BASE_PATH = "/api/vendo";
 
 /** Re-exported, not redeclared: the venue tag is what the ONE sandbox ladder
@@ -58,6 +58,10 @@ export interface WireDeps {
       downstream of one `context()` call reads the same answer. Unset → no orgs
       asserted → `can()` degenerates to ownership. */
   memberships?: (principal: Principal) => Promise<Membership[]>;
+  /** Spec 2026-08-05 §1 — the auth preset's request→facts seam (ONE session
+      decode with `principal`; the preset memoizes per Request). Resolved once
+      per context resolution and stashed as `ctx.user`; unset → no [User] block. */
+  userFacts?: (req: Request) => Promise<Record<string, Json> | undefined>;
   /** Build contract §9.1 companion — the host's own directory lookup, behind the
       owner gate on the Share dialog's door. Takes the ASKER so the host can scope
       its directory to them. Unset → /status says so and the dialog does not offer
@@ -69,15 +73,17 @@ export interface WireDeps {
   sessionId: string;
   store: VendoStore;
   telemetry?: Telemetry;
-  agent: VendoAgent;
-  /** Architecture §3 — turns through the composed `Harness`. Post-flip (wave 2)
-      `POST /threads` routes here for EVERY host: `harness:` when the host named
-      one, `vendo()` when they did not. What decides it is the STORE, not the
-      config — this is unset for exactly one reason, that the store has no SQL
-      handle and so cannot serve the transcript and workspace TABLES a harness
-      turn needs (build contract §3.3/§6). Those deployments keep `agent.stream`,
-      which needs neither table. */
-  harness?: Pick<HarnessTurns, "stream">;
+  /** Architecture §3 — the composed `Harness` door, and the ONLY one: every
+      chat turn is served here — `harness:` when the host named one, `vendo()`
+      when they did not.
+
+      `threads` needs nothing from the store beyond the adapter seam, so the
+      lifecycle works on a hosted store as it always did. `stream` needs
+      somewhere to keep the transcript and the workspace (build contract
+      §3.3/§6), and a store that offers neither a SQL handle nor a StoreOps
+      surface refuses THAT TURN, loudly, naming both options — where the old
+      probe silently routed the whole deployment onto the legacy door. */
+  harness: Pick<HarnessTurns, "stream" | "threads">;
   guard: VendoGuard;
   /** Which optional subsystems this deployment mounted (`createVendo({ apps:
       false })` / `{ automations: false }`). An unmounted subsystem's routes are

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ambientKitEquivalent, prepareIslands } from "./generation/validation/islands.js";
+import { ambientKitEquivalent, prepareIslands } from "./checking/islands.js";
 
 /**
  * Rematch gate 2026-07-25 (docs/eval/runs/2026-07-25-rematch): 17+ Cadence

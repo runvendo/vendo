@@ -3,7 +3,8 @@
  * (approvals wait or fail — they never suspend a run).
  */
 import type { ApprovalId, Harness, ToolCall, ToolOutcome, ToolRegistry } from "@vendoai/core";
-import { CAPABILITY_MISS_TOOL_NAME, FIND_TOOLS_TOOL_NAME } from "@vendoai/agent/internal";
+import { CAPABILITY_MISS_TOOL_NAME } from "./capability-miss.js";
+import { FIND_TOOLS_TOOL_NAME } from "./tool-search.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DiscoveryRails, MetaTool } from "./discovery.js";
 import { APPROVAL_WAIT_MS, createTurnTools, type MirrorEvent } from "./turn-tools.js";

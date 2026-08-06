@@ -6,7 +6,7 @@
  * serves it at `/playground.js`) and a vendo-web Next client route. The import closure is
  * asserted client-only by `closure-guard` — it contains ONLY @vendoai/ui,
  * @vendoai/core, react, ai, and the app's own files, never the umbrella server
- * graph (@vendoai/store, @vendoai/actions, @vendoai/agent, ./server,
+ * graph (@vendoai/store, @vendoai/actions, ./server,
  * createVendo) — which is exactly what lets Next compile it as a client route.
  *
  *   mount(el, options?)            — boot the surface (playground OR try) into el
