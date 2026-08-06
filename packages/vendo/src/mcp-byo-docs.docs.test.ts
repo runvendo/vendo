@@ -58,3 +58,32 @@ describe("the BYO-over-MCP page is published", () => {
     expect(missing).toEqual([]);
   });
 });
+
+describe("the page teaches the door's make-and-place contract", () => {
+  const mustMention: [label: string, needle: string | RegExp][] = [
+    ["the make tool", "vendo_make"],
+    ["the slot argument", /`slot`/],
+    ["the pin tool", "vendo_apps_pin"],
+    ["the unpin tool", "vendo_apps_unpin"],
+    ["the receipt's say field", /`say`/],
+    ["the building status", /"building"/],
+    ["the host-side slot component", "VendoSlot"],
+    ["the in-process embed it is not", "VendoToolResult"],
+    ["the door URL to paste", "/api/vendo/mcp"],
+    ["the marketplace install", "/plugin marketplace add runvendo/vendo"],
+    ["the plugin install", "/plugin install vendo@vendo"],
+    ["the plugin's env var", "VENDO_MCP_URL"],
+    ["the door internals link", "/capabilities/mcp"],
+  ];
+
+  it.each(mustMention)("names %s", async (_label, needle) => {
+    expect(await read(PAGE)).toMatch(needle);
+  });
+
+  it("links only to pages that exist", async () => {
+    const text = await read(PAGE);
+    const targets = [...text.matchAll(/\]\((\/[^)\s#]*)(#[^)\s]*)?\)/g)].map((match) => match[1]!);
+    const broken = [...new Set(targets)].filter((target) => !pageExists(target.replace(/^\//, "")));
+    expect(broken).toEqual([]);
+  });
+});
