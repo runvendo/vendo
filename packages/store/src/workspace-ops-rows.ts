@@ -28,7 +28,7 @@ import type {
 
 /** The binary envelope: a workspace file whose bytes are not text travels as
     `{"$vendoWorkspaceBytes": "<base64>"}`. A plain JSON string is text. */
-export const WORKSPACE_BYTES_KEY = "$vendoWorkspaceBytes";
+const WORKSPACE_BYTES_KEY = "$vendoWorkspaceBytes";
 
 const utf8 = new TextDecoder("utf-8", { fatal: true });
 const encoder = new TextEncoder();
@@ -47,7 +47,7 @@ const sameBytes = (left: Uint8Array, right: Uint8Array): boolean =>
 
 /** Bytes → the JSON the wire carries: the string itself when the content is
     text, the base64 envelope when it is not. */
-export function workspaceBytesToJson(bytes: Uint8Array): unknown {
+function workspaceBytesToJson(bytes: Uint8Array): unknown {
   try {
     const text = utf8.decode(bytes);
     if (!text.includes("\u0000")) return text;
@@ -61,7 +61,7 @@ export function workspaceBytesToJson(bytes: Uint8Array): unknown {
     was written by something other than a workspace filesystem (a direct
     `ops.workspace.commit` of a JSON document), and reads as its JSON text —
     exactly the bytes the SQL backend stores for the same commit. */
-export function workspaceJsonToBytes(data: unknown): Uint8Array {
+function workspaceJsonToBytes(data: unknown): Uint8Array {
   if (typeof data === "string") return encoder.encode(data);
   const envelope = (data as Record<string, unknown> | null)?.[WORKSPACE_BYTES_KEY];
   if (typeof envelope === "string") return base64ToBytes(envelope);
