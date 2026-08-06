@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { placementStore, type PlacementRow } from "./placements.js";
+import {
+  PLACEMENTS_COLLECTION,
+  PLACEMENT_SLOTS_COLLECTION,
+  placementStore,
+  type PlacementRow,
+} from "./placements.js";
 import { memoryStore } from "./testing/index.js";
 
 const row = (slot: string, appId: string, placedAt = "2026-08-05T12:00:00.000Z"): PlacementRow =>
@@ -42,11 +47,32 @@ describe("placementStore — one row per (subject, slot)", () => {
     expect(await rows.list("user_ada", ["sidebar", "sidebar", "nope"])).toEqual([row("sidebar", "app_2")]);
   });
 
-  it("writes the refs the erase cascade and the slot query read", async () => {
+  it("writes the refs the erase cascade and the slot query read, on BOTH rows", async () => {
     const store = memoryStore();
     await placementStore(store).put("user_ada", row("home-hero", "app_1"));
-    const record = await store.records("vendo_placements").get("plc:user_ada:home-hero");
-    expect(record?.refs).toEqual({ subject: "user_ada", slot: "home-hero" });
+    // The live row's id carries the placement's token, so it is found the way
+    // the cascade finds it — by refs — rather than by a spelled-out id.
+    const live = await store.records(PLACEMENTS_COLLECTION).list({ refs: { subject: "user_ada" } });
+    expect(live.records.map((record) => record.refs))
+      .toEqual([{ subject: "user_ada", slot: "home-hero" }]);
+    // The pointer is a row too, and an erase that missed it would leave a slot
+    // pointing at a token whose live row is gone.
+    const pointer = await store.records(PLACEMENT_SLOTS_COLLECTION).get("plc:user_ada:home-hero");
+    expect(pointer?.refs).toEqual({ subject: "user_ada", slot: "home-hero" });
+  });
+
+  it("leaves exactly one live row per slot — the count the seam readers take", async () => {
+    const store = memoryStore();
+    const rows = placementStore(store);
+    const live = async (): Promise<number> =>
+      (await store.records(PLACEMENTS_COLLECTION).list({ refs: { subject: "user_ada" } })).records.length;
+
+    await rows.put("user_ada", row("home-hero", "app_1"));
+    expect(await live()).toBe(1);
+    await rows.put("user_ada", row("home-hero", "app_2"));
+    expect(await live()).toBe(1);
+    await rows.delete("user_ada", "home-hero", "app_2");
+    expect(await live()).toBe(0);
   });
 
   it("keeps ':' inside a subject or slot from shifting the pair", async () => {

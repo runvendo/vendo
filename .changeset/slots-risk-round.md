@@ -17,9 +17,14 @@ Risk-round fixes on the placement stack.
   "nothing was replaced" while one of them was silently displaced. The write
   now compare-and-swaps on the row's revision and the loser retries against the
   winner's row.
-- `unplace()`'s delete is scoped to the app the caller named, at the store, so a
-  stale client cannot clear the app that replaced it. Adapters that expose
-  `RecordStore.claim` compare and delete in one statement.
+- `unplace()` can no longer clear the app that replaced it. A placement is now
+  two rows: a pointer at `plc:<subject>:<slot>` that says who holds the slot
+  under which token (the single CAS arbitration point), and a live row at
+  `plcv:<subject>:<slot>:<token>` that exists only while that placement holds
+  it. A clear deletes the token'd row and nothing else, and tokens are never
+  reused, so a stale client's delete can only ever hit its own placement.
+  Pointers live in their own generic collection (`vendo_placement_slots`), so
+  `vendo_placements` still holds exactly one row per live placement.
 - A `vendo_make` that names a `slot` is presence-only, like the pin tool: the
   slot claims a place on somebody's page and evicts whatever held it, so an
   unattended run still builds but takes no slot. Plain makes are not regraded.

@@ -13,16 +13,39 @@
  * the local PGlite store, a BYO Postgres, and the Cloud hosted store — none of
  * which shares a schema migration path.
  *
- * `refs` is the queryable key: `subject` is what the erase cascade matches
- * (`vendo_records WHERE refs @> '{"subject": …}'::jsonb` —
- * `packages/store/src/erase.ts`), and `{subject, slot}` is the GIN-indexed pair
- * a slot query reads.
+ * TWO rows per slot, because one row cannot answer both questions at once:
+ *
+ *   pointer  `plc:<subject>:<slot>`          — WHO holds the slot, and under
+ *                                              which token. Never deleted; the
+ *                                              only arbitration point, so the
+ *                                              eviction receipt is one CAS.
+ *   live     `plcv:<subject>:<slot>:<token>` — exists iff THAT placement still
+ *                                              holds the slot.
+ *
+ * The slot is occupied iff the live row the pointer names exists. Splitting
+ * them is what makes a clear safe: a clear is `delete(liveId(token))` and
+ * nothing else, and a token is never reused, so a stale client's delete can
+ * only ever hit its OWN placement — never the app that replaced it. Keyed on
+ * the shared (subject, slot) pair alone, that delete lands on whatever now
+ * occupies the id, which is exactly the row it must not touch.
+ *
+ * `refs` is the queryable key on both: `subject` is what the erase cascade
+ * matches (`vendo_records WHERE refs @> '{"subject": …}'::jsonb` —
+ * `packages/store/src/erase.ts`), and `{subject, slot}` is the GIN-indexed
+ * pair a slot query reads.
  */
 import type { RecordInput, StoreAdapter, VendoRecord } from "@vendoai/core";
 import { listAllRecords } from "./persistence.js";
 
-/** The generic collection the rows live in (never a dedicated table). */
+/** The generic collection the LIVE rows live in (never a dedicated table).
+ *  Exactly one row per live placement, which is what the seam readers count. */
 export const PLACEMENTS_COLLECTION = "vendo_placements";
+
+/** The pointers, in their own generic collection so the live count above stays
+ *  the live count. Neither reserved nor dedicated, so it routes to the same
+ *  `vendo_records` table — no migration, and the erase cascade still sweeps it
+ *  on `refs.subject`. */
+export const PLACEMENT_SLOTS_COLLECTION = "vendo_placement_slots";
 
 export interface PlacementRow {
   slot: string;
@@ -41,12 +64,15 @@ export interface PlacementStore {
   list(subject: string, slots?: readonly string[]): Promise<PlacementRow[]>;
 }
 
-/** The id IS the (subject, slot) pair, so a second place in the same slot
- *  OVERWRITES instead of racing a delete-then-insert, and a get is a primary
- *  key read. Both halves are percent-encoded — `encodeURIComponent` escapes
- *  ":" as %3A — so a ":" inside a subject can never shift the pair. */
-const rowId = (subject: string, slot: string): string =>
+/** Both halves are percent-encoded — `encodeURIComponent` escapes ":" as %3A —
+ *  so a ":" inside a subject can never shift the pair. */
+const pointerId = (subject: string, slot: string): string =>
   `plc:${encodeURIComponent(subject)}:${encodeURIComponent(slot)}`;
+
+/** The token is minted per PLACEMENT, so this id names one act of placing
+ *  rather than a slot that many acts share. */
+const liveId = (subject: string, slot: string, token: string): string =>
+  `plcv:${encodeURIComponent(subject)}:${encodeURIComponent(slot)}:${token}`;
 
 const rowOf = (record: VendoRecord): PlacementRow | undefined => {
   const data = record.data as Partial<PlacementRow> | null;
@@ -59,79 +85,104 @@ const rowOf = (record: VendoRecord): PlacementRow | undefined => {
   return { slot, appId, placedBy, placedAt };
 };
 
+const tokenOf = (record: VendoRecord): string | undefined => {
+  const data = record.data as { token?: unknown } | null;
+  if (data === null || typeof data !== "object") return undefined;
+  return typeof data.token === "string" ? data.token : undefined;
+};
+
 export function placementStore(store: StoreAdapter): PlacementStore {
   const rows = store.records(PLACEMENTS_COLLECTION);
+  const pointers = store.records(PLACEMENT_SLOTS_COLLECTION);
 
-  const get = async (subject: string, slot: string): Promise<PlacementRow | undefined> => {
-    const record = await rows.get(rowId(subject, slot));
-    return record === null ? undefined : rowOf(record);
-  };
+  const dataFor = (row: PlacementRow): Record<string, string> => ({
+    slot: row.slot,
+    appId: row.appId,
+    placedBy: row.placedBy,
+    placedAt: row.placedAt,
+  });
 
-  const inputFor = (subject: string, row: PlacementRow): RecordInput => ({
-    id: rowId(subject, row.slot),
-    data: {
-      slot: row.slot,
-      appId: row.appId,
-      placedBy: row.placedBy,
-      placedAt: row.placedAt,
-    },
+  const pointerInput = (subject: string, row: PlacementRow, token: string): RecordInput => ({
+    id: pointerId(subject, row.slot),
+    data: { ...dataFor(row), token },
     refs: { subject, slot: row.slot },
   });
 
+  const liveInput = (subject: string, row: PlacementRow, token: string): RecordInput => ({
+    id: liveId(subject, row.slot, token),
+    data: dataFor(row),
+    refs: { subject, slot: row.slot },
+  });
+
+  const get = async (subject: string, slot: string): Promise<PlacementRow | undefined> => {
+    const pointer = await pointers.get(pointerId(subject, slot));
+    const token = pointer === null ? undefined : tokenOf(pointer);
+    if (token === undefined) return undefined;
+    const live = await rows.get(liveId(subject, slot, token));
+    return live === null ? undefined : rowOf(live);
+  };
+
+  /**
+   * The eviction receipt is only true if the read and the write are ONE
+   * decision: read-then-put let two places into the same slot both answer
+   * "nothing was replaced" while one of them was silently displaced. The
+   * pointer carries a revision on every adapter Vendo ships, so the loser
+   * sees the winner's pointer and retries against it.
+   */
+  const place = async (subject: string, row: PlacementRow): Promise<PlacementRow | undefined> => {
+    const token = globalThis.crypto.randomUUID();
+    const atomic = pointers.atomic;
+    if (atomic === undefined) {
+      // A BYO adapter with no compare-and-swap keeps the old read-then-write
+      // and its old race; there is nothing else to arbitrate on.
+      const previous = await get(subject, row.slot);
+      await rows.put(liveInput(subject, row, token));
+      await pointers.put(pointerInput(subject, row, token));
+      return previous;
+    }
+    // The live row goes down FIRST and the pointer swings to it second, so the
+    // slot never reads empty mid-replace: until the CAS lands every reader
+    // still resolves the app that is really there. Losing the CAS means this
+    // row was never named by anyone, so it is taken back out before retrying.
+    await rows.put(liveInput(subject, row, token));
+    for (;;) {
+      const current = await pointers.get(pointerId(subject, row.slot));
+      const input = pointerInput(subject, row, token);
+      if (current === null) {
+        if (await atomic.insertIfAbsent(input) === null) continue;
+        return undefined;
+      }
+      if (current.revision === undefined) throw new Error("placement pointer is missing its revision");
+      if (await atomic.compareAndSwap(input, current.revision) === null) continue;
+      // The slot is ours. Whatever the pointer named before us is strictly
+      // older than this placement, so clearing it can never take out a newer
+      // one, and it is what the caller is owed as the eviction receipt.
+      const displaced = tokenOf(current);
+      if (displaced === undefined) return undefined;
+      const previous = await rows.get(liveId(subject, row.slot, displaced));
+      if (previous === null) return undefined;
+      await rows.delete(liveId(subject, row.slot, displaced));
+      return rowOf(previous);
+    }
+  };
+
   return {
     get,
+    place,
 
     async put(subject, row) {
-      await rows.put(inputFor(subject, row));
+      await place(subject, row);
     },
 
-    /**
-     * The eviction receipt is only true if the read and the write are ONE
-     * decision: read-then-put let two places into the same slot both answer
-     * "nothing was replaced" while one of them was silently displaced. The
-     * generic records collection carries a revision on every adapter Vendo
-     * ships, so the loser sees the winner's row and retries against it.
-     */
-    async place(subject, row) {
-      const input = inputFor(subject, row);
-      const atomic = rows.atomic;
-      if (atomic === undefined) {
-        // A BYO adapter with no compare-and-swap keeps the old read-then-write
-        // and its old race; there is nothing else to arbitrate on.
-        const previous = await get(subject, row.slot);
-        await rows.put(input);
-        return previous;
-      }
-      for (;;) {
-        const current = await rows.get(input.id);
-        if (current === null) {
-          if (await atomic.insertIfAbsent(input) !== null) return undefined;
-          continue;
-        }
-        if (current.revision === undefined) throw new Error("placement row is missing its revision");
-        if (await atomic.compareAndSwap(input, current.revision) !== null) return rowOf(current);
-      }
-    },
-
-    /**
-     * Scoped to the app the caller named, at the STORE: a stale client whose
-     * read said `appId` must never take out the app that replaced it between
-     * that read and this write. `claim` compares and deletes in one statement;
-     * an adapter without it falls back to the read the caller already did.
-     */
     async delete(subject, slot, appId) {
-      const id = rowId(subject, slot);
-      const record = await rows.get(id);
-      if (record === null || rowOf(record)?.appId !== appId) return;
-      if (rows.claim !== undefined) {
-        await rows.claim({
-          id,
-          data: record.data,
-          ...(record.refs === undefined ? {} : { refs: record.refs }),
-        });
-        return;
-      }
-      await rows.delete(id);
+      const pointer = await pointers.get(pointerId(subject, slot));
+      if (pointer === null) return;
+      const token = tokenOf(pointer);
+      if (token === undefined || rowOf(pointer)?.appId !== appId) return;
+      // The only mutation, and it names THIS placement's token: a place that
+      // lands between the read above and this write installs a new token, so
+      // the app that replaced ours is in a row this delete cannot address.
+      await rows.delete(liveId(subject, slot, token));
     },
 
     async list(subject, slots) {
@@ -139,11 +190,20 @@ export function placementStore(store: StoreAdapter): PlacementStore {
         const found = await Promise.all([...new Set(slots)].map((slot) => get(subject, slot)));
         return found.filter((row): row is PlacementRow => row !== undefined);
       }
-      const records = await listAllRecords(rows, { refs: { subject } });
-      return records
-        .map(rowOf)
-        .filter((row): row is PlacementRow => row !== undefined)
-        .sort((left, right) => left.slot.localeCompare(right.slot));
+      const [pointerRecords, liveRecords] = await Promise.all([
+        listAllRecords(pointers, { refs: { subject } }),
+        listAllRecords(rows, { refs: { subject } }),
+      ]);
+      const live = new Map(liveRecords.map((record) => [record.id, record]));
+      const found: PlacementRow[] = [];
+      for (const pointer of pointerRecords) {
+        const token = tokenOf(pointer);
+        const row = rowOf(pointer);
+        if (token === undefined || row === undefined) continue;
+        const held = live.get(liveId(subject, row.slot, token));
+        if (held !== undefined) found.push(rowOf(held) ?? row);
+      }
+      return found.sort((left, right) => left.slot.localeCompare(right.slot));
     },
   };
 }
