@@ -300,24 +300,23 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, discover = true
     );
   }
 
-  // A placement row is written the moment the app id is minted, so the slot
-  // knows it is about to be filled while the build is still streaming. It says
-  // so with the skeleton the empty state already uses — minus the invitation,
-  // because there is nothing to ask for any more. Ahead of the empty/children
-  // arms below: a slot with a build coming is not empty, and the host's markup
-  // gives way to the view that is about to take its place.
-  if (status === "building") {
-    return (
-      <ChromeRoot>
-        <div className="fl-slot" data-vendo-slot={id}>
-          <SlotGhost label="Building your view…" loading />
-        </div>
-      </ChromeRoot>
-    );
-  }
-
   if (!appId && !pin) {
     if (children !== undefined) return <>{children}</>;
+    // A placement row is written the moment the app id is minted, so a slot
+    // with no markup of its own says what is coming instead of inviting a
+    // second ask — the skeleton the empty state already uses, minus the
+    // invitation. BEHIND the children arm above, deliberately: a working host
+    // component must never blank into a skeleton for the length of a build.
+    // The conversation surface carries that beat for the person who asked.
+    if (status === "building") {
+      return (
+        <ChromeRoot>
+          <div className="fl-slot" data-vendo-slot={id}>
+            <SlotGhost label="Building your view…" loading />
+          </div>
+        </ChromeRoot>
+      );
+    }
     // The invitation (pick S-A×S-D): accent-washed surface, real copy, up to
     // three concrete suggestion chips, and (layout "button") a primary CTA.
     // The skeleton stays behind at low opacity so it still reads as "a view

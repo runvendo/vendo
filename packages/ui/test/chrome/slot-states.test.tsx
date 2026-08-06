@@ -36,21 +36,122 @@ describe("VendoSlot build states", () => {
   );
 
   describe("building", () => {
-    it("shows a skeleton in the slot while the placed build is still streaming", async () => {
+    // A slot with host markup of its own KEEPS it while a build forms — a
+    // working host component never blanks into a skeleton for the length of a
+    // build (pinned by slot-discovery.test.tsx). The beat below is the empty
+    // slot's: it had only an invitation to give up.
+    const emptySlot = (id: string) => render(
+      <VendoProvider client={client}><VendoSlot id={id} /></VendoProvider>,
+    );
+
+    it("shows a skeleton in an empty slot while the placed build is still streaming", async () => {
       wire.state.placements.push({ slot: "hero", appId: "app_minting" });
-      slot("hero");
+      emptySlot("hero");
       const beat = await screen.findByRole("status");
       expect(beat.textContent).toContain("Building your view");
-      // The host's markup gives way — the slot is committed to this app.
-      expect(screen.queryByText("Original hero")).toBeNull();
+      // The invitation gives way — there is nothing to ask for any more.
+      expect(screen.queryByText("This space builds itself")).toBeNull();
     });
 
     it("mounts the app in place the moment the build lands — no remount, no reload", async () => {
       wire.state.placements.push({ slot: "hero", appId: "app_lands" });
       wire.state.landingApps.set("app_lands", { remaining: 2, name: "Trip planner" });
-      slot("hero");
+      emptySlot("hero");
       expect((await screen.findByRole("status")).textContent).toContain("Building your view");
       expect(await screen.findByText("Trip planner app surface")).toBeTruthy();
+    });
+  });
+
+  describe("failed", () => {
+    // The real sentences the wire carries — every one is written for whoever can
+    // FIX the build, and a slot is a host's own page, the most public surface we
+    // have. Same audit as the embed's (test/embeds.test.tsx).
+    const developerReason = "This app wasn't created, because it didn't pass the checks that keep an app honest:"
+      + " the `value` expression is a declarative string that the DataTable does not evaluate,"
+      + " not JavaScript: amount / sum(spending.data.amount)";
+
+    const codeShaped: readonly [string, RegExp][] = [
+      ["a backtick quote", /`/],
+      ["call syntax", /\w+\(/],
+      ["a dotted path", /\w\.\w+\.\w/],
+      ["a snake_case identifier", /[A-Za-z]_[A-Za-z]/],
+      ["a package specifier", /@[\w-]+\//],
+      ["an npm command", /\bnpm\b/],
+      ["a shouted env var", /\b[A-Z][A-Z0-9_]{4,}\b/],
+    ];
+
+    function doomed(retryable: boolean, prompt?: string) {
+      wire.state.failedApps.set("app_doomed", {
+        reason: developerReason,
+        retryable,
+        ...(prompt === undefined ? {} : { prompt }),
+      });
+      wire.state.placements.push({ slot: "hero", appId: "app_doomed" });
+    }
+
+    it("says the CONSUMER sentence — not one fragment of the wire's reaches the page", async () => {
+      doomed(true, "a spending board");
+      slot("hero");
+      await screen.findByText(BUILD_FAILURE_COPY);
+      const rendered = document.querySelector<HTMLElement>("[data-vendo-slot]")?.textContent ?? "";
+      expect(rendered).not.toContain(developerReason);
+      for (const word of developerReason.split(/\s+/).filter(token => token.length > 12)) {
+        expect(rendered).not.toContain(word);
+      }
+      for (const [what, pattern] of codeShaped) {
+        expect(pattern.test(rendered), `${what} reached the slot: ${rendered}`).toBe(false);
+      }
+    });
+
+    it("offers a retry that re-issues the ORIGINAL request and takes the slot", async () => {
+      doomed(true, "a spending board");
+      slot("hero");
+      fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+      await waitFor(() => expect(
+        wire.state.placements.find(row => row.slot === "hero")?.appId,
+      ).not.toBe("app_doomed"));
+      // The fixture names a created app after its prompt, so the mounted app is
+      // provably the re-issued request and not the failed record.
+      expect(await screen.findByText("a spending board app surface")).toBeTruthy();
+    });
+
+    it("offers no retry when the failure is not retryable — never a button that lies", async () => {
+      doomed(false, "a spending board");
+      slot("hero");
+      await screen.findByText(BUILD_FAILURE_COPY);
+      expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+      expect(screen.getByRole("button", { name: "Clear this slot" })).toBeTruthy();
+    });
+
+    it("offers no retry when the record kept no request — there is nothing honest to re-issue", async () => {
+      doomed(true);
+      slot("hero");
+      await screen.findByText(BUILD_FAILURE_COPY);
+      expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    });
+
+    it("clearing the slot unplaces the app and gives the host its own markup back", async () => {
+      doomed(false, "a spending board");
+      slot("hero");
+      fireEvent.click(await screen.findByRole("button", { name: "Clear this slot" }));
+      await waitFor(() => expect(wire.state.placements.some(row => row.slot === "hero")).toBe(false));
+      expect(await screen.findByText("Original hero")).toBeTruthy();
+    });
+  });
+
+  describe("ready", () => {
+    it("mounts the placed app — the tree surface", async () => {
+      wire.state.placements.push({ slot: "hero", appId: "app_1" });
+      slot("hero");
+      expect(await screen.findByText("Invoices app surface")).toBeTruthy();
+    });
+
+    it("mounts the placed app — the http surface", async () => {
+      wire.state.httpApps.set("app_1", "/frame-target.html");
+      wire.state.placements.push({ slot: "hero", appId: "app_1" });
+      slot("hero");
+      const frame = await screen.findByTitle("Vendo app");
+      expect(frame.getAttribute("src")).toBe("/frame-target.html");
     });
   });
 });
