@@ -738,6 +738,72 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         );
       }),
 
+      /** A DELETE is a commit against a revision too. Without this, a turn that
+          checked out an org file, lost the head to a colleague, and then removed
+          the path erased content it had never seen — the one mutation strict
+          mounts cannot take back. */
+      opsCase(opts, "workspace.commit refuses a stale expectedRevision on a tombstone", async (ops) => {
+        await ops.workspace.commit([{ path: "cas-del.json", data: { v: 1 } }]);
+        const revision = numberField(
+          (await ops.workspace.index()).entries
+            .find((entry) => (entry as { path?: unknown }).path === "cas-del.json"),
+          "revision",
+          "workspace.index",
+        );
+        // The head moves under the caller holding `revision`.
+        await ops.workspace.commit([{ path: "cas-del.json", data: { v: 2 } }]);
+
+        await assertThrowsCode(
+          () => ops.workspace.commit([{ path: "cas-del.json", delete: true, expectedRevision: revision }]),
+          "conflict",
+          "deleting a path whose revision has moved",
+        );
+        assertDeepEqual(
+          (await ops.workspace.read(["cas-del.json"]))["cas-del.json"],
+          { v: 2 },
+          "a stale tombstone deleted the newer content",
+        );
+      }),
+
+      /** Bytes that happen to match the head do not make a stale commit fresh:
+          the caller still read a revision that has moved, and the contract's
+          answer to that is `conflict`, whatever the entry would have written. */
+      opsCase(opts, "workspace.commit refuses a stale expectedRevision whose bytes already match", async (ops) => {
+        await ops.workspace.commit([{ path: "cas-same.json", data: { v: 1 } }]);
+        const revision = numberField(
+          (await ops.workspace.index()).entries
+            .find((entry) => (entry as { path?: unknown }).path === "cas-same.json"),
+          "revision",
+          "workspace.index",
+        );
+        await ops.workspace.commit([{ path: "cas-same.json", data: { v: 2 } }]);
+
+        await assertThrowsCode(
+          () => ops.workspace.commit([{ path: "cas-same.json", data: { v: 2 }, expectedRevision: revision }]),
+          "conflict",
+          "committing the head's own bytes against a revision that has moved",
+        );
+      }),
+
+      /** Two entries for one path leave the commit with no single before-image,
+          so undoing it walks back to the intermediate state the commit itself
+          wrote. Refused at the door instead. */
+      opsCase(opts, "workspace.commit refuses the same path twice in one commit", async (ops) => {
+        await assertThrowsCode(
+          () => ops.workspace.commit([
+            { path: "dup.json", data: { v: 1 } },
+            { path: "dup.json", delete: true },
+          ]),
+          "validation",
+          "committing one path twice",
+        );
+        assertDeepEqual(
+          await ops.workspace.read(["dup.json"]),
+          {},
+          "the refused commit wrote its first entry anyway",
+        );
+      }),
+
       // =====================================================================
       // lifecycle
       // =====================================================================

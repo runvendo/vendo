@@ -351,6 +351,16 @@ export function memoryStoreOps(): StoreOps {
     },
     async commit(entries, opts) {
       const owner = opts?.owner ?? BOUND_OWNER;
+      // One commit, one mutation per path: two entries for the same path leave
+      // the commit with no single before-image, so undoing it would walk back to
+      // the intermediate state the commit itself wrote.
+      const paths = new Set<string>();
+      for (const entry of entries as WsEntry[]) {
+        if (paths.has(entry.path)) {
+          throw new VendoError("validation", `workspace entry ${entry.path} appears twice in one commit`);
+        }
+        paths.add(entry.path);
+      }
       const key = opts?.idempotencyKey;
       if (key !== undefined) {
         const body = JSON.stringify(entries);

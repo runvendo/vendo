@@ -43,6 +43,7 @@ interface WorkspaceEntry {
 }
 
 function parseWorkspaceEntries(entries: unknown[]): WorkspaceEntry[] {
+  const seen = new Set<string>();
   return entries.map((entry) => {
     const path = (entry as { path?: unknown } | null)?.path;
     if (typeof path !== "string" || path === "") invalid("workspace entry needs a non-empty path");
@@ -54,12 +55,30 @@ function parseWorkspaceEntries(entries: unknown[]): WorkspaceEntry[] {
     if (expectedRevision !== undefined && typeof expectedRevision !== "number") {
       invalid(`workspace entry ${path} has a non-numeric expectedRevision`);
     }
+    // One commit, one mutation per path. Two entries for the same path leave a
+    // commit with no single before-image, so undoing it walks back to the
+    // INTERMEDIATE state the commit itself wrote rather than to the state the
+    // commit found. There is nothing a duplicate expresses that a second commit
+    // does not, so it is caller nonsense and says so.
+    if (seen.has(path)) invalid(`workspace entry ${path} appears twice in one commit`);
+    seen.add(path);
     return {
       path,
       ...(tombstone ? { delete: true as const } : { data: (entry as { data: unknown }).data }),
       ...(expectedRevision === undefined ? {} : { expectedRevision }),
     };
   });
+}
+
+/** The revisions a set of paths currently hold, absent for a path with no row —
+ *  the compare half of a strict commit for the entries `land` never sees. */
+async function headRevisions(db: Db, owner: string, paths: string[]): Promise<Map<string, number>> {
+  if (paths.length === 0) return new Map();
+  const result = await db.query(
+    `SELECT path, revision FROM vendo_workspace_files WHERE owner = $1 AND path = ANY($2::text[])`,
+    [owner, paths],
+  );
+  return new Map(result.rows.map((row) => [text(row["path"]), Number(row["revision"])]));
 }
 
 const commitEntries = (commit: VendoRecord): WorkspaceEntry[] =>
@@ -474,9 +493,23 @@ export function createStoreOps(
             // read. A lost swap throws, so the transaction takes the whole
             // commit back with it: a conflicting set applies none of itself and
             // the caller re-reads once.
+            //
+            // `land` performs its own compare, so these heads serve the two
+            // strict entries that never reach it: a TOMBSTONE, and a write whose
+            // bytes already match the head. Both are still commits against a
+            // revision the caller read, and skipping their compare let a stale
+            // delete erase a colleague's newer content outright.
+            const heads = await headRevisions(tdb, owner, [...expected.keys()]);
+            const moved = (path: string): boolean => {
+              const at = expected.get(path);
+              return at !== undefined && heads.get(path) !== at;
+            };
             const conflicts: string[] = [];
             for (const staged of prepared) {
-              if (staged.write === "unchanged") continue;
+              if (staged.write === "unchanged") {
+                if (moved(staged.path)) conflicts.push(staged.path);
+                continue;
+              }
               const at = expected.get(staged.path);
               const written = await txRows.land(
                 owner,
@@ -488,6 +521,10 @@ export function createStoreOps(
             }
             for (const entry of parsed) {
               if (entry.delete !== true) continue;
+              if (moved(entry.path)) {
+                conflicts.push(entry.path);
+                continue;
+              }
               await txRows.remove(owner, entry.path, commitId);
             }
             if (conflicts.length > 0) {
