@@ -116,27 +116,6 @@
       "srcHash": "sha256:7945bac1c3e89bd8cc8a281d7959247c373c4ed4ec84d8d3df83425f91ce0e57"
     },
     {
-      "name": "host_demo_pin_create",
-      "description": "POST /api/demo/pin",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "appId": {},
-          "slot": {}
-        },
-        "additionalProperties": false
-      },
-      "risk": "ungraded",
-      "binding": {
-        "kind": "route",
-        "method": "POST",
-        "path": "/maple/api/demo/pin",
-        "argsIn": "body"
-      },
-      "note": "input schema partially interpreted; permissive where unknown (appId: unsupported type (unknown); slot: unsupported type (unknown))",
-      "srcHash": "sha256:2b2382a49fa37795b8d0c105ee6d8a1d8b6c58133d4de957e7fd858b034cb4f1"
-    },
-    {
       "name": "host_demo_reset_create",
       "description": "POST /api/demo/reset",
       "inputSchema": {
