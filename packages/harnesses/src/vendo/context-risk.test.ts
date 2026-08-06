@@ -51,13 +51,25 @@ function measuredSeat(promptTokens: number, script: {
   overflowOnce?: boolean;
   /** The summary each successive pass returns, so a later one can be SHORTER. */
   summaries?: readonly string[];
+  /** A summarizer that 500s, so the FLOOR is the only rail left. */
+  brokenSummarizer?: boolean;
+  /** What the seat calls itself before it has resolved anything — vendo's own
+   *  lazy seat answers `vendo-env` until the first call picks a rung. */
+  modelId?: string;
+  /** What the PROVIDER reports it actually served the request with. */
+  respondsAs?: string;
 } = {}) {
   const prompts: unknown[] = [];
+  /** How many summarizer passes the thread had paid for when each provider call
+   *  went out, so a test can ask what a COMPACTING turn projected. */
+  const summariesBefore: number[] = [];
   let generateCalls = 0;
   let streamCalls = 0;
   const model = new MockLanguageModelV3({
+    ...(script.modelId === undefined ? {} : { modelId: script.modelId }),
     doGenerate: async () => {
       generateCalls += 1;
+      if (script.brokenSummarizer === true) throw new Error("summarizer unavailable");
       return {
         content: [{ type: "text" as const, text: script.summaries?.[generateCalls - 1] ?? SUMMARY }],
         finishReason: { unified: "stop" as const, raw: undefined },
@@ -67,6 +79,7 @@ function measuredSeat(promptTokens: number, script: {
     },
     doStream: async (request) => {
       prompts.push(structuredClone(request.prompt));
+      summariesBefore.push(generateCalls);
       streamCalls += 1;
       if (script.overflowOnce === true && streamCalls === 1) {
         throw new Error("prompt is too long: 213462 tokens > 200000 maximum");
@@ -74,6 +87,9 @@ function measuredSeat(promptTokens: number, script: {
       return {
         stream: simulateReadableStream({
           chunks: [
+            ...(script.respondsAs === undefined
+              ? []
+              : [{ type: "response-metadata" as const, modelId: script.respondsAs }]),
             { type: "text-start" as const, id: "t1" },
             { type: "text-delta" as const, id: "t1", delta: "ok" },
             { type: "text-end" as const, id: "t1" },
@@ -94,6 +110,7 @@ function measuredSeat(promptTokens: number, script: {
     model: model as unknown as LanguageModel,
     /** What each provider call actually sent. */
     prompts,
+    summariesBefore,
     generateCalls: () => generateCalls,
   };
 }
@@ -279,6 +296,129 @@ describe("the trigger's ground truth survives its own compaction", () => {
 
     expect(seat.generateCalls()).toBe(1);
     expect(JSON.stringify(seat.prompts[1])).not.toContain(ANCHOR);
+  });
+});
+
+// ── one very large message ───────────────────────────────────────────────────
+
+/** Only the paste carries this, so a projection either still ships it or it
+ *  does not. */
+const PASTE_MARKER = "PASTED-STATEMENT-77412";
+/** 308,000 characters of dense statement text — the walker's own thread. */
+const PASTE = `${PASTE_MARKER} ${"d".repeat(308_000)}`;
+/** What the provider billed for that text: 1.83x the chars/4 estimate of
+ *  77,000, which is the gap the trigger and the floor fell through. */
+const PASTE_TOKENS = 142_890;
+
+describe("one very large message is not a thread compaction gives up on", () => {
+  it("keeps making the projected prompt smaller instead of freezing it", async () => {
+    // The defect, in the shape a walker found it: one enormous paste, then
+    // ordinary small turns. The trigger fired on every turn and the projection
+    // never changed — ~143k tokens, unchanged, forever — because the cut landed
+    // on 0 and the floor believed the prompt fit. Cost was invisible: the cache
+    // absorbed a prompt nothing was shrinking.
+    const seat = measuredSeat(PASTE_TOKENS);
+    let messages: Turn["messages"] = [userMessage("m1", PASTE)];
+    const turns: Turn["messages"][] = [];
+    for (let index = 0; index < 6; index += 1) {
+      messages = [...messages, userMessage(`u${index}`, "and now?")];
+      turns.push(messages);
+      messages = [...messages, { id: `a${index}`, role: "assistant", parts: [{ type: "text", text: "ok" }] }];
+    }
+
+    await driveThread({ harness: vendo(), model: seat.model, turns });
+
+    const sizes = seat.prompts.map((prompt) => JSON.stringify(prompt).length);
+    // Turn 1 ships the paste, and correctly: chars/4 is all there is to go on
+    // before the provider has priced anything, and it reads 77k against a
+    // 103,680 trigger.
+    expect(sizes[0]).toBeGreaterThan(300_000);
+    // THE claim. Not "compaction ran" — a smaller prompt.
+    expect(
+      Math.min(...sizes),
+      `no turn ever projected a smaller prompt: ${sizes.join(", ")}`,
+    ).toBeLessThan((sizes[0] as number) / 10);
+    // …and not once, either: every turn that PAYS for a summarizer pass has to
+    // project less than the turn before it, or the pass bought nothing.
+    let compactions = 0;
+    for (let index = 1; index < sizes.length; index += 1) {
+      if (seat.summariesBefore[index] === seat.summariesBefore[index - 1]) continue;
+      compactions += 1;
+      expect(sizes[index] as number, `turn ${index + 1} paid for a summary`)
+        .toBeLessThan((sizes[index - 1] as number) / 10);
+      expect(JSON.stringify(seat.prompts[index]), `turn ${index + 1}`).not.toContain(PASTE_MARKER);
+    }
+    expect(compactions, "no turn summarized anything at all").toBeGreaterThanOrEqual(3);
+    // Bounded: the thread never ships MORE than the un-compacted first turn.
+    expect(Math.max(...sizes)).toBeLessThanOrEqual((sizes[0] as number) + 5_000);
+  });
+});
+
+describe("the trigger and the floor measure the same prompt", () => {
+  it("sheds against the count the trigger tripped on, not a second guess at it", async () => {
+    // Two rails over one thread, disagreeing by 1.83x. The trigger tripped on
+    // the provider's own 142,890 for 308,000 characters of dense statement
+    // text; `shedToBudget`'s `fits` asked chars/4, got 77,000 for the same
+    // characters, and concluded the prompt fit the budget it had just been told
+    // it blew. Neither of them acted. The summarizer is dead here on purpose,
+    // so the floor is the only rail left and the claim is about the floor alone.
+    const seat = measuredSeat(PASTE_TOKENS, { brokenSummarizer: true });
+    const first: Turn["messages"] = [userMessage("m1", PASTE), userMessage("m2", "and now?")];
+    await driveThread({
+      harness: vendo(),
+      model: seat.model,
+      turns: [
+        first,
+        [
+          ...first,
+          { id: "a1", role: "assistant", parts: [{ type: "text", text: "ok" }] },
+          userMessage("m3", "what next?"),
+        ],
+      ],
+    });
+
+    // Turn 1 is under the estimate's own trigger and ships the paste whole.
+    expect(JSON.stringify(seat.prompts[0])).toContain(PASTE_MARKER);
+    // Turn 2 tripped on the provider's count, so the floor owes the same count
+    // an answer.
+    expect(JSON.stringify(seat.prompts[1])).not.toContain(PASTE_MARKER);
+    expect(JSON.stringify(seat.prompts[1]).length).toBeLessThan(20_000);
+  });
+});
+
+describe("the window follows the model the provider actually served", () => {
+  it("stops running a 200k Claude seat on the 128k default", async () => {
+    // Vendo's own seat is LAZY: `dev-creds/model.ts` answers `vendo-env` and
+    // picks the rung on the first call, so `model-windows.ts` matched nothing on
+    // every dev and demo seat and every one of them ran the 128k default
+    // against Claude's real 200k — measured on a `claude-sonnet-4-6` seat as
+    // `window=128000 trigger=103680`. The resolved id is not knowable before the
+    // call and IS reported after it, so it is measured like the prompt count is
+    // measured, never guessed.
+    const seat = measuredSeat(120_000, { modelId: "vendo-env", respondsAs: "claude-sonnet-4-6-20260101" });
+    const first: Turn["messages"] = [
+      userMessage("m1", ANCHOR),
+      userMessage("m2", "m".repeat(100_000)),
+      userMessage("m3", "and now?"),
+    ];
+    await driveThread({
+      harness: vendo(),
+      model: seat.model,
+      turns: [
+        first,
+        [
+          ...first,
+          { id: "a1", role: "assistant", parts: [{ type: "text", text: "ok" }] },
+          userMessage("m4", "what next?"),
+        ],
+      ],
+    });
+
+    // 120,000 reported tokens is over 81% of 128k and nowhere near 81% of 200k.
+    // On the window this seat actually has there is nothing to do, and doing
+    // something costs a summarizer call and the oldest band of a healthy thread.
+    expect(seat.generateCalls()).toBe(0);
+    expect(JSON.stringify(seat.prompts[1])).toContain(ANCHOR);
   });
 });
 
