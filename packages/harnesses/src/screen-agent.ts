@@ -129,7 +129,13 @@ export interface ScreenInput {
 
 /** What one assembly run answers. `ScreenOutcome` plus the title an assembled
  *  screen named itself, which the front door turns into a receipt. */
-export type ScreenResult = ScreenOutcome & { title?: string };
+export type ScreenResult = ScreenOutcome & {
+  title?: string;
+  /** What the run chose to record for the next editor (`save_app`'s
+   *  `decisions`). Never a summary this file wrote — only the agent's own words,
+   *  or nothing. */
+  decisions?: string;
+};
 
 const APP_FILE = "app.vendo";
 const PLAN_FILE = "plan.vendo";
@@ -202,6 +208,11 @@ through two tools.
   \`${appId}\`; you never name a path. Every save that parses repaints the person's
   screen, so save as you go — a save is cheap and silence is not. There is no
   edit-in-place tool: save the full document each time.
+  Its \`decisions\` is this app's MEMORY, and the only thing the next editor will
+  have besides the document. Record what reading the document could not tell
+  them — why you narrowed something, a constraint the tools imposed, a shape you
+  ruled out. Never record what you did or in what order; that is narration, and
+  it crowds out the one line that mattered.
 - **\`validate\`** is the floor. Call it on what you saved, fix what it names, save
   again. You are not done until it comes back clean.
 - **\`${ESCALATE_TOOL}\`** is the one door out. Assembling a document out of this
@@ -239,6 +250,9 @@ interface RunRecord {
   assembled: boolean;
   title?: string;
   escalated?: string;
+  /** The last non-empty `decisions` a save carried — this run's whole memory
+   *  contribution, and what replaces the app's stored block. */
+  decisions?: string;
 }
 
 /** Nothing to hire and nothing to load: the job description is already the whole
@@ -314,18 +328,32 @@ export async function assembleScreen(
       + "as you go rather than once at the end. Returns whether the save landed.",
     inputSchema: {
       type: "object",
-      properties: { content: { type: "string", description: "The complete app document, in the .vendo format." } },
+      properties: {
+        content: { type: "string", description: "The complete app document, in the .vendo format." },
+        decisions: {
+          type: "string",
+          description:
+            "What the next person to edit this app must know: choices you made, constraints you found, things "
+            + "you ruled out. Only what is invisible from the document itself — never a narration of your work. "
+            + "It REPLACES this app's decisions, so write the whole block each time, under 5 lines.",
+        },
+      },
       required: ["content"],
       additionalProperties: false,
     },
     execute: async (args, turn) => {
-      const content = (args as { content: string }).content;
+      const { content, decisions } = args as { content: string; decisions?: string };
       const landed = await save(turn, APP_FILE, content);
       if (!landed) {
         return { saved: false, note: "The save did not land — someone else changed this app. Save again." };
       }
       record.assembled = true;
       record.title = nameOf(content) ?? record.title;
+      // The last save that had something to say wins the run. An omitted or blank
+      // `decisions` on a later save is "nothing to add", not "forget the earlier
+      // one" — a save-as-you-go loop would otherwise erase its own memory on the
+      // final validate-fix save.
+      if (decisions !== undefined && decisions.trim() !== "") record.decisions = decisions;
       return { saved: true, note: "Run validate on it now." };
     },
   };
@@ -412,7 +440,13 @@ export async function assembleScreen(
   // stamps it.
   if (record.escalated !== undefined) return { kind: "escalate", why: record.escalated };
   // A model failure AFTER a screen already painted is not a failed screen.
-  if (record.assembled) return { kind: "assembled", ...(record.title === undefined ? {} : { title: record.title }) };
+  if (record.assembled) {
+    return {
+      kind: "assembled",
+      ...(record.title === undefined ? {} : { title: record.title }),
+      ...(record.decisions === undefined ? {} : { decisions: record.decisions }),
+    };
+  }
   return { kind: "unavailable", why: failure ?? "assembly produced nothing that renders" };
 }
 
@@ -489,6 +523,18 @@ export interface ScreenAssemblerDeps {
   render?: (ctx: RunContext) => Omit<RenderSeamOptions, "emit">;
   /** The deployment's assembled prompt for this ctx, when composition has one. */
   system?: (ctx: RunContext) => Promise<string | undefined>;
+  /**
+   * Where a run's `decisions` land: the runtime's one memory door
+   * (`AppsRuntime.remember`), which is on the other side of the layering — this
+   * package holds no store — so composition fills the slot exactly as it does
+   * `render` above.
+   *
+   * Called only for an `assembled` run, because that is the only answer whose
+   * row exists by the time this returns. Unfilled, or throwing, and the run's
+   * decisions are simply not recorded: a lost memory write is never worth
+   * failing a screen the person can already see.
+   */
+  remember?: (appId: AppId, decisions: string, ctx: RunContext) => Promise<void>;
 }
 
 /**
@@ -537,7 +583,15 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
           ...(system === undefined ? {} : { system }),
         },
       );
-      return result.kind === "assembled" ? { kind: "assembled" } : result;
+      if (result.kind !== "assembled") return result;
+      if (result.decisions !== undefined) {
+        await deps.remember?.(request.appId, result.decisions, ctx).catch((error: unknown) => {
+          console.warn(`[vendo] the screen agent's decisions were not recorded on ${request.appId} — ${
+            error instanceof Error ? error.message : String(error)
+          }`);
+        });
+      }
+      return { kind: "assembled" };
     },
   };
 }

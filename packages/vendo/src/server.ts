@@ -2344,6 +2344,12 @@ export function createVendo(input: CreateVendoConfig): Vendo {
         commitSource: (input) => apps.commitSource(input, screenCtx),
         floor: apps.floor(screenCtx),
       }),
+      // The app's memory, through the runtime's one write door — the same door
+      // the front door records asks with. Nothing in this package decides what
+      // goes in it; the assembler hands over the agent's own words.
+      remember: async (appId, decisions, memoryCtx) => {
+        await apps.remember({ appId, decisions }, memoryCtx);
+      },
       // `system` is deliberately unset. The screen agent's brief is the shipped
       // `building-apps` skill plus the host's own tool shapes, and the
       // deployment prompt's job — voice, venue gate, guard directions, the

@@ -342,7 +342,29 @@ export const createAgentTools = (
         const args = input(call.args, ["request"], ["app", "context"]);
         const app = optionalString(args.app, "app");
         const stream = (call as VendoViewStreamingToolCall)[VENDO_VIEW_STREAM];
-        const ask = withContext(args.request as string, optionalString(args.context, "context"));
+        const request = args.request as string;
+        const ask = withContext(request, optionalString(args.context, "context"));
+        /**
+         * The ask, onto the app's memory — the FRONT DOOR's job, because this is
+         * the one place that sees every request that touched an app whichever
+         * engine served it (assembly, the builder, the conductor fall-through,
+         * an edit).
+         *
+         * `request` and not `ask`: the memory holds what the PERSON said. The
+         * `<context>` fence is one calling agent's background for one call, and
+         * replaying it to every future editor as though the person had typed it
+         * is how a stale aside becomes a standing requirement.
+         *
+         * Best-effort, always. There is no arrangement of a lost memory write
+         * that is worse than failing a make the person can already see.
+         */
+        const remember = async (appId: string): Promise<void> => {
+          await runtime.remember({ appId, ask: request }, ctx).catch((error: unknown) => {
+            console.warn(`[vendo] the ask was not recorded on ${appId}: ${
+              error instanceof Error ? error.message : String(error)
+            }`);
+          });
+        };
         if (app === undefined) {
           // ── THE SEAM (blueprint §1 point 2) ─────────────────────────────────
           // "No agent chooses 'quick screen' vs 'real build'. Every request
@@ -379,6 +401,7 @@ export const createAgentTools = (
           if (routed?.kind === "assembled") {
             const stored = await runtime.get(appId, ctx).catch(() => null);
             if (stored !== null) {
+              await remember(appId);
               return receipt({
                 id: stored.id,
                 title: stored.name,
@@ -428,6 +451,9 @@ export const createAgentTools = (
               onView: (part) => stream({ id: vendoViewStreamId(part.appId), part }),
             }),
           }, ctx);
+          // An unsaved create has no row to remember onto; `remember` says so
+          // and moves on, which is the same non-event every other failure is.
+          await remember(created.id);
           // View-only (the store refused the write): the screen IS on the user's
           // page, so this is a success with a caveat, not a failure. Reporting it
           // as an error made the agent apologize for a rendered view and rebuild
@@ -443,7 +469,12 @@ export const createAgentTools = (
               : `${created.name} is on your screen, though I couldn't save it to your apps.`,
           });
         }
-        const result = await runtime.edit(await resolveAppRef(runtime, app, ctx), ask, ctx);
+        const appId = await resolveAppRef(runtime, app, ctx);
+        const result = await runtime.edit(appId, ask, ctx);
+        // Recorded whether or not the change landed: the person DID ask this of
+        // this app, and the next editor reading "asked for X, then asked for X
+        // again, narrower" is reading the truth.
+        await remember(appId);
         // Wave 9 — a ladder-authored automation raises its own card. Published
         // HERE, by the side that knows, rather than duck-typed out of this tool's
         // return value at the bridge: the receipt carries words only.

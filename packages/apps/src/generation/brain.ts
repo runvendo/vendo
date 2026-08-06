@@ -27,6 +27,7 @@ import {
   type PlanFacts,
   type TextEdit,
 } from "@vendoai/core";
+import { appMemoryBrief } from "../app-memory.js";
 import { appendSessionTurns } from "../persistence.js";
 import { askModel, asTree, type GeneratedAppDocument, type GenerationDependencies } from "./engine.js";
 import { brainPrompt } from "./prompts/brain.js";
@@ -56,7 +57,7 @@ export type BrainOutcome =
   | { kind: "cannot"; reasons: string[] };
 
 /** The app the brain is editing, as much of it as printing needs. */
-export type BrainApp = Pick<GeneratedAppDocument, "name" | "tree" | "components">;
+export type BrainApp = Pick<GeneratedAppDocument, "name" | "tree" | "components" | "memory">;
 
 export interface BrainInput {
   /** What to answer: the person's own words, or a machine instruction (a
@@ -225,12 +226,17 @@ const brainMessage = (
 ): string => {
   const session = input.session ?? [];
   const printed = appText(input.app);
+  const memory = appMemoryBrief(input.app?.memory);
   // ORDER IS DELIBERATE. The app's CURRENT text is the last thing before the
   // instruction, because the last thing read is the thing attended to — and the
   // one mistake that matters here is quoting an <Old> from something stale.
   // Retry feedback goes ABOVE the print for the same reason: the fresh text
   // must stay the nearest thing to the ask.
   return [
+    // The memory OPENS the brief, ahead of everything: it is the only section
+    // that says why the app looks the way it does, and a reader who meets the
+    // filtered list first reads the filter as a bug and "fixes" it.
+    ...(memory === undefined ? [] : [memory]),
     ...(session.length === 0 ? [] : [`THE CONVERSATION SO FAR (what was said, not what the app says):\n${transcript(session)}`]),
     ...(previous === undefined ? [] : [
       `YOUR LAST ANSWER DID NOT WORK:\n${previous.answer}`,

@@ -466,7 +466,12 @@ export const conductEdit = async (
   const previous = input.app;
   const turn = await runBrainTurn({
     instruction: input.instruction,
-    app: { name: previous.name, tree: previous.tree, ...(previous.components === undefined ? {} : { components: previous.components }) },
+    app: {
+      name: previous.name,
+      tree: previous.tree,
+      ...(previous.components === undefined ? {} : { components: previous.components }),
+      ...(previous.memory === undefined ? {} : { memory: previous.memory }),
+    },
     ...(input.session === undefined ? {} : { session: input.session }),
   }, deps);
   if (turn.outcome === undefined) return { kind: "failure", issues: turn.issues, session: turn.session };

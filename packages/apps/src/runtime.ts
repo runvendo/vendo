@@ -107,6 +107,7 @@ import {
   runBoxEdit,
   type BoxEditResult,
 } from "./box-agent.js";
+import { appMemoryBrief, rememberedMemory } from "./app-memory.js";
 import { parseVendoManifest } from "./manifest.js";
 import { createAppOpener, createProgressiveQueryResolver, stripServerAuthoritativeFields } from "./open.js";
 import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, listAllRecords, nextEnvStaleAt, rowFromRecord, sessionOf, updateAppRow, withoutSession, type AppRecordWrite } from "./persistence.js";
@@ -806,6 +807,24 @@ export interface AppsRuntime {
     holder(appId: AppId, ctx: RunContext): Promise<string | null>;
   };
   edit(appId: AppId, instruction: string, ctx: RunContext): Promise<EditResult>;
+  /**
+   * The app's memory, and the ONE door that writes it.
+   *
+   * A screen or build run is stateless; the ARTIFACT is what carries its context
+   * forward, and this is where that context lands. `ask` is appended verbatim —
+   * the front door passes the person's own `request`, never the `<context>`-fenced
+   * composite it briefs an engine with. `decisions` REPLACES whatever was there:
+   * it describes the app as it stands, so a superseded one kept beside the new
+   * one reads as a current constraint. Both are capped here (`app-memory.ts`)
+   * rather than in the schema, so a stored row survives a cap that changes.
+   *
+   * There is deliberately no second row-write door for this. Every caller —
+   * `vendo_make`'s create arms, its edit arm, the screen assembler's decisions —
+   * comes through here, which is also the one place the `editor` level is
+   * checked. A caller treats a rejection as a non-event: memory is never worth
+   * failing a make over.
+   */
+  remember(input: { appId: AppId; ask?: string; decisions?: string }, ctx: RunContext): Promise<void>;
   /**
    * The capped version log, and the one-step rollback over it.
    *
@@ -1894,6 +1913,14 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     } else {
       app.egressApproved = [...previous.egressApproved];
     }
+    // Same rule, same reason: the memory is written by the memory door alone, so
+    // an edit carries the STORED one across rather than whatever the generated
+    // document happens to hold (which, on a rebuild, is nothing).
+    if (previous.memory === undefined) {
+      delete app.memory;
+    } else {
+      app.memory = structuredClone(previous.memory);
+    }
     const versionId = await history.append(
       app.id,
       previous,
@@ -2121,11 +2148,16 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   ): Promise<{ ok: true; result: BoxEditResult; doc: AppDocument; servedOk: boolean } | { ok: false; result: BoxEditResult }> => {
     const machine = await lifecycle.wake(app);
     await pushBoxEnv(machine, await lifecycle.buildAppEnv(app)).catch(() => undefined);
+    // The builder in the box reads the app's memory before its own contract, for
+    // the same reason the brain does: the code on that disk cannot say which of
+    // its shapes were asked for and which are incidental.
+    const contract = options.served === true
+      ? `${skinContractPrompt(app)}\n${servedAppContractPrompt()}`
+      : skinContractPrompt(app);
+    const memory = appMemoryBrief(app.memory);
     const result = await runBoxEdit(machine, {
       prompt: instruction,
-      context: options.served === true
-        ? `${skinContractPrompt(app)}\n${servedAppContractPrompt()}`
-        : skinContractPrompt(app),
+      context: memory === undefined ? contract : `${memory}\n\n${contract}`,
       ...(boxEditPollMs === undefined ? {} : { pollIntervalMs: boxEditPollMs }),
       ...(boxEditTimeoutMs === undefined ? {} : { timeoutMs: boxEditTimeoutMs }),
     });
@@ -2578,6 +2610,9 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       if (app.tree !== undefined) stripServerAuthoritativeFields(app.tree);
       delete app.egressApproved;
       delete app.buildFailed;
+      // The memory door is the only writer (`remember`), so a model that echoed
+      // a `memory` block back out of its brief must not have it persisted.
+      delete app.memory;
 
       let finalTree: Tree | undefined;
       if (input.onView !== undefined && app.tree?.formatVersion === VENDO_TREE_FORMAT) {
@@ -3260,6 +3295,15 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       });
     },
 
+    async remember(input, ctx) {
+      // The same `editor` gate every other write to this row passes: appending
+      // to an app's memory is changing the app.
+      await requireOwned(input.appId, ctx);
+      await updateAppDocument(input.appId, (doc) => ({
+        ...doc,
+        memory: rememberedMemory(doc.memory, input),
+      }));
+    },
 
     /**
      * Build contract §9.3 — the level lives HERE, not only at the wire route
