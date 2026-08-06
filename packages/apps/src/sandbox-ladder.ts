@@ -68,12 +68,17 @@ const e2bTimeoutMs = (): number | undefined => {
 export function selectSandbox(
   configured: SandboxAdapter | undefined,
   cloud?: CloudSandboxRung,
+  /** Which module the "is the BYO SDK usable?" probe asks about. Defaults to
+   *  `e2b`; this is the same specifier seam `e2bInstalled` already takes, so
+   *  rung 2's misconfig refusal can be exercised by naming a package that
+   *  genuinely is not installed rather than by stubbing the probe. */
+  e2bSpecifier?: string,
 ): SandboxSelection {
   if (configured !== undefined) return { adapter: configured, venue: "custom" };
 
   const e2bApiKey = environment("E2B_API_KEY");
   if (e2bApiKey !== undefined) {
-    if (!e2bInstalled()) {
+    if (!e2bInstalled(e2bSpecifier)) {
       throw new VendoError(
         "validation",
         "E2B_API_KEY is set but the e2b package is not installed — install e2b, or unset E2B_API_KEY to use another sandbox",
