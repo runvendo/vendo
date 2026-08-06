@@ -1,9 +1,14 @@
 import type { AppDocument, RunContext, StoreAdapter, ToolRegistry } from "@vendoai/core";
-import type { LanguageModel } from "ai";
 import { describe, expect, it } from "vitest";
-import { createApps } from "./index.js";
+import { createApps, type AppsRuntime } from "./index.js";
 import { placementStore } from "./placements.js";
-import { basicLanguageModel, guardFixture, memoryStore, seedAppRow } from "./testing/index.js";
+import {
+  basicLanguageModel,
+  guardFixture,
+  memoryStore,
+  scriptedAssembler,
+  seedAppRow,
+} from "./testing/index.js";
 
 const ctx: RunContext = {
   principal: { kind: "user", subject: "user_ada" },
@@ -191,38 +196,33 @@ const until = async <T>(read: () => Promise<T>, ok: (value: T) => boolean): Prom
   }
 };
 
-/** `basicLanguageModel`, held until the test releases it — which is what makes
- *  "the slot shows the build forming" observable without a sleep. */
-const gatedModel = (gate: Promise<void>): LanguageModel => {
-  const base = basicLanguageModel() as unknown as {
-    specificationVersion: "v2";
-    provider: string;
-    modelId: string;
-    supportedUrls: Record<string, string[]>;
-    doGenerate(call: unknown): Promise<unknown>;
-    doStream(call: unknown): Promise<unknown>;
-  };
-  return {
-    ...base,
-    async doGenerate(call: unknown) {
+const GENERATED = '<App name="Spending"><Text text="Spending"/><Disclaimer reason="Fixture app."/></App>';
+
+/** The one engine, held until the test releases it — which is what makes "the
+ *  slot shows the build forming" observable without a sleep. It is the ASSEMBLER
+ *  that is gated, because assembly is where every `create` starts. */
+const gatedRuntime = (store: StoreAdapter, gate?: Promise<void>): AppsRuntime => {
+  let runtime: AppsRuntime;
+  runtime = createApps({
+    store,
+    guard: guardFixture(),
+    tools,
+    catalog: [],
+    model: basicLanguageModel(),
+    screen: scriptedAssembler(() => runtime, async () => {
       await gate;
-      return await base.doGenerate(call);
-    },
-    async doStream(call: unknown) {
-      await gate;
-      return await base.doStream(call);
-    },
-  } as unknown as LanguageModel;
+      return GENERATED;
+    }),
+  });
+  return runtime;
 };
 
 describe("a slot-targeted create claims its slot at mint (B1)", () => {
-  it("shows the slot BUILDING while the model runs, then READY when it lands", async () => {
+  it("shows the slot BUILDING while the engine runs, then READY when it lands", async () => {
     const store = memoryStore();
     let release = (): void => {};
     const gate = new Promise<void>((resolve) => { release = resolve; });
-    const runtime = createApps({
-      store, guard: guardFixture(), tools, catalog: [], model: gatedModel(gate),
-    });
+    const runtime = gatedRuntime(store, gate);
 
     const building = runtime.create({ prompt: "Show my spending", slot: "home-hero" }, ctx);
     // The row exists before a single token does.
@@ -237,9 +237,7 @@ describe("a slot-targeted create claims its slot at mint (B1)", () => {
 
   it("leaves the slot alone when the create names none", async () => {
     const store = memoryStore();
-    const runtime = createApps({
-      store, guard: guardFixture(), tools, catalog: [], model: basicLanguageModel(),
-    });
+    const runtime = gatedRuntime(store);
     await runtime.create({ prompt: "Show my spending" }, ctx);
     expect(await runtime.placements({}, ctx)).toEqual([]);
   });

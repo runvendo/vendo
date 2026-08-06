@@ -27,64 +27,84 @@ const ctx: RunContext = {
   sessionId: "session_placements_seam",
 };
 
-interface ModelCall {
-  prompt: Array<{ role: string; content: string | Array<{ type?: string; text?: string }> }>;
-}
+/** The smallest document the compiler renders and the seam paints. */
+const SPENDING = `<App name="Spending">
+  <Stack>
+    <Text text="This month" />
+  </Stack>
+</App>`;
 
-const promptText = (call: ModelCall): string => call.prompt
-  .map(message => typeof message.content === "string"
-    ? message.content
-    : message.content.map(part => part.text ?? "").join(""))
-  .join("\n");
+const ZERO_USAGE = {
+  inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+  outputTokens: { total: 0, text: 0, reasoning: 0 },
+} as const;
 
-/** The name the create validator needs, taken from the request the way the
- *  apps package's own `basicLanguageModel` fixture takes it. */
-const namedFrom = (text: string, marker: string): string => {
-  const start = text.lastIndexOf(marker);
-  if (start === -1) return "Untitled app";
-  const value = text.slice(start + marker.length).split("\n")[0]?.trim() ?? "";
-  return (value.slice(0, 40) || "Untitled app").replaceAll('"', "'");
-};
+type Chunk = Record<string, unknown>;
+
+const saveApp = (content: string): Chunk[] => [
+  {
+    type: "tool-call",
+    toolCallId: "c1",
+    toolName: "save_app",
+    input: JSON.stringify({ content }),
+  },
+  { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "tool-calls", raw: undefined } },
+];
+
+const speak = (text: string): Chunk[] => [
+  { type: "text-start", id: "t1" },
+  { type: "text-delta", id: "t1", delta: text },
+  { type: "text-end", id: "t1" },
+  { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
+];
 
 /** A deterministic LanguageModelV2 double that HOLDS until the test releases
  *  it — which is what makes "the slot shows the build forming" observable
- *  without a sleep. Same generation markup as the apps fixture. */
+ *  without a sleep. It drives the ONE engine the way a real screen agent does:
+ *  a `save_app` hand, then a word to finish on. */
 function gatedModel(gate: Promise<void>): LanguageModel {
-  const answer = (text: string): string => {
-    if (text.includes("TASK: EDIT_TREE")) {
-      return `<Edit><SetName name="${namedFrom(text, "INSTRUCTION: ")}"/></Edit>`;
-    }
-    const name = namedFrom(text, "USER_REQUEST: ");
-    return `<App name="${name}"><Text text="${name}"/><Disclaimer reason="Scripted fixture app."/></App>`;
-  };
+  const turns: Chunk[][] = [saveApp(SPENDING), speak("done")];
+  const answer = (): Chunk[] => turns.shift() ?? speak("nothing more to do");
   const model = {
     specificationVersion: "v2" as const,
     provider: "vendo-placements-seam",
     modelId: "vendo-placements-seam-v1",
     supportedUrls: {},
-    async doGenerate(call: ModelCall) {
+    async doGenerate() {
       await gate;
+      const chunks = answer();
+      const toolCall = chunks.find((chunk) => chunk["type"] === "tool-call");
+      if (toolCall !== undefined) {
+        return {
+          content: [{
+            type: "tool-call" as const,
+            toolCallId: toolCall["toolCallId"] as string,
+            toolName: toolCall["toolName"] as string,
+            input: toolCall["input"] as string,
+          }],
+          finishReason: "tool-calls" as const,
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        };
+      }
       return {
-        content: [{ type: "text" as const, text: answer(promptText(call)) }],
+        content: [{
+          type: "text" as const,
+          text: chunks
+            .filter((chunk) => chunk["type"] === "text-delta")
+            .map((chunk) => chunk["delta"] as string).join(""),
+        }],
         finishReason: "stop" as const,
         usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
       };
     },
-    async doStream(call: ModelCall) {
+    async doStream() {
       await gate;
-      const text = answer(promptText(call));
+      const chunks = answer();
       return {
         stream: new ReadableStream({
           start(controller) {
             controller.enqueue({ type: "stream-start", warnings: [] });
-            controller.enqueue({ type: "text-start", id: "text_1" });
-            controller.enqueue({ type: "text-delta", id: "text_1", delta: text });
-            controller.enqueue({ type: "text-end", id: "text_1" });
-            controller.enqueue({
-              type: "finish",
-              finishReason: "stop",
-              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-            });
+            for (const chunk of chunks) controller.enqueue(chunk);
             controller.close();
           },
         }),

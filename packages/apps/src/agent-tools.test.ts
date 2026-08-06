@@ -763,15 +763,21 @@ describe("vendo_make — the slot a new app lands in", () => {
 });
 
 describe("vendo_apps_pin / vendo_apps_unpin — putting an app on the page", () => {
-  // No screen assembler: every app here is made through the runtime's own
-  // `create`, and these two tools only ever move an app that already exists.
-  const makeRuntime = (): AppsRuntime => createApps({
-    store: memoryStore(),
-    guard: guardFixture(),
-    tools: hostTools,
-    catalog: [],
-    model: scriptedLanguageModel(generated),
-  });
+  // These two tools only ever move an app that already exists, so the assembler
+  // is here only to make one: there is ONE engine, and `create` starts at
+  // assembly for every caller.
+  const makeRuntime = (): AppsRuntime => {
+    let runtime: AppsRuntime;
+    runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools: hostTools,
+      catalog: [],
+      model: scriptedLanguageModel(generated),
+      screen: authoringAssembler(() => runtime, generated),
+    });
+    return runtime;
+  };
 
   it("takes exactly app and slot, both required", async () => {
     const descriptors = await makeRuntime().agentTools().descriptors();
