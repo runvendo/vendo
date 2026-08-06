@@ -133,8 +133,10 @@ describe("the transcript's beats", () => {
       expect(beat?.classList.contains("fl-beat-working")).toBe(true);
       expect(beat?.textContent).toContain("List transactions");
     });
-    // C4 — the ribbon no longer narrates tool calls (the transcript owns it).
-    expect(document.querySelector(".fl-ribbon[data-vendo-tool]")).toBeNull();
+    // C4 — the transcript OWNS the narration: the beat lives inside the message
+    // list, never as a status pill parked above the composer.
+    expect(document.querySelector(".fl-msglist [data-vendo-tool='host_list_transactions']")).toBeTruthy();
+    expect(document.querySelector(".fl-composer [data-vendo-tool]")).toBeNull();
     // A live turn is never folded.
     expect(document.querySelector(".fl-beatsummary")).toBeNull();
 
