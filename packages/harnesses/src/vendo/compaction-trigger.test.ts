@@ -183,4 +183,47 @@ describe("the loop's interim floor", () => {
     // Nothing compacted, so there is no new state to persist.
     expect(compacted).toBeUndefined();
   });
+
+  it("DISCARDS a summary whose boundary this history does not contain", async () => {
+    // The loop's own fallback, asserted at the loop. `vendo()` refuses an
+    // unplaceable state before the loop ever sees it, so this rail is only
+    // reachable from `createAgent` — the other caller of `startTurn`, which has no
+    // slot of its own and passes whatever its host handed it. A boundary that
+    // names no message here means the summary describes history this thread does
+    // not have, and projecting it would answer from a branch nobody is on.
+    const { messages } = await turnModelMessages({
+      messages: thread(),
+      system: "system",
+      tools: {},
+      compaction: {
+        model: "probe-model",
+        contextWindowTokens: 2_000,
+        state: { version: 1, summary: "## Goal\nSTALE ACCOUNT", boundaryMessageId: "m_deleted" },
+      },
+    });
+
+    expect(wire(messages)).not.toContain("STALE ACCOUNT");
+  });
+
+  it("keeps a summary whose boundary the host's WINDOW sliced away", async () => {
+    // The case between the two, and the one a plain `findIndex` gets wrong. The
+    // boundary is older than the window, so it is not in the projected history —
+    // but it IS in the thread, and the band it absorbed is exactly what the host's
+    // slice threw away. Dropping the summary here would send a prompt that
+    // remembers neither.
+    const { messages } = await turnModelMessages({
+      messages: thread(),
+      system: "system",
+      tools: {},
+      historyWindow: 1,
+      compaction: {
+        model: "probe-model",
+        contextWindowTokens: 1_000_000,
+        state: { version: 1, summary: "## Goal\nSTILL VALID ACCOUNT", boundaryMessageId: "m1" },
+      },
+    });
+
+    expect(wire(messages)).toContain("STILL VALID ACCOUNT");
+    expect(wire(messages)).toContain("NEWEST");
+  });
 });
