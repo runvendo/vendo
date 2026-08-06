@@ -43,7 +43,6 @@ import { readFile, mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { BASE_PATH } from "@/lib/base-path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { DEFAULT_TRIGGER_ID, UNATTENDED_DESTRUCTIVE_REASON } from "@vendoai/core";
@@ -56,7 +55,9 @@ import { createGuard, type VendoGuard } from "@vendoai/guard";
 import { createStore, type VendoStore } from "@vendoai/store";
 import { mapleDemoUsers } from "@/server/users";
 
-const appDir = fileURLToPath(new URL("../..", import.meta.url));
+// Vitest's root IS the app dir, so cwd names it without `import.meta` — which
+// the app's NodeNext tsconfig reads as CommonJS and rejects.
+const appDir = process.cwd();
 const AUTH_SECRET = "maple-away-drill-secret";
 const BOOT_MS = 240_000;
 
