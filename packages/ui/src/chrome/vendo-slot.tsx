@@ -1,6 +1,7 @@
 import type { Json, ToolOutcome, UIPayload } from "@vendoai/core";
-import { useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, type ReactNode } from "react";
 import { useVendoProvider } from "../context.js";
+import { noteSlot } from "../slot-notes.js";
 import { useApp } from "../hooks/use-app.js";
 import { useSlotApp } from "../hooks/use-slot-app.js";
 import { FluidReveal } from "../tree/fluid-reveal.js";
@@ -10,6 +11,13 @@ import { defaultSlotSuggestions } from "./discoverability.js";
 import { developmentMode } from "./dev-mode.js";
 import { openVendoConversation } from "./overlay-registry.js";
 import { openVendoPalette } from "./palette-hotkey.js";
+
+/** A slot id is a code identifier ("net-worth-card"); the person choosing a
+ *  destination in the picker reads words. */
+function slotLabel(id: string): string {
+  const words = id.replace(/[-_]+/g, " ").replace(/([a-z\d])([A-Z])/g, "$1 $2").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
 
 /** The faint skeleton behind the ghost/empty states — decorative only. */
 function GhostSkeleton() {
@@ -160,6 +168,13 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, discover = true
   // guaranteed "this view didn't load". The host's own children stay up until
   // there is something real to swap in.
   const appId = appIdProp ?? (pin === undefined && discovery.status === "ready" ? discovery.appId : undefined);
+
+  // A slot id lives in the host's markup and nowhere else, so a surface that is
+  // not on this page (the embed's "Add to…" picker) can only learn this slot
+  // exists from here. Every state notes it, including the untouched-children one.
+  useEffect(() => {
+    noteSlot({ id, label: slotLabel(id) });
+  }, [id]);
 
   const author = () => {
     if (onAuthor) {
