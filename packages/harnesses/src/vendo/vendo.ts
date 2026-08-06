@@ -44,20 +44,18 @@ const SPECIALIST_SYSTEM =
 const HIRE_SUBAGENT = "hire_subagent";
 
 /**
- * The per-turn knobs. `model` is here because a host may forward a model picker to
- * its end users (architecture §3, "Options are declared, then overridable per
- * turn"); everything else defaults.
+ * The per-turn knobs — the TYPE is the whole declaration.
+ *
+ * There was a `Harness.optionsSchema` here too, restating these six as zod. It
+ * was never parsed: nothing in the stack validates a harness's options schema,
+ * and the one path that could have (`HarnessTurns.stream` → `runtime.run`) is
+ * typed `<never>` and forwards no options at all. So the schema was a second,
+ * unenforced copy of this interface, and a caller reaching `Turn.options` is
+ * `runtime.run({ options })` — typed, in-process, and already checked by tsc.
+ * Where a value's range genuinely matters the check lives at the function that
+ * needs it ({@link contextWindowTokens}), which is the only place either the
+ * per-turn or the deployment door was ever checked.
  */
-const optionsSchema = z.object({
-  /** Overrides the `default` seat for this turn only. */
-  model: z.unknown().optional(),
-  maxSteps: z.number().int().positive().optional(),
-  historyWindow: z.number().int().positive().optional(),
-  contextTokenBudget: z.number().int().positive().optional(),
-  maxOutputTokens: z.number().int().positive().optional(),
-  contextWindowTokens: z.number().int().positive().optional(),
-});
-
 export interface VendoHarnessOptions {
   model?: LanguageModel;
   maxSteps?: number;
@@ -313,7 +311,6 @@ async function runSubagent(
 export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions> {
   return defineHarness<VendoHarnessOptions>({
     name: "vendo",
-    optionsSchema,
     // Machine-less by design: in-process bash over the workspace is enough
     // (architecture §4, "Hands vary").
     async *run(turn) {

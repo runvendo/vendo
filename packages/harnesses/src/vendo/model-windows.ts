@@ -77,11 +77,11 @@ export function rememberResolvedModelId(model: LanguageModel, reported: string |
  * a model this repo has never heard of, or on a seat whose entry has gone stale,
  * needs a way to be right that does not involve waiting for a release. It has to
  * be a positive WHOLE number of tokens to be a window at all, and this is the
- * only place either door is checked: `vendo.ts` declares `optionsSchema` as
- * `z.number().int().positive()`, but nothing in the stack parses a harness's
+ * only place either door is checked: nothing in the stack parses a harness's
  * options schema, so the per-turn knob arrives exactly as unvalidated as the
- * deployment one — which is why the check here is that same rule and not a
- * looser one. Both ends of the range fail the same way, silently and in opposite
+ * deployment one — which is why the rule lives HERE, at the function both doors
+ * reach, and not in a declaration beside one of them. Both ends of the range
+ * fail the same way, silently and in opposite
  * directions: a zero puts the trigger at zero, so every turn pays for a
  * summarizer pass and then sheds the conversation to its last message; an
  * infinity puts the trigger past every estimate there is, so compaction never
