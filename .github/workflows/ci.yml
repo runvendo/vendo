@@ -194,6 +194,8 @@ jobs:
     timeout-minutes: 15
     needs: test-shards
     if: always() && needs.test-shards.result != 'cancelled'
+    # No turbo cache step: this job never invokes turbo — it replays blob
+    # reports through vitest directly.
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
@@ -201,8 +203,6 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - name: Turbo remote cache (GitHub-cache backed)
-        uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
       - run: pnpm install --frozen-lockfile
       # continue-on-error: a package whose shards all skipped (unaffected) has
       # no artifacts, and download-artifact treats a pattern that matches
@@ -264,8 +264,9 @@ jobs:
       - name: Turbo remote cache (GitHub-cache backed)
         uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
       - run: pnpm install --frozen-lockfile
-      - name: Build deps
-        run: pnpm turbo run build --filter=@vendoai-examples/ai-sdk-agent --filter=@vendoai-examples/mastra-agent --filter=@vendoai-corpus/express-host
+      # No separate build step: turbo.json gives `test` dependsOn
+      # ["^build", "build"], so this one command builds the three packages and
+      # their workspace deps before running them.
       - name: Test formerly-local-only suites
         run: pnpm turbo run test --continue --concurrency=2 --filter=@vendoai-examples/ai-sdk-agent --filter=@vendoai-examples/mastra-agent --filter=@vendoai-corpus/express-host
 
