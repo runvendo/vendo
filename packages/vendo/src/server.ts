@@ -1587,6 +1587,10 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // someone typed into the Share dialog into one of its own subjects. Unset, the
   // dialog does not offer to share with one person at all.
   const resolvePersonSeam = config.auth?.resolvePerson;
+  // Spec 2026-08-05 §1 — the [User] facts seam rides the preset only (decision
+  // 5: no seam for raw principal-trio hosts — a hand-rolled `principal` has no
+  // facts channel).
+  const userFactsSeam = config.auth?.facts;
   // 02-store §4 (kill-list B3) — ephemeral session policy. Validated like the
   // agent's context config; defaults are the recommended knobs. The store takes
   // the clock per call (register/sweep), so one time source needs no seam.
@@ -3299,6 +3303,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     principal: resolvePrincipal,
     ...(membershipsSeam === undefined ? {} : { memberships: membershipsSeam }),
     ...(resolvePersonSeam === undefined ? {} : { resolvePerson: resolvePersonSeam }),
+    ...(userFactsSeam === undefined ? {} : { userFacts: userFactsSeam }),
     ready,
     trustedBaseIsHttps,
     get sessionId() { return sessionId(); },
