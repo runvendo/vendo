@@ -57,6 +57,7 @@
         "group": "Bring your own agent",
         "tag": "Recommended",
         "pages": [
+          "existing-agents/your-agent",
           "existing-agents/index",
           "existing-agents/ai-sdk",
           "existing-agents/mastra",
