@@ -116,3 +116,4 @@ export type { AppMount } from "./workspace.js";
 // missing `verifier` and `Turn.models` could not describe the verifier seat.
 // Lane A's own file said "if lane D's version differs, lane D's wins"; it does,
 // so the copy is gone and there is one definition.
+// proof: e2e skip must mark this package's dependents affected (PR is closed unmerged)
