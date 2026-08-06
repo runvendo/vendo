@@ -4,9 +4,10 @@ import {
   describeShape,
   shapeAtPointer,
   shapeCardSchema,
+  shapeFromJsonSchema,
   type ShapeType,
 } from "./shape.js";
-import type { Json } from "./ids.js";
+import type { Json, JsonSchema } from "./ids.js";
 
 /** deriveShape/mergeShapes are internal; deriveShapeCard is their only
  *  production path, so derivation (single sample) and merging (multiple
@@ -203,5 +204,45 @@ describe("shape cards", () => {
       output: { kind: "wat" },
       source: "sample",
     }).success).toBe(false);
+  });
+});
+
+describe("shapeFromJsonSchema", () => {
+  it("converts scalars, arrays and objects, marking non-required fields optional", () => {
+    expect(shapeFromJsonSchema({ type: "string" })).toEqual({ kind: "string" });
+    expect(shapeFromJsonSchema({ type: "integer" })).toEqual({ kind: "number" });
+    expect(shapeFromJsonSchema({
+      type: "object",
+      properties: {
+        rows: { type: "array", items: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
+        note: { type: "string" },
+      },
+      required: ["rows"],
+    })).toEqual({
+      kind: "object",
+      fields: {
+        rows: { kind: "array", items: { kind: "object", fields: { id: { kind: "string" } } } },
+        note: { kind: "string" },
+      },
+      optional: ["note"],
+    });
+  });
+
+  it("keeps enum and const values on the scalar branch", () => {
+    expect(shapeFromJsonSchema({ type: "string", enum: ["paid", "void"] }))
+      .toEqual({ kind: "string", enum: ["paid", "void"] });
+    expect(shapeFromJsonSchema({ const: 7 })).toEqual({ kind: "number", enum: [7] });
+  });
+
+  it("degrades unmodelled constructs to json instead of throwing", () => {
+    expect(shapeFromJsonSchema({})).toEqual({ kind: "json" });
+    expect(shapeFromJsonSchema({ anyOf: [{ type: "string" }, { type: "number" }] })).toEqual({ kind: "json" });
+    expect(shapeFromJsonSchema({ type: "array" })).toEqual({ kind: "array", items: { kind: "json" } });
+  });
+
+  it("caps conversion depth instead of overflowing", () => {
+    let schema: JsonSchema = { type: "string" };
+    for (let index = 0; index < 10_000; index += 1) schema = { type: "object", properties: { next: schema } };
+    expect(JSON.stringify(shapeFromJsonSchema(schema))).toContain('"json"');
   });
 });
