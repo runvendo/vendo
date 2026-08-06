@@ -87,7 +87,7 @@ describe("@vendoai/vendo/ai-sdk — vendoTools", () => {
     const names = Object.keys(tools).sort();
     expect(names).toContain("vendo_host_list");
     expect(names).toContain("vendo_host_send");
-    expect(names).toContain("vendo_create_app");
+    expect(names).toContain("vendo_make");
     expect(names).toContain("vendo_delegate");
     expect(names.some((name) => name.startsWith("vendo_vendo_"))).toBe(false);
     for (const tool of Object.values(tools) as Tool[]) {
