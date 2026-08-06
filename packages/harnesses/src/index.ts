@@ -32,6 +32,7 @@ export {
 export { vendo, type HarnessHand, type VendoHarnessDeps, type VendoHarnessOptions } from "./vendo.js";
 export {
   assembleScreen,
+  escalatedPlanPath,
   screenAgent,
   screenAssembler,
   ESCALATE_TOOL,

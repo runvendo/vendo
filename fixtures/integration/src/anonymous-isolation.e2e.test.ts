@@ -20,7 +20,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   createStack,
-  generationTurn,
+  screenAgentCreateTurns,
   readSse,
   readSseMidStream,
   resetFixture,
@@ -80,8 +80,9 @@ describe("J7: anonymous sessions are isolated per client through the composed wi
         toolCallTurn("vendo_make", { request: "Build a greeting card" }, "call_app"),
         // Two-lane create (v2 spec §4): the tier-0 paint lane and the full
         // lane each consume one generation turn.
-        generationTurn(CREATE_DIALECT),
-        generationTurn(CREATE_DIALECT, "gen_2"),
+        // The screen agent answers this ask itself (it is THE engine for a
+        // `vendo_make` now), so the conductor spends no generation turns.
+        ...screenAgentCreateTurns(CREATE_DIALECT),
         textTurn("Created your app.", "t1"),
         // Client 1, thread thr_anon_del: a destructive host tool that the composed
         // policy parks (destructive → ask) — an approval queued under the anon subject.

@@ -390,8 +390,8 @@ and shipped chrome displays the unconfigured-policy notice.
 
 Server-shaped app requests ("email me a digest of unpaid invoices at 8am")
 ride the automations engine by default — a steps or agentic automation on the
-app document, created in seconds with no sandbox anywhere. A sandbox adapter
-plus the experimental `apps: { experimentalMachines: true }` opt-in unlocks
+app document, created in seconds with no sandbox anywhere. A configured
+`sandbox` adapter — and nothing else, there is no flag beside it — unlocks
 machine-backed apps (custom server code in a box): see
 [the machine model](./machine-model.md) for the three layers, the escalation
 ladder, graduation, and the box contract. Machine provisioning also requires
@@ -500,8 +500,6 @@ export interface CreateVendoConfig {
   sessions?: { ttlMs?: number; sweepIntervalMs?: number; now?: () => number };
   approvals?: { parkedCallTtlMs?: number };
   apps?: false | {            // false unmounts app generation: no tools, skill or /apps routes
-    experimentalMachines?: boolean;
-    experimentalScreenAgent?: boolean; // route vendo_make through the cheap screen agent first
     review?: {                // review-kind remixes: who may review (queue/reject/approve)
       reviewer?(ctx: RunContext): boolean | Promise<boolean>;
     };

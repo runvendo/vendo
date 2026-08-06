@@ -112,6 +112,24 @@ export function generationTurn(dialect: unknown, id = "gen_1"): LanguageModelV3S
   ];
 }
 
+/**
+ * The screen agent's two turns for one `vendo_make` create: save the document
+ * with its own hands, then stop.
+ *
+ * Every `vendo_make` ask starts in the assembly loop now — that used to be
+ * behind `apps.experimentalScreenAgent` and the flag is gone — so a script that
+ * only feeds the conductor's generation turns runs the assembly loop out of
+ * answers and then feeds ITS turns to the conductor, one call out of step.
+ * Written as one helper rather than two lines per fixture because the pair is
+ * one thing: "the screen agent answered this ask".
+ */
+export function screenAgentCreateTurns(dialect: string): LanguageModelV3StreamPart[][] {
+  return [
+    toolCallTurn("save_app", { content: dialect }, "screen_save"),
+    textTurn("saved", "screen_done"),
+  ];
+}
+
 export type ScriptedModel = MockLanguageModelV3 & { prompts: LanguageModelV3Prompt[] };
 
 export function scriptedModel(turns: LanguageModelV3StreamPart[][]): ScriptedModel {
@@ -288,11 +306,10 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     policy: { file: ".vendo/policy.json" },
     ...(options.telemetry === true ? { telemetry: true } : {}),
     ...(options.connectors === undefined ? {} : { connectors: options.connectors }),
-    // Wave 9 — machine provisioning is flag-gated; a stack composed WITH a
-    // sandbox is here to exercise the box machinery, so opt in.
+    // A configured sandbox IS the opt-in to machine-backed execution; a stack
+    // composed WITH one is here to exercise the box machinery.
     ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }),
     apps: options.apps === false ? false : {
-      ...(options.sandbox === undefined ? {} : { experimentalMachines: true }),
       ...(options.checks === undefined ? {} : { checks: options.checks }),
     },
     ...(options.tools === undefined ? {} : { tools: options.tools }),

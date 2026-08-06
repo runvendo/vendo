@@ -15,7 +15,7 @@ import {
   ADA,
   BOB,
   createStack,
-  generationTurn,
+  screenAgentCreateTurns,
   readSse,
   resetFixture,
   textTurn,
@@ -36,10 +36,11 @@ describe("J1: chat generates an app through the real composition", () => {
     stack = await createStack({
       turns: [
         toolCallTurn("vendo_make", { request: "Build me a greeting card" }, "call_1"),
-        // Two-lane create (v2 spec §4): the tier-0 paint lane and the full
-        // lane each consume one generation turn.
-        generationTurn(CREATE_DIALECT),
-        generationTurn(CREATE_DIALECT, "gen_2"),
+        // `vendo_make` starts in the screen agent on every deployment now, and
+        // it answers this ask itself: it writes the document with its own hands
+        // and the render seam's `authored` half is what makes the row. The
+        // conductor never runs, so it spends no generation turns.
+        ...screenAgentCreateTurns(CREATE_DIALECT),
         textTurn("Created your app.", "t1"),
       ],
     });

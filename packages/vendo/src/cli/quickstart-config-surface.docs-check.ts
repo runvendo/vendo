@@ -92,8 +92,6 @@ export interface CreateVendoConfig {
   sessions?: { ttlMs?: number; sweepIntervalMs?: number; now?: () => number };
   approvals?: { parkedCallTtlMs?: number };
   apps?: false | {            // false unmounts app generation: no tools, skill or /apps routes
-    experimentalMachines?: boolean;
-    experimentalScreenAgent?: boolean; // route vendo_make through the cheap screen agent first
     review?: {                // review-kind remixes: who may review (queue/reject/approve)
       reviewer?(ctx: RunContext): boolean | Promise<boolean>;
     };

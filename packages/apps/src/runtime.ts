@@ -108,7 +108,7 @@ import {
   type BoxEditResult,
 } from "./box-agent.js";
 import { parseVendoManifest } from "./manifest.js";
-import { createAppOpener, createProgressiveQueryResolver, machinesDisabledError, stripServerAuthoritativeFields } from "./open.js";
+import { createAppOpener, createProgressiveQueryResolver, stripServerAuthoritativeFields } from "./open.js";
 import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, listAllRecords, nextEnvStaleAt, rowFromRecord, sessionOf, updateAppRow, withoutSession, type AppRecordWrite } from "./persistence.js";
 import { classifyLegacyPlacements, detectPinDrift, hasDefaultExport, pinComponentName, pinForkSource, type InClientApproval, type PinBaseline, type PinDrift } from "./pins.js";
 import { createReviewLifecycle, type RemixRejection, type ReviewQueueEntry } from "./review.js";
@@ -210,20 +210,6 @@ export interface AppsConfig {
    */
   venueState?: (app: AppDocument, ctx: RunContext) => Promise<Record<string, unknown> | undefined>;
   /**
-   * execution-v2 Wave 9 — the layer-2 (machine-backed execution) experimental
-   * opt-in, gating ALL of the box machinery for NEW graduation: machine
-   * provisioning, box-agent delegation, and fn: generation targeting a new
-   * machine. OFF by default: when the escalation ladder concludes only a box
-   * can express a request (rung c), the create/edit refuses with a typed
-   * VendoError naming this flag — NEVER a silent degrade to a broken
-   * automation. Rungs (a) steps and (b) agentic automations need no machine
-   * and work regardless of this flag. Apps that ALREADY carry a machine are
-   * never stranded: every runtime path over an existing machine (wake, sleep,
-   * fn: calls, schedules, box edits, open) keeps working with the flag off —
-   * only NEW graduation/provisioning is gated.
-   */
-  experimentalMachines?: boolean;
-  /**
    * execution-v2 Wave 9 — the arming seam for ladder-authored automations
    * (the same seam pattern as AutomationsConfig.runner: this block never
    * imports the automations engine). When set, a freshly authored trigger is
@@ -308,11 +294,29 @@ export interface AppsConfig {
    * place that fills it. Explicitly passed always wins; unfilled changes nothing.
    *
    * DEFAULT-SAFE by construction. `vendo_make` routes here first and falls
-   * through to `conductCreate` on every answer but `assembled` — an escalation, an
-   * assembler that could not run, a throw, and (the check that makes the promise
-   * true rather than merely intended) an `assembled` that left no app ROW behind.
+   * through to `conductCreate` on every answer but `assembled` — an `unavailable`,
+   * an assembler that could not run, a throw, and (the check that makes the
+   * promise true rather than merely intended) an `assembled` that left no app ROW
+   * behind. An `escalate` is the one answer that is NOT a fall-through: it is a
+   * request for the build, and the build is what it gets (see `vendo_make` in
+   * agent-tools.ts).
    */
   screen?: ScreenAssembler;
+  /**
+   * §4.5's other half — the plan an escalating screen agent left behind, read
+   * back so the build ANCHORS on it instead of re-planning from the ask alone.
+   *
+   * The plan is a FILE (`/user/apps/<appId>/plan.vendo`, written through the same
+   * `commit()` that painted its skeleton), and this block holds no workspace
+   * (§3.5 — a sandboxed harness holds a workspace and never a store). So the seam
+   * is the same shape as `screen` above and composition, which already built the
+   * workspace the assembler wrote through, is the one place that reads it back.
+   *
+   * Best-effort by design: `undefined` — unfilled slot, no plan file, an
+   * unreadable workspace — means the build plans from the ask, which is exactly
+   * what it did before this seam existed. A build is never lost to a missing brief.
+   */
+  escalatedPlan?: (appId: AppId, ctx: RunContext) => Promise<string | undefined>;
 }
 
 /** 06-apps §1 */
@@ -679,6 +683,17 @@ export interface AppsRuntime {
      * card. Absent — every caller but the front door — one is minted here.
      */
     appId?: AppId;
+    /**
+     * §4.5 — the plan the escalating screen agent already wrote, verbatim.
+     *
+     * The build ANCHORS on it: the person is already looking at its skeleton, so
+     * re-planning from the ask alone is how the outline they are watching turns
+     * into a different app. It is a brief for the brain, never a substitute for
+     * one — the ask still travels verbatim, and the brain is free to say the plan
+     * is wrong. Absent — every caller but an escalation — the brain plans from
+     * the ask exactly as it always has.
+     */
+    plan?: string;
     /** Additive per-call stream hook used by the agent bridge. */
     onView?: (part: VendoViewPart) => void;
     /** Called when the app was generated and STREAMED to the surface but the
@@ -946,6 +961,19 @@ export interface AppsRuntime {
    * (known v2 limit — the last sleep's CAS wins).
    */
   machine: {
+    /**
+     * Can this deployment run a machine at all — i.e. is a `sandbox` adapter
+     * configured?
+     *
+     * The ONE gate on machine-backed execution, and deliberately not a
+     * capability boolean: a host configures a sandbox or it does not, and the
+     * presence of the adapter IS the deliberate opt-in (CLAUDE.md — "gating is
+     * valid key + meter, nothing else: no capability booleans"). Exposed because
+     * the front door has to answer an escalation honestly BEFORE it starts a
+     * build it cannot finish (agent-tools.ts); everything downstream of that
+     * decision still fails loudly on its own (`sandbox-unavailable`).
+     */
+    available(): boolean;
     /** Create the machine from the base template, snapshot it, store the ref. Idempotent. */
     provision(appId: AppId, ctx: RunContext): Promise<AppDocument>;
     /** Resume the stored snapshot; concurrent wakes coalesce to one machine. */
@@ -1012,6 +1040,24 @@ export interface AppsRuntime {
     ): Promise<SetExposureResult>;
   };
 }
+
+/**
+ * §4.5 — the build's brief when a screen agent escalated: the ask VERBATIM,
+ * then the plan it already wrote.
+ *
+ * The ask leads because it is the only thing the person actually said; the plan
+ * follows as what has already been promised on screen. Fenced rather than merged
+ * for the same reason `vendo_make`'s own `context` is (agent-tools.ts): the two
+ * are different kinds of input and running them together turns a plan's prose
+ * into words the person appears to have typed. No plan — every caller but an
+ * escalation — and the brief IS the ask, byte for byte.
+ */
+const escalationBrief = (prompt: string, plan: string | undefined): string =>
+  plan === undefined || plan.trim() === ""
+    ? prompt
+    : `${prompt}\n\n<escalated-plan>\nA screen agent already tried to assemble this out of existing components, could not,`
+      + ` and wrote the plan below. Its skeleton is ALREADY on the person's screen, so build this plan — amend it only`
+      + ` where it is wrong for the ask above.\n\n${plan}\n</escalated-plan>`;
 
 const allRecords = (store: StoreAdapter, refs: Record<string, string>): Promise<VendoRecord[]> =>
   listAllRecords(store.records("vendo_apps"), { refs });
@@ -2150,7 +2196,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
    * and the same call a query-bound fn makes the moment the app opens.
    */
   const boxSeamFor = (appId: AppId, ctx: RunContext, wantsServed: boolean): BoxSeam => ({
-    available: () => lifecycle.available() && config.experimentalMachines === true,
+    available: () => lifecycle.available(),
     provision: async () => {
       const app = await requireOwned(appId, ctx);
       if (app.machine !== undefined) return;
@@ -2479,7 +2525,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       let conducted: ConductedResult;
       try {
         conducted = await conductCreate(
-          { prompt: input.prompt },
+          { prompt: escalationBrief(input.prompt, input.plan) },
           generationDeps,
           conductorOptions(config, queryRunnerFor(queryApp, ctx)),
         );
@@ -3311,6 +3357,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         data,
         requireOwned,
         ...(config.screen === undefined ? {} : { screen: config.screen }),
+        ...(config.escalatedPlan === undefined ? {} : { escalatedPlan: config.escalatedPlan }),
       });
     },
 
@@ -3696,15 +3743,17 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     },
 
     machine: {
+      available: () => lifecycle.available(),
       async provision(appId, ctx) {
         const app = await requireOwned(appId, ctx);
         const alreadyProvisioned = app.machine !== undefined;
-        // Wave 9 — provisioning a NEW machine is experimental (typed refusal
-        // while the flag is off); an already-provisioned app stays idempotent
-        // here so existing apps are never stranded.
-        if (!alreadyProvisioned && config.experimentalMachines !== true) {
-          throw machinesDisabledError();
-        }
+        // `experimentalMachines` used to gate NEW provisioning here with a second
+        // error explaining the flag. The flag is gone, and so is that error: with
+        // the sandbox adapter as the whole gate, "there is nothing to provision
+        // in" is exactly what the lifecycle's own `sandbox-unavailable` already
+        // says, and the escalation ladder never reaches this line — `laneGates`
+        // states the missing lane to the brain BEFORE it plans. An
+        // already-provisioned app stays idempotent, so it is never stranded.
         // Lane E — first provision is the "approve once" moment: unapproved
         // declared egress parks the approval card and refuses loudly here.
         await ensureEgressApproved(app, ctx);

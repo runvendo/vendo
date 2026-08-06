@@ -86,8 +86,6 @@ const setup = (options: {
   edit?: string;
   /** Compose WITHOUT the wire's authenticated served door (an unmounted wire). */
   proxy?: boolean;
-  /** Compose with layer 2 switched off (the default for a real host). */
-  machines?: boolean;
   /** Re-compose over an existing world, to say the same store two ways. */
   store?: ReturnType<typeof memoryStore>;
   sandbox?: ReturnType<typeof fakeBoxSandbox>;
@@ -101,9 +99,6 @@ const setup = (options: {
     tools,
     catalog: [],
     model: scriptedLanguageModel(options.edit ?? servedAppsBrain),
-    // A served (layer-3) surface is served BY a layer-2 machine, so every setup
-    // here has machines on unless it is specifically saying what happens without.
-    ...(options.machines === false ? {} : { experimentalMachines: true }),
     ...(options.theme === undefined ? {} : { theme: options.theme }),
     machine: { sandbox, buildEnv: () => ({ PORT: "8080" }), implicitDomains: ["host.vendo.test"], boxEditPollMs: 5 },
     // The wire fills this with its own base path; the runtime never invents it.
@@ -347,22 +342,13 @@ describe("serving through the door + the keepalive ride", () => {
     expect(sandbox.machines.length).toBeGreaterThan(machinesBefore);
   });
 
-  /** `edit()` on a served app used to carry its own served-flag refusal. What
-      replaces it is the rule open.ts already states for layer 2: an
-      already-provisioned machine is NEVER gated — only new graduation and
-      provisioning are. A person whose app is already served keeps being able to
-      change it when the host turns layer 2 off; they just cannot get a NEW one. */
-  it("keeps editing a served app whose machine already exists, even with layer 2 switched off", async () => {
-    const world = await flipped();
-    // The SAME store and sandbox, said a second way: layer 2 off.
-    const off = setup({ store: world.store, sandbox: world.sandbox, machines: false });
-
-    const result = await off.runtime.edit("app_served", "Make the board header blue", ctx());
-
-    expect(result.failure).toBeUndefined();
-    expect(result.app.ui).toBe("http");
-    expect(result.app.machine).toBeDefined();
-  });
+  /* DELETED with `experimentalMachines`: "keeps editing a served app whose
+     machine already exists, even with layer 2 switched off". Layer 2 has no
+     switch any more — the sandbox adapter's presence is the whole gate — so
+     "off" now means there is no sandbox to wake the app's existing machine
+     with, and the case the test described cannot be composed. The rule it
+     guarded still holds and is still enforced in `machine.provision`: an
+     already-provisioned app is never refused, only NEW provisioning is. */
 
   it("keeps version history at its 50 cap — the box path prunes like every other write", async () => {
     // The box path appends its own undo point (the box already landed the write,

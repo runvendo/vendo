@@ -19,12 +19,12 @@ user owns their own copy. Import, fork, sharing, and publishing mint a fresh
    where execution lives: custom server code, third-party egress with
    secrets, heavy logic, working data. The tree reaches it through `fn:<name>`
    references that resolve to `POST /fn/<name>` on the box. The machine never
-   draws UI. Experimental and off by default; the host enables it per project
-   with `createVendo({ apps: { experimentalMachines: true } })`.
+   draws UI. Gated by one thing: a configured `sandbox` adapter
+   (`createVendo({ sandbox })`). There is no flag beside it.
 3. **Machine everything**: the machine also serves a real web app and the host
-   embeds its URL as the app surface. Experimental and off by default; see
-   [Layer 3 flag and venues](#layer-3-flag-and-venues) for the flag and its
-   current caveats.
+   embeds its URL as the app surface. Same sandbox gate; see
+   [Layer 3 reachability and venues](#layer-3-reachability-and-venues) for what
+   it additionally needs and its current caveats.
 
 The agent escalates when an instruction demands it, preferring the cheapest
 rung that can express the work: a **steps automation** (deterministic tool
@@ -115,8 +115,8 @@ routes.
 
 ### Layer 3 reachability and venues
 
-Layer 3 has no flag of its own: it is a narrowing of layer 2, so
-`createVendo({ apps: { experimentalMachines: true } })` is the only opt-in. What
+Layer 3 has no gate of its own: it is a narrowing of layer 2, so a configured
+`sandbox` adapter is the only opt-in. What
 it additionally needs is a door to be served THROUGH — the mounted wire
 (`createVendo().handler`, which answers `/apps/:appId/serve/**`) plus a
 `VENDO_BASE_URL` to make that URL absolute. A deployment missing either is told

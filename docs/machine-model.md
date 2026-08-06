@@ -15,12 +15,12 @@ shipped.
    escalation ladder below.
 2. **Tree app + machine**: the same tree UI, plus a persistent per-app sandbox
    where execution lives: custom server code, third-party egress with secrets,
-   heavy logic, working data. The machine never draws UI. **Experimental and
-   off by default** — enable with
-   `createVendo({ apps: { experimentalMachines: true } })`.
+   heavy logic, working data. The machine never draws UI. Gated by exactly one
+   thing — a configured `sandbox` adapter (`createVendo({ sandbox })`), because
+   configuring one IS the opt-in. There is no flag beside it.
 3. **Machine everything**: the machine also serves a real web app; the host
-   embeds its URL as the app surface. The tree is gone. No flag of its own —
-   it rides `experimentalMachines`, and additionally needs the mounted wire
+   embeds its URL as the app surface. The tree is gone. Same sandbox gate as
+   layer 2, and additionally needs the mounted wire
    (which answers `/apps/:appId/serve/**`) and `VENDO_BASE_URL`, because the
    only URL a served app is ever opened at is that authenticated proxy.
 
@@ -46,10 +46,9 @@ instruction needs server-shaped work, the judge prefers, in order:
    agentic run model (an agent loop per firing). Still no machine.
 3. **Box graduation** — only when actual custom code is required: real
    computation, libraries, complex persistent state, non-tool-shaped egress,
-   latency-sensitive logic. This rung is **experimental**: with
-   `experimentalMachines` off (the default), the create/edit refuses with a
-   typed `VendoError` naming the flag — never a silent degrade to a broken
-   automation.
+   latency-sensitive logic. This rung needs a machine: with no `sandbox`
+   adapter configured, the create/edit refuses with a typed `VendoError`
+   saying so — never a silent degrade to a broken automation.
 
 Arming: in the composed umbrella, a ladder-authored automation is enabled
 through `automations.enable`, so the standard grant-capture flow runs at
@@ -98,7 +97,7 @@ the Cloud pool ships its own base image and takes no template.
 
 **1 to 2** is invisible and additive — and, since the escalation ladder, the
 LAST resort for server-shaped work: it runs only when the judge concludes the
-instruction needs custom code (and `experimentalMachines` is on), or when the
+instruction needs custom code (and a `sandbox` is configured), or when the
 app already has a machine. The runtime provisions a machine, sends the build to the in-box agent, syncs
 the box's `vendo.json` (schedules and egress declaration), parks an egress
 approval card when the declaration needs one, and rewires the tree's data

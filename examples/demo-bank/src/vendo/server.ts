@@ -94,11 +94,10 @@ export const vendo = createVendo({
       "For a recurring or scheduled payment/task, use vendo_make — describe the schedule in the request; the automation is armed automatically. There is no separate automations tool.",
     ].join("\n"),
   },
-  // execution-v2 Wave 9 — the layer-2 (machines) experimental opt-in is a host
-  // decision; Maple flips it via its own env so demos can gate on/off. Layer 3
-  // (the machine serving the app surface) rides it: no second flag.
+  // Machine-backed execution (layers 2 and 3) is gated by the `sandbox` slot
+  // above and nothing else: configure one and Maple can build boxes, leave it
+  // out and it cannot. There is no flag here to flip.
   apps: {
-    experimentalMachines: process.env.VENDO_EXPERIMENTAL_MACHINES === "1",
     // Remix review (round-2 hardening 2026-08-02): Mia is Maple's host
     // reviewer — this assertion is what lets her read the full review queue,
     // reject, and approve review-kind remixes; a user can never approve

@@ -283,17 +283,6 @@ export interface ServedSurface {
   urlFor(app: AppDocument): Promise<string>;
 }
 
-/** Wave 9 — the one refusal for NEW layer-2 box work while machines are off.
- *  The escalation ladder only lands here when no automation can express the
- *  request, so the message says exactly that instead of silently degrading to a
- *  broken automation. Already-provisioned machines are never gated by this —
- *  only new graduation/provisioning is. */
-export const machinesDisabledError = (): VendoError => new VendoError(
-  "not-implemented",
-  "this request needs custom server code (a box machine), and machine-backed (layer-2) execution is experimental and disabled for this project — enable it with createVendo({ apps: { experimentalMachines: true } }) (AppsConfig.experimentalMachines); scheduled/triggered work that tools can express rides the automations engine without it",
-  { experiment: "machines", flag: "experimentalMachines" },
-);
-
 /** The additive venue states for this open, or none when the seam fails.
  *  Reported once per failure so a broken seam is visible to an operator without
  *  costing the person their app. */

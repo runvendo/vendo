@@ -245,7 +245,6 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     tools: bound,
     catalog: [],
     ...(options.sandbox === undefined ? {} : {
-      experimentalMachines: true,
       machine: {
         sandbox: options.sandbox,
         // Idle auto-sleep is irrelevant here; a no-op clock keeps boxes awake.

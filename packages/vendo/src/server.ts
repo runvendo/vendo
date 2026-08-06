@@ -17,7 +17,7 @@ import { assembleSystemPrompt } from "@vendoai/agent/internal";
 // Architecture §3 — the harness runtime and the default thinker. `vendo()` is
 // composed HERE (not by the host) when `harness:` is unset; its prompt and
 // descriptor catalog reach it on the turn, never at construction.
-import { assertHarnessComposable, reportHire, screenAssembler, vendo } from "@vendoai/harnesses";
+import { assertHarnessComposable, escalatedPlanPath, reportHire, screenAssembler, vendo } from "@vendoai/harnesses";
 // …and re-exported, because §10's one-line opt-in is `harness: vendo()`. Without
 // this, naming the default harness costs a SECOND direct dependency on
 // `@vendoai/harnesses` — a documented one-liner that does not compile from the
@@ -90,6 +90,7 @@ import {
   type ToolOutcome,
   type ToolRegistry,
   type VendoTheme,
+  type WorkspaceFs,
 } from "@vendoai/core";
 import { createGuard, type Judge, type PolicyConfig, type PolicyFile, type RiskResolver, type VendoGuard } from "@vendoai/guard";
 import {
@@ -630,17 +631,13 @@ export interface CreateVendoConfig {
   approvals?: {
     parkedCallTtlMs?: number;
   };
-  /** execution-v2 Waves 4+9 — apps-block options. `experimentalMachines` is
-      the per-project layer-2 opt-in: NEW box graduation (the escalation
-      ladder's last rung) and machine provisioning refuse with a typed
-      VendoError naming this flag until the host enables it; steps/agentic
-      automations (the ladder's first two rungs) never need it, and apps that
-      already carry a machine keep every runtime path.
+  /** Apps-block options.
 
-      A layer-3 SERVED app — the machine serving the app surface itself, embedded
-      in a sandboxed iframe — needs no second flag: it is a narrowing of layer 2,
-      reachable only where there is a machine to serve it and a mounted wire to
-      serve it THROUGH (`createVendo().handler`, which answers
+      Machine-backed execution (layer 2) has no flag: it is gated by exactly one
+      thing, a configured `sandbox` adapter, because configuring one IS the
+      deliberate opt-in. A layer-3 SERVED app — the machine serving the app
+      surface itself, embedded in a sandboxed iframe — additionally needs a
+      mounted wire to serve it THROUGH (`createVendo().handler`, which answers
       /apps/:appId/serve/**). A deployment missing either hears it as a plain
       "cannot" in the plan rather than as a flag.
 
@@ -652,17 +649,6 @@ export interface CreateVendoConfig {
       `vendo.apps` runtime handle stays: unmounting is about what the agent and
       the wire offer, never about taking your server code's API away. */
   apps?: false | {
-    experimentalMachines?: boolean;
-    /** UI-generation blueprint §4.2 — route every `vendo_make` request through
-        the cheap screen agent before the conductor: a small assembly loadout, the
-        host's declared result shapes, a tight step budget, and one `escalate`
-        door that hands the ask on with its plan already painted as the first
-        skeleton. OFF until the six-type proof matrix is walked, because it
-        changes which engine answers every screen ask; the conductor is untouched
-        and is what an escalation, an unserved ask, or an unavailable assembler
-        falls through to. Host config only, like the two flags above — choosing
-        the engine that answers your users is not an env-var decision. */
-    experimentalScreenAgent?: boolean;
     /** Remix review (round-2 hardening 2026-08-02) — the host's reviewer
         assertion for the review-kind remix lifecycle: whether THIS caller may
         read the full review queue, reject, and approve review-kind remixes.
@@ -2230,6 +2216,18 @@ export function createVendo(input: CreateVendoConfig): Vendo {
   // exact mount set — `/host` projection and asserted orgs included — that a
   // harness turn's own hands write through.
   let harnessTurnsForScreens: HarnessTurns | undefined;
+  /** That door, opened for one ctx. ONE spelling, because the assembler that
+   *  WRITES the escalated plan and the receiving end that READS it back must be
+   *  looking at the same mount set or the plan is simply not there. */
+  const screenWorkspace = async (screenCtx: RunContext): Promise<WorkspaceFs> => {
+    if (harnessTurnsForScreens === undefined) {
+      throw new VendoError("not-implemented", "the harness turn door is not composed yet");
+    }
+    return await harnessTurnsForScreens.workspace(
+      screenCtx.principal,
+      screenCtx.memberships === undefined ? undefined : { memberships: screenCtx.memberships },
+    );
+  };
   // Build contract §9.3 — ONE `can()` over the host's store, held by the apps
   // runtime and the automations engine alike, so one rule answers both sides.
   const access = appAccess(store);
@@ -2314,48 +2312,44 @@ export function createVendo(input: CreateVendoConfig): Vendo {
     // @vendoai/harnesses, the front door is in @vendoai/apps, and apps depends on
     // core alone — so composition, the one place that already holds the seats, the
     // guard-bound registry, the store and the seam, is what joins them.
-    ...(config.apps?.experimentalScreenAgent !== true ? {} : {
-      screen: screenAssembler({
-        // The SAME seats every other thinker runs on.
-        models: inference.seats,
-        // The SAME guard-bound registry. There is no second choke point.
-        tools: boundTools,
-        workspace: async (screenCtx) => {
-          if (harnessTurnsForScreens === undefined) {
-            throw new VendoError("not-implemented", "the harness turn door is not composed yet");
-          }
-          return await harnessTurnsForScreens.workspace(
-            screenCtx.principal,
-            screenCtx.memberships === undefined ? undefined : { memberships: screenCtx.memberships },
-          );
-        },
-        // The SAME seam options the harness turns pass below — every one of them,
-        // because a screen assembled here lands on the same store through the same
-        // `commit()`. §1.6's app half (the row that makes a written file an app,
-        // and the queries that put real data behind its bindings), §3.2's source
-        // half, and §7.1's floor.
-        //
-        // The floor was the one that was missing, and its absence was invisible: a
-        // screen assembled through `vendo_make` compiled with a bare `compileWire`
-        // — no fact checks, no binding gate, no tsc — so a lying binding painted
-        // here and was refused one route over. One seam cannot have two answers
-        // about the same bytes.
-        render: (screenCtx) => ({
-          authoredApp: (input) => apps.authored(input, screenCtx),
-          commitSource: (input) => apps.commitSource(input, screenCtx),
-          floor: apps.floor(screenCtx),
-        }),
-        // `system` is deliberately unset. The screen agent's brief is the shipped
-        // `building-apps` skill plus the host's own tool shapes, and the
-        // deployment prompt's job — voice, venue gate, guard directions, the
-        // discovery rail — belongs to the thinker talking to the PERSON. This loop
-        // talks to nobody: the front door speaks its one-line receipt.
+    escalatedPlan: async (appId, planCtx) => {
+      // §4.5's receiving end reads the plan back through the SAME workspace the
+      // escalating agent wrote it to — no second copy, no cache, no store column
+      // invented to hold it. Best-effort: the front door treats `undefined` as
+      // "build from the ask", which is what it did before this seam existed.
+      const workspace = await screenWorkspace(planCtx).catch(() => undefined);
+      if (workspace === undefined) return undefined;
+      const source = await workspace.readFile(escalatedPlanPath(appId)).catch(() => undefined);
+      return typeof source === "string" && source.trim() !== "" ? source : undefined;
+    },
+    screen: screenAssembler({
+      // The SAME seats every other thinker runs on.
+      models: inference.seats,
+      // The SAME guard-bound registry. There is no second choke point.
+      tools: boundTools,
+      workspace: screenWorkspace,
+      // The SAME seam options the harness turns pass below — every one of them,
+      // because a screen assembled here lands on the same store through the same
+      // `commit()`. §1.6's app half (the row that makes a written file an app,
+      // and the queries that put real data behind its bindings), §3.2's source
+      // half, and §7.1's floor.
+      //
+      // The floor was the one that was missing, and its absence was invisible: a
+      // screen assembled through `vendo_make` compiled with a bare `compileWire`
+      // — no fact checks, no binding gate, no tsc — so a lying binding painted
+      // here and was refused one route over. One seam cannot have two answers
+      // about the same bytes.
+      render: (screenCtx) => ({
+        authoredApp: (input) => apps.authored(input, screenCtx),
+        commitSource: (input) => apps.commitSource(input, screenCtx),
+        floor: apps.floor(screenCtx),
       }),
+      // `system` is deliberately unset. The screen agent's brief is the shipped
+      // `building-apps` skill plus the host's own tool shapes, and the
+      // deployment prompt's job — voice, venue gate, guard directions, the
+      // discovery rail — belongs to the thinker talking to the PERSON. This loop
+      // talks to nobody: the front door speaks its one-line receipt.
     }),
-    // execution-v2 Wave 9 — the layer-2 experimental opt-in, host-config only
-    // (never an env var: enabling machine-backed execution is a deliberate
-    // per-project decision). Layer 3 rides it — see the CreateVendoConfig note.
-    ...(config.apps?.experimentalMachines === undefined ? {} : { experimentalMachines: config.apps.experimentalMachines }),
     // Round-2 hardening — the host's reviewer assertion for the review-kind
     // remix lifecycle, threaded verbatim (see the CreateVendoConfig comment).
     ...(config.apps?.review === undefined ? {} : { review: config.apps.review }),

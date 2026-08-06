@@ -87,9 +87,6 @@ async function setup(): Promise<Vendo> {
     },
     store,
     sandbox: servingSandbox(),
-    // Wave 9 — machines (layer 2) stay on: the fixture provisions a machine, and
-    // a served surface is served BY that machine.
-    apps: { experimentalMachines: true },
   });
   // Seed a tree app, provision its machine (graduation's Lane B step), then
   // flip the stored surface — the wire test targets serving, not generation.
@@ -172,7 +169,6 @@ describe("GET /apps/:id/open on a served (layer-3) app", () => {
       },
       store: vendo.store,
       sandbox: servingSandbox(),
-      apps: { experimentalMachines: true },
     });
 
     const response = await noOrigin.handler(wireRequest("/apps/app_served/open", ADA.subject));
@@ -252,9 +248,8 @@ describe("the served lane is offered only where it can actually serve", () => {
       model: capturingModel(captured),
       principal: async () => ADA,
       store,
-      // A sandbox AND machines on, so the only lane in question is the served one.
+      // A sandbox, so the only lane in question is the served one.
       sandbox: servingSandbox(),
-      apps: { experimentalMachines: true },
     });
     const ctx = { principal: ADA, venue: "app" as const, presence: "present" as const, sessionId: "s_lane_gate" };
     const imported = await vendo.apps.importApp({

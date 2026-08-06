@@ -139,6 +139,16 @@ const PLAN_FILE = "plan.vendo";
  *  refuses the commit and the file never lands (see `AppsRuntime.authored`). */
 const appDirectory = (appId: AppId): string => `/user/apps/${appId}`;
 
+/**
+ * Where an escalating run left its plan (§4.5).
+ *
+ * Exported because the RECEIVING end has to read it back — the build anchors on
+ * the plan the person is already looking at — and the one thing worse than a
+ * missing brief is two files spelling the same path. This file owns the
+ * convention; composition just asks it where.
+ */
+export const escalatedPlanPath = (appId: AppId): string => `${appDirectory(appId)}/${PLAN_FILE}`;
+
 /** The app's own name, off the document it just wrote. Presentation only — the
  *  receipt's `title` — so a file that has not named itself yet is simply absent
  *  rather than a reason to fail. */

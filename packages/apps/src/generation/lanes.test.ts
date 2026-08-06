@@ -718,52 +718,43 @@ describe("runServerLane — the box binds after build", () => {
 // ---------------------------------------------------------------------------
 
 describe("laneGates", () => {
-  it("yields the cannot reasons when the host's machine flags are off", () => {
-    const gates = laneGates({ machine: { sandbox: {} } });
+  it("says a host with no sandbox cannot run server code, and there is no second gate", () => {
+    // The sandbox adapter's PRESENCE is the whole opt-in — no capability
+    // boolean beside it (CLAUDE.md). So this is the only way the box lane is
+    // shut, and it is a fact about the deployment rather than a setting.
+    const gates = laneGates({});
 
     expect(gates.box).toBe(false);
     expect(gates.served).toBe(false);
-    expect(gates.cannot.join(" ")).toContain("machines disabled");
+    expect(gates.cannot.join(" ")).toContain("no sandbox configured");
     expect(gates.cannot.join(" ")).toContain("automations engine");
   });
 
-  it("says a host with no sandbox at all cannot run server code, flag or no flag", () => {
-    const gates = laneGates({ experimentalMachines: true });
-
-    expect(gates.box).toBe(false);
-    expect(gates.cannot.join(" ")).toContain("no sandbox configured");
-  });
-
   it("keeps BOTH machine-free automation rungs in reach when no machine can be provisioned", () => {
-    // The escalation ladder is steps → agentic → box, box LAST, and only the box
-    // rung needs a machine: an agentic firing is one harness run on the agents
-    // runtime. A sandbox-less host that states its missing lane without saying
-    // that is a host where "watch this and judge it every morning" comes back as
-    // "This host has no sandbox configured" — the refusal the walk found.
-    for (const said of [
-      laneGates({}).cannot.join(" "),
-      laneGates({ machine: { sandbox: {} } }).cannot.join(" "),
-    ]) {
-      expect(said).toContain("automations engine");
-      expect(said).toContain('kind="steps"');
-      expect(said).toContain('kind="agentic"');
-      expect(said).toContain("no machine");
-    }
+    // The escalation ladder is steps -> agentic -> box, box LAST, and only the
+    // box rung needs a machine: an agentic firing is one harness run on the
+    // agents runtime. A sandbox-less host that states its missing lane without
+    // saying that is a host where "watch this and judge it every morning" comes
+    // back as "This host has no sandbox configured" — the refusal the walk found.
+    const said = laneGates({}).cannot.join(" ");
+    expect(said).toContain("automations engine");
+    expect(said).toContain('kind="steps"');
+    expect(said).toContain('kind="agentic"');
+    expect(said).toContain("no machine");
   });
 
-  it("opens the box lane when the host has a sandbox and the flag on, and served only with a door to serve THROUGH", () => {
+  it("opens the box lane on the sandbox alone, and served only with a door to serve THROUGH", () => {
     // A box with no `servedProxyPath` has no authenticated door to answer a
     // served app on, so it cannot serve one — and the brain hears that as a
     // <Cannot> BEFORE it plans, instead of after a machine has been built and
     // the surface flipped to something no caller can open.
-    const unwired = laneGates({ machine: { sandbox: {} }, experimentalMachines: true });
+    const unwired = laneGates({ machine: { sandbox: {} } });
     expect(unwired.box).toBe(true);
     expect(unwired.served).toBe(false);
     expect(unwired.cannot.join(" ")).toContain("cannot serve its own web pages");
 
     const wired = laneGates({
       machine: { sandbox: {} },
-      experimentalMachines: true,
       servedProxyPath: () => "/api/vendo/apps/a/serve/",
     });
     expect(wired.served).toBe(true);
@@ -772,25 +763,28 @@ describe("laneGates", () => {
 
   /** Served is a MACHINE surface — it is served BY a box. That used to be held
       by a composition-time refusal on two flags agreeing with each other
-      (`experimentalServedApps requires experimentalMachines`). With the served
-      flag gone the relationship is not a rule to remember, it is the shape of
-      the expression: served is a narrowing of box, so no box can never be
-      served. */
+      (`experimentalServedApps requires experimentalMachines`). With every one of
+      those flags gone the relationship is not a rule to remember, it is the
+      shape of the expression: served is a narrowing of box, so no box can never
+      be served. */
   it("never opens the served lane without the box lane it is served by", () => {
     const proxy = () => "/api/vendo/apps/a/serve/";
 
-    // Machines off: a sandbox and a door are not enough.
-    expect(laneGates({ machine: { sandbox: {} }, servedProxyPath: proxy }).served).toBe(false);
-    // No sandbox at all: nothing to provision, flag and door notwithstanding.
-    expect(laneGates({ experimentalMachines: true, servedProxyPath: proxy }).served).toBe(false);
+    // No sandbox at all: nothing to provision, door notwithstanding.
+    expect(laneGates({ servedProxyPath: proxy }).served).toBe(false);
+    // A sandbox with no door: a box, but nothing to answer a served app on.
+    expect(laneGates({ machine: { sandbox: {} } }).served).toBe(false);
+    // Both: the only shape that opens it.
+    expect(laneGates({ machine: { sandbox: {} }, servedProxyPath: proxy }).served).toBe(true);
 
     for (const config of [
+      { servedProxyPath: proxy },
+      { machine: { sandbox: {} } },
       { machine: { sandbox: {} }, servedProxyPath: proxy },
-      { experimentalMachines: true, servedProxyPath: proxy },
-      { machine: { sandbox: {} }, experimentalMachines: true, servedProxyPath: proxy },
     ]) {
       const gates = laneGates(config);
-      expect(gates.served).toBe(gates.box);
+      // Served always IMPLIES box; it is never the wider of the two.
+      expect(gates.served && !gates.box).toBe(false);
     }
   });
 });

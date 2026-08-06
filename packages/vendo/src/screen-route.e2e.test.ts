@@ -132,7 +132,6 @@ interface Walked {
  */
 async function walk(options: {
   turns: Chunk[][];
-  screenAgent: boolean;
   request?: string;
   /** Skip `vendo_make` entirely and write the documents with the harness's own
    *  hands — the OTHER route into the same seam. */
@@ -163,7 +162,6 @@ async function walk(options: {
     principal: async () => principal,
     store,
     harness: harness as never,
-    ...(options.screenAgent ? { apps: { experimentalScreenAgent: true } } : {}),
   } as Parameters<typeof createVendo>[0]);
   const response = await vendo.handler(new Request("https://host.test/api/vendo/threads", {
     method: "POST",
@@ -185,7 +183,6 @@ async function walk(options: {
 describe("vendo_make routed through the screen agent (blueprint §1 point 2)", () => {
   it("assembles, checks, lands the row, paints the slot, and hands back words", async () => {
     const walked = await walk({
-      screenAgent: true,
       turns: [
         // The agent writes the document with its own hands…
         call("save_app", { content: SPENDING }, "c1"),
@@ -240,7 +237,6 @@ describe("vendo_make routed through the screen agent (blueprint §1 point 2)", (
     // never load — while the very same document written on the harness-turn route
     // was refused. One seam, two answers.
     const walked = await walk({
-      screenAgent: true,
       turns: [
         call("save_app", { content: SPENDING }, "c1"),
         call("save_app", { content: LYING }, "c2"),
@@ -265,23 +261,31 @@ describe("vendo_make routed through the screen agent (blueprint §1 point 2)", (
     // The control. This route already carried the floor, so it is the definition
     // of correct behaviour — and the two routes must not disagree about the same
     // bytes.
-    const walked = await walk({ screenAgent: true, turns: [], writes: [SPENDING, LYING] });
+    const walked = await walk({ turns: [], writes: [SPENDING, LYING] });
     const painted = JSON.stringify(walked.chunks.filter((chunk) => chunk["type"] === "data-vendo-view"));
     expect(painted).toContain("This month");
     expect(painted).not.toContain("Last month");
     expect(painted).not.toContain("nope_notATool");
   }, 60_000);
 
-  it("is OFF by default — an unwired slot leaves vendo_make exactly as it was", async () => {
-    // No `experimentalScreenAgent`, so the assembler is never composed and the one
-    // model call that happens is the conductor's own first call. The scripted model
-    // answers it with prose rather than the tool call the conductor requires, so the
-    // build fails — which is the point: the CONDUCTOR is what ran, unchanged.
-    const walked = await walk({ screenAgent: false, turns: [speak("I am not a plan")] });
-    expect(walked.result?.status).toBe("error");
-    // No screen agent means no `save_app` was ever offered, so nothing was written
-    // and nothing painted.
-    expect(walked.chunks.filter((chunk) => chunk["type"] === "data-vendo-view")).toHaveLength(0);
+  it("is ON for every deployment — there is no flag left to compose it behind", async () => {
+    // This case used to assert the opposite ("OFF by default"). `experimentalScreenAgent`
+    // is deleted: the screen agent is THE engine for a `vendo_make` ask, so the
+    // FIRST model call any deployment makes is the assembly loop's.
+    //
+    // Proved by EXHAUSTION rather than by a flag: exactly two turns are scripted,
+    // and the model throws on a third. `save_app` exists only inside the screen
+    // agent's closed loadout, so a run that lands a ready receipt in two calls can
+    // only have been the assembly loop — a conductor handed a `save_app` call on
+    // its first turn has no plan and fails.
+    const walked = await walk({
+      turns: [call("save_app", { content: SPENDING }, "c1"), speak("done")],
+    });
+
+    expect(walked.model.calls).toBe(2);
+    const receipt = makeReceiptSchema.parse((walked.result as { output: unknown }).output);
+    expect(receipt.status).toBe("ready");
+    expect(receipt.title).toBe("Spending");
   }, 60_000);
 
   it("falls through to the conductor when assembly produces nothing that renders", async () => {
@@ -289,7 +293,6 @@ describe("vendo_make routed through the screen agent (blueprint §1 point 2)", (
     // nothing and `authored` stores no row, so the front door finds no app and the
     // conductor takes the ask — the fall-through that makes this seam default-safe.
     const walked = await walk({
-      screenAgent: true,
       turns: [
         call("save_app", { content: "not a document at all" }, "c1"),
         speak("saved"),
