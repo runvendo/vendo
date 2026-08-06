@@ -63,6 +63,13 @@ const CONNECTORS_PROMPT = `Connectors
 - Outside-service tools are never on your own tool list: reach them only through use_service_tool, passing the slug exactly as find_service_tools returned it. Never guess a slug, and never invent arguments — use the schema that came back with the match, and if a match came back without one, ask the user for what it needs.
 ${CONNECT_ETIQUETTE}`;
 
+// Keystone graduates 2026-07-31 (section C: Catalog-description grounding bug)
+// The agent must not answer questions about current rendered state or editability
+// using static catalog prose.
+const CATALOG_GROUNDING_PROMPT = `Catalog grounding
+- When asked about what is on screen or whether it can be edited, ALWAYS ground your answer on the live app document state.
+- Catalog descriptions only inform component selection, never the live state.`;
+
 /** 03-agent §3: company directions are mandatory policy context and fail closed. */
 export async function assembleSystemPrompt(
   guard: Guard,
@@ -107,7 +114,9 @@ export async function assembleSystemPrompt(
   // 03-agent §3 item (4) — the umbrella assembles the summary (AGENT-1); the
   // agent places it, venue-gated.
   const catalog = system?.catalog?.trim();
-  if (catalog && TREE_VENUES.has(ctx.venue)) sections.push(catalog);
+  if (catalog && TREE_VENUES.has(ctx.venue)) {
+    sections.push(`${CATALOG_GROUNDING_PROMPT}\n\n${catalog}`);
+  }
 
   // Knowledge k8 (ENG-368): the static index + usage guidance rides only the
   // venues whose turns go through this assembler with a knowledge-capable
