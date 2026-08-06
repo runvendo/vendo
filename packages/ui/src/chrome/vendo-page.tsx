@@ -18,13 +18,17 @@ import { TakeoverPortal } from "./takeover-portal.js";
 import { VendoThread, type VendoThreadProps } from "./thread/index.js";
 import { WaitingQueue } from "./waiting-queue.js";
 
-/** Host passthrough for the conversation column — the same starter cards and
-    discoverability dial a standalone VendoThread takes, so a host's curated
-    landing survives the move onto the center. The center renders `suggestions`
-    as ROWS (spec §10: noticings with icons, never generic chips) and reuses the
-    same prompts as the day-zero ghost shelf (§14). */
+/** Host passthrough for the conversation column — the same starter cards, hero
+    copy (title · tagline · eyebrow · icon) and discoverability dial a standalone
+    VendoThread takes, so a host's curated landing survives the move onto the
+    center. The center renders `suggestions` as ROWS (spec §10: noticings with
+    icons, never generic chips) and reuses the same prompts as the day-zero ghost
+    shelf (§14); the hero copy is the home's greeting block above them. */
 export interface VendoPageProps {
-  thread?: Pick<VendoThreadProps, "suggestions" | "discoverability">;
+  thread?: Pick<
+    VendoThreadProps,
+    "suggestions" | "discoverability" | "greeting" | "intro" | "heroEyebrow" | "heroIcon"
+  >;
 }
 
 // How long a minted-thread rail retry waits before re-polling GET /threads
@@ -286,6 +290,10 @@ export function VendoPage({ thread }: VendoPageProps = {}) {
                   threadId={conversation.selected}
                   onThreadId={conversation.onThreadId}
                   {...(thread?.suggestions === undefined ? {} : { suggestions: thread.suggestions })}
+                  {...(thread?.greeting === undefined ? {} : { greeting: thread.greeting })}
+                  {...(thread?.intro === undefined ? {} : { intro: thread.intro })}
+                  {...(thread?.heroEyebrow === undefined ? {} : { heroEyebrow: thread.heroEyebrow })}
+                  {...(thread?.heroIcon === undefined ? {} : { heroIcon: thread.heroIcon })}
                   discoverability={thread?.discoverability ?? (conversation.settledFresh ? undefined : "quiet")}
                   {...(shelf === null ? {} : { composerAccessory: shelf })}
                 />
