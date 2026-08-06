@@ -1,5 +1,5 @@
 import type { SecretSource } from "@vendoai/actions/presets";
-import type { ActAs, Membership, PermissionGrant, Principal, ResolvedPerson } from "@vendoai/core";
+import type { ActAs, Json, Membership, PermissionGrant, Principal, ResolvedPerson } from "@vendoai/core";
 import type { HostOAuthAdapter } from "@vendoai/mcp";
 import { environment } from "../wire/shared.js";
 import type { HostAuthPreset, HostAuthPresetUser, HostAuthPresetUserResolver } from "./shared.js";
@@ -179,20 +179,44 @@ export function composeHostAuthPreset(opts: ComposeHostAuthPresetOptions): HostA
     };
   };
 
-  const principal = async (request: Request): Promise<Principal | null> => {
-    const claims = await opts.sessionClaims(request);
-    if (claims === null) return null;
-    const subject = claimString(claims, "sub");
-    return subject === undefined ? null : principalFor(subject, claims);
+  // Spec 2026-08-05 §1 — ONE session decode per request: the wire resolves the
+  // principal and then the [User] facts off the SAME Request, and the decode +
+  // subject→user lookup must not run twice for it. Keyed on the Request object
+  // (entries die with it); a second ask joins the first's promise.
+  const sessions = new WeakMap<Request, Promise<{ subject: string; user: HostAuthPresetUser } | null>>();
+  const resolveSession = (request: Request): Promise<{ subject: string; user: HostAuthPresetUser } | null> => {
+    let session = sessions.get(request);
+    if (session === undefined) {
+      session = (async () => {
+        const claims = await opts.sessionClaims(request);
+        if (claims === null) return null;
+        const subject = claimString(claims, "sub");
+        if (subject === undefined) return null;
+        const user = await opts.resolveUser(subject, claims);
+        return user === null ? null : { subject, user };
+      })();
+      sessions.set(request, session);
+    }
+    return session;
   };
+
+  const principal = async (request: Request): Promise<Principal | null> => {
+    const session = await resolveSession(request);
+    if (session === null) return null;
+    return {
+      kind: "user",
+      subject: session.subject,
+      ...(session.user.display === undefined ? {} : { display: session.user.display }),
+    };
+  };
+
+  const facts = async (request: Request): Promise<Record<string, Json> | undefined> =>
+    (await resolveSession(request))?.user.facts;
 
   const oauth: HostOAuthAdapter = {
     async session(request, { returnTo }) {
-      const claims = await opts.sessionClaims(request);
-      const subject = claims === null ? undefined : claimString(claims, "sub");
-      if (subject !== undefined && claims !== null && await opts.resolveUser(subject, claims) !== null) {
-        return { subject };
-      }
+      const session = await resolveSession(request);
+      if (session !== null) return { subject: session.subject };
       return opts.login(request, returnTo);
     },
     async principal(subject) {
@@ -202,6 +226,7 @@ export function composeHostAuthPreset(opts: ComposeHostAuthPresetOptions): HostA
 
   return {
     principal,
+    facts,
     actAs: opts.actAs,
     oauth,
     ...(opts.memberships === undefined ? {} : { memberships: opts.memberships }),

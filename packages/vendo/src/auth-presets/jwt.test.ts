@@ -129,6 +129,41 @@ describe("jwt() actAs half (shipped genericJwtPreset)", () => {
   });
 });
 
+describe("jwt() facts seam (spec 2026-08-05 §1)", () => {
+  const factsResolver = (subject: string) => {
+    const user = users[subject];
+    return user === undefined ? null : { ...user, facts: { name: user.display, plan: "Pro" } };
+  };
+
+  it("resolves the user resolver's facts off the request's session", async () => {
+    const preset = jwt({ secret, user: factsResolver });
+    await expect(preset.facts?.(await bearerRequest("host_yousef")))
+      .resolves.toEqual({ name: "Yousef Helal", plan: "Pro" });
+  });
+
+  it("decodes the session ONCE per request for principal + facts", async () => {
+    let resolutions = 0;
+    const preset = jwt({
+      secret,
+      user: (subject) => {
+        resolutions += 1;
+        return factsResolver(subject);
+      },
+    });
+    const request = await bearerRequest("host_yousef");
+    await preset.principal(request);
+    await preset.facts?.(request);
+    expect(resolutions).toBe(1);
+  });
+
+  it("resolves undefined for a sessionless request and for a resolver without facts", async () => {
+    const preset = jwt({ secret, user: factsResolver });
+    await expect(preset.facts?.(new Request("https://host.test/api/vendo/threads"))).resolves.toBeUndefined();
+    const factless = jwt({ secret, user: userResolver });
+    await expect(factless.facts?.(await bearerRequest("host_yousef"))).resolves.toBeUndefined();
+  });
+});
+
 describe("jwt() oauth login redirect (authJs parity)", () => {
   it("redirects a sessionless door request to /login on the public origin carrying returnTo", async () => {
     vi.stubEnv("VENDO_BASE_URL", "https://public.example.com");
