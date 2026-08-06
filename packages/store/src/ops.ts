@@ -33,17 +33,32 @@ const WORKSPACE_COMMITS = "vendo_workspace_commits";
 
 interface WorkspaceEntry {
   path: string;
-  data: unknown;
+  data?: unknown;
+  /** A tombstone: the commit removes this path (history keeps the content, so
+   *  undo brings it back). */
+  delete?: true;
+  /** Strict compare-and-swap against the revision the caller read — the
+   *  `/orgs` mounts' commit policy. A stale one refuses the WHOLE commit. */
+  expectedRevision?: number;
 }
 
 function parseWorkspaceEntries(entries: unknown[]): WorkspaceEntry[] {
   return entries.map((entry) => {
     const path = (entry as { path?: unknown } | null)?.path;
     if (typeof path !== "string" || path === "") invalid("workspace entry needs a non-empty path");
-    if ((entry as { data?: unknown }).data === undefined) {
+    const tombstone = (entry as { delete?: unknown }).delete === true;
+    if (!tombstone && (entry as { data?: unknown }).data === undefined) {
       invalid(`workspace entry ${path} needs data`);
     }
-    return { path, data: (entry as { data: unknown }).data };
+    const expectedRevision = (entry as { expectedRevision?: unknown }).expectedRevision;
+    if (expectedRevision !== undefined && typeof expectedRevision !== "number") {
+      invalid(`workspace entry ${path} has a non-numeric expectedRevision`);
+    }
+    return {
+      path,
+      ...(tombstone ? { delete: true as const } : { data: (entry as { data: unknown }).data }),
+      ...(expectedRevision === undefined ? {} : { expectedRevision }),
+    };
   });
 }
 
@@ -64,9 +79,12 @@ export function createStoreOps(
   options: { files?: FilesAdapter; workspaceOwner?: string } = {},
 ): StoreOps {
   const db = dbFor(store);
-  /** Workspace verbs carry no subject on the contract — the backend is bound
-   *  to its caller's mount at construction (the cloud door binds per tenant). */
-  const owner = options.workspaceOwner ?? "user_local";
+  /** Whose drawer a workspace verb addresses. The call names it when the mount
+   *  serves more than one user (`/user/**` is the subject's, `/orgs/<org>/**`
+   *  the org's); with no owner on the call the backend falls back to the one it
+   *  was bound to at construction — today's single-player default. */
+  const boundOwner = options.workspaceOwner ?? "user_local";
+  const ownerFor = (opts?: { owner?: string }): string => opts?.owner ?? boundOwner;
 
   /** The helpers all speak Db but only ever call `query`, so a verb's
    *  transaction hands them the same handle with the tx-scoped query in it. */
@@ -316,6 +334,7 @@ export function createStoreOps(
     // -----------------------------------------------------------------------
     workspace: {
       async index(query) {
+        const owner = ownerFor(query);
         const limit = pageLimit(query?.limit);
         const params: unknown[] = [owner];
         let where = "owner = $1";
@@ -342,7 +361,8 @@ export function createStoreOps(
             : {}),
         };
       },
-      async read(paths) {
+      async read(paths, opts) {
+        const owner = ownerFor(opts);
         const rows = workspaceRows(db, files);
         const result: Record<string, unknown> = {};
         for (const path of paths) {
@@ -353,6 +373,7 @@ export function createStoreOps(
         return result;
       },
       async commit(entries, opts) {
+        const owner = ownerFor(opts);
         const parsed = parseWorkspaceEntries(entries);
         const body = JSON.stringify(parsed);
         const key = opts?.idempotencyKey;
@@ -372,6 +393,9 @@ export function createStoreOps(
         let replayed: boolean | undefined;
         try {
           for (const entry of parsed) {
+            // A tombstone stages nothing: the removal is a row delete, and the
+            // content it removes is already stored (history keeps it).
+            if (entry.delete === true) continue;
             prepared.push({
               path: entry.path,
               write: await rows.prepare(owner, entry.path, encoder.encode(JSON.stringify(entry.data))),
@@ -397,9 +421,37 @@ export function createStoreOps(
               return (existing?.data as { body?: unknown } | undefined)?.body === body;
             }
             const txRows = workspaceRows(tdb, filesFor(tdb));
+            const expected = new Map(
+              parsed
+                .filter((entry) => entry.expectedRevision !== undefined)
+                .map((entry) => [entry.path, entry.expectedRevision!]),
+            );
+            // Strict entries compare-and-swap against the revision the caller
+            // read. A lost swap throws, so the transaction takes the whole
+            // commit back with it: a conflicting set applies none of itself and
+            // the caller re-reads once.
+            const conflicts: string[] = [];
             for (const staged of prepared) {
               if (staged.write === "unchanged") continue;
-              await txRows.land(owner, staged.write, commitId);
+              const at = expected.get(staged.path);
+              const written = await txRows.land(
+                owner,
+                staged.write,
+                commitId,
+                at === undefined ? undefined : { strict: true, expectedRevision: at },
+              );
+              if (written.conflict === true) conflicts.push(staged.path);
+            }
+            for (const entry of parsed) {
+              if (entry.delete !== true) continue;
+              await txRows.remove(owner, entry.path, commitId);
+            }
+            if (conflicts.length > 0) {
+              throw new VendoError(
+                "conflict",
+                `the workspace moved on under ${conflicts.sort().join(", ")}; nothing was committed`,
+                { conflicts },
+              );
             }
             return undefined;
           });
@@ -419,6 +471,7 @@ export function createStoreOps(
         }
       },
       async history(query) {
+        const owner = ownerFor(query);
         const page = await createRecordStore(db, WORKSPACE_COMMITS).list({
           refs: { subject: owner },
           ...(query?.limit === undefined ? {} : { limit: query.limit }),
@@ -433,12 +486,15 @@ export function createStoreOps(
         };
       },
       /** Land the restore and consume the history it walked in ONE transaction. */
-      async undo(commitId) {
+      async undo(commitId, opts) {
+        const owner = ownerFor(opts);
         await db.transaction(async (q) => {
           const tdb = txDb(q);
           const ledger = createRecordStore(tdb, WORKSPACE_COMMITS);
           const commit = await ledger.get(commitId);
-          if (commit === null) {
+          // Another owner's commit is not this owner's to undo, and saying so
+          // would make the door an existence oracle: it is simply not found.
+          if (commit === null || commit.refs?.["subject"] !== owner) {
             throw new VendoError("not-found", `commit ${commitId} not found`);
           }
           const data = commit.data as { entries?: WorkspaceEntry[]; created?: string[] };
