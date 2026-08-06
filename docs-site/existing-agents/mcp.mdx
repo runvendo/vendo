@@ -126,8 +126,9 @@ powerful as your backend already is.
     });
     ```
 
-    The door keeps sha256 hashes only. Rotate by listing both keys until the old
-    one is out of use, then drop it.
+    The door never writes a key down — it compares digests and nothing lands in
+    your store. Rotate by listing both keys until the old one is out of use,
+    then drop it.
   </Step>
 
   <Step title="Exchange it for one user's token">

@@ -593,8 +593,8 @@ export interface CreateVendoConfig {
       that server's signed login handshake at `{mount}/federate`.
       `serviceAuth` opens first-party service auth: the host's OWN backend
       exchanges one of these `vsk_…` keys plus a user id for a short-lived
-      user-bound token at the door's token endpoint (the door keeps hashes
-      only; rotation is listing both keys). */
+      user-bound token at the door's token endpoint (rotation is listing both
+      keys until the old one is out of use). */
   mcp?: boolean | {
     baseUrl?: string;
     remoteAs?: { issuer: string; jwksUri?: string; audience: string };
@@ -3338,7 +3338,6 @@ export function createVendo(input: CreateVendoConfig): Vendo {
       // authorization server's tokens and answer its login federation.
       ...(remoteAs === undefined ? {} : { remoteAs }),
       ...(federation === undefined ? {} : { federation }),
-      // First-party service auth at the door's own token endpoint.
       ...(mcpOptions.serviceAuth === undefined ? {} : { serviceAuth: mcpOptions.serviceAuth }),
       ...(theme === undefined ? {} : { theme }),
     });

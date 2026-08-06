@@ -14,17 +14,14 @@ import {
   SERVICE_CLIENT_ID,
   SERVICE_SUBJECT_TOKEN_TYPE,
   TOKEN_EXCHANGE_GRANT_TYPE,
-  serviceClientId,
-  serviceKeyHashes,
   verifyServiceKey,
 } from "./service-keys.js";
 
 const CLIENTS_COLLECTION = "vendo_mcp_clients";
 const GRANTS_COLLECTION = "vendo_mcp_grants";
 const ACCESS_TOKEN_SECONDS = 60 * 60;
-/** A service token is minted on demand by a backend that holds the key, so it
- *  never needs to outlive the call it was minted for — and it has no refresh
- *  path to revoke, which is exactly why the window is short. */
+/** Short because there is no refresh path to revoke: a backend that holds the
+ *  key mints another on demand. */
 const SERVICE_ACCESS_TOKEN_SECONDS = 10 * 60;
 const SERVICE_SCOPES = ["read", "write"];
 const REFRESH_TOKEN_SECONDS = 30 * 24 * 60 * 60;
@@ -153,10 +150,7 @@ export class OAuthServer {
   readonly #store: StoreAdapter;
   readonly #guard: Guard;
   readonly #theme: VendoTheme | undefined;
-  readonly #serviceAuth: { keys: readonly string[] } | undefined;
-  /** Hashed once, on the first exchange — hashing is async and construction is
-   *  not, and a door nobody exchanges against should never pay for it. */
-  #serviceHashes: Promise<Map<string, string>> | undefined;
+  readonly #serviceKeys: readonly string[] | undefined;
 
   constructor(config: OAuthServerConfig) {
     if (config.oauth.authorize === undefined && config.oauth.session === undefined) {
@@ -166,7 +160,7 @@ export class OAuthServer {
     this.#store = config.store;
     this.#guard = config.guard;
     this.#theme = config.theme;
-    this.#serviceAuth = config.serviceAuth;
+    this.#serviceKeys = config.serviceAuth?.keys;
   }
 
   get hasPrebuiltConsent(): boolean {
@@ -406,10 +400,10 @@ export class OAuthServer {
     }
     const form = new URLSearchParams(await req.text());
     const grantType = form.get("grant_type");
-    // A door with no `serviceAuth` does not serve this grant at all: it falls
-    // through to the unsupported_grant_type below, exactly as it did before.
-    if (grantType === TOKEN_EXCHANGE_GRANT_TYPE && this.#serviceAuth !== undefined) {
-      return this.#exchangeServiceKey(form, resource);
+    const serviceKeys = this.#serviceKeys;
+    // A door with no `serviceAuth` falls through to unsupported_grant_type.
+    if (grantType === TOKEN_EXCHANGE_GRANT_TYPE && serviceKeys !== undefined) {
+      return this.#exchangeServiceKey(form, resource, serviceKeys);
     }
     if (grantType === "authorization_code") {
       const code = form.get("code");
@@ -649,7 +643,7 @@ export class OAuthServer {
    * first MCP request the token is used for, which is the same kill switch
    * every other grant answers to.
    */
-  async #exchangeServiceKey(form: URLSearchParams, resource: string): Promise<Response> {
+  async #exchangeServiceKey(form: URLSearchParams, resource: string, keys: readonly string[]): Promise<Response> {
     const secret = form.get("client_secret");
     const subject = form.get("subject_token");
     if (!secret || !subject) {
@@ -661,22 +655,15 @@ export class OAuthServer {
     // ONE answer for a wrong client_id, an unknown key, a malformed key and a
     // retired one. Anything narrower tells whoever is guessing which half of
     // the credential they already have right.
-    const key = form.get("client_id") === SERVICE_CLIENT_ID
-      ? await verifyServiceKey(secret, await this.#serviceKeyHashes())
-      : null;
-    if (key === null) return oauthJsonError("invalid_client", "Service key is not valid for this MCP server");
+    const clientId = form.get("client_id") === SERVICE_CLIENT_ID ? await verifyServiceKey(secret, keys) : null;
+    if (clientId === null) return oauthJsonError("invalid_client", "Service key is not valid for this MCP server");
     const requestedResource = form.get("resource");
     if (requestedResource !== null && !sameCanonicalUri(requestedResource, resource)) {
       return oauthJsonError("invalid_target", "resource does not identify this MCP server");
     }
-    return this.#issueServiceToken(key.keyId, subject, resource);
-  }
-
-  /** One access grant and nothing else: no refresh token, so no rotation, no
-   *  family, and nothing outstanding to revoke after ten minutes. The backend
-   *  holding the key exchanges again. */
-  async #issueServiceToken(keyId: string, subject: string, resource: string): Promise<Response> {
-    const clientId = serviceClientId(keyId);
+    // One access grant and nothing else: no refresh token, so no rotation, no
+    // family, and nothing outstanding to revoke after ten minutes. The backend
+    // holding the key exchanges again.
     const accessToken = `vmat_${randomBase64Url(32)}`;
     const grant: AccessGrant = {
       kind: "access",
@@ -689,12 +676,7 @@ export class OAuthServer {
     await this.#store.records(GRANTS_COLLECTION).put({
       id: `mcpg_${randomHex(12)}`,
       data: grant,
-      refs: {
-        kind: "access",
-        token_hash: await sha256Hex(accessToken),
-        subject,
-        client_id: clientId,
-      },
+      refs: { kind: "access", token_hash: await sha256Hex(accessToken), subject, client_id: clientId },
     });
     await this.#audit({ kind: "user", subject }, clientId, "exchange");
     return json({
@@ -704,10 +686,6 @@ export class OAuthServer {
       expires_in: SERVICE_ACCESS_TOKEN_SECONDS,
       scope: SERVICE_SCOPES.join(" "),
     }, 200, tokenHeaders());
-  }
-
-  #serviceKeyHashes(): Promise<Map<string, string>> {
-    return (this.#serviceHashes ??= serviceKeyHashes(this.#serviceAuth!.keys));
   }
 
   async #issueTokens(source: Pick<CodeGrant, "subject" | "clientId" | "familyId" | "resource" | "scopes">): Promise<{

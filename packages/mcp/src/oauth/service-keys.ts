@@ -3,15 +3,13 @@
  * key plus one of its user ids and gets back a short-lived access token bound to
  * that user (RFC 8693 token exchange, at the door's existing token endpoint).
  *
- * A key is `vsk_<keyId>_<secret>`: the keyId names it in audit (`svc:<keyId>`)
- * and picks the hash to compare against, the secret is never stored, logged, or
- * echoed. The door holds sha256 hashes only, so a leaked deployment config
- * cannot mint tokens.
+ * A key is `vsk_<keyId>_<secret>`: the keyId names it in audit (`svc:<keyId>`),
+ * the secret is compared as a digest and never stored, logged, or echoed.
  */
 
 /** 8 hex of key id, 40 hex of secret — what `vendo` mints and the only shape a
  *  presented key can have. */
-export const SERVICE_KEY_PATTERN = /^vsk_[0-9a-f]{8}_[0-9a-f]{40}$/;
+const SERVICE_KEY_PATTERN = /^vsk_[0-9a-f]{8}_[0-9a-f]{40}$/;
 
 /** Reserved client_id for the exchange. Not a registered client and never
  *  resolved as one: the key, not the client record, is the credential. */
@@ -24,37 +22,16 @@ export const SERVICE_SUBJECT_TOKEN_TYPE = "urn:vendo:params:oauth:token-type:use
 /** RFC 8693 §2.1. */
 export const TOKEN_EXCHANGE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:token-exchange";
 
-export function parseServiceKey(key: string): { keyId: string } | null {
-  return SERVICE_KEY_PATTERN.test(key) ? { keyId: key.slice(4, 12) } : null;
-}
-
-/** The name a service key wears in audit and on a grant — never the key. */
-export function serviceClientId(keyId: string): string {
-  return `svc:${keyId}`;
-}
-
-/** The configured keys, reduced to what the door keeps: keyId → sha256(key).
- *  A malformed configured key is dropped rather than thrown on — it can never
- *  match a presented key, and a boot crash over one entry of a rotation list
- *  takes the whole deployment down. */
-export async function serviceKeyHashes(keys: readonly string[]): Promise<Map<string, string>> {
-  const hashes = new Map<string, string>();
+/** The name the presented key wears in audit and on a grant, or null if no
+ *  configured key matches it. A malformed configured key simply never matches,
+ *  so one bad entry in a rotation list cannot take the deployment down. */
+export async function verifyServiceKey(presented: string, keys: readonly string[]): Promise<string | null> {
+  if (!SERVICE_KEY_PATTERN.test(presented)) return null;
+  const hash = await sha256Hex(presented);
   for (const key of keys) {
-    const parsed = parseServiceKey(key);
-    if (parsed !== null) hashes.set(parsed.keyId, await sha256Hex(key));
+    if (equalHashes(await sha256Hex(key), hash)) return `svc:${presented.slice(4, 12)}`;
   }
-  return hashes;
-}
-
-export async function verifyServiceKey(
-  presented: string,
-  hashes: ReadonlyMap<string, string>,
-): Promise<{ keyId: string } | null> {
-  const parsed = parseServiceKey(presented);
-  if (parsed === null) return null;
-  const expected = hashes.get(parsed.keyId);
-  if (expected === undefined) return null;
-  return equalHashes(await sha256Hex(presented), expected) ? parsed : null;
+  return null;
 }
 
 /** Constant time in the CONTENT of two same-length hex digests: a compare that

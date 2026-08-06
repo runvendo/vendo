@@ -148,13 +148,10 @@ export interface McpDoorConfig {
   /** Enable the generic signed login-federation handshake at `{mount}/federate`. */
   federation?: { secret: string };
   /** First-party service auth: the host's own backend exchanges one of these
-   * keys plus a user id for a short-lived user-bound access token at
-   * `{mount}/token`, then talks MCP with it like any other client.
-   *
-   * Keys are the full `vsk_…` strings, read from the host's environment; the
-   * door keeps only their hashes. Rotation is listing both the old and the new
-   * key until the old one is out of use. Unset means the grant is neither
-   * advertised in the authorization-server metadata nor served. */
+   * `vsk_…` keys plus a user id for a short-lived user-bound access token at
+   * `{mount}/token`, then talks MCP with it like any other client. Rotation is
+   * listing both the old and the new key until the old one is out of use.
+   * Unset means the grant is neither advertised nor served. */
   serviceAuth?: { keys: readonly string[] };
   /**
    * The tool menu this door offers — the host's curated `surfaces.mcp` list,

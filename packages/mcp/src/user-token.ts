@@ -6,11 +6,9 @@
  * Discovery, not configuration: the MCP endpoint is the only URL a backend
  * knows, so the token endpoint is read off the door's own RFC 9728 metadata —
  * which is also what follows a deployment that trusts an external
- * authorization server (the hosted broker) to THAT server's token endpoint,
- * without the caller having to know there is one.
+ * authorization server (the hosted broker) to THAT server's token endpoint.
  *
- * No retries and no cache: one call mints one token, and the caller owns
- * whatever policy it wants around that.
+ * No retries and no cache: one call mints one token.
  */
 
 import {
@@ -47,9 +45,12 @@ export interface VendoUserToken {
 }
 
 export async function vendoUserToken(input: VendoUserTokenInput): Promise<VendoUserToken> {
-  const call = input.fetch ?? fetch;
+  const transport = input.fetch ?? fetch;
   const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const tokenEndpoint = await discoverTokenEndpoint(call, timeoutMs, input.url);
+  // The budget is a property of every call the helper makes, so it is bound
+  // once here rather than threaded through discovery.
+  const call: typeof fetch = (url, init) => transport(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+  const tokenEndpoint = await discoverTokenEndpoint(call, input.url);
   const response = await call(tokenEndpoint, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
@@ -60,7 +61,6 @@ export async function vendoUserToken(input: VendoUserTokenInput): Promise<VendoU
       subject_token: input.user,
       subject_token_type: SERVICE_SUBJECT_TOKEN_TYPE,
     }),
-    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!response.ok) throw new Error(await exchangeFailure(response, tokenEndpoint));
   const body = await response.json() as { access_token: string; expires_in: number; scope: string };
@@ -78,35 +78,27 @@ export async function vendoUserToken(input: VendoUserTokenInput): Promise<VendoU
  * `{resource}/token`. A door that trusts an external one names that issuer
  * instead, and the issuer publishes where its token endpoint really is.
  */
-async function discoverTokenEndpoint(
-  call: typeof fetch,
-  timeoutMs: number,
-  mcpUrl: string,
-): Promise<string> {
+async function discoverTokenEndpoint(call: typeof fetch, mcpUrl: string): Promise<string> {
   const url = new URL(mcpUrl);
   const metadata = await getJson<{ resource: string; authorization_servers?: string[] }>(
     call,
-    timeoutMs,
     `${url.origin}${PRM_PREFIX}${url.pathname === "/" ? "" : url.pathname}`,
   );
   const issuer = metadata.authorization_servers?.[0];
   if (issuer === undefined) {
     throw new Error(`${mcpUrl} names no authorization server, so there is no token endpoint to exchange at`);
   }
-  if (trimSlash(issuer) === trimSlash(metadata.resource)) return `${trimSlash(issuer)}/token`;
-  const server = await getJson<{ token_endpoint?: string }>(
-    call,
-    timeoutMs,
-    `${trimSlash(issuer)}${AS_PREFIX}`,
-  );
+  const issuerBase = trimSlash(issuer);
+  if (issuerBase === trimSlash(metadata.resource)) return `${issuerBase}/token`;
+  const server = await getJson<{ token_endpoint?: string }>(call, `${issuerBase}${AS_PREFIX}`);
   if (server.token_endpoint === undefined) {
     throw new Error(`The authorization server ${issuer} publishes no token_endpoint`);
   }
   return server.token_endpoint;
 }
 
-async function getJson<T>(call: typeof fetch, timeoutMs: number, url: string): Promise<T> {
-  const response = await call(url, { signal: AbortSignal.timeout(timeoutMs) });
+async function getJson<T>(call: typeof fetch, url: string): Promise<T> {
+  const response = await call(url);
   if (!response.ok) throw new Error(`Discovery failed: GET ${url} answered ${response.status}`);
   return await response.json() as T;
 }
