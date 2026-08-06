@@ -1,6 +1,6 @@
 import type { Json, ToolOutcome, UIPayload } from "@vendoai/core";
 import { useMemo, type ReactNode } from "react";
-import { useVendoContext } from "../context.js";
+import { useVendoProvider } from "../context.js";
 import { useApp } from "../hooks/use-app.js";
 import { useSlotApp } from "../hooks/use-slot-app.js";
 import { FluidReveal } from "../tree/fluid-reveal.js";
@@ -76,7 +76,7 @@ function SlotLoadFailed({ reason, onRetry }: { reason: Error; onRetry(): void })
 }
 
 function MountedApp({ appId }: { appId: string }) {
-  const { client, components } = useVendoContext();
+  const { client, components } = useVendoProvider();
   const { surface, error, isLoading, refresh } = useApp(appId);
   // Wave 7 H2 — the served-surface keepalive: an on-screen embed pings the
   // machine (host-proxied) so a served app doesn't idle out under the user.
@@ -151,7 +151,7 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, discover = true
   };
   children?: ReactNode;
 }) {
-  const { components } = useVendoContext();
+  const { components } = useVendoProvider();
   // Self-discovery (ui-usage-dx §2): with no explicit `appId`/`pin`, the slot
   // resolves its own pinned app — hosts never write the polling dance.
   const discovery = useSlotApp(id, { enabled: discover && appIdProp === undefined && pin === undefined });

@@ -7,7 +7,7 @@
  *  section while it has something to say, and the conversations.
  */
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { useVendoContext } from "../../context.js";
+import { useVendoProvider } from "../../context.js";
 import { useAttention } from "../../hooks/use-approvals.js";
 import type { ThreadSummary } from "../../wire-types.js";
 import { toolTitle } from "../humanize.js";
@@ -192,7 +192,7 @@ export function RailNav({ view, onView, moreOpen, onMoreOpen, activityBump }: Ra
  *  conversation, the card in the transcript), so a rail row's one job is
  *  taking you there. */
 export function NeedsYou({ onOpen }: { onOpen(): void }) {
-  const { tools } = useVendoContext();
+  const { tools } = useVendoProvider();
   const { askCount, asks } = useAttention({ pollMs: NEEDS_POLL_MS });
   const spoken = useAskAnnouncement(askCount);
   const settled = useRef<HTMLParagraphElement>(null);

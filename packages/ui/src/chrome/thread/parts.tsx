@@ -1,7 +1,7 @@
 import { riskLabelSchema, type ApprovalRequest, type Json, type RiskLabel, type UIPayload, type VendoAutomationPart, type VendoBuildFailedPart, type VendoConnectPart, type VendoGrantSetPart, type VendoTurnErrorPart, type VendoViewPart } from "@vendoai/core";
 import { isToolUIPart, type UIMessage } from "ai";
 import { useEffect, useRef, useState } from "react";
-import { useVendoContext } from "../../context.js";
+import { useVendoProvider } from "../../context.js";
 import { useSplitView } from "../split-view.js";
 import { useApprovalSheetPresentation } from "../../hooks/use-mobile-takeover.js";
 import { PayloadView } from "../../tree/renderer.js";
@@ -369,7 +369,7 @@ function GrantSetConsent({ toolCallId, grantSetId, name, permissions, siblingPar
   siblingParts: UIMessage["parts"];
   respond?: ((response: { id: string; approved: boolean }) => void) | undefined;
 }) {
-  const { client } = useVendoContext();
+  const { client } = useVendoProvider();
   const sibling = siblingParts.filter(isToolUIPart).find(candidate => candidate.toolCallId === toolCallId);
   const approvedFlag = (sibling as { approval?: { approved?: boolean } } | undefined)?.approval?.approved;
   const state = sibling === undefined || sibling.state === "approval-requested" ? "parked" as const
@@ -417,7 +417,7 @@ const PREVIEW_MAX_HEIGHT = 300;
     one exists) and, while the workspace is expanded, clicking the card
     features this app on the big stage. */
 function ThreadAppCard({ appId, payload, restored, buildKey }: { appId: string; payload: UIPayload; restored: boolean; buildKey: string }) {
-  const { client, components } = useVendoContext();
+  const { client, components } = useVendoProvider();
   const pin = usePinAction();
   const split = useSplitView();
   const streaming = (payload as { streaming?: boolean }).streaming === true;
@@ -669,7 +669,7 @@ export function ThreadApprovals({ approvals, risks, guardApprovals, cardRefs, re
   respond: (response: { id: string; approved: boolean }) => void;
   onMorph: (morph: Omit<MorphToastProps, "onDone">) => void;
 }) {
-  const { client, theme, tools } = useVendoContext();
+  const { client, theme, tools } = useVendoProvider();
   // Lane pick 1-H — below the mobile breakpoint the NEWEST parked approval
   // presents as a bottom sheet (thumb-zone consent); older parked ones stay
   // in-list behind it so the thread record is complete when the sheet closes.

@@ -7,7 +7,7 @@ import {
 } from "@vendoai/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { APPROVALS_DECIDED_EVENT } from "../client-impl.js";
-import { useVendoContext, useVendoTheme } from "../context.js";
+import { useVendoProvider, useVendoTheme } from "../context.js";
 import { useApprovals } from "../hooks/use-approvals.js";
 import { useAutomations } from "../hooks/use-automations.js";
 import type { RunPlan, RunRecord, RunStatus } from "../wire-types.js";
@@ -179,7 +179,7 @@ export function AutomationsPanel({ pollMs = AUTOMATIONS_POLL_MS }: AutomationsPa
   const poll = pollMs > 0 ? { pollMs } : undefined;
   const automations = useAutomations(poll);
   const approvals = useApprovals(poll);
-  const { client } = useVendoContext();
+  const { client } = useVendoProvider();
   const theme = useVendoTheme();
   // Every per-row map below is keyed by ROW — `${appId}:${triggerId}` — because
   // an app has a list of triggers and each one is dry-run, inspected, armed and

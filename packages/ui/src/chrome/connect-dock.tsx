@@ -8,7 +8,7 @@
     open/close state and renders `<ConnectTray>` inside the `.fl-dock-anchor`
     that wraps its composer; `<ConnectDockButton>` rides in the composer row. */
 import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
-import { useVendoContext, type ConnectorOption } from "../context.js";
+import { useVendoProvider, type ConnectorOption } from "../context.js";
 import { useConnections } from "../hooks/use-connections.js";
 import { useConnectorCatalog } from "../hooks/use-connector-catalog.js";
 import type { ConnectionAccount } from "../wire-types.js";
@@ -21,7 +21,7 @@ const POLL_DEADLINE_MS = 120_000;
 /** Initiate a broker connection and poll it to `active` (the ConnectCard flow,
     shared). Opens the hosted OAuth redirect in its own window. */
 export async function completeConnection(
-  client: ReturnType<typeof useVendoContext>["client"],
+  client: ReturnType<typeof useVendoProvider>["client"],
   input: { toolkit: string; connector?: string },
   isCancelled: () => boolean,
 ): Promise<void> {
@@ -140,7 +140,7 @@ export function ConnectTray({ onClose, anchorRef, closing = false }: {
       animation runs; `data-closing` drives it and disables pointer events. */
   closing?: boolean;
 }) {
-  const { client } = useVendoContext();
+  const { client } = useVendoProvider();
   const { options: connectors, resolved, failed, retry } = useConnectorCatalog();
   const { connections, refresh } = useConnections();
   const [query, setQuery] = useState("");

@@ -2,7 +2,7 @@ import { declaredMoneyUnit, type Json, type JsonSchema } from "@vendoai/core";
 import type { DynamicToolUIPart, ToolUIPart } from "ai";
 import { useEffect, useRef, useState } from "react";
 import { USE_SERVICE_TOOL } from "@vendoai/core";
-import { useVendoContext } from "../context.js";
+import { useVendoProvider } from "../context.js";
 import { developmentMode } from "./dev-mode.js";
 import { memberSchema } from "./field-rows.js";
 import { argValue, humanizeToolName, toolTitle, type ToolMeta } from "./humanize.js";
@@ -336,7 +336,7 @@ export function StatusRibbon({ part, stepIndex, stepTotal, risk = "read" }: {
   /** Rides the data attr (parity with the old beat's machine affordance). */
   risk?: string;
 }) {
-  const { tools } = useVendoContext();
+  const { tools } = useVendoProvider();
   const name = rawToolName(part);
   const label = toolTitle(name, tools[name]);
   const waiting = part.state === "approval-requested";
@@ -542,7 +542,7 @@ export function BuildBeat({
   /** Collapsed-run repeat count (ENG-216) — shown as a ×N suffix. */
   count?: number;
 }) {
-  const { tools } = useVendoContext();
+  const { tools } = useVendoProvider();
   const name = rawToolName(part);
   const error = part.state === "output-error";
   const done = part.state === "output-available";

@@ -10,7 +10,7 @@ import {
   type UIMessage,
 } from "ai";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useVendoContext } from "../context.js";
+import { useVendoProvider } from "../context.js";
 import { currentSituation } from "../situation.js";
 import { publishThreadRun, retireThreadRun, type VendoBeat } from "../chrome/run-activity.js";
 
@@ -137,7 +137,7 @@ function vendoApproval(part: UIMessage["parts"][number]): VendoApprovalPart | un
 
 /** 08-ui §3 */
 export function useVendoThread(threadId?: string) {
-  const { client, transport: transportOverride, captureScreen } = useVendoContext();
+  const { client, transport: transportOverride, captureScreen } = useVendoProvider();
   const suppliedThreadIdRef = useRef(threadId);
   const activeThreadIdRef = useRef(threadId);
   const [effectiveThreadId, setEffectiveThreadId] = useState(threadId);

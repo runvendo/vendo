@@ -3,7 +3,7 @@
     server-side connectors advertise (`GET /connections/catalog`). */
 import { useCallback, useEffect, useState } from "react";
 import type { VendoClient } from "../client.js";
-import { useVendoContext, type ConnectorOption } from "../context.js";
+import { useVendoProvider, type ConnectorOption } from "../context.js";
 
 type CatalogResult = { options: ConnectorOption[]; failed: boolean };
 
@@ -53,7 +53,7 @@ export function useConnectorCatalog(): {
   /** Re-runs a failed auto fetch (no-op for explicit catalogs). */
   retry: () => void;
 } {
-  const { client, connectors } = useVendoContext();
+  const { client, connectors } = useVendoProvider();
   const auto = connectors === "auto";
   // Keyed by client so a provider that swaps clients never shows the
   // previous host's catalog while the replacement fetch is in flight.

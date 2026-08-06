@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useVendoContext } from "../context.js";
+import { useVendoProvider } from "../context.js";
 import { useConnections } from "../hooks/use-connections.js";
 import { useConnectorCatalog } from "../hooks/use-connector-catalog.js";
 import { toolkitLogoUrl } from "./build-beat.js";
@@ -52,7 +52,7 @@ type Phase = "idle" | "connecting" | "connected" | "failed";
  * "Connecting…" button while the OAuth window is open, and a permanent quiet
  * "Connected" record once the broker reports the account active. */
 export function ConnectCard({ connector, toolkit, message, onConnected, live = true }: ConnectCardProps) {
-  const { client } = useVendoContext();
+  const { client } = useVendoProvider();
   const { options: connectors } = useConnectorCatalog();
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string>();

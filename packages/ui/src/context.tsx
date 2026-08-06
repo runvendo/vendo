@@ -147,7 +147,11 @@ export function VendoProvider(props: {
   return <VendoContext.Provider value={value}>{children}</VendoContext.Provider>;
 }
 
-export function useVendoContext(): VendoContextValue {
+/** Everything VendoProvider supplies — the seam every hook and surface reads.
+ *  Named `useVendoProvider` (not `useVendoContext`) since 2026-08-05: the
+ *  host-facing `useVendoContext(data)` publishes into the agent's [Situation]
+ *  channel and owns that name. */
+export function useVendoProvider(): VendoContextValue {
   const ctx = useContext(VendoContext);
   if (!ctx) throw new Error("Vendo hooks and surfaces must be rendered inside <VendoProvider>.");
   return ctx;
@@ -155,7 +159,7 @@ export function useVendoContext(): VendoContextValue {
 
 /** Resolved brand tokens (08 §3 — the useVendoTheme hook). */
 export function useVendoTheme(): VendoTheme {
-  return useVendoContext().theme;
+  return useVendoProvider().theme;
 }
 
 /** Host-supplied tool metadata (ENG-216). Provider-optional so surfaces that

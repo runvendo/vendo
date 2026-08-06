@@ -1,6 +1,6 @@
 import { VendoError, type ApprovalRequest } from "@vendoai/core";
 import { useState } from "react";
-import { useVendoContext, useVendoTools } from "../context.js";
+import { useVendoProvider, useVendoTools } from "../context.js";
 import type { AdoptionVenue } from "../wire-types.js";
 import { toolPresentation } from "./build-beat.js";
 import {
@@ -175,7 +175,7 @@ export { ADOPTION_VENUE_KEY } from "@vendoai/core";
  * while the card itself stays testable and reusable with no transport.
  */
 export function AdoptionVenueCard({ card }: { card: AdoptionVenue }) {
-  const { client } = useVendoContext();
+  const { client } = useVendoProvider();
   const [state, setState] = useState<"waiting" | "adopted">("waiting");
   const [set, setSet] = useState<{
     asks: ApprovalRequest[];

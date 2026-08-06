@@ -7,7 +7,7 @@ import {
   type ToolOutcome,
 } from "@vendoai/core";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { useVendoContext } from "../context.js";
+import { useVendoProvider } from "../context.js";
 import type {
   VendoAppEmbedProps,
   VendoApprovalEmbedProps,
@@ -169,7 +169,7 @@ function executedCard(summary: string, outcome: ToolOutcome): ReactNode {
  * "declined", or "expired" (the frozen `VendoApprovalEmbedState` vocabulary).
  */
 export function VendoApprovalEmbed({ refValue }: VendoApprovalEmbedProps) {
-  const { client } = useVendoContext();
+  const { client } = useVendoProvider();
   const { approvalId, summary } = refValue;
 
   const fetcher = useCallback(async (): Promise<ApprovalResolution | null> => {
@@ -254,7 +254,7 @@ export function VendoApprovalEmbed({ refValue }: VendoApprovalEmbedProps) {
  * (`apps.call`), never through the host's agent loop.
  */
 export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
-  const { client, components } = useVendoContext();
+  const { client, components } = useVendoProvider();
   const { appId, title } = refValue;
   // Retry (criterion 8, speed-core): a retryable terminal failure re-issues
   // the create; the fresh build gets its own id, so the poll loop keys on
