@@ -11,7 +11,10 @@ import { VendoAppEmbed, VendoProvider, createVendoClient, noteSlot, type VendoCl
 import { VendoSlot } from "../../src/chrome/index.js";
 import { createWireServer } from "../wire-server.js";
 
-const ready: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_1", title: "Invoices", status: "ready" };
+// The envelope's status is ALWAYS "building" — it never means done (core's
+// vendoAppRefSchema). Readiness is the wire's answer: app_1 is servable, so the
+// embed resolves its surface and the bar flips to the app's name.
+const ready: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_1", title: "Invoices", status: "building" };
 
 describe("the Add to… picker", () => {
   let wire: Awaited<ReturnType<typeof createWireServer>>;

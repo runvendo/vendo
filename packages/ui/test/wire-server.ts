@@ -317,10 +317,12 @@ export async function createWireServer(options: WireServerOptions = {}) {
      *  per subject — one row per slot, and the entry's status is derived from
      *  the app list on read, never stored. */
     placements: [] as Array<{ slot: string; appId: string }>,
-    /** PR3 — apps whose build "lands" after N placements polls (app id →
-     *  {remaining, name}), so a test can watch a slot go building → ready over
-     *  the real wire instead of asserting two static pages. */
-    landingApps: new Map<string, { remaining: number; name: string }>(),
+    /** PR3 — apps whose build "lands" on the `after`-th placements read, so a
+     *  test can watch a slot go building → ready over the real wire instead of
+     *  asserting two static pages. Placing one again rewinds it (see the place
+     *  route): the browser harness shares one wire across a whole spec file, so
+     *  a one-shot window would be spent by the first attempt. */
+    landingApps: new Map<string, { after: number; seen: number; name: string }>(),
     /** PR3 — apps served as an `{kind:"http"}` surface (app id → url): the
      *  second surface kind a slot must mount. */
     httpApps: new Map<string, string>(),
@@ -1116,10 +1118,10 @@ export async function createWireServer(options: WireServerOptions = {}) {
       // app id).
       if (url.pathname === "/apps/placements" && method === "GET") {
         // PR3 — the harness's build window: a landing app joins the app list
-        // after a couple of polls, exactly like a build completing mid-poll.
+        // after a couple of reads, exactly like a build completing mid-poll.
         for (const [landingId, landing] of state.landingApps) {
-          landing.remaining -= 1;
-          if (landing.remaining <= 0 && !state.apps.some(item => item.id === landingId)) {
+          landing.seen += 1;
+          if (landing.seen >= landing.after && !state.apps.some(item => item.id === landingId)) {
             state.apps.push(app(landingId, landing.name));
           }
         }
@@ -1151,6 +1153,15 @@ export async function createWireServer(options: WireServerOptions = {}) {
         if (placeMatch[2] === "unplace") {
           if (held?.appId === id) state.placements = state.placements.filter(row => row.slot !== slot);
           return json(response, {});
+        }
+        // PR3 — placing a landing app rewinds its build window and takes back
+        // its servable record, so a browser spec can seed the building → ready
+        // story per attempt (the harness's wire outlives every test in a file).
+        const landing = state.landingApps.get(id);
+        if (landing !== undefined) {
+          landing.seen = 0;
+          const landed = state.apps.findIndex(item => item.id === id);
+          if (landed >= 0) state.apps.splice(landed, 1);
         }
         state.placements = [...state.placements.filter(row => row.slot !== slot), { slot, appId: id }];
         return json(response, held === undefined || held.appId === id ? {} : { evicted: held.appId });

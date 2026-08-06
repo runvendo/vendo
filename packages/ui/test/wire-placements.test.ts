@@ -39,7 +39,7 @@ describe("fixture wire — placements", () => {
   });
 
   it("lands a building app after its poll window, in place", async () => {
-    wire.state.landingApps.set("app_lands", { remaining: 2, name: "Trip planner" });
+    wire.state.landingApps.set("app_lands", { after: 2, seen: 0, name: "Trip planner" });
     await client.apps.place("app_lands", "hero");
     expect((await client.apps.placements(["hero"]))[0]?.status).toBe("building");
     expect((await client.apps.placements(["hero"]))[0]).toEqual({

@@ -55,7 +55,7 @@ describe("VendoSlot build states", () => {
 
     it("mounts the app in place the moment the build lands — no remount, no reload", async () => {
       wire.state.placements.push({ slot: "hero", appId: "app_lands" });
-      wire.state.landingApps.set("app_lands", { remaining: 2, name: "Trip planner" });
+      wire.state.landingApps.set("app_lands", { after: 2, seen: 0, name: "Trip planner" });
       emptySlot("hero");
       expect((await screen.findByRole("status")).textContent).toContain("Building your view");
       expect(await screen.findByText("Trip planner app surface")).toBeTruthy();
