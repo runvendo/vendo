@@ -152,6 +152,12 @@ function estimateTokens(messages: readonly ModelMessage[]): number {
   return Math.ceil(JSON.stringify(messages).length / CHARS_PER_TOKEN);
 }
 
+/** The chars/4 guess at a WHOLE prompt: the system message, which is part of the
+ *  same window and is not sheddable, plus the history. What the host's
+ *  `contextTokenBudget` is denominated in. */
+const estimatedPromptTokens = (system: string, messages: readonly ModelMessage[]): number =>
+  estimateTokens([{ role: "system", content: system }]) + estimateTokens(messages);
+
 /**
  * Shed a turn's history to a token budget, CHEAPEST LOSS FIRST:
  *
@@ -165,17 +171,35 @@ function estimateTokens(messages: readonly ModelMessage[]): number {
  * together with its result, so the prompt stays well-formed however much it
  * sheds. The ask always survives: a turn with no user message is not a cheaper
  * turn, it is a broken one.
+ *
+ * `promptTokens` is what the WHOLE prompt costs IN THE BUDGET'S OWN UNITS, and
+ * it is the caller's to supply because only the caller knows which ledger its
+ * budget is written in. This used to be re-derived here at chars/4 whoever was
+ * asking, and the compaction floor's budget is not written in chars/4: it trips
+ * on the provider's reported count. 308,000 characters of dense statement text
+ * bill 142,890 real tokens and estimate 78,244 — 1.83x apart — so the trigger
+ * said "over the budget" and this said "fits" about the same prompt, and neither
+ * rail did anything at all. Passing the number in is what makes them one rail:
+ * `fits(messages)` is now exactly the negation of the trigger that called.
+ *
+ * A candidate is charged at `promptTokens` minus a chars/4 CREDIT for the text
+ * dropped. The credit under-counts whenever the dropped text is denser than
+ * chars/4, so the shed errs toward dropping one message too many — the cheap
+ * direction, and the only one that cannot re-open the disagreement.
+ *
+ * The tools block rides inside whatever figure the caller passed, and it is not
+ * sheddable, so it raises where the shed STARTS and never what the shed can
+ * reach. Once the messages are gone the floor stops, still over budget, and
+ * says so by returning what is left rather than by pretending.
  */
 function shedToBudget(
   messages: readonly ModelMessage[],
-  system: string,
   budget: number,
+  promptTokens: number,
 ): ModelMessage[] {
-  // The system prompt is part of the same window and is not sheddable, so it is
-  // charged against the budget rather than ignored by it.
-  const overhead = estimateTokens([{ role: "system", content: system }]);
+  const whole = estimateTokens(messages);
   const fits = (candidate: readonly ModelMessage[]): boolean =>
-    estimateTokens(candidate) + overhead <= budget;
+    promptTokens - (whole - estimateTokens(candidate)) <= budget;
   if (fits(messages)) return [...messages];
   let shed = pruneMessages({
     messages: [...messages],
@@ -328,7 +352,7 @@ export async function turnModelMessages(input: TurnPromptInput): Promise<TurnPro
   // bills, and it runs before the breakpoints below because shedding changes
   // which message is the stable prefix's last one.
   if (tokenBudget !== undefined) {
-    const shed = shedToBudget(converted, system, tokenBudget);
+    const shed = shedToBudget(converted, tokenBudget, estimatedPromptTokens(system, converted));
     // MEASURED, not assumed: `shedToBudget` returns a new array whether or not
     // it found anything to drop — a thread of one message cannot shed, and the
     // whole point of the flag is to tell that apart from a thread that did.
@@ -366,10 +390,21 @@ export async function turnModelMessages(input: TurnPromptInput): Promise<TurnPro
       }).catch(() => undefined);
       if (result === undefined || result.cutIndex === 0 || result.summary === "") {
         // The floor. Drops reasoning, then tool payloads, then the oldest
-        // messages, with no summary and no notice to the model. The budget bounds
-        // the MESSAGES, so a trip caused by the tools block alone sheds nothing —
-        // the tools are not sheddable and the floor does not pretend otherwise.
-        const shed = shedToBudget(converted, system, triggerTokens(compaction));
+        // messages, with no summary and no notice to the model. It is handed the
+        // SAME count the trigger just tripped on, so the two cannot disagree
+        // about the prompt they are both looking at — and the LARGER of that and
+        // the chars/4 guess, because the floor only ever runs after something
+        // already said this prompt is too big, and `force` arrives from a
+        // provider that refused it while the carried measurement was still
+        // small. A trip the tools block alone caused now sheds the history and
+        // then stops, still over budget — the old floor charged the messages
+        // against the WHOLE window and so quietly shed nothing at all in that
+        // case, which is the same blindness one layer down.
+        const shed = shedToBudget(
+          converted,
+          triggerTokens(compaction),
+          Math.max(promptTokens, estimatedPromptTokens(system, converted)),
+        );
         reduced ||= estimateTokens(shed) < estimateTokens(converted);
         converted = shed;
       } else {
