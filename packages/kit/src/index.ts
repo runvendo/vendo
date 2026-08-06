@@ -9,6 +9,8 @@
  * `KIT_SPECS`, the semantics tokens and `fmt` — is `@vendoai/ui/kit` verbatim.
  * A generated app and a `.vendo` screen therefore render the same components
  * with the same formatters.
+ *
+ * (Leaf-package CI proof — this comment is the only change.)
  */
 
 export * from "@vendoai/ui/kit";
