@@ -169,13 +169,12 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
   const threads = new ThreadRepository(config.store);
   // LAZY, and the laziness is load-bearing twice over.
   //
-  // `threadMessageStore` and `workspaceStore` both resolve a SQL handle
-  // (`dbFor`) as their first act. Building them at compose would (a) do work
-  // inside `createVendo`, which the common edge wiring calls at module init where
-  // Workers forbids it, and (b) throw "Unknown VendoStore handle" outright for a
-  // hosted store — which has no local SQL and, in wave 1, no workspace or
-  // transcript door of its own. Deferred, a hosted deployment composes exactly as
-  // before and only a host that actually drives a harness turn meets the gap.
+  // These three helpers pick their backend (`backendOf`) as their first act.
+  // Building them at compose would (a) do work inside `createVendo`, which the
+  // common edge wiring calls at module init where Workers forbids it, and (b)
+  // throw outright for a store that offers neither a SQL handle nor a StoreOps
+  // surface. Deferred, such a deployment composes exactly as before and only a
+  // host that actually drives a harness turn meets the gap.
   let sql: {
     transcript: ReturnType<typeof threadMessageStore<UIMessage>>;
     workspaces: ReturnType<typeof workspaceStore>;
@@ -195,10 +194,10 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       } catch (cause) {
         throw new VendoError(
           "not-implemented",
-          "Serving a turn through a harness needs a SQL-backed store: the transcript and the workspace "
-          + "(build contract §3.3 / §6) are tables. The configured store has no SQL handle — the Cloud "
-          + "hosted store does not serve the workspace or per-message transcript doors yet. Pass "
-          + "`store: postgres(url)` (or the local default) to use `harness:`.",
+          "Serving a turn through a harness needs somewhere to keep the transcript and the workspace "
+          + "(build contract §3.3 / §6): it needs a SQL-backed store (`store: postgres(url)`, or the "
+          + "local default) or a StoreOps-capable store (the Cloud hosted store). The configured store "
+          + "is neither.",
           { cause },
         );
       }
