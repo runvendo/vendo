@@ -491,7 +491,16 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 /* A terminally failed app build: the ✕ beat plus the classified reason,
    indented under it. Prose, not a failure component (spec §15) — no card, no
    retry chrome; the agent's next sentence carries the recovery. */
-.fl-buildfail { align-self: flex-start; max-width: 92%; }
+.fl-buildfail { align-self: flex-start; }
+/* A failure headline is CONTENT: it wraps rather than ellipsizing. The beat's
+   nowrap clip is right for a progress line and wrong here, and TWO rules hid
+   the sentence together — a turn is shrink-to-fit (.fl-turn-assistant is
+   align-self: flex-start), so this block's former 92% max-width resolved
+   against a width its own text had just set, making the box 8% narrower than
+   the headline inside it, and the ellipsis ate the end. A persisted failure
+   with no detail line under it read "The response didn't f…" after a reload
+   (PR #864 proof). The turn already caps at 92% of the list. */
+.fl-buildfail .fl-beat-label { overflow: visible; white-space: normal; text-overflow: clip; }
 .fl-buildfail .fl-approval-more { margin-left: 21px; line-height: 1.5; }
 
 /* The tool chip was replaced by the build beats above; only its error line
