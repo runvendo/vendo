@@ -93,7 +93,7 @@ async function compose(overrides: Partial<CreateVendoConfig> = {}): Promise<Comp
     store,
     // Exactly one tool starts active; the other is reachable only through
     // `find_tools`, which is what makes the loadout observable at all.
-    agent: { loadout: ["probe_alpha"] },
+    loadout: ["probe_alpha"],
     harness: probeHarness(seen) as never,
     ...overrides,
   } as CreateVendoConfig);
