@@ -100,6 +100,33 @@ export function toolkitDisplayName(toolkit: string): string {
     .join(" ") || toolkit;
 }
 
+/** What connecting a toolkit actually lets us do, in the words a person uses
+    for it. Never an OAuth scope string: `https://www.googleapis.com/auth/gmail.send`
+    is the grant's identifier, not its meaning, and a consent surface that shows
+    the identifier has told the reader nothing (§16 law 3, the same law the
+    connect refusal copy answers). */
+const TOOLKIT_ACCESS: Record<string, string> = {
+  gmail: "read and send mail as you",
+  googlemail: "read and send mail as you",
+  slack: "read and post messages as you",
+  github: "read your repositories and open issues and pull requests as you",
+  notion: "read and edit your pages as you",
+  linear: "read and update your issues as you",
+  googlecalendar: "read your calendar and create events as you",
+  googledrive: "read and add files in your Drive as you",
+  googlesheets: "read and edit your spreadsheets as you",
+  hubspot: "read and update your contacts and deals as you",
+  clickup: "read and update your tasks as you",
+};
+
+/** The access line for a toolkit — a verb phrase the card wraps ("Connecting
+    lets us …"). The generic fallback names the service and stops there: a guess
+    at a specific permission would be worse than the honest general one. */
+export function toolkitAccessCopy(toolkit: string): string {
+  const known = TOOLKIT_ACCESS[toolkit.toLowerCase().replace(/[-_\s]+/g, "")];
+  return known ?? `act in ${toolkitDisplayName(toolkit)} as you`;
+}
+
 /** A tool's declared input properties, when the caller holds the descriptor. */
 export type ArgProperties = Record<string, JsonSchema> | undefined;
 

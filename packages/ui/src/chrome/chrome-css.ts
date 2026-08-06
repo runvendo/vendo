@@ -522,6 +522,15 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 .fl-connect-done-ic { display: inline-grid; place-items: center; width: 15px; height: 15px;
   border-radius: 999px; background: var(--vendo-accent); color: var(--vendo-accent-fg); }
 .fl-connect-done-ic svg { width: 9px; height: 9px; }
+/* V5 connect states: the plain-words access line, the settled receipt beside
+   the badge, the blocked-popup fallback, and the collapsed Skipped record. */
+.fl-connect-access { color: var(--vendo-fg-muted); font-size: 12px; }
+.fl-connect-receipt { color: var(--vendo-fg-muted); font-size: 11.5px; }
+.fl-connect-blocked { display: flex; flex-direction: column; align-items: flex-start; gap: 9px;
+  font-size: 12.5px; line-height: 1.45; color: var(--vendo-fg); }
+.fl-connect-skipped { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.fl-connect-skip-copy { color: var(--vendo-fg-muted); font-size: 12.5px; }
+.fl-connect-reoffer { flex-shrink: 0; }
 /* Grant-set consent card (demo-live-readiness mockup §2): the enumerated
    permission rows under the standing-access head, and the settled outcome. */
 .fl-grantset { min-width: min(420px, 88%); }

@@ -82,6 +82,7 @@ export const VENDO_TOOL_TITLES: Readonly<Record<string, string>> = {
   find_service_tools: "Look for an outside service",
   use_service_tool: "Use an outside service",
   list_connections: "Check your connected services",
+  request_connection: "Ask you to connect a service",
   // Meta-tools: ai-SDK `dynamicTool`s with no descriptor at all, so the table is
   // their ONLY title. The reporter fires on the honest-refusal path — the very
   // turn the §3 leak was photographed on — and read "Vendo report capability

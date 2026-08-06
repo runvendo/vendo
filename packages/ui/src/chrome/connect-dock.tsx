@@ -17,28 +17,79 @@ import { toolkitDisplayName } from "./humanize.js";
 
 const POLL_INTERVAL_MS = 1_500;
 const POLL_DEADLINE_MS = 120_000;
+const POPUP_WIDTH = 520;
+const POPUP_HEIGHT = 680;
+
+/**
+ * Open the sign-in window for a connect, SYNCHRONOUSLY inside the click.
+ *
+ * Safari and Firefox judge a popup by call-stack provenance, not by intent: a
+ * `window.open` that runs after an `await` is no longer "during a click" and is
+ * refused outright. The old flow awaited `initiate()` first so it could open the
+ * window with the real URL in hand — which is precisely the shape those browsers
+ * block. So the window opens BLANK on the click and is navigated once the
+ * redirect URL arrives (see {@link completeConnection}).
+ *
+ * `noopener` is deliberately absent: it forces `window.open` to return null, and
+ * the handle is what lets us navigate the window and close it from here when the
+ * account goes active. The page we send it to is the broker's own consent page.
+ *
+ * Returns `null` when the browser blocked it anyway — the caller keeps going and
+ * offers the same URL as a plain link.
+ */
+export function openConnectPopup(name = "vendo-connect"): Window | null {
+  // Centered on the screen the browser is on, so the consent page lands where
+  // the eye already is rather than in a corner behind the app.
+  const left = Math.max(0, Math.round((window.screen.width - POPUP_WIDTH) / 2));
+  const top = Math.max(0, Math.round((window.screen.height - POPUP_HEIGHT) / 2));
+  return window.open(
+    "about:blank",
+    name,
+    `popup=yes,width=${POPUP_WIDTH},height=${POPUP_HEIGHT},left=${left},top=${top}`,
+  ) ?? null;
+}
 
 /** Initiate a broker connection and poll it to `active` (the ConnectCard flow,
-    shared). Opens the hosted OAuth redirect in its own window. */
+    shared). Resolves with the broker's redirect URL once the account is live. */
 export async function completeConnection(
   client: ReturnType<typeof useVendoContext>["client"],
   input: { toolkit: string; connector?: string },
   isCancelled: () => boolean,
-): Promise<void> {
+  /** The window {@link openConnectPopup} returned for THIS click. `null` means
+      the browser blocked it: the poll still runs, because the user can finish
+      through the fallback link the surface offers. `undefined` means the caller
+      opened nothing, so a background tab is opened here instead. */
+  popup?: Window | null,
+  /** Called once the broker's redirect URL exists — the fallback link's href,
+      needed WHILE the poll runs, long before this resolves. */
+  onRedirect?: (redirectUrl: string) => void,
+): Promise<{ redirectUrl: string }> {
   const initiated = await client.connections.initiate(input);
-  window.open(initiated.redirectUrl, "_blank", "noopener");
+  onRedirect?.(initiated.redirectUrl);
+  if (popup === undefined) window.open(initiated.redirectUrl, "_blank", "noopener");
+  else if (popup !== null) popup.location.replace(initiated.redirectUrl);
   const deadline = Date.now() + POLL_DEADLINE_MS;
   while (!isCancelled() && Date.now() < deadline) {
     const account = await client.connections
       .status(initiated.id, initiated.connector)
       .catch(() => undefined);
-    if (account?.status === "active") return;
+    // Closed from the OPENER: the consent page is the broker's, so there is
+    // nothing of ours running inside it to postMessage back.
+    if (account?.status === "active") {
+      popup?.close();
+      return { redirectUrl: initiated.redirectUrl };
+    }
     if (account?.status === "failed" || account?.status === "expired") {
+      popup?.close();
       throw new Error(`The ${input.toolkit} connection ${account.status} — try again.`);
     }
     await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
   }
-  if (!isCancelled()) throw new Error(`Timed out waiting for the ${input.toolkit} connection — try again.`);
+  if (isCancelled()) return { redirectUrl: initiated.redirectUrl };
+  popup?.close();
+  // Coded, because a deadline is not a refusal: the surface says "nothing
+  // changed" and re-offers, where a failure says the connect went wrong.
+  throw Object.assign(new Error(`Timed out waiting for the ${input.toolkit} connection — try again.`), { code: "timeout" });
 }
 
 /**
@@ -229,6 +280,8 @@ export function ConnectTray({ onClose, anchorRef, closing = false }: {
   }, [connections, connectors, query]);
 
   const connect = async (row: TrayRow) => {
+    // Before the first await, or the browser blocks it (openConnectPopup).
+    const popup = openConnectPopup();
     setConnecting(row.toolkit);
     setError(undefined);
     try {
@@ -236,6 +289,7 @@ export function ConnectTray({ onClose, anchorRef, closing = false }: {
         client,
         { toolkit: row.toolkit, ...(row.connector !== undefined ? { connector: row.connector } : {}) },
         () => cancelledRef.current,
+        popup,
       );
       if (cancelledRef.current) return;
       await refresh();
