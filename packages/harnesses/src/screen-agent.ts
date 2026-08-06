@@ -36,6 +36,7 @@ import {
   VENDO_MAKE_TOOL,
   mintTurnId,
   type AppId,
+  type CommitResult,
   type SeatModels,
   type RunContext,
   type ScreenAssembler,
@@ -56,7 +57,8 @@ import { buildingAppsSkill } from "@vendoai/apps";
 import type { LanguageModel } from "ai";
 import { defineHarness } from "./define.js";
 import { vendo, type HarnessHand, type VendoHarnessOptions } from "./vendo/vendo.js";
-import { wrapWorkspaceForRender, type RenderSeamOptions } from "./render-seam.js";
+import { paintedIn, wrapWorkspaceForRender, type RenderSeamOptions } from "./render-seam.js";
+import { repairInstruction, validateWrittenApps } from "./validate-gate.js";
 
 /**
  * The whole budget for assembling one screen.
@@ -318,18 +320,15 @@ export async function assembleScreen(
   /**
    * Write one hot-path file and land it.
    *
-   * The commit IS the store write and the paint (§1.6). Whether it painted is the
-   * seam's own verdict, reached inside `commit()` and reported to the seam's
-   * `emit` — which belongs to whoever wrapped this workspace, not to us. So this
-   * reports what it can actually know: did the commit land. `validate` is what
-   * tells the model whether what landed is any good — which is this loop's review
-   * floor by design, exactly as `AppsRuntime.authored` says — and the front door
-   * checks the app's ROW before it promises the person a screen.
+   * The commit IS the store write and the paint (§1.6), and the seam answers BOTH
+   * questions on the way out: did the write land, and did it reach the screen
+   * (`CommitResult.painted`). The paint verdict is the one this loop could not see
+   * before — `emit` belongs to whoever wrapped the workspace, not to us — and it
+   * is what separates "saved" from "saved and shown".
    */
-  const save = async (turn: Turn<unknown>, file: string, content: string): Promise<boolean> => {
+  const save = async (turn: Turn<unknown>, file: string, content: string): Promise<CommitResult> => {
     await turn.workspace.writeFile(`${directory}/${file}`, content);
-    const result = await turn.workspace.commit({ message: `${file} (${input.appId})` });
-    return result.status === "ok";
+    return await turn.workspace.commit({ message: `${file} (${input.appId})` });
   };
 
   const saveApp: HarnessHand = {
@@ -354,8 +353,8 @@ export async function assembleScreen(
     },
     execute: async (args, turn) => {
       const { content, decisions } = args as { content: string; decisions?: string };
-      const landed = await save(turn, APP_FILE, content);
-      if (!landed) {
+      const committed = await save(turn, APP_FILE, content);
+      if (committed.status !== "ok") {
         return { saved: false, note: "The save did not land — someone else changed this app. Save again." };
       }
       record.assembled = true;
@@ -365,6 +364,37 @@ export async function assembleScreen(
       // one" — a save-as-you-go loop would otherwise erase its own memory on the
       // final validate-fix save.
       if (decisions !== undefined && decisions.trim() !== "") record.decisions = decisions;
+      /**
+       * A SAVE THAT NEVER REACHED THE SCREEN HEARS WHY — the builder's own gate
+       * (`validateWrittenApps`), on the one case this loop had no door for.
+       *
+       * Live 2026-08-06 ("a dashboard for my upcoming bills"): a save the seam
+       * would not paint leaves no ROW — no paint, no `authored` — and
+       * `validate({appId})`, the door this hand's own note sends the model to, is
+       * row-scoped. It answered "app not found" on exactly the document that
+       * needed judging, so the loop heard nothing, saved again, and the screen the
+       * person kept was judged by nothing it could hear from. `{ document }` has
+       * no such hole, which is the gate's own reason for taking it.
+       *
+       * Only when the paint did NOT happen: a painted save is already floored (the
+       * seam runs the same checks before it emits), so running them again would
+       * pay twice and second-guess the seam. `painted` absent means an unwrapped
+       * workspace — nothing known, so nothing claimed.
+       */
+      const painted = paintedIn(committed);
+      if (painted !== undefined && !painted.includes(input.appId)) {
+        const instruction = repairInstruction(await validateWrittenApps({
+          tools: turn.tools,
+          workspace: turn.workspace,
+          paths: [`${directory}/${APP_FILE}`],
+        }));
+        return {
+          saved: true,
+          note: instruction
+            ?? "That save landed but did not reach the person's screen, and validate found nothing to fix."
+            + " Save a simpler document.",
+        };
+      }
       return { saved: true, note: "Run validate on it now." };
     },
   };
@@ -391,7 +421,7 @@ export async function assembleScreen(
       // returns is the fact that it happened.
       const landed = await save(turn, PLAN_FILE, plan);
       record.escalated = why;
-      return { handedOver: true, planSaved: landed };
+      return { handedOver: true, planSaved: landed.status === "ok" };
     },
   };
 

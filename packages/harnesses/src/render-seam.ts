@@ -113,6 +113,28 @@ const renders = (tree: Tree): boolean => {
   return root !== undefined && (root.children?.length ?? 0) > 0;
 };
 
+/**
+ * Which apps a commit put ON SCREEN, for the hand that wrote it.
+ *
+ * A landed write is not a painted screen: a document that does not compile, does
+ * not render, or does not pass the checks floor lands its bytes and paints
+ * nothing — and leaves no app row, because `authoredApp` runs only on a paint. A
+ * hand that saved one then has no door left: `validate({appId})` is row-scoped
+ * and answers "app not found" on exactly the document that needed judging (live
+ * 2026-08-06). `emit` belongs to whoever wrapped the workspace, so the verdict has
+ * to travel with the commit for the writer to see it at all.
+ *
+ * BESIDE the result rather than on it: the wrapper passes the store's answer
+ * through untouched, and a `CommitResult` is what the store said, not what the
+ * seam did with it.
+ */
+const paintedByCommit = new WeakMap<CommitResult, readonly AppId[]>();
+
+/** The apps `result`'s commit painted, or undefined for a result this seam did not
+ *  produce — which is "not known", never "nothing painted". */
+export const paintedIn = (result: CommitResult): readonly AppId[] | undefined =>
+  paintedByCommit.get(result);
+
 export interface RenderSeamOptions {
   /** Write the part on the stable per-app stream id, so successive views
    *  reconcile in place instead of stacking. */
@@ -466,9 +488,10 @@ export function wrapWorkspaceForRender(workspace: WorkspaceFs, options: RenderSe
           else if (await emitFor(path)) painted.add(appId);
         }
         for (const { path, appId } of plans) {
-          if (!painted.has(appId)) await emitFor(path);
+          if (!painted.has(appId) && await emitFor(path)) painted.add(appId);
         }
         await persistSource(result.changed);
+        paintedByCommit.set(result, [...painted]);
         return result;
       };
     },
