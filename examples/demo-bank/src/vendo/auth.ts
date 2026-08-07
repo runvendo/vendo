@@ -1,5 +1,5 @@
 import type { authJs } from "@vendoai/vendo/auth/auth-js";
-import { joinUrl } from "@vendoai/core";
+import { joinUrl, withPathPrefix } from "@vendoai/core";
 import { getToken } from "next-auth/jwt";
 import { withBasePath } from "@/lib/base-path";
 import {
@@ -42,9 +42,13 @@ export function safeReturnTo(candidate: string | null | undefined, base: URL = p
   if (!candidate) return home;
   try {
     const target = new URL(candidate, base);
-    return target.origin === base.origin
-      ? `${target.pathname}${target.search}${target.hash}`
-      : home;
+    if (target.origin !== base.origin) return home;
+    // Belt and braces: a returnTo that arrives in the app's mount-STRIPPED
+    // vocabulary — an old bookmark, a link built before the prefix existed —
+    // still lands somewhere that exists. The prefix comes from the deployment's
+    // own base URL, and withPathPrefix is idempotent, so an already-public path
+    // is left exactly as it is.
+    return withPathPrefix(home === "/" ? "" : home, `${target.pathname}${target.search}${target.hash}`);
   } catch {
     return home;
   }

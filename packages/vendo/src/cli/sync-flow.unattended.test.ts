@@ -22,17 +22,10 @@ vi.mock("./judge/pass.js", () => ({ runJudgmentPass }));
 const selectJudgmentEngines = vi.hoisted(() => vi.fn());
 vi.mock("./judge/engine.js", () => ({ selectJudgmentEngines }));
 
-const runBriefStage = vi.hoisted(() => vi.fn());
-const runThemeStage = vi.hoisted(() => vi.fn());
-const applyBrief = vi.hoisted(() => vi.fn());
-vi.mock("./extract/stages.js", () => ({
-  runBriefStage,
-  runThemeStage,
-  applyBrief,
-  BRIEF_TEMPLATE: "",
-}));
+const runProseStages = vi.hoisted(() => vi.fn());
+vi.mock("./init-judgment.js", () => ({ runProseStages }));
 
-const { runInitJudgment } = await import("./init-judgment.js");
+const { runSyncFlow } = await import("./sync-flow.js");
 
 async function projectWithTools(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "vendo-loosening-"));
@@ -49,6 +42,16 @@ function silentOutput(): { log: (line: string) => void; error: (line: string) =>
   const lines: string[] = [];
   return { log: (line) => lines.push(line), error: (line) => lines.push(line), lines };
 }
+
+const emptyReport = {
+  tools: { added: [], removed: [], changed: [] },
+  breaking: [],
+  pins: { captured: [], drifted: [] },
+  remixableErrors: [],
+  catalog: { discovered: 0, registered: 0 },
+  components: { captured: [], drifted: [] },
+  warnings: [],
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -67,12 +70,25 @@ beforeEach(() => {
     advisoriesClamped: 0,
     inconsistentRisk: 0,
   });
-  runBriefStage.mockResolvedValue({ brief: "", notes: [], fromStage: false });
-  runThemeStage.mockResolvedValue({ theme: undefined, notes: [] });
-  applyBrief.mockResolvedValue(false);
+  runProseStages.mockResolvedValue({});
 });
 
-describe("the loosening review never blocks an unattended init", () => {
+/** The flow as `vendo init` runs it: full mode, consent granted by flag. */
+function initFlow(overrides: { root: string; output: ReturnType<typeof silentOutput>; yes: boolean; interactive: boolean; confirm?: unknown }) {
+  return runSyncFlow({
+    root: overrides.root,
+    output: overrides.output,
+    mode: "full",
+    yes: overrides.yes,
+    interactive: overrides.interactive,
+    ai: true,
+    sync: (async () => emptyReport) as never,
+    fetchImpl: (async () => { throw new Error("offline"); }) as never,
+    ...(overrides.confirm === undefined ? {} : { confirm: overrides.confirm as never }),
+  });
+}
+
+describe("the loosening review never blocks an unattended run", () => {
   it("queues loosenings under --yes even in a TTY, and offers no confirm to block on", async () => {
     const root = await projectWithTools();
     const output = silentOutput();
@@ -82,17 +98,9 @@ describe("the loosening review never blocks an unattended init", () => {
     // it must not be forwarded.
     const confirm = vi.fn(async () => true);
 
-    const result = await runInitJudgment({
-      root,
-      output,
-      env: {},
-      yes: true,
-      ai: true,
-      interactive: true,
-      confirm,
-    });
+    const result = await initFlow({ root, output, yes: true, interactive: true, confirm });
 
-    expect(result.ran).toBe(true);
+    expect(result.judged.ran).toBe(true);
     expect(runJudgmentPass).toHaveBeenCalledTimes(1);
     const passed = runJudgmentPass.mock.calls[0]![0] as { loosenings: string; confirm?: unknown };
     expect(passed.loosenings).toBe("queue");
@@ -108,15 +116,7 @@ describe("the loosening review never blocks an unattended init", () => {
     const root = await projectWithTools();
     const output = silentOutput();
 
-    await runInitJudgment({
-      root,
-      output,
-      env: {},
-      yes: false,
-      ai: true,
-      interactive: false,
-      confirm: vi.fn(async () => true),
-    });
+    await initFlow({ root, output, yes: false, interactive: false, confirm: vi.fn(async () => true) });
 
     const passed = runJudgmentPass.mock.calls[0]![0] as { loosenings: string; confirm?: unknown };
     expect(passed.loosenings).toBe("queue");
@@ -128,15 +128,7 @@ describe("the loosening review never blocks an unattended init", () => {
     const output = silentOutput();
     const confirm = vi.fn(async () => true);
 
-    await runInitJudgment({
-      root,
-      output,
-      env: {},
-      yes: false,
-      ai: true,
-      interactive: true,
-      confirm,
-    });
+    await initFlow({ root, output, yes: false, interactive: true, confirm });
 
     const passed = runJudgmentPass.mock.calls[0]![0] as { loosenings: string; confirm?: unknown };
     expect(passed.loosenings).toBe("review");

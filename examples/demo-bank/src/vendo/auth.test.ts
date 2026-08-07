@@ -134,5 +134,9 @@ describe("safeReturnTo", () => {
     // under a mount point "/" serves nothing, so it is a 404, not a homepage.
     expect(safeReturnTo("https://attacker.example/maple/callback")).toBe("/maple");
     expect(safeReturnTo(null)).toBe("/maple");
+    // Belt and braces (browser proof, 2026-08-06): a returnTo in the app's
+    // mount-STRIPPED vocabulary — an old bookmark of the pre-fix /login link —
+    // still lands somewhere that exists instead of 404ing after sign-in.
+    expect(safeReturnTo("/insights")).toBe("/maple/insights");
   });
 });
