@@ -122,6 +122,24 @@ describe("extractTheme allowlist fast-path", () => {
     expect(result.usedModel).toBe(false);
   });
 
+  it("lets the IMPORTING sheet win over the sheet it imports, like the real cascade", async () => {
+    // `@import` must precede other rules, so an imported declaration behaves as
+    // if inserted at the import point — the importer's own later declaration
+    // wins at equal specificity. Reading the imported file last inverts that and
+    // reports the wrong brand colour as an EXACT read, which is the one outcome
+    // the exact-then-staged design exists to prevent.
+    const root = await fixture({
+      "package.json": "{}\n",
+      "app/layout.tsx": 'import "./global.css";\nexport default function Layout({ children }) { return <html><body>{children}</body></html>; }\n',
+      "app/global.css": '@import "./tokens.css";\n:root { --primary: #ff6600; }\n',
+      "app/tokens.css": ":root { --primary: #000000; }\n",
+    });
+
+    const result = await extractTheme(root);
+
+    expect(result.slots.accent).toBe("#ff6600");
+  });
+
   it("derives accentText without any model involvement when every other core token is exact", async () => {
     const root = await fixture({
       "package.json": "{}\n",

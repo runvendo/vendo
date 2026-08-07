@@ -122,6 +122,35 @@ describe("host component push", () => {
     expect(first.error).toBeUndefined();
   });
 
+  it("counts BYTES uploaded, not UTF-16 code units — sync prints the number as KB", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-push-utf8-"));
+    roots.push(root);
+    const dir = join(root, ".vendo/components");
+    await mkdir(join(dir, "modules"), { recursive: true });
+    const entry = hex("utf8-entry");
+    const body = JSON.stringify({ source: "const label = \"café — €10 ✅\";" });
+    await writeFile(join(dir, "modules", `${entry}.json`), body, "utf8");
+    await writeFile(join(dir, "Widget.json"), JSON.stringify({
+      name: "Widget",
+      hash: `sha256:${hex("Widget")}`,
+      capturedAt: "2026-08-02T00:00:00.000Z",
+      module: "src/vendo/registry.tsx",
+      export: "Widget",
+      entry,
+      modules: {},
+    }), "utf8");
+
+    const result = await pushHostComponents({
+      vendoDir: join(root, ".vendo"),
+      apiKey: "vendo_key",
+      baseUrl: "https://cloud.test",
+      fetchImpl: fakeCloud().fetchImpl,
+    });
+
+    expect(result.uploadedBytes).toBe(new TextEncoder().encode(body).length);
+    expect(result.uploadedBytes).toBeGreaterThan(body.length);
+  });
+
   it("a second sync compares hashes over a keys-only manifest and uploads nothing", async () => {
     const root = await corpus();
     const cloud = fakeCloud({

@@ -1491,6 +1491,42 @@ describe("vendo doctor error codes + fix_refs", () => {
     })).toBe(0);
   });
 
+  // A pages-only Next host is a shape init explicitly supports: clientRoot()
+  // hands the user `pages/_app.tsx` to paste into, because there is no app
+  // layout to wrap. Doctor scanning app/ layouts only fails such a host
+  // forever, and names a file init never mentioned and that does not exist.
+  it("finds the <VendoRoot> mount in a Pages-Router host's pages/_app.tsx", async () => {
+    const root = await healthy();
+    await rm(join(root, "app", "layout.tsx"));
+    await mkdir(join(root, "pages"), { recursive: true });
+    await writeFile(join(root, "pages", "_app.tsx"),
+      "export default ({Component, pageProps}) => <VendoRoot><Component {...pageProps} /></VendoRoot>;");
+    expect(await doctor({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      output: output().sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+  });
+
+  it("names pages/_app.tsx, not app/layout.tsx, when a Pages-Router host has no mount", async () => {
+    const root = await healthy();
+    await rm(join(root, "app", "layout.tsx"));
+    await mkdir(join(root, "pages"), { recursive: true });
+    await writeFile(join(root, "pages", "_app.tsx"),
+      "export default ({Component, pageProps}) => <Component {...pageProps} />;");
+    const messages = output();
+    expect(await doctor({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(1);
+    const wire004 = messages.errors.join("\n");
+    expect(wire004).toContain(join("pages", "_app.tsx"));
+    expect(wire004).not.toContain(join("app", "layout.tsx"));
+  });
+
   // Render gate (0.4.1 E2E cert M3): the certified invoify install had every
   // page 500ing while doctor exited 0 — a live wire proves nothing about the
   // pages users load.

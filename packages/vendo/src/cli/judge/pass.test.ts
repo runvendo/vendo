@@ -767,6 +767,28 @@ describe("runJudgmentPass — advisories can never discard proposals", () => {
     expect(fields.title!.length).toBeLessThanOrEqual(60);
   });
 
+  it("an over-long `evidence` quote clamps too — it is evidence, not the absence of it", async () => {
+    // The most thorough possible answer (a long quoted handler body) failed the
+    // 500-char bound, and every issue on the evidence path is bucketed as
+    // "evidence-less" — so the operator was told the model supplied no evidence
+    // and the whole grade was silently dropped.
+    const fixture = await twoToolHost();
+    const bus = channel();
+    const result = await runJudgmentPass(options(fixture, bus, {
+      harness: scripted([
+        reply({
+          tools: [{ ...twoGoodProposals[0]!, evidence: `await db.update(accounts)${"x".repeat(600)}` }],
+          narrative: "",
+        }),
+        reply({ verdicts: [{ name: twoGoodProposals[0]!.name, field: "risk", verdict: "uphold" }] }),
+      ]),
+    }));
+
+    expect(result).toMatchObject({ status: "judged", evidenceless: 0 });
+    const file = await readJudgments(fixture);
+    expect(file.tools.host_transferMoney!.fields.risk).toBe("destructive");
+  });
+
   it("a capability field with a BOGUS value is still rejected — clamping is prose-only", async () => {
     const fixture = await twoToolHost();
     const bus = channel();

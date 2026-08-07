@@ -299,6 +299,35 @@ describe("ensureZodFloor", () => {
   });
 });
 
+describe("ensureProviderDeps in a hoisted workspace", () => {
+  it("sees the hoisted ai + provider and installs nothing", async () => {
+    // The app resolves both through the workspace root's node_modules, exactly
+    // as `ai` does at runtime. A root-only stat calls them missing and makes
+    // `vendo init` shell a real install that rewrites the app's package.json.
+    const workspace = await tempRoot();
+    await writeFile(join(workspace, "pnpm-workspace.yaml"), "packages:\n  - apps/*\n");
+    await writeFile(join(workspace, "pnpm-lock.yaml"), "");
+    await installModule(workspace, "ai");
+    await installModule(workspace, "@ai-sdk/anthropic");
+    const app = join(workspace, "apps", "web");
+    await mkdir(app, { recursive: true });
+    await writeFile(join(app, "package.json"), JSON.stringify({ name: "web" }));
+
+    const calls: unknown[] = [];
+    await ensureProviderDeps({
+      root: app,
+      credential: { rung: "vendo-cloud" },
+      output: output().sink,
+      run: async (...call) => {
+        calls.push(call);
+        return 0;
+      },
+    });
+
+    expect(calls).toEqual([]);
+  });
+});
+
 describe("ensureZodFloor in a hoisted workspace (checker round 1)", () => {
   /** pnpm workspace root hoisting zod@3.23.8, app nested with no
       node_modules or lockfile of its own — where most real hosts live. */
