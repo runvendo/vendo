@@ -1414,17 +1414,11 @@ describe("stop is still the only thing that cancels — steering never does", ()
     let release: (() => void) | undefined;
     const sandbox = fakeSandbox(async (box) => {
       box.emit({ type: "text", delta: "building it" });
-      // A real build is not silent, and that matters here: the poll loop checks
-      // the abort at the TOP of each pass, and the door holds a poll open for up
-      // to POLL_WAIT_MS when it has nothing to say. A talking box returns each
-      // poll promptly, which is what lets Stop land promptly. (A SILENT box waits
-      // out the poll window — real, pre-existing, and not this lane's to change.)
-      const beat = setInterval(() => box.emit({ type: "text", delta: "." }), 20);
-      try {
-        await new Promise<void>((resolve) => { release = resolve; });
-      } finally {
-        clearInterval(beat);
-      }
+      // The box then goes QUIET — a long tool call, which is exactly when a user
+      // reaches for Stop. The door parks the poll for POLL_WAIT_MS with nothing
+      // to say, so an interrupt that rides the poll loop cannot arrive until the
+      // park expires. Nothing may wake this box before the assertion below.
+      await new Promise<void>((resolve) => { release = resolve; });
     });
     const { turn } = makeTurn({ threadId: "thr_stop" });
     (turn as unknown as { signal: AbortSignal }).signal = abort.signal;
@@ -1436,7 +1430,10 @@ describe("stop is still the only thing that cancels — steering never does", ()
     await vi.waitFor(() => expect(events).toContainEqual({ type: "text", delta: "building it" }));
 
     abort.abort();
-    await vi.waitFor(() => expect(sandbox.boxes[0]!.interrupted).toBe(true));
+    // PROMPTLY is the whole assertion: the box is silent, so a poll is parked for
+    // POLL_WAIT_MS (10s) right now. 3s is far above any scheduling noise and far
+    // below that park, so crossing it means the interrupt waited for the poll.
+    await vi.waitFor(() => expect(sandbox.boxes[0]!.interrupted).toBe(true), { timeout: 3_000 });
     release?.();
     await running;
   });
