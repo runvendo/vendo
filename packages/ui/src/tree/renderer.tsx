@@ -57,10 +57,10 @@ export interface PayloadRendererProps {
 }
 
 /**
- * v2 spec §6 — the walk's input: the SHARED render mechanics' tree shape
- * (nodes, path-keyed resolved queries, grafted components, payload extras).
- * The v1 format surface around it is gone; convert-payload converts the
- * canonical tree into this shape (named queries → "/" + name pointers).
+ * The walk's input: the shared render mechanics' tree shape (nodes,
+ * path-keyed resolved queries, grafted components, payload extras).
+ * convert-payload converts the canonical tree into this shape (named
+ * queries → "/" + name pointers).
  */
 export interface WalkTree {
   root: string;
@@ -79,10 +79,9 @@ const walkFail = (message: string): WalkValidation => ({ ok: false, error: { cod
 const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-/** The structural render-gate the v1 validator used to provide (per-render
- *  hot path): ids unique and rooted, node shapes sane, generated components
- *  present. Format-tag checks live one layer up (PayloadView dispatch +
- *  validateTree in convert-payload). */
+/** The structural render-gate (per-render hot path): ids unique and rooted,
+ *  node shapes sane, generated components present. Format-tag checks live one
+ *  layer up (PayloadView dispatch + validateTree in convert-payload). */
 const validateWalkTree = (input: WalkTree): WalkValidation => {
   const ids = new Set<string>();
   if (!Array.isArray(input.nodes)) return walkFail("nodes must be an array");
@@ -102,9 +101,9 @@ const validateWalkTree = (input: WalkTree): WalkValidation => {
     ids.add(node.id);
   }
   const components = input.components ?? {};
-  // The jail-compile bounds the v1 walk enforced per render survive here:
-  // Kit names can never be shadowed and the §8 component caps hold even
-  // for payloads that bypassed document validation (direct TreeView input).
+  // The jail-compile bounds hold per render: Kit names can never be shadowed
+  // and the 01-core §8 component caps apply even to payloads that bypassed
+  // document validation (direct TreeView input).
   const names = Object.keys(components);
   if (names.length > TREE_MAX_GENERATED_COMPONENTS) {
     return walkFail(`too many generated components (max ${TREE_MAX_GENERATED_COMPONENTS})`);
@@ -181,7 +180,7 @@ export function isActionBinding(value: unknown): value is ActionBinding {
 
 type BoundMode = "host" | "jail";
 
-/** v2 spec §3 — apply a binding's `$reshape` chain to the resolved value.
+/** Apply a binding's `$reshape` chain to the resolved value.
  *  `applyReshape` is total: absent data passes through (loading is not a
  *  mismatch); a real mismatch reports through `onMismatch` and binds
  *  `undefined`, and the node renders the contained data-shape notice. */
@@ -238,8 +237,7 @@ function bindValue(
 }
 
 /** Binds a node's props, reporting the first reshape mismatch with its prop
- *  name (v2 spec §3 — the region shows one contained notice, not a broken
- *  component). */
+ *  name: the region shows one contained notice, not a broken component. */
 function bindProps(
   props: Record<string, Json> | undefined,
   mode: BoundMode,
@@ -260,7 +258,7 @@ function bindProps(
   return { bound, mismatch };
 }
 
-/** v2 spec §3 — the contained data-shape notice: the region says the data
+/** The contained data-shape notice: the region says the data
  *  didn't match instead of mounting the component with garbage props. While
  *  the payload is a mid-stream partial the mismatch is a transient (the
  *  binding may still be rewritten before ship), so the region holds the
@@ -300,8 +298,8 @@ interface NodeRendererProps {
   ancestry: ReadonlySet<string>;
   nodes: ReadonlyMap<string, TreeNode>;
   generated: Record<string, string>;
-  /** W4b — the payload's compiler-stamped per-island tool manifests. Absent
-   *  (legacy/streaming) means JailedComponent derives from source host-side. */
+  /** The payload's compiler-stamped per-island tool manifests. Absent
+   *  (unstamped/streaming) means JailedComponent derives from source host-side. */
   componentTools?: Record<string, string[]>;
   /** True ONLY when the payload's server-written verdict granted the venue. */
   inClientGranted: boolean;
@@ -472,11 +470,10 @@ function NodeRenderer(props: NodeRendererProps) {
     // V4 — one component family: the Kit is the only built-in set.
     const kit = KIT_COMPONENTS[node.component] as ComponentType<Record<string, unknown>> | undefined;
     const host = props.components[node.component] as ComponentType<Record<string, unknown>> | undefined;
-    // v2 spec §2 — an explicit `source: "host"` resolution means the host
-    // brand won the name. An undefined (or "prewired") source keeps the
-    // built-in first, which is exactly the historical primitive-first order:
-    // deliberate v1 parity, so a stored app whose node collides with a host
-    // catalog name still renders the built-in it was written against.
+    // An explicit `source: "host"` means the host brand won the name. An
+    // undefined (or "prewired") source keeps the built-in first, so a stored
+    // app whose node collides with a host catalog name still renders the
+    // built-in it was written against.
     const Implementation = node.source === "host" ? host ?? kit : kit ?? host;
     if (!Implementation) {
       // Mid-stream, an unresolved name is a transient (the defining island or
@@ -512,7 +509,7 @@ function NodeRenderer(props: NodeRendererProps) {
 }
 
 /**
- * 08-ui §5 — render a validated walk tree (the shared render mechanics, v2 spec §6).
+ * 08-ui §5 — render a validated walk tree.
  *
  * `$state` is local to this TreeView. Generated code can write through its
  * in-jail `vendo.setState(key, value)` bridge; `onStateChange`, when supplied,
@@ -529,7 +526,7 @@ function StatefulTreeView({
   const themeVars = useMemo(() => themeCssVariables(theme), [theme]);
   const streaming = (tree as WalkTree & { streaming?: unknown }).streaming === true;
   const furnishings = (tree as WalkTree & { furnishings?: Record<string, JailFurnishing> }).furnishings ?? {};
-  // W4b — the stamped per-island tool manifests ride the payload beside the
+  // The stamped per-island tool manifests ride the payload beside the
   // component sources (a payload extra, like furnishings).
   const componentTools = (tree as WalkTree & { componentTools?: Record<string, string[]> }).componentTools;
   const inClient = (tree as WalkTree & { inClient?: InClientVenue }).inClient;
@@ -581,8 +578,8 @@ function StatefulTreeView({
     [validation.ok ? validation.tree.nodes : validation.error.message],
   );
 
-  // Remix final shape (2026-08-02) — a review-kind version awaiting the host
-  // reviewer renders NOTHING but its standing, checked BEFORE tree validation:
+  // A review-kind version awaiting the host reviewer renders NOTHING but its
+  // standing, checked BEFORE tree validation:
   // the server ships no executable fork source with `pending-review` (its
   // generated nodes have no components to validate against), so instead of an
   // invalid-tree verdict, a jailed fork, or skeletons of stripped components
@@ -632,8 +629,8 @@ function StatefulTreeView({
   // above) keeps this notice, so an unknown future reason still says
   // SOMETHING rather than silently jailing.
   const dropBackNotice = inClient !== undefined && inClient.granted === false
-    // Widened: the payload is a wire value, so a FUTURE ungranted reason this
-    // union does not know yet must still drop back loudly, not silently jail.
+    // The payload is a wire value, so a FUTURE ungranted reason this union
+    // does not know yet must still drop back loudly, not silently jail.
     && (inClient.reason as string) !== "pending-review"
     ? (
       <ContainedNotice label="In-client approval invalidated" outcome="blocked">

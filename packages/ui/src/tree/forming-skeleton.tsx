@@ -35,10 +35,9 @@ export function Skeleton(props: { width?: string | number; height?: string | num
 }
 
 /**
- * Pick A (ui-lane-renderer, 2026-07-19) — the tree streams before generated
- * component SOURCES arrive, so a forming node's silhouette can only come from
- * what its name says the component is. Anything unrecognized keeps the
- * historical 72px slab, so the fallback is never worse than before.
+ * The tree streams before generated component SOURCES arrive, so a forming
+ * node's silhouette can only come from what its name says the component is.
+ * Anything unrecognized keeps the plain 72px slab.
  */
 export function deriveFormShape(componentName: string): FormShape {
   // A plot is the tallest thing in an app; a 72px slab that becomes a 180px

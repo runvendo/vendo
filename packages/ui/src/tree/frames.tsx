@@ -7,16 +7,14 @@ import { PayloadView } from "./renderer.js";
 import { Skeleton } from "./forming-skeleton.js";
 
 /**
- * Wave 7 H2 — the served-surface keepalive seam. An embedded served app dies
+ * The served-surface keepalive seam. An embedded served app dies
  * under the user when its machine idles out; `ping` (client.apps.pingMachine)
  * is the host-proxied activity signal that keeps it awake. Activity is the gate,
  * not the timer: a machine costs money by the second, so an embed nobody is
  * using is allowed to sleep.
  *
- * That is the whole seam. A woken machine used to mint a new ingress URL, so the
- * frame also had to detect the wake and re-open for the fresh address; served-app
- * URLs are stable proxy URLs now, so a wake is invisible to the frame and the
- * re-open dance is gone.
+ * Served-app URLs are stable proxy URLs, so a wake is invisible to the frame:
+ * nothing has to be re-opened for a fresh address.
  */
 export interface AppFrameKeepalive {
   ping(): Promise<{ state: "awake" | "woke" }>;
@@ -95,8 +93,8 @@ function ResumingCover({ cover }: { cover?: string }) {
   );
 }
 
-/** The embedded served app (Wave 7 H2): the iframe, its keepalive ping, and the
- *  resize protocol it shares with the jail frame. */
+/** The embedded served app: the iframe, its keepalive ping, and the resize
+ *  protocol it shares with the jail frame. */
 function HttpFrame({ url, keepalive }: { url: string; keepalive?: AppFrameKeepalive }) {
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   useEffect(() => {

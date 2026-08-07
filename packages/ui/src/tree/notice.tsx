@@ -30,13 +30,13 @@ const noticeStyle = (danger: boolean): CSSProperties => ({
  *
  * `children` is what a PERSON reads and always renders. `detail` is the
  * developer's half — an exception's own message, a validator's code line — and
- * renders only in dev mode (M36).
+ * renders only in dev mode.
  *
  * The gate lives here because every notice in a generated app goes through this
  * component, and there is no way for it to tell a consumer sentence from a raw
- * exception by looking at the string (ruling 14: a regex set cannot be that
- * authority). So the two halves are separate arguments, and a caller that has
- * developer text says so.
+ * exception by looking at the string — a regex set cannot be that authority.
+ * So the two halves are separate arguments, and a caller that has developer
+ * text says so.
  */
 export function ContainedNotice(props: {
   label: string;
