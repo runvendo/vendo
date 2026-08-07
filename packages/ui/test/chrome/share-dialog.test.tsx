@@ -174,7 +174,7 @@ describe("ShareDialog — the first read", () => {
       </VendoProvider>,
     );
 
-    expect(await screen.findByText(/couldn’t load who this app is shared with/i)).toBeTruthy();
+    expect(await screen.findByText(/can’t confirm who this app is shared with/i)).toBeTruthy();
     expect(screen.queryByText(/have access to this app/i)).toBeNull();
     expect(screen.queryByText(/just you/i)).toBeNull();
     // The wire's own sentence is the developer's, and stays theirs.

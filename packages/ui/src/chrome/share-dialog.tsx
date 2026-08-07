@@ -160,7 +160,12 @@ export function ShareDialog({
       note: its label is what they picked, still on screen. */
   const [sharedWith, setSharedWith] = useState<string>();
 
-  const canShare = level === "owner";
+  /** Every write on this surface is authorised by `level`, and a read that failed
+      leaves the LAST one in place — so this fails closed while the newest read
+      has not answered. The rows below stay (a failure to read is not evidence
+      that access was revoked, and the note says they are unconfirmed); what a
+      level authorises does not. */
+  const canShare = level === "owner" && readFailed === undefined;
   const orgs = memberships.map((membership) => membership.org);
   const nameOf = (org: string): string =>
     memberships.find((membership) => membership.org === org)?.display ?? org;
@@ -279,14 +284,17 @@ export function ShareDialog({
           )}
         </div>
 
-        {/* The read did not answer, so NOTHING below may speak as if it had. An
-            empty grant list and a null level are what this dialog holds both
-            when the answer is "nobody, and you're not an owner" and when there
-            was no answer at all — and it used to state the first, twice, on the
-            strength of the second. The one thing that helps is a retry. */}
+        {/* The newest read did not answer, so NOTHING below may speak as if it
+            had. An empty grant list and a null level are what this dialog holds
+            both when the answer is "nobody, and you're not an owner" and when
+            there was no answer at all — and it used to state the first, twice, on
+            the strength of the second. One sentence covers both a first read that
+            failed (there is nothing to show) and a refresh that failed (what is
+            shown may be out of date), because in both the honest claim is the
+            same: we cannot confirm it. The one thing that helps is a retry. */}
         {readFailed === undefined || isLoading ? null : (
           <p className="fl-share-note" role="alert">
-            We couldn’t load who this app is shared with.{" "}
+            We can’t confirm who this app is shared with right now.{" "}
             <button type="button" className="fl-more" onClick={() => void refresh()}>Try again</button>
           </p>
         )}
