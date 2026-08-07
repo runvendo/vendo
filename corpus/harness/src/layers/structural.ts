@@ -453,9 +453,7 @@ async function layoutReachesVendoReact(repoDir: string, app: AppRouterInfo, layo
       if (source === null) continue;
       const wrapperModule = boundModule(source, candidate);
       if (wrapperModule === null) continue;
-      // A host's own wrapper may still be NAMED VendoRoot (Maple's is).
-      const exportedComponent = exportedFunctionNode(wrapperModule, "VendoProvider")
-        ?? exportedFunctionNode(wrapperModule, "VendoRoot");
+      const exportedComponent = exportedFunctionNode(wrapperModule, "VendoProvider");
       if (exportedComponent === null) continue;
       if (childrenInsideProvider(wrapperModule, packageBinding, exportedComponent)) return true;
     }

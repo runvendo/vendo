@@ -21,7 +21,7 @@ import { cloudMcpTenant, type EnsureTenantResult } from "../cloud-mcp.js";
 import { publicBaseUrl } from "../mcp-broker-select.js";
 import { EJECT_MANIFEST_FILE, type EjectedManifest } from "./eject.js";
 import { applyJudgment, judgmentsFileSchema, overridesFileSchema, toolsFileSchema, type ToolJudgment } from "@vendoai/actions";
-import { openApiMountPath } from "@vendoai/actions/sync";
+import { firstOpenApiSpec, openApiMountPath } from "@vendoai/actions/sync";
 import { publicBase, type RiskLabel } from "@vendoai/core";
 import { detectFramework, detectVendoWiring } from "./framework.js";
 import { importsGeneratedMap, missingRegistrations, registrationKey, requiredServerActions, serverActionsWiring } from "./init-scaffolds.js";
@@ -103,18 +103,6 @@ async function hasDependency(root: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-/** The first OpenAPI document the extractors would find, in their order. */
-async function firstOpenApiSpecPath(root: string): Promise<string | null> {
-  for (const candidate of [
-    "openapi.json", "openapi.yaml", "openapi.yml",
-    join("public", "openapi.json"), join("docs", "openapi.json"), join("docs", "openapi.yaml"),
-  ]) {
-    const file = join(root, candidate);
-    if (await exists(file)) return file;
-  }
-  return null;
 }
 
 /** root rides in as the client's cwd: projectIdHash/packageManager and the
@@ -334,7 +322,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
   // Spec 2026-08-06 §B1 — the deployment's path prefix has exactly one home:
   // VENDO_BASE_URL. A spec that declares a DIFFERENT relative server mount is the
   // #914 shape by another route: every page renders and every tool call 404s.
-  const specPath = await firstOpenApiSpecPath(root);
+  const specPath = await firstOpenApiSpec(root);
   const declaredMount = specPath === null ? "" : await openApiMountPath(specPath);
   const configuredBase = env["VENDO_BASE_URL"];
   if (declaredMount !== "" && configuredBase !== undefined && configuredBase.trim() !== "") {

@@ -21,7 +21,7 @@ export interface RegisteredComponent {
 export type ComponentCatalog = ReadonlyArray<RegisteredComponent>;
 
 /** 01-core §14 (2026-07-18 amendment) — name-keyed registry form. The same
- * object serves both sides: the server reads the data fields, <VendoRoot>
+ * object serves both sides: the server reads the data fields, <VendoProvider>
  * reads the component references. The composition normalizes registry →
  * catalog entry by entry: key → `name`, `props` → `propsSchema`, `component`
  * dropped (the server MUST IGNORE it — never touched, never executed). */

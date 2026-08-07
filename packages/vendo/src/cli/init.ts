@@ -32,13 +32,11 @@ import { createPrettyOutput, plainSelect, usePrettyOutput, type PrettyOutput, ty
 import { contrastingText } from "./theme/color.js";
 import {
   applyThemeDraft,
-  extractTheme as extractThemeSlots,
   toVendoTheme,
   validateSlotValue,
   type ThemeSlotValues,
   type ThemeSummary,
 } from "./theme/extract-theme.js";
-import { baseFrom, writeBase } from "./theme/provenance.js";
 import {
   appDirectory,
   askYesNo,
@@ -814,7 +812,6 @@ async function writeIfMissing(path: string, content: string, force: boolean): Pr
   await writeText(path, content);
 }
 
-
 async function ensureVendoEnvExample(root: string): Promise<void> {
   const path = join(root, ".env.example");
   const current = await readOptional(path);
@@ -1052,7 +1049,7 @@ export async function runInit(options: InitOptions): Promise<number> {
       // --ai IS the consent (no prompt, non-interactive runs stop skipping);
       // --no-ai is the refusal. No flag = ask, every interactive run.
       ...(ai === undefined ? {} : { ai }),
-      ...(extract.force === true || options.force === true ? { force: true } : {}),
+      ...(options.force === true ? { force: true } : {}),
       ...(engine === undefined ? {} : { engine }),
       ...(pretty === null ? {} : { confirm: pretty.confirm, choose: pretty.select }),
       ...(extract.choose === undefined ? {} : { choose: extract.choose }),

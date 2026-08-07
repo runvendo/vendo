@@ -10,7 +10,7 @@ import { hostedStore } from "../../hosted-store.js";
  * of a grey labeled placeholder.
  *
  * WHAT CROSSES THE WIRE: the source of every component the host registers in
- * `<VendoRoot components={…}>`, the source of every module in each component's
+ * `<VendoProvider components={…}>`, the source of every module in each component's
  * import closure, and the app-root stylesheets. Package code never does (the
  * capture stops at node_modules). It happens only when a Vendo Cloud key
  * resolves AND the project said yes once (`.vendo/cloud.json`) — keyless / BYO

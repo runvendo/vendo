@@ -434,7 +434,7 @@ export interface CreateVendoConfig {
       another contributor fails at boot naming both. */
   skills?: readonly Skill[];
   /** Host components available to generated apps: the name-keyed registry
-      object (01 §14 — the same object serves <VendoRoot>; the server ignores
+      object (01 §14 — the same object serves <VendoProvider>; the server ignores
       each entry's `component` reference) or the array form. Entry names must
       mirror the client-side components map 1:1. */
   catalog?: ComponentCatalog | ComponentRegistry;

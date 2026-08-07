@@ -17,7 +17,8 @@ export interface Extractor {
   extract(root: string): Promise<ExtractorResult>;
 }
 
-async function firstOpenApiSpec(root: string): Promise<string | null> {
+/** The first OpenAPI document the extractors find, in their order. */
+export async function firstOpenApiSpec(root: string): Promise<string | null> {
   const candidates = [
     "openapi.json",
     "openapi.yaml",

@@ -37,7 +37,6 @@ export interface InitPolishSeam {
       `false` skips, `undefined` asks in an interactive run and skips
       otherwise. Never persisted anywhere. */
   ai?: boolean;
-  force?: boolean;
   /** --engine: pin the rung family (claude | codex | npx) instead of
       first-available. An unavailable pin skips loudly — never a fallback. */
   engine?: string;
