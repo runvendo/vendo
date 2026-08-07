@@ -581,27 +581,17 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
    * Move any pre-rekey schedule cursor onto its (app, trigger) key, and return the
    * rows the tick should read for the keys that were missing.
    *
-   * The cursor moved from the bare `appId` to `<appId>:<triggerId>` when an app
-   * became a LIST of triggers. `automations:schedule` is a GENERIC collection keyed
-   * by row id, and nothing rewrites generic row ids — the reserved store migrates
-   * itself through generated columns over reserved TABLES, which this is not — so
-   * the old row is invisible on every store, not just a host-supplied one.
+   * The cursor moved from the bare `appId` when an app became a LIST of triggers,
+   * and no store rewrites GENERIC row ids, so the old row is invisible everywhere.
+   * A cursor the tick cannot find reads as "start the clock now" (so a new
+   * schedule does not backfill every window since the epoch) — applied to one that
+   * merely moved, that silently restarts a running automation's clock.
    *
-   * Invisible does not read as "overdue", which would be far worse: a cursor the
-   * tick cannot find is read as "start the clock now", deliberately, so a schedule
-   * discovered for the first time does not fire for every window since the epoch.
-   * Applied to a cursor that merely MOVED, that silently restarts a running
-   * automation's clock — it skips the firing it was due for and comes back up to
-   * one interval late, with nothing anywhere saying so.
-   *
-   * The state is carried VERBATIM (`lastFiredAt`, and `firedAt` for a one-shot
-   * `at:` schedule), because it is the automation's own history and rewriting it
-   * would either skip a window or replay one. Only trigger `main` is looked for:
-   * that is the id a pre-list document's one trigger normalizes to, so no other
-   * trigger can have a bare-id cursor. The old row is deleted once carried, so it
-   * can never be read again and dragged over a cursor that has since moved on; a
-   * row that will not parse is left exactly where it is, unreadable but not
-   * destroyed, and the tick treats it as the missing cursor it already was.
+   * State is carried VERBATIM: it is the automation's own history, and rewriting
+   * it would skip a window or replay one. Only `main` can have a bare-id cursor.
+   * The old row is deleted once carried so it can never drag a newer cursor
+   * backwards; an unparseable one is left alone and stays the missing cursor it
+   * already was. Proven by schedule-cursor.test.ts.
    */
   const migratePreRekeyCursors = async (
     records: RecordStore,
@@ -618,6 +608,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       carried.push(await records.put({
         id: triggerKey(record.id, DEFAULT_TRIGGER_ID),
         data: { ...parsed.data },
+        refs: appRef(record.id),
       }));
       await records.delete(record.id);
     }
@@ -627,20 +618,17 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   /**
    * The app rows that fire on this trigger kind, under EITHER ref spelling.
    *
-   * An app has a LIST of triggers, so "which kind does this app fire on" is a SET
-   * and a ref is matched by equality — which is why one `trigger_kind: "<kind>"`
-   * ref became one key per kind. The RESERVED store re-derives its refs from
-   * generated columns over the document, so it migrated every existing row the
-   * moment the column existed. A host-supplied adapter does not: 01-core §12 says
-   * a generic adapter stores the refs it is GIVEN, so its pre-list rows still
-   * carry the old key and nothing rewrites them. Asking only the new key took
-   * every automation armed before the rename dark on BYO storage — no error, no
-   * run row, no audit event, which is the one failure mode an automation may
-   * never have.
+   * One `trigger_kind: "<kind>"` ref became one key per kind when an app got a
+   * LIST of triggers (a ref matches by equality; "which kinds" is a set). The
+   * RESERVED store re-derives refs from generated columns, so it migrated itself;
+   * a host-supplied adapter stores the refs it is GIVEN (01-core §12) and its
+   * pre-list rows still carry the old key. Asking only the new key took every
+   * automation armed before the rename dark on BYO storage — no error, no run
+   * row, no audit event, the one failure mode an automation may never have.
    *
-   * So both are asked and the rows are deduped by id. The old-key query ages out
-   * on its own rather than needing a sweep: `writeApp` re-derives refs from the
-   * document, so the first arm, disarm or edit moves that row onto the new keys.
+   * So both are asked and deduped by id. The old-key query ages out without a
+   * sweep: `writeApp` re-derives refs, so the first arm, disarm or edit moves the
+   * row across. Proven by byo-refs.test.ts.
    */
   const appsFiringOn = async (
     kind: TriggerSource["kind"],
@@ -682,11 +670,10 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
    * armed only when BOTH say so: the app-level `enabled` the apps runtime owns,
    * and the trigger's OWN armed row.
    *
-   * There is deliberately no "enabled but no rows ⇒ all of them" fallback. That
-   * read was authority-widening for any writer that sets `enabled` without armed
-   * rows — a trigger added to the list later would fire without anyone having
-   * armed it. The pre-list state it existed for is MIGRATED in {@link armedFor}
-   * instead, which names the one trigger it always meant.
+   * There is deliberately no "enabled but no rows ⇒ all of them" fallback: it was
+   * authority-widening, since a trigger added to the list later would fire
+   * without anyone having armed it. The pre-list state it existed for is MIGRATED
+   * in {@link armedFor} instead, which names the one trigger it always meant.
    */
   const armedTriggers = (row: AppRow, armed: ReadonlySet<string>): Trigger[] =>
     row.enabled
@@ -698,11 +685,10 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
    *
    * "Enabled with no per-trigger armed row at all" is the on-disk state of every
    * automation armed before triggers were a list, and it must not go quietly
-   * dark — that is the one failure mode an automation may never have. So the
-   * state is resolved ONCE, here, by seeding the armed row it always meant:
-   * `main`, the id read normalization gives a single-`trigger` document's one
-   * trigger. Deterministic (it names one id, never "whatever the list holds now")
-   * and idempotent (the row it writes is what makes the next read skip this).
+   * dark. Resolved ONCE, here, by seeding the row it always meant: `main`, the id
+   * a single-`trigger` document normalizes to. Deterministic (one id, never
+   * "whatever the list holds now") and idempotent (the row it writes is what
+   * makes the next read skip this).
    */
   const armedFor = async (rows: readonly AppRow[]): Promise<Set<string>> => {
     // ONE query for every (app, trigger) key, so per-trigger arming is not an
@@ -1868,10 +1854,10 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   /**
    * Every sponsorship row for these apps' triggers, in ONE query — and the
    * pre-list rekey, because the LIST is where a person reads who an automation
-   * runs as (§13) and whether it stopped. A row that is invisible here
-   * does not merely go missing: both sentences then answer with the app's OWNER,
-   * so an automation someone else took on reads as the reader's own, and a
-   * STOPPED one shows no stopped line and no way back to it.
+   * runs as (§13) and whether it stopped. A row that is invisible here does not
+   * merely go missing: both sentences then answer with the app's OWNER, so an
+   * automation someone else took on reads as the reader's own, and a STOPPED one
+   * shows no stopped line and no way back to it.
    *
    * The batch is kept. Only a `main` key that MISSED can be pre-list, and those
    * app ids are probed in one further batched read; a deployment with no pre-list
@@ -1909,13 +1895,12 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     const records = await allRecords(config.store.records(APPS), { refs: { subject } });
     const rows = records.map(parseAppRow).filter((row) => row.subject === subject);
     const seen = new Set(rows.map((row) => row.doc.id));
-    // An ORG-held app's row subject is the org id (§9.5), so matching
-    // the caller's own subject listed a promoted automation for NOBODY: not the
-    // members, not the org admin, not even the person who promoted it. Promote
-    // deliberately disarms the automation and tells the promoter it "stays off
-    // until someone turns it back on" — a promise nothing could keep while the
-    // only surface that mentions it hid it. The orgs come from the ctx (§9.1:
-    // asserted, never stored) and `can(editor)` still decides each row.
+    // An ORG-held app's row subject is the org id (§9.5), so matching only the
+    // caller's own subject listed a promoted automation for NOBODY — not the
+    // members, not the org admin, not the person who promoted it — while promote
+    // tells that person it "stays off until someone turns it back on". The orgs
+    // come from the ctx (§9.1: asserted, never stored) and `can(editor)` still
+    // decides each row.
     for (const org of new Set((ctx.memberships ?? []).map(({ org: id }) => id))) {
       for (const record of await allRecords(config.store.records(APPS), { refs: { subject: org } })) {
         const row = parseAppRow(record);
