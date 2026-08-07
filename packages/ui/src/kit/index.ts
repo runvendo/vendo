@@ -63,3 +63,53 @@ export { Accordion, type AccordionProps, type AccordionItem } from "./feedback/a
 // (the client, the surfaces, the voice stage) is not what an app should import.
 export { defaultVendoTheme, resolveTheme, themeCssVariables } from "../theme.js";
 export { applyThemeVars, postToHost, startFrameProtocol } from "../embedded-runtime.js";
+
+// ---------------------------------------------------------------------------
+// The code-land runtime (blueprint §5.4) — what a generated app imports inside
+// its own box. It ships HERE, in the bundle the box already loads, so a
+// generated app and a `.vendo` screen render the same components with the same
+// formatters and share one `$state` store. There is no second Kit, no second
+// `sum`, no second query path, no second action door.
+// ---------------------------------------------------------------------------
+
+/**
+ * The TOTAL forms, re-exported from core so an app that wants the REASON a
+ * value did not fit can read it. Every wrapper below answers with the value or
+ * `undefined`; these two answer with `{ ok, reason }` / `{ ok, issue }`. Same
+ * functions, one implementation — this is the second shape, and the only one.
+ */
+export { applyReshape, evaluateExpr } from "@vendoai/core";
+export type { Json, ReshapeOp, ReshapeResult, ReshapeStep, ToolOutcome } from "@vendoai/core";
+
+// The projection vocabulary: nine live reshape ops.
+export { reshape } from "./reshape.js";
+
+// The aggregates — core's `$expr` engine, one wrapper per EXPR_CALLS member.
+export {
+  average,
+  count,
+  daysUntil,
+  difference,
+  groupBy,
+  max,
+  min,
+  sum,
+  type GroupByAggregate,
+  type GroupByBucket,
+  type GroupedPoint,
+} from "./aggregates.js";
+
+// The one provider, and the app address it derives from the served URL.
+export {
+  appAddressFromPath,
+  useVendoApp,
+  VendoAppProvider,
+  type QueryRefetch,
+  type VendoAppContextValue,
+  type VendoAppProviderProps,
+} from "./app-context.js";
+
+// The guarded read, the write, and the `$state` binding.
+export { useToolQuery, type ToolQuery } from "./query.js";
+export { useToolAction, type ToolAction } from "./action.js";
+export { useVendoState } from "./vendo-state.js";

@@ -1,5 +1,5 @@
-import { applyThemeVars, defaultVendoTheme, resolveTheme, themeCssVariables } from "@vendoai/kit";
-import type { VendoAppProviderProps } from "@vendoai/kit";
+import { applyThemeVars, defaultVendoTheme, resolveTheme, themeCssVariables } from "@vendoai/ui/kit";
+import type { VendoAppProviderProps } from "@vendoai/ui/kit";
 
 /**
  * The page half of the provision contract (the disk half is ../provision.mjs).

@@ -17,8 +17,8 @@
  */
 
 import type { Json, ToolOutcome } from "@vendoai/core";
-import { createVendoClient } from "@vendoai/ui/client";
-import { useKeyedState, type KeyedState } from "@vendoai/ui/kit";
+import { createVendoClient } from "../client-impl.js";
+import { useKeyedState, type KeyedState } from "./state.js";
 import {
   createContext,
   useCallback,

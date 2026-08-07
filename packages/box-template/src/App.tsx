@@ -1,4 +1,4 @@
-import { Button, Callout, Stack, Stat, Surface } from "@vendoai/kit";
+import { Button, Callout, Stack, Stat, Surface } from "@vendoai/ui/kit";
 import { useState } from "react";
 import { callFn } from "./fn.js";
 
@@ -6,14 +6,14 @@ import { callFn } from "./fn.js";
  * The app. THIS is the file to edit.
  *
  * It is real, working code — full TypeScript and React, with the whole Kit
- * available from `@vendoai/kit`. There is no template language and no
+ * available from `@vendoai/ui/kit`. There is no template language and no
  * restricted subset: `tsc`, the dev server's errors and `vite build` are the
  * code validators, and they all run in the box.
  *
  * Two data paths, and they are not interchangeable:
  *  - `callFn` reaches THIS app's own server half (../fns.js), for anything the
  *    app computes or stores itself.
- *  - the guarded hooks from `@vendoai/kit` reach the HOST's tools through the
+ *  - the guarded hooks from `@vendoai/ui/kit` reach the HOST's tools through the
  *    wire, with the viewer's own session and the guard's approvals intact.
  */
 export function App() {

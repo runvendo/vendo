@@ -1,4 +1,4 @@
-import { VendoAppProvider, startFrameProtocol } from "@vendoai/kit";
+import { VendoAppProvider, startFrameProtocol } from "@vendoai/ui/kit";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";

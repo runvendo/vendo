@@ -2298,8 +2298,8 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
    *  surface flip. */
   const servedAppContractPrompt = (): string => [
     "THIS TASK BUILDS THE APP SURFACE ITSELF (layer 3):",
-    "- START WARM: the universal app template is pre-baked at /opt/vendo-box/template — Vite + React 19 with @vendoai/kit (the whole Kit) already installed, the /fn envelopes and vendo.json serving already wired, and the .vendo/run entry already written. Your FIRST action: run exactly `cp -a /opt/vendo-box/template/. /app/` (one command; it copies .vendo/run and the node_modules link too — no ls, no second cp), then go straight to editing src/App.tsx and fns.js. Only if that cp fails (older box) build from scratch.",
-    "- Write real TypeScript and React — the full language, no restricted subset. `npm run typecheck` (tsc), `npm run build` (vite) and the dev server's own errors are your code validators, and all three run here in the box. Import components from \"@vendoai/kit\", never from a CDN.",
+    "- START WARM: the universal app template is pre-baked at /opt/vendo-box/template — Vite + React 19 with @vendoai/ui (the whole Kit, at @vendoai/ui/kit) already installed, the /fn envelopes and vendo.json serving already wired, and the .vendo/run entry already written. Your FIRST action: run exactly `cp -a /opt/vendo-box/template/. /app/` (one command; it copies .vendo/run and the node_modules link too — no ls, no second cp), then go straight to editing src/App.tsx and fns.js. Only if that cp fails (older box) build from scratch.",
+    "- Write real TypeScript and React — the full language, no restricted subset. `npm run typecheck` (tsc), `npm run build` (vite) and the dev server's own errors are your code validators, and all three run here in the box. Import components from \"@vendoai/ui/kit\", never from a CDN.",
     "- src/App.tsx is the app. src/main.tsx is the wiring (brand, provider, frame protocol) and you should not need to touch it. fns.js holds your POST /fn/<name> handlers; the page reaches them with `callFn` from src/fn.ts.",
     "- Serve a REAL web app on the non-/fn paths of $PORT. GET / is the entry page and must answer 200 with text/html; `node server.js` already does that from the Vite build. Keep it self-contained — the box's egress is deny-by-default, so a CDN reference is a guaranteed failed fetch.",
     "- The host's brand is applied for you (the `vendoTheme` query param and the provisioned .vendo/host/theme.json both flow through src/provision.ts onto the --vendo-* CSS variables the Kit reads). Style with those variables, never with hardcoded brand colors.",
@@ -3572,7 +3572,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // fn path lands (see call.ts).
       //
       // A READ takes the QUERY arm. This is the only door a code-land app has
-      // (@vendoai/kit's useToolQuery), so sending every call through the action
+      // (@vendoai/ui/kit's useToolQuery), so sending every call through the action
       // arm gave a read a random uuid per invocation — and the guard's approved
       // replay PINS the call id (05 §2), so an ungraded read that parked could
       // never be satisfied: approve, refetch, new id, park again, forever.

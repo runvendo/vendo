@@ -257,8 +257,8 @@ export function applyFormat(value: unknown, format: ValueFormat = "text"): strin
 
 /**
  * The formatter bundle, as one object. The jail hands islands a bare `fmt`
- * (`ISLAND_AMBIENT_HELPER_NAMES`) and `@vendoai/kit` re-exports this same
- * object into code-land, so both venues format through ONE implementation.
+ * (`ISLAND_AMBIENT_HELPER_NAMES`) and this barrel exports this same object into
+ * code-land, so both venues format through ONE implementation.
  */
 export const fmt = {
   money: formatMoney,

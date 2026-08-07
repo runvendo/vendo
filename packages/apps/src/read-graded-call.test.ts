@@ -7,7 +7,7 @@ import { guardFixture, memoryStore, seedAppRow } from "./testing/index.js";
 /**
  * A READ through `apps.call` takes the QUERY arm.
  *
- * `apps.call` is the only door a code-land app (`@vendoai/kit`'s `useToolQuery`)
+ * `apps.call` is the only door a code-land app (`@vendoai/ui/kit`'s `useToolQuery`)
  * has, and it used to hand every call to `caller.call` — the arm with a random
  * uuid per invocation. A query's identity is (app, tool, args), and
  * `callQuery` derives the call id from exactly that triple (call.ts's

@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { useKeyedState } from "../../src/kit/state.js";
 
 /**
- * The keyed `$state` store the renderer and `@vendoai/kit` share. The renderer
+ * The keyed `$state` store the renderer and the code-land provider share. The renderer
  * suite only ever writes ONE key, so these are the semantics that suite cannot
  * see: composition across keys, and the persistence hook's payload.
  */

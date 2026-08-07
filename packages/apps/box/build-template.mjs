@@ -51,7 +51,7 @@ const STAGED_RUNNER = "claude-turn.mjs";
 // `packages/box-template` is a real workspace package, so a developer's own
 // `pnpm install` gives it resolvable deps and it typechecks, builds and runs in
 // the monorepo. It cannot LIVE under packages/apps: the dependency guard scans a
-// package's whole directory, and an app template importing @vendoai/kit inside
+// package's whole directory, and an app template importing @vendoai/ui/kit inside
 // packages/apps would (correctly) violate `apps → core`.
 const STAGED_TEMPLATE = "template";
 const STAGED_PKG = "pkg";
@@ -88,7 +88,7 @@ rmSync(path.join(stagedTemplate, "run"));
 // THIS commit — reproducible from the monorepo, with zero publish dependency.
 // (`pnpm build` must have run: pack ships only `files`, i.e. dist/.)
 mkdirSync(stagedPkg, { recursive: true });
-const WORKSPACE_PACKAGES = ["core", "ui", "kit"];
+const WORKSPACE_PACKAGES = ["core", "ui"];
 const tarballs = {};
 for (const workspacePackage of WORKSPACE_PACKAGES) {
   const packed = spawnSync("pnpm", ["pack", "--pack-destination", stagedPkg], {

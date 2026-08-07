@@ -17,7 +17,7 @@ code, runs it, curls its own endpoints, and reports a structured result.
   npm-installed into `/opt/vendo-box/node_modules` at **template-build time**,
   so install size is a template concern, never a wake concern.
 - `build-template.mjs` — the e2b template builder (the recipe).
-- The universal app template — Vite + React 19 with `@vendoai/kit` installed —
+- The universal app template — Vite + React 19 with `@vendoai/ui` installed —
   is baked from `packages/box-template` (staged in here at bake time, for the
   same e2b `copy()` reason as `claude-turn.mjs`). It lands at
   `/opt/vendo-box/template`, its deps at `/opt/vendo-box/deps` with the

@@ -12,7 +12,6 @@
       "@vendoai/automations",
       "@vendoai/harnesses",
       "@vendoai/ui",
-      "@vendoai/kit",
       "@vendoai/mcp",
       "@vendoai/knowledge",
       "@vendoai/agents",

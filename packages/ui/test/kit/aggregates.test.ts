@@ -1,6 +1,6 @@
 import { evaluateExpr, type Json } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
-import { average, count, daysUntil, difference, groupBy, max, min, sum } from "../src/aggregates.js";
+import { average, count, daysUntil, difference, groupBy, max, min, sum } from "../../src/kit/aggregates.js";
 
 const invoices = [
   { amount_cents: 12_000, issued_at: "2026-01-14T00:00:00.000Z" },

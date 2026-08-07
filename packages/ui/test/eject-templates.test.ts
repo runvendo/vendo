@@ -194,7 +194,7 @@ describe("eject templates pack-and-inspect", () => {
       exports: Record<string, unknown>;
       files: string[];
     };
-    // `./client` joined the surface deliberately: `@vendoai/kit`'s code-land
+    // `./client` joined the surface deliberately: `@vendoai/ui/kit`'s code-land
     // hooks call the guarded door through this package's existing wire client
     // rather than a second fetch layer (see the kit runtime PR). The eject
     // surface legitimately grew by one subpath; it did not otherwise change.

@@ -1,7 +1,7 @@
 # The universal box app template
 
 What every Vendo app is built **from**, inside its box. Vite + React 19 with
-`@vendoai/kit` preinstalled. **ONE** universal template, baked once per Vendo
+`@vendoai/ui` preinstalled. **ONE** universal template, baked once per Vendo
 release — nothing company-specific is ever baked into it.
 
 It is not published. It is baked into the box image by
@@ -10,7 +10,7 @@ resolves `copy()` sources against that script's directory) and rewrites the
 `workspace:*` deps to the packed tarballs it puts beside them.
 
 It lives here rather than under `packages/apps/box/` because the dependency guard
-scans a package's whole directory: an app template importing `@vendoai/kit`
+scans a package's whole directory: an app template importing `@vendoai/ui/kit`
 inside `packages/apps` would violate `apps → core`, correctly.
 
 ## In the box
@@ -18,7 +18,7 @@ inside `packages/apps` would violate `apps → core`, correctly.
 ```
 /opt/vendo-box/template   this directory, with node_modules a symlink to ↓
 /opt/vendo-box/deps       the deps, installed ONCE at bake time
-/opt/vendo-box/pkg        the packed @vendoai/{core,ui,kit} tarballs
+/opt/vendo-box/pkg        the packed @vendoai/{core,ui} tarballs
 
 cp -a /opt/vendo-box/template/. /app/    ← the agent's first action
 ```

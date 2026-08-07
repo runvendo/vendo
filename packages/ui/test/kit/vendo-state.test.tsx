@@ -1,9 +1,9 @@
-import { useKeyedState } from "@vendoai/ui/kit";
+import { useKeyedState } from "../../src/kit/index.js";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import type { Json } from "@vendoai/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { useVendoApp, VendoAppProvider } from "../src/app-context.js";
-import { useVendoState } from "../src/state.js";
+import { useVendoApp, VendoAppProvider } from "../../src/kit/app-context.js";
+import { useVendoState } from "../../src/kit/vendo-state.js";
 
 afterEach(cleanup);
 

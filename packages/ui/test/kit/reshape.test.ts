@@ -1,6 +1,6 @@
 import { applyReshape } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
-import { reshape } from "../src/reshape.js";
+import { reshape } from "../../src/kit/reshape.js";
 
 const rows = [
   { month: "2026-01", revenue: 100, cost: 40 },

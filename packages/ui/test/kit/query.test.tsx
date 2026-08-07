@@ -1,8 +1,8 @@
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import type { Json, ToolOutcome } from "@vendoai/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { VendoAppProvider } from "../src/app-context.js";
-import { useToolQuery } from "../src/query.js";
+import { VendoAppProvider } from "../../src/kit/app-context.js";
+import { useToolQuery } from "../../src/kit/query.js";
 import { startDoor, type Door } from "./wire-fixture.js";
 
 afterEach(cleanup);
