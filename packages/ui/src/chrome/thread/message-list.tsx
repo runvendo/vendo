@@ -6,9 +6,9 @@ import { ThreadMessage } from "./message.js";
 import { ThreadApprovals } from "./parts.js";
 import type { useMessageWindow, useStickToBottom } from "./scrolling.js";
 
-/** The transcript pane: the windowed message list (ENG-218), parked approval
-    and connect cards, and the ENG-217 streaming indicators. The jump-to-latest
-    affordance (ENG-213) lives with the composer, docked onto the bar.
+/** The transcript pane: the windowed message list, parked approval and connect
+    cards, and the streaming indicators. The jump-to-latest affordance lives
+    with the composer, docked onto the bar.
     Pure presentation over the thread-level state. */
 export function MessageList({
   scroll, messageWindow, busy, risks, isRestored,
@@ -86,9 +86,9 @@ export function MessageList({
         {working ? <FluidThinking label="Working" /> : null}
         {quietLabel !== undefined ? <WorkingBeat label={quietLabel} /> : null}
       </div>
-      {/* Lane picks 3A + 6B — the jump affordance ("N new replies · …") now
-          renders inside the composer's .fl-dock-anchor (see VendoThread), so
-          it docks flush onto the bar and the two read as one piece. */}
+      {/* The jump affordance ("N new replies · …") renders inside the
+          composer's .fl-dock-anchor (see VendoThread), so it docks flush onto
+          the bar and the two read as one piece. */}
     </div>
   );
 }

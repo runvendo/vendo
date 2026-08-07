@@ -2,7 +2,7 @@ import type { UIMessage } from "ai";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { isAgentContext } from "./message-data.js";
 
-/** ENG-218 — windowing for long threads. Rendering a reopened 200-turn thread
+/** Windowing for long threads. Rendering a reopened 200-turn thread
     mounts every turn's DOM (and runs every entrance animation) at once. Instead
     we render only a trailing window of the most recent messages and reveal older
     ones in chunks when the reader scrolls to the top — the DOM stays bounded, so
@@ -56,7 +56,7 @@ export function useMessageWindow(messages: UIMessage[], listRef: React.RefObject
     entrance easing) never breaks the stick. */
 const BOTTOM_SLACK_PX = 32;
 
-/** ENG-213 — scroll management for the message list.
+/** Scroll management for the message list.
 
     Stick-to-bottom: while the reader is at the end, every content change
     (history load, streamed deltas, tool chips, approvals) keeps the latest
@@ -72,10 +72,10 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
   const stuckRef = useRef(true);
   const lastScrollHeightRef = useRef(0);
   const [unseen, setUnseen] = useState(false);
-  // Lane pick 3A — the jump affordance grew into a bar with a COUNT of turns
-  // that landed while scrolled away and a snippet of the newest text. Count =
-  // messages appended since the stick released; snippet = the latest turn's
-  // trailing text (best-effort, purely presentational).
+  // The jump affordance is a bar with a COUNT of turns that landed while
+  // scrolled away and a snippet of the newest text. Count = messages appended
+  // since the stick released; snippet = the latest turn's trailing text
+  // (best-effort, purely presentational).
   const [unseenCount, setUnseenCount] = useState(0);
   const seenLengthRef = useRef(messages.length);
 
@@ -87,7 +87,7 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
   useEffect(() => {
     const previousKey = previousThreadKeyRef.current;
     previousThreadKeyRef.current = threadKey;
-    // ENG-222 id mint is NOT a thread switch: a conversation started without
+    // A server-minted id is NOT a thread switch: a conversation started without
     // an id gets its server-minted thr_ fed back mid-first-stream (a host's
     // onThreadId loop), flipping this key while the reader is mid-read. The
     // messages are the same conversation — KEEP the growth baseline: zeroing
@@ -170,7 +170,7 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
       setUnseen(true);
       setUnseenCount(Math.max(1, messages.length - seenLengthRef.current));
     }
-    // contentRevision — ENG-215: turn-actions (Edit/Regenerate) mount below the
+    // contentRevision — turn-actions (Edit/Regenerate) mount below the
     // last turn the instant a stream settles (busy→false), adding height AFTER
     // the message-driven stick already ran. Re-run so the reader stays pinned.
   }, [messages, contentRevision]);

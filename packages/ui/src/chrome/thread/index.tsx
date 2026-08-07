@@ -11,7 +11,7 @@ import { MessageList } from "./message-list.js";
 import { useMessageWindow, useStickToBottom } from "./scrolling.js";
 import { approvalByCall, grantSetByCall, riskByCall, toolCallPending, turnErrorSentence, userText } from "./message-data.js";
 
-/** Lane pick 4B — a rich landing suggestion: two-line starter card. */
+/** A rich landing suggestion: two-line starter card. */
 export interface VendoSuggestionCard {
   /** Card headline (verb-first reads best: "Build a view"). */
   title: string;
@@ -30,17 +30,17 @@ export interface VendoThreadProps {
   /** One quiet capability line under the landing headline (muted, centered).
    * Purely additive: absent means today's headline-only landing. */
   intro?: string;
-  /** Starter prompts on the empty landing; clicking sends one. Lane pick 4B —
+  /** Starter prompts on the empty landing; clicking sends one.
    * a plain string keeps today's pill chip; the object form renders a two-line
    * starter card (title + concrete outcome, optional icon) with more scent. */
   suggestions?: (string | VendoSuggestionCard)[];
   /** Show a mic affordance in the composer that launches the host's voice surface. */
   onVoice?: () => void;
-  /** ENG-222 — fires with the effective thread id once it is known, including
+  /** Fires with the effective thread id once it is known, including
    * the fresh `thr_` the server mints for a new conversation. Lets a host
    * surface (e.g. a host's own conversation list) pull the new one in. */
   onThreadId?: (threadId: string) => void;
-  /** The discoverability dial (ui-usage-dx §6), overriding the provider's:
+  /** The discoverability dial, overriding the provider's:
    * `"quiet"` disables the fire-once greeting-as-tutorial below. */
   discoverability?: VendoDiscoverability;
   /** Greeting-as-tutorial content (intro + prompt chips) overriding the
@@ -53,7 +53,7 @@ export interface VendoThreadProps {
   composerAccessory?: import("react").ReactNode;
 }
 
-/** 08-ui §4 — conversation chrome over the headless thread transport. */
+/** Conversation chrome over the headless thread transport. */
 export function VendoThread({
   threadId,
   greeting = "What can I help you build?",
@@ -66,7 +66,7 @@ export function VendoThread({
   composerAccessory,
 }: VendoThreadProps) {
   const thread = useVendoThread(threadId);
-  // ui-usage-dx §6 — greeting-as-tutorial: the user's FIRST-ever conversation
+  // Greeting-as-tutorial: the user's FIRST-ever conversation
   // open (fresh thread only — an adopted thread with history is not a first
   // open and does not burn the flag) renders the agent-voiced intro + starter
   // chips locally. Presentation-only: nothing here touches the transport or
@@ -94,7 +94,7 @@ export function VendoThread({
   useEffect(() => {
     if (tutorialActive && (messageCount > 0 || threadId !== undefined)) setTutorialActive(false);
   }, [tutorialActive, messageCount, threadId]);
-  // ENG-222 — surface the effective (possibly server-minted) thread id upward.
+  // Surface the effective (possibly server-minted) thread id upward.
   const reportedThreadId = thread.threadId;
   useEffect(() => {
     if (reportedThreadId !== undefined) onThreadId?.(reportedThreadId);
@@ -137,7 +137,7 @@ export function VendoThread({
   }, [thread.messages, scroll]);
 
   const messageWindow = useMessageWindow(thread.messages, scroll.listRef, threadId);
-  // ENG-218 — entrance-animation gating on restore. The .fl-item-in rise runs
+  // Entrance-animation gating on restore. The .fl-item-in rise runs
   // when an article first mounts; a reopened long thread mounts them all at once
   // → a stampede on first paint. We record every message id present when the
   // thread is first shown (and after each switch) as "restored" and suppress
@@ -155,7 +155,7 @@ export function VendoThread({
   const composerApi = useComposer({
     busy,
     sendMessage: message => thread.sendMessage(message),
-    // §10.2 — a message typed mid-turn is offered to that turn before it queues.
+    // A message typed mid-turn is offered to that turn before it queues.
     ...(thread.steer === undefined ? {} : { steer: thread.steer }),
   });
   const { setDraft, setQueued, textareaRef, send } = composerApi;
@@ -217,7 +217,7 @@ export function VendoThread({
   const assistantHasVisibleText = activeAssistant?.parts.some(
     part => part.type === "text" && part.text.trim().length > 0,
   ) ?? false;
-  // ENG-217 — the streaming moments each get exactly ONE affordance: a streamed
+  // The streaming moments each get exactly ONE affordance: a streamed
   // turn whose text is still empty shows the lone caret (renderPart); once
   // text flows the trailing caret rides .fl-md--streaming. FluidThinking covers
   // every remaining gap, INCLUDING the wait before the first chunk — that
@@ -232,7 +232,7 @@ export function VendoThread({
   const hasBeats = activeAssistant?.parts.some(part => isToolUIPart(part)) ?? false;
   const working = busy && !assistantHasVisibleText && !caretShowing && !hasBeats;
 
-  // ENG-215 — edit the last user turn: drop it (and anything after) from the
+  // Edit the last user turn: drop it (and anything after) from the
   // transcript and refill the composer, so re-sending amends rather than
   // duplicates. Only meaningful when idle.
   const lastUserIndex = (() => {
@@ -242,7 +242,7 @@ export function VendoThread({
     return -1;
   })();
   // Turn actions attach by id, not list index: the map below renders a windowed
-  // slice (ENG-218), so positional indices no longer line up with thread.messages.
+  // slice, so positional indices no longer line up with thread.messages.
   const lastUserId = lastUserIndex >= 0 ? thread.messages[lastUserIndex]?.id : undefined;
   const editLast = () => {
     if (busy || lastUserIndex < 0) return;
@@ -254,7 +254,7 @@ export function VendoThread({
     requestAnimationFrame(() => textareaRef.current?.focus());
   };
 
-  // ENG-215 — regenerate the last assistant turn (re-issues from the preserved
+  // Regenerate the last assistant turn (re-issues from the preserved
   // user message; no duplication). Only when idle and an assistant turn exists.
   const lastAssistantIndex = (() => {
     for (let index = thread.messages.length - 1; index >= 0; index -= 1) {
@@ -268,21 +268,21 @@ export function VendoThread({
     void thread.regenerate();
   };
 
-  // ENG-214 — a broken turn (failed send, mid-stream drop, any thread.error)
+  // A broken turn (failed send, mid-stream drop, any thread.error)
   // surfaces VISIBLY in the thread, not only through the hidden status span.
   // The copy stays friendly — raw transport errors are announced to assistive
   // tech below but never printed to end users.
   // A "Vendo: " prefixed message is the agent's OWN safe error (VendoError
   // code + operator-crafted text, wireErrorMessage in @vendoai/harnesses) — the
   // ONE error shape end users may see in detail. Raw transport/provider
-  // strings never match the prefix and stay hidden (ENG-214 policy).
+  // Strings never match the prefix and stay hidden.
   // self-serve P — a live turn error now ALSO lands in the turn itself (the
   // data-vendo-turn-error part, which survives reload); when that part is
   // already saying it, the banner keeps only its headline + Retry so the same
   // sentence isn't printed twice.
   const turnErrorInThread = activeAssistant?.parts.some(part => part.type === "data-vendo-turn-error") ?? false;
   const errorDetail = turnErrorInThread ? undefined : turnErrorSentence(thread.error?.message);
-  // Ruling 16 — §15 governs the surfaces where the AGENT CAN SPEAK, and this is
+  // The copy law governs the surfaces where the AGENT CAN SPEAK, and this is
   // one: the banner used to carry its own Retry button, a bespoke failure
   // control beside a conversation that already has one recovery path (the turn's
   // Regenerate action, and the composer). The banner states what happened and
@@ -296,11 +296,10 @@ export function VendoThread({
     </div>
   ) : null;
 
-  // Lane picks 3A + 6B — the jump affordance is a bar with a COUNT and snippet
-  // ("2 new replies · …") docked flush onto the composer's top edge (rendered
-  // inside its .fl-dock-anchor, tray-style, so the two read as one piece); at
-  // mobile widths the same element re-clothes as a bottom-center pill (pure
-  // CSS, see the lane block in chrome-css). Activating it re-sticks as before.
+  // The jump affordance is a bar with a COUNT and a snippet ("2 new replies ·
+  // …") docked flush onto the composer's top edge (rendered inside its
+  // .fl-dock-anchor, tray-style, so the two read as one piece); at mobile
+  // widths the same element re-clothes as a bottom-center pill, in CSS alone.
   const jumpBar = scroll.showJump ? (
     <button
       type="button"
@@ -334,7 +333,7 @@ export function VendoThread({
     .filter((part): part is Extract<typeof part, { state: "approval-requested" }> =>
       part.state === "approval-requested" && !grantSets.has(part.toolCallId));
 
-  // Spec §1 — the ribbon no longer narrates tool calls: the TRANSCRIPT owns the
+  // The ribbon no longer narrates tool calls: the TRANSCRIPT owns the
   // work now (one beat per call, at its position in the conversation), so a
   // second live narration above the composer would say the same thing twice.
   // All that survives above the composer is the between-steps gap below.
@@ -374,13 +373,13 @@ export function VendoThread({
     const timer = setTimeout(() => setQuietBusy(true), 800);
     return () => clearTimeout(timer);
   }, [quietBusyEligible]);
-  // §3.4 — the gap narrates the latest harness beat when there is one;
+  // The gap narrates the latest harness beat when there is one;
   // "Working" is the floor for a harness that says nothing. It renders as a
   // WorkingBeat at the transcript tail (2026-08-06 polish: one beat
   // vocabulary, no separate ribbon pill).
   const quietLabel = quietBusy ? thread.beats.at(-1)?.label ?? "Working" : undefined;
 
-  // Lane pick 2E — the WHOLE thread surface is the drop target (the composer
+  // The WHOLE thread surface is the drop target (the composer
   // bar no longer owns drag): a huge, overshoot-proof zone with a centered
   // card naming what will happen. Depth counter as before (child crossings).
   const { dragDepth, setDragDepth, setFiles } = composerApi;
@@ -454,7 +453,7 @@ export function VendoThread({
               </>
             )}
             {!tutorialActive && suggestions.length > 0 ? (
-              // Lane pick 4B — object suggestions render as two-line starter
+              // Object suggestions render as two-line starter
               // cards (title + concrete outcome, optional host icon); plain
               // strings keep the pill chip. A MIXED array renders both
               // containers (cards grid, then one plain chips row) so string

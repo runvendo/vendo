@@ -11,11 +11,11 @@ import { TurnCitations } from "./turn-citations.js";
 // 2026-07 demo feedback — the settled turn's "sources" chip row (lane pick 8C)
 // is GONE: the little read-call pills under assistant messages read as clutter
 // and duplicated the Activity panel, which remains the mechanical record.
-// Spec §1 (2026-08-03) then gave the turn its work back as BEATS — a checklist
+// The turn's work comes back as BEATS — a checklist
 // line per call while the turn runs, folded into one reopenable summary row
 // ("Did 4 things · 7.1s") the moment it settles.
 
-/** ENG-225 — the copy turn action (.fl-turn-actions design). */
+/** The copy turn action (.fl-turn-actions design). */
 function CopyTurnButton({ text }: { text: string }) {
   const [copied, copy] = useCopyFeedback();
   return (
@@ -34,10 +34,9 @@ function CopyTurnButton({ text }: { text: string }) {
   );
 }
 
-/** One turn in the transcript: the user attachments beside the bubble
-    (ENG-225), the article with its stream parts, and the settled-turn
-    actions (Copy always; Edit on the last user turn, Regenerate on the
-    last assistant turn — ENG-215). */
+/** One turn in the transcript: the user attachments beside the bubble, the
+    article with its stream parts, and the settled-turn actions (Copy always;
+    Edit on the last user turn, Regenerate on the last assistant turn). */
 export function ThreadMessage({ message, restored, risks, busy, activeAssistantId, lastUserId, lastAssistantId, onEditLast, onRegenerateLast, sendMessage, respond }: {
   message: UIMessage;
   restored: boolean;
@@ -53,7 +52,7 @@ export function ThreadMessage({ message, restored, risks, busy, activeAssistantI
   /** The thread's native approval response — grant-set cards resume with it. */
   respond?: (response: { id: string; approved: boolean }) => void;
 }) {
-  // ENG-225 — a user turn's attachments render BESIDE the bubble
+  // A user turn's attachments render BESIDE the bubble
   // (the designed .fl-turn-user-att block), not inside it; a
   // files-only send has no bubble at all.
   const sentFiles = message.role === "user"
@@ -62,15 +61,15 @@ export function ThreadMessage({ message, restored, risks, busy, activeAssistantI
   const bubbleText = message.role === "user" ? userText(message) : assistantText(message);
   const skipBubble = message.role === "user" && bubbleText.length === 0
     && message.parts.every(part => part.type === "file" || isAgentContext(part));
-  // ENG-225 — every settled turn carries a Copy action (hover-
+  // Every settled turn carries a Copy action (hover-
   // revealed, see chrome-css); Edit stays on the last user turn and
-  // Regenerate on the last assistant turn (ENG-215). The actively
+  // Regenerate on the last assistant turn. The actively
   // streaming turn gets no actions — its text is still arriving.
   const streamingTurn = busy && message.role === "assistant" && message.id === activeAssistantId;
   const showEdit = !busy && message.role === "user" && message.id === lastUserId;
   const showRegenerate = !busy && message.role === "assistant" && message.id === lastAssistantId;
   const showActions = !streamingTurn && (bubbleText.length > 0 || showEdit || showRegenerate);
-  // Spec §1 — the turn's beats fold into ONE summary row once the whole turn
+  // The turn's beats fold into ONE summary row once the whole turn
   // has settled: while any call is still working (or parked on an approval)
   // every beat stays open, and the fold waits. Restored history arrives folded,
   // which is also what keeps a long thread from a beat entrance stampede.
@@ -78,7 +77,7 @@ export function ThreadMessage({ message, restored, risks, busy, activeAssistantI
   const calls = items.filter(item => isToolUIPart(item.part));
   const pending = streamingTurn || calls.some(item => toolCallPending(item.part));
   // A failed or declined call is not one of the "things I did", and its ✕ beat
-  // never folds (spec §15) — so the count is the work that actually landed, and
+  // never folds — so the count is the work that actually landed, and
   // the failure keeps its own line right where it happened.
   const steps = calls.filter(item => !toolCallIsContent(item.part));
   const [beatsOpen, setBeatsOpen] = useState(false);
