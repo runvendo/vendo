@@ -6,7 +6,7 @@ import {
   type KnowledgeVisibility,
 } from "@vendoai/core";
 
-/** The `.vendo/knowledge.json` format tag (knowledge design v2, developer
+/** The `.vendo/knowledge.json` format tag (developer
     door). An ingestion INPUT like tools.json — deliberately NOT a config
     surface (push/pull semantics don't apply). */
 export const VENDO_KNOWLEDGE_CONFIG_FORMAT = "vendo/knowledge@1" as const;
@@ -29,7 +29,7 @@ export interface KnowledgeConfig {
   sources: KnowledgeSourceConfig[];
 }
 
-/** Checker round 1 fix 1 (SECURITY): a source glob must stay inside the
+/** SECURITY: a source glob must stay inside the
     project root — ingestion runs with the developer's filesystem rights, so
     an absolute or `..`-escaping pattern would sync arbitrary readable files
     into the corpus. Rejected loudly here (the CLI's `add` and every

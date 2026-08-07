@@ -2,13 +2,13 @@ import type { KnowledgeAdapter, KnowledgeStatus } from "@vendoai/core";
 import { VENDO_KNOWLEDGE_SEARCH_TOOL } from "./agent-tools.js";
 import { knowledgeConfigSchema, type KnowledgeConfig } from "./ingest/index.js";
 
-/** Knowledge k8 (ENG-368) — the static prompt index + usage guidance. Pure
+/** The static prompt index + usage guidance. Pure
     assembly: sources come from `.vendo/knowledge.json` (when the developer
     door wrote one), counts from the adapter's `status()`. The caller owns
     WHEN this runs (boot + sync-state change, never per-turn) — the output
     for a given input is byte-stable by construction.
 
-    Checker round 1 P0 (ENG-370 law): the index rides END-USER prompts, so it
+    The index rides END-USER prompts, so it
     names PUBLIC sources only — an internal source's existence is corpus
     metadata and must never surface on a principal-facing path, exactly like
     internal hits. Counts stay aggregate (no per-source identity). */
@@ -60,7 +60,7 @@ export interface KnowledgeIndexReaders {
 /** The index resolver assembleSystemPrompt consumes. Construction is PURE
     (createVendo may run at Workers module init, where I/O is forbidden).
 
-    Refresh contract (checker round 1 P1 — real invalidation, not a
+    Refresh contract (real invalidation, not a
     boot-forever lock):
     - At a FIXED sync state (same manifest bytes) every turn returns the SAME
       cached string — byte-stable, zero adapter I/O (prompt-cache stability).

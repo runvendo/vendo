@@ -4,7 +4,7 @@ import { splitBlocks, splitHeadingSections, startsWithFence } from "./markdown.j
 /** Soft per-chunk character budget. Chunks split at structural boundaries
     (headings, then blank-line blocks); an oversized block subdivides further
     — prose by sentence, then by line, then by hard slice — so no chunk is
-    unbounded (checker round 1 fix 3). */
+    unbounded. */
 const CHUNK_BUDGET = 1200;
 
 /** Fenced code stays atomic up to this hard cap (splitting mid-fence breaks
@@ -68,7 +68,7 @@ function packSection(lines: string[], budget: number): string[] {
   return pack(splitBlocks(lines).flatMap(subdivideBlock), budget, "\n\n");
 }
 
-/** Knowledge design v2 R1 — the v1 structural chunker. Prose (`docs`) splits
+/** The structural chunker. Prose (`docs`) splits
     at h1-h6 boundaries (fence-aware — a heading inside a code block never
     splits, including fences opened in list items) with the accumulated
     heading path on every chunk and a soft size budget applied at blank-line

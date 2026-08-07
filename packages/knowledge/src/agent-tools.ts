@@ -13,9 +13,9 @@ import {
 
 const DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema";
 
-/** Knowledge K1 pin — `vendo_`-prefixed so the loadout policy keeps it always
-    active (tool-search isAlwaysActive); a bare name could be gated out on
-    hosts with a large tool surface. */
+/** `vendo_`-prefixed so the loadout policy keeps it always active
+    (tool-search isAlwaysActive); a bare name could be gated out on hosts with
+    a large tool surface. */
 export const VENDO_KNOWLEDGE_SEARCH_TOOL = "vendo_knowledge_search";
 
 /** The envelope tag core names once (stream-parts.ts) — re-exported so tool
@@ -34,8 +34,8 @@ export interface KnowledgeCitation {
   title?: string;
   source?: string;
   kind: KnowledgeHit["kind"];
-  /** Checker round 1 (pin amended): rides from KnowledgeHit.visibility so
-      the UI's origin line states it instead of guessing. */
+  /** Rides from KnowledgeHit.visibility so the UI's origin line states it
+      instead of guessing. */
   visibility: KnowledgeHit["visibility"];
   snippet: string;
 }
@@ -59,8 +59,8 @@ export interface KnowledgeResultEnvelope {
 
 const descriptor: ToolDescriptor = {
   name: VENDO_KNOWLEDGE_SEARCH_TOOL,
-  // §3 — what a person reads. Without it `ToolListing.title` falls back to the
-  // identifier and the model speaks the slug (wave-1 proof E1-5).
+  // What a person reads. Without it `ToolListing.title` falls back to the
+  // identifier and the model speaks the slug.
   title: VENDO_TOOL_TITLES[VENDO_KNOWLEDGE_SEARCH_TOOL],
   description: "Search the host's product knowledge base (documentation, glossary, API reference) and cite what you find. Use it whenever the user asks how the product works or what a term means. Set lookup:true for an exact glossary/API term lookup. Pass readMore:{docId} to read the full document behind an earlier hit when its snippet is not enough. An insufficient-evidence outcome means the knowledge base does not cover the question — say you don't know instead of guessing.",
   inputSchema: {
@@ -86,17 +86,17 @@ const descriptor: ToolDescriptor = {
 };
 
 export interface KnowledgeToolsOptions {
-  /** Refusal calibration (per-engine, K2 evals): hits scoring below this are
-      "weak". Default 0 — never triggers, so score-less/constant-score engines
-      (the memory adapter) never falsely refuse. */
+  /** Refusal calibration, per engine: hits scoring below this are "weak".
+      Default 0 — never triggers, so score-less/constant-score engines (the
+      memory adapter) never falsely refuse. */
   weakScoreThreshold?: number;
-  /** ENG-370 rate breaker: per-principal calls per rolling minute before the
-      tool answers a loud "rate-limited" error. Explicit option wins over the
+  /** Per-principal calls per rolling minute before the tool answers a loud
+      "rate-limited" error. Explicit option wins over the
       VENDO_KNOWLEDGE_MAX_CALLS_PER_MINUTE env knob; default 60. */
   maxCallsPerMinute?: number;
 }
 
-/** ENG-370 default; the env knob is the operator escape hatch. */
+/** The env knob is the operator escape hatch. */
 const MAX_CALLS_PER_MINUTE = 60;
 
 const maxCallsPerMinuteFromEnv = (): number | undefined => {
@@ -105,11 +105,11 @@ const maxCallsPerMinuteFromEnv = (): number | undefined => {
   return Number.isFinite(configured) && configured > 0 ? configured : undefined;
 };
 
-/** ENG-370 — a small in-memory rolling-minute breaker keyed by principal
-    subject (guard.ts #recordCall is the house pattern, including the
-    once-per-minute sweep that bounds the map for process lifetime). Scoped
-    per registry instance; the tool composes once per createVendo, so the
-    window is per-process like the guard's. */
+/** A small in-memory rolling-minute breaker keyed by principal subject
+    (guard.ts #recordCall is the house pattern, including the once-per-minute
+    sweep that bounds the map for process lifetime). Scoped per registry
+    instance; the tool composes once per createVendo, so the window is
+    per-process like the guard's. */
 class CallRateBreaker {
   #windows = new Map<string, number[]>();
   #lastSweepAt = 0;
@@ -228,13 +228,12 @@ const envelope = (
   output: { kind: VENDO_KNOWLEDGE_RESULT_KIND, ...fields } as unknown as Json,
 });
 
-/** Knowledge K1 — the one knowledge agent tool behind core's adapter contract.
-    The registry composes into createVendo exactly when a `knowledge` adapter
-    is configured (selectKnowledge). Tool-layer policy (spec §Agent experience
-    and trust): chat default → auto-escalate deep once on weak results →
-    structured insufficient-evidence; lookup → schema over glossary/api with
-    honest not-found; readMore → posture-gated fetch; adapter failure → loud
-    unavailable, never a silent empty result. */
+/** The one knowledge agent tool behind core's adapter contract. The registry
+    composes into createVendo exactly when a `knowledge` adapter is configured
+    (selectKnowledge). Tool-layer policy: chat default → auto-escalate deep
+    once on weak results → structured insufficient-evidence; lookup → schema
+    over glossary/api with honest not-found; readMore → posture-gated fetch;
+    adapter failure → loud unavailable, never a silent empty result. */
 export function createKnowledgeTools(
   adapter: KnowledgeAdapter,
   options: KnowledgeToolsOptions = {},
@@ -243,7 +242,7 @@ export function createKnowledgeTools(
   const breaker = new CallRateBreaker(options.maxCallsPerMinute ?? maxCallsPerMinuteFromEnv() ?? MAX_CALLS_PER_MINUTE);
 
   // An engine failure has two audiences and they need different halves of the
-  // same error (conductor amendment, 2026-07-27).
+  // same error.
   //
   // The MODEL gets the statement — what failed — because an outcome with no
   // reason is the silence this whole seam exists to kill: the agent could not
@@ -268,8 +267,8 @@ export function createKnowledgeTools(
     return raw.split(" — ")[0]!;
   };
 
-  // The status()-verified refusal (checker round 1): an empty/weak search
-  // from a SICK engine must not pass as an honest refusal or not-found — the
+  // The status()-verified refusal: an empty/weak search from a SICK engine
+  // must not pass as an honest refusal or not-found — the
   // emptiness is unverifiable. Consulted only on the zero/weak paths (a
   // strong answer never pays the status call); a throw propagates to the
   // caller's catch, which maps it to the loud "unavailable".
@@ -305,8 +304,8 @@ export function createKnowledgeTools(
       if (call.tool !== VENDO_KNOWLEDGE_SEARCH_TOOL) {
         return { status: "error", error: { code: "not-found", message: `Unknown tool: ${call.tool}` } };
       }
-      // ENG-370 breaker — LOUD, never a silent empty result. "rate-limited"
-      // is the house wire code for this condition (Cloud device-login speaks
+      // LOUD, never a silent empty result. "rate-limited" is the house wire
+      // code for this condition (Cloud device-login speaks
       // it); deliberately NOT a VendoErrorCode, so it never rides VendoError.
       if (breaker.record(ctx.principal.subject)) {
         return {
@@ -324,15 +323,15 @@ export function createKnowledgeTools(
         return errorOutcome(error);
       }
 
-      // R5 (knowledge.ts KnowledgeContext): the agent path is
-      // principal-carrying, so includeInternal is NEVER set here.
+      // The agent path is principal-carrying, so includeInternal is NEVER
+      // set here.
       const knowledgeCtx = { principal: ctx.principal };
       try {
         if (input.readMore !== undefined) return await readMore(input.readMore, ctx);
 
         if (input.lookup === true) {
-          // Contract invariant (knowledge.ts R3): intent never implies kinds —
-          // the schema lookup restricts to the structured-fact kinds
+          // Contract invariant: intent never implies kinds — the schema
+          // lookup restricts to the structured-fact kinds
           // explicitly. An empty result is an honest not-found, never a fuzzy
           // fallback into prose docs.
           const result = await adapter.search(

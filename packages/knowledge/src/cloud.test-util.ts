@@ -45,7 +45,7 @@ export interface FakeKnowledgeServer {
 
 /**
  * In-process fake of a `vendo/knowledge-wire@1` server — the test double for
- * the cloud client (ENG-364) and the REFERENCE implementation the BYO docs
+ * the cloud client and the REFERENCE implementation the BYO docs
  * point at: everything a conformant wire server must do fits in this one
  * handler. Speaks core's wire schemas verbatim over any KnowledgeAdapter:
  *
