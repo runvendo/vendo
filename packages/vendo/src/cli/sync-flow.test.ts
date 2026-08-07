@@ -2,8 +2,10 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { describeDevCredential, resolveDevCredential } from "../dev-creds/resolve.js";
+import type { ExtractionHarness } from "./extract/harness.js";
 import type { Output } from "./shared.js";
-import { runSyncFlow, type SyncFlowOptions, type SyncFlowResult } from "./sync-flow.js";
+import { readEnvFiles, runSyncFlow, type SyncFlowOptions, type SyncFlowResult } from "./sync-flow.js";
 
 /**
  * The ONE flow `vendo init` (mode "full") and `vendo sync` (mode "incremental")
@@ -205,6 +207,66 @@ describe("the AI flag matrix (one rule, both modes)", () => {
       judge: { harnesses: [forbidden], confirm: async () => { throw new Error("prompted"); } },
     });
     expect(messages.logs.join("\n")).not.toContain("judgment");
+  });
+});
+
+describe("a harness-owned credential (Claude Code OAuth / auth token / custom endpoint)", () => {
+  /** The Claude Code rungs run on any of ANTHROPIC_AUTH_TOKEN,
+   *  CLAUDE_CODE_OAUTH_TOKEN or a custom ANTHROPIC_BASE_URL — none of which is
+   *  a product-turn API key. Only `availability()` knows that, so only
+   *  `availability()` may decide whether this run has an engine. */
+  const oauthEngine: ExtractionHarness = {
+    id: "oauth-only",
+    availability: async ({ env }) =>
+      (env["CLAUDE_CODE_OAUTH_TOKEN"] ?? "") === "" ? null : "your CLAUDE_CODE_OAUTH_TOKEN",
+    run: async () => "```json\n" + JSON.stringify({ tools: [], narrative: "" }) + "\n```",
+  };
+
+  /** One never-judged tool, so incremental mode has real work and the run
+   *  reaches the engine rather than the up-to-date shortcut. */
+  const UNJUDGED = `${JSON.stringify({
+    format: "vendo/tools@3",
+    tools: [{
+      name: "host_a",
+      description: "Use this to call host_a.",
+      inputSchema: { type: "object", properties: {} },
+      risk: "read",
+      binding: { kind: "route", method: "GET", path: "/api/a", argsIn: "query" },
+    }],
+  })}\n`;
+
+  /** A host holding ONLY a harness-owned credential: no API key on any rung. */
+  async function oauthHost(): Promise<string> {
+    for (const name of ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "VENDO_API_KEY", "VENDO_DEV_CREDENTIAL"]) {
+      vi.stubEnv(name, "");
+    }
+    const root = await host({ ".env": "CLAUDE_CODE_OAUTH_TOKEN=oauth-tok\n" });
+    await writeFile(join(root, ".vendo", "tools.json"), UNJUDGED, "utf8");
+    return root;
+  }
+
+  it("`sync --ai` on an incremental run reaches the engine, same as init and an interactive sync", async () => {
+    const messages = captureOutput();
+    const result = await flow({
+      root: await oauthHost(),
+      output: messages.output,
+      fetchImpl: offline,
+      ai: true,
+      judge: { harnesses: [oauthEngine] },
+    });
+    expect(messages.logs.join("\n")).not.toContain("structural-only");
+    expect(result.judged.ran).toBe(true);
+  });
+
+  it("leaves the runtime model ladder alone: the same env still has NO product-turn credential", async () => {
+    // doctor, doctor-live and dev-creds/model.ts all read this one resolver,
+    // and an interactive-only OAuth token cannot serve a product turn. Widening
+    // it would be a worse bug than the one above.
+    const root = await oauthHost();
+    const env = await readEnvFiles(root);
+    expect(env["CLAUDE_CODE_OAUTH_TOKEN"]).toBe("oauth-tok");
+    expect(await resolveDevCredential({ env })).toEqual({ rung: "none" });
+    expect(describeDevCredential(await resolveDevCredential({ env }))).toBe("no model credential found");
   });
 });
 
