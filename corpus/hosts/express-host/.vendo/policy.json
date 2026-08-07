@@ -1,0 +1,11 @@
+{
+  "format": "vendo/policy@1",
+  "directions": [
+    "Be concise, ground answers in Relay's task API, and never invent tasks or completion state."
+  ],
+  "rules": [
+    { "match": { "risk": "destructive" }, "action": "ask" },
+    { "match": { "risk": "write" }, "action": "ask" },
+    { "match": { "risk": "read" }, "action": "run" }
+  ]
+}

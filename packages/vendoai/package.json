@@ -1,0 +1,86 @@
+{
+  "name": "vendoai",
+  "version": "0.8.0",
+  "description": "Thin compatibility alias for @vendoai/vendo.",
+  "keywords": [
+    "ai",
+    "agent",
+    "genui",
+    "react",
+    "vendo"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/runvendo/vendo.git",
+    "directory": "packages/vendoai"
+  },
+  "homepage": "https://vendo.run",
+  "bugs": "https://github.com/runvendo/vendo/issues",
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "vendo": "bin/vendo.mjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "default": "./dist/react.js"
+    },
+    "./auth/auth0": {
+      "types": "./dist/auth-presets/auth0.d.ts",
+      "default": "./dist/auth-presets/auth0.js"
+    },
+    "./auth/auth-js": {
+      "types": "./dist/auth-presets/auth-js.d.ts",
+      "default": "./dist/auth-presets/auth-js.js"
+    },
+    "./auth/clerk": {
+      "types": "./dist/auth-presets/clerk.d.ts",
+      "default": "./dist/auth-presets/clerk.js"
+    },
+    "./auth/jwt": {
+      "types": "./dist/auth-presets/jwt.d.ts",
+      "default": "./dist/auth-presets/jwt.js"
+    },
+    "./auth/supabase": {
+      "types": "./dist/auth-presets/supabase.d.ts",
+      "default": "./dist/auth-presets/supabase.js"
+    }
+  },
+  "files": [
+    "dist",
+    "bin",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@vendoai/vendo": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

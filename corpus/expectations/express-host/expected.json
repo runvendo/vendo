@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "theme": {
+    "background": "#eef7f4",
+    "surface": "#ffffff",
+    "accent": "#087f6f",
+    "text": "#102f2a",
+    "mutedText": "#5a7771",
+    "radius": "16px",
+    "fontFamily": "Inter, ui-sans-serif, system-ui, sans-serif"
+  },
+  "tools": [
+    {
+      "name": "listTasks",
+      "method": "GET",
+      "path": "/api/tasks",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "createTask",
+      "method": "POST",
+      "path": "/api/tasks",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTask",
+      "method": "GET",
+      "path": "/api/tasks/{id}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "deleteTask",
+      "method": "DELETE",
+      "path": "/api/tasks/{id}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "completeTask",
+      "method": "POST",
+      "path": "/api/tasks/{id}/complete",
+      "readOrWrite": "write"
+    }
+  ],
+  "annotations": [
+    {
+      "name": "listTasks",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "createTask",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTask",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "deleteTask",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "completeTask",
+      "mutating": true,
+      "dangerous": false
+    }
+  ],
+  "components": []
+}

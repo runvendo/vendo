@@ -1,0 +1,96 @@
+---
+title: "Dev-mode credential ladder: resolving a model without wiring one"
+sidebarTitle: "Dev-mode credentials"
+description: "How devModel() resolves a model in development from env keys or a Vendo Cloud key, with pinning, production behavior, and verification."
+---
+
+Vendo runs on any AI SDK `LanguageModel`, and in production you set an API key
+for the provider you chose. `createVendo`'s `model` is optional: when you omit
+it, the runtime resolves a model through `devModel()`, a resolver that tries a
+short ladder of credential sources so a fresh clone can send a first turn with
+whatever key is already around.
+
+Model credentials are real keys only. A coding-agent login (Claude Code,
+Codex) can help at *init* time, but it never serves product turns.
+
+## Ladder
+
+`vendoModel()` (formerly `devModel()`, which remains as a deprecated alias)
+walks these rungs in order and stops at the first one that resolves. Explicit
+keys always beat implicit ones.
+
+<Steps>
+  <Step title="Env key">
+    Reads the first of `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or
+    `GOOGLE_GENERATIVE_AI_API_KEY` in `.env.local` or the shell. An
+    `ANTHROPIC_API_KEY` works alone — Vendo ships `@ai-sdk/anthropic`, and
+    your app's own install wins when present; a non-Anthropic key needs its
+    matching `@ai-sdk/*@^3` provider installed in your app. This rung runs
+    the full native tool loop and works in production.
+  </Step>
+  <Step title="Vendo Cloud key">
+    `VENDO_API_KEY` delegates to the Vendo Cloud model gateway (Anthropic
+    Messages wire, served through the stock `@ai-sdk/anthropic` provider,
+    which Vendo ships — the key alone suffices, and your app's own install
+    wins when present). On this rung the default model is `vendo`
+    (the console maps it to a concrete model server-side); pin a different
+    id with `VENDO_MODEL`. No key on hand? `npx vendo login` mints a free
+    metered API key.
+  </Step>
+  <Step title="None">
+    No credential resolves. The wire returns a generic error and the server
+    log prints the exact set of instructions to unblock: install a provider
+    and set a key, or mint a Cloud key.
+  </Step>
+</Steps>
+
+## Pinning a rung
+
+Force a specific rung for reproducible runs or E2E matrices:
+
+```bash
+VENDO_DEV_CREDENTIAL=env-key:anthropic   # or env-key:openai / env-key:google
+VENDO_DEV_CREDENTIAL=vendo-cloud         # only use VENDO_API_KEY
+VENDO_DEV_CREDENTIAL=none                # force the honest failure
+```
+
+Pinning a rung that cannot resolve produces the same honest error as the
+unpinned `none` case.
+
+## The generated composition
+
+The route init scaffolds calls `createVendo()` without a `model`, so the runtime
+resolves the ladder above on every turn. Init does not scaffold a model file. To
+pin a provider, add `model` to the composition with any AI SDK `LanguageModel`:
+
+```ts
+import { createVendo } from "@vendoai/vendo/server";
+import { vendoModel } from "@vendoai/vendo/server";
+
+// Omit `model` to keep the dev-mode ladder, or set it to pin a provider.
+// In production, set ANTHROPIC_API_KEY (works alone — Vendo ships
+// @ai-sdk/anthropic), or OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY
+// with the matching @ai-sdk/* provider installed.
+const vendo = createVendo({ model: vendoModel(), catalog: registry });
+```
+
+The [handler](/reference/handler-options) contract does not change either way.
+
+## Verifying the model
+
+Init does not run a live turn. `vendo doctor` sends one real model turn through
+the same ladder, so doctor and runtime agree on what is wired:
+
+```bash
+npx vendo doctor
+```
+
+Exit 0 means a real user would have gotten an answer. See the
+[CLI reference](/reference/cli#vendo-doctor-dir).
+
+## Related
+
+- [Quickstart](/quickstart): install, init, and the first working turn.
+- [vendo init](/connect/vendo-init): the scaffold command.
+- [Environment variables](/reference/environment-variables): every
+  `VENDO_*` variable Vendo reads.

@@ -1,0 +1,168 @@
+{
+  "name": "@vendoai/vendo",
+  "version": "0.8.0",
+  "description": "The Vendo umbrella: default composition, public wire routes, React provider, and the vendo CLI.",
+  "keywords": [
+    "ai",
+    "agent",
+    "genui",
+    "react",
+    "vendo"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/runvendo/vendo.git",
+    "directory": "packages/vendo"
+  },
+  "homepage": "https://vendo.run",
+  "bugs": "https://github.com/runvendo/vendo/issues",
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "vendo": "bin/vendo.mjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
+    },
+    "./extract": {
+      "types": "./dist/cli/extract/index.d.ts",
+      "default": "./dist/cli/extract/index.js"
+    },
+    "./try": {
+      "types": "./dist/try.d.ts",
+      "default": "./dist/try.js"
+    },
+    "./try-surface": {
+      "types": "./dist/try-surface.d.ts",
+      "default": "./dist/try-surface.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "default": "./dist/react.js"
+    },
+    "./ai-sdk": {
+      "types": "./dist/ai-sdk.d.ts",
+      "default": "./dist/ai-sdk.js"
+    },
+    "./mastra": {
+      "types": "./dist/mastra.d.ts",
+      "default": "./dist/mastra.js"
+    },
+    "./auth/auth0": {
+      "types": "./dist/auth-presets/auth0.d.ts",
+      "default": "./dist/auth-presets/auth0.js"
+    },
+    "./auth/auth-js": {
+      "types": "./dist/auth-presets/auth-js.d.ts",
+      "default": "./dist/auth-presets/auth-js.js"
+    },
+    "./auth/clerk": {
+      "types": "./dist/auth-presets/clerk.d.ts",
+      "default": "./dist/auth-presets/clerk.js"
+    },
+    "./auth/jwt": {
+      "types": "./dist/auth-presets/jwt.d.ts",
+      "default": "./dist/auth-presets/jwt.js"
+    },
+    "./auth/supabase": {
+      "types": "./dist/auth-presets/supabase.d.ts",
+      "default": "./dist/auth-presets/supabase.js"
+    }
+  },
+  "files": [
+    "dist",
+    "bin",
+    "skills",
+    "README.md"
+  ],
+  "scripts": {
+    "build:embed": "node scripts/build-embed.mjs",
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "conformance": "vitest run src/conformance.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.docs-check.json --noEmit",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "3.0.12",
+    "@vendoai/actions": "workspace:*",
+    "@vendoai/agents": "workspace:*",
+    "@vendoai/apps": "workspace:*",
+    "@vendoai/automations": "workspace:*",
+    "@vendoai/core": "workspace:*",
+    "@vendoai/guard": "workspace:*",
+    "@vendoai/harnesses": "workspace:*",
+    "@vendoai/knowledge": "workspace:*",
+    "@vendoai/mcp": "workspace:*",
+    "@vendoai/store": "workspace:*",
+    "@vendoai/telemetry": "workspace:*",
+    "@vendoai/ui": "workspace:*",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "zod": "^3.25.0"
+  },
+  "peerDependencies": {
+    "@auth/core": ">=0.41.3",
+    "@clerk/backend": ">=1.0.0",
+    "@mastra/core": ">=1.0.0 <2",
+    "ai": ">=6.0.0 <7",
+    "jose": ">=5.0.0",
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0",
+    "zod": ">=3.25.0 <5"
+  },
+  "peerDependenciesMeta": {
+    "@auth/core": {
+      "optional": true
+    },
+    "@mastra/core": {
+      "optional": true
+    },
+    "@clerk/backend": {
+      "optional": true
+    },
+    "jose": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@auth/core": "^0.41.3",
+    "@clerk/backend": "^3.11.7",
+    "@mastra/core": "1.51.0",
+    "@types/json-schema": "^7.0.15",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "ai": "6.0.28",
+    "jose": "^6.2.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.6.0",
+    "vite": "^6.0.0",
+    "vitest": "^2.1.0"
+  },
+  "imports": {
+    "#dev-creds/model": {
+      "workerd": "./dist/dev-creds/model-edge.js",
+      "worker": "./dist/dev-creds/model-edge.js",
+      "edge-light": "./dist/dev-creds/model-edge.js",
+      "browser": "./dist/dev-creds/model-edge.js",
+      "default": "./dist/dev-creds/model.js"
+    }
+  }
+}

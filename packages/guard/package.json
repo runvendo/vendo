@@ -1,0 +1,62 @@
+{
+  "name": "@vendoai/guard",
+  "version": "0.8.0",
+  "description": "Vendo's policy core at one choke point: guard.bind, approvals, grants, audit, Vendo Auto judge, breakers.",
+  "keywords": [
+    "ai",
+    "agent",
+    "guardrails",
+    "policy",
+    "vendo"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/runvendo/vendo.git",
+    "directory": "packages/guard"
+  },
+  "homepage": "https://vendo.run",
+  "bugs": "https://github.com/runvendo/vendo/issues",
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@vendoai/core": "workspace:*",
+    "zod": "^3.25.0"
+  },
+  "peerDependencies": {
+    "ai": ">=6.0.0 <7",
+    "zod": ">=3.25.0 <5"
+  },
+  "devDependencies": {
+    "@ai-sdk/anthropic": "3.0.12",
+    "@electric-sql/pglite": "^0.2.0",
+    "@types/node": "^22.0.0",
+    "ai": "6.0.28",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

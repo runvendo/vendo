@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "seedNotes": "Pinned Skateshop includes deterministic catalog data such as Youness gradient cuts impact 8.375 skateboard deck, Max mean pets paintings impact light 8.25 skateboard deck, Nike Streakfly, Nike InfinityRN 4, Nike Air Max 2013, and Nike Pegasus 40 BTC.",
+  "k": 2,
+  "timeoutMs": 90000,
+  "threshold": 0.8,
+  "conversations": [
+    {
+      "id": "browse-skateboard-decks",
+      "description": "Browse the seeded skateboards/decks catalog.",
+      "prompts": [
+        "Show me available skateboard decks with their price and inventory."
+      ],
+      "assertions": [
+        { "kind": "tool-called", "name": { "regex": "product|catalog|item|inventory|store" } },
+        { "kind": "view-rendered", "role": "table" },
+        { "kind": "no-error-toast" }
+      ]
+    },
+    {
+      "id": "compare-nike-running-products",
+      "description": "Compare two seeded product rows.",
+      "prompts": [
+        "Compare Nike Streakfly and Nike Pegasus 40 BTC by price, inventory, and rating."
+      ],
+      "assertions": [
+        { "kind": "tool-called", "name": { "regex": "product|catalog|item|inventory" } },
+        { "kind": "view-rendered", "role": "table" },
+        { "kind": "no-error-toast" }
+      ]
+    },
+    {
+      "id": "find-youness-deck",
+      "description": "Find a specific seeded product by name.",
+      "prompts": [
+        "Find the Youness gradient cuts impact 8.375 skateboard deck and show the key details."
+      ],
+      "assertions": [
+        { "kind": "tool-called", "name": { "regex": "product|catalog|item|search|inventory" } },
+        { "kind": "view-rendered", "testId": "ui-node", "text": { "contains": "Youness" } },
+        { "kind": "no-error-toast" }
+      ]
+    },
+    {
+      "id": "add-deck-to-cart-approval",
+      "description": "Attempt a cart write and require an approval card.",
+      "prompts": [
+        "Add the Max mean pets paintings impact light 8.25 skateboard deck to my cart."
+      ],
+      "assertions": [
+        { "kind": "tool-called", "name": { "regex": "cart|add|line|checkout|order|product" } },
+        { "kind": "approval-card-shown" },
+        { "kind": "no-error-toast" }
+      ]
+    },
+    {
+      "id": "place-streakfly-order-approval",
+      "description": "Attempt an order write and require approval before mutation.",
+      "prompts": [
+        "Place an order for one Nike Streakfly using the default checkout details."
+      ],
+      "assertions": [
+        { "kind": "tool-called", "name": { "regex": "order|checkout|cart|purchase|payment" } },
+        { "kind": "approval-card-shown" },
+        { "kind": "no-error-toast" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@3.0.0/schema.json",
+  "changelog": "@changesets/cli/changelog",
+  "commit": false,
+  "fixed": [
+    [
+      "@vendoai/core",
+      "@vendoai/store",
+      "@vendoai/actions",
+      "@vendoai/guard",
+      "@vendoai/apps",
+      "@vendoai/automations",
+      "@vendoai/harnesses",
+      "@vendoai/ui",
+      "@vendoai/mcp",
+      "@vendoai/knowledge",
+      "@vendoai/agents",
+      "@vendoai/vendo",
+      "vendoai"
+    ]
+  ],
+  "linked": [],
+  "access": "public",
+  "baseBranch": "main",
+  "updateInternalDependencies": "patch",
+  "ignore": [],
+  "privatePackages": { "version": false, "tag": false }
+}

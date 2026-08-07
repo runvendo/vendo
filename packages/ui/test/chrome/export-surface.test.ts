@@ -1,0 +1,209 @@
+import { execFileSync } from "node:child_process";
+import { rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import * as chrome from "../../src/chrome/index.js";
+
+// Shelf-core Task 1 guard: the thread refactor (vendo-thread.tsx →
+// chrome/thread/) must keep `@vendoai/ui/chrome`'s public surface identical.
+// Value exports are asserted at runtime; type-only exports are erased by
+// esbuild, so — following packages/vendo/src/type-surface.test.ts — a real
+// `tsc --noEmit` runs over a generated fixture that `import type`s each name
+// from the source chrome entry (a dropped type re-export emits TS2305).
+
+const VALUE_EXPORTS = [
+  "ActivityPanel",
+  // The window label the panel and the automation card share.
+  "sponsorLabel",
+  "ApprovalCard",
+  "AutomationCard",
+  "AutomationsPanel",
+  "ConnectCard",
+  "ConnectedAccountsPanel",
+  "GrantSetCard",
+  // Build contract §9.2-§9.6 — the share surface and the viewer fork offer.
+  "ShareDialog",
+  "ForkOffer",
+  "encodeGrantPrincipal",
+  "NoPolicyNotice",
+  "VendoOverlay",
+  "VendoPage",
+  "VendoPalette",
+  "VendoSlot",
+  // Existing-agents Lane B — the three BYO-chat embeds.
+  "VendoAppEmbed",
+  "VendoApprovalEmbed",
+  "VendoToolResult",
+  "VendoThread",
+  "VendoToasts",
+  "vendoToast",
+  "dismissAllVendoToasts",
+  "WaitingQueue",
+  "VendoStage",
+  // Shelf Task 4 — the conversation-opening registry seam (slot remix,
+  // triggers, palette defaults all route through it).
+  "openVendoConversation",
+  // Keystone graduates B8 — the pin ceremony. `usePinAction` is what every pin
+  // affordance calls; `playPinCeremony` is the same sequence for a host running
+  // a pin from its own control.
+  "playPinCeremony",
+  "usePinAction",
+  // ⚠️ TEST EDIT — `usePinNudge` joins them DELIBERATELY. The thread is an eject
+  // surface, so every import in `thread/parts.tsx` is public API by
+  // construction, and the pin button there needs its invite state. The action
+  // and the invitation are two halves of one affordance: a host that ejects the
+  // template and keeps the pin needs both or its pin goes quiet.
+  "usePinNudge",
+  // ⚠️ TEST EDIT — the "Add to…" picker and its destination read, public for the
+  // SAME reason `usePinNudge` is: the thread card now renders the picker in place
+  // of the fixed pin once the origin knows more than one slot, and every import in
+  // `thread/parts.tsx` is public API by construction. An ejected thread that keeps
+  // the placement affordance needs both or it silently loses the multi-slot half.
+  "AddToPicker",
+  "useKnownSlots",
+  // Shelf Lane B — the two placeable pieces (ui-usage-dx §2).
+  "VendoActivities",
+  "VendoTrigger",
+  // Keystone graduates B7 — the remixable-surface affordance.
+  "Remixable",
+  // The eject surface (§4 customization ladder): internals the ejected
+  // thread compiles against, exported deliberately so ejected chrome keeps
+  // data/wire logic as a package dependency and only forks pixels.
+  "describeActivity",
+  "eventOutcomeLabel",
+  "formatAuditTime",
+  "outcomeLabel",
+  // ui-lane-panels pick B — the shared icon-ledger rows (ActivityPanel +
+  // VendoActivities render through them; ejected activities fork them).
+  "ActivityLedger",
+  "formatRelativeAuditTime",
+  "kindGlyph",
+  "BuildBeat",
+  // Spec §1 (2026-08-03) — the settled turn's summary row. Public because the
+  // ejected thread template renders it (the eject standalone guard requires
+  // every template import to be part of the chrome surface).
+  "BeatSummary",
+  // 2026-07 loading-state audit — the between-steps busy voice, now a beat at
+  // the transcript tail rather than a pill above the composer; the ejected
+  // thread template renders it, so it must be public (eject standalone rule).
+  "WorkingBeat",
+  "toolPresentation",
+  // 2026-07 split-view workspace — the overlay's expand/collapse machine;
+  // the ejected thread's app cards read the context via useSplitView.
+  "SplitViewContext",
+  "useSplitView",
+  "ChromeRoot",
+  "useCopyFeedback",
+  "ConnectDockButton",
+  "ConnectTray",
+  "FluidThinking",
+  "previewArgs",
+  "toolkitDisplayName",
+  "toolTitle",
+  "Markdown",
+  "MorphToast",
+  "PrefillScopeContext",
+  "registerPrefillConsumer",
+  "LONG_TEXT_CAP",
+  "truncateHead",
+  // Discoverability (ui-usage-dx §6) — the built-in greeting fallback (so
+  // hosts can extend rather than replace it) plus the fire-once store, which
+  // the ejected thread template imports (the eject standalone guard requires
+  // every template import to be public).
+  "defaultVendoGreeting",
+  "hasSeen",
+  "markSeen",
+  // ui-lane-cards picks — the mobile approval sheet (1-H) and the morph's
+  // Activity-dock seam (4-C): the anchor attribute a host stamps and the
+  // bump event its badge listens for.
+  "ApprovalSheet",
+  "ACTIVITY_ANCHOR_ATTRIBUTE",
+  "ACTIVITY_BUMP_EVENT",
+] as const;
+
+const TYPE_EXPORTS = [
+  "ApprovalCardProps",
+  "AutomationCardProps",
+  "ConnectCardProps",
+  "GrantSetCardProps",
+  "GrantSetPermission",
+  "ShareDialogProps",
+  "ForkOfferProps",
+  "VendoOverlayProps",
+  "VendoCommand",
+  "HotkeyChord",
+  "PaletteHotkey",
+  "VendoToastsProps",
+  "VendoToastInput",
+  "VendoToastAction",
+  "WaitingQueueProps",
+  "OpenConversationOptions",
+  "VendoActivitiesProps",
+  "VendoTriggerProps",
+  // 2026-08-02 final shape: RemixContext died with the context-chip behavior
+  // (remix always means fork now) — deliberately absent.
+  "RemixableProps",
+  // Eject surface types.
+  "VendoThreadProps",
+  "MorphToastProps",
+  "OutcomeTone",
+  "ActivityGlyph",
+  // Discoverability (ui-usage-dx §6) — the dial + greeting config shapes.
+  "VendoDiscoverability",
+  "VendoGreeting",
+];
+
+// vitest's jsdom environment rewrites import.meta.url to a non-file scheme,
+// so resolve from the run cwd (vitest runs with cwd = the package root).
+const packageDir = process.cwd(); // packages/ui
+const require = createRequire(join(packageDir, "package.json"));
+const tsc = require.resolve("typescript/bin/tsc");
+
+const fixtures: string[] = [];
+afterEach(() => {
+  for (const path of fixtures.splice(0)) rmSync(path, { force: true });
+});
+
+/** Type-check a fixture that `import type`s `names` from the chrome entry.
+ *  Returns tsc's combined output on failure, or null when it exits clean. */
+function typecheckImports(names: string[]): string | null {
+  const fixturePath = join(packageDir, `.chrome-surface.${process.pid}.${Math.random().toString(36).slice(2)}.ts`);
+  fixtures.push(fixturePath);
+  writeFileSync(fixturePath, `import type { ${names.join(", ")} } from "./src/chrome/index.js";\n`);
+  try {
+    execFileSync(
+      process.execPath,
+      [tsc, fixturePath, "--noEmit", "--strict", "--target", "ES2022", "--module", "ESNext",
+        "--moduleResolution", "Bundler", "--skipLibCheck", "--esModuleInterop", "--jsx", "react-jsx"],
+      { cwd: packageDir, stdio: "pipe" },
+    );
+    return null;
+  } catch (error) {
+    const err = error as { stdout?: Buffer; stderr?: Buffer };
+    return `${err.stdout?.toString() ?? ""}${err.stderr?.toString() ?? ""}`;
+  }
+}
+
+describe("@vendoai/ui/chrome export surface", () => {
+  it("exports every shipped chrome value", () => {
+    for (const name of VALUE_EXPORTS) {
+      expect(chrome[name], name).toBeDefined();
+    }
+  });
+
+  it("exports no unexpected values", () => {
+    expect(Object.keys(chrome).sort()).toEqual([...VALUE_EXPORTS].sort());
+  });
+
+  it("re-exports every chrome type from the source entry", () => {
+    const failure = typecheckImports(TYPE_EXPORTS);
+    expect(failure, failure ?? "").toBeNull();
+  });
+
+  it("has teeth: a missing type re-export fails the tsc gate with TS2305", () => {
+    const failure = typecheckImports(["__DefinitelyNotAChromeExport"]);
+    expect(failure).not.toBeNull();
+    expect(failure).toContain("TS2305");
+  });
+});

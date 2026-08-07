@@ -1,0 +1,98 @@
+---
+title: "Troubleshooting Vendo: doctor, /status, and error codes"
+sidebarTitle: "Troubleshooting"
+description: "Diagnose broken Vendo wiring with npx vendo doctor, its live probes against your dev server, and the stable error taxonomy shared by CLI, handler, and client."
+---
+
+Start with:
+
+```bash
+npx vendo doctor
+```
+
+Doctor checks local wiring, then probes your running dev server live — a
+`/status` round trip, your root page, the credential-forwarding probes, and
+finally one real streaming model turn through the wire, which spends tokens.
+Exit code 0 is green; exit code 1 means broken wiring. See
+[Verify](/agents/verify) for the symptom, cause, and fix behind every doctor
+error code.
+
+## Error codes
+
+| Code | Meaning | HTTP status |
+| --- | --- | --- |
+| `validation` | malformed document, tree, request, or call | 400 |
+| `not-found` | the scoped resource does not exist | 404 |
+| `blocked` | guard rejected the operation | 403 |
+| `conflict` | the operation conflicts with current state | 409 |
+| `cloud-required` | a Cloud call has no valid key or its meter is exhausted | 402 |
+| `sandbox-unavailable` | no sandbox adapter or unreachable machine | 501 |
+| `not-implemented` | an optional host seam is absent | 501 |
+
+Every non-2xx response uses `{ "error": { "code", "message" } }`.
+`pending-approval` is a tool outcome, not an error.
+
+## Common checks
+
+- A machine-backed app (layers 2 and 3) requires a configured sandbox adapter
+  and `VENDO_BASE_URL` for the box callback URLs.
+- Present-mode credential forwarding requires the wire to trust its own
+  origin. In development it learns and trusts that origin automatically from
+  the first request: no `VENDO_BASE_URL` needed. Every other environment
+  (including `NODE_ENV=test`) keeps the learned origin untrusted by default.
+  In production, an untrusted origin (reason `untrusted-host-origin`, from a
+  missing `VENDO_BASE_URL`) fails the present-mode call closed instead of
+  running it unauthenticated; a cross-origin route binding (reason
+  `cross-origin-binding`) always stays refused, in every environment. Vendo
+  emits one `present-credentials-not-forwarded` audit event either way.
+  `vendo doctor` catches a missing `VENDO_BASE_URL` before you ship (see
+  Doctor probes below).
+- Away host API calls require `actAs` and an app-bound grant that was
+  captured while the user was present. See
+  [actAs presets](/connect/act-as-presets) for provider wiring. If `actAs`
+  returns `null` for a run, the step fails closed, the run terminates, and
+  nothing reaches the host API. Each attempt is audited with its disposition
+  (`minted`, `declined`, `mismatch`, or `error`); grants that don't match the
+  current principal fail closed with `act-as-subject-mismatch`.
+- Upgrading from the 0.4.1 era: if your repo added a direct `@vendoai/vendo`
+  dependency alongside the `vendoai` alias, bumping `vendoai` alone
+  half-upgrades — the CLI is new while the runtime stays pinned old. Bump
+  the direct `@vendoai/vendo` entry to the same version (or drop it and
+  depend on `vendoai` only), then reinstall. `vendo doctor` (0.4.3+) flags
+  the mismatch.
+- On an edge runtime (Cloudflare Workers, Bun, Deno), a refusal naming the
+  local store engines ("the local store engines … need Node; pass `store:` …")
+  or the dev model ladder ("the dev model ladder needs Node; … pass `model:`
+  explicitly") means an infrastructure seam is unfilled: those two defaults
+  are Node-only by design. Set `VENDO_API_KEY` to wire the Cloud adapters, or
+  pass your own `store:`/`model:` — the generated custom wiring shows both
+  slots. See [Edge runtimes](/deploy/edge-runtimes).
+- Cookie-authenticated mutations require `Content-Type: application/json`.
+- `/tick` requires the configured bearer secret.
+- Webhook verification uses the raw body and delivery headers.
+- Unknown instant UI formats render a contained notice instead of breaking the page.
+
+## Doctor probes
+
+`vendo doctor` calls three `/doctor/*` routes on the running dev server:
+
+- `POST /doctor/present` verifies that `authorization` and `cookie` headers
+  reach the host API on same-origin calls. Failure means `VENDO_BASE_URL` is
+  missing or wrong, the route binding is cross-origin, or the server is
+  down.
+- `POST /doctor/act-as` verifies that `createVendo({ actAs })` mints auth
+  material the host principal resolver accepts. Doctor warns (does not
+  fail) when `actAs` is not configured.
+- `GET /doctor/machines` reports the scheduler wiring and machine state: which
+  apps carry a machine, whether a `/tick` caller secret is configured, and
+  each schedule's last-fired state.
+
+No credential values are printed or persisted by any probe, and the synthetic
+`/doctor/*` routes return 404 in production.
+
+`GET /doctor/base-url` is the one exception to that 404, and doctor does not
+call it: it exists for a deployed production server to answer. It reports the
+missing case **only** in production — outside production it returns
+`{ "ok": true }` unconditionally, whether or not `VENDO_BASE_URL` is set, so a
+green answer in dev says nothing about your production wiring.
+See the [CLI reference](/reference/cli#vendo-doctor-dir).

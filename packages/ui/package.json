@@ -1,0 +1,116 @@
+{
+  "name": "@vendoai/ui",
+  "version": "0.8.0",
+  "description": "Headless hooks + optional chrome for Vendo: the client, every surface, the vendo-genui/v2 tree renderer, and the voice stage.",
+  "keywords": [
+    "ai",
+    "agent",
+    "genui",
+    "react",
+    "vendo"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/runvendo/vendo.git",
+    "directory": "packages/ui"
+  },
+  "homepage": "https://vendo.run",
+  "bugs": "https://github.com/runvendo/vendo/issues",
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./chrome": {
+      "types": "./dist/chrome/index.d.ts",
+      "default": "./dist/chrome/index.js"
+    },
+    "./tree": {
+      "types": "./dist/tree/index.d.ts",
+      "default": "./dist/tree/index.js"
+    },
+    "./kit": {
+      "types": "./dist/kit/index.d.ts",
+      "default": "./dist/kit/index.js"
+    },
+    "./client": {
+      "types": "./dist/client-impl.d.ts",
+      "default": "./dist/client-impl.js"
+    },
+    "./voice": {
+      "types": "./dist/voice/index.d.ts",
+      "default": "./dist/voice/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build:jail": "node scripts/build-jail-runtime.mjs",
+    "prebuild": "pnpm run build:jail",
+    "build": "tsc -p tsconfig.json",
+    "postbuild": "node scripts/build-eject-templates.mjs",
+    "pretest": "pnpm run build:jail",
+    "test": "vitest run",
+    "pretest:coverage": "pnpm run build:jail",
+    "pretypecheck": "pnpm run build:jail",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "pretest:browser": "pnpm run build:jail",
+    "test:browser": "playwright test",
+    "pretest:ui": "pnpm run build:jail",
+    "test:ui": "playwright test e2e/smoke.spec.ts",
+    "test:mcp-shim": "playwright test --config e2e/mcp-shim.config.ts",
+    "build:mcp-shim": "node scripts/build-mcp-app-shim.mjs",
+    "build:onest-font": "node scripts/build-onest-font.mjs",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@ai-sdk/react": "3.0.30",
+    "@tanstack/react-table": "^8.20.0",
+    "@vendoai/core": "workspace:*",
+    "aria-snapshot": "0.2.0",
+    "clsx": "2.1.1",
+    "fluidkit": "^0.5.0",
+    "motion": "^11.11.0",
+    "react-markdown": "^9.0.1",
+    "recharts": "^3.2.0",
+    "remark-gfm": "^4.0.0",
+    "sucrase": "^3.35.0",
+    "tailwind-merge": "3.6.0",
+    "zod": "3.25.76"
+  },
+  "peerDependencies": {
+    "ai": "^6.0.0",
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0",
+    "zod": ">=3.25.0 <5"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.10.0",
+    "@modelcontextprotocol/ext-apps": "^1.7.4",
+    "@playwright/test": "^1.49.0",
+    "@testing-library/react": "^16.1.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "ai": "6.0.28",
+    "jsdom": "^25.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.6.0",
+    "vite": "^6.0.0",
+    "vitest": "^2.1.0"
+  }
+}

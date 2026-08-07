@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "nativeScreens": [
+    {
+      "id": "documents",
+      "label": "Papermark documents",
+      "path": "/documents",
+      "waitFor": "main"
+    }
+  ],
+  "prompts": [
+    {
+      "id": "document-portfolio",
+      "label": "Document portfolio",
+      "prompt": "Using the real seeded team workspace, create and open a document portfolio dashboard with each document's name, visibility or processing status, and recent view count when available. Match Papermark's native visual style and use no emoji."
+    },
+    {
+      "id": "viewer-activity",
+      "label": "Viewer activity summary",
+      "prompt": "Using the real seeded workspace data, create and open a viewer activity summary for Corpus Q3 Board Packet.pdf with visits, recent activity, and the analyst@example.test recipient where available. Match Papermark's native visual style and use no emoji."
+    },
+    {
+      "id": "sharing-overview",
+      "label": "Sharing overview",
+      "prompt": "Using the real seeded workspace data, create and open a read-only sharing overview for Security Overview.pdf showing its current links and access settings without changing anything. Match Papermark's native visual style and use no emoji."
+    }
+  ]
+}

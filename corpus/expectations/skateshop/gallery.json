@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "nativeScreens": [
+    {
+      "id": "storefront",
+      "label": "Skateshop storefront",
+      "path": "/",
+      "waitFor": "main"
+    }
+  ],
+  "prompts": [
+    {
+      "id": "inventory-dashboard",
+      "label": "Deck inventory dashboard",
+      "prompt": "Using the real store catalog, create and open an interactive skateboard deck inventory dashboard with product names, prices, stock levels, and a concise low-stock summary. Match the Skateshop storefront's native visual style and use no emoji."
+    },
+    {
+      "id": "running-comparison",
+      "label": "Running shoe comparison",
+      "prompt": "Using the real catalog data, create and open a comparison view for Nike Streakfly, Nike InfinityRN 4, and Nike Pegasus 40 BTC with price, inventory, and rating. Match the Skateshop storefront's native visual style and use no emoji."
+    },
+    {
+      "id": "catalog-summary",
+      "label": "Catalog availability summary",
+      "prompt": "Using the real catalog data, create and open a product availability summary grouped by category with total items, in-stock counts, and representative products. Match the Skateshop storefront's native visual style and use no emoji."
+    }
+  ]
+}

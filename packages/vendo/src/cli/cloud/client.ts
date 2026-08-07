@@ -1,0 +1,185 @@
+import {
+  METER_EXHAUSTED_CODE,
+  formatMeterExhausted,
+  parseMeterExhausted,
+} from "@vendoai/core";
+import {
+  isSessionExpired,
+  readCloudSession,
+  writeCloudSession,
+  type CloudSession,
+} from "./session.js";
+import { deploymentIdentityHeaders } from "../../deployment-identity.js";
+import { CLI_VERSION } from "../shared.js";
+
+const DEFAULT_CLOUD_URL = "https://console.vendo.run";
+
+export function isVendoKey(key: string): boolean {
+  return /^vnd_[0-9a-f]{40}$/.test(key);
+}
+
+export class CloudError extends Error {
+  readonly code: string;
+  readonly status: number;
+
+  constructor(code: string, message: string, status: number) {
+    super(message);
+    this.name = "CloudError";
+    this.code = code;
+    this.status = status;
+  }
+}
+
+// Base-URL resolution lives with the portable runtime helper so server-side
+// code (capability misses) never imports this Node/CLI module.
+export { resolveCloudBaseUrl, type CloudUrlOptions } from "../../cloud-key-fetch.js";
+import { resolveCloudBaseUrl, type CloudUrlOptions } from "../../cloud-key-fetch.js";
+
+export interface SessionStore {
+  read(): Promise<CloudSession | null>;
+  write(session: CloudSession): Promise<void>;
+}
+
+export interface CloudFetchOptions extends CloudUrlOptions {
+  method?: string;
+  body?: unknown;
+  auth?: "user" | "key";
+  apiKey?: string;
+  accessToken?: string;
+  fetchImpl?: typeof fetch;
+  home?: string;
+  sessionStore?: SessionStore;
+  signal?: AbortSignal;
+}
+
+interface ErrorEnvelope {
+  error?: { code?: unknown; message?: unknown };
+}
+
+function requestUrl(path: string, options: CloudUrlOptions): string {
+  const base = resolveCloudBaseUrl(options);
+  const suffix = base.endsWith("/api/v1") && path.startsWith("/api/v1/")
+    ? path.slice("/api/v1".length)
+    : path;
+  return `${base}${suffix.startsWith("/") ? suffix : `/${suffix}`}`;
+}
+
+async function responseBody(response: Response): Promise<unknown> {
+  const text = await response.text();
+  if (text.length === 0) return undefined;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return text;
+  }
+}
+
+function errorFrom(response: Response, body: unknown): CloudError {
+  // Pricing v3 (spec §5): a meter refusal (HTTP 402, stable code
+  // meter-exhausted, structured body) prints as ONE crafted sentence — the
+  // meter, the figures and reset date, and the two exits — instead of the
+  // raw envelope. Same formatter the thread banner uses; the refusal body
+  // stays the only source of truth (no client-side entitlement checks).
+  const refusal = parseMeterExhausted(body);
+  if (refusal !== undefined) {
+    return new CloudError(METER_EXHAUSTED_CODE, formatMeterExhausted(refusal), response.status);
+  }
+  const envelope = body as ErrorEnvelope | null;
+  const code = typeof envelope?.error?.code === "string" ? envelope.error.code : `http-${response.status}`;
+  const message = typeof envelope?.error?.message === "string"
+    ? envelope.error.message
+    : `Vendo Cloud request failed (${response.status})`;
+  return new CloudError(code, message, response.status);
+}
+
+function defaultSessionStore(home: string | undefined): SessionStore {
+  return {
+    read: () => readCloudSession({ home }),
+    write: (session) => writeCloudSession(session, { home }),
+  };
+}
+
+function sessionFrom(value: unknown): CloudSession {
+  if (typeof value !== "object" || value === null || typeof (value as Partial<CloudSession>).access_token !== "string") {
+    throw new CloudError("invalid-session", "Vendo Cloud returned an invalid session", 500);
+  }
+  return value as CloudSession;
+}
+
+async function refreshUserSession(
+  session: CloudSession,
+  options: CloudFetchOptions,
+  store: SessionStore,
+): Promise<CloudSession> {
+  if (!session.refresh_token) {
+    throw new CloudError("session-expired", "Vendo Cloud session expired; run `vendo cloud login` again", 401);
+  }
+  const response = await (options.fetchImpl ?? fetch)(requestUrl("/api/v1/auth/refresh", options), {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      "user-agent": `vendo-cli/${CLI_VERSION}`,
+    },
+    body: JSON.stringify({ refresh_token: session.refresh_token }),
+  });
+  const body = await responseBody(response);
+  if (!response.ok) throw errorFrom(response, body);
+  const refreshed = sessionFrom(body);
+  await store.write(refreshed);
+  return refreshed;
+}
+
+async function send(
+  path: string,
+  options: CloudFetchOptions,
+  token: string | undefined,
+): Promise<{ response: Response; body: unknown }> {
+  const headers: Record<string, string> = {
+    accept: "application/json",
+    "user-agent": `vendo-cli/${CLI_VERSION}`,
+  };
+  if (options.body !== undefined) headers["content-type"] = "application/json";
+  if (token !== undefined) headers.authorization = `Bearer ${token}`;
+  // The console's shared auth middleware upserts deployment inventory and
+  // meters usage from these headers on real service calls — there is no
+  // heartbeat (shared with the runtime Cloud adapters; deployment-identity.ts).
+  if (options.auth === "key") {
+    Object.assign(headers, await deploymentIdentityHeaders());
+  }
+  const response = await (options.fetchImpl ?? fetch)(requestUrl(path, options), {
+    method: options.method ?? (options.body === undefined ? "GET" : "POST"),
+    headers,
+    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    signal: options.signal,
+  });
+  return { response, body: await responseBody(response) };
+}
+
+export async function cloudFetch<T = unknown>(path: string, options: CloudFetchOptions = {}): Promise<T> {
+  let token: string | undefined;
+  let session: CloudSession | null = null;
+  const store = options.sessionStore ?? defaultSessionStore(options.home);
+
+  if (options.auth === "key") {
+    token = options.apiKey ?? (options.env ?? process.env).VENDO_API_KEY;
+    if (!token) throw new CloudError("missing-api-key", "Pass --key or set VENDO_API_KEY", 0);
+  } else if (options.auth === "user") {
+    if (options.accessToken) {
+      token = options.accessToken;
+    } else {
+      session = await store.read();
+      if (!session) throw new CloudError("not-logged-in", "Run `vendo cloud login` first", 401);
+      if (isSessionExpired(session)) session = await refreshUserSession(session, options, store);
+      token = session.access_token;
+    }
+  }
+
+  let result = await send(path, options, token);
+  if (options.auth === "user" && !options.accessToken && result.response.status === 401 && session) {
+    session = await refreshUserSession(session, options, store);
+    result = await send(path, options, session.access_token);
+  }
+  if (!result.response.ok) throw errorFrom(result.response, result.body);
+  return result.body as T;
+}

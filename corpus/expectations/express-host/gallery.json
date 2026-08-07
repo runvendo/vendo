@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "nativeScreens": [
+    {
+      "id": "tasks",
+      "label": "Relay task workspace",
+      "path": "/",
+      "waitFor": ".task-row"
+    }
+  ],
+  "prompts": [
+    {
+      "id": "priority-dashboard",
+      "label": "Priority dashboard",
+      "prompt": "Using Relay's real task data, create and open an interactive task-priority dashboard with the exact visible heading Relay priority dashboard, grouped by priority with assignee and due-date details. Match Relay's native visual style and use no emoji."
+    },
+    {
+      "id": "workload-summary",
+      "label": "Team workload summary",
+      "prompt": "Using Relay's real task data, create and open a team workload summary grouped by assignee with open, in-progress, and completed counts. Match Relay's native visual style and use no emoji."
+    },
+    {
+      "id": "delivery-overview",
+      "label": "Delivery overview",
+      "prompt": "Using Relay's real task data, create and open a delivery overview with completion progress, upcoming due dates, and the highest-priority work that needs attention. Match Relay's native visual style and use no emoji."
+    }
+  ]
+}

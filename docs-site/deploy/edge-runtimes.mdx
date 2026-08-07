@@ -1,0 +1,63 @@
+---
+title: "Edge runtimes"
+sidebarTitle: "Edge runtimes"
+description: "Run the Vendo server on Cloudflare Workers, Bun, Deno, or any Web-standard runtime: the generated wiring, the adapters that work there, and the rules the portability gate enforces."
+---
+
+The Vendo server targets Web-standard JavaScript, not Node. A CI gate bundles
+the server entry for a Worker target and boots it under workerd on every
+change, so the wiring below stays supported.
+
+## Wiring
+
+Run `npx vendo init --framework custom` (detection lands here automatically
+when the host is neither Next.js nor Express). It generates
+`vendo/server.ts`: a lazy composition that takes `Request` in and returns
+`Response`, with the environment passed per call.
+
+Route your runtime's requests through it:
+
+```ts
+// Cloudflare Workers (wrangler.toml: compatibility_flags = ["nodejs_compat"])
+import { handleVendoRequest } from "./vendo/server";
+
+export default {
+  fetch: (request: Request, env: VendoEnv) => handleVendoRequest(request, env),
+};
+```
+
+```ts
+// Bun / Deno / Hono — serve /api/vendo/* through the same function
+app.all("/api/vendo/*", (c) => handleVendoRequest(c.req.raw));
+```
+
+The client side is unchanged: mount `<VendoRoot components={registry}
+theme={theme}>` with `<VendoOverlay />` in your SPA entry.
+
+## The three rules
+
+1. **Construct lazily.** `createVendo()` performs no I/O and starts no timers
+   at construction, but the generated lazy-singleton shape is still the
+   contract: Workers forbids async work in module scope, and env vars only
+   exist per request there.
+2. **Pass adapters explicitly.** The dev credential ladder and the local
+   PGlite/Postgres store engines are Node-only and refuse with guidance on
+   edge runtimes. With `VENDO_API_KEY` the generated wiring fills every seam
+   with the Cloud adapters — the model is the stock `@ai-sdk/anthropic`
+   provider pointed at the console gateway. Without a key, pass your own
+   `model`, `store`, `connections`, and `sandbox`.
+3. **Set `VENDO_BASE_URL`** to the deployed origin. Present-credential
+   forwarding fails closed without it, and `vendo doctor` checks it
+   (`E-AUTH-001`).
+
+## What works where
+
+| Seam | Node | Edge |
+| --- | --- | --- |
+| Store | PGlite / Postgres / hosted | hosted (`VENDO_API_KEY`) or custom |
+| Model | dev ladder / any AI SDK model | explicit model (gateway or BYO) |
+| Sandbox | e2b / Cloud / custom | Cloud or custom |
+| Telemetry | anonymous, opt-out | no-op |
+
+`vendo doctor` judges unknown-framework hosts by their wiring
+(`E-WIRE-007`/`E-WIRE-008`), never by another framework's file layout.

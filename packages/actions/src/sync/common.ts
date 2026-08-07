@@ -1,0 +1,511 @@
+import { promises as fs } from "node:fs";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { sha256Hex } from "@vendoai/core";
+import type TS from "typescript";
+import { noteRejectedCompiler, unsupportedCompiler } from "./compiler-gate.js";
+import type { ExtractedTool, HttpMethod, PrimitiveToolBinding } from "../formats.js";
+
+// Tool identity lives in the pure ../binding-identity.js module (the judgment
+// layer needs it off the node-only side); re-exported here so sync's own
+// importers keep their one import site.
+export { bindingIdentity, dedupKey } from "../binding-identity.js";
+
+const SOURCE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"] as const;
+// Hidden directories are never route sources; alternate Next dist dirs
+// (e.g. a test consumer's FIXTURE_DIST_DIR) must not leak compiled routes
+// into extraction.
+const SKIP_DIRS = new Set(["node_modules", "dist"]);
+const skipDir = (name: string): boolean => SKIP_DIRS.has(name) || name.startsWith(".");
+
+interface TsconfigPathAlias {
+  pattern: string;
+  targets: string[];
+}
+
+export interface ResolvedSource {
+  file: string;
+  source: string;
+}
+
+export interface ImportReference {
+  specifier: string;
+  imported: string;
+}
+
+const aliasCache = new Map<string, Promise<TsconfigPathAlias[]>>();
+
+/** Cleared at the start of every sync so a same-process re-run (watch mode) sees tsconfig edits. */
+export function clearAliasCache(): void {
+  aliasCache.clear();
+}
+
+export async function walk(
+  root: string,
+  keep: (relativePath: string) => boolean,
+  maxFiles = 5_000,
+): Promise<string[]> {
+  const files: string[] = [];
+  async function visit(directory: string): Promise<void> {
+    let entries;
+    try {
+      entries = await fs.readdir(directory, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (files.length >= maxFiles) return;
+      const full = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        if (!skipDir(entry.name)) await visit(full);
+      } else if (keep(path.relative(root, full))) {
+        files.push(full);
+      }
+    }
+  }
+  await visit(root);
+  return files.sort();
+}
+
+/** Write a sync artifact only when its bytes changed (keeps mtimes stable). */
+export async function writeIfChanged(file: string, bytes: string): Promise<void> {
+  try {
+    if (await fs.readFile(file, "utf8") === bytes) return;
+  } catch {
+    // A missing artifact is created below.
+  }
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(file, bytes, "utf8");
+}
+
+function extendsPath(value: unknown, configDir: string): string | null {
+  if (typeof value !== "string" || (!value.startsWith(".") && !path.isAbsolute(value))) return null;
+  const resolved = path.resolve(configDir, value);
+  return path.extname(resolved) ? resolved : `${resolved}.json`;
+}
+
+async function loadAliases(configPath: string, depth = 0): Promise<TsconfigPathAlias[]> {
+  // tsconfig files are JSONC; the compiler's own config parser reads them.
+  const ts = loadCompiler();
+  let parsed: any;
+  try {
+    parsed = ts?.parseConfigFileTextToJson(configPath, await fs.readFile(configPath, "utf8")).config;
+  } catch {
+    return [];
+  }
+  if (!parsed || typeof parsed !== "object") return [];
+  const configDir = path.dirname(configPath);
+  const aliases: TsconfigPathAlias[] = [];
+  const extended = depth < 4 ? extendsPath(parsed?.extends, configDir) : null;
+  if (extended) aliases.push(...await loadAliases(extended, depth + 1));
+  const options = parsed?.compilerOptions && typeof parsed.compilerOptions === "object"
+    ? parsed.compilerOptions
+    : {};
+  const baseUrl = path.resolve(configDir, typeof options.baseUrl === "string" ? options.baseUrl : ".");
+  const paths = options.paths && typeof options.paths === "object" ? options.paths : {};
+  for (const [pattern, rawTargets] of Object.entries(paths)) {
+    if (!Array.isArray(rawTargets)) continue;
+    const targets = rawTargets
+      .filter((target): target is string => typeof target === "string")
+      .map((target) => path.resolve(baseUrl, target));
+    if (targets.length > 0) aliases.push({ pattern, targets });
+  }
+  return aliases;
+}
+
+function aliasesFor(root: string): Promise<TsconfigPathAlias[]> {
+  const key = path.resolve(root);
+  const cached = aliasCache.get(key);
+  if (cached) return cached;
+  const aliases = loadAliases(path.join(key, "tsconfig.json"));
+  aliasCache.set(key, aliases);
+  return aliases;
+}
+
+function aliasBases(specifier: string, alias: TsconfigPathAlias): string[] {
+  const star = alias.pattern.indexOf("*");
+  if (star === -1) return specifier === alias.pattern ? alias.targets : [];
+  const prefix = alias.pattern.slice(0, star);
+  const suffix = alias.pattern.slice(star + 1);
+  if (!specifier.startsWith(prefix) || !specifier.endsWith(suffix)) return [];
+  const matched = specifier.slice(prefix.length, specifier.length - suffix.length);
+  return alias.targets.map((target) => target.replace("*", matched));
+}
+
+function candidates(base: string): string[] {
+  return [
+    base,
+    ...SOURCE_EXTENSIONS.map((extension) => `${base}${extension}`),
+    ...SOURCE_EXTENSIONS.map((extension) => path.join(base, `index${extension}`)),
+  ];
+}
+
+export function isInside(root: string, candidate: string): boolean {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+async function resolvedCandidate(base: string, realRoot: string): Promise<ResolvedSource | null> {
+  for (const candidate of candidates(base)) {
+    if (candidate.split(path.sep).includes("node_modules")) continue;
+    let realCandidate: string;
+    try {
+      realCandidate = await fs.realpath(candidate);
+    } catch {
+      continue;
+    }
+    // The pre-realpath check above is not enough: an in-project symlink
+    // pointing into node_modules resolves to a path inside the root and would
+    // otherwise be captured as if it were the host's own source.
+    if (realCandidate.split(path.sep).includes("node_modules")) continue;
+    if (!isInside(realRoot, realCandidate)) continue;
+    try {
+      return { file: realCandidate, source: await fs.readFile(realCandidate, "utf8") };
+    } catch {
+      // Try the next source-owned candidate.
+    }
+  }
+  return null;
+}
+
+/** The TypeScript compiler, resolved lazily through this package's own
+ * dependency graph (the same posture as catalog-scan). Module analysis is
+ * fail-closed: when the compiler cannot be loaded — or loads but predates the
+ * API surface extraction calls (compiler-gate.ts) — imports and exports
+ * resolve to nothing rather than being guessed at with string scans. */
+let compilerModule: typeof TS | null | undefined;
+
+function loadCompiler(): typeof TS | null {
+  if (compilerModule === undefined) {
+    try {
+      const candidate = createRequire(import.meta.url)("typescript") as typeof TS;
+      const tooOld = unsupportedCompiler(candidate);
+      if (tooOld !== null) noteRejectedCompiler(tooOld);
+      compilerModule = tooOld === null ? candidate : null;
+    } catch {
+      compilerModule = null;
+    }
+  }
+  return compilerModule;
+}
+
+export interface ParsedModule {
+  ts: typeof TS;
+  sf: TS.SourceFile;
+}
+
+/** Parse one module's source for statement-level analysis (no type checking,
+ * no host code execution). TSX is the default script kind — extraction mostly
+ * reads component and route modules — with plain TS for `.ts`/`.mts`/`.cts`
+ * files so generic arrows are not mis-lexed as JSX. */
+export function parseModuleSource(source: string, fileName = "module.tsx"): ParsedModule | null {
+  const ts = loadCompiler();
+  if (!ts) return null;
+  const kind = /\.[cm]?ts$/u.test(fileName) ? ts.ScriptKind.TS : ts.ScriptKind.TSX;
+  return { ts, sf: ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, kind) };
+}
+
+/** Depth-first visit of every node under `root` (root excluded). */
+export function visitNodes(ts: typeof TS, root: TS.Node, visit: (node: TS.Node) => void): void {
+  const walkNode = (node: TS.Node): void => {
+    visit(node);
+    ts.forEachChild(node, walkNode);
+  };
+  ts.forEachChild(root, walkNode);
+}
+
+function hasExportModifier(ts: typeof TS, statement: TS.Statement): boolean {
+  return ts.canHaveModifiers(statement) === true
+    && (ts.getModifiers(statement) ?? []).some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
+}
+
+function hasDefaultModifier(ts: typeof TS, statement: TS.Statement): boolean {
+  return ts.canHaveModifiers(statement) === true
+    && (ts.getModifiers(statement) ?? []).some((modifier) => modifier.kind === ts.SyntaxKind.DefaultKeyword);
+}
+
+function bindingDeclaresName(ts: typeof TS, name: TS.BindingName, exportedName: string): boolean {
+  if (ts.isIdentifier(name)) return name.text === exportedName;
+  return name.elements.some((element) =>
+    !ts.isOmittedExpression(element) && bindingDeclaresName(ts, element.name, exportedName));
+}
+
+/** True when the module itself declares an export named `exportedName`
+ * (declaration exports, `export default`, and specifier-only `export { x }`
+ * lists — the local-value cases resolution treats as owned by this module). */
+function declaresExport(ts: typeof TS, sf: TS.SourceFile, exportedName: string): boolean {
+  for (const statement of sf.statements) {
+    if (ts.isExportAssignment(statement)) {
+      if (exportedName === "default") return true;
+      continue;
+    }
+    if (ts.isExportDeclaration(statement)) {
+      if (statement.moduleSpecifier || !statement.exportClause || !ts.isNamedExports(statement.exportClause)) continue;
+      if (statement.exportClause.elements.some((element) => element.name.text === exportedName)) return true;
+      continue;
+    }
+    if (!hasExportModifier(ts, statement)) continue;
+    if (hasDefaultModifier(ts, statement) && exportedName === "default") return true;
+    if ((ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement) || ts.isEnumDeclaration(statement))
+      && statement.name?.text === exportedName) return true;
+    if (ts.isVariableStatement(statement)
+      && statement.declarationList.declarations.some((declaration) => bindingDeclaresName(ts, declaration.name, exportedName))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function reExportTarget(source: string, exportedName: string, fileName?: string): Promise<{
+  direct: boolean;
+  named?: { specifier: string; imported: string };
+  stars: string[];
+}> {
+  const parsed = parseModuleSource(source, fileName);
+  if (!parsed) return { direct: false, stars: [] };
+  const { ts, sf } = parsed;
+  const stars: string[] = [];
+  let namespaceDeclared = false;
+  for (const statement of sf.statements) {
+    if (!ts.isExportDeclaration(statement) || !statement.moduleSpecifier || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+    const specifier = statement.moduleSpecifier.text;
+    const clause = statement.exportClause;
+    if (!clause || ts.isNamespaceExport(clause)) {
+      // `export * as X from "./y"` declares X on this module itself — the
+      // barrel is the owning module (checked before any star chase, matching
+      // the lexer era, which listed X in the barrel's exports). Both forms
+      // also surface the target module for name-by-name probing.
+      if (clause && clause.name.text === exportedName) namespaceDeclared = true;
+      stars.push(specifier);
+      continue;
+    }
+    const element = clause.elements.find((item) => item.name.text === exportedName);
+    if (element) {
+      return {
+        direct: false,
+        named: { specifier, imported: (element.propertyName ?? element.name).text },
+        stars,
+      };
+    }
+  }
+  return { direct: namespaceDeclared || declaresExport(ts, sf, exportedName), stars };
+}
+
+async function importBases(importer: string, specifier: string, root: string): Promise<string[]> {
+  const bases: string[] = [];
+  if (specifier.startsWith(".")) bases.push(path.resolve(path.dirname(importer), specifier));
+  else {
+    // The host's own tsconfig paths are authoritative for every non-relative
+    // specifier, including `@/` (most hosts map it to src/, not the root).
+    for (const alias of await aliasesFor(root)) bases.push(...aliasBases(specifier, alias));
+    // Convention fallback for `@/` when no tsconfig alias maps it.
+    if (specifier.startsWith("@/")) bases.push(path.join(root, specifier.slice(2)));
+  }
+  return bases;
+}
+
+/** True when a specifier names a PACKAGE rather than the host's own source:
+ *  nothing relative to resolve and no tsconfig path alias that maps it. Source
+ *  capture stops at that boundary — a node_modules module is never the host's
+ *  code — and stays silent about it, so only genuinely broken host imports warn. */
+export async function isPackageSpecifier(importer: string, specifier: string, root: string): Promise<boolean> {
+  return (await importBases(importer, specifier, root)).length === 0;
+}
+
+async function resolveImportedSource(
+  importer: string,
+  specifier: string,
+  root: string,
+  importedName: string,
+  realRoot: string,
+  seen: Set<string>,
+): Promise<ResolvedSource | null> {
+  const key = `${path.resolve(importer)}\0${specifier}\0${importedName}`;
+  if (seen.has(key)) return null;
+  seen.add(key);
+
+  const bases = await importBases(importer, specifier, root);
+  for (const base of bases) {
+    const resolved = await resolvedCandidate(base, realRoot);
+    if (!resolved) continue;
+    const target = await reExportTarget(resolved.source, importedName, resolved.file);
+    if (target.named) {
+      // A named re-export is authoritative: when its chain cannot be followed
+      // the export does not resolve, and returning the barrel here would
+      // capture a false baseline that keeps sync green with unusable source.
+      return await resolveImportedSource(
+        resolved.file,
+        target.named.specifier,
+        root,
+        target.named.imported,
+        realRoot,
+        seen,
+      );
+    }
+    if (target.direct || importedName === "default") return resolved;
+    for (const star of target.stars) {
+      const followed = await resolveImportedSource(resolved.file, star, root, importedName, realRoot, seen);
+      if (followed) return followed;
+    }
+    // The requested export is absent from everything this module reaches.
+    // Fail loudly (unresolved pin + runtime-capture hint) over capturing a
+    // file that does not own the component.
+    return null;
+  }
+  return null;
+}
+
+export async function resolveImportSource(
+  importer: string,
+  specifier: string,
+  root: string,
+  importedName = "default",
+): Promise<ResolvedSource | null> {
+  let realRoot: string;
+  try {
+    realRoot = await fs.realpath(root);
+  } catch {
+    return null;
+  }
+  return resolveImportedSource(importer, specifier, root, importedName, realRoot, new Set());
+}
+
+export async function importReferenceFor(source: string, localExpression: string): Promise<ImportReference | undefined> {
+  const parsed = parseModuleSource(source);
+  const [localName, namespaceMember] = localExpression.split(".", 2);
+  if (!parsed || !localName) return undefined;
+  const { ts, sf } = parsed;
+  for (const statement of sf.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+    const specifier = statement.moduleSpecifier.text;
+    const clause = statement.importClause;
+    if (!clause) continue;
+    const bindings = clause.namedBindings;
+    if (bindings && ts.isNamespaceImport(bindings) && bindings.name.text === localName && namespaceMember) {
+      return { specifier, imported: namespaceMember };
+    }
+    if (namespaceMember !== undefined) continue;
+    if (bindings && ts.isNamedImports(bindings)) {
+      const element = bindings.elements.find((item) => item.name.text === localName);
+      if (element) return { specifier, imported: (element.propertyName ?? element.name).text };
+    }
+    if (clause.name?.text === localName) return { specifier, imported: "default" };
+  }
+  return undefined;
+}
+
+function limitToolName(fullName: string): string {
+  return fullName.length <= 64 ? fullName : `${fullName.slice(0, 57)}_${sha256Hex(fullName).slice(0, 6)}`;
+}
+
+function routeSegments(urlPath: string): string[] {
+  return urlPath.split("/").filter(Boolean);
+}
+
+function staticNameParts(urlPath: string): string[] {
+  return routeSegments(urlPath)
+    .filter((segment, index) => !(index === 0 && segment.toLowerCase() === "api"))
+    .filter((segment) => !/^\{[^}]+\}$/.test(segment))
+    .flatMap((segment) => segment.match(/[A-Za-z0-9]+/g) ?? [])
+    .map((part) => part.toLowerCase());
+}
+
+export function routeToolFullName(method: HttpMethod, urlPath: string): string {
+  const segments = routeSegments(urlPath);
+  const last = segments.at(-1) ?? "";
+  const endsInParameter = /^\{[^}]+\}$/.test(last);
+  const hasEarlierParameter = segments.slice(0, -1).some((segment) => /^\{[^}]+\}$/.test(segment));
+  const parts = staticNameParts(urlPath);
+  const stem = `host_${parts.length > 0 ? parts.join("_") : "route"}`;
+  if (method === "GET") return `${stem}${endsInParameter ? "_get" : "_list"}`;
+  if (method === "POST") return hasEarlierParameter && !endsInParameter ? stem : `${stem}_create`;
+  if (method === "PUT" || method === "PATCH") return `${stem}_update`;
+  return `${stem}_delete`;
+}
+
+export function unclassifiedToolFullName(urlPath: string): string {
+  const parts = staticNameParts(urlPath);
+  return `host_${parts.length > 0 ? parts.join("_") : "route"}_unclassified`;
+}
+
+export function allocateToolName(preferred: string, fallbackSuffix: string, used: Set<string>): string {
+  const first = limitToolName(preferred);
+  if (!used.has(first)) {
+    used.add(first);
+    return first;
+  }
+  const methodFallback = limitToolName(`${preferred}_${fallbackSuffix.toLowerCase()}`);
+  if (!used.has(methodFallback)) {
+    used.add(methodFallback);
+    return methodFallback;
+  }
+  for (let suffix = 2; ; suffix += 1) {
+    const candidate = limitToolName(`${preferred}_${suffix}`);
+    if (!used.has(candidate)) {
+      used.add(candidate);
+      return candidate;
+    }
+  }
+}
+
+function uniqueNameFallback(binding: PrimitiveToolBinding): string {
+  if (binding.kind === "trpc") return binding.type;
+  if (binding.kind === "server-action") return "action";
+  return binding.method;
+}
+
+export function withUniqueNames<T extends ExtractedTool>(tools: T[]): T[] {
+  const used = new Set<string>();
+  return tools.map((tool) => ({
+    ...tool,
+    name: allocateToolName(tool.name, uniqueNameFallback(tool.binding), used),
+  }));
+}
+
+/** A build-time extraction entry plus the root-relative posix path of the
+ *  source file it was extracted from, when the extractor has it in hand.
+ *  Internal to sync: the path never reaches `.vendo/tools.json` — it becomes
+ *  the tool's `srcHash` (content hash) in the v3 write. */
+export type SourcedExtractedTool = ExtractedTool & { srcPath?: string };
+
+function words(value: string): string[] {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/[^A-Za-z0-9]+/g, "_")
+    .toLowerCase()
+    .split("_")
+    .filter(Boolean);
+}
+
+/**
+ * Extraction grades from PROTOCOL FACTS ONLY (risk-grading redesign D2). A
+ * tool's NAME never decides anything: English is infinite, so a word list is
+ * guaranteed to miss (*pay, charge, refund, approve, merge, publish*) and its
+ * existence is what stops a host from auditing the labels.
+ *
+ * `DELETE` is destructive by definition of the method. Nothing else about an
+ * HTTP route is: `GET` alone does not earn `read` (GETs that mutate exist) and
+ * `POST` does not earn `write` (search endpoints post). Anything not proven is
+ * `ungraded`, which the guard asks about until a human or the judge grades it.
+ */
+export function extractedRisk(method: HttpMethod): ExtractedTool["risk"] {
+  return method === "DELETE" ? "destructive" : "ungraded";
+}
+
+/** tRPC risk labeling (04 §1, fail-closed): a `mutation` is a DECLARED
+ * mutation, so it is at least `write` and can never be `read`. A `query` is
+ * not a declared read — tRPC does not stop one from writing — so it stays
+ * `ungraded` until something authorized grades it. */
+export function trpcRisk(type: "query" | "mutation"): ExtractedTool["risk"] {
+  return type === "mutation" ? "write" : "ungraded";
+}
+
+export function trpcToolFullName(procedure: string): string {
+  const parts = words(procedure);
+  return `host_${parts.length > 0 ? parts.join("_") : "procedure"}`;
+}
+
+export function serverActionToolFullName(name: string): string {
+  const parts = words(name);
+  return `host_${parts.length > 0 ? parts.join("_") : "action"}`;
+}

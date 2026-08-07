@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "theme": {
+    "background": "#f1f5f9",
+    "surface": "#ffffff",
+    "accent": "#0f172a",
+    "text": "#020817",
+    "mutedText": "#64748b",
+    "radius": 8,
+    "fontFamily": "Outfit, sans-serif"
+  },
+  "tools": [
+    {
+      "name": "postInvoiceExport",
+      "method": "POST",
+      "path": "/api/invoice/export",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postInvoiceGenerate",
+      "method": "POST",
+      "path": "/api/invoice/generate",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postInvoiceSend",
+      "method": "POST",
+      "path": "/api/invoice/send",
+      "readOrWrite": "write"
+    }
+  ],
+  "annotations": [
+    {
+      "name": "postInvoiceExport",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postInvoiceGenerate",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postInvoiceSend",
+      "mutating": true,
+      "dangerous": true
+    }
+  ],
+  "components": []
+}

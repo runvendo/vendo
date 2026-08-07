@@ -1,0 +1,657 @@
+---
+title: "MCP door: expose Vendo tools to Claude, ChatGPT, Cursor"
+sidebarTitle: "MCP door"
+description: "Serve your product's tools to Claude, ChatGPT, Cursor, and other MCP clients through one guarded, OAuth-authenticated door that shares your policy."
+---
+
+The MCP door makes your product installable in MCP clients such as Claude,
+ChatGPT, and Cursor: your product becomes an MCP server that outside agents
+connect to over OAuth. Every door tool call runs through the same guard-bound
+registry, policy, approvals, and audit path as chat, so outside agents get no
+weaker perimeter than your own conversation surface.
+
+Opening the door is a host decision, and entirely a manual one. It is off by
+default; `vendo init` never asks about it, never turns it on, and scaffolds
+none of its wiring. You set `mcp: true`, make sure a `HostOAuthAdapter` is in
+the composition — any `auth` preset already carries one, so most hosts need
+nothing extra — and add the discovery route yourself. All three are below.
+
+**Status: experimental.** `mcp: true` is real, guard-bound, and covered by
+protocol-level e2e (`fixtures/mcp-e2e`), but it stays out of the main
+[quickstart](/quickstart) path until the attended live client matrix is
+demonstrably green: a real Claude, ChatGPT, and Cursor client each completing
+one real tool call against a running door.
+`fixtures/mcp-e2e/src/live-claude.e2e.test.ts` (env-gated behind
+`VENDO_LIVE_MCP=1`) is the harness for the Claude leg today; equivalent
+attended runs against ChatGPT and Cursor are still outstanding. The door
+graduates into the quickstart's main flow once all three are green and someone
+records the run.
+
+## When to use it
+
+- You want an installable MCP server that exposes your product's tools to
+  third-party agents.
+- Users of those agents should act as themselves in your product, with the same
+  policy and approvals you enforce in-product.
+- You already own a session and consent flow you can plug in behind an OAuth
+  seam.
+
+Skip it if you only need to pull remote MCP tools into your own agent. That is
+what `mcpConnector` does, and it runs the other direction. See
+[Connectors](/capabilities/connected-accounts#connectors).
+
+Also skip it if the agent is your own, running in process with `createVendo`
+in your backend (an AI SDK or Mastra loop you already ship). That case needs
+no OAuth dance and no door: spread the guarded tool pack into your loop
+through the `@vendoai/vendo/ai-sdk` or `@vendoai/vendo/mastra` subpath. See
+[Use with your existing agent](/existing-agents). The door remains the
+third-party-agent story.
+
+One exception to that last one: a backend of yours that has to act for a user
+who is **not** at a browser — a nightly job, a queue worker — can run neither
+the OAuth dance nor the in-process pack. `mcp: { serviceAuth: { keys } }` opens
+first-party service auth at the door's own token endpoint for exactly that:
+your backend posts a key you generated (`openssl rand -hex 32`) plus one of your
+user ids to the door's token endpoint for a ten-minute token bound to that user, then
+talks MCP with it like any other client. Per-user OAuth stays the story for
+anyone else's agent;
+a service key is for code you deploy. See
+[Your own backend, as one of your users](/existing-agents/mcp).
+
+## Enable the door
+
+Set `mcp: true` and pass a `HostOAuthAdapter`. The recommended shape has two
+methods: `session` looks up the current host user (or bounces the browser to
+your login), and `principal` resolves that subject to a live principal on every
+door request. The door renders the consent page itself.
+
+```ts
+// lib/vendo.ts
+import { createVendo } from "@vendoai/vendo/server";
+import type { HostOAuthAdapter } from "@vendoai/vendo";
+
+const oauth: HostOAuthAdapter = {
+  async session(request, { returnTo }) {
+    // Return the current host subject, or redirect the browser
+    // to login. Send the user back through `returnTo` so the
+    // door resumes the exact authorization request without a
+    // login → authorize → login loop.
+    const user = await resolveSession(request);
+    if (user) return { subject: user.id };
+
+    const login = new URL("/login", request.url);
+    login.searchParams.set("returnTo", returnTo);
+    return Response.redirect(login);
+  },
+  async principal(subject) {
+    // Re-resolved on every bearer-authenticated MCP request.
+    // Return null to revoke.
+    const user = await lookupUser(subject);
+    return user
+      ? { kind: "user", subject: user.id, display: user.name }
+      : null;
+  },
+};
+
+export const vendo = createVendo({
+  model,
+  principal: resolvePrincipal,
+  mcp: true,
+  oauth,
+});
+```
+
+Then re-export the handler from your catch-all route:
+
+```ts
+// app/api/vendo/[...vendo]/route.ts
+import { nextVendoHandler } from "@vendoai/vendo/server";
+import { vendo } from "@/lib/vendo";
+
+export const { GET, POST, PUT, PATCH, DELETE } =
+  nextVendoHandler(vendo);
+```
+
+`oauth` is required when `mcp` is true. Without it, `createVendo` throws: the
+door cannot mint principals otherwise. The full adapter contract, including
+the legacy authorize-only mode, is in
+[HostOAuthAdapter](#hostoauthadapter).
+
+## Curate the tool menu
+
+By default the door offers every merged, enabled tool whose `audience` is
+`end-user` or unset. That default exists because an MCP client speaks for a
+person, so the door offers what that person's own auth admits. Operator and
+internal tools stay off it.
+
+Most products want a shorter, deliberate menu. Name it in
+`.vendo/overrides.json` under `surfaces.mcp`:
+
+```json
+{
+  "format": "vendo/overrides@3",
+  "tools": {
+    "host_listAccounts": { "title": "List your accounts" },
+    "host_transferMoney": { "title": "Send money" }
+  },
+  "surfaces": {
+    "mcp": {
+      "tools": ["host_listAccounts", "host_transferMoney"]
+    }
+  }
+}
+```
+
+The door then lists exactly those tools, and a call to any other tool returns
+the same not-found error an unknown tool name returns. `surfaces.agent` does
+the same for your in-product agent's loadout. Both keys are optional and
+independent; `surfaces` accepts only `agent` and `mcp`, so a misspelled surface
+name fails loudly when the file parses.
+
+A menu is curation, not a permission boundary. It changes what a surface
+offers. Your policy, approvals, audit, `disabled`, and audience exclusions
+decide what may run, and none of them read this block. Keep a destructive tool
+on the menu if users need it: the guard still parks it.
+
+An entry naming a tool that does not exist or is disabled warns once at boot
+and is skipped. The rest of the menu still applies, because a stale name in a
+hand-edited file must not take your product down.
+
+Vendo's own `vendo_*` tools, including the saved-apps viewer, are never
+curated away. They are the runtime's plumbing, not your API.
+
+### Title your tools
+
+Tool names are wire identifiers and extracted descriptions are often raw route
+text. Give a tool a `title` and every surface that shows it to a person uses
+that label instead: the door's `tools/list`, and your approval cards.
+
+`vendo sync`'s AI enrichment pass proposes titles for you while it reads your
+handlers. A `title` in `.vendo/overrides.json` always wins over what it wrote.
+
+### Annotations on the wire
+
+Each listed tool carries MCP `annotations` derived from its Vendo risk label,
+so a client can warn a person before a write without re-reading prose:
+
+| Risk | `readOnlyHint` | `destructiveHint` |
+| --- | --- | --- |
+| `read` | `true` | `false` |
+| `write` | `false` | `false` |
+| `destructive` | `false` | `true` |
+| `ungraded` | *omitted* | *omitted* |
+
+An `ungraded` tool asserts neither hint. MCP's own default for
+`destructiveHint` is `true`, so emitting `false` would be an active claim of
+safety about a tool nobody has graded — and `true` would be the opposite guess.
+Omitting them leaves the client on the spec's conservative defaults. Grade the
+tool (`vendo sync`, or `.vendo/overrides.json`) and the hints appear.
+
+Annotations are hints for presentation. The guard is what decides.
+
+Annotations ride on every listing, whether or not you curate a menu. One
+consequence worth knowing before you upgrade: a `read` tool now asserts
+`readOnlyHint: true`, and some clients use that to skip their own confirmation
+prompt for read calls. Your server-side perimeter is unchanged. If a
+`read`-labelled tool is not actually side-effect free, fix its `risk` in
+`.vendo/overrides.json`; that label was already driving your policy and
+approvals.
+
+## Consent page
+
+The door renders the consent page for you when your adapter uses `session`. It
+owns the approve and deny buttons, CSRF-protects the POST, rejects a replayed
+approval, escapes the attacker-controllable `client_name` value from dynamic
+client registration, and issues the standard OAuth authorization-code redirect.
+You do not write any of that.
+
+### Theme it
+
+The consent page styles itself from the same `--vendo-*` CSS custom properties
+the rest of your product UI reads: `--vendo-color-*`, `--vendo-font-*`,
+`--vendo-radius-*`, and `--vendo-space-*`. When you configure Vendo through
+`createVendo`, the umbrella hands your resolved `.vendo/theme.json` to the door
+automatically. Edit `.vendo/theme.json` to restyle the page; no consent-specific
+configuration is needed.
+
+The same theme also carries into apps rendered inside MCP clients. See
+[Saved apps ride along](#saved-apps-ride-along).
+
+### Replace the page
+
+If you need a custom consent page (different copy, a compliance disclosure, a
+branded layout the tokens cannot express), add an `authorize` method alongside
+`session`. The door still owns CSRF, single-use replay protection, and the
+OAuth redirect; you only own the rendered HTML. Post `transaction`,
+`csrf_token`, and `decision=approve|deny` to the `action` URL the door supplies
+in `ctx.consent`.
+
+```ts
+const oauth: HostOAuthAdapter = {
+  async session(request, { returnTo }) {
+    /* as above */
+  },
+  async authorize(request, { clientName, scopes, consent }) {
+    // `consent` is present because `session` is defined.
+    // Render your own page and post the door's form values
+    // back to `consent.action`.
+    return new Response(
+      renderConsent({ clientName, scopes, consent }),
+      {
+        headers: {
+          "content-type": "text/html; charset=utf-8"
+        }
+      }
+    );
+  },
+  async principal(subject) {
+    /* as above */
+  },
+};
+```
+
+Always HTML-escape `clientName` before rendering it. Clients register their own
+name through dynamic client registration or a Client ID Metadata Document, so
+that value is attacker-controllable and can carry phishing text or markup.
+
+## Connect a client
+
+Point the client at `https://your-app.example.com/api/vendo/mcp`. The client
+discovers OAuth from the `WWW-Authenticate` challenge on its first `401`,
+walks the user through your `authorize` step, and starts calling tools.
+
+Verify the door from the host root:
+
+```bash
+npx vendo doctor
+```
+
+When the door is open, doctor verifies both OAuth metadata documents resolve,
+the server card parses, and, if you have started registry paperwork, that
+your `server.json` and `mcp-registry-auth` challenge match the live door.
+`GET /status` returns `blocks.mcp: true`. See
+[HTTP routes](/reference/http-routes) for the door's route table and
+[Handler options](/reference/handler-options) for the `mcp` and `oauth` options.
+
+To make the deployed door discoverable through the official registry, follow
+[Publish to the MCP registry](/capabilities/mcp-registry).
+
+### The connect page
+
+The door serves a themed page at `{mount}/connect`, for example
+`https://your-app.example.com/api/vendo/mcp/connect`. It shows your product
+name, the exact MCP URL to paste, and per-client setup steps for Claude,
+ChatGPT, and Cursor, including a one-click Cursor install link. Link users to
+it from your settings or docs.
+
+The page is unauthenticated and reads no user data: it shows only what your
+public server card already advertises. Like the consent page it ships zero
+JavaScript and it themes itself from `.vendo/theme.json`.
+
+## Route the discovery paths
+
+The door's transport and OAuth endpoints mount under the wire at
+`/api/vendo/mcp`, so your existing catch-all handler already serves them. The
+OAuth discovery documents live at the origin root, outside `/api/vendo`, so
+the catch-all never sees them. Init does not scaffold that route: add it by
+hand as a two-line re-export of the shipped handler. On Next.js it goes at
+`app/.well-known/[...vendo]/route.ts` (under `src/app` when present) —
+`examples/demo-bank` has the reference wiring.
+
+```ts
+// app/.well-known/[...vendo]/route.ts
+import { wellKnownVendoHandler } from "@vendoai/vendo/server";
+import { vendo } from "@/lib/vendo";
+
+export const { GET, POST } = wellKnownVendoHandler(vendo);
+```
+
+`wellKnownVendoHandler` answers only the door's own discovery paths and
+returns 404 for anything else under `/.well-known`. If your app also serves
+its own well-known documents, register those routes separately; the exact
+paths the door owns are listed in
+[Well-known discovery paths](#well-known-discovery-paths).
+
+On Express, the adapter that `vendo init` generates reconstructs the full path
+from `req.originalUrl`, so the same handler serves both bases:
+
+```ts
+app.use("/api/vendo", mountVendo());
+app.use("/.well-known", mountVendo());
+```
+
+Because the door 404s every other well-known path, register your app's own
+well-known routes before that second mount.
+
+## Set VENDO_BASE_URL
+
+Set `VENDO_BASE_URL` to your product's public origin in every real deployment:
+
+```bash
+VENDO_BASE_URL=https://app.example.com
+```
+
+Behind a reverse proxy (Railway, Fly, any TLS terminator), the request
+reaching your process carries the proxy-internal origin, so without
+`VENDO_BASE_URL` the door publishes discovery documents that point at an
+unreachable origin. It also gives door-first traffic a base to resolve host
+routes against. The full list of what it controls is in
+[VENDO_BASE_URL duties](#vendo_base_url-duties).
+
+If your composition serves the door on a different origin than the one host
+routes resolve against, pass the door's public base explicitly:
+`createVendo({ mcp: { baseUrl: "https://app.example.com" }, oauth })`.
+
+## Configure the door through the umbrella
+
+`mcp: true` opens the door with defaults. To pass door-specific settings
+through `createVendo`, for example when you front the door with a hosted
+broker or a different origin, replace `true` with an object:
+
+```ts
+export const vendo = createVendo({
+  model,
+  principal: resolvePrincipal,
+  oauth,
+  mcp: {
+    baseUrl: "https://app.example.com",
+    remoteAs: {
+      issuer: "https://auth.example.com",
+      audience: "https://app.example.com/api/vendo/mcp",
+    },
+    federation: {
+      secret: process.env.VENDO_MCP_FEDERATION_SECRET!
+    },
+  },
+});
+```
+
+`baseUrl`, `remoteAs`, and `federation` live under `mcp: { … }`; they are
+not top-level `createVendo` keys. The object form is also the one place to
+gate broker trust behind environment variables.
+
+## How door calls reach host tools
+
+MCP clients have no host browser session, so Vendo never forwards the inbound
+MCP bearer to your host routes. Door tool calls reach host APIs through the same
+`actAs` seam away automations use:
+
+- On successful OAuth, the door records the user's consent for that client.
+- When a door tool call resolves to a host route, Vendo calls
+  `actAs(principal, grant)` to source auth material for the OAuth'd user.
+- Without a real grant or a consent record, the call fails closed.
+- Without `actAs` configured, the tool returns a `not-implemented` error, the
+  same clean degradation as an away automation.
+
+The OAuth-authenticated user is the authority. Risky tools still stop at your
+per-call guard decision, whatever the token's scopes.
+
+## Delegate to an external authorization server
+
+If your product already runs its own OAuth authorization server, or you use an
+identity provider that issues bearer tokens for your APIs, point the door at it
+with `remoteAs` instead of letting the door mint tokens itself. The door then
+authenticates every MCP request by verifying the inbound bearer as a JWT signed
+by that issuer.
+
+```ts
+export const vendo = createVendo({
+  model,
+  principal: resolvePrincipal,
+  oauth,
+  mcp: {
+    remoteAs: {
+      issuer: "https://auth.example.com",
+      audience: "https://app.example.com/api/vendo/mcp",
+      // jwksUri is optional; the door discovers it from the
+      // issuer's RFC 8414 metadata when omitted.
+    },
+  },
+});
+```
+
+Use `remoteAs` when the external server is authoritative for user identity for
+your product. Skip it if you want the door to run its own OAuth surface. The
+exact token requirements and endpoint behavior in this mode are specified in
+[remoteAs token requirements](#remoteas-token-requirements).
+
+## Federate login from an external authorization server
+
+`federation` adds a signed handshake so an external authorization server can
+have your host complete the interactive login-and-consent step, then hand the
+answer back. This is useful when the external server owns tokens (see
+`remoteAs` above) but does not know how to authenticate your users; your app
+does.
+
+```ts
+export const vendo = createVendo({
+  model,
+  principal: resolvePrincipal,
+  oauth,
+  mcp: {
+    federation: {
+      secret: process.env.VENDO_MCP_FEDERATION_SECRET!
+    },
+  },
+});
+```
+
+Set `VENDO_MCP_FEDERATION_SECRET` to a high-entropy secret shared with the
+external authorization server. That server crafts an HS256-signed request JWT
+and redirects the user's browser to
+`GET /api/vendo/mcp/federate?request=<compact JWS>`. The exact claims the
+request JWT must carry are listed in
+[Federation JWT claims](#federation-jwt-claims).
+
+The door verifies the request, then authenticates the user through your
+adapter:
+
+- If your adapter implements `authorize`, the door calls
+  `oauth.authorize(request, { clientName, scopes })`. This is the same
+  authorize step your local flow uses, so you do not need a separate consent
+  UI.
+- If your adapter is session-only (no `authorize`), the door calls
+  `oauth.session(request, { returnTo })` with the federate request URL as
+  `returnTo`, so a logged-out user bounces to your login page and resumes the
+  handshake automatically. The external authorization server owns consent, so
+  no in-product consent UI runs.
+
+If your adapter returns a `Response` (a login redirect or rendered page), the
+door forwards it so the browser can complete host login and retry. On a
+`{ subject }` result, the door redirects to `redirect_uri` with an HS256-signed
+`assertion` parameter that the external authorization server verifies with the
+same `secret`.
+
+## Revoke access
+
+Clients and hosts can both retire an authorization without waiting for a token
+to expire. The door implements the
+[RFC 7009](https://datatracker.ietf.org/doc/html/rfc7009) revocation endpoint
+at `/api/vendo/mcp/revoke`, and the authorization-server metadata advertises it
+alongside the supported `read` and `write` scopes so clients discover it
+automatically.
+
+Clients revoke a single token by POSTing `application/x-www-form-urlencoded`:
+
+```bash
+curl -X POST https://app.example.com/api/vendo/mcp/revoke \
+  -d "token=<access_or_refresh_token>" \
+  -d "client_id=<client_id>" \
+  -d "token_type_hint=refresh_token"
+```
+
+Returning `null` from your `oauth.principal(subject)` remains the account-level
+kill switch and takes effect on the next transport request. That's the fastest
+way to sever every client for a user from your product's settings UI: the
+door re-resolves the principal on each transport request and closes live MCP
+sessions the moment the lookup fails.
+
+What each revocation retires, and how the endpoint answers, is specified in
+[Revocation semantics](#revocation-semantics).
+
+## Saved apps ride along
+
+The door exposes your saved apps as MCP Apps. `tools/list` includes
+`vendo_apps_list`, `vendo_apps_open`, and `vendo_apps_call`, and opened apps
+render through a static HTML shim. Interactions inside a rendered app route back
+through the same guard-bound path.
+
+The door also *makes* them. `vendo_make` is on the same list, so an outside
+agent asks for a screen in plain language exactly as your own agent does, and
+`vendo_apps_pin` / `vendo_apps_unpin` put a saved app into one of your product's
+slots. None of it hands the agent any UI: `vendo_make` answers with a four-field
+receipt of words, and the screen arrives on the person's own page in your
+product, on a channel the agent is not on. The full walkthrough is
+[Bring your own agent over MCP](/existing-agents/mcp).
+
+### HTTP apps open in-product
+
+Rung-4 HTTP apps run on a machine-served origin the shim cannot host, so the
+door opens them as a link-out instead. `vendo_apps_open` returns a themed card
+with an "Open in {product}" call to action and the target URL, and text-only
+clients receive a human-readable message with the URL inline. The link opens
+in a new tab.
+
+The card is driven by a versioned structured envelope so newer clients dispatch
+on `kind` rather than sniffing shape:
+
+```json
+{
+  "kind": "vendo/open-in-product@1",
+  "url": "https://app.example.com/apps/app_123",
+  "productName": "Acme",
+  "appName": "Sales dashboard"
+}
+```
+
+- `productName` comes from your MCP server identity, so the CTA always names
+  your product.
+- `appName` is best-effort; the door omits it when the app has no title.
+- The card themes itself from the same `--vendo-*` CSS tokens as the consent
+  page, so no extra configuration is needed to match your brand.
+
+Tree apps still render inline through the shim; only served-app (layer 3)
+link-outs use the card.
+
+### Host branding crosses the boundary
+
+An app a user saved in your product still looks like your product when it
+renders inside Claude or ChatGPT. The shim reads the same `--vendo-*` tokens
+your product UI reads and wraps every rendered app in a `VendoProvider`. It
+also propagates the tokens into the sandboxed frame that hosts generated
+components, so payload UI, notices, link-out cards, and generated components
+all inherit your theme.
+
+You do not configure this per-app. When you use `createVendo({ mcp: true })`,
+the umbrella forwards your validated `.vendo/theme.json` to the door and the
+door serves it in the shim. Edit `.vendo/theme.json` to restyle both the
+consent page and MCP-rendered apps in one place.
+
+## Door reference
+
+The wire contracts behind the sections above. Nothing here is required for a
+standard install.
+
+### HostOAuthAdapter
+
+- `session(request, { returnTo })` returns `{ subject }` for the current host
+  user, or a `Response` that redirects the browser to your login. Send the
+  user back through `returnTo` so the door resumes the exact authorization
+  request without a login → authorize → login loop.
+- `principal(subject)` is re-resolved on every bearer-authenticated MCP
+  request. Return `null` to revoke; this is your account-level kill switch.
+- `authorize(request, { clientName, scopes, consent })` is optional. When
+  `session` is defined, `consent` is present and the door keeps CSRF,
+  single-use replay protection, and the OAuth redirect; you own only the
+  rendered HTML.
+- If your adapter omits `session` and only implements the legacy `authorize`,
+  the door hands you the request without a `consent` context. You then own the
+  entire flow: CSRF, replay protection, and the OAuth redirect. Prefer
+  `session` plus the prebuilt page unless you have a reason not to.
+- Import the `HostOAuthAdapter` type from `@vendoai/vendo`. The umbrella
+  re-exports it so you never have to depend on `@vendoai/mcp` directly.
+
+### Well-known discovery paths
+
+The door owns exactly these origin-root paths and returns 404 for every other
+path under `/.well-known`:
+
+- `/.well-known/oauth-protected-resource/api/vendo/mcp` (RFC 9728
+  protected-resource metadata)
+- `/.well-known/oauth-authorization-server/api/vendo/mcp` (RFC 8414
+  authorization-server metadata)
+- `/.well-known/mcp/server-card.json` (server card)
+- `/.well-known/mcp-server-card` (alias for the server card)
+
+`wellKnownVendoHandler` matches the SAME allowlist the wire itself matches, so
+the two can never drift. With `mcp` left unconfigured it still recognizes
+those paths but has no door to serve them, so the request falls through to an
+ordinary 404 rather than a 500.
+
+### VENDO_BASE_URL duties
+
+- **Discovery and audience binding.** The door derives its OAuth discovery
+  documents (issuer, endpoint URLs, the protected-resource `resource`) and its
+  token audience binding from `VENDO_BASE_URL` when set, so clients see your
+  public origin instead of an unreachable proxy-internal one. Forwarded
+  headers such as `X-Forwarded-Host` are never trusted. Without it, the door
+  falls back to the request URL, which is fine for local development and wrong
+  behind a proxy.
+- **Route-binding base.** Host tools that bind to routes need a base origin.
+  The wire normally learns its own origin from the first in-product request,
+  but door requests never teach it (only wire routes do); `VENDO_BASE_URL`
+  gives door-first traffic a base to resolve host routes against.
+
+### remoteAs token requirements
+
+- Tokens must be ES256-signed JWTs with `iss`, `sub`, `aud`, `iat`, and `exp`
+  claims. `iss` must equal the configured `issuer`, `aud` must equal the
+  configured `audience`, and `exp` must be in the future.
+- The door caches the JWKS in memory and refetches it when a bearer arrives
+  with an unfamiliar `kid`, which covers ordinary key rotation. `jwksUri` is
+  optional; the door discovers it from the issuer's RFC 8414 metadata when
+  omitted.
+- The door calls `oauth.principal(subject)` with the JWT `sub` on every
+  request, so returning `null` still kills a live session. This remains your
+  revocation point.
+- The local `/api/vendo/mcp/authorize`, `/token`, and `/register` endpoints
+  return `404` in this mode, and so does RFC 8414 authorization-server
+  metadata. RFC 9728 protected-resource metadata instead advertises
+  `authorization_servers: [remoteAs.issuer]`, so compliant clients discover
+  and use the external server directly.
+- `oauth` is still required. The door skips `oauth.authorize` because the
+  external server owns the interactive step, but it still calls
+  `oauth.principal`.
+
+### Federation JWT claims
+
+The request JWT (HS256, signed with the shared secret, delivered as
+`GET /api/vendo/mcp/federate?request=<compact JWS>`) must carry:
+
+- `iss`: the external authorization server's issuer URL.
+- `aud`: the door's canonical URL (for example
+  `https://app.example.com/api/vendo/mcp`).
+- `exp`: no more than five minutes in the future.
+- `jti`: a fresh nonce per handshake.
+- `redirect_uri`: where to send the browser after login. Its origin must
+  match `iss`.
+- `scopes`: the string array the external server wants your user to consent
+  to.
+- `client_name`: the display name shown in your consent UI.
+
+The assertion the door returns on `redirect_uri` carries `sub` (your host
+subject), `iss` (the door's canonical URL), `aud` (the request's `iss`), a
+matching `jti`, and a sixty-second `exp`. The federate endpoint renders no
+HTML of its own: it either returns your `authorize` response verbatim or
+issues a `302` back to the external authorization server.
+
+### Revocation semantics
+
+Per RFC 7009, the endpoint always returns an empty `200`; unknown tokens and
+unknown or incorrect hints look the same. Revoking an access token invalidates
+that opaque token; revoking a refresh token atomically retires the whole
+authorization-grant family, including its access tokens and any rotated
+successors, while leaving other authorizations for the same client intact.
+
+In `remoteAs` mode the external authorization server owns revocation and the
+door's local `/revoke` path returns `404`.

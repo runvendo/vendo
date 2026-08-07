@@ -1,0 +1,80 @@
+{
+  "name": "@vendoai/store",
+  "version": "0.8.0",
+  "description": "Persistence under everything: core's StoreAdapter on Postgres — PGlite zero-config default, real Postgres in prod, one schema.",
+  "keywords": [
+    "ai",
+    "agent",
+    "persistence",
+    "postgres",
+    "pglite",
+    "vendo"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/runvendo/vendo.git",
+    "directory": "packages/store"
+  },
+  "homepage": "https://vendo.run",
+  "bugs": "https://github.com/runvendo/vendo/issues",
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./postgres": {
+      "types": "./dist/postgres.d.ts",
+      "default": "./dist/postgres.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "conformance": "tsc -p tsconfig.json && vitest run src/conformance.test.ts src/contract-routing.conformance.test.ts src/security/audit-append-only.conformance.test.ts src/security/secrets-aad.conformance.test.ts src/flip-guards.conformance.test.ts src/erase.conformance.test.ts src/workspace.erase.test.ts src/postgres-gate.test.ts",
+    "test": "tsc -p tsconfig.json && vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:coverage": "tsc -p tsconfig.json && vitest run --coverage"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.5.4",
+    "@vendoai/core": "workspace:*",
+    "pg": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.11.10",
+    "just-bash": "^3.1.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "imports": {
+    "#store/db": {
+      "workerd": "./dist/db-edge.js",
+      "worker": "./dist/db-edge.js",
+      "edge-light": "./dist/db-edge.js",
+      "browser": "./dist/db-edge.js",
+      "default": "./dist/db.js"
+    },
+    "#store/crypto": {
+      "workerd": "./dist/crypto-edge.js",
+      "worker": "./dist/crypto-edge.js",
+      "edge-light": "./dist/crypto-edge.js",
+      "browser": "./dist/crypto-edge.js",
+      "default": "./dist/crypto.js"
+    }
+  }
+}

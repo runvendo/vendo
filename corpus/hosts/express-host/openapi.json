@@ -1,0 +1,167 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Relay task API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/tasks": {
+      "get": {
+        "operationId": "listTasks",
+        "summary": "List Relay tasks, optionally filtered by status",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Only return tasks in this status",
+            "schema": {
+              "type": "string",
+              "enum": ["open", "in-progress", "done"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Relay tasks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Task" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createTask",
+        "summary": "Create a Relay task",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateTask" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created task",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Task" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks/{id}": {
+      "get": {
+        "operationId": "getTask",
+        "summary": "Get one Relay task",
+        "parameters": [
+          { "$ref": "#/components/parameters/TaskId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Task",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Task" }
+              }
+            }
+          },
+          "404": { "description": "Task not found" }
+        }
+      },
+      "delete": {
+        "operationId": "deleteTask",
+        "summary": "Permanently delete a Relay task",
+        "parameters": [
+          { "$ref": "#/components/parameters/TaskId" }
+        ],
+        "responses": {
+          "200": { "description": "Task deleted" },
+          "404": { "description": "Task not found" }
+        }
+      }
+    },
+    "/api/tasks/{id}/complete": {
+      "post": {
+        "operationId": "completeTask",
+        "summary": "Mark a Relay task complete",
+        "parameters": [
+          { "$ref": "#/components/parameters/TaskId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Completed task",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Task" }
+              }
+            }
+          },
+          "404": { "description": "Task not found" }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "TaskId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "Relay task id",
+        "schema": { "type": "string" }
+      }
+    },
+    "schemas": {
+      "TeamMember": {
+        "type": "object",
+        "required": ["id", "name", "initials"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "initials": { "type": "string" }
+        }
+      },
+      "Task": {
+        "type": "object",
+        "required": ["id", "title", "description", "status", "priority", "assignee", "team", "dueDate"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "status": { "type": "string", "enum": ["open", "in-progress", "done"] },
+          "priority": { "type": "string", "enum": ["low", "medium", "high"] },
+          "assignee": { "$ref": "#/components/schemas/TeamMember" },
+          "team": {
+            "type": "object",
+            "required": ["id", "name"],
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" }
+            }
+          },
+          "dueDate": { "type": "string", "format": "date" }
+        }
+      },
+      "CreateTask": {
+        "type": "object",
+        "required": ["title"],
+        "properties": {
+          "title": { "type": "string", "description": "Short task title" },
+          "description": { "type": "string", "description": "Task details" },
+          "assignee": { "type": "string", "description": "Assignee name" },
+          "priority": { "type": "string", "enum": ["low", "medium", "high"] },
+          "dueDate": { "type": "string", "format": "date" }
+        }
+      }
+    }
+  }
+}

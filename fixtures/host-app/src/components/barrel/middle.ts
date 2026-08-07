@@ -1,0 +1,1 @@
+export { BarrelCard } from "../BarrelCard";

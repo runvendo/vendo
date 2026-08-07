@@ -1,0 +1,3707 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "name": "get",
+      "method": "GET",
+      "path": "/api",
+      "risk": "read"
+    },
+    {
+      "name": "getActivityLogs",
+      "method": "GET",
+      "path": "/api/activity-logs",
+      "risk": "read"
+    },
+    {
+      "name": "getAdminAnalytics",
+      "method": "GET",
+      "path": "/api/admin/analytics",
+      "risk": "read"
+    },
+    {
+      "name": "postAdminBan",
+      "method": "POST",
+      "path": "/api/admin/ban",
+      "risk": "write"
+    },
+    {
+      "name": "getAdminCommissions",
+      "method": "GET",
+      "path": "/api/admin/commissions",
+      "risk": "read"
+    },
+    {
+      "name": "postAdminDomainsRefresh",
+      "method": "POST",
+      "path": "/api/admin/domains/refresh",
+      "risk": "write"
+    },
+    {
+      "name": "postAdminDomainsRegisterPremium",
+      "method": "POST",
+      "path": "/api/admin/domains/register-premium",
+      "risk": "write"
+    },
+    {
+      "name": "postAdminDomainsRenew",
+      "method": "POST",
+      "path": "/api/admin/domains/renew",
+      "risk": "write"
+    },
+    {
+      "name": "getAdminDomainsSearchAvailability",
+      "method": "GET",
+      "path": "/api/admin/domains/search-availability",
+      "risk": "read"
+    },
+    {
+      "name": "getAdminEvents",
+      "method": "GET",
+      "path": "/api/admin/events",
+      "risk": "read"
+    },
+    {
+      "name": "getAdminFraudAlerts",
+      "method": "GET",
+      "path": "/api/admin/fraud-alerts",
+      "risk": "read"
+    },
+    {
+      "name": "patchAdminFraudAlertsId",
+      "method": "PATCH",
+      "path": "/api/admin/fraud-alerts/{id}",
+      "risk": "write"
+    },
+    {
+      "name": "postAdminImpersonate",
+      "method": "POST",
+      "path": "/api/admin/impersonate",
+      "risk": "write"
+    },
+    {
+      "name": "getAdminLinks",
+      "method": "GET",
+      "path": "/api/admin/links",
+      "risk": "read"
+    },
+    {
+      "name": "deleteAdminLinksBan",
+      "method": "DELETE",
+      "path": "/api/admin/links/ban",
+      "risk": "destructive"
+    },
+    {
+      "name": "getAdminLinksCount",
+      "method": "GET",
+      "path": "/api/admin/links/count",
+      "risk": "read"
+    },
+    {
+      "name": "getAdminPartnersPartnerId",
+      "method": "GET",
+      "path": "/api/admin/partners/{partnerId}",
+      "risk": "read"
+    },
+    {
+      "name": "patchAdminPartnersPartnerId",
+      "method": "PATCH",
+      "path": "/api/admin/partners/{partnerId}",
+      "risk": "write"
+    },
+    {
+      "name": "postAdminPartnersPartnerIdGenerateVeriffSession",
+      "method": "POST",
+      "path": "/api/admin/partners/{partnerId}/generate-veriff-session",
+      "risk": "write"
+    },
+    {
+      "name": "patchAdminPartnersPartnerIdNetworkStatus",
+      "method": "PATCH",
+      "path": "/api/admin/partners/{partnerId}/network-status",
+      "risk": "write"
+    },
+    {
+      "name": "postAdminPartnersPartnerIdPlatforms",
+      "method": "POST",
+      "path": "/api/admin/partners/{partnerId}/platforms",
+      "risk": "write"
+    },
+    {
+      "name": "getAdminPartnersPartnerIdSharedPlatforms",
+      "method": "GET",
+      "path": "/api/admin/partners/{partnerId}/shared-platforms",
+      "risk": "read"
+    },
+    {
+      "name": "postAdminPartnersPartnerIdVerifyIdentity",
+      "method": "POST",
+      "path": "/api/admin/partners/{partnerId}/verify-identity",
+      "risk": "write"
+    },
+    {
+      "name": "postAdminPartnersDeleteAccount",
+      "method": "POST",
+      "path": "/api/admin/partners/delete-account",
+      "risk": "destructive"
+    },
+    {
+      "name": "getAdminPartnersFraud",
+      "method": "GET",
+      "path": "/api/admin/partners/fraud",
+      "risk": "read"
+    },
+    {
+      "name": "getAdminPartnersNetwork",
+      "method": "GET",
+      "path": "/api/admin/partners/network",
+      "risk": "read"
+    },
+    {
+      "name": "getAdminPartnersNetworkCount",
+      "method": "GET",
+      "path": "/api/admin/partners/network/count",
+      "risk": "read"
+    },
+    {
+      "name": "getAdminPartnersTrusted",
+      "method": "GET",
+      "path": "/api/admin/partners/trusted",
+      "risk": "read"
+    },
+    {
+      "name": "postAdminPartnersTrusted",
+      "method": "POST",
+      "path": "/api/admin/partners/trusted",
+      "risk": "write"
+    },
+    {
+      "name": "deleteAdminPartnersTrusted",
+      "method": "DELETE",
+      "path": "/api/admin/partners/trusted",
+      "risk": "destructive"
+    },
+    {
+      "name": "getAdminPayouts",
+      "method": "GET",
+      "path": "/api/admin/payouts",
+      "risk": "read"
+    },
+    {
+      "name": "getAdminPayoutsPaypal",
+      "method": "GET",
+      "path": "/api/admin/payouts/paypal",
+      "risk": "read"
+    },
+    {
+      "name": "getAdminPayoutsStablecoin",
+      "method": "GET",
+      "path": "/api/admin/payouts/stablecoin",
+      "risk": "read"
+    },
+    {
+      "name": "getAdminPrograms",
+      "method": "GET",
+      "path": "/api/admin/programs",
+      "risk": "read"
+    },
+    {
+      "name": "postAdminPrograms",
+      "method": "POST",
+      "path": "/api/admin/programs",
+      "risk": "write"
+    },
+    {
+      "name": "patchAdminPrograms",
+      "method": "PATCH",
+      "path": "/api/admin/programs",
+      "risk": "write"
+    },
+    {
+      "name": "patchAdminProgramsProgramId",
+      "method": "PATCH",
+      "path": "/api/admin/programs/{programId}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteAdminProgramsProgramId",
+      "method": "DELETE",
+      "path": "/api/admin/programs/{programId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "getAdminProgramsSales",
+      "method": "GET",
+      "path": "/api/admin/programs/sales",
+      "risk": "read"
+    },
+    {
+      "name": "postAdminResetLoginAttempts",
+      "method": "POST",
+      "path": "/api/admin/reset-login-attempts",
+      "risk": "destructive"
+    },
+    {
+      "name": "getAdminRevenue",
+      "method": "GET",
+      "path": "/api/admin/revenue",
+      "risk": "read"
+    },
+    {
+      "name": "postAdminSlackSupportInvite",
+      "method": "POST",
+      "path": "/api/admin/slack-support-invite",
+      "risk": "destructive"
+    },
+    {
+      "name": "postAiCompletion",
+      "method": "POST",
+      "path": "/api/ai/completion",
+      "risk": "write"
+    },
+    {
+      "name": "postAiSupportChat",
+      "method": "POST",
+      "path": "/api/ai/support-chat",
+      "risk": "write"
+    },
+    {
+      "name": "postAiSupportChatUpload",
+      "method": "POST",
+      "path": "/api/ai/support-chat/upload",
+      "risk": "write"
+    },
+    {
+      "name": "postAiSyncEmbeddings",
+      "method": "POST",
+      "path": "/api/ai/sync-embeddings",
+      "risk": "write"
+    },
+    {
+      "name": "getAnalytics",
+      "method": "GET",
+      "path": "/api/analytics",
+      "risk": "read"
+    },
+    {
+      "name": "getAnalyticsEventType",
+      "method": "GET",
+      "path": "/api/analytics/{eventType}",
+      "risk": "read"
+    },
+    {
+      "name": "getAnalyticsEventTypeEndpoint",
+      "method": "GET",
+      "path": "/api/analytics/{eventType}/{endpoint}",
+      "risk": "read"
+    },
+    {
+      "name": "getAnalyticsDashboard",
+      "method": "GET",
+      "path": "/api/analytics/dashboard",
+      "risk": "read"
+    },
+    {
+      "name": "getAnalyticsExport",
+      "method": "GET",
+      "path": "/api/analytics/export",
+      "risk": "read"
+    },
+    {
+      "name": "getAppsflyerWebhook",
+      "method": "GET",
+      "path": "/api/appsflyer/webhook",
+      "risk": "read"
+    },
+    {
+      "name": "postAuditLogsExport",
+      "method": "POST",
+      "path": "/api/audit-logs/export",
+      "risk": "write"
+    },
+    {
+      "name": "getAuthNextauth",
+      "method": "GET",
+      "path": "/api/auth/{nextauth}",
+      "risk": "read"
+    },
+    {
+      "name": "postAuthNextauth",
+      "method": "POST",
+      "path": "/api/auth/{nextauth}",
+      "risk": "write"
+    },
+    {
+      "name": "postAuthResetPassword",
+      "method": "POST",
+      "path": "/api/auth/reset-password",
+      "risk": "destructive"
+    },
+    {
+      "name": "getAuthSamlAuthorize",
+      "method": "GET",
+      "path": "/api/auth/saml/authorize",
+      "risk": "read"
+    },
+    {
+      "name": "postAuthSamlAuthorize",
+      "method": "POST",
+      "path": "/api/auth/saml/authorize",
+      "risk": "write"
+    },
+    {
+      "name": "postAuthSamlCallback",
+      "method": "POST",
+      "path": "/api/auth/saml/callback",
+      "risk": "write"
+    },
+    {
+      "name": "postAuthSamlToken",
+      "method": "POST",
+      "path": "/api/auth/saml/token",
+      "risk": "write"
+    },
+    {
+      "name": "getAuthSamlUserinfo",
+      "method": "GET",
+      "path": "/api/auth/saml/userinfo",
+      "risk": "read"
+    },
+    {
+      "name": "postAuthSamlVerify",
+      "method": "POST",
+      "path": "/api/auth/saml/verify",
+      "risk": "write"
+    },
+    {
+      "name": "getBounties",
+      "method": "GET",
+      "path": "/api/bounties",
+      "risk": "read"
+    },
+    {
+      "name": "postBounties",
+      "method": "POST",
+      "path": "/api/bounties",
+      "risk": "write"
+    },
+    {
+      "name": "getBountiesBountyId",
+      "method": "GET",
+      "path": "/api/bounties/{bountyId}",
+      "risk": "read"
+    },
+    {
+      "name": "patchBountiesBountyId",
+      "method": "PATCH",
+      "path": "/api/bounties/{bountyId}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteBountiesBountyId",
+      "method": "DELETE",
+      "path": "/api/bounties/{bountyId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "getBountiesBountyIdSubmissions",
+      "method": "GET",
+      "path": "/api/bounties/{bountyId}/submissions",
+      "risk": "read"
+    },
+    {
+      "name": "postBountiesBountyIdSubmissionsSubmissionIdApprove",
+      "method": "POST",
+      "path": "/api/bounties/{bountyId}/submissions/{submissionId}/approve",
+      "risk": "write"
+    },
+    {
+      "name": "postBountiesBountyIdSubmissionsSubmissionIdReject",
+      "method": "POST",
+      "path": "/api/bounties/{bountyId}/submissions/{submissionId}/reject",
+      "risk": "write"
+    },
+    {
+      "name": "postBountiesBountyIdSyncSocialMetrics",
+      "method": "POST",
+      "path": "/api/bounties/{bountyId}/sync-social-metrics",
+      "risk": "write"
+    },
+    {
+      "name": "getBountiesCountSubmissions",
+      "method": "GET",
+      "path": "/api/bounties/count/submissions",
+      "risk": "read"
+    },
+    {
+      "name": "getCallbackBitly",
+      "method": "GET",
+      "path": "/api/callback/bitly",
+      "risk": "read"
+    },
+    {
+      "name": "postCallbackPlainPartner",
+      "method": "POST",
+      "path": "/api/callback/plain/partner",
+      "risk": "write"
+    },
+    {
+      "name": "postCallbackPlainWorkspace",
+      "method": "POST",
+      "path": "/api/callback/plain/workspace",
+      "risk": "write"
+    },
+    {
+      "name": "postCallbackStripe",
+      "method": "POST",
+      "path": "/api/callback/stripe",
+      "risk": "write"
+    },
+    {
+      "name": "getCampaigns",
+      "method": "GET",
+      "path": "/api/campaigns",
+      "risk": "read"
+    },
+    {
+      "name": "postCampaigns",
+      "method": "POST",
+      "path": "/api/campaigns",
+      "risk": "write"
+    },
+    {
+      "name": "getCampaignsCampaignId",
+      "method": "GET",
+      "path": "/api/campaigns/{campaignId}",
+      "risk": "read"
+    },
+    {
+      "name": "patchCampaignsCampaignId",
+      "method": "PATCH",
+      "path": "/api/campaigns/{campaignId}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteCampaignsCampaignId",
+      "method": "DELETE",
+      "path": "/api/campaigns/{campaignId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "postCampaignsCampaignIdDuplicate",
+      "method": "POST",
+      "path": "/api/campaigns/{campaignId}/duplicate",
+      "risk": "write"
+    },
+    {
+      "name": "getCampaignsCampaignIdEvents",
+      "method": "GET",
+      "path": "/api/campaigns/{campaignId}/events",
+      "risk": "read"
+    },
+    {
+      "name": "getCampaignsCampaignIdEventsCount",
+      "method": "GET",
+      "path": "/api/campaigns/{campaignId}/events/count",
+      "risk": "read"
+    },
+    {
+      "name": "postCampaignsCampaignIdPreview",
+      "method": "POST",
+      "path": "/api/campaigns/{campaignId}/preview",
+      "risk": "write"
+    },
+    {
+      "name": "getCampaignsCampaignIdSummary",
+      "method": "GET",
+      "path": "/api/campaigns/{campaignId}/summary",
+      "risk": "read"
+    },
+    {
+      "name": "getCampaignsCount",
+      "method": "GET",
+      "path": "/api/campaigns/count",
+      "risk": "read"
+    },
+    {
+      "name": "getCommissions",
+      "method": "GET",
+      "path": "/api/commissions",
+      "risk": "read"
+    },
+    {
+      "name": "postCommissions",
+      "method": "POST",
+      "path": "/api/commissions",
+      "risk": "write"
+    },
+    {
+      "name": "getCommissionsCommissionId",
+      "method": "GET",
+      "path": "/api/commissions/{commissionId}",
+      "risk": "read"
+    },
+    {
+      "name": "patchCommissionsCommissionId",
+      "method": "PATCH",
+      "path": "/api/commissions/{commissionId}",
+      "risk": "write"
+    },
+    {
+      "name": "getCommissionsAnalytics",
+      "method": "GET",
+      "path": "/api/commissions/analytics",
+      "risk": "read"
+    },
+    {
+      "name": "patchCommissionsBulk",
+      "method": "PATCH",
+      "path": "/api/commissions/bulk",
+      "risk": "write"
+    },
+    {
+      "name": "getCommissionsCount",
+      "method": "GET",
+      "path": "/api/commissions/count",
+      "risk": "read"
+    },
+    {
+      "name": "getCommissionsExport",
+      "method": "GET",
+      "path": "/api/commissions/export",
+      "risk": "read"
+    },
+    {
+      "name": "postCronAggregateClicks",
+      "method": "POST",
+      "path": "/api/cron/aggregate-clicks",
+      "risk": "write"
+    },
+    {
+      "name": "postCronAggregateClicksProcess",
+      "method": "POST",
+      "path": "/api/cron/aggregate-clicks/process",
+      "risk": "write"
+    },
+    {
+      "name": "postCronBountiesCreateDraftSubmissions",
+      "method": "POST",
+      "path": "/api/cron/bounties/create-draft-submissions",
+      "risk": "write"
+    },
+    {
+      "name": "postCronBountiesNotifyPartners",
+      "method": "POST",
+      "path": "/api/cron/bounties/notify-partners",
+      "risk": "write"
+    },
+    {
+      "name": "getCronBountiesQueueSyncSocialMetrics",
+      "method": "GET",
+      "path": "/api/cron/bounties/queue-sync-social-metrics",
+      "risk": "read"
+    },
+    {
+      "name": "postCronBountiesSyncSocialMetrics",
+      "method": "POST",
+      "path": "/api/cron/bounties/sync-social-metrics",
+      "risk": "write"
+    },
+    {
+      "name": "postCronCampaignsBroadcast",
+      "method": "POST",
+      "path": "/api/cron/campaigns/broadcast",
+      "risk": "write"
+    },
+    {
+      "name": "postCronCleanupDeclinedInvites",
+      "method": "POST",
+      "path": "/api/cron/cleanup/declined-invites",
+      "risk": "write"
+    },
+    {
+      "name": "postCronCleanupDemoEmbedPartners",
+      "method": "POST",
+      "path": "/api/cron/cleanup/demo-embed-partners",
+      "risk": "write"
+    },
+    {
+      "name": "postCronCleanupE2eTests",
+      "method": "POST",
+      "path": "/api/cron/cleanup/e2e-tests",
+      "risk": "write"
+    },
+    {
+      "name": "postCronCleanupExpiredFraudGroups",
+      "method": "POST",
+      "path": "/api/cron/cleanup/expired-fraud-groups",
+      "risk": "write"
+    },
+    {
+      "name": "postCronCleanupExpiredTokens",
+      "method": "POST",
+      "path": "/api/cron/cleanup/expired-tokens",
+      "risk": "write"
+    },
+    {
+      "name": "postCronCleanupLinkRetention",
+      "method": "POST",
+      "path": "/api/cron/cleanup/link-retention",
+      "risk": "write"
+    },
+    {
+      "name": "postCronCleanupOrphanedRewards",
+      "method": "POST",
+      "path": "/api/cron/cleanup/orphaned-rewards",
+      "risk": "write"
+    },
+    {
+      "name": "postCronCleanupRejectedApplications",
+      "method": "POST",
+      "path": "/api/cron/cleanup/rejected-applications",
+      "risk": "write"
+    },
+    {
+      "name": "postCronCleanupUnenrolledPartners",
+      "method": "POST",
+      "path": "/api/cron/cleanup/unenrolled-partners",
+      "risk": "write"
+    },
+    {
+      "name": "postCronCommissionsReferralsBackfill",
+      "method": "POST",
+      "path": "/api/cron/commissions/referrals/backfill",
+      "risk": "write"
+    },
+    {
+      "name": "postCronCommissionsReferralsCreate",
+      "method": "POST",
+      "path": "/api/cron/commissions/referrals/create",
+      "risk": "write"
+    },
+    {
+      "name": "postCronCommissionsReferralsQueue",
+      "method": "POST",
+      "path": "/api/cron/commissions/referrals/queue",
+      "risk": "write"
+    },
+    {
+      "name": "postCronDiscountCodesCreate",
+      "method": "POST",
+      "path": "/api/cron/discount-codes/create",
+      "risk": "write"
+    },
+    {
+      "name": "postCronDiscountCodesCreateQueueBatches",
+      "method": "POST",
+      "path": "/api/cron/discount-codes/create/queue-batches",
+      "risk": "write"
+    },
+    {
+      "name": "postCronDiscountCodesDisable",
+      "method": "POST",
+      "path": "/api/cron/discount-codes/disable",
+      "risk": "write"
+    },
+    {
+      "name": "postCronDisposableEmails",
+      "method": "POST",
+      "path": "/api/cron/disposable-emails",
+      "risk": "write"
+    },
+    {
+      "name": "postCronDomainsDelete",
+      "method": "POST",
+      "path": "/api/cron/domains/delete",
+      "risk": "destructive"
+    },
+    {
+      "name": "getCronDomainsRenewalPayments",
+      "method": "GET",
+      "path": "/api/cron/domains/renewal-payments",
+      "risk": "read"
+    },
+    {
+      "name": "getCronDomainsRenewalReminders",
+      "method": "GET",
+      "path": "/api/cron/domains/renewal-reminders",
+      "risk": "read"
+    },
+    {
+      "name": "postCronDomainsTransfer",
+      "method": "POST",
+      "path": "/api/cron/domains/transfer",
+      "risk": "destructive"
+    },
+    {
+      "name": "postCronDomainsUpdate",
+      "method": "POST",
+      "path": "/api/cron/domains/update",
+      "risk": "write"
+    },
+    {
+      "name": "getCronDomainsVerify",
+      "method": "GET",
+      "path": "/api/cron/domains/verify",
+      "risk": "read"
+    },
+    {
+      "name": "postCronEmailDomainsUpdate",
+      "method": "POST",
+      "path": "/api/cron/email-domains/update",
+      "risk": "write"
+    },
+    {
+      "name": "getCronEmailDomainsVerify",
+      "method": "GET",
+      "path": "/api/cron/email-domains/verify",
+      "risk": "read"
+    },
+    {
+      "name": "postCronExportCommissions",
+      "method": "POST",
+      "path": "/api/cron/export/commissions",
+      "risk": "write"
+    },
+    {
+      "name": "postCronExportCustomers",
+      "method": "POST",
+      "path": "/api/cron/export/customers",
+      "risk": "write"
+    },
+    {
+      "name": "postCronExportEventsPartner",
+      "method": "POST",
+      "path": "/api/cron/export/events/partner",
+      "risk": "write"
+    },
+    {
+      "name": "postCronExportEventsWorkspace",
+      "method": "POST",
+      "path": "/api/cron/export/events/workspace",
+      "risk": "write"
+    },
+    {
+      "name": "postCronExportLinks",
+      "method": "POST",
+      "path": "/api/cron/export/links",
+      "risk": "write"
+    },
+    {
+      "name": "postCronExportPartners",
+      "method": "POST",
+      "path": "/api/cron/export/partners",
+      "risk": "write"
+    },
+    {
+      "name": "postCronExportPayouts",
+      "method": "POST",
+      "path": "/api/cron/export/payouts",
+      "risk": "write"
+    },
+    {
+      "name": "postCronFoldersDelete",
+      "method": "POST",
+      "path": "/api/cron/folders/delete",
+      "risk": "destructive"
+    },
+    {
+      "name": "postCronFramerBackfillLeadsBatch",
+      "method": "POST",
+      "path": "/api/cron/framer/backfill-leads-batch",
+      "risk": "write"
+    },
+    {
+      "name": "getCronFraudSummary",
+      "method": "GET",
+      "path": "/api/cron/fraud/summary",
+      "risk": "read"
+    },
+    {
+      "name": "postCronFraudSummary",
+      "method": "POST",
+      "path": "/api/cron/fraud/summary",
+      "risk": "write"
+    },
+    {
+      "name": "postCronFxRates",
+      "method": "POST",
+      "path": "/api/cron/fx-rates",
+      "risk": "write"
+    },
+    {
+      "name": "postCronGroupsCreateDefaultLinks",
+      "method": "POST",
+      "path": "/api/cron/groups/create-default-links",
+      "risk": "write"
+    },
+    {
+      "name": "postCronGroupsDeleteDefaultLinks",
+      "method": "POST",
+      "path": "/api/cron/groups/delete-default-links",
+      "risk": "destructive"
+    },
+    {
+      "name": "postCronGroupsRemapDefaultLinks",
+      "method": "POST",
+      "path": "/api/cron/groups/remap-default-links",
+      "risk": "write"
+    },
+    {
+      "name": "postCronGroupsRemapDiscountCodes",
+      "method": "POST",
+      "path": "/api/cron/groups/remap-discount-codes",
+      "risk": "write"
+    },
+    {
+      "name": "postCronGroupsSyncUtm",
+      "method": "POST",
+      "path": "/api/cron/groups/sync-utm",
+      "risk": "write"
+    },
+    {
+      "name": "postCronGroupsUpdateDefaultLinks",
+      "method": "POST",
+      "path": "/api/cron/groups/update-default-links",
+      "risk": "write"
+    },
+    {
+      "name": "postCronImportBitly",
+      "method": "POST",
+      "path": "/api/cron/import/bitly",
+      "risk": "write"
+    },
+    {
+      "name": "postCronImportCsv",
+      "method": "POST",
+      "path": "/api/cron/import/csv",
+      "risk": "write"
+    },
+    {
+      "name": "postCronImportFirstpromoter",
+      "method": "POST",
+      "path": "/api/cron/import/firstpromoter",
+      "risk": "write"
+    },
+    {
+      "name": "postCronImportPartnerstack",
+      "method": "POST",
+      "path": "/api/cron/import/partnerstack",
+      "risk": "write"
+    },
+    {
+      "name": "postCronImportRebrandly",
+      "method": "POST",
+      "path": "/api/cron/import/rebrandly",
+      "risk": "write"
+    },
+    {
+      "name": "postCronImportRewardful",
+      "method": "POST",
+      "path": "/api/cron/import/rewardful",
+      "risk": "write"
+    },
+    {
+      "name": "postCronImportShort",
+      "method": "POST",
+      "path": "/api/cron/import/short",
+      "risk": "write"
+    },
+    {
+      "name": "postCronImportTapfiliate",
+      "method": "POST",
+      "path": "/api/cron/import/tapfiliate",
+      "risk": "write"
+    },
+    {
+      "name": "postCronImportTolt",
+      "method": "POST",
+      "path": "/api/cron/import/tolt",
+      "risk": "write"
+    },
+    {
+      "name": "postCronInvoicesRetryFailed",
+      "method": "POST",
+      "path": "/api/cron/invoices/retry-failed",
+      "risk": "write"
+    },
+    {
+      "name": "postCronLinksLinkIdCompleteTests",
+      "method": "POST",
+      "path": "/api/cron/links/{linkId}/complete-tests",
+      "risk": "write"
+    },
+    {
+      "name": "postCronLinksDelete",
+      "method": "POST",
+      "path": "/api/cron/links/delete",
+      "risk": "destructive"
+    },
+    {
+      "name": "postCronLinksInvalidateForDiscounts",
+      "method": "POST",
+      "path": "/api/cron/links/invalidate-for-discounts",
+      "risk": "write"
+    },
+    {
+      "name": "postCronLinksInvalidateForPartners",
+      "method": "POST",
+      "path": "/api/cron/links/invalidate-for-partners",
+      "risk": "write"
+    },
+    {
+      "name": "postCronMessagesNotifyPartner",
+      "method": "POST",
+      "path": "/api/cron/messages/notify-partner",
+      "risk": "write"
+    },
+    {
+      "name": "postCronMessagesNotifyProgram",
+      "method": "POST",
+      "path": "/api/cron/messages/notify-program",
+      "risk": "write"
+    },
+    {
+      "name": "postCronNetworkCalculateProgramSimilarities",
+      "method": "POST",
+      "path": "/api/cron/network/calculate-program-similarities",
+      "risk": "write"
+    },
+    {
+      "name": "postCronPartnerPlatforms",
+      "method": "POST",
+      "path": "/api/cron/partner-platforms",
+      "risk": "write"
+    },
+    {
+      "name": "getCronPartnerPlatformsWebsite",
+      "method": "GET",
+      "path": "/api/cron/partner-platforms/website",
+      "risk": "read"
+    },
+    {
+      "name": "postCronPartnerPlatformsYoutube",
+      "method": "POST",
+      "path": "/api/cron/partner-platforms/youtube",
+      "risk": "write"
+    },
+    {
+      "name": "getCronPartnerProgramSummary",
+      "method": "GET",
+      "path": "/api/cron/partner-program-summary",
+      "risk": "read"
+    },
+    {
+      "name": "postCronPartnerProgramSummaryProcess",
+      "method": "POST",
+      "path": "/api/cron/partner-program-summary/process",
+      "risk": "write"
+    },
+    {
+      "name": "postCronPartnersAutoApprove",
+      "method": "POST",
+      "path": "/api/cron/partners/auto-approve",
+      "risk": "write"
+    },
+    {
+      "name": "postCronPartnersAutoReject",
+      "method": "POST",
+      "path": "/api/cron/partners/auto-reject",
+      "risk": "write"
+    },
+    {
+      "name": "postCronPartnersBan",
+      "method": "POST",
+      "path": "/api/cron/partners/ban",
+      "risk": "write"
+    },
+    {
+      "name": "postCronPartnersDeactivate",
+      "method": "POST",
+      "path": "/api/cron/partners/deactivate",
+      "risk": "write"
+    },
+    {
+      "name": "postCronPartnersMergeAccounts",
+      "method": "POST",
+      "path": "/api/cron/partners/merge-accounts",
+      "risk": "write"
+    },
+    {
+      "name": "postCronPartnersVerifyCountryChange",
+      "method": "POST",
+      "path": "/api/cron/partners/verify-country-change",
+      "risk": "write"
+    },
+    {
+      "name": "getCronPayoutsAggregateDueCommissions",
+      "method": "GET",
+      "path": "/api/cron/payouts/aggregate-due-commissions",
+      "risk": "read"
+    },
+    {
+      "name": "postCronPayoutsAggregateDueCommissions",
+      "method": "POST",
+      "path": "/api/cron/payouts/aggregate-due-commissions",
+      "risk": "write"
+    },
+    {
+      "name": "postCronPayoutsBalanceAvailable",
+      "method": "POST",
+      "path": "/api/cron/payouts/balance-available",
+      "risk": "write"
+    },
+    {
+      "name": "postCronPayoutsChargeSucceeded",
+      "method": "POST",
+      "path": "/api/cron/payouts/charge-succeeded",
+      "risk": "write"
+    },
+    {
+      "name": "getCronPayoutsForceWithdrawals",
+      "method": "GET",
+      "path": "/api/cron/payouts/force-withdrawals",
+      "risk": "read"
+    },
+    {
+      "name": "postCronPayoutsForceWithdrawals",
+      "method": "POST",
+      "path": "/api/cron/payouts/force-withdrawals",
+      "risk": "write"
+    },
+    {
+      "name": "postCronPayoutsPayoutFailed",
+      "method": "POST",
+      "path": "/api/cron/payouts/payout-failed",
+      "risk": "write"
+    },
+    {
+      "name": "postCronPayoutsPayoutPaid",
+      "method": "POST",
+      "path": "/api/cron/payouts/payout-paid",
+      "risk": "write"
+    },
+    {
+      "name": "postCronPayoutsProcess",
+      "method": "POST",
+      "path": "/api/cron/payouts/process",
+      "risk": "write"
+    },
+    {
+      "name": "postCronPayoutsProcessUpdates",
+      "method": "POST",
+      "path": "/api/cron/payouts/process/updates",
+      "risk": "write"
+    },
+    {
+      "name": "getCronPayoutsRemindersPartners",
+      "method": "GET",
+      "path": "/api/cron/payouts/reminders/partners",
+      "risk": "read"
+    },
+    {
+      "name": "postCronPayoutsRemindersPartners",
+      "method": "POST",
+      "path": "/api/cron/payouts/reminders/partners",
+      "risk": "write"
+    },
+    {
+      "name": "getCronPayoutsRemindersProgramOwners",
+      "method": "GET",
+      "path": "/api/cron/payouts/reminders/program-owners",
+      "risk": "read"
+    },
+    {
+      "name": "postCronPayoutsSendStripePayout",
+      "method": "POST",
+      "path": "/api/cron/payouts/send-stripe-payout",
+      "risk": "destructive"
+    },
+    {
+      "name": "postCronPayoutsSendTremendousPayout",
+      "method": "POST",
+      "path": "/api/cron/payouts/send-tremendous-payout",
+      "risk": "destructive"
+    },
+    {
+      "name": "getCronPendingApplicationsSummary",
+      "method": "GET",
+      "path": "/api/cron/pending-applications-summary",
+      "risk": "read"
+    },
+    {
+      "name": "postCronPendingApplicationsSummary",
+      "method": "POST",
+      "path": "/api/cron/pending-applications-summary",
+      "risk": "write"
+    },
+    {
+      "name": "postCronProgramApplicationReminder",
+      "method": "POST",
+      "path": "/api/cron/program-application-reminder",
+      "risk": "write"
+    },
+    {
+      "name": "postCronProgramsDeactivate",
+      "method": "POST",
+      "path": "/api/cron/programs/deactivate",
+      "risk": "write"
+    },
+    {
+      "name": "postCronProgramsReactivate",
+      "method": "POST",
+      "path": "/api/cron/programs/reactivate",
+      "risk": "write"
+    },
+    {
+      "name": "postCronRewardsProcess",
+      "method": "POST",
+      "path": "/api/cron/rewards/process",
+      "risk": "write"
+    },
+    {
+      "name": "postCronSendBatchEmail",
+      "method": "POST",
+      "path": "/api/cron/send-batch-email",
+      "risk": "destructive"
+    },
+    {
+      "name": "postCronShopifyOrderPaid",
+      "method": "POST",
+      "path": "/api/cron/shopify/order-paid",
+      "risk": "write"
+    },
+    {
+      "name": "postCronSitemapsImport",
+      "method": "POST",
+      "path": "/api/cron/sitemaps/import",
+      "risk": "write"
+    },
+    {
+      "name": "getCronSitemapsQueue",
+      "method": "GET",
+      "path": "/api/cron/sitemaps/queue",
+      "risk": "read"
+    },
+    {
+      "name": "postCronSitemapsQueue",
+      "method": "POST",
+      "path": "/api/cron/sitemaps/queue",
+      "risk": "write"
+    },
+    {
+      "name": "getCronStreamsSendLinkClickedWebhooks",
+      "method": "GET",
+      "path": "/api/cron/streams/send-link-clicked-webhooks",
+      "risk": "destructive"
+    },
+    {
+      "name": "getCronStreamsUpdatePartnerStats",
+      "method": "GET",
+      "path": "/api/cron/streams/update-partner-stats",
+      "risk": "read"
+    },
+    {
+      "name": "getCronStreamsUpdateWorkspaceClicks",
+      "method": "GET",
+      "path": "/api/cron/streams/update-workspace-clicks",
+      "risk": "read"
+    },
+    {
+      "name": "getCronStreamsUpdateWorkspaceLinksUsage",
+      "method": "GET",
+      "path": "/api/cron/streams/update-workspace-links-usage",
+      "risk": "read"
+    },
+    {
+      "name": "postCronTagsDeleteLinkTag",
+      "method": "POST",
+      "path": "/api/cron/tags/delete-link-tag",
+      "risk": "destructive"
+    },
+    {
+      "name": "postCronTagsDeletePartnerTag",
+      "method": "POST",
+      "path": "/api/cron/tags/delete-partner-tag",
+      "risk": "destructive"
+    },
+    {
+      "name": "getCronTrialEmails",
+      "method": "GET",
+      "path": "/api/cron/trial-emails",
+      "risk": "read"
+    },
+    {
+      "name": "postCronTrialEmails",
+      "method": "POST",
+      "path": "/api/cron/trial-emails",
+      "risk": "write"
+    },
+    {
+      "name": "getCronTriggerBackup",
+      "method": "GET",
+      "path": "/api/cron/trigger-backup",
+      "risk": "read"
+    },
+    {
+      "name": "getCronTriggerWithdrawal",
+      "method": "GET",
+      "path": "/api/cron/trigger-withdrawal",
+      "risk": "read"
+    },
+    {
+      "name": "postCronUsage",
+      "method": "POST",
+      "path": "/api/cron/usage",
+      "risk": "write"
+    },
+    {
+      "name": "getCronWebhooksSyncClickWorkspaces",
+      "method": "GET",
+      "path": "/api/cron/webhooks/sync-click-workspaces",
+      "risk": "read"
+    },
+    {
+      "name": "postCronWelcomeUser",
+      "method": "POST",
+      "path": "/api/cron/welcome-user",
+      "risk": "write"
+    },
+    {
+      "name": "postCronWorkflowsWorkflowId",
+      "method": "POST",
+      "path": "/api/cron/workflows/{workflowId}",
+      "risk": "write"
+    },
+    {
+      "name": "postCronWorkspacesDelete",
+      "method": "POST",
+      "path": "/api/cron/workspaces/delete",
+      "risk": "destructive"
+    },
+    {
+      "name": "getCustomers",
+      "method": "GET",
+      "path": "/api/customers",
+      "risk": "read"
+    },
+    {
+      "name": "postCustomers",
+      "method": "POST",
+      "path": "/api/customers",
+      "risk": "write"
+    },
+    {
+      "name": "getCustomersId",
+      "method": "GET",
+      "path": "/api/customers/{id}",
+      "risk": "read"
+    },
+    {
+      "name": "patchCustomersId",
+      "method": "PATCH",
+      "path": "/api/customers/{id}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteCustomersId",
+      "method": "DELETE",
+      "path": "/api/customers/{id}",
+      "risk": "destructive"
+    },
+    {
+      "name": "getCustomersIdActivity",
+      "method": "GET",
+      "path": "/api/customers/{id}/activity",
+      "risk": "read"
+    },
+    {
+      "name": "getCustomersIdStripeInvoices",
+      "method": "GET",
+      "path": "/api/customers/{id}/stripe-invoices",
+      "risk": "read"
+    },
+    {
+      "name": "getCustomersCount",
+      "method": "GET",
+      "path": "/api/customers/count",
+      "risk": "read"
+    },
+    {
+      "name": "getCustomersExport",
+      "method": "GET",
+      "path": "/api/customers/export",
+      "risk": "read"
+    },
+    {
+      "name": "getCustomersSearchStripe",
+      "method": "GET",
+      "path": "/api/customers/search-stripe",
+      "risk": "read"
+    },
+    {
+      "name": "getDashboards",
+      "method": "GET",
+      "path": "/api/dashboards",
+      "risk": "read"
+    },
+    {
+      "name": "postDashboards",
+      "method": "POST",
+      "path": "/api/dashboards",
+      "risk": "write"
+    },
+    {
+      "name": "patchDashboardsId",
+      "method": "PATCH",
+      "path": "/api/dashboards/{id}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteDashboardsId",
+      "method": "DELETE",
+      "path": "/api/dashboards/{id}",
+      "risk": "destructive"
+    },
+    {
+      "name": "getDiscountCodes",
+      "method": "GET",
+      "path": "/api/discount-codes",
+      "risk": "read"
+    },
+    {
+      "name": "postDiscountCodes",
+      "method": "POST",
+      "path": "/api/discount-codes",
+      "risk": "write"
+    },
+    {
+      "name": "deleteDiscountCodesDiscountCodeId",
+      "method": "DELETE",
+      "path": "/api/discount-codes/{discountCodeId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "getDocsGuidesGuide",
+      "method": "GET",
+      "path": "/api/docs/guides/{guide}",
+      "risk": "read"
+    },
+    {
+      "name": "getDomains",
+      "method": "GET",
+      "path": "/api/domains",
+      "risk": "read"
+    },
+    {
+      "name": "postDomains",
+      "method": "POST",
+      "path": "/api/domains",
+      "risk": "write"
+    },
+    {
+      "name": "getDomainsDomain",
+      "method": "GET",
+      "path": "/api/domains/{domain}",
+      "risk": "read"
+    },
+    {
+      "name": "patchDomainsDomain",
+      "method": "PATCH",
+      "path": "/api/domains/{domain}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteDomainsDomain",
+      "method": "DELETE",
+      "path": "/api/domains/{domain}",
+      "risk": "destructive"
+    },
+    {
+      "name": "postDomainsDomainPrimary",
+      "method": "POST",
+      "path": "/api/domains/{domain}/primary",
+      "risk": "write"
+    },
+    {
+      "name": "postDomainsDomainTransfer",
+      "method": "POST",
+      "path": "/api/domains/{domain}/transfer",
+      "risk": "destructive"
+    },
+    {
+      "name": "getDomainsDomainValidate",
+      "method": "GET",
+      "path": "/api/domains/{domain}/validate",
+      "risk": "read"
+    },
+    {
+      "name": "getDomainsDomainVerify",
+      "method": "GET",
+      "path": "/api/domains/{domain}/verify",
+      "risk": "read"
+    },
+    {
+      "name": "postDomainsClientRegister",
+      "method": "POST",
+      "path": "/api/domains/client/register",
+      "risk": "write"
+    },
+    {
+      "name": "postDomainsClientSaved",
+      "method": "POST",
+      "path": "/api/domains/client/saved",
+      "risk": "write"
+    },
+    {
+      "name": "getDomainsCount",
+      "method": "GET",
+      "path": "/api/domains/count",
+      "risk": "read"
+    },
+    {
+      "name": "getDomainsDefault",
+      "method": "GET",
+      "path": "/api/domains/default",
+      "risk": "read"
+    },
+    {
+      "name": "patchDomainsDefault",
+      "method": "PATCH",
+      "path": "/api/domains/default",
+      "risk": "write"
+    },
+    {
+      "name": "postDomainsRegister",
+      "method": "POST",
+      "path": "/api/domains/register",
+      "risk": "write"
+    },
+    {
+      "name": "getDomainsSearchAvailability",
+      "method": "GET",
+      "path": "/api/domains/search-availability",
+      "risk": "read"
+    },
+    {
+      "name": "getDomainsStatus",
+      "method": "GET",
+      "path": "/api/domains/status",
+      "risk": "read"
+    },
+    {
+      "name": "postDubWebhook",
+      "method": "POST",
+      "path": "/api/dub/webhook",
+      "risk": "write"
+    },
+    {
+      "name": "deleteE2eBountiesBountyId",
+      "method": "DELETE",
+      "path": "/api/e2e/bounties/{bountyId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "patchE2eEnrollments",
+      "method": "PATCH",
+      "path": "/api/e2e/enrollments",
+      "risk": "write"
+    },
+    {
+      "name": "getE2eNotificationEmails",
+      "method": "GET",
+      "path": "/api/e2e/notification-emails",
+      "risk": "read"
+    },
+    {
+      "name": "postE2eNotificationEmails",
+      "method": "POST",
+      "path": "/api/e2e/notification-emails",
+      "risk": "write"
+    },
+    {
+      "name": "deleteE2eNotificationEmails",
+      "method": "DELETE",
+      "path": "/api/e2e/notification-emails",
+      "risk": "destructive"
+    },
+    {
+      "name": "postE2ePartnersPendingProgramApplication",
+      "method": "POST",
+      "path": "/api/e2e/partners/pending-program-application",
+      "risk": "write"
+    },
+    {
+      "name": "postE2eTriggerWorkflowWorkflowId",
+      "method": "POST",
+      "path": "/api/e2e/trigger-workflow/{workflowId}",
+      "risk": "write"
+    },
+    {
+      "name": "getE2eWorkflows",
+      "method": "GET",
+      "path": "/api/e2e/workflows",
+      "risk": "read"
+    },
+    {
+      "name": "patchE2eWorkflowsWorkflowId",
+      "method": "PATCH",
+      "path": "/api/e2e/workflows/{workflowId}",
+      "risk": "write"
+    },
+    {
+      "name": "getEmailDomains",
+      "method": "GET",
+      "path": "/api/email-domains",
+      "risk": "read"
+    },
+    {
+      "name": "postEmailDomains",
+      "method": "POST",
+      "path": "/api/email-domains",
+      "risk": "write"
+    },
+    {
+      "name": "patchEmailDomainsDomain",
+      "method": "PATCH",
+      "path": "/api/email-domains/{domain}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteEmailDomainsDomain",
+      "method": "DELETE",
+      "path": "/api/email-domains/{domain}",
+      "risk": "destructive"
+    },
+    {
+      "name": "getEmailDomainsDomainVerify",
+      "method": "GET",
+      "path": "/api/email-domains/{domain}/verify",
+      "risk": "read"
+    },
+    {
+      "name": "getEmbedReferralsAnalytics",
+      "method": "GET",
+      "path": "/api/embed/referrals/analytics",
+      "risk": "read"
+    },
+    {
+      "name": "getEmbedReferralsBountiesBountyIdSocialContentStats",
+      "method": "GET",
+      "path": "/api/embed/referrals/bounties/{bountyId}/social-content-stats",
+      "risk": "read"
+    },
+    {
+      "name": "postEmbedReferralsBountiesBountyIdUpload",
+      "method": "POST",
+      "path": "/api/embed/referrals/bounties/{bountyId}/upload",
+      "risk": "write"
+    },
+    {
+      "name": "getEmbedReferralsEarnings",
+      "method": "GET",
+      "path": "/api/embed/referrals/earnings",
+      "risk": "read"
+    },
+    {
+      "name": "getEmbedReferralsEarningsTimeseries",
+      "method": "GET",
+      "path": "/api/embed/referrals/earnings/timeseries",
+      "risk": "read"
+    },
+    {
+      "name": "getEmbedReferralsEvents",
+      "method": "GET",
+      "path": "/api/embed/referrals/events",
+      "risk": "read"
+    },
+    {
+      "name": "getEmbedReferralsLeaderboard",
+      "method": "GET",
+      "path": "/api/embed/referrals/leaderboard",
+      "risk": "read"
+    },
+    {
+      "name": "getEmbedReferralsLinks",
+      "method": "GET",
+      "path": "/api/embed/referrals/links",
+      "risk": "read"
+    },
+    {
+      "name": "postEmbedReferralsLinks",
+      "method": "POST",
+      "path": "/api/embed/referrals/links",
+      "risk": "write"
+    },
+    {
+      "name": "patchEmbedReferralsLinksLinkId",
+      "method": "PATCH",
+      "path": "/api/embed/referrals/links/{linkId}",
+      "risk": "write"
+    },
+    {
+      "name": "postEmbedReferralsSubmissions",
+      "method": "POST",
+      "path": "/api/embed/referrals/submissions",
+      "risk": "write"
+    },
+    {
+      "name": "getEmbedReferralsToken",
+      "method": "GET",
+      "path": "/api/embed/referrals/token",
+      "risk": "read"
+    },
+    {
+      "name": "postEmbedReferralsTremendousSendOtp",
+      "method": "POST",
+      "path": "/api/embed/referrals/tremendous/send-otp",
+      "risk": "destructive"
+    },
+    {
+      "name": "postEmbedReferralsTremendousVerifyOtp",
+      "method": "POST",
+      "path": "/api/embed/referrals/tremendous/verify-otp",
+      "risk": "write"
+    },
+    {
+      "name": "getEvents",
+      "method": "GET",
+      "path": "/api/events",
+      "risk": "read"
+    },
+    {
+      "name": "getEventsExport",
+      "method": "GET",
+      "path": "/api/events/export",
+      "risk": "read"
+    },
+    {
+      "name": "getFolders",
+      "method": "GET",
+      "path": "/api/folders",
+      "risk": "read"
+    },
+    {
+      "name": "postFolders",
+      "method": "POST",
+      "path": "/api/folders",
+      "risk": "write"
+    },
+    {
+      "name": "getFoldersFolderId",
+      "method": "GET",
+      "path": "/api/folders/{folderId}",
+      "risk": "read"
+    },
+    {
+      "name": "patchFoldersFolderId",
+      "method": "PATCH",
+      "path": "/api/folders/{folderId}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteFoldersFolderId",
+      "method": "DELETE",
+      "path": "/api/folders/{folderId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "getFoldersFolderIdDashboard",
+      "method": "GET",
+      "path": "/api/folders/{folderId}/dashboard",
+      "risk": "read"
+    },
+    {
+      "name": "getFoldersFolderIdUsers",
+      "method": "GET",
+      "path": "/api/folders/{folderId}/users",
+      "risk": "read"
+    },
+    {
+      "name": "getFoldersAccessRequests",
+      "method": "GET",
+      "path": "/api/folders/access-requests",
+      "risk": "read"
+    },
+    {
+      "name": "getFoldersCount",
+      "method": "GET",
+      "path": "/api/folders/count",
+      "risk": "read"
+    },
+    {
+      "name": "getFoldersPermissions",
+      "method": "GET",
+      "path": "/api/folders/permissions",
+      "risk": "read"
+    },
+    {
+      "name": "getFraudEvents",
+      "method": "GET",
+      "path": "/api/fraud/events",
+      "risk": "read"
+    },
+    {
+      "name": "getFraudEventsCount",
+      "method": "GET",
+      "path": "/api/fraud/events/count",
+      "risk": "read"
+    },
+    {
+      "name": "getFraudGroups",
+      "method": "GET",
+      "path": "/api/fraud/groups",
+      "risk": "read"
+    },
+    {
+      "name": "getFraudGroupsCount",
+      "method": "GET",
+      "path": "/api/fraud/groups/count",
+      "risk": "read"
+    },
+    {
+      "name": "getFraudRules",
+      "method": "GET",
+      "path": "/api/fraud/rules",
+      "risk": "read"
+    },
+    {
+      "name": "patchFraudRules",
+      "method": "PATCH",
+      "path": "/api/fraud/rules",
+      "risk": "write"
+    },
+    {
+      "name": "getGroups",
+      "method": "GET",
+      "path": "/api/groups",
+      "risk": "read"
+    },
+    {
+      "name": "postGroups",
+      "method": "POST",
+      "path": "/api/groups",
+      "risk": "write"
+    },
+    {
+      "name": "getGroupsGroupIdOrSlug",
+      "method": "GET",
+      "path": "/api/groups/{groupIdOrSlug}",
+      "risk": "read"
+    },
+    {
+      "name": "patchGroupsGroupIdOrSlug",
+      "method": "PATCH",
+      "path": "/api/groups/{groupIdOrSlug}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteGroupsGroupIdOrSlug",
+      "method": "DELETE",
+      "path": "/api/groups/{groupIdOrSlug}",
+      "risk": "destructive"
+    },
+    {
+      "name": "postGroupsGroupIdOrSlugDefault",
+      "method": "POST",
+      "path": "/api/groups/{groupIdOrSlug}/default",
+      "risk": "write"
+    },
+    {
+      "name": "getGroupsGroupIdOrSlugDefaultLinks",
+      "method": "GET",
+      "path": "/api/groups/{groupIdOrSlug}/default-links",
+      "risk": "read"
+    },
+    {
+      "name": "postGroupsGroupIdOrSlugDefaultLinks",
+      "method": "POST",
+      "path": "/api/groups/{groupIdOrSlug}/default-links",
+      "risk": "write"
+    },
+    {
+      "name": "patchGroupsGroupIdOrSlugDefaultLinksDefaultLinkId",
+      "method": "PATCH",
+      "path": "/api/groups/{groupIdOrSlug}/default-links/{defaultLinkId}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteGroupsGroupIdOrSlugDefaultLinksDefaultLinkId",
+      "method": "DELETE",
+      "path": "/api/groups/{groupIdOrSlug}/default-links/{defaultLinkId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "postGroupsGroupIdOrSlugPartners",
+      "method": "POST",
+      "path": "/api/groups/{groupIdOrSlug}/partners",
+      "risk": "write"
+    },
+    {
+      "name": "getGroupsCount",
+      "method": "GET",
+      "path": "/api/groups/count",
+      "risk": "read"
+    },
+    {
+      "name": "getGroupsRules",
+      "method": "GET",
+      "path": "/api/groups/rules",
+      "risk": "read"
+    },
+    {
+      "name": "getHubspotCallback",
+      "method": "GET",
+      "path": "/api/hubspot/callback",
+      "risk": "read"
+    },
+    {
+      "name": "postHubspotWebhook",
+      "method": "POST",
+      "path": "/api/hubspot/webhook",
+      "risk": "write"
+    },
+    {
+      "name": "postHubspotWebhookProcess",
+      "method": "POST",
+      "path": "/api/hubspot/webhook/process",
+      "risk": "write"
+    },
+    {
+      "name": "getIntegrations",
+      "method": "GET",
+      "path": "/api/integrations",
+      "risk": "read"
+    },
+    {
+      "name": "deleteIntegrationsUninstall",
+      "method": "DELETE",
+      "path": "/api/integrations/uninstall",
+      "risk": "destructive"
+    },
+    {
+      "name": "getIntercomCallback",
+      "method": "GET",
+      "path": "/api/intercom/callback",
+      "risk": "read"
+    },
+    {
+      "name": "postIntercomWebhook",
+      "method": "POST",
+      "path": "/api/intercom/webhook",
+      "risk": "write"
+    },
+    {
+      "name": "postIntercomWebhookHealthCheck",
+      "method": "POST",
+      "path": "/api/intercom/webhook/health-check",
+      "risk": "write"
+    },
+    {
+      "name": "postIntercomWebhookProcess",
+      "method": "POST",
+      "path": "/api/intercom/webhook/process",
+      "risk": "write"
+    },
+    {
+      "name": "postIntercomWebhookUninstall",
+      "method": "POST",
+      "path": "/api/intercom/webhook/uninstall",
+      "risk": "write"
+    },
+    {
+      "name": "getLinks",
+      "method": "GET",
+      "path": "/api/links",
+      "risk": "read"
+    },
+    {
+      "name": "postLinks",
+      "method": "POST",
+      "path": "/api/links",
+      "risk": "write"
+    },
+    {
+      "name": "getLinksLinkId",
+      "method": "GET",
+      "path": "/api/links/{linkId}",
+      "risk": "read"
+    },
+    {
+      "name": "putLinksLinkId",
+      "method": "PUT",
+      "path": "/api/links/{linkId}",
+      "risk": "write"
+    },
+    {
+      "name": "patchLinksLinkId",
+      "method": "PATCH",
+      "path": "/api/links/{linkId}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteLinksLinkId",
+      "method": "DELETE",
+      "path": "/api/links/{linkId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "getLinksLinkIdDashboard",
+      "method": "GET",
+      "path": "/api/links/{linkId}/dashboard",
+      "risk": "read"
+    },
+    {
+      "name": "postLinksLinkIdTransfer",
+      "method": "POST",
+      "path": "/api/links/{linkId}/transfer",
+      "risk": "destructive"
+    },
+    {
+      "name": "postLinksBulk",
+      "method": "POST",
+      "path": "/api/links/bulk",
+      "risk": "write"
+    },
+    {
+      "name": "patchLinksBulk",
+      "method": "PATCH",
+      "path": "/api/links/bulk",
+      "risk": "write"
+    },
+    {
+      "name": "deleteLinksBulk",
+      "method": "DELETE",
+      "path": "/api/links/bulk",
+      "risk": "destructive"
+    },
+    {
+      "name": "getLinksCount",
+      "method": "GET",
+      "path": "/api/links/count",
+      "risk": "read"
+    },
+    {
+      "name": "getLinksExists",
+      "method": "GET",
+      "path": "/api/links/exists",
+      "risk": "read"
+    },
+    {
+      "name": "getLinksExport",
+      "method": "GET",
+      "path": "/api/links/export",
+      "risk": "read"
+    },
+    {
+      "name": "getLinksIframeable",
+      "method": "GET",
+      "path": "/api/links/iframeable",
+      "risk": "read"
+    },
+    {
+      "name": "getLinksInfo",
+      "method": "GET",
+      "path": "/api/links/info",
+      "risk": "read"
+    },
+    {
+      "name": "getLinksMetatags",
+      "method": "GET",
+      "path": "/api/links/metatags",
+      "risk": "read"
+    },
+    {
+      "name": "getLinksRandom",
+      "method": "GET",
+      "path": "/api/links/random",
+      "risk": "read"
+    },
+    {
+      "name": "postLinksSync",
+      "method": "POST",
+      "path": "/api/links/sync",
+      "risk": "write"
+    },
+    {
+      "name": "putLinksUpsert",
+      "method": "PUT",
+      "path": "/api/links/upsert",
+      "risk": "write"
+    },
+    {
+      "name": "getLogs",
+      "method": "GET",
+      "path": "/api/logs",
+      "risk": "read"
+    },
+    {
+      "name": "getLogsLogId",
+      "method": "GET",
+      "path": "/api/logs/{logId}",
+      "risk": "read"
+    },
+    {
+      "name": "getLogsCount",
+      "method": "GET",
+      "path": "/api/logs/count",
+      "risk": "read"
+    },
+    {
+      "name": "getMe",
+      "method": "GET",
+      "path": "/api/me",
+      "risk": "read"
+    },
+    {
+      "name": "getMessages",
+      "method": "GET",
+      "path": "/api/messages",
+      "risk": "read"
+    },
+    {
+      "name": "getMessagesCount",
+      "method": "GET",
+      "path": "/api/messages/count",
+      "risk": "read"
+    },
+    {
+      "name": "getMiscCheckFavicon",
+      "method": "GET",
+      "path": "/api/misc/check-favicon",
+      "risk": "read"
+    },
+    {
+      "name": "getMiscCheckWorkspaceSlug",
+      "method": "GET",
+      "path": "/api/misc/check-workspace-slug",
+      "risk": "read"
+    },
+    {
+      "name": "getMockRewardfulAffiliates",
+      "method": "GET",
+      "path": "/api/mock/rewardful/affiliates",
+      "risk": "read"
+    },
+    {
+      "name": "getMockRewardfulCampaigns",
+      "method": "GET",
+      "path": "/api/mock/rewardful/campaigns",
+      "risk": "read"
+    },
+    {
+      "name": "getMockRewardfulCampaignsCampaignId",
+      "method": "GET",
+      "path": "/api/mock/rewardful/campaigns/{campaignId}",
+      "risk": "read"
+    },
+    {
+      "name": "getMockRewardfulCommissions",
+      "method": "GET",
+      "path": "/api/mock/rewardful/commissions",
+      "risk": "read"
+    },
+    {
+      "name": "getMockRewardfulReferrals",
+      "method": "GET",
+      "path": "/api/mock/rewardful/referrals",
+      "risk": "read"
+    },
+    {
+      "name": "getNetworkPartners",
+      "method": "GET",
+      "path": "/api/network/partners",
+      "risk": "read"
+    },
+    {
+      "name": "getNetworkPartnersCount",
+      "method": "GET",
+      "path": "/api/network/partners/count",
+      "risk": "read"
+    },
+    {
+      "name": "getNetworkPartnersInvitesUsage",
+      "method": "GET",
+      "path": "/api/network/partners/invites-usage",
+      "risk": "read"
+    },
+    {
+      "name": "getNetworkPrograms",
+      "method": "GET",
+      "path": "/api/network/programs",
+      "risk": "read"
+    },
+    {
+      "name": "getNetworkProgramsCount",
+      "method": "GET",
+      "path": "/api/network/programs/count",
+      "risk": "read"
+    },
+    {
+      "name": "getNetworkProgramsSummary",
+      "method": "GET",
+      "path": "/api/network/programs/summary",
+      "risk": "read"
+    },
+    {
+      "name": "getOauthApps",
+      "method": "GET",
+      "path": "/api/oauth/apps",
+      "risk": "read"
+    },
+    {
+      "name": "postOauthApps",
+      "method": "POST",
+      "path": "/api/oauth/apps",
+      "risk": "write"
+    },
+    {
+      "name": "getOauthAppsAppId",
+      "method": "GET",
+      "path": "/api/oauth/apps/{appId}",
+      "risk": "read"
+    },
+    {
+      "name": "patchOauthAppsAppId",
+      "method": "PATCH",
+      "path": "/api/oauth/apps/{appId}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteOauthAppsAppId",
+      "method": "DELETE",
+      "path": "/api/oauth/apps/{appId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "postOauthAuthorize",
+      "method": "POST",
+      "path": "/api/oauth/authorize",
+      "risk": "write"
+    },
+    {
+      "name": "postOauthToken",
+      "method": "POST",
+      "path": "/api/oauth/token",
+      "risk": "write"
+    },
+    {
+      "name": "getOauthUserinfo",
+      "method": "GET",
+      "path": "/api/oauth/userinfo",
+      "risk": "read"
+    },
+    {
+      "name": "getOgAnalytics",
+      "method": "GET",
+      "path": "/api/og/analytics",
+      "risk": "read"
+    },
+    {
+      "name": "getOgAvatarSeed",
+      "method": "GET",
+      "path": "/api/og/avatar/{seed}",
+      "risk": "read"
+    },
+    {
+      "name": "getOgPartnerEarnings",
+      "method": "GET",
+      "path": "/api/og/partner-earnings",
+      "risk": "read"
+    },
+    {
+      "name": "getOgPartnerRewind",
+      "method": "GET",
+      "path": "/api/og/partner-rewind",
+      "risk": "read"
+    },
+    {
+      "name": "getOgProgram",
+      "method": "GET",
+      "path": "/api/og/program",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfile",
+      "method": "GET",
+      "path": "/api/partner-profile",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfileInvites",
+      "method": "GET",
+      "path": "/api/partner-profile/invites",
+      "risk": "read"
+    },
+    {
+      "name": "postPartnerProfileInvites",
+      "method": "POST",
+      "path": "/api/partner-profile/invites",
+      "risk": "write"
+    },
+    {
+      "name": "patchPartnerProfileInvites",
+      "method": "PATCH",
+      "path": "/api/partner-profile/invites",
+      "risk": "write"
+    },
+    {
+      "name": "deletePartnerProfileInvites",
+      "method": "DELETE",
+      "path": "/api/partner-profile/invites",
+      "risk": "destructive"
+    },
+    {
+      "name": "postPartnerProfileInvitesAccept",
+      "method": "POST",
+      "path": "/api/partner-profile/invites/accept",
+      "risk": "write"
+    },
+    {
+      "name": "getPartnerProfileMessages",
+      "method": "GET",
+      "path": "/api/partner-profile/messages",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfileMessagesCount",
+      "method": "GET",
+      "path": "/api/partner-profile/messages/count",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfileNotificationPreferences",
+      "method": "GET",
+      "path": "/api/partner-profile/notification-preferences",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfilePayouts",
+      "method": "GET",
+      "path": "/api/partner-profile/payouts",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfilePayoutsCount",
+      "method": "GET",
+      "path": "/api/partner-profile/payouts/count",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfilePayoutsSettings",
+      "method": "GET",
+      "path": "/api/partner-profile/payouts/settings",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfilePostbacks",
+      "method": "GET",
+      "path": "/api/partner-profile/postbacks",
+      "risk": "read"
+    },
+    {
+      "name": "postPartnerProfilePostbacks",
+      "method": "POST",
+      "path": "/api/partner-profile/postbacks",
+      "risk": "write"
+    },
+    {
+      "name": "getPartnerProfilePostbacksPostbackId",
+      "method": "GET",
+      "path": "/api/partner-profile/postbacks/{postbackId}",
+      "risk": "read"
+    },
+    {
+      "name": "patchPartnerProfilePostbacksPostbackId",
+      "method": "PATCH",
+      "path": "/api/partner-profile/postbacks/{postbackId}",
+      "risk": "write"
+    },
+    {
+      "name": "deletePartnerProfilePostbacksPostbackId",
+      "method": "DELETE",
+      "path": "/api/partner-profile/postbacks/{postbackId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "getPartnerProfilePostbacksPostbackIdEvents",
+      "method": "GET",
+      "path": "/api/partner-profile/postbacks/{postbackId}/events",
+      "risk": "read"
+    },
+    {
+      "name": "postPartnerProfilePostbacksPostbackIdRotateSecret",
+      "method": "POST",
+      "path": "/api/partner-profile/postbacks/{postbackId}/rotate-secret",
+      "risk": "write"
+    },
+    {
+      "name": "postPartnerProfilePostbacksPostbackIdSendTest",
+      "method": "POST",
+      "path": "/api/partner-profile/postbacks/{postbackId}/send-test",
+      "risk": "destructive"
+    },
+    {
+      "name": "getPartnerProfilePrograms",
+      "method": "GET",
+      "path": "/api/partner-profile/programs",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramId",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdActivityLogs",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/activity-logs",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdAnalytics",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/analytics",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdAnalyticsExport",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/analytics/export",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdBounties",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/bounties",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdBountiesBountyId",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/bounties/{bountyId}",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdBountiesBountyIdSocialContentStats",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/bounties/{bountyId}/social-content-stats",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdCustomers",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/customers",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdCustomersCustomerId",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/customers/{customerId}",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdCustomersCount",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/customers/count",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdEarnings",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/earnings",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdEarningsCount",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/earnings/count",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdEarningsTimeseries",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/earnings/timeseries",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdEvents",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/events",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdEventsExport",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/events/export",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdGroupsGroupIdOrSlug",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/groups/{groupIdOrSlug}",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdLinks",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/links",
+      "risk": "read"
+    },
+    {
+      "name": "postPartnerProfileProgramsProgramIdLinks",
+      "method": "POST",
+      "path": "/api/partner-profile/programs/{programId}/links",
+      "risk": "write"
+    },
+    {
+      "name": "patchPartnerProfileProgramsProgramIdLinksLinkId",
+      "method": "PATCH",
+      "path": "/api/partner-profile/programs/{programId}/links/{linkId}",
+      "risk": "write"
+    },
+    {
+      "name": "deletePartnerProfileProgramsProgramIdLinksLinkId",
+      "method": "DELETE",
+      "path": "/api/partner-profile/programs/{programId}/links/{linkId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdReferrals",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/referrals",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdReferralsCount",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/referrals/count",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdResources",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/resources",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdSubmittedLeads",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/submitted-leads",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdSubmittedLeadsCount",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/submitted-leads/count",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfileProgramsCount",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/count",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfileReferrals",
+      "method": "GET",
+      "path": "/api/partner-profile/referrals",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfileReferralsStats",
+      "method": "GET",
+      "path": "/api/partner-profile/referrals/stats",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfileReferralsTimeseries",
+      "method": "GET",
+      "path": "/api/partner-profile/referrals/timeseries",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfileRewind",
+      "method": "GET",
+      "path": "/api/partner-profile/rewind",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnerProfileUsers",
+      "method": "GET",
+      "path": "/api/partner-profile/users",
+      "risk": "read"
+    },
+    {
+      "name": "patchPartnerProfileUsers",
+      "method": "PATCH",
+      "path": "/api/partner-profile/users",
+      "risk": "write"
+    },
+    {
+      "name": "deletePartnerProfileUsers",
+      "method": "DELETE",
+      "path": "/api/partner-profile/users",
+      "risk": "destructive"
+    },
+    {
+      "name": "getPartners",
+      "method": "GET",
+      "path": "/api/partners",
+      "risk": "read"
+    },
+    {
+      "name": "postPartners",
+      "method": "POST",
+      "path": "/api/partners",
+      "risk": "write"
+    },
+    {
+      "name": "getPartnersPartnerId",
+      "method": "GET",
+      "path": "/api/partners/{partnerId}",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnersPartnerIdApplicationRisks",
+      "method": "GET",
+      "path": "/api/partners/{partnerId}/application-risks",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnersPartnerIdComments",
+      "method": "GET",
+      "path": "/api/partners/{partnerId}/comments",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnersPartnerIdCommentsCount",
+      "method": "GET",
+      "path": "/api/partners/{partnerId}/comments/count",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnersPartnerIdCrossProgramSummary",
+      "method": "GET",
+      "path": "/api/partners/{partnerId}/cross-program-summary",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnersPartnerIdReferral",
+      "method": "GET",
+      "path": "/api/partners/{partnerId}/referral",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnersAnalytics",
+      "method": "GET",
+      "path": "/api/partners/analytics",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnersApplications",
+      "method": "GET",
+      "path": "/api/partners/applications",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnersApplicationsApplicationId",
+      "method": "GET",
+      "path": "/api/partners/applications/{applicationId}",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnersApplicationsAnalytics",
+      "method": "GET",
+      "path": "/api/partners/applications/analytics",
+      "risk": "read"
+    },
+    {
+      "name": "postPartnersApplicationsApprove",
+      "method": "POST",
+      "path": "/api/partners/applications/approve",
+      "risk": "write"
+    },
+    {
+      "name": "getPartnersApplicationsExport",
+      "method": "GET",
+      "path": "/api/partners/applications/export",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnersApplicationsHistory",
+      "method": "GET",
+      "path": "/api/partners/applications/history",
+      "risk": "read"
+    },
+    {
+      "name": "postPartnersApplicationsReject",
+      "method": "POST",
+      "path": "/api/partners/applications/reject",
+      "risk": "write"
+    },
+    {
+      "name": "postPartnersBan",
+      "method": "POST",
+      "path": "/api/partners/ban",
+      "risk": "write"
+    },
+    {
+      "name": "getPartnersCount",
+      "method": "GET",
+      "path": "/api/partners/count",
+      "risk": "read"
+    },
+    {
+      "name": "postPartnersDeactivate",
+      "method": "POST",
+      "path": "/api/partners/deactivate",
+      "risk": "write"
+    },
+    {
+      "name": "getPartnersExport",
+      "method": "GET",
+      "path": "/api/partners/export",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnersLinks",
+      "method": "GET",
+      "path": "/api/partners/links",
+      "risk": "read"
+    },
+    {
+      "name": "postPartnersLinks",
+      "method": "POST",
+      "path": "/api/partners/links",
+      "risk": "write"
+    },
+    {
+      "name": "putPartnersLinksUpsert",
+      "method": "PUT",
+      "path": "/api/partners/links/upsert",
+      "risk": "write"
+    },
+    {
+      "name": "getPartnersPlatformsCallback",
+      "method": "GET",
+      "path": "/api/partners/platforms/callback",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnersTags",
+      "method": "GET",
+      "path": "/api/partners/tags",
+      "risk": "read"
+    },
+    {
+      "name": "getPartnersTagsCount",
+      "method": "GET",
+      "path": "/api/partners/tags/count",
+      "risk": "read"
+    },
+    {
+      "name": "getPayouts",
+      "method": "GET",
+      "path": "/api/payouts",
+      "risk": "read"
+    },
+    {
+      "name": "getPayoutsPayoutId",
+      "method": "GET",
+      "path": "/api/payouts/{payoutId}",
+      "risk": "read"
+    },
+    {
+      "name": "getPayoutsCount",
+      "method": "GET",
+      "path": "/api/payouts/count",
+      "risk": "read"
+    },
+    {
+      "name": "getPayoutsExport",
+      "method": "GET",
+      "path": "/api/payouts/export",
+      "risk": "read"
+    },
+    {
+      "name": "getPaypalCallback",
+      "method": "GET",
+      "path": "/api/paypal/callback",
+      "risk": "read"
+    },
+    {
+      "name": "postPaypalWebhook",
+      "method": "POST",
+      "path": "/api/paypal/webhook",
+      "risk": "write"
+    },
+    {
+      "name": "postPostbacksCallback",
+      "method": "POST",
+      "path": "/api/postbacks/callback",
+      "risk": "write"
+    },
+    {
+      "name": "getProgramsProgramId",
+      "method": "GET",
+      "path": "/api/programs/{programId}",
+      "risk": "read"
+    },
+    {
+      "name": "getProgramsProgramIdDiscounts",
+      "method": "GET",
+      "path": "/api/programs/{programId}/discounts",
+      "risk": "read"
+    },
+    {
+      "name": "getProgramsProgramIdPayoutsEligible",
+      "method": "GET",
+      "path": "/api/programs/{programId}/payouts/eligible",
+      "risk": "read"
+    },
+    {
+      "name": "getProgramsProgramIdPayoutsEligibleCount",
+      "method": "GET",
+      "path": "/api/programs/{programId}/payouts/eligible/count",
+      "risk": "read"
+    },
+    {
+      "name": "getProgramsProgramIdResources",
+      "method": "GET",
+      "path": "/api/programs/{programId}/resources",
+      "risk": "read"
+    },
+    {
+      "name": "getProgramsProgramIdSubmittedLeads",
+      "method": "GET",
+      "path": "/api/programs/{programId}/submitted-leads",
+      "risk": "read"
+    },
+    {
+      "name": "getProgramsProgramIdSubmittedLeadsCount",
+      "method": "GET",
+      "path": "/api/programs/{programId}/submitted-leads/count",
+      "risk": "read"
+    },
+    {
+      "name": "getProgramsRewardfulCampaigns",
+      "method": "GET",
+      "path": "/api/programs/rewardful/campaigns",
+      "risk": "read"
+    },
+    {
+      "name": "getProjects",
+      "method": "GET",
+      "path": "/api/projects",
+      "risk": "read"
+    },
+    {
+      "name": "postProjects",
+      "method": "POST",
+      "path": "/api/projects",
+      "risk": "write"
+    },
+    {
+      "name": "getProjectsSlug",
+      "method": "GET",
+      "path": "/api/projects/{slug}",
+      "risk": "read"
+    },
+    {
+      "name": "putProjectsSlug",
+      "method": "PUT",
+      "path": "/api/projects/{slug}",
+      "risk": "write"
+    },
+    {
+      "name": "patchProjectsSlug",
+      "method": "PATCH",
+      "path": "/api/projects/{slug}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteProjectsSlug",
+      "method": "DELETE",
+      "path": "/api/projects/{slug}",
+      "risk": "destructive"
+    },
+    {
+      "name": "getProjectsSlugDomains",
+      "method": "GET",
+      "path": "/api/projects/{slug}/domains",
+      "risk": "read"
+    },
+    {
+      "name": "postProjectsSlugDomains",
+      "method": "POST",
+      "path": "/api/projects/{slug}/domains",
+      "risk": "write"
+    },
+    {
+      "name": "getProjectsSlugDomainsDomain",
+      "method": "GET",
+      "path": "/api/projects/{slug}/domains/{domain}",
+      "risk": "read"
+    },
+    {
+      "name": "patchProjectsSlugDomainsDomain",
+      "method": "PATCH",
+      "path": "/api/projects/{slug}/domains/{domain}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteProjectsSlugDomainsDomain",
+      "method": "DELETE",
+      "path": "/api/projects/{slug}/domains/{domain}",
+      "risk": "destructive"
+    },
+    {
+      "name": "getProjectsSlugDomainsDomainVerify",
+      "method": "GET",
+      "path": "/api/projects/{slug}/domains/{domain}/verify",
+      "risk": "read"
+    },
+    {
+      "name": "getProjectsSlugDomainsDefault",
+      "method": "GET",
+      "path": "/api/projects/{slug}/domains/default",
+      "risk": "read"
+    },
+    {
+      "name": "patchProjectsSlugDomainsDefault",
+      "method": "PATCH",
+      "path": "/api/projects/{slug}/domains/default",
+      "risk": "write"
+    },
+    {
+      "name": "getProjectsSlugLinks",
+      "method": "GET",
+      "path": "/api/projects/{slug}/links",
+      "risk": "read"
+    },
+    {
+      "name": "postProjectsSlugLinks",
+      "method": "POST",
+      "path": "/api/projects/{slug}/links",
+      "risk": "write"
+    },
+    {
+      "name": "getProjectsSlugLinksLinkId",
+      "method": "GET",
+      "path": "/api/projects/{slug}/links/{linkId}",
+      "risk": "read"
+    },
+    {
+      "name": "putProjectsSlugLinksLinkId",
+      "method": "PUT",
+      "path": "/api/projects/{slug}/links/{linkId}",
+      "risk": "write"
+    },
+    {
+      "name": "patchProjectsSlugLinksLinkId",
+      "method": "PATCH",
+      "path": "/api/projects/{slug}/links/{linkId}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteProjectsSlugLinksLinkId",
+      "method": "DELETE",
+      "path": "/api/projects/{slug}/links/{linkId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "postProjectsSlugLinksBulk",
+      "method": "POST",
+      "path": "/api/projects/{slug}/links/bulk",
+      "risk": "write"
+    },
+    {
+      "name": "patchProjectsSlugLinksBulk",
+      "method": "PATCH",
+      "path": "/api/projects/{slug}/links/bulk",
+      "risk": "write"
+    },
+    {
+      "name": "deleteProjectsSlugLinksBulk",
+      "method": "DELETE",
+      "path": "/api/projects/{slug}/links/bulk",
+      "risk": "destructive"
+    },
+    {
+      "name": "getProjectsSlugLinksCount",
+      "method": "GET",
+      "path": "/api/projects/{slug}/links/count",
+      "risk": "read"
+    },
+    {
+      "name": "getProjectsSlugLinksInfo",
+      "method": "GET",
+      "path": "/api/projects/{slug}/links/info",
+      "risk": "read"
+    },
+    {
+      "name": "getProjectsSlugLinksRandom",
+      "method": "GET",
+      "path": "/api/projects/{slug}/links/random",
+      "risk": "read"
+    },
+    {
+      "name": "getProjectsSlugTags",
+      "method": "GET",
+      "path": "/api/projects/{slug}/tags",
+      "risk": "read"
+    },
+    {
+      "name": "postProjectsSlugTags",
+      "method": "POST",
+      "path": "/api/projects/{slug}/tags",
+      "risk": "write"
+    },
+    {
+      "name": "putProjectsSlugTagsId",
+      "method": "PUT",
+      "path": "/api/projects/{slug}/tags/{id}",
+      "risk": "write"
+    },
+    {
+      "name": "patchProjectsSlugTagsId",
+      "method": "PATCH",
+      "path": "/api/projects/{slug}/tags/{id}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteProjectsSlugTagsId",
+      "method": "DELETE",
+      "path": "/api/projects/{slug}/tags/{id}",
+      "risk": "destructive"
+    },
+    {
+      "name": "getProviders",
+      "method": "GET",
+      "path": "/api/providers",
+      "risk": "read"
+    },
+    {
+      "name": "getQr",
+      "method": "GET",
+      "path": "/api/qr",
+      "risk": "read"
+    },
+    {
+      "name": "postResendWebhook",
+      "method": "POST",
+      "path": "/api/resend/webhook",
+      "risk": "write"
+    },
+    {
+      "name": "postResumesUploadUrl",
+      "method": "POST",
+      "path": "/api/resumes/upload-url",
+      "risk": "write"
+    },
+    {
+      "name": "getRewards",
+      "method": "GET",
+      "path": "/api/rewards",
+      "risk": "read"
+    },
+    {
+      "name": "getRewardsRewardId",
+      "method": "GET",
+      "path": "/api/rewards/{rewardId}",
+      "risk": "read"
+    },
+    {
+      "name": "getScimV20Directory",
+      "method": "GET",
+      "path": "/api/scim/v2.0/{directory}",
+      "risk": "read"
+    },
+    {
+      "name": "postScimV20Directory",
+      "method": "POST",
+      "path": "/api/scim/v2.0/{directory}",
+      "risk": "write"
+    },
+    {
+      "name": "putScimV20Directory",
+      "method": "PUT",
+      "path": "/api/scim/v2.0/{directory}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteScimV20Directory",
+      "method": "DELETE",
+      "path": "/api/scim/v2.0/{directory}",
+      "risk": "destructive"
+    },
+    {
+      "name": "patchShopifyIntegrationCallback",
+      "method": "PATCH",
+      "path": "/api/shopify/integration/callback",
+      "risk": "write"
+    },
+    {
+      "name": "postShopifyIntegrationWebhook",
+      "method": "POST",
+      "path": "/api/shopify/integration/webhook",
+      "risk": "write"
+    },
+    {
+      "name": "postShopifyPixel",
+      "method": "POST",
+      "path": "/api/shopify/pixel",
+      "risk": "write"
+    },
+    {
+      "name": "getSingularWebhook",
+      "method": "GET",
+      "path": "/api/singular/webhook",
+      "risk": "read"
+    },
+    {
+      "name": "getSlackCallback",
+      "method": "GET",
+      "path": "/api/slack/callback",
+      "risk": "read"
+    },
+    {
+      "name": "postSlackSlashCommands",
+      "method": "POST",
+      "path": "/api/slack/slash-commands",
+      "risk": "write"
+    },
+    {
+      "name": "postStripeConnectV2Webhook",
+      "method": "POST",
+      "path": "/api/stripe/connect/v2/webhook",
+      "risk": "write"
+    },
+    {
+      "name": "postStripeConnectWebhook",
+      "method": "POST",
+      "path": "/api/stripe/connect/webhook",
+      "risk": "write"
+    },
+    {
+      "name": "patchStripeIntegration",
+      "method": "PATCH",
+      "path": "/api/stripe/integration",
+      "risk": "write"
+    },
+    {
+      "name": "postStripeIntegrationWebhook",
+      "method": "POST",
+      "path": "/api/stripe/integration/webhook",
+      "risk": "write"
+    },
+    {
+      "name": "postStripeIntegrationWebhookSandbox",
+      "method": "POST",
+      "path": "/api/stripe/integration/webhook/sandbox",
+      "risk": "write"
+    },
+    {
+      "name": "postStripeIntegrationWebhookTest",
+      "method": "POST",
+      "path": "/api/stripe/integration/webhook/test",
+      "risk": "write"
+    },
+    {
+      "name": "postStripeWebhook",
+      "method": "POST",
+      "path": "/api/stripe/webhook",
+      "risk": "write"
+    },
+    {
+      "name": "getSupportedCountries",
+      "method": "GET",
+      "path": "/api/supported-countries",
+      "risk": "read"
+    },
+    {
+      "name": "getTags",
+      "method": "GET",
+      "path": "/api/tags",
+      "risk": "read"
+    },
+    {
+      "name": "postTags",
+      "method": "POST",
+      "path": "/api/tags",
+      "risk": "write"
+    },
+    {
+      "name": "putTagsId",
+      "method": "PUT",
+      "path": "/api/tags/{id}",
+      "risk": "write"
+    },
+    {
+      "name": "patchTagsId",
+      "method": "PATCH",
+      "path": "/api/tags/{id}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteTagsId",
+      "method": "DELETE",
+      "path": "/api/tags/{id}",
+      "risk": "destructive"
+    },
+    {
+      "name": "getTagsCount",
+      "method": "GET",
+      "path": "/api/tags/count",
+      "risk": "read"
+    },
+    {
+      "name": "getTokens",
+      "method": "GET",
+      "path": "/api/tokens",
+      "risk": "read"
+    },
+    {
+      "name": "postTokens",
+      "method": "POST",
+      "path": "/api/tokens",
+      "risk": "write"
+    },
+    {
+      "name": "getTokensId",
+      "method": "GET",
+      "path": "/api/tokens/{id}",
+      "risk": "read"
+    },
+    {
+      "name": "patchTokensId",
+      "method": "PATCH",
+      "path": "/api/tokens/{id}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteTokensId",
+      "method": "DELETE",
+      "path": "/api/tokens/{id}",
+      "risk": "destructive"
+    },
+    {
+      "name": "postTokensEmbedReferrals",
+      "method": "POST",
+      "path": "/api/tokens/embed/referrals",
+      "risk": "write"
+    },
+    {
+      "name": "postTrackApplication",
+      "method": "POST",
+      "path": "/api/track/application",
+      "risk": "write"
+    },
+    {
+      "name": "postTrackClick",
+      "method": "POST",
+      "path": "/api/track/click",
+      "risk": "write"
+    },
+    {
+      "name": "postTrackLead",
+      "method": "POST",
+      "path": "/api/track/lead",
+      "risk": "write"
+    },
+    {
+      "name": "postTrackLeadClient",
+      "method": "POST",
+      "path": "/api/track/lead/client",
+      "risk": "write"
+    },
+    {
+      "name": "postTrackOpen",
+      "method": "POST",
+      "path": "/api/track/open",
+      "risk": "write"
+    },
+    {
+      "name": "postTrackSale",
+      "method": "POST",
+      "path": "/api/track/sale",
+      "risk": "write"
+    },
+    {
+      "name": "postTrackSaleClient",
+      "method": "POST",
+      "path": "/api/track/sale/client",
+      "risk": "write"
+    },
+    {
+      "name": "postTrackVisit",
+      "method": "POST",
+      "path": "/api/track/visit",
+      "risk": "write"
+    },
+    {
+      "name": "postUnsplashDownload",
+      "method": "POST",
+      "path": "/api/unsplash/download",
+      "risk": "write"
+    },
+    {
+      "name": "getUnsplashSearch",
+      "method": "GET",
+      "path": "/api/unsplash/search",
+      "risk": "read"
+    },
+    {
+      "name": "getUser",
+      "method": "GET",
+      "path": "/api/user",
+      "risk": "read"
+    },
+    {
+      "name": "putUser",
+      "method": "PUT",
+      "path": "/api/user",
+      "risk": "write"
+    },
+    {
+      "name": "patchUser",
+      "method": "PATCH",
+      "path": "/api/user",
+      "risk": "write"
+    },
+    {
+      "name": "deleteUser",
+      "method": "DELETE",
+      "path": "/api/user",
+      "risk": "destructive"
+    },
+    {
+      "name": "getUserNotificationPreferences",
+      "method": "GET",
+      "path": "/api/user/notification-preferences",
+      "risk": "read"
+    },
+    {
+      "name": "postUserNotificationPreferences",
+      "method": "POST",
+      "path": "/api/user/notification-preferences",
+      "risk": "write"
+    },
+    {
+      "name": "patchUserPassword",
+      "method": "PATCH",
+      "path": "/api/user/password",
+      "risk": "write"
+    },
+    {
+      "name": "getUserReferralsToken",
+      "method": "GET",
+      "path": "/api/user/referrals-token",
+      "risk": "read"
+    },
+    {
+      "name": "postUserSetPassword",
+      "method": "POST",
+      "path": "/api/user/set-password",
+      "risk": "write"
+    },
+    {
+      "name": "getUserTokens",
+      "method": "GET",
+      "path": "/api/user/tokens",
+      "risk": "read"
+    },
+    {
+      "name": "deleteUserTokens",
+      "method": "DELETE",
+      "path": "/api/user/tokens",
+      "risk": "destructive"
+    },
+    {
+      "name": "getUtm",
+      "method": "GET",
+      "path": "/api/utm",
+      "risk": "read"
+    },
+    {
+      "name": "postUtm",
+      "method": "POST",
+      "path": "/api/utm",
+      "risk": "write"
+    },
+    {
+      "name": "patchUtmId",
+      "method": "PATCH",
+      "path": "/api/utm/{id}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteUtmId",
+      "method": "DELETE",
+      "path": "/api/utm/{id}",
+      "risk": "destructive"
+    },
+    {
+      "name": "postVeriffWebhook",
+      "method": "POST",
+      "path": "/api/veriff/webhook",
+      "risk": "write"
+    },
+    {
+      "name": "getWebhooks",
+      "method": "GET",
+      "path": "/api/webhooks",
+      "risk": "read"
+    },
+    {
+      "name": "postWebhooks",
+      "method": "POST",
+      "path": "/api/webhooks",
+      "risk": "write"
+    },
+    {
+      "name": "getWebhooksWebhookId",
+      "method": "GET",
+      "path": "/api/webhooks/{webhookId}",
+      "risk": "read"
+    },
+    {
+      "name": "patchWebhooksWebhookId",
+      "method": "PATCH",
+      "path": "/api/webhooks/{webhookId}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteWebhooksWebhookId",
+      "method": "DELETE",
+      "path": "/api/webhooks/{webhookId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "getWebhooksWebhookIdEvents",
+      "method": "GET",
+      "path": "/api/webhooks/{webhookId}/events",
+      "risk": "read"
+    },
+    {
+      "name": "getWebhooksWebhookIdFolders",
+      "method": "GET",
+      "path": "/api/webhooks/{webhookId}/folders",
+      "risk": "read"
+    },
+    {
+      "name": "getWebhooksWebhookIdLinks",
+      "method": "GET",
+      "path": "/api/webhooks/{webhookId}/links",
+      "risk": "read"
+    },
+    {
+      "name": "postWebhooksCallback",
+      "method": "POST",
+      "path": "/api/webhooks/callback",
+      "risk": "write"
+    },
+    {
+      "name": "postWorkflowsCreatePartnerCommission",
+      "method": "POST",
+      "path": "/api/workflows/create-partner-commission",
+      "risk": "write"
+    },
+    {
+      "name": "postWorkflowsPartnerApproved",
+      "method": "POST",
+      "path": "/api/workflows/partner-approved",
+      "risk": "write"
+    },
+    {
+      "name": "getWorkspaces",
+      "method": "GET",
+      "path": "/api/workspaces",
+      "risk": "read"
+    },
+    {
+      "name": "postWorkspaces",
+      "method": "POST",
+      "path": "/api/workspaces",
+      "risk": "write"
+    },
+    {
+      "name": "getWorkspacesIdOrSlug",
+      "method": "GET",
+      "path": "/api/workspaces/{idOrSlug}",
+      "risk": "read"
+    },
+    {
+      "name": "putWorkspacesIdOrSlug",
+      "method": "PUT",
+      "path": "/api/workspaces/{idOrSlug}",
+      "risk": "write"
+    },
+    {
+      "name": "patchWorkspacesIdOrSlug",
+      "method": "PATCH",
+      "path": "/api/workspaces/{idOrSlug}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteWorkspacesIdOrSlug",
+      "method": "DELETE",
+      "path": "/api/workspaces/{idOrSlug}",
+      "risk": "destructive"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugBillingActivatePaidPlan",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/billing/activate-paid-plan",
+      "risk": "write"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugBillingCancel",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/billing/cancel",
+      "risk": "destructive"
+    },
+    {
+      "name": "getWorkspacesIdOrSlugBillingInvoices",
+      "method": "GET",
+      "path": "/api/workspaces/{idOrSlug}/billing/invoices",
+      "risk": "read"
+    },
+    {
+      "name": "getWorkspacesIdOrSlugBillingInvoicesInvoiceId",
+      "method": "GET",
+      "path": "/api/workspaces/{idOrSlug}/billing/invoices/{invoiceId}",
+      "risk": "read"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugBillingManage",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/billing/manage",
+      "risk": "write"
+    },
+    {
+      "name": "getWorkspacesIdOrSlugBillingPaymentMethods",
+      "method": "GET",
+      "path": "/api/workspaces/{idOrSlug}/billing/payment-methods",
+      "risk": "read"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugBillingPaymentMethods",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/billing/payment-methods",
+      "risk": "write"
+    },
+    {
+      "name": "patchWorkspacesIdOrSlugBillingPaymentMethods",
+      "method": "PATCH",
+      "path": "/api/workspaces/{idOrSlug}/billing/payment-methods",
+      "risk": "write"
+    },
+    {
+      "name": "deleteWorkspacesIdOrSlugBillingPaymentMethods",
+      "method": "DELETE",
+      "path": "/api/workspaces/{idOrSlug}/billing/payment-methods",
+      "risk": "destructive"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugBillingUpgrade",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/billing/upgrade",
+      "risk": "write"
+    },
+    {
+      "name": "getWorkspacesIdOrSlugBillingUsage",
+      "method": "GET",
+      "path": "/api/workspaces/{idOrSlug}/billing/usage",
+      "risk": "read"
+    },
+    {
+      "name": "getWorkspacesIdOrSlugImportImportIdDownload",
+      "method": "GET",
+      "path": "/api/workspaces/{idOrSlug}/import/{importId}/download",
+      "risk": "read"
+    },
+    {
+      "name": "getWorkspacesIdOrSlugImportBitly",
+      "method": "GET",
+      "path": "/api/workspaces/{idOrSlug}/import/bitly",
+      "risk": "read"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugImportBitly",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/import/bitly",
+      "risk": "write"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugImportCsv",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/import/csv",
+      "risk": "write"
+    },
+    {
+      "name": "getWorkspacesIdOrSlugImportRebrandly",
+      "method": "GET",
+      "path": "/api/workspaces/{idOrSlug}/import/rebrandly",
+      "risk": "read"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugImportRebrandly",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/import/rebrandly",
+      "risk": "write"
+    },
+    {
+      "name": "putWorkspacesIdOrSlugImportRebrandly",
+      "method": "PUT",
+      "path": "/api/workspaces/{idOrSlug}/import/rebrandly",
+      "risk": "write"
+    },
+    {
+      "name": "getWorkspacesIdOrSlugImportShort",
+      "method": "GET",
+      "path": "/api/workspaces/{idOrSlug}/import/short",
+      "risk": "read"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugImportShort",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/import/short",
+      "risk": "write"
+    },
+    {
+      "name": "putWorkspacesIdOrSlugImportShort",
+      "method": "PUT",
+      "path": "/api/workspaces/{idOrSlug}/import/short",
+      "risk": "write"
+    },
+    {
+      "name": "getWorkspacesIdOrSlugInvites",
+      "method": "GET",
+      "path": "/api/workspaces/{idOrSlug}/invites",
+      "risk": "read"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugInvites",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/invites",
+      "risk": "write"
+    },
+    {
+      "name": "patchWorkspacesIdOrSlugInvites",
+      "method": "PATCH",
+      "path": "/api/workspaces/{idOrSlug}/invites",
+      "risk": "write"
+    },
+    {
+      "name": "deleteWorkspacesIdOrSlugInvites",
+      "method": "DELETE",
+      "path": "/api/workspaces/{idOrSlug}/invites",
+      "risk": "destructive"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugInvitesAccept",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/invites/accept",
+      "risk": "write"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugInvitesDecline",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/invites/decline",
+      "risk": "write"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugInvitesReset",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/invites/reset",
+      "risk": "destructive"
+    },
+    {
+      "name": "getWorkspacesIdOrSlugNotificationPreferences",
+      "method": "GET",
+      "path": "/api/workspaces/{idOrSlug}/notification-preferences",
+      "risk": "read"
+    },
+    {
+      "name": "getWorkspacesIdOrSlugSaml",
+      "method": "GET",
+      "path": "/api/workspaces/{idOrSlug}/saml",
+      "risk": "read"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugSaml",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/saml",
+      "risk": "write"
+    },
+    {
+      "name": "deleteWorkspacesIdOrSlugSaml",
+      "method": "DELETE",
+      "path": "/api/workspaces/{idOrSlug}/saml",
+      "risk": "destructive"
+    },
+    {
+      "name": "getWorkspacesIdOrSlugScim",
+      "method": "GET",
+      "path": "/api/workspaces/{idOrSlug}/scim",
+      "risk": "read"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugScim",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/scim",
+      "risk": "write"
+    },
+    {
+      "name": "deleteWorkspacesIdOrSlugScim",
+      "method": "DELETE",
+      "path": "/api/workspaces/{idOrSlug}/scim",
+      "risk": "destructive"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugSitemapsImport",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/sitemaps/import",
+      "risk": "write"
+    },
+    {
+      "name": "getWorkspacesIdOrSlugStatsEndpoint",
+      "method": "GET",
+      "path": "/api/workspaces/{idOrSlug}/stats/{endpoint}",
+      "risk": "read"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugSupportSlackInvite",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/support/slack-invite",
+      "risk": "destructive"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugUploadUrl",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/upload-url",
+      "risk": "write"
+    },
+    {
+      "name": "getWorkspacesIdOrSlugUsers",
+      "method": "GET",
+      "path": "/api/workspaces/{idOrSlug}/users",
+      "risk": "read"
+    },
+    {
+      "name": "patchWorkspacesIdOrSlugUsers",
+      "method": "PATCH",
+      "path": "/api/workspaces/{idOrSlug}/users",
+      "risk": "write"
+    },
+    {
+      "name": "deleteWorkspacesIdOrSlugUsers",
+      "method": "DELETE",
+      "path": "/api/workspaces/{idOrSlug}/users",
+      "risk": "destructive"
+    }
+  ]
+}

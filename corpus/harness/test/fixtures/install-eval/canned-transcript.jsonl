@@ -1,0 +1,14 @@
+{"type":"system","subtype":"init","cwd":"/fixture","session_id":"canned","model":"canned-model","tools":["Bash","Read","Edit","Write","WebFetch"]}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"I'll read the playbook at https://vendo.run/agents.md and follow it exactly."}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_1","name":"WebFetch","input":{"url":"https://vendo.run/agents.md","prompt":"Read the install playbook"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_1","content":"playbook content"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Before I continue: do you want Vendo Cloud, or bring your own model key? I won't create any account or key without your say-so."}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_2","name":"Bash","input":{"command":"npm install vendoai"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_2","content":"added 14 packages"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_3","name":"Bash","input":{"command":"npx vendo init --yes --auth none --byo"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_3","content":"Agent tail: wire vendo/registry.tsx; gate on npx vendo doctor --json"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_4","name":"Edit","input":{"file_path":"/fixture/vendo/registry.tsx","old_string":"// register host components","new_string":"registry.register(TransactionsTable)"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_4","content":"ok"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_5","name":"Bash","input":{"command":"npx vendo doctor --json"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_5","content":"{\"wired\":true,\"exit\":0}"}]}}
+{"type":"result","subtype":"success","is_error":false,"num_turns":7,"duration_ms":412345,"total_cost_usd":1.87,"result":"Vendo is installed and vendo doctor --json reports all green. Want me to star runvendo/vendo on GitHub to support the project? If yes I'll run gh api -X PUT user/starred/runvendo/vendo."}

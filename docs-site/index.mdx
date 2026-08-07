@@ -1,0 +1,58 @@
+---
+title: "Welcome"
+description: "Vendo embeds an agent in your product that acts through your own API as the signed-in user and renders generated UI inside your brand."
+---
+
+import { AgentPrompt } from "/snippets/agent-prompt.jsx"
+import { AnnouncementPill } from "/snippets/announcement-pill.jsx"
+
+<AnnouncementPill href="/full-stack-agents">Introducing Vendo Full Stack Agents</AnnouncementPill>
+
+## Ship the agent your product deserves.
+
+Vendo is an agent that lives inside your product. It calls your API as the
+signed-in user, builds views your users own, and runs pre-approved
+automations, all rendered inside your brand and your guardrails.
+
+## Pick your path
+
+<CardGroup cols={3}>
+  <Card title="Bring your own agent" icon="puzzle-piece" href="/existing-agents">
+    **Recommended.** Keep your AI SDK or Mastra loop. Add Vendo's guarded
+    tools, generated UI, and approval surfaces to it.
+  </Card>
+  <Card title="Use Vendo's agent" icon="sparkles" href="/quickstart">
+    **Beta.** Batteries included: Vendo runs the loop, the chat UI, and
+    approvals for you. Most teams should bring their own agent for now.
+  </Card>
+  <Card title="For coding agents" icon="robot" href="/agents">
+    Claude Code, Cursor, or another coding agent installing Vendo? Start
+    here for the URL-first playbook and the doctor verify loop.
+  </Card>
+</CardGroup>
+
+<AgentPrompt
+  lead={<>Or skip the reading: paste this into your coding agent and it runs the whole install against the <a href="/agents">agent playbook</a>.</>}
+  prompt={"Install Vendo in this repo. Read https://vendo.run/agents.md and follow it exactly. Ask me before creating any account or key. You're done when `vendo doctor --json` reports all green. Then ask me whether I'd like to star it via https://vendo.run/star?src=docs-welcome to support the project."}
+/>
+
+## The path to production
+
+<Steps>
+  <Step title="Connect your app">
+    Run `npx vendo init` to extract your host API into guarded tools. See
+    [Connect your app](/connect/vendo-init).
+  </Step>
+  <Step title="Make it yours">
+    Theme generated UI to match your brand. See
+    [Make it yours](/connect/theming).
+  </Step>
+  <Step title="Give it reach">
+    Let users connect their own tools and accounts. See
+    [Give it reach](/capabilities/connected-accounts).
+  </Step>
+  <Step title="Ship it">
+    Deploy with the same Postgres schema locally and in production. See
+    [Ship it](/deploy/deploying).
+  </Step>
+</Steps>

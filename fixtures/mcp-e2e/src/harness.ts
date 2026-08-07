@@ -1,0 +1,322 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { inject } from "vitest";
+import type { AppDocument, Principal, ToolRegistry, VendoTheme } from "@vendoai/core";
+import { createActions } from "@vendoai/actions";
+import { createApps, type AppsRuntime } from "@vendoai/apps";
+import { createGuard, type PolicyConfig, type VendoGuard } from "@vendoai/guard";
+import { createMcpDoor, type AppsPort, type HostOAuthAdapter } from "@vendoai/mcp";
+import { createStore, type VendoStore } from "@vendoai/store";
+
+export const SUBJECT = "user_1";
+export const FIXTURE_APP_ID = "app_mcp_fixture";
+export const HTTP_FIXTURE_APP_ID = "app_mcp_http_fixture";
+export const MCP_MOUNT = "/api/vendo/mcp";
+export const FIXTURE_THEME: VendoTheme = {
+  colors: {
+    background: "#FBFBFA",
+    surface: "#FFFFFF",
+    text: "#111111",
+    muted: "#908C85",
+    accent: "#0A7CFF",
+    accentText: "#FFFFFF",
+    danger: "#B42318",
+    border: "#E2E1DE",
+  },
+  typography: { fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif", baseSize: "15px" },
+  radius: { small: "6px", medium: "14px", large: "14px" },
+  density: "comfortable",
+  motion: "full",
+};
+
+export const fixtureBaseUrl = (): string => inject("fixtureBaseUrl");
+
+export const hostTools = [
+  {
+    name: "host_invoices_list",
+    description: "List invoices",
+    inputSchema: { type: "object" },
+    risk: "read",
+    binding: { kind: "route", method: "GET", path: "/api/invoices", argsIn: "query" },
+  },
+  {
+    name: "host_invoices_create",
+    description: "Create invoice",
+    inputSchema: { type: "object" },
+    risk: "write",
+    binding: { kind: "route", method: "POST", path: "/api/invoices", argsIn: "body" },
+  },
+  {
+    name: "host_invoices_get",
+    description: "Get invoice",
+    inputSchema: { type: "object" },
+    risk: "read",
+    binding: { kind: "route", method: "GET", path: "/api/invoices/{id}", argsIn: "query" },
+  },
+  {
+    name: "host_invoices_update",
+    description: "Update invoice",
+    inputSchema: { type: "object" },
+    risk: "write",
+    binding: { kind: "route", method: "PATCH", path: "/api/invoices/{id}", argsIn: "body" },
+  },
+  {
+    name: "host_invoices_send",
+    description: "Send invoice",
+    inputSchema: { type: "object" },
+    risk: "write",
+    binding: { kind: "route", method: "POST", path: "/api/invoices/{id}/send", argsIn: "body" },
+  },
+  {
+    name: "host_invoices_send_critical",
+    description: "Send invoice with critical confirmation",
+    inputSchema: { type: "object" },
+    risk: "write",
+    confirmEach: true,
+    binding: { kind: "route", method: "POST", path: "/api/invoices/{id}/send", argsIn: "body" },
+  },
+  {
+    name: "host_invoices_delete",
+    description: "Delete invoice",
+    inputSchema: { type: "object" },
+    risk: "destructive",
+    binding: { kind: "route", method: "DELETE", path: "/api/invoices/{id}", argsIn: "query" },
+  },
+] as const;
+
+const fixtureApp: AppDocument = {
+  format: "vendo/app@1",
+  id: FIXTURE_APP_ID,
+  name: "MCP invoice fixture",
+  description: "A rung-1 app served through the MCP Apps ride-along.",
+  tree: {
+    formatVersion: "vendo-genui/v2",
+    root: "root",
+    nodes: [{ id: "root", component: "Text", props: { children: "Invoice fixture" } }],
+    data: { fixture: true },
+  },
+};
+
+const httpFixtureApp: AppDocument = {
+  format: "vendo/app@1",
+  id: HTTP_FIXTURE_APP_ID,
+  name: "MCP hosted dashboard",
+  description: "A rung-4 fixture projected as an MCP open-in-product card.",
+  ui: "http",
+  server: "fixture:http",
+};
+
+export type OAuthMode = "auto" | "interactive" | "prebuilt";
+
+export interface Stack {
+  store: VendoStore;
+  guard: VendoGuard;
+  bound: ToolRegistry;
+  apps: AppsRuntime;
+  revoked: Set<string>;
+  autoSubject?: string;
+  oauthMode: OAuthMode;
+  /** Successful resources/read URIs observed at the real HTTP door. */
+  resourceReads: string[];
+  origin: string;
+  endpoint: string;
+  close(): Promise<void>;
+  sql<Row = Record<string, unknown>>(query: string, params?: unknown[]): Promise<Row[]>;
+}
+
+export interface StackOptions {
+  policy?: PolicyConfig;
+  oauthMode?: OAuthMode;
+  doorPort?: number;
+}
+
+export async function loginCookie(subject: string): Promise<string> {
+  const response = await fetch(`${fixtureBaseUrl()}/api/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ user: subject }),
+  });
+  if (!response.ok) throw new Error(`Fixture login failed (${response.status})`);
+  const cookie = response.headers.get("set-cookie")?.split(";")[0];
+  if (!cookie) throw new Error("Fixture login did not return a cookie");
+  return cookie;
+}
+
+export async function resetFixture(): Promise<void> {
+  const response = await fetch(`${fixtureBaseUrl()}/fixture/reset`, { method: "POST" });
+  if (!response.ok) throw new Error(`Fixture reset failed (${response.status})`);
+}
+
+export async function createStack(options: StackOptions = {}): Promise<Stack> {
+  const dataDir = await mkdtemp(join(tmpdir(), "vendo-mcp-e2e-"));
+  const store = createStore({ dataDir });
+  await store.ensureSchema();
+  const guard = createGuard({
+    store,
+    policy: options.policy ?? {
+      rules: [
+        { match: { risk: "destructive" }, action: "ask" },
+        { match: { risk: "read" }, action: "run" },
+        { match: { risk: "write" }, action: "run" },
+      ],
+    },
+  });
+  const control: { autoSubject?: string; oauthMode: OAuthMode } = {
+    autoSubject: SUBJECT,
+    oauthMode: options.oauthMode ?? "auto",
+  };
+  const revoked = new Set<string>();
+  const actions = createActions({
+    tools: hostTools as unknown as Parameters<typeof createActions>[0]["tools"],
+    baseUrl: fixtureBaseUrl(),
+    // NO custom fetch: door host calls must reach the fixture host with EXACTLY
+    // the auth actions attaches, so the e2e exercises the real ActAs seam. (An
+    // earlier fixtureFetch injected a login cookie on every outbound call, which
+    // silently masked whether venue="mcp" / app-ride-along calls authenticated
+    // at all — FIX A removed it; it did no loopback routing, only that masking.)
+    //
+    // venue="mcp" host calls authenticate through the ActAs seam (04 §4 / 10-mcp
+    // §2.1), never a browser session — so the host models it: mint the OAuth'd
+    // user's fixture session for the door's consent-projection grant.
+    actAs: async (principal) => ({ headers: { cookie: await loginCookie(principal.subject) } }),
+  });
+  const bound = guard.bind(actions);
+  const apps = createApps({ store, guard, tools: bound, catalog: [] });
+  await store.records("vendo_apps").put({
+    id: fixtureApp.id,
+    data: { subject: SUBJECT, enabled: false, doc: fixtureApp },
+    refs: { subject: SUBJECT },
+  });
+  await store.records("vendo_apps").put({
+    id: httpFixtureApp.id,
+    data: { subject: SUBJECT, enabled: false, doc: httpFixtureApp },
+    refs: { subject: SUBJECT },
+  });
+  const resolvePrincipal: HostOAuthAdapter["principal"] = async (subject) => {
+    return revoked.has(subject)
+      ? null
+      : { kind: "user", subject, display: `Fixture ${subject}` } satisfies Principal;
+  };
+  const oauth: HostOAuthAdapter = control.oauthMode === "prebuilt" ? {
+    async session() {
+      if (!control.autoSubject) return new Response("missing fixture session", { status: 401 });
+      return { subject: control.autoSubject };
+    },
+    principal: resolvePrincipal,
+  } : {
+    async authorize() {
+      if (control.oauthMode === "interactive") {
+        return new Response(null, {
+          status: 302,
+          headers: { location: "https://fixture.example/consent" },
+        });
+      }
+      if (!control.autoSubject) return new Response("missing fixture session", { status: 401 });
+      return { subject: control.autoSubject };
+    },
+    principal: resolvePrincipal,
+  };
+  let origin = "";
+  const appsPort: AppsPort = {
+    list: (ctx) => apps.list(ctx),
+    async open(appId, ctx) {
+      if (appId === HTTP_FIXTURE_APP_ID) {
+        return { kind: "http", url: `${origin}/fixture/apps/${HTTP_FIXTURE_APP_ID}` };
+      }
+      const opened = await apps.open(appId, ctx);
+      if (opened.kind === "tree") return { kind: "tree", payload: opened.payload };
+      if (opened.kind === "http") return { kind: "http", url: opened.url };
+      throw new Error(`rung-1 fixture cannot serve app surface "${opened.kind}"`);
+    },
+    call: (appId, ref, args, ctx) => apps.call(appId, ref, args, ctx),
+  };
+  const door = createMcpDoor({ tools: bound, guard, oauth, store, apps: appsPort, theme: FIXTURE_THEME });
+  const resourceReads: string[] = [];
+  const httpServer = createServer((req, res) => {
+    void forwardToDoor(req, res, door.handler, (uri) => resourceReads.push(uri));
+  });
+  await new Promise<void>((resolve, reject) => {
+    httpServer.once("error", reject);
+    httpServer.listen(options.doorPort ?? 0, "127.0.0.1", () => {
+      httpServer.off("error", reject);
+      resolve();
+    });
+  });
+  const address = httpServer.address();
+  if (!address || typeof address === "string") throw new Error("Door server did not bind a TCP port");
+  origin = `http://127.0.0.1:${address.port}`;
+
+  const stack: Stack = {
+    store,
+    guard,
+    bound,
+    apps,
+    revoked,
+    get autoSubject() { return control.autoSubject; },
+    set autoSubject(value) { control.autoSubject = value; },
+    get oauthMode() { return control.oauthMode; },
+    set oauthMode(value) { control.oauthMode = value; },
+    resourceReads,
+    origin,
+    endpoint: `${origin}${MCP_MOUNT}`,
+    async sql(query, params) {
+      const raw = store.raw() as { query(q: string, p?: unknown[]): Promise<{ rows: unknown[] }> };
+      return (await raw.query(query, params)).rows as never;
+    },
+    async close() {
+      await new Promise<void>((resolve, reject) => httpServer.close((error) => (error ? reject(error) : resolve())));
+      await store.close();
+      await rm(dataDir, { recursive: true, force: true });
+    },
+  };
+  return stack;
+}
+
+async function forwardToDoor(
+  req: IncomingMessage,
+  res: ServerResponse,
+  handler: (request: Request) => Promise<Response>,
+  onResourceRead: (uri: string) => void,
+): Promise<void> {
+  try {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    const host = req.headers.host ?? "127.0.0.1";
+    const headers = new Headers();
+    for (const [name, value] of Object.entries(req.headers)) {
+      if (value === undefined) continue;
+      headers.set(name, Array.isArray(value) ? value.join(", ") : value);
+    }
+    const body = chunks.length === 0 ? undefined : Buffer.concat(chunks);
+    let resourceUri: string | undefined;
+    if (body !== undefined) {
+      try {
+        const parsed = JSON.parse(body.toString("utf8")) as unknown;
+        const messages = Array.isArray(parsed) ? parsed : [parsed];
+        const read = messages.find((message) => {
+          if (typeof message !== "object" || message === null) return false;
+          return (message as { method?: unknown }).method === "resources/read";
+        }) as { params?: { uri?: unknown } } | undefined;
+        if (typeof read?.params?.uri === "string") resourceUri = read.params.uri;
+      } catch {
+        // OAuth form posts and transport GETs are intentionally ignored.
+      }
+    }
+    const request = new Request(`http://${host}${req.url ?? "/"}`, {
+      method: req.method,
+      headers,
+      ...(body === undefined ? {} : { body }),
+    });
+    const response = await handler(request);
+    if (response.ok && resourceUri !== undefined) onResourceRead(resourceUri);
+    res.statusCode = response.status;
+    response.headers.forEach((value, name) => res.setHeader(name, value));
+    res.end(Buffer.from(await response.arrayBuffer()));
+  } catch (error) {
+    res.statusCode = 500;
+    res.setHeader("content-type", "text/plain");
+    res.end(error instanceof Error ? error.message : "door bridge failed");
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "rootDir": "src/server",
+    "outDir": "dist/server",
+    "types": ["node"]
+  },
+  "include": ["src/server/**/*.ts"]
+}

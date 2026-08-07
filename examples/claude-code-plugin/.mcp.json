@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "vendo": {
+      "type": "http",
+      "url": "${VENDO_MCP_URL:-http://localhost:3000/api/vendo/mcp}"
+    }
+  }
+}

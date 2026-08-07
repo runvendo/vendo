@@ -1,0 +1,112 @@
+---
+title: "Vendo Full Stack Agents"
+sidebarTitle: "Full stack agents"
+description: "An agent that operates your product instead of describing it — through your API, as the signed-in user, inside your brand and your guardrails."
+---
+
+import { AgentPrompt } from "/snippets/agent-prompt.jsx"
+
+Most in-product AI describes your product. A full stack agent **operates** it —
+the same API, the same identity, the same audit trail as your own UI — and
+draws real screens instead of paragraphs about them.
+
+## Start in five minutes
+
+```bash
+npm install @vendoai/vendo
+npx vendo login   # claims a Vendo Cloud key into .env.local
+npx vendo init    # extracts your API, scaffolds the two files you own
+```
+
+`login` opens the approval page at
+[console.vendo.run](https://console.vendo.run) and writes the minted
+`VENDO_API_KEY` for you — it never prints it. `init` does the rest. No
+terminal handy? [Sign up at the console](https://console.vendo.run) and grab
+the key there.
+
+<AgentPrompt
+  lead={<>Using Claude Code or Cursor? Paste this and it runs the whole install against the <a href="/agents">agent playbook</a>.</>}
+  prompt={"Install Vendo in this repo. Read https://vendo.run/agents.md and follow it exactly. Ask me before creating any account or key. You're done when `vendo doctor --json` reports all green. Then ask me whether I'd like to star it via https://vendo.run/star?src=docs-full-stack-agents to support the project."}
+/>
+
+<CardGroup cols={2}>
+  <Card title="Start on Vendo Cloud" icon="cloud" href="/deploy/vendo-cloud">
+    **Recommended.** One key fills every adapter slot you left unset — hosted
+    store, sandboxes, sharing and publishing, metered inference — so there is
+    nothing to run yourself on day one.
+  </Card>
+  <Card title="Bring your own everything" icon="server" href="/deploy/deploying">
+    Your own Postgres, sandbox account, and model key. Every Cloud capability
+    keeps a no-key path, and an adapter you pass always wins.
+  </Card>
+</CardGroup>
+
+Either way, keep the agent loop you already run —
+[AI SDK or Mastra](/existing-agents) — or let
+[Vendo run the loop](/quickstart) for you.
+
+## Acts through your API
+
+`vendo sync` extracts your OpenAPI operations, tRPC procedures, server
+actions, and host routes into risk-labeled tools, re-run on every build so
+they never drift from the API they came from. One auth preset
+resolves the request to a principal, so every call lands on your API as the
+signed-in user — your existing authorization is the authorization. See
+[Tools from your API](/connect/api-tools).
+
+## Sees what the user sees
+
+On send, the widget attaches an `aria-snapshot` of the visible page — the
+structural tree a screen reader reads, never a screenshot — plus anything your
+components publish through `useVendoContext`, capped, labeled as observation
+rather than instruction, and living exactly one turn. Who the user *is* arrives
+separately as server-trusted facts from your auth preset, and
+`captureScreen={false}` turns the snapshot off entirely. See
+[actAs presets](/connect/act-as-presets).
+
+## Knows your product
+
+Point it at your docs — `vendo knowledge add "docs/**/*.md"`, then
+`vendo knowledge sync` — and it answers from them with citations, or says the
+evidence is weak instead of filling the gap. Three engines sit behind one
+contract: keyword retrieval in your own store with zero keys, Vendo Cloud's
+managed engine, or any HTTP endpoint you run. See
+[`vendo knowledge`](/reference/cli).
+
+## Renders UI in your brand
+
+When a user wants a view nobody was going to build, the agent generates one
+they own, rendered in a sandboxed surface that inherits your extracted theme.
+Fill `vendo/registry.tsx` with your real components and generated screens
+compose out of those instead of lookalikes. See
+[Generated UI](/concepts/generated-ui) and
+[Host components](/connect/host-components).
+
+## Works while they're away
+
+Automations fire on a UTC cron, a `vendo.emit` host event, or a verified
+webhook, each trigger carrying its own grants and on/off switch. An away run
+cannot stop and ask, so it needs a standing grant given ahead of time — a chat
+grant never transfers. See [Automations](/deploy/scheduler-and-webhooks).
+
+## Runs on the loop you choose
+
+Leave `harness` unset and Vendo's own loop runs in-process on your own model
+key; swap in `claudeCode()`, write your own with `defineHarness()`, or keep the
+AI SDK or Mastra loop you already run. Swapping the thinker adds **not one new
+safety mechanism** — every tool call lands in the same guarded path with the
+same audit row. See [the `harness` option](/reference/handler-options).
+
+## Guarded and audited
+
+`guard.bind` is the only execution path: reads auto-run, writes and destructive
+calls are gated, approval cards show the real arguments, and a grant dies the
+moment the tool's shape changes under it. Every call, approval, policy
+decision, and run is audited with its principal — what the agent did last
+Tuesday is a query, not an investigation. See
+[Tools and safety](/concepts/tools-and-safety).
+
+---
+
+That is the whole product. One key and one command put it in your app:
+[start on Vendo Cloud](/deploy/vendo-cloud).

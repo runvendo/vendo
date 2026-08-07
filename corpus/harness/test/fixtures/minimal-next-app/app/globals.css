@@ -1,0 +1,9 @@
+@theme {
+  --color-background: #ffffff;
+  --color-surface: #f5f7fa;
+  --color-text: #111418;
+  --color-muted: #5b6470;
+  --color-accent: #0a7cff;
+  --radius-md: 8px;
+  --font-sans: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+}

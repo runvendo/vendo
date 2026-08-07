@@ -1,0 +1,164 @@
+import { readFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import type { HostFramework } from "./framework.js";
+
+/**
+ * Bare dependency versions for telemetry (posthog-analytics design §3):
+ * version strings are non-identifying, in line with what Astro/Nx collect
+ * anonymously. Missing dependencies are omitted, never sent as placeholders.
+ */
+export interface DepVersions {
+  frameworkVersion?: string;
+  reactVersion?: string;
+  zodVersion?: string;
+  typescriptVersion?: string;
+}
+
+/** The npm package that IS each detected framework (detectFramework's own
+    evidence source, framework.ts). */
+const FRAMEWORK_PACKAGE: Record<Exclude<HostFramework, "unknown">, string> = {
+  next: "next",
+  express: "express",
+};
+
+/**
+ * Normalize a semver range to its bare version: "^15.3.1" → "15.3.1",
+ * "~4.2" → "4.2", ">=3.0.0-beta.1" → "3.0.0-beta.1", "workspace:^0.3.0" →
+ * "0.3.0", "npm:foo@^2.1.0" → "2.1.0". The version must start the specifier
+ * (after a workspace:/catalog:/npm-alias prefix and range operator) — a digit
+ * run elsewhere is not a version, so named catalogs ("catalog:react19"),
+ * file:/link:/git:/URL specifiers (paths and ports carry digits), and
+ * versionless ranges ("*", "latest") all → undefined and the field is omitted.
+ */
+function bareVersion(range: unknown): string | undefined {
+  if (typeof range !== "string") return undefined;
+  let s = range.trim();
+  if (s.startsWith("npm:")) {
+    // npm alias: the range follows the LAST "@" ("npm:@scope/name@^2.1.0").
+    const at = s.lastIndexOf("@");
+    s = at > 4 ? s.slice(at + 1) : "";
+  } else {
+    s = s.replace(/^(?:workspace|catalog):/, "");
+  }
+  s = s.replace(/^(?:>=|<=|>|<|\^|~|=)?\s*/, "").replace(/^v(?=\d)/, "");
+  return /^\d+(?:\.\d+)*(?:[-+][0-9A-Za-z.-]+)?/.exec(s)?.[0];
+}
+
+/**
+ * The HOST's installed `ai` version (#478 short-term): @vendoai/vendo speaks
+ * AI SDK v6 to the host's `ai` package (peer `ai >=6 <7`), but npm installs
+ * the peer conflict anyway — so the version must be read from the TARGET
+ * dir's node_modules, never the CLI's own dependency tree. Non-throwing:
+ * an absent install or malformed metadata returns null (the missing-
+ * dependency story belongs to the wiring checks, not this reader).
+ */
+export async function installedAiVersion(root: string): Promise<string | null> {
+  return installedVersion(root, "ai");
+}
+
+/**
+ * The HOST's installed `zod` version (FINDINGS F2): ai@6 imports the
+ * `zod/v3` + `zod/v4` subpaths that arrive in zod 3.25, and the host's own
+ * pin wins the installed tree — so the floor must be resolved from the
+ * TARGET app's require context (hoisted workspaces keep it at the workspace
+ * root), exactly like `installedAiVersion`. Non-throwing: an absent install
+ * returns null (a host without zod resolves ai's own copy).
+ */
+export async function installedZodVersion(root: string): Promise<string | null> {
+  return installedVersion(root, "zod");
+}
+
+/** Resolve the package the way the HOST RUNTIME does — walking the app's
+ * node_modules chain upward, node's own resolution order for a bare
+ * specifier — so hoisted workspace installs (the package at the workspace
+ * root, the app nested with no node_modules of its own) are seen exactly
+ * where `ai` sees them at runtime. Never a fixed path. A direct manifest
+ * read rather than require.resolve, deliberately: exports maps may hide
+ * ./package.json, and in-process resolver patches (test runners, loaders)
+ * must not change what we report about the host's tree. */
+async function installedVersion(root: string, name: string): Promise<string | null> {
+  for (let dir = resolve(root); ; dir = dirname(dir)) {
+    try {
+      return versionOf(await readFile(join(dir, "node_modules", ...name.split("/"), "package.json"), "utf8"));
+    } catch {
+      if (dirname(dir) === dir) return null;
+    }
+  }
+}
+
+function versionOf(manifestSource: string): string | null {
+  const manifest = JSON.parse(manifestSource) as { version?: unknown };
+  return typeof manifest.version === "string" ? manifest.version : null;
+}
+
+/**
+ * npm's dist-tag document for one package — the smallest request that answers
+ * "what is latest". Fail-soft to null on ANY problem (offline, proxy, 404,
+ * slow registry, non-JSON): a version hint must never slow doctor down, break
+ * an air-gapped run, or invent a skew it could not verify.
+ */
+export async function npmLatestVersion(
+  name: string,
+  fetchImpl: typeof fetch = fetch,
+  timeoutMs = 2_000,
+): Promise<string | null> {
+  try {
+    const response = await fetchImpl(`https://registry.npmjs.org/-/package/${name}/dist-tags`, {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!response.ok) return null;
+    const tags = await response.json() as { latest?: unknown };
+    return typeof tags.latest === "string" ? tags.latest : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Plain numeric "is `version` older than `other`". Prereleases are compared on
+    their numeric head only — Vendo publishes none to `latest`, and a guess is
+    worse than silence here, so anything unparseable answers false. */
+export function isOlderVersion(version: string, other: string): boolean {
+  const parts = (value: string): number[] | null => {
+    const bare = bareVersion(value);
+    if (bare === undefined) return null;
+    return bare.split(/[.\-+]/).slice(0, 3).map((part) => Number.parseInt(part, 10));
+  };
+  const left = parts(version);
+  const right = parts(other);
+  if (left === null || right === null) return false;
+  for (let index = 0; index < 3; index += 1) {
+    const a = left[index] ?? 0;
+    const b = right[index] ?? 0;
+    if (Number.isNaN(a) || Number.isNaN(b)) return false;
+    if (a !== b) return a < b;
+  }
+  return false;
+}
+
+/**
+ * Read the host project's dependency versions (deps + devDeps) for telemetry.
+ * Non-throwing: a missing or malformed package.json returns {}.
+ */
+export async function detectDepVersions(root: string, framework: HostFramework | "custom"): Promise<DepVersions> {
+  try {
+    const manifest = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as {
+      dependencies?: Record<string, unknown>;
+      devDependencies?: Record<string, unknown>;
+    };
+    const dependencies = { ...manifest.devDependencies, ...manifest.dependencies };
+    const out: DepVersions = {};
+    const frameworkPackage = framework === "unknown" || framework === "custom" ? undefined : FRAMEWORK_PACKAGE[framework];
+    const frameworkVersion = frameworkPackage === undefined ? undefined : bareVersion(dependencies[frameworkPackage]);
+    if (frameworkVersion !== undefined) out.frameworkVersion = frameworkVersion;
+    const reactVersion = bareVersion(dependencies["react"]);
+    if (reactVersion !== undefined) out.reactVersion = reactVersion;
+    const zodVersion = bareVersion(dependencies["zod"]);
+    if (zodVersion !== undefined) out.zodVersion = zodVersion;
+    const typescriptVersion = bareVersion(dependencies["typescript"]);
+    if (typescriptVersion !== undefined) out.typescriptVersion = typescriptVersion;
+    return out;
+  } catch {
+    return {};
+  }
+}

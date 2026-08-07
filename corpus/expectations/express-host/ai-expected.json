@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "name": "listTasks",
+      "method": "GET",
+      "path": "/api/tasks",
+      "risk": "read"
+    },
+    {
+      "name": "createTask",
+      "method": "POST",
+      "path": "/api/tasks",
+      "risk": "write"
+    },
+    {
+      "name": "getTask",
+      "method": "GET",
+      "path": "/api/tasks/{id}",
+      "risk": "read"
+    },
+    {
+      "name": "deleteTask",
+      "method": "DELETE",
+      "path": "/api/tasks/{id}",
+      "risk": "destructive"
+    },
+    {
+      "name": "completeTask",
+      "method": "POST",
+      "path": "/api/tasks/{id}/complete",
+      "risk": "write"
+    }
+  ]
+}

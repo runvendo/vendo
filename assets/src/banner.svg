@@ -1,0 +1,41 @@
+<svg viewBox="0 0 1280 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Vendo — your product, shaped to every customer">
+  <defs>
+    <linearGradient id="abg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7B57F7"/><stop offset="0.55" stop-color="#6739F0"/><stop offset="1" stop-color="#5527E0"/>
+    </linearGradient>
+    <radialGradient id="aglow" cx="0.28" cy="0.35" r="0.7">
+      <stop offset="0" stop-color="#9D7DFB" stop-opacity="0.55"/><stop offset="1" stop-color="#9D7DFB" stop-opacity="0"/>
+      <animateTransform attributeName="gradientTransform" type="translate" values="0 0; .1 .08; -.04 .02; 0 0" dur="11s" repeatCount="indefinite"/>
+    </radialGradient>
+  </defs>
+  <rect width="1280" height="400" fill="url(#abg)"/>
+  <rect width="1280" height="400" fill="url(#aglow)"/>
+  <g>
+    <rect x="850" y="10" width="105" height="105" fill="#4C22C9" opacity="0.45"><animate attributeName="opacity" values="0.45;0.15;0.45" dur="6s" repeatCount="indefinite"/></rect>
+    <rect x="955" y="115" width="105" height="105" fill="#4C22C9" opacity="0.3"><animate attributeName="opacity" values="0.3;0.5;0.1;0.3" dur="8s" repeatCount="indefinite"/></rect>
+    <rect x="1060" y="10" width="105" height="105" fill="#8F6EF7" opacity="0.35"><animate attributeName="opacity" values="0.35;0.1;0.35" dur="7s" begin="1s" repeatCount="indefinite"/></rect>
+    <rect x="1060" y="220" width="105" height="105" fill="#4C22C9" opacity="0.35"><animate attributeName="opacity" values="0.35;0.55;0.15;0.35" dur="9s" begin="2s" repeatCount="indefinite"/></rect>
+    <rect x="955" y="325" width="105" height="105" fill="#8F6EF7" opacity="0.28"><animate attributeName="opacity" values="0.28;0.08;0.28" dur="5.5s" begin=".5s" repeatCount="indefinite"/></rect>
+    <rect x="1165" y="115" width="105" height="105" fill="#8F6EF7" opacity="0.22"><animate attributeName="opacity" values="0.22;0.42;0.22" dur="7.5s" begin="1.5s" repeatCount="indefinite"/></rect>
+    <circle cx="1280" cy="60" r="90" fill="#8F6EF7" opacity="0.18"><animate attributeName="r" values="90;104;90" dur="10s" repeatCount="indefinite"/></circle>
+    <path d="M1200 220 a70 70 0 0 1 70 70 v-70 Z" fill="#FFFFFF" opacity="0.10"/>
+  </g>
+  <g transform="translate(64,72)">
+    <svg viewBox="0 0 6749.64 6586.116" width="34" height="34">
+      <path d="M2725.23 3428.629C2725.23 3651.199 2893.28 3896.466 3179.45 3905.559C3352.05 3901.013 3547.37 3901.013 3656.37 3950.978C3819.89 4023.652 3987.95 4173.547 3987.95 4373.396C3987.95 4582.338 3824.42 4813.989 3574.61 4813.989C3438.34 4813.989 3370.21 4768.571 3224.87 4764.024C2952.33 4764.024 2779.74 4982.047 2779.74 5231.861C2779.74 5481.675 2952.34 5672.454 3224.87 5681.536C3315.71 5686.082 3397.47 5658.827 3497.39 5667.908C4042.45 5681.536 4319.52 6108.501 4769.19 6244.768C4914.54 6285.652 5037.18 6303.815 5205.24 6294.722C5732.13 6272.013 6186.34 5940.431 6336.24 5468.059C6445.25 5154.652 6427.09 4804.908 6290.82 4486.954C6159.1 4196.257 5754.84 3928.268 5745.76 3415.001C5745.76 2938.071 6086.42 2615.582 6227.23 2311.257C6336.24 2106.861 6377.12 1907.001 6395.28 1729.861C6395.28 1561.803 6368.03 1407.373 6313.53 1257.478C6204.52 975.861 5877.48 589.78 5405.1 567.071C5041.73 544.361 4728.32 603.408 4428.54 848.687C4269.56 998.582 4178.73 1248.396 3792.63 1262.024C3579.16 1266.571 3429.26 1057.629 3179.45 1053.082C2911.46 1044.001 2634.39 1239.315 2634.39 1570.885L2634.39 2034.187L3174.9 2034.187C3461.05 2034.187 3533.73 1816.164 3792.63 1816.164C4137.84 1816.164 4269.56 2088.699 4224.13 2315.803C4178.7 2542.908 3956.15 2928.989 3352.04 2951.699L3179.45 2956.245C2975.05 2956.245 2725.23 3115.222 2725.23 3428.629Z" fill="#FFFFFF"/>
+      <rect x="908.37" y="1198.431" width="863.01" height="844.837" fill="#FFFFFF"><animate attributeName="opacity" values="1;.4;1" dur="4s" repeatCount="indefinite"/></rect>
+      <rect x="1762.3" y="2038.734" width="872.09" height="872.093" fill="#FFFFFF"><animate attributeName="opacity" values="1;.4;1" dur="4s" begin="1s" repeatCount="indefinite"/></rect>
+      <rect x="349.68" y="3006.21" width="853.93" height="853.93" fill="#FFFFFF"><animate attributeName="opacity" values="1;.4;1" dur="4s" begin="2s" repeatCount="indefinite"/></rect>
+      <rect x="1757.75" y="3932.803" width="872.09" height="867.546" fill="#FFFFFF"><animate attributeName="opacity" values="1;.4;1" dur="4s" begin="3s" repeatCount="indefinite"/></rect>
+    </svg>
+    <text x="44" y="27" font-family="Onest" font-weight="700" font-size="27" letter-spacing="-0.03em" fill="#FFFFFF">vendo</text>
+  </g>
+  <text x="64" y="216" font-family="Onest" font-weight="800" font-size="52" letter-spacing="-0.035em" fill="#FFFFFF">Your product, shaped to every customer.</text>
+  <text x="64" y="262" font-family="Onest" font-weight="500" font-size="19.5" fill="#E4DBFF">The embedded agent that lets your users build their own features and micro-apps, right on top of your product.</text>
+  <g transform="translate(1010,352)" font-family="Geist Mono">
+    <text x="0" y="15" font-size="14" fill="#D9CDFF">Backed by</text>
+    <rect x="92" y="0" width="20" height="20" rx="3" fill="#FB651E"/>
+    <text x="102" y="15" font-size="13" font-weight="600" fill="#FFFFFF" text-anchor="middle">Y</text>
+    <text x="120" y="15" font-size="14" font-weight="600" fill="#FFFFFF">Combinator</text>
+  </g>
+</svg>

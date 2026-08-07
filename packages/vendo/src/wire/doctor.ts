@@ -1,0 +1,130 @@
+import type { ExtractedTool } from "@vendoai/actions";
+import { VendoError, principalSchema, type Principal, type ToolOutcome } from "@vendoai/core";
+import { BASE_PATH, environment, json, prefixRoute, route, type RouteEntry } from "./shared.js";
+
+/** The doctor probe surface (CLI `vendo doctor` targets a running dev server):
+    the synthetic credential/actAs round-trip constants and tool descriptors,
+    and the /doctor wire routes. server.ts keeps only the deps.doctor
+    probe-executor wiring (the probes run through a real createActions). */
+
+const DOCTOR_PRESENT_AUTHORIZATION = "Bearer vendo-doctor-present";
+const DOCTOR_PRESENT_COOKIE = "vendo_doctor_present=1";
+export const DOCTOR_ACT_AS_PRINCIPAL: Principal = { kind: "user", subject: "vendo_doctor_act_as" };
+export const DOCTOR_ACT_AS_APP_ID = "app_vendo_doctor" as const;
+
+export const doctorPresentTool: ExtractedTool = {
+  name: "vendo_doctor_present",
+  description: "Vendo doctor present credential round-trip",
+  inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  risk: "read",
+  binding: { kind: "route", method: "GET", path: `${BASE_PATH}/doctor/present/echo`, argsIn: "query" },
+};
+
+export const doctorActAsTool: ExtractedTool = {
+  name: "vendo_doctor_act_as",
+  description: "Vendo doctor actAs mint and verification round-trip",
+  inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  risk: "read",
+  binding: { kind: "route", method: "GET", path: `${BASE_PATH}/doctor/act-as/echo`, argsIn: "query" },
+};
+
+function doctorProbeOk(outcome: ToolOutcome): boolean {
+  if (outcome.status !== "ok" || typeof outcome.output !== "object" || outcome.output === null) return false;
+  return "ok" in outcome.output && outcome.output.ok === true;
+}
+
+/** Doctor targets a running dev server. The prefix gate keeps its synthetic
+    mint/echo routes out of production entirely (and falls through in
+    development); the echo halves expose no credential material — booleans
+    only.
+
+    `/doctor/base-url` (09-vendo §2 install-dx wave 1.1) is listed BEFORE that
+    gate on purpose: unlike the synthetic credential round-trips, it reports a
+    static composition fact (is VENDO_BASE_URL set?) that reveals no secret
+    material, and it is exactly the environment — production — the gate
+    otherwise silences. Placing it first lets it win the route-table scan in
+    every environment, gate included. */
+export const doctorRoutes: RouteEntry[] = [
+  route("GET", "/doctor/base-url", async () => {
+    const missingInProduction = environment("NODE_ENV") === "production" && environment("VENDO_BASE_URL") === undefined;
+    if (missingInProduction) {
+      return json({
+        ok: false,
+        error: {
+          code: "base-url-not-set-in-production",
+          message: "VENDO_BASE_URL is not set in production. Present-mode host tool calls that need to forward the caller's credentials fail closed instead of running unauthenticated. Set VENDO_BASE_URL to this deployment's public origin and restart the server.",
+        },
+      }, 409);
+    }
+    return json({ ok: true });
+  }),
+  prefixRoute("*", "/doctor/", async () => {
+    if (environment("NODE_ENV") === "production") {
+      throw new VendoError("not-found", "unknown Vendo route");
+    }
+    return undefined;
+  }),
+  // The broker seam's selection (selectMcpBroker) — a composition fact, no
+  // secret material; dev-only like every probe route below the gate. /status
+  // collapses an explicit `mcp.remoteAs` and the Cloud-managed broker into
+  // one "broker" posture; doctor reads this to keep the seam's explicit-wins
+  // precedence: only a confirmed "broker" selection may POST the tenant
+  // ensure (against an explicit AS the same call could provision or repoint
+  // an unrelated Cloud tenant).
+  route("GET", "/doctor/mcp", async ({ deps }) => json({ selection: deps.mcpSelection })),
+  // Dev-only machine/schedule reporting (sits AFTER the production gate above,
+  // like every probe route). Reporting only: which apps carry a machine, what
+  // their manifests declare, and whether a schedule caller (VENDO_TICK_SECRET)
+  // is configured for the /tick surface. WHEN a schedule last fired is not here:
+  // a vendo.json schedule is a doc trigger, so its history is the automation's
+  // run records.
+  route("GET", "/doctor/machines", async ({ deps }) => {
+    return json({
+      scheduleCallerConfigured: environment("VENDO_TICK_SECRET") !== undefined,
+      machines: await deps.apps.machine.report(),
+    });
+  }),
+  route("GET", "/doctor/present/echo", async ({ request }) => {
+    return json({
+      ok: request.headers.get("authorization") === DOCTOR_PRESENT_AUTHORIZATION
+        && request.headers.get("cookie") === DOCTOR_PRESENT_COOKIE,
+    });
+  }),
+  route("GET", "/doctor/act-as/echo", async ({ request, deps }) => {
+    const resolved = await deps.principal(request);
+    const parsed = principalSchema.safeParse(resolved);
+    const accepted = parsed.success && parsed.data.subject === DOCTOR_ACT_AS_PRINCIPAL.subject;
+    return json({ ok: accepted }, accepted ? 200 : 401);
+  }),
+  route("POST", "/doctor/present", async ({ deps, context }) => {
+    const outcome = await deps.doctor.present(await context("chat"));
+    if (doctorProbeOk(outcome)) return json({ ok: true });
+    return json({
+      ok: false,
+      error: {
+        code: "present-credentials-not-forwarded",
+        message: "Present credentials did not reach the host API. Set VENDO_BASE_URL to the running host origin and restart the dev server.",
+      },
+    }, 409);
+  }),
+  route("POST", "/doctor/act-as", async ({ deps }) => {
+    const outcome = await deps.doctor.actAs();
+    if (doctorProbeOk(outcome)) return json({ ok: true });
+    if (outcome.status === "error" && outcome.error.code === "not-implemented") {
+      return json({
+        ok: false,
+        error: {
+          code: "act-as-not-configured",
+          message: "actAs is not configured; pass createVendo({ actAs }) before enabling away host actions.",
+        },
+      }, 501);
+    }
+    return json({
+      ok: false,
+      error: {
+        code: "act-as-verification-failed",
+        message: "actAs returned no usable AuthMaterial, or the host API did not accept it. Check the matching verifier middleware and principal resolver.",
+      },
+    }, 409);
+  }),
+];

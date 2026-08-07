@@ -1,0 +1,23 @@
+{
+  "colors": {
+    "background": "#eef7f4",
+    "surface": "#ffffff",
+    "text": "#102f2a",
+    "muted": "#5a7771",
+    "accent": "#087f6f",
+    "accentText": "#ffffff",
+    "danger": "#dc2626",
+    "border": "#e2e8f0"
+  },
+  "typography": {
+    "fontFamily": "Inter, ui-sans-serif, system-ui, sans-serif",
+    "baseSize": "16px"
+  },
+  "radius": {
+    "small": "8px",
+    "medium": "16px",
+    "large": "24px"
+  },
+  "density": "comfortable",
+  "motion": "full"
+}

@@ -1,0 +1,94 @@
+{
+  "name": "@vendoai/actions",
+  "version": "0.8.0",
+  "description": "Every API becomes agent tools, executed as the signed-in user: sync-as-build-step extraction (OpenAPI + route-scan), .vendo tool formats, connectors, and the ActionsRegistry runtime.",
+  "keywords": [
+    "ai",
+    "agent",
+    "tools",
+    "openapi",
+    "vendo"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/runvendo/vendo.git",
+    "directory": "packages/actions"
+  },
+  "homepage": "https://vendo.run",
+  "bugs": "https://github.com/runvendo/vendo/issues",
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./presets": {
+      "types": "./dist/presets/index.d.ts",
+      "default": "./dist/presets/index.js"
+    },
+    "./presets/auth-js": {
+      "types": "./dist/presets/auth-js.d.ts",
+      "default": "./dist/presets/auth-js.js"
+    },
+    "./sync": {
+      "types": "./dist/sync/public.d.ts",
+      "default": "./dist/sync/public.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@vendoai/core": "workspace:*",
+    "jsonata": "^2.0.5",
+    "yaml": "^2.6.0",
+    "zod": "^3.25.0"
+  },
+  "peerDependencies": {
+    "@auth/core": ">=0.41.3",
+    "next": ">=14"
+  },
+  "peerDependenciesMeta": {
+    "@auth/core": {
+      "optional": true
+    },
+    "next": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@auth/core": "^0.41.3",
+    "@types/node": "^22.0.0",
+    "jose": "^6.2.3",
+    "next": "16.2.11",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0",
+    "zod-to-json-schema": "^3.25.2"
+  },
+  "imports": {
+    "#actions/host-files": {
+      "workerd": "./dist/runtime/host-files-edge.js",
+      "worker": "./dist/runtime/host-files-edge.js",
+      "edge-light": "./dist/runtime/host-files-edge.js",
+      "browser": "./dist/runtime/host-files-edge.js",
+      "default": "./dist/runtime/host-files.js"
+    }
+  }
+}

@@ -1,0 +1,106 @@
+# Auto-merge Mintlify docs PRs (Yousef, 2026-07-18).
+#
+# Mintlify's docs agent opens PRs as mintlify[bot] on in-repo mintlify/*
+# branches, touching only docs-site/**. Two guards keep this narrow: the
+# author must be mintlify[bot], and the diff must stay entirely inside
+# docs-site/ — a bot PR touching anything else is left for humans.
+#
+# main's branch protection requires ci/integration/conformance/audit green on an
+# up-to-date branch (strict mode), so this workflow arms GitHub native
+# auto-merge (repo allow_auto_merge is on) and nudges behind branches with
+# update-branch. GitHub merges the PR itself the moment required checks
+# pass. Because update-branch runs under GITHUB_TOKEN, the synchronize it
+# causes does not re-trigger this workflow — the half-hourly sweep is the
+# safety net that re-nudges anything that went behind again, and it also
+# prunes merged mintlify/* branches (native auto-merge doesn't delete them).
+name: mintlify-automerge
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+  schedule:
+    - cron: "17,47 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: mintlify-automerge-${{ github.event.pull_request.number || 'sweep' }}
+  cancel-in-progress: false
+
+jobs:
+  automerge:
+    name: automerge
+    if: github.event_name != 'pull_request' || github.event.pull_request.user.login == 'mintlify[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      EVENT_PR: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Arm auto-merge and nudge behind branches
+        run: |
+          process_pr() {
+            local pr="$1"
+
+            local outside
+            outside=$(gh api "repos/$REPO/pulls/$pr/files" --paginate \
+              --jq '.[].filename | select(startswith("docs-site/") | not)')
+            if [ -n "$outside" ]; then
+              echo "PR #$pr touches files outside docs-site/; leaving for humans:"
+              echo "$outside"
+              return 0
+            fi
+
+            local state mss
+            state=$(gh pr view "$pr" --repo "$REPO" --json state --jq .state)
+            mss=$(gh pr view "$pr" --repo "$REPO" --json mergeStateStatus --jq .mergeStateStatus)
+            echo "PR #$pr: state=$state mergeStateStatus=$mss"
+            [ "$state" = "OPEN" ] || return 0
+
+            if [ "$mss" = "DIRTY" ]; then
+              echo "PR #$pr has conflicts; leaving for humans."
+              return 0
+            fi
+
+            # Arm native auto-merge; if the PR is already clean this call is
+            # rejected, so fall through to an immediate merge.
+            if ! gh pr merge "$pr" --repo "$REPO" --auto --squash; then
+              gh pr merge "$pr" --repo "$REPO" --squash --delete-branch || true
+            fi
+
+            # Strict required checks demand an up-to-date branch, and GitHub
+            # never updates it for us.
+            if [ "$mss" = "BEHIND" ]; then
+              echo "PR #$pr is behind main; updating branch."
+              gh api -X PUT "repos/$REPO/pulls/$pr/update-branch" || true
+            fi
+          }
+
+          if [ -n "$EVENT_PR" ]; then
+            process_pr "$EVENT_PR"
+          else
+            for pr in $(gh pr list --repo "$REPO" --author 'app/mintlify' --state open --json number --jq '.[].number'); do
+              process_pr "$pr"
+            done
+          fi
+
+      - name: Prune merged mintlify/* branches
+        if: github.event_name != 'pull_request'
+        run: |
+          gh pr list --repo "$REPO" --author 'app/mintlify' --state merged --limit 30 \
+            --json headRefName,headRefOid \
+            --jq '.[] | select(.headRefName | startswith("mintlify/")) | "\(.headRefName) \(.headRefOid)"' |
+          while read -r branch merged_sha; do
+            # Exact-match ref lookup (git/ref, not git/refs, which prefix-matches).
+            current_sha=$(gh api "repos/$REPO/git/ref/heads/$branch" --jq .object.sha 2>/dev/null) || continue
+            if [ "$current_sha" != "$merged_sha" ]; then
+              echo "Branch $branch moved since its PR merged; leaving it."
+              continue
+            fi
+            echo "Deleting merged branch $branch"
+            gh api -X DELETE "repos/$REPO/git/refs/heads/$branch" || true
+          done

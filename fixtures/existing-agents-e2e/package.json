@@ -1,0 +1,19 @@
+{
+  "name": "@vendoai-fixtures/existing-agents-e2e",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Lane E full-journey e2e for the BYO-agent examples: scaffold the fresh framework starter in a temp dir, run the CURRENT `vendo init` for server wiring, apply the example's marked `--- vendo` diff programmatically, boot, and drive a live turn to an actual app creation. Live legs are env-gated (VENDO_LIVE_JOURNEY=1); the marked-diff engine is unit-tested hermetically.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
