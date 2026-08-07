@@ -146,7 +146,12 @@ const storedRunStatusSchema = z.union([
 const baseRunRecordSchema = z.object({
   id: z.string(),
   appId: z.string(),
-  triggerId: z.string(),
+  /** Defaulted for the same reason `captureSchema.triggerId` above is: a run
+   *  row written before triggers became a list names none, and it fired the
+   *  app's only trigger, which is the default one. Strict, ONE such row threw
+   *  for every `runs.list` of its app — a single legacy row took the whole
+   *  history down, and the surface reading it got a 400 rather than a gap. */
+  triggerId: z.string().default(DEFAULT_TRIGGER_ID),
   trigger: z.object({
     kind: z.enum(["schedule", "host-event", "external"]),
     event: z.string().optional(),

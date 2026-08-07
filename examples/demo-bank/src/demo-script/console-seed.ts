@@ -249,6 +249,10 @@ async function seedRuns(store: VendoStore, subjects: string[], anchor: Date): Pr
       const outcome = run.failure === undefined ? ("ok" as const) : ("error" as const);
       const record = {
         id: run.id, appId: run.appId,
+        // WHICH trigger fired. Every seeded automation declares exactly one,
+        // under the default id (automationDocs above), so that is what a fire
+        // of it recorded.
+        triggerId: DEFAULT_TRIGGER_ID,
         trigger: { kind: "schedule" as const },
         status, startedAt, finishedAt,
         steps: run.steps.map((step, index) => ({
