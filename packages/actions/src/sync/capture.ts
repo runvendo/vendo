@@ -262,6 +262,11 @@ export async function captureClosure(options: {
   const largest = (): string => [...sizes.entries()]
     .sort(([leftId, left], [rightId, right]) => right - left || leftId.localeCompare(rightId))[0]![0];
 
+  // The budget is ONE total for the closure, and the entry file is already in
+  // it. Checking only inside the walk lets an entry with no capturable
+  // host-local import through at any size.
+  if (bytes > budgetBytes) return { ok: false, overBudget: { bytes, budgetBytes, largest: largest() } };
+
   while (queue.length > 0) {
     const task = queue.shift()!;
     const imports = task.id === null ? sourceImports : captured.get(task.id)!.imports;
