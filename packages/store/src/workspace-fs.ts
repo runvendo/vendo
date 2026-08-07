@@ -16,6 +16,10 @@ import type {
 import { safeErrorMessage, VendoError } from "@vendoai/core";
 import type { PreparedWrite, WorkspaceFileMeta, WorkspaceRows } from "./workspace-rows.js";
 
+/** What one `land` answered, carried out of the commit transaction so the
+    turn's index is only touched once the rows are actually there. */
+type LandResult = Awaited<ReturnType<WorkspaceRows["land"]>>;
+
 /** Build contract §3.1 — the frozen layout. `/user` is the subject's, rw;
     `/orgs/<orgId>` is one mount per ASSERTED membership (§9.7), owned by the
     org; `/host` is host-authored, ro for everyone. No other top-level mount
@@ -573,30 +577,50 @@ export class WorkspaceStoreFs implements WorkspaceFs {
       if (prepared !== "unchanged") landing.push(prepared);
     }
 
+    // Every row this commit touches, in ONE transaction. Each of `remove` and
+    // `land` is a check-then-act held together by an advisory lock on the
+    // path, and that lock lasts exactly as long as the transaction it is taken
+    // in — outside one it is released at the end of its own statement and an
+    // undo lands in the middle of the pair. Content is already placed above,
+    // so the transaction spans rows only.
+    //
+    // Nothing in here touches this instance's index: a rollback would take the
+    // rows back and leave the in-memory turn claiming writes that no longer
+    // exist. The results are applied after the transaction commits.
+    const outcome = await this.rows.transact(async (rows) => {
+      const removed: string[] = [];
+      for (const path of [...this.removed].filter((candidate) => this.persists(candidate))) {
+        if (await rows.remove(this.ownerOf(path)!, path, opts?.message)) removed.push(path);
+      }
+      const written: { prepared: PreparedWrite; owner: string; result: LandResult }[] = [];
+      for (const prepared of landing) {
+        // Build contract §9.7 — commit policy is PER MOUNT: `/user` keeps the
+        // last-write-wins re-aim loop, `/orgs` is strict compare-and-swap, so a
+        // lost swap comes back as `conflict` for the harness to re-read and
+        // re-apply rather than silently overwriting a colleague.
+        const owner = this.ownerOf(prepared.path)!;
+        const strict = !under(prepared.path, USER_MOUNT);
+        const result = await rows.land(owner, prepared, opts?.message, {
+          strict,
+          // The revision this TURN opened with (§3.5's checkout base), not the
+          // head at commit time — the whole point of CAS is to notice the edit
+          // that landed in between.
+          expectedRevision: this.index.get(prepared.path)?.revision ?? null,
+        });
+        written.push({ prepared, owner, result });
+      }
+      return { removed, written };
+    });
+
     const changed: string[] = [];
     const conflicts: string[] = [];
-    for (const path of [...this.removed].filter((candidate) => this.persists(candidate))) {
-      if (await this.rows.remove(this.ownerOf(path)!, path, opts?.message)) {
-        this.index.delete(path);
-        changed.push(path);
-      }
+    for (const path of outcome.removed) {
+      this.index.delete(path);
+      changed.push(path);
     }
     this.removed.clear();
-    for (const prepared of landing) {
-      // Build contract §9.7 — commit policy is PER MOUNT: `/user` keeps the
-      // last-write-wins re-aim loop, `/orgs` is strict compare-and-swap, so a
-      // lost swap comes back as `conflict` for the harness to re-read and
-      // re-apply rather than silently overwriting a colleague.
-      const owner = this.ownerOf(prepared.path)!;
-      const strict = !under(prepared.path, USER_MOUNT);
-      const written = await this.rows.land(owner, prepared, opts?.message, {
-        strict,
-        // The revision this TURN opened with (§3.5's checkout base), not the
-        // head at commit time — the whole point of CAS is to notice the edit
-        // that landed in between.
-        expectedRevision: this.index.get(prepared.path)?.revision ?? null,
-      });
-      if (written.conflict === true) {
+    for (const { prepared, owner, result } of outcome.written) {
+      if (result.conflict === true) {
         conflicts.push(prepared.path);
         continue;
       }
@@ -604,12 +628,12 @@ export class WorkspaceStoreFs implements WorkspaceFs {
         path: prepared.path,
         owner,
         bytes: prepared.bytes,
-        revision: written.revision,
-        updatedAt: written.updatedAt,
+        revision: result.revision,
+        updatedAt: result.updatedAt,
       });
       // A concurrent commit may have already stored these exact bytes, in which
       // case this commit wrote nothing and must not claim the file changed.
-      if (written.landed) changed.push(prepared.path);
+      if (result.landed) changed.push(prepared.path);
     }
     if (conflicts.length > 0) return { status: "conflict", paths: conflicts.sort() };
     // Committed files now read through the store like everything else.

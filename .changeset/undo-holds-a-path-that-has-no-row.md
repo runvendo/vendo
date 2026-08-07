@@ -1,0 +1,13 @@
+---
+"@vendoai/store": patch
+---
+
+Workspace undo now holds the PATH, not the row. #995 closed undo's check-then-act window with `SELECT … FOR UPDATE` on `vendo_workspace_files`, which locks tuples — so it held nothing at a path whose live row is absent, and both undo legs reach one. Undoing a commit that CREATED a path, after a non-ledger delete (`rm`, `erase`, `moveApp`) took the row away, deleted whatever a racer put back; undoing back through a tombstone lost its `ON CONFLICT DO NOTHING` insert to a racer's create, re-aimed at that head and swapped it away with no history row behind it, destroying the content outright. Both are now serialized by a `pg_advisory_xact_lock` on `hashtextextended(owner || path)` taken in `workspaceRows` — where the ops door and the SQL façade converge — so it exists before the row does. No DDL, no migration.
+
+The SQL façade — the local/BYO-Postgres deployment path — ran its commit and its undo with no transaction at all, so a transaction-scoped hold would have been released at the end of each statement. Both are now wrapped in one: `WorkspaceStoreFs.commit` lands its removes and its writes inside a single transaction (content is still placed before it opens, and the turn's index is only updated once it commits), and `workspaceStore.undo` runs its whole walk in one. Without this an undo landed inside the façade's own delete, and the delete removed the revision the undo had just restored — history is append-only, so that revision was simply gone.
+
+`workspaceRows` now takes the files adapter as a function of the database handle rather than a fixed adapter, the same shape `createStoreOps` already used internally: the transacted rows must reach blobs through the transaction's own query, because a store-backed adapter is a `vendo_blobs` row and PGlite's single connection deadlocks on a base-handle query issued mid-transaction.
+
+This covers the two backends that hold their own rows: the SQL façade, and the ops door `createStoreOps` serves. It does NOT cover a workspace over a hosted store — a client cannot open a transaction over HTTP, so the hosted backend's `transact` passes through and the atomicity has to come from whatever serves the wire. Vendo Cloud's console does not supply it today: its workspace route opens a fresh pool per request with no transaction and no lock. Closing that is a separate change, in the console, against a record store rather than SQL.
+
+The advisory lock is a convention, not a mechanism: nothing catches a future writer that touches these rows without taking it first. The alternative that IS enforceable is a soft-delete tombstone row, which `FOR UPDATE` could lock like any other row; that needs a schema migration and is not what this takes.

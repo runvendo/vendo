@@ -1,5 +1,5 @@
 import { VendoError, type FilesAdapter, type Membership, type Principal, type RunContext, type WorkspaceFs } from "@vendoai/core";
-import { storeFiles } from "./files-store.js";
+import { storeFilesForDb } from "./files-store.js";
 import { appAccess, orgOfPath } from "./helpers/app-access.js";
 import { backendOf } from "./helpers/backend.js";
 import type { VendoStore } from "./store.js";
@@ -86,7 +86,11 @@ export function workspaceStore(store: VendoStore, options: { files?: FilesAdapte
   // store already serves.
   const backend = backendOf(store, "the workspace");
   const rows = backend.kind === "sql"
-    ? workspaceRows(backend.db, options.files ?? storeFiles(store))
+    // The adapter as a function of the handle: `transact` rebuilds the rows
+    // against a transaction-scoped one, and a store-backed blob touched in
+    // there must ride the same transaction or PGlite's single connection
+    // deadlocks. A host-wired adapter ignores the handle.
+    ? workspaceRows(backend.db, (db) => options.files ?? storeFilesForDb(db))
     : workspaceOpsRows(backend.ops);
   const access = appAccess(store);
 
@@ -162,7 +166,11 @@ export function workspaceStore(store: VendoStore, options: { files?: FilesAdapte
       if (!(await canWrite(caller, normalized))) {
         throw await refusal(caller, normalized);
       }
-      return await rows.undo(ownerOfPath(caller, normalized), normalized);
+      const owner = ownerOfPath(caller, normalized);
+      // One transaction, so the path hold `undo` takes lives across the whole
+      // walk — read history, restore, consume — instead of being released at
+      // the end of each of its statements.
+      return await rows.transact(async (tx) => await tx.undo(owner, normalized));
     },
     async history(caller, path) {
       const normalized = normalizePath(path);

@@ -1,5 +1,5 @@
 import { WORKSPACE_INLINE_MAX_BYTES, appRootPath, VendoError, type AppMount, type FilesAdapter, type IsoDateTime } from "@vendoai/core";
-import type { Db } from "./db.js";
+import type { Db, Query } from "./db.js";
 import { escapeLike, iso, text } from "./helpers/utils.js";
 
 /** Build contract §3.3 — inline in `content` up to this size; past it the row
@@ -20,6 +20,28 @@ const mountOwner = (mount: AppMount): string =>
 
 /** The two tables an app's documents live in; both move together. */
 const WORKSPACE_TABLES = ["vendo_workspace_files", "vendo_workspace_history"] as const;
+
+/**
+ * Hold one path's rows for the rest of the CALLER'S TRANSACTION.
+ *
+ * `SELECT … FOR UPDATE` locks tuples, so it holds nothing at a path whose live
+ * row is absent — and an undo reaches exactly that state twice over (a create
+ * undone after a non-ledger delete, a path deleted down to a tombstone). The
+ * lock here is keyed on the (owner, path) IDENTITY instead of on a row, so it
+ * exists before the row does. Two identities that hash alike merely queue
+ * behind each other; a collision costs contention, never correctness.
+ *
+ * This is a CONVENTION, not a mechanism. Nothing catches a future writer that
+ * touches these rows without taking it first — the same critique #982 made of
+ * the transcript-writer lock, and this is the second one. The alternative that
+ * IS a mechanism is a soft-delete tombstone row, which `FOR UPDATE` could lock
+ * like any other; that needs a schema migration and is not what this takes.
+ */
+export async function holdWorkspacePath(query: Query, owner: string, path: string): Promise<void> {
+  // U+001F, the unit separator: not a character any owner or normalized path
+  // carries, so `(a, b/c)` and `(a/b, c)` are different keys.
+  await query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`${owner}\u001f${path}`]);
+}
 
 /** One file's metadata. Content is fetched separately (it may live in a blob). */
 export interface WorkspaceFileMeta {
@@ -169,9 +191,30 @@ export interface WorkspaceRows {
       `content-missing` is a revision whose blob is gone — it is consumed too,
       rather than wedging the walk on a revision that can never come back. */
   undo(owner: string, path: string): Promise<UndoOutcome>;
+  /** Run `work` against a transaction-scoped view of these rows.
+   *
+   *  Every mutation below is a check-then-act over several statements, held
+   *  together by {@link holdWorkspacePath} — and that hold lasts exactly as
+   *  long as the transaction it is taken in. A caller that mutates rows
+   *  outside one releases the hold at the end of each statement and holds
+   *  nothing across the pair, which is what the SQL façade did. */
+  transact<T>(work: (rows: WorkspaceRows) => Promise<T>): Promise<T>;
 }
 
-export function workspaceRows(db: Db, files: FilesAdapter): WorkspaceRows {
+/**
+ * @param filesFor The files adapter as a function of the handle, not a fixed
+ *  adapter: `transact` rebuilds these rows against a transaction-scoped handle
+ *  and the blobs must ride that same transaction. A store-backed adapter is a
+ *  `vendo_blobs` row, and PGlite's single connection DEADLOCKS on a base-handle
+ *  query issued mid-transaction. A host-wired adapter ignores the handle and is
+ *  external either way — the honest blob saga.
+ */
+export function workspaceRows(db: Db, filesFor: (db: Db) => FilesAdapter): WorkspaceRows {
+  const files = filesFor(db);
+  const hold = async (owner: string, path: string): Promise<void> => {
+    await holdWorkspacePath((text, params) => db.query(text, params), owner, path);
+  };
+
   const load = async (stored: StoredContent): Promise<Uint8Array | undefined> => {
     if (stored.content !== undefined) return encode(stored.content);
     if (stored.blobRef === undefined) return undefined;
@@ -349,6 +392,7 @@ export function workspaceRows(db: Db, files: FilesAdapter): WorkspaceRows {
     },
   ): Promise<{ landed: boolean; revision: number; updatedAt: IsoDateTime; conflict?: true }> => {
     let prepared = initial;
+    await hold(owner, initial.path);
     if (options.strict === true
       && (prepared.prior?.revision ?? null) !== (options.expectedRevision ?? null)) {
       // The head moved between checkout and commit: the base this write was
@@ -468,6 +512,7 @@ export function workspaceRows(db: Db, files: FilesAdapter): WorkspaceRows {
     },
 
     async remove(owner, path, intent) {
+      await hold(owner, path);
       const current = await currentOf(owner, path);
       if (current === undefined) return false;
       // History is append-only (§3.3): the delete records what it removed, so
@@ -540,6 +585,7 @@ export function workspaceRows(db: Db, files: FilesAdapter): WorkspaceRows {
     },
 
     async undo(owner, path) {
+      await hold(owner, path);
       const previous = await db.query(
         `SELECT id, revision, content, blob_ref FROM vendo_workspace_history
          WHERE path = $1 AND owner = $2 ORDER BY revision DESC`,
@@ -595,6 +641,10 @@ export function workspaceRows(db: Db, files: FilesAdapter): WorkspaceRows {
         revision: written.revision,
         ...(skipped.length > 0 ? { skipped } : {}),
       };
+    },
+
+    async transact(work) {
+      return await db.transaction(async (query) => await work(workspaceRows({ ...db, query }, filesFor)));
     },
   };
 }

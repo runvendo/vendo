@@ -23,7 +23,7 @@ import {
 } from "./sessions.js";
 import { dbFor, type VendoStore } from "./store.js";
 import { invalid, parseThreadData, requireJson } from "./validate.js";
-import { workspaceRows, type PreparedWrite } from "./workspace-rows.js";
+import { holdWorkspacePath, workspaceRows, type PreparedWrite } from "./workspace-rows.js";
 
 /** The commit ledger's collection in the generic records table: one row per
  *  workspace.commit, which is what gives the verb its history entries, its
@@ -462,7 +462,7 @@ export function createStoreOps(
       },
       async read(paths, opts) {
         const owner = ownerFor(opts);
-        const rows = workspaceRows(db, files);
+        const rows = workspaceRows(db, filesFor);
         const result: Record<string, unknown> = {};
         for (const path of paths) {
           const bytes = await rows.read(owner, path);
@@ -480,7 +480,7 @@ export function createStoreOps(
         const commitId = key === undefined
           ? `wsc_${globalThis.crypto.randomUUID()}`
           : `wsc_key_${key}`;
-        const rows = workspaceRows(db, files);
+        const rows = workspaceRows(db, filesFor);
         // Stage: place every entry's content (inline decided, blob uploaded)
         // before any row is touched — the saga's only non-transactional leg.
         const prepared: Array<{ path: string; write: PreparedWrite | "unchanged" }> = [];
@@ -519,7 +519,7 @@ export function createStoreOps(
               const existing = await ledger.get(commitId);
               return (existing?.data as { body?: unknown } | undefined)?.body === body;
             }
-            const txRows = workspaceRows(tdb, filesFor(tdb));
+            const txRows = workspaceRows(tdb, filesFor);
             // `null` is a guard, so only the ABSENT field stays out of the map —
             // `get` then tells "must not exist yet" (null) from "unguarded"
             // (undefined), which a filter on falsiness would collapse.
@@ -626,8 +626,8 @@ export function createStoreOps(
         return await db.transaction(async (q) => {
           const tdb = txDb(q);
           const ledger = createRecordStore(tdb, WORKSPACE_COMMITS);
-          const txRows = workspaceRows(tdb, filesFor(tdb));
-          /** Hold these paths' file rows for the rest of the transaction.
+          const txRows = workspaceRows(tdb, filesFor);
+          /** Hold these paths for the rest of the transaction.
            *
            *  Every undo below is a CHECK — which commit is newest here — and
            *  then an ACT: walk that path's history back one step. The two are
@@ -635,17 +635,16 @@ export function createStoreOps(
            *  lands in the gap and appends a history row, and the act pops
            *  THAT row instead: the committer is told its write landed and the
            *  content is destroyed with no history row behind it (undo has no
-           *  redo). A write cannot append a history row without swapping the
-           *  path's file row first — one CTE does both — so holding the row
-           *  is what makes the pair atomic. Ordered by path, so two undos
-           *  queue instead of deadlocking. */
+           *  redo).
+           *
+           *  It holds the PATH, not the row: both acts below run at a path
+           *  whose live row is absent (a create undone after a non-ledger
+           *  delete, a path deleted down to a tombstone), and `FOR UPDATE`
+           *  locked nothing there. Ordered by path, so two undos queue instead
+           *  of deadlocking, and it is the same key every writer takes in
+           *  `workspaceRows` — see {@link holdWorkspacePath}. */
           const hold = async (paths: string[]): Promise<void> => {
-            if (paths.length === 0) return;
-            await q(
-              `SELECT 1 FROM vendo_workspace_files WHERE owner = $1 AND path = ANY($2::text[])
-               ORDER BY path FOR UPDATE`,
-              [owner, paths],
-            );
+            for (const path of [...paths].sort()) await holdWorkspacePath(q, owner, path);
           };
           /** The commit created this path, so undoing it removes the file
               (recorded to history, §3.3's append-only law, so it stays
@@ -769,7 +768,7 @@ export function createStoreOps(
             throw new VendoError("not-found", `App ${appId} was not found`);
           }
           if (from === orgId) return; // already the org's — idempotent
-          await workspaceRows(tdb, filesFor(tdb)).moveApp(
+          await workspaceRows(tdb, filesFor).moveApp(
             appId,
             { kind: "user", subject: from },
             { kind: "org", org: orgId },

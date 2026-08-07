@@ -130,7 +130,7 @@ export function workspaceOpsRows(ops: StoreOps): WorkspaceRows {
     return commits;
   };
 
-  return {
+  const rows: WorkspaceRows = {
     async index(owners) {
       const metas: WorkspaceFileMeta[] = [];
       for (const owner of owners) {
@@ -257,5 +257,18 @@ export function workspaceOpsRows(ops: StoreOps): WorkspaceRows {
       if (revision === undefined) return { status: "content-missing", revisions: [newest.revision] };
       return { status: "ok", revision };
     },
+
+    // A client cannot open a transaction over HTTP, so this passes through and
+    // whatever SERVES the wire owns the atomicity. This repo's own
+    // `createStoreOps` owns it: each workspace verb runs in one transaction and
+    // takes the same path hold. **Vendo Cloud's console does not** — its
+    // workspace route opens a fresh pool per request and closes it, with no
+    // transaction, no lock and no queue, so a façade over a Cloud-hosted store
+    // is NOT covered by the hold. Closing that is its own piece, in vendo-web,
+    // against a RecordStore (compare-and-swap on a revision) rather than SQL.
+    async transact(work) {
+      return await work(rows);
+    },
   };
+  return rows;
 }
