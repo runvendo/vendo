@@ -575,9 +575,12 @@ export interface AppsRuntime {
    * Resolved PER CALL, never memoized: the semantics provider is re-resolved so a
    * local `tools.json` edit and the cloud-owned overrides both keep merging live.
    *
-   * `undefined` when no tool declares a shape — an empty section is noise.
+   * ALWAYS a section, listing EVERY tool — a tool whose response shape nothing
+   * could read prints the unknown sentence rather than being silently absent.
+   * Silence reads as "this tool has no interesting output", which is how a
+   * model ends up binding to fields it invented.
    */
-  toolShapeBrief(ctx: RunContext): Promise<string | undefined>;
+  toolShapeBrief(ctx: RunContext): Promise<string>;
   /** Speed lane — best-effort page-open warm-up of the generation model(s)
    *  (full + paint), so the first create reuses a live connection. Safe to
    *  call on surface mount; never throws. */

@@ -5,6 +5,7 @@
  * Lifted out of `createApps` unchanged.
  */
 import {
+  UNKNOWN_OUTPUT_SHAPE_NOTE,
   VENDO_APP_BUILD_FAILED_PREFIX,
   VENDO_TREE_FORMAT,
   VendoError,
@@ -430,15 +431,19 @@ export const createBuildSurface = (
       // overrides, and memoizing it would lock a host's annotations for the
       // lifetime of the process.
       const semantics = resolveProvider(config.semantics) ?? {};
-      const { toolShapes } = await generationToolContext(ctx);
-      const cards = Object.entries(toolShapes ?? {})
-        .map(([tool, shape]) => `- ${tool} — shape: ${describeShapeWithSemantics(shape, semantics[tool] ?? {})}`);
-      if (cards.length === 0) return undefined;
-      return "TOOL RESPONSE SHAPES (what each tool really returns, with this host's own field semantics)."
+      const { tools, toolShapes } = await generationToolContext(ctx);
+      const header = "TOOL RESPONSE SHAPES (what each tool really returns, with this host's own field semantics)."
         + " Bind only to fields these name, and read the annotations: :money.cents is integer CENTS,"
         + " :money.dollars whole dollars, :date.iso and :date.epoch machine dates, :enum(a|b) a closed"
-        + " vocabulary, :id an opaque host identifier, :percent.ratio 0..1.\n"
-        + cards.join("\n");
+        + " vocabulary, :id an opaque host identifier, :percent.ratio 0..1.";
+      if (tools.length === 0) return `${header}\n- (this product exposes no tools)`;
+      const cards = tools.map(({ name }) => {
+        const shape = toolShapes?.[name];
+        return shape === undefined
+          ? `- ${name} — ${UNKNOWN_OUTPUT_SHAPE_NOTE}`
+          : `- ${name} — shape: ${describeShapeWithSemantics(shape, semantics[name] ?? {})}`;
+      });
+      return `${header}\n${cards.join("\n")}`;
     },
 
     floor(ctx) {
