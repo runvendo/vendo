@@ -43,8 +43,16 @@ class FakeLocator implements E2eLocator {
     this.handlers.press?.(key);
   }
 
+  /** Playwright's strict mode: a single-element read on a locator that resolves
+      to more than one element throws instead of picking one. */
   async textContent(): Promise<string> {
+    const count = await this.count();
+    if (count > 1) throw new Error(`strict mode violation: locator resolved to ${count} elements`);
     return this.text;
+  }
+
+  async allTextContents(): Promise<string[]> {
+    return Array.from({ length: await this.count() }, () => this.text);
   }
 
   first(): E2eLocator {
@@ -210,6 +218,16 @@ describe("evaluateAssertion", () => {
     await expect(evaluateAssertion({ kind: "no-error-toast" }, signals({}), stageErrorPage))
       .resolves.toMatchObject({ pass: false });
     await expect(evaluateAssertion({ kind: "no-error-toast" }, signals({ errorToasts: [{ text: "failed" }] })))
+      .resolves.toMatchObject({ pass: false });
+  });
+
+  it("reads several visible toasts at once instead of tripping Playwright's strict mode", async () => {
+    const twoBenignToasts = new FakePage({ ".fl-toast": 2 }, "Saved successfully");
+    const twoErrorToasts = new FakePage({ ".fl-toast": 2 }, "Upload failed");
+
+    await expect(evaluateAssertion({ kind: "no-error-toast" }, signals({}), twoBenignToasts))
+      .resolves.toMatchObject({ pass: true });
+    await expect(evaluateAssertion({ kind: "no-error-toast" }, signals({}), twoErrorToasts))
       .resolves.toMatchObject({ pass: false });
   });
 });
