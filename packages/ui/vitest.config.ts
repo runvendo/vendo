@@ -8,9 +8,13 @@ export default defineConfig({
       reporter: ["text", "json-summary"],
       include: ["src/**/*.{ts,tsx}"],
       exclude: ["src/**/*.test.{ts,tsx}", "src/**/*.test-util.{ts,tsx}"],
-      // Ratcheted line-coverage floor (ENG-255): set at/just below the measured
-      // value so it can only rise. Regression below this fails CI.
-      thresholds: { lines: 74 },
+      // Line-coverage floor (ENG-255). CI enforces it in the coverage-merge job,
+      // against the whole suite's merged coverage rather than any single shard.
+      // RATCHET — this number only ever rises: when it goes red, add coverage,
+      // never lower the floor.
+      // Last set 2026-08-07 to 90, against a measured 91.05% on main. Branches
+      // are not floored (88.69% when this was set).
+      thresholds: { lines: 90 },
     },
     environment: "jsdom",
     include: ["test/**/*.test.ts?(x)"],
