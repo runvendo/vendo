@@ -98,13 +98,24 @@ Options:
   first-available (`claude` = Claude Agent SDK or the `claude` CLI, `codex` =
   the `codex` CLI, `npx` = Anthropic's published `@anthropic-ai/claude-code`,
   fetched on the fly with `npm exec` at a pinned version and driven headless
-  and read-only — a one-time ~250MB download, paid by `ANTHROPIC_API_KEY` or
-  by `VENDO_API_KEY` through the Vendo Cloud model gateway). A
+  and read-only — a one-time ~250MB download). A
   pinned engine that is not available skips the AI pass with one loud line —
   it never falls back to a different provider. Interactively, when more than
   one engine is available, the consent question itself becomes a pick (your
   source goes to the provider you choose), so the flag is mostly for
   unattended runs.
+
+  Both Claude-shaped rungs — the `claude` CLI and `npx` — read the same four
+  credentials, in this order: `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`,
+  `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_BASE_URL`. The last three are the
+  corporate-gateway, device-flow-OAuth and custom-endpoint paths Claude Code
+  supports, and a base URL counts on its own with no token beside it (mTLS or
+  proxy auth). `VENDO_API_KEY` is the fallback **only** when none of those four
+  is set, and it routes the pass through the Vendo Cloud model gateway. Your own
+  configuration always wins: a custom `ANTHROPIC_BASE_URL` keeps the pass on
+  your endpoint even with a Vendo Cloud key present, and is never overridden.
+  The `claude` rung additionally runs on a plain Claude Code login; `npx` does
+  not, because it fetches the package rather than reusing a local install.
 - `--theme <slot=value>` overrides a theme slot value directly (repeatable).
 - `--force` regenerates Vendo-owned files under `.vendo/`. It does not replace
   existing host source files.

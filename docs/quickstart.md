@@ -270,8 +270,12 @@ the next one is tried:
    pinned version and driven headless and read-only like rung 2 — real
    Claude Code, no local install required. This is a one-time ~250MB
    download (npm caches it, so later runs skip it); init prints the
-   download notice before it starts. `ANTHROPIC_API_KEY` pays, or
-   `VENDO_API_KEY` through the Vendo Cloud model gateway.
+   download notice before it starts. It reads the same four credentials as
+   rung 2, in the same order (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`,
+   `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_BASE_URL`), and falls back to
+   `VENDO_API_KEY` through the Vendo Cloud model gateway only when none of
+   them is set. Unlike rung 2 it does not run on a bare Claude Code login,
+   having no local install to read one from.
 
 When none of the four resolves, init still completes — extraction defaults
 stand — and prints every rung's remedy. If a chosen rung fails partway
