@@ -5,7 +5,7 @@ runtime, always host-run; a Vendo Cloud key fills every slot left unset — an
 explicit adapter always wins, and there is no hidden key-conditional behavior.
 
 ```ts
-import { agent, tool, api, createGuard, e2b, postgres, s3 } from "@vendoai/agents";
+import { agent, tool, api, createGuard, e2b, postgres } from "@vendoai/agents";
 import { claudeCode } from "@vendoai/agents/harnesses";
 
 const support = agent({
@@ -15,7 +15,7 @@ const support = agent({
   mcp: [{ url: "https://mcp.example.com", headers: { authorization: "…" } }],
   skills: ["./skills/product-docs"],
   egress: ["api.stripe.com"],
-  store: postgres(process.env.DATABASE_URL, { blobs: s3({ /* … */ }) }),
+  store: postgres(process.env.DATABASE_URL),
   sandbox: e2b({ apiKey: process.env.E2B_API_KEY }),
   door: { baseUrl: "https://app.example.com" }, // where the box dials back
   instructions: "Answer as the Acme support desk.",

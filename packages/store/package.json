@@ -52,7 +52,6 @@
   "dependencies": {
     "@electric-sql/pglite": "^0.5.4",
     "@vendoai/core": "workspace:*",
-    "aws4fetch": "^1.0.20",
     "pg": "^8.22.0"
   },
   "devDependencies": {

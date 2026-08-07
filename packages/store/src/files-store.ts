@@ -36,8 +36,7 @@ export function storeFilesForDb(db: Db): FilesAdapter {
         throw new VendoError(
           "validation",
           `File is ${bytes.byteLength} bytes; the store-backed file cap is ${FILES_STORE_MAX_BYTES}`
-            + " bytes. Wire `files:` to store files this large — for example"
-            + " `files: s3({ bucket, region, accessKeyId, secretAccessKey })`.",
+            + " bytes. Wire `files:` with your own `FilesAdapter` to store files this large.",
         );
       }
       await blobs.put(key, bytes, meta);

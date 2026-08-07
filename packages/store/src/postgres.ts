@@ -78,5 +78,4 @@ export {
   type WorkspaceHistoryEntry,
 } from "./workspace.js";
 export { storeFiles, FILES_STORE_MAX_BYTES } from "./files-store.js";
-export { s3, type S3FilesOptions } from "./files-s3.js";
 export { harnessStateStore } from "./harness-state.js";

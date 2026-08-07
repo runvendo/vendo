@@ -113,7 +113,7 @@ const cloudKey = (): { apiKey: string; baseUrl?: string } | undefined => {
 };
 
 /** Blob adapters ride beside the store they were configured with, so
- *  `postgres(url, { blobs: s3({...}) })` stays one value in one slot. */
+ *  `postgres(url, { blobs: myFilesAdapter })` stays one value in one slot. */
 const storeBlobs = new WeakMap<VendoStore, FilesAdapter>();
 
 export interface PostgresOptions {

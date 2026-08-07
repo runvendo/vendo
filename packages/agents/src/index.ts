@@ -26,5 +26,4 @@ export type { EgressConfig } from "./egress.js";
 export type { RunContext } from "@vendoai/core";
 
 export { createGuard, type GuardLike, type VendoGuard } from "@vendoai/guard";
-export { s3 } from "@vendoai/store";
 export { vendoKnowledge } from "@vendoai/knowledge";

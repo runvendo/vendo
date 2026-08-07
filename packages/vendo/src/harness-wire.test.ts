@@ -533,7 +533,7 @@ describe("ONE files adapter (build contract §3.4)", () => {
     }))).text();
 
     expect(message).toMatch(/files:/);
-    expect(message).toMatch(/s3\(/);
+    expect(message).toMatch(/FilesAdapter/);
   });
 });
 
