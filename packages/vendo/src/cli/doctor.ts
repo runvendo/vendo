@@ -432,6 +432,29 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
       } else {
         pass("tools/graded", `catalog: all ${toolsFile.tools.length} tools graded`);
       }
+      // Not-knowing must be FELT here too. A blind slot is not a failure — the
+      // tool still works permissively — but it is why an agent pastes a whole
+      // response into a card instead of binding two fields, and why it calls a
+      // tool with no arguments when the handler wanted three.
+      const blindInputs = toolsFile.tools
+        .filter((tool) => (tool.inputSchemaSource ?? "unknown") === "unknown")
+        .map((tool) => tool.name);
+      const blindOutputs = toolsFile.tools
+        .filter((tool) => (tool.outputSchemaSource ?? "unknown") === "unknown")
+        .map((tool) => tool.name);
+      const total = toolsFile.tools.length;
+      const coverage = `inputs ${total - blindInputs.length}/${total} · outputs ${total - blindOutputs.length}/${total}`;
+      if (blindInputs.length > 0 || blindOutputs.length > 0) {
+        const blind = [...new Set([...blindInputs, ...blindOutputs])].sort();
+        warn(
+          "tools/schemas",
+          "E-TOOLS-004",
+          `catalog: ${coverage} — blind: ${blind.slice(0, 8).join(", ")}${blind.length > 8 ? ` +${blind.length - 8} more` : ""};`
+          + " declare them in your OpenAPI/tRPC/GraphQL contract, or run `vendo sync` with a model key so the judge reads the handlers",
+        );
+      } else if (total > 0) {
+        pass("tools/schemas", `catalog: ${coverage}`);
+      }
     } catch {
       // Not a vendo/tools@3 shape (e.g. a placeholder {}) — the config
       // checks above already govern presence; nothing to grade here.

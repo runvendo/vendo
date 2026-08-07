@@ -690,3 +690,25 @@ care about by hand in `.vendo/overrides.json`:
 ```
 
 Leaving them ungraded is safe — it just means an approval prompt per call.
+
+### E-TOOLS-004 {#E-TOOLS-004}
+
+**Symptom:** `catalog: inputs N/M · outputs N/M — blind: …` (warning, not failure).
+
+**Cause:** Those tools declare no request schema, no response schema, or
+neither. Nothing is broken — a blind tool still runs, permissively — but the
+agent is working without the contract: it cannot know a blind tool's arguments
+(and must not assume it takes none), and it has to pass a blind tool's whole
+output through instead of binding to the two fields a screen needs.
+
+Where the schemas come from, best first: your own contract (an OpenAPI
+response schema, a tRPC `.output()`, a GraphQL schema, a typed server action),
+then the AI judge reading the handler source, then nothing.
+
+**Fix:** Declare the shapes in the contract you already publish — that is the
+only rung that survives a refactor. For handlers with no contract to declare
+(a bare Next route), run `vendo sync` with a model key so the judgment pass
+reads the handler and fills the blind slots; it never overwrites a slot your
+contract already filled.
+
+Leaving them blind is safe. It just costs the agent precision.

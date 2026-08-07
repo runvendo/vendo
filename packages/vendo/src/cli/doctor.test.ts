@@ -306,6 +306,9 @@ describe("vendo doctor", () => {
       format: "vendo/tools@3",
       tools: [{
         name: "host_invoices_list", description: "d", inputSchema: { type: "object" }, risk: "read",
+        // A synced host: both slots carry a source marker, so the coverage
+        // check (E-TOOLS-004) has nothing to report about this catalog.
+        inputSchemaSource: "declared", outputSchemaSource: "declared",
         binding: { kind: "route", method: "GET", path: "/api/invoices", argsIn: "query" },
       }],
     }));
@@ -325,6 +328,9 @@ describe("vendo doctor", () => {
       format: "vendo/tools@3",
       tools: [{
         name: "host_invoices_list", description: "d", inputSchema: { type: "object" }, risk: "read",
+        // A synced host: both slots carry a source marker, so the coverage
+        // check (E-TOOLS-004) has nothing to report about this catalog.
+        inputSchemaSource: "declared", outputSchemaSource: "declared",
         binding: { kind: "route", method: "GET", path: "/api/invoices", argsIn: "query" },
         srcHash: "sha256:abc",
       }],
@@ -349,6 +355,9 @@ describe("vendo doctor", () => {
       format: "vendo/tools@3",
       tools: [{
         name: "host_invoices_list", description: "d", inputSchema: { type: "object" }, risk: "read",
+        // A synced host: both slots carry a source marker, so the coverage
+        // check (E-TOOLS-004) has nothing to report about this catalog.
+        inputSchemaSource: "declared", outputSchemaSource: "declared",
         binding: { kind: "route", method: "GET", path: "/api/invoices", argsIn: "query" },
       }],
     }));
@@ -378,6 +387,9 @@ describe("vendo doctor", () => {
       format: "vendo/tools@3",
       tools: [{
         name: "host_invoices_list", description: "d", inputSchema: { type: "object" }, risk: "read",
+        // A synced host: both slots carry a source marker, so the coverage
+        // check (E-TOOLS-004) has nothing to report about this catalog.
+        inputSchemaSource: "declared", outputSchemaSource: "declared",
         binding: { kind: "route", method: "GET", path: "/api/invoices", argsIn: "query" },
       }],
     }));
@@ -411,6 +423,9 @@ describe("vendo doctor", () => {
       format: "vendo/tools@3",
       tools: [{
         name: "host_invoices_list", description: "d", inputSchema: { type: "object" }, risk: "read",
+        // A synced host: both slots carry a source marker, so the coverage
+        // check (E-TOOLS-004) has nothing to report about this catalog.
+        inputSchemaSource: "declared", outputSchemaSource: "declared",
         binding: { kind: "route", method: "GET", path: "/api/invoices", argsIn: "query" },
       }],
     }));
@@ -1128,6 +1143,34 @@ describe("vendo doctor error codes + fix_refs", () => {
       error_code: "E-CLOUD-001",
       fix_ref: doctorFixRef("E-CLOUD-001"),
     });
+  });
+
+  it("warns E-TOOLS-004 for blind schema slots and passes when both are covered", async () => {
+    const tool = (markers: Record<string, string>) => ({
+      format: "vendo/tools@3",
+      tools: [{
+        name: "host_invoices_list", description: "d", inputSchema: { type: "object", properties: {} }, risk: "read",
+        binding: { kind: "route", method: "GET", path: "/api/invoices", argsIn: "query" },
+        ...markers,
+      }],
+    });
+
+    const blindRoot = await healthy();
+    await writeFile(join(blindRoot, ".vendo", "tools.json"),
+      JSON.stringify(tool({ inputSchemaSource: "declared", outputSchemaSource: "unknown" })));
+    const blind = await jsonChecks({ targetDir: blindRoot, fetchImpl: successfulProbeFetch() });
+    const warning = blind.report.checks.find((check) => check.id === "tools/schemas");
+    expect(warning).toMatchObject({ status: "warning", error_code: "E-TOOLS-004" });
+    expect(warning?.message).toContain("inputs 1/1 · outputs 0/1");
+    expect(warning?.message).toContain("host_invoices_list");
+
+    const coveredRoot = await healthy();
+    await writeFile(join(coveredRoot, ".vendo", "tools.json"),
+      JSON.stringify(tool({ inputSchemaSource: "declared", outputSchemaSource: "declared" })));
+    const covered = await jsonChecks({ targetDir: coveredRoot, fetchImpl: successfulProbeFetch() });
+    expect(covered.report.checks.find((check) => check.error_code === "E-TOOLS-004")).toBeUndefined();
+    expect(covered.report.checks.find((check) => check.id === "tools/schemas"))
+      .toMatchObject({ status: "ok", message: "catalog: inputs 1/1 · outputs 1/1" });
   });
 
   it("check ids are unique across a full run, healthy and broken alike", async () => {

@@ -61,6 +61,7 @@ export const DOCTOR_ERROR_CODES = {
   "E-TOOLS-001": "every extracted host tool is disabled or excluded (zero live host tools)",
   "E-TOOLS-002": "the extracted tool surface is empty (zero host tools)",
   "E-TOOLS-003": "part of the tool catalog is ungraded (nobody has graded it, so it asks on every call)",
+  "E-TOOLS-004": "part of the tool catalog declares no request/response shape (the agent must pass whole outputs through / cannot know the arguments)",
 } as const;
 
 export type DoctorErrorCode = keyof typeof DOCTOR_ERROR_CODES;
