@@ -340,6 +340,26 @@ describe("build contract §9.2 — grants over a generic records adapter", () =>
     expect(await access.levelFor(ctxFor("kim", [{ org: "acme" }]), app)).toBe("viewer");
   });
 
+  it("keeps one row when two grants for the same principal overlap, so a later downgrade sticks", async () => {
+    const access = await madeStore();
+    // Two owners share with kim in the same instant. `grant` reads the app's
+    // grants, finds no row for kim, and only THEN writes — so both reads land
+    // before either write and an id minted on that empty read is a DIFFERENT id
+    // per caller. Two rows for one principal is the unrevokable grant this
+    // whole describe exists to prevent: `levelFor` folds them with
+    // `strongerLevel`, so the downgrade below updates one row and the other
+    // keeps editor standing. Nothing here is a stub — the interleave is the
+    // real reference adapter's own await points.
+    await Promise.all([
+      access.grant(owner, app, "user:kim", "editor"),
+      access.grant(owner, app, "user:kim", "editor"),
+    ]);
+    expect(await access.list(owner, app)).toHaveLength(1);
+
+    await access.grant(owner, app, "user:kim", "viewer");
+    expect(await access.levelFor(ctxFor("kim", [{ org: "acme" }]), app)).toBe("viewer");
+  });
+
   it("revokes every row for the principal, so access cannot survive a revoke", async () => {
     const access = await madeStore();
     await access.grant(owner, app, "user:kim", "viewer");

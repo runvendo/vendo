@@ -1,8 +1,11 @@
 import { VendoError, type Json, type Principal } from "@vendoai/core";
 import type { UIMessage } from "ai";
+import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "./backends.test-util.js";
-import { eraseStore, storeFiles, threadMessageStore, threadStore } from "./index.js";
+import { harnessStateKey } from "./harness-state.js";
+import { createStore, eraseStore, storeFiles, threadMessageStore, threadStore } from "./index.js";
+import type { VendoStore } from "./store.js";
 
 const alice: Principal = { kind: "user", subject: "user_alice" };
 const bob: Principal = { kind: "user", subject: "user_bob" };
@@ -229,3 +232,130 @@ for (const backend of backends()) {
     });
   });
 }
+
+/**
+ * The cascade under CONCURRENCY.
+ *
+ * `threadStore.delete` is one transaction, but a transcript writer that only
+ * READS the thread row takes no lock on it. Under READ COMMITTED its snapshot
+ * still shows that row while the delete sits uncommitted, so it appends a
+ * message the cascade has already swept past — and the row outlives the thread
+ * that owns it. That row is then unreachable forever, for exactly the reason
+ * the cascade above exists: no foreign key, no subject of its own, and
+ * `erase.bySubject` reaches transcript rows only through `thread_id IN (SELECT
+ * id FROM vendo_threads WHERE subject = $1)`.
+ *
+ * PGlite cannot show this — it is single-connection and serializes
+ * transactions, so the interleave is unreachable there. Real Postgres only,
+ * which the store shards already set POSTGRES_URL for.
+ *
+ * The overlap is FORCED, not raced: a third connection holds the `vendo_state`
+ * row the cascade deletes LAST, so the delete parks with the thread row already
+ * gone and not yet committed — precisely the window that strands a row.
+ */
+describe.runIf(process.env["POSTGRES_URL"])("a concurrent transcript write cannot escape the cascade", () => {
+  const url = process.env["POSTGRES_URL"]!;
+  let store: VendoStore;
+  let admin: Client;
+
+  beforeAll(async () => {
+    admin = new Client({ connectionString: url });
+    await admin.connect();
+    store = createStore({ url });
+    await store.ensureSchema();
+  });
+  afterAll(async () => {
+    if (store) await store.close();
+    if (admin) await admin.end();
+  });
+
+  const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+  /** Poll until `ready`. The attempt bound is a safety net far inside the
+   *  suite's own timeout, so the test timeout stays the only hang detector. */
+  const until = async (ready: () => Promise<boolean>): Promise<void> => {
+    for (let attempt = 0; attempt < 400; attempt++) {
+      if (await ready()) return;
+      await wait(25);
+    }
+    throw new Error("the forced overlap never opened");
+  };
+
+  const blockedOn = async (table: string): Promise<boolean> => (
+    await admin.query(
+      `SELECT 1 FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND query LIKE '%' || $1 || '%'`,
+      [table],
+    )
+  ).rows.length > 0;
+
+  /** An owned thread with one message, plus the harness-state row the cascade
+   *  deletes last — that row is the parking brake. */
+  const seed = async (id: string): Promise<void> => {
+    await threadStore(store).put(alice, { id, messages: [] });
+    await threadMessageStore<UIMessage>(store).upsert(alice, id, message("m_seed", "before"), 0);
+    await admin.query(
+      `INSERT INTO vendo_state (app_id, subject, data, created_at, updated_at)
+       VALUES ($1, $2, '{}'::jsonb, now(), now())`,
+      [harnessStateKey(id), alice.subject],
+    );
+  };
+
+  /** Run `write` while the cascade is parked, then let the cascade finish.
+   *  Resolves to "ok" when the write reported success to its caller. */
+  const duringCascade = async (id: string, write: () => Promise<unknown>): Promise<string> => {
+    const brake = new Client({ connectionString: url });
+    await brake.connect();
+    await brake.query("BEGIN");
+    await brake.query("SELECT 1 FROM vendo_state WHERE app_id = $1 FOR UPDATE", [harnessStateKey(id)]);
+
+    const deleting = threadStore(store).delete(alice, id);
+    await until(() => blockedOn("vendo_state"));
+
+    let settled = false;
+    const writing = write()
+      .then(() => "ok", (error: unknown) => String(error))
+      .finally(() => { settled = true; });
+    // The write has either finished (it escaped) or parked on the thread row's
+    // own lock (it did not). Either way the window is open; release the brake.
+    await until(async () => settled || await blockedOn("vendo_thread_messages"));
+
+    await brake.query("ROLLBACK");
+    await brake.end();
+    const outcome = await writing;
+    await deleting;
+    return outcome;
+  };
+
+  const survivingMessages = async (id: string): Promise<number> => (
+    await admin.query("SELECT id FROM vendo_thread_messages WHERE thread_id = $1", [id])
+  ).rows.length;
+
+  it("refuses an ask_user answer written into a thread the cascade is deleting", async () => {
+    const id = "thr_race_answer";
+    await seed(id);
+
+    const outcome = await duringCascade(id, () => threadStore(store).recordAnswer(alice, {
+      threadId: id,
+      questionId: "q_race",
+      answer: { picked: "yes" },
+    }));
+
+    // Reporting success is the worse half of the bug: `recordAnswer`'s contract
+    // is that a receipt means the row exists, and the model reads that receipt.
+    expect(outcome).not.toBe("ok");
+    expect(await survivingMessages(id)).toBe(0);
+  });
+
+  it("refuses a message upsert written into a thread the cascade is deleting", async () => {
+    const id = "thr_race_upsert";
+    await seed(id);
+
+    const outcome = await duringCascade(
+      id,
+      () => threadMessageStore<UIMessage>(store).upsert(alice, id, message("m_race", "during"), 1),
+    );
+
+    expect(outcome).not.toBe("ok");
+    expect(await survivingMessages(id)).toBe(0);
+  });
+});
