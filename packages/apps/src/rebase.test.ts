@@ -82,7 +82,7 @@ const rewriteFor = (instruction: string): { label?: string; name?: string } | un
  * The ONE builder, as a fixture.
  *
  * It opens the app's own document, rewrites it and saves the whole thing back
- * through `authored` — the real write, the real undo point, the real recorded
+ * through `authored` — the real write, the real recorded version, the real recorded
  * pin intent. Only the choice of new document stands in for a live screen
  * agent, which is what makes a replayed trail here a real replayed trail.
  *
@@ -367,33 +367,6 @@ describe("06-apps §8 — pin rebase via intent replay", () => {
       versionHash: appVersionHash((result as { app: AppDocument }).app),
       reason: "version-changed",
     });
-  });
-
-  it("undo rewinds the rebase step by step, back to the pre-rebase version, and keeps the replay trail intact", async () => {
-    const store = memoryStore();
-    const appId = await seedForkedHistory(store);
-    const runtime = rebasedRuntime(store);
-    const before = await runtime.get(appId, ctx);
-    const versionsBefore = await runtime.history(appId, ctx).list();
-    const result = await runtime.pins.rebase({ appId, slot: SLOT }, ctx);
-    expect(result.status).toBe("rebased");
-
-    // Every replay is a real write through the one builder now, so a rebase is
-    // as many undo points as it made writes: the re-fork, each replayed intent,
-    // and the rebase's own version. Rewinding it walks back through all of them.
-    const spent = (await runtime.history(appId, ctx).list()).length - versionsBefore.length;
-    expect(spent).toBe(3);
-    let undone: AppDocument | undefined;
-    for (let step = 0; step < spent; step += 1) undone = await runtime.history(appId, ctx).undo();
-    expect(undone).toEqual(before);
-    await expect(runtime.get(appId, ctx)).resolves.toEqual(before);
-    await expect(runtime.pins.drift(appId, ctx)).resolves.toMatchObject([{ slot: SLOT }]);
-    const trail = await store.records(`vendo:app-pin-intents:${appId}`).list();
-    expect(trail.records).toHaveLength(2);
-
-    // The intact trail supports rebasing again after the undo.
-    const again = await runtime.pins.rebase({ appId, slot: SLOT }, ctx);
-    expect(again.status).toBe("rebased");
   });
 
   it("fails closed on a replay failure: reports the split and persists nothing", async () => {

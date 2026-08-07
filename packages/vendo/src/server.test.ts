@@ -213,10 +213,7 @@ function stubRouteBlocks(vendo: Vendo): void {
   vi.spyOn(vendo.apps, "edit").mockResolvedValue({
     app: app(), version: { at: new Date().toISOString(), intent: "edit", rung: 1 },
   });
-  vi.spyOn(vendo.apps, "history").mockReturnValue({
-    list: async () => [],
-    undo: async () => app(),
-  });
+  vi.spyOn(vendo.apps, "history").mockReturnValue({ list: async () => [] });
   vi.spyOn(vendo.apps, "exportApp").mockResolvedValue(new Uint8Array([1, 2, 3]));
   vi.spyOn(vendo.apps, "importApp").mockResolvedValue(app("app_imported"));
   vi.spyOn(vendo.apps, "fork").mockResolvedValue(app("app_forked"));
@@ -255,7 +252,6 @@ describe("09 §3 public wire", () => {
       request("POST", "/apps/app_wire/call", { ref: "host_x", args: {} }),
       request("POST", "/apps/app_wire/edit", { instruction: "edit" }),
       request("GET", "/apps/app_wire/history"),
-      request("POST", "/apps/app_wire/history", { op: "undo" }),
       request("GET", "/apps/app_wire/export"),
       request("POST", "/apps/import", new Uint8Array([1, 2, 3]), { "content-type": "application/octet-stream" }),
       request("POST", "/apps/app_wire/fork", {}),
@@ -536,30 +532,25 @@ describe("09 §3 public wire", () => {
     expect(vi.mocked(console.warn).mock.calls.flat().join(" ")).toContain("principal");
   });
 
-  it("does not read history for an unowned app on GET or undo", async () => {
+  it("does not read history for an unowned app", async () => {
     const { vendo } = await setup();
     stubRouteBlocks(vendo);
     vi.mocked(vendo.apps.get).mockResolvedValue(null);
     const history = vi.mocked(vendo.apps.history);
 
-    for (const [method, body] of [
-      ["GET", undefined],
-      ["POST", { op: "undo" }],
-    ] as const) {
-      const response = await vendo.handler(request(method, "/apps/app_other/history", body));
-      expect(response.status).toBe(404);
-      expect(await response.json()).toEqual({
-        error: { code: "not-found", message: "app not found: app_other" },
-      });
-    }
+    const response = await vendo.handler(request("GET", "/apps/app_other/history"));
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      error: { code: "not-found", message: "app not found: app_other" },
+    });
     expect(history).not.toHaveBeenCalled();
   });
 
-  it("enforces history() ownership at the wire: cross-principal reads and undo are denied for real", async () => {
+  it("enforces history() ownership at the wire: cross-principal reads are denied for real", async () => {
     // Build contract §9.3: the LEVEL lives in the apps runtime (`history` takes
-    // the ctx — list needs viewer, undo needs editor) and this route masks what
-    // the caller cannot see. No mocks — a real store row, a real history entry,
-    // and the real apps runtime behind the handler, so both halves are proven.
+    // the ctx — list needs viewer) and this route masks what the caller cannot
+    // see. No mocks — a real store row, a real history entry, and the real apps
+    // runtime behind the handler, so both halves are proven.
     let current: Principal = { kind: "user", subject: "user_owner" };
     const { vendo } = await setup(vi.fn(async () => current));
     expect((await vendo.handler(request("GET", "/status"))).status).toBe(200); // migrate the store
@@ -582,25 +573,19 @@ describe("09 §3 public wire", () => {
 
     // Another authenticated principal is told the app does not exist…
     current = { kind: "user", subject: "user_mallory" };
-    for (const [method, body] of [["GET", undefined], ["POST", { op: "undo" }]] as const) {
-      const denied = await vendo.handler(request(method, "/apps/app_hist/history", body));
-      expect(denied.status).toBe(404);
-      expect(await denied.json()).toEqual({
-        error: { code: "not-found", message: "app not found: app_hist" },
-      });
-    }
+    const denied = await vendo.handler(request("GET", "/apps/app_hist/history"));
+    expect(denied.status).toBe(404);
+    expect(await denied.json()).toEqual({
+      error: { code: "not-found", message: "app not found: app_hist" },
+    });
 
-    // …and the denied undo mutated NOTHING: the app row and history survive.
+    // …and the denial read NOTHING: the app row and history survive untouched,
+    // proving the 404 was ownership rather than routing.
     current = { kind: "user", subject: "user_owner" };
     const row = await vendo.store.records("vendo_apps").get("app_hist");
     expect((row?.data as { doc: AppDocument }).doc).toEqual(doc);
     const listAfter = await vendo.handler(request("GET", "/apps/app_hist/history"));
     expect(await listAfter.json()).toHaveLength(1);
-
-    // The owner's undo works, proving the 404s above were ownership, not routing.
-    const undone = await vendo.handler(request("POST", "/apps/app_hist/history", { op: "undo" }));
-    expect(undone.status).toBe(200);
-    expect(await undone.json()).toMatchObject({ id: "app_hist", name: "Wire app v1" });
   });
 
   it("enforces JSON CSRF on mutations with only the three contracted exceptions", async () => {

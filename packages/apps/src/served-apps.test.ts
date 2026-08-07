@@ -356,7 +356,7 @@ describe("serving through the door + the keepalive ride", () => {
      already-provisioned app is never refused, only NEW provisioning is. */
 
   it("keeps version history at its 50 cap — the box path prunes like every other write", async () => {
-    // The box path appends its own undo point (the box already landed the write,
+    // The box path appends its own version (the box already landed the write,
     // so that version is real history the moment it exists) and is therefore the
     // third site the cap is applied at. Nothing pinned it: dropping its
     // `pruneHistory` call left the log growing past 50 with the suite green.
@@ -375,7 +375,7 @@ describe("serving through the door + the keepalive ride", () => {
     }
     const before = await runtime.history("app_served", ctx()).list();
     expect(before).toHaveLength(50);
-    // The flip's own undo point is the oldest entry, so it is the one this
+    // The flip's own version is the oldest entry, so it is the one this
     // edit's version has to push out.
     expect(before.at(-1)?.intent).toBe(LAYER3_INSTRUCTION);
 
@@ -383,7 +383,7 @@ describe("serving through the door + the keepalive ride", () => {
     expect(result.failure).toBeUndefined();
 
     const versions = await runtime.history("app_served", ctx()).list();
-    // The cap held with this edit's version in it, and the oldest undo point in
+    // The cap held with this edit's version in it, and the oldest version in
     // the log — the one the 2→3 flip left — is what paid for it.
     expect(versions).toHaveLength(50);
     expect(versions[0]?.intent).toBe("Make the board header blue");

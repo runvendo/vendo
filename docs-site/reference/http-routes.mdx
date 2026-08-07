@@ -37,7 +37,7 @@ and production is exactly where that answer matters.
 | `/apps/:id/ship-diff` | GET | `ShipDiff`, the reviewable code diff against the last approved baseline, hash-pinned to the current version. Owner-scoped. See [In-client venue](/concepts/in-client-venue). |
 | `/apps/:id/call` | POST | `{ ref: "fn:<name>" \| "<tool>", args }` → `ToolOutcome` (tree actions + fn: calls) |
 | `/apps/:id/edit` | POST | `{ instruction }` → `EditResult` |
-| `/apps/:id/history` | GET · POST | versions · `{ op: "undo" }` |
+| `/apps/:id/history` | GET | the app's capped version log, newest first |
 | `/apps/:id/export` | GET | `.vendoapp` bytes |
 | `/apps/import` | POST | bytes → `AppDocument` (fresh id minted). Requires `Content-Type: application/octet-stream` (or `application/vnd.vendo.app`) — it is exempt from the JSON CSRF floor, so a non-safelisted media type is what forces a cross-origin preflight |
 | `/apps/:id/fn/:name` | POST | proxies one `fn:` call into the app's machine and relays its status, body, and `content-type`. No cookies or authorization cross the skin; a call that outruns the budget answers `504` while the box keeps working |

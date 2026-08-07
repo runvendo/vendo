@@ -20,10 +20,10 @@ import type { AppsRuntime } from "./types.js";
 const createAppReadDoors = (
   deps: Pick<AppsRuntimeContext,
     "config" | "caller" | "history" | "review" | "opener" | "owned" | "requireOwned"
-    | "grantedRecords" | "reportDocumentEdit">,
+    | "grantedRecords">,
 ): Pick<AppsRuntime, "get" | "list" | "history" | "open" | "call"> => {
   const { config, caller, history, review, opener, owned, requireOwned } = deps;
-  const { grantedRecords, reportDocumentEdit } = deps;
+  const { grantedRecords } = deps;
   return {
     async get(appId, ctx) {
       const app = await owned(appId, ctx, "viewer");
@@ -56,10 +56,10 @@ const createAppReadDoors = (
 
     /**
      * Build contract §9.3 — the level lives HERE, not only at the wire route
-     * that used to be the sole boundary: reading the log needs `viewer`,
-     * rolling the app back needs `EDITOR`. A caller who cannot even see the app
-     * stays masked (`not-found`) at both verbs, exactly like every other door.
-     * The 06 §1 signature gained the ctx for this reason (wave-3 ruling).
+     * that used to be the sole boundary: reading the log needs `viewer`, and a
+     * caller who cannot even see the app stays masked (`not-found`), exactly
+     * like every other door. The 06 §1 signature gained the ctx for this
+     * reason (wave-3 ruling).
      */
     history(appId, ctx) {
       const surface = history.surface(appId);
@@ -67,17 +67,6 @@ const createAppReadDoors = (
         list: async () => {
           await requireOwned(appId, ctx, "viewer");
           return await surface.list();
-        },
-        undo: async () => {
-          const previous = await requireOwned(appId, ctx, "editor");
-          const restored = await surface.undo();
-          // §9.9 — a rollback CHANGES WHAT THE APP IS, so it is an edit for every
-          // purpose the choke point serves: a third party rewinding the team's
-          // app has to invalidate the sponsorship exactly as their edit would.
-          // The history module writes the row itself, so the announcement is made
-          // here, at the one door every undo comes through.
-          await reportDocumentEdit(previous, restored, ctx.principal.subject);
-          return withoutSession(restored);
         },
       });
     },
@@ -277,7 +266,7 @@ export const createAppsSurface = (
     "config" | "apps" | "caller" | "data" | "history" | "review" | "opener" | "interchange"
     | "inClientApprovals" | "exposure" | "egressApprovals" | "parkedActions" | "placementRows"
     | "lifecycle" | "manifestTriggers" | "owned" | "requireOwned" | "requireMultiParty"
-    | "grantedRecords" | "reportDocumentEdit" | "reportLifecycle" | "claimSlot" | "markUnbuilt"
+    | "grantedRecords" | "reportLifecycle" | "claimSlot" | "markUnbuilt"
     | "runtime">,
 ): Pick<AppsRuntime,
   "get" | "list" | "delete" | "fork" | "promote" | "share" | "publish"

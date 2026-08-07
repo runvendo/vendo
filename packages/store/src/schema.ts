@@ -27,7 +27,7 @@ import type { Db } from "./db-postgres.js";
     once and gets the whole set:
       · `vendo_workspace_files` / `vendo_workspace_history` (§3.3) — the agent's
         filesystem as a façade over rows (documents are files, records stay
-        tables), with revision + append-only history behind undo.
+        tables), with a revision and an append-only history trail per path.
       · `vendo_thread_messages` (§6) — one row per transcript message, so a turn
         writes O(messages) instead of rewriting the whole array. `vendo_threads`
         LOSES `messages`; the v6 backfill splits every existing array into rows
@@ -170,10 +170,11 @@ export const DDL = [
     PRIMARY KEY (path, owner)
   )`,
   "CREATE INDEX IF NOT EXISTS vendo_workspace_files_owner_idx ON vendo_workspace_files (owner)",
-  // Undo + provenance. One row per superseded revision, carrying the content
-  // that revision held and the consumer-voice `intent` of the write that
-  // replaced it ("made the chart blue"). Retention: WORKSPACE_HISTORY_LIMIT
-  // rows per path.
+  // Provenance. One row per superseded revision, carrying the content that
+  // revision held and the consumer-voice `intent` of the write that replaced it
+  // ("made the chart blue"). Retention: WORKSPACE_HISTORY_LIMIT rows per path.
+  // The `content`/`blob_ref` columns are written but no longer read: nothing
+  // restores a superseded revision now that undo is gone (see the changeset).
   `CREATE TABLE IF NOT EXISTS vendo_workspace_history (
     id text PRIMARY KEY, path text NOT NULL, owner text NOT NULL, revision integer NOT NULL,
     content text, blob_ref text, intent text, at timestamptz NOT NULL DEFAULT now()

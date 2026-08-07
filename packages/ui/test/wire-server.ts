@@ -1263,11 +1263,6 @@ export async function createWireServer(options: WireServerOptions = {}) {
           return json(response, { app: edited, version });
         }
         if (action === "history" && method === "GET") return json(response, state.history);
-        if (action === "history" && method === "POST") {
-          const undone = { ...state.apps[index]!, name: "Undone" };
-          state.apps[index] = undone;
-          return json(response, undone);
-        }
         if (action === "fork" && method === "POST") {
           const forked = { ...state.apps[index]!, id: `app_fork_${state.apps.length}`, forkedFrom: id };
           state.apps.push(forked);

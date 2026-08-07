@@ -27,7 +27,7 @@ export function useApp(appId: AppId, { enabled = true }: AppOptions = {}): {
   isLoading: boolean;
   call(ref: string, args: Json): Promise<ToolOutcome>;
   edit(instruction: string): Promise<EditResult>;
-  history: { list(): Promise<VersionEntry[]>; undo(): Promise<AppDocument> };
+  history: { list(): Promise<VersionEntry[]> };
   refresh(): Promise<void>;
 } {
   const { client } = useVendoProvider();
@@ -37,12 +37,12 @@ export function useApp(appId: AppId, { enabled = true }: AppOptions = {}): {
   const [isLoading, setIsLoading] = useState(true);
   const generationRef = useRef(0);
   // Reset per appId (below), so `isLoading` reflects only the first load of the
-  // current app — an edit/undo refresh does not flicker it true→false.
+  // current app — an edit refresh does not flicker it true→false.
   const loadedRef = useRef(false);
 
   const refresh = useCallback(async () => {
     // Mirror useResource: bump per call, so overlapping refreshes (manual +
-    // edit + undo) can never let a stale response clobber newer app state.
+    // edit) can never let a stale response clobber newer app state.
     const generation = (generationRef.current += 1);
     const current = () => generation === generationRef.current;
     if (!loadedRef.current) setIsLoading(true);
@@ -97,15 +97,8 @@ export function useApp(appId: AppId, { enabled = true }: AppOptions = {}): {
     [appId, client, refresh],
   );
   const history = useMemo(
-    () => ({
-      list: () => client.apps.history(appId),
-      undo: async () => {
-        const result = await client.apps.undo(appId);
-        await refresh();
-        return result;
-      },
-    }),
-    [appId, client, refresh],
+    () => ({ list: () => client.apps.history(appId) }),
+    [appId, client],
   );
 
   return { app, surface, error, isLoading, call, edit, history, refresh };

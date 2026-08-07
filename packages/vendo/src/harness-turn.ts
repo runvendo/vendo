@@ -138,7 +138,7 @@ export interface HarnessTurns {
     signal?: AbortSignal;
   }): Promise<Response>;
   /** The workspace as one principal sees it this turn. Exposed for the host and
-   *  for the undo/history doors; `open` builds a fresh path index per call.
+   *  for the history door; `open` builds a fresh path index per call.
    *  The `/orgs` mounts (§9.7) come from the host's memberships seam, resolved
    *  here — a caller may override with `memberships` when it already has them. */
   workspace(

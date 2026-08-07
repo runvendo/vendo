@@ -78,7 +78,7 @@ const labelAsked = (instruction: string): string | undefined => {
  * The ONE builder, as a fixture: it opens the app's own document, rewrites the
  * pinned island in it and saves the whole thing back through `authored`. Only
  * the choice of new source stands in for a live screen agent — the write, the
- * undo point and the recorded pin intent are the runtime's own.
+ * recorded version and the recorded pin intent are the runtime's own.
  */
 const relabelScreen = (runtime: () => AppsRuntime, seen: string[] = []): ScreenAssembler =>
   scriptedAssembler(runtime, (request, current) => {
@@ -114,11 +114,9 @@ describe("06-apps §8 — gesture-owned deterministic fork (pins.fork)", () => {
       source: "generated",
     }));
     expect(forked.version.intent).toBe(`Remix the host component "${SLOT}"`);
-    // The fork is a recorded version: undo returns to the pre-fork app.
+    // The fork is a recorded version, under its own intent.
     const versions = await runtime.history(app.id, ctx).list();
     expect(versions.map(({ intent }) => intent)).toContain(forked.version.intent);
-    const undone = await runtime.history(app.id, ctx).undo();
-    expect(undone.pins ?? []).toEqual([]);
   });
 
   it("mints a minimal app around the fork when the gesture hits an empty slot", async () => {

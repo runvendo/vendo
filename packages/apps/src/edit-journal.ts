@@ -118,10 +118,8 @@ const createEditNotices = (deps: Pick<AppsRuntimeContext, "config" | "history">)
   /**
    * Build contract §9.9 — the ONE announcement every change to what an app IS
    * passes through, so lane H's sponsorship invalidation hears about a
-   * third-party change without a second write path to police. Called by
-   * `persistEdit` and by `undo` (which writes the row itself, in the history
-   * module, and so cannot go through persistEdit). The change has ALREADY
-   * landed: a listener that throws must never unwind it.
+   * third-party change without a second write path to police. The change has
+   * ALREADY landed: a listener that throws must never unwind it.
    */
   const reportDocumentEdit = async (
     previous: AppDocument,
@@ -137,17 +135,17 @@ const createEditNotices = (deps: Pick<AppsRuntimeContext, "config" | "history">)
   };
 
   /**
-   * The undo point an append already spent, deleted because the write it was
-   * appended FOR never landed. `undo()` restores the latest snapshot
-   * unconditionally, so an orphan version is a loaded gun: its snapshot predates
-   * the concurrent change a refusal just preserved. Cleanup failure is logged,
+   * The version an append already spent, deleted because the write it was
+   * appended FOR never landed. Leaving it would put a version in the trail for
+   * a state that never became the past — and its snapshot predates the
+   * concurrent change a refusal just preserved. Cleanup failure is logged,
    * never thrown — the refusal is what the caller must hear about.
    */
   const discardVersion = async (appId: AppId, versionId: string): Promise<void> => {
     try {
       await history.discard(appId, versionId);
     } catch (error) {
-      console.error(`[vendo] a refused write left an undo point behind (${appId}): ${safeErrorMessage(error)}`);
+      console.error(`[vendo] a refused write left a stale version behind (${appId}): ${safeErrorMessage(error)}`);
     }
   };
 
@@ -197,7 +195,7 @@ const createEditPersist = (
     // Best-effort optimistic concurrency. The core StoreAdapter seam (01-core §12) has
     // no compare-and-swap or transactions, so a narrow TOCTOU window between the final
     // check and the put remains — closing it fully needs a store-level revision column
-    // (a store-block follow-up). This catches the common edit-vs-undo / double-edit races.
+    // (a store-block follow-up). This catches the common double-edit races.
     const assertCurrent = async (): Promise<boolean> => {
       const current = await apps.get(previous.id);
       const row = current === null ? null : rowFromRecord(current);
@@ -243,8 +241,8 @@ const createEditPersist = (
       appRow = appRecordInput(app, rowSubject, enabled);
       await apps.put(appRow);
     } catch (error) {
-      // The version above is an undo point to a state that never became the
-      // past — see discardVersion. The refusal is re-thrown unchanged.
+      // The version above records a state that never became the past — see
+      // discardVersion. The refusal is re-thrown unchanged.
       await discardVersion(app.id, versionId);
       throw error;
     }
@@ -253,7 +251,7 @@ const createEditPersist = (
     await pruneHistory(app.id);
     await reportDocumentEdit(previous, appRow.data.doc, subject);
     // A legacy row's transcript never rides a document out of the runtime. One
-    // rule, every path (get/list/fork/undo strip it too), so what an edit
+    // rule, every path (get/list/fork strip it too), so what an edit
     // returns is exactly what a list returns.
     return withoutSession(structuredClone(appRow.data.doc));
   };
@@ -267,8 +265,8 @@ const createEditIntents = () => {
    *
    * `authored` is the one write path now — a runtime edit is a screen agent
    * opening the app's document, rewriting it and saving it, which is the same
-   * commit any other author makes. Without this the undo point for every edit
-   * would read "Saved app.vendo" and `pins.rebase` would find a trail of
+   * commit any other author makes. Without this the recorded version for every
+   * edit would read "Saved app.vendo" and `pins.rebase` would find a trail of
    * unreplayable `touch` rows where the user's instructions used to be.
    *
    * Set for exactly the duration of one `assembleEdit`, keyed by app so two

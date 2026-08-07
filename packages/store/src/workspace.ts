@@ -5,7 +5,7 @@ import { backendOf } from "./helpers/backend.js";
 import type { VendoStore } from "./store.js";
 import { workspaceOpsRows } from "./workspace-ops-rows.js";
 import { HOST_MOUNT, normalizePath, pathForbidden, pathNotFound, WorkspaceStoreFs } from "./workspace-fs.js";
-import { workspaceRows, type AppMount, type UndoOutcome, type WorkspaceHistoryEntry } from "./workspace-rows.js";
+import { workspaceRows, type AppMount, type WorkspaceHistoryEntry } from "./workspace-rows.js";
 
 /** Build contract §9.7 — what the façade needs to know about the caller: who
     they are, and which orgs the host ASSERTED this request. A RunContext
@@ -43,8 +43,8 @@ function hostFiles(projection: HostProjection | undefined): Map<string, Uint8Arr
 /**
  * Build contract §3 — the workspace: the agent's filesystem as a façade over
  * the store. `open` is called once per turn (it builds the path index just-bash
- * needs synchronously); `undo` and `history` read the same rows the façade
- * writes, so what the user undoes is exactly what the agent did.
+ * needs synchronously); `history` reads the same rows the façade writes, so
+ * what the user sees in the trail is exactly what the agent did.
  */
 export function workspaceStore(store: VendoStore, options: { files?: FilesAdapter } = {}): {
   /** One workspace, one turn. Writes stage until `commit()`. `host` projects
@@ -58,12 +58,6 @@ export function workspaceStore(store: VendoStore, options: { files?: FilesAdapte
       memberships?: Membership[];
     },
   ): Promise<WorkspaceFs>;
-  /** Walks one step back through a path's history — including back to a file
-      that was deleted. `empty` means there is nothing left to undo;
-      `content-missing` is a revision whose blob is gone (consumed, so the walk
-      continues into older revisions instead of stopping there forever).
-      An undo is a WRITE, so it needs `can(editor)` on the path. */
-  undo(caller: WorkspaceCaller, path: string): Promise<UndoOutcome>;
   /** Newest superseded revision first; viewer-level, like any other read. */
   history(caller: WorkspaceCaller, path: string): Promise<WorkspaceHistoryEntry[]>;
   /** Build contract §9.5 — promote's workspace half; see WorkspaceRows.moveApp. */
@@ -157,13 +151,6 @@ export function workspaceStore(store: VendoStore, options: { files?: FilesAdapte
         hostFiles(opts?.host),
       );
     },
-    async undo(caller, path) {
-      const normalized = normalizePath(path);
-      if (!(await canWrite(caller, normalized))) {
-        throw await refusal(caller, normalized);
-      }
-      return await rows.undo(ownerOfPath(caller, normalized), normalized);
-    },
     async history(caller, path) {
       const normalized = normalizePath(path);
       if (!(await canRead(caller, normalized))) {
@@ -199,7 +186,6 @@ export {
   WORKSPACE_HISTORY_LIMIT,
   WORKSPACE_INLINE_MAX_BYTES,
   type AppMount,
-  type UndoOutcome,
   type WorkspaceFileMeta,
   type WorkspaceHistoryEntry,
 } from "./workspace-rows.js";

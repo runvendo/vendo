@@ -154,23 +154,18 @@ describe("two principals, one org, over the real composition", () => {
     expect((await call(vendo, kim, "GET", "/apps/app_dash")).body.name).toBe("Team dashboard");
   });
 
-  it("a viewer cannot roll the team's app back, but may read its versions", async () => {
-    // `undo` is an EDIT of the shared app — the level belongs in the runtime,
-    // not only in this route, which is why the runtime now takes the ctx.
-    await seedApp(store, seeded("app_undo", "Shared"), ORG);
-    await call(vendo, dana, "POST", "/apps/app_undo/grants", { principal: "user:kim", level: "viewer" });
+  it("a viewer may read the team's app versions, and a stranger may not", async () => {
+    // The level belongs in the runtime, not only in this route, which is why
+    // the runtime takes the ctx.
+    await seedApp(store, seeded("app_hist", "Shared"), ORG);
+    await call(vendo, dana, "POST", "/apps/app_hist/grants", { principal: "user:kim", level: "viewer" });
 
-    const listed = await call(vendo, kim, "GET", "/apps/app_undo/history");
+    const listed = await call(vendo, kim, "GET", "/apps/app_hist/history");
     expect(listed.status).toBe(200);
 
-    const rolled = await call(vendo, kim, "POST", "/apps/app_undo/history", { op: "undo" });
-    expect(rolled.status).toBe(403);
-    expect(rolled.body.error.code).toBe("forbidden");
-
-    // A caller who cannot see it stays masked at both verbs.
+    // A caller who cannot see it stays masked.
     const stranger: Principal = { kind: "user", subject: "stranger" };
-    expect((await call(vendo, stranger, "GET", "/apps/app_undo/history")).status).toBe(404);
-    expect((await call(vendo, stranger, "POST", "/apps/app_undo/history", { op: "undo" })).status).toBe(404);
+    expect((await call(vendo, stranger, "GET", "/apps/app_hist/history")).status).toBe(404);
   });
 
   it("the harness workspace door mounts the asserted orgs", async () => {

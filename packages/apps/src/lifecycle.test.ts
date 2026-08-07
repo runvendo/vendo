@@ -62,7 +62,7 @@ const setup = (withModel = true) => {
 };
 
 describe("apps lifecycle", () => {
-  it("disarms changed triggers on edit and undo while preserving unchanged trigger edits", async () => {
+  it("disarms changed triggers on edit while preserving unchanged trigger edits", async () => {
     const store = memoryStore();
     const original: AppDocument = {
       format: VENDO_APP_FORMAT,
@@ -86,19 +86,6 @@ describe("apps lifecycle", () => {
 
     expect(enabledAfterDocumentEdit(original, renamed, true)).toBe(true);
     expect(enabledAfterDocumentEdit(original, changed, true)).toBe(false);
-
-    const history = createAppHistory(store);
-    await history.append(original.id, original, {
-      at: "2026-07-12T12:00:00.000Z",
-      intent: "Change trigger",
-      rung: 1,
-    });
-    await seedAppRow(store, changed, "user_ada", true);
-    await history.surface(original.id).undo();
-    expect((await store.records("vendo_apps").get(original.id))?.data).toMatchObject({
-      enabled: false,
-      doc: { triggers: original.triggers },
-    });
   });
 
   it("round-trips create, get, and newest-first list without leaking across owners", async () => {
@@ -235,7 +222,7 @@ describe("apps lifecycle", () => {
     ]);
   });
 
-  it("caps public history at 50 entries and undo restores and pops the latest snapshot", async () => {
+  it("caps public history at 50 entries", async () => {
     const { runtime } = setup();
     const ctx = context("user_ada");
     const app = await runtime.create({ prompt: "Original" }, ctx);
@@ -249,11 +236,6 @@ describe("apps lifecycle", () => {
     expect(entries).toHaveLength(50);
     expect(entries[0]?.intent).toBe("Edit 51");
     expect(entries.at(-1)?.intent).toBe("Edit 2");
-
-    const restored = await history.undo();
-    expect(restored.name).toBe("Edit 50");
-    expect(await runtime.get(app.id, ctx)).toEqual(restored);
-    expect(await history.list()).toHaveLength(49);
   });
 
   it("keeps the full per-pin replay trail when public version history is capped", async () => {
@@ -274,61 +256,13 @@ describe("apps lifecycle", () => {
       }, ["net-worth-card"]);
       // The cap is applied by the caller once its write has LANDED — an append
       // is speculative until then, and pruning inside it charged a refused write
-      // the oldest real undo point (see AppHistoryAccess.prune).
+      // the oldest real version (see AppHistoryAccess.prune).
       await history.prune(app.id);
     }
 
     expect(await history.surface(app.id).list()).toHaveLength(50);
     expect((await history.pinIntents(app.id, "net-worth-card")).map(({ intent }) => intent))
       .toEqual(Array.from({ length: 51 }, (_, index) => `Pin edit ${index + 1}`));
-
-    await history.surface(app.id).undo();
-    expect(await history.pinIntents(app.id, "net-worth-card")).toHaveLength(50);
-  });
-
-  it("undoes same-millisecond edits in strict LIFO order", async () => {
-    const store = memoryStore({ timestamp: () => "2026-07-11T12:00:00.000Z" });
-    let runtime: AppsRuntime;
-    runtime = createApps({
-      store,
-      guard: guardFixture(),
-      tools,
-      catalog: [],
-      model: basicLanguageModel(),
-      screen: screenFor(() => runtime),
-    });
-    const app: AppDocument = {
-      format: VENDO_APP_FORMAT,
-      id: "app_lifo",
-      name: "Original",
-      ui: "tree",
-      tree: {
-        formatVersion: "vendo-genui/v2",
-        root: "root",
-        nodes: [{ id: "root", component: "Text" }],
-      },
-    };
-    await seedAppRow(store, app, "user_ada");
-    const uuid = vi.spyOn(globalThis.crypto, "randomUUID")
-      .mockReturnValueOnce("ffffffff-ffff-4fff-8fff-ffffffffffff")
-      .mockReturnValueOnce("00000000-0000-4000-8000-000000000000");
-    try {
-      await runtime.edit(app.id, "First", context("user_ada"));
-      await runtime.edit(app.id, "Second", context("user_ada"));
-
-      await expect(runtime.history(app.id, context("user_ada")).undo()).resolves.toMatchObject({ name: "First" });
-      await expect(runtime.history(app.id, context("user_ada")).undo()).resolves.toEqual(app);
-    } finally {
-      uuid.mockRestore();
-    }
-  });
-
-  it("rejects undo on empty history", async () => {
-    const { runtime } = setup();
-    const app = await runtime.create({ prompt: "No history" }, context("user_ada"));
-    await expect(runtime.history(app.id, context("user_ada")).undo()).rejects.toEqual(
-      new VendoError("conflict", "nothing to undo"),
-    );
   });
 
   it("rejects invalid stored documents on reads with the app id in detail", async () => {

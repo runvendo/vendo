@@ -39,12 +39,11 @@ export const STORE_WIRE_PATHS = {
   "harness.get": "/harness/get",
   "harness.set": "/harness/set",
   "harness.clear": "/harness/clear",
-  // workspace (5)
+  // workspace (4)
   "workspace.index": "/workspace/index",
   "workspace.read": "/workspace/read",
   "workspace.commit": "/workspace/commit",
   "workspace.history": "/workspace/history",
-  "workspace.undo": "/workspace/undo",
   // lifecycle (6)
   "lifecycle.erase": "/lifecycle/erase",
   "lifecycle.adopt": "/lifecycle/adopt",
@@ -248,18 +247,6 @@ export const storeWireWorkspaceHistoryRequestSchema = cursorQuerySchema.extend({
   ...ownerField,
   path: z.string().min(1).optional(),
 });
-
-/** Exactly ONE of commitId/path: undo the whole commit, or undo one path's
-    newest change. Both set is two different mutations in one call, and neither
-    is an undo with no target. */
-export const storeWireWorkspaceUndoRequestSchema = z.object({
-  ...ownerField,
-  commitId: z.string().min(1).optional(),
-  path: z.string().min(1).optional(),
-}).passthrough().refine(
-  (body) => (body.commitId === undefined) !== (body.path === undefined),
-  { message: "undo takes exactly one of commitId or path" },
-);
 
 // ---------------------------------------------------------------------------
 // lifecycle

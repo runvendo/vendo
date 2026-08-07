@@ -50,8 +50,8 @@ export type PinsSurfaceDeps = Pick<
 
 /**
  * The empty-slot Remix gesture: mint the minimal base document the fork lands
- * in, so the fork itself is an ordinary recorded edit (undo returns to the
- * empty base; rebase finds a full trail).
+ * in, so the fork itself is an ordinary recorded edit (rebase finds a full
+ * trail).
  */
 const mintForkBase = async (
   deps: Pick<PinsSurfaceDeps, "apps" | "placementRows" | "requireOwned" | "reportLifecycle">,
@@ -396,7 +396,7 @@ const rebasePin = async (
   // The rebase version appends NO pin intent of its own: its content is
   // exactly the replayed trail on the new baseline, and replaying a
   // "rebase" instruction through the model on a future rebase would be
-  // meaningless. Undo of this version therefore removes no intents.
+  // meaningless.
   // Re-read: every replayed step already landed, so the row as it stands
   // IS this rebase's baseline — persisting against the pre-rebase document
   // would read as a concurrent change.

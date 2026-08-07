@@ -109,10 +109,10 @@ for (const backend of backends()) {
       expect(await reader.readFile("/orgs/acme/policy.json")).toContain("org-policy@1");
     });
 
-    it("undoes and reads the history of an ORG file, owner derived from the path", async () => {
+    it("reads the history of an ORG file, owner derived from the path", async () => {
       // §9.7 — owner derivation is a pure function of the path in EVERY door.
       // Deriving it from the principal instead made a promoted app's history
-      // unreachable: history() answered [] and undo() answered empty.
+      // unreachable: history() answered [].
       const path = "/orgs/acme/files/roadmap.md";
       const first = await workspace().open(dana, { memberships: acme });
       await first.writeFile(path, "v1");
@@ -122,12 +122,11 @@ for (const backend of backends()) {
       await second.commit();
 
       expect(await workspace().history(ctxOf(kim, acme), path)).toHaveLength(1);
-      expect(await workspace().undo(ctxOf(kim, acme), path)).toMatchObject({ status: "ok" });
       const settled = await workspace().open(kim, { memberships: acme });
-      expect(await settled.readFile(path)).toBe("v1");
+      expect(await settled.readFile(path)).toBe("v2");
     });
 
-    it("refuses undo/history on an org the host did not assert", async () => {
+    it("refuses history on an org the host did not assert", async () => {
       // §9.4 — the failing predicate here IS the viewer check, so the answer is
       // the one a path that does not exist gets. `forbidden` would have told a
       // stranger that `/orgs/acme` is a real place with something in it.
@@ -138,11 +137,10 @@ for (const backend of backends()) {
 
       const stranger = { principal: kim, venue: "app" as const, presence: "present" as const, sessionId: "s" };
       await expect(workspace().history(stranger, path)).rejects.toMatchObject({ code: "not-found" });
-      await expect(workspace().undo(stranger, path)).rejects.toMatchObject({ code: "not-found" });
     });
 
     describe("§9.4 — `forbidden` implies the caller is at least a viewer", () => {
-      it("answers a VIEWER denied an edit with forbidden, at all three doors", async () => {
+      it("answers a VIEWER denied an edit with forbidden, and still reads", async () => {
         // The fork offer renders off this code, so it must keep meaning exactly
         // "you can see it, but not do this to it".
         const app = "app_orgviewerdoors";
@@ -153,7 +151,6 @@ for (const backend of backends()) {
         await seed.writeFile(path, "page: v1");
         await seed.commit();
 
-        await expect(workspace().undo(ctxOf(kim, acme), path)).rejects.toMatchObject({ code: "forbidden" });
         const viewer = await workspace().open(kim, { memberships: acme });
         await viewer.writeFile(path, "page: mine");
         await expect(viewer.commit()).rejects.toMatchObject({ code: "forbidden" });
@@ -161,7 +158,7 @@ for (const backend of backends()) {
         expect(await workspace().history(ctxOf(kim, acme), path)).toHaveLength(0);
       });
 
-      it("answers a NON-viewer with not-found at all three doors, inside an asserted org", async () => {
+      it("answers a NON-viewer with not-found at both doors, inside an asserted org", async () => {
         // The org mount is asserted, so EACCES does not fire — the only thing
         // standing between sam and the app subtree is the grant she does not
         // hold. `forbidden` there is an existence oracle for every app id.
@@ -174,7 +171,6 @@ for (const backend of backends()) {
 
         const sam = { kind: "user" as const, subject: "sam" };
         await expect(workspace().history(ctxOf(sam, acme), path)).rejects.toMatchObject({ code: "not-found" });
-        await expect(workspace().undo(ctxOf(sam, acme), path)).rejects.toMatchObject({ code: "not-found" });
         const outsider = await workspace().open(sam, { memberships: acme });
         await outsider.writeFile(path, "page: mine");
         await expect(outsider.commit()).rejects.toMatchObject({ code: "not-found" });

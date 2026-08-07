@@ -130,15 +130,9 @@ async function openWithPendingWindow(wire: WireContext, appId: string, ctx: RunC
 
 async function handleHistory(wire: WireContext, appId: string, ctx: RunContext): Promise<Response | undefined> {
   const { request, deps } = wire;
-  // The door still masks an app this caller cannot see at all, so a
-  // not-found answer never depends on which verb they asked for.
+  // The door still masks an app this caller cannot see at all.
   if (await deps.apps.get(appId, ctx) === null) throw new VendoError("not-found", `app not found: ${appId}`);
   if (request.method === "GET") return json(await deps.apps.history(appId, ctx).list());
-  if (request.method === "POST") {
-    const body = await requestJson(request);
-    if (body["op"] !== "undo") throw new VendoError("validation", "history op must be undo");
-    return json(await deps.apps.history(appId, ctx).undo());
-  }
   return undefined;
 }
 
@@ -351,10 +345,9 @@ export const appRoutes: RouteEntry[] = [
       return json(await deps.apps.edit(appId, string(body["instruction"], "instruction"), ctx));
     }
     // Build contract §9.3 — the LEVEL lives in the runtime: `list` needs
-    // viewer, `undo` needs editor (rolling the team's app back is an edit), and
-    // a caller who cannot see the app stays masked. This route just names the
-    // caller; it is no longer the only thing standing between a viewer and the
-    // team's history.
+    // viewer, and a caller who cannot see the app stays masked. This route just
+    // names the caller; it is no longer the only thing standing between a
+    // viewer and the team's history.
     if (operation === "history" && segments.length === 3) {
       const answer = await handleHistory(wire, appId, ctx);
       if (answer !== undefined) return answer;

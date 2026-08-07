@@ -153,20 +153,15 @@ describe("§9.3 — reads need viewer, edits editor, delete owner", () => {
 });
 
 describe("§9.3 — history is level-aware in the RUNTIME, not only at the wire", () => {
-  it("keeps list at viewer, reserves undo for an editor, masks a stranger", async () => {
+  it("keeps list at viewer and masks a stranger", async () => {
     const { runtime, store } = setup();
     await seedAppRow(store, doc("app_hist"), "acme");
     await seedGrants(store, "app_hist", { "user:kim": "viewer", "user:dana": "editor" });
 
     // A viewer may read the version list...
     expect(await runtime.history("app_hist", ctx("kim")).list()).toEqual([]);
-    // ...but rolling the team's app back is an edit.
-    await expect(runtime.history("app_hist", ctx("kim")).undo())
-      .rejects.toMatchObject({ code: "forbidden" });
-    // A caller who cannot see it at all stays masked at both verbs.
+    // ...and a caller who cannot see the app at all stays masked.
     await expect(runtime.history("app_hist", ctx("mal")).list())
-      .rejects.toMatchObject({ code: "not-found" });
-    await expect(runtime.history("app_hist", ctx("mal")).undo())
       .rejects.toMatchObject({ code: "not-found" });
   });
 });
@@ -430,36 +425,6 @@ describe("§9.9 — the onDocumentEdit choke point", () => {
     expect(state.edits).toHaveLength(1);
     expect(state.edits[0]).toMatchObject({ from: "Before", to: "After", editor: "dana" });
     // The sponsor changing their own app is not a third-party edit.
-    expect(state.active).toBe(true);
-  });
-
-  it("treats an UNDO as an edit: a third party's rollback invalidates the sponsorship", async () => {
-    // §9.9 calls persistEdit "the ONE choke point every document edit passes
-    // through", and undo wrote the app row directly — so rolling the team's app
-    // back was the one way to change what an app IS without the sponsorship
-    // hearing about it. Silently skipping the invalidation lane H exists for.
-    const { state, onDocumentEdit } = sponsoredBy("dana");
-    const { runtime, store } = setup({ onDocumentEdit, model: basicLanguageModel() });
-    const app = await runtime.create({ prompt: "Before" }, ctx("dana"));
-    await runtime.edit(app.id, "After", ctx("dana"));
-    expect(state.active).toBe(true);
-
-    await seedGrants(store, app.id, { "user:kim": "editor" });
-    const restored = await runtime.history(app.id, ctx("kim")).undo();
-
-    expect(restored.name).toBe("Before");
-    expect(state.edits.at(-1)).toMatchObject({ from: "After", to: "Before", editor: "kim" });
-    expect(state.active).toBe(false);
-  });
-
-  it("leaves the sponsorship alone when the SPONSOR rolls their own app back", async () => {
-    const { state, onDocumentEdit } = sponsoredBy("dana");
-    const { runtime } = setup({ onDocumentEdit, model: basicLanguageModel() });
-    const app = await runtime.create({ prompt: "Before" }, ctx("dana"));
-    await runtime.edit(app.id, "After", ctx("dana"));
-
-    await runtime.history(app.id, ctx("dana")).undo();
-    expect(state.edits.at(-1)).toMatchObject({ editor: "dana" });
     expect(state.active).toBe(true);
   });
 });

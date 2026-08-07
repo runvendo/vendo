@@ -128,11 +128,10 @@ for (const backend of backends()) {
       // The signed-in subject opens the workspace and finds their own work.
       const fs = await workspaceStore(made.store).open(signedIn);
       expect(await fs.readFile("/user/apps/app_anon/app.vendo")).toBe("then edited");
-      // History travelled with the file, so undo still works after signing in.
-      const undone = await workspaceStore(made.store).undo({ principal: signedIn }, "/user/apps/app_anon/app.vendo");
-      expect(undone).toEqual({ status: "ok", revision: 3 });
-      expect(await (await workspaceStore(made.store).open(signedIn))
-        .readFile("/user/apps/app_anon/app.vendo")).toBe("made while anonymous");
+      // History travelled with the file, so the trail is still readable after
+      // signing in — under the new owner, not the anonymous one.
+      expect(await workspaceStore(made.store)
+        .history({ principal: signedIn }, "/user/apps/app_anon/app.vendo")).toHaveLength(1);
 
       expect(await count("vendo_workspace_files", "owner = $1", [anon.subject])).toBe(0);
     });

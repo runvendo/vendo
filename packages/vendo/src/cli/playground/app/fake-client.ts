@@ -153,7 +153,6 @@ export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
       pingMachine: async () => ({ state: "awake" }),
       edit: async (id) => ({ app: app(id), version: { at: new Date().toISOString(), intent: "edit", rung: 2 } }),
       history: async () => [{ at: "2026-07-18T09:05:30.000Z", intent: "create", rung: 2 }],
-      undo: async (id) => app(id),
       exportApp: async (id) => new TextEncoder().encode(JSON.stringify(app(id))),
       importApp: async (bytes) => {
         const imported = JSON.parse(new TextDecoder().decode(bytes)) as AppDocument;

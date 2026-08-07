@@ -366,7 +366,7 @@ describe("an app.vendo the harness wrote", () => {
 
 /**
  * Build contract §9.9 — a files-first rewrite is a change to what the app IS, so
- * it passes through the SAME announcement `persistEdit` and `undo` make. It has
+ * it passes through the SAME announcement `persistEdit` makes. It has
  * to: `authoredDocument` keeps `trigger` verbatim, so the intent hash a
  * sponsorship was minted over does not move when a third party rewrites the file
  * — the fire-time hash check cannot see this change, and this hook is the only
@@ -567,8 +567,8 @@ describe("a save whose text left a pinned component out", () => {
   });
 });
 
-describe("the undo point a files-first save leaves", () => {
-  it("records the state a rewrite replaced, and restores it", async () => {
+describe("the version a files-first save leaves", () => {
+  it("records the state a rewrite replaced", async () => {
     const { runtime } = stand();
     await runtime.authored({ appId: APP_ID, compiled: compiled(SPEND) }, ctx());
     // The first save is a create: there is no earlier state to keep.
@@ -579,8 +579,6 @@ describe("the undo point a files-first save leaves", () => {
     const versions = await runtime.history(APP_ID, ctx()).list();
     expect(versions).toHaveLength(1);
     expect(versions[0]?.intent).toBe("Saved app.vendo");
-    // The point of the entry: a truncated or wrong save is recoverable.
-    expect((await runtime.history(APP_ID, ctx()).undo()).name).toBe("Spending");
   });
 
   it("spends no version on a re-save that changed nothing", async () => {
@@ -588,7 +586,7 @@ describe("the undo point a files-first save leaves", () => {
     await runtime.authored({ appId: APP_ID, compiled: compiled(SPEND) }, ctx());
     await runtime.authored({ appId: APP_ID, compiled: compiled(SPEND) }, ctx());
 
-    // The history is capped at 50: an undo point to the state the app is already
+    // The history is capped at 50: a version for the state the app is already
     // in would push a real one out.
     expect(await runtime.history(APP_ID, ctx()).list()).toEqual([]);
     // And §9.9 says nothing either: the app is not different, invalidation is
@@ -602,9 +600,9 @@ describe("the undo point a files-first save leaves", () => {
 /**
  * The cap is 50, and every append is speculative until the write it was appended
  * FOR lands (a refusal discards it). Pruning inside the append therefore charged
- * the app's OLDEST real undo point for a write that never happened: at the cap,
- * one refused save destroyed v0 and left 49. Fifty conflicts erased the whole
- * undo history of an app that never changed once.
+ * the app's OLDEST real version for a write that never happened: at the cap, one
+ * refused save destroyed v0 and left 49. Fifty conflicts erased the whole
+ * recorded history of an app that never changed once.
  */
 describe("a refused write at the history cap", () => {
   /** Fill the log to exactly the cap with versions of the app as it stands. */
@@ -626,7 +624,7 @@ describe("a refused write at the history cap", () => {
   const versionIds = async (store: Stand["store"]): Promise<string[]> =>
     (await store.records(`vendo:app-history:${APP_ID}`).list()).records.map(({ id }) => id).sort();
 
-  it("costs the SAVE path no undo point at all", async () => {
+  it("costs the SAVE path no version at all", async () => {
     const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
       const { runtime, store, arm } = stand();
@@ -648,8 +646,7 @@ describe("a refused write at the history cap", () => {
       expect((await rowOf(store))?.doc?.description).toBe("the person's own edit");
       expect(errors.mock.calls.map(String).join(" ")).toContain("app not saved");
       // …and the log is EXACTLY what it was: the speculative version taken back,
-      // and the oldest real one — the furthest back this person can still undo —
-      // never charged for it.
+      // and the oldest real one never charged for it.
       expect(await versionIds(store)).toEqual(before);
     } finally {
       errors.mockRestore();
@@ -694,7 +691,7 @@ describe("a refused write at the history cap", () => {
 
     const versions = await runtime.history(APP_ID, ctx()).list();
     expect(versions).toHaveLength(50);
-    // The newest is this save, and the oldest real undo point paid for it.
+    // The newest is this save, and the oldest real version paid for it.
     expect(versions[0]?.intent).toBe("Saved app.vendo");
     expect(versions.at(-1)?.intent).toBe("Edit 2");
   });
@@ -758,13 +755,10 @@ describe("a save computed over a row that changed under it", () => {
       expect(row?.doc?.name).toBe("Spending");
       expect(edits).toEqual([]);
       expect(errors.mock.calls.map(String).join(" ")).toContain("app not saved");
-      // The append already ran — and the refusal takes it back. `undo()` restores
-      // the latest snapshot unconditionally, and this one predates BOTH writes, so
-      // leaving it would hand the next undo a version that wipes the very edit
-      // this save just refused to clobber: preserved, then destroyed one tap later.
+      // The append already ran — and the refusal takes it back. Its snapshot
+      // predates BOTH writes, so leaving it would put a version in the trail
+      // for a state that was never the past.
       expect(await runtime.history(APP_ID, ctx()).list()).toEqual([]);
-      // So there is nothing to undo, and the person's own edit survives the try.
-      await expect(runtime.history(APP_ID, ctx()).undo()).rejects.toMatchObject({ code: "conflict" });
       expect((await rowOf(store))?.doc?.description).toBe("the person's own edit");
     } finally {
       errors.mockRestore();
@@ -788,11 +782,11 @@ describe("a save computed over a row that changed under it", () => {
   /**
    * The same append-then-check bracket on the path that has a CALLER: every
    * `persistEdit` write. A refusal there threw before and left its version
-   * behind too, and a version whose write never landed is an undo point aimed
-   * at whatever landed instead. The fork gesture is the one persistEdit path a
-   * model-less stand can drive (it is deterministic by design).
+   * behind too, and a version whose write never landed describes a state that
+   * never existed. The fork gesture is the one persistEdit path a model-less
+   * stand can drive (it is deterministic by design).
    */
-  it("leaves no undo point behind when a GESTURE is refused mid-write", async () => {
+  it("leaves no version behind when a GESTURE is refused mid-write", async () => {
     const slot = "dashboard.header";
     const { runtime, store, arm } = stand({
       pinBaselines: [{
@@ -823,7 +817,6 @@ describe("a save computed over a row that changed under it", () => {
     // that never happened would later vouch for a rebase of a pin that is not
     // even on the document.
     expect((await store.records(`vendo:app-pin-intents:${APP_ID}`).list()).records).toEqual([]);
-    await expect(runtime.history(APP_ID, ctx()).undo()).rejects.toMatchObject({ code: "conflict" });
     expect((await rowOf(store))?.doc?.description).toBe("the person's own edit");
   });
 });

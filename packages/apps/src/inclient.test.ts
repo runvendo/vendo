@@ -121,7 +121,7 @@ describe("createInClientApprovals", () => {
     await approvals.record(approvalFor(first));
     await approvals.record({ ...approvalFor(second), at: "2026-07-15T10:00:00.000Z" });
     expect(await approvals.list(first.id)).toHaveLength(2);
-    // An undo back to the first version matches the first approval again.
+    // Each version matches its own approval, and both stay matched.
     expect((await approvals.verdictFor(first)).granted).toBe(true);
     expect((await approvals.verdictFor(second)).granted).toBe(true);
   });

@@ -49,7 +49,7 @@ for (const backend of backends()) {
         { path: "/orgs/acme/apps/app_promoted/app.vendo", owner: "acme" },
         { path: "/user/memory/notes.md", owner: "dana" },
       ]);
-      // History follows, or undo would walk into rows nobody can reach.
+      // History follows, or the trail would point at rows nobody can reach.
       expect(await made.sql(
         "SELECT DISTINCT path, owner FROM vendo_workspace_history",
       )).toEqual([{ path: "/orgs/acme/apps/app_promoted/app.vendo", owner: "acme" }]);

@@ -56,7 +56,6 @@ describe("createVendoClient", () => {
     });
     expect((await client.apps.edit("app_1", "Add totals")).app.name).toBe("Edited");
     expect(await client.apps.history("app_1")).toHaveLength(2);
-    expect((await client.apps.undo("app_1")).name).toBe("Undone");
     expect(await client.apps.exportApp("app_1")).toEqual(new Uint8Array([0, 1, 255]));
     const imported = await client.apps.importApp(new Uint8Array([4, 5, 6]));
     expect(imported.id).toBe("app_imported");
@@ -73,10 +72,10 @@ describe("createVendoClient", () => {
     // A slot of its own: the appId-less forkPin calls above already placed
     // their mints in "hero" and "hero2".
     expect(await client.apps.place("app_1", "shelf")).toEqual({});
-    // "Undone", not "Invoices": the undo above renamed app_1, and the title
+    // "Edited", not "Invoices": the edit above renamed app_1, and the title
     // is derived from the CURRENT document on every read, never stored.
     expect(await client.apps.placements(["shelf"])).toEqual([
-      { slot: "shelf", app: "app_1", title: "Undone", status: "ready" },
+      { slot: "shelf", app: "app_1", title: "Edited", status: "ready" },
     ]);
     expect(await client.apps.place("app_auto", "shelf")).toEqual({ evicted: "app_1" });
     await client.apps.unplace("app_auto", "shelf");
@@ -121,7 +120,6 @@ describe("createVendoClient", () => {
     exact("POST", "/apps/app_1/call", { ref: "fn:refresh", args: { month: "July" } });
     exact("POST", "/apps/app_1/edit", { instruction: "Add totals" });
     exact("GET", "/apps/app_1/history", undefined);
-    exact("POST", "/apps/app_1/history", { op: "undo" });
     exact("GET", "/apps/app_1/export", undefined);
     exact("POST", "/apps/import", [4, 5, 6]);
     exact("POST", "/apps/app_1/fork", {});

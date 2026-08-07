@@ -109,9 +109,9 @@ const createRefusedSaveRecorder = (
     // it back would report an unchanged app as the change (`editRefusals`).
     const refusedIntent = editIntents.get(appId);
     if (refusedIntent !== undefined) editRefusals.set(appId, { intent: refusedIntent, reason });
-    // …and a refused save spends no undo point: the appended version's
-    // snapshot predates the concurrent edit the refusal just preserved, and
-    // `undo()` would write it straight over that edit (see discardVersion).
+    // …and a refused save records no version: the appended version's snapshot
+    // predates the concurrent edit the refusal just preserved, so leaving it
+    // would put a lie in the trail (see discardVersion).
     if (appended !== undefined) await discardVersion(appId, appended);
     // …and a discarded version is not history, so it is not this edit's
     // answer either.
@@ -163,10 +163,10 @@ const createAuthoredSaver = (
           return stored.enabled;
         };
         await assertCurrent();
-        // The undo point this path had none of: the state the save replaces,
+        // The version this path recorded none of: the state the save replaces,
         // appended before the write lands, exactly as persistEdit does it. A
         // re-save that changed nothing is not a version — it would spend one of
-        // the 50 capped slots to undo to the state it is already in.
+        // the 50 capped slots on the state the app is already in.
         changed = JSON.stringify(previous) !== JSON.stringify(document);
         if (changed) {
           // The person's own words when THIS runtime asked for the save
@@ -398,7 +398,7 @@ const createEditDoor = (
         return failedEdit(previous, instruction, [reason]);
       }
     }
-    // `authored` appended this edit's own undo point under the person's words
+    // `authored` appended this edit's own version under the person's words
     // (see `editIntents`), so the version reported here IS that row — read
     // back rather than re-stamped, because a second clock read tells the
     // caller a millisecond history does not hold. Nothing else is written.

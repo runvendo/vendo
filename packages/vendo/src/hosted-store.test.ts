@@ -510,7 +510,7 @@ describe("demo-host journey through the store seam", () => {
 });
 
 // ---------------------------------------------------------------------------
-// hostedStoreOps — the 32-op client over `vendo/store-wire@1`.
+// hostedStoreOps — the 31-op client over `vendo/store-wire@1`.
 //
 // Unit tests over an injected fake fetch: they pin the route, the request body
 // and the response decoding for every op — records and blobs against the
@@ -563,7 +563,6 @@ const DOORS: Record<string, { method: string; path: string; keyed?: true }> = {
   "workspace.read": { method: "POST", path: P["workspace.read"] },
   "workspace.commit": { method: "POST", path: P["workspace.commit"], keyed: true },
   "workspace.history": { method: "POST", path: P["workspace.history"] },
-  "workspace.undo": { method: "POST", path: P["workspace.undo"], keyed: true },
   "lifecycle.erase": { method: "POST", path: "/erase", keyed: true },
   "lifecycle.adopt": { method: "POST", path: "/sessions/adopt", keyed: true },
   "lifecycle.promote": { method: "POST", path: P["lifecycle.promote"], keyed: true },
@@ -630,14 +629,13 @@ const ALL_BODIES: Record<string, unknown> = {
   [door("workspace.read")]: { files: { "/a.md": "hi" } },
   [door("workspace.commit")]: { ok: true, commitId: "wsc_1" },
   [door("workspace.history")]: { entries: [{ commitId: "wsc_1" }] },
-  [door("workspace.undo")]: { ok: true },
   [door("lifecycle.erase")]: { report: { vendo_apps: 1 } },
   [door("lifecycle.adopt")]: { report: null },
   [door("lifecycle.promote")]: { ok: true },
   [door("lifecycle.session.register")]: { ok: true },
   [door("lifecycle.session.stale")]: { subjects: ["sub_1"] },
   [door("lifecycle.session.claim")]: { claimed: false },
-  [door("status")]: { format: "vendo/store-wire@1", ops: 32 },
+  [door("status")]: { format: "vendo/store-wire@1", ops: 31 },
 };
 
 const driveEveryOp = async (ops: ReturnType<typeof wireFake>["ops"]): Promise<void> => {
@@ -665,7 +663,6 @@ const driveEveryOp = async (ops: ReturnType<typeof wireFake>["ops"]): Promise<vo
   await ops.workspace.read(["/a.md"]);
   await ops.workspace.commit([{ path: "/a.md", data: "hi" }]);
   await ops.workspace.history();
-  await ops.workspace.undo("wsc_1");
   await ops.lifecycle.erase({ subject: "sub_1" });
   await ops.lifecycle.adopt("sub_anon", "sub_real");
   await ops.lifecycle.promote("app_1", "org_1");
@@ -675,13 +672,13 @@ const driveEveryOp = async (ops: ReturnType<typeof wireFake>["ops"]): Promise<vo
   await ops.status();
 };
 
-describe("hostedStoreOps — the 32-op wire client", () => {
-  it("routes all 32 ops to the console's real door, with a key on exactly the mutations", async () => {
+describe("hostedStoreOps — the 31-op wire client", () => {
+  it("routes all 31 ops to the console's real door, with a key on exactly the mutations", async () => {
     const { calls, ops } = wireFake(ALL_BODIES);
     await driveEveryOp(ops);
 
     const expected = Object.values(DOORS);
-    expect(calls).toHaveLength(32);
+    expect(calls).toHaveLength(31);
     expect(calls.map((call) => `${call.method} ${call.path}`))
       .toEqual(expected.map((route) => `${route.method} ${route.path}`));
     expect(calls.map((call) => call.idempotencyKey === null ? "read" : "keyed"))
@@ -883,7 +880,7 @@ describe("hostedStoreOps — the 32-op wire client", () => {
     expect(await absent.ops.harness.get("app_1", "sub_1")).toBeNull();
   });
 
-  it("workspace: index/read/commit/history/undo, caller-owned commit key", async () => {
+  it("workspace: index/read/commit/history, caller-owned commit key", async () => {
     const { calls, ops } = wireFake(ALL_BODIES);
 
     expect(await ops.workspace.index({ cursor: "cur_0", limit: 100 })).toEqual({
@@ -902,24 +899,13 @@ describe("hostedStoreOps — the 32-op wire client", () => {
 
     expect(await ops.workspace.history()).toEqual({ entries: [{ commitId: "wsc_1" }] });
     expect(calls[3]!.body).toEqual({});
-
-    await ops.workspace.undo("wsc_1");
-    expect(calls[4]!.body).toEqual({ commitId: "wsc_1" });
   });
 
-  it("workspace: the path legs of history and undo ride the same two doors", async () => {
-    const { calls, ops } = wireFake({
-      ...ALL_BODIES,
-      [door("workspace.undo")]: { ok: true, revision: 7 },
-    });
+  it("workspace: the path leg of history rides the same door", async () => {
+    const { calls, ops } = wireFake(ALL_BODIES);
 
     await ops.workspace.history({ path: "/a.md", owner: "own_1" });
     expect(calls[0]!.body).toEqual({ path: "/a.md", owner: "own_1" });
-
-    // A path target is a path on the wire, never a commit id — the door takes
-    // exactly one of the two, and reports the revision it restored.
-    expect(await ops.workspace.undo({ path: "/a.md" }, { owner: "own_1" })).toEqual({ revision: 7 });
-    expect(calls[1]!.body).toEqual({ path: "/a.md", owner: "own_1" });
   });
 
   it("lifecycle: erase/adopt/promote plus the three session doors", async () => {
@@ -950,9 +936,9 @@ describe("hostedStoreOps — the 32-op wire client", () => {
 
   it("status: the GET handshake, parsed as vendo/store-wire@1", async () => {
     const { calls, ops } = wireFake(ALL_BODIES);
-    expect(await ops.status()).toMatchObject({ format: "vendo/store-wire@1", ops: 32 });
+    expect(await ops.status()).toMatchObject({ format: "vendo/store-wire@1", ops: 31 });
     expect(calls[0]).toMatchObject({ path: "/status", method: "GET" });
-    await expect(wireFake({ [door("status")]: { format: "vendo/store-wire@2", ops: 32 } }).ops.status())
+    await expect(wireFake({ [door("status")]: { format: "vendo/store-wire@2", ops: 31 } }).ops.status())
       .rejects.toThrow(/invalid status/);
   });
 

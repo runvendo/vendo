@@ -57,7 +57,7 @@ const descriptors = [
     // view — and Yousef's ruling (2026-07-28) says the same about a change: the
     // ceremony belongs on what a screen DOES (money, messages, deletion), never
     // on the person rearranging their own view. Actions INSIDE the screen are
-    // guarded individually at call time. History and undo are the safety net.
+    // guarded individually at call time. The recorded history is the audit trail.
     risk: "read",
   },
   {

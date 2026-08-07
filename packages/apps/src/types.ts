@@ -639,14 +639,13 @@ export interface AppsRuntime {
    */
   remember(input: { appId: AppId; ask?: string; decisions?: string }, ctx: RunContext): Promise<void>;
   /**
-   * The capped version log, and the one-step rollback over it.
+   * The capped version log.
    *
    * Build contract §9.3 — this takes the ctx (06 §1's `history(appId)` widened
-   * by the wave-3 ruling): `list` needs `viewer`, `undo` needs `EDITOR`,
-   * because rolling back the team's app is an edit. Without the ctx here the
-   * only boundary would be the wire route — and one door is not a boundary.
+   * by the wave-3 ruling): `list` needs `viewer`. Without the ctx here the only
+   * boundary would be the wire route — and one door is not a boundary.
    */
-  history(appId: AppId, ctx: RunContext): { list(): Promise<VersionEntry[]>; undo(): Promise<AppDocument> };
+  history(appId: AppId, ctx: RunContext): { list(): Promise<VersionEntry[]> };
   open(appId: AppId, ctx: RunContext): Promise<OpenSurface>;
   call(appId: AppId, ref: string, args: Json, ctx: RunContext): Promise<ToolOutcome>;
   exportApp(appId: AppId, ctx: RunContext): Promise<Uint8Array>;

@@ -1,14 +1,13 @@
 import { VendoError, type StoreOps } from "@vendoai/core";
 import { iso } from "./helpers/utils.js";
 import type {
-  UndoOutcome,
   WorkspaceFileMeta,
   WorkspaceHistoryEntry,
   WorkspaceRows,
 } from "./workspace-rows.js";
 
 /**
- * The workspace pair over the 32-op contract instead of this store's own
+ * The workspace pair over the 31-op contract instead of this store's own
  * Postgres — what makes a hosted store (a key, no database) serve the same
  * `WorkspaceStoreFs` a local one does, byte for byte. The façade above
  * (workspace.ts) is unchanged, and so are its permission checks: `can()` reads
@@ -105,13 +104,8 @@ export function workspaceOpsRows(ops: StoreOps): WorkspaceRows {
     return path in files ? files[path] : undefined;
   };
 
-  /** The commits that touched one path, newest first. `stopAfter` short-circuits
-      the walk for undo, which only ever needs the newest one. */
-  const pathCommits = async (
-    owner: string,
-    path: string,
-    stopAfter?: number,
-  ): Promise<PathCommit[]> => {
+  /** The commits that touched one path, newest first. */
+  const pathCommits = async (owner: string, path: string): Promise<PathCommit[]> => {
     const commits: PathCommit[] = [];
     let cursor: string | undefined;
     do {
@@ -124,7 +118,6 @@ export function workspaceOpsRows(ops: StoreOps): WorkspaceRows {
         const commit = pathCommitOf(entry);
         if (commit !== undefined) commits.push(commit);
       }
-      if (stopAfter !== undefined && commits.length >= stopAfter) return commits;
       cursor = page.cursor;
     } while (cursor !== undefined);
     return commits;
@@ -245,17 +238,5 @@ export function workspaceOpsRows(ops: StoreOps): WorkspaceRows {
       return entries;
     },
 
-    async undo(owner, path): Promise<UndoOutcome> {
-      const newest = (await pathCommits(owner, path, 1))[0];
-      // Nothing has touched the path, or the only thing that did created it:
-      // either way there is no older version to walk back to.
-      if (newest?.revision === undefined) return { status: "empty" };
-      const { revision } = await ops.workspace.undo({ path }, { owner });
-      // The restore landed but the wire did not name the revision it wrote,
-      // which is the ops backend's answer when the content behind that
-      // revision could not be read back. Naming it beats claiming an `ok`.
-      if (revision === undefined) return { status: "content-missing", revisions: [newest.revision] };
-      return { status: "ok", revision };
-    },
   };
 }

@@ -31,8 +31,8 @@ export interface WorkspaceFileMeta {
 }
 
 /** One superseded revision: which revision it was, and why it was replaced.
-    The content itself stays behind the table — `undo` restores it; nothing else
-    needs to read it, and fetching it here would mean one blob read per entry. */
+    The content itself stays behind the table — nothing reads it, and fetching
+    it here would mean one blob read per entry. */
 export interface WorkspaceHistoryEntry {
   revision: number;
   intent?: string;
@@ -100,23 +100,9 @@ export interface PreparedWrite {
   prior: Current | undefined;
 }
 
-/** What one step of `undo` did.
- *  - `ok` — the file now holds that revision's content. `skipped` names any
- *    newer revisions whose content could not be read and were stepped over
- *    (they are left intact, not destroyed).
- *  - `content-missing` — nothing left in history could be read. That is one
- *    adapter fault to surface (a wrong bucket, an expired key), not N content
- *    losses: every row named is still there, and will restore once the adapter
- *    can read again.
- *  - `empty` — there is nothing left to undo. */
-export type UndoOutcome =
-  | { status: "ok"; revision: number; skipped?: number[] }
-  | { status: "content-missing"; revisions: number[] }
-  | { status: "empty" };
-
 /** Row-level access to the workspace pair (build contract §3.3). Content lands
  *  inline or in the files adapter; every overwrite appends the superseded
- *  revision to history, and undo pops it back off. */
+ *  revision to history. */
 export interface WorkspaceRows {
   /** The path index the façade builds at turn start (§3.2). */
   index(owners: string[]): Promise<WorkspaceFileMeta[]>;
@@ -150,25 +136,20 @@ export interface WorkspaceRows {
   ): Promise<{ landed: boolean; revision: number; updatedAt: IsoDateTime; conflict?: true }>;
   /** Drop a prepared write that will never land, so its blob is not orphaned. */
   discard(prepared: PreparedWrite): Promise<void>;
-  /** Deleting records the content it removed (history is append-only, §3.3), so
-      `undo` can bring the file back. Returns false if there was nothing there. */
+  /** Deleting records what it removed, because history is append-only (§3.3).
+      Returns false if there was nothing there. */
   remove(owner: string, path: string, intent?: string): Promise<boolean>;
   /** Build contract §9.5 — promote's workspace half: move one app's documents
       between mounts (`/user/apps/<id>/**` owned by a person and
       `/orgs/<org>/apps/<id>/**` owned by the org). Owner AND path change
       together, because owner derivation is a pure function of the path (§9.7);
-      history moves with the files, or undo would walk into unreachable rows.
+      history moves with the files, or the trail would point at unreachable rows.
       Both directions, so the umbrella's promote can put the documents back
       when the row flip that follows them fails. A destination that already
       holds these paths is refused BEFORE anything moves. Returns how many file
       rows moved. */
   moveApp(appId: string, from: AppMount, to: AppMount): Promise<number>;
   history(owner: string, path: string): Promise<WorkspaceHistoryEntry[]>;
-  /** Walks history backwards: restores the newest superseded revision and
-      consumes it, so a second call walks one step further back.
-      `content-missing` is a revision whose blob is gone — it is consumed too,
-      rather than wedging the walk on a revision that can never come back. */
-  undo(owner: string, path: string): Promise<UndoOutcome>;
 }
 
 export function workspaceRows(db: Db, files: FilesAdapter): WorkspaceRows {
@@ -187,12 +168,10 @@ export function workspaceRows(db: Db, files: FilesAdapter): WorkspaceRows {
     if (stored.blobRef !== undefined) await files.delete(stored.blobRef);
   };
 
-  /** Drop `stored` unless `keep` is the same blob. `undo` hands its history
-   *  row's blob straight to the live file row rather than re-uploading the
-   *  bytes, so two undos that pick the same revision both hold the key the
-   *  winner has just made the live file's only copy — and the loser would
-   *  release it, leaving a row pointing at nothing and no history row naming
-   *  it. Whoever still points at a blob keeps it. */
+  /** Drop `stored` unless `keep` is the same blob. Two writers can place the
+   *  same bytes and end up holding the same key, and the loser must not release
+   *  what the winner has just made the live file's only copy — that would leave
+   *  a row pointing at nothing. Whoever still points at a blob keeps it. */
   const release = async (stored: StoredContent, keep: StoredContent): Promise<void> => {
     if (stored.blobRef !== keep.blobRef) await dropBlob(stored);
   };
@@ -283,7 +262,7 @@ export function workspaceRows(db: Db, files: FilesAdapter): WorkspaceRows {
   const swapRow = async (
     owner: string,
     prepared: PreparedWrite,
-    options: { intent?: string; recordHistory: boolean },
+    options: { intent?: string },
     now: IsoDateTime,
   ): Promise<boolean> => {
     const values = [
@@ -316,7 +295,7 @@ export function workspaceRows(db: Db, files: FilesAdapter): WorkspaceRows {
        ), logged AS (
          INSERT INTO vendo_workspace_history (id, path, owner, revision, content, blob_ref, intent, at)
          SELECT $9, $1, $2, $8, $10, $11, $12, $7
-         WHERE $13 AND EXISTS (SELECT 1 FROM swapped)
+         WHERE EXISTS (SELECT 1 FROM swapped)
        )
        SELECT COUNT(*)::int AS swapped FROM swapped`,
       [
@@ -326,7 +305,6 @@ export function workspaceRows(db: Db, files: FilesAdapter): WorkspaceRows {
         prior.stored.content ?? null,
         prior.stored.blobRef ?? null,
         options.intent ?? null,
-        options.recordHistory,
       ],
     );
     return Number(result.rows[0]?.["swapped"] ?? 0) > 0;
@@ -343,7 +321,6 @@ export function workspaceRows(db: Db, files: FilesAdapter): WorkspaceRows {
     initial: PreparedWrite,
     options: {
       intent?: string;
-      recordHistory: boolean;
       strict?: boolean;
       expectedRevision?: number | null;
     },
@@ -365,15 +342,6 @@ export function workspaceRows(db: Db, files: FilesAdapter): WorkspaceRows {
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       const now = new Date().toISOString();
       if (await swapRow(owner, prepared, options, now)) {
-        // Only AFTER the swap wins: with no history row (recordHistory:false, the
-        // undo path) nothing references the revision we just replaced, so its
-        // blob goes with it. Dropping it BEFORE the swap would delete content a
-        // concurrent winner's history row points at when we then lose the race —
-        // permanent loss, the mirror of the N1/N2 hazard. A won CAS on
-        // `revision = prior.revision` is the proof nobody else superseded it.
-        if (prepared.prior !== undefined && !options.recordHistory) {
-          await release(prepared.prior.stored, prepared.stored);
-        }
         await trim(owner, prepared.path);
         return { landed: true, revision: prepared.revision, updatedAt: now };
       }
@@ -457,7 +425,6 @@ export function workspaceRows(db: Db, files: FilesAdapter): WorkspaceRows {
     async land(owner, prepared, intent, options) {
       return await landRow(owner, prepared, {
         ...(intent === undefined ? {} : { intent }),
-        recordHistory: true,
         ...(options?.strict === true ? { strict: true } : {}),
         ...(options?.expectedRevision === undefined ? {} : { expectedRevision: options.expectedRevision }),
       });
@@ -471,8 +438,7 @@ export function workspaceRows(db: Db, files: FilesAdapter): WorkspaceRows {
       const current = await currentOf(owner, path);
       if (current === undefined) return false;
       // History is append-only (§3.3): the delete records what it removed, so
-      // the blob stays — the history row is its pointer now — and undo can
-      // bring the file back.
+      // the blob stays — the history row is its pointer now.
       await appendHistory(owner, path, current, intent, new Date().toISOString());
       await db.query("DELETE FROM vendo_workspace_files WHERE path = $1 AND owner = $2", [path, owner]);
       await trim(owner, path);
@@ -539,62 +505,5 @@ export function workspaceRows(db: Db, files: FilesAdapter): WorkspaceRows {
       });
     },
 
-    async undo(owner, path) {
-      const previous = await db.query(
-        `SELECT id, revision, content, blob_ref FROM vendo_workspace_history
-         WHERE path = $1 AND owner = $2 ORDER BY revision DESC`,
-        [path, owner],
-      );
-      if (previous.rows.length === 0) return { status: "empty" };
-
-      // Walk newest-first until a revision's content can actually be read. A
-      // revision whose content is unreachable is STEPPED OVER, never deleted:
-      // the blob may come back (a misconfigured adapter, a transient outage),
-      // and destroying the row would turn one recoverable fault into permanent
-      // data loss across every path the user tries to recover.
-      const skipped: number[] = [];
-      let found: { id: string; revision: number; stored: StoredContent; bytes: Uint8Array } | undefined;
-      for (const row of previous.rows) {
-        const stored = storedOf(row);
-        const revision = Number(row["revision"]);
-        const bytes = await load(stored);
-        if (bytes === undefined) {
-          skipped.push(revision);
-          continue;
-        }
-        found = { id: text(row["id"]), revision, stored, bytes };
-        break;
-      }
-      if (found === undefined) return { status: "content-missing", revisions: skipped };
-
-      const { stored, bytes } = found;
-      const consume = async (): Promise<void> => {
-        await db.query("DELETE FROM vendo_workspace_history WHERE id = $1", [found.id]);
-      };
-      const prior = await currentOf(owner, path);
-      // No history row for the state undo discards: appending one would make it
-      // the newest entry and the next undo would restore it, toggling between
-      // two revisions instead of walking back. Undo has no redo (wave 1).
-      const written = await landRow(
-        owner,
-        {
-          path,
-          content: bytes,
-          bytes: bytes.byteLength,
-          revision: (await highestRevision(owner, path)) + 1,
-          stored,
-          prior,
-        },
-        { recordHistory: false },
-      );
-      // Consumed: the restored revision leaves history, so the next undo walks
-      // one step further back. Its blob is now the live row's, so it stays.
-      await consume();
-      return {
-        status: "ok",
-        revision: written.revision,
-        ...(skipped.length > 0 ? { skipped } : {}),
-      };
-    },
   };
 }

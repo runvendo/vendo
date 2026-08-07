@@ -259,7 +259,6 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
       call: (id, ref, args) => json(`/apps/${idPath(id)}/call`, "POST", { ref, args }),
       edit: (id, instruction) => json(`/apps/${idPath(id)}/edit`, "POST", { instruction }),
       history: id => readJson(`/apps/${idPath(id)}/history`),
-      undo: id => json(`/apps/${idPath(id)}/history`, "POST", { op: "undo" }),
       exportApp: async id => new Uint8Array(await (await request(`/apps/${idPath(id)}/export`)).arrayBuffer()),
       importApp: bytes =>
         readJson("/apps/import", {

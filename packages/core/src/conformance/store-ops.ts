@@ -77,9 +77,9 @@ const assertPaginates = async (
 };
 
 /** Reads one string field off an opaque list entry. `workspace.index` and
-    `workspace.history` type their entries as `unknown`, but `undo(commitId)`
-    has no other way to learn a commit id, so the field is contract, not shape
-    guessing. */
+    `workspace.history` type their entries as `unknown`, but a caller has no
+    other way to learn a path or a commit id, so the field is contract, not
+    shape guessing. */
 const stringField = (entry: unknown, field: string, message: string): string => {
   const value = (entry as Record<string, unknown> | null)?.[field];
   assert(typeof value === "string", `${message}: entry ${JSON.stringify(entry)} has no string "${field}"`);
@@ -97,7 +97,7 @@ const numberField = (entry: unknown, field: string, message: string): number => 
 
 /** A thread's harness state rides the harness slot under this synthetic appId
     (the store's `harnessStateKey`), which is what makes deleteThread's cascade
-    onto harness state observable through the 32 ops. */
+    onto harness state observable through the 31 ops. */
 const harnessSlot = (threadId: string): string => `harness_state:${threadId}`;
 
 // ---------------------------------------------------------------------------
@@ -475,27 +475,20 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         );
       }),
 
-      opsCase(opts, "workspace.undo restores the values its commit replaced", async (ops) => {
-        await ops.workspace.commit([{ path: "undo.json", data: { v: 1 } }]);
+      opsCase(opts, "workspace.history records one commit per landed write", async (ops) => {
+        await ops.workspace.commit([{ path: "hist.json", data: { v: 1 } }]);
         const before = new Set((await ops.workspace.history()).entries
           .map((entry) => stringField(entry, "commitId", "workspace.history")));
-        await ops.workspace.commit([{ path: "undo.json", data: { v: 2 } }]);
+        await ops.workspace.commit([{ path: "hist.json", data: { v: 2 } }]);
         const added = (await ops.workspace.history()).entries
           .map((entry) => stringField(entry, "commitId", "workspace.history"))
           .filter((id) => !before.has(id));
         assert(added.length === 1, `one commit should have been added to history, got ${added.length}`);
-        await ops.workspace.undo(added[0]!);
-        assertDeepEqual(
-          (await ops.workspace.read(["undo.json"]))["undo.json"],
-          { v: 1 },
-          "undo did not restore the value its commit replaced",
-        );
-        await assertThrowsCode(() => ops.workspace.undo("commit_absent"), "not-found", "undoing an unknown commit");
       }),
 
       /** The workspace is the last op family to name its owner, and until it
           did, every end user of one deployment shared ONE drawer. Two owners,
-          one path: no read, index, history or undo may cross. */
+          one path: no read, index or history may cross. */
       opsCase(opts, "workspace ops keep two owners' drawers apart", async (ops) => {
         const path = "shared.json";
         await ops.workspace.commit([{ path, data: { who: "a" } }], { owner: "own_a" });
@@ -534,21 +527,11 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         const [ofA, ofB] = [await commitsOf("own_a"), await commitsOf("own_b")];
         assert(ofA.length === 1 && ofB.length === 1, "history did not filter by owner");
         assert(ofA[0] !== ofB[0], "two owners' histories returned the same commit");
-        await assertThrowsCode(
-          () => ops.workspace.undo(ofB[0]!, { owner: "own_a" }),
-          "not-found",
-          "undoing another owner's commit",
-        );
-        assertDeepEqual(
-          (await ops.workspace.read([path], { owner: "own_b" }))[path],
-          { who: "b" },
-          "a cross-owner undo changed the other owner's file",
-        );
       }),
 
       /** Deletion was inexpressible over the wire: a hosted workspace could
           add and overwrite files forever but never drop one. */
-      opsCase(opts, "workspace.commit removes a path with a delete tombstone, and undo restores it", async (ops) => {
+      opsCase(opts, "workspace.commit removes a path with a delete tombstone", async (ops) => {
         await ops.workspace.commit([{ path: "tomb.json", data: { v: 1 } }]);
         await ops.workspace.commit([{ path: "tomb.json", delete: true }]);
         assertDeepEqual(
@@ -562,23 +545,16 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
           [],
           "the tombstoned path is still in the index",
         );
-        const newest = stringField(
-          (await ops.workspace.history()).entries[0],
-          "commitId",
-          "workspace.history",
-        );
-        await ops.workspace.undo(newest);
-        assertDeepEqual(
-          (await ops.workspace.read(["tomb.json"]))["tomb.json"],
-          { v: 1 },
-          "undoing a tombstone did not bring the file back",
+        // The tombstone is itself a commit, so the trail still says what happened.
+        assert(
+          (await ops.workspace.history({ path: "tomb.json" })).entries.length === 2,
+          "the tombstone did not record a commit of its own",
         );
       }),
 
       // ---------------------------------------------------------------------
-      // the path legs of history/undo — surgical per-file undo. Without them a
-      // user who wanted one file back had to undo whole commits, taking every
-      // other file in them along.
+      // the path leg of history — one file's trail, rather than the whole
+      // ledger filtered by hand.
       // ---------------------------------------------------------------------
 
       opsCase(opts, "workspace.history narrows to the commits that touched one path", async (ops) => {
@@ -596,9 +572,9 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         );
         assertDeepEqual(await commitsOf("p-never.json"), [], "path history invented commits for an untouched path");
 
-        // Newest first, and the newest one names the revision it superseded —
-        // the version a per-path undo walks back to. The commit that CREATED
-        // the path superseded nothing, so it names no revision.
+        // Newest first, and the newest one names the revision it superseded,
+        // which is what distinguishes an overwrite from a create. The commit
+        // that CREATED the path superseded nothing, so it names no revision.
         const newest = mine[0];
         assert(
           numberField(newest, "revision", "workspace.history") > 0,
@@ -610,55 +586,7 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         );
       }),
 
-      opsCase(opts, "workspace.undo by path restores that path and leaves the rest of its commit", async (ops) => {
-        await ops.workspace.commit([{ path: "u-one.json", data: { v: 1 } }, { path: "u-two.json", data: { v: 1 } }]);
-        await ops.workspace.commit([{ path: "u-one.json", data: { v: 2 } }, { path: "u-two.json", data: { v: 2 } }]);
-
-        await ops.workspace.undo({ path: "u-one.json" });
-        const after = await ops.workspace.read(["u-one.json", "u-two.json"]);
-        assertDeepEqual(after["u-one.json"], { v: 1 }, "the path undo did not restore the previous version");
-        assertDeepEqual(after["u-two.json"], { v: 2 }, "the path undo touched a path it was not asked about");
-
-        await assertThrowsCode(
-          () => ops.workspace.undo({ path: "u-never.json" }),
-          "not-found",
-          "undoing a path nothing has touched",
-        );
-      }),
-
-      opsCase(opts, "workspace.undo by path deletes a file its commit created", async (ops) => {
-        await ops.workspace.commit([{ path: "u-new.json", data: { v: 1 } }]);
-        await ops.workspace.undo({ path: "u-new.json" });
-        assertDeepEqual(
-          await ops.workspace.read(["u-new.json"]),
-          {},
-          "undoing the commit that created a file left the file behind",
-        );
-      }),
-
-      /** The bookkeeping that makes the two legs coexist: a path already undone
-          is CONSUMED from its commit, so undoing that whole commit afterwards
-          steps over it instead of restoring it a second time. */
-      opsCase(opts, "a whole-commit undo skips a path an earlier path undo consumed", async (ops) => {
-        await ops.workspace.commit([{ path: "c-one.json", data: { v: 1 } }, { path: "c-two.json", data: { v: 1 } }]);
-        await ops.workspace.commit([{ path: "c-one.json", data: { v: 2 } }, { path: "c-two.json", data: { v: 2 } }]);
-        const newest = stringField(
-          (await ops.workspace.history()).entries[0],
-          "commitId",
-          "workspace.history",
-        );
-
-        await ops.workspace.undo({ path: "c-one.json" });
-        // Someone puts the file back where the path undo left it from.
-        await ops.workspace.commit([{ path: "c-one.json", data: { v: 3 } }]);
-        await ops.workspace.undo(newest);
-
-        const after = await ops.workspace.read(["c-one.json", "c-two.json"]);
-        assertDeepEqual(after["c-one.json"], { v: 3 }, "the whole-commit undo restored a path already undone by path");
-        assertDeepEqual(after["c-two.json"], { v: 1 }, "the whole-commit undo did not restore its remaining path");
-      }),
-
-      opsCase(opts, "the path legs keep two owners' drawers apart", async (ops) => {
+      opsCase(opts, "the path leg of history keeps two owners' drawers apart", async (ops) => {
         const path = "p-shared.json";
         for (const owner of ["pown_a", "pown_b"]) {
           await ops.workspace.commit([{ path, data: { who: owner, v: 1 } }], { owner });
@@ -673,22 +601,10 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
           [],
           "an owner with no files read another owner's path history",
         );
-        await assertThrowsCode(
-          () => ops.workspace.undo({ path }, { owner: "pown_c" }),
-          "not-found",
-          "undoing a path in a drawer that has none",
-        );
-
-        await ops.workspace.undo({ path }, { owner: "pown_a" });
-        assertDeepEqual(
-          (await ops.workspace.read([path], { owner: "pown_a" }))[path],
-          { who: "pown_a", v: 1 },
-          "one owner's path undo did not restore their own file",
-        );
         assertDeepEqual(
           (await ops.workspace.read([path], { owner: "pown_b" }))[path],
           { who: "pown_b", v: 2 },
-          "one owner's path undo reached into another owner's drawer",
+          "one owner's path history reached into another owner's drawer",
         );
       }),
 
@@ -786,8 +702,9 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
       }),
 
       /** Two entries for one path leave the commit with no single before-image,
-          so undoing it walks back to the intermediate state the commit itself
-          wrote. Refused at the door instead. */
+          so the path's trail would name two superseded revisions under one
+          commit id and neither would be THE one it replaced. Refused at the
+          door instead. */
       opsCase(opts, "workspace.commit refuses the same path twice in one commit", async (ops) => {
         await assertThrowsCode(
           () => ops.workspace.commit([
@@ -946,7 +863,7 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         const status = await ops.status();
         assert(status.format === VENDO_STORE_WIRE_FORMAT, `status.format should be ${VENDO_STORE_WIRE_FORMAT}`);
         assert(typeof status.ops === "number", "status.ops should be a number");
-        assert(status.ops === 32, `status.ops should be 32, got ${status.ops}`);
+        assert(status.ops === 31, `status.ops should be 31, got ${status.ops}`);
       }),
     ],
   };

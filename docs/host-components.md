@@ -77,7 +77,7 @@ the next clean sync:
 | `useApprovals` | pending approvals and batch decisions |
 | `useGrants` | grants and revocation |
 | `useApps` | list, create, remove, and fork |
-| `useApp` | open, call, edit, history, undo, and refresh by re-opening |
+| `useApp` | open, call, edit, history, and refresh by re-opening |
 | `useSlotApp` | the app currently pinned to a slot (polls; `VendoSlot` uses it itself) |
 | `useAutomations` | enable, disable, runs, dry-run, and stop |
 | `useActivity` | self-scoped audit activity |

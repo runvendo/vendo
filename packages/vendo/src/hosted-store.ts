@@ -62,7 +62,7 @@ export interface HostedStore extends VendoStore {
     stale(idleMs: number, now?: number): Promise<string[]>;
     claim(subject: string, idleMs: number, now?: number): Promise<boolean>;
   };
-  /** The 32-op named-operation surface over the same mount and the same key —
+  /** The 31-op named-operation surface over the same mount and the same key —
    * `vendo/store-wire@1` (see {@link hostedStoreOps}). Additive: the
    * StoreAdapter doors above are unchanged and keep their own routes. */
   ops: StoreOps;
@@ -404,10 +404,10 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
 }
 
 // ---------------------------------------------------------------------------
-// The 32-op StoreOps client — store design v1, `vendo/store-wire@1`
+// The 31-op StoreOps client — store design v1, `vendo/store-wire@1`
 // ---------------------------------------------------------------------------
 
-/** The 32 named ops — STORE_WIRE_PATHS' keys ARE the op names, and stay the
+/** The 31 named ops — STORE_WIRE_PATHS' keys ARE the op names, and stay the
  * op names even where the console's door sits at a different path. */
 type StoreWireOp = keyof typeof STORE_WIRE_PATHS;
 
@@ -446,7 +446,7 @@ const raiseWireError = async (response: Response): Promise<never> => {
 };
 
 /**
- * The Cloud client for the whole 32-op store contract, speaking
+ * The Cloud client for the whole 31-op store contract, speaking
  * `vendo/store-wire@1` over the console's store mount: bearer key, deployment
  * identity and per-request abort budget shared with {@link hostedStore}, the
  * same adapter rule (behavior comes ONLY from the constructor arguments),
@@ -693,14 +693,6 @@ export function hostedStoreOps(options: HostedStoreOptions): StoreOps {
       },
       async history(query) {
         return entriesOf(await post("workspace.history", P["workspace.history"], { ...query }));
-      },
-      async undo(target, opts) {
-        const answer = await mutate("workspace.undo", P["workspace.undo"], {
-          ...(typeof target === "string" ? { commitId: target } : { path: target.path }),
-          ...owned(opts),
-        });
-        const revision = (answer as { revision?: unknown } | null)?.revision;
-        return typeof revision === "number" ? { revision } : {};
       },
     },
     lifecycle: {

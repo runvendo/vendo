@@ -73,16 +73,14 @@ export function memoryStoreOps(): StoreOps {
   // local backend does.
   type WsEntry = { path: string; data?: unknown; delete?: true; expectedRevision?: number | null };
   type WsFile = { data: unknown; revision: number; updatedAt: IsoDateTime };
-  /** `before` is what each path held before the commit (absent = the commit
-      created it), and `beforeRevision` which revision that was — the pair a
-      per-path undo restores, and the pair it consumes so a later whole-commit
-      undo does not restore the same path twice. */
+  /** `beforeRevision` is which revision each path held before the commit —
+      absent when the commit created it, which is how the path-scoped history
+      tells an overwrite from a create. */
   type WsCommit = {
     id: string;
     owner: string;
     at: IsoDateTime;
     entries: WsEntry[];
-    before: Map<string, unknown>;
     beforeRevision: Map<string, number>;
   };
   const BOUND_OWNER = "user_local";
@@ -352,8 +350,8 @@ export function memoryStoreOps(): StoreOps {
     async commit(entries, opts) {
       const owner = opts?.owner ?? BOUND_OWNER;
       // One commit, one mutation per path: two entries for the same path leave
-      // the commit with no single before-image, so undoing it would walk back to
-      // the intermediate state the commit itself wrote.
+      // the commit with no single before-image, so the path's trail could not
+      // say which revision this commit replaced.
       const paths = new Set<string>();
       for (const entry of entries as WsEntry[]) {
         if (paths.has(entry.path)) {
@@ -387,11 +385,9 @@ export function memoryStoreOps(): StoreOps {
         );
       }
       wsCommitSeq += 1;
-      const before = new Map<string, unknown>();
       const beforeRevision = new Map<string, number>();
       for (const e of entries as WsEntry[]) {
         const current = files.get(e.path);
-        before.set(e.path, current?.data);
         if (current !== undefined) beforeRevision.set(e.path, current.revision);
         if (e.delete === true) {
           files.delete(e.path);
@@ -408,7 +404,6 @@ export function memoryStoreOps(): StoreOps {
         owner,
         at: isoNow(),
         entries: entries as WsEntry[],
-        before,
         beforeRevision,
       });
     },
@@ -433,46 +428,6 @@ export function memoryStoreOps(): StoreOps {
         entries: all.slice(offset, end),
         ...(end < all.length ? { cursor: String(end) } : {}),
       };
-    },
-    async undo(target, opts) {
-      const owner = opts?.owner ?? BOUND_OWNER;
-      const files = drawer(owner);
-      /** Put one path back the way the commit found it: absent means the commit
-          created it, so undoing removes it again. */
-      const restore = (path: string, prev: unknown): number | undefined => {
-        if (prev === undefined) {
-          files.delete(path);
-          return undefined;
-        }
-        const revision = (files.get(path)?.revision ?? 0) + 1;
-        files.set(path, { data: prev, revision, updatedAt: isoNow() });
-        return revision;
-      };
-      if (typeof target === "string") {
-        // Another owner's commit is not this owner's to undo — and saying so
-        // would make the door an existence oracle.
-        const idx = wsCommits.findIndex((c) => c.id === target && c.owner === owner);
-        if (idx === -1) throw new VendoError("not-found", `commit ${target} not found`);
-        for (const [path, prev] of wsCommits[idx]!.before) restore(path, prev);
-        wsCommits.splice(idx, 1);
-        return {};
-      }
-      const { path } = target;
-      let idx = wsCommits.length - 1;
-      while (idx >= 0) {
-        const c = wsCommits[idx]!;
-        if (c.owner === owner && c.entries.some((e) => e.path === path)) break;
-        idx -= 1;
-      }
-      if (idx === -1) throw new VendoError("not-found", `no commit has touched ${path}`);
-      const commit = wsCommits[idx]!;
-      const revision = restore(path, commit.before.get(path));
-      // Consume ONLY this path — the rest of the commit stays undoable.
-      commit.entries = commit.entries.filter((e) => e.path !== path);
-      commit.before.delete(path);
-      commit.beforeRevision.delete(path);
-      if (commit.entries.length === 0) wsCommits.splice(idx, 1);
-      return revision === undefined ? {} : { revision };
     },
   };
 
@@ -573,7 +528,7 @@ export function memoryStoreOps(): StoreOps {
     workspace,
     lifecycle,
     async status(): Promise<StoreWireStatus> {
-      return { format: VENDO_STORE_WIRE_FORMAT, ops: 32 };
+      return { format: VENDO_STORE_WIRE_FORMAT, ops: 31 };
     },
   };
 }

@@ -183,7 +183,7 @@ export interface AppsRuntimeContext {
   ): Promise<AppDocument>;
   /** Build contract §9.9 — the ONE announcement every change to what an app IS. */
   reportDocumentEdit(previous: AppDocument, next: AppDocument, subject: string): Promise<void>;
-  /** Drop an undo point the write it was appended FOR never landed for. */
+  /** Drop a version the write it was appended FOR never landed for. */
   discardVersion(appId: AppId, versionId: string): Promise<void>;
   /** The 50-version cap, applied once the newest version's write has landed. */
   pruneHistory(appId: AppId): Promise<void>;

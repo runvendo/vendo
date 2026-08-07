@@ -5,11 +5,10 @@
  * loop, asked to rewrite that app's document, answering with another whole-
  * document `save_app`). Both saves land through the real render seam and
  * `AppsRuntime.authored`. The wire returns an EditResult; history surfaces the
- * prior version; undo restores it.
+ * prior version.
  *
- * History note: the frozen history surface (06 §1) lists RESTORABLE prior
- * snapshots (the undo targets), appended only on edit — so one edit yields
- * exactly one entry (the original), and a single undo restores the original.
+ * History note: the frozen history surface (06 §1) lists prior snapshots,
+ * appended only on edit — so one edit yields exactly one entry (the original).
  */
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -47,7 +46,7 @@ afterEach(async () => {
 });
 
 describe("J3: app edit + history through the composed wire", () => {
-  it("creates, edits by saving the app's own document back, lists the prior version, and undoes to restore it", async () => {
+  it("creates, edits by saving the app's own document back, and lists the prior version", async () => {
     await resetFixture();
     stack = await createStack({
       turns: [
@@ -79,26 +78,18 @@ describe("J3: app edit + history through the composed wire", () => {
     const current = (await (await stack.wireFetch(`/apps/${appId}`, {}, ADA)).json()) as AppDoc;
     expect(greetingText(current)).toBe("Goodbye");
 
-    // --- History lists the restorable prior version -----------------------
+    // --- History lists the prior version ----------------------------------
     const history = (await (await stack.wireFetch(`/apps/${appId}/history`, {}, ADA)).json()) as Array<{
       rung: number;
       intent: string;
     }>;
     expect(history).toHaveLength(1);
-    // The undo point is filed under the PERSON's words, not "Saved app.vendo":
+    // The version is filed under the PERSON's words, not "Saved app.vendo":
     // an edit lands through `authored` like any other commit, and the intent is
     // what makes the trail replayable.
     expect(history[0]?.intent).toBe("Change the greeting text to Goodbye");
 
-    // --- Undo restores the original ---------------------------------------
-    const restored = (await (await stack.wireFetch(`/apps/${appId}/history`, {
-      method: "POST",
-      body: JSON.stringify({ op: "undo" }),
-    }, ADA)).json()) as AppDoc;
-    expect(greetingText(restored)).toBe("Hello");
-
-    // The composed store reflects the restore.
-    const afterUndo = (await (await stack.wireFetch(`/apps/${appId}`, {}, ADA)).json()) as AppDoc;
-    expect(greetingText(afterUndo)).toBe("Hello");
+    // The recorded snapshot is the pre-edit document.
+    expect(history[0]?.rung).toBe(1);
   });
 });

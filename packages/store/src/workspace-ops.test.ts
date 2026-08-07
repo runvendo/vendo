@@ -2,13 +2,12 @@ import type { Membership, Principal } from "@vendoai/core";
 import { VendoError } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "./backends.test-util.js";
-import type { Query } from "./db.js";
 import { createStoreOps } from "./ops.js";
-import { dbFor, type VendoStore as StoreHandle } from "./store.js";
+import type { VendoStore as StoreHandle } from "./store.js";
 import { workspaceStore } from "./workspace.js";
 
 /**
- * T1/D3 — the workspace façade over the 32-op contract instead of a SQL handle.
+ * T1/D3 — the workspace façade over the 31-op contract instead of a SQL handle.
  *
  * The seam is real on both sides: the PRODUCER is `WorkspaceStoreFs` driving
  * `workspaceOpsRows`, and the CONSUMER is `createStoreOps` writing this store's
@@ -21,7 +20,7 @@ const dana: Principal = { kind: "user", subject: "dana" };
 const kim: Principal = { kind: "user", subject: "kim" };
 const acme: Membership[] = [{ org: "acme" }];
 
-/** A store handle with NO local database and the 32 ops instead — exactly the
+/** A store handle with NO local database and the 31 ops instead — exactly the
     shape a hosted store presents. The record/blob doors still delegate to the
     real store, because that is what the hosted store's own doors do. */
 const opsBacked = (store: StoreHandle): StoreHandle => ({
@@ -46,7 +45,7 @@ for (const backend of backends()) {
     /** The façade a hosted deployment gets. */
     const hosted = () => workspaceStore(opsBacked(made.store));
     /** The SAME façade over the SAME rows with a database handle instead of
-        the 32 ops — the local answer every hosted answer is compared against. */
+        the 31 ops — the local answer every hosted answer is compared against. */
     const local = () => workspaceStore(made.store);
 
     it("commits through the ops backend into the ordinary workspace rows", async () => {
@@ -130,11 +129,11 @@ for (const backend of backends()) {
       expect(await (await hosted().open(dana, { memberships: acme })).readFile(path)).toBe("v2 from kim");
     });
 
-    /** S3 — the path legs. The claim is not "undo works over the wire" but
-        "the hosted façade answers what the SQL façade answers", so every
-        assertion here is checked against `local()`, the same façade over the
-        same rows with a database handle instead of the 32 ops. */
-    it("walks one path back through its versions, exactly as the SQL façade does", async () => {
+    /** S3 — the path leg of history. The claim is not "history works over the
+        wire" but "the hosted façade answers what the SQL façade answers", so
+        every assertion here is checked against `local()`, the same façade over
+        the same rows with a database handle instead of the 31 ops. */
+    it("reports one path's version trail, exactly as the SQL façade does", async () => {
       const path = "/user/notes/history.md";
       for (const content of ["v1", "v2", "v3"]) {
         const fs = await hosted().open(dana);
@@ -149,65 +148,25 @@ for (const backend of backends()) {
       expect(versions).toHaveLength(2);
       expect(versions.map((entry) => entry.revision)).toEqual([2, 1]);
       expect(await local().history(caller, path)).toHaveLength(2);
-
-      expect(await hosted().undo(caller, path)).toMatchObject({ status: "ok" });
-      expect(await (await hosted().open(dana)).readFile(path)).toBe("v2");
-      expect(await hosted().undo(caller, path)).toMatchObject({ status: "ok" });
-      expect(await (await hosted().open(dana)).readFile(path)).toBe("v1");
-
-      // One step past the oldest version there is nothing left to restore, and
-      // the file keeps what the last undo put there.
-      expect(await hosted().undo(caller, path)).toEqual({ status: "empty" });
-      expect(await (await hosted().open(dana)).readFile(path)).toBe("v1");
-      expect(await hosted().history(caller, path)).toEqual([]);
-    });
-
-    it("undoes one path without disturbing the others in the same commit", async () => {
-      const [kept, undone] = ["/user/pair/kept.md", "/user/pair/undone.md"];
-      for (const version of ["v1", "v2"]) {
-        const fs = await hosted().open(dana);
-        await fs.writeFile(kept, `${kept} ${version}`);
-        await fs.writeFile(undone, `${undone} ${version}`);
-        await fs.commit();
-      }
-
-      expect(await hosted().undo({ principal: dana }, undone)).toMatchObject({ status: "ok" });
-      const next = await hosted().open(dana);
-      expect(await next.readFile(undone)).toBe(`${undone} v1`);
-      expect(await next.readFile(kept)).toBe(`${kept} v2`);
+      expect(await hosted().history(caller, path)).toEqual(await local().history(caller, path));
+      expect(await (await hosted().open(dana)).readFile(path)).toBe("v3");
     });
 
     /** A file with one version has nothing behind it — the SQL backend records
-        no history row for a create, so both façades say `empty` and the file
-        stays. (The commit-ledger level below the façade DOES remove it: that is
-        `ops.workspace.undo({ path })`, and the conformance suite pins it.) */
-    it("answers empty for a file that has only ever been created", async () => {
+        no history row for a create, so both façades report an empty trail. */
+    it("reports an empty trail for a file that has only ever been created", async () => {
       const path = "/user/fresh.md";
       const fs = await hosted().open(dana);
       await fs.writeFile(path, "only version");
       await fs.commit();
       const caller = { principal: dana };
 
+      expect(await hosted().history(caller, path)).toEqual([]);
       expect(await hosted().history(caller, path)).toEqual(await local().history(caller, path));
-      expect(await hosted().undo(caller, path)).toEqual({ status: "empty" });
-      expect(await local().undo(caller, path)).toEqual({ status: "empty" });
       expect(await (await hosted().open(dana)).readFile(path)).toBe("only version");
     });
 
-    it("brings back a file the agent deleted", async () => {
-      const path = "/user/deleted.md";
-      const seed = await hosted().open(dana);
-      await seed.writeFile(path, "still needed");
-      await seed.commit();
-      const cleaner = await hosted().open(dana);
-      await cleaner.rm(path);
-      await cleaner.commit();
-
-      expect(await hosted().undo({ principal: dana }, path)).toMatchObject({ status: "ok" });
-      expect(await (await hosted().open(dana)).readFile(path)).toBe("still needed");
-    });
-
-    it("keeps one owner's path history and undo out of another's", async () => {
+    it("keeps one owner's path history out of another's", async () => {
       const path = "/user/private.md";
       for (const [who, text] of [[dana, "dana"], [kim, "kim"]] as const) {
         for (const version of ["v1", "v2"]) {
@@ -218,105 +177,14 @@ for (const backend of backends()) {
       }
 
       expect(await hosted().history({ principal: dana }, path)).toHaveLength(1);
-      expect(await hosted().undo({ principal: dana }, path)).toMatchObject({ status: "ok" });
-      expect(await (await hosted().open(dana)).readFile(path)).toBe("dana v1");
-      // The other drawer did not move.
+      expect(await (await hosted().open(dana)).readFile(path)).toBe("dana v2");
+      // The other drawer is its own trail, and its own content.
+      expect(await hosted().history({ principal: kim }, path)).toHaveLength(1);
       expect(await (await hosted().open(kim)).readFile(path)).toBe("kim v2");
 
-      // And a stranger's undo of the same path finds nothing of theirs to undo.
+      // And a stranger's read of the same path finds nothing of theirs.
       const sam = { kind: "user", subject: "sam" } as const;
-      expect(await hosted().undo({ principal: sam }, path)).toEqual({ status: "empty" });
-      expect(await (await hosted().open(dana)).readFile(path)).toBe("dana v1");
-    });
-
-    /** `workspaceRows.undo` pops the NEWEST superseded revision at a path, and
-        nothing checked that the revision belonged to the commit being undone.
-        So undoing an older commit walked back the NEWER commit's write — and
-        that write has no history row behind it (undo has no redo), so its
-        content was gone for good, while the ledger kept the newer commit and
-        dropped the older one it never actually undid. */
-    it("refuses to undo a commit a later one has already built on", async () => {
-      const path = "/user/stacked/notes.md";
-      const ops = createStoreOps(made.store);
-      for (const [key, data] of [["s0", "zero"], ["s1", "one"], ["s2", "two"]] as const) {
-        await ops.workspace.commit([{ path, data }], { owner: "dana", idempotencyKey: key });
-      }
-
-      await expect(ops.workspace.undo("wsc_key_s1", { owner: "dana" }))
-        .rejects.toBeInstanceOf(VendoError);
-      // The newest commit's content is what it was, and still the live version.
-      expect(await (await hosted().open(dana)).readFile(path)).toBe("two");
-      // And the commit it refused is still on the ledger, undoable in order.
-      const ledger = await ops.workspace.history({ owner: "dana", path });
-      expect((ledger.entries as { commitId: string }[]).map((entry) => entry.commitId))
-        .toContain("wsc_key_s1");
-    });
-
-    /** The window under the refusal above. `pathsMovedOn` is the CHECK and
-        `undoOne` is the ACT; with nothing held between them, a commit that
-        lands in the gap appends a history row that `undoOne` then pops —
-        restoring the older value over the commit that just succeeded, with no
-        history row behind it. The committer was told "ok" and its content is
-        gone, which is the very outcome the check exists to prevent.
-
-        Two transactions have to overlap for real, so this only bites on a
-        backend that runs them concurrently: PGlite serialises and cannot
-        express it. The invariant asserted is the one that matters either way —
-        content a commit reported as landed is never silently destroyed. */
-    it("destroys no committed content when a commit lands while an undo is deciding", async () => {
-      const path = "/user/window/notes.md";
-      const ops = createStoreOps(made.store);
-      for (const [key, data] of [["w0", "zero"], ["w1", "one"], ["w2", "two"]] as const) {
-        await ops.workspace.commit([{ path, data }], { owner: "dana", idempotencyKey: key });
-      }
-
-      // Fire a fourth commit in the gap: after the undo's ledger walk has
-      // decided the target is still the newest here, before it reads history.
-      const db = dbFor(made.store);
-      const originalTx = db.transaction.bind(db);
-      let racer: Promise<void> | undefined;
-      db.transaction = (async (run: (q: Query) => Promise<unknown>) => await originalTx(async (q) => {
-        const wrapped: Query = async (text, params) => {
-          if (racer === undefined && text.includes("FROM vendo_workspace_history")) {
-            racer = ops.workspace.commit(
-              [{ path, data: "three" }],
-              { owner: "dana", idempotencyKey: "w3" },
-            );
-            // Long enough for an unblocked racer to land; a racer the undo is
-            // holding off simply stays blocked and this returns on the timer.
-            await Promise.race([
-              racer.catch(() => undefined),
-              new Promise((resolve) => setTimeout(resolve, 2_000)),
-            ]);
-          }
-          return await q(text, params);
-        };
-        return await run(wrapped);
-      })) as typeof db.transaction;
-
-      let undone: string;
-      try {
-        undone = await ops.workspace.undo("wsc_key_w2", { owner: "dana" }).then(() => "ok", (error: unknown) =>
-          error instanceof VendoError ? error.code : String(error));
-      } finally {
-        db.transaction = originalTx;
-      }
-      const landed = await racer!.then(() => true, () => false);
-      expect(racer).toBeDefined();
-
-      // Whatever the two decided between them, a commit that reported success
-      // must still be reachable — live, or behind a history row.
-      if (landed) {
-        const live = await (await hosted().open(dana)).readFile(path);
-        const history = await made.sql(
-          "SELECT content FROM vendo_workspace_history WHERE path = $1 AND owner = $2",
-          [path, "dana"],
-        );
-        const stored = history.map((row) => String(row["content"]));
-        expect([live === "three", stored.includes('"three"')].includes(true))
-          .toBe(true);
-      }
-      expect(["ok", "conflict"]).toContain(undone);
+      expect(await hosted().history({ principal: sam }, path)).toEqual([]);
     });
 
     it("still refuses to move an app between mounts — that runs server-side", async () => {

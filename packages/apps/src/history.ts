@@ -9,7 +9,7 @@ import {
   type VendoRecord,
 } from "@vendoai/core";
 import { z } from "zod";
-import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, listAllRecords, rowFromRecord, validateDocument } from "./persistence.js";
+import { documentFromRecord, listAllRecords, validateDocument } from "./persistence.js";
 import type { VersionEntry } from "./runtime.js";
 
 const HISTORY_LIMIT = 50;
@@ -106,8 +106,8 @@ const sequenceFromRecord = (record: VendoRecord): number => {
 
 export interface AppHistoryAccess {
   /** Returns the appended version's id, so a caller whose write then fails can
-   *  `discard` it — an undo point to a state that never became the past is a
-   *  loaded gun (`undo` restores the latest snapshot unconditionally). */
+   *  `discard` it — a version recording a state that never became the past is a
+   *  lie in the trail. */
   append(
     appId: AppId,
     doc: AppDocument,
@@ -123,15 +123,15 @@ export interface AppHistoryAccess {
    * Trims the version log to the cap. Called by a caller whose write has
    * LANDED — never by `append` itself: an append whose write is then refused
    * `discard`s its own version, and a prune inside the append would already
-   * have deleted the oldest REAL undo point to make room for it. Fifty refused
-   * saves would have erased the whole undo history of an app that never changed.
+   * have deleted the oldest REAL version to make room for it. Fifty refused
+   * saves would have erased the whole recorded history of an app that never
+   * changed once.
    * The pin-intent trail is not capped (06-apps §8 replays the full trail).
    */
   prune(appId: AppId): Promise<void>;
   clear(appId: AppId): Promise<void>;
   surface(appId: AppId): {
     list(): Promise<VersionEntry[]>;
-    undo(): Promise<AppDocument>;
   };
 }
 
@@ -225,24 +225,6 @@ export const createAppHistory = (store: StoreAdapter): AppHistoryAccess => {
             }
           }
           return entries;
-        },
-        // history(appId) has no ctx in the frozen contract. The HTTP/wire layer must enforce
-        // ownership before exposing this app-id-scoped surface; undo still verifies the app row.
-        async undo() {
-          const appRow = await store.records("vendo_apps").get(appId);
-          if (appRow === null) throw new VendoError("not-found", `app not found: ${appId}`);
-          documentFromRecord(appRow);
-          const latest = (await ordered(appId)).at(-1);
-          if (latest === undefined) throw new VendoError("conflict", "nothing to undo");
-          const snapshot = snapshotFromRecord(latest, appId);
-          const row = rowFromRecord(appRow);
-          // A changed trigger must be re-armed — enable() re-captures and re-mints trigger state.
-          const enabled = enabledAfterDocumentEdit(row.doc, snapshot.doc, row.enabled);
-          await store.records("vendo_apps").put(
-            appRecordInput(snapshot.doc, row.subject, enabled),
-          );
-          await deleteVersion(appId, latest.id);
-          return structuredClone(snapshot.doc);
         },
       };
     },

@@ -29,9 +29,9 @@
  *     field — the only failure-ish field is `buildFailed`, a terminal generation
  *     crash marker. `appRecordInput` (`../persistence.ts`) keys the row by the app
  *     id, so every write clobbers the live row. `createAppHistory`
- *     (`../history.ts`) archives the PREVIOUS doc for `undo()`, but serving always
- *     reads the single live row: there is no served-version pointer distinct from
- *     the latest-written one, so "the previous version keeps serving" has no
+ *     (`../history.ts`) archives the PREVIOUS doc, but serving always reads the
+ *     single live row: there is no served-version pointer distinct from the
+ *     latest-written one, so "the previous version keeps serving" has no
  *     mechanism.
  *  3. The bounded fix round exists but at the wrong time. `FIX_ROUNDS = 2` in
  *     `../generation/conductor.ts` re-invokes the brain on blocking findings — a

@@ -74,7 +74,7 @@ describe("apps agent tools", () => {
     // Making a document is a rung-1-only, jailed UI operation whichever way it
     // routes: it cannot reach host tools, a server machine, or the network.
     // Yousef's ruling (2026-07-28): an app edit does not need approval —
-    // rearranging your own view is not an act on the world, and history/undo are
+    // rearranging your own view is not an act on the world, and the history is
     // the safety net.
     expect(descriptors.map((descriptor) => descriptor.risk)).toEqual([
       "read", "write", "read", "write", "write", "read", "write", "write",

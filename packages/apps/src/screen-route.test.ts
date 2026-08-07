@@ -345,7 +345,7 @@ describe("the public create/edit API runs the one engine", () => {
     // IN PLACE, and it really changed.
     expect(edited.app.id).toBe(app.id);
     expect(JSON.stringify(await runtime.get(app.id, ctx))).toContain("Last month");
-    // The undo point carries the person's own words, not "Saved app.vendo" —
+    // The recorded version carries the person's own words, not "Saved app.vendo" —
     // which is what keeps a remix's replayable trail replayable.
     expect((await runtime.history(app.id, ctx).list()).map(({ intent }) => intent))
       .toContain("say last month instead");

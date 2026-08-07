@@ -109,7 +109,6 @@ export interface VendoClient {
     call(id: AppId, ref: string, args: Json): Promise<ToolOutcome>;
     edit(id: AppId, instruction: string): Promise<EditResult>;
     history(id: AppId): Promise<VersionEntry[]>;
-    undo(id: AppId): Promise<AppDocument>;
     exportApp(id: AppId): Promise<Uint8Array>;
     importApp(bytes: Uint8Array): Promise<AppDocument>;
     fork(id: AppId): Promise<AppDocument>;

@@ -86,7 +86,7 @@ describe("headless hooks", () => {
     expect(result.current.apps).toHaveLength(3);
   });
 
-  it("loads an app and surface, proxies calls/history, and refreshes after edit and undo", async () => {
+  it("loads an app and surface, proxies calls/history, and refreshes after edit", async () => {
     const { result } = renderHook(() => useApp("app_1"), { wrapper });
     expect(result.current.app).toBeUndefined();
     expect(result.current.surface).toBeUndefined();
@@ -97,8 +97,6 @@ describe("headless hooks", () => {
     await expect(result.current.history.list()).resolves.toHaveLength(1);
     await act(() => result.current.edit("Add totals"));
     expect(result.current.app?.name).toBe("Edited");
-    await act(() => result.current.history.undo());
-    expect(result.current.app?.name).toBe("Undone");
     await act(() => result.current.refresh());
     expect(result.current.surface?.kind).toBe("tree");
   });

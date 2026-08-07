@@ -32,7 +32,6 @@ import {
   storeWireWorkspaceReadRequestSchema,
   storeWireWorkspaceCommitRequestSchema,
   storeWireWorkspaceHistoryRequestSchema,
-  storeWireWorkspaceUndoRequestSchema,
   storeWireLifecycleEraseRequestSchema,
   storeWireLifecycleAdoptRequestSchema,
   storeWireLifecyclePromoteRequestSchema,
@@ -44,10 +43,10 @@ import {
 } from "./index.js";
 
 describe("vendo/store-wire@1", () => {
-  it("exposes the format constant and 32+1 mount-relative paths", () => {
+  it("exposes the format constant and 31+1 mount-relative paths", () => {
     expect(VENDO_STORE_WIRE_FORMAT).toBe("vendo/store-wire@1");
-    // 7 families: records(7) + blobs(4) + transcripts(6) + harness(3) + workspace(5) + lifecycle(6) + status(1) = 32
-    expect(Object.keys(STORE_WIRE_PATHS)).toHaveLength(32);
+    // 7 families: records(7) + blobs(4) + transcripts(6) + harness(3) + workspace(4) + lifecycle(6) + status(1) = 31
+    expect(Object.keys(STORE_WIRE_PATHS)).toHaveLength(31);
     expect(STORE_WIRE_PATHS.status).toBe("/status");
     expect(STORE_WIRE_PATHS["records.get"]).toBe("/records/get");
     expect(STORE_WIRE_PATHS["lifecycle.session.claim"]).toBe("/lifecycle/session/claim");
@@ -136,8 +135,6 @@ describe("vendo/store-wire@1", () => {
     expect(storeWireWorkspaceReadRequestSchema.safeParse({ paths: [] }).success).toBe(false);
     expect(storeWireWorkspaceCommitRequestSchema.parse({ entries: [{ path: "/a.md", content: "hi" }] }).entries).toHaveLength(1);
     expect(storeWireWorkspaceHistoryRequestSchema.parse({ cursor: "c1" }).cursor).toBe("c1");
-    expect(storeWireWorkspaceUndoRequestSchema.parse({ commitId: "commit_1" }).commitId).toBe("commit_1");
-    expect(storeWireWorkspaceUndoRequestSchema.safeParse({ commitId: "" }).success).toBe(false);
   });
 
   it("parses lifecycle request DTOs", () => {
@@ -172,9 +169,9 @@ describe("vendo/store-wire@1", () => {
   it("status doubles as the discovery handshake: format + ops count", () => {
     const status: StoreWireStatus = {
       format: VENDO_STORE_WIRE_FORMAT,
-      ops: 32,
+      ops: 31,
     };
-    expect(storeWireStatusSchema.parse(status).ops).toBe(32);
+    expect(storeWireStatusSchema.parse(status).ops).toBe(31);
     expect(storeWireStatusSchema.safeParse({ ...status, format: "vendo/store-wire@2" }).success).toBe(false);
   });
 
