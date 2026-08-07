@@ -15,5 +15,9 @@ Two surfaces that stated something untrue, and were believed.
 - The Share dialog never read the `error` its own hook exposes, so a failed
   app-access read rendered the empty initial data as fact — twice, and
   self-contradicting: "You don’t have access to this app." next to "Nobody else
-  yet — it’s just you." It now says the read failed, offers a retry, and
-  withholds the write controls it has no basis to offer.
+  yet — it’s just you." It now says it cannot confirm who the app is shared with,
+  offers a retry, and withholds every control a level authorises — including
+  after a later read fails, where the dialog used to keep the previous owner
+  level and go on offering the picker, Share and each row's Remove on the
+  strength of an answer it no longer had. The grant rows themselves stay: a
+  failure to read is not evidence that access was revoked.
