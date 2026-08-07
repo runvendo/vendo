@@ -109,6 +109,20 @@ describe("vendoKnowledge — retrieval quality", () => {
     expect(schema.hits[0]!.ref.source).toBe(CORPUS[3]!.source);
   });
 
+  it("falls back to the doc row for chunks written before chunk rows carried a source", async () => {
+    const { store, adapter } = await seeded();
+    // Every store synced by a shipped version holds chunk rows in this shape,
+    // and hash-based sync never rewrites an unchanged doc.
+    const chunks = store.records(KNOWLEDGE_CHUNKS_COLLECTION);
+    for (const row of (await chunks.list({ refs: { doc_id: "docs#refunds.md" }, limit: 1000 })).records) {
+      const { source: _dropped, ...legacy } = row.data as Record<string, unknown>;
+      await chunks.put({ id: row.id, data: legacy, refs: row.refs! });
+    }
+    const hit = (await adapter.search({ text: "How long do refunds take?" }, ctx)).hits[0]!;
+    expect(hit.ref.docId).toBe("docs#refunds.md");
+    expect(hit.ref.source).toBe(CORPUS[0]!.source);
+  });
+
   it("an empty kinds array matches nothing; kinds filter applies in-query", async () => {
     const { adapter } = await seeded();
     expect((await adapter.search({ text: "refunds", kinds: [] }, ctx)).hits).toEqual([]);
