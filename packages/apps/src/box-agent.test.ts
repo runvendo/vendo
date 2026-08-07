@@ -1,14 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { pushBoxEnv, readBoxManifest, requestAppWithBootRetry, runBoxEdit, type BoxAgentClock } from "./box-agent.js";
 import type { SandboxMachine } from "./sandbox.js";
-import { fakeBoxSandbox } from "./testing/fake-box.js";
+import { fakeBoxSandbox, type FakeBoxAgent } from "./testing/fake-box.js";
+import { inMemoryBoxFiles } from "./testing/box-files.js";
 
 /** Instant clock so the poll loop runs without real time. */
 const instantClock = (): BoxAgentClock => ({ sleep: async () => undefined, now: () => 0 });
 
-const boxOf = async (agent?: Parameters<typeof fakeBoxSandbox>[0]["agent"]) => {
+const boxOf = async (agent?: FakeBoxAgent) => {
   const adapter = fakeBoxSandbox(agent === undefined ? {} : { agent });
-  return adapter.create({ env: { PORT: "8080" } });
+  await adapter.create({ env: { PORT: "8080" } });
+  // Through `adapter.machines`, not `create`: the seam's `create` answers a
+  // `SandboxMachine`, and the cases below read the fake's own box state.
+  const [machine] = adapter.machines;
+  if (machine === undefined) throw new Error("the fake box adapter created no machine");
+  return machine;
 };
 
 describe("box-agent control-port transport", () => {
@@ -98,7 +104,8 @@ describe("box-agent control-port transport", () => {
         const status = statuses[Math.min(calls++, statuses.length - 1)] ?? 200;
         return { status, headers: {}, body: new TextEncoder().encode(JSON.stringify({ result: { ready: true } })) };
       },
-      url: async () => "https://8080-boot.test", snapshot: async () => "x", stop: async () => undefined, destroy: async () => undefined,
+      url: async () => "https://8080-boot.test", files: inMemoryBoxFiles(new Map()),
+      snapshot: async () => "x", stop: async () => undefined, destroy: async () => undefined,
     } satisfies SandboxMachine;
     const answer = await requestAppWithBootRetry(machine, { method: "POST", path: "/fn/x" }, { attempts: 5, sleep: async () => undefined });
     expect(calls).toBe(3);
@@ -109,7 +116,8 @@ describe("box-agent control-port transport", () => {
     const machine = {
       id: "stuck",
       async request() { return { status: 502, headers: {}, body: new Uint8Array() }; },
-      url: async () => "https://8080-stuck.test", snapshot: async () => "x", stop: async () => undefined, destroy: async () => undefined,
+      url: async () => "https://8080-stuck.test", files: inMemoryBoxFiles(new Map()),
+      snapshot: async () => "x", stop: async () => undefined, destroy: async () => undefined,
     } satisfies SandboxMachine;
     const answer = await requestAppWithBootRetry(machine, { method: "GET", path: "/vendo.json" }, { attempts: 3, sleep: async () => undefined });
     expect(answer.status).toBe(502);

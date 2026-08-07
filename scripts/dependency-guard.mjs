@@ -2,15 +2,18 @@
 /**
  * Dependency guard — the wave-3 CI gate.
  *
- * Enforces, for every package in the active workspace (packages/*):
+ * Enforces, for EVERY package in the workspace — the blocks under packages/ and
+ * the consumers under fixtures/, examples/, corpus/ and bench/ alike:
  *
  *   1. LAYERING — the only allowed @vendoai/* edges are:
  *        core → (nothing)
  *        apps → core            automations → apps, core
  *        store, agent, actions, guard, ui → core
  *        vendo (umbrella) → everything
- *      A package not in the map fails loudly: adding a package means
- *      consciously adding its layer here.
+ *      A packages/* block not in the map fails loudly: adding a block means
+ *      consciously adding its layer here. A consumer outside packages/ is not a
+ *      block and sits above every layer, so it may depend on any block in the
+ *      map — but rules 2 and 3 bind it exactly as they bind a block.
  *
  *   2. NO QUARRY IMPORTS — nothing may import from legacy/ (path or relative
  *      escape), and nothing may import the retired package names that only
@@ -41,18 +44,19 @@
  *
  * Known residual gaps (accepted): computed dynamic imports (import(`@vendoai/${x}`))
  * and tsconfig path aliases are invisible to a static text scan; PR review covers
- * them. The scan may also match import-shaped strings inside comments — a false
- * positive fails loudly and is fixed by rewording, never by loosening the gate.
+ * them. The scan may also match import-shaped strings inside comments, or inside
+ * source a package GENERATES for somewhere else (corpus/harness emits a Next
+ * layout for the corpus app) — a false positive fails loudly and is fixed by
+ * rewording, never by loosening the gate.
  */
 
-import { readdirSync, readFileSync, statSync, existsSync } from "node:fs";
+import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // fileURLToPath (not .pathname) so a checkout path containing spaces or other
 // URL-escaped characters decodes correctly — .pathname leaves "%20" undecoded.
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const PACKAGES_DIR = join(ROOT, "packages");
 
 /** package name → allowed @vendoai/* (and umbrella) deps. "*" = anything in the map. */
 const LAYERS = {
@@ -210,9 +214,25 @@ const RETIRED = [
 
 const errors = [];
 
+/** Directories that hold generated output rather than authored source. `dist` and
+ * `node_modules` were always skipped; the rest matter now that the scan reaches
+ * fixtures/ and examples/, where a `next build` or a Playwright run drops bundled
+ * chunks INSIDE a scanned package. A bundle is full of import-shaped strings and
+ * would fail the gate on code nobody wrote. All are gitignored; nothing tracked
+ * in this repo lives under any of them (`.vendo/`, which IS tracked and does hold
+ * source, is deliberately absent). */
+const GENERATED_DIRS = new Set([
+  "node_modules",
+  "dist",
+  ".next",
+  ".turbo",
+  "coverage",
+  "test-results",
+]);
+
 function* sourceFiles(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name === "node_modules" || entry.name === "dist") continue;
+    if (GENERATED_DIRS.has(entry.name)) continue;
     const p = join(dir, entry.name);
     if (entry.isDirectory()) yield* sourceFiles(p);
     else if (/\.(ts|tsx|mts|cts|js|mjs|cjs|jsx)$/.test(entry.name)) yield p;
@@ -222,19 +242,58 @@ function* sourceFiles(dir) {
 const IMPORT_RE =
   /(?:\bfrom\s*|\bimport\s*\(\s*|\brequire\s*\(\s*|^\s*import\s*)["']([^"']+)["']/gm;
 
-const dirs = readdirSync(PACKAGES_DIR).filter((d) =>
-  statSync(join(PACKAGES_DIR, d)).isDirectory(),
-);
+/** Every package directory in the workspace, read out of pnpm-workspace.yaml.
+ *
+ * Derived, never hardcoded: the scan root used to be the literal `packages/`, so
+ * fixtures/, examples/, corpus/ and bench/ were never looked at — and an
+ * undeclared cross-package import had been sitting in fixtures/integration-browser
+ * the whole time, breaking a rule that already existed and simply never ran there.
+ * Reading the workspace's own definition is the only way that gap cannot reopen
+ * the next time a root is added.
+ *
+ * Only the two entry shapes this file uses are understood: a literal path, and a
+ * `<parent>/*` glob. Anything else throws, because a silently unscanned directory
+ * is the defect above. */
+function workspacePackageDirs() {
+  const yaml = readFileSync(join(ROOT, "pnpm-workspace.yaml"), "utf8");
+  const list = /^packages:[^\S\n]*\n((?:[^\S\n]+-[^\n]*\n)+)/m.exec(yaml)?.[1];
+  if (!list) throw new Error("dependency-guard: no `packages:` list in pnpm-workspace.yaml");
+  const dirs = [];
+  for (const line of list.trimEnd().split("\n")) {
+    const pattern = /^\s*-\s*["']?([^"'\s]+)["']?$/.exec(line)?.[1];
+    if (!pattern) throw new Error(`dependency-guard: unreadable workspace entry: ${line.trim()}`);
+    if (!pattern.includes("*")) {
+      dirs.push(pattern);
+    } else if (pattern.endsWith("/*")) {
+      const parent = pattern.slice(0, -2);
+      for (const entry of readdirSync(join(ROOT, parent), { withFileTypes: true })) {
+        if (entry.isDirectory() && existsSync(join(ROOT, parent, entry.name, "package.json"))) {
+          dirs.push(`${parent}/${entry.name}`);
+        }
+      }
+    } else {
+      throw new Error(`dependency-guard: unsupported workspace glob "${pattern}"`);
+    }
+  }
+  return dirs;
+}
+
+const dirs = workspacePackageDirs();
 
 for (const dir of dirs) {
-  const pkgPath = join(PACKAGES_DIR, dir, "package.json");
+  const packageRoot = join(ROOT, dir);
+  const pkgPath = join(packageRoot, "package.json");
   if (!existsSync(pkgPath)) continue;
   const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
-  const allowed = LAYERS[pkg.name];
+  // Outside packages/ a package is a CONSUMER, not a block: it sits above every
+  // layer, so any block in the map is a legal dependency. Only a block missing
+  // from the map is a mistake — that is the conscious-layer rule, and widening it
+  // to consumers would demand a layer for every fixture and example.
+  const allowed = LAYERS[pkg.name] ?? (dir.startsWith("packages/") ? undefined : "*");
 
   if (allowed === undefined) {
     errors.push(
-      `${pkg.name} (packages/${dir}): not in the dependency-guard layer map — add it to scripts/dependency-guard.mjs with its allowed layer (00-overview.md, "The dependency rule").`,
+      `${pkg.name} (${dir}): not in the dependency-guard layer map — add it to scripts/dependency-guard.mjs with its allowed layer (00-overview.md, "The dependency rule").`,
     );
     continue;
   }
@@ -295,7 +354,7 @@ for (const dir of dirs) {
   }
 
   // 2 + 3 on the sources
-  for (const file of sourceFiles(join(PACKAGES_DIR, dir))) {
+  for (const file of sourceFiles(packageRoot)) {
     const src = readFileSync(file, "utf8");
     const rel = file.slice(ROOT.length);
     for (const match of src.matchAll(IMPORT_RE)) {
@@ -308,8 +367,7 @@ for (const dir of dirs) {
         // A relative import must stay inside its own package — an escape can
         // reach the quarry or a sibling block without naming either.
         const resolved = resolve(dirname(file), spec);
-        const packageRoot = join(PACKAGES_DIR, dir) + sep;
-        if (!(resolved + sep).startsWith(packageRoot)) {
+        if (!(resolved + sep).startsWith(packageRoot + sep)) {
           errors.push(`${rel}: relative import "${spec}" escapes its package directory.`);
         }
         continue;

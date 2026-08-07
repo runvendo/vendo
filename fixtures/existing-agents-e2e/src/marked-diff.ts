@@ -93,7 +93,10 @@ export function starterPackageJson(source: string): string {
     const section = pkg[field];
     if (typeof section !== "object" || section === null) continue;
     for (const name of Object.keys(section)) {
-      if (name === "vendoai" || name.startsWith("@vendoai/") || name === "vitest") {
+      // Every `@vendoai`-scoped name, not just `@vendoai/*`: the workspace's
+      // test rigs live under `@vendoai-fixtures/*` and are no more part of a
+      // framework starter than vitest is.
+      if (name === "vendoai" || name.startsWith("@vendoai") || name === "vitest") {
         delete (section as Record<string, unknown>)[name];
       }
     }

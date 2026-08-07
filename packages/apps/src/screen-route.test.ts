@@ -58,7 +58,8 @@ const runtimeWith = (screen?: ScreenAssembler, options: {
 } = {}) => {
   briefs.length = 0;
   boxTasks.length = 0;
-  const model = basicLanguageModel();
+  // `LanguageModel` includes a bare model-id string, which cannot be spread.
+  const model = basicLanguageModel() as Exclude<ReturnType<typeof basicLanguageModel>, string>;
   const watched = {
     ...model,
     doStream: async (call: { prompt: unknown }) => {
@@ -86,7 +87,7 @@ const runtimeWith = (screen?: ScreenAssembler, options: {
           sandbox: fakeBoxSandbox({
             agent: ({ prompt, context }) => {
               boxTasks.push(`${prompt}\n${context ?? ""}`);
-              return { ok: true, summary: "built the matcher", fns: ["matchInvoices"], filesChanged: [] };
+              return { ok: true, summary: "built the matcher", fns: ["matchInvoices"], filesChanged: [], testsRun: 0 };
             },
           }),
           buildEnv: () => ({ PORT: "8080" }),

@@ -1,5 +1,6 @@
 import { VENDO_APP_FORMAT, VendoError, type AppDocument, type RunContext, type ToolOutcome } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
+import { inMemoryBoxFiles } from "./testing/box-files.js";
 import type { AppCaller } from "./call.js";
 import { createFnCaller } from "./fn.js";
 import type { SandboxMachine } from "./sandbox.js";
@@ -59,6 +60,8 @@ const boxWake = (handler: (request: {
         body: encoder.encode(answer.body ?? ""),
       };
     },
+    async url() { return "https://8080-fake_fn_box.test"; },
+    files: inMemoryBoxFiles(new Map()),
     async snapshot() { return "fake-v2:snap_next"; },
     async stop() { /* sleep */ },
     async destroy() { /* gone */ },

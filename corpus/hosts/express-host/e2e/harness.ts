@@ -41,19 +41,28 @@ async function reserveLoopbackPort(): Promise<number> {
 
 export async function startTestHost(
   model: LanguageModel,
-  options: { trustedOrigin?: boolean } = {},
+  options: { trustedOrigin?: boolean; development?: boolean } = {},
 ): Promise<TestHost> {
   const dataDir = await mkdtemp(join(tmpdir(), "relay-express-e2e-"));
   const store = createStore({ dataDir });
   const port = options.trustedOrigin === true ? await reserveLoopbackPort() : 0;
   const previousBaseUrl = process.env.VENDO_BASE_URL;
   if (options.trustedOrigin === true) process.env.VENDO_BASE_URL = `http://127.0.0.1:${port}`;
+  // The composition reads NODE_ENV once, at createVendo time, to decide whether
+  // the development-only routes get mounted at all (#989). Under vitest it is
+  // "test", so a `development: true` opt-in has to be spelled here for any e2e
+  // that reaches a dev-only route — this host's `dev` script sets
+  // NODE_ENV=development, which is what those e2es stand in for.
+  const previousNodeEnv = process.env.NODE_ENV;
+  if (options.development === true) process.env.NODE_ENV = "development";
   let relay: ReturnType<typeof createRelayServer>;
   try {
     relay = createRelayServer({ model, store });
   } finally {
     if (previousBaseUrl === undefined) delete process.env.VENDO_BASE_URL;
     else process.env.VENDO_BASE_URL = previousBaseUrl;
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
   }
   let server: Server;
   try {

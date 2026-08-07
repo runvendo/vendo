@@ -3,6 +3,7 @@ import { VENDO_APP_FORMAT, VendoError } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { createMachineLifecycle, type LifecycleClock } from "./machine-lifecycle.js";
 import { documentFromRecord } from "./persistence.js";
+import { inMemoryBoxFiles } from "./testing/box-files.js";
 import { fakeStatefulSandbox, memoryStore, seedAppRow } from "./testing/index.js";
 
 const app = (id = "app_machine_test"): AppDocument => ({
@@ -265,6 +266,7 @@ describe("machine lifecycle: provider snapshot hygiene", () => {
     const lifecycle = createMachineLifecycle({
       store,
       sandbox,
+      allowedDomains: () => [],
       // Another app server wins the provision race while this one assembles env:
       // the store row already carries a machine by the time our CAS write runs.
       buildEnv: async () => {
@@ -319,6 +321,8 @@ describe("machine lifecycle: in-flight requests defer auto-sleep", () => {
             releaseRequest = () => resolve({ status: 200, headers: {}, body: new Uint8Array() });
           },
         ),
+      url: async () => "https://8080-slow.test",
+      files: inMemoryBoxFiles(new Map()),
       snapshot: async () => {
         snapshots += 1;
         return `slow:snap_${snapshots}`;
@@ -333,6 +337,7 @@ describe("machine lifecycle: in-flight requests defer auto-sleep", () => {
         resume: async () => slowMachine,
         destroy: async () => undefined,
       },
+      allowedDomains: () => [],
       idleMs: 5 * 60_000,
       clock: timers.clock,
     });
@@ -451,6 +456,7 @@ describe("machine lifecycle: env-stale wake rebuild (Wave 7)", () => {
     const lifecycle = createMachineLifecycle({
       store,
       sandbox,
+      allowedDomains: () => [],
       buildEnv: () => ({ PORT: "8080", FRESH: "yes" }),
       injectEnv: async () => {
         injections += 1;
@@ -491,6 +497,7 @@ describe("machine lifecycle: env-stale wake rebuild (Wave 7)", () => {
     const lifecycle = createMachineLifecycle({
       store,
       sandbox,
+      allowedDomains: () => [],
       buildEnv: () => ({ PORT: "8080", ...(secret === undefined ? {} : { STRIPE_KEY: secret }) }),
       injectEnv: async (_machine, env) => {
         injected.push(env);
