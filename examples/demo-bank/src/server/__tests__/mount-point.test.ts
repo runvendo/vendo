@@ -8,8 +8,13 @@
  * see depends on it: get it wrong and every page renders perfectly while every
  * number the agent quotes is a 404. That is why this is asserted rather than
  * eyeballed.
+ *
+ * Spec 2026-08-06 §B1 moved the prefix's home: stored paths are PREFIX-FREE and
+ * VENDO_BASE_URL carries the whole public URL, which core's joinUrl attaches
+ * exactly once at call time.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { joinUrl } from "@vendoai/core";
 import { config } from "../../proxy";
 import spec from "../../../openapi.json";
 import tools from "../../../.vendo/tools.json";
@@ -18,22 +23,38 @@ import { BASE_PATH } from "@/lib/base-path";
 
 afterEach(() => vi.unstubAllGlobals());
 
+const PUBLIC_URL = `http://localhost:3000${BASE_PATH}`;
+
 describe("Maple's mount point", () => {
   it("is what the spec declares as its server", () => {
     expect(spec.servers).toEqual([{ url: BASE_PATH }]);
   });
 
-  it("reaches every synced tool binding, route-scanned ones included", () => {
+  /** Spec 2026-08-06 §B1: stored paths are PREFIX-FREE. The prefix lives in
+   *  VENDO_BASE_URL and core's joinUrl attaches it exactly once at call time —
+   *  baking it into tools.json is what produced /maple/maple/… (#914). */
+  it("stores every binding path prefix-free", () => {
     expect(tools.tools.length).toBeGreaterThan(0);
     for (const { name, binding } of tools.tools) {
-      expect(binding.path.startsWith(`${BASE_PATH}/`), `${name}: ${binding.method} ${binding.path}`).toBe(true);
+      expect(binding.path.startsWith(`${BASE_PATH}/`), `${name}: ${binding.method} ${binding.path}`).toBe(false);
+      expect(binding.path.startsWith("/"), `${name}: ${binding.method} ${binding.path}`).toBe(true);
+    }
+  });
+
+  /** …and the runtime's join puts it back exactly once, which is the property
+   *  the agent's tool calls actually depend on. */
+  it("reaches the real endpoint once the public URL is joined on", () => {
+    for (const { name, binding } of tools.tools) {
+      const url = joinUrl(PUBLIC_URL, binding.path.replace(/\{[^}]+\}/g, "x"));
+      expect(url.pathname.startsWith(`${BASE_PATH}/`), `${name}: ${url.pathname}`).toBe(true);
+      expect(url.pathname.startsWith(`${BASE_PATH}${BASE_PATH}/`), `${name}: ${url.pathname}`).toBe(false);
     }
   });
 
   /** Also catches a STALE tools.json — a spec edit that never got synced. */
   it("covers every documented operation exactly once", () => {
     const documented = Object.entries(spec.paths as Record<string, Record<string, unknown>>)
-      .flatMap(([path, item]) => Object.keys(item).map(method => `${method.toUpperCase()} ${BASE_PATH}${path}`))
+      .flatMap(([path, item]) => Object.keys(item).map(method => `${method.toUpperCase()} ${path}`))
       .sort();
     const synced = tools.tools
       .filter(tool => tool.binding.kind === "openapi")

@@ -9,8 +9,10 @@ export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
     // Boot seeding calls host_* tools before any request has taught the wire
     // its own origin, so an unset VENDO_BASE_URL (the local-dev posture) makes
-    // every route-bound call fail. Prime the loopback origin first.
-    process.env.VENDO_BASE_URL ??= `http://localhost:${process.env.PORT ?? 3000}`;
+    // every route-bound call fail. Prime the loopback origin first — the FULL
+    // public URL, /maple included (spec 2026-08-06 §B1: nothing strips
+    // VENDO_BASE_URL's path).
+    process.env.VENDO_BASE_URL ??= `http://localhost:${process.env.PORT ?? 3000}/maple`;
     const { seedDemoScript } = await import("@/demo-script/seed.js");
     seedDemoScript().catch((error: unknown) => {
       console.error("[maple] demo seeding failed:", error);
