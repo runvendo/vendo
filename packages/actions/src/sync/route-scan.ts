@@ -94,6 +94,23 @@ function isVendoRoute(urlPath: string): boolean {
   return urlPath === "/api/vendo" || urlPath.startsWith("/api/vendo/");
 }
 
+/**
+ * A GraphQL server answers one POST whose body is a `{ query, variables }`
+ * envelope. Route dispatch (runtime/registry.ts) sends the model's arguments
+ * as the whole JSON body, so a GraphQL endpoint scanned as a generic route
+ * produces an enabled tool the server rejects on every call — a stack we
+ * half-support, which is exactly what cutting the GraphQL extractor was meant
+ * to end. No override can fix it (nothing can build the envelope), so the
+ * route yields no tool at all and says so in a warning.
+ *
+ * Matched on the route module's own source: every Next GraphQL handler
+ * constructs its server or imports its framework adapter there. A route that
+ * merely CALLS an upstream GraphQL API (`graphql-request`, `@apollo/client`)
+ * is an ordinary REST route and is deliberately not matched.
+ */
+const GRAPHQL_SERVER_MARKER =
+  /graphql-yoga|@apollo\/server|apollo-server(?:-micro|-express)?|graphql-http|express-graphql|@as-integrations\/next|createYoga\s*\(|new\s+ApolloServer\s*\(/;
+
 function addMethod(methods: Set<HttpMethod>, value: string | undefined): void {
   const method = value?.toUpperCase();
   if (method && HTTP_METHOD_SET.has(method)) methods.add(method as HttpMethod);
@@ -626,6 +643,10 @@ export async function scanRoutes(root: string): Promise<RouteScanResult> {
   const usedNames = new Set<string>();
   const scanState = createRouteScanState(root, routes.map((route) => route.file));
   for (const route of routes) {
+    if (GRAPHQL_SERVER_MARKER.test(route.source)) {
+      warnings.push(`route ${route.urlPath} is a GraphQL endpoint; GraphQL is not an extracted stack, so no tool was emitted`);
+      continue;
+    }
     // The route module is the tool's known source file (v3 srcHash input).
     const srcPath = path.relative(root, route.file).split(path.sep).join("/");
     const methods = await verbsFromSource(route.file, route.source, route, root, new Set(), 0, false);

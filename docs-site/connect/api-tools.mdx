@@ -208,6 +208,11 @@ frameworks are not yet scanned.
 Route scans fail closed. The extractor emits any route it cannot classify as
 disabled, with a note.
 
+A GraphQL endpoint is skipped, with a warning naming the route. Vendo does not
+extract GraphQL, and a GraphQL handler answers one POST with a
+`{ query, variables }` envelope that route dispatch cannot construct — so the
+route yields no tool rather than one that fails on every call.
+
 ## Durable overrides
 
 ```json

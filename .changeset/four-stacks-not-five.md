@@ -17,4 +17,11 @@ transport in the runtime registry. This is breaking for a host whose committed
 `.vendo/tools.json` already carries a `graphql` binding — that file no longer
 parses. Pre-1.0, no deprecation shim ships; re-run `vendo sync` to regenerate.
 
+Route-scan skips a GraphQL endpoint instead of falling back to it. A Next.js
+GraphQL handler exports `POST` like any other route, so generic scanning would
+mint an enabled tool that posts the model's arguments as the JSON body — which
+every GraphQL server rejects, since it wants a `{ query, variables }` envelope.
+The endpoint now yields no tool and a warning naming it. Cut means gone, not
+gone-and-quietly-worse.
+
 Behaviour for the four surviving stacks is unchanged.
