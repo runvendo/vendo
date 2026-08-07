@@ -132,11 +132,19 @@ const LAYERS = {
 const ZOD_V4_EXPORT_FLOOR = [3, 25, 0];
 
 /** One comparator: an operator (or none) over a possibly-partial version —
- * "^3.25.0", "~3.25.0", ">=3.25.0", "3.25.76", "<5". A missing minor or patch
- * reads as 0, which is what npm means by them in a lower bound ("^3" is
- * >=3.0.0, "3.25" is >=3.25.0). Wildcards ("3.25.x", "*"), prereleases
- * ("3.25.0-beta.1") and the hyphen range's bare "-" deliberately do NOT match. */
-const COMPARATOR = /^(\^|~|>=|>|<=|<|=)?\s*(\d+)(?:\.(\d+))?(?:\.(\d+))?$/;
+ * "^3.25.0", "~3.25.0", ">=3.25.0", ">= 3.25.0", "3.25.76", "<5". A missing
+ * minor or patch reads as 0, which is what npm means by them in a lower bound
+ * ("^3" is >=3.0.0, "3.25" is >=3.25.0). Wildcards ("3.25.x", "*"), prereleases
+ * ("3.25.0-beta.1") and the hyphen range's bare "-" deliberately do NOT match.
+ *
+ * Sticky, and it absorbs the whitespace on both sides, because npm allows a
+ * space BETWEEN an operator and its version (">= 3.25.0"). The operator and its
+ * version are therefore one token that the scanner walks over; whitespace only
+ * separates COMPLETE comparators. Splitting on bare whitespace instead would
+ * fragment ">= 3.25.0 < 5" into ">=", "3.25.0", "<", "5" and strand both
+ * operators. `\d+` is required, so a match is never empty and the walk always
+ * advances. */
+const COMPARATOR = /\s*(\^|~|>=|>|<=|<|=)?\s*(\d+)(?:\.(\d+))?(?:\.(\d+))?\s*/y;
 
 /** Operators whose version is a ceiling. They cannot raise a floor, so the
  * floor scan skips them — but they are still a shape we understand, which is
@@ -147,7 +155,10 @@ const CEILING_OPERATORS = new Set(["<", "<="]);
  *
  * A range is a `||` union of alternatives, and each alternative is a
  * whitespace-separated INTERSECTION of comparators — the shape every `ai`-peer
- * package in this repo uses for its zod peer, ">=3.25.0 <5". An alternative's
+ * package in this repo uses for its zod peer, ">=3.25.0 <5". Each alternative
+ * is SCANNED comparator by comparator rather than split on whitespace, so the
+ * equally legal ">= 3.25.0 < 5" reads the same; anything left over when the
+ * scan stalls is a shape we do not model. An alternative's
  * floor is the highest of its lower bounds (an intersection can only narrow);
  * the range's floor is the lowest across alternatives, because a union is only
  * as safe as the oldest zod it admits. `>x.y.z` is read as a floor of x.y.z —
@@ -160,9 +171,11 @@ const CEILING_OPERATORS = new Set(["<", "<="]);
 function parseVersionFloor(range) {
   let floor = null;
   for (const alternative of String(range).split("||")) {
+    const text = alternative.trim();
     let alternativeFloor = null;
-    for (const comparator of alternative.trim().split(/\s+/)) {
-      const match = COMPARATOR.exec(comparator);
+    COMPARATOR.lastIndex = 0;
+    while (COMPARATOR.lastIndex < text.length) {
+      const match = COMPARATOR.exec(text);
       if (!match) return null;
       if (CEILING_OPERATORS.has(match[1])) continue;
       const version = [Number(match[2]), Number(match[3] ?? 0), Number(match[4] ?? 0)];
