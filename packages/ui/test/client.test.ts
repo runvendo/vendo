@@ -177,7 +177,7 @@ describe("createVendoClient", () => {
 
   /** An unprefixed baseUrl on a prefixed page is the #914 shape from the
    *  browser: one loud error naming both sides and the fix, not a bare 404. */
-  it("throws ONE named mount-mismatch error on first contact, reported once at error level", async () => {
+  it("throws ONE named mount-mismatch error on first contact, reported once per PAGE", async () => {
     const originalFetch = globalThis.fetch;
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
     window.history.replaceState({}, "", "/maple/dashboard");
@@ -189,9 +189,14 @@ describe("createVendoClient", () => {
       const client = createVendoClient({ baseUrl: "/api/vendo" });
       await expect(client.threads.list()).rejects.toThrow(/wire mount mismatch/);
       await expect(client.status()).rejects.toThrow(/\/maple/);
+      // A page holds several clients — the overlay's and each embed's — and
+      // they all hit the same wall. The guard is keyed by the pair the message
+      // is about, so the second client throws without reprinting it.
+      const second = createVendoClient({ baseUrl: "/api/vendo" });
+      await expect(second.threads.list()).rejects.toThrow(/wire mount mismatch/);
       // Callers that degrade on a failed fetch (the connector catalog) swallow
       // the throw, so the console.error is what the developer actually sees —
-      // once per client, never folded into a retry warning.
+      // once per page, never folded into a retry warning.
       expect(errors.mock.calls).toEqual([[expect.stringMatching(/wire mount mismatch[\s\S]*\/maple/)]]);
     } finally {
       globalThis.fetch = originalFetch;

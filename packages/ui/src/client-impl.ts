@@ -97,6 +97,13 @@ function pageMount(): string | undefined {
   return segments.length === 0 ? "" : `/${segments[0]}`;
 }
 
+/** The mount mismatches already reported on this page, keyed by the pair the
+ *  message is about (client baseUrl + the page's prefix). A page routinely
+ *  holds several clients — the overlay's and each embed's — and one wiring
+ *  mistake printing once per client is a wall of the same paragraph. ONE loud
+ *  report, then silence; the throw still reaches every caller. */
+const reportedMounts = new Set<string>();
+
 /** 08-ui §2 */
 export function createVendoClient(config: VendoClientConfig): VendoClient {
   const baseUrl = config.baseUrl ?? "/api/vendo";
@@ -111,10 +118,9 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
    *
    *  The throw alone is not enough: callers that degrade on a failed fetch
    *  (the connector catalog's retry warning) bury it among the page's other
-   *  404s, so the one message that names the fix is reported once per client,
-   *  at error level, before it is thrown. */
+   *  404s, so the one message that names the fix is reported once per page, at
+   *  error level, before it is thrown. */
   let mountProven = false;
-  let mountReported = false;
 
   async function send(path: string, init?: RequestInit): Promise<Response> {
     const target = joinPath(baseUrl, path);
@@ -133,8 +139,9 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
           requested: target,
           ...(mount === undefined ? {} : { pageMount: mount }),
         });
-        if (!mountReported) {
-          mountReported = true;
+        const pair = `${baseUrl}|${mount ?? ""}`;
+        if (!reportedMounts.has(pair)) {
+          reportedMounts.add(pair);
           console.error(message);
         }
         throw new Error(message);
