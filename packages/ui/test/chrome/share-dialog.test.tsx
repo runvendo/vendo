@@ -184,6 +184,63 @@ describe("ShareDialog — the first read", () => {
     expect(screen.queryByLabelText("Who to share with")).toBeNull();
     expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
   });
+
+  it("stops offering the write once a REFRESH has failed — a level is not data", async () => {
+    // The first read answered, so the hook holds a real level and a real list.
+    // When a LATER read fails it keeps both, and the level is what gates every
+    // write on this surface: leaving it in place offers to change who can reach
+    // an app on the strength of an answer we no longer have. Stale information is
+    // worth showing with a note; a stale PERMISSION is a wrong affordance.
+    let reads = 0;
+    const client = {
+      async status() { return { posture: "unconfigured", memberships }; },
+      apps: {
+        async grants() {
+          reads += 1;
+          if (reads > 1) throw new Error("app-access read failed: 503");
+          return {
+            level: "owner" as AccessLevel,
+            grants: [{
+              id: "grant_1",
+              appId: "app_live",
+              orgId: "other",
+              principal: "team:other/finance",
+              level: "viewer" as AccessLevel,
+              createdBy: "user_1",
+              createdAt: "2026-07-01T00:00:00.000Z",
+            }],
+            personal: false,
+          };
+        },
+        async promote() { return {}; },
+        async share() { return { grants: [] }; },
+        async unshare() { return { grants: [] }; },
+      },
+    } as unknown as VendoClient;
+
+    render(
+      <VendoProvider client={client}>
+        <ShareDialog appId="app_live" memberships={memberships} />
+      </VendoProvider>,
+    );
+    // While the read stands, the owner has every control.
+    await screen.findByLabelText("Who to share with");
+    expect(screen.getByRole("button", { name: "Remove" })).toBeTruthy();
+
+    // A share writes and then re-reads — and that re-read is the one that fails.
+    await shareWith("Everyone at Acme");
+    await screen.findByText(/can’t confirm who this app is shared with/i);
+
+    // Fail closed on everything a level authorises.
+    expect(screen.queryByLabelText("Who to share with")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Remove" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Share" })).toBeNull();
+    // The row itself STAYS. A failure to read is not evidence that access was
+    // revoked, and the note above it says it is unconfirmed.
+    expect(screen.getByText("The finance team")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+    expect(document.body.textContent).not.toContain("503");
+  });
 });
 
 describe("ShareDialog — share implies promote", () => {
