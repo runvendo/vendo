@@ -36,7 +36,12 @@ import {
   type UIMessageStreamWriter,
 } from "ai";
 import { resolveMapleSession } from "@/vendo/auth";
-import { mapleScenarioBeats, mapleScenarios, type MapleScenarioBeat } from "@/vendo/scenarios";
+import {
+  mapleScenarioBeats,
+  mapleScenarios,
+  type MapleScenarioBeat,
+  type MapleScenarioCard,
+} from "@/vendo/scenarios";
 import { vendo } from "@/vendo/server";
 import { demoAppId } from "./seed";
 import {
@@ -55,6 +60,9 @@ const PARKED_OUTCOME_COLLECTION = "vendo_parked_call_outcome";
 /** The card beats, plus the one beat no card sends (the post-OAuth line). */
 type Beat = MapleScenarioBeat | "gmailConnected";
 
+/** The text a card sends on tap — the engine's whole routing key. */
+const cardKey = (card: MapleScenarioCard): string => (card.prompt ?? card.title).trim();
+
 // A beat whose card was renamed away would otherwise go quietly unreachable
 // and the demo would just stop answering that prompt — fail at boot instead.
 const unbound = mapleScenarioBeats.filter(
@@ -63,6 +71,22 @@ const unbound = mapleScenarioBeats.filter(
 if (unbound.length > 0) {
   throw new Error(
     `demo-script: no Maple scenario card declares beat ${unbound.join(", ")} — see src/vendo/scenarios.tsx`,
+  );
+}
+
+// Two cards sending the same text would hand the choice of script back to
+// ladder order, since the first match wins — the exact failure the per-card
+// beat removed. Fail at boot instead.
+const beatsByKey = new Map<string, MapleScenarioBeat[]>();
+for (const card of mapleScenarios) {
+  beatsByKey.set(cardKey(card), [...(beatsByKey.get(cardKey(card)) ?? []), card.beat]);
+}
+const shared = [...beatsByKey].filter(([, beats]) => beats.length > 1);
+if (shared.length > 0) {
+  throw new Error(
+    `demo-script: Maple scenario cards share a prompt, so ladder order would decide which script plays — ${shared
+      .map(([key, beats]) => `beats ${beats.join(", ")} all send "${key}"`)
+      .join("; ")}; see src/vendo/scenarios.tsx`,
   );
 }
 
@@ -92,7 +116,7 @@ function userText(message: UIMessage): string {
 
 function matchBeat(text: string): Beat | undefined {
   // Each card names its own beat, so reordering the ladder is a no-op here.
-  const card = mapleScenarios.find((candidate) => (candidate.prompt ?? candidate.title).trim() === text);
+  const card = mapleScenarios.find((candidate) => cardKey(candidate) === text);
   if (card !== undefined) return card.beat;
   // The ConnectCard's deterministic continuation line after a live Gmail
   // OAuth ("Connected Gmail." — parts.tsx onConnected, kept natural on
