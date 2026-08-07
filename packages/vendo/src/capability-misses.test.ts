@@ -89,6 +89,26 @@ describe("capability-miss Cloud upload", () => {
     expect(capture.hostId).toBe("telemetry-installation-id");
   });
 
+  it("mints NO installation id on the user's disk when there is no Cloud slot to upload through", async () => {
+    // This capture is composed on every createVendo boot, keyed or not. A
+    // keyless host uploads nothing ever, so it must not leave a persistent,
+    // opted-in tracking id in ~/.vendo/telemetry.json for a deployment that
+    // opted into nothing.
+    const home = await tempDir("vendo-miss-home-keyless-");
+    const capture = createCapabilityMissCapture({
+      env: {},
+      telemetryHome: home,
+      surface: () => Promise.resolve(surface),
+      append: async () => {},
+    });
+
+    capture.record(event("mis_keyless"));
+    await capture.flush();
+
+    await expect(readFile(join(home, ".vendo", "telemetry.json"), "utf8")).rejects.toThrow();
+    expect(capture.hostId.length).toBeGreaterThan(0);
+  });
+
   it("keeps local capture but sends nothing without a Cloud slot", async () => {
     const append = vi.fn(async () => {});
     const fetchImpl = vi.fn<typeof fetch>();
