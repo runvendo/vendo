@@ -1,7 +1,7 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { z } from "zod";
-import { fieldSemanticSchema, gradedRiskLabelSchema } from "@vendoai/core";
+import { fieldSemanticSchema, gradedRiskLabelSchema, jsonSchemaSchema, type JsonSchema } from "@vendoai/core";
 import {
   VENDO_JUDGMENTS_FORMAT,
   applyJudgment,
@@ -18,6 +18,7 @@ import {
   type PendingLoosening,
   type ToolJudgment,
 } from "@vendoai/actions";
+import { patchToolSchemas, type ToolSchemaPatch, type ToolSchemaSlot } from "@vendoai/actions/sync";
 import type { ExtractionHarness } from "../extract/harness.js";
 import { parseJudgeArtifact } from "./parse.js";
 import { readOptional, type Output } from "../shared.js";
@@ -71,6 +72,12 @@ const judgeProposalSchema = z.object({
   disabled: z.boolean().optional(),
   audience: z.enum(["end-user", "operator", "internal"]).optional(),
   semantics: z.record(fieldSemanticSchema).optional(),
+  /** The handler's request/response schemas. Deliberately NOT `JudgmentFields`
+   *  members: they land in tools.json through `patchToolSchemas`, so
+   *  `applyJudgment` can never spread them onto a descriptor and
+   *  `overrides.json` never carries one. Refused unless the slot is BLIND. */
+  inputSchema: jsonSchemaSchema.optional(),
+  outputSchema: jsonSchemaSchema.optional(),
 });
 
 /** Advisory bounds. These are CLAMPED, never enforced by rejection — see
@@ -230,6 +237,10 @@ function assertsNoMutation(reason: string): boolean {
 /** Every field a judgment may carry, in the order the narrative reports them. */
 const JUDGMENT_FIELDS = ["description", "title", "risk", "confirmEach", "disabled", "audience", "semantics"] as const;
 
+/** The two schema slots a proposal may fill. Kept OUT of `JUDGMENT_FIELDS` on
+ *  purpose — that list is what gets spread into a judgment. */
+const SCHEMA_SLOTS = ["inputSchema", "outputSchema"] as const satisfies readonly ToolSchemaSlot[];
+
 export interface JudgmentPassOptions {
   root: string;
   /** The `.vendo` directory (sync's `out`). */
@@ -270,6 +281,11 @@ export interface JudgmentPassCounts {
   advisoriesClamped: number;
   /** Risk grades dropped for contradicting their own stated reason. */
   inconsistentRisk: number;
+  /** Blind schema slots the judge filled and the skeptic upheld (both slots). */
+  schemasInferred: number;
+  /** Schema proposals the skeptic vetoed, plus the ones `patchToolSchemas`
+   *  refused because the slot was already occupied or the tool was rebound. */
+  schemasRejected: number;
 }
 
 export type JudgmentPassResult =
@@ -292,6 +308,9 @@ interface Candidate {
 interface Proposal {
   candidate: Candidate;
   fields: JudgmentFields;
+  /** Blind slots this proposal offers to fill. Routed to tools.json, never
+   *  into `fields`. */
+  schemas: Partial<Record<ToolSchemaSlot, JsonSchema>>;
   evidence: string;
   reason?: string;
 }
@@ -515,6 +534,7 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
   const malformed: string[] = [];
   const unknownTools: string[] = [];
   const inconsistentRisk: string[] = [];
+  const schemasRefused: string[] = [];
   const missedSurfaces: string[] = [];
   const narratives: string[] = [];
   let advisoriesClamped = 0;
@@ -591,9 +611,22 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
         delete fields.risk;
         inconsistentRisk.push(parsed.data.name);
       }
+      // Only a BLIND slot may be offered. The prompt says so; this is the code
+      // that means it, and `patchToolSchemas` is the third and final wall.
+      const schemas: Partial<Record<ToolSchemaSlot, JsonSchema>> = {};
+      for (const slot of SCHEMA_SLOTS) {
+        const proposed = parsed.data[slot];
+        if (proposed === undefined) continue;
+        const source = slot === "inputSchema"
+          ? candidate.tool.inputSchemaSource ?? "unknown"
+          : candidate.tool.outputSchemaSource ?? "unknown";
+        if (source === "unknown") schemas[slot] = proposed;
+        else schemasRefused.push(`${parsed.data.name}.${slot}`);
+      }
       proposals.set(parsed.data.name, {
         candidate,
         fields,
+        schemas,
         evidence: parsed.data.evidence,
         ...(parsed.data.reason === undefined ? {} : { reason: parsed.data.reason }),
       });
@@ -613,11 +646,16 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
   // ------------------------------------------------------------------
   const subjects: SkepticSubject[] = [];
   for (const proposal of proposals.values()) {
-    const moves = Object.entries(proposal.fields).map(([field, to]) => ({
+    const moves: SkepticSubject["moves"] = Object.entries(proposal.fields).map(([field, to]) => ({
       field,
       from: effectiveFrom(proposal.candidate.effective, field),
       to,
     }));
+    // A schema fill is a claim about the handler like any other, so it costs
+    // the same verbatim evidence and the same independent verdict.
+    for (const [slot, schema] of Object.entries(proposal.schemas)) {
+      moves.push({ field: slot, from: "unknown", to: schema });
+    }
     // A proposal with no fields is a bare CONFIRMATION ("I read this, nothing to
     // change"). There is nothing to uphold, so it does not cost a skeptic call.
     if (moves.length === 0) continue;
@@ -685,6 +723,9 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
   const hardenedFields: string[] = [];
   const discredited: string[] = [];
   const judgedNames: string[] = [];
+  const schemaPatches: ToolSchemaPatch[] = [];
+  /** Slots the skeptic vetoed or never examined — counted with the refusals. */
+  let schemasVetoed = 0;
 
   for (const proposal of proposals.values()) {
     const { candidate } = proposal;
@@ -705,12 +746,29 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
       Object.assign(upheld, { [field]: value });
     }
 
+    for (const [slot, schema] of Object.entries(proposal.schemas) as Array<[ToolSchemaSlot, JsonSchema]>) {
+      const verdict = verdicts.get(verdictKey(name, slot));
+      if (verdict === undefined) {
+        unexaminedRejected.push(`${name}.${slot}`);
+        schemasVetoed += 1;
+        continue;
+      }
+      if (verdict.verdict === "reject") {
+        rejectedBySkeptic.push(`${name}.${slot}${verdict.reason === undefined ? "" : ` — ${sanitize(verdict.reason)}`}`);
+        schemasVetoed += 1;
+        continue;
+      }
+      schemaPatches.push({ tool: name, binding: bindingIdentity(candidate.tool.binding), slot, schema });
+    }
+
     // Every field discredited means the proposal — and the quote it rests on —
     // did not survive review. Writing an entry from it would record evidence the
     // skeptic just called fabricated, so nothing is written and the tool stays a
-    // candidate for the next run.
+    // candidate for the next run. A proposal whose only surviving contribution
+    // is a schema patch is NOT discredited: the patch is applied below and the
+    // judgment entry still records the srcHash that stops the next re-ask.
     const proposedCount = Object.keys(proposal.fields).length;
-    if (proposedCount > 0 && Object.keys(upheld).length === 0) {
+    if (proposedCount > 0 && Object.keys(upheld).length === 0 && Object.keys(proposal.schemas).length === 0) {
       discredited.push(name);
       continue;
     }
@@ -809,11 +867,29 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
     await writeIfChanged(judgmentsPath, `${JSON.stringify(file, null, 2)}\n`);
   }
 
+  // Schemas land in tools.json, NOT in judgments.json: the descriptor's schema
+  // is the machine layer, and `patchToolSchemas` refuses any slot the
+  // deterministic extractors already filled.
+  const patched = await patchToolSchemas(join(options.out, "tools.json"), schemaPatches);
+  const schemasRejectedCount = schemasRefused.length + schemasVetoed + patched.skipped.length;
+
   // ------------------------------------------------------------------
   // Narrative.
   // ------------------------------------------------------------------
   output.log(`judgment (${sanitize(credential)}): ${judgedNames.length} tools judged`);
   if (hardenedFields.length > 0) output.log(`  hardened (${hardenedFields.length}): ${listed(hardenedFields)}`);
+  if (patched.written.length > 0) {
+    output.log(`  schemas inferred (${patched.written.length}): ${listed(patched.written.map((entry) => `${entry.tool}.${entry.slot}`))}`);
+  }
+  // Skeptic vetoes count as rejections but are printed by the skeptic's own
+  // line — this one names the slots refused for being occupied or rebound.
+  const schemasRefusedList = [
+    ...schemasRefused,
+    ...patched.skipped.map((entry) => `${entry.tool}.${entry.slot} (${entry.reason})`),
+  ];
+  if (schemasRefusedList.length > 0) {
+    output.log(`  schema proposals refused (${schemasRefusedList.length}): ${listed(schemasRefusedList, 6)}`);
+  }
   if (approved > 0) output.log(`  loosenings approved (${approved})`);
   if (declined > 0) output.log(`  loosenings declined and dropped (${declined})`);
   if (queued > 0) {
@@ -876,6 +952,8 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
     evidenceless: evidenceless.length,
     advisoriesClamped,
     inconsistentRisk: inconsistentRisk.length,
+    schemasInferred: patched.written.length,
+    schemasRejected: schemasRejectedCount,
   };
 }
 

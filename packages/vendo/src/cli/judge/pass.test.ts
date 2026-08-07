@@ -1120,3 +1120,68 @@ describe("runJudgmentPass — a risk grade that contradicts its own reason is dr
     expect(result).toMatchObject({ inconsistentRisk: 0 });
   });
 });
+
+// ---------------------------------------------------------------------------
+// The judge rung: schemas
+// ---------------------------------------------------------------------------
+
+const readTools = async (fixture: Fixture): Promise<{ tools: ExtractedTool[] }> =>
+  JSON.parse(await readFile(fixture.toolsPath, "utf8")) as { tools: ExtractedTool[] };
+
+describe("the judge rung fills blind schema slots only", () => {
+  const proposed = { type: "object", properties: { since: { type: "string" } }, required: ["since"] };
+
+  it("writes an upheld schema into tools.json and marks it inferred", async () => {
+    const fixture = await host([tool("host_a")]);
+    const bus = channel();
+    const result = await runJudgmentPass(options(fixture, bus, {
+      harness: scripted([
+        reply({ tools: [{
+          name: "host_a",
+          evidence: "const since = searchParams.get(\"since\")!",
+          inputSchema: proposed,
+        }], narrative: "" }),
+        reply({ verdicts: [{ name: "host_a", field: "inputSchema", verdict: "uphold" }] }),
+      ]),
+    }));
+
+    expect(result).toMatchObject({ schemasInferred: 1, schemasRejected: 0 });
+    const written = (await readTools(fixture)).tools[0]!;
+    expect(written.inputSchema).toEqual(proposed);
+    expect(written.inputSchemaSource).toBe("inferred");
+    // Schemas never enter the AI-writable judgment surface.
+    expect(JSON.stringify((await readJudgments(fixture)).tools.host_a)).not.toContain("inputSchema");
+  });
+
+  it("refuses a schema for a declared slot and leaves tools.json byte-identical", async () => {
+    const fixture = await host([tool("host_a", { inputSchemaSource: "declared" })]);
+    const before = await readFile(fixture.toolsPath, "utf8");
+    const bus = channel();
+    const result = await runJudgmentPass(options(fixture, bus, {
+      harness: scripted([
+        reply({ tools: [{ name: "host_a", evidence: "await request.json()", inputSchema: proposed }], narrative: "" }),
+      ]),
+    }));
+
+    expect(result).toMatchObject({ schemasInferred: 0 });
+    expect((result as { schemasRejected: number }).schemasRejected).toBeGreaterThanOrEqual(1);
+    expect(await readFile(fixture.toolsPath, "utf8")).toBe(before);
+  });
+
+  it("drops a schema the skeptic vetoed", async () => {
+    const fixture = await host([tool("host_a")]);
+    const bus = channel();
+    const result = await runJudgmentPass(options(fixture, bus, {
+      harness: scripted([
+        reply({ tools: [{ name: "host_a", evidence: "return Response.json(rows)", outputSchema: proposed }], narrative: "" }),
+        reply({ verdicts: [{ name: "host_a", field: "outputSchema", verdict: "reject", reason: "the handler returns an array" }] }),
+      ]),
+    }));
+
+    expect(result).toMatchObject({ schemasInferred: 0 });
+    expect((result as { schemasRejected: number }).schemasRejected).toBeGreaterThanOrEqual(1);
+    const written = (await readTools(fixture)).tools[0]!;
+    expect(written.outputSchema).toBeUndefined();
+    expect(written.outputSchemaSource ?? "unknown").toBe("unknown");
+  });
+});
