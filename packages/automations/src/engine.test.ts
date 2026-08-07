@@ -1231,6 +1231,71 @@ describe("schedule, webhook, and host triggers", () => {
       receivedAt: NOW.toISOString(),
     });
   });
+
+  it("refs the schedule cursor, webhook secret, and delivery to their app so app erase collects them", async () => {
+    const store = memoryStoreAdapter();
+    const external = app("app_refs_webhook", {
+      on: { kind: "external", connector: "github", event: "push" },
+      run: { kind: "steps", steps: [] },
+    });
+    const scheduled = app("app_refs_schedule", {
+      on: { kind: "schedule", every: "15m" },
+      run: { kind: "steps", steps: [] },
+    });
+    await seedApp(store, external);
+    await seedApp(store, scheduled);
+    const engine = createAutomations({
+      apps: appsDouble(), tools: registry(), guard: new GuardDouble(), store, now: () => NOW,
+    });
+    await engine.enable(external.id, "main", ctx());
+    await engine.enable(scheduled.id, "main", ctx());
+    const secret = ((await store.records("automations:webhook").get(`${external.id}:main`))?.data as { secret: string }).secret;
+    const body = JSON.stringify({ answer: 42 });
+    const timestamp = String(NOW.getTime() / 1_000);
+    const signature = await sign(secret, "delivery_refs", timestamp, body);
+    await engine.webhook(new Request("https://example.test/api/webhooks/github", {
+      method: "POST",
+      headers: {
+        "webhook-id": "delivery_refs",
+        "webhook-timestamp": timestamp,
+        "webhook-signature": `v1,${signature}`,
+      },
+      body,
+    }));
+
+    expect((await store.records("automations:webhook").get(`${external.id}:main`))?.refs)
+      .toEqual({ app_id: external.id });
+    expect((await store.records("automations:deliveries").get(`${external.id}:main:delivery_refs`))?.refs)
+      .toEqual({ app_id: external.id });
+    expect((await store.records("automations:schedule").get(`${scheduled.id}:main`))?.refs)
+      .toEqual({ app_id: scheduled.id });
+  });
+
+  it("refs a schedule cursor the tick itself writes, on both the claiming and the not-yet-due path", async () => {
+    const store = memoryStoreAdapter();
+    const due = app("app_refs_tick_due", {
+      on: { kind: "schedule", every: "15m" },
+      run: { kind: "steps", steps: [] },
+    });
+    const future = app("app_refs_tick_future", {
+      on: { kind: "schedule", at: "2026-07-12T13:00:00.000Z" },
+      run: { kind: "steps", steps: [] },
+    });
+    await seedApp(store, due, "user_a", true);
+    await seedApp(store, future, "user_a", true);
+    // No cursor rows yet: the tick is what writes both, and the app row alone
+    // is what an erase would otherwise leave them behind from.
+    const engine = createAutomations({
+      apps: appsDouble(), tools: registry(), guard: new GuardDouble(), store, now: () => NOW,
+    });
+
+    await engine.tick();
+
+    expect((await store.records("automations:schedule").get(`${due.id}:main`))?.refs)
+      .toEqual({ app_id: due.id });
+    expect((await store.records("automations:schedule").get(`${future.id}:main`))?.refs)
+      .toEqual({ app_id: future.id });
+  });
 });
 
 // wave 2 (Cloud auto): under the hosted store, Vendo Cloud's own scheduler and Composio
