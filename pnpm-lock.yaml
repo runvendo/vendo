@@ -819,9 +819,6 @@ importers:
       '@vendoai/harnesses':
         specifier: workspace:*
         version: link:../harnesses
-      '@vendoai/knowledge':
-        specifier: workspace:*
-        version: link:../knowledge
       '@vendoai/mcp':
         specifier: workspace:*
         version: link:../mcp
@@ -829,7 +826,7 @@ importers:
         specifier: workspace:*
         version: link:../store
       zod:
-        specifier: ^3.25.0
+        specifier: '>=3.25.0 <5'
         version: 3.25.76
     devDependencies:
       '@types/node':
