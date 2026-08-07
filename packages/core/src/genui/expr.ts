@@ -885,26 +885,23 @@ const walkShape = (
   if (shape.kind === "array") {
     if (INDEX_PATTERN.test(head)) return walkShape(shape.items, rest, [...consumed, head], container);
     // A field name against rows reads the column: the resolved shape is an
-    // array of the field's shape.
+    // array of the field's shape, and a column of columns flattens into one
+    // column — the same single level walkValue drops per hop (D2).
     const inner = walkShape(shape.items, segments, consumed, container);
     if (!inner.ok) return inner;
+    const column: ShapeType = { kind: "array", items: inner.shape.kind === "array" ? inner.shape.items : inner.shape };
     return inner.container === undefined
-      ? { ok: true, shape: { kind: "array", items: inner.shape } }
-      : { ok: true, shape: { kind: "array", items: inner.shape }, container: inner.container };
+      ? { ok: true, shape: column }
+      : { ok: true, shape: column, container: inner.container };
   }
   return { ok: false, issue: `"${head}" reads past the ${shape.kind} at ${at}` };
 };
 
 /** The item shape behind a column (`invoices.amount_cents` is `number[]`).
- *  EVERY array level collapses: walkShape wraps once per array hop, while the
- *  evaluator flattens a column of columns into one column (walkValue, D2). So
- *  `orders.lines.cents` is a column of numbers to both — unwrapping one level
- *  here made the check reject expressions the evaluator computes. */
-const columnItems = (shape: ShapeType): ShapeType => {
-  let items = shape;
-  while (items.kind === "array") items = items.items;
-  return items;
-};
+ *  ONE level, because walkShape already dropped the levels the hops added: a
+ *  level still standing here is one the field's own type declares, and the
+ *  evaluator meets that one as a list at runtime. */
+const columnItems = (shape: ShapeType): ShapeType => (shape.kind === "array" ? shape.items : shape);
 
 interface CheckState {
   readonly context: ExprCheckContext;
@@ -957,13 +954,18 @@ const pathShape = (state: CheckState, node: ExprNode & { kind: "path" }): { shap
   return walked.container === undefined ? { shape: walked.shape } : { shape: walked.shape, container: walked.container };
 };
 
+/** The slots that need ONE number: arithmetic's operands and difference's two
+ *  arguments both reach the evaluator's asNumber, which rejects any list. The
+ *  aggregates are the other half — they read a column and reduce it. */
+const isScalarSlot = (call: string): boolean => call === "arithmetic" || call === "difference";
+
 const requireNumeric = (state: CheckState, node: ExprNode, call: string): void => {
   if (node.kind === "path") {
     const { shape, container } = pathShape(state, node);
     // The list check runs BEFORE the numeric one: a column of numbers is
     // numeric per item and still not a single number, so asking about the
     // items first would wave it through.
-    if (call === "arithmetic" && shape.kind === "array") {
+    if (isScalarSlot(call) && shape.kind === "array") {
       state.issues.push(`${node.text} is a list, not a single number — reduce it with sum(), count(), or average() first`);
       return;
     }
@@ -978,7 +980,7 @@ const requireNumeric = (state: CheckState, node: ExprNode, call: string): void =
     return;
   }
   const shape = shapeOfNode(state, node);
-  if (call === "arithmetic" && shape.kind === "array") {
+  if (isScalarSlot(call) && shape.kind === "array") {
     state.issues.push(`${printExpr(node)} is a list, not a single number — reduce it with sum(), count(), or average() first`);
     return;
   }
