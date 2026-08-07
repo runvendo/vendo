@@ -478,6 +478,31 @@ describe("ConnectCard and ConnectedAccountsPanel", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  // not-found is also what `byoConnections` throws when the CONNECTOR is
+  // missing ("no connector named composio supports connections") — an absent
+  // broker, not an absent account, and the client cannot tell those apart. So
+  // dropping a row is never permanent: a list read the server actually answers
+  // that still carries the account overrules it, and the row comes back.
+  it("a severed row the server still reports comes back on the next read it answers", async () => {
+    render(<VendoProvider client={client}><ConnectedAccountsPanel undoMs={30} /></VendoProvider>);
+    await screen.findByText("Gmail");
+    // The account is live; it is the broker lookup that is missing.
+    wire.state.failures.push({
+      method: "DELETE",
+      path: "/connections/ca_1",
+      code: "not-found",
+      message: "no connector named composio supports connections",
+      status: 404,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect Gmail" }));
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
+
+    // The read that follows answers, and it still has the account: it wins.
+    await waitFor(() => expect(screen.getByText(/via Composio · connected/)).toBeTruthy());
+    expect(screen.getByRole("button", { name: "Disconnect Gmail" })).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   // An account is gone the moment the WIRE says so — by the disconnect
   // succeeding, or by it answering not-found. Neither may wait on the list read
   // that follows to prove it: when that read fails the hook keeps its last
