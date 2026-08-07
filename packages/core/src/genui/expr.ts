@@ -1020,7 +1020,16 @@ const callShape = (state: CheckState, node: ExprNode & { kind: "call" }): ShapeT
     return { kind: "number" };
   }
   if (node.name === "days_until") {
-    const shape = columnItems(pathShape(state, rows).shape);
+    const shape = pathShape(state, rows).shape;
+    // days_until is a SCALAR slot: it reads one date, so a column of dates is
+    // as wrong as a column of numbers is under `-`. The evaluator says so; the
+    // check said nothing while columnItems looked past the list at its items.
+    if (shape.kind === "array") {
+      state.issues.push(
+        `days_until() reads one date, but ${rows.text} is a list — point it at a single row's date field`,
+      );
+      return { kind: "number" };
+    }
     if (shape.kind !== "json" && shape.kind !== "string") {
       state.issues.push(`days_until() reads an ISO date string, but ${rows.text} is a ${shape.kind} field`);
     }

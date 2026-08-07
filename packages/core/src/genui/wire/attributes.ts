@@ -195,14 +195,24 @@ export const parseAttributes = (state: CompileState, element: AttributeElement):
     } else {
       state.index = beforeValue;
     }
-    if (seen.has(name)) {
-      issue(state, "duplicate-attribute", `duplicate attribute "${name}" (the last one wins)`);
-    }
-    seen.add(name);
-    if (name === "id" && element !== "declaration" && element !== "patch") {
+    if (name === "id" && element !== "declaration") {
       issue(state, "wire-id-ignored", "wire-supplied id attributes are ignored (ids are compiler-owned)");
+      seen.add(name);
       continue;
     }
+    // Reported AFTER the drop, because the outcome is what a retry acts on: a
+    // dropped last value leaves the earlier one standing, and saying the last
+    // one won sends the model back to re-write the value that never landed.
+    if (seen.has(name)) {
+      issue(
+        state,
+        "duplicate-attribute",
+        value === DROPPED
+          ? `duplicate attribute "${name}" (the last one was dropped, so the earlier one stands)`
+          : `duplicate attribute "${name}" (the last one wins)`,
+      );
+    }
+    seen.add(name);
     if (value === DROPPED) continue;
     // defineOwn: a wire attribute named __proto__ must become data, never
     // the props object's prototype.

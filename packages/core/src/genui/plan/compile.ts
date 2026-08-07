@@ -68,6 +68,13 @@ const NO_NAMES: ReadonlySet<string> = new Set();
  *  stops teaching once it becomes a catalog dump. */
 const MAX_LISTED_NAMES = 12;
 
+/** At most this many issues are handed back. The issue list IS the retry
+ *  prompt, and a broken document mints a sentence per stray token, so an
+ *  uncapped list is an unbounded prompt (the wire compiler caps its own for
+ *  the same reason, wire/state.ts). A plan is a short document: nothing a
+ *  rewrite can act on lives past the first few dozen sentences. */
+const PLAN_MAX_ISSUES = 64;
+
 const nameList = (names: readonly string[]): string => {
   if (names.length === 0) return "none at all";
   const shown = names.slice(0, MAX_LISTED_NAMES).join(", ");
@@ -551,6 +558,14 @@ const compilePlanUnsafe = (text: string, facts: PlanFacts): PlanCompileResult =>
   return { plan: appPlan, issues: plan.issues };
 };
 
+const capIssues = (issues: string[]): string[] =>
+  issues.length <= PLAN_MAX_ISSUES
+    ? issues
+    : [
+      ...issues.slice(0, PLAN_MAX_ISSUES),
+      `${issues.length - PLAN_MAX_ISSUES} further problems were not listed — fix these first and write the plan again.`,
+    ];
+
 /**
  * Read one `<Plan>` document into an {@link AppPlan}, checking it against what
  * the host actually has. Pure, deterministic and total: never throws — an
@@ -558,7 +573,8 @@ const compilePlanUnsafe = (text: string, facts: PlanFacts): PlanCompileResult =>
  */
 export function compilePlan(text: string, facts: PlanFacts): PlanCompileResult {
   try {
-    return compilePlanUnsafe(text, facts);
+    const result = compilePlanUnsafe(text, facts);
+    return { ...result, issues: capIssues(result.issues) };
   } catch (error) {
     return {
       issues: [`the plan could not be read (${safeErrorMessage(error)}); write it again as one <Plan> document.`],
