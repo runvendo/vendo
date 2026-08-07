@@ -30,10 +30,19 @@ const session = await support.session("u_42", {
   user: { name: "Dana", plan: "pro" },     // server-trust, model-visible
   context: { helpers() { /* … */ } },       // guard/tools only
   headers: req.headers,                     // present-user auth forwarding
+  threadId: req.body.threadId,             // omit to start a new conversation
 });
 session.on("approval", (req) => req.approve());
 const response = await session.stream("Refund invoice #7");
+// Send `session.threadId` back to the client; it is what reopens this
+// conversation on the next request.
 ```
+
+A session is a REQUEST-lifetime object — the conversation it is on outlives
+it, in your store. Build one per request and pass `threadId` back in, or the
+next request starts a blank conversation. Omitting `threadId` opens a new
+one; a `threadId` that is not this subject's is a `not-found` error, never a
+silent new conversation. `session.threadId` is the id to hand your client.
 
 Every tool call passes the guard (`run` / `ask` / `block`); the dev's risk
 label is final and an unlabeled tool asks. Unset slots resolve down the

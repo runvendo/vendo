@@ -10,6 +10,7 @@
 import {
   hostSkillFiles,
   createTurnSkills,
+  VendoError,
   type ApprovalRequest,
   type FilesAdapter,
   type Harness,
@@ -40,6 +41,12 @@ export interface SessionOptions {
   context?: Record<string, unknown>;
   /** Present-user auth forwarding — the request's own headers. */
   headers?: Record<string, string> | Headers;
+  /** Reopen the conversation with this id instead of starting a new one. A
+   *  session is a request-lifetime object; the thread is what outlives it, so
+   *  this id is what a Node backend hands back to reach the same conversation
+   *  on the next request. Not this subject's thread (or not a thread at all) is
+   *  `not-found` — never a silent new conversation. */
+  threadId?: string;
 }
 
 export interface ApprovalEvent {
@@ -49,6 +56,8 @@ export interface ApprovalEvent {
 }
 
 export interface AgentSession {
+  /** The conversation this session is on. Hand it back as
+   *  `session(subject, { threadId })` to reopen the same conversation later. */
   readonly threadId: string;
   /** One turn; an AI-SDK UI-message stream `Response` (approval parts included). */
   stream(
@@ -101,8 +110,22 @@ export async function createSession(
 
   await deps.store.ensureSchema();
   await deps.doorReady;
-  const threadId = `thr_${randomUUID()}` as ThreadId;
-  await threadStore(deps.store).put(principal, { id: threadId, messages: [] });
+  const threads = threadStore(deps.store);
+  let threadId: ThreadId;
+  if (options.threadId === undefined) {
+    threadId = `thr_${randomUUID()}` as ThreadId;
+    await threads.put(principal, { id: threadId, messages: [] });
+  } else {
+    threadId = options.threadId as ThreadId;
+    // `get` is scoped to the principal's own subject, so this is the ownership
+    // check: a foreign thread reads back as absent and gets the same answer as
+    // one that never existed. There is deliberately NO `put` on this leg — put
+    // replaces the transcript with the `messages` it is handed, so the empty
+    // array above would delete every turn we are here to read back.
+    if (await threads.get(principal, threadId) === null) {
+      throw new VendoError("not-found", `no conversation ${threadId} for this user`);
+    }
+  }
 
   const transcript = threadMessageStore<UIMessage>(deps.store);
   const workspaces = workspaceStore(deps.store, { files: deps.files });
