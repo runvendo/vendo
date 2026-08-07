@@ -42,7 +42,7 @@ async function healthy(): Promise<string> {
     await writeFile(path, body);
   };
   await write("package.json", JSON.stringify({ dependencies: { "@vendoai/vendo": "0.3.0", next: "16" } }));
-  await write("app/layout.tsx", "export default ({children}) => <VendoRoot>{children}<VendoOverlay /></VendoRoot>;");
+  await write("app/layout.tsx", "import { VendoProvider } from \"@vendoai/vendo/react\";\nexport default ({children}) => <VendoProvider baseUrl=\"/api/vendo\">{children}<VendoOverlay /></VendoProvider>;\n");
   await write("app/api/vendo/[...vendo]/route.ts", "export const GET = () => {};\n");
   for (const file of ["tools.json", "overrides.json", "policy.json", "brief.md", "theme.json"]) await write(`.vendo/${file}`, "{}\n");
   await write(".vendo/data/.gitignore", "*\n");
