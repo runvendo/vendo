@@ -7,6 +7,7 @@ import {
   EXPR_CALLS,
   KIT_WIRE_COMPONENT_NAMES,
   WIRE_COMPONENT_NAMES,
+  shapeFromJsonSchema,
   type JsonSchema,
   type NormalizedCatalog,
 } from "@vendoai/core";
@@ -188,6 +189,24 @@ describe("screenTypings", () => {
     });
     // `{ id?: string } & any` would be `any`, and every binding through it valid.
     expect(dts).toContain("declare const transfer: { data: { id?: string } }");
+  });
+
+  it("keeps sibling properties alongside allOf, so both check floors agree", () => {
+    const data = {
+      allOf: [{ type: "object", properties: { id: { type: "string" }, actor: { type: "string" } }, required: ["id"] }],
+      properties: { total: { type: "number" } },
+      required: ["total"],
+    };
+    const dts = screenTypings({
+      catalog: [],
+      queries: [{ name: "transfer", tool: "maple_transfer" }],
+      toolOutputSchemas: { maple_transfer: { type: "object", properties: { data }, required: ["data"] } },
+    });
+    // Dropping `total` here would REJECT a binding the declared contract allows
+    // and core's shapeFromJsonSchema admits — a false finding, not a loose one.
+    expect(dts).toContain("declare const transfer: { data: { id: string; actor?: string } & { total: number } }");
+    const shape = shapeFromJsonSchema(data as JsonSchema);
+    expect(shape.kind === "object" ? Object.keys(shape.fields).sort() : []).toEqual(["actor", "id", "total"]);
   });
 
   it("types a query permissively when no schema is declared", () => {

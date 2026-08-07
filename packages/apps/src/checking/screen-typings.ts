@@ -171,7 +171,12 @@ const jsonSchemaTypeText = (schema: unknown, reading: SchemaReading, depth = 0):
     // `any`, and `T & any` is `any` — it would erase the very intersection it
     // was constraining, so it is dropped rather than joined. An unmodelled
     // branch still types as `any` and still collapses it: the safe direction.
-    const parts = schema.allOf.filter(describesAValue).map((branch) => jsonSchemaTypeText(branch, reading, depth + 1));
+    // Sibling `properties` are one more member, exactly as core's
+    // `intersectSchemas` treats them: dropping them here would make THIS floor
+    // reject a binding the declared contract allows and the other floor admits.
+    const own = isRecord(schema.properties) ? [{ ...schema, allOf: [] }] : [];
+    const parts = [...schema.allOf, ...own].filter(describesAValue)
+      .map((branch) => jsonSchemaTypeText(branch, reading, depth + 1));
     if (parts.length > 0) return parts.join(" & ");
   }
   const type = Array.isArray(schema.type) ? schema.type[0] : schema.type;
