@@ -920,7 +920,7 @@ describe("vendo init (zero-question)", () => {
     // Post server-wiring semantics: dev trusts its own origin; production
     // fails loud without the variable — no silent credential drop.
     expect(example).toContain("Dev trusts the request's own");
-    expect(example).toContain("production fails loud");
+    expect(example).toContain("fails loud without this set");
     expect(example).not.toContain("disabled without it");
     expect(await run(root, output())).toBe(0);
     expect((await readFile(join(root, ".env.example"), "utf8")).match(/VENDO_BASE_URL/g)).toHaveLength(1);

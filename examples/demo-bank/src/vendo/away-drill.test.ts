@@ -88,8 +88,9 @@ let serverOutput = "";
 /** The app's own root — the origin plus the mount point Maple is served under.
  *  What a visitor types, and what every page/API fetch hangs off. */
 let baseUrl = "";
-/** The bare origin. The WIRE base: `binding.path` in tools.json already carries
- *  the mount point, so joining it onto `baseUrl` would double it. */
+/** The bare origin, for the pieces that address the server rather than the app
+ *  (spec 2026-08-06 §B1 made `baseUrl` — the FULL public URL — the wire base:
+ *  stored `binding.path`s are prefix-free and joinUrl puts /maple back on). */
 let origin = "";
 
 async function freePort(): Promise<number> {
@@ -181,7 +182,7 @@ async function createStack(): Promise<Stack> {
   const actions = createActions({
     tools: await mapleTools(),
     overrides: await mapleOverrides(),
-    baseUrl: origin,
+    baseUrl,
     // The drill's point: away identity is a REAL Auth.js session minted with
     // the host's own secret. Unknown subjects are declined via claims → null.
     actAs: authJsPreset({
@@ -330,7 +331,9 @@ beforeAll(async () => {
   const env = {
     ...process.env,
     AUTH_SECRET,
-    VENDO_BASE_URL: origin,
+    // The FULL public URL, mount point included (spec 2026-08-06 §B1) —
+    // stored tool paths are prefix-free, so this is what puts /maple back on.
+    VENDO_BASE_URL: baseUrl,
     NEXT_TELEMETRY_DISABLED: "1",
     MAPLE_DIST_DIR: ".next/away-drill",
   };
