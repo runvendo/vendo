@@ -93,6 +93,13 @@ const ARMED = "automations:armed";
 const WEBHOOK_MAX_BYTES = 1024 * 1024;
 const FOREACH_MAX_ITEMS = 1000;
 
+/** Every engine-owned generic row belongs to ONE app, and the 02-store §5 erase
+ *  cascade collects generic rows by `refs @> {app_id}` — so a row written
+ *  without this ref outlives the app forever. That is not only clutter: a
+ *  webhook secret is a live signing key, and the delivery ledger has no other
+ *  lifecycle at all. */
+const appRef = (appId: string): Record<string, string> => ({ app_id: appId });
+
 const appRowSchema = z.object({
   subject: z.string(),
   enabled: z.boolean(),
@@ -1844,14 +1851,14 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     if (trigger.on.kind === "schedule") {
       const cursor = await config.store.records(SCHEDULE).get(key);
       if (cursor === null) {
-        await config.store.records(SCHEDULE).put({ id: key, data: { lastFiredAt: iso() } });
+        await config.store.records(SCHEDULE).put({ id: key, data: { lastFiredAt: iso() }, refs: appRef(appId) });
       }
     }
     if (trigger.on.kind === "external") {
       const secret = await config.store.records(WEBHOOK).get(key);
       if (secret === null) {
         const bytes = globalThis.crypto.getRandomValues(new Uint8Array(32));
-        await config.store.records(WEBHOOK).put({ id: key, data: { secret: base64url(bytes) } });
+        await config.store.records(WEBHOOK).put({ id: key, data: { secret: base64url(bytes) }, refs: appRef(appId) });
       }
     }
     return { enabled: true, missing, ...(missing.length === 0 ? {} : { grantSetId }) };
@@ -2088,6 +2095,10 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       const trigger = validateTrigger(declared);
       if (trigger.on.kind !== "schedule") continue;
       const cursorKey = triggerKey(row.doc.id, trigger.id);
+      // Every write of this row restates the ref, including the compare-and-swap
+      // replacement: a put that omitted it would strip the app ref the enable
+      // wrote and re-orphan the cursor on the very next tick.
+      const cursorRow = (data: Json) => ({ id: cursorKey, data, refs: appRef(row.doc.id) });
       const cursorRecord = cursorById.get(cursorKey) ?? null;
       const cursor = cursorRecord === null
         ? { lastFiredAt: at.toISOString() }
@@ -2105,8 +2116,8 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       }
       if (scheduledFor === undefined) {
         if (cursorRecord === null) {
-          if (scheduleRecords.atomic === undefined) await scheduleRecords.put({ id: cursorKey, data: cursor });
-          else await scheduleRecords.atomic.insertIfAbsent({ id: cursorKey, data: cursor });
+          if (scheduleRecords.atomic === undefined) await scheduleRecords.put(cursorRow(cursor));
+          else await scheduleRecords.atomic.insertIfAbsent(cursorRow(cursor));
         }
         continue;
       }
@@ -2117,15 +2128,12 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       };
       let claimed = true;
       if (cursorRecord === null) {
-        if (scheduleRecords.atomic === undefined) await scheduleRecords.put({ id: cursorKey, data: nextCursor });
-        else claimed = await scheduleRecords.atomic.insertIfAbsent({ id: cursorKey, data: nextCursor }) !== null;
+        if (scheduleRecords.atomic === undefined) await scheduleRecords.put(cursorRow(nextCursor));
+        else claimed = await scheduleRecords.atomic.insertIfAbsent(cursorRow(nextCursor)) !== null;
       } else if (scheduleRecords.atomic !== undefined && cursorRecord.revision !== undefined) {
-        claimed = await scheduleRecords.atomic.compareAndSwap(
-          { id: cursorKey, data: nextCursor },
-          cursorRecord.revision,
-        ) !== null;
+        claimed = await scheduleRecords.atomic.compareAndSwap(cursorRow(nextCursor), cursorRecord.revision) !== null;
       } else {
-        await scheduleRecords.put({ id: cursorKey, data: nextCursor });
+        await scheduleRecords.put(cursorRow(nextCursor));
       }
       if (!claimed) continue;
       fired.push({ row, trigger, scheduledFor, firedAt: atIso });
@@ -2306,6 +2314,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
             deliveryId: headerResult.data.id,
             receivedAt: iso(),
           },
+          refs: appRef(row.doc.id),
         };
         if (deliveries.atomic === undefined) {
           if (await deliveries.get(deliveryKey) !== null) {
