@@ -210,6 +210,15 @@ control was deleted, so `.vendo/data/` contents could get committed.
 !.gitignore
 ```
 
+### E-CFG-003 {#E-CFG-003}
+
+**Symptom:** The OpenAPI spec's relative `servers[0].url` and `VENDO_BASE_URL`'s
+path prefix disagree — every page renders and every host tool call 404s.
+
+**Fix:** Set `VENDO_BASE_URL` to the app's full public URL including the spec's
+server mount (`https://site.com/maple`), or drop the relative server from the
+spec if the app is not mounted under a prefix.
+
 ## Host dependencies
 
 ### E-DEP-001 {#E-DEP-001}

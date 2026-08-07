@@ -21,7 +21,8 @@ import { cloudMcpTenant, type EnsureTenantResult } from "../cloud-mcp.js";
 import { publicBaseUrl } from "../mcp-broker-select.js";
 import { EJECT_MANIFEST_FILE, type EjectedManifest } from "./eject.js";
 import { applyJudgment, judgmentsFileSchema, overridesFileSchema, toolsFileSchema, type ToolJudgment } from "@vendoai/actions";
-import type { RiskLabel } from "@vendoai/core";
+import { openApiMountPath } from "@vendoai/actions/sync";
+import { publicBase, type RiskLabel } from "@vendoai/core";
 import { detectFramework, detectVendoWiring } from "./framework.js";
 import { importsGeneratedMap, missingRegistrations, registrationKey, requiredServerActions, serverActionsWiring } from "./init-scaffolds.js";
 import { CONFIG_SURFACES, OVERRIDES_ENABLEMENT_NOTE } from "../config-surface.js";
@@ -101,6 +102,18 @@ async function hasDependency(root: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** The first OpenAPI document the extractors would find, in their order. */
+async function firstOpenApiSpecPath(root: string): Promise<string | null> {
+  for (const candidate of [
+    "openapi.json", "openapi.yaml", "openapi.yml",
+    join("public", "openapi.json"), join("docs", "openapi.json"), join("docs", "openapi.yaml"),
+  ]) {
+    const file = join(root, candidate);
+    if (await exists(file)) return file;
+  }
+  return null;
 }
 
 /** root rides in as the client's cwd: projectIdHash/packageManager and the
@@ -357,6 +370,29 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     else fail(`config/${file}`, "E-CFG-001", `missing .vendo/${file}`);
   }
   if (!await exists(join(root, ".vendo", "data", ".gitignore"))) warn("config/data-gitignore", "E-CFG-002", ".vendo/data/.gitignore is missing");
+
+  // Spec 2026-08-06 §B1 — the deployment's path prefix has exactly one home:
+  // VENDO_BASE_URL. A spec that declares a DIFFERENT relative server mount is the
+  // #914 shape by another route: every page renders and every tool call 404s.
+  const specPath = await firstOpenApiSpecPath(root);
+  const declaredMount = specPath === null ? "" : await openApiMountPath(specPath);
+  const configuredBase = env["VENDO_BASE_URL"];
+  if (declaredMount !== "" && configuredBase !== undefined && configuredBase.trim() !== "") {
+    let basePath = "";
+    try {
+      basePath = publicBase(configuredBase).path;
+    } catch {
+      basePath = "";
+    }
+    if (basePath !== declaredMount) {
+      fail("config/mount", "E-CFG-003",
+        `${relative(root, specPath!)} declares servers[0].url ${JSON.stringify(declaredMount)} but VENDO_BASE_URL's path is `
+        + `${JSON.stringify(basePath)} — one of them is wrong, and the disagreement 404s every host tool while every page renders. `
+        + `Set VENDO_BASE_URL to the app's FULL public URL including ${JSON.stringify(declaredMount)}, or drop the relative server from the spec.`);
+    } else {
+      pass("config/mount", `the OpenAPI server mount and VENDO_BASE_URL agree on ${JSON.stringify(declaredMount)}`);
+    }
+  }
 
   // cse lane 3 — per-surface OWNERSHIP: for each cloud-resolvable content
   // surface, is the local file the source of truth, or is it resolved at

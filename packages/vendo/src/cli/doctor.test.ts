@@ -1303,6 +1303,38 @@ describe("vendo doctor error codes + fix_refs", () => {
     });
   });
 
+  /** Spec 2026-08-06 §B1: the path prefix has ONE home, VENDO_BASE_URL. A spec
+   *  declaring a different relative server mount is #914 by another route —
+   *  every page renders and every host tool 404s. */
+  const specWithMount = JSON.stringify({
+    openapi: "3.1.0", info: { title: "t", version: "1" }, servers: [{ url: "/maple" }], paths: {},
+  });
+
+  it("fails E-CFG-003 when the OpenAPI server mount and VENDO_BASE_URL's path disagree", async () => {
+    const root = await healthy();
+    await writeFile(join(root, "openapi.json"), specWithMount, "utf8");
+    const { report } = await jsonChecks({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      env: { VENDO_BASE_URL: "https://site.com" },
+    });
+    expect(report.checks.find((check) => check.id === "config/mount")).toMatchObject({
+      status: "broken",
+      error_code: "E-CFG-003",
+    });
+  });
+
+  it("passes config/mount when the spec and VENDO_BASE_URL agree", async () => {
+    const root = await healthy();
+    await writeFile(join(root, "openapi.json"), specWithMount, "utf8");
+    const { report } = await jsonChecks({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      env: { VENDO_BASE_URL: "https://site.com/maple" },
+    });
+    expect(report.checks.find((check) => check.id === "config/mount")).toMatchObject({ status: "ok" });
+  });
+
   // Visible-surface gate (0.4.1 E2E cert B3): green must mean a user can SEE
   // the agent — <VendoRoot> alone is a provider that renders nothing.
   it("fails E-WIRE-006 when nothing visible is mounted, and exits 1", async () => {

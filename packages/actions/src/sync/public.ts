@@ -5,6 +5,10 @@
  *  these, which put ~4MB of dev tooling (and hard Node deps) into every
  *  Worker bundle. CLI and tests import from here. */
 export { mergeOverrides, vendoSync, type SyncReportWithWarnings } from "./index.js";
+// The spec's relative server mount. Stored paths no longer carry it (spec
+// 2026-08-06 §B1); doctor reads it to catch a spec that disagrees with
+// VENDO_BASE_URL's path prefix (E-CFG-003).
+export { openApiMountPath } from "./openapi.js";
 // The judgment layer's deterministic half (direction rule, apply, prune) is
 // NOT here: it lives at the package root (src/judgments.ts) because the runtime
 // registry applies judgments, and this entry is the node-only build-time half.

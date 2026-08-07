@@ -27,6 +27,7 @@ describe("doctor error-code registry", () => {
         "E-AUTH-007": "actAs is not configured",
         "E-CFG-001": "a required .vendo/ config file is missing",
         "E-CFG-002": ".vendo/data/.gitignore is missing",
+        "E-CFG-003": "the OpenAPI spec's relative server mount and VENDO_BASE_URL's path prefix disagree",
         "E-CLOUD-001": "VENDO_API_KEY is set but not usable",
         "E-DEP-001": "the installed ai package is a major version @vendoai/vendo does not support",
         "E-DEP-002": "the running wire serves a different @vendoai/vendo version than this CLI (split-brain install)",

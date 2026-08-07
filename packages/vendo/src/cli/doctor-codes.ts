@@ -25,6 +25,7 @@ export const DOCTOR_ERROR_CODES = {
   "E-WIRE-009": "detected \"use server\" actions are not registered or not wired into createVendo",
   "E-CFG-001": "a required .vendo/ config file is missing",
   "E-CFG-002": ".vendo/data/.gitignore is missing",
+  "E-CFG-003": "the OpenAPI spec's relative server mount and VENDO_BASE_URL's path prefix disagree",
   "E-DEP-001": "the installed ai package is a major version @vendoai/vendo does not support",
   "E-DEP-002": "the running wire serves a different @vendoai/vendo version than this CLI (split-brain install)",
   "E-DEP-003": "the installed zod predates the zod/v3 + zod/v4 subpaths the AI SDK imports (zod < 3.25)",
