@@ -2,7 +2,7 @@
 import type { ComponentRegistry, UIPayload } from "@vendoai/core";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { VendoProvider, hostComponentMap } from "../src/index.js";
+import { VendoProvider, createVendoClient, hostComponentMap, useVendoProvider, type VendoClient } from "../src/index.js";
 import { VendoSlot } from "../src/chrome/index.js";
 
 /** A pinned vendo-genui/v2 tree whose single node is the HOST component —
@@ -46,6 +46,32 @@ describe("components prop accepts the 01 §14 registry form (08 §2 amendment)",
       </VendoProvider>,
     );
     expect(screen.getByTestId("metric").textContent).toBe("metric:42");
+  });
+});
+
+describe("VendoProvider baseUrl", () => {
+  function Probe({ onClient }: { onClient: (client: VendoClient) => void }) {
+    onClient(useVendoProvider().client);
+    return null;
+  }
+
+  it("builds its own client at the given baseUrl, and an explicit client wins", () => {
+    let built: VendoClient | undefined;
+    render(
+      <VendoProvider baseUrl="/maple/api/vendo">
+        <Probe onClient={client => { built = client; }} />
+      </VendoProvider>,
+    );
+    expect(built?.baseUrl).toBe("/maple/api/vendo");
+
+    const explicit = createVendoClient({ baseUrl: "/explicit" });
+    let seen: VendoClient | undefined;
+    render(
+      <VendoProvider baseUrl="/maple/api/vendo" client={explicit}>
+        <Probe onClient={client => { seen = client; }} />
+      </VendoProvider>,
+    );
+    expect(seen).toBe(explicit);
   });
 });
 

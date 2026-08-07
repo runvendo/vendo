@@ -95,6 +95,10 @@ export function hostComponentMap(components: HostComponentsInput | undefined): R
 
 export function VendoProvider(props: {
   client?: VendoClient;
+  /** The wire mount, path prefix included ("/maple/api/vendo"). Default
+      "/api/vendo". Ignored when `client` is passed — an explicit client already
+      carries its own base. */
+  baseUrl?: string;
   components?: HostComponentsInput;
   theme?: Partial<VendoTheme>;
   transport?: ChatTransport<UIMessage>;
@@ -112,7 +116,7 @@ export function VendoProvider(props: {
   captureScreen?: boolean;
   children: ReactNode;
 }): ReactNode {
-  const { client, components, theme, transport, onPin, pinSlot, tools, connectors, discoverability, greeting, intl, captureScreen, children } = props;
+  const { client, baseUrl, components, theme, transport, onPin, pinSlot, tools, connectors, discoverability, greeting, intl, captureScreen, children } = props;
   const currency = intl?.currency;
   const locale = intl?.locale;
   // Installed during RENDER, not in an effect: the formatters are called while
@@ -124,7 +128,7 @@ export function VendoProvider(props: {
   }, [currency, locale]);
   const value = useMemo<VendoContextValue>(
     () => ({
-      client: client ?? createVendoClient({}),
+      client: client ?? createVendoClient(baseUrl === undefined ? {} : { baseUrl }),
       components: hostComponentMap(components),
       theme: resolveTheme(defaultVendoTheme, theme),
       transport,
@@ -137,7 +141,7 @@ export function VendoProvider(props: {
       intl: resolvedIntl,
       captureScreen: captureScreen ?? true,
     }),
-    [client, components, theme, transport, onPin, pinSlot, tools, connectors, discoverability, greeting, resolvedIntl, captureScreen],
+    [client, baseUrl, components, theme, transport, onPin, pinSlot, tools, connectors, discoverability, greeting, resolvedIntl, captureScreen],
   );
   return <VendoContext.Provider value={value}>{children}</VendoContext.Provider>;
 }
