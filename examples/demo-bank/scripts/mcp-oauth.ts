@@ -11,10 +11,39 @@
  */
 import crypto from "node:crypto";
 
-export type DoorSession = {
-  origin: URL;
+/** The door's fixed mount inside the app (10-mcp §5). */
+const MOUNT = "/api/vendo/mcp";
+
+export type DoorWalk = {
+  /** Where Maple is served — every URL below hangs off this. */
+  base: string;
   /** The door's resource URL — also the OAuth `resource` every request carries. */
   resource: string;
+  protectedResourceMetadata: string;
+  authorizationServerMetadata: string;
+  login: string;
+};
+
+/**
+ * EVERY URL THE WALK TOUCHES, decided in one place from the target.
+ *
+ * The door's own OAuth surface is the only one this script can walk (a
+ * broker-fronted deployment owns the sign-in itself), so the authorization
+ * server is the door — its metadata sits beside the protected-resource
+ * document rather than being re-derived from what discovery returns.
+ */
+export function doorUrls(target: string | undefined): DoorWalk {
+  const base = new URL(target ?? "http://localhost:3000").origin;
+  return {
+    base,
+    resource: `${base}${MOUNT}`,
+    protectedResourceMetadata: `${base}/.well-known/oauth-protected-resource${MOUNT}`,
+    authorizationServerMetadata: `${base}/.well-known/oauth-authorization-server${MOUNT}`,
+    login: `${base}/login`,
+  };
+}
+
+export type DoorSession = DoorWalk & {
   accessToken: string;
   refreshToken: string | undefined;
   /** Maple's own Auth.js session, for calling the product's routes as the person. */
@@ -65,28 +94,18 @@ export function textOf(result: unknown): string {
 }
 
 export async function signIn(target: string | undefined, clientName: string): Promise<DoorSession> {
-  const origin = new URL(target ?? "http://localhost:3000");
-  origin.pathname = "/";
-  origin.search = "";
-  origin.hash = "";
-  const resource = new URL("/api/vendo/mcp", origin).toString();
-  const protectedMetadataUrl = new URL(
-    "/.well-known/oauth-protected-resource/api/vendo/mcp",
-    origin,
-  );
+  const walk = doorUrls(target);
+  const { base, resource } = walk;
 
   const protectedMetadata = await json<{
     resource: string;
     authorization_servers: string[];
-  }>(await fetch(protectedMetadataUrl), "protected-resource discovery");
+  }>(await fetch(walk.protectedResourceMetadata), "protected-resource discovery");
   assert(protectedMetadata.resource === resource, "Protected-resource metadata advertised the wrong resource.");
 
   const authorizationServer = protectedMetadata.authorization_servers?.[0];
   assert(authorizationServer, "Protected-resource metadata omitted its authorization server.");
-  const authorizationMetadataUrl = new URL(
-    `/.well-known/oauth-authorization-server${new URL(resource).pathname}`,
-    authorizationServer,
-  );
+  const authorizationMetadataUrl = walk.authorizationServerMetadata;
   const authorizationMetadata = await json<{
     authorization_endpoint: string;
     token_endpoint: string;
@@ -127,15 +146,16 @@ export async function signIn(target: string | undefined, clientName: string): Pr
   const bounce = await fetch(authorizeUrl, { redirect: "manual" });
   assert(bounce.status === 302, `Authorization did not bounce to Maple login (${bounce.status}).`);
   const loginUrl = new URL(bounce.headers.get("location") ?? "");
-  assert(loginUrl.pathname === "/login", "Authorization bounced somewhere other than Maple login.");
+  assert(`${loginUrl.origin}${loginUrl.pathname}` === walk.login, "Authorization bounced somewhere other than Maple login.");
   assert(loginUrl.searchParams.get("returnTo") === authorizeUrl.toString(), "Login bounce did not preserve the exact returnTo.");
   const loginPage = await fetch(loginUrl);
   assert(loginPage.ok && (await loginPage.text()).includes("Sign in to Maple"), "Maple login page did not render.");
 
   const email = process.env.MAPLE_DEMO_EMAIL ?? "yousef@maple.com";
-  const password = process.env.MAPLE_DEMO_PASSWORD ?? (origin.hostname === "localhost" ? "maple-demo" : undefined);
+  const password = process.env.MAPLE_DEMO_PASSWORD
+    ?? (new URL(base).hostname === "localhost" ? "maple-demo" : undefined);
   assert(password, "Set MAPLE_DEMO_PASSWORD for non-local runs.");
-  const login = await fetch(new URL("/login", origin), {
+  const login = await fetch(walk.login, {
     method: "POST",
     redirect: "manual",
     headers: { "content-type": "application/x-www-form-urlencoded" },
@@ -197,15 +217,14 @@ export async function signIn(target: string | undefined, clientName: string): Pr
   );
 
   return {
-    origin,
-    resource,
+    ...walk,
     accessToken: token.access_token,
     refreshToken: token.refresh_token,
     cookie,
     consentHtml,
     discovery: {
-      protectedResource: protectedMetadataUrl.toString(),
-      authorizationServer: authorizationMetadataUrl.toString(),
+      protectedResource: walk.protectedResourceMetadata,
+      authorizationServer: authorizationMetadataUrl,
       advertisedResource: protectedMetadata.resource,
     },
   };

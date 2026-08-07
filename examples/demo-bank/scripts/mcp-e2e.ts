@@ -9,7 +9,7 @@ const CLIENT_NAME = "Maple MCP proof client";
 async function main() {
   const target = process.argv.slice(2).find((argument) => argument !== "--");
   const session = await signIn(target, CLIENT_NAME);
-  const { cookie, origin, resource } = session;
+  const { cookie, base, resource } = session;
 
   // The door's own consent page wears the HOST's brand, not Vendo's. Read the
   // accent from Maple's authored theme rather than pinning a literal here —
@@ -37,7 +37,7 @@ async function main() {
     const approvalId = textOf(parked).match(/apr_[0-9a-f-]+/)?.[0];
     assert(approvalId, "Parked transfer did not name its approval.");
 
-    const decided = await fetch(new URL("/api/vendo/approvals/decide", origin), {
+    const decided = await fetch(`${base}/api/vendo/approvals/decide`, {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
       body: JSON.stringify({
@@ -55,7 +55,7 @@ async function main() {
     assert(textOf(retried).includes("MCP Proof Recipient"), "Approved transfer did not return Maple's side effect.");
 
     console.log(JSON.stringify({
-      origin: origin.toString(),
+      base,
       discovery: session.discovery,
       oauth: {
         dcr: true,

@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import { config } from "../../proxy";
 import spec from "../../../openapi.json";
 import tools from "../../../.vendo/tools.json";
+import { doorUrls } from "../../../scripts/mcp-oauth";
 import { BASE_PATH } from "@/lib/base-path";
 
 describe("Maple's mount point", () => {
@@ -37,6 +38,27 @@ describe("Maple's mount point", () => {
       .map(tool => `${tool.binding.method} ${tool.binding.path}`)
       .sort();
     expect(synced).toEqual(documented);
+  });
+
+  /** THE MCP DOOR IS UNDER THE MOUNT POINT TOO, and the same nothing-visible
+   *  rule applies: an origin-rooted discovery URL reaches Maple's 404 PAGE, and
+   *  a 404 page is an HTML body a walk can read right past. The door, its two
+   *  discovery documents and the login it bounces to all live under the prefix
+   *  — the door advertises the prefix-LOCAL well-known spelling, because a
+   *  mounted deployment owns no path outside its prefix. */
+  it("roots the MCP door walk — resource, discovery, login — at the mount point", () => {
+    const walk = {
+      base: `http://localhost:3000${BASE_PATH}`,
+      resource: `http://localhost:3000${BASE_PATH}/api/vendo/mcp`,
+      protectedResourceMetadata: `http://localhost:3000${BASE_PATH}/.well-known/oauth-protected-resource/api/vendo/mcp`,
+      authorizationServerMetadata: `http://localhost:3000${BASE_PATH}/.well-known/oauth-authorization-server/api/vendo/mcp`,
+      login: `http://localhost:3000${BASE_PATH}/login`,
+    };
+    // No argument at all is the same walk: the default target is the dev
+    // server's origin, not a bare origin the door does not answer on.
+    expect(doorUrls(undefined)).toEqual(walk);
+    expect(doorUrls("http://localhost:3000")).toEqual(walk);
+    expect(doorUrls("http://localhost:3000/maple")).toEqual(walk);
   });
 
   /** Next prefixes every proxy matcher with the mount point, so the catch-all

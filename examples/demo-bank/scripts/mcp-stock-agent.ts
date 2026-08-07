@@ -88,7 +88,7 @@ async function main() {
     process.exit(1);
   }
   console.log("\nPASS — words to the agent, pixels to the product.");
-  console.log(`       the screen is at ${new URL("/vendo/apps", session.origin)}  (app ${String(receipt.id)})`);
+  console.log(`       the screen is at ${session.base}/vendo/apps  (app ${String(receipt.id)})`);
 }
 
 main().catch((error) => {
