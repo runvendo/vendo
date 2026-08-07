@@ -37,6 +37,35 @@ const liveTurn = (subject: string, marker: string, presence?: RunContext["presen
   tools: toolsFor(marker),
 });
 
+/**
+ * An expired entry is INERT: `resolve()` refuses it whether or not the registry
+ * is still holding it, and nothing else in the file can see it (verified against
+ * both the pre- and post-fix implementations). "The registry let go of it" has
+ * therefore no behavioural surface to assert against, and a retention leak is
+ * only visible by looking at the Map the registry builds for itself. This
+ * captures that Map from the outside; the product exposes nothing for it.
+ */
+const probeRegistry = <T>(make: () => T) => {
+  const built: Map<string, unknown>[] = [];
+  const RealMap = globalThis.Map;
+  globalThis.Map = class extends RealMap {
+    constructor(...args: ConstructorParameters<typeof Map>) {
+      super(...args);
+      built.push(this as Map<string, unknown>);
+    }
+  } as MapConstructor;
+  try {
+    return {
+      registry: make(),
+      /** The credential map, identified by a token it holds — so call it once
+       *  something has been minted, never by construction order. */
+      credentialMap: (token: string) => built.find((map) => map.has(token))!,
+    };
+  } finally {
+    globalThis.Map = RealMap;
+  }
+};
+
 describe("the door's turn credential — what it refuses", () => {
   it("cannot be minted outside a live turn: there is no context to bind to", async () => {
     const credentials = createTurnCredentials();
@@ -169,6 +198,28 @@ describe("the door's turn credential — what it refuses", () => {
     const again = credentials.publish("thr_a", liveTurn("user_a", "a2"));
     expect(await credentials.resolve(token)).toBeNull();
     again();
+  });
+
+  it("an abandoned thread's expired credential is collected by ANY publish, not only its own thread's", async () => {
+    let now = 1_000_000;
+    const { registry: credentials, credentialMap } = probeRegistry(() =>
+      createTurnCredentials({ now: () => now, idleMs: 60_000 }));
+
+    const release = credentials.publish("thr_a", liveTurn("user_a", "a"));
+    const token = credentials.mint("thr_a")!;
+    const minted = credentialMap(token);
+    release();
+
+    // Thread A is ABANDONED: it never takes another turn, and nothing ever
+    // resolves its token. Only publish() and resolve() can notice an expiry, so
+    // for this entry neither will ever run again.
+    now += 120_000;
+    for (let i = 0; i < 20; i++) credentials.publish("thr_b", liveTurn("user_b", `b${i}`))();
+
+    expect(minted.has(token)).toBe(false);
+    expect(minted.size).toBe(0);
+    // Belt and braces: it was never usable while it lingered, either.
+    expect(await credentials.resolve(token)).toBeNull();
   });
 
   it("two mints never collide, and a token is not derivable from the thread it names", () => {
