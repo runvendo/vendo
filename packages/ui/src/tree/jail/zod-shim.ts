@@ -35,6 +35,11 @@
  *  one thing a shim must never fake. */
 const PARSERS = new Set(["parse", "safeParse", "parseAsync", "safeParseAsync"]);
 
+/** A chainable answer here would make every shim value a thenable whose
+ *  `then` never calls back, so one `await` hangs the island forever. Absent
+ *  is the only safe answer, and `has` says the same. */
+const PROMISE_KEYS = new Set(["then", "catch", "finally"]);
+
 /**
  * The shim's own refusal, with its OWN type. Deliberately not a `ZodError`: if
  * a refusal were catchable as a validation error, a component's `catch (e) { if
@@ -68,6 +73,7 @@ const node = (): unknown => new Proxy(function chain() {} as object, {
   get(_target, property) {
     if (typeof property === "symbol") return undefined;
     const key = String(property);
+    if (PROMISE_KEYS.has(key)) return undefined;
     if (PARSERS.has(key)) return () => refuse(key);
     // `_def`/`shape`/`options`/`element` are read by tooling, never by render
     // paths; a chainable answer keeps property access from throwing.
@@ -76,7 +82,7 @@ const node = (): unknown => new Proxy(function chain() {} as object, {
   // `z.object({...})`, `.min(1)`, `.describe("…")` — all calls chain.
   apply: () => node(),
   // Some code probes with `in`; answer consistently with `get`.
-  has: () => true,
+  has: (_target, property) => !PROMISE_KEYS.has(String(property)),
 });
 
 /**
@@ -98,11 +104,12 @@ export const zodShim: Record<string, unknown> = new Proxy({}, {
     if (typeof property === "symbol") return undefined;
     const key = String(property);
     if (key === "__esModule") return true;
+    if (PROMISE_KEYS.has(key)) return undefined;
     // The namespace and the default export are the module itself.
     if (key === "z" || key === "default") return zodShim;
     if (key === "ZodError") return ZodError;
     if (PARSERS.has(key)) return () => refuse(key);
     return node();
   },
-  has: () => true,
+  has: (_target, property) => !PROMISE_KEYS.has(String(property)),
 }) as Record<string, unknown>;
