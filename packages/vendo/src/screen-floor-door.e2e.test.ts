@@ -224,10 +224,18 @@ describe("the assembly loop always hears the floor's verdict on what it saved", 
     // …and this is why the hand cannot lean on the door the brief used to name.
     // The loop's own `validate({appId})` — step 2, the id straight off its brief —
     // is row-scoped, and a save that never painted leaves no row, so it refused to
-    // judge the one document that needed it. Both live lines, in one run.
+    // judge the one document that needed it.
+    //
+    // The seam's half stays the operator's: no row is our defect to chase, and the
+    // loop can do nothing with it.
     const logged = operatorLog(refusals.mock.calls);
     expect(logged).toContain("has no row to hold its source");
-    expect(logged).toContain("app not found");
+    // The refusal's half is the LOOP's, and it now arrives where the loop can read
+    // it — the prompt after the `validate` call. It used to be flattened to
+    // "could not complete. Try again", which sent the loop back through a call that
+    // can never succeed while the real sentence went only to a log nobody was
+    // reading. Same refusal, same run; the door it comes through is the fix.
+    expect(walked.prompts[2] ?? "").toContain("app not found");
   }, 120_000);
 
   it("a save that DOES reach the screen still lands the row, the paint and a ready receipt", async () => {
