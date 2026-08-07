@@ -432,9 +432,11 @@ describe("ConnectCard and ConnectedAccountsPanel", () => {
   // A refusal the person cannot retry away must not be dressed as a wobble:
   // "try again in a moment" sends them back to the same wall forever.
   it.each([
-    ["blocked", "Sign in first, then disconnect Gmail."],
-    ["forbidden", "You don’t have access to disconnect Gmail here."],
-  ])("a %s disconnect refusal says what to do instead of promising a retry", async (code, sentence) => {
+    ["blocked", 401, "Sign in first, then disconnect Gmail."],
+    ["forbidden", 403, "You don’t have access to disconnect Gmail here."],
+    ["not-implemented", 501, "Disconnecting Gmail isn’t set up here — there’s nothing you can do from this screen."],
+    ["cloud-required", 402, "Disconnecting Gmail isn’t set up here — there’s nothing you can do from this screen."],
+  ] as const)("a %s disconnect refusal says what to do instead of promising a retry", async (code, status, sentence) => {
     render(<VendoProvider client={client}><ConnectedAccountsPanel undoMs={30} /></VendoProvider>);
     await screen.findByText("Gmail");
     wire.state.failures.push({
@@ -442,7 +444,7 @@ describe("ConnectCard and ConnectedAccountsPanel", () => {
       path: "/connections/ca_1",
       code,
       message: "the wire's own sentence, which is the developer's",
-      status: code === "blocked" ? 401 : 403,
+      status,
     });
     fireEvent.click(screen.getByRole("button", { name: "Disconnect Gmail" }));
     fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
@@ -453,16 +455,42 @@ describe("ConnectCard and ConnectedAccountsPanel", () => {
     expect(alert.textContent).not.toContain("developer");
   });
 
-  it("a transient disconnect failure still offers the retry that can work", async () => {
+  // The broker answers not-found for any id outside this person's own scope
+  // (`ConnectorConnections`' frozen rule), so the row on screen is stale: the
+  // account is ALREADY gone. Their intent is a fact — reporting a failure, or
+  // leaving the row sitting there, would both be lies.
+  it("a disconnect for an account that is already gone drops the row instead of erroring", async () => {
     render(<VendoProvider client={client}><ConnectedAccountsPanel undoMs={30} /></VendoProvider>);
     await screen.findByText("Gmail");
     wire.state.failures.push({
       method: "DELETE",
       path: "/connections/ca_1",
-      code: "conflict",
-      message: "broker busy",
-      status: 409,
+      code: "not-found",
+      message: "connection not found: ca_1",
+      status: 404,
     });
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect Gmail" }));
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
+    // …and the server never had it: another tab, or the broker's own console.
+    wire.state.connections = [];
+
+    expect(await screen.findByText(/No connected accounts yet/)).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  // Reserved for the faults that DO clear on their own. `validation` rides here
+  // deliberately: the client stamps it on any envelope that carries no code of
+  // its own, so it is the unknown bucket, not a statement about the deployment.
+  it.each([
+    ["conflict", 409],
+    ["validation", 400],
+    // What `raiseCloudError` stamps on a console 5xx — an unknown code to the
+    // client, and the shape every unmapped broker failure arrives in.
+    ["unavailable", 500],
+  ] as const)("a transient disconnect failure (%s) still offers the retry that can work", async (code, status) => {
+    render(<VendoProvider client={client}><ConnectedAccountsPanel undoMs={30} /></VendoProvider>);
+    await screen.findByText("Gmail");
+    wire.state.failures.push({ method: "DELETE", path: "/connections/ca_1", code, message: "broker busy", status });
     fireEvent.click(screen.getByRole("button", { name: "Disconnect Gmail" }));
     fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
 
