@@ -98,11 +98,10 @@ const shapeSchemaMismatch = (shape: ShapeType, schema: Record<string, unknown>):
   return null;
 };
 
-/** With the tools' declared response shapes AND the catalog's prop schemas
- *  both in hand, a top-level
- *  `$path` prop on a host node can be kind-checked end to end. Existence is
- *  the wire compiler's shape check; this catches the type mismatches that
- *  render silently broken (empty chart, blank stat). */
+/** With the tools' declared response shapes AND the catalog's prop schemas both
+ *  in hand, a top-level `$path` prop on a host node can be kind-checked end to
+ *  end. Existence is the wire compiler's shape check; this catches the type
+ *  mismatches that render silently broken (empty chart, blank stat). */
 export const bindingKindIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] => {
   if (deps.toolShapes === undefined) return [];
   const issues: FactIssue[] = [];

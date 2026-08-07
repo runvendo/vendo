@@ -2106,6 +2106,13 @@ describe("app design rules (spec 2026-07-20)", () => {
         name: "host_ledger",
         description: "Ledger rows",
         inputSchema: { type: "object", properties: {} },
+        // The DECLARED response — the only source of a tool's shape now that
+        // nothing samples the host. Semantics annotate the fields it names.
+        outputSchema: {
+          type: "object",
+          properties: { amount: { type: "number" }, dueAt: { type: "string" } },
+          required: ["amount", "dueAt"],
+        },
         risk: "read",
         binding: { kind: "route", method: "GET", path: "/ledger", argsIn: "query" },
         semantics: { amount: { kind: "money", unit: amount } },
@@ -2122,7 +2129,6 @@ describe("app design rules (spec 2026-07-20)", () => {
     vi.stubEnv("E2B_API_KEY", "");
     vi.stubEnv("VENDO_API_KEY", "vnd_cloud_key");
     vi.stubEnv("VENDO_CLOUD_URL", "https://cloud-overrides.test");
-    // A trusted origin so the create-time shape sampler's route read resolves.
     vi.stubEnv("VENDO_BASE_URL", hostOrigin);
     // The cloud-owned authored layer annotates a SECOND field, so the merged
     // view can only be right if both legs applied.
@@ -2138,8 +2144,6 @@ describe("app design rules (spec 2026-07-20)", () => {
           { headers: { etag: '"rel_1"' } },
         );
       }
-      // The create-time shape sampler's one read of the host route.
-      if (url.startsWith(`${hostOrigin}/ledger`)) return Response.json({ amount: 1200, dueAt: "2026-01-31" });
       throw new Error(`unexpected fetch ${url}`);
     }));
 

@@ -236,6 +236,9 @@ export type SchemaSource = "declared" | "types" | "inferred" | "unknown";
 
 export const schemaSourceSchema = z.enum(["declared", "types", "inferred", "unknown"]) satisfies z.ZodType<SchemaSource>;
 
+/** Absent ≡ "unknown": a pre-marker file reads as blind. */
+export const schemaIsBlind = (source: SchemaSource | undefined): boolean => (source ?? "unknown") === "unknown";
+
 /** 04-actions §2: a descriptor plus its execution binding — one entry of `.vendo/tools.json`.
  *
  *  `outputSchema` (the host's DECLARED response body, recorded by sync) is a plain

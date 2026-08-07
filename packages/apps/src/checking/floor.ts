@@ -101,9 +101,9 @@ export interface AppFloorOptions {
   /**
    * The host surface to measure against, resolved LAZILY and once.
    *
-   * Lazily because building it probes the host's read tools for shape cards, and
-   * a floor is constructed per turn but called per commit; once because a turn
-   * must not change its mind about what the host has halfway through.
+   * Lazily because building it lists the host's tools, and a floor is
+   * constructed per turn but called per commit; once because a turn must not
+   * change its mind about what the host has halfway through.
    */
   deps: () => Promise<FloorDependencies>;
   /** The host's own plugged checks (`AppsConfig.checks`). APPENDED — a host adds

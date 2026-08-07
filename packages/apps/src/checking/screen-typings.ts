@@ -7,10 +7,9 @@
  * derived once at composition (`NormalizedCatalogEntry.propsJsonSchema`), and a
  * query's result is the tool's declared `outputSchema`. This module turns all
  * of that into ambient declaration text so `tsc` — the real compiler, not a
- * bespoke walker —
- * decides whether a screen names components that exist, sets props that exist
- * with types that fit, reaches fields the data really carries, and aggregates
- * over field names the rows really have.
+ * bespoke walker — decides whether a screen names components that exist, sets
+ * props that exist with types that fit, reaches fields the data really carries,
+ * and aggregates over field names the rows really have.
  *
  * Everything here is DERIVED. No hand-written component list, no hand-written
  * prop list: the component vocabulary comes from `WIRE_COMPONENT_NAMES` +

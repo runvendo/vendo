@@ -33,9 +33,9 @@ export interface AutomationPlanInput {
   /** The tools steps may name / the agentic prompt may reference — the SAME
    *  guard-bound surface the automations engine executes through. */
   tools: readonly HostToolInfo[];
-  /** Sampled result shapes (the engine's shape cards, keyed by tool name):
-   *  without them the model guesses output fields and the jsonata reads
-   *  nothing (the live-gate "steps.unpaid.items" class). */
+  /** The tools' DECLARED result shapes, keyed by tool name: without them the
+   *  model guesses output fields and the jsonata reads nothing (the live-gate
+   *  "steps.unpaid.items" class). */
   toolShapes?: Readonly<Record<string, ShapeType>>;
   /**
    * The automations this app ALREADY runs — its trigger list as it stands.

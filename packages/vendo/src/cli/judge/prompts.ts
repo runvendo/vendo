@@ -1,4 +1,4 @@
-import type { ExtractedTool } from "@vendoai/actions";
+import { schemaIsBlind, type ExtractedTool } from "@vendoai/actions";
 
 /**
  * ALL prompt content for the judgment channel lives HERE — the judge pass and
@@ -143,8 +143,8 @@ export function judgmentFacts(tools: ExtractedTool[]): string {
     // The fill gate, stated as a FACT about each tool rather than as a rule
     // the model has to apply: a slot that is not flagged here is already
     // filled by the host's own contract and any proposal for it is refused.
-    ...((tool.inputSchemaSource ?? "unknown") === "unknown" ? { inputSchemaUnknown: true } : {}),
-    ...((tool.outputSchemaSource ?? "unknown") === "unknown" ? { outputSchemaUnknown: true } : {}),
+    ...(schemaIsBlind(tool.inputSchemaSource) ? { inputSchemaUnknown: true } : {}),
+    ...(schemaIsBlind(tool.outputSchemaSource) ? { outputSchemaUnknown: true } : {}),
     description: tool.description,
   })), null, 2);
 }
@@ -233,8 +233,8 @@ export function composeSkepticInstructions(input: {
         ...(subject.tool.confirmEach === true ? { confirmEach: true } : {}),
         ...(subject.tool.disabled === true ? { disabled: true } : {}),
         ...(subject.tool.audience === undefined ? {} : { audience: subject.tool.audience }),
-        ...((subject.tool.inputSchemaSource ?? "unknown") === "unknown" ? { inputSchemaUnknown: true } : {}),
-        ...((subject.tool.outputSchemaSource ?? "unknown") === "unknown" ? { outputSchemaUnknown: true } : {}),
+        ...(schemaIsBlind(subject.tool.inputSchemaSource) ? { inputSchemaUnknown: true } : {}),
+        ...(schemaIsBlind(subject.tool.outputSchemaSource) ? { outputSchemaUnknown: true } : {}),
       },
       proposed: subject.moves.map((move) => ({ field: move.field, from: move.from, to: move.to })),
       evidence: subject.evidence,

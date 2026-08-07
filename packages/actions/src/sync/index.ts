@@ -5,6 +5,7 @@ import { canonicalJson, descriptorHash, VendoError, type JsonSchema, type ToolSe
 import {
   VENDO_TOOLS_FORMAT,
   overridesFileSchema,
+  schemaIsBlind,
   toolsFileSchema,
   type BreakingChange,
   type ExtractedTool,
@@ -123,8 +124,7 @@ export function inputNarrowed(previous: ExtractedTool, next: ExtractedTool): boo
   // breaking makes `vendoSync({ strict: true })` THROW on the judge's own
   // work. Only inference is exempt: a blind input turning `declared` means the
   // host added a real validator, which IS a breaking change worth reporting.
-  if ((previous.inputSchemaSource ?? "unknown") === "unknown"
-      && next.inputSchemaSource === "inferred") return false;
+  if (schemaIsBlind(previous.inputSchemaSource) && next.inputSchemaSource === "inferred") return false;
 
   const oldSchema = objectValue(previous.inputSchema);
   const newSchema = objectValue(next.inputSchema);
@@ -237,8 +237,8 @@ function schemaCoverage(tools: readonly ExtractedTool[]): SyncReport["toolSchema
   const inputs: string[] = [];
   const outputs: string[] = [];
   for (const tool of tools) {
-    if ((tool.inputSchemaSource ?? "unknown") === "unknown") inputs.push(tool.name);
-    if ((tool.outputSchemaSource ?? "unknown") === "unknown") outputs.push(tool.name);
+    if (schemaIsBlind(tool.inputSchemaSource)) inputs.push(tool.name);
+    if (schemaIsBlind(tool.outputSchemaSource)) outputs.push(tool.name);
   }
   return {
     total: tools.length,
@@ -292,14 +292,14 @@ export async function vendoSync(options: {
     const inherited = carried !== undefined && carried.identity === bindingIdentity(tool.binding) ? carried : undefined;
     // The extractor's own reading always wins; a carried value only fills a
     // slot this run left blind.
-    const fillInput = inherited?.inputSchema !== undefined && (tool.inputSchemaSource ?? "unknown") === "unknown";
-    const fillOutput = inherited?.outputSchema !== undefined && tool.outputSchema === undefined;
+    const inputFill = schemaIsBlind(tool.inputSchemaSource) ? inherited?.inputSchema : undefined;
+    const outputFill = tool.outputSchema === undefined ? inherited?.outputSchema : undefined;
     tools.push({
       ...tool,
       ...(srcHash === undefined ? {} : { srcHash }),
       ...(inherited?.semantics === undefined ? {} : { semantics: inherited.semantics }),
-      ...(fillInput ? { inputSchema: inherited.inputSchema!, inputSchemaSource: "inferred" as const } : {}),
-      ...(fillOutput ? { outputSchema: inherited.outputSchema!, outputSchemaSource: "inferred" as const } : {}),
+      ...(inputFill === undefined ? {} : { inputSchema: inputFill, inputSchemaSource: "inferred" as const }),
+      ...(outputFill === undefined ? {} : { outputSchema: outputFill, outputSchemaSource: "inferred" as const }),
     });
   }
   const extracted = toolsFileSchema.parse({ format: VENDO_TOOLS_FORMAT, tools });

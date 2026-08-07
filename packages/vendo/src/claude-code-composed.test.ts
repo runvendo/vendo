@@ -145,6 +145,19 @@ function hostTools(): { tools: ToolRegistry; calls: Array<Record<string, unknown
     title: "List invoices",
     description: "List the signed-in customer's invoices",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    // The host's DECLARED response. It is what gives the binding gate a shape
+    // to check `$path`s against — nothing samples the host anymore, so a tool
+    // that declares nothing is checked permissively.
+    outputSchema: {
+      type: "object",
+      properties: {
+        invoices: {
+          type: "array",
+          items: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+        },
+      },
+      required: ["invoices"],
+    },
     risk: "read",
   };
   return {
@@ -369,17 +382,15 @@ describe("createVendo({ sandbox, harness: claudeCode() })", () => {
     expect(body).toContain("data-vendo-view");
     expect(body).toContain(appId);
     expect(body).toContain("inv_1");
-    // The read ran through the one guard-bound registry, as the app venue. THREE
-    // calls now, all this tool: the app's own `<Query>`; the shape probe
-    // `validate` performs when the builder loop gates the turn (§7.1 item 4) —
-    // deriving the tool's response shape is exactly what lets the binding gate say
-    // whether a `$path` names a field that exists; and the EVIDENCE read behind the
-    // mandatory reviewer pass, which runs this app's own queries so the reviewer can
-    // check the totals on screen against the rows that produced them (a
-    // double-counted headline is invisible in the markup and obvious beside the
-    // data). All three are `read`, guarded like any other; the shape probe is deduped
-    // per process, so it is paid once and not per turn.
-    expect(host.calls).toHaveLength(3);
+    // The read ran through the one guard-bound registry, as the app venue. TWO
+    // calls, both this tool: the app's own `<Query>`, and the EVIDENCE read
+    // behind the mandatory reviewer pass, which runs this app's own queries so
+    // the reviewer can check the totals on screen against the rows that produced
+    // them (a double-counted headline is invisible in the markup and obvious
+    // beside the data). Both are `read`, guarded like any other. There is no
+    // third call: the binding gate reads the tool's DECLARED outputSchema, where
+    // it used to pay a live shape probe for the same answer.
+    expect(host.calls).toHaveLength(2);
     expect(host.calls.every((args) => JSON.stringify(args) === "{}")).toBe(true);
 
     // 2. It is an app: in the person's list, with the title the model gave it.

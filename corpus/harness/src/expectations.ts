@@ -30,6 +30,12 @@ export const repoExpectedThemeSchema = z
   })
   .strict();
 
+/** Curated: this tool's request/response schema must be KNOWN in
+ *  .vendo/tools.json (source !== "unknown"). Absent = not asserted, so a repo
+ *  whose shapes nobody has curated yet is neither rewarded nor punished for
+ *  them. Spread into every tool-inventory variant. */
+const curatedSchemas = { inputSchema: z.boolean().optional(), outputSchema: z.boolean().optional() };
+
 /** HTTP-shaped tool identity: method + path (route and openapi bindings). */
 export const expectedHttpToolInventorySchema = z
   .object({
@@ -37,12 +43,7 @@ export const expectedHttpToolInventorySchema = z
     method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
     path: z.string().regex(/^\/(?!\/)\S*$/),
     readOrWrite: z.enum(["read", "write"]),
-    /** Curated: this tool's request/response schema must be KNOWN in
-     *  .vendo/tools.json (source !== "unknown"). Absent = not asserted, so a
-     *  repo whose shapes nobody has curated yet is neither rewarded nor
-     *  punished for them. */
-    inputSchema: z.boolean().optional(),
-    outputSchema: z.boolean().optional(),
+    ...curatedSchemas,
   })
   .strict();
 
@@ -54,12 +55,7 @@ export const expectedTrpcToolInventorySchema = z
     kind: z.literal("trpc"),
     procedure: z.string().min(1),
     readOrWrite: z.enum(["read", "write"]),
-    /** Curated: this tool's request/response schema must be KNOWN in
-     *  .vendo/tools.json (source !== "unknown"). Absent = not asserted, so a
-     *  repo whose shapes nobody has curated yet is neither rewarded nor
-     *  punished for them. */
-    inputSchema: z.boolean().optional(),
-    outputSchema: z.boolean().optional(),
+    ...curatedSchemas,
   })
   .strict();
 
@@ -72,12 +68,7 @@ export const expectedServerActionToolInventorySchema = z
     module: z.string().min(1),
     export: z.string().min(1),
     readOrWrite: z.enum(["read", "write"]),
-    /** Curated: this tool's request/response schema must be KNOWN in
-     *  .vendo/tools.json (source !== "unknown"). Absent = not asserted, so a
-     *  repo whose shapes nobody has curated yet is neither rewarded nor
-     *  punished for them. */
-    inputSchema: z.boolean().optional(),
-    outputSchema: z.boolean().optional(),
+    ...curatedSchemas,
   })
   .strict();
 

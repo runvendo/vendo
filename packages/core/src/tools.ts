@@ -270,11 +270,8 @@ export const toolDescriptorSchema = z.object({
 export function inputSchemaIsBlind(schema: JsonSchema | undefined): boolean {
   if (schema === undefined) return true;
   const properties = schema.properties;
-  const named = typeof properties === "object" && properties !== null && !Array.isArray(properties)
-    ? properties as Record<string, unknown>
-    : undefined;
-  if (named !== undefined && Object.keys(named).length > 0) return false;
-  return schema.additionalProperties === true || named === undefined;
+  if (typeof properties !== "object" || properties === null || Array.isArray(properties)) return true;
+  return Object.keys(properties).length === 0 && schema.additionalProperties === true;
 }
 
 /** The two sentences the tool-shape guarantee prints for a slot nothing could

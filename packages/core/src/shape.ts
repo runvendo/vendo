@@ -102,7 +102,7 @@ const DESCRIBE_MAX_DEPTH = 6;
 /** A declared enum prints its VALUES: the closed vocabulary is the useful fact,
  *  and a model that reads `string` where the host declared `"paid" | "void"`
  *  invents values the host will reject. */
-const enumText = (values: readonly Json[] | undefined): string | undefined =>
+export const enumText = (values: readonly Json[] | undefined): string | undefined =>
   values === undefined || values.length === 0
     ? undefined
     : values.map((value) => JSON.stringify(value)).join(" | ");
@@ -159,10 +159,8 @@ const shapeFromJsonSchemaAt = (schema: unknown, depth: number): ShapeType => {
   }
   // A bare enum/const with no `type`: the values themselves name the kind.
   if (values !== undefined) {
-    const first = values[0];
-    if (typeof first === "string") return { kind: "string", enum: values };
-    if (typeof first === "number") return { kind: "number", enum: values };
-    if (typeof first === "boolean") return { kind: "boolean", enum: values };
+    const valueKind = SCALAR_KINDS[typeof values[0]];
+    if (valueKind !== undefined) return { kind: valueKind, enum: values };
   }
   return JSON_SHAPE;
 };

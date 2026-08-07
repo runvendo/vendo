@@ -730,35 +730,34 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
   for (const proposal of proposals.values()) {
     const { candidate } = proposal;
     const name = candidate.tool.name;
-    const upheld: JudgmentFields = {};
-    for (const [field, value] of Object.entries(proposal.fields)) {
+    // An omitted verdict is a rejection: the skeptic answers every (name, field)
+    // pair it was given, so silence is not assent.
+    const upheldBySkeptic = (field: string): boolean => {
       const verdict = verdicts.get(verdictKey(name, field));
       if (verdict === undefined) {
         unexaminedRejected.push(`${name}.${field}`);
-        continue;
+        return false;
       }
       if (verdict.verdict === "reject") {
         rejectedBySkeptic.push(
           `${name}.${field}${verdict.reason === undefined ? "" : ` — ${sanitize(verdict.reason)}`}`,
         );
-        continue;
+        return false;
       }
-      Object.assign(upheld, { [field]: value });
+      return true;
+    };
+
+    const upheld: JudgmentFields = {};
+    for (const [field, value] of Object.entries(proposal.fields)) {
+      if (upheldBySkeptic(field)) Object.assign(upheld, { [field]: value });
     }
 
     for (const [slot, schema] of Object.entries(proposal.schemas) as Array<[ToolSchemaSlot, JsonSchema]>) {
-      const verdict = verdicts.get(verdictKey(name, slot));
-      if (verdict === undefined) {
-        unexaminedRejected.push(`${name}.${slot}`);
+      if (upheldBySkeptic(slot)) {
+        schemaPatches.push({ tool: name, binding: bindingIdentity(candidate.tool.binding), slot, schema });
+      } else {
         schemasVetoed += 1;
-        continue;
       }
-      if (verdict.verdict === "reject") {
-        rejectedBySkeptic.push(`${name}.${slot}${verdict.reason === undefined ? "" : ` — ${sanitize(verdict.reason)}`}`);
-        schemasVetoed += 1;
-        continue;
-      }
-      schemaPatches.push({ tool: name, binding: bindingIdentity(candidate.tool.binding), slot, schema });
     }
 
     // Every field discredited means the proposal — and the quote it rests on —

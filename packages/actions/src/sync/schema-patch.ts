@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import type { JsonSchema } from "@vendoai/core";
-import { VENDO_TOOLS_FORMAT, toolsFileSchema, type ExtractedTool, type SchemaSource } from "../formats.js";
+import { VENDO_TOOLS_FORMAT, schemaIsBlind, toolsFileSchema, type ExtractedTool, type SchemaSource } from "../formats.js";
 import { bindingIdentity, writeIfChanged } from "./common.js";
 
 export type ToolSchemaSlot = "inputSchema" | "outputSchema";
@@ -59,8 +59,7 @@ export async function patchToolSchemas(
       result.skipped.push({ tool: patch.tool, slot: patch.slot, reason: "rebound" });
       continue;
     }
-    const source: SchemaSource = tool[sourceKey(patch.slot)] ?? "unknown";
-    if (source !== "unknown") {
+    if (!schemaIsBlind(tool[sourceKey(patch.slot)])) {
       result.skipped.push({ tool: patch.tool, slot: patch.slot, reason: "occupied" });
       continue;
     }

@@ -539,8 +539,7 @@ export interface AppsRuntime {
    * binding silently.
    *
    * Its `deps` are resolved lazily and once per returned floor: building them
-   * probes the host's read tools for shape cards, and a floor is built per turn but
-   * called per commit.
+   * lists the host's tools, and a floor is built per turn but called per commit.
    */
   floor(ctx: RunContext): AppFloor;
   /**

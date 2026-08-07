@@ -522,7 +522,7 @@ const finishResult = (
   };
   if (state.queries.length > 0) tree.queries = state.queries;
   // v2 spec §3 — the binding shape check runs as a post-pass over the
-  // emitted nodes, only when the caller supplied shape cards. Shape errors
+  // emitted nodes, only when the caller supplied tool shapes. Shape errors
   // are repairable, not structural: the binding stays in the tree (repair
   // needs the anchor) and `complete` is untouched — the engine's ship gate
   // is `bindingErrors.length > 0`. Each error also mirrors into the issue

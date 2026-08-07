@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { describeShape, type ShapeType } from "./shape.js";
+import { describeShape, enumText, type ShapeType } from "./shape.js";
 
 /**
  * W3 (v3 spec §Context) — field semantics: what a tool-response field MEANS
@@ -198,10 +198,7 @@ const describeAt = (
     });
     return entries.length === 0 ? "{}" : `{ ${entries.join(", ")} }`;
   }
-  if (renderEnum && shape.enum !== undefined && shape.enum.length > 0) {
-    return shape.enum.map((value) => JSON.stringify(value)).join(" | ");
-  }
-  return shape.kind;
+  return (renderEnum ? enumText(shape.enum) : undefined) ?? shape.kind;
 };
 
 /** {@link describeShape}, with each classified field annotated
