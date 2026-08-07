@@ -45,6 +45,16 @@ function ToolkitMark({ toolkit }: { toolkit: string }) {
   );
 }
 
+/** The disconnect half of `connectRefusalCopy`. A refused disconnect always
+ *  leaves the account connected — but only SOME refusals clear on their own,
+ *  and "try again in a moment" sends the rest back to the same wall forever. */
+function disconnectRefusalCopy(reason: unknown, name: string): string {
+  const code = (reason as { code?: unknown } | null)?.code;
+  if (code === "blocked") return `Sign in first, then disconnect ${name}.`;
+  if (code === "forbidden") return `You don’t have access to disconnect ${name} here.`;
+  return `We couldn’t disconnect ${name} — it is still connected. Try again in a moment.`;
+}
+
 interface Severing {
   /** Seconds left on the undo window (display only). */
   left: number;
@@ -132,9 +142,9 @@ export function ConnectedAccountsPanel({ undoMs = 10_000 }: ConnectedAccountsPan
           await disconnect(id, connection.connector);
         } catch (reason) {
           // spec §16 law 3 — the wire's sentence is the developer's; the person
-          // is told that the account is still connected and nothing changed.
+          // gets ours, and it names the refusal rather than a blanket retry.
           if (!cancelled.current) {
-            setError(`We couldn’t disconnect ${toolkitDisplayName(connection.toolkit)} — it is still connected. Try again in a moment.`);
+            setError(disconnectRefusalCopy(reason, toolkitDisplayName(connection.toolkit)));
           }
         } finally {
           if (!cancelled.current) {
