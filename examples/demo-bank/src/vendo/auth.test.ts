@@ -3,7 +3,8 @@ import { authJs } from "@vendoai/vendo/auth/auth-js";
 import { encode } from "next-auth/jwt";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { authSecret, resolveMapleSubject } from "@/server/users";
-import { resolveMapleSession, safeReturnTo } from "./auth";
+import { BASE_PATH } from "@/lib/base-path";
+import { resolveMapleSession, safeReturnTo, withMountedLogin } from "./auth";
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -94,6 +95,24 @@ describe("authJs's actAs half (away/MCP minting) — the session resolveMapleSes
   });
 });
 
+describe("the MCP door's sign-in bounce", () => {
+  /** The one page a real MCP client's human ever sees. The preset builds it as
+   *  `<public origin>/login`, which on the mounted demo is a 404 — measured on
+   *  maple.vendo.run, where the door bounces to /login and Maple's login page
+   *  is at /maple/login. */
+  it("lands under Maple's mount point, not the bare origin", async () => {
+    const returnTo = "http://localhost:3000/maple/api/vendo/mcp/authorize?state=ok";
+    const answer = await withMountedLogin(auth).oauth!.session!(
+      new Request("http://localhost:3000/api/vendo/mcp/authorize"),
+      { returnTo },
+    );
+    expect(answer).toBeInstanceOf(Response);
+    const location = new URL((answer as Response).headers.get("location")!);
+    expect(location.pathname).toBe(`${BASE_PATH}/login`);
+    expect(location.searchParams.get("returnTo")).toBe(returnTo);
+  });
+});
+
 describe("safeReturnTo", () => {
   it("only accepts same-origin return targets", () => {
     vi.stubEnv("VENDO_BASE_URL", "https://maple.example.com");
@@ -102,5 +121,18 @@ describe("safeReturnTo", () => {
     expect(safeReturnTo("/settings")).toBe("/settings");
     expect(safeReturnTo("https://attacker.example/callback")).toBe("/");
     expect(safeReturnTo(null)).toBe("/");
+  });
+
+  /** Every caller puts the mount point back on with `withBasePath`, so this
+   *  must hand back the app's own vocabulary whichever way the prefix arrived
+   *  — Next strips it off its own request URLs, but an absolute URL built from
+   *  the deployment's public base (the MCP door's `returnTo`) still carries
+   *  it, and prefixing that a second time is a 404 the human sees right after
+   *  typing their password. */
+  it("answers in the app's own vocabulary, mount point or no mount point", () => {
+    vi.stubEnv("VENDO_BASE_URL", "https://maple.example.com");
+    expect(safeReturnTo(`https://maple.example.com${BASE_PATH}/api/vendo/mcp/authorize?state=ok`))
+      .toBe("/api/vendo/mcp/authorize?state=ok");
+    expect(safeReturnTo(BASE_PATH)).toBe("/");
   });
 });

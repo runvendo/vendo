@@ -109,7 +109,10 @@ gateway — see "Store posture"), `VENDO_BASE_URL`, `AUTH_SECRET`,
 `MAPLE_DEMO_EMAIL`, and `MAPLE_DEMO_PASSWORD`.
 `VENDO_BASE_URL` is the one public-origin switch: set it to the
 default Railway origin first, then change it to `https://maple.vendo.run` after
-DNS is live and redeploy.
+DNS is live and redeploy. It is the ORIGIN only, never the mount point — host
+tool bindings already carry `/maple`, and `src/vendo/mcp-config.ts` adds it to
+the MCP door's public base. Without it the door has no way to learn where it
+is, and every URL it advertises 404s.
 
 For a fast local HTTPS iteration loop, this machine has Tailscale Funnel:
 
@@ -125,12 +128,17 @@ through the funnel. Stop the tunnel with `tailscale funnel reset`. The tunnel is
 only for iteration and is not part of the Railway deployment.
 
 The real-SDK proof runs discovery, DCR, PKCE, Maple login, the door-owned
-consent page, a seeded account tool, and a destructive transfer that parks for
-in-product approval before succeeding on retry:
+consent page, a seeded account tool (walking its in-product approval if the
+guard asks for one), and a money transfer that the guard must refuse:
 
 ```bash
-pnpm --filter demo-bank mcp:e2e -- http://localhost:3000
+pnpm --filter demo-bank mcp:e2e
 ```
+
+The argument is Maple's ORIGIN and defaults to `http://localhost:3000`; where
+Maple sits on it comes from the app's own mount point, so
+`http://localhost:3000/maple` is the same run. `VENDO_BASE_URL` must be set to
+that origin for the door's discovery documents to name URLs a client can reach.
 
 ## Broker-fronted MCP (remote authorization server)
 

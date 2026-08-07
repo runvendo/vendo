@@ -11,7 +11,8 @@
  * HTTP MCP (initialize + tools/list) with the bearer it earned.
  *
  * Usage: node scripts/assert-curated-mcp-menu.mjs [base-url]
- *   base-url defaults to http://127.0.0.1:3457
+ *   base-url is where Maple is MOUNTED, prefix included
+ *   (e.g. http://localhost:3000/maple); defaults to http://127.0.0.1:3457.
  * Exit 0 = the door's menu matches the authored file exactly.
  */
 import { createHash, randomBytes } from "node:crypto";
@@ -20,7 +21,8 @@ import { fileURLToPath } from "node:url";
 import { encode } from "next-auth/jwt";
 
 const base = (process.argv[2] ?? "http://127.0.0.1:3457").replace(/\/+$/, "");
-const endpoint = `${base}/api/vendo/mcp`;
+const MOUNT = "/api/vendo/mcp";
+const endpoint = `${base}${MOUNT}`;
 const appDir = fileURLToPath(new URL("..", import.meta.url));
 const COOKIE_NAME = "authjs.session-token";
 const SEEDED_SUBJECT = "vendo-demo";
@@ -63,9 +65,10 @@ const verifier = b64url(randomBytes(32));
 const challenge = b64url(createHash("sha256").update(verifier).digest());
 const redirectUri = "http://127.0.0.1:43117/callback";
 
-const metadataUrl = new URL(endpoint);
-metadataUrl.pathname = `/.well-known/oauth-authorization-server${metadataUrl.pathname}`;
-const metadataResponse = await fetch(metadataUrl);
+// Prefix-LOCAL, not RFC 8414 root-insertion: a deployment mounted under a path
+// prefix owns no path outside it, so that is the spelling the door advertises
+// and answers (packages/mcp/src/door.ts).
+const metadataResponse = await fetch(`${base}/.well-known/oauth-authorization-server${MOUNT}`);
 if (!metadataResponse.ok) await fail("metadata", metadataResponse);
 const metadata = await metadataResponse.json();
 

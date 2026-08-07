@@ -27,32 +27,42 @@ async function main() {
   try {
     const listed = await client.listTools();
     assert(listed.tools.some((tool) => tool.name === "host_listAccounts"), "Maple account tool was not listed.");
-    const accounts = await client.callTool({ name: "host_listAccounts", arguments: {} });
+
+    // MAPLE'S OWN DATA, THROUGH THE DOOR — and if the guard ASKS for it first,
+    // a person decides in Maple's own product and the retry is the real
+    // answer. Whether it asks is not this script's to predict: every host tool
+    // is `ungraded` in .vendo/tools.json, the grade is merged from
+    // .vendo/overrides.json, an auto-judge rules on top, and the ORG policy
+    // above that is seeded locally but console-managed on the hosted store
+    // (src/demo-script/console-seed.ts). Pinning one ruling would report a
+    // deployment posture as a regression.
+    let accounts = await client.callTool({ name: "host_listAccounts", arguments: {} });
+    const approvalId = textOf(accounts).match(/apr_[0-9a-f-]+/)?.[0];
+    if (accounts.isError && approvalId !== undefined) {
+      const decided = await fetch(`${base}/api/vendo/approvals/decide`, {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({
+          ids: [approvalId],
+          decision: { approve: true, remember: { scope: { kind: "tool" }, duration: "standing" } },
+        }),
+      });
+      assert(decided.ok, `Maple's in-product approval decision failed (${decided.status}).`);
+      accounts = await client.callTool({ name: "host_listAccounts", arguments: {} });
+    }
     assert(!accounts.isError, `Maple account tool failed: ${textOf(accounts)}`);
     assert(textOf(accounts).includes("Maple Checking"), "Maple account tool did not return seeded account data.");
 
-    const transferArgs = { amount: 1234, recipient_name: "MCP Proof Recipient", memo: "ENG-267 e2e" };
-    const parked = await client.callTool({ name: "host_transferMoney", arguments: transferArgs });
-    assert(parked.isError, "Destructive Maple transfer did not park for approval.");
-    const approvalId = textOf(parked).match(/apr_[0-9a-f-]+/)?.[0];
-    assert(approvalId, "Parked transfer did not name its approval.");
-
-    const decided = await fetch(`${base}/api/vendo/approvals/decide`, {
-      method: "POST",
-      headers: { cookie, "content-type": "application/json" },
-      body: JSON.stringify({
-        ids: [approvalId],
-        decision: {
-          approve: true,
-          remember: { scope: { kind: "tool" }, duration: "standing" },
-        },
-      }),
+    // AND MONEY DOES NOT MOVE WITHOUT A PERSON. Ask or block is the
+    // deployment's policy to choose — Maple's seeded org policy blocks this
+    // one tool at the MCP venue outright ("Money never moves on behalf of an
+    // external MCP client"), a console-managed org may only ask. The thing
+    // that must never happen either way is a transfer nobody was asked about.
+    const transfer = await client.callTool({
+      name: "host_transferMoney",
+      arguments: { amount: 1234, recipient_name: "MCP Proof Recipient", memo: "ENG-267 e2e" },
     });
-    assert(decided.ok, `Maple's in-product approval decision failed (${decided.status}).`);
-
-    const retried = await client.callTool({ name: "host_transferMoney", arguments: transferArgs });
-    assert(!retried.isError, `Approved transfer retry failed: ${textOf(retried)}`);
-    assert(textOf(retried).includes("MCP Proof Recipient"), "Approved transfer did not return Maple's side effect.");
+    assert(transfer.isError, "A money transfer ran over MCP without asking anyone.");
 
     console.log(JSON.stringify({
       base,
@@ -71,10 +81,11 @@ async function main() {
         sdkClient: true,
         toolsListed: listed.tools.length,
         mapleDataTool: "host_listAccounts",
-        destructiveTool: "host_transferMoney",
-        parkedApproval: approvalId,
-        resolvedInProduct: true,
-        retrySucceeded: true,
+        // undefined when the guard ran the read outright; an id when it asked
+        // and the decision was walked in Maple's own product.
+        parkedApproval: approvalId ?? null,
+        moneyRefusedWithoutAPerson: "host_transferMoney",
+        refusal: textOf(transfer),
       },
     }, null, 2));
   } finally {

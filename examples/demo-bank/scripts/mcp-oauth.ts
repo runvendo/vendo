@@ -10,6 +10,7 @@
  * with no Vendo imports reaching the door), so the dance exists once.
  */
 import crypto from "node:crypto";
+import { BASE_PATH } from "../src/lib/base-path.js";
 
 /** The door's fixed mount inside the app (10-mcp §5). */
 const MOUNT = "/api/vendo/mcp";
@@ -27,13 +28,25 @@ export type DoorWalk = {
 /**
  * EVERY URL THE WALK TOUCHES, decided in one place from the target.
  *
+ * The target names Maple's ORIGIN; WHERE Maple sits on it is the app's own
+ * fact (src/lib/base-path.ts), not an argument — so a target that already
+ * carries the mount point and one that doesn't are the same walk. Nothing
+ * here is origin-rooted: the door, its two discovery documents and the login
+ * it bounces to all live under the prefix, and an origin-rooted URL reaches
+ * Maple's 404 page instead.
+ *
+ * The well-known URLs are the door's own PREFIX-LOCAL spelling, not RFC 8414
+ * / 9728 root-insertion: a mounted deployment owns no path outside its
+ * prefix, so that is the spelling it advertises and answers
+ * (packages/mcp/src/door.ts).
+ *
  * The door's own OAuth surface is the only one this script can walk (a
  * broker-fronted deployment owns the sign-in itself), so the authorization
  * server is the door — its metadata sits beside the protected-resource
  * document rather than being re-derived from what discovery returns.
  */
 export function doorUrls(target: string | undefined): DoorWalk {
-  const base = new URL(target ?? "http://localhost:3000").origin;
+  const base = new URL(target ?? "http://localhost:3000").origin + BASE_PATH;
   return {
     base,
     resource: `${base}${MOUNT}`,
@@ -146,7 +159,10 @@ export async function signIn(target: string | undefined, clientName: string): Pr
   const bounce = await fetch(authorizeUrl, { redirect: "manual" });
   assert(bounce.status === 302, `Authorization did not bounce to Maple login (${bounce.status}).`);
   const loginUrl = new URL(bounce.headers.get("location") ?? "");
-  assert(`${loginUrl.origin}${loginUrl.pathname}` === walk.login, "Authorization bounced somewhere other than Maple login.");
+  assert(
+    `${loginUrl.origin}${loginUrl.pathname}` === walk.login,
+    `Authorization bounced to ${loginUrl.origin}${loginUrl.pathname}, not Maple login at ${walk.login}.`,
+  );
   assert(loginUrl.searchParams.get("returnTo") === authorizeUrl.toString(), "Login bounce did not preserve the exact returnTo.");
   const loginPage = await fetch(loginUrl);
   assert(loginPage.ok && (await loginPage.text()).includes("Sign in to Maple"), "Maple login page did not render.");
