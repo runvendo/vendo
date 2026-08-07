@@ -26,6 +26,13 @@ concurrency:
 #   ci                aggregate; KEEPS the required-check name `ci`
 # Required checks on main are: ci, integration, conformance, audit.
 # Renaming any of those job names breaks merges.
+#
+# No browser runs here (Yousef's call, 2026-08-06): headless CI mis-resolves
+# :focus-visible and light-dark(), so the Playwright suites were a slow gate
+# that could not judge the thing they were watching. They stay the LOCAL
+# pre-PR gate — `pnpm --filter @vendoai/ui test:browser` and
+# `pnpm --filter @vendoai-fixtures/integration-browser test:browser` — under
+# the UI-LAW browser-verification step.
 jobs:
   typecheck-lint:
     runs-on: ubuntu-latest
@@ -319,7 +326,6 @@ jobs:
           if pnpm turbo ls --affected --output=json > /tmp/affected.json \
              && jq -e '[.packages.items[].name | select(IN(
                   "@vendoai-fixtures/integration",
-                  "@vendoai-fixtures/integration-browser",
                   "@vendoai-fixtures/mcp-e2e",
                   "@vendoai/redteam-e2e",
                   "@vendoai-fixtures/automations-e2e",
@@ -331,7 +337,7 @@ jobs:
       # suffix pulls each fixture package's transitive workspace deps;
       # `demo-bank^...` builds demo-bank's deps without running its Next build).
       - if: steps.affected.outputs.skip != 'true'
-        run: pnpm turbo run build --filter=@vendoai-fixtures/integration... --filter=@vendoai-fixtures/integration-browser... --filter=@vendoai-fixtures/mcp-e2e... --filter=@vendoai/redteam-e2e... --filter=@vendoai-fixtures/automations-e2e... --filter=demo-bank^...
+        run: pnpm turbo run build --filter=@vendoai-fixtures/integration... --filter=@vendoai-fixtures/mcp-e2e... --filter=@vendoai/redteam-e2e... --filter=@vendoai-fixtures/automations-e2e... --filter=demo-bank^...
       # The node suite boots the real composed umbrella over HTTP against the host app.
       - if: steps.affected.outputs.skip != 'true'
         run: pnpm --filter @vendoai-fixtures/integration test
@@ -343,15 +349,15 @@ jobs:
         run: pnpm --filter @vendoai-fixtures/mcp-e2e test
       # The offline security corpus (PR #123): prompt-injection, oauth-csrf,
       # artifact/away-authority, shared-app-dormant, smoke. Mock-model and
-      # key-free; the live-egress legs stay on nightly. Each fixture boots its
+      # key-free; the live-egress legs are run on demand. Each fixture boots its
       # own host-app dev server on an ephemeral port with a per-suite dist dir,
       # so these steps are safe to run back to back on one runner; they stay
       # sequential steps (not turbo-parallel) to avoid oversubscribing CPUs.
       - if: steps.affected.outputs.skip != 'true'
         run: pnpm --filter @vendoai/redteam-e2e test
       # Automations governance e2e: kill-switch, emit-and-revoke, park-resume,
-      # webhook, schedules, observability, steps-pipeline (live-* legs are
-      # nightly's).
+      # webhook, schedules, observability, steps-pipeline (live-* legs run on
+      # demand).
       - if: steps.affected.outputs.skip != 'true'
         run: pnpm --filter @vendoai-fixtures/automations-e2e test
       # Maple's suite (auth, away drill, transfers, money, mcp-config, server
@@ -359,18 +365,6 @@ jobs:
       # turbo run skips them — this is demo-bank's only CI execution.
       - if: steps.affected.outputs.skip != 'true'
         run: pnpm --filter demo-bank test
-      # The browser leg drives the shipped hooks/chrome in Chromium against the same wire.
-      - if: steps.affected.outputs.skip != 'true'
-        run: pnpm --filter @vendoai-fixtures/integration-browser exec playwright install --with-deps chromium
-      - if: steps.affected.outputs.skip != 'true'
-        run: pnpm --filter @vendoai-fixtures/integration-browser test:browser
-      - if: failure()
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4
-        with:
-          name: integration-browser-playwright-trace
-          path: fixtures/integration-browser/e2e/test-results
-          if-no-files-found: ignore
-          retention-days: 7
 
   conformance:
     runs-on: ubuntu-latest
@@ -402,11 +396,10 @@ jobs:
       - name: Turbo remote cache (GitHub-cache backed)
         uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
       - run: pnpm install --frozen-lockfile
-      # This job exercises exactly four packages: the root `conformance` script
-      # is turbo over core/store/agent, and the browser suites are @vendoai/ui.
-      # `--affected` includes dependents, so a change anywhere beneath them
-      # still runs this job — see the integration job's skip step for the
-      # TURBO_SCM_BASE and fall-open rationale.
+      # This job exercises exactly the three packages the root `conformance`
+      # script covers. `--affected` includes dependents, so a change anywhere
+      # beneath them still runs this job — see the integration job's skip step
+      # for the TURBO_SCM_BASE and fall-open rationale.
       - name: Skip if conformance scope unaffected (PRs only)
         id: affected
         if: github.event_name == 'pull_request'
@@ -417,102 +410,12 @@ jobs:
              && jq -e '[.packages.items[].name | select(IN(
                   "@vendoai/core",
                   "@vendoai/store",
-                  "@vendoai/agent",
-                  "@vendoai/ui"))] | length == 0' /tmp/affected.json > /dev/null; then
+                  "@vendoai/agent"))] | length == 0' /tmp/affected.json > /dev/null; then
             echo "conformance scope unaffected by this PR; skipping"
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
       - if: steps.affected.outputs.skip != 'true'
         run: pnpm conformance
-      # Vite's generated bundle differs byte-for-byte between macOS and Linux,
-      # so freshness cannot be enforced with a cross-platform source diff. The
-      # checked-in artifact is instead exercised through its real browser wire.
-      - if: steps.affected.outputs.skip != 'true'
-        run: pnpm --filter @vendoai/ui exec playwright install --with-deps chromium
-      - name: MCP Apps shim semantic contract
-        if: steps.affected.outputs.skip != 'true'
-        run: pnpm --filter @vendoai/ui test:mcp-shim
-      # ENG-231 — the permanent solidity + stress gate over the localhost wire
-      # fixture: the stress spec (mid-stream kill, phone viewports, rapid
-      # open/close, multi-turn persistence, concurrent surfaces, dark-brand)
-      # plus the solidity axes it consolidates — long threads, scroll +
-      # jump-to-latest, theme-token effectiveness / dark derivation, the bounded
-      # height chain. Scoped to this CI-hardened set on purpose: the axe / keyboard /
-      # screenshot / raw-interaction legacy specs stay the LOCAL pre-PR gate
-      # (per the UI-LAW browser-verification step) because headless CI mis-
-      # resolves :focus-visible outlines and light-dark(), which those specs
-      # assert directly. The full suite still runs locally via `test:browser`.
-      # `test:browser` (not `exec playwright test`) so the pretest:browser hook
-      # builds the gitignored jail runtime first; extra args pass through to
-      # playwright as the file list.
-      #
-      # The consumer-voice family joins them (post-check checklist 11): those
-      # specs are what keeps a developer's sentence — an env var, a raw
-      # exception, a status slug, a wire reason — off a person's screen, and
-      # every one of them was running nowhere. `build-failed-banner` was RED on
-      # its own branch for exactly that reason. They stub their doors with
-      # page.route and assert text, so nothing in them depends on the
-      # :focus-visible / light-dark() resolution that keeps the legacy specs
-      # local.
-      #
-      # Post-check round 2 additions, and why each one is here:
-      #   accessibility     the paragraph above lumped "axe" in with the
-      #                     :focus-visible specs. That was never true of it —
-      #                     it is eleven pure axe sweeps over the chrome and
-      #                     asserts no outline and no light-dark() anywhere.
-      #   center-a11y       the durable half of postcheck-b's one-shot proof
-      #                     script, which lived under docs/ outside `testDir`
-      #                     and so could never catch a regression. It is also
-      #                     the only CI home of four BROWSER-ONLY mechanisms
-      #                     the wave otherwise pinned in jsdom alone: `inert`
-      #                     (H11/H12), real focus order (H10/H18/M34),
-      #                     IntersectionObserver (H16) and contrast (M33).
-      #   approvals-poller  H15's ~20s request COUNT. Eventual consistency —
-      #                     what the smoke pack checks — is also what three
-      #                     independent pollers give you; only counting tells
-      #                     them apart, and nothing in CI counted.
-      #   jail-and-tree     containment: the opaque-origin CSP jail, the
-      #                     bridge, iframe height, and a node failure staying
-      #                     inside its boundary in the consumer's words.
-      #
-      # DELIBERATELY STILL OUT, with reasons rather than silence:
-      #   keyboard.spec.ts     the whole file asserts :focus-visible outlines
-      #                        (`expectFocusIndicator` on every tab stop),
-      #                        which headless CI mis-resolves — the same reason
-      #                        the legacy specs above stay local. It is GREEN
-      #                        locally: the product defect this comment used to
-      #                        cite (`workspace tabs rove…`, the Automations
-      #                        tab's aria-selected stuck at "false") was real
-      #                        and is fixed — an ACT was sitting in the tablist
-      #                        with role="tab", forcing manual activation. The
-      #                        focus-order coverage CI actually needs is in
-      #                        center-a11y (H10/H18/M34), which is green here.
-      #   screenshots.spec.ts  writes PNGs; it is a capture job, not a gate.
-      #   live-voice.spec.ts   needs OPENAI_API_KEY and a real model.
-      - name: UI solidity + stress suite
-        if: steps.affected.outputs.skip != 'true'
-        run: >-
-          pnpm --filter @vendoai/ui test:browser
-          e2e/smoke.spec.ts
-          e2e/stress.spec.ts
-          e2e/scroll-management.spec.ts
-          e2e/extreme-content.spec.ts
-          e2e/theme.spec.ts
-          e2e/height-chain.spec.ts
-          e2e/pass3-consumer-voice.spec.ts
-          e2e/wave3-consumer-voice.spec.ts
-          e2e/run-history-voice.spec.ts
-          e2e/build-failed-banner.spec.ts
-          e2e/accessibility.spec.ts
-          e2e/center-a11y.spec.ts
-          e2e/approvals-poller-proof.spec.ts
-          e2e/jail-and-tree.spec.ts
-      - if: failure()
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4
-        with:
-          name: ui-browser-playwright-trace
-          path: packages/ui/e2e/test-results
-          retention-days: 7
 
   # Supply-chain gate: fails on high/critical advisories in the PRODUCTION
   # dependency graph (what ships in the published tarballs). Scoped to --prod so

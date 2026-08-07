@@ -16,7 +16,7 @@ quality, start here.
 | Per-engine pass bars | [`knowledge/bars/<engine>.json`](./knowledge/bars/) | Ratcheted metric floors per engine (see "Bars" below) |
 | Fixture corpus | `corpus/harness/src/knowledge-eval/fixtures/corpus.json` | 59 `KnowledgeDoc`s derived from `docs-site/*.mdx` (reference/* → kind `api`, rest `docs`), 12 synthesized glossary entries, 4 `visibility:"internal"` docs from `docs/*.md` |
 | Runner + metrics + judge | `corpus/harness/src/knowledge-eval/` | `pnpm corpus knowledge-eval [--engine memory]... [--json] [--strict]` — recall@5 + MRR per intent, refusal leg, bars check, scorecard artifacts; repeat `--engine` for the per-engine comparison (engine columns); `judge.ts` is the shared LLM-judge surface |
-| Per-PR CI gate | `.github/workflows/knowledge-eval.yml` | The deterministic offline run, strict, on every PR and push to main |
+| How it runs | on demand | `pnpm corpus knowledge-eval --strict` — no CI job (the scheduled `Knowledge Eval` workflow was removed 2026-08-06) |
 
 Doc ids in the fixture corpus are content-derived slugs (from frontmatter
 titles), never docs-site file paths — file paths rot (corpus/README.md once
@@ -76,15 +76,14 @@ workflow — its refusal layer is red at baseline, see the ledger). Planned:
 `cloud` (lane K3, nightly). Real engines are measured on the natural
 `question`; only the memory engine uses `memoryQuery`.
 
-## Nightly engine-matrix rows (not per-PR; wiring lands with the engines)
+## Engine-matrix rows (on demand; wiring lands with the engines)
 
 These rows run `pnpm corpus knowledge-eval --engine <e> --strict --json` plus
-the model-costed judge leg, one row per engine with bars. They belong in the
-nightly workflow, NOT in `knowledge-eval.yml` (a separate wave owns
-nightly.yml; the runner already accepts `--engine`, so wiring is one line per
-engine when K3/K7 land). **Anti-silent-skip idiom:** a nightly row that cannot
-run (missing key, engine unreachable) must FAIL its job step with the reason
-in the step summary — a skipped engine that looks green is how quality rots.
+the model-costed judge leg, one row per engine with bars. The runner already
+accepts `--engine`, so wiring is one line per engine when K3/K7 land.
+**Anti-silent-skip idiom:** a row that cannot run (missing key, engine
+unreachable) must FAIL with the reason printed — a skipped engine that looks
+green is how quality rots.
 The same idiom governs test-level skips: gated suites announce the skip
 reason in output (see `tool-legs.test.ts`).
 

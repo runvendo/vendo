@@ -2,7 +2,10 @@
 
 The permanent performance-budget gate and honest latency measurements for the
 Vendo v0 blocks. Private (never published). Speed is the product thesis; this
-package turns that into a CI check and a set of reproducible numbers.
+package turns that into a repeatable check and a set of reproducible numbers.
+It is run on demand (`pnpm --filter @vendoai/bench bench -- --check`), not on
+every PR — the scheduled `perf` workflow was removed with the rest of CI's
+scheduled jobs.
 
 Everything lives under `bench/`. It touches no contract file and no other
 package's source. It participates in the root turbo gates, but its `test`
@@ -44,7 +47,7 @@ The build must be current (`pnpm build`) — the CLI runs from `dist/`.
 
 ## Suites
 
-Deterministic (CI-gated):
+Deterministic (budget-gated):
 
 | Suite | Measures |
 | --- | --- |
@@ -113,16 +116,15 @@ listing every breach. It **also fails when any ceiling key in `budgets.json`
 matches no measured case** — otherwise renaming or deleting a suite/case would
 silently turn its budget into dead config and the gate would stop gating.
 (Partial runs — `--check --suite <name>` — skip the dead-config check by design;
-it only applies to the full deterministic set, which is what CI runs.)
+it only applies to the full deterministic set.)
 
-### Recalibrating against real CI samples
+### Recalibrating against real samples
 
-When a ceiling looks miscalibrated, collect the p95 values from recent
-`perf.yml` job summaries (the tables are in each run's `$GITHUB_STEP_SUMMARY`),
-take the worst CI p95 observed, and set the ceiling to ~3x that value (or keep
-the existing absolute floor if it is larger). Land the recalibration as a
-single PR editing `budgets.json`, citing the CI runs sampled — those PRs are
-the calibration record.
+When a ceiling looks miscalibrated, collect the p95 values from several full
+`--check` runs, take the worst p95 observed, and set the ceiling to ~3x that
+value (or keep the existing absolute floor if it is larger). Land the
+recalibration as a single PR editing `budgets.json`, citing the runs sampled —
+those PRs are the calibration record.
 
 ## Raising a budget
 

@@ -1,12 +1,13 @@
 # The browser suite — what actually runs where, and what it actually covers
 
-Three tiers, and the difference between them matters:
+Nothing here runs in CI (Yousef's call, 2026-08-06: zero browser in CI —
+headless CI mis-resolves `:focus-visible` and `light-dark()`, which several of
+these specs assert directly). The browser suite is the LOCAL pre-PR gate.
 
-| Tier | Command | Runs in CI | What it is |
-|---|---|---|---|
-| **smoke** | `pnpm --filter @vendoai/ui test:ui` | yes, and in `pnpm test` | `smoke.spec.ts` only. 15 tests, ~35s. The things that must never silently stop working. |
-| **CI browser gate** | the `UI solidity + stress suite` step in `.github/workflows/ci.yml` | yes | smoke + 13 more spec files (14 total). |
-| **local pre-PR** | `pnpm --filter @vendoai/ui test:browser` | no | everything in `e2e/`. |
+| Tier | Command | What it is |
+|---|---|---|
+| **smoke** | `pnpm --filter @vendoai/ui test:ui` | `smoke.spec.ts` only. 15 tests, ~35s. The things that must never silently stop working. |
+| **full pre-PR** | `pnpm --filter @vendoai/ui test:browser` | everything in `e2e/`. |
 
 The harness is served **production-built** (`vite build` + `vite preview`, ~3.4s).
 `VENDO_HARNESS_DEV=1` puts the dev server back for interactive debugging. A gate
@@ -40,25 +41,24 @@ Anything else says so.
 
 ### Browser-only mechanisms
 
-Four things cannot be answered by jsdom at all. Each now has at least one CI
+Four things cannot be answered by jsdom at all. Each has at least one
 assertion in a real Chromium:
 
-| Mechanism | CI assertion |
+| Mechanism | Assertion |
 |---|---|
 | `inert` | `center-a11y.spec.ts` H11 (a planted button inside a preview refuses focus) and H12 (every host sibling of the portal is inert) |
 | focus order | `center-a11y.spec.ts` H10 (one tab stop, Tab leaves the tablist), H18 (an arrow walk changes nothing), M34 (12 Tabs stay inside the sheet) |
 | `IntersectionObserver` | `center-a11y.spec.ts` H16, driven through a controlled observer, both branches — gated, and fail-open when the API is missing |
 | `:has()` | `smoke.spec.ts` §8 — the build-suppression rule is `.fl-thread:has(.fl-appcard-bar[data-state="building"]) …`, and the test reads computed `animationName`, so a `:has()` that stopped matching turns the assertion red |
 
-### What is deliberately NOT in CI
+### Specs that are not part of the default gate
 
 | Spec | Why |
 |---|---|
-| `keyboard.spec.ts` | the whole file asserts `:focus-visible` outlines, which headless CI mis-resolves. Green locally; not a CI-environment fix that belongs here. |
 | `screenshots.spec.ts` | writes PNGs; a capture job, not a gate. |
-| `mcp-shim.spec.ts` | runs in CI under its own config (`test:mcp-shim`). |
+| `mcp-shim.spec.ts` | runs under its own config (`test:mcp-shim`). |
 | `eng-222.spec.ts` | currently-RED product defect (`New conversation` never appears in the page thread's sidebar) — tracked, not fixed here; see "Currently RED" below. |
-| `live-voice.spec.ts` | needs `OPENAI_API_KEY` and a real model; moves to the `nightly.yml` live-voice leg instead (landing in PR #834). |
+| `live-voice.spec.ts` | needs `OPENAI_API_KEY` and a real model; run it on demand. |
 
 ### Currently RED on this branch (product defects, not spec bugs)
 
@@ -72,6 +72,6 @@ production build, so none of it is a harness-mode artefact:
 | `stress.spec.ts:68` | `New conversation` never appears — same root as eng-222 | defects worker (center) |
 | `wave3-consumer-voice.spec.ts:86`, `:151` | the Invoices card offers no `Share` / `Change` button | defects worker (cards / apps page) |
 
-`stress.spec.ts` and `wave3-consumer-voice.spec.ts` are in the CI browser gate,
-so **that job is red on this branch until those land**. Nothing here was
-quarantined to hide it.
+`stress.spec.ts` and `wave3-consumer-voice.spec.ts` are in the pre-PR gate, so
+**it is red on this branch until those land**. Nothing here was quarantined to
+hide it.

@@ -5,7 +5,7 @@
 # author must be mintlify[bot], and the diff must stay entirely inside
 # docs-site/ — a bot PR touching anything else is left for humans.
 #
-# main's branch protection requires ci/integration/perf green on an
+# main's branch protection requires ci/integration/conformance/audit green on an
 # up-to-date branch (strict mode), so this workflow arms GitHub native
 # auto-merge (repo allow_auto_merge is on) and nudges behind branches with
 # update-branch. GitHub merges the PR itself the moment required checks
