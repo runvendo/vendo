@@ -829,11 +829,11 @@ export class OAuthServer {
       changed = await this.#revokeFamily(family.id) || changed;
     }
 
-    // Outstanding grants minted before family anchors shipped remain valid
-    // across a rolling deployment. Revoke those with the same guarded UPDATE
-    // pattern instead of list-then-delete.
-    const legacy = await listAll(store, { subject, client_id: clientId });
-    for (const record of legacy) {
+    // The service-key exchange mints ONE access grant with no refresh token and
+    // therefore no family anchor (§3.4), so a family sweep cannot reach it.
+    // Revoke those per grant, with the same guarded UPDATE.
+    const familyless = await listAll(store, { subject, client_id: clientId });
+    for (const record of familyless) {
       const access = accessGrantSchema.safeParse(record.data);
       if (access.success && access.data.familyId === undefined) {
         changed = await this.#revokeTokenRecord(record, accessGrantSchema) || changed;
@@ -842,21 +842,6 @@ export class OAuthServer {
       const refresh = refreshGrantSchema.safeParse(record.data);
       if (refresh.success && refresh.data.familyId === undefined) {
         changed = await this.#revokeTokenRecord(record, refreshGrantSchema) || changed;
-      }
-    }
-    // Pre-family authorization codes did not carry subject/client refs. Their
-    // one-minute window still overlaps rolling deploys, so scan the bounded
-    // code set, filter by parsed binding, and guard-update matches as revoked.
-    const legacyCodes = await listAll(store, { kind: "code" });
-    for (const record of legacyCodes) {
-      const code = codeGrantSchema.safeParse(record.data);
-      if (
-        code.success
-        && code.data.familyId === undefined
-        && code.data.subject === subject
-        && code.data.clientId === clientId
-      ) {
-        changed = await this.#revokeTokenRecord(record, codeGrantSchema) || changed;
       }
     }
     return changed;

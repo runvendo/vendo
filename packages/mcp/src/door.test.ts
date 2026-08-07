@@ -556,25 +556,15 @@ describe("createMcpDoor routing and OAuth", () => {
     await connectedA.client.close().catch(() => undefined);
   });
 
-  it("revokes a pre-family authorization code during a rolling deployment", async () => {
+  it("refuses an authorization code still outstanding when the client was revoked", async () => {
     const harness = makeHarness();
     const client = await register(harness.door);
-    const code = "vmcd_pre_family_code";
-    await harness.store.records("vendo_mcp_grants").put({
-      id: "mcpg_pre_family_code",
-      data: {
-        kind: "code",
-        subject: "user_1",
-        clientId: client.body.client_id,
-        resource: BASE,
-        scopes: ["read", "write"],
-        codeChallenge: await pkceChallenge(VERIFIER),
-        redirectUri: REDIRECT,
-        expiresAt: new Date(Date.now() + 60_000).toISOString(),
-      },
-      refs: { kind: "code", token_hash: await sha256Hex(code) },
-    });
+    const auth = await authorize(harness.door, client.body.client_id);
+    const code = new URL(auth.headers.get("location")!).searchParams.get("code")!;
 
+    // A code lives a minute; a revoke inside that window has to reach it. The
+    // family anchor is what does it — the code carries the family id and the
+    // exchange re-checks that the family is still active.
     await harness.door.revokeClient("user_1", client.body.client_id);
 
     const exchangeResponse = await exchange(harness.door, {
@@ -585,7 +575,22 @@ describe("createMcpDoor routing and OAuth", () => {
     });
     expect(exchangeResponse.status).toBe(400);
     expect(await exchangeResponse.json()).toMatchObject({ error: "invalid_grant" });
-    expect(harness.store.rows("vendo_mcp_grants")[0]?.data.revokedAt).toEqual(expect.any(String));
+  });
+
+  it("revokes an outstanding service-key access grant, which carries no family", async () => {
+    const harness = makeHarness({ serviceAuth: { keys: [SERVICE_KEY] } });
+    const exchanged = await serviceExchange(harness.door);
+    const { access_token: token } = await exchanged.json() as TokenResponse;
+    expect((await harness.door.handler(mcpRequest(token))).status).toBe(200);
+
+    // The service-key exchange mints ONE access grant and nothing else — no
+    // refresh token, so no rotation and no family anchor to hang a revocation
+    // on. Per-grant revocation is the only thing that can reach it.
+    await harness.door.revokeClient("user_1", "vendo-service");
+    expect((await harness.door.handler(mcpRequest(token))).status).toBe(200);
+
+    await harness.door.revokeClient("user_1", `svc:${(await sha256Hex(SERVICE_KEY)).slice(0, 8)}`);
+    expect((await harness.door.handler(mcpRequest(token))).status).toBe(401);
   });
 
   it("consumes an authorization code the moment it is presented, even on PKCE failure", async () => {
