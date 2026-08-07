@@ -1,5 +1,6 @@
 import type { SecretSource } from "@vendoai/actions/presets";
 import type { ActAs, Json, Membership, PermissionGrant, Principal, ResolvedPerson } from "@vendoai/core";
+import { joinUrl } from "@vendoai/core";
 import type { HostOAuthAdapter } from "@vendoai/mcp";
 import { environment } from "../wire/shared.js";
 import type { HostAuthPreset, HostAuthPresetUser, HostAuthPresetUserResolver } from "./shared.js";
@@ -71,10 +72,13 @@ export async function resolvePresetSecret(
   return value;
 }
 
-/** The operator-set public origin (VENDO_BASE_URL) or, failing that, the
-    request's own origin — mirrors authJs and how the door derives its URLs. */
-export function publicOrigin(request: Request): URL {
-  return new URL(environment("VENDO_BASE_URL") ?? request.url);
+/** The operator-set FULL public URL (VENDO_BASE_URL — path prefix included) or,
+    failing that, the request's own origin. Spec 2026-08-06 §B1: nothing strips
+    the configured path, which is how the login redirect used to land on
+    /login instead of /maple/login (#866). */
+export function publicUrl(request: Request): URL {
+  const configured = environment("VENDO_BASE_URL");
+  return new URL(configured ?? new URL(request.url).origin);
 }
 
 export function requestCookies(request: Request): [name: string, value: string][] {
@@ -133,16 +137,22 @@ export function lazyActAs(build: () => ActAs): ActAs {
   return async (principal, grant) => (mint ??= build())(principal, grant);
 }
 
-/** /login?returnTo= on the deployment's public origin (authJs parity). Systems
-    whose own convention demands it pass a different path (Clerk's /sign-in,
-    Auth0's /auth/login) or extra params — never a new preset option. */
+/** {login}?returnTo= on the deployment's public URL (authJs parity). The
+    default target is `{public}/login`, overridable per deployment with
+    VENDO_LOGIN_URL — which may be absolute, on another domain. Systems whose
+    own convention demands it pass a different path (Clerk's /sign-in, Auth0's
+    /auth/login) or extra params — never a new preset option. */
 export function loginRedirect(
   request: Request,
   returnTo: string,
   path = "/login",
   extraParams: Record<string, string> = {},
 ): Response {
-  const login = new URL(path, publicOrigin(request));
+  const configured = environment("VENDO_LOGIN_URL");
+  // VENDO_LOGIN_URL is the deployment's answer and wins over a preset's
+  // convention path; joinUrl passes an absolute value through untouched and
+  // attaches a relative one under the public prefix exactly once.
+  const login = joinUrl(publicUrl(request), configured ?? path);
   login.searchParams.set("returnTo", returnTo);
   for (const [name, value] of Object.entries(extraParams)) {
     login.searchParams.set(name, value);
