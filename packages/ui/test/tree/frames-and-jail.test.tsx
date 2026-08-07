@@ -167,6 +167,49 @@ describe("AppFrame", () => {
     expect(screen.getByText("Instant app")).toBeTruthy();
   });
 
+  it("does not carry one app's $state into the next app mounted in its place", async () => {
+    // The same leak as the TreeView case, through the surface a host actually
+    // renders: both apps carry the compiler's synthetic `root`, so only `appId`
+    // separates them.
+    const StateProbe: ComponentType<{ value?: unknown }> = ({ value }) => <output>{String(value)}</output>;
+    const payload = (island: string) => ({
+      formatVersion: VENDO_TREE_FORMAT,
+      root: "root",
+      nodes: [
+        { id: "root", component: "Row", children: ["generated", "probe"] },
+        { id: "generated", component: island, source: "generated" as const },
+        { id: "probe", component: "StateProbe", source: "host" as const, props: { value: { $state: "draft" } } },
+      ],
+      components: { [island]: `export default function ${island}() { return <div>editor</div> }` },
+    });
+
+    const view = render(
+      <AppFrame
+        appId="app_a"
+        surface={{ kind: "tree", payload: payload("EditorA") }}
+        components={{ StateProbe }}
+        onAction={ok}
+      />,
+    );
+    const iframe = screen.getByTitle("Generated component: EditorA") as HTMLIFrameElement;
+    window.dispatchEvent(new MessageEvent("message", {
+      source: iframe.contentWindow,
+      data: { kind: "state-set", key: "draft", value: "belongs to app A" },
+    }));
+    await waitFor(() => expect(screen.getByText("belongs to app A")).toBeTruthy());
+
+    view.rerender(
+      <AppFrame
+        appId="app_b"
+        surface={{ kind: "tree", payload: payload("EditorB") }}
+        components={{ StateProbe }}
+        onAction={ok}
+      />,
+    );
+    expect(screen.queryByText("belongs to app A")).toBeNull();
+    expect(screen.getByText("undefined")).toBeTruthy();
+  });
+
   it("contains unknown surface kinds", () => {
     render(<AppFrame surface={{ kind: "spatial" } as never} />);
     expect(screen.getByRole("note", { name: /unsupported app surface/i }).textContent).toContain("spatial");

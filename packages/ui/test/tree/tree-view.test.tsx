@@ -430,6 +430,38 @@ describe("TreeView bindings and outcomes", () => {
     expect(screen.getByText("undefined")).toBeTruthy();
   });
 
+  it("does not carry one app's $state into the next app rendered in its place", async () => {
+    // Every compiled app is rooted at the SAME synthetic node id (the compiler
+    // emits `root: "root"` for all of them — core/genui/wire/compile.ts), so the
+    // root is not an app identity: `appId` is. Two real apps, same position.
+    const StateProbe: ComponentType<{ value?: unknown }> = ({ value }) => <output>{String(value)}</output>;
+    const appTree = (island: string) => tree(
+      [
+        { id: "root", component: "Row", children: ["generated", "probe"] },
+        { id: "generated", component: island, source: "generated" },
+        { id: "probe", component: "StateProbe", source: "host", props: { value: { $state: "draft" } } },
+      ],
+      "root",
+      { [island]: `export default function ${island}() { return <div>editor</div> }` },
+    );
+
+    const view = render(
+      <TreeView appId="app_a" tree={appTree("EditorA")} components={{ StateProbe }} onAction={ok} />,
+    );
+    const iframe = screen.getByTitle("Generated component: EditorA") as HTMLIFrameElement;
+    window.dispatchEvent(new MessageEvent("message", {
+      source: iframe.contentWindow,
+      data: { kind: "state-set", key: "draft", value: "belongs to app A" },
+    }));
+    await waitFor(() => expect(screen.getByText("belongs to app A")).toBeTruthy());
+
+    view.rerender(
+      <TreeView appId="app_b" tree={appTree("EditorB")} components={{ StateProbe }} onAction={ok} />,
+    );
+    expect(screen.queryByText("belongs to app A")).toBeNull();
+    expect(screen.getByText("undefined")).toBeTruthy();
+  });
+
   it("turns $action props into callbacks and marks pending approval", async () => {
     const ActionButton: ComponentType<{ run?: () => Promise<ToolOutcome> }> = ({ run }) => (
       <button type="button" onClick={() => void run?.()}>Run action</button>
