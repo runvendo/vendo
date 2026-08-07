@@ -80,6 +80,21 @@ const threadState = vi.hoisted(() => ({
   persisted: [] as unknown[],
 }));
 
+/** The scenario ladder is host copy: cards get added, dropped and reordered.
+ *  Flipping this serves the SAME cards in a different order, which must not
+ *  change which script a card plays. */
+const scenarioOrder = vi.hoisted(() => ({ reversed: false }));
+
+vi.mock("@/vendo/scenarios", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/vendo/scenarios")>();
+  return {
+    ...actual,
+    get mapleScenarios() {
+      return scenarioOrder.reversed ? [...actual.mapleScenarios].reverse() : actual.mapleScenarios;
+    },
+  };
+});
+
 vi.mock("./threads", () => ({
   loadScriptedThread: vi.fn(async () => ({ id: "thr_test", messages: threadState.messages as UIMessage[] })),
   persistScriptedThread: vi.fn(async (_principal: unknown, _id: unknown, messages: unknown[]) => {
@@ -90,7 +105,15 @@ vi.mock("./threads", () => ({
   },
 }));
 
+import { mapleScenarios } from "@/vendo/scenarios";
 import { scriptedThreadsResponse } from "./engine";
+
+/** The prompt a card sends on tap, found by its headline — never by position. */
+function cardPrompt(title: string): string {
+  const card = mapleScenarios.find((candidate) => candidate.title === title);
+  if (card === undefined) throw new Error(`no Maple scenario card titled "${title}"`);
+  return (card.prompt ?? card.title).trim();
+}
 
 function threadsRequest(text: string): Request {
   return new Request("http://localhost:3000/api/vendo/threads", {
@@ -115,9 +138,10 @@ describe("scripted beats stream wire-safe tool parts", () => {
     vi.clearAllMocks();
     threadState.messages = [];
     threadState.persisted = [];
+    scenarioOrder.reversed = false;
   });
 
-  it("card (e) low-balance beat: every tool input is an object (Anthropic replay contract)", async () => {
+  it("the low-balance beat streams every tool input as an object (Anthropic replay contract)", async () => {
     const response = await scriptedThreadsResponse(
       threadsRequest("When my checking balance drops below $2,000, email me an alert."),
     );
@@ -145,7 +169,7 @@ describe("scripted beats stream wire-safe tool parts", () => {
     expect(JSON.stringify(grantInput)).toContain("standing, this app only");
   }, 60_000);
 
-  it("card (c) weekly beat surfaces the WHOLE grant set as one data-vendo-grant-set part (criterion 22, demo half)", async () => {
+  it("the weekly beat surfaces the WHOLE grant set as one data-vendo-grant-set part (criterion 22, demo half)", async () => {
     const response = await scriptedThreadsResponse(
       threadsRequest("Every Friday, email me a summary of that week's spending."),
     );
@@ -173,6 +197,33 @@ describe("scripted beats stream wire-safe tool parts", () => {
     // No legacy single-ask approval part for grant asks.
     expect(chunks.filter((chunk) => chunk.type === "data-vendo-approval")).toHaveLength(0);
   }, 60_000);
+
+  it("every card still plays its OWN script when the scenario ladder is reordered", async () => {
+    scenarioOrder.reversed = true;
+    const turn = async (title: string): Promise<{ tools: string[]; text: string }> => {
+      const response = await scriptedThreadsResponse(threadsRequest(cardPrompt(title)));
+      expect(response, `"${title}" matched no scripted beat`).not.toBeNull();
+      const chunks = await streamedChunks(response as Response);
+      return {
+        tools: chunks.filter((chunk) => chunk.type === "tool-input-start").map((chunk) => String(chunk.toolName)),
+        text: chunks.filter((chunk) => chunk.type === "text-delta").map((chunk) => String(chunk.delta)).join(""),
+      };
+    };
+
+    const [spending, transfer, weekly, moneyHq, lowBalance] = await Promise.all([
+      turn("Where did my money go?"),
+      turn("Move money to savings"),
+      turn("Email me a weekly summary"),
+      turn("Build my money HQ"),
+      turn("Alert me before I overdraft"),
+    ]);
+
+    expect(spending.text).toContain("Here's where this month went.");
+    expect(transfer.tools).toContain("host_transferMoney");
+    expect(weekly.text).toContain("Setting up your Friday digest");
+    expect(moneyHq.text).toContain("Here's your money HQ");
+    expect(lowBalance.text).toContain("You want a heads-up before checking runs low.");
+  }, 120_000);
 
   it("a parked set abandoned by the next prompt resolves non-orphan — real-agent replay never 400s (criterion 23)", async () => {
     // History: a weekly turn parked on its grant set, never decided.
