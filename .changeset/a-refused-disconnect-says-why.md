@@ -14,7 +14,12 @@ on their own (broker 5xx, timeouts, a dropped request):
 - `not-implemented` / `cloud-required` → "Disconnecting Gmail isn't set up here — there's
   nothing you can do from this screen."
 - `not-found` → **not an error at all.** The broker answers not-found for any id outside
-  the caller's own scope, so the account is already gone and the person's intent is a
-  fact; the panel re-reads the list and the stale row leaves, exactly as a real sever ends.
+  the caller's own scope, so the account is already gone and the person's intent is a fact.
 
 The wire's own message still never reaches the person.
+
+A severed row also stops depending on the list read that follows it. `useResource` keeps
+its last good page when a refresh fails, so a 503 on that read used to put the row straight
+back wearing a Connected chip, with nothing said — a disconnect that looked like a button
+doing nothing. That was true of every successful sever, not just the already-gone case.
+The panel now drops the row on the wire's word and holds it dropped for the session.

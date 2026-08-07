@@ -97,6 +97,12 @@ export function ConnectedAccountsPanel({ undoMs = 10_000 }: ConnectedAccountsPan
   const [severing, setSevering] = useState<Record<string, Severing | undefined>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string>();
+  // Accounts the WIRE has confirmed gone this session. The list read that
+  // follows a sever is not what proves it: `useResource` keeps its last good
+  // page when a refresh fails, which would put the row back wearing a
+  // Connected chip. Held until the surface remounts, when the server answers
+  // from scratch.
+  const [severed, setSevered] = useState<Record<string, boolean>>({});
   const timers = useRef(new Map<string, { commit: number; tick: number }>());
   // Pending disconnects flush on unmount (an undone-looking row must never
   // silently survive navigation), so the latest wire args live in a ref.
@@ -156,13 +162,15 @@ export function ConnectedAccountsPanel({ undoMs = 10_000 }: ConnectedAccountsPan
         setBusy(current => ({ ...current, [id]: true }));
         try {
           await disconnect(id, connection.connector);
+          if (!cancelled.current) setSevered(current => ({ ...current, [id]: true }));
         } catch (reason) {
           // spec §16 law 3 — the wire's sentence is the developer's; the person
           // gets ours, and it names the refusal rather than a blanket retry.
-          // An account that is already gone is not a failure to report: re-read
-          // the list so the stale row leaves, exactly as a real sever ends.
+          // An account that is already gone is not a failure to report: the
+          // broker answers not-found for anything outside the caller's own
+          // scope, so the sever is a fact and only the row is stale.
           if (cancelled.current) return;
-          if (alreadyGone(reason)) await refresh();
+          if (alreadyGone(reason)) setSevered(current => ({ ...current, [id]: true }));
           else setError(disconnectRefusalCopy(reason, toolkitDisplayName(connection.toolkit)));
         } finally {
           if (!cancelled.current) {
@@ -217,12 +225,14 @@ export function ConnectedAccountsPanel({ undoMs = 10_000 }: ConnectedAccountsPan
     }
   };
 
+  const rows = connections.filter(connection => severed[connection.id] !== true);
+
   return (
     <ChromeRoot>
       <section aria-labelledby="vendo-accounts-heading" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <h2 id="vendo-accounts-heading" className="fl-auto-title" style={{ margin: 0 }}>Connected accounts</h2>
         {error ? <div role="alert" className="fl-error">{error}</div> : null}
-        {connections.length === 0 ? (
+        {rows.length === 0 ? (
           <div className="fl-acct-ghost">
             <span className="fl-acct-ghost-title">No connected accounts yet</span>
             <p className="fl-acct-ghost-copy">
@@ -250,7 +260,7 @@ export function ConnectedAccountsPanel({ undoMs = 10_000 }: ConnectedAccountsPan
             ) : null}
           </div>
         ) : null}
-        {connections.map(connection => {
+        {rows.map(connection => {
           const name = toolkitDisplayName(connection.toolkit);
           const status = STATUS[connection.status];
           const sever = severing[connection.id];
