@@ -596,11 +596,14 @@ class GuardImplementation implements VendoGuard {
    *  swept. A `ttlMs <= 0` disables the sweep. */
   async sweepExpiredApprovals(ttlMs: number, at: number = Date.parse(now())): Promise<number> {
     if (ttlMs <= 0) return 0;
-    const records = await listAll(this.#store.records(APPROVALS_COLLECTION));
+    // Filtered by the store, not in JS: this runs every 60s for the life of the
+    // process, and the unfiltered read grows with every approval ever decided.
+    const records = await listAll(this.#store.records(APPROVALS_COLLECTION), {
+      refs: { status: "pending" },
+    });
     let swept = 0;
     for (const record of records) {
       const data = approvalData(record);
-      if (data.status !== "pending") continue;
       const parkedAt = Date.parse(data.request.createdAt);
       if (!Number.isFinite(parkedAt) || parkedAt + ttlMs > at) continue;
       try {
