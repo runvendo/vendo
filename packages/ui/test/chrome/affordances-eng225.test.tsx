@@ -3,6 +3,7 @@
 // copy, drag-drop attach + image previews, sent attachments in the transcript,
 // the waiting-on-you queue, toasts, and the connect dock/tray.
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
 import { VendoThread, VendoToasts, WaitingQueue, dismissAllVendoToasts, vendoToast } from "../../src/chrome/index.js";
@@ -412,5 +413,30 @@ describe("connect dock + tray (ENG-225)", () => {
     expect(popup.close).toHaveBeenCalled();
     // The freshly connected row celebrates (one-shot bloom class).
     expect(tray.querySelector(".is-just-connected")).toBeTruthy();
+  });
+
+  it("still connects after a StrictMode remount (the tray's cancel latch resets)", async () => {
+    // React's dev StrictMode mounts, tears down and re-mounts every effect. The
+    // tray's cancel ref was only ever SET, by that cleanup, so it stayed latched
+    // through the second mount: the poll in completeConnection exited on its
+    // FIRST check, which means no status read, no error, and no end — the row
+    // sat on "Connecting Slack" forever while the person finished signing in.
+    // Same latch, same fix as ConnectCard's (connect.test.tsx).
+    const popup = { location: { replace: vi.fn() }, close: vi.fn() };
+    vi.stubGlobal("open", vi.fn(() => popup));
+    render(
+      <StrictMode>
+        <VendoProvider client={client} connectors={CONNECTORS}><VendoThread threadId="thr_1" /></VendoProvider>
+      </StrictMode>,
+    );
+    await screen.findByText("Existing thread");
+    fireEvent.click(await screen.findByRole("button", { name: "Connect tools" }));
+    const tray = await screen.findByRole("dialog", { name: "Connect tools" });
+    fireEvent.click(await within(tray).findByRole("button", { name: "Connect Slack" }));
+
+    await within(tray).findByRole("img", { name: "Slack connected" });
+    expect(popup.close).toHaveBeenCalled();
+    // No spinner left behind: the flow ENDED rather than being abandoned.
+    expect(within(tray).queryByRole("status", { name: "Connecting Slack" })).toBeNull();
   });
 });
