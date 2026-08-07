@@ -450,7 +450,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
           "tools/schemas",
           "E-TOOLS-004",
           `catalog: ${coverage} — blind: ${blind.slice(0, 8).join(", ")}${blind.length > 8 ? ` +${blind.length - 8} more` : ""};`
-          + " declare them in your OpenAPI/tRPC/GraphQL contract, or run `vendo sync` with a model key so the judge reads the handlers",
+          + " declare them in your OpenAPI/tRPC contract, or run `vendo sync` with a model key so the judge reads the handlers",
         );
       } else if (total > 0) {
         pass("tools/schemas", `catalog: ${coverage}`);
