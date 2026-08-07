@@ -38,9 +38,9 @@ export const JUDGE_OUTPUT_RULES = [
   "Rules:",
   "- Reply with ONLY one fenced json block matching:",
   '  { "tools": [{ "name", "evidence", "reason"?, "description"?, "title"?, "risk"?, "confirmEach"?,',
-  '    "disabled"?, "audience"?, "semantics"? }], "narrative": string }',
+  '    "disabled"?, "audience"?, "semantics"?, "inputSchema"?, "outputSchema"? }], "narrative": string }',
   "- tools: include ONLY names from the catalog above. You may not add, rename, or rebind tools;",
-  "  bindings and input schemas are machine-owned and ignored if you send them.",
+  "  bindings are machine-owned and ignored if you send them.",
   "- evidence: REQUIRED on every entry — a short snippet quoted VERBATIM from the handler source",
   "  you actually read, copied character for character (<= 500 chars). A second reviewer will",
   "  look for this exact string in the file; an entry whose evidence is paraphrased, invented, or",
@@ -100,6 +100,18 @@ export const JUDGE_OUTPUT_RULES = [
   '  | { "kind": "date", "format": "iso"|"epoch" } | { "kind": "enum", "labels": {value: label} }',
   '  | { "kind": "id", "entity"? } | { "kind": "percent", "scale": "ratio"|"0-100" } |',
   '  { "kind": "plain" }. Only include fields you read evidence for in the handler code/types.',
+  '- inputSchema / outputSchema: JSON Schema for what the handler READS from the request and what it',
+  '  RETURNS on success. Send one ONLY for a tool the catalog above flags "inputSchemaUnknown": true /',
+  '  "outputSchemaUnknown": true. Every other slot is already filled by the host\'s own contract',
+  "  (an OpenAPI spec, a tRPC .output(), a typed server action) and a proposal for it is refused",
+  "  outright and counted — you gain nothing by sending it.",
+  "  Describe the SHAPE THE HANDLER ACTUALLY PRODUCES, envelope included: if it returns",
+  '  `Response.json({ data: rows })`, the outputSchema is the object with a `data` array, not the',
+  "  array. Read the response construction and the types it is built from — never the route name.",
+  "  Include enum values wherever the code constrains a field to a closed set; an enum erased to a",
+  "  bare string is worse than no schema at all. Omit any field you are not sure of, and omit the",
+  "  whole slot if you cannot read it: a wrong schema is a confident lie the next agent binds to.",
+  "  Your evidence quote must cover the schema too — quote the response construction or the type.",
   "- narrative: a short human-readable story of what you read and what you changed — anything",
   "  suspicious especially. Plain prose, <= 30 lines.",
 ].join("\n");
@@ -128,6 +140,11 @@ export function judgmentFacts(tools: ExtractedTool[]): string {
     ...(tool.disabled === true ? { disabled: true } : {}),
     ...(tool.audience === undefined ? {} : { audience: tool.audience }),
     ...(tool.title === undefined ? {} : { title: tool.title }),
+    // The fill gate, stated as a FACT about each tool rather than as a rule
+    // the model has to apply: a slot that is not flagged here is already
+    // filled by the host's own contract and any proposal for it is refused.
+    ...((tool.inputSchemaSource ?? "unknown") === "unknown" ? { inputSchemaUnknown: true } : {}),
+    ...((tool.outputSchemaSource ?? "unknown") === "unknown" ? { outputSchemaUnknown: true } : {}),
     description: tool.description,
   })), null, 2);
 }
@@ -216,6 +233,8 @@ export function composeSkepticInstructions(input: {
         ...(subject.tool.confirmEach === true ? { confirmEach: true } : {}),
         ...(subject.tool.disabled === true ? { disabled: true } : {}),
         ...(subject.tool.audience === undefined ? {} : { audience: subject.tool.audience }),
+        ...((subject.tool.inputSchemaSource ?? "unknown") === "unknown" ? { inputSchemaUnknown: true } : {}),
+        ...((subject.tool.outputSchemaSource ?? "unknown") === "unknown" ? { outputSchemaUnknown: true } : {}),
       },
       proposed: subject.moves.map((move) => ({ field: move.field, from: move.from, to: move.to })),
       evidence: subject.evidence,
@@ -227,6 +246,9 @@ export function composeSkepticInstructions(input: {
     '  { "verdicts": [{ "name", "field", "verdict": "uphold" | "reject", "reason"? }] }',
     "- Return exactly one verdict for EVERY (name, field) pair listed above. A pair you omit is",
     "  treated as rejected.",
+    '- An "inputSchema" or "outputSchema" field is a claim about the handler like any other: REJECT it',
+    "  unless the source really produces that shape, envelope and enum values included. A schema that",
+    "  is merely plausible is a reject — the next agent binds to it as if it were the contract.",
     "- reason: one sentence, required on a reject, saying what the code actually shows. <= 300 chars.",
   ].join("\n");
 }

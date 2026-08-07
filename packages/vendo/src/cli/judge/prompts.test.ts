@@ -48,7 +48,25 @@ describe("judgmentFacts", () => {
     expect(facts).toContain("operator");
     // inputSchema is machine-owned: a model that cannot see it cannot restate it.
     expect(facts).not.toContain("secret");
-    expect(facts).not.toContain("inputSchema");
+    expect(facts).not.toContain('"inputSchema"');
+  });
+
+  it("flags only the blind slots and states the fill-only rule", () => {
+    const facts = judgmentFacts([
+      {
+        name: "host_listItems",
+        description: "List items",
+        inputSchema: { type: "object", properties: {} },
+        inputSchemaSource: "declared",
+        outputSchemaSource: "unknown",
+        risk: "read",
+        binding: { kind: "openapi", operationId: "listItems", method: "GET", path: "/api/items" },
+      },
+    ]);
+    expect(facts).not.toContain("inputSchemaUnknown");
+    expect(facts).toContain("outputSchemaUnknown");
+    expect(JUDGE_OUTPUT_RULES).toContain('"outputSchemaUnknown": true');
+    expect(JUDGE_OUTPUT_RULES).toContain("is refused");
   });
 });
 
