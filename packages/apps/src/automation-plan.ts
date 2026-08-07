@@ -8,6 +8,7 @@ import {
   UNKNOWN_INPUT_SCHEMA_NOTE,
   UNKNOWN_OUTPUT_SHAPE_NOTE,
   type ShapeType,
+  type Step,
   type Trigger,
 } from "@vendoai/core";
 import type { LanguageModel } from "ai";
@@ -262,6 +263,69 @@ const scheduleIssues = (trigger: Omit<Trigger, "id">): string[] => {
   return issues;
 };
 
+/** Everything a `steps` run has to satisfy beyond the schema: referable step
+ *  ids, a tool universe the planner could actually see, §12's defence in depth
+ *  per step, and a published result that derives from live data and lands in the
+ *  collection the plan declared. */
+const stepsIssues = (
+  steps: readonly Step[],
+  input: AutomationPlanInput,
+  refused: ReadonlySet<string>,
+  resultsCollection: unknown,
+): string[] => {
+  const issues: string[] = [];
+  if (steps.length === 0) issues.push("steps must not be empty");
+  // The planning surface is the whole legal tool universe here: fn: refs
+  // are NOT accepted — the ladder only authors automations for machine-less
+  // apps this wave, and a machine-less app has no fn: to call.
+  const known = new Set(plannerTools(input.tools).map(({ name }) => name));
+  const seen = new Set<string>();
+  const priorIds = new Set<string>();
+  let publishesDeclaredCollection = false;
+  for (const step of steps) {
+    // Bare-identifier ids only: a hyphenated id referenced as
+    // steps.invoice-rows parses as SUBTRACTION in jsonata, so the reference
+    // silently evaluates to nothing at run time.
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(step.id) || seen.has(step.id)) {
+      issues.push(`step ids must be unique bare identifiers ([A-Za-z_][A-Za-z0-9_]*) — "${step.id}" is not`);
+    }
+    seen.add(step.id);
+    if (refused.has(step.tool)) {
+      issues.push(refusal(`step "${step.id}"`, step.tool));
+    } else if (!known.has(step.tool)) {
+      issues.push(`step "${step.id}" names unknown tool "${step.tool}"; the available tools are: ${[...known].join(", ") || "(none)"}`);
+    }
+    // Law 1 for automations: a published result must be BUILT from a PRIOR
+    // step's output (or the trigger event) — a hand-typed data payload is
+    // invented data on the board. Quoted jsonata string literals (BOTH legal
+    // quote forms) are stripped first so 'a steps guide' or "steps.rows"
+    // cannot smuggle past the check, and the referenced step id must be one
+    // that ran EARLIER (a bare "steps" token or a forward reference
+    // publishes nothing at run time).
+    if (step.tool === RESULTS_TOOL) {
+      const dataExpression = (step.args?.data ?? "").replace(/'[^']*'|"[^"]*"/g, "");
+      const referencedPrior = [...dataExpression.matchAll(/\bsteps\.([A-Za-z_][A-Za-z0-9_]*)/g)]
+        .some((match) => priorIds.has(match[1] as string));
+      if (!referencedPrior && !/\bevent\b/.test(dataExpression)) {
+        issues.push(`step "${step.id}" publishes hand-typed data — the "${RESULTS_TOOL}" data expression must derive from an EARLIER step's output (steps.<priorStepId>...) or the trigger event; add the read step that fetches the live data first`);
+      }
+      if (typeof resultsCollection === "string"
+        && step.args?.collection?.trim() === `'${resultsCollection}'`
+        && step.args?.appId?.trim() === `'${input.appId}'`) {
+        publishesDeclaredCollection = true;
+      }
+    }
+    priorIds.add(step.id);
+  }
+  // A declared results collection the run never writes leaves the rebound
+  // board permanently empty — require the publish step to target exactly
+  // this app and that collection (literal jsonata strings).
+  if (typeof resultsCollection === "string" && !publishesDeclaredCollection) {
+    issues.push(`resultsCollection "${resultsCollection}" is declared but no step publishes it — add a "${RESULTS_TOOL}" step with args {"appId":"'${input.appId}'","collection":"'${resultsCollection}'","id":"'latest'","data":...}`);
+  }
+  return issues;
+};
+
 const validatePlan = (
   raw: string,
   input: AutomationPlanInput,
@@ -314,56 +378,7 @@ const validatePlan = (
     }
   }
   if (trigger.run.kind === "steps") {
-    const steps = trigger.run.steps;
-    if (steps.length === 0) issues.push("steps must not be empty");
-    // The planning surface is the whole legal tool universe here: fn: refs
-    // are NOT accepted — the ladder only authors automations for machine-less
-    // apps this wave, and a machine-less app has no fn: to call.
-    const known = new Set(plannerTools(input.tools).map(({ name }) => name));
-    const seen = new Set<string>();
-    const priorIds = new Set<string>();
-    let publishesDeclaredCollection = false;
-    for (const step of steps) {
-      // Bare-identifier ids only: a hyphenated id referenced as
-      // steps.invoice-rows parses as SUBTRACTION in jsonata, so the reference
-      // silently evaluates to nothing at run time.
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(step.id) || seen.has(step.id)) {
-        issues.push(`step ids must be unique bare identifiers ([A-Za-z_][A-Za-z0-9_]*) — "${step.id}" is not`);
-      }
-      seen.add(step.id);
-      if (refused.has(step.tool)) {
-        issues.push(refusal(`step "${step.id}"`, step.tool));
-      } else if (!known.has(step.tool)) {
-        issues.push(`step "${step.id}" names unknown tool "${step.tool}"; the available tools are: ${[...known].join(", ") || "(none)"}`);
-      }
-      // Law 1 for automations: a published result must be BUILT from a PRIOR
-      // step's output (or the trigger event) — a hand-typed data payload is
-      // invented data on the board. Quoted jsonata string literals (BOTH legal
-      // quote forms) are stripped first so 'a steps guide' or "steps.rows"
-      // cannot smuggle past the check, and the referenced step id must be one
-      // that ran EARLIER (a bare "steps" token or a forward reference
-      // publishes nothing at run time).
-      if (step.tool === RESULTS_TOOL) {
-        const dataExpression = (step.args?.data ?? "").replace(/'[^']*'|"[^"]*"/g, "");
-        const referencedPrior = [...dataExpression.matchAll(/\bsteps\.([A-Za-z_][A-Za-z0-9_]*)/g)]
-          .some((match) => priorIds.has(match[1] as string));
-        if (!referencedPrior && !/\bevent\b/.test(dataExpression)) {
-          issues.push(`step "${step.id}" publishes hand-typed data — the "${RESULTS_TOOL}" data expression must derive from an EARLIER step's output (steps.<priorStepId>...) or the trigger event; add the read step that fetches the live data first`);
-        }
-        if (typeof resultsCollection === "string"
-          && step.args?.collection?.trim() === `'${resultsCollection}'`
-          && step.args?.appId?.trim() === `'${input.appId}'`) {
-          publishesDeclaredCollection = true;
-        }
-      }
-      priorIds.add(step.id);
-    }
-    // A declared results collection the run never writes leaves the rebound
-    // board permanently empty — require the publish step to target exactly
-    // this app and that collection (literal jsonata strings).
-    if (typeof resultsCollection === "string" && !publishesDeclaredCollection) {
-      issues.push(`resultsCollection "${resultsCollection}" is declared but no step publishes it — add a "${RESULTS_TOOL}" step with args {"appId":"'${input.appId}'","collection":"'${resultsCollection}'","id":"'latest'","data":...}`);
-    }
+    issues.push(...stepsIssues(trigger.run.steps, input, refused, resultsCollection));
   }
   const name = candidate.name;
   if (name !== undefined && (typeof name !== "string" || name.trim() === "" || name.length > 80)) {

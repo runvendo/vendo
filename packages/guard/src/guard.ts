@@ -758,73 +758,7 @@ class GuardImplementation implements VendoGuard {
             await this.#reportFrozenBlock(ctx, call);
             return { status: "blocked", reason: FROZEN_REASON };
           }
-          const grant = await this.#grantForExecution(decision, call, completed.descriptor, ctx);
-          // CORE-2: `grant` is a first-class RunContext field — no cast needed.
-          const executeCtx = grant === undefined ? ctx : { ...ctx, grant };
-          // Build contract §7: for a MUTATING call, a key that already succeeded
-          // returns its recorded outcome INSTEAD of executing. The check sits
-          // here, after the guard has said run and before the registry is
-          // touched, because that is the only point where skipping is both safe
-          // (authority was still checked) and effective (the effect is avoided).
-          //
-          // The DECLARED label decides — the dev's label is final (two-vote
-          // grading removed), so a declared `read` is silent and takes no
-          // receipt.
-          const risk = completed.descriptor.risk;
-          const mutating = risk === "write" || risk === "destructive";
-          const base = mutating ? effectBaseKey(ctx, call) : undefined;
-          const key = base === undefined ? undefined : effectKeyOf(base, this.#effectOrdinal(base, call.id));
-          const recorded = key === undefined ? undefined : await this.#recordedEffect(key);
-          if (recorded !== undefined) {
-            outcome = recorded;
-          } else {
-            // Finding 14 (TOCTOU): two concurrent identical calls both read "no
-            // receipt" and both executed. Share one in-flight execution per key
-            // so the second awaits the first's outcome instead of repeating it.
-            const inFlight = key === undefined ? undefined : this.#effectsInFlight.get(key);
-            if (inFlight !== undefined) {
-              outcome = await inFlight;
-            } else {
-              const run = (async (): Promise<ToolOutcome> => {
-                try {
-                  return await tools.execute(call, executeCtx);
-                } catch (error) {
-                  return {
-                    status: "error",
-                    error: {
-                      code: error instanceof VendoError ? error.code : "error",
-                      message: errorMessage(error),
-                    },
-                  };
-                }
-              })();
-              if (key !== undefined) this.#effectsInFlight.set(key, run);
-              try {
-                outcome = await run;
-              } finally {
-                if (key !== undefined) this.#effectsInFlight.delete(key);
-              }
-              // Only a SUCCESS is ledgered. A failed mutation may not have landed
-              // at all, so recording it would turn a transient upstream error into
-              // a permanent refusal to retry — the opposite of the goal.
-              if (key !== undefined && outcome.status === "ok") {
-                // The mutation ALREADY HAPPENED. A receipt-store failure must
-                // never discard it: throwing here would lose both the caller's
-                // outcome and the audit row for real, completed work. Surface it
-                // loudly and carry on — an unrecorded receipt risks a duplicate
-                // on a later re-run, which is strictly better than losing the
-                // record of a payment that went out.
-                try {
-                  await this.#recordEffect(key, outcome, ctx.principal.subject);
-                } catch (error) {
-                  console.error(
-                    `[vendo] guard: ${call.tool} completed but its effect receipt could not be written `
-                    + `(${errorMessage(error)}). A re-run of this run may repeat the call.`,
-                  );
-                }
-              }
-            }
-          }
+          outcome = await this.#runOnce(tools, call, decision, completed.descriptor, ctx);
         }
 
         const detail: Record<string, unknown> = {};
@@ -1476,6 +1410,81 @@ class GuardImplementation implements VendoGuard {
     };
     if (records.atomic === undefined) await records.put(input);
     else await records.atomic.insertIfAbsent(input);
+  }
+
+  /** The dispatch itself, once the guard has said run and the freeze has been
+   *  re-read: resolve the grant the call runs under, then hand it to the
+   *  registry exactly once per effect key. */
+  async #runOnce(
+    tools: ToolRegistry,
+    call: ToolCall,
+    decision: GuardDecision,
+    descriptor: ToolDescriptor,
+    ctx: RunContext,
+  ): Promise<ToolOutcome> {
+    const grant = await this.#grantForExecution(decision, call, descriptor, ctx);
+    // CORE-2: `grant` is a first-class RunContext field — no cast needed.
+    const executeCtx = grant === undefined ? ctx : { ...ctx, grant };
+    // Build contract §7: for a MUTATING call, a key that already succeeded
+    // returns its recorded outcome INSTEAD of executing. The check sits
+    // here, after the guard has said run and before the registry is
+    // touched, because that is the only point where skipping is both safe
+    // (authority was still checked) and effective (the effect is avoided).
+    //
+    // The DECLARED label decides — the dev's label is final (two-vote
+    // grading removed), so a declared `read` is silent and takes no
+    // receipt.
+    const risk = descriptor.risk;
+    const mutating = risk === "write" || risk === "destructive";
+    const base = mutating ? effectBaseKey(ctx, call) : undefined;
+    const key = base === undefined ? undefined : effectKeyOf(base, this.#effectOrdinal(base, call.id));
+    const recorded = key === undefined ? undefined : await this.#recordedEffect(key);
+    if (recorded !== undefined) return recorded;
+    // Finding 14 (TOCTOU): two concurrent identical calls both read "no
+    // receipt" and both executed. Share one in-flight execution per key
+    // so the second awaits the first's outcome instead of repeating it.
+    const inFlight = key === undefined ? undefined : this.#effectsInFlight.get(key);
+    if (inFlight !== undefined) return await inFlight;
+    const run = (async (): Promise<ToolOutcome> => {
+      try {
+        return await tools.execute(call, executeCtx);
+      } catch (error) {
+        return {
+          status: "error",
+          error: {
+            code: error instanceof VendoError ? error.code : "error",
+            message: errorMessage(error),
+          },
+        };
+      }
+    })();
+    if (key !== undefined) this.#effectsInFlight.set(key, run);
+    let outcome: ToolOutcome;
+    try {
+      outcome = await run;
+    } finally {
+      if (key !== undefined) this.#effectsInFlight.delete(key);
+    }
+    // Only a SUCCESS is ledgered. A failed mutation may not have landed
+    // at all, so recording it would turn a transient upstream error into
+    // a permanent refusal to retry — the opposite of the goal.
+    if (key !== undefined && outcome.status === "ok") {
+      // The mutation ALREADY HAPPENED. A receipt-store failure must
+      // never discard it: throwing here would lose both the caller's
+      // outcome and the audit row for real, completed work. Surface it
+      // loudly and carry on — an unrecorded receipt risks a duplicate
+      // on a later re-run, which is strictly better than losing the
+      // record of a payment that went out.
+      try {
+        await this.#recordEffect(key, outcome, ctx.principal.subject);
+      } catch (error) {
+        console.error(
+          `[vendo] guard: ${call.tool} completed but its effect receipt could not be written `
+          + `(${errorMessage(error)}). A re-run of this run may repeat the call.`,
+        );
+      }
+    }
+    return outcome;
   }
 
   async #grantForExecution(

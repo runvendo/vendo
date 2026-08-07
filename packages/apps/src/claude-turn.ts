@@ -329,6 +329,118 @@ const WRITING_TOOL_NAMES = new Set(WRITING_TOOLS.split("|"));
 const PLANNING_TOOL = "TodoWrite";
 
 /**
+ * Everything `query()` is told, once, for the life of the session.
+ *
+ * A sibling function rather than a sibling MODULE: `dist/claude-turn.js` is
+ * copied verbatim into the machine image (module header), so this file has no
+ * relative imports to give it.
+ */
+function sessionOptions(
+  input: ClaudeSessionInput,
+  onPostToolUse: (raw: unknown) => Promise<Record<string, unknown>>,
+): Record<string, unknown> {
+  return {
+    cwd: input.cwd,
+    ...(input.model === undefined ? {} : { model: input.model }),
+    ...(input.effort === undefined ? {} : { effort: input.effort }),
+    ...(input.maxTurns === undefined ? {} : { maxTurns: input.maxTurns }),
+    ...(input.resume === undefined ? {} : { resume: input.resume }),
+    // Append, never replace: the co-trained Claude Code harness IS the product
+    // decision behind this adapter.
+    systemPrompt: { type: "preset", preset: "claude_code", append: input.systemPrompt ?? "" },
+    // Nothing local left to ask: the box contains the box's own hands, and the
+    // guard decides host tools at the door (module header).
+    permissionMode: "bypassPermissions",
+    // The SDK documents the pair as required ("Must be set to `true` when using
+    // `permissionMode: 'bypassPermissions'`"); today's CLI treats it as advisory
+    // (measured 2026-08-03), so this is hygiene against one that enforces it.
+    allowDangerouslySkipPermissions: true,
+    disallowedTools: DISALLOWED_TOOLS,
+    // The host's own door, over native remote MCP. `alwaysLoad` because this
+    // surface is deliberately UNCURATED (`toolSurface: { curated: false }`):
+    // the door lists everything the ctx projects — THE LAW's §12 withholding
+    // and the host's `surfaces.agent` menu still decide that set — so letting
+    // the engine defer the listing behind its own tool search would put back
+    // exactly the friction the redesign removed. It also makes an unreachable
+    // door fail at startup instead of silently presenting a model with no hands.
+    ...(input.toolDoor === undefined ? {} : {
+      mcpServers: {
+        [VENDO_MCP_SERVER]: {
+          type: "http",
+          url: input.toolDoor.url,
+          headers: { Authorization: `Bearer ${input.toolDoor.token}` },
+          alwaysLoad: true,
+        },
+      },
+    }),
+    // Never read settings or CLAUDE.md off the materialized workspace: those are
+    // the USER's files, and a file cannot be allowed to configure the harness.
+    // This disables FILESYSTEM settings discovery only — `plugins` below is an
+    // explicit programmatic list, so native skills survive tenant isolation.
+    settingSources: [],
+    // The other half of that rule, for MCP: `settingSources` closes SETTINGS
+    // discovery, and the SDK names a project `.mcp.json` as something only this
+    // flag ignores. The box's cwd is a disk the model writes itself, and `reopen`
+    // relaunches a fresh CLI over it — a server mounted that way would arrive as
+    // `mcp__*` tools, outside DISALLOWED_TOOLS, the guard, the audit log and the
+    // egress filter. The door above is the only MCP server this box wants.
+    strictMcpConfig: true,
+    // Without this the SDK hands us whole assistant blocks and the user watches
+    // a still screen for the length of a paragraph.
+    includePartialMessages: true,
+    env: input.env,
+    ...(input.pluginPath === undefined ? {} : {
+      // `skipMcpDiscovery`: we own the MCP wiring (the in-process projection),
+      // so the engine must not read a plugin's own .mcp.json.
+      plugins: [{ type: "local", path: input.pluginPath, skipMcpDiscovery: true }],
+      // The SDK's single switch for turning discovered skills ON. NAMED, never
+      // "all": "all" also enables whatever the machine's own home directory
+      // happens to carry. A plugin whose skills are never enabled is a
+      // directory nobody reads, so an empty name list still passes [].
+      skills: [...(input.skillNames ?? [])],
+    }),
+    ...(input.onFileWritten === undefined ? {} : {
+      hooks: { PostToolUse: [{ matcher: WRITING_TOOLS, hooks: [onPostToolUse] }] },
+    }),
+  };
+}
+
+/**
+ * One `assistant` message, read for what the user should see.
+ *
+ * An `assistant` message is the COMPLETED form of prose that may already
+ * have streamed as deltas. Emitting both showed the user every sentence
+ * twice (measured live 2026-08-02, once `includePartialMessages` went on).
+ * Whichever arrived first wins; the block is still the only source when
+ * an SDK build streams nothing, so the fallback stays real.
+ *
+ * The message is SCANNED either way, never skipped whole: a `tool_use`
+ * block rides in the SAME message as the sentence that introduced it, so
+ * skipping the duplicate prose also threw away every beat in any turn
+ * where the model spoke — which is every real turn.
+ */
+function readAssistantMessage(
+  input: ClaudeSessionInput,
+  message: Record<string, unknown>,
+  streamed: boolean,
+  beat: (phase: BeatPhase, label: string) => void,
+): void {
+  const content = (message["message"] as { content?: Array<Record<string, unknown>> } | undefined)?.content;
+  for (const block of content ?? []) {
+    if (block["type"] === "text") {
+      if (!streamed && typeof block["text"] === "string" && block["text"] !== "") {
+        input.emit({ type: "text", delta: block["text"] });
+      }
+    } else if (block["type"] === "tool_use" && typeof block["name"] === "string") {
+      // The tool's NAME and nothing else. Its inputs are the model's own
+      // text and can name a file (see {@link PLANNING_TOOL}).
+      if (block["name"] === PLANNING_TOOL) beat("planning", "Working out the steps");
+      else if (WRITING_TOOL_NAMES.has(block["name"])) beat("building", "Putting it together");
+    }
+  }
+}
+
+/**
  * Open ONE live session for a whole conversation.
  *
  * `query()` is called exactly once. Its `prompt` is a stream we keep open, so a
@@ -387,72 +499,7 @@ export function createClaudeSession(input: ClaudeSessionInput): ClaudeSession {
   };
 
   const drain = (async () => {
-    const options: Record<string, unknown> = {
-      cwd: input.cwd,
-      ...(input.model === undefined ? {} : { model: input.model }),
-      ...(input.effort === undefined ? {} : { effort: input.effort }),
-      ...(input.maxTurns === undefined ? {} : { maxTurns: input.maxTurns }),
-      ...(input.resume === undefined ? {} : { resume: input.resume }),
-      // Append, never replace: the co-trained Claude Code harness IS the product
-      // decision behind this adapter.
-      systemPrompt: { type: "preset", preset: "claude_code", append: input.systemPrompt ?? "" },
-      // Nothing local left to ask: the box contains the box's own hands, and the
-      // guard decides host tools at the door (module header).
-      permissionMode: "bypassPermissions",
-      // The SDK documents the pair as required ("Must be set to `true` when using
-      // `permissionMode: 'bypassPermissions'`"); today's CLI treats it as advisory
-      // (measured 2026-08-03), so this is hygiene against one that enforces it.
-      allowDangerouslySkipPermissions: true,
-      disallowedTools: DISALLOWED_TOOLS,
-      // The host's own door, over native remote MCP. `alwaysLoad` because this
-      // surface is deliberately UNCURATED (`toolSurface: { curated: false }`):
-      // the door lists everything the ctx projects — THE LAW's §12 withholding
-      // and the host's `surfaces.agent` menu still decide that set — so letting
-      // the engine defer the listing behind its own tool search would put back
-      // exactly the friction the redesign removed. It also makes an unreachable
-      // door fail at startup instead of silently presenting a model with no hands.
-      ...(input.toolDoor === undefined ? {} : {
-        mcpServers: {
-          [VENDO_MCP_SERVER]: {
-            type: "http",
-            url: input.toolDoor.url,
-            headers: { Authorization: `Bearer ${input.toolDoor.token}` },
-            alwaysLoad: true,
-          },
-        },
-      }),
-      // Never read settings or CLAUDE.md off the materialized workspace: those are
-      // the USER's files, and a file cannot be allowed to configure the harness.
-      // This disables FILESYSTEM settings discovery only — `plugins` below is an
-      // explicit programmatic list, so native skills survive tenant isolation.
-      settingSources: [],
-      // The other half of that rule, for MCP: `settingSources` closes SETTINGS
-      // discovery, and the SDK names a project `.mcp.json` as something only this
-      // flag ignores. The box's cwd is a disk the model writes itself, and `reopen`
-      // relaunches a fresh CLI over it — a server mounted that way would arrive as
-      // `mcp__*` tools, outside DISALLOWED_TOOLS, the guard, the audit log and the
-      // egress filter. The door above is the only MCP server this box wants.
-      strictMcpConfig: true,
-      // Without this the SDK hands us whole assistant blocks and the user watches
-      // a still screen for the length of a paragraph.
-      includePartialMessages: true,
-      env: input.env,
-      ...(input.pluginPath === undefined ? {} : {
-        // `skipMcpDiscovery`: we own the MCP wiring (the in-process projection),
-        // so the engine must not read a plugin's own .mcp.json.
-        plugins: [{ type: "local", path: input.pluginPath, skipMcpDiscovery: true }],
-        // The SDK's single switch for turning discovered skills ON. NAMED, never
-        // "all": "all" also enables whatever the machine's own home directory
-        // happens to carry. A plugin whose skills are never enabled is a
-        // directory nobody reads, so an empty name list still passes [].
-        skills: [...(input.skillNames ?? [])],
-      }),
-      ...(input.onFileWritten === undefined ? {} : {
-        hooks: { PostToolUse: [{ matcher: WRITING_TOOLS, hooks: [onPostToolUse] }] },
-      }),
-    };
-
-    const query = sdk.query({ prompt: inbox.stream(), options });
+    const query = sdk.query({ prompt: inbox.stream(), options: sessionOptions(input, onPostToolUse) });
     live = query;
     /** Did the message now being assembled already reach the user as deltas? */
     let streamed = false;
@@ -470,29 +517,7 @@ export function createClaudeSession(input: ClaudeSessionInput): ClaudeSession {
         continue;
       }
       if (type === "assistant") {
-        // An `assistant` message is the COMPLETED form of prose that may already
-        // have streamed as deltas. Emitting both showed the user every sentence
-        // twice (measured live 2026-08-02, once `includePartialMessages` went on).
-        // Whichever arrived first wins; the block is still the only source when
-        // an SDK build streams nothing, so the fallback stays real.
-        //
-        // The message is SCANNED either way, never skipped whole: a `tool_use`
-        // block rides in the SAME message as the sentence that introduced it, so
-        // skipping the duplicate prose also threw away every beat in any turn
-        // where the model spoke — which is every real turn.
-        const content = (message["message"] as { content?: Array<Record<string, unknown>> } | undefined)?.content;
-        for (const block of content ?? []) {
-          if (block["type"] === "text") {
-            if (!streamed && typeof block["text"] === "string" && block["text"] !== "") {
-              input.emit({ type: "text", delta: block["text"] });
-            }
-          } else if (block["type"] === "tool_use" && typeof block["name"] === "string") {
-            // The tool's NAME and nothing else. Its inputs are the model's own
-            // text and can name a file (see {@link PLANNING_TOOL}).
-            if (block["name"] === PLANNING_TOOL) beat("planning", "Working out the steps");
-            else if (WRITING_TOOL_NAMES.has(block["name"])) beat("building", "Putting it together");
-          }
-        }
+        readAssistantMessage(input, message, streamed, beat);
         streamed = false;
         continue;
       }
