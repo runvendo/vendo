@@ -21,14 +21,10 @@ does, which parts are yours, and how a request travels through them.
 | `@vendoai/knowledge` | product knowledge ingestion and retrieval |
 | `@vendoai/ui` | headless hooks and optional chrome |
 | `@vendoai/telemetry` | build and development telemetry |
-| `@vendoai/engine` | a command-agnostic Agent SDK runner: a job in on stdin, the final message out on stdout |
 
 `@vendoai/vendo` composes the blocks and owns the public wire and CLI, and
-`vendoai` is an unscoped alias of it. Eleven of the twelve are ordinary
-dependencies of the umbrella. `@vendoai/engine` is the exception and is
-deliberately a dependency of nothing: `vendo init`'s last-resort rung fetches
-it at a pinned version with `npm exec`, so the Agent SDK's bundled binary
-never lands in your `node_modules`.
+`vendoai` is an unscoped alias of it. All of them are ordinary dependencies
+of the umbrella.
 
 ## The two files you own
 

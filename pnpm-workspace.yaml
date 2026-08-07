@@ -53,9 +53,9 @@ overrides:
   # the 2026-08-03 host-confusion advisory GHSA-7p8r-x3mc-p8w7 (>=4.0.0 <4.1.2).
   #
   # This is NOT examples-only, as this block used to claim. `pnpm why --prod`
-  # puts it in the published trees of @vendoai/{vendo,mcp,engine,apps,harnesses}:
+  # puts it in the published trees of @vendoai/{vendo,mcp,apps,harnesses}:
   # vendo depends on ajv and ajv-formats directly, mcp on
-  # @modelcontextprotocol/sdk>ajv, and engine/apps/harnesses on
+  # @modelcontextprotocol/sdk>ajv, and apps/harnesses on
   # @anthropic-ai/claude-agent-sdk>@modelcontextprotocol/sdk>ajv. Not exploitable
   # today — ajv resolves $ref/$id in schemas we author, not attacker-supplied
   # ones, and nothing authorizes off the parsed authority — but an advisory that
@@ -116,7 +116,7 @@ overrides:
   #     encoded backslash, GHSA-frvp-7c67-39w9 (<2.0.5).
   #
   # Not examples-only: `pnpm why --prod` puts both in the published
-  # @vendoai/{mcp,engine,apps,harnesses} trees (apps/harnesses via
+  # @vendoai/{mcp,apps,harnesses} trees (apps/harnesses via
   # @anthropic-ai/claude-agent-sdk>@modelcontextprotocol/sdk), alongside
   # examples/mastra-agent>@mastra/core.
   #
@@ -172,7 +172,7 @@ overrides:
   # resolvers read them as octal, giving an SSRF / trust-boundary bypass,
   # GHSA-mwp4-54f8-5fhr (<=10.3.0). Arrives via
   # @modelcontextprotocol/sdk>express-rate-limit — which is not only mastra's:
-  # `pnpm why --prod` puts it in the published @vendoai/{mcp,engine,apps,
+  # `pnpm why --prod` puts it in the published @vendoai/{mcp,apps,
   # harnesses,vendo} trees too. Not exploitable today (the consumer is
   # express-rate-limit's IPv4 key generator, so the worst case is bucket
   # confusion from a spoofed X-Forwarded-For, not an authz decision), but

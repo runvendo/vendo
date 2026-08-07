@@ -1,6 +1,6 @@
 import { execFile, type ExecFileException } from "node:child_process";
 import { composeGatewayFuel, hasOwnAnthropicEnvOverride } from "./gateway-fuel.js";
-import type { ExtractionHarness, ExtractionRunInput } from "./harness.js";
+import { extractionModelPin, type ExtractionHarness, type ExtractionRunInput } from "./harness.js";
 
 /**
  * Last-resort extraction harness: nothing Claude-shaped is installed on the
@@ -9,11 +9,11 @@ import type { ExtractionHarness, ExtractionRunInput } from "./harness.js";
  * `npm exec` rather than degrading straight to the honest skip. This is the
  * fourth and final rung of the ladder in extraction.ts.
  *
- * Cross-task contract (a parallel task builds `@vendoai/engine` to this exact
- * shape): `npm exec --yes @vendoai/engine@<PINNED_VERSION> -- run`, job JSON
- * `{ instructions, root }` on the child's stdin, credentials/base-url/headers
- * ride the child's process env (never the job JSON), stdout is EXACTLY the
- * agent's final text, stderr is progress/narration, exit 0 = success. The
+ * Child contract: `npm exec --yes @anthropic-ai/claude-code@<PINNED_VERSION>`
+ * runs Anthropic's published `claude` binary in the same headless, read-only
+ * shape as the PATH rung (claude-cli-harness.ts) — prompt on argv via `-p`,
+ * Read/Glob/Grep only, `--setting-sources ""`, credentials on the child's
+ * process env, stdout is the agent's final text, exit 0 = success. The
  * version is pinned exact (never a range) so this rung's behavior can't
  * drift out from under init on a machine with no local install to pin
  * instead.
@@ -35,8 +35,16 @@ import type { ExtractionHarness, ExtractionRunInput } from "./harness.js";
  * run() actually does.
  */
 
-export const ENGINE_PACKAGE_NAME = "@vendoai/engine";
-export const ENGINE_PACKAGE_VERSION = "0.1.0";
+export const ENGINE_PACKAGE_NAME = "@anthropic-ai/claude-code";
+export const ENGINE_PACKAGE_VERSION = "2.1.224";
+
+// Same read-only posture as the PATH rung (claude-cli-harness.ts): the two
+// spawn the same binary, so their tool policy must not diverge.
+const ALLOWED_TOOLS = ["Read", "Glob", "Grep"];
+const DISALLOWED_TOOLS = [
+  "Bash", "Write", "Edit", "WebFetch", "WebSearch", "Task",
+  "TodoWrite", "NotebookEdit", "KillShell", "BashOutput",
+];
 
 // A one-time ~250MB package fetch plus the extraction stages themselves (which
 // can already run for minutes over a real codebase on the other rungs) needs
@@ -50,13 +58,13 @@ interface ExecResult {
   code: number;
 }
 
-// Extends the sibling harnesses' (args, options) Exec seam with `input` and
-// `onStderrLine`: unlike `claude -p "<prompt>"` (prompt rides argv), this
-// rung's child protocol reads the job off stdin and narrates progress over
-// stderr line-by-line, so the seam needs both to be scriptable in tests.
+// Extends the sibling harnesses' (args, options) Exec seam with
+// `onStderrLine`: unlike the PATH rungs, this one pays a multi-minute npm
+// fetch before the agent even starts, and narrates that progress over stderr
+// line-by-line, so the seam needs it to be scriptable in tests.
 type Exec = (
   args: string[],
-  options: { cwd: string; env: NodeJS.ProcessEnv; input: string; onStderrLine?: (line: string) => void },
+  options: { cwd: string; env: NodeJS.ProcessEnv; onStderrLine?: (line: string) => void },
 ) => Promise<ExecResult>;
 
 /** Pure mapping from a completed `execFile` callback into an ExecResult —
@@ -83,7 +91,7 @@ export function resolveNpmExecResult(
     const megabytes = Math.round(MAX_BUFFER_BYTES / (1024 * 1024));
     return {
       stdout: "",
-      stderr: `npm exec output exceeded the ${megabytes}MB buffer — the engine's narration stream was `
+      stderr: `npm exec output exceeded the ${megabytes}MB buffer — the child's narration stream was `
         + "larger than expected, so the child was killed before finishing",
       code: 1,
     };
@@ -151,12 +159,12 @@ export function createLineSplitter(onLine: (line: string) => void): { push(chunk
 
 function execNpmEngine(
   args: string[],
-  options: { cwd: string; env: NodeJS.ProcessEnv; input: string; onStderrLine?: (line: string) => void },
+  options: { cwd: string; env: NodeJS.ProcessEnv; onStderrLine?: (line: string) => void },
 ): Promise<ExecResult> {
   return new Promise((resolve) => {
-    // stderr is progress/narration per the child protocol — forward it line
-    // by line as it streams in, not just once the process exits; flush()
-    // in the callback below delivers any trailing partial line too.
+    // stderr carries npm's fetch progress and the agent's narration — forward
+    // it line by line as it streams in, not just once the process exits;
+    // flush() in the callback below delivers any trailing partial line too.
     const splitter = createLineSplitter((line) => options.onStderrLine?.(line));
     const child = execFile(
       "npm",
@@ -168,15 +176,6 @@ function execNpmEngine(
       },
     );
     child.stderr?.on("data", (chunk: Buffer | string) => splitter.push(chunk.toString()));
-    // If the child exits (or is killed by the timeout) before the stdin
-    // write drains, Node emits an unhandled EPIPE 'error' on this stream —
-    // with no listener, that's an uncaughtException that aborts all of
-    // `vendo init`, bypassing extraction.ts's graceful per-rung degradation.
-    // The real outcome always arrives via the execFile callback's exit code
-    // + stderr above, so this handler is intentionally a no-op.
-    child.stdin?.on("error", () => {});
-    child.stdin?.write(options.input);
-    child.stdin?.end();
   });
 }
 
@@ -186,7 +185,7 @@ function isSet(value: string | undefined): value is string {
 
 // Every label this rung can return carries the download disclosure, since
 // (unlike the PATH-binary rungs) a fetch always happens here.
-const DOWNLOAD_NOTE = "via the Vendo engine, ~250MB one-time download";
+const DOWNLOAD_NOTE = "via npm-fetched Claude Code, ~250MB one-time download";
 const DOWNLOAD_SUFFIX = ` (${DOWNLOAD_NOTE})`;
 
 export interface NpxEngineHarnessOptions {
@@ -243,15 +242,21 @@ export function npxEngineHarness(options: NpxEngineHarnessOptions = {}): Extract
         + "npm caches it locally, so later runs skip the download)…",
       );
 
-      const job = JSON.stringify({ instructions: input.instructions, root: input.root });
-      const args = ["exec", "--yes", `${ENGINE_PACKAGE_NAME}@${ENGINE_PACKAGE_VERSION}`, "--", "run"];
+      const model = extractionModelPin(input.env);
+      const args = [
+        "exec", "--yes", `${ENGINE_PACKAGE_NAME}@${ENGINE_PACKAGE_VERSION}`, "--",
+        "-p", input.instructions,
+        "--allowedTools", ...ALLOWED_TOOLS,
+        "--disallowedTools", ...DISALLOWED_TOOLS,
+        "--setting-sources", "",
+        ...(model === undefined ? [] : ["--model", model]),
+      ];
       // Forward the caller's env so a key present only in the passed map
       // (not process.env) still authenticates the child; gateway fuel (if
       // applicable) wins last — mirrors claude-cli-harness.ts.
       const result = await exec(args, {
         cwd: input.root,
         env: { ...merged, ...overlay },
-        input: job,
         onStderrLine: input.onProgress,
       });
       if (result.code !== 0) {

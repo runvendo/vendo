@@ -1,3 +1,6 @@
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { claudeHarness } from "./claude-harness.js";
 
@@ -64,6 +67,38 @@ describe("claudeHarness", () => {
     expect(captured?.["model"]).toBe("old-model");
     await harness.run({ root: "/x", env: {}, instructions: "go" });
     expect(captured?.["model"]).toBeUndefined();
+  });
+
+  it("confines reads to the host root through canUseTool, not a blanket allowlist", async () => {
+    let captured: Record<string, unknown> | undefined;
+    const harness = claudeHarness({
+      loadSdk: async () => ({
+        query: (input: { options?: Record<string, unknown> }) => {
+          captured = input.options;
+          return (async function* () { yield { type: "result", result: "ok" }; })();
+        },
+      }) as unknown as Awaited<ReturnType<NonNullable<Parameters<typeof claudeHarness>[0]["loadSdk"]>>>,
+    });
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "vendo-claude-harness-")));
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), "vendo-claude-outside-")));
+    try {
+      await harness.run({ root, env: {}, instructions: "go" });
+      // A blanket `allowedTools` would auto-allow Read/Glob/Grep on any path
+      // and never consult the callback — the tool set has to ride `tools`.
+      expect(captured?.["allowedTools"]).toBeUndefined();
+      expect(captured?.["tools"]).toEqual(["Read", "Glob", "Grep"]);
+
+      const canUseTool = captured?.["canUseTool"] as (
+        name: string,
+        input: Record<string, unknown>,
+      ) => Promise<{ behavior: string }>;
+      await expect(canUseTool("Read", { file_path: "README.md" })).resolves.toMatchObject({ behavior: "allow" });
+      await expect(canUseTool("Read", { file_path: join(outside, "secret.txt") }))
+        .resolves.toMatchObject({ behavior: "deny" });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 
   it("falls back to concatenated assistant text when no result message arrives", async () => {

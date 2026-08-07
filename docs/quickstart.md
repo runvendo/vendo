@@ -309,11 +309,12 @@ the next one is tried:
    endpoint is always honored, never overridden by anything below.
 3. The `codex` CLI on PATH, driven headless and read-only. A ChatGPT login
    or `OPENAI_API_KEY` pays.
-4. `@vendoai/engine`, fetched on the fly with `npm exec` at a pinned
-   version — real Claude Code, no local install required. This is a
-   one-time ~250MB download (npm caches it, so later runs skip it); init
-   prints the download notice before it starts. `ANTHROPIC_API_KEY` pays,
-   or `VENDO_API_KEY` through the Vendo Cloud model gateway.
+4. `@anthropic-ai/claude-code`, fetched on the fly with `npm exec` at a
+   pinned version and driven headless and read-only like rung 2 — real
+   Claude Code, no local install required. This is a one-time ~250MB
+   download (npm caches it, so later runs skip it); init prints the
+   download notice before it starts. `ANTHROPIC_API_KEY` pays, or
+   `VENDO_API_KEY` through the Vendo Cloud model gateway.
 
 When none of the four resolves, init still completes — extraction defaults
 stand — and prints every rung's remedy. If a chosen rung fails partway
