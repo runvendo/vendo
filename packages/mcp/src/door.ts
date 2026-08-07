@@ -752,7 +752,7 @@ class Door {
     state.server.setRequestHandler(ListToolsRequestSchema, async () => {
       const tools = state.turn === undefined
         ? await this.#listedTools(state)
-        : await turnTools(state.turn, this.#withheld);
+        : await turnTools(state.turn, this.#withheld, this.#config.apps !== undefined);
       return { tools };
     });
     state.server.setRequestHandler(CallToolRequestSchema, async (request) =>
@@ -856,7 +856,15 @@ class Door {
     if (state.turn !== undefined) {
       if (this.#withheld.has(name)) return inBandError(`not-found: Tool ${name} was not found`);
       const turn = state.turn;
-      return turnResult(await turn.tools.call(name, args as Json));
+      const result = await turn.tools.call(name, args as Json);
+      // The shim renders a bare format-tagged UIPayload, not the registry's
+      // OpenSurface envelope — the same unwrap the OAuth leg does below. Both
+      // legs share one mount and one `apps` config, so they cannot disagree
+      // about whether a saved app renders.
+      if (name === "vendo_apps_open" && this.#config.apps !== undefined && result.status === "ok") {
+        return textResult(await this.#mcpAppsOpenOutput(result.output, args, turn.ctx, identity));
+      }
+      return turnResult(result);
     }
     const descriptors = await this.#config.tools.descriptors(state.context);
     // An off-menu name answers exactly like a name that does not exist: the
@@ -1569,7 +1577,11 @@ function bearerOf(req: Request): string | undefined {
  * visible without reopening anything — the limitation that made the in-process
  * projection snapshot its tool set at session open dies here.
  */
-async function turnTools(turn: LiveTurn, withheld: ReadonlySet<string>): Promise<Tool[]> {
+async function turnTools(
+  turn: LiveTurn,
+  withheld: ReadonlySet<string>,
+  appsConfigured: boolean,
+): Promise<Tool[]> {
   const listings = (await turn.tools.list()).filter((listing) => !withheld.has(listing.name));
   const compiles = wireSchemaCompiler();
   return listings.map((listing) => {
@@ -1581,6 +1593,9 @@ async function turnTools(turn: LiveTurn, withheld: ReadonlySet<string>): Promise
       ...wireOutputSchema(listing.outputSchema, compiles),
       ...(label === undefined ? {} : { title: label }),
       annotations: toolAnnotations(listing.risk, label),
+      // Same as the OAuth leg: an app-viewer name the turn's registry owns has
+      // to advertise the shim, or the client never preloads the renderer.
+      ...(appsConfigured && APP_TOOL_NAMES.has(listing.name) ? { _meta: appUiMeta() } : {}),
     };
   });
 }
