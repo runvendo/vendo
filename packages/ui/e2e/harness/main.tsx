@@ -1,9 +1,9 @@
 import {
   compileWire,
-  deriveShapeCard,
   type ApprovalDecision,
   type ApprovalRequest,
   type Json,
+  type ShapeType,
   type ToolOutcome,
  
   type UIPayload,
@@ -1538,10 +1538,20 @@ const SHAPE_WIRE_BROKEN = `<App name="Revenue by month (mis-bound)">
 
 function TreeWireShapeScenario() {
   const noop = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
-  // The shape card comes straight from the scripted sample — the same
-  // deriveShapeCard path `vendo sync`/the engine uses on recorded responses.
-  const toolShapes = useMemo(
-    () => ({ metrics_revenue: deriveShapeCard("metrics_revenue", [SHAPE_DATA.revenue]).output }),
+  // The declared shape, written literally — the same structural form
+  // `shapeFromJsonSchema` produces from a host's own response schema.
+  const toolShapes = useMemo<Record<string, ShapeType>>(
+    () => ({
+      metrics_revenue: {
+        kind: "object",
+        fields: {
+          rows: {
+            kind: "array",
+            items: { kind: "object", fields: { month: { kind: "string" }, revenue: { kind: "number" } } },
+          },
+        },
+      },
+    }),
     [],
   );
   const happy = useMemo(() => compileWire(SHAPE_WIRE, { toolShapes }), [toolShapes]);

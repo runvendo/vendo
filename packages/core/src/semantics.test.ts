@@ -7,15 +7,31 @@ import {
   semanticFormatToken,
   type ToolSemantics,
 } from "./semantics.js";
-import { deriveShape, type ShapeType } from "./shape.js";
+import { type ShapeType } from "./shape.js";
 
-const invoiceRows = {
-  data: [
-    { id: "inv_1", clientId: "cl_9", amountCents: 285000, dueDate: "2026-08-01", status: "overdue", paidAt: null },
-    { id: "inv_2", clientId: "cl_4", amountCents: 90000, dueDate: "2026-07-21T17:00:00Z", status: "paid", paidAt: "2026-07-01T09:00:00Z" },
-  ],
-  totalCents: 375000,
-  count: 2,
+/** The declared shape of the invoice response, written literally — the same
+ *  structural form `shapeFromJsonSchema` produces from a host's own schema.
+ *  `paidAt` is `json`: the host returns a date or null. */
+const invoiceRows: ShapeType = {
+  kind: "object",
+  fields: {
+    data: {
+      kind: "array",
+      items: {
+        kind: "object",
+        fields: {
+          id: { kind: "string" },
+          clientId: { kind: "string" },
+          amountCents: { kind: "number" },
+          dueDate: { kind: "string" },
+          status: { kind: "string" },
+          paidAt: { kind: "json" },
+        },
+      },
+    },
+    totalCents: { kind: "number" },
+    count: { kind: "number" },
+  },
 };
 
 /** Collapsed-path semantics for {@link invoiceRows} — array levels carry no
@@ -95,8 +111,7 @@ describe("semanticAtPointer", () => {
 
 describe("describeShapeWithSemantics", () => {
   it("annotates the compact shape card with field semantics", () => {
-    const shape = deriveShape(invoiceRows);
-    const card = describeShapeWithSemantics(shape, invoiceSemantics);
+    const card = describeShapeWithSemantics(invoiceRows, invoiceSemantics);
     expect(card).toContain("amountCents: number:money.cents");
     expect(card).toContain("dueDate: string:date.iso");
     expect(card).toContain("status: string:enum(overdue|paid)");
@@ -105,7 +120,7 @@ describe("describeShapeWithSemantics", () => {
   });
 
   it("matches describeShape exactly when no semantics apply", () => {
-    const shape = deriveShape({ note: "x" });
+    const shape: ShapeType = { kind: "object", fields: { note: { kind: "string" } } };
     expect(describeShapeWithSemantics(shape, {})).toBe("{ note: string }");
   });
 
