@@ -296,6 +296,7 @@ import {
   devRoutes,
   orgsRoutes,
   statusRoutes,
+  syncImpactRoutes,
   systemRoutes,
   webhookRoutes,
 } from "./wire/misc.js";
@@ -519,9 +520,11 @@ export interface CreateVendoConfig {
   guard?: VendoGuard | GuardRules;
   secrets?: SecretsProvider;
   telemetry?: boolean;
-  /** Development-only injection seams (e.g. /dev/inclient-approval).
-      NODE_ENV=development enables them; `false` disables the environment
-      default. */
+  /** Development-only surfaces: the injection seams (/dev/inclient-approval)
+      and the `vendo sync` blast-radius probe (POST /sync/impact), which is not
+      even mounted without this. NODE_ENV=development enables them; `false`
+      disables the environment default. Unset with any other NODE_ENV — or none,
+      or a runtime with no `process` at all — leaves them closed. */
   development?: boolean;
   /** Unified try surface — the project root the `.vendo/` profile is read
       under: the actions files (tools.json/overrides.json, read by the actions
@@ -1415,11 +1418,16 @@ function telemetryClient(enabled: boolean | undefined): Telemetry | undefined {
     A handler returning undefined falls through to later entries (grouped
     handlers keep the old chain's method/operation fall-out), and no match at
     all answers not-found. */
-const wireRoutesFor = (mounted: WireDeps["mounted"]): readonly RouteEntry[] => [
+const wireRoutesFor = (deps: WireDeps): readonly RouteEntry[] => [
   ...devRoutes,
   ...doctorRoutes,
-  ...(mounted.automations ? webhookRoutes : []),
+  ...(deps.mounted.automations ? webhookRoutes : []),
   ...systemRoutes,
+  // The `vendo sync` blast-radius probe takes no principal and reads the whole
+  // deployment's apps and grants, so mounting it is the ONLY thing standing
+  // between it and an anonymous caller. A composition that did not say it is
+  // development never gets the route.
+  ...(deps.development ? syncImpactRoutes : []),
   // execution-v2 Lane C: the box callback surface is a machine surface like
   // webhooks/tick — raw prefix match, bearer-authenticated, ahead of the user
   // surfaces; the fn proxy sits just before the grouped /apps arm so
@@ -1432,7 +1440,7 @@ const wireRoutesFor = (mounted: WireDeps["mounted"]): readonly RouteEntry[] => [
   ...orgsRoutes,
   // The whole /apps surface goes with app generation: with `apps: false` there
   // is nothing to open, fork, serve or import, so the door is not there either.
-  ...(mounted.apps
+  ...(deps.mounted.apps
     ? [
       ...fnProxyRoutes,
       // Build contract §9.8 — ahead of the grouped /apps arm for the same reason
@@ -1441,7 +1449,7 @@ const wireRoutesFor = (mounted: WireDeps["mounted"]): readonly RouteEntry[] => [
       ...appRoutes,
     ]
     : []),
-  ...(mounted.automations ? [...automationRoutes, ...runRoutes] : []),
+  ...(deps.mounted.automations ? [...automationRoutes, ...runRoutes] : []),
   ...activityRoutes,
   ...statusRoutes,
 ];
@@ -1449,7 +1457,7 @@ const wireRoutesFor = (mounted: WireDeps["mounted"]): readonly RouteEntry[] => [
 function createWireHandler(deps: WireDeps): (request: Request) => Promise<Response> {
   // Assembled once per composition, not per request: what is mounted is a boot
   // fact.
-  const wireRoutes = wireRoutesFor(deps.mounted);
+  const wireRoutes = wireRoutesFor(deps);
   // Amortized on-request sweep bookkeeping — lives in the shared handler closure
   // (persists across requests), NOT per-invocation. The serverless-safe leg:
   // Next.js gives no timer guarantee, so every request may trigger the sweep.

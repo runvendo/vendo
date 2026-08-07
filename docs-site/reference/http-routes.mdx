@@ -63,7 +63,7 @@ unauthenticated in every environment by design: it reveals only whether
 | `/connections/:id?connector=` | GET · DELETE | status (poll while connecting) · disconnect through the broker |
 | `/orgs` · `/orgs/:id` and every other `/orgs/*` path | any | always `cloud-required` (`402`); organizations are a [Vendo Cloud](/deploy/vendo-cloud) capability, not an OSS wire route |
 | `/status` | GET | `{ posture, version, blocks: {...} }`, includes `blocks.mcp` reporting the door posture (`"local"` when it serves its own OAuth surface, `"broker"` when an external authorization server fronts it, or `false` when the door is closed), `blocks.sandbox` reporting the execution venue (`"e2b"`, `"cloud"`, `"custom"`, or `false` when none is wired), and `blocks.connections` reporting the connected-accounts broker posture (`"byo"`, `"cloud"`, or `false`) |
-| `/sync/impact` | POST | dev-only. `{ tools: string[] }` → `{ impact }`, per-tool reference counts across enabled apps, enabled automations, and active standing grants. Accepts up to 200 tool names per call. In production it answers `blocked` (`403`), not `404` — the route is mounted everywhere and refuses on `NODE_ENV` |
+| `/sync/impact` | POST | Development compositions only (`createVendo({ development })`, which `NODE_ENV=development` enables). Every other deployment answers `404`: the route is not in the table at all, so nothing about the runtime or the environment can open it. `{ tools: string[] }` → `{ impact }`, per-tool reference counts across enabled apps, enabled automations, and active standing grants. Accepts up to 200 tool names per call. It takes no principal and its counts are deployment-wide, which is precisely why a deployment that did not opt in must not carry it |
 
 ## Development routes
 

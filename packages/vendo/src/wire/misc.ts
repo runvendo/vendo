@@ -99,13 +99,12 @@ export const webhookRoutes: RouteEntry[] = [
   }),
 ];
 
-/** The machine-facing surfaces: the authenticated scheduler tick and the
-    dev-only sync impact probe. Both match on the RAW path (prefix or exact)
-    ahead of any segment decoding, exactly like the old chain. The tick is here
-    rather than with the webhook door because it also drives the hosted session
-    sweep, which every deployment needs. (The v1 run-token apps proxy mount died
-    with execution-v2 Wave 1.5; the box callback surface at /box/ is its
-    replacement.) */
+/** The machine-facing surface: the authenticated scheduler tick. Matches on the
+    RAW path ahead of any segment decoding, exactly like the old chain. The tick
+    is here rather than with the webhook door because it also drives the hosted
+    session sweep, which every deployment needs. (The v1 run-token apps proxy
+    mount died with execution-v2 Wave 1.5; the box callback surface at /box/ is
+    its replacement.) */
 export const systemRoutes: RouteEntry[] = [
   route("POST", "/tick", async ({ request, deps, sweep }) => {
     if (!await tickAuthorized(request)) {
@@ -132,10 +131,23 @@ export const systemRoutes: RouteEntry[] = [
       ...(errors.length === 0 ? {} : { errors }),
     }, errors.length === 0 ? 200 : 500);
   }),
+];
+
+/** The `vendo sync` blast-radius probe, mounted ONLY in a development
+    composition (wireRoutesFor) — a deployment that did not opt in has no such
+    route and answers the ordinary 404.
+
+    It used to sit in systemRoutes and refuse per-request on
+    `environment("NODE_ENV") === "production"`, which failed OPEN twice over:
+    `environment()` answers undefined for an unset NODE_ENV and on any runtime
+    without a `process` global (edge, Workers). Either one served this to an
+    anonymous caller — and the answer is not scoped to a principal, it reads
+    the deployment's whole vendo_apps and vendo_grants collections, so it was
+    cross-subject enumeration. Absence of configuration has to mean closed;
+    `deps.development` is the flag that already means that, and it is decided at
+    boot rather than per request. */
+export const syncImpactRoutes: RouteEntry[] = [
   route("POST", "/sync/impact", async ({ request, deps }) => {
-    if (environment("NODE_ENV") === "production") {
-      throw new VendoError("blocked", "sync impact is only available on a dev server");
-    }
     const body = await requestJson(request);
     const tools = body["tools"];
     if (!Array.isArray(tools) || tools.length > 200 || tools.some((tool) => typeof tool !== "string")) {
