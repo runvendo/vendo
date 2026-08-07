@@ -1135,6 +1135,35 @@ describe("vendo doctor error codes + fix_refs", () => {
     }
   });
 
+  /** A composition that never declared itself development does not mount the
+      doctor probes at all (that is the fix in #989), so both auth probes come
+      back 404. Doctor used to read that 404 as a credential failure and told
+      the reader to set VENDO_BASE_URL or to go check createVendo({ actAs }) —
+      both false, and both send them to fix something that is not broken. The
+      404 has exactly one cause worth naming: the composition is not a
+      development composition. */
+  it("blames the unmounted probe surface, not VENDO_BASE_URL or actAs, when the composition never declared development", async () => {
+    const unmountedProbes = vi.fn(async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.endsWith("/status")) {
+        return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
+      }
+      // What the real wire answers for a route that is not in the table.
+      return Response.json({ error: { code: "not-found", message: "unknown Vendo route" } }, { status: 404 });
+    });
+    const { report } = await jsonChecks({ targetDir: await healthy(), fetchImpl: unmountedProbes });
+
+    const present = report.checks.find((check) => check.id === "auth/present");
+    expect(present?.status).toBe("broken");
+    expect(present?.message).toContain("development");
+    expect(present?.message).not.toContain("VENDO_BASE_URL");
+
+    const actAs = report.checks.find((check) => check.id === "auth/act-as");
+    expect(actAs?.status).toBe("broken");
+    expect(actAs?.message).toContain("development");
+    expect(actAs?.message).not.toContain("verifier middleware");
+  });
+
   it("stamps warnings with codes too without flipping the exit", async () => {
     const { exit, report } = await jsonChecks({
       targetDir: await healthy(),
