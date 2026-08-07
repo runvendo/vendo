@@ -6,7 +6,6 @@ import type { ExtractedTool, OverridesFile } from "@vendoai/actions";
 import { mergeOverrides, vendoSync } from "@vendoai/actions/sync";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
-import type { VendoTheme } from "@vendoai/core";
 import { scrubErrorDetail, type Telemetry } from "@vendoai/telemetry";
 import { detectDepVersions, installedAiVersion } from "./dep-versions.js";
 import { AUTH_MD_URL, runCloudStep, upsertEnvLocal, warnEnvLocalNotIgnored, type CloudStepOptions } from "./cloud-init.js";
@@ -33,6 +32,7 @@ import { contrastingText } from "./theme/color.js";
 import {
   applyThemeDraft,
   extractTheme as extractThemeSlots,
+  toVendoTheme,
   validateSlotValue,
   type ThemeSlotValues,
   type ThemeSummary,
@@ -84,42 +84,7 @@ import {
  * ceremony (doctor owns verification and the live turn).
  */
 
-const DEFAULT_RADIUS = { small: "4px", large: "12px" } as const;
-
 const BRIEF_PLACEHOLDER = `${BRIEF_TEMPLATE}\n`;
-
-/** Slot values → the frozen runtime VendoTheme contract — one derivation law,
- *  never two (theme/provenance.ts leans on this exact derivation). */
-export function toVendoTheme(slots: ThemeSlotValues): VendoTheme {
-  const deriveRadius = (factor: number, fallback: string): string => {
-    const value = slots.radius.match(/^(\d+(?:\.\d+)?)px$/)?.[1];
-    return value === undefined ? fallback : `${Number(value) * factor}px`;
-  };
-  return {
-    colors: {
-      background: slots.background,
-      surface: slots.surface,
-      text: slots.text,
-      muted: slots.mutedText,
-      accent: slots.accent,
-      accentText: slots.accentText,
-      danger: slots.danger,
-      border: slots.border,
-    },
-    typography: {
-      fontFamily: slots.fontFamily,
-      headingFamily: slots.headingFamily,
-      baseSize: slots.baseSize,
-    },
-    radius: {
-      small: deriveRadius(0.5, DEFAULT_RADIUS.small),
-      medium: slots.radius,
-      large: deriveRadius(1.5, DEFAULT_RADIUS.large),
-    },
-    density: slots.density,
-    motion: slots.motion,
-  };
-}
 
 export interface RiskRecommendation {
   tool: string;

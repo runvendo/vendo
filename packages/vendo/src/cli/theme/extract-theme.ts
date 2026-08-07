@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import type { VendoTheme } from "@vendoai/core";
 import { z } from "zod";
 import { contrastingText, normalizeColor, normalizeLength, resolveCssVarRefs } from "./color.js";
 import { parseCssVars, type CssVarDecl } from "./css-vars.js";
@@ -26,6 +27,41 @@ import { walk } from "./walk.js";
  * theme.json stays the editable source of truth; init shows the palette for
  * a one-glance confirm and asks only about model-flagged uncertainty.
  */
+
+const DEFAULT_RADIUS = { small: "4px", large: "12px" } as const;
+
+/** Slot values → the frozen runtime VendoTheme contract — one derivation law,
+ *  never two (theme/provenance.ts leans on this exact derivation). */
+export function toVendoTheme(slots: ThemeSlotValues): VendoTheme {
+  const deriveRadius = (factor: number, fallback: string): string => {
+    const value = slots.radius.match(/^(\d+(?:\.\d+)?)px$/)?.[1];
+    return value === undefined ? fallback : `${Number(value) * factor}px`;
+  };
+  return {
+    colors: {
+      background: slots.background,
+      surface: slots.surface,
+      text: slots.text,
+      muted: slots.mutedText,
+      accent: slots.accent,
+      accentText: slots.accentText,
+      danger: slots.danger,
+      border: slots.border,
+    },
+    typography: {
+      fontFamily: slots.fontFamily,
+      headingFamily: slots.headingFamily,
+      baseSize: slots.baseSize,
+    },
+    radius: {
+      small: deriveRadius(0.5, DEFAULT_RADIUS.small),
+      medium: slots.radius,
+      large: deriveRadius(1.5, DEFAULT_RADIUS.large),
+    },
+    density: slots.density,
+    motion: slots.motion,
+  };
+}
 
 export interface ThemeSlotValues {
   accent: string;
