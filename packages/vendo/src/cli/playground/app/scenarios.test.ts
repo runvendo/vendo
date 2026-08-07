@@ -10,12 +10,13 @@ const REQUIRED = [
   "thread-view",
   "thread-connect",
   "approval-flow",
+  "automations-panel",
   "activities",
   "activities-empty",
   "slot-empty",
   "slot-filled",
   "slot-broken",
-  "page",
+  "accounts",
   "mobile",
 ];
 
@@ -53,9 +54,9 @@ describe("playground scenario registry", () => {
   });
 
   it("auto-played scenarios carry the prompt their script answers", () => {
-    // These stay interactive: the launcher waits for a click, the page waits
-    // for a typed turn, and mobile embeds another scenario in an iframe.
-    const interactive = new Set(["overlay-launcher", "page", "mobile"]);
+    // These stay interactive: the launcher waits for a click, and mobile
+    // embeds another scenario in an iframe.
+    const interactive = new Set(["overlay-launcher", "mobile"]);
     for (const scenario of scenarios) {
       if (scenario.script && !interactive.has(scenario.id)) {
         expect(scenario.autoSend, `${scenario.id} plays a script and needs an opening user turn`).toBeTruthy();

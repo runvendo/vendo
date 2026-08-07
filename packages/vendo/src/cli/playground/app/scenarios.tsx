@@ -5,7 +5,7 @@
  * scripted transport, and the auto-sent opening turn.
  */
 import type { DirectorScript } from "@vendoai/ui";
-import { VendoActivities, VendoOverlay, VendoPage, VendoSlot, VendoThread } from "@vendoai/ui/chrome";
+import { AutomationsPanel, ConnectedAccountsPanel, VendoActivities, VendoOverlay, VendoSlot, VendoThread } from "@vendoai/ui/chrome";
 import { useMemo, type ReactElement } from "react";
 import {
   approvalScript,
@@ -21,7 +21,7 @@ import {
 
 export interface PlaygroundScenario {
   id: string;
-  group: "Overlay" | "Thread" | "Approvals" | "Automations" | "Activities" | "Slot" | "Page" | "Mobile";
+  group: "Overlay" | "Thread" | "Approvals" | "Automations" | "Activities" | "Slot" | "Accounts" | "Mobile";
   title: string;
   description: string;
   /** Scripted turns this scenario's sends play (ScriptedTransport). */
@@ -158,6 +158,13 @@ export const scenarios: PlaygroundScenario[] = [
     render: () => <ThreadPane />,
   },
   {
+    id: "automations-panel",
+    group: "Automations",
+    title: "Automations panel",
+    description: "Where an armed automation lives afterwards: its trigger, the standing permissions it holds, a dry run, and the last ten runs. Hosts mount this piece on their own settings route.",
+    render: () => <AutomationsPanel pollMs={0} />,
+  },
+  {
     id: "activities",
     group: "Activities",
     title: "Approvals queue + activity feed",
@@ -202,12 +209,11 @@ export const scenarios: PlaygroundScenario[] = [
     ),
   },
   {
-    id: "page",
-    group: "Page",
-    title: "Workspace console",
-    description: "The full VendoPage: conversations with history, the waiting-on-you approval strip, apps, automations, accounts, and activity.",
-    script: viewScript(),
-    render: () => <VendoPage />,
+    id: "accounts",
+    group: "Accounts",
+    title: "Connected accounts",
+    description: "The settings-page counterpart to the in-thread connect card: the accounts this user has connected, and disconnecting one (with an undo window).",
+    render: () => <ConnectedAccountsPanel />,
   },
   {
     id: "mobile",
