@@ -29,7 +29,28 @@ export default tseslint.config(
       parser: tseslint.parser,
       parserOptions: { ecmaVersion: 'latest', sourceType: 'module' },
     },
-    plugins: { sonarjs },
-    rules: sonarjs.configs.recommended.rules,
+    plugins: { sonarjs, '@typescript-eslint': tseslint.plugin },
+    rules: {
+      ...sonarjs.configs.recommended.rules,
+      // Off for good: it does not see this repo's assertion helpers, so a test
+      // that asserts through one reads as a test with no assertions. 108 of
+      // those, all false.
+      'sonarjs/assertions-in-tests': 'off',
+      // Replaced by @typescript-eslint/no-unused-vars below. sonarjs's version
+      // flags the binding in a rest-omit destructuring
+      // (`const { secret: _secret, ...rest } = row`), where the binding is
+      // what excludes the key — deleting it changes the object — and it takes
+      // no options, so there is nothing to configure around it.
+      'sonarjs/no-unused-vars': 'off',
+      // Same intent, correct semantics. The `^_` patterns cover the other
+      // deliberate idiom: signature-preserving no-op parameters in the edge
+      // shims (store/src/crypto-edge.ts, vendo-telemetry/src/edge.ts) and the
+      // React error boundaries, where the parameter has to exist for the
+      // function to match the type it implements.
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { ignoreRestSiblings: true, varsIgnorePattern: '^_', argsIgnorePattern: '^_' },
+      ],
+    },
   },
 );

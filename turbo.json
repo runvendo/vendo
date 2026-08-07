@@ -22,6 +22,16 @@
     "@vendoai/ui#build": { "dependsOn": ["^build"], "outputs": ["dist/**", "src/tree/jail/runtime-bundle.gen.ts"] },
     "conformance": { "dependsOn": ["^build", "build"], "env": ["CI", "POSTGRES_URL"] },
     "typecheck": { "dependsOn": ["^build"] },
-    "lint": {}
+    "lint": {},
+    // The root-level eslint over packages/* (eslint.blocking.config.mjs). It
+    // parses ~1,500 files and takes 2m20s cold, so it is a turbo task rather
+    // than a plain step in the `lint` script — `pnpm lint` is documented as
+    // cached and a step that always pays two minutes breaks that. The inputs
+    // are everything the run reads: the tracked files under packages/ (turbo
+    // skips git-ignored ones, so dist/ and node_modules/ are already out), the
+    // config, and the lockfile, since the rule set lives in the plugins.
+    "//#lint:packages": {
+      "inputs": ["packages/**", "eslint.blocking.config.mjs", "pnpm-lock.yaml"]
+    }
   }
 }

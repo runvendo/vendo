@@ -19,11 +19,17 @@ The demo host apps live under `examples/`.
 
 - Branch from `main`; open a PR against `main`.
 - `pnpm build && pnpm test && pnpm typecheck && pnpm lint` must pass.
-- `pnpm lint:report` is report-only and always exits 0. It runs
-  eslint-plugin-sonarjs and knip over `packages/*`, which `pnpm lint` does not
-  cover. Nothing it prints blocks a merge; it exists so a rule set can be
-  chosen from real counts. Run it after `pnpm build` — knip loads each
-  package's vite/vitest config, and those import built `dist/`.
+- `pnpm lint` blocks on four things: the dependency guard, the portability
+  gate, `eslint.blocking.config.mjs` over `packages/*`, and each `examples/*`
+  app's own eslint. A rule joins the blocking config only when `packages/*`
+  reports zero findings for it, so main stays green and every finding it prints
+  is a new one; the rules still waiting on a clean tree are listed at the top
+  of that file.
+- `pnpm lint:report` is report-only and always exits 0. It runs the rest of
+  eslint-plugin-sonarjs, plus knip, over `packages/*`. Nothing it prints blocks
+  a merge; it exists so a rule can be judged from real counts before it goes
+  blocking. Run it after `pnpm build` — knip loads each package's vite/vitest
+  config, and those import built `dist/`.
 - UI-affecting changes need before/after screenshots in the PR.
 - Keep PRs focused; small is reviewable.
 
