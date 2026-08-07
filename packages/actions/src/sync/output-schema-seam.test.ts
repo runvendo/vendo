@@ -12,8 +12,10 @@ import os from "node:os";
 import path from "node:path";
 import type { RunContext } from "@vendoai/core";
 import { afterEach, describe, expect, it } from "vitest";
+import { bindingIdentity } from "../binding-identity.js";
 import { createActions } from "../runtime/registry.js";
 import { vendoSync } from "./index.js";
+import { patchToolSchemas } from "./schema-patch.js";
 
 const directories: string[] = [];
 
@@ -95,5 +97,29 @@ describe("declared output schemas cross the sync → registry seam", () => {
     // …and the descriptor whitelist keeps them off the wire.
     expect(listItems).not.toHaveProperty("outputSchemaSource");
     expect(listItems).not.toHaveProperty("inputSchemaSource");
+  });
+});
+
+describe("a judge-written schema survives the next sync, and only the right one", () => {
+  it("carries an inferred fill forward and drops it when the binding moves", async () => {
+    const { root, out } = await syncedHost();
+    const toolsPath = path.join(out, "tools.json");
+    const file = JSON.parse(await fs.readFile(toolsPath, "utf8")) as { tools: Array<Record<string, unknown>> };
+    const ping = file.tools.find((tool) => tool.name === "host_ping")!;
+    const inferred = { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"] };
+
+    const written = await patchToolSchemas(toolsPath, [
+      { tool: "host_ping", binding: bindingIdentity(ping.binding as never), slot: "outputSchema", schema: inferred },
+    ]);
+    expect(written.written).toHaveLength(1);
+
+    // A plain re-sync must not wipe it.
+    await vendoSync({ root, out });
+    const afterResync = await createActions({ dir: out }).descriptors(ctx);
+    expect(afterResync.find((descriptor) => descriptor.name === "host_ping")?.outputSchema).toEqual(inferred);
+
+    // The extractors' own reading still wins: `host_listItems` keeps the spec's
+    // schema, not anything carried.
+    expect(afterResync.find((descriptor) => descriptor.name === "host_listItems")?.outputSchema).toEqual(ITEMS_RESPONSE);
   });
 });
