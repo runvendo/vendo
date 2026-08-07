@@ -57,6 +57,7 @@ interface ProcedureDef {
   kind: "procedure";
   type: "query" | "mutation" | "subscription" | "unknown";
   inputExpr?: TS.Expression;
+  outputExpr?: TS.Expression;
   module: FileModule;
 }
 
@@ -88,7 +89,8 @@ function procedureFromChain(extraction: Extraction, expr: TS.CallExpression, mod
   if (!ts.isPropertyAccessExpression(callee) || !PROCEDURE_KINDS.has(callee.name.text)) return null;
   const type = callee.name.text as "query" | "mutation" | "subscription";
   let inputExpr: TS.Expression | undefined;
-  // Walk down the chain collecting .input(...)
+  let outputExpr: TS.Expression | undefined;
+  // Walk down the chain collecting .input(...) and .output(...)
   let current: TS.Expression = callee.expression;
   while (ts.isCallExpression(current)) {
     const inner = current.expression;
@@ -96,12 +98,21 @@ function procedureFromChain(extraction: Extraction, expr: TS.CallExpression, mod
       if (inner.name.text === "input" && current.arguments.length > 0 && inputExpr === undefined) {
         inputExpr = current.arguments[0]!;
       }
+      if (inner.name.text === "output" && current.arguments.length > 0 && outputExpr === undefined) {
+        outputExpr = current.arguments[0]!;
+      }
       current = inner.expression;
     } else {
       break;
     }
   }
-  return { kind: "procedure", type, inputExpr, module };
+  return {
+    kind: "procedure",
+    type,
+    ...(inputExpr === undefined ? {} : { inputExpr }),
+    ...(outputExpr === undefined ? {} : { outputExpr }),
+    module,
+  };
 }
 
 async function evaluateRouterExpression(
@@ -385,13 +396,24 @@ export async function extractTrpc(root: string): Promise<TrpcExtractResult> {
         }
       }
 
+      let outputSchema: Record<string, unknown> | undefined;
+      if (def.outputExpr) {
+        const interpreted = await zodFromExpression(extraction, def.module, def.outputExpr, 0);
+        // A partially-interpreted OUTPUT is not recorded: unlike an input,
+        // where a permissive schema still lets the call through, a half-read
+        // response schema teaches the model field names that may not exist.
+        if (interpreted.recognized && interpreted.reason === undefined) outputSchema = interpreted.schema;
+      }
+
       const name = allocateToolName(trpcToolFullName(procedure), def.type, usedNames);
       tools.push({
         name,
         description: `tRPC ${def.type} ${procedure}`,
         inputSchema,
         inputSchemaSource,
-        outputSchemaSource: "unknown" satisfies SchemaSource,
+        ...(outputSchema === undefined
+          ? { outputSchemaSource: "unknown" satisfies SchemaSource }
+          : { outputSchema, outputSchemaSource: "declared" satisfies SchemaSource }),
         risk: trpcRisk(def.type),
         ...(note ? { note } : {}),
         binding: bindingFor(procedure, def.type, mount.mount, transformer),

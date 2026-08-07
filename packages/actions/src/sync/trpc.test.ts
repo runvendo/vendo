@@ -570,6 +570,37 @@ export default createNextApiHandler({ router: appRouter });
     expect(result.tools).toEqual([]);
     expect(result.warnings.some((warning) => warning.includes("could not be statically resolved"))).toBe(true);
   });
+
+  it("records a procedure's .output() schema as declared", async () => {
+    const root = await temporaryHost();
+    await writeFile(root, "package.json", JSON.stringify({
+      name: "trpc-output",
+      dependencies: { "@trpc/server": "^11.0.0", zod: "^4.0.0" },
+    }));
+    await writeFile(root, "pages/api/trpc/[trpc].ts", `
+import { createNextApiHandler } from "@trpc/server/adapters/next";
+import { appRouter } from "@/server/router";
+
+export default createNextApiHandler({ router: appRouter });
+`);
+    await writeFile(root, "server/router.ts", `
+import { initTRPC } from "@trpc/server";
+import { z } from "zod";
+
+const t = initTRPC.create();
+export const appRouter = t.router({
+  listInvoices: t.procedure
+    .output(z.object({ id: z.string(), amountCents: z.number() }))
+    .query(() => ({ id: "inv_1", amountCents: 1 })),
+});
+`);
+    const { tools } = await extractTrpc(root);
+    const listed = tools.find((tool) => (tool.binding as TrpcBinding).procedure === "listInvoices");
+    expect(listed?.outputSchemaSource).toBe("declared");
+    expect(listed?.outputSchema).toMatchObject({ type: "object" });
+    expect((listed?.outputSchema as { properties?: Record<string, unknown> }).properties)
+      .toHaveProperty("amountCents");
+  });
 });
 
 describe("trpc + route-scan interplay", () => {
