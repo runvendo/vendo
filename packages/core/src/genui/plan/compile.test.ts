@@ -366,6 +366,21 @@ describe("compilePlan", () => {
     expect(result.plan?.groups[0]?.leaves).toStrictEqual([{ component: "StatTile", purpose: "Total outstanding" }]);
   });
 
+  it("keeps reading the group after a stray close tag that opens nothing", () => {
+    const result = compilePlan(
+      `<Plan name="Stray close"><Group tab="Overview">
+           <Leaf component="StatTile" purpose="Total outstanding"/></Leaf>
+           <Leaf component="DataTable" purpose="Every invoice"/>
+         </Group></Plan>`,
+      FACTS,
+    );
+    expect(result.issues).toEqual(["</Leaf> closes nothing that is open here; it was ignored."]);
+    expect(result.plan?.groups[0]?.leaves).toStrictEqual([
+      { component: "StatTile", purpose: "Total outstanding" },
+      { component: "DataTable", purpose: "Every invoice" },
+    ]);
+  });
+
   it("stops cleanly on a lone trailing '<' inside a group", () => {
     const result = compilePlan(
       `<Plan name="Trailing"><Group tab="Overview"><Leaf component="StatTile" purpose="Total outstanding"/><`,
