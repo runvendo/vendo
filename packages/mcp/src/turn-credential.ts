@@ -61,8 +61,9 @@ export interface TurnCredentialPort {
  * Its authority window is that turn: between turns it resolves to nothing, and a
  * call arriving then is a 401, because a call with no turn behind it has no
  * accountability context to be judged in. It dies on `revoke()` (the machine
- * holding it was destroyed), on an idle sweep, and permanently if its thread is
- * ever seen carrying a different principal. Everything it can reach is what that
+ * holding it was destroyed), when it has gone unused for the idle budget, and
+ * permanently if its thread is ever seen carrying a different principal —
+ * whichever comes first. Everything it can reach is what that
  * turn could already reach — `turn.tools`, which is the guard-bound registry
  * with the turn's own ctx.
  */
@@ -144,8 +145,16 @@ export function createTurnCredentials(options: TurnCredentialsOptions = {}): Tur
       // Touch every credential of this conversation: a thread still taking turns
       // is a thread still in use, and the idle budget is about abandonment.
       // Every survivor matches `subject` — the burn above saw to that.
-      for (const entry of minted.values()) {
-        if (entry.threadId === threadId) entry.expiresAt = now() + idleMs;
+      //
+      // An entry that ALREADY lapsed is dropped instead of refreshed. Expiry is
+      // otherwise only ever noticed inside resolve(), so a credential abandoned
+      // for two days would be pushed two days forward by the next turn and work
+      // again. This is also the only thing that bounds `minted`: a token minted
+      // and never resolved has nothing else to remove it.
+      for (const [token, entry] of minted) {
+        if (entry.threadId !== threadId) continue;
+        if (entry.expiresAt <= now()) minted.delete(token);
+        else entry.expiresAt = now() + idleMs;
       }
       return () => {
         // Only ever retract OUR publication. A disposer that ran after the next
