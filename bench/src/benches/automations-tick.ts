@@ -24,7 +24,7 @@ const WARMUP = 10;
 
 // A minimal registry + apps port: the seeded apps never fire (schedules are not due, the
 // emitted event matches nothing), so neither is actually invoked by these cases.
-const benchTools = (): ToolRegistry => ({
+const idleTools = (): ToolRegistry => ({
   async descriptors() { return []; },
   async execute() { return { status: "ok", output: {} }; },
 });
@@ -72,7 +72,7 @@ export const automationsTickSuite: Suite = {
   async run(): Promise<SuiteResult> {
     const store = memoryStore();
     const guard = createGuard({ store });
-    const automations = createAutomations({ apps: benchApps(), tools: benchTools(), guard, store });
+    const automations = createAutomations({ apps: benchApps(), tools: idleTools(), guard, store });
     await seed(store);
 
     const principal: Principal = { kind: "user", subject: OWNER };

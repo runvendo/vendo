@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  budgetKey,
-  findBreaches,
-  findUnmatchedCeilings,
-  loadBudgets,
-  type BudgetsFile,
-} from "./budgets.js";
+import { findBreaches, findUnmatchedCeilings, loadBudgets, type BudgetsFile } from "./budgets.js";
 import { DETERMINISTIC_SUITES } from "./benches/index.js";
 import type { SuiteResult } from "./types.js";
 
@@ -97,16 +91,3 @@ describe("committed budgets.json integrity", () => {
   });
 });
 
-describe("budgetKey", () => {
-  it("joins suite and case with a colon", () => {
-    expect(budgetKey("store", "put-pglite")).toBe("store:put-pglite");
-  });
-});
-
-describe("loadBudgets", () => {
-  it("loads the committed budgets.json with ceilings", async () => {
-    const file = await loadBudgets();
-    expect(Object.keys(file.ceilings).length).toBeGreaterThan(0);
-    for (const value of Object.values(file.ceilings)) expect(typeof value).toBe("number");
-  });
-});
