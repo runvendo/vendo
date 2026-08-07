@@ -149,6 +149,41 @@ describe("ShareDialog — the first read", () => {
     expect(await screen.findByLabelText("Who to share with")).toBeTruthy();
     expect(screen.queryByText(/have access to this app/i)).toBeNull();
   });
+
+  it("says the read failed, instead of two contradictory guesses about it", async () => {
+    // A failed grants read leaves the hook's data at its EMPTY initial value and
+    // files the failure in `error`, which this dialog never read. So the surface
+    // stated two things, both untrue and each contradicting the other: "You
+    // don't have access to this app." (level null is also "we don't know") and
+    // "Nobody else yet — it's just you." (an empty list is also "we never got
+    // one"). A failure to READ who can reach the app is evidence about the
+    // service, not about the app.
+    const client = {
+      async status() { return { posture: "unconfigured", memberships }; },
+      apps: {
+        async grants() { throw new Error("app-access read failed: 503"); },
+        async promote() { return {}; },
+        async share() { return { grants: [] }; },
+        async unshare() { return { grants: [] }; },
+      },
+    } as unknown as VendoClient;
+
+    render(
+      <VendoProvider client={client}>
+        <ShareDialog appId="app_down" memberships={memberships} />
+      </VendoProvider>,
+    );
+
+    expect(await screen.findByText(/couldn’t load who this app is shared with/i)).toBeTruthy();
+    expect(screen.queryByText(/have access to this app/i)).toBeNull();
+    expect(screen.queryByText(/just you/i)).toBeNull();
+    // The wire's own sentence is the developer's, and stays theirs.
+    expect(document.body.textContent).not.toContain("503");
+    // Nothing is offered that would be a guess: with no known level, the write
+    // controls stay away, and the one thing that can help is here.
+    expect(screen.queryByLabelText("Who to share with")).toBeNull();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+  });
 });
 
 describe("ShareDialog — share implies promote", () => {
