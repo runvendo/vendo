@@ -1,4 +1,5 @@
 import { execFile, type ExecFileException } from "node:child_process";
+import { rootScopedToolRules } from "./confine-to-root.js";
 import { composeGatewayFuel, hasOwnAnthropicEnvOverride } from "./gateway-fuel.js";
 import { extractionModelPin, type ExtractionHarness, type ExtractionRunInput } from "./harness.js";
 
@@ -12,8 +13,9 @@ import { extractionModelPin, type ExtractionHarness, type ExtractionRunInput } f
  * Child contract: `npm exec --yes @anthropic-ai/claude-code@<PINNED_VERSION>`
  * runs Anthropic's published `claude` binary in the same headless, read-only
  * shape as the PATH rung (claude-cli-harness.ts) — prompt on argv via `-p`,
- * Read/Glob/Grep only, `--setting-sources ""`, credentials on the child's
- * process env, stdout is the agent's final text, exit 0 = success. The
+ * Read/Glob/Grep only and each one scoped to the host root by a permission
+ * rule (confine-to-root.ts), `--setting-sources ""`, credentials on the
+ * child's process env, stdout is the agent's final text, exit 0 = success. The
  * version is pinned exact (never a range) so this rung's behavior can't
  * drift out from under init on a machine with no local install to pin
  * instead.
@@ -39,8 +41,9 @@ export const ENGINE_PACKAGE_NAME = "@anthropic-ai/claude-code";
 export const ENGINE_PACKAGE_VERSION = "2.1.224";
 
 // Same read-only posture as the PATH rung (claude-cli-harness.ts): the two
-// spawn the same binary, so their tool policy must not diverge.
-const ALLOWED_TOOLS = ["Read", "Glob", "Grep"];
+// spawn the same binary, so their tool policy must not diverge — including the
+// root-scoped allowlist, which is built per-run from the host root
+// (rootScopedToolRules) rather than being a constant here.
 const DISALLOWED_TOOLS = [
   "Bash", "Write", "Edit", "WebFetch", "WebSearch", "Task",
   "TodoWrite", "NotebookEdit", "KillShell", "BashOutput",
@@ -246,7 +249,7 @@ export function npxEngineHarness(options: NpxEngineHarnessOptions = {}): Extract
       const args = [
         "exec", "--yes", `${ENGINE_PACKAGE_NAME}@${ENGINE_PACKAGE_VERSION}`, "--",
         "-p", input.instructions,
-        "--allowedTools", ...ALLOWED_TOOLS,
+        "--allowedTools", ...rootScopedToolRules(input.root),
         "--disallowedTools", ...DISALLOWED_TOOLS,
         "--setting-sources", "",
         ...(model === undefined ? [] : ["--model", model]),

@@ -10,9 +10,12 @@ import { basename, dirname, join, resolve, sep } from "node:path";
  * must FAIL, not ship the dev's unrelated local files to the model.
  *
  * It lives at the ladder level, not inside one rung, so the guarantee outlives
- * whichever rung happens to enforce it: `claude-harness.ts` wires it as the
- * Agent SDK's `canUseTool` callback today, and the CLI rungs get the same
- * posture from their flags.
+ * whichever rung happens to enforce it. Two forms, because the rungs enforce
+ * it in two different places: `confineToolToRoot` is the in-process decision
+ * the Agent SDK rung wires as its `canUseTool` callback, and
+ * `rootScopedToolRules` is the same confinement expressed as the permission
+ * rules the two CLI rungs pass on argv — a subprocess has no callback to hand
+ * it.
  */
 
 /** The subset of the SDK's `canUseTool` return union this file produces. The
@@ -101,4 +104,30 @@ export function confineToolToRoot(
     }
   }
   return { behavior: "allow", updatedInput: input };
+}
+
+/**
+ * The CLI rungs' form of the same confinement: `--allowedTools` rules scoped
+ * to the root, never the bare tool names. A bare `Read` auto-allows Read on
+ * ANY path; `Read(//abs/root/**)` (the `//` anchor is the CLI's own syntax for
+ * a filesystem-absolute path) allows it only inside the root, and anything
+ * else falls back to a permission prompt that headless mode cannot answer —
+ * so it is denied.
+ *
+ * The CLI matches an allow rule against BOTH the path the model supplied and
+ * the path it resolves to, which is what makes this a real confinement rather
+ * than a string-prefix check: a `../` climb and an in-root symlink pointing
+ * outside are each denied (verified against @anthropic-ai/claude-code 2.1.224
+ * — see confine-to-root.live.test.ts). That same both-sides matching is why
+ * the realpath of the root gets its own rule when it differs from the root as
+ * given: on macOS `/tmp` is a symlink to `/private/tmp`, so the supplied side
+ * is the symlinked form and the resolved side is the realpath, and naming only
+ * one of them would deny every in-root read. Naming the same directory twice
+ * does not widen the confinement.
+ */
+export function rootScopedToolRules(root: string): string[] {
+  const asGiven = resolve(root);
+  const real = resolveThroughSymlinks(asGiven);
+  const dirs = real === asGiven ? [asGiven] : [asGiven, real];
+  return dirs.flatMap((dir) => ["Read", "Glob", "Grep"].map((tool) => `${tool}(/${dir}/**)`));
 }
