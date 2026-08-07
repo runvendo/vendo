@@ -139,6 +139,25 @@ describe("the pin ceremony (Keystone graduates B8)", () => {
     vi.unstubAllGlobals();
   });
 
+  it("honours a host that set theme.motion: reduced, not only the OS setting", async () => {
+    // `theme.motion` is a promise the HOST makes on the person's behalf, and
+    // this flight only ever consulted the OS media query. The chrome
+    // stylesheet's `[data-vendo-motion="reduced"] * { animation: none }` cannot
+    // cover for it either: a Web Animations flight is not a CSS animation.
+    const { panel } = stage();
+    // Exactly what ChromeRoot writes on every chrome boundary.
+    panel.setAttribute("data-vendo-motion", "reduced");
+    vi.stubGlobal("matchMedia", () => ({ matches: false }));
+    playPinCeremony({ appId: "app_1", slot: "hero" });
+
+    expect(ghost()).toBeNull();
+    await flushFrames();
+    expect(flight()).toBeUndefined();
+    // The settle pulse stays: reduced motion is not "no feedback".
+    expect(ring()).toBeTruthy();
+    vi.unstubAllGlobals();
+  });
+
   it("brings the slot on screen before measuring, so the payoff is watchable", async () => {
     stage();
     // The panel is a modal over a page the user may have scrolled away from

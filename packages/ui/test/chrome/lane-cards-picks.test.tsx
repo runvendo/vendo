@@ -224,4 +224,48 @@ describe("lane-cards picks", () => {
       window.removeEventListener(ACTIVITY_BUMP_EVENT, onBump);
     }
   });
+
+  it("4-C: a host on theme.motion reduced gets the opacity-only exit, anchor or not", () => {
+    // The morph told the DOM one thing and itself another: it wrote
+    // data-vendo-motion="reduced" from the theme (which the chrome stylesheet
+    // turns into `transition: none`) while its own timings and the dock path
+    // still read the OS media query alone. So a reduced-motion host got the
+    // travel budget and the dock with every transition stripped — the pill
+    // teleported, then vanished into an anchor it never travelled to.
+    vi.useFakeTimers();
+    const anchor = document.createElement("button");
+    anchor.setAttribute(ACTIVITY_ANCHOR_ATTRIBUTE, "");
+    anchor.getBoundingClientRect = () => ({
+      top: 10, left: 500, width: 60, height: 30, right: 560, bottom: 40, x: 500, y: 10, toJSON: () => ({}),
+    }) as DOMRect;
+    document.body.appendChild(anchor);
+    const onBump = vi.fn();
+    window.addEventListener(ACTIVITY_BUMP_EVENT, onBump);
+    const onDone = vi.fn();
+    try {
+      const view = render(
+        <MorphToast
+          startRect={{ top: 100, left: 20, width: 400, height: 200 }}
+          title="Post to #renewals in Slack — approved"
+          theme={{
+            colors: { background: "#fff", surface: "#f7f7f8", text: "#111", muted: "#666", accent: "#111", accentText: "#fff", danger: "#c00", border: "#eee" },
+            typography: { fontFamily: "system-ui", baseSize: "15px" },
+            radius: { small: "6px", medium: "10px", large: "16px" },
+            density: "comfortable",
+            motion: "reduced",
+          }}
+          onDone={onDone}
+        />,
+      );
+      expect(document.querySelector<HTMLElement>(".fl-morph-card")?.style.transition).toBe("opacity .3s");
+      // No travel to wait out, and the dock is not taken: fade hold, then gone.
+      vi.advanceTimersByTime(3200 + 460 + 10);
+      expect(onBump).not.toHaveBeenCalled();
+      expect(onDone).toHaveBeenCalledTimes(1);
+      view.unmount();
+    } finally {
+      window.removeEventListener(ACTIVITY_BUMP_EVENT, onBump);
+      anchor.remove();
+    }
+  });
 });
