@@ -247,7 +247,7 @@ const compileLeaf = (plan: PlanState, group: PlanGroup): PlanLeaf | undefined =>
 
 /** A group's children: `<Leaf>` elements only. Returns how many leaves the
  *  per-group cap dropped. Exits on `</Group>`, at EOF, or — rewinding so the
- *  enclosing loop still sees it — on any other close tag. */
+ *  enclosing loop still sees it — on `</Plan>`. */
 const compileGroupChildren = (plan: PlanState, group: PlanGroup): number => {
   const state = plan.state;
   let dropped = 0;
@@ -267,6 +267,14 @@ const compileGroupChildren = (plan: PlanState, group: PlanGroup): number => {
       const close = scanCloseTag(state);
       if (close === FAILED) return dropped;
       if (close.name === "Group") return dropped;
+      // Only a tag that closes an ANCESTOR proves the </Group> is missing;
+      // rewind so the plan loop sees it too. Anything else closes nothing —
+      // say that and keep reading, because a mismatched close must never lose
+      // the rest of the document (the wire compiler's closeTag, same rule).
+      if (close.name !== "Plan") {
+        plan.issues.push(`</${close.name}> closes nothing that is open here; it was ignored.`);
+        continue;
+      }
       state.index = before;
       plan.issues.push(`${groupLabel(group)} was never closed — its </Group> is missing. It was closed for you.`);
       return dropped;
