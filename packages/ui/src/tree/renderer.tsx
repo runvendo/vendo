@@ -38,6 +38,12 @@ import { useKeyedState } from "../kit/state.js";
 
 export interface TreeViewProps {
   tree: WalkTree;
+  /**
+   * Which app this tree belongs to — the `$state` and outcome namespace's
+   * identity. A caller that can render a DIFFERENT app in the same position
+   * passes it; see {@link TreeView} for what it buys.
+   */
+  appId?: string;
   components: Record<string, ComponentType>;
   data?: Record<string, Json>;
   onAction(req: { nodeId: string; action: string; payload?: Json }): Promise<ToolOutcome>;
@@ -50,6 +56,8 @@ export interface TreeViewProps {
 
 export interface PayloadRendererProps {
   payload: UIPayload;
+  /** As {@link TreeViewProps.appId}. */
+  appId?: string;
   components: Record<string, ComponentType>;
   data?: Record<string, Json>;
   onAction(req: { nodeId: string; action: string; payload?: Json }): Promise<ToolOutcome>;
@@ -693,7 +701,19 @@ function StatefulTreeView({
   );
 }
 
-/** A new tree identity owns a fresh `$state` and outcome namespace. */
+/**
+ * A new app owns a fresh `$state` and outcome namespace.
+ *
+ * The identity is `appId`. It cannot be the tree: the compiler roots EVERY
+ * compiled app at the same synthetic `root` node (core/genui/wire/compile.ts),
+ * so keying on `tree.root` reused one instance across two different apps and
+ * app B rendered app A's `$state`. Nor can it be the tree's contents — a
+ * streaming tree changes on every chunk, and wiping `$state` mid-stream would
+ * throw away what the user just typed.
+ *
+ * Without `appId` the key falls back to `tree.root`, which is exactly the
+ * behavior every existing caller already had.
+ */
 export function TreeView(props: TreeViewProps) {
-  return <StatefulTreeView key={props.tree.root} {...props} />;
+  return <StatefulTreeView key={props.appId ?? props.tree.root} {...props} />;
 }

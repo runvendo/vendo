@@ -24,6 +24,12 @@ export interface AppFrameKeepalive {
 
 export interface AppFrameProps {
   surface: OpenSurface;
+  /**
+   * Which app this surface belongs to. A frame that can show a DIFFERENT app in
+   * the same position passes it, and the tree surface's `$state` then belongs to
+   * that app alone (renderer.tsx's TreeView documents why the tree cannot say).
+   */
+  appId?: string;
   components?: Record<string, ComponentType>;
   data?: Record<string, Json>;
   onAction?(req: { nodeId: string; action: string; payload?: Json }): Promise<ToolOutcome>;
@@ -157,7 +163,7 @@ function HttpFrame({ url, keepalive }: { url: string; keepalive?: AppFrameKeepal
 }
 
 /** 08-ui §5; 06-apps §1 — render every app execution plane fail-soft. */
-export function AppFrame({ surface, components = {}, data, onAction = unavailableAction, onStateChange, keepalive }: AppFrameProps) {
+export function AppFrame({ surface, appId, components = {}, data, onAction = unavailableAction, onStateChange, keepalive }: AppFrameProps) {
   if (surface.kind === "http") {
     return <HttpFrame url={surface.url} keepalive={keepalive} />;
   }
@@ -173,6 +179,7 @@ export function AppFrame({ surface, components = {}, data, onAction = unavailabl
     return (
       <PayloadView
         payload={payload}
+        {...(appId === undefined ? {} : { appId })}
         components={components}
         data={data}
         onAction={onAction}
