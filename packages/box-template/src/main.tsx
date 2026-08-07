@@ -3,7 +3,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { App } from "./App.js";
-import { applyProvisionedBrand } from "./provision.js";
+import { applyHostTheme } from "./theme.js";
 
 /**
  * The app's entry point — the ONE place the runtime is wired, so an agent
@@ -17,7 +17,7 @@ const mount = document.getElementById("root")!;
 
 // Brand FIRST. The tokens are CSS custom properties, so applying them before the
 // first paint is what keeps a themed app from flashing Vendo's neutral defaults.
-const address = applyProvisionedBrand();
+applyHostTheme();
 
 // flushSync so the tree is really in the DOM before anything measures it. A
 // concurrent root commits asynchronously, so starting the frame protocol after a
@@ -27,7 +27,7 @@ const address = applyProvisionedBrand();
 flushSync(() => {
   createRoot(mount).render(
     <StrictMode>
-      <VendoAppProvider {...address}>
+      <VendoAppProvider>
         <App />
       </VendoAppProvider>
     </StrictMode>,

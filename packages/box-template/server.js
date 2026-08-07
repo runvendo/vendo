@@ -16,7 +16,6 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { fns } from "./fns.js";
-import { injectRuntimeConfig, readRuntimeConfig } from "./provision.mjs";
 
 const APP_ROOT = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(APP_ROOT, "dist");
@@ -132,14 +131,11 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "GET" || req.method === "HEAD") {
-      // The served surface: GET / is the built entry page, with the provision
-      // data spliced in so the app knows which app it is before its first paint.
-      // HEAD answers too — the host's keepalive probes it.
+      // The served surface: GET / is the built entry page. HEAD answers too —
+      // the host's keepalive probes it.
       if (url.pathname === "/") {
         res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-        res.end(req.method === "HEAD"
-          ? undefined
-          : injectRuntimeConfig(readFileSync(ENTRY, "utf8"), readRuntimeConfig(APP_ROOT)));
+        res.end(req.method === "HEAD" ? undefined : readFileSync(ENTRY, "utf8"));
         return;
       }
       // Vite's build output: hashed filenames under assets/, plus whatever the

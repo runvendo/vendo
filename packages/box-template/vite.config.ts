@@ -1,7 +1,6 @@
 import { devPortFrom } from "@vendoai/core";
 import react from "@vitejs/plugin-react";
-import { defineConfig, type Plugin } from "vite";
-import { RUNTIME_TOKEN, injectRuntimeConfig, readRuntimeConfig } from "./provision.mjs";
+import { defineConfig } from "vite";
 
 /**
  * The dev server's port — DECLARED by the host at box create, never discovered.
@@ -15,20 +14,8 @@ import { RUNTIME_TOKEN, injectRuntimeConfig, readRuntimeConfig } from "./provisi
  */
 const devPort = devPortFrom(process.env);
 
-/** The dev server is a server too, so it owes the page the same provision data
- *  `server.js` splices in — otherwise the live preview is the one surface that
- *  renders unbranded and without an app identity. ONE reader, two callers. */
-const provisionData = (): Plugin => ({
-  name: "vendo-provision-data",
-  apply: "serve",
-  transformIndexHtml: {
-    order: "post",
-    handler: (html) => injectRuntimeConfig(html, readRuntimeConfig(process.cwd())),
-  },
-});
-
 export default defineConfig({
-  plugins: [react(), provisionData()],
+  plugins: [react()],
   // RELATIVE, and load-bearing. A shared app is served through the wire proxy,
   // which mounts it under `/apps/<id>/serve/` (packages/vendo/src/wire/box.ts,
   // servedProxyRoutes): an absolute `/assets/...` URL leaves that mount and 404s

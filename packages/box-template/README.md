@@ -53,36 +53,13 @@ page has no CDN reference and no absolute asset URL). Code validity comes from
 `tsc` and `vite build` — there is no hand-rolled syntax checking, and there must
 never be.
 
-## What arrives as data, not as a bake
+## The theme route
 
-Everything company-specific lands as FILES when the box is provisioned, under a
-directory whose layout is byte-identical to a host project's own `.vendo/`:
-
-```
-/app/.vendo/host/theme.json                     VendoTheme
-/app/.vendo/host/components/<Name>.json         CapturedHostComponent
-/app/.vendo/host/components/modules/<hex>.json  CapturedModule { source, imports? }
-```
-
-So a producer's whole job is a directory copy of what `vendo sync` already wrote:
-no new format, no new transport. `provision.mjs` is the receiving end. It is a
-SUBTREE of `.vendo/` because `.vendo/` is the supervisor's control directory — a
-host component named `run` must not be able to collide with the entry that starts
-the app.
-
-Absent is normal and never fatal: a box provisioned without host data serves on
-Vendo's own neutral defaults.
-
-## Two theme routes, both open
-
-1. `?vendoTheme=<json>` — the shipped route; the apps runtime puts the host's live
-   tokens on the surface URL and the wire proxy forwards the query string.
-2. `.vendo/host/theme.json` — the provisioned brand baseline.
-
-The query param wins: it is the host's theme at the moment the surface opened.
-A malformed value on either route is ignored — a bad theme must never blank the
-app. Both flow through `themeCssVariables`, the same flattening the chrome and
-the jail use, onto the `--vendo-*` custom properties the Kit's tokens read.
+`?vendoTheme=<json>` — the apps runtime puts the host's live tokens on the
+surface URL and the wire proxy forwards the query string. A malformed value is
+ignored: a bad theme must never blank the app. It flows through
+`themeCssVariables`, the same flattening the chrome and the jail use, onto the
+`--vendo-*` custom properties the Kit's tokens read.
 
 ## The files
 
@@ -90,10 +67,9 @@ the jail use, onto the `--vendo-*` custom properties the Kit's tokens read.
 | --- | --- |
 | `src/App.tsx` | **the app — this is the file to edit** |
 | `src/main.tsx` | the wiring: brand, provider, frame protocol. Rarely touched |
-| `src/provision.ts` | the page half of the provision contract |
+| `src/theme.ts` | the `?vendoTheme=` reader |
 | `src/fn.ts` | `callFn` — the app's own server half |
 | `fns.js` | the `POST /fn/<name>` handlers |
 | `server.js` | the skin contract + serving the Vite build |
-| `provision.mjs` | the disk half of the provision contract |
 | `vendo.json` | the manifest (`schedules`, `egress`) |
 | `run` | the `.vendo/run` line, landed by the bake |
