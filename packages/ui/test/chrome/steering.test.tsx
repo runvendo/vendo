@@ -55,6 +55,12 @@ describe("steering the build in flight", () => {
     fireEvent.keyDown(composer, { key: "Enter" });
     await within(dialog()).findByRole("button", { name: "Stop" });
     await waitFor(() => expect(turns()).toHaveLength(1));
+    // The turn's id rides the POST's response HEADERS, and a steer offered
+    // before the client has read them is answered `false` with no request at
+    // all — the message just keeps its turn-end flush. `turns()` only proves
+    // the SERVER saw the POST, so wait for the first streamed chunk to render:
+    // that is the client having consumed the response, id included.
+    await within(dialog()).findByLabelText("Approval for Send the report");
     releaseHeld = release;
     return release;
   }
