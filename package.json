@@ -11,6 +11,7 @@
     "conformance": "turbo run conformance --filter=@vendoai/core --filter=@vendoai/store --filter=@vendoai/vendo",
     "typecheck": "turbo run typecheck",
     "lint": "node scripts/dependency-guard.mjs && node scripts/portability-gate.mjs && turbo run lint",
+    "lint:report": "eslint --config eslint.report.config.mjs --no-config-lookup 'packages/*/**/*.{ts,tsx}' || true; knip --no-exit-code",
     "deps:guard": "node scripts/dependency-guard.mjs",
     "corpus": "pnpm --filter @vendoai/corpus-harness corpus",
     "corpus:ui-parity": "pnpm --filter @vendoai/corpus-harness ui-parity",
@@ -25,10 +26,14 @@
     "@changesets/cli": "^2.31.0",
     "@vitest/coverage-v8": "^2.1.0",
     "esbuild": "^0.25.12",
+    "eslint": "^9.39.5",
+    "eslint-plugin-sonarjs": "^3.0.7",
+    "knip": "^5.88.1",
     "miniflare": "^4.20260714.0",
     "opentype.js": "^2.0.0",
     "turbo": "^2.1.0",
     "typescript": "^5.6.0",
+    "typescript-eslint": "^8.63.0",
     "vitest": "^2.1.0"
   }
 }

@@ -19,6 +19,11 @@ The demo host apps live under `examples/`.
 
 - Branch from `main`; open a PR against `main`.
 - `pnpm build && pnpm test && pnpm typecheck && pnpm lint` must pass.
+- `pnpm lint:report` is report-only and always exits 0. It runs
+  eslint-plugin-sonarjs and knip over `packages/*`, which `pnpm lint` does not
+  cover. Nothing it prints blocks a merge; it exists so a rule set can be
+  chosen from real counts. Run it after `pnpm build` — knip loads each
+  package's vite/vitest config, and those import built `dist/`.
 - UI-affecting changes need before/after screenshots in the PR.
 - Keep PRs focused; small is reviewable.
 
