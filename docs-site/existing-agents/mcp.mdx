@@ -176,12 +176,6 @@ powerful as your backend already is.
   </Step>
 </Steps>
 
-<Note>
-  A door pointed at an external authorization server (`mcp.remoteAs`, or the
-  hosted broker) does not serve its own token endpoint, so the exchange lives at
-  that server instead: post to the issuer's own `token_endpoint`.
-</Note>
-
 ## What the agent gets
 
 | Tool | What it does |
@@ -427,8 +421,7 @@ exits non-zero and says which one.
 
 <CardGroup cols={2}>
   <Card title="MCP door internals" href="/capabilities/mcp">
-    The adapter contract, the consent page, menus, `remoteAs`, federation, and
-    revocation.
+    The adapter contract, the consent page, menus, and revocation.
   </Card>
   <Card title="Publish to the MCP registry" href="/capabilities/mcp-registry">
     Make the deployed door discoverable through the official registry.

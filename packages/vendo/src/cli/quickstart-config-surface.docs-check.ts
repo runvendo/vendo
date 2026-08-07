@@ -82,8 +82,6 @@ export interface CreateVendoConfig {
   };
   mcp?: boolean | {            // the door; `baseUrl` is its PUBLIC base URL
     baseUrl?: string;
-    remoteAs?: { issuer: string; jwksUri?: string; audience: string };
-    federation?: { secret: string };
     serviceAuth?: { keys: readonly string[] }; // your backend's `vsk_` keys
   };
   oauth?: HostOAuthAdapter;   // escape hatch; required when `mcp` is true and `auth` is absent

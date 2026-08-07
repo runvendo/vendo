@@ -27,8 +27,6 @@ import {
 import { connectPage } from "./connect-page.js";
 import type { HostOAuthAdapter } from "./oauth/adapter.js";
 import type { AppsPort } from "./apps-port.js";
-import { handleFederation } from "./oauth/federation.js";
-import { RemoteAsVerifier } from "./oauth/remote-as.js";
 import { canonicalUri, json, OAuthServer, randomHex, sameCanonicalUri, TOKEN_EXCHANGE_GRANT_TYPE } from "./oauth/server.js";
 import { SHIM_HTML } from "./shim/shim-html.gen.js";
 import {
@@ -141,11 +139,6 @@ export interface McpDoorConfig {
    * attacker-controllable and are never consulted.
    * The umbrella defaults this from `VENDO_BASE_URL`. */
   baseUrl?: string;
-  /** Trust access tokens from an external OAuth authorization server instead
-   * of serving the door's local authorization-server endpoints. */
-  remoteAs?: { issuer: string; jwksUri?: string; audience: string };
-  /** Enable the generic signed login-federation handshake at `{mount}/federate`. */
-  federation?: { secret: string };
   /** First-party service auth: the host's own backend exchanges one of these
    * opaque keys plus a user id for a short-lived user-bound access token at
    * `{mount}/token`, then talks MCP with it like any other client. Rotation is
@@ -276,7 +269,6 @@ class Door {
    *  the reason the flag cannot be contradicted by anything else in the config. */
   readonly #oauth: OAuthServer | undefined;
   readonly #hostOAuth: HostOAuthAdapter | undefined;
-  readonly #remoteAs: RemoteAsVerifier | undefined;
   readonly #state: McpDoorState;
   /** Last mount an MCP request actually arrived at — a server-card hint only.
    * Authority never derives from remembered paths: every flow re-derives its
@@ -316,7 +308,6 @@ class Door {
     this.#oauth = outside === undefined
       ? undefined
       : new OAuthServer({ ...config, oauth: outside });
-    this.#remoteAs = config.remoteAs === undefined ? undefined : new RemoteAsVerifier(config.remoteAs);
     const publicBase = config.baseUrl === undefined ? undefined : publicBaseOf(config.baseUrl);
     this.#publicOrigin = publicBase?.origin;
     this.#publicBasePath = publicBase?.path ?? "";
@@ -366,11 +357,10 @@ class Door {
       return json(protectedResourceMetadata(
         base,
         stripPathPrefix(this.#publicBasePath, path.slice(PRM_PREFIX.length)),
-        this.#config.remoteAs?.issuer,
       ));
     }
     if (path.startsWith(AS_PREFIX)) {
-      if (req.method !== "GET" || this.#config.remoteAs !== undefined) return notFound();
+      if (req.method !== "GET") return notFound();
       return json(authorizationServerMetadata(
         base,
         stripPathPrefix(this.#publicBasePath, path.slice(AS_PREFIX.length)),
@@ -401,18 +391,17 @@ class Door {
     const endpoint = endpointFor(path);
     const mount = endpoint.mount;
     if (endpoint.kind === "authorize") {
-      return this.#config.remoteAs === undefined
-        && (req.method === "GET" || (req.method === "POST" && oauth.hasPrebuiltConsent))
+      return req.method === "GET" || (req.method === "POST" && oauth.hasPrebuiltConsent)
         ? oauth.authorize(req, resourceUri(base, mount))
         : notFound();
     }
     if (endpoint.kind === "token") {
-      return req.method === "POST" && this.#config.remoteAs === undefined
+      return req.method === "POST"
         ? oauth.token(req, resourceUri(base, mount))
         : notFound();
     }
     if (endpoint.kind === "revoke") {
-      if (req.method !== "POST" || this.#config.remoteAs !== undefined) return notFound();
+      if (req.method !== "POST") return notFound();
       const result = await oauth.revoke(req);
       if (result.grant?.tokenType === "refresh_token") {
         if (result.grant.familyId === undefined) {
@@ -424,14 +413,7 @@ class Door {
       return result.response;
     }
     if (endpoint.kind === "register") {
-      return req.method === "POST" && this.#config.remoteAs === undefined ? oauth.register(req) : notFound();
-    }
-    if (endpoint.kind === "federate") {
-      return req.method === "GET"
-        && this.#config.federation !== undefined
-        && (hostOAuth.authorize !== undefined || hostOAuth.session !== undefined)
-        ? handleFederation(req, resourceUri(base, mount), this.#config.federation.secret, hostOAuth)
-        : notFound();
+      return req.method === "POST" ? oauth.register(req) : notFound();
     }
     if (endpoint.kind === "connect") {
       // The one door page for PEOPLE: no session, no token, nothing a client
@@ -485,10 +467,8 @@ class Door {
     const turn = presented === undefined ? null : await this.#resolveTurn(presented);
     if (turn !== null) return this.#handleTurnMcp(req, mount, presented!, turn);
 
-    const auth = this.#remoteAs === undefined
-      ? await oauth.authenticate(req)
-      : await this.#remoteAs.authenticate(req);
-    if (!auth || (this.#remoteAs === undefined && !sameCanonicalUri(auth.grant.resource, resource))) {
+    const auth = await oauth.authenticate(req);
+    if (!auth || !sameCanonicalUri(auth.grant.resource, resource)) {
       return unauthorized(base, mount, req.headers.has("authorization"));
     }
 
@@ -1074,7 +1054,7 @@ class Door {
 }
 
 function endpointFor(path: string): {
-  kind: "mcp" | "authorize" | "token" | "revoke" | "register" | "federate" | "connect";
+  kind: "mcp" | "authorize" | "token" | "revoke" | "register" | "connect";
   mount: string;
 } {
   for (const [suffix, kind] of [
@@ -1082,7 +1062,6 @@ function endpointFor(path: string): {
     ["/token", "token"],
     ["/revoke", "revoke"],
     ["/register", "register"],
-    ["/federate", "federate"],
     ["/connect", "connect"],
   ] as const) {
     if (path.endsWith(suffix)) return { kind, mount: path.slice(0, -suffix.length) };
@@ -1175,11 +1154,11 @@ function protectedResourceMetadataUrl(base: string, mount: string): string {
   return canonicalUri(base) + PRM_PREFIX + normalizeMount(mount);
 }
 
-function protectedResourceMetadata(base: string, mount: string, remoteIssuer?: string) {
+function protectedResourceMetadata(base: string, mount: string) {
   const resource = resourceUri(base, mount);
   return {
     resource,
-    authorization_servers: [remoteIssuer ?? resource],
+    authorization_servers: [resource],
     bearer_methods_supported: ["header"],
   };
 }

@@ -411,48 +411,6 @@ describe("parity gate — the MCP door vs the in-process projection", () => {
     expect(fromTurn[0]!.turnId).toBe(inHost.turnIds[0]);
   }, 40_000);
 
-  /**
-   * §9.1 — `mode: "local"` IS the self-hosted path, and it is byte-identical.
-   *
-   * `selectMcpBroker`'s hostname rules are pinned exhaustively and purely in
-   * `mcp-broker-select.test.ts`. What that cannot say is whether the door a
-   * self-hoster actually gets differs from the one they got before the broker
-   * existed — the failure this guards is a key silently changing the front door's
-   * shape for a deployment the broker cannot even reach.
-   *
-   * So the same composition is booted twice — once with no key at all, once with
-   * a key AND a private base URL — and the `vendo_make` entry the wire carries is
-   * compared as SERIALIZED BYTES. Same door, same listing, key or no key.
-   */
-  it("§9.1 — no key and key-plus-private-host both keep the LOCAL door, and its `vendo_make` listing byte-for-byte", async () => {
-    const localArm = async (): Promise<{ selection: unknown; make: string }> => {
-      let listed: Awaited<ReturnType<DoorSession["listTools"]>> = [];
-      const host = await composedHostOverDoor(async (door) => {
-        listed = await door.listTools();
-      });
-      await runHarnessTurn(host.vendo, "thr_local_arm", "what can you do");
-      const doctor = await host.vendo.handler(new Request("https://host.test/api/vendo/doctor/mcp"));
-      return {
-        selection: ((await doctor.json()) as { selection: unknown }).selection,
-        make: JSON.stringify(listed.find((tool) => tool.name === VENDO_MAKE_TOOL)),
-      };
-    };
-
-    const noKey = await localArm();
-    expect(noKey.selection).toBe("local");
-
-    // A Cloud key present, but the deployment is a private host the broker cannot
-    // forward a visitor to — the frozen localhost rule. The broker default is
-    // SKIPPED, silently, and today's door stands.
-    vi.stubEnv("VENDO_API_KEY", "vnd_parity_local_arm");
-    vi.stubEnv("VENDO_BASE_URL", "https://app.internal.local");
-    const privateHost = await localArm();
-    expect(privateHost.selection).toBe("local");
-
-    expect(noKey.make).toContain(VENDO_MAKE_TOOL);
-    expect(privateHost.make).toBe(noKey.make);
-  }, 40_000);
-
   it("a credential is dead the moment its turn ends — a door call between turns is a 401", async () => {
     let stolen: string | undefined;
     const host = await composedHostOverDoor(async (_door, mint) => {

@@ -69,9 +69,7 @@ export type DoctorErrorCode = keyof typeof DOCTOR_ERROR_CODES;
  *  CI gate enumerates error codes only). Append-only all the same; NNN stays
  *  unique within an area across both registries (E-CLOUD-001 exists, so the
  *  first CLOUD informational is 002). */
-export const DOCTOR_INFO_CODES = {
-  "I-CLOUD-002": "the hosted MCP broker activates when the deployment has a public base URL",
-} as const;
+export const DOCTOR_INFO_CODES = {} as const;
 
 export type DoctorInfoCode = keyof typeof DOCTOR_INFO_CODES;
 

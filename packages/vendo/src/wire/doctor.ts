@@ -64,14 +64,6 @@ export const doctorRoutes: RouteEntry[] = [
     }
     return undefined;
   }),
-  // The broker seam's selection (selectMcpBroker) — a composition fact, no
-  // secret material; dev-only like every probe route below the gate. /status
-  // collapses an explicit `mcp.remoteAs` and the Cloud-managed broker into
-  // one "broker" posture; doctor reads this to keep the seam's explicit-wins
-  // precedence: only a confirmed "broker" selection may POST the tenant
-  // ensure (against an explicit AS the same call could provision or repoint
-  // an unrelated Cloud tenant).
-  route("GET", "/doctor/mcp", async ({ deps }) => json({ selection: deps.mcpSelection })),
   // Dev-only machine/schedule reporting (sits AFTER the production gate above,
   // like every probe route). Reporting only: which apps carry a machine, what
   // their manifests declare, and whether a schedule caller (VENDO_TICK_SECRET)

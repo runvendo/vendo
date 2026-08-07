@@ -135,7 +135,7 @@ Types only; each key's behavior is documented once, on
 | `profileDir` | `string` | the project root `.vendo/` is read under; unset keeps the process cwd |
 | `fetch` | `typeof fetch` | the fetch host route/OpenAPI tool bindings execute through; unset keeps the platform fetch |
 | `profile` | `{ overrides?, theme?, brief?, catalog?, policy?, designRules?, tools? }` | the `.vendo/` pieces as in-memory compose-time inputs, each winning over its file. `profile.tools` is **deprecated** → the `tools` slot |
-| `mcp` | `boolean \| { baseUrl?: string; remoteAs?: object; federation?: object }` | opens the [MCP door](/capabilities/mcp); off by default |
+| `mcp` | `boolean \| { baseUrl?: string }` | opens the [MCP door](/capabilities/mcp); off by default |
 | `oauth` | `HostOAuthAdapter` | escape hatch, mutually exclusive with `auth`; required when `mcp` is on and `auth` supplies no oauth half |
 | `agent` | `ComposedAgent` | a whole agent built by `agent()` from `@vendoai/agents` — see [above](#values-built-by-another-function) |
 | `sessions` | `{ ttlMs?: number; sweepIntervalMs?: number }` | anonymous-session lifecycle; defaults 30 min idle, 60 s sweep |

@@ -119,18 +119,10 @@ Bodies follow the MCP transport spec, not the wire's JSON envelope.
 | `/api/vendo/mcp/token` | POST | OAuth token endpoint (form-encoded) |
 | `/api/vendo/mcp/revoke` | POST | RFC 7009 token revocation (form-encoded). A revocation that lands — including one naming a token that no longer exists — answers an empty `200`, per the spec. Five paths answer `400` with an OAuth `{ error, error_description }` body instead: a non-form content type, a missing `token` or `client_id`, an unresolvable `client_id`, a token issued to a different client, and — the one that is not the caller's fault — a store whose records do not support atomic claims, which fails `server_error` no matter how well-formed the request was |
 | `/api/vendo/mcp/register` | POST | OAuth dynamic client registration (JSON body) |
-| `/api/vendo/mcp/federate` | GET | signed login handshake for an external authorization server; only mounted when `federation` is configured |
 | `/api/vendo/mcp/connect` | GET | the door's one page for **people**, not clients: an HTML setup page naming the product and the door's public MCP URL, for pasting into an MCP client. Unauthenticated by design — no session, no token, and nothing on it that the public server card does not already carry. Titled with the host identity's name, and styled with the door's theme when the composition resolves one. Any method other than GET is `404` |
 | `/.well-known/oauth-protected-resource/api/vendo/mcp` | GET | RFC 9728 protected-resource metadata |
 | `/.well-known/oauth-authorization-server/api/vendo/mcp` | GET | RFC 8414 authorization-server metadata |
 | `/.well-known/mcp/server-card.json` · `/.well-known/mcp-server-card` | GET | server card describing the door |
-
-With `remoteAs` configured, `/api/vendo/mcp/authorize`, `/token`, `/revoke`, `/register`,
-and the RFC 8414 authorization-server metadata all return `404`; the external
-issuer owns those endpoints and RFC 9728 metadata advertises it. The transport
-and `/connect` are unaffected — delegating the authorization server does not
-take away the door's own setup page. See [MCP
-door](/capabilities/mcp) for the delegation model.
 
 Door paths bypass the wire's principal resolver and CSRF JSON gate. The door
 re-resolves `oauth.principal(subject)` on every bearer-authenticated transport

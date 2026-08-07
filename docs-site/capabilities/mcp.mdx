@@ -345,8 +345,8 @@ routes resolve against, pass the door's public base explicitly:
 ## Configure the door through the umbrella
 
 `mcp: true` opens the door with defaults. To pass door-specific settings
-through `createVendo`, for example when you front the door with a hosted
-broker or a different origin, replace `true` with an object:
+through `createVendo`, for example when the door is served on a different
+origin, replace `true` with an object:
 
 ```ts
 export const vendo = createVendo({
@@ -355,20 +355,11 @@ export const vendo = createVendo({
   oauth,
   mcp: {
     baseUrl: "https://app.example.com",
-    remoteAs: {
-      issuer: "https://auth.example.com",
-      audience: "https://app.example.com/api/vendo/mcp",
-    },
-    federation: {
-      secret: process.env.VENDO_MCP_FEDERATION_SECRET!
-    },
   },
 });
 ```
 
-`baseUrl`, `remoteAs`, and `federation` live under `mcp: { … }`; they are
-not top-level `createVendo` keys. The object form is also the one place to
-gate broker trust behind environment variables.
+`baseUrl` lives under `mcp: { … }`; it is not a top-level `createVendo` key.
 
 ## How door calls reach host tools
 
@@ -385,82 +376,6 @@ MCP bearer to your host routes. Door tool calls reach host APIs through the same
 
 The OAuth-authenticated user is the authority. Risky tools still stop at your
 per-call guard decision, whatever the token's scopes.
-
-## Delegate to an external authorization server
-
-If your product already runs its own OAuth authorization server, or you use an
-identity provider that issues bearer tokens for your APIs, point the door at it
-with `remoteAs` instead of letting the door mint tokens itself. The door then
-authenticates every MCP request by verifying the inbound bearer as a JWT signed
-by that issuer.
-
-```ts
-export const vendo = createVendo({
-  model,
-  principal: resolvePrincipal,
-  oauth,
-  mcp: {
-    remoteAs: {
-      issuer: "https://auth.example.com",
-      audience: "https://app.example.com/api/vendo/mcp",
-      // jwksUri is optional; the door discovers it from the
-      // issuer's RFC 8414 metadata when omitted.
-    },
-  },
-});
-```
-
-Use `remoteAs` when the external server is authoritative for user identity for
-your product. Skip it if you want the door to run its own OAuth surface. The
-exact token requirements and endpoint behavior in this mode are specified in
-[remoteAs token requirements](#remoteas-token-requirements).
-
-## Federate login from an external authorization server
-
-`federation` adds a signed handshake so an external authorization server can
-have your host complete the interactive login-and-consent step, then hand the
-answer back. This is useful when the external server owns tokens (see
-`remoteAs` above) but does not know how to authenticate your users; your app
-does.
-
-```ts
-export const vendo = createVendo({
-  model,
-  principal: resolvePrincipal,
-  oauth,
-  mcp: {
-    federation: {
-      secret: process.env.VENDO_MCP_FEDERATION_SECRET!
-    },
-  },
-});
-```
-
-Set `VENDO_MCP_FEDERATION_SECRET` to a high-entropy secret shared with the
-external authorization server. That server crafts an HS256-signed request JWT
-and redirects the user's browser to
-`GET /api/vendo/mcp/federate?request=<compact JWS>`. The exact claims the
-request JWT must carry are listed in
-[Federation JWT claims](#federation-jwt-claims).
-
-The door verifies the request, then authenticates the user through your
-adapter:
-
-- If your adapter implements `authorize`, the door calls
-  `oauth.authorize(request, { clientName, scopes })`. This is the same
-  authorize step your local flow uses, so you do not need a separate consent
-  UI.
-- If your adapter is session-only (no `authorize`), the door calls
-  `oauth.session(request, { returnTo })` with the federate request URL as
-  `returnTo`, so a logged-out user bounces to your login page and resumes the
-  handshake automatically. The external authorization server owns consent, so
-  no in-product consent UI runs.
-
-If your adapter returns a `Response` (a login redirect or rendered page), the
-door forwards it so the browser can complete host login and retry. On a
-`{ subject }` result, the door redirects to `redirect_uri` with an HS256-signed
-`assertion` parameter that the external authorization server verifies with the
-same `secret`.
 
 ## Revoke access
 
@@ -602,49 +517,6 @@ ordinary 404 rather than a 500.
   but door requests never teach it (only wire routes do); `VENDO_BASE_URL`
   gives door-first traffic a base to resolve host routes against.
 
-### remoteAs token requirements
-
-- Tokens must be ES256-signed JWTs with `iss`, `sub`, `aud`, `iat`, and `exp`
-  claims. `iss` must equal the configured `issuer`, `aud` must equal the
-  configured `audience`, and `exp` must be in the future.
-- The door caches the JWKS in memory and refetches it when a bearer arrives
-  with an unfamiliar `kid`, which covers ordinary key rotation. `jwksUri` is
-  optional; the door discovers it from the issuer's RFC 8414 metadata when
-  omitted.
-- The door calls `oauth.principal(subject)` with the JWT `sub` on every
-  request, so returning `null` still kills a live session. This remains your
-  revocation point.
-- The local `/api/vendo/mcp/authorize`, `/token`, and `/register` endpoints
-  return `404` in this mode, and so does RFC 8414 authorization-server
-  metadata. RFC 9728 protected-resource metadata instead advertises
-  `authorization_servers: [remoteAs.issuer]`, so compliant clients discover
-  and use the external server directly.
-- `oauth` is still required. The door skips `oauth.authorize` because the
-  external server owns the interactive step, but it still calls
-  `oauth.principal`.
-
-### Federation JWT claims
-
-The request JWT (HS256, signed with the shared secret, delivered as
-`GET /api/vendo/mcp/federate?request=<compact JWS>`) must carry:
-
-- `iss`: the external authorization server's issuer URL.
-- `aud`: the door's canonical URL (for example
-  `https://app.example.com/api/vendo/mcp`).
-- `exp`: no more than five minutes in the future.
-- `jti`: a fresh nonce per handshake.
-- `redirect_uri`: where to send the browser after login. Its origin must
-  match `iss`.
-- `scopes`: the string array the external server wants your user to consent
-  to.
-- `client_name`: the display name shown in your consent UI.
-
-The assertion the door returns on `redirect_uri` carries `sub` (your host
-subject), `iss` (the door's canonical URL), `aud` (the request's `iss`), a
-matching `jti`, and a sixty-second `exp`. The federate endpoint renders no
-HTML of its own: it either returns your `authorize` response verbatim or
-issues a `302` back to the external authorization server.
-
 ### Revocation semantics
 
 Per RFC 7009, the endpoint always returns an empty `200`; unknown tokens and
@@ -652,6 +524,3 @@ unknown or incorrect hints look the same. Revoking an access token invalidates
 that opaque token; revoking a refresh token atomically retires the whole
 authorization-grant family, including its access tokens and any rotated
 successors, while leaving other authorizations for the same client intact.
-
-In `remoteAs` mode the external authorization server owns revocation and the
-door's local `/revoke` path returns `404`.

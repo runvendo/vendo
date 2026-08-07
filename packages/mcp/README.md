@@ -34,31 +34,6 @@ The umbrella defaults `baseUrl` from `VENDO_BASE_URL`; pass
 derive from each request's own URL. Forwarded headers such as
 `X-Forwarded-Host` are never trusted.
 
-## External authorization servers
-
-By default the door owns the OAuth authorization-server flow. A host that runs
-its authorization server separately can instead configure:
-
-```ts
-createMcpDoor({
-  // tools, guard, oauth, store, ...
-  remoteAs: {
-    issuer: "https://auth.example.com",
-    audience: "https://product.example.com/api/mcp",
-    // Optional. Otherwise the door discovers jwks_uri from RFC 8414 metadata.
-    jwksUri: "https://auth.example.com/.well-known/jwks.json",
-  },
-});
-```
-
-In this mode the door accepts only ES256 bearer JWTs whose signature, `iss`,
-`aud`, `exp`, and `iat` validate against the external server's JWKS. Keys are
-cached and a new `kid` triggers a refresh for key rotation. The host's
-`oauth.principal(sub)` still runs on every request, so returning `null` remains
-the immediate account-level kill switch. The door's local `/authorize`,
-`/token`, and `/register` endpoints and RFC 8414 metadata return `404`; RFC 9728
-protected-resource metadata advertises the configured external issuer.
-
 ## Token revocation
 
 Local authorization-server metadata advertises `{mount}/revoke` and the
@@ -79,25 +54,7 @@ await door.revokeClient(subject, clientId);
 ```
 
 Grant-family and token revocation use the store's guarded atomic claim rather
-than a read-then-write update. In `remoteAs` mode, the external authorization
-server owns revocation and the door's local `/revoke` path returns `404`.
-
-## Login federation
-
-`federation: { secret }` enables `GET {mount}/federate?request=<compact JWS>` as
-a generic login handshake for an external authorization server. Requests are
-HS256-signed with the shared secret and carry `iss`, the door resource as `aud`,
-an expiration no more than five minutes away, `jti`, `redirect_uri`, `scopes`,
-and `client_name`. The redirect URI must have the same origin as `iss`.
-
-The door passes the client name and scopes to `HostOAuthAdapter.authorize`. A
-`Response` from the adapter is returned unchanged for the host's login bounce;
-after authentication the browser can retry the same signed request. A resolved
-host subject is returned to the external server as `assertion=<compact JWS>` on
-the redirect URI. That HS256 assertion is audience-bound to the request issuer,
-issuer-bound to the canonical door resource, echoes the request `jti`, and
-expires after 60 seconds. The endpoint emits redirects or JSON errors only; it
-does not render request values into HTML.
+than a read-then-write update.
 
 ## Transport state seam
 

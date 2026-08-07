@@ -217,8 +217,6 @@ export { cloudSandbox, type CloudSandboxOptions } from "./sandbox.js";
 // `store: postgres(url)`, instead of composing something broken.
 provideCloudAdapters({ sandbox: cloudSandbox });
 import { cloudApps } from "./cloud-apps.js";
-import { cloudMcpTenant } from "./cloud-mcp.js";
-import { selectMcpBroker } from "./mcp-broker-select.js";
 import { chainSecrets, cloudSecrets } from "./cloud-secrets.js";
 // The Cloud secrets provider and its chaining helper ride the server surface
 // like the other Cloud adapters: a host can compose them explicitly via
@@ -584,18 +582,13 @@ export interface CreateVendoConfig {
       identifiers, and RFC 8707 audience binding derive from — set it (or
       `VENDO_BASE_URL`, the default) behind a reverse proxy, where the request
       URL carries the proxy-internal origin. Forwarded headers are never
-      trusted. `remoteAs` (10-mcp §3.1) trusts an external authorization server
-      — e.g. the hosted broker at `{tenant}.mcp.vendo.run` — instead of serving
-      the door's local OAuth surface, and `federation` (10-mcp §3.2) answers
-      that server's signed login handshake at `{mount}/federate`.
+      trusted.
       `serviceAuth` opens first-party service auth: the host's OWN backend
       exchanges one of these keys plus a user id for a short-lived user-bound
       token at the door's token endpoint (rotation is listing both keys until
       the old one is out of use). */
   mcp?: boolean | {
     baseUrl?: string;
-    remoteAs?: { issuer: string; jwksUri?: string; audience: string };
-    federation?: { secret: string };
     serviceAuth?: { keys: readonly string[] };
   };
   /** 10-mcp §3 plus its additive prebuilt flow — the host's session + identity seam. Threaded top-level like
@@ -1728,18 +1721,10 @@ export function createVendo(input: CreateVendoConfig): Vendo {
   // background sweep together through this once-latch; on Node the first
   // request pays the same cost the old eager kick merely front-loaded.
   let startBackgroundSweep: () => void = () => undefined;
-  // Assigned at the door composition below when the broker arm of the mcp
-  // seam is selected: the ensure-tenant call rides this SAME boot-once latch
-  // as ensureSchema — an awaited compose step, resolved before the first
-  // request is served — never construction-time I/O (createVendo runs at
-  // module init in the edge wiring, where Workers forbids fetch).
-  let warmMcpBroker: (() => Promise<void>) | undefined;
   let readyState: Promise<void> | undefined;
   const ready = (): Promise<void> => {
     if (readyState === undefined) {
-      readyState = warmMcpBroker === undefined
-        ? store.ensureSchema()
-        : Promise.all([store.ensureSchema(), warmMcpBroker()]).then(() => undefined);
+      readyState = store.ensureSchema();
       // No unhandled rejection before a handler/emit awaits the latch.
       void readyState.catch(() => undefined);
       startBackgroundSweep();
@@ -3297,16 +3282,8 @@ export function createVendo(input: CreateVendoConfig): Vendo {
   let door: McpDoor | undefined;
   // The /status posture for the mcp block (connections-posture pattern):
   // false when the door is closed, "local" when it serves its own OAuth
-  // surface, "broker" when an external authorization server fronts it —
-  // ensured from the Cloud broker or explicitly configured. A `let` read
-  // through a deps getter, so the ensure-failure degrade below reports what
-  // actually composed.
-  let mcpPosture: "local" | "broker" | false = false;
-  // The seam's selection, kept beside the posture for the dev-only
-  // /doctor/mcp probe (wire/doctor.ts): the posture collapses explicit
-  // `mcp.remoteAs` and the Cloud-managed broker into "broker", and doctor
-  // needs the distinction to never ensure a tenant for an explicit AS.
-  let mcpSelection: "off" | "explicit" | "broker" | "local" = "off";
+  // surface.
+  let mcpPosture: "local" | false = false;
   if (mcpOptions !== undefined) {
     if (oauthSeam === undefined) {
       throw new VendoError(
@@ -3339,10 +3316,7 @@ export function createVendo(input: CreateVendoConfig): Vendo {
     // proxy-INTERNAL origin and must not shape what discovery advertises
     // (ENG-333). An explicit `mcp.baseUrl` overrides the env default for
     // compositions whose door origin differs from the route-binding origin.
-    const composeDoor = (
-      remoteAs = mcpOptions.remoteAs,
-      federation = mcpOptions.federation,
-    ): McpDoor => createMcpDoor({
+    door = createMcpDoor({
       tools: boundTools,
       guard,
       store,
@@ -3367,74 +3341,17 @@ export function createVendo(input: CreateVendoConfig): Vendo {
       turnCredentials,
       mount: MCP_MOUNT,
       ...(doorBaseUrl === undefined ? {} : { baseUrl: doorBaseUrl }),
-      // 10-mcp §3.1/§3.2 — broker-fronted compositions: trust the external
-      // authorization server's tokens and answer its login federation.
-      ...(remoteAs === undefined ? {} : { remoteAs }),
-      ...(federation === undefined ? {} : { federation }),
       ...(mcpOptions.serviceAuth === undefined ? {} : { serviceAuth: mcpOptions.serviceAuth }),
       ...(theme === undefined ? {} : { theme }),
     });
-    // ADAPTER RULE, mcp seam (selectMcpBroker — cloned from selectConnections
-    // above): explicit `mcp.remoteAs` wins verbatim; else VENDO_API_KEY plus a
-    // PUBLIC base URL default the hosted broker (an idempotent ensure-tenant
-    // call wires remoteAs + federation from the response); else the local
-    // door, byte-identical to today. The localhost rule and the ensure wire
-    // are frozen in the provisioning plan.
-    const mcpCloud = cloudKeyOptions();
-    const selection = selectMcpBroker(mcpOptions, mcpCloud, doorBaseUrl, MCP_MOUNT);
-    mcpSelection = selection.mode;
-    if (mcpOptions.serviceAuth !== undefined && (selection.mode === "broker" || selection.mode === "explicit")) {
-      console.warn(
-        "[vendo] mcp.serviceAuth is set, but this door trusts an external authorization server "
-        + "(mcp.remoteAs, or the hosted broker VENDO_API_KEY selects), so it does not serve its own "
-        + "token endpoint — the service-key exchange lives there. Exchange keys at that server instead.",
-      );
-    }
-    if (selection.mode === "broker" && mcpCloud !== undefined) {
-      mcpPosture = "broker";
-      // Boot-once, awaited: the first door construction rides the ready latch
-      // (warmMcpBroker above) so the trust anchor is resolved before the first
-      // request is served — and the wrapper below awaits the same latch, so a
-      // door request can never race a half-composed door.
-      let brokerDoor: Promise<McpDoor> | undefined;
-      const composeBrokerDoor = async (): Promise<McpDoor> => {
-        try {
-          const { tenant, federationSecret } = await cloudMcpTenant(mcpCloud).ensure(selection.ensure);
-          return composeDoor(
-            { issuer: tenant.issuer, audience: tenant.audience },
-            { secret: federationSecret },
-          );
-        } catch (error) {
-          // Same degrade posture as the hosted overrides fetch above: a
-          // console blip must not kill boot. Loud, once, then the local door
-          // for this composition's lifetime; the next boot re-ensures.
-          mcpPosture = "local";
-          console.warn(
-            "[vendo] hosted MCP broker ensure-tenant failed; the door serves its own local OAuth "
-            + `surface this boot: ${error instanceof Error ? error.message : String(error)}`,
-          );
-          return composeDoor();
-        }
-      };
-      const doorReady = (): Promise<McpDoor> => (brokerDoor ??= composeBrokerDoor());
-      warmMcpBroker = async () => { await doorReady(); };
-      door = {
-        handler: async (request) => (await doorReady()).handler(request),
-        revokeClient: async (subject, clientId) => (await doorReady()).revokeClient(subject, clientId),
-      };
-    } else {
-      mcpPosture = selection.mode === "explicit" ? "broker" : "local";
-      door = composeDoor();
-    }
+    mcpPosture = "local";
   } else if (internalDoorOnly) {
     // The INTERNAL half alone. It answers one live turn's credential and
     // nothing else, so it is handed only what that leg reads: the credential
     // registry and where it lives. No oauth (there is no space to sign into),
     // no apps ride-alongs, no `surfaces.mcp` menu, no theme — a turn's tools,
-    // curation and rendering are all decided by the turn. The broker seam
-    // (selectMcpBroker above) never applies here: there is no outside OAuth
-    // surface for an external authorization server to front, so this half
-    // keeps `mcp: false` posture like any closed door.
+    // curation and rendering are all decided by the turn. This half keeps
+    // `mcp: false` posture like any closed door.
     door = createMcpDoor({
       internal: true,
       tools: boundTools,
@@ -3500,7 +3417,6 @@ export function createVendo(input: CreateVendoConfig): Vendo {
     model: inference.agent.venue,
     doctor,
     get mcp() { return mcpPosture; },
-    mcpSelection,
     development,
     sessions: {
       ttlMs: sessionsConfig.ttlMs,

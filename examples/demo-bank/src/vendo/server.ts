@@ -6,7 +6,6 @@ import { authJs } from "@vendoai/vendo/auth/auth-js";
 import { createVendo, guard, vendoModel } from "@vendoai/vendo/server";
 import { authSecret, primaryMapleUser, resolveMaplePerson, resolveMapleSubject } from "@/server/users";
 import { mapleKnowledgeDocs } from "./knowledge";
-import { mapleMcpConfig } from "./mcp-config";
 import { namedHarness } from "./proof-harness";
 import { mapleRegistry } from "./registry";
 
@@ -128,7 +127,7 @@ export const vendo = createVendo({
     policy: { file: ".vendo/policy.json" },
     judge: vendoAutoJudge({ model: vendoModel("vendo-judge") }),
   }),
-  mcp: mapleMcpConfig(),
+  mcp: true,
   // BYO Composio when Maple brings its own key; otherwise the slot stays
   // UNSET so a VENDO_API_KEY deployment composes the Cloud tools connector
   // (an explicit [] would read as "no connectors, ever" — the seam honors it).

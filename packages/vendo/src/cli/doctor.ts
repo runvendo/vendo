@@ -16,9 +16,7 @@ import { describeDevCredential, resolveDevCredential } from "../dev-creds/resolv
 // Relative (not the #dev-creds condition): the CLI is Node-only and the edge
 // build deliberately does not export the pin map.
 import { SLOT_PIN_ENV } from "../dev-creds/model.js";
-import { DOCTOR_INFO_CODES, doctorFixRef, type DoctorErrorCode } from "./doctor-codes.js";
-import { cloudMcpTenant, type EnsureTenantResult } from "../cloud-mcp.js";
-import { publicBaseUrl } from "../mcp-broker-select.js";
+import { doctorFixRef, type DoctorErrorCode } from "./doctor-codes.js";
 import { EJECT_MANIFEST_FILE, type EjectedManifest } from "./eject.js";
 import { applyJudgment, judgmentsFileSchema, overridesFileSchema, toolsFileSchema, type ToolJudgment } from "@vendoai/actions";
 import type { RiskLabel } from "@vendoai/core";
@@ -57,10 +55,6 @@ export interface DoctorOptions {
   /** The npm `latest` lookup behind the version-skew line — its own seam, not
       fetchImpl, so a scripted wire probe never doubles as a registry answer. */
   npmLatest?: () => Promise<string | null>;
-  /** The broker ensure-tenant call behind the hosted-MCP line — its own seam
-      for the same reason as npmLatest: it rides the Cloud console, not the
-      probed wire. */
-  ensureTenant?: (input: { baseUrl: string; mount: string }) => Promise<EnsureTenantResult>;
 }
 
 type CheckStatus = "ok" | "broken" | "warning";
@@ -505,7 +499,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     }
   }
 
-  let mcpPosture: "local" | "broker" | false = false;
+  let mcpDoorOpen = false;
   let sandboxVenue: unknown;
   let liveComposition = false;
   try {
@@ -534,12 +528,9 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
       } else {
         fail("deps/version-skew", "E-DEP-002", `the running wire serves @vendoai/vendo ${body.version} but this CLI is ${CLI_VERSION} — likely a split-brain install (a direct @vendoai/vendo dependency pinned to an older range wins over the vendoai umbrella's). Fix: npm install @vendoai/vendo@${CLI_VERSION} (or remove the direct @vendoai/vendo dependency and reinstall), then restart the dev server and re-run doctor.`);
       }
-      // 10-mcp §1 — the door flag lives under blocks.mcp. Since the broker
-      // seam it is a posture ("local" | "broker" | false); older wires still
-      // send a boolean (version skew), which predates the broker — "local".
-      mcpPosture = body.blocks.mcp === "broker" ? "broker"
-        : body.blocks.mcp === true || body.blocks.mcp === "local" ? "local"
-        : false;
+      // 10-mcp §1 — the door flag lives under blocks.mcp: the "local" posture
+      // when the door is open, or `true` from an older wire (version skew).
+      mcpDoorOpen = body.blocks.mcp === true || body.blocks.mcp === "local";
       sandboxVenue = body.blocks.sandbox;
       if (sandboxVenue === "e2b") {
         // 0.4.4 defect C — "ok: execution venue: e2b" on a host that cannot
@@ -639,7 +630,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
   // 10-mcp §5 — when the door is open, verify both discovery documents resolve
   // and the server card parses. The metadata is path-inserted (RFC 9728 §3): a
   // door mounted at /api/vendo/mcp serves /.well-known/...-resource/api/vendo/mcp.
-  if (mcpPosture !== false) {
+  if (mcpDoorOpen) {
     const origin = new URL(statusUrl).origin;
     const mountPath = `${new URL(statusUrl).pathname.replace(/\/$/, "")}/mcp`;
     const resolves = async (id: string, code: DoctorErrorCode, url: string, valid: (body: Record<string, unknown>) => boolean, label: string): Promise<Record<string, unknown> | null> => {
@@ -658,46 +649,20 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
       }
       return null;
     };
-    const resource = await resolves(
+    await resolves(
       "mcp/protected-resource",
       "E-MCP-001",
       `${origin}/.well-known/oauth-protected-resource${mountPath}`,
       (body) => typeof body.resource === "string",
       "MCP protected-resource metadata resolves",
     );
-    if (mcpPosture === "broker") {
-      // Remote-AS posture: the door deliberately 404s its own authorization-
-      // server metadata — an external AS fronts it, named in the protected-
-      // resource document (RFC 9728 §2). The contract still requires BOTH
-      // documents to resolve (10-mcp §5), and the runtime fetches the
-      // EXTERNAL issuer's metadata before it can verify a single token
-      // (remote-as.ts) — so doctor must resolve that document, not re-read
-      // the one it already validated.
-      const servers = resource?.authorization_servers;
-      const advertised = Array.isArray(servers) && typeof servers[0] === "string" ? servers[0] as string : undefined;
-      const parses = (value: string): boolean => { try { new URL(value); return true; } catch { return false; } };
-      if (advertised === undefined) {
-        fail("mcp/authorization-server", "E-MCP-002", "MCP protected-resource metadata does not name the external authorization server fronting the door");
-      } else if (!parses(advertised)) {
-        fail("mcp/authorization-server", "E-MCP-002", `the advertised authorization server "${advertised}" is not a valid URL — the runtime cannot resolve its metadata`);
-      } else {
-        await resolves(
-          "mcp/authorization-server",
-          "E-MCP-002",
-          `${advertised.replace(/\/+$/, "")}/.well-known/oauth-authorization-server`,
-          (body) => body.issuer === advertised,
-          `MCP authorization-server metadata at ${advertised} resolves`,
-        );
-      }
-    } else {
-      await resolves(
-        "mcp/authorization-server",
-        "E-MCP-002",
-        `${origin}/.well-known/oauth-authorization-server${mountPath}`,
-        (body) => typeof body.issuer === "string",
-        "MCP authorization-server metadata resolves",
-      );
-    }
+    await resolves(
+      "mcp/authorization-server",
+      "E-MCP-002",
+      `${origin}/.well-known/oauth-authorization-server${mountPath}`,
+      (body) => typeof body.issuer === "string",
+      "MCP authorization-server metadata resolves",
+    );
     await resolves(
       "mcp/server-card",
       "E-MCP-003",
@@ -823,57 +788,6 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     warn("cloud/key", "E-CLOUD-001", `VENDO_API_KEY is set but not usable: ${cloud.error ?? "malformed"}`);
   } else {
     note(`Vendo Cloud (optional): no VENDO_API_KEY. A key unlocks ${cloud.unlocks.join("; ")}. Run \`vendo login\` to start.`);
-  }
-
-  // MCP broker seam (provisioning plan 2026-08-03): with a usable key and an
-  // open door, doctor explains what the broker default does — the seam skips
-  // the broker SILENTLY on a private base URL (the broker cannot forward
-  // visitors to a laptop), so doctor is where that decision gets said. With a
-  // public URL it resolves and prints the tenant the composition WOULD/did
-  // front the door with; the ensure is idempotent — the very call boot makes.
-  if (cloud.present && cloud.ok && mcpPosture !== false) {
-    const brokerBase = publicBaseUrl(env["VENDO_BASE_URL"]);
-    if (brokerBase === undefined) {
-      // Informational, not a failure: nothing is broken — deploying to a
-      // public URL is simply what arms the broker.
-      note(`I-CLOUD-002: ${DOCTOR_INFO_CODES["I-CLOUD-002"]} — VENDO_BASE_URL is unset or private, so the door serves its own local OAuth surface for now`);
-    } else {
-      // Explicit-adapter precedence (the seam's rule): /status reports both
-      // an explicit `mcp.remoteAs` and the Cloud-managed broker as "broker",
-      // but only the Cloud-managed arm ever calls ensure — against an
-      // explicitly configured AS the same POST could provision or repoint an
-      // unrelated Cloud tenant. Read the composition's own selection off the
-      // dev-only probe; anything but a confirmed "broker" skips the ensure.
-      let selection: unknown;
-      try {
-        const probed = await fetchImpl(`${statusUrl}/doctor/mcp`, { headers: { accept: "application/json" } });
-        if (probed.ok) selection = (await probed.json() as { selection?: unknown }).selection;
-      } catch {
-        // Unreachable probe — same conservative skip as an older wire below.
-      }
-      if (selection === "explicit") {
-        note("hosted MCP broker: an explicit mcp.remoteAs fronts the door — the broker default does not apply, so doctor ensures no tenant");
-      } else if (selection !== "broker") {
-        note("hosted MCP broker: the composition did not report selecting the broker (older wire, or a probe the dev-only route cannot answer) — skipping the tenant ensure");
-      } else {
-        const ensure = options.ensureTenant ?? ((input: { baseUrl: string; mount: string }) =>
-          cloudMcpTenant({
-            apiKey: env["VENDO_API_KEY"] ?? "",
-            ...(env["VENDO_CLOUD_URL"] === undefined ? {} : { baseUrl: env["VENDO_CLOUD_URL"] }),
-          }).ensure(input));
-        try {
-          const { tenant } = await ensure({
-            baseUrl: brokerBase,
-            mount: `${new URL(statusUrl).pathname.replace(/\/$/, "")}/mcp`,
-          });
-          pass("cloud/mcp-broker", `hosted MCP broker tenant: ${tenant.issuer}${tenant.status === "disabled" ? " (disabled in the console — the broker refuses traffic)" : ""} — the door composes against it when deployed at ${brokerBase}`);
-        } catch (error) {
-          // Informational like the arm above: the composition itself degrades
-          // to the local door on the same failure, loudly, at boot.
-          note(`hosted MCP broker: the tenant could not be resolved (${error instanceof Error ? error.message : String(error)}) — the door falls back to its own local OAuth surface until the console answers`);
-        }
-      }
-    }
   }
 
   if (devServerStop !== null) devServerStop();

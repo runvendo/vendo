@@ -139,7 +139,7 @@ describe("the INTERNAL-only door — one credential space, and no way into the o
     }
   });
 
-  it("no authorization server: register, authorize, token, revoke, federate and the connect page are all 404", async () => {
+  it("no authorization server: register, authorize, token, revoke and the connect page are all 404", async () => {
     const { vendo } = await internalHost();
     const attempts: Array<[string, Request]> = [
       ["register", new Request(`${MOUNT}/register`, {
@@ -158,7 +158,6 @@ describe("the INTERNAL-only door — one credential space, and no way into the o
         headers: { "content-type": "application/x-www-form-urlencoded" },
         body: "token=x",
       })],
-      ["federate", new Request(`${MOUNT}/federate?token=x`)],
       ["connect", new Request(`${MOUNT}/connect`)],
     ];
     for (const [name, request] of attempts) {
