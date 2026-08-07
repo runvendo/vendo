@@ -22,4 +22,7 @@ A severed row also stops depending on the list read that follows it. `useResourc
 its last good page when a refresh fails, so a 503 on that read used to put the row straight
 back wearing a Connected chip, with nothing said — a disconnect that looked like a button
 doing nothing. That was true of every successful sever, not just the already-gone case.
-The panel now drops the row on the wire's word and holds it dropped for the session.
+The panel now drops the row on the wire's word — and never permanently: a list read the
+server actually answers that still carries the account overrules the sever and brings the
+row back, since `not-found` also covers a missing *connector* rather than a missing account
+and the client cannot tell those apart. A failed read still changes nothing.

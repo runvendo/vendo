@@ -97,17 +97,30 @@ export function ConnectedAccountsPanel({ undoMs = 10_000 }: ConnectedAccountsPan
   const [severing, setSevering] = useState<Record<string, Severing | undefined>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string>();
-  // Accounts the WIRE has confirmed gone this session. The list read that
-  // follows a sever is not what proves it: `useResource` keeps its last good
-  // page when a refresh fails, which would put the row back wearing a
-  // Connected chip. Held until the surface remounts, when the server answers
-  // from scratch.
+  // Accounts the WIRE has confirmed gone. The list read that follows a sever is
+  // not what proves it: `useResource` keeps its last good page when a refresh
+  // fails, which would put the row back wearing a Connected chip.
   const [severed, setSevered] = useState<Record<string, boolean>>({});
   const timers = useRef(new Map<string, { commit: number; tick: number }>());
   // Pending disconnects flush on unmount (an undone-looking row must never
   // silently survive navigation), so the latest wire args live in a ref.
   const pendingRef = useRef(new Map<string, { connector: string }>());
   const cancelled = useRef(false);
+
+  // …and never permanently. `not-found` is also what the composition throws
+  // when the CONNECTOR is missing rather than the account, and the client
+  // cannot tell those apart — so a list read the server actually ANSWERS
+  // overrules the sever: an account still on that page is live, whatever the
+  // disconnect said. `useResource` replaces this array only on a successful
+  // read, so a failed refresh never reaches here and the row stays gone.
+  useEffect(() => {
+    setSevered(current => {
+      const kept = Object.keys(current).filter(id => !connections.some(row => row.id === id));
+      return kept.length === Object.keys(current).length
+        ? current
+        : Object.fromEntries(kept.map(id => [id, true]));
+    });
+  }, [connections]);
 
   // The unmount flush must see the CURRENT disconnect without re-running the
   // effect (an effect keyed on `disconnect` would flush pending severs on any
@@ -170,8 +183,14 @@ export function ConnectedAccountsPanel({ undoMs = 10_000 }: ConnectedAccountsPan
           // broker answers not-found for anything outside the caller's own
           // scope, so the sever is a fact and only the row is stale.
           if (cancelled.current) return;
-          if (alreadyGone(reason)) setSevered(current => ({ ...current, [id]: true }));
-          else setError(disconnectRefusalCopy(reason, toolkitDisplayName(connection.toolkit)));
+          if (alreadyGone(reason)) {
+            setSevered(current => ({ ...current, [id]: true }));
+            // The row is already gone from the page, so this read is not what
+            // proves it — it is the check on the claim. A successful one that
+            // still has the account brings it back (see the effect above); a
+            // failed one changes nothing.
+            await refresh();
+          } else setError(disconnectRefusalCopy(reason, toolkitDisplayName(connection.toolkit)));
         } finally {
           if (!cancelled.current) {
             setBusy(current => ({ ...current, [id]: false }));
