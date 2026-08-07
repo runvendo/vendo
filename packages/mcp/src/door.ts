@@ -12,7 +12,7 @@ import type {
   ToolResult,
   VendoTheme,
 } from "@vendoai/core";
-import { auditContext, themeCssVariables } from "@vendoai/core";
+import { auditContext, stripPathPrefix, themeCssVariables, withPathPrefix } from "@vendoai/core";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv";
@@ -1112,26 +1112,6 @@ function outsideSpacePath(path: string): boolean {
 function normalizeMount(mount: string): string {
   if (!mount || mount === "/") return "";
   return `/${mount.replace(/^\/+|\/+$/g, "")}`;
-}
-
-/** Whether `path` is `prefix` itself or lives under it, on a SEGMENT boundary —
- *  `/maple/api` is under `/maple`, `/maplesyrup` is not. `""` holds everything. */
-function underPathPrefix(prefix: string, path: string): boolean {
-  return prefix === "" || path === prefix || path.startsWith(`${prefix}/`);
-}
-
-/** The public spelling of a path: prefixed exactly once. A path that already
- *  carries the prefix (a prefix-preserving mount) is left alone. */
-function withPathPrefix(prefix: string, path: string): string {
-  return underPathPrefix(prefix, path) ? path : `${prefix}${path}`;
-}
-
-/** The door-local spelling of a path: the public prefix taken back off. A path
- *  outside the prefix is left alone. */
-function stripPathPrefix(prefix: string, path: string): string {
-  if (prefix === "" || !underPathPrefix(prefix, path)) return path;
-  const stripped = path.slice(prefix.length);
-  return stripped === "" ? "/" : stripped;
 }
 
 /** Reduce the configured base URL to its canonical origin and mount-normalized
