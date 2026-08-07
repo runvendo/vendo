@@ -129,6 +129,10 @@ export async function createSession(
 
   const transcript = threadMessageStore<UIMessage>(deps.store);
   const workspaces = workspaceStore(deps.store, { files: deps.files });
+  // Opened once per turn, in `stream()` below, so a turn always sees a fresh
+  // path index. Nothing reads it before then: `runtime()` is only called inside
+  // `stream()`, after the open.
+  let workspace: Awaited<ReturnType<typeof workspaces.open>>;
   const runtime = () =>
     createHarnessRuntime({
       tools: deps.tools,
@@ -138,9 +142,6 @@ export async function createSession(
       harnessState: harnessStateStore(deps.store),
       ...(deps.liveTurn === undefined ? {} : { liveTurn: deps.liveTurn }),
     });
-  // Opened at session start (the spec's "opens thread + workspace") and
-  // reopened per turn below, so a turn always sees a fresh path index.
-  let workspace = await workspaces.open(principal, { host: hostSkillFiles(deps.skills) });
 
   const contextFor = (turnContext: Record<string, unknown> | undefined): RunContext => ({
     principal,

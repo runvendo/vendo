@@ -12,7 +12,6 @@ describe("the package surface", () => {
     expect(agents.createGuard).toBeTypeOf("function");
     expect(agents.e2b).toBeTypeOf("function");
     expect(agents.postgres).toBeTypeOf("function");
-    expect(agents.vendoKnowledge).toBeTypeOf("function");
     expect(agents.provideCloudAdapters).toBeTypeOf("function");
   });
 

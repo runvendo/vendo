@@ -54,10 +54,8 @@
     "@vendoai/core": "workspace:*",
     "@vendoai/guard": "workspace:*",
     "@vendoai/harnesses": "workspace:*",
-    "@vendoai/knowledge": "workspace:*",
     "@vendoai/mcp": "workspace:*",
-    "@vendoai/store": "workspace:*",
-    "zod": "^3.25.0"
+    "@vendoai/store": "workspace:*"
   },
   "peerDependencies": {
     "ai": ">=6.0.0 <7",
