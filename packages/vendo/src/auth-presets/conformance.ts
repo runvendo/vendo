@@ -1,4 +1,4 @@
-import { authMaterialSchema, principalSchema, type AuthMaterial, type Json, type Membership, type PermissionGrant, type Principal } from "@vendoai/core";
+import { authMaterialSchema, principalSchema, publicBase, type AuthMaterial, type Json, type Membership, type PermissionGrant, type Principal } from "@vendoai/core";
 import type { ConformanceSuite } from "@vendoai/core/conformance";
 import type { HostAuthPreset } from "./shared.js";
 
@@ -56,16 +56,17 @@ const assert: (condition: unknown, message: string) => asserts condition = (cond
 const defaultAnonymousRequest = (): Request =>
   new Request("https://host.conformance.test/api/vendo/threads");
 
-/** The deployment's public origin, computed exactly the way the presets do:
+/** The deployment's public ORIGIN, computed exactly the way the presets do:
     the operator-set VENDO_BASE_URL when configured (empty string = unset, the
-    umbrella's `environment()` semantics), else the request's own origin. Kept
-    env-aware so the redirect case passes on CORRECT preset behavior whether or
-    not the suite's runner has VENDO_BASE_URL in its environment. */
+    umbrella's `environment()` semantics), else the request's own origin. The
+    comparison stays origin-only on purpose — a redirect to the login page under
+    the deployment's path prefix is CORRECT (#866), so comparing full URLs here
+    would fail exactly the behavior this spec fixes. */
 const publicOrigin = (request: Request): string => {
   const base = typeof process === "undefined" ? undefined : process.env["VENDO_BASE_URL"];
   if (base !== undefined && base.length > 0) {
     try {
-      return new URL(base).origin;
+      return publicBase(base).origin;
     } catch {
       // An unparseable base is an env misconfiguration; fall back to the
       // request origin rather than failing the case on the harness's env.
