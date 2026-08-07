@@ -368,14 +368,11 @@ const createServerWorkRunner = (
     });
     let document: AppDocument = { ...lane.document, id: appId };
     const findings = [...lane.findings];
-    if (lane.automation !== undefined) {
-      // The automation lane landed its own write; re-read so the caller holds
-      // the stored row rather than the pre-persist copy.
-      document = await requireOwned(appId, ctx);
-    } else if (lane.server !== undefined) {
-      // Provisioning the box wrote `machine` to the row, so the caller must hold
-      // the row as it stands NOW — the pre-box copy would report an app with no
-      // machine on it.
+    if (lane.automation !== undefined || lane.server !== undefined) {
+      // Either lane already wrote the row itself — the automation lane landed
+      // its own persist, and provisioning the box wrote `machine` — so re-read:
+      // the pre-write copy would report an app without what the lane just gave
+      // it.
       document = await requireOwned(appId, ctx);
     }
     // ── The 2→3 surface flip ────────────────────────────────────────────────
