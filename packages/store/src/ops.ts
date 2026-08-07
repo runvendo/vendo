@@ -627,6 +627,26 @@ export function createStoreOps(
           const tdb = txDb(q);
           const ledger = createRecordStore(tdb, WORKSPACE_COMMITS);
           const txRows = workspaceRows(tdb, filesFor(tdb));
+          /** Hold these paths' file rows for the rest of the transaction.
+           *
+           *  Every undo below is a CHECK — which commit is newest here — and
+           *  then an ACT: walk that path's history back one step. The two are
+           *  only sound together. With nothing held between them a commit
+           *  lands in the gap and appends a history row, and the act pops
+           *  THAT row instead: the committer is told its write landed and the
+           *  content is destroyed with no history row behind it (undo has no
+           *  redo). A write cannot append a history row without swapping the
+           *  path's file row first — one CTE does both — so holding the row
+           *  is what makes the pair atomic. Ordered by path, so two undos
+           *  queue instead of deadlocking. */
+          const hold = async (paths: string[]): Promise<void> => {
+            if (paths.length === 0) return;
+            await q(
+              `SELECT 1 FROM vendo_workspace_files WHERE owner = $1 AND path = ANY($2::text[])
+               ORDER BY path FOR UPDATE`,
+              [owner, paths],
+            );
+          };
           /** The commit created this path, so undoing it removes the file
               (recorded to history, §3.3's append-only law, so it stays
               recoverable); otherwise the superseded revision comes back. */
@@ -654,6 +674,7 @@ export function createStoreOps(
             // Refusing is the honest answer: the newer write has no history row
             // behind it, so undoing through it would destroy content nobody
             // asked to remove and could never be recovered.
+            await hold(commitEntries(commit).map((entry) => entry.path));
             const movedOn = await pathsMovedOn(ledger, owner, commit);
             if (movedOn.length > 0) {
               throw new VendoError(
@@ -672,6 +693,9 @@ export function createStoreOps(
           }
 
           const { path } = target;
+          // Same check-then-act as above, one path wide: `newestCommitTouching`
+          // decides and `undoOne` walks back, so the row is held across both.
+          await hold([path]);
           const commit = await newestCommitTouching(ledger, owner, path);
           if (commit === undefined) {
             throw new VendoError("not-found", `no commit has touched ${path}`);
