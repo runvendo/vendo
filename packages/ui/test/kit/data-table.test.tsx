@@ -52,4 +52,53 @@ describe("DataTable", () => {
     render(<DataTable rows={[{ id: 9, client: { name: "X" }, amountCents: Number.NaN }]} columns={columns} />);
     expect(screen.queryByText(/NaN/)).toBeNull();
   });
+
+  // A dropdown is a list of the values that EXIST, so picking one means "this
+  // value" — never "any value containing this one". Substring matching there is
+  // invisible until two of the real values overlap, and then the table quietly
+  // shows rows the person excluded: filtering to Paid listed the unpaid ones.
+  it("a filter dropdown matches the value picked, not every value containing it", () => {
+    const invoices = [
+      { id: 1, client: { name: "Hartwell" }, status: "paid" },
+      { id: 2, client: { name: "Acme" }, status: "unpaid" },
+    ];
+    render(
+      <DataTable
+        rows={invoices}
+        columns={[{ key: "client.name", label: "Client" }, { key: "status", label: "Status" }]}
+        filterableBy={["status"]}
+      />,
+    );
+    fireEvent.change(screen.getByRole("combobox", { name: "Filter by Status" }), { target: { value: "paid" } });
+    expect(screen.getByText("Hartwell")).toBeTruthy();
+    expect(screen.queryByText("Acme")).toBeNull();
+  });
+
+  // Every filter compares against the text the cell SHOWS. The columns are
+  // formatted — "$2,500.00", "Mar 14, 2026" — while the filters read the raw
+  // field ("250000", "2026-03-14"), so a person searching for what is in front
+  // of them got the empty state, and one searching the raw form got rows whose
+  // text does not contain what they typed.
+  it("searches the text the cells actually show", () => {
+    render(<DataTable rows={rows} columns={columns} searchable />);
+    const search = screen.getByRole("searchbox");
+    fireEvent.change(search, { target: { value: "Mar 14" } });
+    expect(screen.getByText("Hartwell")).toBeTruthy();
+    expect(screen.queryByText("Acme")).toBeNull();
+
+    fireEvent.change(search, { target: { value: "$2,500" } });
+    expect(screen.getByText("Hartwell")).toBeTruthy();
+    expect(screen.queryByText("Borealis")).toBeNull();
+  });
+
+  it("offers filter options in the words the column displays", () => {
+    render(<DataTable rows={rows} columns={columns} filterableBy={["dueDate"]} />);
+    const filter = screen.getByRole("combobox", { name: "Filter by Due" });
+    expect(within(filter).getByRole("option", { name: "Mar 14, 2026" })).toBeTruthy();
+    expect(within(filter).queryByRole("option", { name: "2026-03-14" })).toBeNull();
+
+    fireEvent.change(filter, { target: { value: "Mar 14, 2026" } });
+    expect(screen.getByText("Hartwell")).toBeTruthy();
+    expect(screen.queryByText("Acme")).toBeNull();
+  });
 });
