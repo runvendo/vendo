@@ -9,7 +9,6 @@ import { runEject } from "./cli/eject.js";
 import { runInit, type InitOptions } from "./cli/init.js";
 import { runKnowledge } from "./cli/knowledge/index.js";
 import { runMcp } from "./cli/mcp/index.js";
-import { runServiceKey } from "./cli/service-key.js";
 import { CLI_VERSION } from "./cli/shared.js";
 import { runSync } from "./cli/sync.js";
 
@@ -27,7 +26,6 @@ Advanced:
   eject <surface> [dir]  Copy a shipped chrome surface's presentation source into your repo (--list to see surfaces)
   knowledge <verb> Sync local docs/glossary/API sources into the product knowledge base (add, list, remove, sync)
   mcp <command>   Generate MCP registry discovery and domain-verification files
-  service-key new Mint a key so your own backend can act as one of your users over MCP (--name, --json)
   cloud <command> Use the public Vendo Cloud API
   config <command> Push/pull a .vendo surface to/from hosted config, or show surface owners
 
@@ -157,7 +155,6 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "config") return runConfig(args);
   if (command === "knowledge") return runKnowledge(args);
   if (command === "mcp") return runMcp(args);
-  if (command === "service-key") return runServiceKey(args);
   if (command === "init") {
     const problems = optionErrors(args, INIT_FLAGS, INIT_VALUE_OPTIONS);
     const auth = option(args, "--auth");

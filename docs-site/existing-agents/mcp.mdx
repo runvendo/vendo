@@ -104,16 +104,14 @@ powerful as your backend already is.
 
 <Steps>
   <Step title="Mint a key">
-    ```bash
-    npx vendo service-key new --name backend
-    ```
-
-    It is printed once and stored nowhere — not by the CLI, not by Vendo. Put it
-    in your backend's environment before you close the terminal:
+    A key is any opaque non-empty string — the door never parses one — so a
+    shell one-liner is the whole ceremony:
 
     ```bash
-    VENDO_SERVICE_KEY=vsk_…
+    echo "VENDO_SERVICE_KEY=$(openssl rand -hex 32)" >> .env
     ```
+
+    Vendo neither generates nor stores it. That file is the only copy.
   </Step>
 
   <Step title="List it on the door">

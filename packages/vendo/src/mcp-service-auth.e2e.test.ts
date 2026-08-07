@@ -111,9 +111,10 @@ describe("first-party service auth, end to end through the composed door", () =>
     const { vendo, store } = await composedHost();
 
     // `subject_token` is a bare wire string that goes straight onto a grant's
-    // `refs` and an audit row. Postgres jsonb cannot hold a NUL, so the REAL
-    // store rejects the write mid-exchange — and only the real store can show
-    // it, which is why this lives here and not in the in-memory door harness.
+    // `refs` and an audit row, and Postgres jsonb cannot hold a NUL. The door
+    // refuses one before the write, so this lives against the REAL store
+    // because that is what makes the guard's ABSENCE fail: an in-memory store
+    // holds a NUL happily and would keep this test green with the check gone.
     const response = await vendo.handler(new Request(`${MOUNT}/token`, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },

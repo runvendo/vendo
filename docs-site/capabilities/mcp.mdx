@@ -51,8 +51,8 @@ One exception to that last one: a backend of yours that has to act for a user
 who is **not** at a browser — a nightly job, a queue worker — can run neither
 the OAuth dance nor the in-process pack. `mcp: { serviceAuth: { keys } }` opens
 first-party service auth at the door's own token endpoint for exactly that:
-your backend posts a key (from `vendo service-key new`) plus one of your user
-ids to the door's token endpoint for a ten-minute token bound to that user, then
+your backend posts a key you generated (`openssl rand -hex 32`) plus one of your
+user ids to the door's token endpoint for a ten-minute token bound to that user, then
 talks MCP with it like any other client. Per-user OAuth stays the story for
 anyone else's agent;
 a service key is for code you deploy. See

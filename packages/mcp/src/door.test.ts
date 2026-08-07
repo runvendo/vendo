@@ -41,10 +41,9 @@ const BASE = "https://product.example/api/vendo/mcp";
 const PROXIED_BASE = "http://door.internal:8787/api/vendo/mcp";
 const REDIRECT = "https://client.example/callback";
 const VERIFIER = "a-very-long-pkce-verifier-that-is-valid-for-the-test-suite-1234567890";
-/** Two service keys: one spelled the way `vendo service-key new` mints, one an
- *  arbitrary string, because a key has no format the door checks. The label is
- *  `svc:` plus the first 8 hex of the key's sha256 — pinned literally here so a
- *  change to that derivation cannot pass. */
+/** Two service keys, deliberately spelled nothing alike, because a key has no
+ *  format the door checks. The label is `svc:` plus the first 8 hex of the key's
+ *  sha256 — pinned literally here so a change to that derivation cannot pass. */
 const SERVICE_KEY = "vsk_0123456789abcdef0123456789abcdef0123456789abcdef";
 const SERVICE_KEY_B = "any opaque string will do - the door never parses a key";
 const SERVICE_CLIENT = "svc:5c006a4c";
@@ -2884,11 +2883,19 @@ describe("createMcpDoor first-party service auth", () => {
       ["another server's resource", { resource: "https://other.example/mcp" }, "invalid_target"],
       ["a grant_type nobody serves", { grant_type: "client_credentials" }, "unsupported_grant_type"],
     ];
+    const refusals: string[] = [];
     for (const [name, overrides, error] of rows) {
       const response = await serviceExchange(harness.door, overrides);
       expect(response.status, name).toBe(400);
-      expect(await response.json(), name).toMatchObject({ error });
+      const body = await response.json() as { error: string };
+      expect(body, name).toMatchObject({ error });
+      if (error === "invalid_client") refusals.push(JSON.stringify(body));
     }
+    // Indistinguishable is the whole claim, and the `error` code alone does not
+    // carry it: a description that named the failing half would be an oracle
+    // while every assertion above still passed. The BODIES must be identical.
+    expect(new Set(refusals).size, refusals.join("\n")).toBe(1);
+
     const wrongType = await serviceExchange(harness.door, {}, "application/json");
     expect(wrongType.status).toBe(400);
     expect(await wrongType.json()).toMatchObject({ error: "invalid_request" });
@@ -2936,37 +2943,34 @@ describe("createMcpDoor first-party service auth", () => {
     });
   });
 
-  it("refuses a key list that cannot ever match, LOUDLY, at composition", () => {
+  it("refuses a key list that cannot ever match, LOUDLY, by index and never by value", () => {
     // A key the door can never match is not a security posture, it is a
     // deployment that advertises the grant and answers every exchange with
     // `invalid_client` — the most expensive possible way to learn about an unset
-    // env var, which is the realistic spelling of the mistake and comes first.
-    expect(() => makeHarness({ serviceAuth: { keys: [undefined as unknown as string] } }))
-      .toThrow(/serviceAuth\.keys\[0\]/);
-    expect(() => makeHarness({ serviceAuth: { keys: ["", SERVICE_KEY] } }))
-      .toThrow(/serviceAuth\.keys\[0\]/);
-    // An empty list is the same failure with nothing to point at.
-    expect(() => makeHarness({ serviceAuth: { keys: [] } })).toThrow(/serviceAuth\.keys is empty/);
-    // A good key beside a blank one still fails, and the message names WHICH
-    // entry: a rotation list with a dead slot strands whoever holds that key.
-    expect(() => makeHarness({ serviceAuth: { keys: [SERVICE_KEY, "   "] } }))
-      .toThrow(/serviceAuth\.keys\[1\]/);
+    // env var, which is the realistic spelling of the mistake.
+    const bad: Array<[label: string, keys: readonly string[], names: RegExp]> = [
+      // An empty list is the same failure with nothing to point at.
+      ["an empty list", [], /serviceAuth\.keys is empty/],
+      ["a hole where an env var should be", [undefined as unknown as string], /serviceAuth\.keys\[0\]/],
+      ["a blank first entry", ["", SERVICE_KEY], /serviceAuth\.keys\[0\]/],
+      // A good key beside a blank one still fails, and the message names WHICH
+      // entry: a rotation list with a dead slot strands whoever holds that key.
+      ["a dead slot in a rotation list", [SERVICE_KEY, "   "], /serviceAuth\.keys\[1\]/],
+    ];
+    for (const [label, keys, names] of bad) {
+      expect(() => makeHarness({ serviceAuth: { keys } }), label).toThrow(names);
+      // Every one of these lists still holds LIVE keys. Naming the index is
+      // enough to fix the deployment; echoing a value writes a live credential
+      // into whatever collects the crash.
+      try {
+        makeHarness({ serviceAuth: { keys } });
+      } catch (error) {
+        expect((error as Error).message, label).not.toContain(SERVICE_KEY);
+        expect((error as Error).message, label).not.toContain(SERVICE_KEY.slice(13));
+      }
+    }
     // Anything non-empty is a key. There is no shape to get wrong.
     expect(() => makeHarness({ serviceAuth: { keys: ["not-a-service-key"] } })).not.toThrow();
-  });
-
-  it("never puts a key in the message", () => {
-    // The list that trips the check still holds live keys. Naming the index is
-    // enough to fix the deployment; echoing a value writes a live credential
-    // into whatever collects the crash.
-    const keys = [SERVICE_KEY, "  "];
-    expect(() => makeHarness({ serviceAuth: { keys } })).toThrow(/serviceAuth\.keys\[1\]/);
-    try {
-      makeHarness({ serviceAuth: { keys } });
-    } catch (error) {
-      expect((error as Error).message).not.toContain(SERVICE_KEY);
-      expect((error as Error).message).not.toContain(SERVICE_KEY.slice(13));
-    }
   });
 });
 

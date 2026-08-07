@@ -171,7 +171,8 @@ export class OAuthServer {
     if (serviceKeys !== undefined) {
       if (serviceKeys.length === 0) {
         throw new TypeError(
-          "serviceAuth.keys is empty; list a key from `vendo service-key new`, or drop `serviceAuth` to close the exchange",
+          "serviceAuth.keys is empty; list a key (any opaque string — `openssl rand -hex 32`), "
+          + "or drop `serviceAuth` to close the exchange",
         );
       }
       const blank = serviceKeys.findIndex((key) => !key?.trim());
@@ -422,10 +423,9 @@ export class OAuthServer {
     }
     const form = new URLSearchParams(await req.text());
     const grantType = form.get("grant_type");
-    const serviceKeys = this.#serviceKeys;
     // A door with no `serviceAuth` falls through to unsupported_grant_type.
-    if (grantType === TOKEN_EXCHANGE_GRANT_TYPE && serviceKeys !== undefined) {
-      return this.#exchangeServiceKey(form, resource, serviceKeys);
+    if (grantType === TOKEN_EXCHANGE_GRANT_TYPE && this.#serviceKeys !== undefined) {
+      return this.#exchangeServiceKey(form, resource, this.#serviceKeys);
     }
     if (grantType === "authorization_code") {
       const code = form.get("code");
@@ -686,17 +686,12 @@ export class OAuthServer {
     // wrong client_id, an unknown key and a retired one — anything narrower
     // tells whoever is guessing which half of the credential they have right.
     const hash = await sha256Hex(secret);
-    let clientId: string | null = null;
-    if (form.get("client_id") === SERVICE_CLIENT_ID) {
-      for (const key of keys) {
-        if (equalHashes(await sha256Hex(key), hash)) {
-          // The matched key's name in audit and on the grant.
-          clientId = `svc:${hash.slice(0, 8)}`;
-          break;
-        }
-      }
-    }
-    if (clientId === null) return oauthJsonError("invalid_client", "Service key is not valid for this MCP server");
+    const listed = form.get("client_id") === SERVICE_CLIENT_ID
+      && (await Promise.all(keys.map(sha256Hex))).some((candidate) => equalHashes(candidate, hash));
+    if (!listed) return oauthJsonError("invalid_client", "Service key is not valid for this MCP server");
+    // `hash` is the presented secret's digest, which IS the matched key's — so
+    // this names which key acted without a key value going near it.
+    const clientId = `svc:${hash.slice(0, 8)}`;
     const requestedResource = form.get("resource");
     if (requestedResource !== null && !sameCanonicalUri(requestedResource, resource)) {
       return oauthJsonError("invalid_target", "resource does not identify this MCP server");
