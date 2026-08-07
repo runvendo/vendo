@@ -1988,6 +1988,30 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   const editVersions = new Map<AppId, VersionEntry>();
 
   /**
+   * Why an edit's own save did NOT land, keyed by app — the other return leg of
+   * `editIntents`, and the only one that can say the edit failed.
+   *
+   * A refused save degrades rather than throws (the file is on screen, it just
+   * is not in the store), and the assembler sits between that save and this
+   * runtime, so `authored`'s return value cannot carry the refusal back to
+   * `edit`. Without this, `assembleEdit` re-reads the row, finds the PRE-edit
+   * document, and reports it as the edit — a success receipt for a change that
+   * never happened.
+   *
+   * Keyed by app and matched on the WORDS, exactly like `editVersions`, so two
+   * overlapping edits of one app cannot take each other's refusal.
+   */
+  const editRefusals = new Map<AppId, { intent: string; reason: string }>();
+
+  /** THIS edit's refusal, or nothing. See {@link editRefusals}. */
+  const takeEditRefusal = (appId: AppId, instruction: string): string | undefined => {
+    const recorded = editRefusals.get(appId);
+    if (recorded?.intent !== instruction) return undefined;
+    editRefusals.delete(appId);
+    return recorded.reason;
+  };
+
+  /**
    * THIS edit's captured row, or nothing.
    *
    * The intent match is the correlation: `edit` reports a version, and the only
@@ -2043,6 +2067,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     // own. Clearing can only cost a concurrent edit its captured row, and losing
     // a row means stamping the version the way this door always did.
     editVersions.delete(appId);
+    editRefusals.delete(appId);
     let outcome: Awaited<ReturnType<ScreenAssembler["assemble"]>>;
     try {
       outcome = await config.screen.assemble({
@@ -2056,6 +2081,11 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     }
     if (outcome.kind === "escalate") return { kind: "escalate" };
     if (outcome.kind === "unavailable") return { kind: "failed", issues: [outcome.why] };
+    // The assembler says it saved, and the STORE may have refused that save (see
+    // `editRefusals`). The row below would then read back the pre-edit document
+    // and this door would report it as the edit.
+    const refused = takeEditRefusal(appId, instruction);
+    if (refused !== undefined) return { kind: "failed", issues: [refused] };
     // Through `requireOwned`, so what comes back is the same classified,
     // access-checked document every other door hands out — the row is the answer
     // and it must read identically wherever it is read.
@@ -2985,7 +3015,13 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           // The same degradation create takes on a refused write: the app is on
           // screen, it just is not in the list. Never silent — and never a reason
           // to withhold the data the person can already see.
-          console.error(`[vendo] app not saved (${input.appId}): the harness wrote it as a file but it did not land — ${safeErrorMessage(error)}`);
+          const reason = safeErrorMessage(error);
+          console.error(`[vendo] app not saved (${input.appId}): the harness wrote it as a file but it did not land — ${reason}`);
+          // …and when the save was an EDIT's, the refusal is that edit's answer:
+          // the row still holds the pre-edit document, so `assembleEdit` reading
+          // it back would report an unchanged app as the change (`editRefusals`).
+          const refusedIntent = editIntents.get(input.appId);
+          if (refusedIntent !== undefined) editRefusals.set(input.appId, { intent: refusedIntent, reason });
           // …and a refused save spends no undo point: the appended version's
           // snapshot predates the concurrent edit the refusal just preserved, and
           // `undo()` would write it straight over that edit (see discardVersion).
