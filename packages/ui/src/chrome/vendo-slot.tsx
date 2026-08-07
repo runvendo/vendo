@@ -58,7 +58,7 @@ function SlotGhost({ label, detail, loading = false }: { label: string; detail?:
  * `reason.message` put all of them on a HOST PAGE, the most public surface we
  * have. The developer sentence keeps its home (the server's own error, the
  * browser console); the person looking at this slot is told what it means for
- * THEM. Same treatment as the adoption card (`refusalCopy`) and the
+ * THEM. Same treatment as the grant-set card (`refusalCopy`) and the
  * apps page (`refusalSentence`).
  */
 function loadFailureCopy(reason: unknown): string {

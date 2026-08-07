@@ -68,8 +68,6 @@ import type {
   ShipDiff as UiShipDiff,
   PinDrift as UiPinDrift,
   PinRebaseResult as UiPinRebaseResult,
-  AdoptionVenue as UiAdoptionVenue,
-  AdoptResult as UiAdoptResult,
 } from "@vendoai/ui";
 import type {
   OpenSurface as AppsOpenSurface,
@@ -85,7 +83,6 @@ import type {
   RunStatus as AutomationsRunStatus,
   RunRecord as AutomationsRunRecord,
   RunPlan as AutomationsRunPlan,
-  AdoptionCard as AutomationsAdoptionCard,
 } from "@vendoai/automations";
 import type {
   Thread as AgentThread,
@@ -94,7 +91,6 @@ import type {
 
 type AutomationsEntry = Awaited<ReturnType<AutomationsEngine["list"]>>[number];
 type AutomationsEnableResult = Awaited<ReturnType<AutomationsEngine["enable"]>>;
-type AutomationsAdoptResult = Awaited<ReturnType<AutomationsEngine["adopt"]>>;
 type Assignable<Source, Target> = [Source] extends [Target] ? true : false;
 type Assert<T extends true> = T;
 `;
@@ -131,13 +127,6 @@ type Checks = [
   Assert<Assignable<AgentThread, UiThread>>,
   Assert<Assignable<UiThreadSummary, AgentThreadSummary>>,
   Assert<Assignable<AgentThreadSummary, UiThreadSummary>>,
-  // Build contract §9.9 — the adoption ask rides an app's open payload and its
-  // acceptance comes back off the adopt route, so both shapes cross the wire
-  // and both are declared twice.
-  Assert<Assignable<UiAdoptionVenue, AutomationsAdoptionCard>>,
-  Assert<Assignable<AutomationsAdoptionCard, UiAdoptionVenue>>,
-  Assert<Assignable<UiAdoptResult, AutomationsAdoptResult>>,
-  Assert<Assignable<AutomationsAdoptResult, UiAdoptResult>>,
 ];
 declare const checks: Checks;
 void checks;

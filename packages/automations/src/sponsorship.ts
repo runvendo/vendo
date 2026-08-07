@@ -25,7 +25,7 @@ export const SPONSORSHIPS = "automations:sponsorships";
  *  and a missing row otherwise reads as "never sponsored", which would hand the
  *  automation silently back to the app's owner the next time it fired. With this
  *  marker, marker-present + row-absent means "the sponsor is gone": the run
- *  stops and asks to be adopted. `refs` carry only `app_id`, so a subject erase
+ *  stops. `refs` carry only `app_id`, so a subject erase
  *  cannot reach it and an app erase collects it. */
 export const SPONSORED = "automations:sponsored";
 
@@ -48,11 +48,10 @@ export interface Sponsorship {
   triggerId: string;
   /** The sponsor's subject. An automation always runs as a named person. */
   sponsor: string;
-  /** The sponsor's own display name, as their Principal asserted it at enable or
-   *  adoption (additive to the §9.9 shape, ruled 2026-08-01). Captured with
-   *  their consent in the same moment they take the automation on, so every
-   *  surface can say "Dana" instead of `user_dana` without Vendo ever holding a
-   *  directory. Absent when the host asserts no display name. */
+  /** The sponsor's own display name, as their Principal asserted it at enable.
+   *  Captured with their consent in the same moment they arm the automation, so
+   *  every surface can say "Dana" instead of `user_dana` without Vendo ever
+   *  holding a directory. Absent when the host asserts no display name. */
   display?: string;
   /** Core `intentHash()` over the app's §7 intent at mint time. */
   intentHash: string;
@@ -71,12 +70,6 @@ export const sponsorshipSchema = z.object({
   reason: z.enum(["edit", "departure", "grants"]).optional(),
   invalidatedAt: z.string().optional(),
 }) satisfies z.ZodType<Sponsorship>;
-
-/** The name a person reads for the sponsor: their asserted display name, else
- *  the host's own identifier for them as a last resort. Never a phrase invented
- *  about a real person — an anonymous stand-in is only correct once the row (and
- *  with it the name) is gone, which is why callers handle that case, not this. */
-export const sponsorName = (row: Sponsorship): string => row.display ?? row.sponsor;
 
 /** The tools an automation DECLARES it will use: its steps' host tools, deduped
  *  and `fn:` refs excluded (those are the app's own code, not host authority).
@@ -200,7 +193,7 @@ export const storedSponsorshipSchema = sponsorshipSchema.extend({
  *  - The intent hash is RECOMPUTED under the current formula, which now has the
  *    trigger id in its preimage. Carrying the old hash forward would fail the
  *    fire-time intent check for every still-active pre-list sponsorship, so a
- *    document nobody edited would stop and ask to be adopted.
+ *    document nobody edited would stop.
  *
  * Only `main` can have a pre-list row, so nothing else is even looked for.
  */
@@ -239,35 +232,4 @@ export const migratePreListSponsorship = async (
     moved = true;
   }
   return moved;
-};
-
-/** Claim a stopped automation for a new sponsor. Returns false when another
- *  editor got there first — adoption is first-past-the-post, and the loser is
- *  told so honestly rather than silently overwriting the winner.
- *
- *  Two shapes, because there are two ways an automation stops: an invalidated
- *  row is compare-and-swapped, while an ERASED sponsor left no row at all and
- *  the claim is an insert. Stores with no atomic door re-read and check instead:
- *  it narrows, but cannot close, a cross-process race (the engine's schedule
- *  cursor makes the same trade). */
-export const claimSponsorship = async (
-  records: RecordStore,
-  next: Sponsorship,
-  expected: { kind: "row"; revision?: string } | { kind: "erased" },
-): Promise<boolean> => {
-  const id = triggerKey(next.appId, next.triggerId);
-  const input = { id, data: { ...next }, refs: sponsorshipRefs(next) };
-  if (expected.kind === "erased") {
-    if (records.atomic !== undefined) return await records.atomic.insertIfAbsent(input) !== null;
-    if (await records.get(id) !== null) return false;
-    await records.put(input);
-    return true;
-  }
-  if (records.atomic !== undefined && expected.revision !== undefined) {
-    return await records.atomic.compareAndSwap(input, expected.revision) !== null;
-  }
-  const current = await readSponsorship(records, next.appId, next.triggerId);
-  if (current?.row.status !== "invalidated") return false;
-  await records.put(input);
-  return true;
 };

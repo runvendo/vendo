@@ -37,9 +37,7 @@ import {
 import { Cron } from "croner";
 import jsonata from "jsonata";
 import { z } from "zod";
-import { adoptionCard, type AdoptionCard, type ConsentItem } from "./adoption.js";
 import {
-  claimSponsorship,
   currentIntentHash,
   declaredSurface,
   markSponsored,
@@ -47,7 +45,6 @@ import {
   readSponsorship,
   SPONSORED,
   SPONSORSHIPS,
-  sponsorName,
   sponsorshipSchema,
   storedSponsorshipSchema,
   triggerKey,
@@ -236,9 +233,9 @@ const runRowDataSchema = z.object({
   finishedAt: z.string().optional(),
 });
 
-/** Every stop sentence ends the same way, and must: the list, the adoption card
- *  and the stopped run row all print it, and they have to match byte for byte. */
-const TAKE_IT_ON = " — anyone who can edit this app can take it on";
+/** Every stop sentence ends the same way, and must: the list and the stopped run
+ *  row both print it, and they have to match byte for byte. */
+const TAKE_IT_ON = " — anyone who can edit this app can turn it back on";
 
 /** §9.9 — what a stopped automation says, in the consumer's voice. It names the
  *  automation and what anyone who can edit the app may do about it; the
@@ -249,9 +246,8 @@ const TAKE_IT_ON = " — anyone who can edit this app can take it on";
  *  subject column (02-store §2), and the erase cascade reaches run rows only
  *  through the apps the subject OWNS — which for an org-owned automation is the
  *  org, and the org outlives the person (§9.7). A name written here would
- *  therefore survive its owner's own erasure. The name belongs on the adoption
- *  card and the audit row instead: both are derived from rows the cascade does
- *  reach. */
+ *  therefore survive its owner's own erasure. The name belongs on the audit row
+ *  instead: it is derived from rows the cascade does reach. */
 const SPONSORSHIP_STOP: Record<NonNullable<Sponsorship["reason"]>, (name: string) => string> = {
   edit: (name) => `stopped: ${name} changed after the person who set it up allowed it${TAKE_IT_ON}`,
   departure: (name) => `stopped: the person ${name} ran as no longer has access to it${TAKE_IT_ON}`,
@@ -366,6 +362,14 @@ const stepArgs = async (
   }
   return args;
 };
+
+/** One thing a person is asked to allow for a trigger. A host tool is named by
+ *  its tool; the connector dispatcher is named by the SERVICE ACTION it will
+ *  call, because its tool name is not its action (01-core §5 `service-tool`). */
+interface ConsentItem {
+  tool: string;
+  slug?: string;
+}
 
 /** The identity of a consent item — what "already asked for this" means, and
  *  therefore what two different service actions must NOT collapse into. */
@@ -529,10 +533,10 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
 
   /** The app, for a caller allowed to CHANGE it — null when it is absent OR the
    *  caller cannot edit it, because those two answer alike everywhere. §8's
-   *  editor = edit, and §13's adoption makes an editor the person an automation
-   *  runs as, so arming, disarming and previewing are theirs too — not the
-   *  owner's alone. With no access seam configured this is exactly the ownership
-   *  check it replaces. */
+   *  editor = edit, and arming makes an editor the person an automation runs as,
+   *  so arming, disarming and previewing are theirs too — not the owner's alone.
+   *  With no access seam configured this is exactly the ownership check it
+   *  replaces. */
   const editableAppOrNull = async (
     appId: string,
     ctx: RunContext,
@@ -550,7 +554,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   };
 
   /** The named trigger of an app, validated — the door every per-trigger
-   *  ceremony (enable, adopt, dryRun) goes through. A trigger id the document
+   *  ceremony (enable, dryRun) goes through. A trigger id the document
    *  does not declare is a caller's mistake, not an empty answer. */
   const declaredTrigger = (doc: AppDocument, triggerId: string): Trigger => {
     const declared = triggerOf(doc, triggerId);
@@ -951,8 +955,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   /** §9.9's fire-time gate, in ONE place: a run may proceed only while the
    *  sponsorship is active, the stored intent still matches the live document,
    *  and the sponsor can still edit the app. Any failure marks the sponsorship
-   *  invalidated — which IS the adoption card (the card is derived state, not a
-   *  second row) — and the caller stops the run loudly before any tool call. */
+   *  invalidated and the caller stops the run loudly before any tool call. */
   const sponsorshipRefusal = async (
     app: AppRow,
     trigger: Trigger,
@@ -1638,10 +1641,8 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   /** The tools a consent moment has to ask THIS subject about: the automation's
    *  surface minus whatever they already hold a live standing grant for.
    *
-   *  Two callers, one routine (07 §3): enable(), where the owner arms the
-   *  automation, and adopt() (§9.9), where an editor takes a stopped one on —
-   *  approving its reads and writes AS THEMSELVES, which is exactly the same
-   *  capture under a different subject. */
+   *  One caller (07 §3): enable(), where the person arming the automation
+   *  approves its reads and writes AS THEMSELVES. */
   const captureGrants = async (
     doc: AppDocument,
     trigger: Trigger,
@@ -1822,9 +1823,9 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     );
     // §9.9 — enabling is what names the sponsor: the person arming an
     // automation is the person it runs as, bound to the intent they just saw.
-    // A re-enable refreshes both, which is how an invalidated automation its
-    // OWNER re-arms comes back without an adoption card. Per TRIGGER, because
-    // that is the thing they just looked at and allowed.
+    // A re-enable refreshes both, which is how an invalidated automation comes
+    // back. Per TRIGGER, because that is the thing they just looked at and
+    // allowed.
     await writeSponsorship(sponsorships(), {
       appId,
       triggerId: trigger.id,
@@ -1922,15 +1923,13 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
         }
       }
     }
-    // An adopted automation runs as its SPONSOR, who may not own the app — and
-    // the person it runs as has to be able to see it (§8: editor = edit). The
+    // An automation runs as its SPONSOR, who may not own the app — and the
+    // person it runs as has to be able to see it (§8: editor = edit). The
     // sponsorship rows are ref'd by subject, so this is one indexed query, never
     // a scan of everybody's apps.
     //
-    // E8-F2 — INVALIDATED rows are included on purpose. A stopped automation
-    // used to vanish from here, leaving the adoption card the only mention of it
-    // anywhere: dismiss the card, or never open the app, and there was no way
-    // back to it at all.
+    // E8-F2 — INVALIDATED rows are included on purpose: a stopped automation
+    // must not vanish from here, or there is no way back to it at all.
     // Deduped: sponsorship is per (app, trigger), so sponsoring two triggers of
     // one app must still fetch that app once.
     // Read with the ON-DISK schema, not the contract one: a pre-list row carries
@@ -1989,8 +1988,8 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
           const sponsor = sponsorship?.sponsor ?? row.subject;
           const display = sponsorship?.display ?? (sponsor === subject ? ctx.principal.display : undefined);
           // E8-F2 — a stopped automation says so HERE, in the same sentence the
-          // adoption card and the stopped run row use, so the list is a way back to
-          // it rather than a place it silently disappeared from.
+          // stopped run row uses, so the list is a way back to it rather than a
+          // place it silently disappeared from.
           const stopped = sponsorship?.status === "invalidated"
             ? stopFor(sponsorship.reason ?? "edit", row.doc.name)
             : undefined;
@@ -2047,86 +2046,6 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     if (hash !== row.intentHash) {
       await writeSponsorship(sponsorships(), { ...row, intentHash: hash });
     }
-  };
-
-  /** The stopped shape for one trigger, or undefined when it is not waiting. */
-  const waitingFor = async (
-    doc: AppDocument,
-    triggerId: string,
-  ): Promise<
-    | { reason: NonNullable<Sponsorship["reason"]>; sponsor?: string; stoppedAt?: string }
-    | undefined
-  > => {
-    const state = await sponsorshipState(doc, triggerId);
-    // The sponsor's row was erased with their data: the ask is real, and it is
-    // anonymous — the name went with the erase and must not come back.
-    if (state.kind === "erased") return { reason: "departure" };
-    if (state.kind !== "row" || state.row.status !== "invalidated") return undefined;
-    return {
-      reason: state.row.reason ?? "edit",
-      sponsor: sponsorName(state.row),
-      ...(state.row.invalidatedAt === undefined ? {} : { stoppedAt: state.row.invalidatedAt }),
-    };
-  };
-
-  const adoption: AutomationsEngine["adoption"] = async (appId, ctx) => {
-    // Served ONLY to editors+: a viewer sees the app, not the ask. Nothing is
-    // pushed to anybody — the card waits here for whoever opens the app next.
-    const found = await editableAppOrNull(appId, ctx);
-    if (found === null) return undefined;
-    // The open payload carries ONE card, so several stopped triggers surface one
-    // at a time, in declaration order: taking the first on reveals the next.
-    for (const trigger of triggersOf(found.row.doc)) {
-      const waiting = await waitingFor(found.row.doc, trigger.id);
-      if (waiting === undefined) continue;
-      // The card says exactly what adopting will grant, because it is derived
-      // from the surface `adopt()` captures from — not from a second guess at it.
-      const byName = await descriptors(ctx);
-      return adoptionCard(
-        found.row.doc,
-        trigger,
-        { triggerId: trigger.id, ...waiting },
-        byName,
-        await consentSurface(trigger, byName),
-      );
-    }
-    return undefined;
-  };
-
-  const adopt: AutomationsEngine["adopt"] = async (appId, triggerId, ctx) => {
-    const found = await editableApp(appId, ctx);
-    const state = await sponsorshipState(found.row.doc, triggerId);
-    // Adoptable from either stopped shape: an invalidated row, or an erased
-    // sponsor who left no row behind.
-    const claimable = state.kind === "erased"
-      || (state.kind === "row" && state.row.status === "invalidated");
-    if (!claimable) return { adopted: false, missing: [], reason: "already-adopted" };
-    const trigger = declaredTrigger(found.row.doc, triggerId);
-    // Approvals stay strictly SELF-SUBJECT: the adopter approves the
-    // automation's reads and writes as themselves, through the existing
-    // approvals door, and the grant set is minted under their subject.
-    const { missing, grantSetId } = await captureGrants(
-      found.row.doc,
-      trigger,
-      await descriptors(ctx),
-      ctx,
-    );
-    const swapped = await claimSponsorship(sponsorships(), {
-      appId,
-      triggerId: trigger.id,
-      sponsor: ctx.principal.subject,
-      ...(ctx.principal.display === undefined ? {} : { display: ctx.principal.display }),
-      intentHash: currentIntentHash(found.row.doc, trigger),
-      status: "active",
-    }, state.kind === "erased"
-      ? { kind: "erased" }
-      : { kind: "row", ...(state.revision === undefined ? {} : { revision: state.revision }) });
-    // First editor+ to complete wins; the loser is told the truth rather than
-    // silently overwriting the winner. Their own asks stand — they are that
-    // person's standing grants for an app they can edit, and the engine already
-    // projects them as "waiting on N permissions".
-    if (!swapped) return { adopted: false, missing: [], reason: "already-adopted" };
-    return { adopted: true, missing, ...(missing.length === 0 ? {} : { grantSetId }) };
   };
 
   const runTick: AutomationsEngine["tick"] = async (providedNow) => {
@@ -2586,7 +2505,5 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     runs: { get: runsGet, list: runsList, stop: runsStop, rerun: runsRerun },
     dryRun,
     onDocumentEdit,
-    adoption,
-    adopt,
   };
 };

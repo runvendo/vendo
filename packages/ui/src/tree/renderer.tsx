@@ -25,8 +25,7 @@ import {
 } from "react";
 import { useVendoThemeOrDefault } from "../context.js";
 import { themeCssVariables } from "../theme.js";
-import { ADOPTION_VENUE_KEY, AdoptionVenueCard } from "../chrome/adoption-card.js";
-import type { AdoptionVenue, InClientVenue, PinDrift } from "../wire-types.js";
+import type { InClientVenue, PinDrift } from "../wire-types.js";
 import { resolvePointer } from "./bindings.js";
 import { NodeErrorBoundary } from "./error-boundary.js";
 import { FluidReveal } from "./fluid-reveal.js";
@@ -568,20 +567,6 @@ function StatefulTreeView({
   // component sources (a payload extra, like furnishings).
   const componentTools = (tree as WalkTree & { componentTools?: Record<string, string[]> }).componentTools;
   const inClient = (tree as WalkTree & { inClient?: InClientVenue }).inClient;
-  // §9.9 — the adoption ask, when the server attached one for THIS caller (it
-  // only does so for an editor+). Read through the shared key constant, so the
-  // provider side and this side cannot drift into a card nobody ever sees.
-  // Tolerated like every other payload extra: a malformed field is no card,
-  // never a broken surface.
-  const adoptionRaw = (tree as WalkTree & Record<string, unknown>)[ADOPTION_VENUE_KEY];
-  const adoption = typeof adoptionRaw === "object" && adoptionRaw !== null
-    && typeof (adoptionRaw as AdoptionVenue).automation === "string"
-    // The trigger id is load-bearing, not decoration: adopt() acts on ONE
-    // trigger, so a card without it could only guess which.
-    && typeof (adoptionRaw as AdoptionVenue).triggerId === "string"
-    && Array.isArray((adoptionRaw as AdoptionVenue).needs)
-    ? adoptionRaw as AdoptionVenue
-    : undefined;
   // Tolerate a malformed field (like every other payload extra): only an
   // array of well-formed entries renders the notice.
   const pinDriftRaw = (tree as WalkTree & { pinDrift?: unknown }).pinDrift;
@@ -724,10 +709,6 @@ function StatefulTreeView({
       {dataNotice}
       {dropBackNotice}
       {driftNotice}
-      {/* §9.9 — a stopped automation asks IN the app, above its own surface:
-          nothing is pushed to anybody, and the next editor to open it may
-          take it on. */}
-      {adoption === undefined ? null : <AdoptionVenueCard card={adoption} />}
       <NodeRenderer
         nodeId={validation.tree.root}
         ancestry={new Set()}

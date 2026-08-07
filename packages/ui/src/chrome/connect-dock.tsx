@@ -110,7 +110,7 @@ export async function completeConnection(
  * TypeScript call and that environment variable reached whoever was trying to
  * connect their Slack. The developer sentence keeps its home (the server's own
  * error, the dev-mode console); the person is told what it means for THEM.
- * `refusalCopy` in adoption-card is the pattern.
+ * `refusalCopy` in grant-set-card is the pattern.
  */
 export function connectRefusalCopy(reason: unknown, name: string): string {
   const code = (reason as { code?: unknown } | null)?.code;

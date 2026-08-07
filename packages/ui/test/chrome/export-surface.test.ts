@@ -14,12 +14,7 @@ import * as chrome from "../../src/chrome/index.js";
 
 const VALUE_EXPORTS = [
   "ActivityPanel",
-  // Build contract §9.9 — the adoption card: the presentational half, the
-  // client-bound half the app surface renders from venue state, and the
-  // window label the panel and the card share.
-  "ADOPTION_VENUE_KEY",
-  "AdoptionCard",
-  "AdoptionVenueCard",
+  // The window label the panel and the automation card share.
   "sponsorLabel",
   "ApprovalCard",
   "AutomationCard",
@@ -128,7 +123,6 @@ const VALUE_EXPORTS = [
 ] as const;
 
 const TYPE_EXPORTS = [
-  "AdoptionCardProps",
   "ApprovalCardProps",
   "AutomationCardProps",
   "ConnectCardProps",

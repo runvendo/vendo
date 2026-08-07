@@ -17,8 +17,6 @@ import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { createVendoClient } from "../src/client.js";
 import { VendoProvider } from "../src/context.js";
 import {
-  AdoptionCard,
-  AdoptionVenueCard,
   ApprovalCard,
   AutomationCard,
   ConnectCard,
@@ -26,7 +24,6 @@ import {
   type GrantSetPermission,
 } from "../src/chrome/index.js";
 import type { ToolMetaMap } from "../src/chrome/humanize.js";
-import type { AdoptionVenue } from "../src/wire-types.js";
 
 /** Host tool metadata, exactly as a host passes it to `VendoProvider tools`. */
 export const GALLERY_TOOLS: ToolMetaMap = {
@@ -158,19 +155,6 @@ const SCHEDULE: Trigger = {
   run: { kind: "agentic", prompt: "Summarize last week's spending and post it." },
 };
 
-const adoptionVenue = (over: Partial<AdoptionVenue> = {}): AdoptionVenue => ({
-  appId: "app_1",
-  automation: "Friday spending summary",
-  sponsor: "Dana",
-  reason: "edit",
-  stoppedAt: "2026-08-01T17:00:00.000Z",
-  needs: [
-    { tool: "host_invoices_list", title: "Read invoices", risk: "read" },
-    { tool: "slack_SLACK_SEND_MESSAGE", title: "Post to Slack", risk: "write" },
-  ],
-  ...over,
-});
-
 export interface CardCase {
   id: string;
   label: string;
@@ -187,7 +171,6 @@ export const LOGO_CASES = [
   "approval-consequence",
   "grantset-parked",
   "connect-slack",
-  "adoption-waiting-edit",
 ];
 
 export const CARD_CASES: CardCase[] = [
@@ -421,32 +404,6 @@ export const CARD_CASES: CardCase[] = [
         ]}
       />
     ),
-  },
-
-  // ---- AdoptionCard: waiting → adopted ---------------------------------
-  {
-    id: "adoption-waiting-edit",
-    label: "Paused automation — waiting (edited)",
-    note: "sponsorship lapsed after an edit; the first editor takes it on",
-    node: <AdoptionCard card={adoptionVenue()} onAdopt={noop} />,
-  },
-  {
-    id: "adoption-waiting-anonymous",
-    label: "Paused automation — DEGRADED: sponsor erased",
-    note: "no sponsor name survives the erase: the card stays anonymous, never invents one",
-    node: <AdoptionCard card={adoptionVenue({ reason: "departure", sponsor: undefined })} onAdopt={noop} />,
-  },
-  {
-    id: "adoption-adopted",
-    label: "Paused automation — settled (adopted)",
-    note: "the settled record after somebody took it on",
-    node: <AdoptionCard card={adoptionVenue({ reason: "grants" })} state="adopted" />,
-  },
-  {
-    id: "adoption-venue",
-    label: "Paused automation — in-app venue card",
-    note: "the same ask as it appears inside the pinned app",
-    node: <AdoptionVenueCard card={adoptionVenue()} />,
   },
 
   // ---- AutomationCard --------------------------------------------------

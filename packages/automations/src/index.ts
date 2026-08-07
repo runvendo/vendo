@@ -27,9 +27,6 @@ import type {
 import type { AppsRuntime } from "@vendoai/apps";
 import { createAutomationsEngine } from "./engine.js";
 
-import type { AdoptionCard } from "./adoption.js";
-
-export type { AdoptionCard, AdoptionNeed } from "./adoption.js";
 export { appIntentOf, SPONSORSHIPS, triggerKey, type Sponsorship } from "./sponsorship.js";
 export { UNATTENDED_IRREVERSIBILITY_RULE, unattendedIrreversibilityCheck } from "./law.js";
 
@@ -83,8 +80,8 @@ export interface AutomationsConfig {
    *  kinds for the same data (Vendo Cloud's scheduler + Composio delivery, under the hosted
    *  store — see packages/vendo/src/server.ts) so the two never double-run one automation. */
   localTriggerKinds?: ReadonlySet<"schedule" | "external">;
-  /** Build contract §9.3 — the access seam the fire-time sponsorship check and
-   *  the adoption card ask `can(editor)` through. Absent → ownership only. */
+  /** Build contract §9.3 — the access seam the fire-time sponsorship check asks
+   *  `can(editor)` through. Absent → ownership only. */
   appAccess?: AppAccessSeam;
   /** Build contract §9.1 — the SAME host org query the wire resolves per
    *  request, resolved here per fire. Keyed on Principal (never on a Request)
@@ -158,14 +155,14 @@ export interface AutomationsEngine {
       grantSetId?: string;
       /** §13 — who this trigger runs as, for its window label ("runs with
        *  Dana's access"). `display` rides the sponsorship row, captured from the
-       *  sponsor's own Principal when they took the automation on, so it reads the
+       *  sponsor's own Principal when they armed the automation, so it reads the
        *  same for everyone: Vendo still holds no directory and invents no name. */
       sponsor?: { subject: string; display?: string };
-      /** §9.9 — set exactly while this trigger is STOPPED and waiting to be
-       *  adopted. `summary` is the same consumer sentence the adoption card and
-       *  the stopped run row carry, so the list is a route back to a paused
-       *  automation instead of the one place it vanished from (E8-F2). It never
-       *  names the sponsor: this string is read by anyone who can edit the app. */
+      /** Set exactly while this trigger is STOPPED. `summary` is the same
+       *  consumer sentence the stopped run row carries, so the list is a route
+       *  back to a paused automation instead of the one place it vanished from
+       *  (E8-F2). It never names the sponsor: this string is read by anyone who
+       *  can edit the app. */
       stopped?: { reason: "edit" | "departure" | "grants"; summary: string };
     }>;
     /** How many principals hold a grant on the app, when an access seam is
@@ -205,41 +202,6 @@ export interface AutomationsEngine {
    *  side: an edit by anyone other than the sponsor invalidates sponsorship;
    *  the sponsor's own edit re-binds the intent instead. */
   onDocumentEdit(previous: AppDocument, next: AppDocument, editor: string): Promise<void>;
-
-  /** Build contract §9.9 — the adoption card as additive venue state on the
-   *  app's open payload. `undefined` when nothing is waiting or the caller
-   *  cannot edit the app: nothing is pushed, the card waits IN the app.
-   *
-   *  THE COMPOSITION CONTRACT, stated here because two packages have to agree on
-   *  it: the card rides the open payload under the key **`adoption`** —
-   *  `payload.adoption` — which is exactly what `@vendoai/ui`'s tree renderer
-   *  reads (`ADOPTION_VENUE_KEY` in `chrome/adoption-card.tsx`, asserted by its
-   *  own test). The venue-state provider the apps runtime calls is therefore:
-   *
-   *  ```ts
-   *  async (app, ctx) => {
-   *    const card = await automations.adoption(app.id, ctx);
-   *    return card === undefined ? undefined : { adoption: card };
-   *  }
-   *  ```
-   *
-   *  Any other key attaches a card nobody ever sees.
-   *
-   *  Sponsorship is per (app, trigger), so a card is about ONE trigger and names
-   *  it (`AdoptionCard.triggerId`). The open payload carries a single card, so
-   *  when several of an app's triggers are waiting this answers for the first in
-   *  declaration order and the next one surfaces once that is taken on. */
-  adoption(appId: AppId, ctx: RunContext): Promise<AdoptionCard | undefined>;
-
-  /** Take a stopped trigger on: approve its reads and writes as YOURSELF
-   *  (approvals stay strictly self-subject) and become its sponsor. The first
-   *  editor+ to complete wins; the loser hears `already-adopted`. */
-  adopt(appId: AppId, triggerId: string, ctx: RunContext): Promise<{
-    adopted: boolean;
-    missing: ApprovalRequest[];
-    grantSetId?: string;
-    reason?: "already-adopted";
-  }>;
 }
 
 /** 07 §1 — the engine. */

@@ -171,12 +171,3 @@ export function accessForPath(ctx: RunContext, level: AccessLevel, path: string)
   // mount is the membership's.
   return app === undefined ? { decision: true } : { app };
 }
-
-/** The payload key the §9.9 adoption ask rides on an app's open surface
- *  (`payload.adoption`). It lives HERE, in the one package both sides depend
- *  on, because three of them have to agree: the automations engine produces
- *  the card, the composition seam attaches it under this key, and the tree
- *  renderer reads it. The server cannot import the renderer's package (React),
- *  so a constant owned by either end would have to be duplicated at the other
- *  — and a silent disagreement is a card nobody ever sees. */
-export const ADOPTION_VENUE_KEY = "adoption";

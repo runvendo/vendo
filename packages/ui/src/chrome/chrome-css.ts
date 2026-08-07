@@ -2150,7 +2150,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 
 /* ================== card shell (spec §16, one shell three laws) ==================
    The ONE geometry every consent/status card wears — approval, connect,
-   standing-access, automation, adoption, resolved — on every surface (thread,
+   standing-access, automation, resolved — on every surface (thread,
    queue, activities, sheet, voice, embeds, center). Contents differ; geometry
    never does. Components land in Lane B (chrome/card-shell.tsx).
 

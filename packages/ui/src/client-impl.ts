@@ -248,7 +248,6 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
       enable: (id, triggerId) => json(`/automations/${idPath(id)}/enable/${idPath(triggerId)}`, "POST"),
       disable: (id, triggerId) => json(`/automations/${idPath(id)}/disable/${idPath(triggerId)}`, "POST"),
       dryRun: (id, triggerId) => json(`/automations/${idPath(id)}/dry-run/${idPath(triggerId)}`, "POST"),
-      adopt: (id, triggerId) => json(`/automations/${idPath(id)}/adopt/${idPath(triggerId)}`, "POST"),
     },
     runs: {
       list: filter => {

@@ -244,9 +244,6 @@ export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
         ],
         grantsMissing: [],
       }),
-      // The playground has no sponsorship state to lapse, so nothing is ever
-      // waiting to be taken on.
-      adopt: async () => ({ adopted: false, missing: [], reason: "already-adopted" as const }),
     },
 
     runs: {

@@ -381,7 +381,7 @@ describe("sponsorship — the re-run gate", () => {
    *  hold, and the previous sponsor's ask grants them nothing. */
   it("re-runs as the new sponsor after the automation changes hands, granting the old one nothing", async () => {
     const store = memoryStoreAdapter();
-    const app = oneWriteStep("app_rerun_adopted", "inv_42");
+    const app = oneWriteStep("app_rerun_rearmed", "inv_42");
     const { engine, guard, calls } = harness(
       { store, appAccess: appAccessStub(["user_dana", "user_omar"]) },
       missOnce(store),
@@ -394,9 +394,9 @@ describe("sponsorship — the re-run gate", () => {
     // Dana's outstanding ask, before anything changes hands.
     const danasAsk = await liveAsk(store);
     // The automation changes hands after the failure: someone else edits it, and
-    // a different editor adopts it — so it now runs as Omar.
+    // a different editor re-arms it — so it now runs as Omar.
     await engine.onDocumentEdit(app, app, "user_omar");
-    expect((await engine.adopt(app.id, "main", ctx("user_omar", "Omar"))).adopted).toBe(true);
+    expect((await engine.enable(app.id, "main", ctx("user_omar", "Omar"))).enabled).toBe(true);
 
     guard.decide(danasAsk, true);
     await flush();
@@ -501,7 +501,7 @@ describe("sponsorship — an erased sponsor", () => {
     expect(JSON.stringify(marker?.data)).not.toContain("user_dana");
   });
 
-  it("stops the automation and waits for adoption instead of reverting to the owner", async () => {
+  it("stops the automation instead of reverting to the owner", async () => {
     const app = doc("app_erased_sponsor");
     const { store, engine, calls } = harness({ appAccess: appAccessStub(["user_dana", "user_omar"]) });
     await seedApp(store, app);
@@ -510,12 +510,11 @@ describe("sponsorship — an erased sponsor", () => {
 
     await engine.emit("go", {}, ctx().principal);
 
+    // It did NOT run — not as the owner, not as anybody.
     expect(calls).toEqual([]);
-    const card = await engine.adoption(app.id, ctx("user_omar"));
-    expect(card).toMatchObject({ appId: app.id, reason: "departure" });
-    // Anonymously: the erased subject must not come back through the card.
-    expect(card?.sponsor).toBeUndefined();
-    expect(JSON.stringify(card)).not.toContain("user_dana");
+    // ...and the erased subject does not come back through the list either.
+    const listed = await engine.list(ctx("user_omar"));
+    expect(JSON.stringify(listed)).not.toContain("user_dana");
   });
 
   it("still lets a pre-sponsorship automation (no marker at all) run as its owner", async () => {
@@ -534,14 +533,13 @@ describe("sponsorship — an erased sponsor", () => {
 });
 
 /** F9 — nothing a person reads should say `user_dana`. The sponsor's own
- *  display name is captured at enable and at adoption (their Principal carries
- *  it) and used everywhere the automation talks about them. */
+ *  display name is captured at enable (their Principal carries it) and used
+ *  everywhere the automation talks about them. */
 describe("sponsorship — consumer-voice names", () => {
-  it("captures the sponsor's display name and uses it on the adoption card", async () => {
-    // F8 (wave-3 check) moved the NAME off the persisted run summary and onto
-    // the card: the run row outlives a subject erase, the sponsorship row the
-    // card is derived from does not. The consumer-voice law is unchanged —
-    // nothing a person reads says `user_dana`.
+  it("captures the sponsor's display name, and keeps it off the run summary", async () => {
+    // F8 (wave-3 check) moved the NAME off the persisted run summary: the run
+    // row outlives a subject erase, the sponsorship row does not. The
+    // consumer-voice law is unchanged — nothing a person reads says `user_dana`.
     const app = doc("app_named");
     const { store, engine } = harness();
     await seedApp(store, app);
@@ -551,24 +549,9 @@ describe("sponsorship — consumer-voice names", () => {
     await engine.onDocumentEdit(app, app, "user_omar");
     const runIds = await engine.emit("go", {}, ctx().principal);
     const run = await engine.runs.get(runIds[0]!, ctx());
-    const card = await engine.adoption(app.id, ctx("user_dana", "Dana"));
 
-    expect(card?.sponsor).toBe("Dana");
     expect(run?.summary).not.toContain("Dana");
     expect(run?.summary).not.toContain("user_dana");
-  });
-
-  it("says something human when no display name was ever asserted", async () => {
-    const app = doc("app_unnamed");
-    const { store, engine } = harness();
-    await seedApp(store, app);
-    await engine.enable(app.id, "main", ctx());
-    await engine.onDocumentEdit(app, app, "user_omar");
-    const card = await engine.adoption(app.id, ctx());
-
-    // The subject is the only identifier the host gave us; it is the last
-    // resort, not a phrase invented about a real person.
-    expect(card?.sponsor).toBe("user_dana");
   });
 });
 
@@ -713,110 +696,22 @@ describe("sponsorship — consent rows join the erase cascade", () => {
   });
 });
 
-describe("sponsorship — the adoption card", () => {
-  it("appears for an editor once the automation stops, and never for a non-editor", async () => {
-    const app = doc("app_card");
-    const { store, engine } = harness({ appAccess: appAccessStub(["user_dana", "user_omar"]) });
-    await seedApp(store, app);
-    await engine.enable(app.id, "main", ctx());
-
-    // Nothing to adopt while the sponsorship holds.
-    expect(await engine.adoption(app.id, ctx("user_omar"))).toBeUndefined();
-
-    await engine.onDocumentEdit(app, app, "user_omar");
-    const card = await engine.adoption(app.id, ctx("user_omar"));
-
-    expect(card).toMatchObject({
-      appId: app.id,
-      automation: app.name,
-      sponsor: "user_dana",
-      reason: "edit",
-    });
-    // §12 completeness: one line per read/write, real titles, material
-    // arguments where they exist — never one summary line for a compound.
-    expect(card?.needs).toEqual([
-      { tool: readTool.name, title: readTool.name, description: readTool.description, risk: "read" },
-      {
-        tool: writeTool.name,
-        title: writeTool.name,
-        description: writeTool.description,
-        risk: "write",
-        args: { invoice: "'inv_42'" },
-      },
-    ]);
-
-    expect(await engine.adoption(app.id, ctx("user_stranger"))).toBeUndefined();
-  });
-});
-
-describe("sponsorship — adoption", () => {
-  it("re-mints the grants under the adopter, and the automation then runs as them", async () => {
-    const app = doc("app_adopt");
-    const { store, guard, engine, calls } = harness({ appAccess: appAccessStub(["user_dana", "user_omar"]) });
-    await seedApp(store, app);
-    await engine.enable(app.id, "main", ctx());
-    await engine.onDocumentEdit(app, app, "user_omar");
-
-    const adopted = await engine.adopt(app.id, "main", ctx("user_omar"));
-
-    expect(adopted.adopted).toBe(true);
-    expect(adopted.missing.map((request) => request.call.tool)).toEqual([readTool.name, writeTool.name]);
-    expect(adopted.missing.every((request) => request.ctx.principal.subject === "user_omar")).toBe(true);
-    expect(await sponsorshipRow(store, app.id)).toMatchObject({
-      sponsor: "user_omar", status: "active", intentHash: intentHash(appIntentOf(app, app.triggers?.[0])),
-    });
-
-    for (const request of adopted.missing) guard.decide(request.id, true);
-    await flush();
-    const grants = (await store.records("vendo_grants").list()).records;
-    expect(grants.map((record) => (record.data as { subject: string }).subject)).toEqual(["user_omar", "user_omar"]);
-
-    await engine.emit("go", {}, ctx().principal);
-    expect(calls).toHaveLength(2);
-    expect(calls[0]?.ctx.principal.subject).toBe("user_omar");
-  });
-
-  it("lets exactly one editor win — the loser hears that it is already adopted", async () => {
-    const app = doc("app_race");
-    const { store, engine } = harness({ appAccess: appAccessStub(["user_dana", "user_omar", "user_zoe"]) });
-    await seedApp(store, app);
-    await engine.enable(app.id, "main", ctx());
-    await engine.onDocumentEdit(app, app, "user_omar");
-
-    expect((await engine.adopt(app.id, "main", ctx("user_omar"))).adopted).toBe(true);
-    const loser = await engine.adopt(app.id, "main", ctx("user_zoe"));
-
-    expect(loser).toMatchObject({ adopted: false, reason: "already-adopted" });
-    expect(await sponsorshipRow(store, app.id)).toMatchObject({ sponsor: "user_omar" });
-  });
-
-  it("refuses a non-editor", async () => {
-    const app = doc("app_adopt_denied");
-    const { store, engine } = harness({ appAccess: appAccessStub(["user_dana"]) });
-    await seedApp(store, app);
-    await engine.enable(app.id, "main", ctx());
-    await engine.onDocumentEdit(app, app, "user_omar");
-
-    await expect(engine.adopt(app.id, "main", ctx("user_stranger"))).rejects.toThrow(/not found/i);
-  });
-});
-
-/** F6 — after adoption the automation runs as the ADOPTER, who may not own the
- *  app. §8's editor = edit, so every door the owner has is the editor's too —
- *  otherwise the person it runs as cannot see it, pause it, or stop it. */
+/** F6 — an automation runs as its SPONSOR, who may not own the app. §8's
+ *  editor = edit, so every door the owner has is the editor's too — otherwise
+ *  the person it runs as cannot see it, pause it, or stop it. */
 describe("sponsorship — an editor's doors", () => {
-  const adopted = async (): Promise<Harness & { app: AppDocument }> => {
+  const editorSponsored = async (): Promise<Harness & { app: AppDocument }> => {
     const app = doc("app_editor_doors");
     const bench = harness({ appAccess: appAccessStub(["user_dana", "user_omar"]) });
     await seedApp(bench.store, app);
-    await bench.engine.enable(app.id, "main", ctx("user_dana", "Dana"));
-    await bench.engine.onDocumentEdit(app, app, "user_omar");
-    await bench.engine.adopt(app.id, "main", ctx("user_omar", "Omar"));
+    // Omar is an editor, not the owner: arming is his door too, and it makes
+    // him the person the automation runs as.
+    await bench.engine.enable(app.id, "main", ctx("user_omar", "Omar"));
     return { ...bench, app };
   };
 
   it("lists the automation for the person it now runs as", async () => {
-    const { engine, app } = await adopted();
+    const { engine, app } = await editorSponsored();
 
     const [entry] = await engine.list(ctx("user_omar", "Omar"));
 
@@ -825,7 +720,7 @@ describe("sponsorship — an editor's doors", () => {
   });
 
   it("names the sponsor to the OWNER too, from the row rather than the caller", async () => {
-    const { engine } = await adopted();
+    const { engine } = await editorSponsored();
 
     const [entry] = await engine.list(ctx("user_dana", "Dana"));
 
@@ -833,7 +728,7 @@ describe("sponsorship — an editor's doors", () => {
   });
 
   it("lets an editor see, dry-run, stop and disable it — and a stranger none of that", async () => {
-    const { engine, app, store } = await adopted();
+    const { engine, app, store } = await editorSponsored();
     const [runId] = await engine.emit("go", {}, ctx().principal);
 
     const editor = ctx("user_omar", "Omar");
@@ -852,7 +747,7 @@ describe("sponsorship — an editor's doors", () => {
   });
 
   it("stops a run for the editor it runs as", async () => {
-    const { engine, app } = await adopted();
+    const { engine, app } = await editorSponsored();
     const { store } = harness();
     void store;
     const editor = ctx("user_omar", "Omar");
@@ -902,12 +797,12 @@ describe("sponsorship — the window label", () => {
  *  2. It is not reachable by a subject erase. `vendo_runs` has no subject column
  *     (02-store §2), so the cascade reaches run rows only through the apps the
  *     subject OWNS — and for an ORG-owned automation the owner is the org, which
- *     outlives the person (§9.7). Adoption is exactly what makes sponsor ≠
- *     row-owner possible, so this wave created the case.
+ *     outlives the person (§9.7). An editor arming an app they do not own is
+ *     exactly what makes sponsor ≠ row-owner possible.
  *
  *  So the persisted row may carry neither a person's NAME nor a host system's
- *  raw error text. The live, derived surfaces (the adoption card, the audit
- *  trail) carry both — and both ARE erasable. */
+ *  raw error text. The live, derived surfaces (the list, the audit trail) carry
+ *  both — and both ARE erasable. */
 describe("sponsorship — what the stopped run row is allowed to say", () => {
   /** The raw persisted row, not the gated `runs.get` projection: what survives
    *  an erase is what is ON DISK, whoever can or cannot read it back. */
@@ -941,9 +836,9 @@ describe("sponsorship — what the stopped run row is allowed to say", () => {
     expect((await runRow(store, runId!)).summary).toMatch(/permissions/i);
   });
 
-  it("keeps the sponsor's NAME off the run row, while the adoption card still says it", async () => {
+  it("keeps the sponsor's NAME off the run row", async () => {
     const editors = new Set(["user_dana", "user_omar"]);
-    const { store, engine, app } = await orgHarness("app_name_survives", editors);
+    const { store, engine } = await orgHarness("app_name_survives", editors);
 
     editors.delete("user_dana");
     const [runId] = await engine.emit("go", {}, { kind: "user", subject: "maple" });
@@ -954,9 +849,9 @@ describe("sponsorship — what the stopped run row is allowed to say", () => {
     expect(persisted).not.toContain("Dana");
     expect(persisted).not.toContain("user_dana");
 
-    // The name is not lost to the product: the card is derived from the
-    // sponsorship row, which an erase DOES collect.
-    expect(await engine.adoption(app.id, ctx("user_omar"))).toMatchObject({ sponsor: "Dana" });
+    // The name is not lost to the product: it lives on the sponsorship row,
+    // which an erase DOES collect.
+    expect(JSON.stringify(await store.records(SPONSORSHIPS).list())).toContain("Dana");
   });
 
   it("says a broken identity seam in the consumer's voice, and audits the raw failure", async () => {
@@ -985,7 +880,7 @@ describe("sponsorship — what the stopped run row is allowed to say", () => {
  *  automation outside the app itself, so anything it hides is, in practice, gone:
  *  promote deliberately disarms the automation and the Share dialog promises it
  *  "stays off until someone turns it back on", and an invalidated sponsorship
- *  leaves the adoption card as the only mention anywhere. */
+ *  used to leave no mention anywhere. */
 describe("sponsorship — an automation the caller can edit is an automation they can SEE", () => {
   const withOrg = (subject: string, org = "maple"): RunContext =>
     ({ ...ctx(subject), memberships: [{ org }] }) as RunContext;
@@ -1010,7 +905,7 @@ describe("sponsorship — an automation the caller can edit is an automation the
   });
 
   it("keeps a STOPPED automation visible to its sponsor, with the honest stopped state", async () => {
-    // A personal app Dana ADOPTED: she is the sponsor and not the owner, so
+    // A personal app Dana sponsors but does not own, so
     // `sponsoredElsewhere` is her only route to it — and it dropped every row
     // whose sponsorship was not `active`, which is exactly the paused ones.
     const app = doc("app_paused");
@@ -1031,7 +926,7 @@ describe("sponsorship — an automation the caller can edit is an automation the
 
     expect(listed.map((entry) => entry.app.id)).toEqual([app.id]);
     expect(listed[0]?.triggers[0]?.stopped).toMatchObject({ reason: "edit" });
-    expect(listed[0]?.triggers[0]?.stopped?.summary).toMatch(/anyone who can edit this app can take it on/);
+    expect(listed[0]?.triggers[0]?.stopped?.summary).toMatch(/anyone who can edit this app can turn it back on/);
   });
 });
 
@@ -1102,7 +997,7 @@ describe("sponsorship — a member's event fires the org's automation", () => {
     expect(calls).toEqual([]);
     const run = await engine.runs.get(ids[0]!, ctx("user_dana"));
     expect(run?.status).toBe("error");
-    expect(run?.summary).toMatch(/anyone who can edit this app can take it on/);
+    expect(run?.summary).toMatch(/anyone who can edit this app can turn it back on/);
     expect(await sponsorshipRow(store, app.id)).toMatchObject({ status: "invalidated" });
   });
 });

@@ -613,7 +613,7 @@ export function AutomationsPanel({ pollMs = AUTOMATIONS_POLL_MS }: AutomationsPa
                           )}
                         </div>
                         {/* §9.9 — WHY it stopped, in the server's own consumer sentence
-                            (the same one the adoption card carries, so the list and the
+                            (the same one the stopped run row carries, so the list and the
                             card never say two different things). The card in the app is
                             where it gets taken on; this is how it gets found. */}
                         {row.stopped === undefined ? null : (

@@ -63,7 +63,7 @@ const twinDoc = (appId: AppId): AppDocument => automationDoc({
  * The harness's `createStack` with the two extra seams this suite needs, and
  * nothing else: a caller-owned `dataDir` (so one PGlite database can be CLOSED
  * and REOPENED under a completely fresh engine + guard — the reload leg), and an
- * `editors` list behind the `appAccess` seam (so a second person can adopt).
+ * `editors` list behind the `appAccess` seam (so a second person can edit).
  */
 interface AttackStack extends Stack {
   /** A SECOND engine over the SAME store — two authorities ticking one
@@ -390,80 +390,21 @@ describe("attack 2b — a pre-list STOPPED automation must not silently run agai
         refs: { app_id: appId },
       });
 
-      // §9.9: a stopped automation does not run — it waits to be adopted. The
-      // rekey must not hand it back to the app's owner.
+      // A stopped automation does not run. The rekey must not hand it back to
+      // the app's owner.
       const [runId] = await stack.automations.emit("legacy.stopped", { id: PROBE }, ADA);
       const run = runId === undefined
         ? undefined
         : await stack.automations.runs.get(runId, ownerCtx(ADA.subject, appId));
       expect(run?.status ?? "not-fired").not.toBe("ok");
       expect(await probeMemo()).not.toBe("stopped-ran");
-      // …and the ask is still there to be taken on.
-      expect(await stack.automations.adoption(appId, ownerCtx(ADA.subject, appId))).toBeDefined();
+      // …and the row is still stopped afterwards, not quietly revived.
+      expect(await stack.sql<{ status: string }>(
+        `SELECT data->>'status' AS status
+           FROM vendo_records WHERE collection = 'automations:sponsorships' ORDER BY id`,
+      )).toEqual([{ status: "invalidated" }]);
     } finally {
       await stack.close();
-    }
-  });
-});
-
-describe("attack 3 — adoption is per trigger", () => {
-  beforeEach(resetFixture);
-
-  it("mints and moves nothing for the trigger that was not adopted", async () => {
-    const dataDir = await mkdtemp(join(tmpdir(), "vendo-per-trigger-adopt-"));
-    const appId = "app_adopt_two";
-    const stack = await compose({ dataDir, editors: [ADA.subject, BOB.subject] });
-    try {
-      const doc = automationDoc({
-        id: appId,
-        name: "Two ways",
-        triggers: [
-          { id: "reader", on: { kind: "host-event", event: "adopt.read" }, run: { kind: "steps", steps: [listStep] } },
-          { id: "sender", on: { kind: "host-event", event: "adopt.send" }, run: { kind: "steps", steps: [touchStep("sender-ran")] } },
-        ],
-      });
-      await stack.putApp(ADA.subject, doc);
-      const adaCtx = ownerCtx(ADA.subject, appId);
-      await approve(stack, (await stack.automations.enable(appId, "reader", adaCtx)).missing);
-      await approve(stack, (await stack.automations.enable(appId, "sender", adaCtx)).missing);
-
-      // A third party's edit stops both of ADA's sponsorships.
-      await stack.automations.onDocumentEdit(doc, doc, BOB.subject);
-      const stoppedRows = await stack.sql<{ id: string; status: string; sponsor: string }>(
-        `SELECT id, data->>'status' AS status, data->>'sponsor' AS sponsor
-           FROM vendo_records WHERE collection = 'automations:sponsorships' ORDER BY id`,
-      );
-      expect(stoppedRows).toEqual([
-        { id: `${appId}:reader`, status: "invalidated", sponsor: ADA.subject },
-        { id: `${appId}:sender`, status: "invalidated", sponsor: ADA.subject },
-      ]);
-
-      // BOB takes ON exactly one trigger.
-      const bobCtx = ownerCtx(BOB.subject, appId);
-      const adopted = await stack.automations.adopt(appId, "reader", bobCtx);
-      expect(adopted.adopted).toBe(true);
-      expect(adopted.missing.map((request) => request.call.tool)).toEqual(["host_invoices_list"]);
-      await approve(stack, adopted.missing, BOB);
-
-      // Sponsorship moved for `reader` and ONLY for `reader`.
-      expect(await stack.sql(
-        `SELECT id, data->>'status' AS status, data->>'sponsor' AS sponsor
-           FROM vendo_records WHERE collection = 'automations:sponsorships' ORDER BY id`,
-      )).toEqual([
-        { id: `${appId}:reader`, status: "active", sponsor: BOB.subject },
-        { id: `${appId}:sender`, status: "invalidated", sponsor: ADA.subject },
-      ]);
-
-      // BOB holds authority for `reader` alone — nothing app-wide, nothing for
-      // `sender`, and nothing for a tool `reader` never declared.
-      expect(await grantRows(stack, BOB.subject)).toEqual([
-        { tool: "host_invoices_list", app_id: appId, trigger_id: "reader", source: "automation" },
-      ]);
-      // …and `sender` is still waiting to be taken on, by name.
-      expect((await stack.automations.adoption(appId, bobCtx))?.triggerId).toBe("sender");
-    } finally {
-      await stack.close();
-      await rm(dataDir, { recursive: true, force: true });
     }
   });
 });

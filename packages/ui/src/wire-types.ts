@@ -83,47 +83,6 @@ export type InClientVenue =
   | { granted: false; versionHash: string; reason: "pending-review"; review: ReviewStanding };
 
 /**
- * Build contract §9.9 — the adoption ask riding a tree payload
- * (`payload.adoption`): an automation whose sponsorship lapsed has stopped, and
- * the card WAITS in the app for whoever can edit it to take it on. Nothing is
- * pushed to anybody. SERVER-AUTHORITATIVE: the runtime only attaches it for a
- * caller with `can(editor)`, so its presence is itself the permission check.
- */
-export interface AdoptionVenue {
-  appId: AppId;
-  /** WHICH trigger of the app stopped. Sponsorship is per (app, trigger), so a
-   *  card is about one trigger and `adopt` has to be told which one to take on —
-   *  the app's other triggers may still be running perfectly well. */
-  triggerId: string;
-  /** The automation's user-visible name. */
-  automation: string;
-  /** Who it used to run as, named as they asserted themselves. ABSENT once that
-   *  person's data is erased — the name went with the erase, and the card says
-   *  "someone else" rather than resurrecting an identifier. */
-  sponsor?: string;
-  reason: "edit" | "departure" | "grants";
-  stoppedAt?: IsoDateTime;
-  /** One entry per read and write — never one summary line for a compound. */
-  needs: Array<{
-    tool: string;
-    title: string;
-    description?: string;
-    risk: RiskLabel;
-    args?: Record<string, string>;
-  }>;
-}
-
-/** Build contract §9.9 — what `POST /automations/:id/adopt` returns. `adopted:
- *  false` with `reason: "already-adopted"` is the honest answer for the editor
- *  who lost the race; `missing` carries the adopter's own grant-set asks. */
-export interface AdoptResult {
-  adopted: boolean;
-  missing: ApprovalRequest[];
-  grantSetId?: string;
-  reason?: "already-adopted";
-}
-
-/**
  * 06-apps §8 — one drifted pin riding a tree payload (`payload.pinDrift`):
  * the host updated (or removed) the captured component this fork was remixed
  * from. SERVER-AUTHORITATIVE: only the runtime's baseline comparison writes
@@ -288,11 +247,10 @@ export interface AutomationTriggerEntry {
    *  sponsor: Vendo holds no directory, so a name for anyone else would be
    *  invented; the subject is the honest fallback. */
   sponsor?: { subject: string; display?: string };
-  /** Build contract §9.9 — set exactly while this trigger is STOPPED and
-   *  waiting to be adopted. `summary` is the same consumer sentence the adoption
-   *  card and the stopped run row carry, so the list is a route back to a paused
-   *  automation instead of the one place it vanished from. It never names the
-   *  sponsor: anyone who can edit the app reads it. */
+  /** Set exactly while this trigger is STOPPED. `summary` is the same consumer
+   *  sentence the stopped run row carries, so the list is a route back to a
+   *  paused automation instead of the one place it vanished from. It never names
+   *  the sponsor: anyone who can edit the app reads it. */
   stopped?: { reason: "edit" | "departure" | "grants"; summary: string };
 }
 

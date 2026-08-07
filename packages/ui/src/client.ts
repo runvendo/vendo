@@ -24,7 +24,6 @@ import type {
 } from "@vendoai/core";
 import type { UIMessage } from "ai";
 import type {
-  AdoptResult,
   ApprovalResolution,
   AutomationEntry,
   ConnectableToolkit,
@@ -176,10 +175,6 @@ export interface VendoClient {
     enable(id: AppId, triggerId: string): Promise<EnableResult>;
     disable(id: AppId, triggerId: string): Promise<void>;
     dryRun(id: AppId, triggerId: string): Promise<RunPlan>;
-    /** POST /automations/:id/adopt — build contract §9.9: take a stopped
-     *  automation on, approving its reads and writes as YOURSELF. Editors+
-     *  only; the first to complete wins. */
-    adopt(id: AppId, triggerId: string): Promise<AdoptResult>;
   };
 
   runs: {

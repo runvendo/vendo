@@ -68,7 +68,6 @@ import {
   type AutomationsEngine,
 } from "@vendoai/automations";
 import {
-  ADOPTION_VENUE_KEY,
   RESERVED_SUBJECT_PREFIX,
   VendoError,
   descriptorHash,
@@ -2359,19 +2358,6 @@ export function createVendo(input: CreateVendoConfig): Vendo {
     // invalidation to report.
     onDocumentEdit: async (previous, next, editor) =>
       automationsForArming?.onDocumentEdit(previous, next, editor),
-    // The adoption card is additive venue state on the open payload, under the
-    // one key the tree renderer reads. Without this line the card exists and
-    // nothing can ever show it, so a stopped automation would wait forever.
-    venueState: async (app, ctx) => {
-      // F24 — an app with no trigger has never been an automation, so it has no
-      // sponsorship and nothing to adopt. Answering that from the document the
-      // opener already holds keeps the adoption lookup's two store reads off
-      // EVERY app open in every deployment, including the single-player ones
-      // that have no automations at all.
-      if ((app.triggers ?? []).length === 0) return undefined;
-      const card = await automationsForArming?.adoption(app.id, ctx);
-      return card === undefined ? undefined : { [ADOPTION_VENUE_KEY]: card };
-    },
     // Build contract §9.8 — where the authenticated served-app proxy lives. The
     // wire owns its base path, so it is filled here and nowhere else; the apps
     // block never invents a URL for a door it does not mount.

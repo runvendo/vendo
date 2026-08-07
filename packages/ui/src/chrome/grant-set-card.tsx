@@ -44,7 +44,7 @@ export interface GrantSetPermission {
  *  displaying" on a bank customer's consent card (live, `standing-01-pending`).
  *  The row now says the verb and the thing — the cadence is the card's own
  *  plain-words line — and the only sentence allowed under it is one the HOST
- *  wrote for people (`ToolMeta.description`). Shared with the adoption card so
+ *  wrote for people (`ToolMeta.description`). Shared across consent cards so
  *  both consent surfaces speak one vocabulary. */
 const RISK_WORD: Record<string, string> = {
   read: "Reads",
@@ -98,7 +98,7 @@ const revokePronoun = (count: number): string =>
 
 /** The consumer's half of a refusal (spec §16 law 3) — the same defect the
  *  connect card carried: this card rendered whatever `onDecide` threw, and the
- *  wire's sentences carry app and grant-set ids. `refusalCopy` in adoption-card
+ *  wire's sentences carry app and grant-set ids. `refusalCopy` here
  *  is the pattern; the developer sentence keeps its home in the server log. */
 function refusalCopy(reason: unknown): string {
   const code = (reason as { code?: unknown } | null)?.code;

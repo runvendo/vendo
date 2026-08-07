@@ -16,7 +16,6 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
 import {
-  AdoptionCard,
   ApprovalCard,
   AutomationCard,
   ConnectCard,
@@ -64,18 +63,6 @@ const KINDS: Array<[string, React.ReactNode]> = [
     />,
   ],
   ["connect", <ConnectCard connector="composio" toolkit="slack" message="Connect Slack to post." onConnected={() => undefined} />],
-  [
-    "paused adoption",
-    <AdoptionCard
-      card={{
-        appId: "app_1",
-        automation: "Weekly sweep",
-        reason: "departure",
-        sponsor: "Dana",
-        needs: [{ tool: "host_invoices_list", title: "List invoices", risk: "read" }],
-      }}
-    />,
-  ],
   ["automation", <AutomationCard name="Low balance alert" enabled description="Emails you when checking dips." />],
 ];
 
@@ -157,10 +144,10 @@ describe("one card shell, three laws", () => {
   it("never renders a refusal's developer sentence — the consumer-voice law", () => {
     // §16.3: every sentence the wire throws is written for the host developer
     // (one names an env var, another carries an app id). A card shows what it
-    // means for the PERSON — `refusalCopy` in adoption-card is the pattern.
+    // means for the PERSON — `refusalCopy` in grant-set-card is the pattern.
     // This is a source grep, so it proves the shape the audit caught is gone,
     // not that every string is consumer-voiced.
-    const CARDS = /^(approval-card|approval-sheet|adoption-card|automation-card|connect-card|grant-set-card|embeds|waiting-queue|card-shell|morph-toast)\.tsx$/;
+    const CARDS = /^(approval-card|approval-sheet|automation-card|connect-card|grant-set-card|embeds|waiting-queue|card-shell|morph-toast)\.tsx$/;
     const files = [
       ...readdirSync("src/chrome").filter(name => CARDS.test(name)).map(name => join("src/chrome", name)),
       join("src/voice", "voice-consent.tsx"),

@@ -98,11 +98,8 @@ describe("re-verify — the one-door claim", () => {
         status: "active",
       });
 
-      // CONTROL: one read through the door (the adoption card) migrates the row,
-      // and from then on the list tells the truth — so the row's contents are
-      // reachable and correct, and only the path matters below.
-      expect((await stack.automations.adoption(stoppedApp, ownerCtx(ADA.subject, stoppedApp)))?.triggerId)
-        .toBe("main");
+      // CONTROL: the row's contents are reachable and correct through the
+      // migrating door, so only the path matters below.
       const migrated = await triggerEntry(stack, stoppedApp);
       expect(migrated?.sponsor?.subject).toBe(BOB.subject);
       expect(migrated?.stopped?.reason).toBe("edit");

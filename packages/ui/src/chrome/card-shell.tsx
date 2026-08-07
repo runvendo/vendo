@@ -3,7 +3,7 @@
  *  Every consent/status card in the product is this shell with different
  *  CONTENTS: eyebrow · one-size icon well · title · the mandatory plain-words
  *  line · field rows or a list · actions · byline. Approval, connect,
- *  standing-access, automation, paused/adoption and the resolved record are
+ *  standing-access, automation and the resolved record are
  *  contents only, and every surface that shows one (thread, waiting strip,
  *  activities, mobile sheet, voice, embeds) renders the SAME shell.
  *
@@ -35,7 +35,6 @@ export const CARD_EYEBROWS = {
   connect: "Connect",
   standingAccess: "Standing access",
   automationStatus: "Automation",
-  pausedAdoption: "Paused automation",
   resolved: "Approval",
   waiting: "Waiting on you",
 } as const;
