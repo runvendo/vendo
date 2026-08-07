@@ -31,20 +31,16 @@ export interface SandboxConformanceHarness {
    */
   multiPort: boolean;
   /**
-   * True when resume() mints an INDEPENDENT machine per call (e2b restores
-   * a checkpoint into fresh sandboxes). The Vendo Cloud resume revives the
-   * ONE machine a snapshot came from (pause model, same id) — no fork — so
-   * its harness disables the independent-machines case and the fresh-id
-   * assertion. Tracked Cloud follow-up: resume-from-a-stopped-machine
-   * provisioning a new box would flip this back on.
+   * True when resume() mints an INDEPENDENT machine per call (e2b restores a
+   * checkpoint into fresh sandboxes; Cloud's artifact model does the same). A
+   * pause-model provider that revives the ONE machine a snapshot came from
+   * would set this false and skip the independent-machines and fresh-id cases.
    */
   resumeForks: boolean;
   /**
    * True when resume(ref, policy) can REPLACE the snapshot-time egress
-   * allowlist (e2b, via provider network rules). The Cloud resume takes the
-   * bare ref today (a changed policy raises the typed
-   * cloud-egress-override-unsupported error); flips on when the Cloud
-   * resume grows its egress field (tracked follow-up).
+   * allowlist — e2b via provider network rules, Cloud by stating the allowlist
+   * on every resume. A provider that only takes the bare ref sets this false.
    */
   resumeReplacesPolicy: boolean;
 }

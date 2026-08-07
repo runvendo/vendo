@@ -1,14 +1,11 @@
-/** @vendoai/apps — the app artifact and engine (docs/contracts/06-apps.md).
+/**
+ * @vendoai/apps — the app artifact and engine (docs/contracts/06-apps.md).
  *
- * The sandbox seam is the execution-v2 shape (sandbox.ts); the v1 seam and
- * its compat bridge are deleted (execution-v2 Wave 1.5).
- * The package root otherwise exports exactly the 06 §1 public API plus the
- * block-plan's flagged additions (AppsConfig.pinBaselines), the ENG-288 M4
- * in-client trust-axis surface (06 §9): AppsRuntime.inClient and
- * appVersionHash, and the ENG-288 M5 drift→rebase surface (06 §8):
- * AppsRuntime.pins and detectPinDrift.
- * Everything else — the generation engine, interchange plumbing — is internal
- * and reachable only through AppsRuntime.
+ * The package root is the 06 §1 public API and nothing else. Everything the
+ * runtime uses to get its work done — the generation engine, interchange
+ * plumbing, persistence — is internal and reachable only through AppsRuntime.
+ * A comment below each export block says why that block is public, because
+ * "why is this public?" is the only question this file cannot answer itself.
  */
 export {
   buildFailureReason,
@@ -30,8 +27,8 @@ export {
   type SetExposureResult,
   type VersionEntry,
 } from "./runtime.js";
-// Placement rows (2026-08-05) — "show this app in that slot", off the document
-// and in the generic records collection.
+// Placement rows — "show this app in that slot", off the document and in the
+// generic records collection.
 export {
   placementStore,
   PLACEMENTS_COLLECTION,
@@ -88,9 +85,9 @@ export {
   type InClientVerdict,
   type ReviewStanding,
 } from "./inclient.js";
-// Remix final shape (2026-08-02) — the review-kind lifecycle vocabulary:
-// the queue entry the console seam lists and the rejection record the note
-// surfaces from (AppsRuntime.review is the behavior surface).
+// The review-kind lifecycle vocabulary: the queue entry the console seam lists
+// and the rejection record the note surfaces from (AppsRuntime.review is the
+// behavior surface).
 export {
   remixRejectionSchema,
   type RemixRejection,
@@ -112,21 +109,19 @@ export type {
   CheckingLayer,
   Finding,
 } from "./checking/types.js";
-// The plan→layout function, exported for the same reason as the bench loaders
-// above (the exports map closes deep imports): it is a pure, deterministic
-// function of the public AppPlan, so demo/harness surfaces can render a plan's
-// skeleton without booting the engine.
+// The plan→layout function. The exports map closes deep imports, and this is a
+// pure, deterministic function of the public AppPlan — so a demo or harness
+// surface can render a plan's skeleton without booting the engine.
 export { skeletonFromPlan, type Skeleton } from "./generation/skeleton.js";
-// The automation planner, exported for the same reason as the skeleton above: it
-// is one model call over public inputs, so a harness can author (and prove the
-// refusal of) an automation plan without booting the generation pipeline.
+// The automation planner, public for the same reason as the skeleton above: one
+// model call over public inputs, so a harness can author (and prove the refusal
+// of) an automation plan without booting the generation pipeline.
 export { planAutomation, type AutomationPlan, type AutomationPlanInput } from "./automation-plan.js";
 // The model-capability rule (model-params.ts): which Claude ids still accept
 // sampling params, and the output cap for ids a sampling-era provider registry
 // does not know. Exported for the umbrella's model ladder — its lazy wrapper
 // reports a family id ("vendo-env"), so the resolved rung's REAL id must be
-// re-checked at call time (#692). Data-only rule — no engine behavior rides
-// on the export.
+// re-checked at call time. Data-only rule — no engine behavior rides on it.
 export {
   acceptsSamplingParams,
   UNKNOWN_MODEL_MAX_OUTPUT_TOKENS,
@@ -146,10 +141,6 @@ export { buildingAppsSkill } from "./skills/building-apps.js";
 // screen agent's in `@vendoai/harnesses`, the builder's in composition — and a
 // second rendering of the same two config keys is how they start to disagree.
 export { hostDesignBrief } from "./generation/contracts/sections.js";
-// The conductor, the brain, the deterministic fill and their public surface are
-// GONE (2026-08-06). There is one builder — the screen assembler in the
-// `apps.screen` slot — and one escape from it, the server lane an escalated plan
-// declares. `skeletonFromPlan` below is what paints that plan.
 // Contract §3.2 — the checkout/commit seam. Public because the workspace half of
 // it lives outside this package: a sandboxed harness holds a `WorkspaceFs` and
 // never a store, so composition binds the store side once and hands these to
