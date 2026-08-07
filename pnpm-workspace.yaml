@@ -77,7 +77,64 @@ overrides:
   "@types/react-dom": "^19.2.0"
   # 2026-07-24 advisory: PostCSS path traversal in previous source map,
   # GHSA-r28c-9q8g-f849 (<=8.5.17) — floor raised from the earlier 8.5.10 line.
-  "postcss@<8.5.18": ">=8.5.18"
+  # Raised again 2026-08-06 to 8.5.23 for GHSA-fxqj-rqcc-2cmp (<=8.5.22), the
+  # incomplete-fix follow-up to GHSA-6g55-p6wh-862q. The override exists at all
+  # because next pins postcss exactly (16.2.11 -> 8.4.31), so the consumers
+  # (examples/{ai-sdk-agent,demo-bank} > next, demo-bank > next-auth > next)
+  # cannot reach the patch on their own. Drop it once every next in the tree
+  # pins >=8.5.23 (next 16.3.0 does).
+  "postcss@<8.5.23": ">=8.5.23"
+  # 2026-08-06 advisory: js-yaml quadratic CPU consumption resolving !!omap,
+  # GHSA-5p4m-2wfm-xmqj / CVE-2026-59870 (>=3.0.0 <3.15.1 and >=4.0.0 <4.3.1).
+  # This is the HIGH that reddened the required `audit` check repo-wide.
+  #
+  # The 3.x line is the prod path: examples/mastra-agent > @mastra/core >
+  # gray-matter, which declares `js-yaml: ^3.13.1` and is itself unmaintained at
+  # 4.0.3, so the 3.15.1 backport is already inside its declared range — the
+  # lockfile was simply pinned to 3.15.0. Floored per major line, and bounded,
+  # because gray-matter calls the removed 3.x `safeLoad` API: letting this floor
+  # walk to 4.x or 5.x would break that CJS consumer at runtime.
+  #
+  # The 4.x floor is dev-tooling hygiene, not a prod fix — 4.3.0's only
+  # consumers are @changesets/parse and @eslint/eslintrc, which is why
+  # `pnpm audit --prod` never flagged it. Same advisory, so it is closed here
+  # rather than left to rot until the day a prod path picks up js-yaml 4.
+  "js-yaml@>=3 <3.15.1": ">=3.15.1 <4"
+  "js-yaml@>=4 <4.3.1": ">=4.3.1 <5"
+  # 2026-08-06 advisory: node-tar uncontrolled recursion in mapHas/filesFilter,
+  # an uncatchable stack-overflow DoS from a crafted long-path archive,
+  # GHSA-r292-9mhp-454m (<=7.5.20). Reaches the prod graph only via
+  # examples/demo-bank > e2b, which declares `tar: ^7.5.19` — the patch is
+  # inside its range and the lockfile was pinned to 7.5.20. Bounded to the 7.x
+  # line that is actually installed.
+  "tar@>=7 <7.5.21": ">=7.5.21 <8"
+  # 2026-08-06 advisories, both arriving through @modelcontextprotocol/sdk:
+  #   - hono ReDoS in the CORS middleware via Access-Control-Request-Headers,
+  #     GHSA-8j4g-w8fx-2239 (<4.12.34). The sdk declares `hono: ^4.11.4`, so
+  #     the patch is in range; the lockfile was pinned to 4.12.29.
+  #   - @hono/node-server path traversal in serve-static on Windows via an
+  #     encoded backslash, GHSA-frvp-7c67-39w9 (<2.0.5).
+  #
+  # Not examples-only: `pnpm why --prod` puts both in the published
+  # @vendoai/{mcp,engine,apps,harnesses} trees (apps/harnesses via
+  # @anthropic-ai/claude-agent-sdk>@modelcontextprotocol/sdk), alongside
+  # examples/mastra-agent>@mastra/core.
+  #
+  # The node-server floor is the one deliberate exception to this file's
+  # don't-cross-a-major rule: there is NO 1.x backport — upstream's only
+  # patched version is 2.0.5 — so the choice is 2.x or carry the advisory
+  # forever. Checked rather than assumed, because the installed sdk (1.29.0)
+  # still declares `^1.19.9`, i.e. this floor is outside its range:
+  #   - sdk 1.30.0 declares `^1.19.9 || ^2.0.5`, so upstream has blessed 2.x;
+  #   - sdk 1.29.0 imports exactly `serve` and `getRequestListener`, and 2.1.0
+  #     exports both (its breaking changes are elsewhere);
+  #   - @hono/node-ws@1.3.1 lists node-server as a peer but imports nothing
+  #     from it at runtime (only `hono/ws`, `node:http`, `ws`), so the unmet
+  #     peer range is types-only.
+  # Drop this floor once the tree carries @modelcontextprotocol/sdk >=1.30.0,
+  # which asks for the patched line itself. Both bounded below the next major.
+  "hono@>=4 <4.12.34": ">=4.12.34 <5"
+  "@hono/node-server@<2.0.5": ">=2.0.5 <3"
   # 2026-08-03 advisory: brace-expansion DoS via unbounded intermediate arrays
   # bypassing the CVE-2026-14257 mitigation, GHSA-rgw5-rvv9-x895 (<1.1.18 and
   # >=4.0.0 <5.0.9). Reaches the prod graph only transitively:
