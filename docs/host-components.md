@@ -97,7 +97,6 @@ each a one-liner:
 | --- | --- |
 | `VendoOverlay` | The chat, floating over the app (the default surface). |
 | `VendoThread` | The same chat, embedded in a host page. |
-| `VendoPage` | The full workspace console (threads, apps, automations, activity). |
 | `VendoSlot` | A region of the host page the user can replace with their own generated view. |
 | `VendoActivities` | Drop-in feed of what the agent did + pending approvals, placeable in any host page. |
 | `VendoTrigger` | A button that opens the chat preloaded with a prompt and context. |
@@ -107,7 +106,12 @@ each a one-liner:
 `onCommand` router its conversation commands open the mounted overlay on their
 own; commands that need host routing (open app, show activity) hint in
 development until you supply `onCommand`. `ApprovalCard`, `ActivityPanel`,
-`AutomationsPanel`, and `NoPolicyNotice` cover trust and operations.
+`AutomationsPanel`, `ConnectedAccountsPanel`, and `NoPolicyNotice` cover trust
+and operations. Each panel carries its own theme and stylesheet, so mounting
+one needs nothing but a `VendoProvider` ancestor — route them wherever your
+product already keeps settings and admin. They are designed against a ~780px
+measure, so give them a width-constrained container; at full bleed the
+activity ledger rows stretch.
 
 Customization is a ladder, not a cliff — four rungs, no cliff between them:
 

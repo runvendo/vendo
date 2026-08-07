@@ -193,8 +193,8 @@ Schema is derived from the schema internally, and a schema-less entry is legal.
 
 Want the launcher pill and panel? Add `<VendoOverlay />` inside the provider —
 optional, and never added for you. Swap it for `<VendoThread />`,
-`<VendoPage />`, `<VendoPalette />`, or the headless hooks; they all speak to
-the same wire. The hooks and the BYO embeds are re-exported from
+`<VendoPalette />`, or the headless hooks; they all speak to the same wire.
+The hooks and the BYO embeds are re-exported from
 `@vendoai/vendo/react`. The other chrome surfaces live in `@vendoai/ui/chrome`
 and need `@vendoai/ui` as a direct dependency.
 

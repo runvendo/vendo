@@ -42,9 +42,10 @@ fabricated context byline on the in-thread approval card. See
 
 ## Fixes
 
-**Thread sidebar refreshes on new conversation.** `VendoPage`'s chat sidebar
-now surfaces and highlights a conversation started via **New conversation**
-as soon as the server mints its `thr_` id. `VendoThread` also gains an
+**Thread sidebar refreshes on new conversation.** The chat sidebar in the
+`VendoPage` console surfaces and highlights a conversation started via **New
+conversation** as soon as the server mints its `thr_` id. (`VendoPage` has
+since been removed from `@vendoai/ui`.) `VendoThread` also gains an
 optional `onThreadId` callback that fires with the effective thread id, so
 headless hosts can mirror the same refresh into their own UI:
 
