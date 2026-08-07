@@ -50,11 +50,27 @@ describe("claudeCliHarness", () => {
     expect(text).toBe("the result");
     expect(capturedArgs).toEqual([
       "-p", "go read the codebase",
-      "--allowedTools", "Read", "Glob", "Grep",
+      "--allowedTools", "Read(//host/root/**)", "Glob(//host/root/**)", "Grep(//host/root/**)",
       "--disallowedTools",
       "Bash", "Write", "Edit", "WebFetch", "WebSearch", "Task", "TodoWrite", "NotebookEdit", "KillShell", "BashOutput",
       "--setting-sources", "",
     ]);
+  });
+
+  it("confines reads to the root — a bare tool name would auto-allow Read on ANY path", async () => {
+    let capturedArgs: string[] = [];
+    const harness = claudeCliHarness({
+      exec: async (args) => { capturedArgs = args; return { stdout: "ok", stderr: "", code: 0 }; },
+    });
+    await harness.run({ root: "/host/root", env: {}, instructions: "go" });
+    const allowed = capturedArgs.slice(
+      capturedArgs.indexOf("--allowedTools") + 1,
+      capturedArgs.indexOf("--disallowedTools"),
+    );
+    expect(allowed).not.toContain("Read");
+    expect(allowed).not.toContain("Glob");
+    expect(allowed).not.toContain("Grep");
+    for (const rule of allowed) expect(rule).toContain("(//host/root/**)");
   });
 
   it("passes cwd = host root and forwards the caller's env over process.env", async () => {

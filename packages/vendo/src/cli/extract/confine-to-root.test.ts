@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { confineToolToRoot, resolveThroughSymlinks } from "./confine-to-root.js";
+import { confineToolToRoot, resolveThroughSymlinks, rootScopedToolRules } from "./confine-to-root.js";
 
 describe("confineToolToRoot (read confinement for the canUseTool callback)", () => {
   // Real directories so the symlink case is a real symlink, not a mock.
@@ -76,6 +76,49 @@ describe("confineToolToRoot (read confinement for the canUseTool callback)", () 
   it("allows tools without path-shaped inputs (the tools option already bounds the set)", () => {
     const input = { anything: "goes" };
     expect(confineToolToRoot("SomeOtherTool", input, root)).toEqual(allow(input));
+  });
+});
+
+describe("rootScopedToolRules (read confinement for the CLI rungs' flags)", () => {
+  it("scopes every read-only tool to the root instead of naming it bare", () => {
+    expect(rootScopedToolRules("/host/root")).toEqual([
+      "Read(//host/root/**)",
+      "Glob(//host/root/**)",
+      "Grep(//host/root/**)",
+    ]);
+  });
+
+  it("never emits a bare tool name — a bare name is the blanket any-path auto-allow this replaces", () => {
+    for (const rule of rootScopedToolRules("/host/root")) {
+      expect(rule).toMatch(/^(Read|Glob|Grep)\(\/\/.+\/\*\*\)$/);
+    }
+  });
+
+  it("normalizes an untidy root so the rule names one canonical directory", () => {
+    expect(rootScopedToolRules("/host/nested/../root/")).toEqual(rootScopedToolRules("/host/root"));
+  });
+
+  it("scopes BOTH the symlinked root and its realpath, so a symlinked root still reads itself", () => {
+    // macOS points /tmp at /private/tmp: the CLI matches an allow rule against
+    // the path the model supplied (the symlinked form) AND its target (the
+    // realpath), so a rule for only one of the two denies every in-root read.
+    const real = realpathSync(mkdtempSync(join(tmpdir(), "vendo-extract-rule-real-")));
+    const parent = realpathSync(mkdtempSync(join(tmpdir(), "vendo-extract-rule-link-")));
+    const link = join(parent, "root");
+    symlinkSync(real, link);
+    try {
+      expect(rootScopedToolRules(link)).toEqual([
+        `Read(/${link}/**)`,
+        `Glob(/${link}/**)`,
+        `Grep(/${link}/**)`,
+        `Read(/${real}/**)`,
+        `Glob(/${real}/**)`,
+        `Grep(/${real}/**)`,
+      ]);
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+      rmSync(real, { recursive: true, force: true });
+    }
   });
 });
 
