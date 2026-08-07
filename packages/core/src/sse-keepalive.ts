@@ -20,10 +20,6 @@
  * emits nothing), so a keepalive is invisible to the client's message sequence.
  * It is deliberately NOT a `HarnessEvent` and NOT a `data-vendo-*` part: a
  * keepalive is not something that happened, it is the wire saying it is still there.
- *
- * Two sinks, because the two SSE surfaces in this repo genuinely differ: the
- * production wire returns a web `Response` (`withSseKeepalive`), and the `vendo
- * try` dev server writes to a Node `ServerResponse` (`startSseKeepalive`).
  */
 
 /** The frame itself. An SSE comment — no event, no data, ~14 bytes. */
@@ -37,24 +33,8 @@ export interface SseKeepaliveOptions {
   intervalMs?: number;
 }
 
-/** Callback-sink form: writes a frame immediately, then one per interval, until
- *  the returned `stop` is called. For sinks that are not a web stream (Node's
- *  `ServerResponse`). */
-export function startSseKeepalive(
-  options: SseKeepaliveOptions & { write: (frame: string) => void },
-): () => void {
-  options.write(SSE_KEEPALIVE_FRAME);
-  const timer = setInterval(
-    () => options.write(SSE_KEEPALIVE_FRAME),
-    options.intervalMs ?? DEFAULT_SSE_KEEPALIVE_INTERVAL_MS,
-  );
-  // A keepalive must never hold a Node process open.
-  (timer as { unref?: () => void }).unref?.();
-  return () => clearInterval(timer);
-}
-
-/** Stream-sink form: wrap an SSE `Response` so its first frame leaves at once
- *  and silence is punctuated.
+/** Wrap an SSE `Response` so its first frame leaves at once and silence is
+ *  punctuated.
  *
  *  Backpressure and ordering are preserved by construction: each pull races the
  *  in-flight source read against the keepalive deadline, and the read that loses

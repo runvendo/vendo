@@ -1,12 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  describeShapeWithSemantics,
-  inferFieldSemantic,
-  semanticAtPointer,
-  declaredMoneyUnit,
-  semanticFormatToken,
-  type ToolSemantics,
-} from "./semantics.js";
+import { declaredMoneyUnit, describeShapeWithSemantics, type ToolSemantics } from "./semantics.js";
 import { type ShapeType } from "./shape.js";
 
 /** The declared shape of the invoice response, written literally — the same
@@ -46,69 +39,6 @@ const invoiceSemantics: ToolSemantics = {
   totalCents: { kind: "money", unit: "cents" },
 };
 
-describe("inferFieldSemantic", () => {
-  it("classifies *Cents number fields as money in cents", () => {
-    expect(inferFieldSemantic("amountCents", [285000, 90000])).toEqual({ kind: "money", unit: "cents" });
-    expect(inferFieldSemantic("totalCents", [375000])).toEqual({ kind: "money", unit: "cents" });
-  });
-
-  it("classifies ISO strings as iso dates, ignoring nulls", () => {
-    expect(inferFieldSemantic("dueDate", ["2026-08-01", "2026-07-21T17:00:00Z"])).toEqual({ kind: "date", format: "iso" });
-    expect(inferFieldSemantic("paidAt", [null, "2026-07-01T09:00:00Z"])).toEqual({ kind: "date", format: "iso" });
-  });
-
-  it("classifies small lowercase vocabularies on enum-named fields, with humanized labels", () => {
-    expect(inferFieldSemantic("status", ["overdue", "paid"])).toEqual({
-      kind: "enum",
-      labels: { overdue: "Overdue", paid: "Paid" },
-    });
-  });
-
-  it("classifies id / *Id fields with the entity prefix", () => {
-    expect(inferFieldSemantic("id", ["inv_1", "inv_2"])).toEqual({ kind: "id" });
-    expect(inferFieldSemantic("clientId", ["cl_9", "cl_4"])).toEqual({ kind: "id", entity: "client" });
-  });
-
-  it("leaves plain fields plain (count is not money)", () => {
-    expect(inferFieldSemantic("count", [2])).toEqual({ kind: "plain" });
-  });
-
-  it("classifies epoch-range numbers on date-named fields", () => {
-    expect(inferFieldSemantic("updatedAt", [1786230000000])).toEqual({ kind: "date", format: "epoch" });
-  });
-
-  it("classifies ratio and whole percents by range", () => {
-    expect(inferFieldSemantic("progressRatio", [0.42])).toEqual({ kind: "percent", scale: "ratio" });
-    expect(inferFieldSemantic("utilizationPct", [62])).toEqual({ kind: "percent", scale: "0-100" });
-  });
-
-  it("classifies decimal amount fields as dollars, integer amount fields as cents", () => {
-    expect(inferFieldSemantic("balance", [1234.56])).toEqual({ kind: "money", unit: "dollars" });
-    expect(inferFieldSemantic("balance", [123456])).toEqual({ kind: "money", unit: "cents" });
-  });
-
-  it("never classifies bare *Total / total count fields as money (cubic P1: documentsTotal, clientsTotal, pagination total are counts)", () => {
-    expect(inferFieldSemantic("documentsTotal", [55])).toEqual({ kind: "plain" });
-    expect(inferFieldSemantic("clientsTotal", [12])).toEqual({ kind: "plain" });
-    expect(inferFieldSemantic("total", [30])).toEqual({ kind: "plain" });
-    // Money-token totals still classify.
-    expect(inferFieldSemantic("totalAmount", [123456])).toEqual({ kind: "money", unit: "cents" });
-    expect(inferFieldSemantic("totalCents", [123456])).toEqual({ kind: "money", unit: "cents" });
-  });
-
-  it("never classifies mixed-type or free-text fields", () => {
-    expect(inferFieldSemantic("status", ["This invoice is very overdue indeed"])).toEqual({ kind: "plain" });
-  });
-});
-
-describe("semanticAtPointer", () => {
-  it("resolves JSON pointers, dropping numeric array segments", () => {
-    expect(semanticAtPointer(invoiceSemantics, "/data/0/amountCents")).toEqual({ kind: "money", unit: "cents" });
-    expect(semanticAtPointer(invoiceSemantics, "/totalCents")).toEqual({ kind: "money", unit: "cents" });
-    expect(semanticAtPointer(invoiceSemantics, "/data/0/nope")).toBeUndefined();
-  });
-});
-
 describe("describeShapeWithSemantics", () => {
   it("annotates the compact shape card with field semantics", () => {
     const card = describeShapeWithSemantics(invoiceRows, invoiceSemantics);
@@ -133,15 +63,6 @@ describe("describeShapeWithSemantics", () => {
       .toBe('{ status: "paid" | "void" }');
     expect(describeShapeWithSemantics(shape, { status: { kind: "enum", labels: { paid: "Paid", void: "Void" } } }))
       .toBe("{ status: string:enum(paid|void) }");
-  });
-});
-
-describe("semanticFormatToken", () => {
-  it("maps semantics to Kit value-format tokens", () => {
-    expect(semanticFormatToken({ kind: "money", unit: "cents" })).toBe("money");
-    expect(semanticFormatToken({ kind: "date", format: "iso" })).toBe("date");
-    expect(semanticFormatToken({ kind: "percent", scale: "ratio" })).toBe("percent");
-    expect(semanticFormatToken({ kind: "id" })).toBeUndefined();
   });
 });
 
@@ -173,10 +94,16 @@ describe("declaredMoneyUnit — what the HOST declared about an input field", ()
   });
 
   it("stays silent on fields that are not money — no currency guessing", () => {
-    for (const name of ["invoiceId", "count", "quantity", "recipient_name", "memo", "itemCount", "rate", "percent"]) {
+    // A bare total is a COUNT: documentsTotal, clientsTotal and pagination
+    // totals are not money. Only a money token (totalAmount) makes one.
+    for (const name of [
+      "invoiceId", "count", "quantity", "recipient_name", "memo", "itemCount", "rate", "percent",
+      "documentsTotal", "clientsTotal", "total",
+    ]) {
       expect(declaredMoneyUnit(name, { type: "number" }), name).toBeUndefined();
     }
     // "cents" inside a sentence about something else is not a declaration.
     expect(declaredMoneyUnit("note", { description: "mentions cents" })).toBeUndefined();
+    expect(declaredMoneyUnit("totalAmount", { type: "integer" })).toBe("unknown");
   });
 });

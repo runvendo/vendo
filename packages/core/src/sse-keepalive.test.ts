@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SSE_KEEPALIVE_FRAME, startSseKeepalive, withSseKeepalive } from "./sse-keepalive.js";
+import { SSE_KEEPALIVE_FRAME, withSseKeepalive } from "./sse-keepalive.js";
 
 // Blueprint §4.1 item 5 / §4.2 — the SERVER→CLIENT half of the wire's
 // keepalive. Distinct from `heartbeat.ts`, which is the CLIENT→SERVER abort
@@ -123,25 +123,5 @@ describe("withSseKeepalive", () => {
   it("passes a bodyless response through untouched", () => {
     const empty = new Response(null, { status: 204 });
     expect(withSseKeepalive(empty)).toBe(empty);
-  });
-});
-
-describe("startSseKeepalive", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("writes a frame immediately, then one per interval, until stopped", async () => {
-    const written: string[] = [];
-    const stop = startSseKeepalive({ write: (frame) => written.push(frame), intervalMs: 20 });
-    expect(written).toEqual([SSE_KEEPALIVE_FRAME]);
-    await vi.advanceTimersByTimeAsync(60);
-    expect(written).toHaveLength(4);
-    stop();
-    await vi.advanceTimersByTimeAsync(100);
-    expect(written).toHaveLength(4);
   });
 });

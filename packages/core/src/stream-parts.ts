@@ -41,7 +41,7 @@ export const vendoViewPartSchema = z.object({
  *  above are the logical parts; on the wire the ai-SDK data-chunk schema
  *  requires the payload nested under `data`, with an optional reconciliation
  *  `id`. Producers convert with {@link toVendoWirePart}; consumers parse with
- *  the *WirePartSchema pairings below. */
+ *  {@link vendoViewWirePartSchema}. */
 export interface VendoWirePart<Part extends { type: string }> {
   type: Part["type"];
   data: Omit<Part, "type">;
@@ -50,8 +50,6 @@ export interface VendoWirePart<Part extends { type: string }> {
 }
 
 export type VendoViewWirePart = VendoWirePart<VendoViewPart>;
-export type VendoApprovalWirePart = VendoWirePart<VendoApprovalPart>;
-export type VendoConnectWirePart = VendoWirePart<VendoConnectPart>;
 
 /** Nest a flat §16 part into its wire envelope ({ type, ...rest } → { type, data: rest }). */
 export function toVendoWirePart<Part extends { type: string }>(
