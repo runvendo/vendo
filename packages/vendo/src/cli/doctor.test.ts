@@ -1172,8 +1172,9 @@ describe("vendo doctor error codes + fix_refs", () => {
       a proxy whose route rule matched /status but not /doctor/* — serves a
       valid /status while every doctor path 404s. Telling that reader to pass
       development: true is the same wrong-advice bug pointed the other way. The
-      tell is /doctor/base-url 404ing too: no composition leaves that one out,
-      so the wire is not at this URL and the development gate is not the story. */
+      tell is /doctor/base-url not answering like a wire: no composition leaves
+      that route out, so the wire is not at this URL and the development gate
+      is not the story. */
   it("does not blame the development gate when /doctor/base-url 404s alongside the probes", async () => {
     const wrongBase = vi.fn(async (input: string | URL | Request) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -1192,6 +1193,62 @@ describe("vendo doctor error codes + fix_refs", () => {
       expect(check?.message).not.toContain("development: true");
       expect(check?.message).not.toContain("NODE_ENV=development");
     }
+  });
+
+  /** Reading "not a 404" as "the wire is here" is the same mistake a third
+      time. An HTML catch-all, an auth layer or a proxy error page answers 200,
+      401, 302 or 500 at any path on the origin without a Vendo route table
+      behind it — so the wrong-wire-base diagnosis has to survive those, not
+      just a clean 404. Only a Vendo-SHAPED body ({ ok }, which the route
+      answers in every environment) is evidence the wire is there at all. */
+  it.each([
+    ["an HTML catch-all", new Response("<!doctype html><html></html>", { status: 200, headers: { "content-type": "text/html" } })],
+    ["an auth layer", new Response("<html>sign in</html>", { status: 401, headers: { "content-type": "text/html" } })],
+    ["a proxy error page", new Response("<html>bad gateway</html>", { status: 500, headers: { "content-type": "text/html" } })],
+  ])("keeps the wrong-wire-base diagnosis when /doctor/base-url is answered by %s", async (_label, answer) => {
+    const intermediary = vi.fn(async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.endsWith("/status")) {
+        return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
+      }
+      if (url.endsWith("/doctor/base-url")) return answer.clone();
+      return Response.json({ error: { code: "not-found", message: "no route" } }, { status: 404 });
+    });
+    const { report } = await jsonChecks({ targetDir: await healthy(), fetchImpl: intermediary });
+
+    for (const id of ["auth/present", "auth/act-as"]) {
+      const check = report.checks.find((entry) => entry.id === id);
+      expect(check?.status).toBe("broken");
+      expect(check?.message).not.toContain("development: true");
+      expect(check?.message).not.toContain("NODE_ENV=development");
+    }
+  });
+
+  /** Neither message may ASSERT a cause, because no observable response
+      separates them: a real Vendo deployment that is simply not the one you
+      meant — a stale base URL pointing at staging — answers /status and
+      /doctor/base-url perfectly and 404s the development-only probes, byte for
+      byte identical to your own dev server with the gate closed. Doctor cannot
+      know which deployment the reader meant, so it reports what it saw and
+      tells them how to separate the two themselves. */
+  it("names both causes and how to separate them rather than asserting one", async () => {
+    const wireAnswers = vi.fn(async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.endsWith("/status")) {
+        return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
+      }
+      if (url.endsWith("/doctor/base-url")) return Response.json({ ok: true });
+      return Response.json({ error: { code: "not-found", message: "unknown Vendo route" } }, { status: 404 });
+    });
+    const { report } = await jsonChecks({ targetDir: await healthy(), fetchImpl: wireAnswers });
+
+    const message = report.checks.find((check) => check.id === "auth/present")?.message ?? "";
+    // Both candidate causes, and the step that tells them apart.
+    expect(message).toContain("development: true");
+    expect(message).toContain("not the dev server you meant");
+    expect(message).toContain("re-run");
+    // No bare assertion that the composition is the undeclared one.
+    expect(message).not.toContain("this composition did not declare itself development");
   });
 
   it("stamps warnings with codes too without flipping the exit", async () => {
