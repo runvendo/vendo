@@ -81,9 +81,14 @@ describe("capability-miss Cloud upload", () => {
 
     const capture = createCapabilityMissCapture({
       env: {},
+      // The Cloud slot is what makes the identity load-bearing: it is the id
+      // the console correlates uploads by. Without it nothing is uploaded and
+      // nothing is read from the user's home directory at all.
+      cloud: { apiKey: "vnd_test" },
       telemetryHome: home,
       surface: () => Promise.resolve(surface),
       append: async () => {},
+      fetchImpl: vi.fn(async () => Response.json({ accepted: 1, duplicates: 0 }, { status: 202 })),
     });
 
     expect(capture.hostId).toBe("telemetry-installation-id");

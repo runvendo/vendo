@@ -14,6 +14,10 @@ const DEFAULT_QUEUE_LIMIT = 1_000;
 const DEFAULT_BATCH_DELAY_MS = 250;
 const DEFAULT_REQUEST_TIMEOUT_MS = 1_500;
 const DEFAULT_RETRY_DELAYS_MS = [250, 1_000] as const;
+/** The hostId stamped on misses that stay on this machine. `CapabilityMissEvent`
+ *  requires the field, but a local-only log correlates nothing across hosts, so
+ *  there is no identity to mint. */
+const LOCAL_ONLY_IDENTITY = { anonymousId: "local", optedOut: true } as const;
 
 export interface CapabilitySurfaceSnapshot {
   hash: string;
@@ -209,8 +213,16 @@ function createMissUploader(options: {
 
 export function createCapabilityMissCapture(options: CaptureOptions): CapabilityMissCapture {
   const env = options.env ?? runtimeEnv();
+  // Only the upload stream needs a STABLE installation identity, and it exists
+  // only when the host filled the Cloud slot and no kill switch is tripped.
+  // `loadConfig` MINTS AND PERSISTS an opted-in id into ~/.vendo/telemetry.json,
+  // and this capture is composed on every createVendo boot — so reaching it
+  // unconditionally leaves a tracking id on the disk of every host that never
+  // enabled telemetry and can never upload. Local-only capture writes to the
+  // project's own .vendo/data, where a cross-boot identity means nothing.
+  const uploads = options.cloud !== undefined && !envOptOut(env);
   const telemetryConfig = options.telemetryConfig
-    ?? loadConfig(options.telemetryHome, env);
+    ?? (uploads ? loadConfig(options.telemetryHome, env) : LOCAL_ONLY_IDENTITY);
   let uploader: MissUploader | undefined;
   if (options.cloud !== undefined) {
     // Contract (01-core §17): upload is gated by the key plus envOptOut only.
