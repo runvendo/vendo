@@ -20,6 +20,7 @@ const report = () => ({
   remixableErrors: [],
   catalog: { discovered: 1, registered: 1 },
   components: { captured: ["Donut"], drifted: [] },
+  toolSchemas: { total: 0, inputs: { known: 0, unknown: [] }, outputs: { known: 0, unknown: [] } },
   warnings: [],
 });
 

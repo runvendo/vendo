@@ -132,6 +132,12 @@ export async function readEnvFiles(
 export function printSyncReport(report: SyncReportWithWarnings, output: Output): void {
   for (const warning of report.warnings) output.error(`warning: ${warning}`);
   output.log(`tools: +${report.tools.added.length} -${report.tools.removed.length} ~${report.tools.changed.length}`);
+  const { total, inputs, outputs } = report.toolSchemas;
+  const blind = [...new Set([...inputs.unknown, ...outputs.unknown])].sort();
+  output.log(`tool schemas: inputs ${inputs.known}/${total} · outputs ${outputs.known}/${total}`
+    + (blind.length === 0
+      ? ""
+      : ` — blind: ${blind.slice(0, 6).join(", ")}${blind.length > 6 ? ` +${blind.length - 6} more` : ""}`));
   output.log(`pins: ${report.pins.captured.length} captured, ${report.pins.drifted.length} drifted`);
   for (const slot of report.pins.pruned ?? []) {
     output.log(`pruned: ${slot} — stale baseline deleted (no <Remixable> wrapper names this slot anymore)`);

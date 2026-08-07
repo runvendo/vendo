@@ -14,6 +14,7 @@ afterEach(() => {
 const report = (
   breaking: Array<{ tool: string; change: "removed" }> = [],
   changed: string[] = [],
+  toolSchemas = { total: 0, inputs: { known: 0, unknown: [] }, outputs: { known: 0, unknown: [] } },
 ) => ({
   tools: { added: [], removed: [], changed },
   breaking,
@@ -21,6 +22,7 @@ const report = (
   remixableErrors: [],
   catalog: { discovered: 2, registered: 1 },
   components: { captured: [], drifted: [] },
+  toolSchemas,
   warnings: [],
 });
 
@@ -319,6 +321,20 @@ describe("vendo sync", () => {
     const logs: string[] = [];
     expect(await runSync({ targetDir: ".", output: { log: (line) => logs.push(line), error() {} }, sync: async () => report() })).toBe(0);
     expect(logs).toContain("catalog.json: 2 discovered, 1 registered");
+  });
+
+  it("prints the schema coverage line, naming the blind tools", async () => {
+    const logs: string[] = [];
+    expect(await runSync({
+      targetDir: ".",
+      output: { log: (line) => logs.push(line), error() {} },
+      sync: async () => report([], [], {
+        total: 3,
+        inputs: { known: 3, unknown: [] },
+        outputs: { known: 1, unknown: ["host_a", "host_b"] },
+      }),
+    })).toBe(0);
+    expect(logs.join("\n")).toContain("tool schemas: inputs 3/3 · outputs 1/3 — blind: host_a, host_b");
   });
 
   it("--json prints exactly one machine-readable object carrying report and impact", async () => {

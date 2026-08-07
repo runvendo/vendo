@@ -40,6 +40,7 @@ const REPORT = {
   remixableErrors: [],
   catalog: { discovered: 0, registered: 0 },
   components: { captured: [], drifted: [] },
+  toolSchemas: { total: 0, inputs: { known: 0, unknown: [] }, outputs: { known: 0, unknown: [] } },
   warnings: [],
 };
 
