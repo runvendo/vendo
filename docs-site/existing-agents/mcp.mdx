@@ -179,10 +179,13 @@ powerful as your backend already is.
 </Steps>
 
 <Note>
-  A door pointed at an external authorization server (`mcp.remoteAs`, or a
-  declared `VENDO_MCP_BROKER_URL`) does not serve its own token endpoint, so the
-  exchange lives at that server instead: post to the issuer's own
-  `token_endpoint`.
+  A door pointed at an external authorization server with an explicit
+  `mcp.remoteAs` does not serve its own token endpoint, so the exchange lives at
+  that server instead: post to the issuer's own `token_endpoint`.
+
+  A declared `VENDO_MCP_BROKER_URL` does not do that to you. It is a default, and
+  `serviceAuth` is something you asked for: configuring it keeps the door's own
+  `/token` and the exchange above, broker variable or not.
 </Note>
 
 ## What the agent gets
