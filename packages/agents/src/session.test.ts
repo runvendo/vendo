@@ -68,6 +68,39 @@ describe("session", () => {
     expect(seen).toHaveLength(3); // user, assistant, user
   });
 
+  it("resumes an existing thread by id, so a session per HTTP request keeps the conversation", async () => {
+    const store = memoryStore();
+    let seen: readonly unknown[] = [];
+    const peek = defineHarness({
+      name: "peek",
+      async *run(turn) {
+        seen = turn.messages;
+        yield { type: "text" as const, delta: "ok" };
+      },
+    });
+    const support = agent({ name: "support", harness: peek, store });
+    const first = await support.session("u_42");
+    await (await first.stream("first")).text();
+
+    // The next request: the JS object is gone, only the id came back from the
+    // client. Everything the first session persisted must still be there.
+    const resumed = await support.session("u_42", { threadId: first.threadId });
+    expect(resumed.threadId).toBe(first.threadId);
+    await (await resumed.stream("second")).text();
+    expect(seen).toHaveLength(3); // user, assistant, user
+    const messages = await threadMessageStore(store).list(principal, first.threadId as never);
+    expect(messages.map((m) => m.role)).toEqual(["user", "assistant", "user", "assistant"]);
+  });
+
+  it("refuses to resume a thread that is not this subject's", async () => {
+    const store = memoryStore();
+    const support = agent({ name: "support", harness: speaks("hi"), store });
+    const mine = await support.session("u_42");
+    await expect(support.session("u_99", { threadId: mine.threadId })).rejects.toMatchObject({
+      code: "not-found",
+    });
+  });
+
   it("assembles the per-turn system prompt: instructions, [User], the guard's directions", async () => {
     let system: string | undefined;
     const peek = defineHarness({
