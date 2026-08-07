@@ -1,14 +1,24 @@
 /**
  * ONE floor at every door.
  *
- * Four doors let an app reach a screen — the paint seam (`createAppFloor`),
- * `validate({ document })`, `validate({ appId })`, and the edit path — and each
- * ran a different subset of the checks. An island that crashes the moment it
- * renders was caught at exactly one of them: `validate({ document })` ran the
- * smoke render, and the paint seam, the stored-app door and the edit path each
- * shipped the same broken island without ever executing it.
+ * Three doors let an app reach a screen — the paint seam's floor
+ * (`AppsRuntime.floor`, which composition hands the render seam),
+ * `validate({ document })` and `validate({ appId })` — and each ran a different
+ * subset of the checks. An island that crashes the moment it renders was caught
+ * at exactly one of them: `validate({ document })` ran the smoke render, and the
+ * paint seam and the stored-app door each shipped the same broken island without
+ * ever executing it.
  *
- * These drive one deliberately-broken island through all four doors, each
+ * There WAS a fourth door. Until "the brain dies" (9a3e81342) an edit ran a
+ * validator of its own (`documentFromEdit`); since then an edit is the screen
+ * assembler opening the app's own `app.vendo`, rewriting it and saving it, so
+ * the save is checked by the paint seam's floor below and by nothing else. That
+ * validator sat callerless and is deleted, and with it its carried-issue filter
+ * — an edit excused for a stale node the previous version already carried —
+ * which production has never had on this architecture: a block is a block, from
+ * every author, on every commit (`harnesses/render-seam.ts`).
+ *
+ * These drive one deliberately-broken island through all three doors, each
  * through its own real entry point, and assert the SAME refusal at every one.
  * Nothing here stubs a check: the floor is the shipped floor, the store is a
  * real store, and the island really renders (and really crashes) in a worker.
@@ -22,12 +32,10 @@ import {
   type ToolRegistry,
 } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
-import { documentFromEdit } from "./generation/validation/validate.js";
-import type { GenerationDependencies } from "./generation/engine.js";
 import { createApps } from "./index.js";
 import { guardFixture, memoryStore, scriptedLanguageModel, seedAppRow } from "./testing/index.js";
 import type { FloorDependencies } from "./checking/deps.js";
-import { blocks, createAppFloor } from "./checking/floor.js";
+import { blocks } from "./checking/floor.js";
 import { wireCompileOptionsFor } from "./wire-options.js";
 
 /** Renders once, reaches for a name nothing in the ambient scope carries, and
@@ -65,6 +73,9 @@ const tools: ToolRegistry = {
  *  deterministic, and the reviewer is fail-open by design. */
 const model = () => scriptedLanguageModel(() => "no");
 
+const runtime = () =>
+  createApps({ store: memoryStore(), guard: guardFixture(), tools, catalog, model: model() });
+
 const documentWith = (island: string, id: string): AppDocument => {
   const compiled = compileWire(wireWith(island), wireCompileOptionsFor(floorDeps()));
   return {
@@ -78,8 +89,11 @@ const documentWith = (island: string, id: string): AppDocument => {
 };
 
 describe("a crashing island is refused at every door", () => {
-  it("the paint seam", async () => {
-    const floor = createAppFloor({ deps: async () => floorDeps() });
+  it("the paint seam, which is where an edit's save lands too", async () => {
+    // `AppsRuntime.floor(ctx)` verbatim — the object `packages/vendo` passes to
+    // the render seam that wraps the screen assembler's workspace, so this is
+    // the door for a files-first save, a `vendo_make` create AND an edit.
+    const floor = runtime().floor(ctx);
     const compiled = await floor.compile(wireWith(CRASHING_ISLAND));
 
     const findings = blocks(await floor.check({ appId: "app_one_floor", compiled }));
@@ -88,9 +102,9 @@ describe("a crashing island is refused at every door", () => {
   }, 60_000);
 
   it("validate({ document })", async () => {
-    const runtime = createApps({ store: memoryStore(), guard: guardFixture(), tools, catalog, model: model() });
+    const apps = runtime();
 
-    const result = await runtime.validate({ document: wireWith(CRASHING_ISLAND) }, ctx);
+    const result = await apps.validate({ document: wireWith(CRASHING_ISLAND) }, ctx);
 
     expect(result.ok).toBe(false);
     expect(result.findings.map(({ message }) => message).join("\n")).toMatch(CRASH);
@@ -98,56 +112,23 @@ describe("a crashing island is refused at every door", () => {
 
   it("validate({ appId })", async () => {
     const store = memoryStore();
-    const runtime = createApps({ store, guard: guardFixture(), tools, catalog, model: model() });
+    const apps = createApps({ store, guard: guardFixture(), tools, catalog, model: model() });
     await seedAppRow(store, documentWith(CRASHING_ISLAND, "app_stored_broken"), ctx.principal.subject);
 
-    const result = await runtime.validate({ appId: "app_stored_broken" }, ctx);
+    const result = await apps.validate({ appId: "app_stored_broken" }, ctx);
 
     expect(result.ok).toBe(false);
     expect(result.findings.map(({ message }) => message).join("\n")).toMatch(CRASH);
-  }, 60_000);
-
-  it("the edit path", async () => {
-    const deps = { ...floorDeps(), model: model() } as unknown as GenerationDependencies;
-    const previous = documentWith(HEALTHY_ISLAND, "app_edited");
-
-    const built = await documentFromEdit(
-      previous,
-      compileWire(wireWith(CRASHING_ISLAND), wireCompileOptionsFor(deps)),
-      deps,
-      "make the card show the total",
-    );
-
-    expect(built.document).toBeUndefined();
-    expect(built.issues.join("\n")).toMatch(CRASH);
   }, 60_000);
 });
 
 describe("the floor still lets a sound app through every door", () => {
   it("the paint seam and validate({ document }) both say nothing", async () => {
-    const floor = createAppFloor({ deps: async () => floorDeps() });
+    const apps = runtime();
+    const floor = apps.floor(ctx);
     const compiled = await floor.compile(wireWith(HEALTHY_ISLAND));
-    const runtime = createApps({ store: memoryStore(), guard: guardFixture(), tools, catalog, model: model() });
 
     expect(blocks(await floor.check({ appId: "app_one_floor_ok", compiled }))).toEqual([]);
-    expect((await runtime.validate({ document: wireWith(HEALTHY_ISLAND) }, ctx)).ok).toBe(true);
-  }, 60_000);
-
-  it("an edit does not inherit the blame for an island that was already broken", async () => {
-    // The carried-issue rule: the previous app's island crashes, the edit does
-    // not touch it, so the edit lands rather than being blocked by history.
-    const deps = { ...floorDeps(), model: model() } as unknown as GenerationDependencies;
-    const previous = documentWith(CRASHING_ISLAND, "app_already_broken");
-    const edited = wireWith(CRASHING_ISLAND).replace("<BrokenCard/>", '<BrokenCard/><Text text="added"/>');
-
-    const built = await documentFromEdit(
-      previous,
-      compileWire(edited, wireCompileOptionsFor(deps)),
-      deps,
-      "add a caption",
-    );
-
-    expect(built.issues).toEqual([]);
-    expect(built.document).toBeDefined();
+    expect((await apps.validate({ document: wireWith(HEALTHY_ISLAND) }, ctx)).ok).toBe(true);
   }, 60_000);
 });

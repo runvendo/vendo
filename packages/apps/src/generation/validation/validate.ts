@@ -1,9 +1,14 @@
 /**
- * Create/edit validation — the FACTS enforced on a compiled document before it
- * can become an app: the compile is complete and clean, the tree is
+ * Create validation — the FACTS enforced on a compiled document before it can
+ * become an app: the compile is complete and clean, the tree is
  * catalog-consistent, its islands are syntactically sound and render without
  * crashing, its queries name real host tools, and its bindings fit the shapes
  * those tools actually return.
+ *
+ * EDIT validation is not here and no longer exists as a thing of its own. Since
+ * "the brain dies" (9a3e81342) an edit is the screen assembler rewriting the
+ * app's own `app.vendo` and saving it, so the save is checked by the paint
+ * seam's floor (../../checking/floor.ts) like every other author's commit.
  *
  * Judgment is not here and never was checkable here. Whether a number is
  * invented, a button dead, or a section beside the point is the AI reviewer's
@@ -13,11 +18,7 @@
 import {
   isAdvisoryWireIssue,
   VENDO_APP_FORMAT,
-  VENDO_TREE_FORMAT,
   validateAppDocument,
-  validateTree,
-  type AppDocument,
-  type Finding,
   type WireCompileResult,
 } from "@vendoai/core";
 import {
@@ -32,11 +33,8 @@ import {
   queryInputIssues,
   unknownToolIssues,
 } from "../../checking/facts.js";
-import { floorChecks } from "../../checking/floor.js";
-import { createCheckingLayer } from "../../checking/layer.js";
 import { prepareIslands } from "../../checking/islands.js";
 import { smokeRenderIslands } from "../../checking/smoke-render.js";
-import { pinComponentName } from "../../pins.js";
 import {
   asPayload,
   type GeneratedAppDocument,
@@ -54,7 +52,7 @@ export const UNSTORED_APP_ID = "app_generation_validation";
  *
  *  Advisory codes drop out here, from the one classification every door shares
  *  (`isAdvisoryWireIssue`) rather than a list per door. Mapping EVERY wire issue
- *  to a block is what made these two doors disagree with the paint seam, which
+ *  to a block is what made this door disagree with the paint seam, which
  *  refuses only what did not parse: `wire-id-ignored` is what our own
  *  `printWire({ includeIds: true })` stamps on an app's `app.vendo`, so the seam
  *  painted that source and `validate({ document })` refused the same bytes. */
@@ -132,88 +130,4 @@ export const validateCompiledCreate = async (
   const appValidation = validateAppDocument({ ...document, id: UNSTORED_APP_ID });
   if (!appValidation.ok) return { issues: [appValidation.error.message] };
   return { document, issues: [] };
-};
-
-/** One finding as the issue line this validator speaks. */
-const issueLine = ({ where, message }: Finding): string =>
-  where === undefined ? message : `${where} ${message}`;
-
-/** Edit validation: the SAME floor every other door runs (checking/floor.ts),
- *  filtered against the pre-existing app, so an edit that doesn't touch a stale
- *  node (a legacy Table.data prop, an already-dead button, an island that
- *  already crashed) is never blocked by that node's issue — only issues the edit
- *  newly introduces surface. Ids are stable across an edit and both runs read
- *  the same request text, so a carried-over issue is a byte-identical string. */
-export const validateEditedApp = async (
-  app: AppDocument,
-  deps: GenerationDependencies,
-  source: AppDocument,
-  /** The edit instruction — the user text in scope, threaded into the island
-   *  law-1 scan the same way create threads its request, so a value the user
-   *  themselves named is never read as a fabrication. */
-  requestText?: string,
-): Promise<string[]> => {
-  const validation = validateAppDocument(app);
-  if (!validation.ok) return [validation.error.message];
-  if (app.tree?.formatVersion !== VENDO_TREE_FORMAT) return ["tree edit produced an unsupported format"];
-  const treeValidation = validateTree(app.tree);
-  if (!treeValidation.ok) return [treeValidation.error.message];
-  const layer = createCheckingLayer({ deps, checks: floorChecks(deps) });
-  const request = requestText ?? "";
-  const carried = new Set((await layer.run({ document: source, request })).map(issueLine));
-  return (await layer.run({ document: app, request }))
-    .map(issueLine)
-    .filter((issue) => !carried.has(issue));
-};
-
-/**
- * A compiled edit as the NEXT version of a stored app. The tree and its islands
- * are the model's; everything else on the document — trigger, storage, machine,
- * pins, description — is the app's own history and survives untouched. Model
- * islands go through the same ambient contract create screens them with;
- * PINNED components are captured host source on the furnishing trust path, so
- * they are neither stripped nor scanned.
- */
-export const documentFromEdit = async (
-  previous: AppDocument,
-  compiled: WireCompileResult,
-  deps: GenerationDependencies,
-  instruction: string,
-): Promise<{ document?: AppDocument; issues: string[] }> => {
-  const structural = [
-    ...(compiled.complete ? [] : ["the edited app did not parse to a complete <App> document; the change was dropped."]),
-    ...blockingWireIssues(compiled),
-    ...compiled.bindingErrors.map((error) =>
-      `binding ${error.path} on node "${error.nodeId}" prop "${error.prop}": ${error.message}${error.available === undefined ? "" : ` (available: ${error.available.join(", ")})`}`),
-  ];
-  if (structural.length > 0) return { issues: structural };
-  const app: AppDocument = {
-    ...structuredClone(previous),
-    ...(compiled.name === undefined ? {} : { name: compiled.name }),
-    tree: asPayload(structuredClone(compiled.tree)),
-  };
-  const pinned = new Set((previous.pins ?? []).map((pin) => pinComponentName(pin.slot)));
-  const split = (all: Record<string, string>): { pinned: Record<string, string>; model: Record<string, string> } => ({
-    pinned: Object.fromEntries(Object.entries(all).filter(([name]) => pinned.has(name))),
-    model: Object.fromEntries(Object.entries(all).filter(([name]) => !pinned.has(name))),
-  });
-  const hostComponents = deps.catalog.map(({ name }) => name);
-  const parts = split(compiled.components);
-  // Admission runs here for the STAMP (`componentTools`); its issues are the
-  // floor's to report, from `validateEditedApp` below, where the carried-issue
-  // filter lives.
-  const prepared = await prepareIslands(parts.model, deps.tools, hostComponents, instruction);
-  const components = { ...parts.pinned, ...prepared.components };
-  if (Object.keys(components).length === 0) {
-    delete app.components;
-    delete app.componentTools;
-  } else {
-    app.components = structuredClone(components);
-    // componentTools stays DEFINED whenever components exist, so the renderer's
-    // stamped-era rule (missing key = zero tools) applies instead of its
-    // source-scan fallback.
-    app.componentTools = structuredClone(prepared.componentTools);
-  }
-  const issues = await validateEditedApp(app, deps, previous, instruction);
-  return issues.length > 0 ? { issues } : { document: app, issues: [] };
 };
