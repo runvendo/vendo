@@ -22,7 +22,8 @@ import {
   type VendoViewStreamingToolCall,
 } from "@vendoai/core";
 import type { AppDataAccess } from "./app-data.js";
-import { NO_ASSEMBLER, NOTHING_RENDERABLE, NO_MACHINE, type AppsRuntime } from "./runtime.js";
+import { NO_ASSEMBLER, NOTHING_RENDERABLE, NO_MACHINE } from "./build-messages.js";
+import type { AppsRuntime } from "./types.js";
 
 const DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema";
 
