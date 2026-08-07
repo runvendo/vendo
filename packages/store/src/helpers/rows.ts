@@ -111,26 +111,32 @@ export async function replaceThreadMessages(
   now = new Date().toISOString(),
 ): Promise<void> {
   // A legacy/hand-written row may hold messages with no `id` (the door accepts
-  // any Json). Derive a positional id for those rather than dropping them —
-  // the same rule the v6 backfill uses, so both doors agree.
+  // any Json). Derive a positional id for those rather than dropping them.
+  //
+  // The ids are derived ONCE, in TypeScript, and passed in beside the messages.
+  // SQL used to re-derive them with `COALESCE(elem->>'id', …)`, which disagreed
+  // with the TypeScript rule on an empty-string id ('' is not NULL, so COALESCE
+  // kept it) and on a non-string id (`elem->>'id'` renders 5 as '5'). The
+  // duplicate guard runs on the TypeScript rule, so those inputs cleared it and
+  // then collided inside this statement — the bare 21000 the guard exists to
+  // prevent. One derivation means the guard and the statement cannot disagree.
+  const ids = threadMessageRowIds(messages);
   await db.query(
     `INSERT INTO vendo_thread_messages (thread_id, id, seq, message, created_at, updated_at)
-     SELECT $1, COALESCE(elem->>'id', 'msg_' || (ordinality - 1)::text),
-            (ordinality - 1)::integer, elem, $3, $3
-     FROM jsonb_array_elements($2::jsonb) WITH ORDINALITY AS a(elem, ordinality)
+     SELECT $1, ids.id, (a.ordinality - 1)::integer, a.elem, $4, $4
+     FROM unnest($3::text[]) WITH ORDINALITY AS ids(id, n)
+     JOIN jsonb_array_elements($2::jsonb) WITH ORDINALITY AS a(elem, ordinality)
+       ON a.ordinality = ids.n
      ON CONFLICT (thread_id, id) DO UPDATE
        SET seq = EXCLUDED.seq, message = EXCLUDED.message, updated_at = EXCLUDED.updated_at,
            revision = vendo_thread_messages.revision + 1
        WHERE vendo_thread_messages.message IS DISTINCT FROM EXCLUDED.message
           OR vendo_thread_messages.seq IS DISTINCT FROM EXCLUDED.seq`,
-    [threadId, JSON.stringify(messages), now],
+    [threadId, JSON.stringify(messages), ids, now],
   );
   await db.query(
-    `DELETE FROM vendo_thread_messages
-     WHERE thread_id = $1 AND id <> ALL (
-       SELECT COALESCE(elem->>'id', 'msg_' || (ordinality - 1)::text)
-       FROM jsonb_array_elements($2::jsonb) WITH ORDINALITY AS a(elem, ordinality))`,
-    [threadId, JSON.stringify(messages)],
+    "DELETE FROM vendo_thread_messages WHERE thread_id = $1 AND id <> ALL ($2::text[])",
+    [threadId, ids],
   );
 }
 
