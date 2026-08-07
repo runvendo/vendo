@@ -76,27 +76,30 @@ export interface TelemetryOptions {
 }
 
 /**
- * The value of one NAME=value line in `<root>/.env.local`. Matches dotenv
- * semantics for hand-authored entries: surrounding quotes are stripped, and
- * unquoted values lose their ` #…` inline comment. Non-throwing: a missing
- * or unreadable file is null. Sync on purpose — telemetry client creation is
- * synchronous.
+ * The value of one NAME=value line in the project's dotenv. The SYNC half of
+ * the one env reader — telemetry client creation cannot await — reading the
+ * same files in the same precedence as sync-flow.ts's `readEnvFiles`: `.env`
+ * then `.env.local`, local wins. Matches dotenv semantics for hand-authored
+ * entries: surrounding quotes are stripped, and unquoted values lose their
+ * ` #…` inline comment. Non-throwing: a missing or unreadable file is null.
  */
-export function envLocalValueSync(root: string, name: string): string | null {
-  try {
-    const raw = readFileSync(join(root, ".env.local"), "utf8");
-    const match = raw.match(new RegExp(`^\\s*${name}\\s*=\\s*(.+?)\\s*$`, "m"));
-    const value = match?.[1];
-    if (value === undefined) return null;
-    return normalizeDotEnvValue(value);
-  } catch {
-    return null;
+export function envFileValueSync(root: string, name: string): string | null {
+  let found: string | null = null;
+  for (const file of [".env", ".env.local"]) {
+    try {
+      const raw = readFileSync(join(root, file), "utf8");
+      const match = raw.match(new RegExp(`^\\s*(?:export\\s+)?${name}\\s*=\\s*(.+?)\\s*$`, "m"));
+      if (match?.[1] !== undefined) found = normalizeDotEnvValue(match[1]);
+    } catch {
+      // A missing file is the common case.
+    }
   }
+  return found;
 }
 
-/** One value grammar for every CLI dotenv reader (envLocalValueSync, doctor's
- * readDotEnvFallback): matching surrounding quotes are stripped; unquoted
- * values lose their ` #…` inline comment. */
+/** One value grammar for both halves of the CLI's env reader (this file's
+ * envFileValueSync and sync-flow.ts's readEnvFiles): matching surrounding
+ * quotes are stripped; unquoted values lose their ` #…` inline comment. */
 export function normalizeDotEnvValue(value: string): string {
   const quoted = value.match(/^(["'])(.*)\1$/);
   if (quoted?.[2] !== undefined) return quoted[2];
@@ -108,15 +111,14 @@ export function toolingTelemetry(options: TelemetryOptions & {
 } = {}): Telemetry {
   try {
     let env = options.env ?? process.env;
-    // Cloud-lane key sourcing widens to the project's .env.local — exactly
+    // Cloud-lane key sourcing widens to the project's dotenv — exactly
     // where `vendo login` / cloud-init / --cloud-key land the key — because
     // a Cloud-minted key almost never lives in the process env. Only
     // VENDO_API_KEY widens: consent vars (DO_NOT_TRACK, CI, …) keep coming
     // from the caller's env untouched, and an explicit non-blank env value
-    // always wins over .env.local (the same precedence init's credential
-    // merge uses).
+    // always wins over the files (the same precedence readEnvFiles uses).
     if ((env.VENDO_API_KEY ?? "").trim() === "") {
-      const stored = envLocalValueSync(options.cwd ?? process.cwd(), "VENDO_API_KEY");
+      const stored = envFileValueSync(options.cwd ?? process.cwd(), "VENDO_API_KEY");
       if (stored !== null) env = { ...env, VENDO_API_KEY: stored };
     }
     return initTelemetry({

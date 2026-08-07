@@ -1658,7 +1658,7 @@ function discoveryFetch(challenge?: string): typeof fetch {
   }) as typeof fetch;
 }
 
-describe("readDotEnvFallback", () => {
+describe("readEnvFiles — the CLI's one env reader (doctor and config read it too)", () => {
   it("reads .env.local over .env, parses quotes/comments, never overrides process env at the merge site", async () => {
     const root = await mkdtemp(join(tmpdir(), "vendo-doctor-env-"));
     cleanup.push(() => rm(root, { recursive: true, force: true }));
@@ -1667,8 +1667,8 @@ describe("readDotEnvFallback", () => {
       join(root, ".env.local"),
       "# comment\nSHARED=from-local\nVENDO_API_KEY=\"vnd_0123\"\nexport EXPORTED=yes\nEMPTY=\nBROKEN LINE\n",
     );
-    const { readDotEnvFallback } = await import("./doctor.js");
-    const env = await readDotEnvFallback(root);
+    const { readEnvFiles } = await import("./sync-flow.js");
+    const env = await readEnvFiles(root, {});
     expect(env["SHARED"]).toBe("from-local");
     expect(env["ENV_ONLY"]).toBe("plain");
     expect(env["VENDO_API_KEY"]).toBe("vnd_0123");
@@ -1677,32 +1677,32 @@ describe("readDotEnvFallback", () => {
     expect(Object.keys(env)).not.toContain("BROKEN LINE");
   });
 
-  it("strips inline comments from unquoted values, same grammar as envLocalValueSync", async () => {
+  it("strips inline comments from unquoted values, same grammar as envFileValueSync", async () => {
     const root = await mkdtemp(join(tmpdir(), "vendo-doctor-envc-"));
     cleanup.push(() => rm(root, { recursive: true, force: true }));
     await writeFile(join(root, ".env.local"), "VENDO_API_KEY=vnd_abc # dev key\nQUOTED=\"kept # inside\"\n");
-    const { readDotEnvFallback } = await import("./doctor.js");
-    const env = await readDotEnvFallback(root);
+    const { readEnvFiles } = await import("./sync-flow.js");
+    const env = await readEnvFiles(root, {});
     expect(env["VENDO_API_KEY"]).toBe("vnd_abc");
     expect(env["QUOTED"]).toBe("kept # inside");
   });
 
   it("blank process values yield to concrete dotenv values at the merge", async () => {
-    const { mergeEnvOverDotEnv } = await import("./doctor.js");
-    const merged = mergeEnvOverDotEnv(
-      { VENDO_API_KEY: "vnd_real", ONLY_FILE: "x" },
-      { VENDO_API_KEY: "  ", SHELL_WINS: "yes", ONLY_PROC: "" },
-    );
+    const root = await mkdtemp(join(tmpdir(), "vendo-doctor-envm-"));
+    cleanup.push(() => rm(root, { recursive: true, force: true }));
+    await writeFile(join(root, ".env"), "VENDO_API_KEY=vnd_real\nONLY_FILE=x\n");
+    const { readEnvFiles } = await import("./sync-flow.js");
+    const merged = await readEnvFiles(root, { VENDO_API_KEY: "  ", SHELL_WINS: "yes", ONLY_PROC: "" });
     expect(merged["VENDO_API_KEY"]).toBe("vnd_real");
     expect(merged["ONLY_FILE"]).toBe("x");
     expect(merged["SHELL_WINS"]).toBe("yes");
     expect(merged["ONLY_PROC"]).toBe("");
   });
 
-  it("returns an empty object when no env files exist", async () => {
+  it("returns only the process env when no env files exist", async () => {
     const root = await mkdtemp(join(tmpdir(), "vendo-doctor-noenv-"));
     cleanup.push(() => rm(root, { recursive: true, force: true }));
-    const { readDotEnvFallback } = await import("./doctor.js");
-    expect(await readDotEnvFallback(root)).toEqual({});
+    const { readEnvFiles } = await import("./sync-flow.js");
+    expect(await readEnvFiles(root, {})).toEqual({});
   });
 });

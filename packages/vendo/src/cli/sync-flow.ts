@@ -108,7 +108,10 @@ export interface SyncFlowResult {
  * both through doctor's copy, and telemetry had a third. Minimal KEY=VALUE
  * parser: `export ` prefix, matching quotes, `#` comment lines.
  */
-export async function readEnvFiles(root: string): Promise<Record<string, string | undefined>> {
+export async function readEnvFiles(
+  root: string,
+  processEnv: NodeJS.ProcessEnv = process.env,
+): Promise<Record<string, string | undefined>> {
   const fromFiles: Record<string, string> = {};
   for (const file of [".env", ".env.local"]) {
     const source = await readOptional(join(root, file));
@@ -121,8 +124,8 @@ export async function readEnvFiles(root: string): Promise<Record<string, string 
       fromFiles[match[1]!] = normalizeDotEnvValue(match[2]!.trim());
     }
   }
-  const merged: Record<string, string | undefined> = { ...fromFiles, ...process.env };
-  for (const [key, value] of Object.entries(process.env)) {
+  const merged: Record<string, string | undefined> = { ...fromFiles, ...processEnv };
+  for (const [key, value] of Object.entries(processEnv)) {
     if ((value ?? "").trim() === "" && fromFiles[key] !== undefined) merged[key] = fromFiles[key];
   }
   return merged;

@@ -45,7 +45,7 @@ import {
   clientRoot,
   cloudProjectProps,
   consoleOutput,
-  envLocalValueSync,
+  envFileValueSync,
   errorClass,
   exists,
   invokedByPackageScript,
@@ -814,13 +814,6 @@ async function writeIfMissing(path: string, content: string, force: boolean): Pr
   await writeText(path, content);
 }
 
-/** The value of one NAME=value line in .env.local (the cloud step's upsert
-    target) — the same-run pickup reads the freshly minted key back from disk.
-    One parser for the whole CLI: shared.ts's envLocalValueSync (telemetry's
-    cloud-key read uses the same one, so the two can never disagree). */
-async function envLocalValue(root: string, name: string): Promise<string | null> {
-  return envLocalValueSync(root, name);
-}
 
 async function ensureVendoEnvExample(root: string): Promise<void> {
   const path = join(root, ".env.example");
@@ -933,7 +926,7 @@ export async function runInit(options: InitOptions): Promise<number> {
     let effectiveEnv = env;
     for (const name of [...ENV_KEY_VARS.map((entry) => entry.envVar), "VENDO_API_KEY"]) {
       if ((env[name] ?? "").trim() !== "") continue;
-      const stored = await envLocalValue(root, name);
+      const stored = envFileValueSync(root, name);
       if (stored !== null) effectiveEnv = { ...effectiveEnv, [name]: stored };
     }
     let credential = await (options.resolveCredential ?? resolveDevCredential)({ env: effectiveEnv });
@@ -960,7 +953,7 @@ export async function runInit(options: InitOptions): Promise<number> {
     // Same-run pickup: a starter key minted just now lands in .env.local —
     // merge it the same way so THIS run's passes already benefit.
     if (cloud.wroteEnvLocal) {
-      const minted = await envLocalValue(root, "VENDO_API_KEY");
+      const minted = envFileValueSync(root, "VENDO_API_KEY");
       if (minted !== null) {
         effectiveEnv = { ...effectiveEnv, VENDO_API_KEY: minted };
         credential = await (options.resolveCredential ?? resolveDevCredential)({ env: effectiveEnv });
