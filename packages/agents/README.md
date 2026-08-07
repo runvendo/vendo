@@ -1,8 +1,9 @@
 # @vendoai/agents
 
 Spawn a governed, harness-grade agent in any Node backend in a few lines. One
-runtime, always host-run; a Vendo Cloud key fills every slot left unset — an
-explicit adapter always wins, and there is no hidden key-conditional behavior.
+runtime, always host-run; a Vendo Cloud key fills the sandbox slot when you
+leave it unset — an explicit adapter always wins, and there is no hidden
+key-conditional behavior.
 
 ```ts
 import { agent, tool, api, createGuard, e2b, postgres } from "@vendoai/agents";
@@ -46,8 +47,9 @@ silent new conversation. `session.threadId` is the id to hand your client.
 
 Every tool call passes the guard (`run` / `ask` / `block`); the dev's risk
 label is final and an unlabeled tool asks. Unset slots resolve down the
-ladder: store → Cloud tenant Postgres (`VENDO_API_KEY`) or the embedded
-zero-config store; sandbox → `E2B_API_KEY` or the Cloud pool. Egress binds at
+ladder: store → the embedded zero-config store (with `VENDO_API_KEY` set,
+pass `store` explicitly — Cloud tenant-store access is not wired yet);
+sandbox → `E2B_API_KEY` or the Cloud pool. Egress binds at
 box boot from host code only — a list adds to the harness's minimum, `"all"`
 lifts it, and every box boot writes one audit row saying which skin it got.
 

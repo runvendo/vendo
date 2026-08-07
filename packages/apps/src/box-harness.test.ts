@@ -1,7 +1,7 @@
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 // The box harness ships as zero-dependency runtime .mjs baked into the base
 // template; it is exercised here through its side-effect-free factory.
 import { createHarness } from "../box/harness.mjs";
@@ -10,12 +10,23 @@ import { createHarness } from "../box/harness.mjs";
  *  each read names the shape the route documents. */
 const jsonOf = async <T>(response: Response): Promise<T> => await response.json() as T;
 
+/**
+ * A temp dir removed when the test finishes — pass, fail, or throw.
+ * `onTestFinished` runs outside the test body, so a harness that fails to
+ * start (or an assertion that throws mid-test) cannot strand the directory.
+ */
+function boxDir(prefix: string): string {
+  const dir = mkdtempSync(path.join(tmpdir(), prefix));
+  onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
+  return dir;
+}
+
 /** Drive one harness on an ephemeral port against a scripted agent engine. */
 const withHarness = async (
   runAgentTask: (input: { prompt: string; context?: string; env: Record<string, string> }) => Promise<unknown>,
   body: (base: string, harness: ReturnType<typeof createHarness>) => Promise<void>,
 ): Promise<void> => {
-  const appDir = mkdtempSync(path.join(tmpdir(), "vendo-box-"));
+  const appDir = boxDir("vendo-box-");
   const harness = createHarness({
     appDir,
     controlPort: 0,
@@ -135,7 +146,7 @@ describe("box control-port protocol", () => {
   });
 
   it("supervises the app from the .vendo/run Procfile entry", async () => {
-    const appDir = mkdtempSync(path.join(tmpdir(), "vendo-box-"));
+    const appDir = boxDir("vendo-box-");
     const marker = path.join(appDir, "started.txt");
     // createHarness() creates .vendo/; write the Procfile entry before start().
     const harness = createHarness({ appDir, controlPort: 0, runAgentTask: (async () => ({ ok: true, summary: "", filesChanged: [], testsRun: 0 })) as never });
@@ -163,8 +174,8 @@ describe("box control-port protocol", () => {
     // supervisor must never source the machine's shell profiles. Sourcing them
     // is what flaked this suite under load-average 40 (a host ~/.bash_profile
     // is arbitrarily slow), and it leaks host profile env into the app.
-    const appDir = mkdtempSync(path.join(tmpdir(), "vendo-box-"));
-    const home = mkdtempSync(path.join(tmpdir(), "vendo-home-"));
+    const appDir = boxDir("vendo-box-");
+    const home = boxDir("vendo-home-");
     const profileRan = path.join(home, "profile-ran");
     writeFileSync(
       path.join(home, ".bash_profile"),

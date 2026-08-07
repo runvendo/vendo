@@ -395,9 +395,15 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
       return (await raw.query(query, params)).rows as never;
     },
     async close() {
-      await new Promise<void>((resolve, reject) => httpServer.close((error) => (error ? reject(error) : resolve())));
-      await store.close();
-      await rm(dataDir, { recursive: true, force: true });
+      // The data dir goes in a finally: a server that refuses to close, or a
+      // PGlite close that rejects, must not strand the scratch directory —
+      // that is what grew /tmp by one dir per stack for every red run.
+      try {
+        await new Promise<void>((resolve, reject) => httpServer.close((error) => (error ? reject(error) : resolve())));
+        await store.close();
+      } finally {
+        await rm(dataDir, { recursive: true, force: true });
+      }
     },
   };
 }

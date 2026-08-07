@@ -1,8 +1,8 @@
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { prepareE2eRepo } from "./e2e-prep.js";
+import { tempDir } from "./temp-dir.test-util.js";
+import { APP_THEME_PATH, prepareE2eRepo, SRC_APP_THEME_PATH } from "./e2e-prep.js";
 
 /** The handler `vendo init` currently scaffolds under api/vendo/[...vendo]. */
 const initRouteSource = `import { model } from "@/lib/ai";
@@ -31,7 +31,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 }
 
 async function createSkateshopFixture(): Promise<{ appRoot: string; logsDir: string }> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "vendo-e2e-prep-"));
+  const root = await tempDir("vendo-e2e-prep-");
   const appRoot = path.join(root, "skateshop");
   const logsDir = path.join(root, "logs");
   await mkdir(path.join(appRoot, ".vendo"), { recursive: true });
@@ -42,7 +42,7 @@ async function createSkateshopFixture(): Promise<{ appRoot: string; logsDir: str
     path.join(appRoot, "src/app/layout.tsx"),
     `import { ClerkProvider } from "@clerk/nextjs"
 import { VendoProvider } from "@vendoai/vendo/react";
-import theme from "../../.vendo/theme.json";
+import theme from "${SRC_APP_THEME_PATH}";
 import type { VendoTheme } from "@vendoai/vendo";
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -128,7 +128,7 @@ function umamiExtractionToolsJson(): string {
 }
 
 async function createUmamiFixture(): Promise<{ appRoot: string; logsDir: string }> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "vendo-e2e-prep-"));
+  const root = await tempDir("vendo-e2e-prep-");
   const appRoot = path.join(root, "umami");
   const logsDir = path.join(root, "logs");
   await mkdir(path.join(appRoot, ".vendo"), { recursive: true });
@@ -138,7 +138,7 @@ async function createUmamiFixture(): Promise<{ appRoot: string; logsDir: string 
   await writeFile(
     path.join(appRoot, "src/app/layout.tsx"),
     initLayoutSource(
-      "../../.vendo/theme.json",
+      SRC_APP_THEME_PATH,
       (inner) => `<html lang="en"><body><Providers>${inner}</Providers></body></html>`,
     ),
   );
@@ -179,7 +179,7 @@ async function createPapermarkFixture(options: {
   routeSegment?: string | null;
   toolsJson?: string;
 } = {}): Promise<{ appRoot: string; logsDir: string }> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "vendo-e2e-prep-"));
+  const root = await tempDir("vendo-e2e-prep-");
   const appRoot = path.join(root, "papermark");
   const logsDir = path.join(root, "logs");
   await mkdir(path.join(appRoot, ".vendo"), { recursive: true });
@@ -194,7 +194,7 @@ async function createPapermarkFixture(options: {
   await writeFile(
     path.join(appRoot, "app/layout.tsx"),
     initLayoutSource(
-      "../.vendo/theme.json",
+      APP_THEME_PATH,
       (inner) => `<html lang="en"><body>${inner}</body></html>`,
     ),
   );
@@ -207,7 +207,7 @@ async function createPapermarkFixture(options: {
 
 describe("prepareE2eRepo", () => {
   it("keeps the permanently wired Express host as an explicit no-op", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "vendo-express-prep-"));
+    const root = await tempDir("vendo-express-prep-");
     const appRoot = path.join(root, "express-host");
     const logsDir = path.join(root, "logs");
 
@@ -366,7 +366,7 @@ describe("prepareE2eRepo", () => {
   });
 
   it("aligns Teable's generated App Router and model module with its src/pages tree", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "vendo-teable-prep-"));
+    const root = await tempDir("vendo-teable-prep-");
     const appRoot = path.join(root, "apps/nextjs-app");
     const backendRoot = path.join(root, "apps/nestjs-backend");
     const logsDir = path.join(root, "logs");
@@ -384,7 +384,7 @@ describe("prepareE2eRepo", () => {
     );
     await writeFile(
       path.join(appRoot, "app/layout.tsx"),
-      'import theme from "../.vendo/theme.json";\n',
+      `import theme from "${APP_THEME_PATH}";\n`,
     );
     await writeFile(path.join(appRoot, "lib/ai.ts"), "export const model = {};\n");
     await writeFile(path.join(appRoot, "src/pages/auth/login.tsx"), "export default function Login() {}\n");
@@ -395,7 +395,7 @@ describe("prepareE2eRepo", () => {
     await expect(readFile(path.join(appRoot, "app/layout.tsx"), "utf8")).rejects.toThrow();
     await expect(readFile(path.join(appRoot, "lib/ai.ts"), "utf8")).rejects.toThrow();
     await expect(readFile(path.join(appRoot, "src/app/api/vendo/[...vendo]/route.ts"), "utf8")).resolves.toContain("@/lib/ai");
-    await expect(readFile(path.join(appRoot, "src/app/layout.tsx"), "utf8")).resolves.toContain('../../.vendo/theme.json');
+    await expect(readFile(path.join(appRoot, "src/app/layout.tsx"), "utf8")).resolves.toContain(SRC_APP_THEME_PATH);
     await expect(readFile(path.join(appRoot, "src/lib/ai.ts"), "utf8")).resolves.toContain("export const model");
     await expect(readFile(path.join(backendRoot, "next-i18next.config.js"), "utf8")).resolves.toContain("defaultLocale");
     expect(firstLogs).toEqual([path.join(logsDir, "e2e.prepare.log")]);
@@ -406,12 +406,12 @@ describe("prepareE2eRepo", () => {
   });
 
   it("fails Teable prep loudly when the next-i18next config is missing", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "vendo-teable-prep-"));
+    const root = await tempDir("vendo-teable-prep-");
     const appRoot = path.join(root, "apps/nextjs-app");
     const logsDir = path.join(root, "logs");
     await mkdir(path.join(appRoot, "src/app"), { recursive: true });
     await mkdir(path.join(appRoot, "src/lib"), { recursive: true });
-    await writeFile(path.join(appRoot, "src/app/layout.tsx"), 'import theme from "../../.vendo/theme.json";\n');
+    await writeFile(path.join(appRoot, "src/app/layout.tsx"), `import theme from "${SRC_APP_THEME_PATH}";\n`);
     await writeFile(path.join(appRoot, "src/lib/ai.ts"), "export const model = {};\n");
 
     await expect(prepareE2eRepo({ name: "teable" }, appRoot, logsDir)).rejects.toThrow(/next-i18next\.config\.js/);

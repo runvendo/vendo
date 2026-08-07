@@ -1,8 +1,8 @@
-import { mkdtemp as mkdtempRaw, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 // A real workerd run reports a "not implemented" Error with NO .code at all
 // when a build's "workerd" custom condition didn't resolve to
@@ -23,21 +23,21 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 import { readOptionalVendoJson } from "./host-files.js";
 import { readOptionalVendoJson as readOnEdge } from "./host-files-edge.js";
 
-// Every case here needs a real temp dir; without this the file left one behind
-// per case on every run.
-const roots: string[] = [];
-const mkdtemp = async (prefix: string): Promise<string> => {
-  const root = await mkdtempRaw(prefix);
-  roots.push(root);
+/**
+ * A host root that is removed when the test finishes — pass, fail, or throw.
+ * `onTestFinished` runs outside the test body's own try/catch, so a failing
+ * assertion (several of these tests assert on rejections) cannot strand the
+ * directory the way a trailing `rm` at the end of the test body would.
+ */
+async function hostRoot(prefix: string): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), prefix));
+  onTestFinished(() => rm(root, { recursive: true, force: true }));
   return root;
-};
-afterEach(async () => {
-  for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
-});
+}
 
 describe("host config files, node entry", () => {
   it("reads and parses a .vendo file, resolving the dir from a host root", async () => {
-    const root = await mkdtemp(join(tmpdir(), "vendo-host-files-"));
+    const root = await hostRoot("vendo-host-files-");
     const { mkdir } = await import("node:fs/promises");
     await mkdir(join(root, ".vendo"));
     await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({ format: "vendo/tools@3", tools: [] }));
@@ -46,7 +46,7 @@ describe("host config files, node entry", () => {
   });
 
   it("returns undefined for a missing file", async () => {
-    const root = await mkdtemp(join(tmpdir(), "vendo-host-files-"));
+    const root = await hostRoot("vendo-host-files-");
     const parsed = await readOptionalVendoJson(root, "tools.json", (value) => value);
     expect(parsed).toBeUndefined();
   });
@@ -58,7 +58,7 @@ describe("host config files, node entry", () => {
     // mock comment above for why this isn't reproduced on a real disk.
     const notImplemented = Object.assign(new Error("not implemented"), { code: undefined });
     readFileMock.mockRejectedValueOnce(notImplemented);
-    const root = await mkdtemp(join(tmpdir(), "vendo-host-files-unenv-"));
+    const root = await hostRoot("vendo-host-files-unenv-");
     await expect(readOptionalVendoJson(root, "tools.json", (value) => value)).resolves.toBeUndefined();
   });
 
@@ -70,7 +70,7 @@ describe("host config files, node entry", () => {
     for (const code of ["EACCES", "EISDIR", "EMFILE"]) {
       const classedFailure = Object.assign(new Error(`simulated ${code}`), { code });
       readFileMock.mockRejectedValueOnce(classedFailure);
-      const root = await mkdtemp(join(tmpdir(), `vendo-host-files-${code}-`));
+      const root = await hostRoot(`vendo-host-files-${code}-`);
       await expect(readOptionalVendoJson(root, "overrides.json", (value) => value)).rejects.toMatchObject({
         name: "VendoError",
         code: "validation",
@@ -80,7 +80,7 @@ describe("host config files, node entry", () => {
   });
 
   it("still throws loudly on malformed JSON — only read failures degrade, not content-shape failures", async () => {
-    const root = await mkdtemp(join(tmpdir(), "vendo-host-files-"));
+    const root = await hostRoot("vendo-host-files-");
     const { mkdir } = await import("node:fs/promises");
     await mkdir(join(root, ".vendo"));
     await writeFile(join(root, ".vendo", "tools.json"), "{ not valid json");

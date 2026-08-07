@@ -86,14 +86,29 @@ const openDoor = (
   // operator and nothing else — the app registers no address anywhere, so no
   // boot-time call can repoint a live deployment or swap its authentication
   // architecture behind its back.
-  const remoteAs = mcpOptions.remoteAs ?? declaredRemoteAs(environment("VENDO_MCP_BROKER_URL"));
+  //
+  // An explicit `mcp.serviceAuth` is itself a LOCAL authorization-server choice:
+  // the RFC 8693 exchange it opens exists only at the door's own `/token`, which
+  // a `remoteAs` door does not serve (`packages/mcp/src/door.ts`). So it fills
+  // the same slot the env default fills, and the env default does not displace
+  // it — the deployment variable is a default, and a default never overrides
+  // what the host passed. The broker URL is still PARSED either way, so a
+  // malformed one keeps failing loudly instead of dropping to a local door.
+  const declaredBroker = declaredRemoteAs(environment("VENDO_MCP_BROKER_URL"));
+  const remoteAs = mcpOptions.remoteAs
+    ?? (mcpOptions.serviceAuth === undefined ? declaredBroker : undefined);
   const secret = environment("VENDO_MCP_FEDERATION_SECRET");
   const federation = mcpOptions.federation ?? (secret === undefined ? undefined : { secret });
   if (mcpOptions.serviceAuth !== undefined && remoteAs !== undefined) {
+    // Only reachable now with BOTH keys passed explicitly, side by side: the
+    // host named an external authorization server AND asked this door for an
+    // exchange only a local one can serve. The explicit `remoteAs` is honoured
+    // — it is a value the door can act on, and composition throws only for
+    // values it cannot (a malformed broker URL, an empty `serviceAuth.keys`).
     console.warn(
-      "[vendo] mcp.serviceAuth is set, but this door trusts an external authorization server "
-      + "(mcp.remoteAs, or a declared VENDO_MCP_BROKER_URL), so it does not serve its own token endpoint "
-      + "— the service-key exchange lives there. Exchange keys at that server instead.",
+      "[vendo] mcp.serviceAuth is set alongside an explicit mcp.remoteAs, so this door trusts that "
+      + "external authorization server and does not serve its own token endpoint — the service-key "
+      + "exchange lives there. Exchange keys at that server instead, or drop mcp.remoteAs.",
     );
   }
   return {
