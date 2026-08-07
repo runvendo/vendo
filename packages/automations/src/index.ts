@@ -27,7 +27,7 @@ import type {
 import type { AppsRuntime } from "@vendoai/apps";
 import { createAutomationsEngine } from "./engine.js";
 
-export { appIntentOf, SPONSORSHIPS, triggerKey, type Sponsorship } from "./sponsorship.js";
+export { triggerKey } from "./sponsorship.js";
 export { UNATTENDED_IRREVERSIBILITY_RULE, unattendedIrreversibilityCheck } from "./law.js";
 
 /** Build contract §9.3's `can()`, as much of it as the engine needs — taken as

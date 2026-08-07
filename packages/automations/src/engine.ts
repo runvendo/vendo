@@ -22,7 +22,6 @@ import {
   type Json,
   type PermissionGrant,
   type GrantScope,
-  type Principal,
   type RecordStore,
   type RunContext,
   type RunId,
@@ -72,23 +71,20 @@ const CAPTURES = "automations:captures";
 const SCHEDULE = "automations:schedule";
 const WEBHOOK = "automations:webhook";
 const DELIVERIES = "automations:deliveries";
-/**
- * Which TRIGGERS of an app are armed — one row per armed (app, trigger),
- * engine-owned like `automations:captures`, so the generic records door is right
- * here.
- *
- * It is a second fact beside the app row's `enabled` boolean deliberately, and
- * the two mean different things: `enabled` is the APP-level arm the apps runtime
- * already owns (a trigger edit disarms the whole app there, §9.9), this is the
- * per-trigger arm a person turns on and off. A firing needs BOTH, so the
- * existing app-level disarm keeps working untouched and turning one trigger off
- * never reaches another.
- */
 /** The app row's trigger-kind ref BEFORE the trigger list: one key holding one
  *  kind. Kept only so the queries below can still find a row nobody has
  *  rewritten yet — nothing writes it any more. */
 const PRE_LIST_TRIGGER_KIND_REF = "trigger_kind";
-
+/**
+ * Which TRIGGERS of an app are armed — one row per armed (app, trigger).
+ *
+ * A second fact beside the app row's `enabled` boolean deliberately, and the two
+ * mean different things: `enabled` is the APP-level arm the apps runtime already
+ * owns (a trigger edit disarms the whole app there, §9.9), this is the
+ * per-trigger arm a person turns on and off. A firing needs BOTH, so the
+ * existing app-level disarm keeps working untouched and turning one trigger off
+ * never reaches another.
+ */
 const ARMED = "automations:armed";
 const WEBHOOK_MAX_BYTES = 1024 * 1024;
 const FOREACH_MAX_ITEMS = 1000;

@@ -113,9 +113,13 @@ export const currentIntentHash = (doc: AppDocument, trigger: Trigger | undefined
   intentHash(appIntentOf(doc, trigger));
 
 /** The stored sponsorship, or undefined when there is none (an automation
- *  enabled before sponsorship shipped) or the row is unreadable. A corrupt row
- *  is not a sponsorship — it degenerates to the pre-sponsorship behavior of
- *  running as the app's owner rather than stranding the automation. */
+ *  enabled before sponsorship shipped) or the row is unreadable.
+ *
+ *  A corrupt row therefore reads as NO row, which the caller resolves against
+ *  the {@link SPONSORED} era marker — and since every sponsorship write stamps
+ *  that marker, the automation fails CLOSED (it stops) rather than falling back
+ *  to running as the app's owner. That is the intended answer: an unreadable
+ *  sponsorship is not evidence that nobody took the automation on. */
 export const readSponsorship = async (
   records: RecordStore,
   appId: string,
