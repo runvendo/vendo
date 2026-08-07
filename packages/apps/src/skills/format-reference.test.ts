@@ -7,11 +7,33 @@
  * the model follows it, the app fails validation, and the model has no way to
  * learn which of the two was wrong.
  */
+import { readFile } from "node:fs/promises";
 import { compilePlan, compileWire, EXPR_CALLS, RESHAPE_OPS, WIRE_COMPONENT_NAMES } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { VENDO_FORMAT_REFERENCE } from "./format-reference.js";
 
 const FENCED = /```\n([\s\S]*?)```/g;
+
+const REPO_ROOT = new URL("../../../../", import.meta.url);
+const PLAN_COMPILER = "packages/core/src/genui/plan/compile.ts";
+
+/** The reference's own `<Plan>` section, up to the next heading. */
+const planSection = (): string => {
+  const start = VENDO_FORMAT_REFERENCE.indexOf("### `<Plan");
+  const end = VENDO_FORMAT_REFERENCE.indexOf("\n### ", start + 1);
+  return VENDO_FORMAT_REFERENCE.slice(start, end);
+};
+
+/** Every attribute the plan compiler reads off the `<Plan>` ROOT, scanned from
+ *  the compiler itself — `head` is the root tag there, and every other element
+ *  reads its own `attrs.props`. */
+const planRootAttributes = async (): Promise<string[]> => {
+  const source = await readFile(new URL(PLAN_COMPILER, REPO_ROOT), "utf8");
+  return [...new Set([
+    ...source.matchAll(/stringAttr\(head\.props, "(\w+)"\)/g),
+    ...source.matchAll(/head\.props\??\.(\w+)/g),
+  ].map(([, name]) => name as string))];
+};
 
 /** Every fenced block whose first non-space character opens the named element. */
 const blocks = (tag: string): string[] =>
@@ -82,6 +104,26 @@ describe("the reference only names things that exist", () => {
     expect(documented).not.toContain("avg");
     expect(VENDO_FORMAT_REFERENCE).not.toContain("| avg");
     expect(VENDO_FORMAT_REFERENCE).toContain('sum(rows, "field")');
+  });
+
+  /** The reference's header promises it is taken from the parsers, and a model
+   *  that believes it strips whatever it does not find here — `display="stage"`
+   *  went undocumented while the compiler read it, so a full-width app arrived
+   *  as an inline card. This is the half that stops it drifting again: the
+   *  attribute list comes from the compiler, not from a reader. */
+  it("documents every attribute the plan compiler reads off `<Plan>`", async () => {
+    const attributes = await planRootAttributes();
+    // The scan itself is load-bearing: if the compiler stopped calling its root
+    // tag `head`, this would empty out and the loop below would hold nothing.
+    expect(attributes, `${PLAN_COMPILER} no longer reads <Plan> through \`head.props\``)
+      .toEqual(expect.arrayContaining(["name", "display"]));
+    const section = planSection();
+    for (const attribute of attributes) {
+      expect(section, `compilePlan reads <Plan ${attribute}> and the reference never says so`)
+        .toContain(`\`${attribute}\``);
+    }
+    // And it must not deny the ones it does not list.
+    expect(section).not.toMatch(/No other attribute on `<Plan>` is read/);
   });
 
   it("teaches the plan's real element set and no invented one", () => {
