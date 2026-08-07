@@ -116,6 +116,8 @@ Options:
   your endpoint even with a Vendo Cloud key present, and is never overridden.
   The `claude` rung additionally runs on a plain Claude Code login; `npx` does
   not, because it fetches the package rather than reusing a local install.
+  That is the ladder `vendo init` always walks; `vendo sync --ai` is the one
+  exception — see the `--ai` option under `vendo sync`.
 - `--theme <slot=value>` overrides a theme slot value directly (repeatable).
 - `--force` regenerates Vendo-owned files under `.vendo/`. It does not replace
   existing host source files.
@@ -501,8 +503,19 @@ Options:
   (interactive; cannot combine with `--json`).
 - `--full`: judge the whole catalog instead of only what moved.
 - `--engine <name>`: pin the judgment engine family (`claude`, `codex`,
-  `npx`); an unavailable pin skips loudly, never falls back.
-- `--ai`: run the judgment pass with no prompt, interactive or not.
+  `npx`); an unavailable pin skips loudly, never falls back. Subject to the
+  `--ai` carve-out below.
+- `--ai`: run the judgment pass with no prompt, interactive or not. **On an
+  incremental run `--ai` skips the engine sweep** — `vendo sync` runs in
+  `predev` on every dev-server start, so it must not probe harnesses each time
+  — and the pass resolves its own engine behind a narrower credential gate that
+  reads only `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+  `GOOGLE_GENERATIVE_AI_API_KEY` and `VENDO_API_KEY`. A machine carrying **only**
+  `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN` or a standalone
+  `ANTHROPIC_BASE_URL` therefore gets `judgment: structural-only` on
+  `vendo sync --ai`, even though `vendo init` and an interactive `vendo sync`
+  accept all three. Add `--full`, or drop `--ai` on an interactive run, to walk
+  the whole ladder.
 - `--no-ai`: force the judgment pass off (what the installed `predev`/
   `prebuild` hooks pass, so committed files never churn and a build never
   spends). `--no-watermark` remains accepted as an alias.
