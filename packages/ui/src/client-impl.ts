@@ -107,8 +107,14 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
    *  wire is mounted — the #914 shape, seen from the browser. One loud error
    *  naming BOTH sides and the fix beats a mysterious 404 on a page that
    *  otherwise renders perfectly. Checked once; after a real envelope arrives
-   *  the mount is proven and the check costs nothing. */
+   *  the mount is proven and the check costs nothing.
+   *
+   *  The throw alone is not enough: callers that degrade on a failed fetch
+   *  (the connector catalog's retry warning) bury it among the page's other
+   *  404s, so the one message that names the fix is reported once per client,
+   *  at error level, before it is thrown. */
   let mountProven = false;
+  let mountReported = false;
 
   async function send(path: string, init?: RequestInit): Promise<Response> {
     const target = joinPath(baseUrl, path);
@@ -122,11 +128,16 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
     if (!mountProven) {
       if (response.status === 404 && !isWireEnvelope(response)) {
         const mount = pageMount();
-        throw new Error(mountMismatchMessage({
+        const message = mountMismatchMessage({
           clientBaseUrl: baseUrl,
           requested: target,
           ...(mount === undefined ? {} : { pageMount: mount }),
-        }));
+        });
+        if (!mountReported) {
+          mountReported = true;
+          console.error(message);
+        }
+        throw new Error(message);
       }
       mountProven = true;
     }
