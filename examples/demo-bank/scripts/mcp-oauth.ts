@@ -40,10 +40,9 @@ export type DoorWalk = {
  * prefix, so that is the spelling it advertises and answers
  * (packages/mcp/src/door.ts).
  *
- * The door's own OAuth surface is the only one this script can walk (a
- * broker-fronted deployment owns the sign-in itself), so the authorization
- * server is the door — its metadata sits beside the protected-resource
- * document rather than being re-derived from what discovery returns.
+ * `authorizationServerMetadata` is only where the door's OWN metadata sits —
+ * which server to read is discovery's answer, not this table's (see
+ * `authorizationServerMetadataUrl`).
  */
 export function doorUrls(target: string | undefined): DoorWalk {
   const base = new URL(target ?? "http://localhost:3000").origin + BASE_PATH;
@@ -54,6 +53,27 @@ export function doorUrls(target: string | undefined): DoorWalk {
     authorizationServerMetadata: `${base}/.well-known/oauth-authorization-server${MOUNT}`,
     login: `${base}/login`,
   };
+}
+
+const withoutTrailingSlash = (url: string): string => url.replace(/\/+$/, "");
+
+/**
+ * WHOSE authorization-server metadata to read: the server the protected-
+ * resource document advertises (RFC 9728 §3.3), never one derived from where
+ * the door sits.
+ *
+ * Maple's own door names ITSELF, and the document it answers on is the
+ * prefix-local one beside the protected-resource document. A broker-fronted
+ * deployment names `https://{tenant}.mcp.vendo.run` and 404s its own metadata
+ * route on purpose, so the advertised issuer is the only reachable document
+ * — and it is a plain RFC 8414 root-insertion on that issuer.
+ */
+export function authorizationServerMetadataUrl(walk: DoorWalk, issuer: string): string {
+  if (withoutTrailingSlash(issuer) === withoutTrailingSlash(walk.resource)) {
+    return walk.authorizationServerMetadata;
+  }
+  const advertised = new URL(issuer);
+  return `${advertised.origin}/.well-known/oauth-authorization-server${withoutTrailingSlash(advertised.pathname)}`;
 }
 
 export type DoorSession = DoorWalk & {
@@ -118,7 +138,7 @@ export async function signIn(target: string | undefined, clientName: string): Pr
 
   const authorizationServer = protectedMetadata.authorization_servers?.[0];
   assert(authorizationServer, "Protected-resource metadata omitted its authorization server.");
-  const authorizationMetadataUrl = walk.authorizationServerMetadata;
+  const authorizationMetadataUrl = authorizationServerMetadataUrl(walk, authorizationServer);
   const authorizationMetadata = await json<{
     authorization_endpoint: string;
     token_endpoint: string;
