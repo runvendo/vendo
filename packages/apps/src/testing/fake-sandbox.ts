@@ -27,17 +27,6 @@ export type MachineApp = (
   ctx: MachineAppContext,
 ) => MachineResponse | Promise<MachineResponse>;
 
-export interface FakeExecResult {
-  code: number;
-  stdout: string;
-  stderr: string;
-}
-
-export interface FakeExecCall {
-  cmd: string;
-  opts?: { cwd?: string; timeoutMs?: number };
-}
-
 /** The v2 create spec (the seam's SandboxAdapter.create parameter, kept local
     for the fake's internal signatures). */
 export interface FakeCreateSpec {
@@ -91,11 +80,6 @@ const bodyArgs = (body: Uint8Array | string | undefined): unknown => {
   }
 };
 
-/** The provider-native wildcard-aware allowlist rule the fake simulates. */
-const domainAllowed = (allowedDomains: readonly string[] | undefined, host: string): boolean =>
-  allowedDomains === undefined || allowedDomains.some((rule) =>
-    rule === host || (rule.startsWith("*.") && host.endsWith(rule.slice(1))));
-
 const defaultApp: MachineApp = (request, ctx) => {
   const match = /^\/fn\/([A-Za-z_][A-Za-z0-9_-]*)$/.exec(request.path);
   if (request.method.toUpperCase() === "POST" && match?.[1] !== undefined) {
@@ -119,22 +103,12 @@ const defaultApp: MachineApp = (request, ctx) => {
   };
 };
 
-const onePixelPng = new Uint8Array([
-  137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82,
-  0, 0, 0, 1, 0, 0, 0, 1, 8, 4, 0, 0, 0, 181, 28, 12, 2,
-  0, 0, 0, 11, 73, 68, 65, 84, 120, 218, 99, 252, 255, 31, 0, 3,
-  3, 2, 0, 238, 254, 127, 217, 0, 0, 0, 0, 73, 69, 78, 68, 174,
-  66, 96, 130,
-]);
-
 /** Test machine with deterministic I/O and inspectable state. */
 export class FakeSandboxMachine implements SandboxMachine {
   readonly requests: MachineRequest[] = [];
-  readonly commands: FakeExecCall[] = [];
-  readonly execResults: FakeExecResult[] = [];
   readonly fileContents: Map<string, Uint8Array>;
   /** The seam's file operations (sandbox.ts), over this machine's contents.
-   *  Exec/screenshot/url/request/snapshot are lifecycle-guarded separately. */
+   *  Url/request/snapshot are lifecycle-guarded separately. */
   readonly files: SandboxMachine["files"];
   readonly env: Record<string, string>;
   readonly port: number;
@@ -184,35 +158,6 @@ export class FakeSandboxMachine implements SandboxMachine {
     };
   }
 
-  async exec(cmd: string, opts?: { cwd?: string; timeoutMs?: number }): Promise<FakeExecResult> {
-    this.ensureRunning("exec a command");
-    this.commands.push(opts === undefined ? { cmd } : { cmd, opts: { ...opts } });
-    const programmed = this.execResults.shift();
-    if (programmed !== undefined) return programmed;
-
-    const printedEnv = /^printf\s+'%s'\s+"\$([A-Za-z_][A-Za-z0-9_]*)"$/.exec(cmd)?.[1];
-    if (printedEnv !== undefined) {
-      return { code: 0, stdout: this.env[printedEnv] ?? "", stderr: "" };
-    }
-
-    const fetchedHost = /fetch\(['"]https:\/\/([^/'"]+)/.exec(cmd)?.[1];
-    if (fetchedHost !== undefined) {
-      const allowed = domainAllowed(this.allowedDomains, fetchedHost);
-      const exits = /then\(\(\) => process\.exit\((\d+)\)\)\.catch\(\(\) => process\.exit\((\d+)\)\)/.exec(cmd);
-      return {
-        code: Number(allowed ? exits?.[1] ?? 0 : exits?.[2] ?? 1),
-        stdout: "",
-        stderr: "",
-      };
-    }
-
-    return { code: 0, stdout: "", stderr: "" };
-  }
-
-  programExec(...results: FakeExecResult[]): void {
-    this.execResults.push(...results.map((result) => ({ ...result })));
-  }
-
   setApp(app: MachineApp): void {
     this.app = app;
   }
@@ -220,11 +165,6 @@ export class FakeSandboxMachine implements SandboxMachine {
   async snapshot(): Promise<string> {
     this.ensureRunning("snapshot");
     return this.saveSnapshot(this);
-  }
-
-  async screenshot(): Promise<Uint8Array> {
-    this.ensureRunning("capture a screenshot");
-    return onePixelPng.slice();
   }
 
   async url(port?: number): Promise<string> {
