@@ -51,12 +51,10 @@ import { threadRoutes } from "./wire/threads.js";
 // every importer already names it through.
 export type { CreateVendoConfig, Vendo } from "./types.js";
 
-import { assembleSystemPrompt } from "./prompt.js";
 // Architecture §3 — the harness runtime and the default thinker. `vendo()` is
-// composed HERE (not by the host) when `harness:` is unset; its prompt and
-// descriptor catalog reach it on the turn, never at construction.
-import { assertHarnessComposable, escalatedPlanPath, reportHire, screenAssembler, vendo } from "@vendoai/harnesses";
-// …and re-exported, because §10's one-line opt-in is `harness: vendo()`. Without
+// composed HERE (not by the host) when `harness:` is unset (compose-harness.ts);
+// its prompt and descriptor catalog reach it on the turn, never at construction
+// — and re-exported, because §10's one-line opt-in is `harness: vendo()`. Without
 // this, naming the default harness costs a SECOND direct dependency on
 // `@vendoai/harnesses` — a documented one-liner that does not compile from the
 // package the host installed. Alias it at the import when your own composed
