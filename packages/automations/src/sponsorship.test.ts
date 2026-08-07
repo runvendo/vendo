@@ -141,7 +141,7 @@ const setSponsorship = async (store: StoreAdapter, row: Sponsorship): Promise<vo
   await store.records(SPONSORSHIPS).put({ id: triggerKey(row.appId, row.triggerId), data: row, refs: { subject: row.sponsor } });
 };
 
-/** `can(editor)` as lane G freezes it (§9.3), stubbed: editor for the listed
+/** `can(editor)` (§9.3), stubbed: editor for the listed
  *  subjects, nobody else. Automations takes it as config and never imports
  *  the store, so this stub is the same shape production wires. The set is
  *  mutable so a test can REVOKE access the way a real revoke does. */
@@ -297,7 +297,7 @@ describe("sponsorship — the fire-time gate", () => {
   });
 });
 
-/** F1 (verifier repro), re-run half — a run that met a missing permission fails
+/** A run that met a missing permission fails
  *  loudly, and the remedy is a FRESH run through `runs.rerun`. That is a second
  *  firing through a different door, so the fire-time gate has to run again there
  *  too: a third party editing the document between the failure and the re-run
@@ -478,7 +478,7 @@ describe("sponsorship — invalidation on a third party's edit", () => {
   });
 });
 
-/** F3 — the sponsorship row carries the sponsor's subject, so a subject erase
+/** The sponsorship row carries the sponsor's subject, so a subject erase
  *  DELETES it. Without a trace that the app was ever sponsored, the fire-time
  *  gate would read "no sponsorship" and quietly hand the automation back to the
  *  app's owner. The era marker is that trace: keyed to the app only, so a
@@ -532,14 +532,14 @@ describe("sponsorship — an erased sponsor", () => {
   });
 });
 
-/** F9 — nothing a person reads should say `user_dana`. The sponsor's own
+/** Nothing a person reads should say `user_dana`. The sponsor's own
  *  display name is captured at enable (their Principal carries it) and used
  *  everywhere the automation talks about them. */
 describe("sponsorship — consumer-voice names", () => {
   it("captures the sponsor's display name, and keeps it off the run summary", async () => {
-    // F8 (wave-3 check) moved the NAME off the persisted run summary: the run
-    // row outlives a subject erase, the sponsorship row does not. The
-    // consumer-voice law is unchanged — nothing a person reads says `user_dana`.
+    // The NAME stays off the persisted run summary: the run row outlives a
+    // subject erase, the sponsorship row does not. The consumer-voice law is
+    // unchanged — nothing a person reads says `user_dana`.
     const app = doc("app_named");
     const { store, engine } = harness();
     await seedApp(store, app);
@@ -555,7 +555,7 @@ describe("sponsorship — consumer-voice names", () => {
   });
 });
 
-/** F10 — the identity checks call HOST code (a memberships callback, an access
+/** The identity checks call HOST code (a memberships callback, an access
  *  seam). They run before the run row is written, and the schedule path swallows
  *  a rejected run, so a throw there used to make the whole firing vanish: no
  *  row, no audit, nothing to look at. */
@@ -585,7 +585,7 @@ describe("sponsorship — a broken identity seam", () => {
     expect(runId).toBeDefined();
     const run = await engine.runs.get(runId!, ctx());
     expect(run).toMatchObject({ status: "error" });
-    // F10 (wave-3 check): the host's raw throw is the AUDIT row's, never the
+    // The host's raw throw is the AUDIT row's, never the
     // consumer's — the panel renders `summary` and `error.message` verbatim.
     expect(run?.error?.message).not.toContain("host directory is down");
     expect(guard.audit.some((event) =>
@@ -633,7 +633,7 @@ describe("sponsorship — a broken identity seam", () => {
 
     // The host's directory dies between the failure and the re-run: the fresh
     // run cannot check who it runs as, so it must land a loud terminal row of
-    // its own rather than sit in "running" forever (F10, the re-run half).
+    // its own rather than sit in "running" forever.
     breakSeam = true;
     guard.decide("apr_seam", true);
     await flush();
@@ -658,7 +658,7 @@ describe("sponsorship — a broken identity seam", () => {
   });
 });
 
-/** F12 — the consent rows are generic records, and the 02-store §5 erase cascade
+/** The consent rows are generic records, and the 02-store §5 erase cascade
  *  finds generic rows by their REFS. Without them a subject erase (or an app
  *  delete) leaves the automation's pending asks behind. */
 describe("sponsorship — consent rows join the erase cascade", () => {
@@ -696,7 +696,7 @@ describe("sponsorship — consent rows join the erase cascade", () => {
   });
 });
 
-/** F6 — an automation runs as its SPONSOR, who may not own the app. §8's
+/** An automation runs as its SPONSOR, who may not own the app. §8's
  *  editor = edit, so every door the owner has is the editor's too — otherwise
  *  the person it runs as cannot see it, pause it, or stop it. */
 describe("sponsorship — an editor's doors", () => {
@@ -789,8 +789,8 @@ describe("sponsorship — the window label", () => {
   });
 });
 
-/** F8/F10/F18 (wave-3 independent check) — what a STOPPED run is allowed to
- *  leave behind. Two constraints meet on the same row:
+/** What a STOPPED run is allowed to leave behind. Two constraints meet on the
+ *  same row:
  *
  *  1. It is read by people: `automations-panel.tsx` renders `summary` and
  *     `error.message` verbatim.
@@ -875,8 +875,7 @@ describe("sponsorship — what the stopped run row is allowed to say", () => {
   });
 });
 
-/** E8-F1/E8-F2 (live browser proof, 2026-08-01) — the two ways an automation
- *  became BUILT BUT UNREACHABLE. `list` is the only surface that mentions an
+/** The two ways an automation became BUILT BUT UNREACHABLE. `list` is the only surface that mentions an
  *  automation outside the app itself, so anything it hides is, in practice, gone:
  *  promote deliberately disarms the automation and the Share dialog promises it
  *  "stays off until someone turns it back on", and an invalidated sponsorship
@@ -930,8 +929,7 @@ describe("sponsorship — an automation the caller can edit is an automation the
   });
 });
 
-/** ORCHESTRATOR RULING 2026-08-01 (handoff #5, derived from the locked model) —
- *  an event emitted by a MEMBER of the org fires that org's automations.
+/** An event emitted by a MEMBER of the org fires that org's automations.
  *
  *  `emit` matched apps by the emitter's own subject, so an ORG-owned host-event
  *  automation could never be fired by anybody: the row subject is the org id

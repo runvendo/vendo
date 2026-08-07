@@ -86,7 +86,7 @@ class GuardDouble implements Guard {
   store?: StoreAdapter;
   private readonly callbacks = new Set<(id: ApprovalId, approved: boolean) => void>();
 
-  /** AGENT-6, the real guard's contract in miniature: deny as `system` (never a
+  /** The real guard's contract in miniature: deny as `system` (never a
    *  standing no), idempotent, mint nothing, then fire the decision callbacks
    *  the same way an explicit denial does. */
   async abandonApprovals(ids: ApprovalId[]): Promise<void> {
@@ -1296,7 +1296,7 @@ describe("schedule, webhook, and host triggers", () => {
   });
 });
 
-// wave 2 (Cloud auto): under the hosted store, Vendo Cloud's own scheduler and Composio
+// Under the hosted store, Vendo Cloud's own scheduler and Composio
 // delivery already fire schedule/external automations for the deployment — the local engine
 // composed alongside it must not ALSO fire them (double-run). `localTriggerKinds` scopes which
 // trigger kinds this engine instance fires; host-event (vendo.emit) is never gated by it.
