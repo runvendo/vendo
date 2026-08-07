@@ -11,8 +11,17 @@ describe("sha256Hex", () => {
   });
 });
 
+// canonicalJson is the serializer feeding every content hash. A value that
+// serializes ambiguously (or differently across implementations) would let two
+// logically distinct payloads collide, or the same payload hash differently on
+// two hosts. The contract is fail-closed: anything that is not well-formed JSON
+// data THROWS rather than being silently coerced.
 describe("canonicalJson", () => {
   it("sorts RFC 8785 unicode property names by UTF-16 code units", () => {
+    // U+1F600 GRINNING FACE is D83D DE00 in UTF-16; its first code unit (D83D) is
+    // BELOW U+FB33 (HEBREW LETTER DALET WITH DAGESH, a single BMP unit), so a
+    // per-code-UNIT sort places the emoji key first. A per-code-POINT sort would
+    // place U+1F600 after U+FB33 — this vector pins the former.
     const value = {
       "\u20ac": "Euro Sign",
       "\r": "Carriage Return",
@@ -67,5 +76,32 @@ describe("canonicalJson", () => {
       expect(() => canonicalJson(value)).toThrow(VendoError);
     }
     expect(canonicalJson(Object.create(null, { a: { value: 1, enumerable: true } }))).toBe("{\"a\":1}");
+  });
+
+  // A rejection that only fires at the top level is no protection at all: every
+  // real payload nests, so each refusal is re-checked inside an object and an
+  // array.
+  it("rejects a refused value wherever it is nested", () => {
+    class Widget {
+      readonly kind = "widget";
+    }
+    const refused: unknown[] = [
+      "\udc00 low", Number.NaN, Number.POSITIVE_INFINITY, 9007199254740993n,
+      new Date(0), new Map([["a", 1]]), new Set([1]), /pattern/, new Widget(),
+    ];
+    for (const value of refused) {
+      expect(() => canonicalJson({ nested: value })).toThrow(VendoError);
+      expect(() => canonicalJson([value])).toThrow(VendoError);
+    }
+  });
+
+  it("rejects cyclic objects and cyclic arrays instead of recursing forever", () => {
+    const cyclicObject: Record<string, unknown> = {};
+    cyclicObject.self = cyclicObject;
+    expect(() => canonicalJson(cyclicObject)).toThrow(VendoError);
+
+    const cyclicArray: unknown[] = [];
+    cyclicArray.push(cyclicArray);
+    expect(() => canonicalJson(cyclicArray)).toThrow(VendoError);
   });
 });

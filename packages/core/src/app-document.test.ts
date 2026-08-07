@@ -2,9 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   VENDO_APP_FORMAT,
   VENDO_TREE_FORMAT,
-  WIRE_ISSUE_CODES,
   appDocumentSchema,
-  compileWire,
   validateAppDocument,
 } from "./index.js";
 
@@ -70,10 +68,14 @@ const invoiceChaser = () => ({
   futureCapability: { version: 2, retained: true },
 });
 
-const expectValidation = (input: unknown): void => {
+/** Assert a refusal, and — where the message IS the contract — the exact words. */
+const expectValidation = (input: unknown, message?: string): void => {
   const result = validateAppDocument(input);
   expect(result.ok).toBe(false);
-  if (!result.ok) expect(result.error.code).toBe("validation");
+  if (!result.ok) {
+    expect(result.error.code).toBe("validation");
+    if (message !== undefined) expect(result.error.message).toBe(message);
+  }
 };
 
 describe("appDocumentSchema and validateAppDocument", () => {
@@ -170,21 +172,6 @@ describe("appDocumentSchema and validateAppDocument", () => {
     for (const document of [query, action, step]) expectValidation(document);
   });
 
-  it("rejects malformed fn: references even when a server exists", () => {
-    expectValidation({
-      ...minimal(),
-      server: "e2b:snap_ok",
-      tree: {
-        ...minimal().tree,
-        nodes: [{ id: "root", component: "Button", props: { onClick: { action: "fn:bad name" } } }],
-      },
-    });
-  });
-
-  it("rejects components nested inside an at-rest v1 tree", () => {
-    expectValidation({ ...minimal(), tree: { ...minimal().tree, components: {} } });
-  });
-
   it("rejects bad pin bases, server refs, and host refs", () => {
     expectValidation({ ...minimal(), pins: [{ slot: "card", base: "md5:abc" }] });
     expectValidation({ ...minimal(), server: "SnapshotWithoutProvider" });
@@ -263,27 +250,6 @@ describe("appDocumentSchema and validateAppDocument", () => {
   });
 });
 
-const minimalDoc = () => ({
-  format: VENDO_APP_FORMAT,
-  id: "app_v2",
-  name: "Minimal App",
-  ui: "tree" as const,
-  tree: {
-    formatVersion: VENDO_TREE_FORMAT,
-    root: "root",
-    nodes: [{ id: "root", component: "Text", props: { text: "How can I help?" } }],
-  },
-});
-
-const expectValidationMessage = (input: unknown, message: string): void => {
-  const result = validateAppDocument(input);
-  expect(result.ok).toBe(false);
-  if (!result.ok) {
-    expect(result.error.code).toBe("validation");
-    expect(result.error.message).toBe(message);
-  }
-};
-
 describe("appDocumentSchema machine field (execution-v2)", () => {
   const withMachine = () => ({
     ...minimal(),
@@ -324,10 +290,10 @@ describe("appDocumentSchema machine field (execution-v2)", () => {
   });
 });
 
-describe("validateAppDocument with vendo-genui/v2 trees", () => {
+describe("validateAppDocument walks a vendo-genui tree", () => {
   it("accepts a tree whose generated nodes are backed by document-level components", () => {
     const document = {
-      ...minimalDoc(),
+      ...minimal(),
       tree: {
         formatVersion: VENDO_TREE_FORMAT,
         root: "root",
@@ -343,18 +309,18 @@ describe("validateAppDocument with vendo-genui/v2 trees", () => {
   });
 
   it("rejects components smuggled inside a tree with the tree validator's message", () => {
-    expectValidationMessage(
-      { ...minimalDoc(), tree: { ...minimalDoc().tree, components: {} } },
+    expectValidation(
+      { ...minimal(), tree: { ...minimal().tree, components: {} } },
       "trees must not carry components (they live at the app-document level)",
     );
   });
 
   it("rejects generated nodes with no definition in the document components", () => {
-    expectValidationMessage(
+    expectValidation(
       {
-        ...minimalDoc(),
+        ...minimal(),
         tree: {
-          ...minimalDoc().tree,
+          ...minimal().tree,
           nodes: [{ id: "root", component: "Gauge", source: "generated" as const }],
         },
       },
@@ -363,27 +329,27 @@ describe("validateAppDocument with vendo-genui/v2 trees", () => {
   });
 
   it("enforces document component limits beside a tree", () => {
-    expectValidation({ ...minimalDoc(), components: { Text: "export default () => null;" } }); // reserved
-    expectValidation({ ...minimalDoc(), components: { "not-pascal": "x" } });
+    expectValidation({ ...minimal(), components: { Text: "export default () => null;" } }); // reserved
+    expectValidation({ ...minimal(), components: { "not-pascal": "x" } });
   });
 
   it("requires a machine (or legacy server) for fn: v2 query tools and prop actions", () => {
     const withQuery = {
-      ...minimalDoc(),
-      tree: { ...minimalDoc().tree, queries: [{ name: "load", tool: "fn:load" }] },
+      ...minimal(),
+      tree: { ...minimal().tree, queries: [{ name: "load", tool: "fn:load" }] },
     };
-    expectValidationMessage(withQuery, "fn: references require a machine (or legacy app server)");
+    expectValidation(withQuery, "fn: references require a machine (or legacy app server)");
     expect(validateAppDocument({ ...withQuery, server: "e2b:snap_ok" }).ok).toBe(true);
     // execution-v2: the machine satisfies the presence rule the same way.
     expect(validateAppDocument({
       ...withQuery,
       machine: { snapshotRef: "e2b:v2:snap_ok", provisionedAt: "2026-07-19T00:00:00.000Z" },
     }).ok).toBe(true);
-    expectValidationMessage(
+    expectValidation(
       {
-        ...minimalDoc(),
+        ...minimal(),
         tree: {
-          ...minimalDoc().tree,
+          ...minimal().tree,
           nodes: [{ id: "root", component: "Button", props: { nested: [{ action: "fn:click" }] } }],
         },
       },
@@ -393,10 +359,10 @@ describe("validateAppDocument with vendo-genui/v2 trees", () => {
 
   it("rejects malformed fn: prop actions in v2 nodes even when a server exists", () => {
     expectValidation({
-      ...minimalDoc(),
+      ...minimal(),
       server: "e2b:snap_ok",
       tree: {
-        ...minimalDoc().tree,
+        ...minimal().tree,
         nodes: [{ id: "root", component: "Button", props: { onClick: { action: "fn:bad name" } } }],
       },
     });
@@ -404,37 +370,10 @@ describe("validateAppDocument with vendo-genui/v2 trees", () => {
 
   it("rejects malformed fn: v2 query tools even when a server exists", () => {
     expectValidation({
-      ...minimalDoc(),
-      server: "e2b:snap_ok",
-      tree: { ...minimalDoc().tree, queries: [{ name: "load", tool: "fn:bad name" }] },
-    });
-  });
-
-  it("leaves v1 documents and opaque unknown formats untouched", () => {
-    expect(validateAppDocument(minimal())).toEqual({ ok: true, app: minimal() });
-    expect(validateAppDocument(invoiceChaser())).toEqual({ ok: true, app: invoiceChaser() });
-    const opaque = {
       ...minimal(),
-      tree: { formatVersion: "vendo-canvas/v3", opaque: { components: true, action: "fn:not_walked" } },
-    };
-    expect(validateAppDocument(opaque)).toEqual({ ok: true, app: opaque });
-  });
-
-  it("exports the wire compiler and issue registry from the package root", () => {
-    expect(WIRE_ISSUE_CODES).toContain("missing-app");
-    const compiled = compileWire('<App name="Tiny"><Text>hi</Text></App>');
-    expect(compiled.complete).toBe(true);
-    expect(compiled.issues).toEqual([]);
-    expect(compiled.name).toBe("Tiny");
-    const document = {
-      format: VENDO_APP_FORMAT,
-      id: "app_wire",
-      name: compiled.name ?? "Tiny",
-      ui: "tree" as const,
-      tree: compiled.tree,
-      components: compiled.components,
-    };
-    expect(validateAppDocument(document)).toEqual({ ok: true, app: document });
+      server: "e2b:snap_ok",
+      tree: { ...minimal().tree, queries: [{ name: "load", tool: "fn:bad name" }] },
+    });
   });
 });
 

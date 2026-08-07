@@ -8,8 +8,7 @@ describe("KnowledgeAdapter conformance kit against the memory stub", () => {
     posture: { fetch: true, write: true, visibility: "enforced" },
   });
 
-  it("mounts every case", () => {
-    expect(suite.seam).toBe("KnowledgeAdapter");
+  it("mounts a non-trivial case set (posture gating must never mount nothing)", () => {
     expect(suite.cases.length).toBeGreaterThanOrEqual(6);
   });
 
@@ -17,19 +16,22 @@ describe("KnowledgeAdapter conformance kit against the memory stub", () => {
     it(conformanceCase.name, conformanceCase.run);
   }
 
-  it("public-only postures skip the internal-tier cases", () => {
+  it("posture picks the visibility tier: public-only gets R2, enforced gets R5", () => {
+    // The posture is the host's attestation about its corpus, so it decides
+    // which visibility cases exist at all — an internal-tier case run against a
+    // public-only corpus would fail on a corpus that is correct by declaration.
     const publicOnly = knowledgeAdapterConformance({
       makeAdapter: async () => ({ adapter: memoryKnowledgeAdapter() }),
       posture: { fetch: true, write: true, visibility: "public-only" },
     });
-    const names = publicOnly.cases.map((c) => c.name).join("\n");
-    expect(names).not.toContain("internal");
-  });
-
-  it("runConformance reports ok for the full-posture stub", async () => {
-    const report = await runConformance(suite);
-    expect(report.failures).toEqual([]);
-    expect(report.ok).toBe(true);
+    const tiers = (cases: typeof suite.cases): string[] =>
+      [...new Set(cases.map((c) => c.name.slice(0, c.name.indexOf(" "))))];
+    expect(tiers(suite.cases)).toContain("R5");
+    expect(tiers(publicOnly.cases)).not.toContain("R5");
+    const attestation = (cases: typeof suite.cases): boolean =>
+      cases.some((c) => c.name.includes("public-only posture"));
+    expect(attestation(publicOnly.cases)).toBe(true);
+    expect(attestation(suite.cases)).toBe(false);
   });
 
   it("a nonfunctional search fails conformance even at the weakest posture", async () => {

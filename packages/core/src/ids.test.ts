@@ -5,7 +5,7 @@ import {
   grantIdSchema,
   runIdSchema,
   threadIdSchema,
-} from "../index.js";
+} from "./index.js";
 
 // Light regression suite for the prefix-typed id schemas (01-core §1). These
 // schemas only assert the TYPE PREFIX — they are a cheap tripwire against an id

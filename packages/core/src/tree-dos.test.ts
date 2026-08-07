@@ -6,7 +6,7 @@ import {
   VENDO_TREE_FORMAT,
   validateAppDocument,
   validateTree,
-} from "../index.js";
+} from "./index.js";
 
 // Denial-of-service / resource-exhaustion regression suite for the tree and
 // app-document validators (01-core §8/§9). Each cap here is exercised at the
