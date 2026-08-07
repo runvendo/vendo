@@ -65,37 +65,137 @@ const readPath = (s: string, i: number): { path: string; end: number } => {
   return { path: m ? m[0] : "", end };
 };
 
-/** Rewrite one segment (a non-island slice) of wire, minting into `mint`. */
-const rewriteSegment = (
-  seg: string,
+/** The half-open ranges of the string literals in an expression. A call
+ *  written inside one — `text={"call ops.team (Mon-Fri)"}` — is copy, not a
+ *  call, the same distinction the expression parser makes. */
+const stringSpans = (expr: string): Array<[start: number, end: number]> => {
+  const spans: Array<[number, number]> = [];
+  for (let i = 0; i < expr.length; i += 1) {
+    const quote = expr[i] as string;
+    if (quote !== '"' && quote !== "'" && quote !== "`") continue;
+    const start = i;
+    i += 1;
+    while (i < expr.length && expr[i] !== quote) i += expr[i] === "\\" ? 2 : 1;
+    spans.push([start, Math.min(i, expr.length - 1)]);
+  }
+  return spans;
+};
+
+/** Rewrite one attribute expression, minting into `mint`. */
+const rewriteExpr = (
+  expr: string,
   mint: (tool: string, argsRaw: string) => string,
   knownTools: ReadonlySet<string>,
 ): string => {
+  const spans = stringSpans(expr);
   let out = "";
   let cursor = 0;
   CALL_HEAD.lastIndex = 0;
   let m: RegExpExecArray | null;
-  while ((m = CALL_HEAD.exec(seg)) !== null) {
+  while ((m = CALL_HEAD.exec(expr)) !== null) {
     const tool = m[1]!;
     // Single-segment heads are tool calls only when the registry says so —
     // otherwise they are reshape ops or plain text and stay untouched.
     if (!tool.includes(".") && !knownTools.has(tool)) continue;
+    if (spans.some(([start, end]) => m!.index > start && m!.index < end)) continue;
     const parenOpen = m.index + m[0].length - 1;
     // A reshape call (`format(...)`) is never a data source; skip if the
     // token is immediately preceded by `|`.
-    const before = seg.slice(0, m.index).replace(/\s+$/, "");
+    const before = expr.slice(0, m.index).replace(/\s+$/, "");
     if (before.endsWith("|")) continue;
-    const parenClose = matchBracket(seg, parenOpen);
+    const parenClose = matchBracket(expr, parenOpen);
     if (parenClose === -1) continue;
-    const argsRaw = seg.slice(parenOpen + 1, parenClose - 1).trim();
-    const { path, end } = readPath(seg, parenClose);
+    const argsRaw = expr.slice(parenOpen + 1, parenClose - 1).trim();
+    const { path, end } = readPath(expr, parenClose);
     const name = mint(tool, argsRaw);
-    out += seg.slice(cursor, m.index) + name + path;
+    out += expr.slice(cursor, m.index) + name + path;
     cursor = end;
     CALL_HEAD.lastIndex = end;
   }
-  out += seg.slice(cursor);
+  out += expr.slice(cursor);
   return out;
+};
+
+/** Candidate open tag: `<` followed by a tag name. */
+const TAG_NAME = /^[A-Za-z_][A-Za-z0-9_-]*/;
+const ISLAND_CLOSE = "</Island>";
+
+/** The index just past a markup string that opens at `open`. */
+const endOfString = (s: string, open: number): number => {
+  const quote = s[open];
+  let i = open + 1;
+  while (i < s.length && s[i] !== quote) i += s[i] === "\\" ? 2 : 1;
+  return i + 1;
+};
+
+/**
+ * Walk the markup and rewrite ONLY the attribute expression blocks, because an
+ * inline reference is `attr={tool.name(args)}` and nothing else. Everything a
+ * user reads — text children and double-quoted attribute values — is copied
+ * through untouched: this pass used to regex the whole document, so
+ * `<Text text="Contact ops.team (Mon-Fri)"/>` had its visible words rewritten
+ * to `Contact opsTeam` and minted a query for a tool nobody has.
+ *
+ * Markup-level quoting matches `scanTagEnd` in scan.ts (double quotes and
+ * brace blocks, not single quotes), so this pre-pass and the compiler proper
+ * end a tag at the same character. `<Island>` bodies are raw TSX, not markup,
+ * and their ambient `tools.x.y(args)` calls are not data references — so an
+ * island that carries content is skipped whole, exactly as compileIsland reads
+ * it (to the FIRST `</Island>`), while a self-closing one has no body to skip.
+ */
+const rewriteAttributes = (
+  wire: string,
+  mint: (tool: string, argsRaw: string) => string,
+  knownTools: ReadonlySet<string>,
+): string => {
+  let out = "";
+  let copied = 0;
+  let i = 0;
+  while (i < wire.length) {
+    if (wire[i] !== "<") {
+      i += 1;
+      continue;
+    }
+    const tag = TAG_NAME.exec(wire.slice(i + 1));
+    if (tag === null) {
+      i += 1;
+      continue;
+    }
+    const island = tag[0] === "Island";
+    i += 1 + tag[0].length;
+    let selfClosing = false;
+    while (i < wire.length) {
+      const char = wire[i] as string;
+      if (char === ">") {
+        selfClosing = wire[i - 1] === "/";
+        i += 1;
+        break;
+      }
+      if (char === '"') {
+        i = endOfString(wire, i);
+        continue;
+      }
+      if (char === "{") {
+        const end = matchBracket(wire, i);
+        if (end === -1) {
+          i = wire.length;
+          break;
+        }
+        if (!island) {
+          out += wire.slice(copied, i + 1) + rewriteExpr(wire.slice(i + 1, end - 1), mint, knownTools);
+          copied = end - 1;
+        }
+        i = end;
+        continue;
+      }
+      i += 1;
+    }
+    if (island && !selfClosing) {
+      const close = wire.indexOf(ISLAND_CLOSE, i);
+      i = close === -1 ? wire.length : close + ISLAND_CLOSE.length;
+    }
+  }
+  return out + wire.slice(copied);
 };
 
 export interface InlineRefsResult {
@@ -114,23 +214,6 @@ export interface InlineRefsOptions {
 /** Expand inline tool references into `<Query>` declarations + plain bindings. */
 export const expandInlineRefs = (wire: string, options?: InlineRefsOptions): InlineRefsResult => {
   const knownTools: ReadonlySet<string> = new Set(options?.tools ?? []);
-  // Split off island regions so their ambient tools.* calls are untouched.
-  const segments: { text: string; island: boolean }[] = [];
-  let i = 0;
-  const openRe = /<Island\b[^>]*?>/g;
-  const closeTag = "</Island>";
-  while (i < wire.length) {
-    openRe.lastIndex = i;
-    const open = openRe.exec(wire);
-    if (!open) { segments.push({ text: wire.slice(i), island: false }); break; }
-    segments.push({ text: wire.slice(i, open.index), island: false });
-    const contentStart = open.index; // include the whole island element verbatim
-    const close = wire.indexOf(closeTag, open.index + open[0].length);
-    const end = close === -1 ? wire.length : close + closeTag.length;
-    segments.push({ text: wire.slice(contentStart, end), island: true });
-    i = end;
-  }
-
   const queries = new Map<string, { name: string; tool: string; argsRaw: string }>();
   // Seed with names already claimed in the document — explicit <Query id="…">
   // and <Island name="…"> — so a minted name can never collide with one the
@@ -151,9 +234,7 @@ export const expandInlineRefs = (wire: string, options?: InlineRefsOptions): Inl
     return name;
   };
 
-  const rewritten = segments
-    .map((s) => (s.island ? s.text : rewriteSegment(s.text, mint, knownTools)))
-    .join("");
+  const rewritten = rewriteAttributes(wire, mint, knownTools);
 
   if (queries.size === 0) return { wire: rewritten, minted: 0 };
 
