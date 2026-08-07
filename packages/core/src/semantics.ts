@@ -2,8 +2,8 @@ import { z } from "zod";
 import { describeShape, enumText, type ShapeType } from "./shape.js";
 
 /**
- * W3 (v3 spec §Context) — field semantics: what a tool-response field MEANS
- * (cents money, ISO date, enum vocabulary, id, percent scale), beyond its
+ * Field semantics: what a tool-response field MEANS (cents money, ISO date,
+ * enum vocabulary, id, percent scale), beyond its
  * structural shape. Carried per tool inside `.vendo/tools.json` (the machine
  * layer, overlaid by the host's `overrides.json` annotations) and consumed by
  * generation context as annotated shape cards
@@ -60,11 +60,11 @@ const DOLLARS_DESCRIPTION = /\bdollars\b/i;
  * money-shaped but nobody said in which unit, so a renderer must NOT present it
  * as an amount. `undefined` — not money at all; leave it alone.
  *
- * Wave-1 live proof E2c is why this exists: a $47.50 payment's consent card
- * rendered `amount 4750`, which reads as $4,750 — a 100× misread on the one
- * surface that gates irreversible money movement. Declaration only, never a
- * guess from the value: mislabelling a non-money integer as currency would be
- * the same defect pointing the other way.
+ * Why this exists: a $47.50 payment's consent card rendered `amount 4750`,
+ * which reads as $4,750 — a 100× misread on the one surface that gates
+ * irreversible money movement. Declaration only, never a guess from the value:
+ * mislabelling a non-money integer as currency would be the same defect
+ * pointing the other way.
  */
 export function declaredMoneyUnit(
   field: string,

@@ -8,8 +8,8 @@
  *
  *  Islands render inside an opaque-origin, network-denied jail: only React and
  *  ReactDOM are reachable. An external chart/util import cannot load, so the
- *  engine must catch it before it ships (verify-v2 #5: a `recharts` island
- *  error-boxed the whole app). */
+ *  engine must catch it before it ships — an unresolvable `recharts` import
+ *  error-boxes the whole app. */
 export const JAIL_ALLOWED_MODULES = [
   "react",
   "react-dom",

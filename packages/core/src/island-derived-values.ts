@@ -1,9 +1,9 @@
 /**
- * v4 wave — law 1 teeth for island math (the M12 class).
+ * Law 1 teeth for island math.
  *
- * Final gate 2026-07-21: "a currency converter for my balances" fabricated an
- * FX rate for the THIRD straight run — an island computing displayed EUR
- * values from `const RATE = 0.92`. The prompt principle ("every number comes
+ * The failure this exists for: "a currency converter for my balances"
+ * fabricated an FX rate on three straight runs — an island computing displayed
+ * EUR values from `const RATE = 0.92`. The prompt principle ("every number comes
  * from a tool result") does not hold for constants feeding displayed math, so
  * this scanner catches the shape at compile and routes it to repair.
  *
@@ -24,11 +24,11 @@
  *   - setTimeout/setInterval delay arguments,
  *   - numbers the USER typed in the request (and their cent-scaled ×100
  *     forms) — a $200 budget the user asked for is the user's parameter,
- *     not invented data (rematch 2026-07-25 rows H12/H14),
+ *     not invented data,
  *   - unit-conversion constants (7, 12, 24, 52, 60, 365, 4.33, 1000 and
  *     their products, e.g. 86400000 ms/day) in MULTIPLICATIVE chains —
- *     "per month" and date-difference math is conversion, not invention
- *     (rematch rows H3/H16/H17/H24); an additive `+ 12` still flags.
+ *     "per month" and date-difference math is conversion, not invention; an
+ *     additive `+ 12` still flags.
  */
 import { blankNonCode } from "./island-ambient.js";
 

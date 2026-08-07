@@ -40,17 +40,12 @@ export interface AuditEvent {
 
 /**
  * The ctx half of an audit row — the fields every row copies off the run it came
- * out of.
- *
- * ONE copy, because eight hand-written ones is exactly how `turnId` reached three
- * of them and silently missed five: the guard's own mint got it, and the
- * connect gate, the share row, the MCP door's tool-call row and the away-run
- * summary each kept spreading five fields by hand and were never told about the
- * sixth. A row that cannot be joined to its turn is not a smaller row, it is an
- * unanswerable question in the plane billing and reconciliation read.
+ * out of. ONE copy: hand-spreading these at each mint site is how `turnId`
+ * reached three writers and silently missed five, and a row that cannot be
+ * joined to its turn is an unanswerable question for billing and reconciliation.
  *
  * Absent optionals stay ABSENT rather than becoming `undefined` keys, so a row
- * built through this is byte-identical to the hand-written ones it replaces.
+ * built through this is byte-identical to a hand-written one.
  */
 export const auditContext = (
   ctx: Pick<RunContext, "principal" | "venue" | "presence" | "appId" | "trigger" | "turnId" | "mcpConsent">,

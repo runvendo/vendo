@@ -59,8 +59,8 @@ export * from "./workspace.js";
 // contract, and the per-binding repair shape (v2 spec §3) are public; the
 // sibling modules (expressions, attributes, scan, limits, state) stay
 // internal. The shape checker itself is public for one consumer: the
-// graduation fn-result post-pass (Wave 7 H2), which re-checks an already
-// compiled tree once the fn: shapes are sampled.
+// graduation fn-result post-pass, which re-checks an already compiled tree
+// once the fn: shapes are sampled.
 export { compileWire, type WireCompileOptions, type WireCompileResult } from "./genui/wire/compile.js";
 export { expandInlineRefs, type InlineRefsResult } from "./genui/wire/inline-refs.js";
 export {
@@ -74,9 +74,9 @@ export {
 // wire (the model's edit context).
 export { printWire, type WirePrintInput, type WirePrintOptions } from "./genui/wire/print.js";
 export { checkBindingShapes, type BindingShapeError } from "./genui/wire/shape-check.js";
-// genui/plan — the plan dialect the brain writes before workers fill anything
-// in (generation pipeline rebuild, "Locked interfaces"): the flat AppPlan
-// shape plus its compiler, whose fact checks speak sentences, not codes.
+// genui/plan — the plan dialect written before workers fill anything in: the
+// flat AppPlan shape plus its compiler, whose fact checks speak sentences,
+// not codes.
 export { compilePlan, type PlanCompileResult, type PlanFacts } from "./genui/plan/compile.js";
 export {
   planTabs,
@@ -90,10 +90,10 @@ export {
   type PlanServer,
 } from "./genui/plan/types.js";
 
-// The harness contract (build contract 2026-07-30 §1) plus the two seams it is
-// typed against: the workspace filesystem (§3.2, lane B) and the model seats
-// (§4, lane D). Type-only by design — `defineHarness` and the runtime live in
-// @vendoai/harnesses (§2), so core stays the shapes every block may speak.
+// The harness contract plus the two seams it is typed against: the workspace
+// filesystem and the model seats. Type-only by design — `defineHarness` and the
+// runtime live in @vendoai/harnesses, so core stays the shapes every block may
+// speak.
 export type {
   BeatPhase,
   DeniedNeeds,
@@ -110,8 +110,3 @@ export type {
 export type { CommitResult, WorkspaceFs } from "./workspace.js";
 export { WORKSPACE_INLINE_MAX_BYTES, appRootPath } from "./workspace.js";
 export type { AppMount } from "./workspace.js";
-// `Seat` / `ResolvedModels` come from `./model-seats.js` through the star export
-// above. They were ALSO re-exported here from a second copy in `./models.ts`,
-// non-generic and typed against the ai-SDK's `LanguageModel` — which put an `ai`
-// import in core for one type — and the explicit re-export silently won over the
-// star. The copy is gone, so there is one definition.

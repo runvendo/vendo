@@ -89,8 +89,7 @@ export const isVendoAppsTool = (name: string): boolean =>
  * never handed `vendo_apps_open` as a tool's human label. Client-side, the
  * render layer has no descriptor at all for a progress chip or an activity row —
  * the wire tool part carries only a name — so it reads the same table rather
- * than prettifying our own namespace into "Vendo apps edit…" (wave-1 live proof
- * E1-5).
+ * than prettifying our own namespace into "Vendo apps edit…".
  *
  * Host tools are NOT here: a host authors its own titles (sync enrichment,
  * `.vendo/overrides.json`), and inventing labels for someone else's API would be
@@ -133,9 +132,9 @@ export const VENDO_TOOL_TITLES: Readonly<Record<string, string>> = {
  * §3's voice law is a rendering-layer law, and a model is the surface that writes
  * a refusal or an explanation — it can only say a title it was told. Handed only
  * `description`, the identifier is the sole proper noun in its context, which is
- * how a live refusal reached a user reading `` `host_transferMoney` `` (wave-1
- * proof E1-5). The identifier stays the CALL name; this is the one place the
- * human label enters the model's vocabulary.
+ * how a live refusal reached a user reading `` `host_transferMoney` ``. The
+ * identifier stays the CALL name; this is the one place the human label enters
+ * the model's vocabulary.
  *
  * A title equal to the name adds nothing (`ToolListing.title` falls back to the
  * name) and would teach exactly the wrong vocabulary, so it is dropped.
@@ -149,8 +148,8 @@ export function modelToolDescription(
     : `${title} — ${tool.description}`;
 }
 
-/** 0.4.4 cert defect B — the message prefix the apps runtime stamps on a
- *  terminally failed BUILD's error ("app build failed: <classified reason>").
+/** The message prefix the apps runtime stamps on a terminally failed BUILD's
+ *  error ("app build failed: <classified reason>").
  *  The agent loop reads it to end the turn and raise the failed-build banner;
  *  named once here so neither side string-matches the other. Only this class
  *  ends a turn — a cheap create error (input validation, feature-flag
@@ -168,8 +167,8 @@ export type GradedRiskLabel = "read" | "write" | "destructive";
  *  and the loop that ends a turn on it. */
 export const ASK_USER_TOOL = "ask_user";
 
-/** The connector dispatcher (connector-discovery design 2026-08-03) — the one
- *  tool whose real action is an ARGUMENT rather than its name, because a single
+/** The connector dispatcher — the one tool whose real action is an ARGUMENT
+ *  rather than its name, because a single
  *  name stands in for a third-party catalog of ~20,000 tools.
  *
  *  It lives here for the same reason `ASK_USER_TOOL` does, and one more: the
@@ -179,16 +178,16 @@ export const ASK_USER_TOOL = "ask_user";
  *  packages read and none of them may spell differently. */
 export const USE_SERVICE_TOOL = "use_service_tool";
 
-/** The four permanent connector-discovery names (design 2026-08-03) — the whole
- *  door onto a broker's catalog, however many tens of thousands of tools it holds.
+/** The four permanent connector-discovery names — the whole door onto a
+ *  broker's catalog, however many tens of thousands of tools it holds.
  *
  *  Beside {@link USE_SERVICE_TOOL} because a THIRD side reads them: the loadout.
  *  Not one of them carries the `vendo_*` prefix the always-active exemption keys
  *  on, so a host with more tools than the initial cap — or any curated
  *  `surfaces.agent` menu — silently dropped `request_connection` and
- *  `list_connections` while the system prompt went on teaching both (uiaudit
- *  2026-08-06). These are Vendo's own tools, not host API tools that explode in
- *  number, so they are exempt like the rest of ours. */
+ *  `list_connections` while the system prompt went on teaching both. These are
+ *  Vendo's own tools, not host API tools that explode in number, so they are
+ *  exempt like the rest of ours. */
 export const CONNECTOR_DISCOVERY_TOOLS = [
   "find_service_tools",
   USE_SERVICE_TOOL,
@@ -234,9 +233,9 @@ export interface ToolDescriptor {
    *  only on connector tools whose usefulness is gated by a per-user connected
    *  account (e.g. Composio's gmail/slack). Composition seams read it to skip
    *  work that is pointless without a connection — the apps runtime's
-   *  create-time shape probes skip unconnected toolkits (re-gate 2026-07-26
-   *  finding 2). Metadata only: it never changes what the tool can do, and
-   *  execution still answers `connect-required` on its own. */
+   *  create-time shape probes skip unconnected toolkits. Metadata only: it
+   *  never changes what the tool can do, and execution still answers
+   *  `connect-required` on its own. */
   toolkit?: string;
 }
 

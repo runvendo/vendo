@@ -1,5 +1,5 @@
 /**
- * The harness contract — build contract 2026-07-30 §1, copied verbatim.
+ * The harness contract.
  *
  * Types only, so every block may speak them: `defineHarness` and the runtime
  * that builds a `Turn` live in `@vendoai/harnesses` (build contract §2). The
@@ -27,18 +27,16 @@ export interface Harness<Options = unknown> {
   /**
    * Boot-time composition check — never a runtime surprise.
    *
-   * Amendment 2026-08-02: `toolDoor` joins `sandbox`. A harness whose thinker
-   * is not in this process reaches `turn.tools` over the host's own MCP door
-   * (10-mcp §3b), and composition is the only place that can mount one. Unlike
-   * `sandbox` this is never a boot ERROR — declaring it is how a harness asks
-   * composition for a door, and composition always answers.
+   * A harness whose thinker is not in this process reaches `turn.tools` over the
+   * host's own MCP door, and composition is the only place that can mount one.
+   * Unlike `sandbox`, `toolDoor` is never a boot ERROR — declaring it is how a
+   * harness asks composition for a door, and composition always answers.
    */
   readonly requires?: { sandbox?: boolean; toolDoor?: boolean };
   /**
-   * Amendment 2026-08-03: how this harness wants the equipped-tool surface
-   * shaped. `curated: false` = skip the discovery loadout (the ctx safety
-   * projection still applies); `withhold` = names never listed to and never
-   * callable by this harness.
+   * How this harness wants the equipped-tool surface shaped. `curated: false` =
+   * skip the discovery loadout (the ctx safety projection still applies);
+   * `withhold` = names never listed to and never callable by this harness.
    */
   readonly toolSurface?: { curated?: false; withhold?: readonly string[] };
   run(turn: Turn<Options>): AsyncGenerator<HarnessEvent, void, void>;
@@ -52,8 +50,8 @@ export interface Turn<Options = unknown> {
   readonly skills: TurnSkills;
   /** §3; the harness's file hands. */
   readonly workspace: WorkspaceFs;
-  /** §4, relaxed (agents spec 2026-08-04): the seats this turn was handed — any
-   *  subset, because a seat is required only where a harness actually reads it.
+  /** §4 — the seats this turn was handed. Any subset: a seat is required only
+   *  where a harness actually reads it.
    *  `SeatModels` itself is generic so `@vendoai/store` can speak seats without
    *  an `ai` dependency; a `Turn` is handed to an in-process harness that passes
    *  the seat straight to `streamText`, so here the model type is named. */
@@ -66,50 +64,40 @@ export interface Turn<Options = unknown> {
   /** Present iff the caller proved presence (a click/message/submit). */
   readonly interactive: boolean;
   /**
-   * Amendment 2026-07-31: the deployment's assembled system prompt — the product
-   * brief, the host's voice, the guard's directions, the knowledge index, the
-   * discovery rail. Composition assembles it per turn because it needs the
-   * `RunContext` a `Turn` deliberately does not carry, so it cannot be a
-   * construction-time dep of the harness value: a host who writes
-   * `harness: vendo()` builds that value once, at boot, with no ctx in sight.
-   * Carried HERE so every harness — named, defaulted, or a host's own — is told
-   * the same thing. Unset only for a runtime driven without composition.
+   * The deployment's assembled system prompt — the product brief, the host's
+   * voice, the guard's directions, the knowledge index, the discovery rail.
+   * Composition assembles it per turn because it needs the `RunContext` a `Turn`
+   * deliberately does not carry, so it cannot be a construction-time dep of the
+   * harness value: a host who writes `harness: vendo()` builds that value once,
+   * at boot, with no ctx in sight. Unset only for a runtime driven without
+   * composition.
    */
   readonly system?: string;
   /**
-   * Amendment 2026-08-01 (wave 2): the conversation's stable identity.
-   * Session-owning adapters (a machine pool, a native session ref) need a
-   * per-conversation key; deriving one from `messages[0].id` is a hack that
-   * history edits can orphan. The runtime already holds the thread id —
-   * passing it is simply true. Opaque to adapters.
+   * The conversation's stable identity. Session-owning adapters (a machine pool,
+   * a native session ref) need a per-conversation key; deriving one from
+   * `messages[0].id` is a hack that history edits can orphan. Opaque to adapters.
    */
   readonly threadId: string;
   /**
-   * This turn's own identity, minted per turn beside `threadId` and for the same
-   * reason: the runtime already holds it, so passing it is simply true. A thread
-   * spans a conversation; this spans one exchange, which is the grain the audit
-   * rows, the mirrored calls, the beats and the views all needed to join on.
-   * Opaque to adapters.
+   * This turn's own identity, minted per turn beside `threadId`. A thread spans a
+   * conversation; this spans one exchange — the grain the audit rows, the
+   * mirrored calls, the beats and the views all join on. Opaque to adapters.
    */
   readonly turnId: TurnId;
   /**
-   * Amendment 2026-08-05: register the one thing that takes the user's words
-   * MID-TURN — the second and last piece of inbound control on a turn, beside
-   * `signal`.
+   * Register the one thing that takes the user's words MID-TURN — the second and
+   * last piece of inbound control on a turn, beside `signal`.
    *
-   * Inbound, so it is deliberately NOT a `HarnessEvent`: that union is closed and
-   * describes what a harness SAYS. A steer is what a harness is TOLD, and folding
-   * the two together would be a second event vocabulary.
+   * Inbound, so deliberately NOT a `HarnessEvent`: that union is closed and
+   * describes what a harness SAYS. A steer is what a harness is TOLD.
    *
-   * Optional, so every harness and every driver that predates steering is
-   * unchanged by construction. Registering is the harness declaring "I can fold a
-   * message into the turn I am already running"; the handler then answers whether
-   * this particular message LANDED, because a harness that can steer in general
-   * still cannot when the thing it drives has just finished. A `false` — or never
-   * registering at all — is what tells the caller to keep the message for the next
-   * turn, and it is why nothing here needs a capability protocol.
-   *
-   * At most one handler: a turn has one thinker.
+   * Registering declares "I can fold a message into the turn I am already
+   * running"; the handler then answers whether this particular message LANDED,
+   * because a harness that can steer in general still cannot when the thing it
+   * drives has just finished. A `false` — or never registering — tells the caller
+   * to keep the message for the next turn, which is why nothing here needs a
+   * capability protocol. At most one handler: a turn has one thinker.
    */
   readonly onSteer?: (handler: (text: string) => Promise<boolean>) => void;
 }
@@ -145,15 +133,12 @@ export interface ToolListing {
   description: string;
   /** The tool's grade as it stands, `ungraded` included: a harness's model is
    *  told "nobody has graded this" rather than handed a `write` we invented for
-   *  it (risk-grading redesign D3). The guard is still the gate — an ungraded
-   *  call asks at call time — but a harness that can read the state can say so
-   *  before it tries. */
+   *  it. The guard is still the gate — an ungraded call asks at call time — but a
+   *  harness that can read the state can say so before it tries. */
   risk: RiskLabel;
-  /** Amendment 2026-07-30: JSON Schema for the tool's input. Every in-process
-   *  harness must hand schemas to its model, and JSON Schema is the interchange —
-   *  without it a harness can SEE a tool and still not call it. The runtime has
-   *  populated this since the amendment landed; the field was missing from the
-   *  type, so the contract held at runtime and not at compile time. */
+  /** JSON Schema for the tool's input. Every in-process harness must hand
+   *  schemas to its model, and JSON Schema is the interchange — without it a
+   *  harness can SEE a tool and still not call it. */
   inputSchema?: JsonSchema;
   /** The tool's DECLARED result shape — extraction captures it from the host's
    *  own contract; surfaces hand it to the model so data fields are known before
@@ -189,8 +174,8 @@ export interface TurnState {
 }
 
 /**
- * Build contract §1.5 — the CLOSED yield vocabulary. Routing (frozen, as
- * amended 2026-07-30): `text` → screen + transcript · `status` → screen only ·
+ * Build contract §1.5 — the CLOSED yield vocabulary. Routing is frozen:
+ * `text` → screen + transcript · `status` → screen only ·
  * `error` → screen + audit (not the transcript) · `usage` → audit/metering
  * only. Tool calls are mirrored by the runtime, never yielded; harnesses never
  * yield view events.

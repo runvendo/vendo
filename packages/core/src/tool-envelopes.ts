@@ -19,10 +19,9 @@ export const VENDO_APPROVAL_REF_KIND = "vendo/approval-ref@1" as const;
  *  failure itself, so the model must not claim the app is created/ready/done.
  *  `status` is always `"building"` — a MACHINE-readable field, not prose, so a
  *  model that skims past the tool description still cannot mistake this for a
- *  finished, describable resource (runvendo/flowlet#822 defect 2: three
- *  observed conversations narrated a fabricated, finished dashboard off an
- *  envelope that carried an appId and a title and nothing telling the model
- *  otherwise). A build that terminally fails is never wrapped in this ref —
+ *  finished, describable resource: given an envelope carrying only an appId and
+ *  a title, observed conversations narrated a fabricated, finished dashboard.
+ *  A build that terminally fails is never wrapped in this ref —
  *  see `appRefFromReceipt` in `@vendoai/harnesses`. */
 export interface VendoAppRef {
   kind: typeof VENDO_APP_REF_KIND;
