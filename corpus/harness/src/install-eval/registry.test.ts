@@ -1,8 +1,8 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
+import { tempDir } from "../temp-dir.test-util.js";
 import {
   indexLocalTarballs,
   readTarballManifest,
@@ -52,7 +52,7 @@ describe("readTarballManifest", () => {
 
 describe("local npm registry", () => {
   it("serves local packuments and tarballs, redirects everything else upstream", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "install-eval-registry-"));
+    const dir = await tempDir("install-eval-registry-");
     await writeFile(path.join(dir, "vendoai-vendo-0.3.0.tgz"), makeTarball(vendoManifest));
     const packages = await indexLocalTarballs(dir);
     expect([...packages.keys()]).toEqual(["@vendoai/vendo"]);

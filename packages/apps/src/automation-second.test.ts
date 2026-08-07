@@ -162,6 +162,7 @@ describe("a second automation on an app that already has one", () => {
 
     // The stored row, read back through the ordinary door.
     const stored = await runtime.get(APP_ID, ctx);
+    if (stored === null) throw new Error(`app row ${APP_ID} is gone`);
     expect(stored.triggers?.map(({ id }) => id)).toEqual(["main", "weekly_nudge_summary"]);
     expect(stored.triggers?.[0]).toEqual(firstTrigger);
     expect(stored.triggers?.[1]?.on).toEqual({ kind: "schedule", every: "7d" });

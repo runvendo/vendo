@@ -1,17 +1,32 @@
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 // The box harness ships as zero-dependency runtime .mjs baked into the base
 // template; it is exercised here through its side-effect-free factory.
 import { createHarness } from "../box/harness.mjs";
+
+/** The control port answers JSON; `Response.json()` hands back `unknown`, so
+ *  each read names the shape the route documents. */
+const jsonOf = async <T>(response: Response): Promise<T> => await response.json() as T;
+
+/**
+ * A temp dir removed when the test finishes — pass, fail, or throw.
+ * `onTestFinished` runs outside the test body, so a harness that fails to
+ * start (or an assertion that throws mid-test) cannot strand the directory.
+ */
+function boxDir(prefix: string): string {
+  const dir = mkdtempSync(path.join(tmpdir(), prefix));
+  onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
+  return dir;
+}
 
 /** Drive one harness on an ephemeral port against a scripted agent engine. */
 const withHarness = async (
   runAgentTask: (input: { prompt: string; context?: string; env: Record<string, string> }) => Promise<unknown>,
   body: (base: string, harness: ReturnType<typeof createHarness>) => Promise<void>,
 ): Promise<void> => {
-  const appDir = mkdtempSync(path.join(tmpdir(), "vendo-box-"));
+  const appDir = boxDir("vendo-box-");
   const harness = createHarness({
     appDir,
     controlPort: 0,
@@ -38,7 +53,7 @@ describe("box control-port protocol", () => {
     await withHarness(async () => ({ ok: true, summary: "", filesChanged: [], testsRun: 0 }), async (base) => {
       const response = await fetch(`${base}/agent/health`);
       expect(response.status).toBe(200);
-      const body = await response.json();
+      const body = await jsonOf<{ ok: boolean; harness: string }>(response);
       expect(body.ok).toBe(true);
       expect(body.harness).toBe("vendo-box/1");
     });
@@ -58,11 +73,11 @@ describe("box control-port protocol", () => {
         body: JSON.stringify({ prompt: "build a chaser", context: "SKIN CONTRACT ..." }),
       });
       expect(started.status).toBe(202);
-      const { taskId } = await started.json();
+      const { taskId } = await jsonOf<{ taskId: string }>(started);
       expect(taskId).toMatch(/^boxtask_/);
       await harness.taskPromise(taskId);
       const polled = await fetch(`${base}/agent/task/${taskId}`);
-      const body = await polled.json();
+      const body = await jsonOf<{ status: string; result: unknown }>(polled);
       expect(body.status).toBe("done");
       expect(body.result).toEqual({
         ok: true,
@@ -83,9 +98,9 @@ describe("box control-port protocol", () => {
       await gate;
       return { ok: true, summary: "", filesChanged: [], testsRun: 0 };
     }, async (base, harness) => {
-      const first = await (await fetch(`${base}/agent/task`, {
+      const first = await jsonOf<{ taskId: string }>(await fetch(`${base}/agent/task`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: "one" }),
-      })).json();
+      }));
       const second = await fetch(`${base}/agent/task`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: "two" }),
       });
@@ -111,9 +126,9 @@ describe("box control-port protocol", () => {
       return { ok: true, summary: "", filesChanged: [], testsRun: 0 };
     }, async (base, harness) => {
       // First task: no secret granted yet.
-      const t1 = await (await fetch(`${base}/agent/task`, {
+      const t1 = await jsonOf<{ taskId: string }>(await fetch(`${base}/agent/task`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: "one" }),
-      })).json();
+      }));
       await harness.taskPromise(t1.taskId);
       // Grant flips: host re-injects env (Lane E commitExposure → box restart loop).
       const env = await fetch(`${base}/agent/env`, {
@@ -121,9 +136,9 @@ describe("box control-port protocol", () => {
         body: JSON.stringify({ env: { RESEND_API_KEY: "granted-value" } }),
       });
       expect(env.status).toBe(200);
-      const t2 = await (await fetch(`${base}/agent/task`, {
+      const t2 = await jsonOf<{ taskId: string }>(await fetch(`${base}/agent/task`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: "two" }),
-      })).json();
+      }));
       await harness.taskPromise(t2.taskId);
       expect(envSeen[0]).toBeUndefined();
       expect(envSeen[1]).toBe("granted-value");
@@ -131,7 +146,7 @@ describe("box control-port protocol", () => {
   });
 
   it("supervises the app from the .vendo/run Procfile entry", async () => {
-    const appDir = mkdtempSync(path.join(tmpdir(), "vendo-box-"));
+    const appDir = boxDir("vendo-box-");
     const marker = path.join(appDir, "started.txt");
     // createHarness() creates .vendo/; write the Procfile entry before start().
     const harness = createHarness({ appDir, controlPort: 0, runAgentTask: (async () => ({ ok: true, summary: "", filesChanged: [], testsRun: 0 })) as never });
@@ -159,8 +174,8 @@ describe("box control-port protocol", () => {
     // supervisor must never source the machine's shell profiles. Sourcing them
     // is what flaked this suite under load-average 40 (a host ~/.bash_profile
     // is arbitrarily slow), and it leaks host profile env into the app.
-    const appDir = mkdtempSync(path.join(tmpdir(), "vendo-box-"));
-    const home = mkdtempSync(path.join(tmpdir(), "vendo-home-"));
+    const appDir = boxDir("vendo-box-");
+    const home = boxDir("vendo-home-");
     const profileRan = path.join(home, "profile-ran");
     writeFileSync(
       path.join(home, ".bash_profile"),

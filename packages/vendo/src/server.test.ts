@@ -3265,9 +3265,57 @@ describe("10-mcp §5 — door claims only its four exact well-known paths (FIX H
         .toEqual(["https://own-as.example.com"]);
     });
 
+    // ADAPTER RULE: the env var is a DEFAULT, and a default never displaces what
+    // the host passed. An explicit `mcp.serviceAuth` IS a local
+    // authorization-server choice — the RFC 8693 exchange it opens exists only
+    // at the door's own /token, which a broker-fronted door 404s — so the door
+    // stays local and the exchange a customer configured keeps answering.
+    it("an explicit mcp.serviceAuth keeps the door's own token endpoint over the declared broker", async () => {
+      const key = "vsk_0123456789abcdef0123456789abcdef0123456789abcdef";
+      vi.stubEnv("VENDO_MCP_BROKER_URL", `${BROKER}/mcp`);
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const vendo = await mcpVendo({ serviceAuth: { keys: [key] } });
+
+      // The door still owns its OAuth surface, and advertises the exchange...
+      const as = await vendo.handler(root("/.well-known/oauth-authorization-server/api/vendo/mcp"));
+      expect(as.status).toBe(200);
+      expect((await as.json() as { grant_types_supported?: string[] }).grant_types_supported)
+        .toContain("urn:ietf:params:oauth:grant-type:token-exchange");
+      const prm = await vendo.handler(root("/.well-known/oauth-protected-resource/api/vendo/mcp"));
+      expect((await prm.json() as { authorization_servers?: string[] }).authorization_servers)
+        .toEqual(["https://host.test/api/vendo/mcp"]);
+
+      // ...and the exchange itself answers at {mount}/token rather than 404ing.
+      const exchanged = await vendo.handler(new Request("https://host.test/api/vendo/mcp/token", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
+          client_id: "vendo-service",
+          client_secret: key,
+          subject_token: "user_door",
+          subject_token_type: "urn:vendo:params:oauth:token-type:user-id",
+          resource: "https://host.test/api/vendo/mcp",
+        }),
+      }));
+      expect(exchanged.status).toBe(200);
+      expect((await exchanged.json() as { access_token?: string }).access_token).toMatch(/^vmat_/);
+      // And nothing to warn about: the host named ONE authorization server.
+      expect(warn.mock.calls.flat().join(" ")).not.toContain("mcp.serviceAuth");
+    });
+
     it("a malformed VENDO_MCP_BROKER_URL fails LOUD at composition — never a quiet drop to local", async () => {
       vi.stubEnv("VENDO_MCP_BROKER_URL", "acme.mcp.vendo.run/mcp");
       await expect(mcpVendo()).rejects.toThrow(/VENDO_MCP_BROKER_URL must be an absolute http\(s\) URL/);
+    });
+
+    // serviceAuth wins the PRECEDENCE, not the parse: a broker URL nobody can
+    // verify tokens against is a broken deployment either way, so the loud
+    // failure must not be short-circuited by the slot it no longer fills.
+    it("still rejects a malformed broker URL when mcp.serviceAuth pins the door local", async () => {
+      vi.stubEnv("VENDO_MCP_BROKER_URL", "acme.mcp.vendo.run/mcp");
+      await expect(mcpVendo({ serviceAuth: { keys: ["vsk_service_key_with_enough_entropy"] } }))
+        .rejects.toThrow(/VENDO_MCP_BROKER_URL must be an absolute http\(s\) URL/);
     });
 
     // This URL becomes the OAuth resource audience, so anything that cannot BE

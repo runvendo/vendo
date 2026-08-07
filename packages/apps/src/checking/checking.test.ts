@@ -10,6 +10,7 @@ import {
   type AppDocument,
   type NormalizedCatalog,
   type ShapeType,
+  type Tree,
 } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { screenTypesCheck } from "./facts.js";
@@ -70,7 +71,7 @@ const documentFrom = (wire: string): AppDocument => {
     id: "app_checking_test",
     name: compiled.name ?? "Untitled",
     ui: "tree",
-    tree: compiled.tree as AppDocument["tree"],
+    tree: compiled.tree as unknown as AppDocument["tree"],
   } as AppDocument;
 };
 
@@ -275,7 +276,7 @@ describe("built-in fact checks", () => {
       '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack><Text text={invoices.data.0.customer}/></Stack></App>',
     ));
 
-    const finding = findings.find(({ where }) => where.includes('prop "text"'));
+    const finding = findings.find(({ where }) => where?.includes('prop "text"'));
     expect(finding?.severity).toBe("block");
     expect(finding?.message).toContain("the real fields are: id, client, amountCents");
   });
@@ -314,7 +315,7 @@ describe("built-in fact checks", () => {
       '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack><Stat value={sum(invoices.data, "amountCent")}/></Stack></App>',
     ));
 
-    const finding = findings.find(({ where }) => where.includes('prop "value"'));
+    const finding = findings.find(({ where }) => where?.includes('prop "value"'));
     expect(finding?.severity).toBe("block");
     expect(finding?.message).toContain('computes {sum(invoices.data, "amountCent")}');
     expect(finding?.message).toContain("the real fields are: id, client, amountCents");
@@ -326,7 +327,7 @@ describe("built-in fact checks", () => {
       '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack><Stat value={sum(invoices.data, "client") / count(invoices.data)}/></Stack></App>',
     ));
 
-    const finding = findings.find(({ where }) => where.includes('prop "value"'));
+    const finding = findings.find(({ where }) => where?.includes('prop "value"'));
     expect(finding?.severity).toBe("block");
     expect(finding?.message).toContain("sum() needs numeric values");
     expect(finding?.message).toContain("the numeric fields are: amountCents");
@@ -338,11 +339,11 @@ describe("built-in fact checks", () => {
     const layer = createCheckingLayer({ deps: deps() });
     const app = documentFrom(cleanApp);
     const tree = structuredClone(app.tree) as NonNullable<AppDocument["tree"]>;
-    const table = tree.nodes.find((node) => node.component === "DataTable");
+    const table = (tree as unknown as Tree).nodes.find((node) => node.component === "DataTable");
     (table as { props?: Record<string, unknown> }).props = { rows: { $expr: 'sum(invoices.data, "amountCents") + * 2' } };
     const findings = await layer.run({ document: { ...app, tree }, request: "invoices" });
 
-    const finding = findings.find(({ where }) => where.includes('prop "rows"'));
+    const finding = findings.find(({ where }) => where?.includes('prop "rows"'));
     expect(finding?.severity).toBe("block");
     expect(finding?.message).toContain('"*"');
   });

@@ -1,7 +1,7 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { tempDir } from "../temp-dir.test-util.js";
 import { doctorOutcomeFromReport, parseDoctorJson, runFixtureDoctor } from "./doctor.js";
 import type { InstallEvalFixture } from "./fixtures.js";
 
@@ -55,7 +55,7 @@ const fixture: InstallEvalFixture = {
 
 describe("runFixtureDoctor guards", () => {
   it("fails distinctly when the fixture has no vendo CLI", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "install-eval-doctor-"));
+    const dir = await tempDir("install-eval-doctor-");
     const outcome = await runFixtureDoctor({
       fixture,
       fixtureDir: dir,
@@ -68,7 +68,7 @@ describe("runFixtureDoctor guards", () => {
   });
 
   it("refuses to boot when something already answers on the fixture port", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "install-eval-doctor-port-"));
+    const dir = await tempDir("install-eval-doctor-port-");
     await mkdir(path.join(dir, "node_modules", "@vendoai", "vendo", "bin"), { recursive: true });
     await writeFile(path.join(dir, "node_modules", "@vendoai", "vendo", "bin", "vendo.mjs"), "// stub");
     const outcome = await runFixtureDoctor({

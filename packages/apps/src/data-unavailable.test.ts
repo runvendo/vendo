@@ -208,7 +208,7 @@ describe("where a resolved query's result lands", () => {
 
     const surface = await runtime.open(APP_ID, ctx());
     if (surface.kind !== "tree") throw new Error("expected a tree surface");
-    const data = (surface.payload as { data: Record<string, unknown> }).data;
+    const data = (surface.payload as unknown as { data: Record<string, unknown> }).data;
     expect(Object.getPrototypeOf(data)).toBe(Object.prototype);
     expect(Object.getOwnPropertyDescriptor(data, "__proto__")?.value).toEqual({ polluted: true });
     expect(({} as Record<string, unknown>)["polluted"]).toBeUndefined();

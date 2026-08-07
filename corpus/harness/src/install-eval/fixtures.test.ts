@@ -1,7 +1,7 @@
-import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { tempDir } from "../temp-dir.test-util.js";
 import {
   prepareFixture,
   readFinalToolState,
@@ -43,7 +43,7 @@ describe("stripVendoFromPackageJson", () => {
 
 describe("prepareFixture", () => {
   it("copies clean, strips the Vendo footprint, points npm at the registry, and snapshots", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "install-eval-fixture-"));
+    const root = await tempDir("install-eval-fixture-");
     const sourceDir = path.join(root, "source-app");
     await mkdir(path.join(sourceDir, ".vendo"), { recursive: true });
     await mkdir(path.join(sourceDir, "node_modules", "junk"), { recursive: true });
@@ -86,7 +86,7 @@ describe("prepareFixture", () => {
 
 describe("prepareFixture (corpus repo source)", () => {
   it("sources external pinned fixtures from the corpus checkout via the seam", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "install-eval-corpus-fixture-"));
+    const root = await tempDir("install-eval-corpus-fixture-");
     const checkoutDir = path.join(root, "pinned-checkout");
     await mkdir(path.join(checkoutDir, ".git"), { recursive: true });
     await writeFile(path.join(checkoutDir, "package.json"), JSON.stringify({
@@ -125,7 +125,7 @@ describe("prepareFixture (corpus repo source)", () => {
 
 describe("readFinalToolState", () => {
   it("collects generated tool names and referenced names", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "install-eval-state-"));
+    const dir = await tempDir("install-eval-state-");
     await mkdir(path.join(dir, ".vendo"), { recursive: true });
     await writeFile(path.join(dir, ".vendo", "tools.json"), JSON.stringify({
       tools: [{ name: "host_accounts_list" }, { name: "host_transfers_create" }],
@@ -145,7 +145,7 @@ describe("readFinalToolState", () => {
   });
 
   it("reads empty state when nothing was generated", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "install-eval-state-empty-"));
+    const dir = await tempDir("install-eval-state-empty-");
     expect(await readFinalToolState(dir)).toEqual({ toolNames: [], referencedToolNames: [] });
   });
 });
