@@ -115,6 +115,38 @@ describe("AutomationsPanel liveness", () => {
     expect(screen.queryByText("running now")).toBeNull();
   });
 
+  it("keeps the run-health strip when a refresh lands while /runs is still in flight", async () => {
+    // The eager strip fetch discards its own response whenever the effect
+    // restarts, and a restart is just a new `automations` array — which every
+    // refresh produces. The restarted effect finds the row still marked as
+    // fetched and skips it, and the discarded response then UNMARKS it, so
+    // nothing is in flight and nothing will re-fetch: the effect only re-runs on
+    // the next identity change. With the poll on, the run sweep quietly covers
+    // for this a tick later; with the cadence off (a host driving its own
+    // refreshes — pollMs=0) there is no sweep, and the health strip is simply
+    // gone for the rest of the session.
+    const slow: VendoClient = {
+      ...client,
+      runs: {
+        ...client.runs,
+        list: async (filter) => {
+          await new Promise(resolve => setTimeout(resolve, 120));
+          return client.runs.list(filter);
+        },
+      },
+    };
+    render(<VendoProvider client={slow}><AutomationsPanel pollMs={0} /></VendoProvider>);
+    const toggle = await screen.findByRole("switch", { name: "Enable Invoice watcher — Invoice created" });
+    // A person arms their automation while the first strip read is still out:
+    // `enable` refreshes, and that refresh is the restart.
+    fireEvent.click(toggle);
+    await waitFor(() => expect(wire.requests).toContainEqual(
+      expect.objectContaining({ method: "POST", path: "/automations/app_auto/enable/main" }),
+    ));
+
+    expect(await screen.findByRole("img", { name: /^Last \d+ runs? for/ })).toBeTruthy();
+  });
+
   // Both cadence tests below take their baseline AFTER the initial load has gone
   // quiet. Snapshotting the request count the moment the first button renders
   // counts the mount fetches that are still in flight, which reads as a poll
