@@ -16,8 +16,7 @@
  *   reduced-motion needs no special casing), sits under the overlay's own
  *   scrim + blur exactly like the canvas frames.
  *
- * Styling rides the house inline-style idiom with a themeCssVariables scope,
- * like try-refine and the old chips row.
+ * Styling rides the house inline-style idiom with a themeCssVariables scope.
  */
 import type { VendoTheme } from "@vendoai/core";
 import { themeCssVariables } from "@vendoai/ui";

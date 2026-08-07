@@ -108,7 +108,7 @@ export const tryProfileSchema = z.object({
     level: tryDepthLevelSchema,
     stages: z.record(tryStageStatusSchema),
   }),
-  capabilities: z.object({ liveChat: z.boolean(), refine: z.boolean() }),
+  capabilities: z.object({ liveChat: z.boolean() }),
 });
 
 export type TryProfile = z.infer<typeof tryProfileSchema>;
@@ -239,9 +239,6 @@ export async function assembleTryProfile(
     usecases,
     fixturesAvailable,
     depth: { level, stages },
-    capabilities: {
-      liveChat: options.capabilities?.liveChat ?? false,
-      refine: options.capabilities?.refine ?? false,
-    },
+    capabilities: { liveChat: options.capabilities?.liveChat ?? false },
   };
 }

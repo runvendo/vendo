@@ -37,7 +37,6 @@ import {
   type TrySurfaceMode,
 } from "./try-boot.js";
 import { TryPanelProvider, TryPanelThread } from "./try-panel.js";
-import { TryRefine, refineEnabled } from "./try-refine.js";
 import { TryStage } from "./try-stage.js";
 import { LiveSurfaceMount } from "./try-surface-live.js";
 
@@ -160,9 +159,6 @@ export function TryApp({ boot }: { boot: TryBoot }) {
             {label}
           </span>
         ) : null}
-        {/* Only rendered when the server reports the capability: a keyless
-            run never shows a Refine affordance it couldn't honor. */}
-        {refineEnabled(state.profile) ? <TryRefine theme={theme} /> : null}
       </div>
       {/* Keyed by mode: a mode flip (server-reported, never a client-side
           fallback) must remount onto the other data source cleanly. */}

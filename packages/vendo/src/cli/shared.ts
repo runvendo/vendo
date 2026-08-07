@@ -222,6 +222,15 @@ export async function withCommandRun(
   }
 }
 
+/** Windows' `start` is a cmd built-in, not an executable — execFile can only
+ *  reach it through `cmd /c start "" <url>` (the empty string is the window
+ *  title, so a URL is never mistaken for one). */
+export function browserOpenCommand(platform: NodeJS.Platform, url: string): { command: string; args: string[] } {
+  if (platform === "darwin") return { command: "open", args: [url] };
+  if (platform === "win32") return { command: "cmd", args: ["/c", "start", "", url] };
+  return { command: "xdg-open", args: [url] };
+}
+
 /** Lockfile-derived package manager for `run dev` (doctor's probe starter). */
 export async function detectPackageManager(root: string): Promise<"pnpm" | "yarn" | "bun" | "npm"> {
   if (await exists(join(root, "pnpm-lock.yaml"))) return "pnpm";

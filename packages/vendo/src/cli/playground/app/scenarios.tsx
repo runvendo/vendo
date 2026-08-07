@@ -1,8 +1,8 @@
 /**
  * The scenario registry: each entry is one linkable URL (`#<id>`) mounting a
  * REAL chrome surface against scripted data. The nav renders from this list;
- * the harness (main.tsx) supplies the provider, fake client, scripted
- * transport, and the auto-sent opening turn.
+ * the harness (scenario-mount.tsx) supplies the provider, fake client,
+ * scripted transport, and the auto-sent opening turn.
  */
 import type { DirectorScript } from "@vendoai/ui";
 import { VendoActivities, VendoOverlay, VendoPage, VendoSlot, VendoThread } from "@vendoai/ui/chrome";

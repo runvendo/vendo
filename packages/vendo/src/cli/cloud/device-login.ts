@@ -7,8 +7,7 @@ import { errorMessage, printJson } from "./output.js";
 import { deletePendingClaim, readPendingClaim, writePendingClaim } from "./pending-claim.js";
 import { writeCloudSession, type CloudSession } from "./session.js";
 import { upsertEnvLocal, warnEnvLocalNotIgnored } from "../cloud-init.js";
-import { browserOpenCommand } from "../playground.js";
-import { CLI_VERSION, consoleOutput, withCommandRun, type Output, type TelemetryOptions } from "../shared.js";
+import { browserOpenCommand, CLI_VERSION, consoleOutput, withCommandRun, type Output, type TelemetryOptions } from "../shared.js";
 
 /**
  * `vendo login` (alias: `vendo cloud device-login`) — the auth.md

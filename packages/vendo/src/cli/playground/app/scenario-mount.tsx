@@ -1,7 +1,7 @@
 /**
  * The shared scenario harness: one REAL chrome surface mounted against the
- * fake wire client + scripted transport. Used by the playground page
- * (main.tsx) and the docs inline embeds (embed-entry.tsx).
+ * fake wire client + scripted transport. Used by the playground shell
+ * (surface.tsx) and the docs inline embeds (embed-entry.tsx).
  */
 import type { VendoTheme } from "@vendoai/core";
 import { ScriptedTransport, VendoProvider } from "@vendoai/ui";

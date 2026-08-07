@@ -2,7 +2,7 @@
  * The playground's theme editor: a floating card top-right (Yousef's pick C)
  * that collapses to a "Theme" pill, and a grabber-handled bottom sheet at
  * phone widths. Every VendoTheme token is editable live; state lives in
- * main.tsx so the whole page (and the embed iframe) re-themes together.
+ * surface.tsx so the whole page (and the embed iframe) re-themes together.
  */
 import type { VendoTheme } from "@vendoai/core";
 import { useEffect, useState } from "react";

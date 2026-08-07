@@ -1,9 +1,9 @@
 /**
  * The try surface, as an importable client-only module.
  *
- * This is the ONE source both venues build from: the CLI IIFE (`main.tsx`,
- * served by the playground server at `/playground.js`) and a vendo-web Next
- * client route (`@vendoai/vendo/try-surface`). It carries NO module-level DOM/window access
+ * This is the ONE source both venues build from: vendo-web's Next client route
+ * (`@vendoai/vendo/try-surface`) and the docs inline-embed IIFE
+ * (`embed-entry.tsx`). It carries NO module-level DOM/window access
  * so it is safe to import under SSR — every `document`/`window` touch lives
  * inside `mount()` or a component effect, which only ever run in the browser.
  *

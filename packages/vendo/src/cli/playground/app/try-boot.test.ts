@@ -31,7 +31,7 @@ function profileFixture(overrides: Partial<TryProfile> = {}): TryProfile {
     usecases: [],
     fixturesAvailable: false,
     depth: { level: "shallow", stages: {} },
-    capabilities: { liveChat: false, refine: false },
+    capabilities: { liveChat: false },
     ...overrides,
   };
 }
@@ -532,7 +532,7 @@ describe("stageNavLabels", () => {
 
 describe("selectSurfaceMode", () => {
   it("live only when the profile honestly reports the liveChat capability", () => {
-    expect(selectSurfaceMode(profileFixture({ capabilities: { liveChat: true, refine: false } }))).toBe("live");
+    expect(selectSurfaceMode(profileFixture({ capabilities: { liveChat: true } }))).toBe("live");
   });
 
   it("scripted when liveChat is false, or there is no profile yet", () => {

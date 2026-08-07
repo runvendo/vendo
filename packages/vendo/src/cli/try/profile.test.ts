@@ -91,7 +91,7 @@ describe("assembleTryProfile on the committed demo-bank profile", () => {
       fixtures: "pending",
     });
 
-    expect(profile.capabilities).toEqual({ liveChat: false, refine: false });
+    expect(profile.capabilities).toEqual({ liveChat: false });
     expect(tryProfileSchema.parse(profile)).toEqual(profile);
   });
 
@@ -109,7 +109,7 @@ describe("assembleTryProfile on the committed demo-bank profile", () => {
       domain: "maple.example",
       logoUrl: "https://maple.example/logo.svg",
     });
-    expect(profile.capabilities).toEqual({ liveChat: true, refine: false });
+    expect(profile.capabilities).toEqual({ liveChat: true });
     // Caller-supplied stage statuses win over the disk derivation…
     expect(profile.depth.stages["usecases"]).toBe("failed");
     // …without erasing the derived ones.
