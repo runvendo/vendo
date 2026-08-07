@@ -826,7 +826,7 @@ importers:
         specifier: workspace:*
         version: link:../store
       zod:
-        specifier: '>=3.25.0 <5'
+        specifier: ^3.25.0
         version: 3.25.76
     devDependencies:
       '@types/node':
