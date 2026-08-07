@@ -59,16 +59,24 @@ function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
+/** The tags whose `components={…}` prop registers host components. Both the
+ *  umbrella's `@vendoai/vendo/react` and `@vendoai/ui` export the provider, and
+ *  `VendoRoot` stays recognized so a host mid-migration is never silently
+ *  scanned to zero components. */
+const PROVIDER_EXPORTS: readonly string[] = ["VendoProvider", "VendoRoot"];
+const PROVIDER_MODULES: readonly string[] = ["@vendoai/vendo/react", "@vendoai/ui"];
+
 function vendoRootNames(sourceFile: tsTypes.SourceFile): Set<string> {
-  const names = new Set(["VendoRoot"]);
+  const names = new Set(PROVIDER_EXPORTS);
   for (const statement of sourceFile.statements) {
     if (!ts.isImportDeclaration(statement)
       || !ts.isStringLiteral(statement.moduleSpecifier)
-      || statement.moduleSpecifier.text !== "@vendoai/vendo/react"
+      || !PROVIDER_MODULES.includes(statement.moduleSpecifier.text)
       || statement.importClause?.namedBindings === undefined
       || !ts.isNamedImports(statement.importClause.namedBindings)) continue;
     for (const element of statement.importClause.namedBindings.elements) {
-      if ((element.propertyName?.text ?? element.name.text) === "VendoRoot") names.add(element.name.text);
+      const imported = element.propertyName?.text ?? element.name.text;
+      if (PROVIDER_EXPORTS.includes(imported)) names.add(element.name.text);
     }
   }
   return names;
@@ -76,7 +84,9 @@ function vendoRootNames(sourceFile: tsTypes.SourceFile): Set<string> {
 
 function isVendoRootTag(tagName: tsTypes.JsxTagNameExpression, names: ReadonlySet<string>): boolean {
   const text = tagName.getText();
-  return names.has(text) || text.slice(text.lastIndexOf(".") + 1) === "VendoRoot";
+  if (names.has(text)) return true;
+  const last = text.slice(text.lastIndexOf(".") + 1);
+  return PROVIDER_EXPORTS.includes(last);
 }
 
 function hasJsxEvidence(node: tsTypes.Node): boolean {

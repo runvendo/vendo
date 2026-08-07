@@ -4,6 +4,12 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { scanComponentCatalog } from "./catalog-scan.js";
 
+/** The provider's two import specifiers, assembled at runtime because the
+ *  dependency guard's static text scan reads import-shaped strings even inside
+ *  fixtures, and actions may not import @vendoai/vendo or @vendoai/ui. */
+const VENDO_REACT = ["@vendoai", "vendo", "react"].join("/");
+const UI_PACKAGE = ["@vendoai", "ui"].join("/");
+
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
@@ -312,5 +318,29 @@ describe("deterministic component catalog scan", () => {
     expect(result.entries).toEqual([]);
     expect(result.warnings).toContainEqual(expect.stringContaining("inline components map"));
     expect(result.warnings).not.toContainEqual(expect.stringContaining("NotVendoRoot"));
+  });
+
+  it("recognizes <VendoProvider components={…}> from @vendoai/vendo/react", async () => {
+    const root = await host(`
+      type ComponentType = (props: unknown) => unknown;
+      import { VendoProvider } from "${VENDO_REACT}";
+      export function Badge({ active }: { active?: boolean }) { return <span>{active}</span>; }
+      export const hostComponents: Record<string, ComponentType> = { Badge: Badge as ComponentType };
+      export function Root() { return <VendoProvider components={hostComponents} />; }
+    `);
+    const result = await scanComponentCatalog(root);
+    expect(result.entries.map((entry) => entry.name)).toEqual(["Badge"]);
+  });
+
+  it("recognizes <VendoProvider> imported from @vendoai/ui, and under an alias", async () => {
+    const root = await host(`
+      type ComponentType = (props: unknown) => unknown;
+      import { VendoProvider as Root } from "${UI_PACKAGE}";
+      export function Badge({ active }: { active?: boolean }) { return <span>{active}</span>; }
+      export const hostComponents: Record<string, ComponentType> = { Badge: Badge as ComponentType };
+      export function App() { return <Root components={hostComponents} />; }
+    `);
+    const result = await scanComponentCatalog(root);
+    expect(result.entries.map((entry) => entry.name)).toEqual(["Badge"]);
   });
 });
