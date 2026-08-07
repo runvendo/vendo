@@ -1148,6 +1148,38 @@ describe("09 §3 public wire", () => {
     expect(response.status).toBe(404);
   });
 
+  it("does not mount the doctor probes when NODE_ENV is unset", async () => {
+    // The gate used to be a per-request `NODE_ENV === "production"` refusal on
+    // the /doctor/ prefix, so ABSENCE of configuration read as "not production"
+    // and served the whole probe surface unauthenticated: /doctor/machines
+    // enumerates every machine-bearing app in the deployment (id, name,
+    // provisioned-at, awake-right-now, and each declared cron + fn) across every
+    // subject, and reports whether VENDO_TICK_SECRET guards /tick;
+    // POST /doctor/act-as makes the composition mint host actAs material for a
+    // synthetic principal on demand. NODE_ENV is unset on plenty of Node deploys
+    // and `process` does not exist at all on edge runtimes, where
+    // `environment()` returns undefined for the same reason. Mounting is a
+    // composition fact now, and absent means closed.
+    vi.stubEnv("NODE_ENV", undefined);
+    const { vendo } = await setup();
+
+    for (const probe of [
+      request("GET", "/doctor/machines"),
+      request("GET", "/doctor/mcp"),
+      request("GET", "/doctor/present/echo"),
+      request("GET", "/doctor/act-as/echo"),
+      request("POST", "/doctor/present", {}),
+      request("POST", "/doctor/act-as", {}),
+    ]) {
+      expect((await vendo.handler(probe)).status, probe.url).toBe(404);
+    }
+
+    // The one deliberate exception, unchanged: /doctor/base-url reports a
+    // static composition fact and exists to catch a PRODUCTION misconfiguration,
+    // so it is mounted in every environment.
+    expect((await vendo.handler(request("GET", "/doctor/base-url"))).status).toBe(200);
+  });
+
   it("validates sync impact tool arrays", async () => {
     vi.stubEnv("NODE_ENV", "development");
     const { vendo } = await setup();
