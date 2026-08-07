@@ -362,14 +362,19 @@ export async function startBackends(): Promise<Backends> {
     await connectedMcp?.close().catch(() => undefined);
     await composioStub.close().catch(() => undefined);
     await new Promise<void>((resolve) => httpServer.close(() => resolve()));
-    if (host.exitCode === null) {
-      host.kill("SIGTERM");
-      const exited = new Promise<void>((resolve) => host.once("exit", () => resolve()));
-      await Promise.race([exited, new Promise<void>((resolve) => setTimeout(resolve, 5_000))]);
-      if (host.exitCode === null) host.kill("SIGKILL");
+    // The data dir goes in a finally: a host that will not die, or a PGlite
+    // close that rejects, must not strand the scratch directory.
+    try {
+      if (host.exitCode === null) {
+        host.kill("SIGTERM");
+        const exited = new Promise<void>((resolve) => host.once("exit", () => resolve()));
+        await Promise.race([exited, new Promise<void>((resolve) => setTimeout(resolve, 5_000))]);
+        if (host.exitCode === null) host.kill("SIGKILL");
+      }
+      await store.close();
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
     }
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
   };
   // Vite kills this process on teardown; make sure the next child dies with it.
   const onSignal = () => void close().finally(() => process.exit(0));
