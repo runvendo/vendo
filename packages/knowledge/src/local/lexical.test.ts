@@ -101,6 +101,14 @@ describe("vendoKnowledge — retrieval quality", () => {
     expect((await adapter.search({ text: "Refund policy", intent: "schema" }, ctx)).hits).toEqual([]);
   });
 
+  it("carries the doc source on every intent so citations keep provenance", async () => {
+    const { adapter } = await seeded();
+    const chat = await adapter.search({ text: "How long do refunds take?" }, ctx);
+    expect(chat.hits[0]!.ref.source).toBe(CORPUS[0]!.source);
+    const schema = await adapter.search({ text: "APR", intent: "schema" }, ctx);
+    expect(schema.hits[0]!.ref.source).toBe(CORPUS[3]!.source);
+  });
+
   it("an empty kinds array matches nothing; kinds filter applies in-query", async () => {
     const { adapter } = await seeded();
     expect((await adapter.search({ text: "refunds", kinds: [] }, ctx)).hits).toEqual([]);
