@@ -6,8 +6,17 @@
  * and is read back through the SHIPPED reader (`AppsRuntime.toolShapeBrief`),
  * with no stub on either side — so the two cannot agree by construction.
  */
-import type { RunContext, ToolCall, ToolDescriptor, ToolOutcome, ToolRegistry } from "@vendoai/core";
+import {
+  UNKNOWN_INPUT_SCHEMA_NOTE,
+  UNKNOWN_OUTPUT_SHAPE_NOTE,
+  type RunContext,
+  type ToolCall,
+  type ToolDescriptor,
+  type ToolOutcome,
+  type ToolRegistry,
+} from "@vendoai/core";
 import { describe, expect, it } from "vitest";
+import { toolLine } from "./automation-plan.js";
 import { createApps } from "./index.js";
 import { guardFixture, memoryStore, scriptedLanguageModel } from "./testing/index.js";
 
@@ -70,5 +79,54 @@ describe("declared output schemas produce the shape cards", () => {
     expect(brief).toContain("host_getSpendingInsights");
     expect(brief).toContain('category: "dining" | "groceries"');
     expect(brief).toContain("amount: number");
+  });
+
+  it("lists EVERY tool: a schema'd one by shape, a blind one by the unknown sentence", async () => {
+    const tools = new FixtureTools([
+      {
+        name: "host_listItems",
+        description: "List items",
+        risk: "read",
+        inputSchema: { type: "object", properties: {} },
+        outputSchema: { type: "object", properties: { data: { type: "array", items: { type: "string" } } }, required: ["data"] },
+      },
+      {
+        name: "host_voice_create",
+        description: "POST /api/voice",
+        risk: "write",
+        inputSchema: { type: "object", properties: {}, additionalProperties: true },
+      },
+    ]);
+    const brief = await runtimeWith(tools).toolShapeBrief(ctx);
+
+    expect(brief).toContain("host_listItems");
+    expect(brief).toContain("{ data: string[] }");
+    expect(brief).toContain("host_voice_create");
+    expect(brief).toContain(UNKNOWN_OUTPUT_SHAPE_NOTE);
+  });
+
+  it("returns a section even when the product has no tools at all", async () => {
+    const brief = await runtimeWith(new FixtureTools([])).toolShapeBrief(ctx);
+    expect(typeof brief).toBe("string");
+    expect(brief.length).toBeGreaterThan(0);
+  });
+});
+
+describe("the automation planner's tool line", () => {
+  it("distinguishes a declared no-argument tool from a blind one", () => {
+    const declared = toolLine(
+      { name: "host_listGoals", description: "Goals", risk: "read", inputSchema: { type: "object", properties: {} } },
+      { kind: "object", fields: { data: { kind: "array", items: { kind: "string" } } } },
+    );
+    const blind = toolLine(
+      { name: "host_voice_create", description: "Voice", risk: "write", inputSchema: { type: "object", properties: {}, additionalProperties: true } },
+      undefined,
+    );
+
+    expect(declared).toContain("takes no arguments");
+    expect(declared).not.toContain(UNKNOWN_INPUT_SCHEMA_NOTE);
+    expect(declared).toContain("result shape: { data: string[] }");
+    expect(blind).toContain(UNKNOWN_INPUT_SCHEMA_NOTE);
+    expect(blind).toContain(UNKNOWN_OUTPUT_SHAPE_NOTE);
   });
 });

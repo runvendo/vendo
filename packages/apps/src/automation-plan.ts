@@ -1,9 +1,12 @@
 import {
   describeShapeWithSemantics,
+  inputSchemaIsBlind,
   isVendoAppsTool,
   withheldFromUnattended,
   triggerSchema,
   UNATTENDED_DESTRUCTIVE_REASON,
+  UNKNOWN_INPUT_SCHEMA_NOTE,
+  UNKNOWN_OUTPUT_SHAPE_NOTE,
   type ShapeType,
   type Trigger,
 } from "@vendoai/core";
@@ -146,7 +149,7 @@ const declaredTools = (prompt: string, tools: readonly HostToolInfo[]): string[]
 const refusal = (where: string, tool: string): string =>
   `${where} uses "${tool}". ${UNATTENDED_DESTRUCTIVE_REASON} Author the part that can run away — read the live data and publish the result to the board — and leave "${tool}" out; the person does that themselves, on demand, from the app.`;
 
-const toolLine = (
+export const toolLine = (
   { name, description, risk, inputSchema }: HostToolInfo,
   shape: ShapeType | undefined,
 ): string => {
@@ -154,7 +157,18 @@ const toolLine = (
   const fields = typeof properties === "object" && properties !== null
     ? Object.keys(properties as Record<string, unknown>)
     : [];
-  return `- ${name} [${risk}]${fields.length === 0 ? "" : ` (input fields: ${fields.join(", ")})`}: ${description}${shape === undefined ? "" : `\n  result shape: ${describeShapeWithSemantics(shape, {})}`}`;
+  // Three states, never two: named arguments, a DECLARED empty argument list,
+  // and a slot nothing could read. Collapsing the last two into `()` tells the
+  // planner a tool takes nothing when in truth nobody knows what it takes.
+  const input = inputSchemaIsBlind(inputSchema)
+    ? ` (${UNKNOWN_INPUT_SCHEMA_NOTE})`
+    : fields.length === 0
+      ? " (takes no arguments)"
+      : ` (input fields: ${fields.join(", ")})`;
+  const result = shape === undefined
+    ? UNKNOWN_OUTPUT_SHAPE_NOTE
+    : `result shape: ${describeShapeWithSemantics(shape, {})}`;
+  return `- ${name} [${risk}]${input}: ${description}\n  ${result}`;
 };
 
 const stepsContract = (input: AutomationPlanInput): string => `RUN MODEL (this instruction is DETERMINISTIC tool work):
