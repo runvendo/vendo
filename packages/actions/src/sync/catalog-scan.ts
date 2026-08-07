@@ -550,7 +550,8 @@ function schemaForType(
     const item = checker.getIndexTypeOfType(type, ts.IndexKind.Number);
     if (item === undefined) return { unsupported: `array item type could not be resolved (${checker.typeToString(type)})` };
     const converted = schemaForType(checker, item, location, new Set(seen), depth + 1);
-    return converted.schema === undefined ? converted : { schema: { type: "array", items: converted.schema } };
+    if (converted.schema === undefined) return converted;
+    return { schema: { type: "array", items: converted.schema }, ...(converted.unsupported === undefined ? {} : { unsupported: converted.unsupported }) };
   }
 
   if (type.getCallSignatures().length > 0 || type.getConstructSignatures().length > 0) {
@@ -568,14 +569,23 @@ function schemaForType(
 
   const properties: Record<string, JsonSchema> = {};
   const required: string[] = [];
+  const reasons: string[] = [];
   for (const property of checker.getPropertiesOfType(type).sort((left, right) => compareText(left.name, right.name))) {
     const declaration = property.valueDeclaration ?? property.declarations?.[0] ?? location;
     const propertyType = checker.getTypeOfSymbolAtLocation(property, declaration);
     const converted = schemaForType(checker, propertyType, declaration, new Set(seen), depth + 1);
-    if (converted.schema === undefined) {
-      return { unsupported: `property ${property.name} uses ${converted.unsupported ?? checker.typeToString(propertyType)}` };
+    // Degrade the one unrepresentable property to permissive `{}` and drop it
+    // from `required` — the same rule the sibling converter in
+    // route-schema.ts applies. Failing the whole object instead would throw
+    // away every property that converted fine, and a component with a single
+    // callback prop would reach the console as "declares no props schema".
+    properties[property.name] = converted.schema ?? {};
+    if (converted.unsupported !== undefined) {
+      reasons.push(`property ${property.name} uses ${converted.unsupported}`);
+    } else if (converted.schema === undefined) {
+      reasons.push(`property ${property.name} uses ${checker.typeToString(propertyType)}`);
     }
-    properties[property.name] = converted.schema;
+    if (converted.schema === undefined) continue;
     if ((property.flags & ts.SymbolFlags.Optional) === 0
       && withoutUndefined(propertyType).length === (propertyType.isUnion() ? propertyType.types.length : 1)) {
       required.push(property.name);
@@ -587,11 +597,11 @@ function schemaForType(
   if (stringIndex === undefined) schema.additionalProperties = false;
   else {
     const converted = schemaForType(checker, stringIndex, location, new Set(seen), depth + 1);
-    if (converted.schema === undefined) return converted;
-    schema.additionalProperties = converted.schema;
+    schema.additionalProperties = converted.schema ?? {};
+    if (converted.unsupported !== undefined) reasons.push(`index signature uses ${converted.unsupported}`);
   }
   if (required.length > 0) schema.required = required;
-  return { schema };
+  return reasons.length > 0 ? { schema, unsupported: reasons.join("; ") } : { schema };
 }
 
 function schemaForComponent(checker: tsTypes.TypeChecker, declaration: tsTypes.FunctionLikeDeclaration): SchemaResult {
