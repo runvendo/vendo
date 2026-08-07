@@ -302,9 +302,9 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
         // never runs the judge a second time, so an approved call is executed
         // ONCE below rather than executed-then-re-executed.
         let approvalId: ApprovalId | undefined;
-        const ask = await previewApproval(descriptor, bridge, (id) => {
+        const ask = await previewApproval(descriptor, bridge, args, { toolCallId }, (id) => {
           approvalId = id;
-        })(args, { toolCallId });
+        });
 
         if (ask) {
           if (approvalId !== undefined) {
@@ -346,7 +346,7 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
         // channel (a `vendo_apps_*` tree plus the VENDO_VIEW_STREAM partials),
         // the connect card, the build-failed banner, the citations part and
         // `toolOutputCap` all come from here — never a second implementation.
-        const outcome = await guardedCall(descriptor, bridge)(args, { toolCallId });
+        const outcome = await guardedCall(descriptor, bridge, args, { toolCallId });
         if (outcome.status === "pending-approval") {
           // The preview said run and the REAL check asked — a breaker or presence
           // boundary. Nobody is waiting on this one, so it must still be swept.

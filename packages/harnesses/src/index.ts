@@ -40,7 +40,6 @@ export { tokenBudgetStop } from "./vendo/loop.js";
 export {
   assembleScreen,
   escalatedPlanPath,
-  screenAgent,
   screenAssembler,
   ESCALATE_TOOL,
   SAVE_APP_TOOL,

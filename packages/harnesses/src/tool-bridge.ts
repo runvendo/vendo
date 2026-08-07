@@ -3,7 +3,6 @@ import {
   VENDO_KNOWLEDGE_RESULT_KIND,
   VENDO_MAKE_TOOL,
   VENDO_VIEW_STREAM,
-  modelToolDescription,
   toVendoWirePart,
   vendoAutomationPartSchema,
   vendoCitationsPartSchema,
@@ -28,13 +27,7 @@ import {
   type VendoViewStreamingToolCall,
   type VendoViewStreamUpdate,
 } from "@vendoai/core";
-import {
-  dynamicTool,
-  jsonSchema,
-  type ToolSet,
-  type UIMessage,
-  type UIMessageStreamWriter,
-} from "ai";
+import type { UIMessage, UIMessageStreamWriter } from "ai";
 
 type VendoPart = VendoApprovalPart | VendoAutomationPart | VendoBuildFailedPart | VendoCitationsPart | VendoConnectPart | VendoViewPart;
 
@@ -157,17 +150,6 @@ function capOutcome(outcome: ToolOutcome, cap: number | undefined): ToolOutcome 
   };
 }
 
-/** 03-agent §2 */
-export async function buildAgentTools(options: ToolBridgeOptions): Promise<ToolSet> {
-  // Pass the turn's context so THE LAW's projection actually applies (design
-  // §12): an unattended turn is never handed a destructive or external tool.
-  // Without this the guard's withholding is computed and then discarded.
-  const descriptors = await options.registry.descriptors(options.ctx);
-  const tools: ToolSet = {};
-  for (const descriptor of descriptors) addAgentTool(tools, descriptor, options);
-  return tools;
-}
-
 /**
  * Execute ONE guarded call with every shipped rail attached: the view channel
  * (a `vendo_apps_*` tree OpenSurface, plus the VENDO_VIEW_STREAM bridge that
@@ -180,18 +162,12 @@ export async function buildAgentTools(options: ToolBridgeOptions): Promise<ToolS
  * commit-gated workspace render seam is additive for file-truth harnesses — not a
  * replacement for this channel. Both coexist.
  */
-export function guardedCall(
+export async function guardedCall(
   descriptor: ToolDescriptor,
   options: ToolBridgeOptions,
-): (input: unknown, context: { toolCallId: string }) => Promise<ToolOutcome> {
-  // Returns the closure rather than taking the call as arguments, so the ai-SDK
-  // still invokes THIS function body directly with no delegating hop in between.
-  // That is load-bearing, not style: an extra microtask between the tool
-  // returning and the SDK recording its output changes who wins the race against
-  // an abort raised inside a tool, and `abort.test.ts` pins the shipped outcome
-  // (an aborted call leaves NO tool part in the persisted message, rather than an
-  // unpaired `input-available` one that a provider would later reject).
-  return async (input, { toolCallId }) => {
+  input: unknown,
+  { toolCallId }: { toolCallId: string },
+): Promise<ToolOutcome> {
   const call: VendoViewStreamingToolCall = { id: toolCallId, tool: descriptor.name, args: input };
   if (descriptor.name === VENDO_MAKE_TOOL && options.writer !== undefined) {
     Object.defineProperty(call, VENDO_VIEW_STREAM, {
@@ -295,7 +271,6 @@ export function guardedCall(
   const modelOutcome = capOutcome(outcome, options.toolOutputCap);
   finishCall?.(modelOutcome);
   return modelOutcome;
-  };
 }
 
 /**
@@ -303,22 +278,22 @@ export function guardedCall(
  * today's `data-vendo-approval` part — `invalidatedGrant` and all — when the guard
  * wants a human.
  *
- * Exported for the same reason as {@link executeGuardedCall}, and it is exactly
- * why `previewCheck` exists: a caller that will make the REAL dispatching call
+ * Exported for the same reason as {@link guardedCall}, and it is exactly why
+ * `previewCheck` exists: a caller that will make the REAL dispatching call
  * moments later must not charge the write-budget/call-rate breakers twice, nor
  * run the judge twice. The harness runtime previews here, awaits the tap, then
  * executes ONCE.
  */
-export function previewApproval(
+export async function previewApproval(
   descriptor: ToolDescriptor,
   options: ToolBridgeOptions,
+  input: unknown,
+  { toolCallId }: { toolCallId: string },
   /** Receives the guard's approval id when the verdict is "ask" (undefined when
-   *  the guard itself threw and we fail closed). Reported by callback rather than
-   *  by return value so this closure IS the ai-SDK's `needsApproval` hook — see
-   *  the timing note on {@link guardedCall}. */
+   *  the guard itself threw and we fail closed) — a second output beside the
+   *  boolean verdict, which is the only thing a caller can wait on. */
   onAsk?: (approvalId: ApprovalId | undefined) => void,
-): (input: unknown, context: { toolCallId: string }) => Promise<boolean> {
-  return async (input, { toolCallId }) => {
+): Promise<boolean> {
   if (options.guard === undefined) return false;
   // Pre-guard short-circuit: a call preflight already rules out (an
   // unconnected service) must not reach the guard — asking would mint
@@ -364,21 +339,4 @@ export function previewApproval(
     onAsk?.(undefined);
     return true;
   }
-  };
-}
-
-/** Build ONE guard-bound agent tool and insert it into `tools`. Exported so a
- * tool lazily expanded mid-turn (find_tools, spec 2026-07-20)
- * materializes with the exact wrapper the boot-time toolset uses. */
-export function addAgentTool(tools: ToolSet, descriptor: ToolDescriptor, options: ToolBridgeOptions): void {
-  const needsApproval = options.guard ? previewApproval(descriptor, options) : undefined;
-
-  tools[descriptor.name] = dynamicTool({
-    // Title-first, so the model has a human label to speak (§3): its own
-    // refusals and explanations are user-visible surfaces.
-    description: modelToolDescription(descriptor),
-    inputSchema: jsonSchema(descriptor.inputSchema as Parameters<typeof jsonSchema>[0]),
-    execute: guardedCall(descriptor, options),
-    ...(needsApproval ? { needsApproval } : {}),
-  });
 }

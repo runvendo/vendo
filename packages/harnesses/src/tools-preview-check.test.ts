@@ -1,16 +1,16 @@
 import type { Guard, GuardDecision, RunContext, ToolCall, ToolDescriptor, ToolOutcome, ToolRegistry } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
-import { addAgentTool } from "./tool-bridge.js";
+import { guardedCall, previewApproval } from "./tool-bridge.js";
 import { ctx } from "./test-doubles.test-util.js";
 
-// genqa defect 1 (double-count): the AI SDK calls `needsApproval` (a preview)
-// and then, when it answers false, `execute` (the real, dispatching call)
-// moments later for the SAME toolCallId. Before this fix both hooks called
-// `guard.check()` — a "run" verdict billed the write-budget/call-rate
-// breakers TWICE for one logical call. `addAgentTool`'s `needsApproval` must
-// prefer `guard.previewCheck` when the guard implements it, and never call
-// `guard.check` itself in that case — the dispatching path (`execute`, via
-// the guard-bound registry) remains the ONLY caller of `check`.
+// genqa defect 1 (double-count): a caller previews with `previewApproval` and
+// then, when it answers false, dispatches with `guardedCall` moments later for
+// the SAME toolCallId. Before this fix both called `guard.check()` — a "run"
+// verdict billed the write-budget/call-rate breakers TWICE for one logical
+// call. `previewApproval` must prefer `guard.previewCheck` when the guard
+// implements it, and never call `guard.check` itself in that case — the
+// dispatching path (`guardedCall`, via the guard-bound registry) remains the
+// ONLY caller of `check`.
 function countingGuard(action: GuardDecision["action"]): Guard & { checkCalls: number; previewCalls: number } {
   const decision: GuardDecision = action === "run"
     ? { action: "run", decidedBy: "default" }
@@ -72,24 +72,16 @@ function boundRegistryOver(guard: Guard, outcome: ToolOutcome): ToolRegistry {
   };
 }
 
-describe("addAgentTool needsApproval prefers previewCheck (genqa defect 1)", () => {
-  it("a run verdict: previewCheck is called once (needsApproval) and check is called once (execute) — never check twice", async () => {
+describe("previewApproval prefers previewCheck (genqa defect 1)", () => {
+  it("a run verdict: previewCheck is called once (preview) and check is called once (dispatch) — never check twice", async () => {
     const guard = countingGuard("run");
     const registry = boundRegistryOver(guard, { status: "ok", output: { done: true } });
-    const tools: Record<string, unknown> = {};
-    addAgentTool(tools as never, await registry.descriptors().then((d) => d[0]!), {
-      registry,
-      guard,
-      ctx: ctx(),
-    });
-    const tool = tools["host_write"] as {
-      needsApproval(input: unknown, opts: { toolCallId: string }): Promise<boolean>;
-      execute(input: unknown, opts: { toolCallId: string }): Promise<ToolOutcome>;
-    };
+    const descriptor = await registry.descriptors().then((d) => d[0]!);
+    const options = { registry, guard, ctx: ctx() };
 
-    const needsApproval = await tool.needsApproval({}, { toolCallId: "call_1" });
+    const needsApproval = await previewApproval(descriptor, options, {}, { toolCallId: "call_1" });
     expect(needsApproval).toBe(false);
-    const outcome = await tool.execute({}, { toolCallId: "call_1" });
+    const outcome = await guardedCall(descriptor, options, {}, { toolCallId: "call_1" });
 
     expect(outcome).toMatchObject({ status: "ok" });
     expect(guard.previewCalls).toBe(1);
@@ -100,19 +92,11 @@ describe("addAgentTool needsApproval prefers previewCheck (genqa defect 1)", () 
     const guard = countingGuard("run");
     delete (guard as { previewCheck?: unknown }).previewCheck;
     const registry = boundRegistryOver(guard, { status: "ok", output: { done: true } });
-    const tools: Record<string, unknown> = {};
-    addAgentTool(tools as never, await registry.descriptors().then((d) => d[0]!), {
-      registry,
-      guard,
-      ctx: ctx(),
-    });
-    const tool = tools["host_write"] as {
-      needsApproval(input: unknown, opts: { toolCallId: string }): Promise<boolean>;
-      execute(input: unknown, opts: { toolCallId: string }): Promise<ToolOutcome>;
-    };
+    const descriptor = await registry.descriptors().then((d) => d[0]!);
+    const options = { registry, guard, ctx: ctx() };
 
-    await tool.needsApproval({}, { toolCallId: "call_1" });
-    await tool.execute({}, { toolCallId: "call_1" });
+    await previewApproval(descriptor, options, {}, { toolCallId: "call_1" });
+    await guardedCall(descriptor, options, {}, { toolCallId: "call_1" });
 
     expect(guard.checkCalls).toBe(2);
   });

@@ -479,8 +479,8 @@ export interface TurnLoopOptions {
   fallbacks?: readonly ResolvedModel[];
   system: string;
   messages: UIMessage[];
-  /** Already built and guard-bound by the caller (buildAgentTools, or the
-   *  harness runtime's delegating set). */
+  /** Already built and guard-bound by the caller (the harness runtime's
+   *  delegating set). */
   tools: ToolSet;
   signal?: AbortSignal;
   /** §3.5 — the turn this loop is running, for anything downstream that has to

@@ -20,9 +20,8 @@
  *   view and never compiles anything — that is exactly why a screen it assembles
  *   passes the same floor a `claudeCode()` app does.
  * - **`vendo_make` is withheld, not merely unused.** The screen agent IS what
- *   `vendo_make` calls, so leaving it callable is a loop. A closed loadout excludes
- *   it by omission; the `Harness` door withholds it at `toolSurface` as well, so
- *   the runtime answers the name with the same `not-found` a typo gets.
+ *   `vendo_make` calls, so leaving it callable is a loop. The closed loadout
+ *   excludes it by omission.
  * - **The job description is the shipped skill.** `buildingAppsSkill` plus its
  *   `references/format.md` are the same text `claudeCode()` reads. This file adds
  *   one short block that corrects the ENVIRONMENT (no disk, no delegation, two
@@ -49,13 +48,11 @@ import {
   type TurnState,
   type TurnTools,
   type WorkspaceFs,
-  type Harness,
   type Turn,
   modelToolDescription,
 } from "@vendoai/core";
 import { buildingAppsSkill } from "@vendoai/apps";
 import type { LanguageModel } from "ai";
-import { defineHarness } from "./define.js";
 import { vendo, type HarnessHand, type VendoHarnessOptions } from "./vendo/vendo.js";
 import { paintedIn, wrapWorkspaceForRender, type RenderSeamOptions } from "./render-seam.js";
 import { repairInstruction, validateWrittenApps } from "./validate-gate.js";
@@ -102,11 +99,10 @@ const ASSEMBLY_TOOLS: readonly string[] = [
 /**
  * What the lean loop needs, and nothing else.
  *
- * A `Turn` satisfies this by construction — structurally, with no adapter and no
- * wrapper — which is what lets the `Harness` door and the `vendo_make` door share
- * ONE loop instead of growing a second copy of it. Composition's door builds the
- * same fields out of the pieces it already holds; the two identities are optional
- * because only the harness door is inside a turn that already has them.
+ * A structural subset of `Turn`, so a caller already inside a turn passes its own
+ * turn verbatim — no adapter, no wrapper — and the `vendo_make` door builds the
+ * same fields out of the pieces composition already holds. The two identities are
+ * optional because only a caller inside a turn already has them.
  */
 export interface ScreenSurface {
   readonly models: SeatModels<LanguageModel>;
@@ -556,62 +552,7 @@ export async function assembleScreen(
   return { kind: "unavailable", why: failure ?? "assembly produced nothing that renders" };
 }
 
-// ─── Door 1: the harness ─────────────────────────────────────────────────────
-
-/**
- * The screen agent as a `Harness`.
- *
- * Its `Turn` is the surface, verbatim: the runtime already wrapped
- * `turn.workspace` with the render seam, already bound `turn.tools` to the guard,
- * and already assembled `turn.system`. So this door is the lean loop with nothing
- * around it — which is the point of `ScreenSurface` being a structural subset of
- * `Turn`.
- */
-export function screenAgent(): Harness<never> {
-  return defineHarness<never>({
-    name: "screen",
-    // Uncurated for `claudeCode()`'s reason: this loadout is chosen here, by
-    // name and by risk, so the discovery loadout has nothing to add — and
-    // `vendo_make` is withheld because the screen agent is what it calls.
-    toolSurface: { curated: false, withhold: [VENDO_MAKE_TOOL] },
-    async *run(turn: Turn<never>) {
-      if (turn.signal.aborted) return;
-      const appId = `app_${globalThis.crypto.randomUUID()}` as AppId;
-      yield { type: "status", label: "Putting it together…", phase: "assembling", appId };
-      const result = await assembleScreen(turn, {
-        appId,
-        request: latestAsk(turn),
-        ...(turn.system === undefined ? {} : { system: turn.system }),
-      });
-      // One line, consumer voice — the screen IS the answer, so this is never a
-      // narration of it (§10.1).
-      yield { type: "text", delta: sayFor(result) };
-    },
-  });
-}
-
-/** The person's latest words — what a screen is assembled from. */
-const latestAsk = (turn: Turn<unknown>): string => {
-  for (let index = turn.messages.length - 1; index >= 0; index -= 1) {
-    const message = turn.messages[index];
-    if (message?.role !== "user") continue;
-    const text = message.parts
-      .filter((part): part is { type: "text"; text: string } => part.type === "text")
-      .map((part) => part.text)
-      .join("\n")
-      .trim();
-    if (text.length > 0) return text;
-  }
-  return "";
-};
-
-const sayFor = (result: ScreenResult): string => {
-  if (result.kind === "assembled") return `${result.title ?? "It"} is on your screen.`;
-  if (result.kind === "escalate") return "That one needs building — I've started it, and the outline is on your screen.";
-  return "I couldn't put that together. Try describing it a different way.";
-};
-
-// ─── Door 2: the `vendo_make` route ──────────────────────────────────────────
+// ─── The `vendo_make` route ──────────────────────────────────────────────────
 
 export interface ScreenAssemblerDeps {
   /** The seats, as `Turn.models` carries them. */
@@ -623,9 +564,9 @@ export interface ScreenAssemblerDeps {
    *  render seam itself, so composition never has to know that it must. */
   workspace: (ctx: RunContext) => Promise<WorkspaceFs>;
   /** The seam's optional halves — the checks floor, plan facts, the app half
-   *  (`AppsRuntime.authored`) and source persistence. The SAME options the
-   *  harness-turn route passes: a screen assembled here compiles in the production
-   *  dialect and passes the same floor, or it does not paint. */
+   *  (`AppsRuntime.authored`) and source persistence. A screen assembled here
+   *  compiles in the production dialect and passes the same floor, or it does not
+   *  paint. */
   render?: (ctx: RunContext) => Omit<RenderSeamOptions, "emit">;
   /** The deployment's assembled prompt for this ctx, when composition has one. */
   system?: (ctx: RunContext) => Promise<string | undefined>;
