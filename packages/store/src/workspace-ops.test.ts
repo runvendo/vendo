@@ -2,8 +2,9 @@ import type { Membership, Principal } from "@vendoai/core";
 import { VendoError } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "./backends.test-util.js";
+import type { Query } from "./db.js";
 import { createStoreOps } from "./ops.js";
-import type { VendoStore as StoreHandle } from "./store.js";
+import { dbFor, type VendoStore as StoreHandle } from "./store.js";
 import { workspaceStore } from "./workspace.js";
 
 /**
@@ -249,6 +250,73 @@ for (const backend of backends()) {
       const ledger = await ops.workspace.history({ owner: "dana", path });
       expect((ledger.entries as { commitId: string }[]).map((entry) => entry.commitId))
         .toContain("wsc_key_s1");
+    });
+
+    /** The window under the refusal above. `pathsMovedOn` is the CHECK and
+        `undoOne` is the ACT; with nothing held between them, a commit that
+        lands in the gap appends a history row that `undoOne` then pops —
+        restoring the older value over the commit that just succeeded, with no
+        history row behind it. The committer was told "ok" and its content is
+        gone, which is the very outcome the check exists to prevent.
+
+        Two transactions have to overlap for real, so this only bites on a
+        backend that runs them concurrently: PGlite serialises and cannot
+        express it. The invariant asserted is the one that matters either way —
+        content a commit reported as landed is never silently destroyed. */
+    it("destroys no committed content when a commit lands while an undo is deciding", async () => {
+      const path = "/user/window/notes.md";
+      const ops = createStoreOps(made.store);
+      for (const [key, data] of [["w0", "zero"], ["w1", "one"], ["w2", "two"]] as const) {
+        await ops.workspace.commit([{ path, data }], { owner: "dana", idempotencyKey: key });
+      }
+
+      // Fire a fourth commit in the gap: after the undo's ledger walk has
+      // decided the target is still the newest here, before it reads history.
+      const db = dbFor(made.store);
+      const originalTx = db.transaction.bind(db);
+      let racer: Promise<void> | undefined;
+      db.transaction = (async (run: (q: Query) => Promise<unknown>) => await originalTx(async (q) => {
+        const wrapped: Query = async (text, params) => {
+          if (racer === undefined && text.includes("FROM vendo_workspace_history")) {
+            racer = ops.workspace.commit(
+              [{ path, data: "three" }],
+              { owner: "dana", idempotencyKey: "w3" },
+            );
+            // Long enough for an unblocked racer to land; a racer the undo is
+            // holding off simply stays blocked and this returns on the timer.
+            await Promise.race([
+              racer.catch(() => undefined),
+              new Promise((resolve) => setTimeout(resolve, 2_000)),
+            ]);
+          }
+          return await q(text, params);
+        };
+        return await run(wrapped);
+      })) as typeof db.transaction;
+
+      let undone: string;
+      try {
+        undone = await ops.workspace.undo("wsc_key_w2", { owner: "dana" }).then(() => "ok", (error: unknown) =>
+          error instanceof VendoError ? error.code : String(error));
+      } finally {
+        db.transaction = originalTx;
+      }
+      const landed = await racer!.then(() => true, () => false);
+      expect(racer).toBeDefined();
+
+      // Whatever the two decided between them, a commit that reported success
+      // must still be reachable — live, or behind a history row.
+      if (landed) {
+        const live = await (await hosted().open(dana)).readFile(path);
+        const history = await made.sql(
+          "SELECT content FROM vendo_workspace_history WHERE path = $1 AND owner = $2",
+          [path, "dana"],
+        );
+        const stored = history.map((row) => String(row["content"]));
+        expect([live === "three", stored.includes('"three"')].includes(true))
+          .toBe(true);
+      }
+      expect(["ok", "conflict"]).toContain(undone);
     });
 
     it("still refuses to move an app between mounts — that runs server-side", async () => {
