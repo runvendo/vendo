@@ -224,9 +224,15 @@ export function AutomationsPanel({ pollMs = AUTOMATIONS_POLL_MS }: AutomationsPa
   // automation healthy" without opening Run history. Once per appId; a strip
   // fetch failure stays silent-but-visible — the strip simply doesn't render,
   // and Run history still surfaces errors through the shared alert.
+  //
+  // NOTHING here is cancelled on an effect restart. This effect restarts every
+  // time `automations` is a new array, which is every poll tick and every
+  // refresh — and a response discarded on restart also unmarked its row, which
+  // the already-restarted effect had skipped, so no retry was ever issued and
+  // the strip stayed empty. The rows are keyed and the landing is idempotent,
+  // so a late response is simply the answer arriving.
   const listRuns = automations.runs;
   useEffect(() => {
-    let cancelled = false;
     for (const entry of automations.automations) {
       const appId = entry.app.id;
       for (const { trigger } of entry.triggers) {
@@ -236,22 +242,14 @@ export function AutomationsPanel({ pollMs = AUTOMATIONS_POLL_MS }: AutomationsPa
         void (async () => {
           try {
             const result = await listRuns({ appId, triggerId: trigger.id });
-            // A discarded (cancelled) response must also unmark the row, or an
-            // effect restart would skip its only retry and the strip never renders.
-            if (cancelled) {
-              stripFetched.current.delete(key);
-              return;
-            }
             setRecent(current => ({ ...current, [key]: result.runs.slice(0, RUN_STRIP_LIMIT) }));
           } catch {
-            if (!cancelled) stripFetched.current.delete(key);
+            // Unmark so this row's next render retries it.
+            stripFetched.current.delete(key);
           }
         })();
       }
     }
-    return () => {
-      cancelled = true;
-    };
   }, [automations.automations, listRuns]);
 
   // The row states above ride the hooks' own poll; RUNS are fetched per row, so
