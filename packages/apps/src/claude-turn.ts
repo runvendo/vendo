@@ -388,7 +388,13 @@ function sessionOptions(
     // Without this the SDK hands us whole assistant blocks and the user watches
     // a still screen for the length of a paragraph.
     includePartialMessages: true,
-    env: input.env,
+    // The engine announces `session_state_changed` only when this is set, and that
+    // event is the only thing that can tell a steered turn its work is over
+    // without guessing how many `result` messages to expect (see
+    // `steersAwaitingResult`). Ours wins over the machine's env because it is this
+    // loop's protocol, not an operator preference — and an engine that does not
+    // know the variable simply ignores it.
+    env: { ...input.env, CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1" },
     ...(input.pluginPath === undefined ? {} : {
       // `skipMcpDiscovery`: we own the MCP wiring (the in-process projection),
       // so the engine must not read a plugin's own .mcp.json.
@@ -455,17 +461,27 @@ export function createClaudeSession(input: ClaudeSessionInput): ClaudeSession {
   /** Settles the `send()` whose turn is currently in flight. */
   let settleTurn: ((error?: unknown) => void) | undefined;
   /**
-   * How many `result` messages belong to STEERS rather than to the `send()` now
-   * waiting.
+   * How many `result` messages a steer may still absorb before one of them is
+   * allowed to end the caller's turn — a CAP on the wait, never a prediction.
    *
-   * MEASURED HAZARD. Every user message the SDK answers produces its own
-   * `result`, and `send()` settles on the next one it sees. So a steer that only
-   * pushed would resolve the original `send()` at the FIRST result: the box door
-   * marks the message done, the harness's poll loop returns, the turn ends on the
-   * wire — and the steer's own output is pushed into a state nobody polls. N
-   * steers add exactly N results, so counting them is the whole fix.
+   * THE HAZARD IT IS FOR. A steer that only pushed would resolve the original
+   * `send()` at the first result it saw: the box door marks the message done, the
+   * harness's poll loop returns, the turn ends on the wire — and the steer's own
+   * output is pushed into a state nobody polls. So a steer buys the turn one more
+   * boundary before it may end.
+   *
+   * WHY IT IS ONLY A CAP. It used to be an exact count, on the belief that every
+   * user message the engine answers produces its own `result`. Nothing guarantees
+   * that. The engine's own docs say a queued batch is "coalesced into one turn"
+   * and that a message it merges "does query" only once — steering's whole
+   * premise, that the words reach the model at its next STEP boundary, is a turn
+   * that never gains a second result at all. An exact count then swallows the
+   * FINAL result and the caller waits out the harness's whole message budget
+   * (15 minutes) for work that finished minutes ago. A hang bought with a guess,
+   * which is why the count no longer decides on its own: `session_state_changed`
+   * does, below.
    */
-  let steeredResults = 0;
+  let steersAwaitingResult = 0;
   /** A session that died. Every later `send()` fails with it rather than hanging. */
   let fatal: unknown;
 
@@ -497,6 +513,18 @@ export function createClaudeSession(input: ClaudeSessionInput): ClaudeSession {
     input.emit({ type: "status", label, phase });
   };
 
+  /**
+   * Release whoever is waiting on the turn in flight. Idempotent, and it clears
+   * the steer cap WHOLE: a cap that outlived its turn would be spent against the
+   * next caller's boundaries instead.
+   */
+  const endTurn = (error?: unknown): void => {
+    steersAwaitingResult = 0;
+    const settle = settleTurn;
+    settleTurn = undefined;
+    settle?.(error);
+  };
+
   const drain = (async () => {
     const query = sdk.query({ prompt: inbox.stream(), options: sessionOptions(input, onPostToolUse) });
     live = query;
@@ -512,6 +540,17 @@ export function createClaudeSession(input: ClaudeSessionInput): ClaudeSession {
         const named = message["model"];
         if (typeof named === "string") model = named;
         beat("understanding", "Getting started");
+        continue;
+      }
+      if (type === "system" && message["subtype"] === "session_state_changed") {
+        // THE authority on when a steered turn is over, and the reason the cap
+        // above can stay a cap. The engine's own schema calls `idle` the
+        // "authoritative turn-over signal" — its queue is empty and no turn is
+        // running — so nothing further is coming for this message no matter how
+        // many results the engine chose to emit for it. An engine that never says
+        // so leaves the cap as the only signal, which is exactly the old
+        // behaviour: no worse, and better wherever the count guessed high.
+        if (message["state"] === "idle") endTurn();
         continue;
       }
       if (type === "assistant") {
@@ -536,10 +575,10 @@ export function createClaudeSession(input: ClaudeSessionInput): ClaudeSession {
           // Consumer voice: no subtypes, no internals. And no `finishing` beat —
           // a beat that claimed progress in front of an error would be a lie.
           input.emit({ type: "error", message: "I couldn't finish that one." });
-        } else if (steeredResults === 0) {
-          // Only the FINAL result finishes. A steered result is an INTERMEDIATE
-          // boundary — the turn continues (that is the whole point of the
-          // counter) — so "Finishing up" here would claim the build is done
+        } else if (steersAwaitingResult === 0) {
+          // Only the FINAL result finishes. A result a steer is still waiting on is
+          // an INTERMEDIATE boundary — the turn continues (that is the whole point
+          // of the cap) — so "Finishing up" here would claim the build is done
           // while the correction's rework is still ahead (§3.4, no progress-lie).
           beat("finishing", "Finishing up");
         }
@@ -550,23 +589,20 @@ export function createClaudeSession(input: ClaudeSessionInput): ClaudeSession {
         // or the rework's build/plan beats would stay suppressed and the turn
         // would fall silent during the one moment steering exists to show.
         narrated.clear();
-        if (steeredResults > 0) {
-          // A steered message's own boundary. The turn continues.
-          steeredResults -= 1;
+        if (steersAwaitingResult > 0) {
+          // Spend one steer's allowance. A boundary that arrives while the turn is
+          // still owed steered work is intermediate, and the turn continues.
+          steersAwaitingResult -= 1;
           continue;
         }
         // THE turn boundary. The input stream stays open; only this message's
         // caller is released.
-        const settle = settleTurn;
-        settleTurn = undefined;
-        settle?.();
+        endTurn();
       }
     }
   })().catch((error: unknown) => {
     fatal = error;
-    const settle = settleTurn;
-    settleTurn = undefined;
-    settle?.(error);
+    endTurn(error);
   });
 
   /** One turn at a time: the SDK answers pushed messages in order, so two
@@ -592,15 +628,15 @@ export function createClaudeSession(input: ClaudeSessionInput): ClaudeSession {
     },
     steer(prompt) {
       if (settleTurn === undefined) return false;
-      steeredResults += 1;
+      steersAwaitingResult += 1;
       inbox.push({ type: "user", message: { role: "user", content: prompt }, parent_tool_use_id: null });
       return true;
     },
     async interrupt() {
-      // An interrupted session stops reading its input, so the results the
-      // steers were counting on may never arrive. Left counted, the caller's
+      // An interrupted session stops reading its input, so the boundaries the
+      // steers were allowed to absorb may never arrive. Left allowed, the caller's
       // promise would hang to the message budget instead of ending on stop.
-      steeredResults = 0;
+      steersAwaitingResult = 0;
       // Only meaningful in streaming-input mode, which is the only mode we use.
       // A session too young to have opened its query has nothing to stop.
       await live?.interrupt?.().catch(() => undefined);
