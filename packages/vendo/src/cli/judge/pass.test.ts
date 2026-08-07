@@ -1186,6 +1186,32 @@ describe("the judge rung fills blind schema slots only", () => {
     expect(written.outputSchemaSource ?? "unknown").toBe("unknown");
   });
 
+  it("a proposal whose fields AND schemas are all vetoed is discredited, so the tool stays a candidate", async () => {
+    const fixture = await host([tool("host_a")]);
+    const bus = channel();
+    const result = await runJudgmentPass(options(fixture, bus, {
+      harness: scripted([
+        reply({ tools: [{
+          name: "host_a",
+          risk: "destructive",
+          evidence: "invented quote",
+          outputSchema: proposed,
+        }], narrative: "" }),
+        reply({ verdicts: [
+          { name: "host_a", field: "risk", verdict: "reject", reason: "the handler only selects" },
+          { name: "host_a", field: "outputSchema", verdict: "reject", reason: "the handler returns an array" },
+        ] }),
+      ]),
+    }));
+
+    expect(result).toMatchObject({ schemasInferred: 0 });
+    // NOTHING survived, so this is the same case as the fields-only wholesale
+    // rejection above: no entry at all, and above all no srcHash to stop the
+    // tool being re-judged next run.
+    await expect(readFile(fixture.judgmentsPath, "utf8")).rejects.toThrow();
+    expect(bus.logs.join("\n")).toMatch(/wholly rejected|left unjudged/i);
+  });
+
   it("judgmentFieldsSchema cannot carry a schema, so applyJudgment can never spread one", () => {
     expect(judgmentFieldsSchema.safeParse({ description: "ok" }).success).toBe(true);
     expect(judgmentFieldsSchema.safeParse({ inputSchema: { type: "object" } }).success).toBe(false);

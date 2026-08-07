@@ -752,22 +752,27 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
       if (upheldBySkeptic(field)) Object.assign(upheld, { [field]: value });
     }
 
+    let upheldSchemas = 0;
     for (const [slot, schema] of Object.entries(proposal.schemas) as Array<[ToolSchemaSlot, JsonSchema]>) {
       if (upheldBySkeptic(slot)) {
         schemaPatches.push({ tool: name, binding: bindingIdentity(candidate.tool.binding), slot, schema });
+        upheldSchemas += 1;
       } else {
         schemasVetoed += 1;
       }
     }
 
-    // Every field discredited means the proposal — and the quote it rests on —
-    // did not survive review. Writing an entry from it would record evidence the
-    // skeptic just called fabricated, so nothing is written and the tool stays a
-    // candidate for the next run. A proposal whose only surviving contribution
-    // is a schema patch is NOT discredited: the patch is applied below and the
-    // judgment entry still records the srcHash that stops the next re-ask.
-    const proposedCount = Object.keys(proposal.fields).length;
-    if (proposedCount > 0 && Object.keys(upheld).length === 0 && Object.keys(proposal.schemas).length === 0) {
+    // A proposal that survived NOTHING — and the quote it rests on — did not
+    // survive review. Writing an entry from it would record evidence the
+    // skeptic just called fabricated, and its srcHash would stop the tool ever
+    // being re-asked, so nothing is written and it stays a candidate for the
+    // next run. The test is what SURVIVED, never what was offered: a proposal
+    // whose only surviving contribution is a schema patch is kept (the patch is
+    // applied below and the entry records the srcHash), while one whose fields
+    // and schemas were all vetoed is discredited like any other. A proposal
+    // that offered nothing at all is a bare CONFIRMATION and is kept.
+    const proposedCount = Object.keys(proposal.fields).length + Object.keys(proposal.schemas).length;
+    if (proposedCount > 0 && Object.keys(upheld).length === 0 && upheldSchemas === 0) {
       discredited.push(name);
       continue;
     }
