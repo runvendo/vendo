@@ -6,6 +6,7 @@ import {
   VENDO_JUDGMENTS_FORMAT,
   VENDO_TOOLS_FORMAT,
   bindingIdentity,
+  judgmentFieldsSchema,
   type ExtractedTool,
   type JudgmentsFile,
   type ToolJudgment,
@@ -1183,5 +1184,11 @@ describe("the judge rung fills blind schema slots only", () => {
     const written = (await readTools(fixture)).tools[0]!;
     expect(written.outputSchema).toBeUndefined();
     expect(written.outputSchemaSource ?? "unknown").toBe("unknown");
+  });
+
+  it("judgmentFieldsSchema cannot carry a schema, so applyJudgment can never spread one", () => {
+    expect(judgmentFieldsSchema.safeParse({ description: "ok" }).success).toBe(true);
+    expect(judgmentFieldsSchema.safeParse({ inputSchema: { type: "object" } }).success).toBe(false);
+    expect(judgmentFieldsSchema.safeParse({ outputSchema: { type: "object" } }).success).toBe(false);
   });
 });
