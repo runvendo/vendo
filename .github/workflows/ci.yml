@@ -208,7 +208,7 @@ jobs:
       - name: Test with coverage (PGlite + PostgreSQL)
         run: pnpm turbo run test:coverage --continue --concurrency=2 ${{ matrix.filters }}
 
-  # The per-package coverage floors (vendo 78 / store 84 / ui 74, each in the
+  # The per-package coverage floors (vendo 78 / store 84 / ui 90, each in the
   # package's vitest config) live HERE, because a floor is only meaningful
   # against the whole suite's coverage. vitest replays the shards' blob reports
   # without re-running a single test, then reports and enforces.
