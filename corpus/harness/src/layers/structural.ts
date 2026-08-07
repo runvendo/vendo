@@ -247,9 +247,9 @@ async function readText(repoDir: string, rel: string): Promise<string | null> {
 
 /** Two valid Express wirings exist: the pre-wired shape (an app like
  * express-host that already composes createVendo in src/server + renders
- * VendoRoot in src/client) and the generated shape `vendo init` writes for a
- * real Express/Nest API host (vendo/server.ts|mjs; the client lives in a
- * separate frontend, so no VendoRoot requirement). */
+ * VendoProvider in src/client) and the generated shape `vendo init` writes for
+ * a real Express/Nest API host (vendo/server.ts|mjs; the client lives in a
+ * separate frontend, so no VendoProvider requirement). */
 async function expressShape(repoDir: string): Promise<"pre-wired" | "generated"> {
   return await exists(path.join(repoDir, "src/server/vendo.ts")) ? "pre-wired" : "generated";
 }
@@ -332,7 +332,7 @@ function hasFunctionalExpressVendoMount(server: string): boolean {
   return false;
 }
 
-/** The module specifiers this file imports a binding named VendoRoot from
+/** The module specifiers this file imports a binding named VendoProvider from
  * (aliases irrelevant here — tag resolution is symbol-level). */
 function vendoRootImportSpecifiers(mod: BoundModule): string[] {
   const { ts, sf } = mod;
@@ -342,7 +342,7 @@ function vendoRootImportSpecifiers(mod: BoundModule): string[] {
     const bindings = statement.importClause?.namedBindings;
     if (bindings === undefined || !ts.isNamedImports(bindings)) continue;
     for (const element of bindings.elements) {
-      if ((element.propertyName ?? element.name).text === "VendoRoot") {
+      if ((element.propertyName ?? element.name).text === "VendoProvider") {
         specifiers.push(statement.moduleSpecifier.text);
       }
     }
@@ -415,16 +415,16 @@ function exportedFunctionNode(mod: BoundModule, exportName: string): TS.Node | n
 }
 
 /** The layout wraps children with the @vendoai/vendo/react provider either
- * directly or through the ONE generated wrapper hop: since 0.4.1's
- * visible-surface wiring (init-scaffolds.ts's vendoRootWrapperSource), a
- * by-the-book init mounts <VendoRoot> imported from the repo-local
- * `vendo/vendo-root` module — the layout itself never names the package.
+ * directly or through ONE wrapper hop: init generates no client file at all —
+ * its printed paste (init.ts's mountStep) imports <VendoProvider> from the
+ * package straight into the layout — but a host may still mount its own local
+ * wrapper module instead.
  * "Wraps" means the `{children}` expression is an AST descendant of a JSX
  * element whose tag SYMBOL (TypeScript's own binder — hoisted vars,
- * parameter shadows, every scoping rule) resolves to the VendoRoot import;
+ * parameter shadows, every scoping rule) resolves to the VendoProvider import;
  * and through the wrapper hop, the layout's imported EXPORT itself — never
  * some other function in the wrapper file — must nest its children inside
- * the package's VendoRoot. Fails closed when the TypeScript compiler is
+ * the package's VendoProvider. Fails closed when the TypeScript compiler is
  * unavailable.
  *
  * Precision boundary (conductor ruling + Yousef ruling, 2026-07-26):
@@ -440,10 +440,10 @@ async function layoutReachesVendoReact(repoDir: string, app: AppRouterInfo, layo
   const layoutModule = boundModule(layout, app.layoutRel);
   if (layoutModule === null) return false;
   const packageBinding = (binding: { specifier: string; imported: string }): boolean =>
-    binding.imported === "VendoRoot" && binding.specifier === "@vendoai/vendo/react";
+    binding.imported === "VendoProvider" && binding.specifier === "@vendoai/vendo/react";
   for (const specifier of vendoRootImportSpecifiers(layoutModule)) {
     const fromThisImport = (binding: { specifier: string; imported: string }): boolean =>
-      binding.imported === "VendoRoot" && binding.specifier === specifier;
+      binding.imported === "VendoProvider" && binding.specifier === specifier;
     if (!childrenInsideProvider(layoutModule, fromThisImport)) continue;
     if (specifier === "@vendoai/vendo/react") return true;
     if (!specifier.startsWith(".")) continue;
@@ -453,7 +453,9 @@ async function layoutReachesVendoReact(repoDir: string, app: AppRouterInfo, layo
       if (source === null) continue;
       const wrapperModule = boundModule(source, candidate);
       if (wrapperModule === null) continue;
-      const exportedComponent = exportedFunctionNode(wrapperModule, "VendoRoot");
+      // A host's own wrapper may still be NAMED VendoRoot (Maple's is).
+      const exportedComponent = exportedFunctionNode(wrapperModule, "VendoProvider")
+        ?? exportedFunctionNode(wrapperModule, "VendoRoot");
       if (exportedComponent === null) continue;
       if (childrenInsideProvider(wrapperModule, packageBinding, exportedComponent)) return true;
     }
@@ -483,8 +485,8 @@ async function checkExpectedFiles(ctx: StructuralLayerContext): Promise<Structur
         if (!hasFunctionalExpressVendoMount(server)) {
           wiringProblems.push("Express server does not mount vendo.handler at /api/vendo");
         }
-        if (!client.includes("<VendoRoot")) {
-          wiringProblems.push("Express client sources do not render <VendoRoot");
+        if (!client.includes("<VendoProvider")) {
+          wiringProblems.push("Express client sources do not render <VendoProvider");
         }
       } else {
         const server = await readText(ctx.repoDir, await generatedExpressServerRel(ctx.repoDir));
@@ -498,7 +500,7 @@ async function checkExpectedFiles(ctx: StructuralLayerContext): Promise<Structur
       const layout = await readText(ctx.repoDir, app.layoutRel);
       const route = await readText(ctx.repoDir, routeRel(app));
       if (layout && !await layoutReachesVendoReact(ctx.repoDir, app, layout)) {
-        wiringProblems.push(`${app.layoutRel} does not wrap children with @vendoai/vendo/react VendoRoot (directly or via a local VendoRoot wrapper module)`);
+        wiringProblems.push(`${app.layoutRel} does not wrap children with @vendoai/vendo/react VendoProvider (directly or via a local provider wrapper module)`);
       }
       if (route && (!route.includes("createVendo") || !route.includes("nextVendoHandler"))) {
         wiringProblems.push(`${routeRel(app)} does not compose createVendo() with nextVendoHandler()`);

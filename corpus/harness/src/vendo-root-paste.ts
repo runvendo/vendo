@@ -8,7 +8,6 @@ export interface VendoRootPasteResult {
   reason: string;
 }
 
-const LAST_STEPS_HEADER = "Last steps are yours:";
 const WRAP_LINE = /…\s*then wrap:\s*(.+)$/;
 // Tolerates formatting whitespace — a layout rendering `{ children }` is as
 // paste-able as `{children}` (corpus-triage review finding: cubic P2).
@@ -45,12 +44,14 @@ function directivePrologueEnd(lines: readonly string[]): number {
   return end;
 }
 
-/** The block init prints (see packages/vendo/src/cli/init.ts's
- * manualWiringLines, wrapped by output.log under the "Last steps are
- * yours:" header): everything from that header up to the next blank line. */
-function extractPasteBlock(output: string): string[] | null {
+/** The step init prints for `file` inside its STEPS-LEFT frame (see the
+ * `handSteps` block at the end of packages/vendo/src/cli/init.ts's runInit):
+ * a `File: <path>` line, then the paste lines, then a blank line. Keyed on the
+ * file so an unrelated step in the same frame — a stale registration map, an
+ * unwired route — can never be mistaken for the mount paste. */
+function extractPasteBlock(output: string, file: string): string[] | null {
   const lines = output.split(/\r?\n/);
-  const headerIndex = lines.findIndex((line) => line.trim() === LAST_STEPS_HEADER);
+  const headerIndex = lines.findIndex((line) => line.trim() === `File: ${file}`);
   if (headerIndex === -1) return null;
   const block: string[] = [];
   for (let index = headerIndex + 1; index < lines.length; index += 1) {
@@ -63,7 +64,7 @@ function extractPasteBlock(output: string): string[] | null {
 
 /** Deliberately dumb string surgery that mirrors the ONE paste `vendo init`
  * prints and no longer performs itself (init dropped its layout codemod —
- * see f2c23568; init.ts's manualWiringLines is the source of truth for
+ * see f2c23568; init.ts's mountStep is the source of truth for
  * what a human is told to paste). The corpus harness plays that human: it
  * reads the exact lines init printed to stdout this run and pastes them,
  * so a green corpus run still means the app is wired end to end, not just
@@ -90,14 +91,14 @@ export async function applyVendoRootPaste(
 
   const filePath = path.join(repoDir, app.layoutRel);
   const original = await readFile(filePath, "utf8");
-  if (original.includes("<VendoRoot")) {
-    return { applied: false, file: app.layoutRel, reason: "layout already wraps <VendoRoot> — left unchanged" };
+  if (original.includes("<VendoProvider")) {
+    return { applied: false, file: app.layoutRel, reason: "layout already wraps <VendoProvider> — left unchanged" };
   }
 
-  const block = extractPasteBlock(initStdout);
+  const block = extractPasteBlock(initStdout, app.layoutRel);
   if (block === null) {
     throw new Error(
-      `vendo init did not print the "${LAST_STEPS_HEADER}" paste instructions in its stdout; ` +
+      `vendo init did not print a "File: ${app.layoutRel}" paste step in its stdout; ` +
       `nothing to paste into ${app.layoutRel}`,
     );
   }
@@ -135,5 +136,5 @@ export async function applyVendoRootPaste(
     withImports.slice(last.index + last[0].length);
   await writeFile(filePath, pasted, "utf8");
 
-  return { applied: true, file: app.layoutRel, reason: "pasted the printed VendoRoot import(s) + wrap into the layout" };
+  return { applied: true, file: app.layoutRel, reason: "pasted the printed VendoProvider import(s) + wrap into the layout" };
 }

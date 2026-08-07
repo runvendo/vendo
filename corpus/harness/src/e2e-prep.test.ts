@@ -16,15 +16,15 @@ const vendo = createVendo({
 export const { GET, POST, DELETE } = nextVendoHandler(vendo);
 `;
 
-/** An App Router layout after init wired VendoRoot around {children}. */
+/** An App Router layout after init wired VendoProvider around {children}. */
 function initLayoutSource(themeImportPath: string, wrap: (inner: string) => string): string {
-  return `import { VendoRoot } from "@vendoai/vendo/react";
+  return `import { VendoProvider } from "@vendoai/vendo/react";
 import theme from "${themeImportPath}";
 import type { VendoTheme } from "@vendoai/vendo";
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    ${wrap("<VendoRoot theme={theme as VendoTheme}>{children}</VendoRoot>")}
+    ${wrap("<VendoProvider theme={theme as VendoTheme}>{children}</VendoProvider>")}
   )
 }
 `;
@@ -41,7 +41,7 @@ async function createSkateshopFixture(): Promise<{ appRoot: string; logsDir: str
   await writeFile(
     path.join(appRoot, "src/app/layout.tsx"),
     `import { ClerkProvider } from "@clerk/nextjs"
-import { VendoRoot } from "@vendoai/vendo/react";
+import { VendoProvider } from "@vendoai/vendo/react";
 import theme from "../../.vendo/theme.json";
 import type { VendoTheme } from "@vendoai/vendo";
 
@@ -49,7 +49,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <ClerkProvider>
       <html lang="en">
-        <body><VendoRoot theme={theme as VendoTheme}>{children}</VendoRoot></body>
+        <body><VendoProvider theme={theme as VendoTheme}>{children}</VendoProvider></body>
       </html>
     </ClerkProvider>
   )
@@ -346,7 +346,7 @@ describe("prepareE2eRepo", () => {
     expect(log).toContain("VENDO_BASE_URL");
   });
 
-  it("fails loudly when init's layout no longer carries the VendoRoot wrapper", async () => {
+  it("fails loudly when init's layout no longer carries the VendoProvider wrapper", async () => {
     const { appRoot, logsDir } = await createUmamiFixture();
     await writeFile(
       path.join(appRoot, "src/app/layout.tsx"),
@@ -356,7 +356,7 @@ describe("prepareE2eRepo", () => {
 `,
     );
 
-    await expect(prepareE2eRepo({ name: "umami" }, appRoot, logsDir)).rejects.toThrow(/VendoRoot/);
+    await expect(prepareE2eRepo({ name: "umami" }, appRoot, logsDir)).rejects.toThrow(/VendoProvider/);
   });
 
   it("does nothing for repos without a Layer 3 prep fixture", async () => {

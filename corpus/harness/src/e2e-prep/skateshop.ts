@@ -581,8 +581,8 @@ export async function prepareSkateshopE2eRepo(appRoot: string, logsDir: string):
   // The curated manifest is the server-side tool source (createActions reads
   // .vendo/tools.json); guidance lives in the tool descriptions since the old
   // handler-level instructionsExtra knob no longer exists, and the chat
-  // surface ships as the corpus-mounted VendoOverlay (init wires the VendoRoot
-  // provider only).
+  // surface ships as the corpus-mounted VendoOverlay (init's paste carries the
+  // VendoProvider only).
   await mountCorpusOverlay(appRoot, "src/app");
   actions.push("mounted the corpus Vendo overlay");
 

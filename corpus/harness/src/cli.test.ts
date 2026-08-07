@@ -704,18 +704,19 @@ describe("runCli run", () => {
     expect(defaultRun.scorecard).toContain("\"repo\": \"repo-passes\"");
   });
 
-  it("applies the printed VendoRoot paste to the layout after a successful init (init no longer codemods it)", async () => {
+  it("applies the printed VendoProvider paste to the layout after a successful init (init no longer codemods it)", async () => {
     const corpusRoot = await makeTempRoot();
     const context = createRunContext({ corpusRoot });
     const repo = manifestEntry("repo-paste");
     const repoDir = context.repoDir(repo.name);
     const initStdout = [
-      "Last steps are yours:",
-      "  In app/layout.tsx:",
-      '    import { VendoRoot } from "@vendoai/vendo/react";',
-      "    … then wrap: <VendoRoot>{children}</VendoRoot>",
+      "ONE STEP LEFT — paste this yourself (init never edits your files)",
       "",
-      "Then start your dev server — the agent is live in your app.",
+      "  File: app/layout.tsx",
+      '    import { VendoProvider } from "@vendoai/vendo/react";',
+      "    … then wrap: <VendoProvider>{children}</VendoProvider>",
+      "",
+      "  Then confirm it landed: npx vendo doctor",
     ].join("\n");
 
     const deps: CorpusCliDependencies = {
@@ -765,11 +766,11 @@ describe("runCli run", () => {
 
     expect(exitCode).toBe(0);
     const layout = await readFile(path.join(repoDir, "app/layout.tsx"), "utf8");
-    expect(layout).toContain('import { VendoRoot } from "@vendoai/vendo/react";');
-    expect(layout).toContain("<VendoRoot>{children}</VendoRoot>");
+    expect(layout).toContain('import { VendoProvider } from "@vendoai/vendo/react";');
+    expect(layout).toContain("<VendoProvider>{children}</VendoProvider>");
   });
 
-  it("fails the repo when init's stdout did not print the VendoRoot paste instructions", async () => {
+  it("fails the repo when init's stdout did not print the VendoProvider paste instructions", async () => {
     const corpusRoot = await makeTempRoot();
     const context = createRunContext({ corpusRoot });
     const repo = manifestEntry("repo-no-paste");
@@ -822,9 +823,9 @@ describe("runCli run", () => {
 
     expect(exitCode).toBe(1);
     const scorecard = await readFile(path.join(context.reposDir, ".logs", "scorecard.json"), "utf8");
-    expect(scorecard).toContain("Last steps are yours");
+    expect(scorecard).toContain("paste step in its stdout");
     const layout = await readFile(path.join(repoDir, "app/layout.tsx"), "utf8");
-    expect(layout).not.toContain("VendoRoot");
+    expect(layout).not.toContain("VendoProvider");
   });
 });
 

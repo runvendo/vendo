@@ -591,7 +591,7 @@ export function layer3TargetUrl(baseUrl: string, repoName: string, threadId: str
       url.pathname = "/corpus-e2e";
     }
     // teable's readiness URL is the sign-in page; after login the Vendo overlay
-    // (VendoRoot, wired by init into the app-router layout) renders on the
+    // (VendoProvider, pasted into the app-router layout) renders on the
     // authenticated space page.
     if (repoName === "teable") {
       url.pathname = "/space";
