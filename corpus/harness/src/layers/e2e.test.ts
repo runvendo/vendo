@@ -1,7 +1,7 @@
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { tempDir } from "../temp-dir.test-util.js";
 import {
   evaluateAssertion,
   parseConversationSuite,
@@ -281,7 +281,7 @@ describe("scorePassAtK", () => {
 
 describe("runE2eLayer", () => {
   it("retries opening the Vendo surface when the launcher is present before hydration", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "vendo-e2e-"));
+    const root = await tempDir("vendo-e2e-");
     const expectationsRoot = path.join(root, "expectations");
     const logsDir = path.join(root, "logs");
     const repoDir = path.join(root, "repo");
@@ -350,7 +350,7 @@ describe("runE2eLayer", () => {
   });
 
   it("restores the per-attempt Vendo thread URL after Umami login redirects", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "vendo-e2e-"));
+    const root = await tempDir("vendo-e2e-");
     const expectationsRoot = path.join(root, "expectations");
     const logsDir = path.join(root, "logs");
     const repoDir = path.join(root, "repo");
@@ -431,7 +431,7 @@ describe("runE2eLayer", () => {
   });
 
   it("visits Papermark's e2e login route and restores the per-attempt Vendo thread URL", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "vendo-e2e-"));
+    const root = await tempDir("vendo-e2e-");
     const expectationsRoot = path.join(root, "expectations");
     const logsDir = path.join(root, "logs");
     const repoDir = path.join(root, "repo");
@@ -499,7 +499,7 @@ describe("runE2eLayer", () => {
   });
 
   it("logs teable in via the sign-in form and targets the authenticated /space page", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "vendo-e2e-"));
+    const root = await tempDir("vendo-e2e-");
     const expectationsRoot = path.join(root, "expectations");
     const logsDir = path.join(root, "logs");
     const repoDir = path.join(root, "repo");

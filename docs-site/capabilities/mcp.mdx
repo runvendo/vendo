@@ -430,6 +430,11 @@ nothing is fetched at boot, so no deploy can repoint another one; a URL the
 door cannot verify tokens against fails loudly rather than quietly reverting to
 a local OAuth surface. An explicit `mcp.remoteAs` still wins over it.
 
+So does an explicit `mcp.serviceAuth`: its exchange only exists at the door's own
+`/token`, so configuring it is a choice of local authorization server, and this
+variable — a default — leaves it alone. To front a `serviceAuth` door with a
+broker, move the exchange to the broker and drop `serviceAuth`.
+
 ## Federate login from an external authorization server
 
 `federation` adds a signed handshake so an external authorization server can

@@ -1,5 +1,5 @@
 ---
-"@vendoai/ui": major
+"@vendoai/ui": minor
 "@vendoai/core": minor
 "@vendoai/apps": minor
 ---

@@ -1,7 +1,7 @@
-import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { chmod, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { tempDir } from "../temp-dir.test-util.js";
 import { SCRIPTED_HUMAN_ANSWER, agentEnv, buildClaudeArgs, runInstallAgent } from "./agent.js";
 
 const SESSION_ID = "11111111-2222-4333-8444-555555555555";
@@ -78,7 +78,7 @@ async function readArgsLog(dir: string): Promise<string[]> {
 
 describe("runInstallAgent scripted-human continuation", () => {
   it("answers the mandated key question exactly once via --resume and appends the second turn to the transcript", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "install-eval-agent-resume-"));
+    const dir = await tempDir("install-eval-agent-resume-");
     const fakeBin = await writeFakeClaude(dir, { firstResult: KEY_QUESTION_RESULT, resumeResult: STAR_ASK_RESULT });
     const transcriptPath = path.join(dir, "logs", "transcript.jsonl");
 
@@ -116,7 +116,7 @@ describe("runInstallAgent scripted-human continuation", () => {
   }, 15_000);
 
   it("caps at ONE scripted reply — a second ask ends the run as today", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "install-eval-agent-cap-"));
+    const dir = await tempDir("install-eval-agent-cap-");
     // The fake agent asks the key question again even after the reply.
     const fakeBin = await writeFakeClaude(dir, { firstResult: KEY_QUESTION_RESULT, resumeResult: KEY_QUESTION_RESULT });
 
@@ -137,7 +137,7 @@ describe("runInstallAgent scripted-human continuation", () => {
   }, 15_000);
 
   it("does NOT answer the star ask — that transcript is complete", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "install-eval-agent-star-"));
+    const dir = await tempDir("install-eval-agent-star-");
     const fakeBin = await writeFakeClaude(dir, { firstResult: STAR_ASK_RESULT, resumeResult: KEY_QUESTION_RESULT });
 
     const result = await runInstallAgent({
@@ -159,7 +159,7 @@ describe("runInstallAgent scripted-human continuation", () => {
 
 describe("runInstallAgent", () => {
   it("enforces the time budget with a group kill, keeps the transcript pure JSONL, and never resumes a timed-out run", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "install-eval-agent-"));
+    const dir = await tempDir("install-eval-agent-");
     // Fake agent: one JSON line on stdout, noise on stderr, then hang — the
     // wall-clock kill has to end it (and its process group).
     const fakeBin = path.join(dir, "fake-claude.sh");

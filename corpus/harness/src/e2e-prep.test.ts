@@ -1,7 +1,7 @@
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { tempDir } from "./temp-dir.test-util.js";
 import { prepareE2eRepo } from "./e2e-prep.js";
 
 /** The handler `vendo init` currently scaffolds under api/vendo/[...vendo]. */
@@ -31,7 +31,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 }
 
 async function createSkateshopFixture(): Promise<{ appRoot: string; logsDir: string }> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "vendo-e2e-prep-"));
+  const root = await tempDir("vendo-e2e-prep-");
   const appRoot = path.join(root, "skateshop");
   const logsDir = path.join(root, "logs");
   await mkdir(path.join(appRoot, ".vendo"), { recursive: true });
@@ -128,7 +128,7 @@ function umamiExtractionToolsJson(): string {
 }
 
 async function createUmamiFixture(): Promise<{ appRoot: string; logsDir: string }> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "vendo-e2e-prep-"));
+  const root = await tempDir("vendo-e2e-prep-");
   const appRoot = path.join(root, "umami");
   const logsDir = path.join(root, "logs");
   await mkdir(path.join(appRoot, ".vendo"), { recursive: true });
@@ -179,7 +179,7 @@ async function createPapermarkFixture(options: {
   routeSegment?: string | null;
   toolsJson?: string;
 } = {}): Promise<{ appRoot: string; logsDir: string }> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "vendo-e2e-prep-"));
+  const root = await tempDir("vendo-e2e-prep-");
   const appRoot = path.join(root, "papermark");
   const logsDir = path.join(root, "logs");
   await mkdir(path.join(appRoot, ".vendo"), { recursive: true });
@@ -207,7 +207,7 @@ async function createPapermarkFixture(options: {
 
 describe("prepareE2eRepo", () => {
   it("keeps the permanently wired Express host as an explicit no-op", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "vendo-express-prep-"));
+    const root = await tempDir("vendo-express-prep-");
     const appRoot = path.join(root, "express-host");
     const logsDir = path.join(root, "logs");
 
@@ -366,7 +366,7 @@ describe("prepareE2eRepo", () => {
   });
 
   it("aligns Teable's generated App Router and model module with its src/pages tree", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "vendo-teable-prep-"));
+    const root = await tempDir("vendo-teable-prep-");
     const appRoot = path.join(root, "apps/nextjs-app");
     const backendRoot = path.join(root, "apps/nestjs-backend");
     const logsDir = path.join(root, "logs");
@@ -406,7 +406,7 @@ describe("prepareE2eRepo", () => {
   });
 
   it("fails Teable prep loudly when the next-i18next config is missing", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "vendo-teable-prep-"));
+    const root = await tempDir("vendo-teable-prep-");
     const appRoot = path.join(root, "apps/nextjs-app");
     const logsDir = path.join(root, "logs");
     await mkdir(path.join(appRoot, "src/app"), { recursive: true });
