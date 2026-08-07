@@ -566,13 +566,15 @@ const compilePlanUnsafe = (text: string, facts: PlanFacts): PlanCompileResult =>
   return { plan: appPlan, issues: plan.issues };
 };
 
-const capIssues = (issues: string[]): string[] =>
-  issues.length <= PLAN_MAX_ISSUES
-    ? issues
-    : [
-      ...issues.slice(0, PLAN_MAX_ISSUES),
-      `${issues.length - PLAN_MAX_ISSUES} further problems were not listed — fix these first and write the plan again.`,
-    ];
+const capIssues = (issues: string[]): string[] => {
+  if (issues.length <= PLAN_MAX_ISSUES) return issues;
+  const omitted = issues.length - PLAN_MAX_ISSUES;
+  const problems = omitted === 1 ? "1 further problem was" : `${omitted} further problems were`;
+  return [
+    ...issues.slice(0, PLAN_MAX_ISSUES),
+    `${problems} not listed — fix these first and write the plan again.`,
+  ];
+};
 
 /**
  * Read one `<Plan>` document into an {@link AppPlan}, checking it against what

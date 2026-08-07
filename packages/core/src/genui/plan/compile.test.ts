@@ -223,6 +223,14 @@ describe("compilePlan", () => {
     expect(result.issues.at(-1)).toContain("were not listed");
   });
 
+  it("counts a single omitted issue in the singular", () => {
+    // The issue list is the retry prompt verbatim, so "1 further problems" is
+    // a grammatical error handed straight to the model.
+    const result = compilePlan(`<Plan name="Noise">${"</X>".repeat(64)}</Plan>`, FACTS);
+    expect(result.issues).toHaveLength(65);
+    expect(result.issues.at(-1)).toBe("1 further problem was not listed — fix these first and write the plan again.");
+  });
+
   it("reads a valid five-field cron schedule without complaint", () => {
     const result = compilePlan(
       `<Plan name="Valid cron"><Group><Leaf component="StatTile" purpose="Total outstanding"/></Group>

@@ -16,11 +16,13 @@ landed with the two-level column paths grows the three rows that cover it.
 Two smaller compiler corrections ride along. A duplicate attribute whose LAST value
 was dropped (single-quoted, ill-formed UTF-16, an invalid action) was still reported
 as "the last one wins", which sent a retry back to re-write the value that never
-landed; the message now names the outcome, and two compiler-owned `id` attributes
-no longer claim a winner where both are ignored. And `compilePlan`'s issue list —
-which is verbatim the model's retry prompt — is capped at 64 with a final count,
-the way the wire compiler already caps its own; a broken document previously minted
-one sentence per stray token with no bound.
+landed; the message now names the outcome — including the case where EVERY value
+was dropped and no attribute survives at all — and two compiler-owned `id`
+attributes no longer claim a winner where both are ignored. And `compilePlan`'s
+issue list — which is verbatim the model's retry prompt — is capped at 64 with a
+final count, the way the wire compiler already caps its own; a broken document
+previously minted one sentence per stray token with no bound. That count reads
+"1 further problem was not listed" when exactly one is omitted.
 
 Internal only, no public surface change: the wire attribute layer's dead `patch`
 element mode, its action-attribute regex duplicated into the printer, and
