@@ -130,6 +130,9 @@ describe("safeReturnTo", () => {
     vi.stubEnv("VENDO_BASE_URL", "https://maple.example.com/maple");
     expect(safeReturnTo("https://maple.example.com/maple/api/vendo/mcp/authorize?state=ok"))
       .toBe("/maple/api/vendo/mcp/authorize?state=ok");
-    expect(safeReturnTo("https://attacker.example/maple/callback")).toBe("/");
+    // A refused target collapses to the app's OWN home, not the origin root —
+    // under a mount point "/" serves nothing, so it is a 404, not a homepage.
+    expect(safeReturnTo("https://attacker.example/maple/callback")).toBe("/maple");
+    expect(safeReturnTo(null)).toBe("/maple");
   });
 });

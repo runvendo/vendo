@@ -13,10 +13,16 @@ function requestFor(path: string, cookie?: string): NextRequest {
 }
 
 /** The autologin gate fails closed without a configured origin, so every
- * minting scenario stubs the demo origin explicitly (like local runs must). */
+ * minting scenario stubs the demo origin explicitly (like local runs must).
+ *
+ * THE `/maple` IS LOAD-BEARING. It is what instrumentation.ts really primes,
+ * and stubbing a prefix-FREE base collapsed the app's two vocabularies (the
+ * mount-stripped path Next hands the proxy, and the public path the browser
+ * uses) into one string — so the suite could not see the proxy emitting a
+ * prefix-free returnTo, and sign-in landed on a 404. */
 function stubDemoDeployment(): void {
   vi.stubEnv("DEMO_AUTOLOGIN", "1")
-  vi.stubEnv("VENDO_BASE_URL", "http://localhost:3000")
+  vi.stubEnv("VENDO_BASE_URL", "http://localhost:3000/maple")
 }
 
 /**
@@ -120,18 +126,20 @@ describe("proxy auto-login behavior", () => {
     const request = requestFor("/login")
     const response = await proxy(request)
     expect(response.status).toBe(307)
-    expect(locationOf(response, request)).toBe("/maple/")
+    expect(locationOf(response, request)).toBe("/maple")
     expect(response.headers.get("set-cookie")).toContain("authjs.session-token=")
   })
 
   it("/login honors a same-origin returnTo and collapses foreign ones", async () => {
     stubDemoDeployment()
-    const sameRequest = requestFor("/login?returnTo=%2Faccounts%3Ftab%3Dsavings")
+    // returnTo arrives in the PUBLIC spelling — it came from a browser — and is
+    // emitted unchanged. Re-prefixing it here is what produced /maple/maple/….
+    const sameRequest = requestFor("/login?returnTo=%2Fmaple%2Faccounts%3Ftab%3Dsavings")
     const same = await proxy(sameRequest)
     expect(locationOf(same, sameRequest)).toBe("/maple/accounts?tab=savings")
     const foreignRequest = requestFor(`/login?returnTo=${encodeURIComponent("https://evil.example/phish")}`)
     const foreign = await proxy(foreignRequest)
-    expect(locationOf(foreign, foreignRequest)).toBe("/maple/")
+    expect(locationOf(foreign, foreignRequest)).toBe("/maple")
   })
 
   it("without the flag, /login still renders the form (passes through untouched)", async () => {
@@ -281,11 +289,29 @@ describe("proxy auto-login behavior", () => {
   it("without the flag, unauthenticated behavior is unchanged: pages bounce to /login, APIs 401", async () => {
     const page = await proxy(requestFor("/accounts"))
     expect(page.status).toBe(307)
-    expect(page.headers.get("location")).toContain("/login?returnTo=%2Faccounts")
+    // returnTo is handed to the BROWSER, so it is the public spelling. It used
+    // to be the mount-stripped %2Faccounts, and signing in landed on a 404.
+    expect(page.headers.get("location")).toContain("/login?returnTo=%2Fmaple%2Faccounts")
     expect(page.headers.get("set-cookie")).toBeNull()
 
     const api = await proxy(requestFor("/api/accounts"))
     expect(api.status).toBe(401)
+  })
+
+  /** The whole signed-out round trip in one place, under the PREFIXED base URL a
+   *  real deployment sets: bounce → the returnTo the browser gets → what the
+   *  login continuation resolves it back to. Every hop stays under /maple and
+   *  none of them doubles it. */
+  it("round-trips signed-out → /login → back to the page, one prefix at every hop", async () => {
+    vi.stubEnv("VENDO_BASE_URL", "http://localhost:3000/maple")
+    const bounce = await proxy(requestFor("/accounts?tab=savings"))
+    const returnTo = new URL(bounce.headers.get("location")!).searchParams.get("returnTo")
+    expect(returnTo).toBe("/maple/accounts?tab=savings")
+
+    // The continuation the login form (and auto-login) resolves that returnTo to.
+    vi.stubEnv("DEMO_AUTOLOGIN", "1")
+    const back = requestFor(`/login?returnTo=${encodeURIComponent(returnTo!)}`)
+    expect(locationOf(await proxy(back), back)).toBe("/maple/accounts?tab=savings")
   })
 
   it("replaces a stale session cookie so the FIRST render is signed in", async () => {

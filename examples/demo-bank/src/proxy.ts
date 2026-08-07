@@ -92,8 +92,11 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     // Z1: with auto-login active the login form must never render — a
     // /logout continuation lands here, so mint (if needed) and continue
     // straight into the product at the sanitized returnTo.
+    // `continueTo` is already the PUBLIC spelling (safeReturnTo returns the
+    // browser's own, /maple included), so it must NOT go back through
+    // mountedRedirect — that second prefix is the /maple/maple/… shape.
     const continueTo = safeReturnTo(request.nextUrl.searchParams.get("returnTo"), publicUrl(request));
-    const response = mountedRedirect(request, continueTo);
+    const response = NextResponse.redirect(new URL(continueTo, request.nextUrl));
     const token = await getToken({
       req: request,
       secret: authSecret(),
@@ -136,9 +139,11 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
       { status: 401 },
     );
   }
-  // `pathname` already has the mount point stripped by Next, so returnTo stays
-  // in the app's own vocabulary; the prefix goes back on when a URL is emitted.
-  const returnTo = encodeURIComponent(`${pathname}${search}`);
+  // `pathname` arrives with the mount point stripped by Next, but returnTo is
+  // handed to the BROWSER and read back by safeReturnTo, which speaks the public
+  // spelling. Emitting the stripped path made sign-in land on /accounts — a 404
+  // under /maple — on a deployment whose every page rendered fine.
+  const returnTo = encodeURIComponent(withBasePath(`${pathname}${search}`));
   return mountedRedirect(request, `/login?returnTo=${returnTo}`);
 }
 

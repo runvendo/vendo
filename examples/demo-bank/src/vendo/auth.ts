@@ -1,7 +1,7 @@
 import type { authJs } from "@vendoai/vendo/auth/auth-js";
 import { joinUrl } from "@vendoai/core";
 import { getToken } from "next-auth/jwt";
-import { stripBasePath, withBasePath } from "@/lib/base-path";
+import { withBasePath } from "@/lib/base-path";
 import {
   authSecret,
   isSecureDeployment,
@@ -23,25 +23,30 @@ export async function resolveMapleSession(request: Request): Promise<MapleDemoUs
 }
 
 /** The operator-set FULL public URL (VENDO_BASE_URL — /maple included) or,
- * failing that, the request's own origin — mirrors how the door and the auth
- * presets derive their URLs. */
+ * failing that, the request's own origin under Maple's mount point — mirrors how
+ * the door and the auth presets derive their URLs. The request contributes its
+ * ORIGIN only: its path is wherever the visitor happens to be, not where the app
+ * is mounted, and letting it through made every URL built from here hang off the
+ * current page. */
 export function publicUrl(request?: Request): URL {
-  return new URL(process.env.VENDO_BASE_URL ?? request?.url ?? "http://localhost:3000");
+  return new URL(process.env.VENDO_BASE_URL ?? withBasePath("/"), request?.url ?? "http://localhost:3000");
 }
 
-/** Same-origin-only returnTo: anything else collapses to "/". The returned path
- * is the PUBLIC spelling — prefix included, exactly as the browser will use it.
- * #867: callers used to run it back through withBasePath() and produce
- * /maple/maple/…. */
+/** Same-origin-only returnTo: anything else collapses to the app's own home. The
+ * returned path is the PUBLIC spelling — prefix included, exactly as the browser
+ * will use it. #867: callers used to run it back through withBasePath() and
+ * produce /maple/maple/…. The fallback is the base's own path, not "/": under a
+ * mount point the origin root serves nothing, so "/" is a 404. */
 export function safeReturnTo(candidate: string | null | undefined, base: URL = publicUrl()): string {
-  if (!candidate) return "/";
+  const home = base.pathname.replace(/\/+$/u, "") || "/";
+  if (!candidate) return home;
   try {
     const target = new URL(candidate, base);
     return target.origin === base.origin
-      ? `${stripBasePath(target.pathname)}${target.search}${target.hash}`
-      : "/";
+      ? `${target.pathname}${target.search}${target.hash}`
+      : home;
   } catch {
-    return "/";
+    return home;
   }
 }
 
