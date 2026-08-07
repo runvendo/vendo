@@ -130,7 +130,18 @@ export function ShareDialog({
   // Whether this is still the caller's own copy comes from the SAME read that
   // answers their level — no caller can forget to pass it, which is exactly how
   // "share implies promote" never fired in the shipped surface.
-  const { level, grants, personal, isLoading, share, unshare, promote, resolvePerson } = useAppGrants(appId);
+  const {
+    level,
+    grants,
+    personal,
+    isLoading,
+    error: readFailed,
+    refresh,
+    share,
+    unshare,
+    promote,
+    resolvePerson,
+  } = useAppGrants(appId);
   const [target, setTarget] = useState("");
   const [person, setPerson] = useState("");
   /** Which org a person-share moves the app into, when the caller belongs to
@@ -268,10 +279,22 @@ export function ShareDialog({
           )}
         </div>
 
+        {/* The read did not answer, so NOTHING below may speak as if it had. An
+            empty grant list and a null level are what this dialog holds both
+            when the answer is "nobody, and you're not an owner" and when there
+            was no answer at all — and it used to state the first, twice, on the
+            strength of the second. The one thing that helps is a retry. */}
+        {readFailed === undefined || isLoading ? null : (
+          <p className="fl-share-note" role="alert">
+            We couldn’t load who this app is shared with.{" "}
+            <button type="button" className="fl-more" onClick={() => void refresh()}>Try again</button>
+          </p>
+        )}
+
         {/* Nothing is said about access until the first read has answered: `null`
             is also what the hook holds while it is still in flight, so rendering
             it told every caller they had no access for as long as the fetch took. */}
-        {canShare || isLoading ? null : (
+        {canShare || isLoading || readFailed !== undefined ? null : (
           <p className="fl-share-note">
             {level === null ? "You don’t have access to this app." : OWNER_ONLY}
           </p>
@@ -383,7 +406,7 @@ export function ShareDialog({
 
         <ul className="fl-share-list">
           {isLoading && grants.length === 0 ? <li className="fl-share-empty">Loading…</li> : null}
-          {!isLoading && grants.length === 0 ? (
+          {!isLoading && readFailed === undefined && grants.length === 0 ? (
             <li className="fl-share-empty">Nobody else yet — it’s just you.</li>
           ) : null}
           {grants.map((grant) => (
