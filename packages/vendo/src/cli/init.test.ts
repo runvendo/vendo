@@ -134,44 +134,26 @@ describe("vendo init (zero-question)", () => {
     expect(JSON.parse(sink.logs.join("\n"))).toMatchObject({ framework: expected });
   });
 
-  it("wires a fresh Next host with no prompts: route + wrapper + layout mount + hooks + .vendo", async () => {
+  it("wires a fresh Next host with no prompts: route + hooks + .vendo, and one paste", async () => {
     const root = await fixture();
     const sink = output();
     expect(await run(root, sink)).toBe(0);
 
-    // The generated code files: model-less createVendo (model is optional)
-    // wired to the empty shared registry.
+    // The generated code file: a model-less createVendo (model is optional).
+    // No client file is generated at all — the host writes its own.
     const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
     expect(route).toContain('import { createVendo, guard, nextVendoHandler } from "@vendoai/vendo/server";');
-    expect(route).toContain('import { registry } from ' + '"../../../../vendo/registry";');
-    expect(route).toContain("catalog: registry,");
     // The anonymous principal matches the docs' chat-route demo principal —
     // a null wire principal makes chat-created apps invisible to the embeds
     // (0.4.1 E2E cert B4).
     expect(route).toContain('principal: async () => ({ kind: "user" as const, subject: "demo-user" })');
     expect(route).not.toContain("model");
-    const registry = await readFile(join(root, "vendo", "registry.tsx"), "utf8");
-    // The type comes from @vendoai/vendo (the root contract-types entry), not
-    // @vendoai/core — hosts only get @vendoai/vendo (or @vendoai/ui) as a
-    // direct dependency; @vendoai/core is transitive and pnpm strict linking
-    // won't let the host resolve it (TS2307).
-    expect(registry).toContain('import type { ComponentRegistry } from "@vendoai/vendo";');
-    expect(registry).toContain("export const registry = {} satisfies ComponentRegistry;");
-    expect(registry).toContain("SpendingDonut"); // the commented example entry
-
-    // The visible surface (0.4.1 E2E cert B3): the "use client" wrapper owns
-    // the registry/theme imports (RSC-safe) and mounts <VendoOverlay />…
-    const wrapper = await readFile(join(root, "vendo", "vendo-root.tsx"), "utf8");
-    expect(wrapper).toContain('"use client";');
-    expect(wrapper).toContain('import { VendoOverlay, VendoRoot as VendoClientRoot } from "@vendoai/vendo/react";');
-    expect(wrapper).toContain('import { registry } from "./registry";');
-    expect(wrapper).toContain('import theme from "../.vendo/theme.json";');
-    expect(wrapper).toContain("<VendoClientRoot components={registry} theme={theme as VendoTheme}>");
-    expect(wrapper).toContain("<VendoOverlay />");
-    // …and the host's own layout is NOT touched: mounting the wrapper is the
+    await expect(readFile(join(root, "vendo", "registry.tsx"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(join(root, "vendo", "vendo-root.tsx"))).rejects.toMatchObject({ code: "ENOENT" });
+    // The host's own layout is NOT touched: mounting the provider is the
     // developer's paste (init never writes user-authored files).
     const layout = await readFile(join(root, "app", "layout.tsx"), "utf8");
-    expect(layout).not.toContain("VendoRoot");
+    expect(layout).not.toContain("VendoProvider");
 
     // package.json gains the sync hooks.
     const manifest = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as { scripts?: Record<string, string> };
@@ -196,9 +178,7 @@ describe("vendo init (zero-question)", () => {
 
     // The summary lists what changed; nothing is left to paste.
     const logs = sink.logs.join("\n");
-    expect(logs).toContain("Wired (4 files):");
-    expect(logs).toContain("+ " + join("vendo", "registry.tsx"));
-    expect(logs).toContain("+ " + join("vendo", "vendo-root.tsx"));
+    expect(logs).toContain("Wired (2 files):");
     expect(logs).toContain("+ " + join("app", "api", "vendo", "[...vendo]", "route.ts"));
     expect(logs).not.toContain("~ " + join("app", "layout.tsx"));
     expect(logs).toContain("~ package.json");
@@ -222,16 +202,14 @@ describe("vendo init (zero-question)", () => {
     expect(await tree(root)).toEqual(first);
     expect(again.logs.join("\n")).toContain("Already wired — nothing to change.");
     // The second run's agent tail reflects what THIS run did: no composition
-    // was created (no auth line), no registry was generated (no registry edit
-    // line), the layout is already mounted (no layout line) — only the
-    // doctor gate remains.
+    // was created (no auth line), the layout is already mounted (no layout
+    // line) — only the doctor gate remains.
     const tail = again.logs.join("\n").split("Agent tail:")[1]!;
     expect(tail).not.toContain("auth:");
-    expect(tail).not.toContain(join("vendo", "registry.tsx"));
     expect(tail).toContain("vendo doctor --json");
   });
 
-  it("computes the wrapper's theme specifier from a src/app layout (../../ to project root)", async () => {
+  it("computes the paste's theme specifier from a src/app layout (../../ to project root)", async () => {
     const root = await mkdtemp(join(tmpdir(), "vendo-init-srcapp-"));
     cleanup.push(root);
     await mkdir(join(root, "src", "app"), { recursive: true });
@@ -240,15 +218,12 @@ describe("vendo init (zero-question)", () => {
       "export default function Layout({ children }) { return <html><body>{children}</body></html>; }\n");
     const sink = output();
     expect(await run(root, sink)).toBe(0);
-    const route = await readFile(join(root, "src", "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
-    expect(route).toContain('import { registry } from ' + '"../../../../vendo/registry";');
-    // The registry and wrapper mirror the app dir: src/app → src/vendo/*.
-    await expect(readFile(join(root, "src", "vendo", "registry.tsx"), "utf8")).resolves.toContain("ComponentRegistry");
-    const wrapper = await readFile(join(root, "src", "vendo", "vendo-root.tsx"), "utf8");
-    expect(wrapper).toContain('import theme from "../../.vendo/theme.json";');
+    await expect(readFile(join(root, "src", "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8")).resolves.toContain("nextVendoHandler");
     // The layout is untouched; the specifier rides the printed paste instead.
-    expect(await readFile(join(root, "src", "app", "layout.tsx"), "utf8")).not.toContain("VendoRoot");
-    expect(sink.logs.join("\n")).toContain('import { VendoRoot } from "../vendo/vendo-root";');
+    expect(await readFile(join(root, "src", "app", "layout.tsx"), "utf8")).not.toContain("VendoProvider");
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain('import theme from "../../.vendo/theme.json";');
+    expect(logs).toContain('import { VendoProvider } from "@vendoai/vendo/react";');
   });
 
   it("scaffolds app/ under src/ when the host's pages router lives there (teable: pages+app must share one base)", async () => {
@@ -264,18 +239,18 @@ describe("vendo init (zero-question)", () => {
     const sink = output();
     expect(await run(root, sink)).toBe(0);
     const route = await readFile(join(root, "src", "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
-    expect(route).toContain('import { registry } from ' + '"../../../../vendo/registry";');
+    expect(route).toContain("nextVendoHandler");
     expect(await readdir(root)).not.toContain("app");
   });
 
-  it("generates a theme-less wrapper when the project disables resolveJsonModule", async () => {
+  it("prints a theme-less paste when the project disables resolveJsonModule", async () => {
     const root = await fixture();
     await writeFile(join(root, "tsconfig.json"), JSON.stringify({ compilerOptions: { resolveJsonModule: false } }));
     const sink = output();
     expect(await run(root, sink)).toBe(0);
-    const wrapper = await readFile(join(root, "vendo", "vendo-root.tsx"), "utf8");
-    expect(wrapper).toContain("<VendoClientRoot components={registry}>");
-    expect(wrapper).not.toContain("import theme from");
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain('<VendoProvider baseUrl="/api/vendo">');
+    expect(logs).not.toContain("import theme from");
   });
 
   it.each([
@@ -569,8 +544,7 @@ describe("vendo init (zero-question)", () => {
     expect(tail).toContain("auth: authJs() wired (detected next-auth)");
     // …the exact files the agent must now hand-edit, including the mount
     // paste init will never make for it…
-    expect(tail).toContain(`edit ${join("vendo", "registry.tsx")} — `);
-    expect(tail).toContain(`edit ${join("app", "layout.tsx")} — wrap the app in the <VendoRoot> lines above`);
+    expect(tail).toContain(`edit ${join("app", "layout.tsx")} — wrap the app in the <VendoProvider> lines above`);
     expect(tail).toContain(`edit ${join(".vendo", "brief.md")} — `);
     // …and the machine gate, closing the tail block.
     expect(tail).toContain("vendo doctor --json");
@@ -643,7 +617,6 @@ describe("vendo init (zero-question)", () => {
     expect(await run(root, sink)).toBe(0);
     const tail = sink.logs.join("\n").split("Agent tail:")[1]!;
     expect(tail).toContain("auth: none wired");
-    expect(tail).toContain(`edit ${join("vendo", "registry.tsx")} — `);
     expect(tail).toContain(`edit ${join("vendo", "server.ts")} — `);
     expect(tail).toContain("mountVendo()");
     expect(tail).toContain("vendo doctor --json");
@@ -834,29 +807,21 @@ describe("vendo init (zero-question)", () => {
     expect(theme.colors.muted).toBe("#908c85");
   });
 
-  it("never clobbers an existing registry and still wires the route to it", async () => {
+  it("never writes a client file — the host writes its own", async () => {
     const root = await fixture();
-    await mkdir(join(root, "vendo"), { recursive: true });
-    const custom = "export const registry = { /* host-authored */ };\n";
-    await writeFile(join(root, "vendo", "registry.tsx"), custom);
     expect(await run(root, output())).toBe(0);
-    expect(await readFile(join(root, "vendo", "registry.tsx"), "utf8")).toBe(custom);
-    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
-    expect(route).toContain('import { registry } from ' + '"../../../../vendo/registry";');
+    await expect(readFile(join(root, "vendo", "registry.tsx"), "utf8")).rejects.toThrow();
+    await expect(readFile(join(root, "vendo", "vendo-root.tsx"), "utf8")).rejects.toThrow();
   });
 
-  it("does not scaffold a registry next to a hand-written route that ignores it", async () => {
+  it("prints ONE paste — <VendoProvider>, with no overlay line", async () => {
     const root = await fixture();
-    await mkdir(join(root, "app", "api", "vendo", "[...vendo]"), { recursive: true });
-    await writeFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"),
-      'import { createVendo, guard, nextVendoHandler } from "@vendoai/vendo/server";\n' +
-      "const vendo = createVendo({ principal: async () => null });\n" +
-      "export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);\n");
     const sink = output();
     expect(await run(root, sink)).toBe(0);
-    await expect(readFile(join(root, "vendo", "registry.tsx"))).rejects.toMatchObject({ code: "ENOENT" });
-    // The paste line stays honest: no components prop without a registry file.
-    expect(sink.logs.join("\n")).not.toContain("components={registry}");
+    const printed = sink.logs.join("\n");
+    expect(printed).toContain("<VendoProvider");
+    expect(printed).not.toContain("VendoOverlay");
+    expect(printed).not.toContain("vendo-root");
   });
 
   it("states an env key in one line and skips the cloud offer", async () => {
@@ -1128,13 +1093,11 @@ describe("vendo init (zero-question)", () => {
     expect(await run(unwired, sink)).toBe(0);
     const server = await readFile(join(unwired, "vendo", "server.ts"), "utf8");
     expect(server).toContain("createVendo({");
-    expect(server).toContain('import { registry } from "./registry";');
-    expect(server).toContain("catalog: registry,");
     expect(server).not.toContain("model");
-    await expect(readFile(join(unwired, "vendo", "registry.tsx"), "utf8")).resolves.toContain("ComponentRegistry");
+    await expect(readFile(join(unwired, "vendo", "registry.tsx"))).rejects.toMatchObject({ code: "ENOENT" });
     await expect(readFile(join(unwired, "vendo", "ai.ts"))).rejects.toMatchObject({ code: "ENOENT" });
     expect(sink.logs.join("\n")).toContain('app.use("/api/vendo", mountVendo());');
-    expect(sink.logs.join("\n")).toContain("components={registry}");
+    expect(sink.logs.join("\n")).toContain('<VendoProvider baseUrl="/api/vendo"');
     // Fresh composition creation with no auth dependency: one calm advisory.
     expect(sink.logs.join("\n")).toContain("Auth: no provider detected");
 
@@ -1233,7 +1196,7 @@ describe("vendo init (zero-question)", () => {
     const logs = again.logs.join("\n");
     expect(logs).toContain("Already wired — nothing to change.");
     // The advisory fires only when the composition is created, never on the
-    // re-run between scaffold and the manual <VendoRoot> paste.
+    // re-run between scaffold and the manual <VendoProvider> paste.
     expect(logs).not.toContain("Auth:");
   });
 
@@ -1244,13 +1207,11 @@ describe("vendo init (zero-question)", () => {
       'import { createVendo } from "@vendoai/vendo/server";\nexport const vendo = createVendo({ principal: async () => null });\n');
     const sink = output();
     expect(await run(root, sink)).toBe(0);
-    // No duplicate server module, no orphaned registry, no advisory about a
-    // composition init does not own — and the paste line stays honest.
+    // No duplicate server module and no advisory about a composition init
+    // does not own.
     await expect(readFile(join(root, "vendo", "server.ts"))).rejects.toMatchObject({ code: "ENOENT" });
-    await expect(readFile(join(root, "vendo", "registry.tsx"))).rejects.toMatchObject({ code: "ENOENT" });
     const logs = sink.logs.join("\n");
     expect(logs).not.toContain("Auth:");
-    expect(logs).not.toContain("components={registry}");
   });
 
   it("uses an ESM scaffold when an Express host has no tsconfig", async () => {
@@ -1260,8 +1221,7 @@ describe("vendo init (zero-question)", () => {
     const server = await readFile(join(root, "vendo", "server.mjs"), "utf8");
     expect(server).not.toContain(": Headers");
     expect(server).toContain("mountVendo");
-    expect(server).toContain('import { registry } from "./registry.mjs";');
-    await expect(readFile(join(root, "vendo", "registry.mjs"), "utf8")).resolves.toContain("export const registry = {};");
+    await expect(readFile(join(root, "vendo", "registry.mjs"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("writes the setup skill silently when .claude exists and respects an edited copy", async () => {
@@ -1689,10 +1649,9 @@ describe("vendo init (zero-question)", () => {
     expect(plan.writes).toContain(".vendo/tools.json");
     expect(plan.writes).not.toContain(".env");
     expect(plan.codeChanges.map((change) => change.path)).toContain(join("app", "api", "vendo", "[...vendo]", "route.ts"));
-    expect(plan.codeChanges.map((change) => change.path)).toContain(join("vendo", "registry.tsx"));
-    // The wrapper is a NEW Vendo-owned file, so it IS a planned change; the
-    // host's layout never is, and the paste rides manualSteps + `mount`.
-    expect(plan.codeChanges.map((change) => change.path)).toContain(join("vendo", "vendo-root.tsx"));
+    // Init writes no client file at all, and the host's layout never is a
+    // planned change: the paste rides manualSteps + `mount`.
+    expect(plan.codeChanges.map((change) => change.path)).not.toContain(join("vendo", "vendo-root.tsx"));
     expect(plan.codeChanges.map((change) => change.path)).not.toContain(join("app", "layout.tsx"));
     expect(plan.manualSteps[0]).toBe(`In ${join("app", "layout.tsx")}:`);
     expect(Array.isArray(plan.extraction.tools)).toBe(true);
@@ -1822,13 +1781,11 @@ describe("the mount paste (init never edits user-authored source)", () => {
     const sink = output();
     expect(await run(root, sink)).toBe(0);
     expect(await readFile(join(root, "app", "layout.tsx"), "utf8")).toBe(before);
-    // The Vendo-owned wrapper is still generated — it is a NEW file.
-    await expect(readFile(join(root, "vendo", "vendo-root.tsx"), "utf8")).resolves.toContain("<VendoOverlay />");
     const logs = sink.logs.join("\n");
     expect(logs).toContain("ONE STEP LEFT — paste this yourself (init never edits your files)");
     expect(logs).toContain(`File: ${join("app", "layout.tsx")}`);
-    expect(logs).toContain('import { VendoRoot } from "../vendo/vendo-root";');
-    expect(logs).toContain("<VendoRoot>{children}</VendoRoot>");
+    expect(logs).toContain('import { VendoProvider } from "@vendoai/vendo/react";');
+    expect(logs).toContain('<VendoProvider baseUrl="/api/vendo" theme={theme as VendoTheme}>{children}</VendoProvider>');
     expect(logs).toContain("Then confirm it landed: npx vendo doctor");
     // No layout diff is even proposed.
     expect(logs).not.toContain("~ " + join("app", "layout.tsx"));
@@ -1844,8 +1801,8 @@ describe("the mount paste (init never edits user-authored source)", () => {
     expect(await readFile(join(root, "app", "layout.tsx"), "utf8")).toBe(twoSites);
     const logs = sink.logs.join("\n");
     expect(logs).toContain("ONE STEP LEFT");
-    expect(logs).toContain('import { VendoRoot } from "../vendo/vendo-root";');
-    expect(logs).toContain("mounts <VendoOverlay />");
+    expect(logs).toContain('import { VendoProvider } from "@vendoai/vendo/react";');
+    expect(logs).toContain("<VendoProvider baseUrl=");
   });
 
   it("carries the same file and lines in the --agent plan's `mount`", async () => {
@@ -1859,28 +1816,28 @@ describe("the mount paste (init never edits user-authored source)", () => {
     };
     expect(plan.mount?.file).toBe(join("app", "layout.tsx"));
     expect(plan.mount?.lines).toEqual([
-      'import { VendoRoot } from "../vendo/vendo-root";',
-      "… then wrap: <VendoRoot>{children}</VendoRoot>",
+      'import { VendoProvider } from "@vendoai/vendo/react";',
+      'import theme from "../.vendo/theme.json";',
+      'import type { VendoTheme } from "@vendoai/vendo";',
+      '… then wrap: <VendoProvider baseUrl="/api/vendo" theme={theme as VendoTheme}>{children}</VendoProvider>',
     ]);
-    expect(plan.mount?.why).toContain("wired but invisible");
+    expect(plan.mount?.why).toContain("nothing on the page can reach it");
     // The same lines still ride manualSteps, and no layout diff is planned.
-    expect(plan.manualSteps.join("\n")).toContain("<VendoRoot>{children}</VendoRoot>");
+    expect(plan.manualSteps.join("\n")).toContain('<VendoProvider baseUrl="/api/vendo"');
     expect(plan.codeChanges.map((change) => change.path)).not.toContain(join("app", "layout.tsx"));
   });
 
-  it("a layout that already mounts <VendoRoot> without any surface gets the one overlay line (D6)", async () => {
+  /** A host that already mounts the provider IS mounted — init has nothing
+      left to print, whatever surface it renders inside. */
+  it("a layout that already mounts <VendoProvider> gets no paste", async () => {
     const root = await fixture();
     await writeFile(join(root, "app", "layout.tsx"),
-      'import { VendoRoot } from "@vendoai/vendo/react";\n' +
-      "export default function Layout({ children }) { return <html><body><VendoRoot>{children}</VendoRoot></body></html>; }\n");
+      'import { VendoProvider } from "@vendoai/vendo/react";\n' +
+      "export default function Layout({ children }) { return <html><body><VendoProvider>{children}</VendoProvider></body></html>; }\n");
     const sink = output();
     expect(await run(root, sink)).toBe(0);
-    // Never edited, no wrapper orphan generated.
-    await expect(readFile(join(root, "vendo", "vendo-root.tsx"))).rejects.toMatchObject({ code: "ENOENT" });
     const logs = sink.logs.join("\n");
-    expect(logs).toContain("ONE STEP LEFT");
-    expect(logs).toContain("<VendoOverlay />");
-    expect(logs).toContain("it renders nothing");
+    expect(logs).not.toContain("ONE STEP LEFT");
   });
 
   it("a host with its own surface (BYO embeds) is left entirely alone", async () => {
@@ -2075,8 +2032,8 @@ describe("vendo init (custom runtime)", () => {
     expect(server).toContain('createAnthropic({ apiKey: cloud.apiKey, baseURL: `${cloud.baseUrl}/api/v1` })("vendo")');
     expect(server).toContain("store: hostedStore(cloud),");
     expect(server).toContain("sandbox: cloudSandbox(cloud),");
-    // No framework file-layout assumptions.
-    expect(await readFile(join(root, "vendo", "registry.tsx"), "utf8")).toContain("ComponentRegistry");
+    // No framework file-layout assumptions, and no client file.
+    await expect(readFile(join(root, "vendo", "registry.tsx"))).rejects.toMatchObject({ code: "ENOENT" });
 
     const log = sink.logs.join("\n");
     expect(log).toContain("handleVendoRequest(request, env)");

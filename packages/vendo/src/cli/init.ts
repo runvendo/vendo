@@ -22,13 +22,11 @@ import {
   importsGeneratedMap,
   missingRegistrationLines,
   missingRegistrations,
-  registrySource,
   requiredServerActions,
   routeSource,
   serverActionsModuleSource,
   serverActionsWiring,
   VENDO_ENV_EXAMPLE,
-  vendoRootWrapperSource,
 } from "./init-scaffolds.js";
 import { createPrettyOutput, plainSelect, usePrettyOutput, type PrettyOutput, type SelectOption } from "./pretty.js";
 import { contrastingText } from "./theme/color.js";
@@ -484,56 +482,29 @@ async function setupSkillSource(): Promise<string | null> {
   }
 }
 
-/** The mount paste for a Next host, as data. A host that already mounts a
-    surface needs nothing; a <VendoRoot>-without-surface host needs the one
-    overlay line; everyone else pastes the wrapper mount (the wrapper owns the
-    registry/theme imports — pasting them into a Server Component layout is the
-    RSC-serialization crash the wrapper exists to avoid). Null on Express and
-    custom hosts: their wiring has no single host file to name, so it stays in
-    the printed lines below. */
-async function mountStep(root: string, layout: LayoutWiring, withRegistry: boolean): Promise<ManualEdit | null> {
+/** The mount paste for a Next host, as data — ONE paste: `<VendoProvider>`
+    around the app's client root. A host that already mounts a surface needs
+    nothing. No overlay line: the chat bubble is an optional documented line,
+    never something init prints. Null on Express and custom hosts: their wiring
+    has no single host file to name, so it stays in the printed lines below. */
+async function mountStep(root: string, layout: LayoutWiring): Promise<ManualEdit | null> {
   if (layout.kind === "already" || layout.kind === "express" || layout.kind === "custom") return null;
-  if (layout.kind === "overlay-missing") {
-    return {
-      file: layout.layoutPath,
-      lines: [
-        `import { VendoOverlay } from "@vendoai/vendo/react";`,
-        `… then add inside <VendoRoot>: <VendoOverlay />`,
-      ],
-      why: "<VendoRoot> is a context provider — it renders nothing. <VendoOverlay /> is the launcher pill + panel your users open.",
-    };
-  }
-  const app = await appDirectory(root);
   const { file: entry, children } = await clientRoot(root);
   const entryDir = dirname(entry);
-  if (withRegistry) {
-    const wrapperSpecifier = relative(entryDir, join(dirname(app), "vendo", "vendo-root")).split(sep).join("/");
-    return {
-      file: relative(root, entry),
-      lines: [
-        `import { VendoRoot } from ${JSON.stringify(wrapperSpecifier)};`,
-        `… then wrap: <VendoRoot>${children}</VendoRoot>`,
-      ],
-      why: `${join("vendo", "vendo-root.tsx")} mounts <VendoOverlay />, the visible launcher + panel — until this lands, Vendo is wired but invisible.`,
-    };
-  }
-  // No registry consumer (a hand-wired route that ignores it): the direct
-  // provider + overlay paste — theme.json is serializable, so it may cross
-  // the Server Component boundary; the registry may not.
   const specifier = await themeImportSpecifier(root, entryDir);
   return {
     file: relative(root, entry),
     lines: [
-      `import { VendoOverlay, VendoRoot } from "@vendoai/vendo/react";`,
+      `import { VendoProvider } from "@vendoai/vendo/react";`,
       ...(specifier === null
         ? []
         : [
             `import theme from ${JSON.stringify(specifier)};`,
             `import type { VendoTheme } from "@vendoai/vendo";`,
           ]),
-      `… then wrap: <VendoRoot${specifier === null ? "" : " theme={theme as VendoTheme}"}>${children}<VendoOverlay /></VendoRoot>`,
+      `… then wrap: <VendoProvider baseUrl="/api/vendo"${specifier === null ? "" : " theme={theme as VendoTheme}"}>${children}</VendoProvider>`,
     ],
-    why: "<VendoRoot> alone renders nothing — <VendoOverlay /> is the visible launcher + panel; until this lands, Vendo is wired but invisible.",
+    why: "<VendoProvider> is what the @vendoai/ui hooks and embeds read; baseUrl is the wire mount, path prefix included. Until this lands, Vendo is wired but nothing on the page can reach it.",
   };
 }
 
@@ -544,27 +515,21 @@ function editLines(step: ManualEdit): string[] {
 
 /** Everything the run could not do itself: the mount paste plus, on Express
     and custom runtimes, their own two wiring lines. */
-async function manualWiringLines(root: string, layout: LayoutWiring, withRegistry: boolean): Promise<string[]> {
+async function manualWiringLines(root: string, layout: LayoutWiring): Promise<string[]> {
   if (layout.kind === "express") {
-    const wrap = withRegistry
-      ? `<VendoRoot components={registry} theme={theme}>…<VendoOverlay /></VendoRoot>`
-      : `<VendoRoot theme={theme}>…<VendoOverlay /></VendoRoot>`;
     return [
       `app.use("/api/vendo", mountVendo());   // in your server`,
-      `${wrap}  // around your client root (see vendo/server for the imports; <VendoOverlay /> is the visible launcher + panel)`,
+      `<VendoProvider baseUrl="/api/vendo" theme={theme}>…</VendoProvider>  // around your client root`,
     ];
   }
   if (layout.kind === "custom") {
-    const wrap = withRegistry
-      ? `<VendoRoot components={registry} theme={theme}>…<VendoOverlay /></VendoRoot>`
-      : `<VendoRoot theme={theme}>…<VendoOverlay /></VendoRoot>`;
     return [
       `Route your runtime's requests through the generated module — Cloudflare Workers: export default { fetch: (request, env) => handleVendoRequest(request, env) };`,
-      `${wrap}  // around your client root (see vendo/server for the imports; <VendoOverlay /> is the visible launcher + panel)`,
-      `Set VENDO_BASE_URL to the deployed origin (credential forwarding fails closed without it).`,
+      `<VendoProvider baseUrl="/api/vendo" theme={theme}>…</VendoProvider>  // around your client root`,
+      `Set VENDO_BASE_URL to the deployment's FULL public URL, path prefix included (credential forwarding fails closed without it).`,
     ];
   }
-  const step = await mountStep(root, layout, withRegistry);
+  const step = await mountStep(root, layout);
   return step === null ? [] : editLines(step);
 }
 
@@ -577,7 +542,6 @@ async function manualWiringLines(root: string, layout: LayoutWiring, withRegistr
 async function agentTailLines(args: {
   root: string;
   framework: Exclude<HostFramework, "unknown"> | "custom";
-  registryPath: string | null;
   compositionPath: string | null;
   authWired: AuthMatch | null;
   /** How far the visible-surface wiring got this run. */
@@ -600,21 +564,16 @@ async function agentTailLines(args: {
       lines.push(`auth: ${args.authWired.preset}() wired (detected ${args.authWired.dependency})`);
     }
   }
-  if (args.registryPath !== null) {
-    lines.push(`edit ${args.registryPath} — register the components the agent may render (generated empty)`);
-  }
   if (args.compositionPath !== null && args.authWired === null) {
     lines.push(`edit ${args.compositionPath} — add the auth preset named in the advisory above when the host has auth`);
   }
   if (args.framework === "express") {
     // No exact entry file exists to name on Express — point at the printed
     // wiring lines instead of guessing a path.
-    lines.push("edit your server and client entries — paste the mountVendo() and <VendoRoot>/<VendoOverlay /> lines above (without a mounted surface, users see nothing)");
-  } else if (args.layout.kind === "overlay-missing") {
-    lines.push(`edit ${args.layout.layoutPath} — add <VendoOverlay /> inside your <VendoRoot> (see the lines above; <VendoRoot> alone renders NOTHING visible)`);
+    lines.push("edit your server and client entries — paste the mountVendo() and <VendoProvider> lines above (without a mounted provider, nothing on the page can reach Vendo)");
   } else if (args.layout.kind === "manual") {
     const entry = relative(args.root, (await clientRoot(args.root)).file);
-    lines.push(`edit ${entry} — wrap the app in the <VendoRoot> lines above (it mounts <VendoOverlay />, the visible surface; without it users see nothing)`);
+    lines.push(`edit ${entry} — wrap the app in the <VendoProvider> lines above (without it, nothing on the page can reach Vendo)`);
   }
   for (const edit of args.edits) {
     lines.push(`edit ${edit.file} — apply the change printed above yourself (it already exists, so init did not write it)`);
@@ -672,9 +631,6 @@ export function starViaGh(spawnStar: NonNullable<InitOptions["spawnStar"]>, time
     there is no "wired by init" state: the only question is what is left for
     the developer to paste. */
 type LayoutWiring =
-  /** The layout already mounts <VendoRoot> but no <VendoOverlay /> is
-      mounted anywhere obvious — the one remaining paste is the overlay. */
-  | { kind: "overlay-missing"; layoutPath: string }
   /** A Vendo mount already exists — nothing to do or say. */
   | { kind: "already" }
   /** Nothing mounts Vendo yet — the printed paste is the step. */
@@ -700,8 +656,6 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
   authWired: AuthMatch | null;
   /** Relative path of the composition created THIS run; null otherwise. */
   compositionPath: string | null;
-  /** Relative path of the registry generated THIS run; null otherwise. */
-  registryPath: string | null;
   /** How the visible surface reached (or didn't reach) the layout. */
   layout: LayoutWiring;
 }> {
@@ -717,8 +671,6 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
   let authAdvice: string | null = null;
   let authWired: AuthMatch | null = null;
   let compositionPath: string | null = null;
-  let registryPath: string | null = null;
-  let withRegistry = false;
   let layout: LayoutWiring = { kind: "manual" };
 
   if (framework === "custom") {
@@ -727,21 +679,10 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
     if (!wiring.server || !wiring.client) {
       const typescript = await exists(join(root, "tsconfig.json"));
       const server = join(root, "vendo", typescript ? "server.ts" : "server.mjs");
-      const registryFile = join(root, "vendo", typescript ? "registry.tsx" : "registry.mjs");
-      const registryBefore = await readOptional(registryFile);
       const serverBefore = await readOptional(server);
-      // Same ownership rules as the Express branch: init composes only when
-      // it CREATES the composition, and the registry regenerates only for a
-      // consumer that uses it.
+      // Same ownership rule as the Express branch: init composes only when it
+      // CREATES the composition.
       const scaffolding = serverBefore === null && !wiring.server;
-      const registryPlanned = registryBefore === null
-        && (scaffolding || serverBefore?.includes("./registry") === true);
-      if (registryPlanned) {
-        const path = relative(root, registryFile);
-        const registryAfter = registrySource(typescript ? "tsx" : "mjs");
-        changes.push({ absolute: registryFile, path, before: null, after: registryAfter, diff: diff(path, null, registryAfter) });
-        registryPath = path;
-      }
       if (scaffolding) {
         const path = relative(root, server);
         const auth = await resolveScaffoldAuth(root, path, options.auth, confirmAuth, selectAuth);
@@ -751,7 +692,6 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
         authWired = auth.wired;
         compositionPath = path;
       }
-      withRegistry = registryBefore !== null || registryPlanned;
     }
   } else if (framework === "express") {
     layout = { kind: "express" };
@@ -759,30 +699,17 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
     if (!wiring.server || !wiring.client) {
       const typescript = await exists(join(root, "tsconfig.json"));
       const server = join(root, "vendo", typescript ? "server.ts" : "server.mjs");
-      const registryFile = join(root, "vendo", typescript ? "registry.tsx" : "registry.mjs");
-      const registryBefore = await readOptional(registryFile);
       const serverBefore = await readOptional(server);
       // Init owns the composition only when it CREATES it: no generated
       // server module yet AND no hand-wired createVendo anywhere else. A host
-      // that composed at its own path but hasn't pasted <VendoRoot> yet gets
-      // neither a duplicate server module nor an orphaned registry — the
-      // Express analog of the Next branch's routeBefore === null guard.
+      // that composed at its own path but hasn't pasted <VendoProvider> yet
+      // gets no duplicate server module — the Express analog of the Next
+      // branch's routeBefore === null guard.
       const scaffolding = serverBefore === null && !wiring.server;
-      // The registry regenerates only for a composition that uses it: the one
-      // being created now, or a previously generated server module whose
-      // ./registry import would otherwise dangle. Never clobbered.
-      const registryPlanned = registryBefore === null
-        && (scaffolding || serverBefore?.includes("./registry") === true);
-      if (registryPlanned) {
-        const path = relative(root, registryFile);
-        const registryAfter = registrySource(typescript ? "tsx" : "mjs");
-        changes.push({ absolute: registryFile, path, before: null, after: registryAfter, diff: diff(path, null, registryAfter) });
-        registryPath = path;
-      }
       if (scaffolding) {
         const path = relative(root, server);
         // Detect + confirm happens only here — fresh composition creation —
-        // so a re-run before the manual <VendoRoot> paste neither asks nor
+        // so a re-run before the manual <VendoProvider> paste neither asks nor
         // re-fires the advisory after "Already wired".
         const auth = await resolveScaffoldAuth(root, path, options.auth, confirmAuth, selectAuth);
         const serverAfter = expressServerSource(typescript, auth.wired);
@@ -791,7 +718,6 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
         authWired = auth.wired;
         compositionPath = path;
       }
-      withRegistry = registryBefore !== null || registryPlanned;
     }
   } else {
     const app = await appDirectory(root);
@@ -800,21 +726,6 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
     const routeBefore = await readOptional(route);
     const actionsBefore = await readOptional(actionsModule);
     const registrations = await requiredServerActions(root);
-    // The shared registry mirrors the app dir (src/app → src/vendo): generated
-    // only while absent and only when the route uses it — a fresh scaffold, or
-    // a route that already imports vendo/registry. A hand-wired route that
-    // ignores the registry never grows an orphan file.
-    const registryFile = join(dirname(app), "vendo", "registry.tsx");
-    const registryBefore = await readOptional(registryFile);
-    const registryPlanned = registryBefore === null
-      && (routeBefore === null || routeBefore.includes("vendo/registry"));
-    if (registryPlanned) {
-      const path = relative(root, registryFile);
-      const registryAfter = registrySource("tsx");
-      changes.push({ absolute: registryFile, path, before: null, after: registryAfter, diff: diff(path, null, registryAfter) });
-      registryPath = path;
-    }
-    withRegistry = registryBefore !== null || registryPlanned;
     // The registration map is generated once, when the host's first
     // "use server" action appears. After that it is the developer's file and is
     // never rewritten — so an existing one is compared by the KEYS it registers,
@@ -849,8 +760,7 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
       const path = relative(root, route);
       // Detect + confirm happens only on fresh composition creation.
       const auth = await resolveScaffoldAuth(root, path, options.auth, confirmAuth, selectAuth);
-      const registrySpecifier = relative(dirname(route), join(dirname(app), "vendo", "registry")).split(sep).join("/");
-      const routeAfter = routeSource({ serverActions: registrations.length > 0, auth: auth.wired, registrySpecifier });
+      const routeAfter = routeSource({ serverActions: registrations.length > 0, auth: auth.wired });
       changes.push({ absolute: route, path, before: routeBefore, after: routeAfter, diff: diff(path, routeBefore, routeAfter) });
       authAdvice = auth.advice;
       authWired = auth.wired;
@@ -863,34 +773,10 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
       if (edit !== null) edits.push(edit);
     }
 
-    // Visible surface (0.4.1 E2E cert B3): the client mount wrapper next to
-    // the registry — the "use client" boundary that owns the registry + theme
-    // imports (passing the registry from the Server Component layout into the
-    // client provider fails RSC serialization) and mounts <VendoOverlay />.
-    // A NEW Vendo-owned file, so init writes it; mounting it in the host's own
-    // layout is the developer's paste (init never writes user-authored files),
-    // printed by mountStep and gated by doctor's E-WIRE-004.
-    const wrapperFile = join(dirname(app), "vendo", "vendo-root.tsx");
-    const wrapperBefore = await readOptional(wrapperFile);
-    // The generated wrapper doesn't count as a host mount: its overlay is
-    // only real once a layout mounts the wrapper itself.
-    const mounts = await detectVendoWiring(root, { exclude: [wrapperFile] });
-    if (mounts.client || mounts.surface) {
-      // A mounted <VendoRoot> next to an existing wrapper IS the surface —
-      // the wrapper renders <VendoOverlay />.
-      layout = mounts.surface || wrapperBefore !== null
-        ? { kind: "already" }
-        // A pages-only host mounted <VendoRoot> in pages/_app.tsx, not in an
-        // app/layout.tsx it doesn't have — name the file it really wraps in.
-        : { kind: "overlay-missing", layoutPath: relative(root, (await clientRoot(root)).file) };
-    } else if (withRegistry && wrapperBefore === null) {
-      // The wrapper consumes ./registry, so it exists only alongside one —
-      // a hand-wired host that ignores the registry keeps the direct paste.
-      const path = relative(root, wrapperFile);
-      const themeSpecifier = await themeImportSpecifier(root, dirname(wrapperFile));
-      const wrapperAfter = vendoRootWrapperSource({ themeSpecifier });
-      changes.push({ absolute: wrapperFile, path, before: null, after: wrapperAfter, diff: diff(path, null, wrapperAfter) });
-    }
+    // Init never writes a client file, so the only question is whether the host
+    // already mounts one. A host source that mounts the provider IS the mount.
+    const mounts = await detectVendoWiring(root);
+    if (mounts.client) layout = { kind: "already" };
   }
   const packageJson = join(root, "package.json");
   const packageBefore = await readOptional(packageJson);
@@ -931,9 +817,9 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
     ".vendo/theme.extracted.json",
     ".vendo/data/.gitignore",
   ];
-  const mount = await mountStep(root, layout, withRegistry);
+  const mount = await mountStep(root, layout);
   const manualSteps = [
-    ...await manualWiringLines(root, layout, withRegistry),
+    ...await manualWiringLines(root, layout),
     ...edits.flatMap(editLines),
   ];
   return {
@@ -944,7 +830,6 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
     authAdvice,
     authWired,
     compositionPath,
-    registryPath,
     layout,
     plan: {
       framework,
@@ -1055,7 +940,7 @@ export async function runInit(options: InitOptions): Promise<number> {
     ? undefined
     : (options.selectAuth ?? (pretty === null ? plainSelect : pretty.select));
   const detectStarted = Date.now();
-  const { plan, changes, edits, manualSteps, mount, authAdvice, authWired, compositionPath, registryPath, layout } = await buildPlan(options, confirmAuth, selectAuth);
+  const { plan, changes, edits, manualSteps, mount, authAdvice, authWired, compositionPath, layout } = await buildPlan(options, confirmAuth, selectAuth);
   const detectMs = Date.now() - detectStarted;
   let telemetry = telemetryFor(options, output, root);
   await telemetry.track("init_started", { framework: plan.framework });
@@ -1440,7 +1325,7 @@ export async function runInit(options: InitOptions): Promise<number> {
     // never reaches here (its read-only JSON plan returned above).
     if (options.yes === true || !interactive) {
       output.log("\nAgent tail:");
-      const tail = await agentTailLines({ root, framework: plan.framework, registryPath, compositionPath, authWired, layout, edits, cloudKeyMissing: credential.rung === "none" });
+      const tail = await agentTailLines({ root, framework: plan.framework, compositionPath, authWired, layout, edits, cloudKeyMissing: credential.rung === "none" });
       for (const line of tail) output.log(`  ${line}`);
     } else {
       // Star ask (agent-install-dx §CLI-5): the interactive success screen
