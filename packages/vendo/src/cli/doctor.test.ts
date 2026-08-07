@@ -1690,7 +1690,7 @@ describe("readEnvFiles — the CLI's one env reader (doctor and config read it t
   it("blank process values yield to concrete dotenv values at the merge", async () => {
     const root = await mkdtemp(join(tmpdir(), "vendo-doctor-envm-"));
     cleanup.push(() => rm(root, { recursive: true, force: true }));
-    await writeFile(join(root, ".env"), "VENDO_API_KEY=vnd_real\nONLY_FILE=x\n");
+    await writeFile(join(root, ".env"), "VENDO_API_KEY=vnd_real\nONLY_FILE=x\nSHELL_WINS=from-file\n");
     const { readEnvFiles } = await import("./sync-flow.js");
     const merged = await readEnvFiles(root, { VENDO_API_KEY: "  ", SHELL_WINS: "yes", ONLY_PROC: "" });
     expect(merged["VENDO_API_KEY"]).toBe("vnd_real");

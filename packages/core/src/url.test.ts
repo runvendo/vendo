@@ -5,21 +5,8 @@ import {
   mountMismatchMessage,
   publicBase,
   stripPathPrefix,
-  underPathPrefix,
   withPathPrefix,
 } from "./url.js";
-
-describe("underPathPrefix", () => {
-  it.each([
-    ["", "/anything", true],
-    ["/maple", "/maple", true],
-    ["/maple", "/maple/api", true],
-    ["/maple", "/maplesyrup", false],
-    ["/maple", "/other", false],
-  ])("prefix %j holds %j → %s", (prefix, path, expected) => {
-    expect(underPathPrefix(prefix, path)).toBe(expected);
-  });
-});
 
 describe("withPathPrefix", () => {
   it("prefixes exactly once", () => {

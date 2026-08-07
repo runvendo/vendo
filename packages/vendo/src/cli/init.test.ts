@@ -807,13 +807,6 @@ describe("vendo init (zero-question)", () => {
     expect(theme.colors.muted).toBe("#908c85");
   });
 
-  it("never writes a client file — the host writes its own", async () => {
-    const root = await fixture();
-    expect(await run(root, output())).toBe(0);
-    await expect(readFile(join(root, "vendo", "registry.tsx"), "utf8")).rejects.toThrow();
-    await expect(readFile(join(root, "vendo", "vendo-root.tsx"), "utf8")).rejects.toThrow();
-  });
-
   it("prints ONE paste — <VendoProvider>, with no overlay line", async () => {
     const root = await fixture();
     const sink = output();

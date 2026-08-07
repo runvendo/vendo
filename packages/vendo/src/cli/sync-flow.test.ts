@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Output } from "./shared.js";
-import { readEnvFiles, runSyncFlow, type SyncFlowOptions, type SyncFlowResult } from "./sync-flow.js";
+import { runSyncFlow, type SyncFlowOptions, type SyncFlowResult } from "./sync-flow.js";
 
 /**
  * The ONE flow `vendo init` (mode "full") and `vendo sync` (mode "incremental")
@@ -91,31 +91,6 @@ const engine = {
   availability: async () => "a scripted engine",
   run: async () => { throw new Error("declined consent must never reach the engine"); },
 };
-
-describe("readEnvFiles", () => {
-  /** init's defect: it read `.env.local` ONLY, so a key sitting in `.env` was
-   *  invisible and the run went structural-only with no signal why. */
-  it("reads .env AND .env.local, with .env.local winning", async () => {
-    const root = await host({ ".env": "A=from-env\nB=only-env\n", ".env.local": "A=from-local\n" });
-    const env = await readEnvFiles(root);
-    expect(env.A).toBe("from-local");
-    expect(env.B).toBe("only-env");
-  });
-
-  it("lets a concrete process value win, but not a blank one", async () => {
-    const root = await host({ ".env": "VENDO_API_KEY=from-file\n" });
-    const previous = process.env.VENDO_API_KEY;
-    process.env.VENDO_API_KEY = "  ";
-    try {
-      expect((await readEnvFiles(root)).VENDO_API_KEY).toBe("from-file");
-      process.env.VENDO_API_KEY = "real";
-      expect((await readEnvFiles(root)).VENDO_API_KEY).toBe("real");
-    } finally {
-      if (previous === undefined) delete process.env.VENDO_API_KEY;
-      else process.env.VENDO_API_KEY = previous;
-    }
-  });
-});
 
 describe("runSyncFlow", () => {
   it("judges the WHOLE catalog in full mode and only what moved in incremental", async () => {
