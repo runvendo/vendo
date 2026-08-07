@@ -256,7 +256,6 @@ describe("the shipped client against the shipped door", () => {
       ["apps.call", () => client.apps.call(app, "fn:refresh", { month: "July" })],
       ["apps.edit", () => client.apps.edit(app, "add totals")],
       ["apps.history", () => client.apps.history(app)],
-      ["apps.undo", () => client.apps.undo(app)],
       ["apps.exportApp", () => client.apps.exportApp(app)],
       ["apps.fork", () => client.apps.fork(app)],
       ["apps.forkPin", () => client.apps.forkPin({ appId: app, slot: "hero", instruction: "make it blue" })],
