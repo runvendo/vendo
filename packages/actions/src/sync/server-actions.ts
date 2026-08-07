@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type TS from "typescript";
-import type { ExtractedTool, ServerActionBinding } from "../formats.js";
+import type { ExtractedTool, SchemaSource, ServerActionBinding } from "../formats.js";
 import {
   allocateToolName,
   serverActionToolFullName,
@@ -567,6 +567,8 @@ export async function extractServerActions(root: string): Promise<ServerActionsE
         name,
         description: `server action ${action.moduleRel}#${action.exportName} could not be classified`,
         inputSchema: { type: "object", properties: {} },
+        inputSchemaSource: "unknown" satisfies SchemaSource,
+        outputSchemaSource: "unknown" satisfies SchemaSource,
         // D2 — nothing spoke, so nothing is graded. `disabled` keeps it out of the
         // agent's hands; `ungraded` keeps it counted in doctor's tally and asking
         // rather than running if a human ever re-enables it.
@@ -587,6 +589,10 @@ export async function extractServerActions(root: string): Promise<ServerActionsE
       name,
       description: `server action ${action.moduleRel}#${action.exportName}`,
       inputSchema,
+      // `typeNodeSchema` read the parameter annotations; a partially
+      // interpreted one still carries its existing note.
+      inputSchemaSource: "types" satisfies SchemaSource,
+      outputSchemaSource: "unknown" satisfies SchemaSource,
       // A server action is a POST-shaped RPC endpoint, not a declared
       // mutation: nothing about the protocol says whether it reads or writes.
       risk: "ungraded",
