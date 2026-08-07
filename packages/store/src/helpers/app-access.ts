@@ -182,8 +182,17 @@ export function appAccess(store: VendoStore): AppAccess {
           + " — move it into a team first (sharing offers to), or fork a copy for them",
         );
       }
+      // ONE row per (app, principal), enforced HERE rather than by the local
+      // engine's `ON CONFLICT (app_id, principal)` — a constraint no hosted or
+      // BYO records adapter has, and `records.put` is keyed by id alone. A
+      // second row for one principal is an unrevokable grant: `levelFor` folds
+      // every match with `strongerLevel`, so a downgrade does nothing, and
+      // `revoke` would have to find them all. Reusing the existing row's id
+      // (rather than deriving one) keeps every grant already written on an
+      // engine that minted a random id revokable and updatable in place.
+      const existing = (await grantsFor(appId)).find((row) => row.principal === principal);
       await grants.put({
-        id: `ag_${globalThis.crypto.randomUUID()}`,
+        id: existing?.id ?? `ag_${globalThis.crypto.randomUUID()}`,
         data: { appId, orgId, principal, level, createdBy: ctx.principal.subject },
         // The door writes the refs it queries by. The local engine derives them
         // from the row's own columns, but an adapter that stores records
@@ -197,8 +206,11 @@ export function appAccess(store: VendoStore): AppAccess {
 
     async revoke(ctx, appId, principal) {
       await require(ctx, appId, "owner");
-      const existing = (await grantsFor(appId)).find((row) => row.principal === principal);
-      if (existing !== undefined) await grants.delete(existing.id);
+      // EVERY matching row, not the first: an adapter that accreted duplicates
+      // before `grant` reused ids would otherwise keep the person granted, and
+      // a revoke that leaves access standing is the worst possible outcome here.
+      const matching = (await grantsFor(appId)).filter((row) => row.principal === principal);
+      for (const row of matching) await grants.delete(row.id);
     },
 
     async list(ctx, appId) {
