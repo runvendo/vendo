@@ -310,6 +310,46 @@ jobs:
       - name: Turbo remote cache (GitHub-cache backed)
         uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
       - run: pnpm install --frozen-lockfile
+      # Four suites CI never executed. Each has a `test` script and no
+      # `test:coverage`, so test-rest's turbo run passes over them and no step
+      # named them — they ran only in release.yml's unfiltered `pnpm test`,
+      # which is the worst possible place to first learn a suite is red. That is
+      # not hypothetical: the Express host's doctor e2e went red on main when
+      # #989 tightened the /doctor/* mounting gate and stayed red for hours,
+      # invisible to every PR, until a release dry run tripped over it (#1046).
+      #
+      # UNGUARDED by the skip probe below, and deliberately still without a
+      # `test:coverage` script, because both of those decide on turbo's
+      # dependency graph and these suites' real inputs are not in it: they read
+      # examples/ and corpus/ trees off disk and drive the CLI at the repo root.
+      # A probe would therefore skip exactly the PR that fixes one of them.
+      #
+      # They are invoked per package rather than through `turbo run test`, which
+      # would also run each example's own `build` — a full `next build` nobody
+      # needs, since these suites import the example's `src/` directly and need
+      # only their workspace deps built. That is what the `^...` step below
+      # builds (14 tasks, replayed from the remote cache that typecheck-lint's
+      # `pnpm build` fills). Sequential steps, not one parallel turbo run, for
+      # the same reason as the redteam/automations steps further down. All four
+      # are hermetic — scripted models, temp PGlite stores, no network, no keys;
+      # ai-sdk-agent's two live journeys self-skip without a key.
+      - name: Build the orphan suites' workspace deps (no example builds)
+        run: pnpm turbo run build --filter=@vendoai/bench^... --filter=@vendoai-corpus/express-host^... --filter=@vendoai-examples/ai-sdk-agent^... --filter=@vendoai-examples/mastra-agent^...
+      # Perf-budget arithmetic: stats, report, budgets, and the create-total
+      # guard. Pure functions — no bench actually runs here.
+      - run: pnpm --filter @vendoai/bench test
+      # The Express corpus host: six e2e that boot the real relay on loopback
+      # over real HTTP (status, chat-tool, approvals, generated view, the fetch
+      # adapter, and `vendo doctor` against the running wire).
+      - run: pnpm --filter @vendoai-corpus/express-host test
+      # The AI SDK example's four-touch diff: guarded action, generated UI,
+      # approvals. The two cloud-posture journeys gate on a live key and skip.
+      - run: pnpm --filter @vendoai-examples/ai-sdk-agent test
+      # The Mastra example's SEAM suite — a real Mastra Agent turn parking a
+      # risky tool call, approving it over the wire, and executing the real
+      # handler, against the example's own composeVendo and checked-in
+      # .vendo/tools.json. Added by #1001 and never once run in CI until now.
+      - run: pnpm --filter @vendoai-examples/mastra-agent test
       # Same skip contract as test-shards: `--affected` marks a package when it
       # or ANY of its workspace deps changed (verified: a one-line core edit
       # marks every fixture and demo below), so a skip here can never hide a
