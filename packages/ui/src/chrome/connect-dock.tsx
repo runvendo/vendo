@@ -212,8 +212,15 @@ export function ConnectTray({ onClose, anchorRef, closing = false }: {
   const trayRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const cancelledRef = useRef(false);
-  useEffect(() => () => {
-    cancelledRef.current = true;
+  useEffect(() => {
+    // The latch persists across effects; reset it for StrictMode remounts, or
+    // the first cleanup latches it for the rest of the tray's life and every
+    // connect exits its poll on the first check — silently, since a cancelled
+    // flow throws nothing. Same reset ConnectCard does.
+    cancelledRef.current = false;
+    return () => {
+      cancelledRef.current = true;
+    };
   }, []);
 
   // --fl-tray-max: the room actually above the bar within this surface, so the
