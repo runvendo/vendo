@@ -408,23 +408,7 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
   const storedFile = await readJudgmentsFile(judgmentsPath);
   const stored: Record<string, ToolJudgment> = storedFile?.tools ?? {};
 
-  // ------------------------------------------------------------------
-  // Candidates. The whole set in full mode; in incremental mode a tool is a
-  // candidate when it has never been judged, when its judgment describes a
-  // handler that MOVED (binding mismatch — the entry is inert), or when its
-  // source hash drifted out from under a standing judgment.
-  // ------------------------------------------------------------------
-  const byName = new Map<string, Candidate>();
-  for (const tool of tools) {
-    const entry = stored[tool.name];
-    const valid = entry !== undefined && entry.binding === bindingIdentity(tool.binding) ? entry : undefined;
-    byName.set(tool.name, { tool, effective: applyJudgment(tool, valid), existing: valid });
-  }
-  const candidates = [...byName.values()]
-    .filter((candidate) => options.mode === "full"
-      || candidate.existing === undefined
-      || candidate.existing.srcHash !== candidate.tool.srcHash)
-    .sort((left, right) => bindingIdentity(left.tool.binding).localeCompare(bindingIdentity(right.tool.binding)));
+  const { byName, candidates } = selectCandidates(tools, stored, options.mode);
 
   // The up-to-date check is purely LOCAL and runs BEFORE engine resolution: a
   // fully judged, unchanged catalog says so whether or not a model key is
@@ -462,6 +446,110 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
     credential = resolved.engine.credential;
   }
 
+  const { overrideNames, appName } = await readPromptContext(options);
+
+  const artifactDir = join(options.out, "data", "judge");
+  await rm(artifactDir, { recursive: true, force: true });
+  const notes: string[] = [];
+  const stages = createStageRunner({ harness, artifactDir, options });
+
+  const judged = await runJudgeStage({ candidates, byName, appName, overrideNames, notes, stages, options });
+
+  if (judged.chunksParsed === 0) {
+    output.error(
+      `warning: judgment output unparseable — skipped, the structural catalog stands (${sanitize(notes[0] ?? "no usable batch")})`,
+    );
+    return { status: "skipped" };
+  }
+
+  const verdicts = await runSkepticStage({ proposals: judged.proposals, appName, notes, stages, options });
+
+  const routed = routeProposals(judged.proposals, verdicts, stored);
+
+  // Drop entries that no longer describe anything BEFORE the review, so a human
+  // is never asked about a loosening on a tool that vanished.
+  const pruned = pruneJudgments({ format: VENDO_JUDGMENTS_FORMAT, tools: routed.next }, tools);
+
+  // ------------------------------------------------------------------
+  // Loosenings: one aggregated decision, or the queue.
+  // ------------------------------------------------------------------
+  const { approved, queued, declined } = options.loosenings === "review"
+    ? await reviewPendingLoosenings(pruned, byName, options)
+    : { approved: 0, declined: 0, queued: countPending(pruned) };
+
+  // ------------------------------------------------------------------
+  // Write. Stable key order, no-churn bytes, and validated against the strict
+  // schema — a malformed write is a bug here and must never land on disk.
+  // ------------------------------------------------------------------
+  const sortedTools: Record<string, ToolJudgment> = {};
+  for (const name of Object.keys(pruned.tools).sort()) sortedTools[name] = pruned.tools[name]!;
+  const file = judgmentsFileSchema.parse({ format: VENDO_JUDGMENTS_FORMAT, tools: sortedTools });
+  // Don't create an empty file where none existed: a pass that found nothing to
+  // record leaves the directory as it was.
+  if (storedFile !== null || Object.keys(sortedTools).length > 0) {
+    await writeIfChanged(judgmentsPath, `${JSON.stringify(file, null, 2)}\n`);
+  }
+
+  // Schemas land in tools.json, NOT in judgments.json: the descriptor's schema
+  // is the machine layer, and `patchToolSchemas` refuses any slot the
+  // deterministic extractors already filled.
+  const patched = await patchToolSchemas(join(options.out, "tools.json"), routed.schemaPatches);
+
+  reportNarrative({
+    output,
+    credential,
+    judged,
+    routed,
+    patched,
+    loosenings: { approved, declined, queued },
+    repairedStages: stages.repairedStages,
+    notes,
+  });
+
+  return {
+    status: "judged",
+    judged: routed.judgedNames.length,
+    hardened: routed.hardenedFields.length,
+    queued,
+    approved,
+    rejectedBySkeptic: routed.rejectedBySkeptic.length,
+    unexaminedRejected: routed.unexaminedRejected.length,
+    evidenceless: judged.evidenceless.length,
+    advisoriesClamped: judged.advisoriesClamped,
+    inconsistentRisk: judged.inconsistentRisk.length,
+    schemasInferred: patched.written.length,
+    schemasRejected: judged.schemasRefused.length + routed.schemasVetoed + patched.skipped.length,
+  };
+}
+
+/** Candidates. The whole set in full mode; in incremental mode a tool is a
+ *  candidate when it has never been judged, when its judgment describes a
+ *  handler that MOVED (binding mismatch — the entry is inert), or when its
+ *  source hash drifted out from under a standing judgment. */
+function selectCandidates(
+  tools: ExtractedTool[],
+  stored: Record<string, ToolJudgment>,
+  mode: JudgmentPassOptions["mode"],
+): { byName: Map<string, Candidate>; candidates: Candidate[] } {
+  const byName = new Map<string, Candidate>();
+  for (const tool of tools) {
+    const entry = stored[tool.name];
+    const valid = entry !== undefined && entry.binding === bindingIdentity(tool.binding) ? entry : undefined;
+    byName.set(tool.name, { tool, effective: applyJudgment(tool, valid), existing: valid });
+  }
+  const candidates = [...byName.values()]
+    .filter((candidate) => mode === "full"
+      || candidate.existing === undefined
+      || candidate.existing.srcHash !== candidate.tool.srcHash)
+    .sort((left, right) => bindingIdentity(left.tool.binding).localeCompare(bindingIdentity(right.tool.binding)));
+  return { byName, candidates };
+}
+
+/** Read-only context the prompts quote: which tools a human has already
+ *  overridden, and what to call the app. */
+async function readPromptContext(
+  options: JudgmentPassOptions,
+): Promise<{ overrideNames: string[]; appName: string }> {
   const overridesRaw = await readOptional(join(options.out, "overrides.json"));
   let overrideNames: string[] = [];
   if (overridesRaw !== null) {
@@ -481,27 +569,37 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
       appName = "app";
     }
   }
+  return { overrideNames, appName };
+}
 
-  const artifactDir = join(options.out, "data", "judge");
-  await rm(artifactDir, { recursive: true, force: true });
-  const notes: string[] = [];
+const failure = (error: unknown): string => error instanceof Error ? error.message : "unknown error";
+
+interface StageRunner {
+  /** One harness call plus its artifact. A throw is recorded and rethrown so the
+   *  caller decides whether that stage is fatal. */
+  run: <Schema extends z.ZodTypeAny>(stage: string, instructions: string, schema: Schema) => Promise<z.infer<Schema>>;
   /** Stages whose output needed a syntax repair — warned about, never hidden. */
+  repairedStages: string[];
+}
+
+function createStageRunner(input: {
+  harness: ExtractionHarness;
+  artifactDir: string;
+  options: JudgmentPassOptions;
+}): StageRunner {
+  const { harness, artifactDir, options } = input;
   const repairedStages: string[] = [];
   const writeArtifact = async (stage: string, body: unknown): Promise<void> => {
     await writeIfChanged(join(artifactDir, `${stage}.json`), `${JSON.stringify(body, null, 2)}\n`);
   };
-  const failure = (error: unknown): string => error instanceof Error ? error.message : "unknown error";
-
-  /** One harness call plus its artifact. A throw is recorded and rethrown so the
-   *  caller decides whether that stage is fatal. */
-  async function runStage<Schema extends z.ZodTypeAny>(
+  const run = async <Schema extends z.ZodTypeAny>(
     stage: string,
     instructions: string,
     schema: Schema,
-  ): Promise<z.infer<Schema>> {
+  ): Promise<z.infer<Schema>> => {
     let text: string | null = null;
     try {
-      text = await harness!.run({
+      text = await harness.run({
         root: options.root,
         env: options.env,
         instructions,
@@ -523,22 +621,115 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
       await writeArtifact(stage, { stage, error: failure(error), ...(text === null ? {} : { raw: text }) });
       throw error;
     }
-  }
+  };
+  return { run, repairedStages };
+}
 
-  // ------------------------------------------------------------------
-  // JUDGE.
-  // ------------------------------------------------------------------
+/** Everything one JUDGE pass produced: the surviving proposals, and every
+ *  tally the narrative and the counts report. */
+interface JudgeStageResult {
+  proposals: Map<string, Proposal>;
+  chunksParsed: number;
+  evidenceless: string[];
+  malformed: string[];
+  unknownTools: string[];
+  inconsistentRisk: string[];
+  schemasRefused: string[];
+  missedSurfaces: string[];
+  narratives: string[];
+  advisoriesClamped: number;
+}
+
+/** One parsed proposal, ingested into `result`. Everything model-authored is
+ *  sanitized at INGEST, not just at the print site, so the value is safe
+ *  everywhere it travels. */
+function ingestProposal(raw: unknown, byName: Map<string, Candidate>, result: JudgeStageResult): void {
+  const prose = clampProse(raw);
+  result.advisoriesClamped += prose.clamped;
+  const parsed = judgeProposalSchema.safeParse(prose.value);
+  if (!parsed.success) {
+    // This name never matched a real tool, so it is pure model text with no
+    // schema behind it.
+    const name = typeof (raw as { name?: unknown } | null)?.name === "string"
+      ? sanitize((raw as { name: string }).name)
+      : "(unnamed)";
+    // Evidence is the one requirement worth counting separately: it is the
+    // difference between a finding and an opinion.
+    if (parsed.error.issues.some((issue) => issue.path[0] === "evidence")) result.evidenceless.push(name);
+    else result.malformed.push(name);
+    return;
+  }
+  const candidate = byName.get(parsed.data.name);
+  if (candidate === undefined) {
+    // Parsed, but names no tool in the catalog — so it is model text that
+    // never met a schema constraint either. Same ingest-time sanitize.
+    result.unknownTools.push(sanitize(parsed.data.name));
+    return;
+  }
+  const fields: JudgmentFields = {};
+  for (const key of JUDGMENT_FIELDS) {
+    const value = parsed.data[key];
+    if (value !== undefined) Object.assign(fields, { [key]: value });
+  }
+  // Self-consistency backstop. The model hedges upward: it emits `write`
+  // while its own reason says the handler changes no stored state (cache
+  // revalidation, a GET dispatching query procedures). Such a grade is
+  // DROPPED, not corrected in either direction — applying it would auto-apply
+  // a hardening the reason itself denies, and rewriting it to `read` would
+  // apply a loosening no human approved. Dropping leaves the tool's standing
+  // grade untouched, which is the only move that loosens nothing.
+  if (
+    (fields.risk === "write" || fields.risk === "destructive")
+    && parsed.data.reason !== undefined
+    && assertsNoMutation(parsed.data.reason)
+  ) {
+    delete fields.risk;
+    result.inconsistentRisk.push(parsed.data.name);
+  }
+  // Only a BLIND slot may be offered. The prompt says so; this is the code
+  // that means it, and `patchToolSchemas` is the third and final wall.
+  const schemas: Partial<Record<ToolSchemaSlot, JsonSchema>> = {};
+  for (const slot of SCHEMA_SLOTS) {
+    const proposed = parsed.data[slot];
+    if (proposed === undefined) continue;
+    const source = slot === "inputSchema"
+      ? candidate.tool.inputSchemaSource ?? "unknown"
+      : candidate.tool.outputSchemaSource ?? "unknown";
+    if (source === "unknown") schemas[slot] = proposed;
+    else result.schemasRefused.push(`${parsed.data.name}.${slot}`);
+  }
+  result.proposals.set(parsed.data.name, {
+    candidate,
+    fields,
+    schemas,
+    evidence: parsed.data.evidence,
+    ...(parsed.data.reason === undefined ? {} : { reason: parsed.data.reason }),
+  });
+}
+
+async function runJudgeStage(input: {
+  candidates: Candidate[];
+  byName: Map<string, Candidate>;
+  appName: string;
+  overrideNames: string[];
+  notes: string[];
+  stages: StageRunner;
+  options: JudgmentPassOptions;
+}): Promise<JudgeStageResult> {
+  const { candidates, byName, appName, overrideNames, notes, stages, options } = input;
   const chunks = chunked(candidates, JUDGE_BATCH_LIMIT);
-  const proposals = new Map<string, Proposal>();
-  const evidenceless: string[] = [];
-  const malformed: string[] = [];
-  const unknownTools: string[] = [];
-  const inconsistentRisk: string[] = [];
-  const schemasRefused: string[] = [];
-  const missedSurfaces: string[] = [];
-  const narratives: string[] = [];
-  let advisoriesClamped = 0;
-  let judgeChunksParsed = 0;
+  const result: JudgeStageResult = {
+    proposals: new Map<string, Proposal>(),
+    chunksParsed: 0,
+    evidenceless: [],
+    malformed: [],
+    unknownTools: [],
+    inconsistentRisk: [],
+    schemasRefused: [],
+    missedSurfaces: [],
+    narratives: [],
+    advisoriesClamped: 0,
+  };
 
   for (const [index, chunk] of chunks.entries()) {
     options.onProgress?.(chunks.length > 1
@@ -546,7 +737,7 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
       : `judging ${chunk.length} tools`);
     let artifact: z.infer<typeof judgeResultSchema>;
     try {
-      artifact = await runStage(
+      artifact = await stages.run(
         `judge-${index + 1}`,
         composeJudgeInstructions({
           appName,
@@ -561,89 +752,23 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
       notes.push(`judge batch ${index + 1}/${chunks.length} unusable (${failure(error)}) — its tools stay unjudged`);
       continue;
     }
-    judgeChunksParsed += 1;
+    result.chunksParsed += 1;
     const advisories = normalizeAdvisories(artifact);
-    advisoriesClamped += advisories.clamped;
-    if (advisories.narrative !== "") narratives.push(advisories.narrative);
-    missedSurfaces.push(...advisories.surfaces);
+    result.advisoriesClamped += advisories.clamped;
+    if (advisories.narrative !== "") result.narratives.push(advisories.narrative);
+    result.missedSurfaces.push(...advisories.surfaces);
 
-    for (const raw of artifact.tools) {
-      const prose = clampProse(raw);
-      advisoriesClamped += prose.clamped;
-      const parsed = judgeProposalSchema.safeParse(prose.value);
-      if (!parsed.success) {
-        // Sanitized at INGEST, not just at the print site, so the value is safe
-        // everywhere it travels — this name never matched a real tool, so it is
-        // pure model text with no schema behind it.
-        const name = typeof (raw as { name?: unknown } | null)?.name === "string"
-          ? sanitize((raw as { name: string }).name)
-          : "(unnamed)";
-        // Evidence is the one requirement worth counting separately: it is the
-        // difference between a finding and an opinion.
-        if (parsed.error.issues.some((issue) => issue.path[0] === "evidence")) evidenceless.push(name);
-        else malformed.push(name);
-        continue;
-      }
-      const candidate = byName.get(parsed.data.name);
-      if (candidate === undefined) {
-        // Parsed, but names no tool in the catalog — so it is model text that
-        // never met a schema constraint either. Same ingest-time sanitize.
-        unknownTools.push(sanitize(parsed.data.name));
-        continue;
-      }
-      const fields: JudgmentFields = {};
-      for (const key of JUDGMENT_FIELDS) {
-        const value = parsed.data[key];
-        if (value !== undefined) Object.assign(fields, { [key]: value });
-      }
-      // Self-consistency backstop. The model hedges upward: it emits `write`
-      // while its own reason says the handler changes no stored state (cache
-      // revalidation, a GET dispatching query procedures). Such a grade is
-      // DROPPED, not corrected in either direction — applying it would auto-apply
-      // a hardening the reason itself denies, and rewriting it to `read` would
-      // apply a loosening no human approved. Dropping leaves the tool's standing
-      // grade untouched, which is the only move that loosens nothing.
-      if (
-        (fields.risk === "write" || fields.risk === "destructive")
-        && parsed.data.reason !== undefined
-        && assertsNoMutation(parsed.data.reason)
-      ) {
-        delete fields.risk;
-        inconsistentRisk.push(parsed.data.name);
-      }
-      // Only a BLIND slot may be offered. The prompt says so; this is the code
-      // that means it, and `patchToolSchemas` is the third and final wall.
-      const schemas: Partial<Record<ToolSchemaSlot, JsonSchema>> = {};
-      for (const slot of SCHEMA_SLOTS) {
-        const proposed = parsed.data[slot];
-        if (proposed === undefined) continue;
-        const source = slot === "inputSchema"
-          ? candidate.tool.inputSchemaSource ?? "unknown"
-          : candidate.tool.outputSchemaSource ?? "unknown";
-        if (source === "unknown") schemas[slot] = proposed;
-        else schemasRefused.push(`${parsed.data.name}.${slot}`);
-      }
-      proposals.set(parsed.data.name, {
-        candidate,
-        fields,
-        schemas,
-        evidence: parsed.data.evidence,
-        ...(parsed.data.reason === undefined ? {} : { reason: parsed.data.reason }),
-      });
-    }
+    for (const raw of artifact.tools) ingestProposal(raw, byName, result);
   }
+  return result;
+}
 
-  if (judgeChunksParsed === 0) {
-    output.error(
-      `warning: judgment output unparseable — skipped, the structural catalog stands (${sanitize(notes[0] ?? "no usable batch")})`,
-    );
-    return { status: "skipped" };
-  }
+type Verdicts = Map<string, { verdict: "uphold" | "reject"; reason?: string }>;
 
-  // ------------------------------------------------------------------
-  // SKEPTIC — a second, independent run per chunk. `harness.run` is stateless,
-  // so each call is a fresh conversation on the same engine.
-  // ------------------------------------------------------------------
+/** The moves one proposal asks the skeptic to check. A proposal with no fields
+ *  is a bare CONFIRMATION ("I read this, nothing to change"): there is nothing
+ *  to uphold, so it does not cost a skeptic call and yields no subject. */
+function skepticSubjects(proposals: Map<string, Proposal>): SkepticSubject[] {
   const subjects: SkepticSubject[] = [];
   for (const proposal of proposals.values()) {
     const moves: SkepticSubject["moves"] = Object.entries(proposal.fields).map(([field, to]) => ({
@@ -656,8 +781,6 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
     for (const [slot, schema] of Object.entries(proposal.schemas)) {
       moves.push({ field: slot, from: "unknown", to: schema });
     }
-    // A proposal with no fields is a bare CONFIRMATION ("I read this, nothing to
-    // change"). There is nothing to uphold, so it does not cost a skeptic call.
     if (moves.length === 0) continue;
     subjects.push({
       tool: proposal.candidate.effective,
@@ -666,8 +789,21 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
       ...(proposal.reason === undefined ? {} : { reason: proposal.reason }),
     });
   }
+  return subjects;
+}
 
-  const verdicts = new Map<string, { verdict: "uphold" | "reject"; reason?: string }>();
+/** SKEPTIC — a second, independent run per chunk. `harness.run` is stateless,
+ *  so each call is a fresh conversation on the same engine. */
+async function runSkepticStage(input: {
+  proposals: Map<string, Proposal>;
+  appName: string;
+  notes: string[];
+  stages: StageRunner;
+  options: JudgmentPassOptions;
+}): Promise<Verdicts> {
+  const { proposals, appName, notes, stages, options } = input;
+  const subjects = skepticSubjects(proposals);
+  const verdicts: Verdicts = new Map();
   const collectVerdicts = (artifact: z.infer<typeof skepticResultSchema>): void => {
     for (const raw of artifact.verdicts) {
       const parsed = skepticVerdictSchema.safeParse(raw);
@@ -682,7 +818,7 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
   for (const [index, chunk] of chunked(subjects, JUDGE_BATCH_LIMIT).entries()) {
     options.onProgress?.(`checking ${chunk.length} proposals against the source`);
     try {
-      collectVerdicts(await runStage(
+      collectVerdicts(await stages.run(
         `skeptic-${index + 1}`,
         composeSkepticInstructions({ appName, subjects: chunk }),
         skepticResultSchema,
@@ -704,7 +840,7 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
   if (unexaminedSubjects.length > 0) {
     options.onProgress?.("re-asking the skeptic about unexamined fields");
     try {
-      collectVerdicts(await runStage(
+      collectVerdicts(await stages.run(
         "skeptic-reask",
         composeSkepticInstructions({ appName, subjects: unexaminedSubjects, reask: true }),
         skepticResultSchema,
@@ -713,182 +849,194 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
       notes.push(`skeptic re-ask unusable (${failure(error)}) — the unexamined fields are rejected`);
     }
   }
+  return verdicts;
+}
 
-  // ------------------------------------------------------------------
-  // Routing.
-  // ------------------------------------------------------------------
-  const next: Record<string, ToolJudgment> = { ...stored };
-  const rejectedBySkeptic: string[] = [];
-  const unexaminedRejected: string[] = [];
-  const hardenedFields: string[] = [];
-  const discredited: string[] = [];
-  const judgedNames: string[] = [];
-  const schemaPatches: ToolSchemaPatch[] = [];
+/** What routing wrote, and every tally the narrative reports about it. */
+interface RoutingResult {
+  next: Record<string, ToolJudgment>;
+  rejectedBySkeptic: string[];
+  unexaminedRejected: string[];
+  hardenedFields: string[];
+  discredited: string[];
+  judgedNames: string[];
+  schemaPatches: ToolSchemaPatch[];
   /** Slots the skeptic vetoed or never examined — counted with the refusals. */
-  let schemasVetoed = 0;
+  schemasVetoed: number;
+}
 
-  for (const proposal of proposals.values()) {
-    const { candidate } = proposal;
-    const name = candidate.tool.name;
-    // An omitted verdict is a rejection: the skeptic answers every (name, field)
-    // pair it was given, so silence is not assent.
-    const upheldBySkeptic = (field: string): boolean => {
-      const verdict = verdicts.get(verdictKey(name, field));
-      if (verdict === undefined) {
-        unexaminedRejected.push(`${name}.${field}`);
-        return false;
-      }
-      if (verdict.verdict === "reject") {
-        rejectedBySkeptic.push(
-          `${name}.${field}${verdict.reason === undefined ? "" : ` — ${sanitize(verdict.reason)}`}`,
-        );
-        return false;
-      }
-      return true;
-    };
-
-    const upheld: JudgmentFields = {};
-    for (const [field, value] of Object.entries(proposal.fields)) {
-      if (upheldBySkeptic(field)) Object.assign(upheld, { [field]: value });
+/** Route ONE proposal's surviving fields and schemas into `result`. */
+function routeProposal(proposal: Proposal, verdicts: Verdicts, result: RoutingResult): void {
+  const { candidate } = proposal;
+  const name = candidate.tool.name;
+  // An omitted verdict is a rejection: the skeptic answers every (name, field)
+  // pair it was given, so silence is not assent.
+  const upheldBySkeptic = (field: string): boolean => {
+    const verdict = verdicts.get(verdictKey(name, field));
+    if (verdict === undefined) {
+      result.unexaminedRejected.push(`${name}.${field}`);
+      return false;
     }
-
-    let upheldSchemas = 0;
-    for (const [slot, schema] of Object.entries(proposal.schemas) as Array<[ToolSchemaSlot, JsonSchema]>) {
-      if (upheldBySkeptic(slot)) {
-        schemaPatches.push({ tool: name, binding: bindingIdentity(candidate.tool.binding), slot, schema });
-        upheldSchemas += 1;
-      } else {
-        schemasVetoed += 1;
-      }
+    if (verdict.verdict === "reject") {
+      result.rejectedBySkeptic.push(
+        `${name}.${field}${verdict.reason === undefined ? "" : ` — ${sanitize(verdict.reason)}`}`,
+      );
+      return false;
     }
+    return true;
+  };
 
-    // A proposal that survived NOTHING — and the quote it rests on — did not
-    // survive review. Writing an entry from it would record evidence the
-    // skeptic just called fabricated, and its srcHash would stop the tool ever
-    // being re-asked, so nothing is written and it stays a candidate for the
-    // next run. The test is what SURVIVED, never what was offered: a proposal
-    // whose only surviving contribution is a schema patch is kept (the patch is
-    // applied below and the entry records the srcHash), while one whose fields
-    // and schemas were all vetoed is discredited like any other. A proposal
-    // that offered nothing at all is a bare CONFIRMATION and is kept.
-    const proposedCount = Object.keys(proposal.fields).length + Object.keys(proposal.schemas).length;
-    if (proposedCount > 0 && Object.keys(upheld).length === 0 && upheldSchemas === 0) {
-      discredited.push(name);
-      continue;
-    }
-
-    const wire: JudgmentProposal = {
-      ...upheld,
-      evidence: proposal.evidence,
-      ...(proposal.reason === undefined ? {} : { reason: proposal.reason }),
-    };
-    const { hardenings, loosenings } = splitProposal(candidate.effective, wire);
-
-    const base = candidate.existing;
-    const fields: JudgmentFields = { ...(base?.fields ?? {}), ...hardenings };
-    // Semantics merge PER KEY: a judgment corrects individual response fields,
-    // it never wipes what a previous pass established.
-    if (hardenings.semantics !== undefined) {
-      fields.semantics = { ...(base?.fields.semantics ?? {}), ...hardenings.semantics };
-    }
-    for (const field of Object.keys(hardenings)) hardenedFields.push(`${name}.${field}`);
-
-    next[name] = {
-      binding: bindingIdentity(candidate.tool.binding),
-      ...(candidate.tool.srcHash === undefined ? {} : { srcHash: candidate.tool.srcHash }),
-      fields,
-      evidence: proposal.evidence,
-      ...(((base?.pending ?? []).length + loosenings.length) > 0
-        ? { pending: [...(base?.pending ?? []), ...loosenings] }
-        : {}),
-    };
-    judgedNames.push(name);
+  const upheld: JudgmentFields = {};
+  for (const [field, value] of Object.entries(proposal.fields)) {
+    if (upheldBySkeptic(field)) Object.assign(upheld, { [field]: value });
   }
 
-  // Drop entries that no longer describe anything BEFORE the review, so a human
-  // is never asked about a loosening on a tool that vanished.
-  const pruned = pruneJudgments({ format: VENDO_JUDGMENTS_FORMAT, tools: next }, tools);
+  let upheldSchemas = 0;
+  for (const [slot, schema] of Object.entries(proposal.schemas) as Array<[ToolSchemaSlot, JsonSchema]>) {
+    if (upheldBySkeptic(slot)) {
+      result.schemaPatches.push({ tool: name, binding: bindingIdentity(candidate.tool.binding), slot, schema });
+      upheldSchemas += 1;
+    } else {
+      result.schemasVetoed += 1;
+    }
+  }
 
-  // ------------------------------------------------------------------
-  // Loosenings: one aggregated decision, or the queue.
-  // ------------------------------------------------------------------
+  // A proposal that survived NOTHING — and the quote it rests on — did not
+  // survive review. Writing an entry from it would record evidence the
+  // skeptic just called fabricated, and its srcHash would stop the tool ever
+  // being re-asked, so nothing is written and it stays a candidate for the
+  // next run. The test is what SURVIVED, never what was offered: a proposal
+  // whose only surviving contribution is a schema patch is kept (the patch is
+  // applied below and the entry records the srcHash), while one whose fields
+  // and schemas were all vetoed is discredited like any other. A proposal
+  // that offered nothing at all is a bare CONFIRMATION and is kept.
+  const proposedCount = Object.keys(proposal.fields).length + Object.keys(proposal.schemas).length;
+  if (proposedCount > 0 && Object.keys(upheld).length === 0 && upheldSchemas === 0) {
+    result.discredited.push(name);
+    return;
+  }
+
+  const wire: JudgmentProposal = {
+    ...upheld,
+    evidence: proposal.evidence,
+    ...(proposal.reason === undefined ? {} : { reason: proposal.reason }),
+  };
+  const { hardenings, loosenings } = splitProposal(candidate.effective, wire);
+
+  const base = candidate.existing;
+  const fields: JudgmentFields = { ...(base?.fields ?? {}), ...hardenings };
+  // Semantics merge PER KEY: a judgment corrects individual response fields,
+  // it never wipes what a previous pass established.
+  if (hardenings.semantics !== undefined) {
+    fields.semantics = { ...(base?.fields.semantics ?? {}), ...hardenings.semantics };
+  }
+  for (const field of Object.keys(hardenings)) result.hardenedFields.push(`${name}.${field}`);
+
+  result.next[name] = {
+    binding: bindingIdentity(candidate.tool.binding),
+    ...(candidate.tool.srcHash === undefined ? {} : { srcHash: candidate.tool.srcHash }),
+    fields,
+    evidence: proposal.evidence,
+    ...(((base?.pending ?? []).length + loosenings.length) > 0
+      ? { pending: [...(base?.pending ?? []), ...loosenings] }
+      : {}),
+  };
+  result.judgedNames.push(name);
+}
+
+function routeProposals(
+  proposals: Map<string, Proposal>,
+  verdicts: Verdicts,
+  stored: Record<string, ToolJudgment>,
+): RoutingResult {
+  const result: RoutingResult = {
+    next: { ...stored },
+    rejectedBySkeptic: [],
+    unexaminedRejected: [],
+    hardenedFields: [],
+    discredited: [],
+    judgedNames: [],
+    schemaPatches: [],
+    schemasVetoed: 0,
+  };
+  for (const proposal of proposals.values()) routeProposal(proposal, verdicts, result);
+  return result;
+}
+
+const countPending = (pruned: JudgmentsFile): number =>
+  Object.values(pruned.tools).reduce((total, entry) => total + (entry.pending ?? []).length, 0);
+
+/** Loosenings: one aggregated decision. Mutates `pruned` in place — either way
+ *  the queue is emptied, so the same question is not asked forever. */
+async function reviewPendingLoosenings(
+  pruned: JudgmentsFile,
+  byName: Map<string, Candidate>,
+  options: JudgmentPassOptions,
+): Promise<{ approved: number; queued: number; declined: number }> {
   let approved = 0;
-  let queued = 0;
   let declined = 0;
-  if (options.loosenings === "review") {
-    const items: LooseningReviewItem[] = [];
-    for (const [name, entry] of Object.entries(pruned.tools)) {
-      const tool = byName.get(name)?.tool;
-      if (tool === undefined || (entry.pending ?? []).length === 0) continue;
-      // The "from" side is the state AFTER this run's hardenings landed —
-      // otherwise the diff shows a value the loosening no longer moves from.
-      const { pending: _queued, ...applied } = entry;
-      const effective = applyJudgment(tool, applied);
-      for (const pending of entry.pending ?? []) {
-        items.push({
-          name,
-          field: pending.field,
-          from: effectiveValue(effective, pending.field),
-          to: pending.value,
-          evidence: pending.evidence,
-          ...(pending.reason === undefined ? {} : { reason: pending.reason }),
-        });
-      }
+  const items: LooseningReviewItem[] = [];
+  for (const [name, entry] of Object.entries(pruned.tools)) {
+    const tool = byName.get(name)?.tool;
+    if (tool === undefined || (entry.pending ?? []).length === 0) continue;
+    // The "from" side is the state AFTER this run's hardenings landed —
+    // otherwise the diff shows a value the loosening no longer moves from.
+    const { pending: _queued, ...applied } = entry;
+    const effective = applyJudgment(tool, applied);
+    for (const pending of entry.pending ?? []) {
+      items.push({
+        name,
+        field: pending.field,
+        from: effectiveValue(effective, pending.field),
+        to: pending.value,
+        evidence: pending.evidence,
+        ...(pending.reason === undefined ? {} : { reason: pending.reason }),
+      });
     }
-    const verdict = items.length === 0 ? "approved" : await reviewLoosenings(items, {
-      note: (line) => output.log(line),
-      confirm: options.confirm ?? (async () => false),
-    });
-    for (const [name, entry] of Object.entries(pruned.tools)) {
-      const pending = entry.pending ?? [];
-      if (pending.length === 0) continue;
-      const fields: JudgmentFields = { ...entry.fields };
-      if (verdict === "approved") {
-        for (const item of pending) if (promote(fields, item)) approved += 1;
-      } else {
-        declined += pending.length;
-      }
-      // Either way the queue is emptied: an approved loosening moved into
-      // `fields`, and a declined one is DROPPED rather than silently re-queued
-      // so the same question is not asked forever.
-      const { pending: _dropped, ...rest } = entry;
-      pruned.tools[name] = { ...rest, fields };
+  }
+  const verdict = items.length === 0 ? "approved" : await reviewLoosenings(items, {
+    note: (line) => options.output.log(line),
+    confirm: options.confirm ?? (async () => false),
+  });
+  for (const [name, entry] of Object.entries(pruned.tools)) {
+    const pending = entry.pending ?? [];
+    if (pending.length === 0) continue;
+    const fields: JudgmentFields = { ...entry.fields };
+    if (verdict === "approved") {
+      for (const item of pending) if (promote(fields, item)) approved += 1;
+    } else {
+      declined += pending.length;
     }
-  } else {
-    for (const entry of Object.values(pruned.tools)) queued += (entry.pending ?? []).length;
+    // Either way the queue is emptied: an approved loosening moved into
+    // `fields`, and a declined one is DROPPED rather than silently re-queued
+    // so the same question is not asked forever.
+    const { pending: _dropped, ...rest } = entry;
+    pruned.tools[name] = { ...rest, fields };
   }
+  return { approved, queued: 0, declined };
+}
 
-  // ------------------------------------------------------------------
-  // Write. Stable key order, no-churn bytes, and validated against the strict
-  // schema — a malformed write is a bug here and must never land on disk.
-  // ------------------------------------------------------------------
-  const sortedTools: Record<string, ToolJudgment> = {};
-  for (const name of Object.keys(pruned.tools).sort()) sortedTools[name] = pruned.tools[name]!;
-  const file = judgmentsFileSchema.parse({ format: VENDO_JUDGMENTS_FORMAT, tools: sortedTools });
-  // Don't create an empty file where none existed: a pass that found nothing to
-  // record leaves the directory as it was.
-  if (storedFile !== null || Object.keys(sortedTools).length > 0) {
-    await writeIfChanged(judgmentsPath, `${JSON.stringify(file, null, 2)}\n`);
-  }
-
-  // Schemas land in tools.json, NOT in judgments.json: the descriptor's schema
-  // is the machine layer, and `patchToolSchemas` refuses any slot the
-  // deterministic extractors already filled.
-  const patched = await patchToolSchemas(join(options.out, "tools.json"), schemaPatches);
-  const schemasRejectedCount = schemasRefused.length + schemasVetoed + patched.skipped.length;
-
-  // ------------------------------------------------------------------
-  // Narrative.
-  // ------------------------------------------------------------------
-  output.log(`judgment (${sanitize(credential)}): ${judgedNames.length} tools judged`);
-  if (hardenedFields.length > 0) output.log(`  hardened (${hardenedFields.length}): ${listed(hardenedFields)}`);
+function reportNarrative(input: {
+  output: Output;
+  credential: string;
+  judged: JudgeStageResult;
+  routed: RoutingResult;
+  patched: Awaited<ReturnType<typeof patchToolSchemas>>;
+  loosenings: { approved: number; declined: number; queued: number };
+  repairedStages: string[];
+  notes: string[];
+}): void {
+  const { output, credential, judged, routed, patched, repairedStages, notes } = input;
+  const { approved, declined, queued } = input.loosenings;
+  output.log(`judgment (${sanitize(credential)}): ${routed.judgedNames.length} tools judged`);
+  if (routed.hardenedFields.length > 0) output.log(`  hardened (${routed.hardenedFields.length}): ${listed(routed.hardenedFields)}`);
   if (patched.written.length > 0) {
     output.log(`  schemas inferred (${patched.written.length}): ${listed(patched.written.map((entry) => `${entry.tool}.${entry.slot}`))}`);
   }
   // Skeptic vetoes count as rejections but are printed by the skeptic's own
   // line — this one names the slots refused for being occupied or rebound.
   const schemasRefusedList = [
-    ...schemasRefused,
+    ...judged.schemasRefused,
     ...patched.skipped.map((entry) => `${entry.tool}.${entry.slot} (${entry.reason})`),
   ];
   if (schemasRefusedList.length > 0) {
@@ -899,33 +1047,33 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
   if (queued > 0) {
     output.log(`  ${queued} loosenings queued — review with \`vendo sync --review\``);
   }
-  if (rejectedBySkeptic.length > 0) {
-    output.log(`  rejected by the skeptic (${rejectedBySkeptic.length}): ${listed(rejectedBySkeptic, 6)}`);
+  if (routed.rejectedBySkeptic.length > 0) {
+    output.log(`  rejected by the skeptic (${routed.rejectedBySkeptic.length}): ${listed(routed.rejectedBySkeptic, 6)}`);
   }
-  if (unexaminedRejected.length > 0) {
+  if (routed.unexaminedRejected.length > 0) {
     output.log(
-      `  unexamined after one re-ask, rejected (${unexaminedRejected.length}): ${listed(unexaminedRejected, 6)}`,
+      `  unexamined after one re-ask, rejected (${routed.unexaminedRejected.length}): ${listed(routed.unexaminedRejected, 6)}`,
     );
   }
-  if (evidenceless.length > 0) {
-    output.log(`  no evidence → rejected (${evidenceless.length}): ${listed(evidenceless)}`);
+  if (judged.evidenceless.length > 0) {
+    output.log(`  no evidence → rejected (${judged.evidenceless.length}): ${listed(judged.evidenceless)}`);
   }
-  if (malformed.length > 0) output.log(`  malformed proposals ignored (${malformed.length}): ${listed(malformed)}`);
-  if (inconsistentRisk.length > 0) {
+  if (judged.malformed.length > 0) output.log(`  malformed proposals ignored (${judged.malformed.length}): ${listed(judged.malformed)}`);
+  if (judged.inconsistentRisk.length > 0) {
     output.log(
-      `  risk grade contradicted its own reason, dropped (${inconsistentRisk.length}):`
-      + ` ${listed(inconsistentRisk)}`,
+      `  risk grade contradicted its own reason, dropped (${judged.inconsistentRisk.length}):`
+      + ` ${listed(judged.inconsistentRisk)}`,
     );
   }
-  if (discredited.length > 0) {
-    output.log(`  wholly rejected, left unjudged (${discredited.length}): ${listed(discredited)}`);
+  if (routed.discredited.length > 0) {
+    output.log(`  wholly rejected, left unjudged (${routed.discredited.length}): ${listed(routed.discredited)}`);
   }
-  if (unknownTools.length > 0) {
-    output.log(`  proposals for unknown tools ignored (${unknownTools.length}): ${listed(unknownTools)}`);
+  if (judged.unknownTools.length > 0) {
+    output.log(`  proposals for unknown tools ignored (${judged.unknownTools.length}): ${listed(judged.unknownTools)}`);
   }
-  if (advisoriesClamped > 0) {
+  if (judged.advisoriesClamped > 0) {
     output.error(
-      `warning: ${advisoriesClamped} advisory string${advisoriesClamped === 1 ? "" : "s"} clamped`
+      `warning: ${judged.advisoriesClamped} advisory string${judged.advisoriesClamped === 1 ? "" : "s"} clamped`
       + " (over-long or unusable) — tool judgments were unaffected",
     );
   }
@@ -936,29 +1084,14 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
     );
   }
   for (const note of notes) output.error(`warning: ${sanitize(note)}`);
-  for (const narrative of narratives) {
+  for (const narrative of judged.narratives) {
     for (const line of narrative.split("\n")) output.log(`  ${sanitize(line)}`);
   }
   // Coverage leads are WARNINGS, never tools: naming a surface is a lead, and
   // adding a tool is the deterministic scanner's job.
-  for (const missed of missedSurfaces) {
+  for (const missed of judged.missedSurfaces) {
     output.error(`warning: missed surface (not extracted yet): ${sanitize(missed)}`);
   }
-
-  return {
-    status: "judged",
-    judged: judgedNames.length,
-    hardened: hardenedFields.length,
-    queued,
-    approved,
-    rejectedBySkeptic: rejectedBySkeptic.length,
-    unexaminedRejected: unexaminedRejected.length,
-    evidenceless: evidenceless.length,
-    advisoriesClamped,
-    inconsistentRisk: inconsistentRisk.length,
-    schemasInferred: patched.written.length,
-    schemasRejected: schemasRejectedCount,
-  };
 }
 
 /** The current value of one proposed field, for the skeptic's before/after. */
