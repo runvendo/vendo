@@ -56,14 +56,15 @@ describe("doctor error-code registry", () => {
         "E-TURN-002": "the live model turn cannot run while the dev server is down",
         "E-UI-001": "an ejected surface predates the installed @vendoai/ui",
         "E-WIRE-001": "Express server is not wired with createVendo from @vendoai/vendo/server",
-        "E-WIRE-002": "Express client is not wrapped in <VendoRoot>",
+        "E-WIRE-002": "Express client is not wrapped in <VendoProvider>",
         "E-WIRE-003": "the Next.js catch-all handler app/api/vendo/[...vendo]/route.ts is missing",
-        "E-WIRE-004": "the Next.js root layout is not wrapped in <VendoRoot>",
+        "E-WIRE-004": "the Next.js root layout is not wrapped in <VendoProvider>",
         "E-WIRE-005": "the @vendoai/vendo (or vendoai alias) dependency is not declared",
-        "E-WIRE-006": "no visible agent surface is mounted (<VendoRoot> alone renders nothing)",
+        "E-WIRE-006": "no visible agent surface is mounted (<VendoProvider> alone renders nothing)",
         "E-WIRE-007": "no createVendo server wiring found in an unknown-framework host",
-        "E-WIRE-008": "no <VendoRoot> found in an unknown-framework host's source",
+        "E-WIRE-008": "no <VendoProvider> found in an unknown-framework host's source",
         "E-WIRE-009": "detected "use server" actions are not registered or not wired into createVendo",
+        "E-WIRE-010": "the host still names the removed <VendoRoot> (swap it for <VendoProvider>)",
       }
     `);
   });

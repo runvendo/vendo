@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { stdin, stdout } from "node:process";
 import type { Telemetry } from "@vendoai/telemetry";
 import {
@@ -195,38 +195,21 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
   const warn = (id: string, code: DoctorErrorCode, message: string): void => { warnings += 1; checks.push({ id, status: "warning", message, error_code: code, fix_ref: doctorFixRef(code) }); if (!json) output.error(`warning: ${message}`); };
 
   const framework = await detectFramework(root);
-  // The generated vendo/vendo-root.tsx wrapper carries the <VendoRoot> AND
-  // <VendoOverlay /> markers itself, so an unexcluded scan would pass the
-  // client/surface gates even when NO layout mounts the wrapper — the exact
-  // doctor-green-but-invisible failure E-WIRE-006 exists to catch. Mirror
-  // init's layout decision: exclude the wrapper from the scan, then let a
-  // user-code <VendoRoot> mount next to an overlay-bearing wrapper satisfy
-  // the surface (the wrapper renders the overlay once a layout mounts it).
-  const wrapperCandidates = [
-    join(root, "vendo", "vendo-root.tsx"),
-    join(root, "src", "vendo", "vendo-root.tsx"),
-  ];
-  let wrapperWithOverlay = false;
-  for (const candidate of wrapperCandidates) {
-    const source = await readFile(candidate, "utf8").catch(() => null);
-    if (source !== null && source.includes("<VendoOverlay")) wrapperWithOverlay = true;
-  }
-  const scanned = await detectVendoWiring(root, { exclude: wrapperCandidates });
-  const wiring = { ...scanned, surface: scanned.surface || (scanned.client && wrapperWithOverlay) };
+  const wiring = await detectVendoWiring(root);
   if (framework === "unknown") {
     // No framework to pattern-match (field case: a Cloudflare Worker + Vite
     // host failed E-WIRE-003/004 forever) — judge the wiring by the same
     // bounded source scan init uses, never by another framework's file
     // layout. The surface check below still runs; it is source-generic.
-    if (scanned.server) pass("wiring/server", "createVendo server wiring found");
+    if (wiring.server) pass("wiring/server", "createVendo server wiring found");
     else fail("wiring/server", "E-WIRE-007", "no createVendo server wiring found — import createVendo from @vendoai/vendo/server and mount vendo.handler on your runtime's request entry");
-    if (scanned.client) pass("wiring/client", "<VendoRoot> wraps the client");
-    else warn("wiring/client", "E-WIRE-008", "no <VendoRoot> found in the host source — the @vendoai/ui hooks and embeds need it; ignore this if the host renders a fully custom surface");
+    if (wiring.client) pass("wiring/client", "<VendoProvider> wraps the client");
+    else warn("wiring/client", "E-WIRE-008", "no <VendoProvider> found in the host source — the @vendoai/ui hooks and embeds need it; ignore this if the host renders a fully custom surface");
   } else if (framework === "express") {
     if (wiring.server) pass("wiring/express-server", "Express server is wired");
     else fail("wiring/express-server", "E-WIRE-001", "Express server is not wired with createVendo from @vendoai/vendo/server");
-    if (wiring.client) pass("wiring/express-client", "<VendoRoot> wraps the client");
-    else fail("wiring/express-client", "E-WIRE-002", "Express client is not wrapped in <VendoRoot>");
+    if (wiring.client) pass("wiring/express-client", "<VendoProvider> wraps the client");
+    else fail("wiring/express-client", "E-WIRE-002", "Express client is not wrapped in <VendoProvider>");
   } else {
     const routeCandidates = [
       join(root, "app", "api", "vendo", "[...vendo]", "route.ts"),
@@ -279,9 +262,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
 
     // The mount may live in ANY layout, not just the root one (i18n/route-group
     // hosts mount in e.g. app/[locale]/layout.tsx — the literal root-layout
-    // grep fought exactly that correct wiring in the 0.4.1 E2E cert), and the
-    // correct scaffold mounts the generated vendo/vendo-root.tsx wrapper —
-    // whose export is also named VendoRoot, so the marker holds there too.
+    // grep fought exactly that correct wiring in the 0.4.1 E2E cert).
     let rootWired = false;
     const mountCandidates = [
       ...await walk(join(root, "app"), (rel) => /(^|[\\/])layout\.(?:tsx|jsx|js)$/.test(rel)),
@@ -294,10 +275,10 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     ];
     for (const path of mountCandidates) {
       const source = await readFile(path, "utf8").catch(() => "");
-      if (source.includes("<VendoRoot") || source.includes("<VendoProvider")) rootWired = true;
+      if (source.includes("<VendoProvider")) rootWired = true;
     }
     if (rootWired) {
-      pass("wiring/next-root", "<VendoRoot> wraps the app");
+      pass("wiring/next-root", "<VendoProvider> wraps the app");
     } else {
       // The exact paste, not a description of it: init never edits user source,
       // so this is the one step a by-the-book install still owes, and doctor is
@@ -305,23 +286,34 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
       // "which file", so the two can never name different files again.
       const { file: layoutPath, children } = await clientRoot(root);
       const file = relative(root, layoutPath);
-      const specifier = relative(dirname(layoutPath), join(dirname(dirname(layoutPath)), "vendo", "vendo-root"))
-        .split(sep).join("/");
       fail("wiring/next-root", "E-WIRE-004",
-        `no client entry mounts <VendoRoot> — Vendo is wired but invisible. In ${file}, paste: `
-        + `import { VendoRoot } from "${specifier}";  … then wrap: <VendoRoot>${children}</VendoRoot>. `
-        + "(The generated vendo/vendo-root.tsx wrapper's export is also named VendoRoot and mounts <VendoOverlay />; "
-        + "any layout that covers your pages works. `vendo init` never edits your source, so this paste is always yours.)");
+        `no client entry mounts <VendoProvider> — Vendo is wired but nothing on the page can reach it. In ${file}, paste: `
+        + `import { VendoProvider } from "@vendoai/vendo/react";  … then wrap: <VendoProvider baseUrl="/api/vendo">${children}</VendoProvider>. `
+        + "(Any layout that covers your pages works. `vendo init` never edits your source, so this paste is always yours.)");
     }
   }
 
-  // Visible surface (0.4.1 E2E cert B3): <VendoRoot> is a context provider
+  // Visible surface (0.4.1 E2E cert B3): <VendoProvider> is a context provider
   // that renders NOTHING — two certified stacks ended doctor-green with no
   // way for a user to reach the agent. Green must mean visible.
   if (wiring.surface) {
     pass("wiring/surface", "a visible agent surface is mounted (<VendoOverlay /> or an equivalent)");
   } else {
-    fail("wiring/surface", "E-WIRE-006", "no visible agent surface is mounted — <VendoRoot> renders nothing by itself; mount <VendoOverlay /> (init generates vendo/vendo-root.tsx for this), or render your own surface (<VendoThread />, <VendoToolResult>, the BYO embeds)");
+    fail("wiring/surface", "E-WIRE-006", "no visible agent surface is mounted — <VendoProvider> renders nothing by itself; add <VendoOverlay /> (the launcher pill + panel) or render your own surface (<VendoThread />, <VendoToolResult>, the BYO embeds)");
+  }
+
+  // VendoRoot is gone in this release (spec 2026-08-06 §B2). A host that still
+  // names it, or still carries the wrapper init used to generate, gets the
+  // three-line fix by name instead of a build error it has to decode.
+  const legacyWrapper = (await Promise.all(
+    [join(root, "vendo", "vendo-root.tsx"), join(root, "src", "vendo", "vendo-root.tsx")]
+      .map(async (candidate) => (await exists(candidate)) ? candidate : null),
+  )).find((candidate) => candidate !== null);
+  if (legacyWrapper !== undefined || wiring.legacyRoot) {
+    warn("wiring/vendo-root", "E-WIRE-010",
+      `<VendoRoot> was removed — swap it for <VendoProvider baseUrl="/api/vendo">. `
+      + (legacyWrapper === undefined ? "" : `${relative(root, legacyWrapper)} is YOUR file now: change its import to \`import { VendoProvider } from "@vendoai/vendo/react"\`, rename the tag, and add baseUrl. `)
+      + "Nothing else moves — the props are identical.");
   }
 
   if (await hasDependency(root)) pass("wiring/dependency", "@vendoai/vendo dependency is declared");

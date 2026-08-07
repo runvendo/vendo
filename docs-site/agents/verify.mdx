@@ -184,6 +184,21 @@ judgment disabled) — the runtime never dispatches those, so registering them
 buys nothing. Nor a route that passes a `serverActions` map it composes itself;
 init leaves that shape alone and doctor has no generated map to grade.
 
+### E-WIRE-010 {#E-WIRE-010}
+
+**Symptom (warning):** The host still names `<VendoRoot>`, or still carries the
+`vendo/vendo-root.tsx` wrapper older versions of `vendo init` generated.
+
+**Cause:** `VendoRoot` was removed; `VendoProvider` is the only provider, and it
+takes the wire mount as `baseUrl`.
+
+**Fix:** Three lines. Change the import to
+`import { VendoProvider } from "@vendoai/vendo/react"`, rename the tag to
+`<VendoProvider>`, and add `baseUrl="/api/vendo"` (include your deployment's
+path prefix if it has one). The props are otherwise identical. A generated
+`vendo/vendo-root.tsx` is YOUR file now — edit it in place or fold it into your
+layout.
+
 ### E-CFG-001 {#E-CFG-001}
 
 **Symptom:** A required `.vendo/` file is missing; the message names it, one

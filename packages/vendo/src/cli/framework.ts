@@ -7,10 +7,12 @@ export type HostFramework = "next" | "express" | "unknown";
 export interface VendoWiring {
   server: boolean;
   client: boolean;
-  /** A VISIBLE agent surface is mounted — <VendoRoot> alone is a context
+  /** A VISIBLE agent surface is mounted — <VendoProvider> alone is a context
       provider that renders nothing (0.4.1 E2E cert B3: by-the-book installs
       ended doctor-green with nothing on screen). */
   surface: boolean;
+  /** The host still names the removed <VendoRoot> — doctor prints the swap. */
+  legacyRoot: boolean;
 }
 
 /** What counts as a visible surface: the shipped chrome (<VendoOverlay> and
@@ -69,23 +71,21 @@ export async function workspaceHostCandidates(root: string): Promise<string[]> {
 }
 
 /** Bounded source scan shared by init and doctor so their wiring verdicts
-    agree. `exclude` skips generated files whose own markers would count as
-    host wiring (init's layout decision excludes the vendo-root wrapper: its
-    <VendoOverlay /> is only real once a layout mounts the wrapper itself). */
-export async function detectVendoWiring(root: string, options: { exclude?: string[] } = {}): Promise<VendoWiring> {
+    agree. */
+export async function detectVendoWiring(root: string): Promise<VendoWiring> {
   let server = false;
   let client = false;
   let surface = false;
-  const excluded = new Set(options.exclude ?? []);
+  let legacyRoot = false;
   const files = await walk(root, (relativePath) => SOURCE_FILE.test(relativePath), SOURCE_SCAN_MAX_FILES);
   for (const file of files) {
-    if (excluded.has(file)) continue;
     const source = await readFile(file, "utf8").catch(() => "");
     const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
     if (code.includes("@vendoai/vendo/server") && /\bcreateVendo\s*\(/.test(code)) server = true;
-    if (code.includes("<VendoRoot") || code.includes("<VendoProvider")) client = true;
+    if (code.includes("<VendoProvider")) client = true;
+    if (code.includes("<VendoRoot")) { client = true; legacyRoot = true; }
     if (SURFACE_MARKERS.some((marker) => code.includes(marker))) surface = true;
     if (server && client && surface) break;
   }
-  return { server, client, surface };
+  return { server, client, surface, legacyRoot };
 }
