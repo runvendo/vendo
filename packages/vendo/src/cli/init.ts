@@ -58,8 +58,8 @@ import {
  * `vendo init` (install-dx v1, re-derived 2026-07-18): one command, zero
  * questions on the happy path, no ceremony.
  *
- *   scan → wire (the surface files — empty vendo/registry.tsx, the client
- *   mount vendo/vendo-root.tsx, the catch-all handler wired to the registry;
+ *   scan → wire (the server surface — the catch-all handler holding the
+ *   composition; init never writes a client file;
  *   a detected auth preset gets one consent-style confirm in interactive runs,
  *   --yes/non-interactive accept it silently — plus package.json hooks)
  *   → key (env stated, else the cloud starter offer) → done summary (files

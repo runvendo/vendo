@@ -254,10 +254,10 @@ export async function appDirectory(root: string): Promise<string> {
   return join(root, "app");
 }
 
-/** The file whose client root the <VendoRoot> paste belongs in, and the child
-    expression it wraps there. A pages-only host has NO app/layout.tsx to wrap
-    — its client root is pages/_app.tsx, and the generated vendo-root.tsx is a
-    client component that mounts there unchanged. (Where the API route segment
+/** The file whose client root the <VendoProvider> paste belongs in, and the
+    child expression it wraps there. A pages-only host has NO app/layout.tsx to
+    wrap — its client root is pages/_app.tsx, and the paste mounts there
+    unchanged. (Where the API route segment
     gets scaffolded is a separate, deliberate choice — see appDirectory.)
     Keyed on the layout FILE, not on a router probe: the scaffold creates app/
     mid-run, and the answer must be the same before and after it.

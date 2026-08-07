@@ -614,7 +614,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     try {
       const response = await fetchImpl(`${new URL(statusUrl).origin}/`, { headers: { accept: "text/html" } });
       if (response.status >= 500) {
-        fail("live/render", "E-LIVE-006", `the app's root page returned ${response.status} — the site is crashing for users even though the wire answers (typical cause: the component registry imported in a Server Component layout; mount it via the generated vendo/vendo-root.tsx wrapper instead). Check the dev server log.`);
+        fail("live/render", "E-LIVE-006", `the app's root page returned ${response.status} — the site is crashing for users even though the wire answers (typical cause: the component registry declared in a Server Component layout; move it into your own "use client" file with the provider). Check the dev server log.`);
       } else {
         pass("live/render", `the app's root page renders (HTTP ${response.status})`);
       }
