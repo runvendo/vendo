@@ -3269,6 +3269,20 @@ describe("10-mcp §5 — door claims only its four exact well-known paths (FIX H
       vi.stubEnv("VENDO_MCP_BROKER_URL", "acme.mcp.vendo.run/mcp");
       await expect(mcpVendo()).rejects.toThrow(/VENDO_MCP_BROKER_URL must be an absolute http\(s\) URL/);
     });
+
+    // This URL becomes the OAuth resource audience, so anything that cannot BE
+    // a resource identifier is refused at composition rather than normalized
+    // into one. A silently-stripped fragment is the worst outcome: the door
+    // would verify against an audience the operator never typed while every
+    // broker-minted token failed with nothing explaining why.
+    it.each([
+      ["a fragment (RFC 8707 §2)", "https://acme.mcp.vendo.run/mcp#frag", /VENDO_MCP_BROKER_URL cannot contain a fragment/],
+      ["embedded credentials", "https://user:pw@acme.mcp.vendo.run/mcp", /VENDO_MCP_BROKER_URL cannot contain credentials/],
+      ["a non-http scheme", "ftp://acme.mcp.vendo.run/mcp", /VENDO_MCP_BROKER_URL must be an absolute http\(s\) URL/],
+    ])("rejects %s at composition", async (_label, url, message) => {
+      vi.stubEnv("VENDO_MCP_BROKER_URL", url);
+      await expect(mcpVendo()).rejects.toThrow(message);
+    });
   });
 
   it("serves BOTH spellings when the deployment is mounted under a path prefix", async () => {

@@ -51,6 +51,18 @@ const declaredRemoteAs = (value: string | undefined): { issuer: string; audience
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new TypeError(`VENDO_MCP_BROKER_URL must be an absolute http(s) URL, got ${JSON.stringify(value)}`);
   }
+  // The door refuses credentials in a base URL; refuse them here in the same
+  // words, so the message names the variable rather than an internal concept.
+  if (url.username !== "" || url.password !== "") {
+    throw new TypeError("VENDO_MCP_BROKER_URL cannot contain credentials");
+  }
+  // RFC 8707 §2 — a resource identifier carries no fragment, and this URL
+  // becomes the audience. REJECTED, never stripped: dropping it silently would
+  // authenticate against an audience the operator never typed, while the one
+  // they did type could never match a token the broker mints.
+  if (url.hash !== "") {
+    throw new TypeError(`VENDO_MCP_BROKER_URL cannot contain a fragment, got ${JSON.stringify(value)}`);
+  }
   return { issuer: url.origin, audience: canonicalUri(value) };
 };
 
