@@ -87,7 +87,7 @@ const raiseStoreError = (response: Response): Promise<never> =>
 
 /** A console that is not serving the ephemeral-session op family
  * (/api/v1/store/sessions/*) answers Next.js's BARE 404 page, no error
- * envelope. Typed so the composition layer (hostedSessionOps in server.ts)
+ * envelope. Typed so the composition layer (hostedSessionOps in compose-store.ts)
  * can disable the session doors gracefully instead of failing anonymous
  * traffic; an ENVELOPED 404 is a live console answering "not-found" and keeps
  * the loud path, same for every other failure. Prod has served the doors
@@ -149,7 +149,7 @@ const blobKeyPath = (namespace: string, key: string): string =>
  * construction: the wire has no secrets surface, and storeSecrets/secretStore
  * keep requiring the local store handle. Cloned from cloudSandbox's shape:
  * behavior comes ONLY from constructor arguments (adapter rule — see
- * selectStore in server.ts); the adapter never reads the environment. */
+ * selectStore in compose-store.ts); the adapter never reads the environment. */
 export function hostedStore(options: HostedStoreOptions): HostedStore {
   const base = (options.baseUrl ?? "https://console.vendo.run").replace(/\/$/, "");
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;

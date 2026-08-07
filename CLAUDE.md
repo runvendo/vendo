@@ -32,7 +32,7 @@ generated UI in a sandboxed, brand-native surface.
   implementation shipped in OSS. `VENDO_API_KEY` sets Cloud defaults only for
   adapter slots the host left unset; an explicitly passed adapter always
   wins; no hidden key-conditional branches. Reference implementation:
-  `selectConnections` in `packages/vendo/src/server.ts`.
+  `selectConnections` in `packages/vendo/src/compose-selection.ts`.
 - Gating is valid key + meter, nothing else: no capability booleans, no
   entitlement protocol, no validate endpoint, no client-side checks. Key
   problems surface on the first real service call.
