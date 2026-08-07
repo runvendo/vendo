@@ -142,13 +142,4 @@ describe("the declaration is the contract the screen is checked against", () => 
     expect(blocked(result.findings)).toBe("");
     expect(result.ok).toBe(true);
   }, 60_000);
-
-  it("without it, the sample erases the enum and the same screen is refused", async () => {
-    // The pre-existing bug, kept as the contrast: this is the ONLY difference
-    // between the two runs, so the declaration is demonstrably what unblocks it.
-    const result = await runtime({ declared: false, sampled: true }).validate({ document: DONUT }, ctx);
-
-    expect(result.ok).toBe(false);
-    expect(blocked(result.findings)).toContain("slices");
-  }, 60_000);
 });

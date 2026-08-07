@@ -188,17 +188,6 @@ export interface AppsConfig {
    *  the generation engine (annotated shape cards, law checks, Kit format
    *  defaults). Provider form resolved per generation (see catalog note). */
   semantics?: Readonly<Record<string, ToolSemantics>> | (() => Readonly<Record<string, ToolSemantics>> | undefined);
-  /** Re-gate 2026-07-26 finding 2 — the caller's CONNECTED toolkits, resolved
-   *  per create/edit. The create-time shape sampler probes every no-arg read
-   *  tool once; a connector tool (descriptor.toolkit set, 01-core §4) whose
-   *  toolkit is not in this set is never probed — on the gate hosts, ~159
-   *  unconnected Slack/Gmail probes piled up at the approval gate and the
-   *  burst tripped the call-rate breaker under real creates. The umbrella
-   *  backs this with the connections seam (connections.list, active accounts).
-   *  Unset or failing = treat every toolkit as unconnected: connector probes
-   *  skip, host tools are unaffected, and the tools stay LISTED for
-   *  generation (execution still answers `connect-required` on its own). */
-  connectedToolkits?: (ctx: RunContext) => Promise<string[]>;
   /**
    * UI-generation blueprint §1 point 2 — the screen agent. "The seam routes, not
    * the caller": every `vendo_make` request starts in the cheap assembly loop,
