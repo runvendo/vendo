@@ -51,9 +51,12 @@ read from the first \`<Plan\` to the last \`</Plan>\`.
 A plan holds \`<Query>\`, \`<Group>\` (of \`<Leaf>\`), \`<Server>\`, \`<Island>\` and
 \`<Cannot>\`, and nothing else. It needs at least one group or one \`<Cannot>\`.
 
-### \`<Plan name="…">\`
+### \`<Plan name display>\`
 
-\`name\` becomes the app's title. No other attribute on \`<Plan>\` is read.
+| attribute | | |
+|---|---|---|
+| \`name\` | required | becomes the app's title. |
+| \`display\` | optional | \`"inline"\` (default) or \`"stage"\`. \`"stage"\` opens the app full-width and assembles it there; it is for what the person asked you to BUILD when it takes several groups. Anything else is reported and the app arrives inline. |
 
 ### \`<Query id tool input/>\` — self-closing
 
