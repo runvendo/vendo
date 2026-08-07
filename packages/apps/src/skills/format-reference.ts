@@ -6,8 +6,7 @@
  * Every element, attribute and function below is taken from the parsers and the
  * validator, not from another prompt: `core/genui/plan/compile.ts` (plan.vendo),
  * `core/genui/wire/{compile,attributes,expression}.ts` (app.vendo),
- * `core/genui/expr.ts`, `core/reshape.ts` (the pipe ops),
- * `core/genui/wire/text-edit.ts` (edits) and
+ * `core/genui/expr.ts`, `core/reshape.ts` (the pipe ops) and
  * `apps/generation/validation/validate.ts`. Anything a prompt claims and no parser
  * implements is deliberately absent — a documented attribute that does nothing is
  * worse than a missing one. The component half is INTERPOLATED from the same
@@ -287,29 +286,9 @@ is nothing left to reshape. Let the component format it: \`Stat\` takes
 Edit the text; never rewrite the file. Small edits keep everything the person is
 already looking at exactly where it is.
 
-Editing the file by hand, use your own file-edit tool. Editing an app through
-this product's app tools, the change is written as edit blocks — same discipline,
-one dialect:
-
-\`\`\`
-<Edit>
-  <Old><Stat label="Total" value={sum(invoices.data, "amount_cents")}/></Old>
-  <New><Stat label="Total outstanding" value={sum(invoices.data, "amount_cents")} format="money"/></New>
-</Edit>
-\`\`\`
-
-- The elements are exactly \`<Edit>\`, \`<Old>\` and \`<New>\`, with **no attributes** —
-  \`<Edit reason="…">\` is not read as an edit at all.
-- \`<Old>\` is the text as printed, verbatim: blank space around the outside is
-  trimmed and nothing else is forgiven. There is no fuzzy matching.
-- It must match **exactly once**. Zero matches and two matches are both refused;
-  include a surrounding line to make it unique. The refusal quotes the closest
-  line the app actually has — read it, do not retry the same quote.
-- An empty \`<New></New>\` deletes. An \`<Old>\` that is empty after trimming is
-  refused.
-- One \`<Edit>\` per replacement. They apply in order, each seeing the result of
-  the ones before it, and the **first failure abandons the whole batch** — so a
-  bad quote never leaves the app half-rewritten.
+Use your own file-edit tool, quoting the exact text that goes and the text that
+replaces it. Quote enough of it to match in exactly one place — a quote that
+matches twice, or not at all, is a failed edit, not a guess to retry.
 
 ---
 

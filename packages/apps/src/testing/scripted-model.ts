@@ -132,12 +132,6 @@ const markedValue = (text: string, marker: string): string => {
 /** Compatibility fixture for lifecycle/execution suites that only need valid generation. */
 export const basicLanguageModel = (): LanguageModel => scriptedLanguageModel((call) => {
   const prompt = textOf(call);
-  if (prompt.includes("TASK: EDIT_TREE")) {
-    const instruction = markedValue(prompt, "INSTRUCTION: ");
-    // v2 spec §5 — edits are wire patches; quotes in the derived name would
-    // break the attribute, so strip them.
-    return `<Edit><SetName name="${instruction.replaceAll('"', "'")}"/></Edit>`;
-  }
   const name = markedValue(prompt, "USER_REQUEST: ");
   // v2 spec §2 — creates are wire markup; quotes in the derived name would
   // break the attribute, so strip them. The Disclaimer keeps the fixture past

@@ -72,14 +72,6 @@ export {
 // v2 spec §5 — the one-dialect edit surface: print the app as id-anchored
 // wire (the model's edit context).
 export { printWire, type WirePrintInput, type WirePrintOptions } from "./genui/wire/print.js";
-// The brain's edit surface: exact old/new text edits over the id-free print,
-// and the recompile that carries node ids across them.
-export {
-  applyTextEdits,
-  recompileWithIdentity,
-  type TextEdit,
-  type TextEditResult,
-} from "./genui/wire/text-edit.js";
 export { checkBindingShapes, type BindingShapeError } from "./genui/wire/shape-check.js";
 // genui/plan — the plan dialect the brain writes before workers fill anything
 // in (generation pipeline rebuild, "Locked interfaces"): the flat AppPlan

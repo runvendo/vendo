@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  TREE_MAX_COMPONENT_SOURCE_CHARS,
-  TREE_MAX_GENERATED_COMPONENTS,
   TREE_MAX_NODES,
   TREE_MAX_QUERIES,
-  TREE_MAX_TOTAL_COMPONENT_CHARS,
   VENDO_APP_FORMAT,
   VENDO_TREE_FORMAT,
   validateAppDocument,
@@ -12,9 +9,12 @@ import {
 } from "../index.js";
 
 // Denial-of-service / resource-exhaustion regression suite for the tree and
-// app-document validators (01-core §8/§9). Every pinned cap is exercised at the
+// app-document validators (01-core §8/§9). Each cap here is exercised at the
 // over-limit side; these are the bounds that stop a hostile generator from
-// making the jail compile an unbounded payload.
+// making the jail compile an unbounded payload. The generated-component caps
+// are NOT here: a tree carrying `components` is rejected outright before any
+// cap is read, so they are pinned where they actually bite, in
+// `component-map.test.ts`.
 
 const treeWithNodes = (count: number): Record<string, unknown> => ({
   formatVersion: VENDO_TREE_FORMAT,
@@ -27,8 +27,6 @@ const expectProvisionFailure = (input: unknown): void => {
   expect(result.ok).toBe(false);
   if (!result.ok) expect(result.error.code).toBe("provision");
 };
-
-const componentCode = "export default function C(){ return null; }";
 
 describe("validateTree resource caps", () => {
   it("rejects more than TREE_MAX_NODES nodes", () => {
@@ -43,38 +41,6 @@ describe("validateTree resource caps", () => {
     });
     expect(validateTree(withQueries(TREE_MAX_QUERIES)).ok).toBe(true);
     expectProvisionFailure(withQueries(TREE_MAX_QUERIES + 1));
-  });
-
-  it("rejects more than TREE_MAX_GENERATED_COMPONENTS generated components", () => {
-    const components: Record<string, string> = {};
-    for (let index = 0; index <= TREE_MAX_GENERATED_COMPONENTS; index += 1) {
-      components[`Gen${index}`] = componentCode;
-    }
-    expect(Object.keys(components).length).toBe(TREE_MAX_GENERATED_COMPONENTS + 1);
-    expectProvisionFailure({
-      ...treeWithNodes(1),
-      nodes: [{ id: "n0", component: "Gen0", source: "generated" }],
-      components,
-    });
-  });
-
-  it("rejects a single component source larger than TREE_MAX_COMPONENT_SOURCE_CHARS", () => {
-    expectProvisionFailure({
-      ...treeWithNodes(1),
-      nodes: [{ id: "n0", component: "Gen0", source: "generated" }],
-      components: { Gen0: "x".repeat(TREE_MAX_COMPONENT_SOURCE_CHARS + 1) },
-    });
-  });
-
-  it("rejects total component source larger than TREE_MAX_TOTAL_COMPONENT_CHARS", () => {
-    // Four maxed-out sources exactly hit the total cap; a single extra char busts it.
-    const quarter = "x".repeat(TREE_MAX_COMPONENT_SOURCE_CHARS);
-    expect(quarter.length * 4).toBe(TREE_MAX_TOTAL_COMPONENT_CHARS);
-    expectProvisionFailure({
-      ...treeWithNodes(1),
-      nodes: [{ id: "n0", component: "A", source: "generated" }],
-      components: { A: quarter, B: quarter, C: quarter, D: quarter, E: "x" },
-    });
   });
 
   it("rejects duplicate node ids", () => {

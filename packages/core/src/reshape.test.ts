@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   applyReshape,
-  DEPRECATED_FORMAT_KINDS,
-  DEPRECATED_RESHAPE_OPS,
-  findDeprecatedReshapeUsage,
   findInvalidReshape,
   isWireReshapeOp,
   reduceNumeric,
@@ -481,37 +478,7 @@ describe("template (object→string projection)", () => {
 });
 
 /** W5a (v3 spec §Dialect retirement) — staged retirement mechanics. */
-describe("findDeprecatedReshapeUsage", () => {
-  it("flags asOptions, template, and format currencyCents — once per distinct kind", () => {
-    const tree = {
-      nodes: [
-        { id: "select-1", component: "Select", props: { options: { $path: "/accounts/data", $reshape: [{ op: "asOptions", args: ["id", "name"] }] } } },
-        { id: "table-1", component: "Table", props: { rows: { $path: "/deadlines/data", $reshape: [
-          { op: "template", args: ["assignedTo", "{assignedTo.name}"] },
-          { op: "format", args: ["amount", "currencyCents"] },
-        ] } } },
-        { id: "text-1", component: "Text", props: { value: { $path: "/x", $reshape: [{ op: "template", args: ["{a}"] }] } } },
-      ],
-    };
-    const notices = findDeprecatedReshapeUsage(tree);
-    expect(notices).toHaveLength(3);
-    expect(notices.join("\n")).toContain('"asOptions"');
-    expect(notices.join("\n")).toContain('"template"');
-    expect(notices.join("\n")).toContain('"currencyCents"');
-    expect(notices.join("\n")).toContain("labelField");
-  });
-
-  it("the taught path is clean: Kit-native props and live ops raise no notice", () => {
-    expect(findDeprecatedReshapeUsage({
-      nodes: [
-        { id: "select-1", component: "Select", props: { options: { $path: "/accounts/data" }, labelField: "name", valueField: "id" } },
-        { id: "stat-1", component: "Stat", props: { value: { $path: "/txns/data", $reshape: [{ op: "sum", args: ["amount"] }] } } },
-        { id: "chart-1", component: "Chart", props: { points: { $path: "/rev/rows", $reshape: [{ op: "asPoints", args: ["month", "revenue"] }] } } },
-        { id: "text-1", component: "Text", props: { value: { $path: "/d", $reshape: [{ op: "format", args: ["date"] }] } } },
-      ],
-    })).toEqual([]);
-  });
-
+describe("deprecated reshape dialect", () => {
   it("deprecated ops STAY COMPILING for stored apps (staged retirement, not deletion)", () => {
     expect(findInvalidReshape({ $reshape: [{ op: "asOptions", args: ["id", "name"] }] })).toBeNull();
     expect(findInvalidReshape({ $reshape: [{ op: "template", args: ["{name}"] }] })).toBeNull();
@@ -542,11 +509,6 @@ describe("frozen reshape op registry", () => {
       "max",
       "count",
     ]);
-  });
-
-  it("the deprecated subset is exactly the retired dialect", () => {
-    expect(DEPRECATED_RESHAPE_OPS).toEqual(["asOptions", "template"]);
-    expect(DEPRECATED_FORMAT_KINDS).toEqual(["currencyCents"]);
   });
 
   it("the WIRE subset excludes every aggregate — one sum, and it is the $expr one", () => {

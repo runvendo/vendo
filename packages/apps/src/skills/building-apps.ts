@@ -311,20 +311,6 @@ text that goes and write what replaces it — and quote enough of it to match in
 exactly one place. Everything the person is already looking at then stays where
 it is; a rewritten file moves the whole app under them.
 
-Where an app is changed through this product's own app tools instead of by hand,
-the same change is written as an edit block, under the same rule:
-
-\`\`\`
-<Edit>
-  <Old><Stat label="Total" value={sum(invoices, "amount_cents")}/></Old>
-  <New><Stat label="Total outstanding" value={sum(invoices, "amount_cents")}/></New>
-</Edit>
-\`\`\`
-
-\`<Old>\` must appear in the app exactly once — include a surrounding line if it
-would otherwise match twice. An empty \`<New>\` deletes. One \`<Edit>\` per
-replacement.
-
 There are checks after you that you cannot see and cannot skip. They are not
 your enemy; they are the reason you can move fast.
 

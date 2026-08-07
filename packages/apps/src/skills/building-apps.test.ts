@@ -103,9 +103,8 @@ describe("it carries the v2 pattern", () => {
 
   it("teaches validate then fix by editing, not rewriting", () => {
     expect(body).toContain("validate");
-    expect(body).toContain("<Edit>");
-    expect(body).toContain("<Old>");
-    expect(body).toMatch(/exactly once/);
+    expect(body).toMatch(/editing the text in place, never by rewriting the file/i);
+    expect(body).toMatch(/exactly one place/);
   });
 
   it("makes a clean validate the condition for reporting done (D4/D7's review floor)", () => {

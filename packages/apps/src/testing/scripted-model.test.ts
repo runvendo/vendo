@@ -137,24 +137,13 @@ describe("basicLanguageModel — valid generation for suites that only need an a
     expect(result.text).toContain('name="Invoice Chaser"');
   });
 
-  it("answers an edit with a wire patch, not a fresh app", async () => {
-    const result = await generateText({
-      model: basicLanguageModel(),
-      prompt: "TASK: EDIT_TREE\nINSTRUCTION: Rename to Retention",
-    });
-
-    expect(result.text).toContain("<Edit>");
-    expect(result.text).toContain('name="Rename to Retention"');
-  });
-
   it("strips quotes that would break the name attribute", async () => {
     const result = await generateText({
       model: basicLanguageModel(),
-      prompt: 'TASK: EDIT_TREE\nINSTRUCTION: Call it "Q3"',
+      prompt: 'USER_REQUEST: Call it "Q3"',
     });
 
     expect(result.text).toContain("Call it 'Q3'");
-    expect(result.text).toContain("<Edit>");
   });
 
   it("caps a long name inside the display-title limit", async () => {
