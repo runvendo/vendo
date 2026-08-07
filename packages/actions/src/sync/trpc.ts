@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type TS from "typescript";
-import type { ExtractedTool, TrpcBinding } from "../formats.js";
+import type { ExtractedTool, SchemaSource, TrpcBinding } from "../formats.js";
 import {
   allocateToolName,
   resolveImportSource,
@@ -354,6 +354,8 @@ export async function extractTrpc(root: string): Promise<TrpcExtractResult> {
           name,
           description: `tRPC procedure ${procedure} could not be classified`,
           inputSchema: { type: "object", properties: {} },
+          inputSchemaSource: "unknown" satisfies SchemaSource,
+          outputSchemaSource: "unknown" satisfies SchemaSource,
           // D2 — nothing spoke, so nothing is graded. `disabled` keeps it out of the
           // agent's hands; `ungraded` keeps it counted in doctor's tally and asking
           // rather than running if a human ever re-enables it.
@@ -367,6 +369,9 @@ export async function extractTrpc(root: string): Promise<TrpcExtractResult> {
       }
 
       let inputSchema: Record<string, unknown> = { type: "object", properties: {} };
+      // tRPC's contract: NO `.input()` is itself the declaration that the
+      // procedure takes no arguments. Only an uninterpretable validator is blind.
+      let inputSchemaSource: SchemaSource = "declared";
       let note: string | undefined;
       if (def.inputExpr) {
         const interpreted = await zodFromExpression(extraction, def.module, def.inputExpr, 0);
@@ -375,6 +380,7 @@ export async function extractTrpc(root: string): Promise<TrpcExtractResult> {
           if (interpreted.reason) note = `input schema partially interpreted; permissive where unknown (${interpreted.reason})`;
         } else {
           inputSchema = { ...PERMISSIVE_INPUT };
+          inputSchemaSource = "unknown";
           note = `input schema not statically interpreted (${interpreted.reason ?? "unrecognized validator"}); permissive schema emitted`;
         }
       }
@@ -384,6 +390,8 @@ export async function extractTrpc(root: string): Promise<TrpcExtractResult> {
         name,
         description: `tRPC ${def.type} ${procedure}`,
         inputSchema,
+        inputSchemaSource,
+        outputSchemaSource: "unknown" satisfies SchemaSource,
         risk: trpcRisk(def.type),
         ...(note ? { note } : {}),
         binding: bindingFor(procedure, def.type, mount.mount, transformer),
