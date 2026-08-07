@@ -130,9 +130,10 @@ describe("the declaration is the contract the screen is checked against", () => 
 
     expect(result.ok).toBe(false);
     // The declaration is the only thing that could know this — and it teaches
-    // the field that IS there.
-    expect(blocked(result.findings)).toContain('reads field "total"');
-    expect(blocked(result.findings)).toContain("data");
+    // the field that IS there. Declarations now feed toolShapes into the wire
+    // compiler, so the block lands one layer ahead of screen-tsc.
+    expect(blocked(result.findings)).toContain('field "total"');
+    expect(blocked(result.findings)).toContain("available: data");
   }, 60_000);
 
   it("satisfies an enum-typed prop — the donut case", async () => {
