@@ -1741,6 +1741,49 @@ describe("vendo doctor error codes + fix_refs", () => {
     expect(messages.errors.join("\n")).toContain("root page returned 500");
   });
 
+  // The other half of the render gate: it fails on 5xx and blessed EVERYTHING
+  // else, so `ok: the app's root page renders (HTTP 404)` was the line every
+  // healthy run printed. A 404 is the one status that means the opposite — no
+  // page is served at `/` — which the catch below already calls none of doctor's
+  // business. So the probe may report the status it saw; it may not claim a
+  // render it never observed.
+  it("does not claim the root page renders when the origin answers 404", async () => {
+    const root = await healthy();
+    const messages = output();
+    expect(await doctor({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch() as unknown as typeof fetch,
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    const rootLines = [...messages.logs, ...messages.errors].filter((line) => line.includes("root page"));
+    expect(rootLines.join("\n")).toContain("404");
+    expect(rootLines.some((line) => line.startsWith("ok:"))).toBe(false);
+    expect(rootLines.join("\n")).not.toContain("renders");
+  });
+
+  // A 2xx proves the server answered, not that the page is correct — so the pass
+  // says what was observed rather than asserting a render doctor cannot see.
+  it("reports the observed status when the root page answers 200", async () => {
+    const root = await healthy();
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url === "http://localhost:3000/") return new Response("<html></html>", { status: 200 });
+      if (url.endsWith("/status")) return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
+      if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
+      if (url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
+      return Response.json({}, { status: 404 });
+    });
+    const messages = output();
+    expect(await doctor({
+      targetDir: root,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    expect(messages.logs.join("\n")).toContain("ok: the app's root page answered HTTP 200");
+  });
+
   // Split-brain guard (0.4.2 re-run): a direct @vendoai/vendo dep pinned to
   // an older range beats the vendoai umbrella's for the app import, so the
   // CLI upgrades while /status silently serves the old runtime.
