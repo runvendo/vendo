@@ -36,6 +36,21 @@ describe("the jail's zod shim", () => {
     expect(() => (z as unknown as Record<string, () => unknown>).parse!()).toThrow(/preview sandbox/);
   });
 
+  it("is not a thenable, so awaiting anything the shim answered resolves", async () => {
+    // Every unknown property chains, and `then` is a property. A schema (or
+    // the module itself) that answers `then` with another callable node is a
+    // thenable whose `then` never calls back: `await` on it hangs the island
+    // forever, which is the one outcome this shim is written to avoid.
+    const schema = z.object({ a: z.string() });
+    expect(await Promise.resolve(schema)).toBe(schema);
+    expect(await Promise.resolve(zodShim)).toBe(zodShim);
+    for (const key of ["then", "catch", "finally"]) {
+      expect((schema as Record<string, unknown>)[key], key).toBeUndefined();
+      expect(key in (schema as object), key).toBe(false);
+      expect(key in zodShim, key).toBe(false);
+    }
+  });
+
   it("is registered as a bundled package, so producers and the runtime agree", () => {
     // Permit-without-provide is the bug this pairing prevents: the runtime
     // table is typed on the same list capture checks.
