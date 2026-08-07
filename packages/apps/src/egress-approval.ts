@@ -106,8 +106,6 @@ const listAll = (store: StoreAdapter, refs: Record<string, string>): Promise<Ven
  * the doc first, denial just clears — fail closed).
  */
 export interface EgressApprovals {
-  /** Parked requests for one app. */
-  pending(appId: AppId): Promise<EgressApprovalRequest[]>;
   /** Park one domain on a guard approval (re-parking the same domain overwrites). */
   putPending(request: EgressApprovalRequest): Promise<void>;
   /** Parked requests riding a specific guard approval id. */
@@ -129,9 +127,6 @@ export const createEgressApprovals = (store: StoreAdapter): EgressApprovals => {
   });
 
   return {
-    async pending(appId) {
-      return (await listAll(store, { app_id: appId })).map(requestData);
-    },
     async putPending(request) {
       await collection.put({
         id: recordId(request.appId, request.domain),
