@@ -65,7 +65,10 @@ describe("openVendoConversation registry", () => {
     expect(posts()).toHaveLength(1);
 
     await act(async () => release());
-    await within(dialog()).findByText("Turn complete");
+    // findAll, not find: releasing the gate un-gates every later reply too, so on a
+    // loaded runner the queued remix can complete before this query first polls and
+    // a singular findByText would throw on the second "Turn complete".
+    await within(dialog()).findAllByText("Turn complete");
     // Turn done → the queued remix auto-sends as the second turn.
     await waitFor(() => expect(posts()).toHaveLength(2));
   });
