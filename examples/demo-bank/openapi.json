@@ -113,10 +113,26 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/Transaction"
-                      }
+                      "type": "object",
+                      "description": "One page of transactions. The rows are `data.data`; the outer `data` is the API envelope.",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Transaction"
+                          }
+                        },
+                        "nextCursor": {
+                          "type": "string"
+                        },
+                        "total": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "data",
+                        "total"
+                      ]
                     }
                   },
                   "required": [
@@ -362,10 +378,26 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/Transaction"
-                      }
+                      "type": "object",
+                      "description": "One page of transactions. The rows are `data.data`; the outer `data` is the API envelope.",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Transaction"
+                          }
+                        },
+                        "nextCursor": {
+                          "type": "string"
+                        },
+                        "total": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "data",
+                        "total"
+                      ]
                     }
                   },
                   "required": [

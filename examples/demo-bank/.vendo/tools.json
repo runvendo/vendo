@@ -207,7 +207,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:bf61a6a5d1b753940070a52246e3576bd1646194ee01761535f8bdd24ed4eab9"
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
     },
     {
       "name": "host_demo_reset_create",
@@ -311,7 +311,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:bf61a6a5d1b753940070a52246e3576bd1646194ee01761535f8bdd24ed4eab9"
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
     },
     {
       "name": "host_getBudgets",
@@ -373,7 +373,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:bf61a6a5d1b753940070a52246e3576bd1646194ee01761535f8bdd24ed4eab9"
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
     },
     {
       "name": "host_getCashflowInsights",
@@ -425,7 +425,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:bf61a6a5d1b753940070a52246e3576bd1646194ee01761535f8bdd24ed4eab9"
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
     },
     {
       "name": "host_getProfile",
@@ -504,7 +504,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:bf61a6a5d1b753940070a52246e3576bd1646194ee01761535f8bdd24ed4eab9"
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
     },
     {
       "name": "host_getRecurringInsights",
@@ -582,7 +582,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:bf61a6a5d1b753940070a52246e3576bd1646194ee01761535f8bdd24ed4eab9"
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
     },
     {
       "name": "host_getSpendingInsights",
@@ -641,7 +641,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:bf61a6a5d1b753940070a52246e3576bd1646194ee01761535f8bdd24ed4eab9"
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
     },
     {
       "name": "host_getTransaction",
@@ -771,7 +771,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:bf61a6a5d1b753940070a52246e3576bd1646194ee01761535f8bdd24ed4eab9"
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
     },
     {
       "name": "host_listAccounts",
@@ -851,7 +851,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:bf61a6a5d1b753940070a52246e3576bd1646194ee01761535f8bdd24ed4eab9"
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
     },
     {
       "name": "host_listAccountTransactions",
@@ -872,104 +872,120 @@
         "type": "object",
         "properties": {
           "data": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "string"
-                },
-                "accountId": {
-                  "type": "string"
-                },
-                "cardId": {
-                  "type": "string"
-                },
-                "merchant": {
-                  "type": "string"
-                },
-                "descriptor": {
-                  "type": "string"
-                },
-                "logo": {
-                  "type": "string"
-                },
-                "amount": {
-                  "type": "integer",
-                  "description": "Amount in integer cents, negative for a debit: divide by 100 exactly once before displaying."
-                },
-                "timestamp": {
-                  "type": "string",
-                  "format": "date-time"
-                },
-                "category": {
-                  "type": "string",
-                  "enum": [
-                    "dining",
-                    "groceries",
-                    "coffee",
-                    "transport",
-                    "subscriptions",
-                    "shopping",
-                    "income",
-                    "transfer",
-                    "housing",
-                    "other"
-                  ]
-                },
-                "status": {
-                  "type": "string",
-                  "enum": [
-                    "posted",
-                    "pending",
-                    "authorized"
-                  ]
-                },
-                "statusTimeline": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "state": {
-                        "type": "string"
-                      },
-                      "at": {
-                        "type": "string",
-                        "format": "date-time"
+            "type": "object",
+            "description": "One page of transactions. The rows are `data.data`; the outer `data` is the API envelope.",
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "accountId": {
+                      "type": "string"
+                    },
+                    "cardId": {
+                      "type": "string"
+                    },
+                    "merchant": {
+                      "type": "string"
+                    },
+                    "descriptor": {
+                      "type": "string"
+                    },
+                    "logo": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer",
+                      "description": "Amount in integer cents, negative for a debit: divide by 100 exactly once before displaying."
+                    },
+                    "timestamp": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "category": {
+                      "type": "string",
+                      "enum": [
+                        "dining",
+                        "groceries",
+                        "coffee",
+                        "transport",
+                        "subscriptions",
+                        "shopping",
+                        "income",
+                        "transfer",
+                        "housing",
+                        "other"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "posted",
+                        "pending",
+                        "authorized"
+                      ]
+                    },
+                    "statusTimeline": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "state": {
+                            "type": "string"
+                          },
+                          "at": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "required": [
+                          "state",
+                          "at"
+                        ]
                       }
                     },
-                    "required": [
-                      "state",
-                      "at"
-                    ]
-                  }
-                },
-                "method": {
-                  "type": "string"
-                },
-                "location": {
-                  "type": "string"
-                },
-                "notes": {
-                  "type": "string"
-                },
-                "recurringId": {
-                  "type": "string"
+                    "method": {
+                      "type": "string"
+                    },
+                    "location": {
+                      "type": "string"
+                    },
+                    "notes": {
+                      "type": "string"
+                    },
+                    "recurringId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "accountId",
+                    "merchant",
+                    "descriptor",
+                    "amount",
+                    "timestamp",
+                    "category",
+                    "status",
+                    "statusTimeline",
+                    "method"
+                  ]
                 }
               },
-              "required": [
-                "id",
-                "accountId",
-                "merchant",
-                "descriptor",
-                "amount",
-                "timestamp",
-                "category",
-                "status",
-                "statusTimeline",
-                "method"
-              ]
-            }
+              "nextCursor": {
+                "type": "string"
+              },
+              "total": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "data",
+              "total"
+            ]
           }
         },
         "required": [
@@ -985,7 +1001,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:bf61a6a5d1b753940070a52246e3576bd1646194ee01761535f8bdd24ed4eab9"
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
     },
     {
       "name": "host_listCards",
@@ -1069,7 +1085,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:bf61a6a5d1b753940070a52246e3576bd1646194ee01761535f8bdd24ed4eab9"
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
     },
     {
       "name": "host_listCardTransactions",
@@ -1090,104 +1106,120 @@
         "type": "object",
         "properties": {
           "data": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "string"
-                },
-                "accountId": {
-                  "type": "string"
-                },
-                "cardId": {
-                  "type": "string"
-                },
-                "merchant": {
-                  "type": "string"
-                },
-                "descriptor": {
-                  "type": "string"
-                },
-                "logo": {
-                  "type": "string"
-                },
-                "amount": {
-                  "type": "integer",
-                  "description": "Amount in integer cents, negative for a debit: divide by 100 exactly once before displaying."
-                },
-                "timestamp": {
-                  "type": "string",
-                  "format": "date-time"
-                },
-                "category": {
-                  "type": "string",
-                  "enum": [
-                    "dining",
-                    "groceries",
-                    "coffee",
-                    "transport",
-                    "subscriptions",
-                    "shopping",
-                    "income",
-                    "transfer",
-                    "housing",
-                    "other"
-                  ]
-                },
-                "status": {
-                  "type": "string",
-                  "enum": [
-                    "posted",
-                    "pending",
-                    "authorized"
-                  ]
-                },
-                "statusTimeline": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "state": {
-                        "type": "string"
-                      },
-                      "at": {
-                        "type": "string",
-                        "format": "date-time"
+            "type": "object",
+            "description": "One page of transactions. The rows are `data.data`; the outer `data` is the API envelope.",
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "accountId": {
+                      "type": "string"
+                    },
+                    "cardId": {
+                      "type": "string"
+                    },
+                    "merchant": {
+                      "type": "string"
+                    },
+                    "descriptor": {
+                      "type": "string"
+                    },
+                    "logo": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer",
+                      "description": "Amount in integer cents, negative for a debit: divide by 100 exactly once before displaying."
+                    },
+                    "timestamp": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "category": {
+                      "type": "string",
+                      "enum": [
+                        "dining",
+                        "groceries",
+                        "coffee",
+                        "transport",
+                        "subscriptions",
+                        "shopping",
+                        "income",
+                        "transfer",
+                        "housing",
+                        "other"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "posted",
+                        "pending",
+                        "authorized"
+                      ]
+                    },
+                    "statusTimeline": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "state": {
+                            "type": "string"
+                          },
+                          "at": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "required": [
+                          "state",
+                          "at"
+                        ]
                       }
                     },
-                    "required": [
-                      "state",
-                      "at"
-                    ]
-                  }
-                },
-                "method": {
-                  "type": "string"
-                },
-                "location": {
-                  "type": "string"
-                },
-                "notes": {
-                  "type": "string"
-                },
-                "recurringId": {
-                  "type": "string"
+                    "method": {
+                      "type": "string"
+                    },
+                    "location": {
+                      "type": "string"
+                    },
+                    "notes": {
+                      "type": "string"
+                    },
+                    "recurringId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "accountId",
+                    "merchant",
+                    "descriptor",
+                    "amount",
+                    "timestamp",
+                    "category",
+                    "status",
+                    "statusTimeline",
+                    "method"
+                  ]
                 }
               },
-              "required": [
-                "id",
-                "accountId",
-                "merchant",
-                "descriptor",
-                "amount",
-                "timestamp",
-                "category",
-                "status",
-                "statusTimeline",
-                "method"
-              ]
-            }
+              "nextCursor": {
+                "type": "string"
+              },
+              "total": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "data",
+              "total"
+            ]
           }
         },
         "required": [
@@ -1203,7 +1235,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:bf61a6a5d1b753940070a52246e3576bd1646194ee01761535f8bdd24ed4eab9"
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
     },
     {
       "name": "host_listGoals",
@@ -1261,7 +1293,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:bf61a6a5d1b753940070a52246e3576bd1646194ee01761535f8bdd24ed4eab9"
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
     },
     {
       "name": "host_listNotifications",
@@ -1329,7 +1361,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:bf61a6a5d1b753940070a52246e3576bd1646194ee01761535f8bdd24ed4eab9"
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
     },
     {
       "name": "host_listPayees",
@@ -1384,7 +1416,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:bf61a6a5d1b753940070a52246e3576bd1646194ee01761535f8bdd24ed4eab9"
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
     },
     {
       "name": "host_listScheduledPayments",
@@ -1451,7 +1483,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:bf61a6a5d1b753940070a52246e3576bd1646194ee01761535f8bdd24ed4eab9"
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
     },
     {
       "name": "host_listTransactions",
@@ -1635,7 +1667,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:bf61a6a5d1b753940070a52246e3576bd1646194ee01761535f8bdd24ed4eab9"
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
     },
     {
       "name": "host_proof_list",
@@ -1819,7 +1851,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:bf61a6a5d1b753940070a52246e3576bd1646194ee01761535f8bdd24ed4eab9"
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
     },
     {
       "name": "host_voice_create",
