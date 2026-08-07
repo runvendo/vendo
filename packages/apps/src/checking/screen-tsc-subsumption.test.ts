@@ -128,7 +128,7 @@ const treeOf = (wire: string): Tree => {
   } as unknown as AppDocument;
   const tree = document.tree;
   if (tree === undefined) throw new Error("fixture failed to compile to a tree");
-  return tree as Tree;
+  return tree as unknown as Tree;
 };
 
 const tsc = (wire: string) => screenTscFindings({ screen: wire, typings });

@@ -7,6 +7,7 @@ import {
   type ToolRegistry,
 } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
+import { inMemoryBoxFiles } from "./testing/box-files.js";
 import { createApps } from "./index.js";
 import type { SandboxAdapter, SandboxMachine } from "./sandbox.js";
 import { basicLanguageModel, guardFixture, memoryStore, seedAppRow } from "./testing/index.js";
@@ -63,6 +64,8 @@ const statefulBox = () => {
       }
       return { status: 404, headers: {}, body: new Uint8Array() };
     },
+    async url() { return "https://8080-fake_fn_runtime.test"; },
+    files: inMemoryBoxFiles(new Map()),
     async snapshot() { return "fake:fn-runtime"; },
     async stop() { /* sleep */ },
     async destroy() { /* gone */ },

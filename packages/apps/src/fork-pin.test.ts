@@ -3,7 +3,7 @@
 // captured source and records the pin with NO builder call. The generator lost
 // the fork decision entirely; an instruction riding the gesture reaches the
 // builder already scoped to an ordinary island edit on the existing fork.
-import type { AppDocument, RunContext, ScreenAssembler, StoreAdapter, ToolRegistry } from "@vendoai/core";
+import type { AppDocument, RunContext, ScreenAssembler, StoreAdapter, ToolRegistry, Tree } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { createApps, type AppsConfig, type AppsRuntime, type PinBaseline } from "./index.js";
 import { pinComponentName } from "./pins.js";
@@ -153,7 +153,8 @@ describe("06-apps §8 — gesture-owned deterministic fork (pins.fork)", () => {
     }));
     // Persisted, not just returned.
     const stored = (await runtime.list(ctx)).find(({ id }) => id === forked.app.id);
-    expect(stored?.tree?.nodes.find((node) => node.component === COMPONENT)?.props).toEqual(props);
+    const storedNodes = (stored?.tree as unknown as Tree | undefined)?.nodes;
+    expect(storedNodes?.find((node) => node.component === COMPONENT)?.props).toEqual(props);
   });
 
   it("runs a gesture instruction as ONE ordinary edit, already scoped to the fork", async () => {
@@ -339,7 +340,7 @@ describe("06-apps §8 — fork idempotency (appId-less dedupe)", () => {
 
     // The race really happened (both racers minted) and really converged
     // (the loser's row was reaped, not just hidden).
-    const operations = guard.audit.map((event) => event.detail?.operation);
+    const operations = guard.audit.map((event) => (event.detail as { operation?: string } | undefined)?.operation);
     expect(operations.filter((operation) => operation === "create")).toHaveLength(2);
     expect(operations.filter((operation) => operation === "delete")).toHaveLength(1);
 

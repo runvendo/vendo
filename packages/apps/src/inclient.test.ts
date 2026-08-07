@@ -234,8 +234,8 @@ describe("runtime in-client surface", () => {
     expect(await runtime.inClient.verdict(app.id, ctx)).toMatchObject({ granted: true });
     expect(guard.audit.some((event) =>
       event.kind === "app-lifecycle"
-      && event.detail?.operation === "in-client-approve"
-      && event.detail?.versionHash === approval.versionHash)).toBe(true);
+      && (event.detail as { operation?: string } | undefined)?.operation === "in-client-approve"
+      && (event.detail as { versionHash?: string } | undefined)?.versionHash === approval.versionHash)).toBe(true);
   });
 
   it("open() rides the granted verdict, an edit drops back loudly, and re-approval re-grants", async () => {

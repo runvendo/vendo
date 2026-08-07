@@ -1,5 +1,6 @@
 import { VENDO_APP_FORMAT, type AppDocument, type RunContext, type ToolRegistry } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
+import { inMemoryBoxFiles } from "./testing/box-files.js";
 import { createApps } from "./index.js";
 import type { SandboxAdapter, SandboxMachine } from "./sandbox.js";
 import { basicLanguageModel, guardFixture, memoryStore, seedAppRow } from "./testing/index.js";
@@ -45,6 +46,8 @@ function handlerSandbox(handler: BoxHandler): SandboxAdapter {
         body: encoder.encode(answer.body ?? ""),
       };
     },
+    async url() { return "https://8080-fake_box_v2.test"; },
+    files: inMemoryBoxFiles(new Map()),
     async snapshot() { return "fake:box-door"; },
     async stop() { /* sleep */ },
     async destroy() { /* gone */ },

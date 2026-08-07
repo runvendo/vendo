@@ -87,8 +87,9 @@ describe(".vendoapp interchange through createApps", () => {
     expect(await store.records("vendo_state").get(`${copy.id}:user_grace`)).toBeNull();
     expect(guard.grants).toHaveLength(1);
     expect(guard.grants.some((grant) => grant.appId === copy.id)).toBe(false);
-    expect(guard.audit.filter((event) => event.detail?.operation === "export")).toHaveLength(1);
-    expect(guard.audit.filter((event) => event.detail?.operation === "import")).toHaveLength(2);
+    const operationOf = (event: { detail?: unknown }) => (event.detail as { operation?: string } | undefined)?.operation;
+    expect(guard.audit.filter((event) => operationOf(event) === "export")).toHaveLength(1);
+    expect(guard.audit.filter((event) => operationOf(event) === "import")).toHaveLength(2);
   });
 
   it("exports only the document, without identity, lineage, or machine state", async () => {

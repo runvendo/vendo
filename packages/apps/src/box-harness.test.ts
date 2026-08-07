@@ -6,6 +6,10 @@ import { afterEach, describe, expect, it } from "vitest";
 // template; it is exercised here through its side-effect-free factory.
 import { createHarness } from "../box/harness.mjs";
 
+/** The control port answers JSON; `Response.json()` hands back `unknown`, so
+ *  each read names the shape the route documents. */
+const jsonOf = async <T>(response: Response): Promise<T> => await response.json() as T;
+
 /** Drive one harness on an ephemeral port against a scripted agent engine. */
 const withHarness = async (
   runAgentTask: (input: { prompt: string; context?: string; env: Record<string, string> }) => Promise<unknown>,
@@ -38,7 +42,7 @@ describe("box control-port protocol", () => {
     await withHarness(async () => ({ ok: true, summary: "", filesChanged: [], testsRun: 0 }), async (base) => {
       const response = await fetch(`${base}/agent/health`);
       expect(response.status).toBe(200);
-      const body = await response.json();
+      const body = await jsonOf<{ ok: boolean; harness: string }>(response);
       expect(body.ok).toBe(true);
       expect(body.harness).toBe("vendo-box/1");
     });
@@ -58,11 +62,11 @@ describe("box control-port protocol", () => {
         body: JSON.stringify({ prompt: "build a chaser", context: "SKIN CONTRACT ..." }),
       });
       expect(started.status).toBe(202);
-      const { taskId } = await started.json();
+      const { taskId } = await jsonOf<{ taskId: string }>(started);
       expect(taskId).toMatch(/^boxtask_/);
       await harness.taskPromise(taskId);
       const polled = await fetch(`${base}/agent/task/${taskId}`);
-      const body = await polled.json();
+      const body = await jsonOf<{ status: string; result: unknown }>(polled);
       expect(body.status).toBe("done");
       expect(body.result).toEqual({
         ok: true,
@@ -83,9 +87,9 @@ describe("box control-port protocol", () => {
       await gate;
       return { ok: true, summary: "", filesChanged: [], testsRun: 0 };
     }, async (base, harness) => {
-      const first = await (await fetch(`${base}/agent/task`, {
+      const first = await jsonOf<{ taskId: string }>(await fetch(`${base}/agent/task`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: "one" }),
-      })).json();
+      }));
       const second = await fetch(`${base}/agent/task`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: "two" }),
       });
@@ -111,9 +115,9 @@ describe("box control-port protocol", () => {
       return { ok: true, summary: "", filesChanged: [], testsRun: 0 };
     }, async (base, harness) => {
       // First task: no secret granted yet.
-      const t1 = await (await fetch(`${base}/agent/task`, {
+      const t1 = await jsonOf<{ taskId: string }>(await fetch(`${base}/agent/task`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: "one" }),
-      })).json();
+      }));
       await harness.taskPromise(t1.taskId);
       // Grant flips: host re-injects env (Lane E commitExposure → box restart loop).
       const env = await fetch(`${base}/agent/env`, {
@@ -121,9 +125,9 @@ describe("box control-port protocol", () => {
         body: JSON.stringify({ env: { RESEND_API_KEY: "granted-value" } }),
       });
       expect(env.status).toBe(200);
-      const t2 = await (await fetch(`${base}/agent/task`, {
+      const t2 = await jsonOf<{ taskId: string }>(await fetch(`${base}/agent/task`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: "two" }),
-      })).json();
+      }));
       await harness.taskPromise(t2.taskId);
       expect(envSeen[0]).toBeUndefined();
       expect(envSeen[1]).toBe("granted-value");
