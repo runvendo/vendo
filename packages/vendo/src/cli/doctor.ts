@@ -126,18 +126,32 @@ async function probeBody(response: Response): Promise<DoctorProbeBody> {
   }
 }
 
-/** Both auth probes 404 for one reason: the composition never declared itself
-    development, so `wireRoutesFor` left the probe routes out of the table
-    entirely. Saying "set VENDO_BASE_URL" or "check createVendo({ actAs })"
-    here sends the reader to fix something that is not broken, so the 404 gets
-    its own message naming the real cause and the two ways to opt in.
-    `next dev` sets NODE_ENV for you; a bare `node`/`tsx` server does not. */
+/** A 404 from the auth probes has two causes, and doctor may not guess between
+    them: the composition never declared itself development (so `wireRoutesFor`
+    left the probe routes out), or this URL is not the wire base at all. Saying
+    "set VENDO_BASE_URL" for the first, or "pass development: true" for the
+    second, both send the reader to fix something that is not broken.
+    `/doctor/base-url` separates them: wire/doctor.ts mounts it in EVERY
+    environment (wireRoutesFor keeps it outside the `deps.development` ternary)
+    precisely so a production misconfiguration can still be probed, while the
+    probes beside it are development-only. So base-url answering is what makes
+    the undeclared composition identifiable. */
 const PROBES_NOT_MOUNTED =
-  "the doctor probes are not mounted: this composition did not declare itself development, "
-  + "so /doctor/present and /doctor/act-as are not in the route table. Pass "
-  + "createVendo({ development: true }) for this host, or run it with NODE_ENV=development "
-  + "(next dev sets that for you; a plain node/tsx server does not). "
-  + "Production deployments are meant to answer 404 here.";
+  "the doctor probes are not mounted: /doctor/base-url answers here but /doctor/present "
+  + "and /doctor/act-as are not in the route table, which is what a composition that did not "
+  + "declare itself development looks like. Pass createVendo({ development: true }) for this "
+  + "host, or run it with NODE_ENV=development (next dev sets that for you; a plain node/tsx "
+  + "server does not). Production deployments are meant to answer 404 here.";
+
+/** base-url 404s too, so the development gate is NOT the story: every
+    composition mounts that route. Something answered /status at this URL — a
+    proxy, a catch-all, an unrelated service — but the Vendo wire is elsewhere. */
+const NOT_THE_WIRE_BASE = (statusUrl: string): string =>
+  `the doctor probes answered 404 and so did /doctor/base-url, which every composition mounts in `
+  + `every environment — so ${statusUrl} is answering /status but is not this app's Vendo wire base. `
+  + `Check the origin and the FULL mount path you passed (a host under a basePath needs it, e.g. `
+  + `http://localhost:3000/maple/api/vendo), and any proxy in front of it. If the URL is right, this `
+  + `host's @vendoai/vendo predates the doctor surface — upgrade it and restart the dev server.`;
 
 /** 09-vendo §5 / block-actions A — wiring checks plus live composition,
     present-credential, and actAs mint+verify round-trips. */
@@ -620,6 +634,18 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     fail("auth/present", "E-AUTH-003", `present credential probe cannot run; start the dev server at ${statusUrl} and retry`);
     fail("auth/act-as", "E-AUTH-006", `cannot probe actAs; start the dev server at ${statusUrl} and retry`);
   } else {
+    // Asked at most once, and only when a probe actually 404s, so a healthy
+    // run costs no extra request. A base-url probe that throws counts as not
+    // mounted — the ambiguous message is the safe one to be wrong with.
+    let probe404: Promise<string> | undefined;
+    const probe404Message = (): Promise<string> => (probe404 ??= (async () => {
+      try {
+        const response = await fetchImpl(`${statusUrl}/doctor/base-url`, { headers: { accept: "application/json" } });
+        if (response.status !== 404) return PROBES_NOT_MOUNTED;
+      } catch { /* fall through */ }
+      return NOT_THE_WIRE_BASE(statusUrl);
+    })());
+
     try {
       const response = await fetchImpl(`${statusUrl}/doctor/present`, {
         method: "POST",
@@ -635,7 +661,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
       if (response.ok && body.ok === true) {
         pass("auth/present", "present credentials reach the host API");
       } else if (response.status === 404) {
-        fail("auth/present", "E-AUTH-001", PROBES_NOT_MOUNTED);
+        fail("auth/present", "E-AUTH-001", await probe404Message());
       } else {
         fail("auth/present", "E-AUTH-001", "present credentials did not reach the host API; set VENDO_BASE_URL to the running host origin and restart the dev server");
       }
@@ -655,7 +681,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
       } else if (body.error?.code === "act-as-not-configured") {
         warn("auth/act-as", "E-AUTH-007", "actAs is not configured; pass createVendo({ actAs }) before enabling away host actions");
       } else if (response.status === 404) {
-        fail("auth/act-as", "E-AUTH-004", PROBES_NOT_MOUNTED);
+        fail("auth/act-as", "E-AUTH-004", await probe404Message());
       } else {
         fail("auth/act-as", "E-AUTH-004", "actAs mint + host verification failed; check createVendo({ actAs }), its verifier middleware, and the host principal resolver");
       }
