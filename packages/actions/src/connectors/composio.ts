@@ -1,4 +1,4 @@
-import { debugConnectorHttp, VendoError, type RiskLabel, type RunContext, type ToolCall, type ToolDescriptor, type ToolOutcome } from "@vendoai/core";
+import { debugConnectorHttp, joinUrl, VendoError, type RiskLabel, type RunContext, type ToolCall, type ToolDescriptor, type ToolOutcome } from "@vendoai/core";
 import type { Connector, ConnectorAccount, ConnectorAccountIdentity, ConnectorCatalogEntry, ServiceToolMatch } from "./connector.js";
 import { composioToolRisk } from "./composio-risk.js";
 import { normalizeToolName } from "./names.js";
@@ -166,14 +166,14 @@ export function composioConnector(config: {
   apps?: string[];
   baseUrl?: string;
 }): Connector {
-  const baseUrl = (config.baseUrl ?? "https://backend.composio.dev").replace(/\/$/, "");
+  const baseUrl = config.baseUrl ?? "https://backend.composio.dev";
   let normalizedToRaw = new Map<string, { raw: string; toolkit: string }>();
 
   async function composioFetch(
     path: string,
     options: { method?: string; query?: Record<string, string>; body?: Record<string, unknown> } = {},
   ): Promise<{ ok: boolean; status: number; payload: unknown }> {
-    const url = new URL(`${baseUrl}${path}`);
+    const url = joinUrl(baseUrl, path);
     for (const [key, value] of Object.entries(options.query ?? {})) url.searchParams.set(key, value);
     debugConnectorHttp("composio", options.method ?? "GET", path);
     const response = await fetch(url, {
