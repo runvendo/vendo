@@ -3,41 +3,46 @@ import path from "node:path";
 import { z } from "zod";
 import type { ScorecardCheck, ScorecardLayerInput, ScorecardScore } from "../scorecard.js";
 
+// A narrow structural port of the slice of Playwright this layer drives. Every
+// member is required: a real Locator/Page always has all of them, so an
+// optional member would only ever be absent on a test fake — and a fake that
+// silently lacks fill() turns a host login into a no-op the run still scores.
+// Return types are widened where Playwright's are richer (goto resolves a
+// Response) so a real Page satisfies this interface without a cast.
 export interface E2eLocator {
   count(): Promise<number>;
-  click?(options?: unknown): Promise<void>;
-  fill?(value: string): Promise<void>;
-  press?(key: string): Promise<void>;
-  textContent?(): Promise<string | null>;
-  allTextContents?(): Promise<string[]>;
-  first?(): E2eLocator;
+  click(options?: unknown): Promise<unknown>;
+  fill(value: string): Promise<unknown>;
+  press(key: string): Promise<unknown>;
+  textContent(): Promise<string | null>;
+  allTextContents(): Promise<string[]>;
+  first(): E2eLocator;
 }
 
 export interface E2eFrameLocator {
   locator(selector: string): E2eLocator;
   getByRole(role: string, options?: { name?: string | RegExp }): E2eLocator;
-  getByTestId?(testId: string): E2eLocator;
+  getByTestId(testId: string): E2eLocator;
 }
 
 export interface E2eRequest {
   url(): string;
   method(): string;
-  postData?(): string | null;
-  postDataJSON?(): unknown;
+  postData(): string | null;
+  postDataJSON(): unknown;
 }
 
 export interface E2ePage {
-  goto(url: string, options?: E2eNavigationOptions): Promise<void>;
+  goto(url: string, options?: E2eNavigationOptions): Promise<unknown>;
   locator(selector: string): E2eLocator;
   getByRole(role: string, options?: { name?: string | RegExp }): E2eLocator;
-  getByLabel(label: string | RegExp): E2eLocator;
-  getByTestId?(testId: string): E2eLocator;
-  frameLocator?(selector: string): E2eFrameLocator;
-  keyboard?: { press(key: string): Promise<void> };
-  on?(event: "request", listener: (request: E2eRequest) => void): void;
-  off?(event: "request", listener: (request: E2eRequest) => void): void;
-  screenshot?(options: { path: string; fullPage?: boolean }): Promise<Buffer | void>;
-  close?(): Promise<void>;
+  getByTestId(testId: string): E2eLocator;
+  frameLocator(selector: string): E2eFrameLocator;
+  keyboard: { press(key: string): Promise<unknown> };
+  on(event: "request", listener: (request: E2eRequest) => void): unknown;
+  off(event: "request", listener: (request: E2eRequest) => void): unknown;
+  screenshot(options: { path: string; fullPage?: boolean }): Promise<unknown>;
+  close(): Promise<unknown>;
 }
 
 export interface E2eNavigationOptions {
@@ -528,7 +533,7 @@ async function runAttempt(
       if (error || assertions.some((assertion) => !assertion.pass)) {
         screenshotPath = path.join(ctx.logsDir, `e2e.${safeFilePart(script.id)}.${attempt}.png`);
         try {
-          await session.page.screenshot?.({ path: screenshotPath, fullPage: true });
+          await session.page.screenshot({ path: screenshotPath, fullPage: true });
           screenshots.push(screenshotPath);
         } catch {
           screenshotPath = undefined;
@@ -572,7 +577,7 @@ async function defaultPageFactory(): Promise<E2ePageSession> {
   const context = await browser.newContext();
   const page = await context.newPage();
   return {
-    page: page as unknown as E2ePage,
+    page,
     close: async () => {
       await context.close();
       await browser.close();
@@ -651,7 +656,6 @@ async function loginToUmami(page: E2ePage, timeoutMs: number): Promise<void> {
   if (await safeCount(username) === 0) return;
 
   const password = page.locator('[data-test="input-password"] input, input[name="password"]');
-  if (!username.fill || !password.fill) return;
   await username.fill("admin");
   await password.fill("umami");
   await clickIfPresent(page.getByRole("button", { name: /^login$/i }));
@@ -676,11 +680,10 @@ async function loginToTeable(
   if (await safeCount(email) === 0) return;
 
   const password = page.locator('input[name="password"], input[type="password"], #password');
-  if (!email.fill || !password.fill) return;
   await email.fill("test@e2e.com");
   await password.fill("12345678");
   if (!await clickIfPresent(page.getByRole("button", { name: /sign\s?in|log\s?in|continue|submit/i }))) {
-    await email.press?.("Enter");
+    await email.press("Enter");
   }
   // The form clears from the DOM once the redirect lands.
   await waitFor(async () => (await safeCount(email)) === 0, timeoutMs).catch(() => undefined);
@@ -724,10 +727,10 @@ async function attachNetworkSignals(
       if (tool) signals.toolCalls.push({ name: tool, method, url, source: "voice-tools" });
     }
   };
-  page.on?.("request", onRequest);
+  page.on("request", onRequest);
   return {
     dispose() {
-      page.off?.("request", onRequest);
+      page.off("request", onRequest);
     },
   };
 }
@@ -768,8 +771,8 @@ export async function openVendoSurface(page: E2ePage, timeoutMs: number): Promis
       lastOpenAttempt = now;
       const launcher = page.getByRole("button", { name: /ask|assistant|vendo/i });
       if (!await clickIfPresent(launcher)) {
-        await page.keyboard?.press("Meta+K");
-        await page.keyboard?.press("Control+K");
+        await page.keyboard.press("Meta+K");
+        await page.keyboard.press("Control+K");
       }
     }
 
@@ -782,14 +785,8 @@ export async function sendPrompt(page: E2ePage, prompt: string): Promise<void> {
   // (aria-label "Message composer" / "Message"), so a bare getByLabel violates
   // Playwright strict mode — target the textbox role.
   const input = page.getByRole("textbox", { name: /message/i });
-  if (!input.fill) throw new Error("Vendo composer message field did not expose fill()");
   await input.fill(prompt);
-  if (input.press) {
-    await input.press("Enter");
-    return;
-  }
-  if (!page.keyboard) throw new Error("Vendo composer message field did not expose press() and page has no keyboard");
-  await page.keyboard.press("Enter");
+  await input.press("Enter");
 }
 
 async function waitForAssertions(
@@ -830,7 +827,7 @@ async function waitFor(predicate: () => Promise<boolean>, timeoutMs: number): Pr
 
 async function countToolCallDomMatches(page: E2ePage, name: TextMatcher): Promise<number> {
   const labels = page.locator(".fl-tool-label");
-  const texts = await labels.allTextContents?.().catch(() => [] as string[]) ?? [];
+  const texts = await labels.allTextContents().catch(() => [] as string[]);
   return texts.filter((text) => textMatches(name, text.replace(/^Tool:\s*/i, ""))).length;
 }
 
@@ -838,7 +835,7 @@ async function countViewDomMatches(page: E2ePage, assertion: Extract<Conversatio
   let count = 0;
   if (assertion.testId) {
     const literal = literalMatcherValue(assertion.testId);
-    if (literal) count += await safeCount(page.getByTestId ? page.getByTestId(literal) : page.locator(attrSelector("data-testid", literal)));
+    if (literal) count += await safeCount(page.getByTestId(literal));
   }
   if (assertion.component) {
     const literal = literalMatcherValue(assertion.component);
@@ -852,31 +849,31 @@ async function countViewDomMatches(page: E2ePage, assertion: Extract<Conversatio
     }
   }
   if (!assertion.testId && !assertion.component && !assertion.role) {
-    count += await safeCount(page.getByTestId ? page.getByTestId("ui-node") : page.locator(attrSelector("data-testid", "ui-node")));
+    count += await safeCount(page.getByTestId("ui-node"));
   }
   if (assertion.text && count === 0) {
     const body = page.locator("body");
-    const text = await body.textContent?.();
+    const text = await body.textContent();
     if (textMatches(assertion.text, text ?? undefined)) count += await safeCount(body);
   }
   return count;
 }
 
+function stageFrame(page: E2ePage): E2eFrameLocator {
+  return page.frameLocator('iframe#vendo-stage, iframe[title="Vendo stage"]');
+}
+
 async function countStageFrameRoleMatches(page: E2ePage, role: string, text: TextMatcher | undefined): Promise<number> {
-  const frame = page.frameLocator?.('iframe#vendo-stage, iframe[title="Vendo stage"]');
-  if (!frame) return 0;
-  return safeCount(frame.getByRole(role, roleOptions(text)));
+  return safeCount(stageFrame(page).getByRole(role, roleOptions(text)));
 }
 
 async function countErrorDomSignals(page: E2ePage): Promise<number> {
   const hardErrors = await safeCount(page.locator(hardErrorSelector));
-  const stageErrors = page.frameLocator
-    ? await safeCount(page.frameLocator('iframe#vendo-stage, iframe[title="Vendo stage"]').locator(stageErrorSelector))
-    : 0;
+  const stageErrors = await safeCount(stageFrame(page).locator(stageErrorSelector));
   // Several toasts can be visible at once, so read them all: a single-element
   // textContent() would trip Playwright's strict mode, and a concatenated read
   // would score two benign toasts as errors the moment one of them matched.
-  const toasts = await page.locator(".fl-toast:visible").allTextContents?.().catch(() => [] as string[]) ?? [];
+  const toasts = await page.locator(".fl-toast:visible").allTextContents().catch(() => [] as string[]);
   return hardErrors + stageErrors + toasts.filter((text) => errorToastText.test(text)).length;
 }
 
@@ -900,8 +897,8 @@ function roleOptions(text: TextMatcher | undefined): { name?: string | RegExp } 
 }
 
 async function clickIfPresent(locator: E2eLocator): Promise<boolean> {
-  if (await safeCount(locator) === 0 || !locator.click) return false;
-  await (locator.first?.() ?? locator).click?.();
+  if (await safeCount(locator) === 0) return false;
+  await locator.first().click();
   return true;
 }
 
@@ -915,7 +912,7 @@ async function safeCount(locator: E2eLocator): Promise<number> {
 
 async function captureObservableText(page: E2ePage): Promise<string | undefined> {
   try {
-    return (await page.locator(".fl-msglist, [role='dialog'], body").textContent?.()) ?? undefined;
+    return (await page.locator(".fl-msglist, [role='dialog'], body").textContent()) ?? undefined;
   } catch {
     return undefined;
   }
@@ -927,16 +924,16 @@ async function closeSession(session: E2ePageSession | undefined): Promise<void> 
     await session.close();
     return;
   }
-  await session.page.close?.();
+  await session.page.close();
 }
 
 function requestJson(request: E2eRequest): unknown {
   try {
-    if (request.postDataJSON) return request.postDataJSON();
+    return request.postDataJSON();
   } catch {
     // Fall back to raw post data.
   }
-  const raw = request.postData?.();
+  const raw = request.postData();
   if (!raw) return undefined;
   try {
     return JSON.parse(raw) as unknown;

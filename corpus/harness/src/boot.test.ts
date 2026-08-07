@@ -61,6 +61,7 @@ function fakeProcess(pid: number): FakeBootProcess {
     kill() {
       return true;
     },
+    once() {},
   };
 }
 

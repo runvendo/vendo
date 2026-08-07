@@ -60,41 +60,50 @@ class FakeLocator implements E2eLocator {
   }
 }
 
-class FakePage implements E2ePage {
-  constructor(
-    private readonly counts: Record<string, number>,
-    private readonly bodyText = "",
-    private readonly frameCounts: Record<string, number> = {},
-  ) {}
+/** A complete page: every member the layer can reach is present, so a test can
+    never accidentally exercise a degraded path a real Playwright page has no
+    way to take. Tests override only the members they drive. */
+function fakePage(overrides: Partial<E2ePage>): E2ePage {
+  return {
+    async goto() {},
+    locator: () => new FakeLocator(0),
+    getByRole: () => new FakeLocator(0),
+    getByTestId: () => new FakeLocator(0),
+    frameLocator: () => fakeFrame({}),
+    keyboard: { press: async () => {} },
+    on: () => {},
+    off: () => {},
+    screenshot: async () => {},
+    close: async () => {},
+    ...overrides,
+  };
+}
 
-  async goto(_url: string, _options?: E2eNavigationOptions): Promise<void> {}
+function fakeFrame(counts: Record<string, number>): E2eFrameLocator {
+  return {
+    locator: (selector: string) => new FakeLocator(counts[selector] ?? 0),
+    getByRole: (role: string) => new FakeLocator(counts[`role:${role}`] ?? 0),
+    getByTestId: (testId: string) => new FakeLocator(counts[`testid:${testId}`] ?? 0),
+  };
+}
 
-  locator(selector: string): E2eLocator {
-    if (selector === "body") return new FakeLocator(1, this.bodyText);
-    if (selector.includes(".fl-toast")) return new FakeLocator(this.counts[".fl-toast"] ?? 0, this.bodyText);
-    const key = Object.keys(this.counts).find((candidate) => selector.includes(candidate));
-    return new FakeLocator(key ? this.counts[key] ?? 0 : 0);
-  }
-
-  getByRole(role: string): E2eLocator {
-    return new FakeLocator(this.counts[`role:${role}`] ?? 0);
-  }
-
-  getByLabel(): E2eLocator {
-    return new FakeLocator(this.counts.label ?? 0);
-  }
-
-  getByTestId(testId: string): E2eLocator {
-    return new FakeLocator(this.counts[`testid:${testId}`] ?? 0);
-  }
-
-  frameLocator(): E2eFrameLocator {
-    return {
-      locator: (selector: string) => new FakeLocator(this.frameCounts[selector] ?? 0),
-      getByRole: (role: string) => new FakeLocator(this.frameCounts[`role:${role}`] ?? 0),
-      getByTestId: (testId: string) => new FakeLocator(this.frameCounts[`testid:${testId}`] ?? 0),
-    };
-  }
+/** A page whose locators answer from a selector-substring count table. */
+function countingPage(
+  counts: Record<string, number>,
+  bodyText = "",
+  frameCounts: Record<string, number> = {},
+): E2ePage {
+  return fakePage({
+    locator(selector: string) {
+      if (selector === "body") return new FakeLocator(1, bodyText);
+      if (selector.includes(".fl-toast")) return new FakeLocator(counts[".fl-toast"] ?? 0, bodyText);
+      const key = Object.keys(counts).find((candidate) => selector.includes(candidate));
+      return new FakeLocator(key ? counts[key] ?? 0 : 0);
+    },
+    getByRole: (role: string) => new FakeLocator(counts[`role:${role}`] ?? 0),
+    getByTestId: (testId: string) => new FakeLocator(counts[`testid:${testId}`] ?? 0),
+    frameLocator: () => fakeFrame(frameCounts),
+  });
 }
 
 function signals(partial: Partial<E2eObservableSignals>): E2eObservableSignals {
@@ -138,7 +147,7 @@ describe("conversation suite parsing", () => {
 describe("prepareLayer3Page", () => {
   it("forwards an explicit DOM-ready navigation policy to the host page", async () => {
     const navigations: Array<{ url: string; options?: { waitUntil?: "load" | "domcontentloaded"; timeout?: number } }> = [];
-    const page = new FakePage({});
+    const page = countingPage({});
     page.goto = async (url, options) => { navigations.push({ url, options }); };
 
     await prepareLayer3Page("express-host", page, 30_000, "http://127.0.0.1:3210/", {
@@ -174,7 +183,7 @@ describe("evaluateAssertion", () => {
     const observed = signals({
       views: [{ component: "DataTable", role: "table", testId: "ui-node", text: "Pricing" }],
     });
-    const page = new FakePage({ "role:list": 1, "testid:ui-node": 1 });
+    const page = countingPage({ "role:list": 1, "testid:ui-node": 1 });
 
     await expect(evaluateAssertion({ kind: "view-rendered", component: "DataTable", role: "table" }, observed))
       .resolves.toMatchObject({ pass: true });
@@ -185,20 +194,20 @@ describe("evaluateAssertion", () => {
   });
 
   it("matches generated view roles inside the Vendo stage iframe", async () => {
-    const page = new FakePage({}, "", { "role:table": 1 });
+    const page = countingPage({}, "", { "role:table": 1 });
 
     await expect(evaluateAssertion({ kind: "view-rendered", role: "table" }, signals({}), page))
       .resolves.toMatchObject({ pass: true });
   });
 
   it("evaluates approval cards and no-error-toast from fake page/signal objects", async () => {
-    const approvalPage = new FakePage({ "Approval request": 1 });
-    const genericAlertPage = new FakePage({ '[role="alert"]': 1 });
-    const shellErrorPage = new FakePage({ ".fl-error": 1 });
-    const explicitDataErrorPage = new FakePage({ '[data-error="true"]': 1 });
-    const benignDataErrorPage = new FakePage({ "[data-error]": 1 });
-    const stageErrorPage = new FakePage({}, "", { "[data-error]:visible, [data-error-boundary]:visible": 1 });
-    const statusToastPage = new FakePage({ ".fl-toast": 1 }, "Saved successfully");
+    const approvalPage = countingPage({ "Approval request": 1 });
+    const genericAlertPage = countingPage({ '[role="alert"]': 1 });
+    const shellErrorPage = countingPage({ ".fl-error": 1 });
+    const explicitDataErrorPage = countingPage({ '[data-error="true"]': 1 });
+    const benignDataErrorPage = countingPage({ "[data-error]": 1 });
+    const stageErrorPage = countingPage({}, "", { "[data-error]:visible, [data-error-boundary]:visible": 1 });
+    const statusToastPage = countingPage({ ".fl-toast": 1 }, "Saved successfully");
     const approvalAssertion: ConversationAssertion = { kind: "approval-card-shown" };
 
     await expect(evaluateAssertion(approvalAssertion, signals({}), approvalPage))
@@ -222,8 +231,8 @@ describe("evaluateAssertion", () => {
   });
 
   it("reads several visible toasts at once instead of tripping Playwright's strict mode", async () => {
-    const twoBenignToasts = new FakePage({ ".fl-toast": 2 }, "Saved successfully");
-    const twoErrorToasts = new FakePage({ ".fl-toast": 2 }, "Upload failed");
+    const twoBenignToasts = countingPage({ ".fl-toast": 2 }, "Saved successfully");
+    const twoErrorToasts = countingPage({ ".fl-toast": 2 }, "Upload failed");
 
     await expect(evaluateAssertion({ kind: "no-error-toast" }, signals({}), twoBenignToasts))
       .resolves.toMatchObject({ pass: true });
@@ -298,7 +307,7 @@ describe("runE2eLayer", () => {
 
     let launcherClicks = 0;
     let promptSent = false;
-    const page: E2ePage = {
+    const page = fakePage({
       async goto() {},
       locator(selector: string) {
         if (selector === "body" || selector.includes("[role='dialog']")) return new FakeLocator(1, "dialog ready");
@@ -323,15 +332,7 @@ describe("runE2eLayer", () => {
         }
         return new FakeLocator(0);
       },
-      getByLabel() {
-        return new FakeLocator(1, "", {
-          fill: () => {},
-          press: () => {
-            promptSent = true;
-          },
-        });
-      },
-    };
+    });
 
     const result = await runE2eLayer({
       repoName: "fixture",
@@ -376,7 +377,7 @@ describe("runE2eLayer", () => {
     const gotoUrls: string[] = [];
     let usernameVisible = true;
     let promptSent = false;
-    const page: E2ePage = {
+    const page = fakePage({
       async goto(url: string) {
         gotoUrls.push(url);
       },
@@ -409,15 +410,7 @@ describe("runE2eLayer", () => {
         }
         return new FakeLocator(0);
       },
-      getByLabel() {
-        return new FakeLocator(1, "", {
-          fill: () => {},
-          press: () => {
-            promptSent = true;
-          },
-        });
-      },
-    };
+    });
 
     const result = await runE2eLayer({
       repoName: "umami",
@@ -464,7 +457,7 @@ describe("runE2eLayer", () => {
 
     const gotoUrls: string[] = [];
     let promptSent = false;
-    const page: E2ePage = {
+    const page = fakePage({
       async goto(url: string) {
         gotoUrls.push(url);
       },
@@ -484,15 +477,7 @@ describe("runE2eLayer", () => {
         }
         return new FakeLocator(0);
       },
-      getByLabel() {
-        return new FakeLocator(1, "", {
-          fill: () => {},
-          press: () => {
-            promptSent = true;
-          },
-        });
-      },
-    };
+    });
 
     const result = await runE2eLayer({
       repoName: "papermark",
@@ -541,7 +526,7 @@ describe("runE2eLayer", () => {
     const gotoUrls: string[] = [];
     let credentialsVisible = true;
     let promptSent = false;
-    const page: E2ePage = {
+    const page = fakePage({
       async goto(url: string) {
         gotoUrls.push(url);
       },
@@ -574,15 +559,7 @@ describe("runE2eLayer", () => {
         }
         return new FakeLocator(0);
       },
-      getByLabel() {
-        return new FakeLocator(1, "", {
-          fill: () => {},
-          press: () => {
-            promptSent = true;
-          },
-        });
-      },
-    };
+    });
 
     const result = await runE2eLayer({
       repoName: "teable",

@@ -271,7 +271,7 @@ export async function createPlaywrightGalleryDriver(): Promise<GalleryCaptureDri
         const targetUrl = new URL(input.screen.path, input.readinessUrl).toString();
         await prepareLayer3Page(
           input.repoName,
-          page as unknown as E2ePage,
+          page,
           nativeScreenTimeoutMs,
           targetUrl,
           galleryNavigationOptions(nativeScreenTimeoutMs),
@@ -309,18 +309,18 @@ export async function createPlaywrightGalleryDriver(): Promise<GalleryCaptureDri
         );
         await prepareLayer3Page(
           input.repoName,
-          page as unknown as E2ePage,
+          page,
           Math.min(timeoutMs, 30_000),
           targetUrl,
           galleryNavigationOptions(timeoutMs),
         );
-        await openVendoSurface(page as unknown as E2ePage, Math.min(timeoutMs, 30_000));
+        await openVendoSurface(page, Math.min(timeoutMs, 30_000));
         const initialGeneratedNodes = await page.locator(firstPaintSelector).count();
         const initialGenerationTools = await page.locator(generationToolSelector).count();
         const startedAt = performance.now();
-        await sendPrompt(page as unknown as E2ePage, input.prompt.prompt);
+        await sendPrompt(page, input.prompt.prompt);
         let stopApprovalWatcher = false;
-        const approvalWatcher = approveGenerationIfRequested(page as unknown as E2ePage, {
+        const approvalWatcher = approveGenerationIfRequested(page, {
           timeoutMs,
           shouldStop: () => stopApprovalWatcher,
         });
@@ -344,7 +344,7 @@ export async function createPlaywrightGalleryDriver(): Promise<GalleryCaptureDri
         await page.screenshot({ path: firstPaintPath, fullPage: false });
 
         const remainingMs = Math.max(1_000, timeoutMs - firstPaint);
-        await waitForIdle(page as unknown as E2ePage, remainingMs);
+        await waitForIdle(page, remainingMs);
         const settledStartedAt = performance.now();
         while (
           await page.locator(firstPaintSelector).count() <= initialGeneratedNodes
@@ -403,11 +403,9 @@ export async function approveGenerationIfRequested(
   }));
   const startedAt = performance.now();
   while (!options.shouldStop?.() && performance.now() - startedAt < options.timeoutMs) {
-    const matches = page.locator(generationApprovalSelector);
-    const approve = matches.first ? matches.first() : matches;
+    const approve = page.locator(generationApprovalSelector).first();
     try {
       if (await approve.count() > 0) {
-        if (!approve.click) throw new Error("Gallery approval control is not clickable.");
         await approve.click();
         return true;
       }

@@ -14,12 +14,16 @@ export interface BootCommandResult {
   stderr: string;
 }
 
+// The slice of ChildProcess the boot recipe drives. `pid` stays optional
+// because a real ChildProcess leaves it unset until the spawn succeeds; the
+// rest are required, so a fake that forgets one fails to compile instead of
+// quietly turning teardown or the exit watcher into a no-op.
 export interface BootProcess {
   pid?: number;
-  stdout?: Readable | NodeJS.ReadableStream | null;
-  stderr?: Readable | NodeJS.ReadableStream | null;
-  kill?: (signal?: NodeJS.Signals | number) => boolean;
-  once?: (event: "exit" | "close" | "error", listener: (...args: unknown[]) => void) => unknown;
+  stdout: Readable | null;
+  stderr: Readable | null;
+  kill(signal?: NodeJS.Signals | number): boolean;
+  once(event: "exit" | "close" | "error", listener: (...args: unknown[]) => void): unknown;
 }
 
 export interface BootLogPaths {
@@ -293,12 +297,8 @@ function attachLogStream(
   bootProcess.stderr?.on("data", write);
 
   return async () => {
-    const stdout = bootProcess.stdout as { off?: (event: string, listener: (chunk: unknown) => void) => void; removeListener?: (event: string, listener: (chunk: unknown) => void) => void } | null | undefined;
-    const stderr = bootProcess.stderr as { off?: (event: string, listener: (chunk: unknown) => void) => void; removeListener?: (event: string, listener: (chunk: unknown) => void) => void } | null | undefined;
-    if (stdout?.off) stdout.off("data", write);
-    else stdout?.removeListener?.("data", write);
-    if (stderr?.off) stderr.off("data", write);
-    else stderr?.removeListener?.("data", write);
+    bootProcess.stdout?.off("data", write);
+    bootProcess.stderr?.off("data", write);
     await new Promise<void>((resolve, reject) => {
       writer.end((error?: Error | null) => {
         if (error) reject(error);
@@ -406,7 +406,7 @@ export async function bootRepo(repo: BootRepo, options: BootRepoOptions = {}): P
       } catch (error) {
         errors.push(error);
       }
-    } else if (serverProcess?.kill) {
+    } else if (serverProcess) {
       try {
         serverProcess.kill("SIGTERM");
       } catch (error) {
@@ -447,10 +447,10 @@ export async function bootRepo(repo: BootRepo, options: BootRepoOptions = {}): P
     }
 
     serverProcess = spawnProcess(devServer.command, { cwd: appRoot, env });
-    serverProcess.once?.("exit", (code, signal) => {
+    serverProcess.once("exit", (code, signal) => {
       serverExit = `Dev server exited before readiness with ${code === null ? `signal ${String(signal)}` : `exit code ${String(code)}`}`;
     });
-    serverProcess.once?.("error", (error) => {
+    serverProcess.once("error", (error) => {
       serverExit = `Dev server failed to start: ${error instanceof Error ? error.message : String(error)}`;
     });
     closeServerLog = attachLogStream(serverProcess, logPaths.server, tail);
