@@ -15,7 +15,14 @@ Non-interactive setup with zero questions on the happy path. It scans the app,
 scaffolds the server surface (the `createVendo` composition) and writes the
 `.vendo/` contract. Init never writes a client file — the paste it prints is
 yours. Theme is extracted automatically and auth is detected from
-`package.json`. See
+`package.json`.
+
+`init` = **install** (framework detection, the route handler, keys and deps,
+the `predev`/`prebuild` hooks) and then a **full sync** — the same flow
+`vendo sync` runs, judging the whole catalog. It fails loud: any error exits
+**1**.
+
+See
 [vendo init](/connect/vendo-init) for the full walkthrough and
 [the agent playbook](/agents) for the agent-driven flow.
 
@@ -267,8 +274,14 @@ behind every check.
 
 Runs the build-step scan manually. Sync owns the WHOLE scan: tool extraction,
 remix baselines, the host component catalog, and the theme, for `dir`, which
-defaults to the current directory. The default is fail-soft and warns on
-breaking changes.
+defaults to the current directory.
+
+`sync` is the same flow `init` ends in, **incremental** — it judges only what
+moved. It fails **soft**: an extraction failure still exits **0**, because a
+sync problem must never break a build. `--strict` is the CI gate: breaking
+changes exit **2**, or **3** when saved references (apps, automations, grants)
+point at them; `--report` with no Cloud key exits **1**; under `--strict` a
+failed run exits **2**.
 When tools changed or broke, sync asks the running dev server which saved
 apps, automations, and grants they impact and prints one `impact:` line per
 tool (or `impact unknown` when no server is reachable). Drifted pins get an
