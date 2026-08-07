@@ -5,6 +5,7 @@ import {
   VENDO_TOOLS_FORMAT,
   compoundBindingSchema,
   compoundToolSchema,
+  extractedToolSchema,
   judgmentsFileSchema,
   overridesFileSchema,
   toolBindingSchema,
@@ -299,5 +300,22 @@ describe("judgmentsFileSchema", () => {
         JSON.stringify(smuggled),
       ).toBe(false);
     }
+  });
+});
+
+describe("schema source markers", () => {
+  it("parses both markers and rejects an invented rung", () => {
+    const base = {
+      name: "host_items_list",
+      description: "List items",
+      inputSchema: { type: "object", properties: {} },
+      risk: "read",
+      binding: { kind: "route", method: "GET", path: "/api/items", argsIn: "query" },
+    };
+    const parsed = extractedToolSchema.parse({ ...base, inputSchemaSource: "declared", outputSchemaSource: "unknown" });
+    expect(parsed).toMatchObject({ inputSchemaSource: "declared", outputSchemaSource: "unknown" });
+    // Absence is legal — a pre-marker file still parses.
+    expect(extractedToolSchema.safeParse(base).success).toBe(true);
+    expect(extractedToolSchema.safeParse({ ...base, inputSchemaSource: "guessed" }).success).toBe(false);
   });
 });

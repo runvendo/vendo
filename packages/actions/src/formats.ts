@@ -228,12 +228,20 @@ export const VENDO_TOOLS_FORMAT = "vendo/tools@3" as const;
 
 export const VENDO_OVERRIDES_FORMAT = "vendo/overrides@3" as const;
 
+/** Which rung of the trust ladder produced a schema. "unknown" is explicit, not
+ *  absence: `inputSchema` is REQUIRED on every descriptor (core tools.ts), so
+ *  only this can tell a derived no-argument schema from one nothing could read.
+ *  It is also the AI fill gate — `patchToolSchemas` refuses an occupied slot. */
+export type SchemaSource = "declared" | "types" | "inferred" | "unknown";
+
+export const schemaSourceSchema = z.enum(["declared", "types", "inferred", "unknown"]) satisfies z.ZodType<SchemaSource>;
+
 /** 04-actions §2: a descriptor plus its execution binding — one entry of `.vendo/tools.json`.
  *
  *  `outputSchema` (the host's DECLARED response body, recorded by sync) is a plain
  *  `ToolDescriptor` field, not extraction-only provenance: the registry carries it
- *  and every surface lists it. Generation's `toolShapes` still come from runtime
- *  sampling, which is ground truth. */
+ *  and every surface lists it. Generation's `toolShapes` are built from it
+ *  (`shapeFromJsonSchema`) — nothing samples the host anymore. */
 export type ExtractedTool = ToolDescriptor & {
   binding: PrimitiveToolBinding;
   /** Fail-closed extraction (04 §1): a route the scanner can't classify is emitted disabled, never silently auto-allowed. */
@@ -245,6 +253,11 @@ export type ExtractedTool = ToolDescriptor & {
   /** Sync-inferred field semantics, keyed by collapsed dot path into the
    *  response (core semantics.ts). Host corrections live in overrides.json. */
   semantics?: Record<string, FieldSemantic>;
+  /** Which rung of the trust ladder filled each schema slot. Absent = a
+   *  pre-marker file, read as "unknown". Machine layer and reports only —
+   *  never forwarded to `descriptors()` (registry.ts's descriptor whitelist). */
+  inputSchemaSource?: SchemaSource;
+  outputSchemaSource?: SchemaSource;
   /** The handler-source content hash incremental sync diffs against. */
   srcHash?: string;
 };
@@ -255,6 +268,8 @@ export const extractedToolSchema = z.preprocess(readCriticalAlias, toolDescripto
   note: z.string().optional(),
   audience: z.enum(["end-user", "operator", "internal"]).optional(),
   semantics: z.record(fieldSemanticSchema).optional(),
+  inputSchemaSource: schemaSourceSchema.optional(),
+  outputSchemaSource: schemaSourceSchema.optional(),
   srcHash: z.string().min(1).optional(),
 }).superRefine((tool, context) => {
   if ((tool.binding as { kind?: string }).kind === "compound") {
@@ -740,5 +755,13 @@ export interface SyncReport {
     pruned?: string[];
     skipped?: string[];
     withoutSamples?: string[];
+  };
+  /** Schema coverage across the whole catalog, BOTH slots. `unknown` names the
+   *  blind tools by name because a count alone is not actionable: the agent
+   *  must pass those outputs through whole and cannot know their arguments. */
+  toolSchemas: {
+    total: number;
+    inputs: { known: number; unknown: string[] };
+    outputs: { known: number; unknown: string[] };
   };
 }
