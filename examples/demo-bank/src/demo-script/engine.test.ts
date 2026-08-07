@@ -81,16 +81,17 @@ const threadState = vi.hoisted(() => ({
 }));
 
 /** The scenario ladder is host copy: cards get added, dropped and reordered.
- *  Flipping this serves the SAME cards in a different order, which must not
- *  change which script a card plays. */
-const scenarioOrder = vi.hoisted(() => ({ reversed: false }));
+ *  `reversed` serves the SAME cards in a different order (which must not
+ *  change which script a card plays); `dropped` removes one card entirely. */
+const scenarioLadder = vi.hoisted(() => ({ reversed: false, dropped: "" }));
 
 vi.mock("@/vendo/scenarios", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/vendo/scenarios")>();
   return {
     ...actual,
     get mapleScenarios() {
-      return scenarioOrder.reversed ? [...actual.mapleScenarios].reverse() : actual.mapleScenarios;
+      const cards = actual.mapleScenarios.filter((card) => card.beat !== scenarioLadder.dropped);
+      return scenarioLadder.reversed ? [...cards].reverse() : cards;
     },
   };
 });
@@ -138,7 +139,8 @@ describe("scripted beats stream wire-safe tool parts", () => {
     vi.clearAllMocks();
     threadState.messages = [];
     threadState.persisted = [];
-    scenarioOrder.reversed = false;
+    scenarioLadder.reversed = false;
+    scenarioLadder.dropped = "";
   });
 
   it("the low-balance beat streams every tool input as an object (Anthropic replay contract)", async () => {
@@ -199,7 +201,7 @@ describe("scripted beats stream wire-safe tool parts", () => {
   }, 60_000);
 
   it("every card still plays its OWN script when the scenario ladder is reordered", async () => {
-    scenarioOrder.reversed = true;
+    scenarioLadder.reversed = true;
     const turn = async (title: string): Promise<{ tools: string[]; text: string }> => {
       const response = await scriptedThreadsResponse(threadsRequest(cardPrompt(title)));
       expect(response, `"${title}" matched no scripted beat`).not.toBeNull();
@@ -224,6 +226,12 @@ describe("scripted beats stream wire-safe tool parts", () => {
     expect(moneyHq.text).toContain("Here's your money HQ");
     expect(lowBalance.text).toContain("You want a heads-up before checking runs low.");
   }, 120_000);
+
+  it("a beat left without a card fails at import, naming the beat", async () => {
+    scenarioLadder.dropped = "moneyhq";
+    vi.resetModules();
+    await expect(import("./engine.js")).rejects.toThrow(/moneyhq/);
+  });
 
   it("a parked set abandoned by the next prompt resolves non-orphan — real-agent replay never 400s (criterion 23)", async () => {
     // History: a weekly turn parked on its grant set, never decided.
