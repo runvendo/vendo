@@ -2,7 +2,7 @@ import type { ApprovalId } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { createGuard } from "../../src/index.js";
 import { createMemoryStore } from "../fixtures/memory-store.js";
-import { FixtureTools, alice, bob, call, context } from "../fixtures/tools.js";
+import { FixtureTools, alice, bob, call, context, descriptor } from "../fixtures/tools.js";
 
 // Approvals are single-use and pinned to the exact call AND the exact context
 // the user saw. They never replay across uses, across present→away, or across
@@ -22,6 +22,30 @@ describe("approval replay is single-use and context-pinned", () => {
     await expect(bound.execute(c, context())).resolves.toMatchObject({ status: "ok" });
     expect(tools.executions).toHaveLength(1);
     // Replay of the exact same ToolCall is refused — the approval was consumed.
+    await expect(bound.execute(c, context())).resolves.toMatchObject({ status: "pending-approval" });
+    expect(tools.executions).toHaveLength(1);
+  });
+
+  it("a preview does not spend the yes — the real call it cleared still runs", async () => {
+    const store = createMemoryStore();
+    const guard = createGuard({ store, policy: { rules: [{ match: {}, action: "ask" }] } });
+    const tools = new FixtureTools();
+    const bound = guard.bind(tools);
+    const c = call("host_write", { amount: 5 }, "call_preview");
+
+    const parked = await bound.execute(c, context());
+    if (parked.status !== "pending-approval") throw new Error("expected the call to park");
+    await guard.approvals.decide(parked.approvalId, { approve: true }, alice);
+
+    // The harness previews before it dispatches (harnesses tool-bridge's
+    // `needsApproval` hook), then makes the real call. A preview never
+    // dispatches anything, so it must not spend the one use it is inspecting.
+    await expect(guard.previewCheck!(c, descriptor("write"), context()))
+      .resolves.toMatchObject({ action: "run" });
+    await expect(bound.execute(c, context())).resolves.toMatchObject({ status: "ok" });
+    expect(tools.executions).toHaveLength(1);
+
+    // Still single-use: the preview did not mint a second one.
     await expect(bound.execute(c, context())).resolves.toMatchObject({ status: "pending-approval" });
     expect(tools.executions).toHaveLength(1);
   });
