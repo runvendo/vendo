@@ -236,6 +236,11 @@ async function typeNodeSchema(
     if (zod !== null) return zod;
     const name = entityNameText(ts, type.typeName);
     if (name === "Date") return recognizedSchema({ type: "string", format: "date-time" });
+    // Every server action is async, so its declared return type is a Promise;
+    // the tool's response is what the promise RESOLVES to.
+    if (name === "Promise" && type.typeArguments?.length === 1) {
+      return typeNodeSchema(extraction, module, type.typeArguments[0]!, depth + 1);
+    }
     if (name === "Array" && type.typeArguments?.length === 1) {
       const items = await typeNodeSchema(extraction, module, type.typeArguments[0]!, depth + 1);
       return items.recognized
@@ -270,6 +275,8 @@ interface CollectedAction {
    * default exports, the export name otherwise). */
   sourceName: string;
   params: ActionParam[];
+  /** The statically-read RESOLVED return type, when the export annotates one. */
+  outputSchema?: Record<string, unknown>;
   /** Fail-closed dispositions. */
   disabled?: "inline" | "unclassifiable";
   unclassifiableReason?: string;
@@ -304,6 +311,21 @@ async function actionParams(
   return params;
 }
 
+/** The action's declared, promise-unwrapped return schema. An action with no
+ *  return annotation, an uninterpretable one, or a `void`/empty result records
+ *  nothing: an empty `{}` outputSchema teaches the model nothing and reads as
+ *  a contract. */
+async function actionReturn(
+  extraction: Extraction,
+  module: FileModule,
+  fn: FunctionNode,
+): Promise<Record<string, unknown> | undefined> {
+  if (!fn.type) return undefined;
+  const interpreted = await typeNodeSchema(extraction, module, fn.type, 0);
+  if (!interpreted.recognized || Object.keys(interpreted.schema).length === 0) return undefined;
+  return interpreted.schema;
+}
+
 function moduleStem(moduleRel: string): string {
   return path.posix.basename(moduleRel).replace(SOURCE_FILE_PATTERN, "");
 }
@@ -318,7 +340,14 @@ async function collectModuleActions(
   const base = { module, moduleRel };
 
   const pushFunction = async (exportName: string, sourceName: string, fn: FunctionNode): Promise<void> => {
-    out.push({ ...base, exportName, sourceName, params: await actionParams(extraction, module, fn) });
+    const outputSchema = await actionReturn(extraction, module, fn);
+    out.push({
+      ...base,
+      exportName,
+      sourceName,
+      params: await actionParams(extraction, module, fn),
+      ...(outputSchema === undefined ? {} : { outputSchema }),
+    });
   };
   const pushUnclassifiable = (exportName: string, reason: string): void => {
     out.push({ ...base, exportName, sourceName: exportName, params: [], disabled: "unclassifiable", unclassifiableReason: reason });
@@ -467,12 +496,14 @@ function collectInlineActions(
         extraction.warnings.push(`server-actions: an anonymous inline server action in ${moduleRel} cannot be identified; it was skipped`);
       } else {
         pending.push((async () => {
+          const outputSchema = await actionReturn(extraction, module, node);
           out.push({
             module,
             moduleRel,
             exportName: name,
             sourceName: name,
             params: await actionParams(extraction, module, node),
+            ...(outputSchema === undefined ? {} : { outputSchema }),
             disabled: "inline",
           });
         })());
@@ -592,7 +623,9 @@ export async function extractServerActions(root: string): Promise<ServerActionsE
       // `typeNodeSchema` read the parameter annotations; a partially
       // interpreted one still carries its existing note.
       inputSchemaSource: "types" satisfies SchemaSource,
-      outputSchemaSource: "unknown" satisfies SchemaSource,
+      ...(action.outputSchema === undefined
+        ? { outputSchemaSource: "unknown" satisfies SchemaSource }
+        : { outputSchema: action.outputSchema, outputSchemaSource: "types" satisfies SchemaSource }),
       // A server action is a POST-shaped RPC endpoint, not a declared
       // mutation: nothing about the protocol says whether it reads or writes.
       risk: "ungraded",

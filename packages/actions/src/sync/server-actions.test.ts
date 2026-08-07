@@ -347,6 +347,30 @@ export async function phantomAction() {}
     const result = await extractServerActions(root);
     expect(result.tools).toEqual([]);
   });
+
+  it("reads a server action's Promise-wrapped return type as its response schema", async () => {
+    const root = await temporaryHost();
+    await writeFile(root, "package.json", JSON.stringify({ name: "sa-return", dependencies: { next: "16.0.0" } }));
+    await writeFile(root, "src/actions/invoices.ts", `
+"use server";
+
+export async function listInvoices(): Promise<{ id: string; amountCents: number }[]> {
+  return [];
+}
+`);
+    const { tools } = await extractServerActions(root);
+    const listed = tools.find((tool) => (tool.binding as ServerActionBinding).exportName === "listInvoices");
+    expect(listed?.outputSchemaSource).toBe("types");
+    expect(listed?.outputSchema).toEqual({
+      type: "array",
+      items: {
+        type: "object",
+        properties: { id: { type: "string" }, amountCents: { type: "number" } },
+        required: ["id", "amountCents"],
+        additionalProperties: false,
+      },
+    });
+  });
 });
 
 describe("serverActionRegistrations", () => {
