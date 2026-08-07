@@ -9,6 +9,7 @@ import {
   writePushComponents,
 } from "./cloud/host-components.js";
 import { pushPinBaselines } from "./cloud/pin-baselines.js";
+import { AGENT_ENDPOINT_ENV_VAR } from "./extract/gateway-fuel.js";
 import type { ThemeStageInput } from "./extract/stages.js";
 import { runProseStages } from "./init-judgment.js";
 import { selectJudgmentEngines, type AvailableEngine } from "./judge/engine.js";
@@ -110,6 +111,16 @@ export interface SyncFlowResult {
  * invisible and the run went structural-only with no signal why), sync read
  * both through doctor's copy, and telemetry had a third. Minimal KEY=VALUE
  * parser: `export ` prefix, matching quotes, `#` comment lines.
+ *
+ * ONE exception, and it is a security boundary rather than a parsing rule:
+ * the files may not supply AGENT_ENDPOINT_ENV_VAR. Everything downstream
+ * sees a flat map and so cannot tell a shell value from a file one; this is
+ * the last point where that provenance is still known, so it is where the
+ * distinction gets made. Dropping the key here (rather than filtering it at
+ * each consumer) carries provenance to every rung for free: below this line
+ * the only remaining source is `processEnv`, and every consumer that
+ * re-merges `process.env` over its input — both Claude rungs do — therefore
+ * still honors the developer's own shell endpoint.
  */
 export async function readEnvFiles(
   root: string,
@@ -121,6 +132,7 @@ export async function readEnvFiles(
     if (source === null) continue;
     Object.assign(fromFiles, parseDotEnv(source));
   }
+  delete fromFiles[AGENT_ENDPOINT_ENV_VAR];
   const merged: Record<string, string | undefined> = { ...fromFiles, ...processEnv };
   for (const [key, value] of Object.entries(processEnv)) {
     if ((value ?? "").trim() === "" && fromFiles[key] !== undefined) merged[key] = fromFiles[key];

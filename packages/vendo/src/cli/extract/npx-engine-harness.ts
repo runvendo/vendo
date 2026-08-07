@@ -34,7 +34,10 @@ import { extractionModelPin, type ExtractionHarness, type ExtractionRunInput } f
  * always wins — availability() must label these honestly (not as "Vendo
  * Cloud key") since composeGatewayFuel itself refuses to overlay onto any of
  * them; a wrong label here would make the consent prompt lie about what
- * run() actually does.
+ * run() actually does. As on the PATH rung, the base URL that counts is the
+ * developer's own (shell or an explicit programmatic env) — a project's
+ * `.env` cannot supply one, because sync-flow.ts's readEnvFiles drops it
+ * before any env reaches this rung.
  */
 
 export const ENGINE_PACKAGE_NAME = "@anthropic-ai/claude-code";

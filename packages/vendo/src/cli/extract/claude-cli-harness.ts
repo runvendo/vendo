@@ -27,6 +27,12 @@ import { extractionModelPin, type ExtractionHarness, type ExtractionRunInput } f
  * runs on Vendo Cloud's model gateway instead of degrading to unavailable
  * (see gateway-fuel.ts). Own credential always wins — this never overrides a
  * working ANTHROPIC_API_KEY, login, or any of those env vars.
+ *
+ * "Own" is provenance, not spelling: the ANTHROPIC_BASE_URL this rung honors
+ * (and labels, and refuses to overlay) is the developer's own — from their
+ * shell, or explicitly passed by a programmatic caller. A project's `.env`
+ * cannot supply one; sync-flow.ts's readEnvFiles drops it before any env
+ * reaches here, so a cloned repo can never pick where its source is sent.
  */
 
 const DISALLOWED_TOOLS = [

@@ -210,7 +210,13 @@ describe("claudeCliHarness", () => {
       })).toBe("your CLAUDE_CODE_OAUTH_TOKEN");
     });
 
-    it("labels the rung with ANTHROPIC_BASE_URL when only a custom base URL is set (no token), not the Vendo Cloud key", async () => {
+    it("labels the rung with the DEVELOPER'S OWN ANTHROPIC_BASE_URL (no token), not the Vendo Cloud key", async () => {
+      // A bare base URL is still a credential (mTLS/proxy auth) and still wins
+      // — but only when it is the developer's, which by the time an env
+      // reaches a rung is the only kind there is: readEnvFiles refuses to
+      // carry one out of `.env`/`.env.local`, so an env like this one can only
+      // have come from the shell or an explicit programmatic caller. The seam
+      // proving the project half is closed lives in sync-flow.test.ts.
       const harness = claudeCliHarness({ probeBinary: async () => true, probeLogin: async () => false });
       expect(await harness.availability({
         root: "/x",
