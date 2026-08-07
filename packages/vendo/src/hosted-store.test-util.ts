@@ -31,6 +31,24 @@ export function fakeConsole() {
   const eraseCalls: unknown[] = [];
   const sessions = new Map<string, number>();
 
+  /** A route this fake does not serve is a HOLE IN THE FAKE, and it throws out
+   * of `fetch` so that nothing can read it as the console's own answer. It used
+   * to answer `not-found`, which is exactly what a live console says when it
+   * refuses — so a test driving an unserved op family saw a plausible rejection,
+   * concluded the code handled it, and proved nothing. No production path makes
+   * `fetch` reject with this name, so the signal cannot be mistaken for one.
+   * Serve the route here, or assert this throw. */
+  const unserved = (method: string, path: string, detail?: string): never => {
+    const error = new Error(
+      `fakeConsole does not serve ${method} ${path}`
+      + `${detail === undefined ? "" : ` (${detail})`} — implement it in hosted-store.test-util.ts`,
+    );
+    error.name = "FakeConsoleUnservedRoute";
+    throw error;
+  };
+  const isUnserved = (error: unknown): boolean =>
+    error instanceof Error && error.name === "FakeConsoleUnservedRoute";
+
   const STATUS: Record<string, number> = {
     validation: 400,
     unauthorized: 401,
@@ -72,10 +90,11 @@ export function fakeConsole() {
     }
 
     try {
+      const miss = (detail?: string): never => unserved(request.method, url.pathname, detail);
       const segments = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
       // /api/v1/store/...
       if (segments[0] !== "api" || segments[1] !== "v1" || segments[2] !== "store") {
-        return envelope("not-found", "unknown route");
+        miss("not the console's store mount");
       }
       const rest = segments.slice(3);
 
@@ -121,7 +140,7 @@ export function fakeConsole() {
               ),
             });
           default:
-            return envelope("not-found", `unknown records op: ${rest[1]}`);
+            return miss(`unknown records op: ${rest[1]}`);
         }
       }
 
@@ -157,7 +176,7 @@ export function fakeConsole() {
           case "list":
             return json({ keys: await blobs.list((body.prefix as string | undefined) ?? "") });
           default:
-            return envelope("not-found", `unknown blobs op: ${rest[1]}`);
+            return miss(`unknown blobs op: ${rest[1]}`);
         }
       }
 
@@ -202,7 +221,7 @@ export function fakeConsole() {
               ),
             });
           default:
-            return envelope("not-found", `unknown records method: ${method}`);
+            return miss(`unknown records method: ${method}`);
         }
       }
 
@@ -241,7 +260,7 @@ export function fakeConsole() {
             return json({ claimed: true });
           }
           default:
-            return envelope("not-found", `unknown session method: ${rest[1]}`);
+            return miss(`unknown session method: ${rest[1]}`);
         }
       }
 
@@ -278,8 +297,9 @@ export function fakeConsole() {
         return json({ report: { vendo_apps: 1, vendo_threads: 2 } });
       }
 
-      return envelope("not-found", "unknown route");
+      return miss();
     } catch (error) {
+      if (isUnserved(error)) throw error;
       if (error instanceof VendoError) return envelope(error.code, error.message);
       return envelope("unavailable", error instanceof Error ? error.message : String(error));
     }

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   STORE_WIRE_PATHS,
+  VendoError,
   storeWireBlobsDeleteRequestSchema,
   storeWireBlobsGetRequestSchema,
   storeWireBlobsListRequestSchema,
@@ -1150,5 +1151,29 @@ describe("hostedStore keeps its StoreAdapter surface and gains the op surface", 
     // the adapter's.
     await store.ops.lifecycle.sessionRegister("anon_1", 1_000);
     expect(await store.sessions.stale(1, 100_000)).toEqual(["anon_1"]);
+  });
+
+  // 16 of the 32 ops have no door in the fake: all 6 transcripts, all 3
+  // harness, all 5 workspace, lifecycle.promote and /status. It used to answer
+  // them with a `not-found` envelope — the SAME answer a live console sends
+  // when it refuses — so a test exercising one of those families read a
+  // plausible rejection and asserted nothing. The fake now throws out of
+  // `fetch`, which no console answer can be mistaken for.
+  it("never stands in for a door it does not serve", async () => {
+    const store = hosted(fakeConsole());
+    const unserved: Array<[string, () => Promise<unknown>]> = [
+      ["transcripts", () => store.ops.transcripts.listThreads()],
+      ["harness", () => store.ops.harness.get("app_1", "sub_1")],
+      ["workspace", () => store.ops.workspace.index()],
+      ["lifecycle.promote", () => store.ops.lifecycle.promote("app_1", "org_1")],
+      ["status", () => store.ops.status()],
+    ];
+    for (const [family, call] of unserved) {
+      const error = await call().then(() => undefined, (reason: unknown) => reason);
+      expect(error, family).toBeInstanceOf(Error);
+      expect((error as Error).name, family).toBe("FakeConsoleUnservedRoute");
+      // Not a VendoError: a wire-legal code would be the console's own voice.
+      expect(error, family).not.toBeInstanceOf(VendoError);
+    }
   });
 });
