@@ -1,6 +1,7 @@
 import type { AccessLevel, AppAccess } from "../app-access.js";
 import type { AppId } from "../ids.js";
 import type { Membership, RunContext } from "../run-context.js";
+import { assert } from "./assertions.js";
 import type { ConformanceCase, ConformanceSuite } from "./index.js";
 
 /**
@@ -26,10 +27,6 @@ export interface AppAccessConformanceOptions {
       world up; the gate itself is asserted through `access.grant`. */
   seedGrant(appId: AppId, principal: string, level: AccessLevel): Promise<void>;
 }
-
-const assert: (condition: unknown, message: string) => asserts condition = (condition, message) => {
-  if (!condition) throw new Error(message);
-};
 
 const ctxFor = (subject: string, memberships?: Membership[]): RunContext => ({
   principal: { kind: "user", subject },

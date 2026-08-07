@@ -1,9 +1,8 @@
-import type { ZodType } from "zod";
+import { assert, assertBytesEqual, assertDeepEqual, assertParses } from "./assertions.js";
 import {
   TOOL_NAME_PATTERN,
   agentRunReportSchema,
   authMaterialSchema,
-  canonicalJson,
   descriptorHash,
   guardDecisionSchema,
   isoDateTimeSchema,
@@ -54,32 +53,6 @@ export interface ConformanceReport {
   failures: Array<{ name: string; error: string }>;
   ok: boolean;
 }
-
-const assert: (condition: unknown, message: string) => asserts condition = (condition, message) => {
-  if (!condition) throw new Error(message);
-};
-
-const assertParses = <T>(schema: ZodType<T>, value: unknown, message: string): T => {
-  const parsed = schema.safeParse(value);
-  if (!parsed.success) {
-    throw new Error(`${message}: ${JSON.stringify(parsed.error.issues)}`);
-  }
-  return parsed.data;
-};
-
-const assertDeepEqual = (actual: unknown, expected: unknown, message: string): void => {
-  // undefined is not JSON — map it to a sentinel so a null/undefined mismatch
-  // fails with THIS assertion message, not canonicalJson's.
-  const canon = (value: unknown): string => (value === undefined ? "undefined" : canonicalJson(value));
-  assert(canon(actual) === canon(expected), message);
-};
-
-const assertBytesEqual = (actual: Uint8Array, expected: Uint8Array, message: string): void => {
-  assert(actual.length === expected.length, `${message}: byte lengths differ`);
-  for (let index = 0; index < actual.length; index += 1) {
-    assert(actual[index] === expected[index], `${message}: byte ${index} differs`);
-  }
-};
 
 /** Executes all cases without stopping at the first failure. */
 export async function runConformance(suite: ConformanceSuite): Promise<ConformanceReport> {

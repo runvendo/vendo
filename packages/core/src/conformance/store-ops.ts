@@ -1,33 +1,9 @@
 import type { VendoErrorCode } from "../errors.js";
 import { isoDateTimeSchema } from "../ids.js";
-import { canonicalJson } from "../jcs.js";
 import { VENDO_STORE_WIRE_FORMAT } from "../store-wire.js";
 import type { StoreOps } from "../store.js";
+import { assert, assertBytesEqual, assertDeepEqual } from "./assertions.js";
 import type { ConformanceCase, ConformanceSuite } from "./index.js";
-
-// ---------------------------------------------------------------------------
-// helpers (mirrors the ones in index.ts — keep conformance self-contained)
-// ---------------------------------------------------------------------------
-
-const assert: (condition: unknown, message: string) => asserts condition = (condition, message) => {
-  if (!condition) throw new Error(message);
-};
-
-/** Canonical (key-order-insensitive) equality: Postgres jsonb normalizes
-    object key order, so a byte-for-byte JSON.stringify comparison would fail
-    every jsonb-backed implementation on a semantically identical value. */
-const assertDeepEqual = (actual: unknown, expected: unknown, message: string): void => {
-  const a = actual === undefined ? "undefined" : canonicalJson(actual);
-  const b = expected === undefined ? "undefined" : canonicalJson(expected);
-  assert(a === b, `${message}: ${a} !== ${b}`);
-};
-
-const assertBytesEqual = (actual: Uint8Array, expected: Uint8Array, message: string): void => {
-  assert(actual.length === expected.length, `${message}: byte lengths differ`);
-  for (let i = 0; i < actual.length; i += 1) {
-    assert(actual[i] === expected[i], `${message}: byte ${i} differs`);
-  }
-};
 
 /** Refusals are checked by VendoError CODE, not by message text: "threw" is not
     "refused for the right reason". Duck-typed rather than `instanceof`, because

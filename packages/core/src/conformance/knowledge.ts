@@ -8,6 +8,7 @@ import {
   type KnowledgeDoc,
   type KnowledgePosture,
 } from "../index.js";
+import { assert, assertParses } from "./assertions.js";
 import type { ConformanceCase, ConformanceSuite } from "./index.js";
 
 /** The suite seeds, mutates, and removes fixed `doc_conformance_*` ids: run
@@ -50,16 +51,6 @@ const DEFAULT_SEED: { public: KnowledgeDoc; internal: KnowledgeDoc } = {
 };
 
 const ctx: KnowledgeContext = { principal: { kind: "user", subject: "user_knowledge_conformance" } };
-
-const assert: (condition: unknown, message: string) => asserts condition = (condition, message) => {
-  if (!condition) throw new Error(message);
-};
-
-const assertParses = <T>(schema: { safeParse(value: unknown): { success: boolean; error?: unknown; data?: unknown } }, value: unknown, message: string): T => {
-  const parsed = schema.safeParse(value);
-  if (!parsed.success) throw new Error(`${message}: ${JSON.stringify(parsed.error)}`);
-  return parsed.data as T;
-};
 
 /** Executable KnowledgeAdapter checks — knowledge design v2 (2026-07-22) R2/R5.
     ENG-358 freezes this skeleton; ENG-359 grows the behavioral case set. */
