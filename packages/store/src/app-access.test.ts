@@ -1,10 +1,11 @@
 import { VendoError, type Membership, type RunContext } from "@vendoai/core";
-import { appAccessConformance } from "@vendoai/core/conformance";
+import { appAccessConformance, memoryStoreAdapter } from "@vendoai/core/conformance";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { appAccess } from "./helpers/app-access.js";
 import { appStore } from "./helpers/apps.js";
 import { appFixture } from "./fixtures.test-util.js";
 import { backends, type MadeBackend } from "./backends.test-util.js";
+import type { VendoStore } from "./store.js";
 
 /** Build contract §9.2–§9.4 — grants are the only rows Vendo stores, and
     `can()` is the one function every door reaches. */
@@ -292,3 +293,61 @@ for (const backend of backends()) {
     });
   });
 }
+
+/**
+ * §9.2's one-row-per-(app, principal) rule, proven on a records adapter that is
+ * NOT the local Postgres engine.
+ *
+ * The rule was enforced only by `ON CONFLICT (app_id, principal)` in
+ * `routing.ts` — a constraint this door never sees. Every multi-party
+ * deployment runs on a hosted or BYO records adapter, which is keyed by id
+ * alone, exactly as core's reference adapter is. This is the same failure class
+ * `app-access.ts` already documents one paragraph up: a rule enforced only in
+ * the local engine behaved differently on Cloud.
+ */
+describe("build contract §9.2 — grants over a generic records adapter", () => {
+  const app = "app_shared";
+  const owner = ctxFor("dana", [{ org: "acme", admin: true }]);
+
+  const madeStore = async (): Promise<ReturnType<typeof appAccess>> => {
+    const adapter = memoryStoreAdapter();
+    await adapter.ensureSchema();
+    const store = adapter as unknown as VendoStore;
+    await store.records("vendo_apps").put({
+      id: app,
+      data: { subject: "acme", enabled: true, doc: doc(app) },
+    });
+    return appAccess(store);
+  };
+
+  it("re-granting a principal updates the one row rather than accreting a second", async () => {
+    const access = await madeStore();
+    await access.grant(owner, app, "user:kim", "viewer");
+    await access.grant(owner, app, "user:kim", "editor");
+
+    const rows = await access.list(owner, app);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.level).toBe("editor");
+  });
+
+  it("downgrades a principal, instead of folding the old level back in", async () => {
+    const access = await madeStore();
+    await access.grant(owner, app, "user:kim", "editor");
+    await access.grant(owner, app, "user:kim", "viewer");
+
+    // Two rows make `levelFor` fold them with `strongerLevel`, so the downgrade
+    // silently does nothing and kim keeps editor forever.
+    expect(await access.levelFor(ctxFor("kim", [{ org: "acme" }]), app)).toBe("viewer");
+  });
+
+  it("revokes every row for the principal, so access cannot survive a revoke", async () => {
+    const access = await madeStore();
+    await access.grant(owner, app, "user:kim", "viewer");
+    await access.grant(owner, app, "user:kim", "editor");
+
+    await access.revoke(owner, app, "user:kim");
+
+    expect(await access.list(owner, app)).toHaveLength(0);
+    expect(await access.levelFor(ctxFor("kim", [{ org: "acme" }]), app)).toBeNull();
+  });
+});
