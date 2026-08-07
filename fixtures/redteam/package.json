@@ -14,6 +14,12 @@
   "devDependencies": {
     "@ai-sdk/anthropic": "^3.0.12",
     "@types/node": "^22.0.0",
+    "ai": "^6.0.0",
+    "fflate": "^0.8.2",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "dependencies": {
     "@vendoai/actions": "workspace:*",
     "@vendoai/agents": "workspace:*",
     "@vendoai/apps": "workspace:*",
@@ -23,10 +29,6 @@
     "@vendoai/harnesses": "workspace:*",
     "@vendoai/mcp": "workspace:*",
     "@vendoai/store": "workspace:*",
-    "@vendoai/vendo": "workspace:*",
-    "ai": "^6.0.0",
-    "fflate": "^0.8.2",
-    "typescript": "^5.6.0",
-    "vitest": "^2.1.0"
+    "@vendoai/vendo": "workspace:*"
   }
 }

@@ -13,6 +13,8 @@
   "dependencies": {
     "@ai-sdk/anthropic": "3.0.12",
     "@ai-sdk/react": "3.0.30",
+    "@vendoai/core": "workspace:*",
+    "@vendoai/store": "workspace:*",
     "@vendoai/ui": "workspace:*",
     "@vendoai/vendo": "workspace:*",
     "ai": "6.0.28",
@@ -26,8 +28,6 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@vendoai/core": "workspace:*",
-    "@vendoai/store": "workspace:*",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
     "tailwindcss": "^4",

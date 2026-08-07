@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { tempDir } from "./temp-dir.test-util.js";
-import { prepareE2eRepo } from "./e2e-prep.js";
+import { APP_THEME_PATH, prepareE2eRepo, SRC_APP_THEME_PATH } from "./e2e-prep.js";
 
 /** The handler `vendo init` currently scaffolds under api/vendo/[...vendo]. */
 const initRouteSource = `import { model } from "@/lib/ai";
@@ -42,7 +42,7 @@ async function createSkateshopFixture(): Promise<{ appRoot: string; logsDir: str
     path.join(appRoot, "src/app/layout.tsx"),
     `import { ClerkProvider } from "@clerk/nextjs"
 import { VendoProvider } from "@vendoai/vendo/react";
-import theme from "../../.vendo/theme.json";
+import theme from "${SRC_APP_THEME_PATH}";
 import type { VendoTheme } from "@vendoai/vendo";
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -138,7 +138,7 @@ async function createUmamiFixture(): Promise<{ appRoot: string; logsDir: string 
   await writeFile(
     path.join(appRoot, "src/app/layout.tsx"),
     initLayoutSource(
-      "../../.vendo/theme.json",
+      SRC_APP_THEME_PATH,
       (inner) => `<html lang="en"><body><Providers>${inner}</Providers></body></html>`,
     ),
   );
@@ -194,7 +194,7 @@ async function createPapermarkFixture(options: {
   await writeFile(
     path.join(appRoot, "app/layout.tsx"),
     initLayoutSource(
-      "../.vendo/theme.json",
+      APP_THEME_PATH,
       (inner) => `<html lang="en"><body>${inner}</body></html>`,
     ),
   );
@@ -384,7 +384,7 @@ describe("prepareE2eRepo", () => {
     );
     await writeFile(
       path.join(appRoot, "app/layout.tsx"),
-      'import theme from "../.vendo/theme.json";\n',
+      `import theme from "${APP_THEME_PATH}";\n`,
     );
     await writeFile(path.join(appRoot, "lib/ai.ts"), "export const model = {};\n");
     await writeFile(path.join(appRoot, "src/pages/auth/login.tsx"), "export default function Login() {}\n");
@@ -395,7 +395,7 @@ describe("prepareE2eRepo", () => {
     await expect(readFile(path.join(appRoot, "app/layout.tsx"), "utf8")).rejects.toThrow();
     await expect(readFile(path.join(appRoot, "lib/ai.ts"), "utf8")).rejects.toThrow();
     await expect(readFile(path.join(appRoot, "src/app/api/vendo/[...vendo]/route.ts"), "utf8")).resolves.toContain("@/lib/ai");
-    await expect(readFile(path.join(appRoot, "src/app/layout.tsx"), "utf8")).resolves.toContain('../../.vendo/theme.json');
+    await expect(readFile(path.join(appRoot, "src/app/layout.tsx"), "utf8")).resolves.toContain(SRC_APP_THEME_PATH);
     await expect(readFile(path.join(appRoot, "src/lib/ai.ts"), "utf8")).resolves.toContain("export const model");
     await expect(readFile(path.join(backendRoot, "next-i18next.config.js"), "utf8")).resolves.toContain("defaultLocale");
     expect(firstLogs).toEqual([path.join(logsDir, "e2e.prepare.log")]);
@@ -411,7 +411,7 @@ describe("prepareE2eRepo", () => {
     const logsDir = path.join(root, "logs");
     await mkdir(path.join(appRoot, "src/app"), { recursive: true });
     await mkdir(path.join(appRoot, "src/lib"), { recursive: true });
-    await writeFile(path.join(appRoot, "src/app/layout.tsx"), 'import theme from "../../.vendo/theme.json";\n');
+    await writeFile(path.join(appRoot, "src/app/layout.tsx"), `import theme from "${SRC_APP_THEME_PATH}";\n`);
     await writeFile(path.join(appRoot, "src/lib/ai.ts"), "export const model = {};\n");
 
     await expect(prepareE2eRepo({ name: "teable" }, appRoot, logsDir)).rejects.toThrow(/next-i18next\.config\.js/);

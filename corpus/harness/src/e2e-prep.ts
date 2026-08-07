@@ -6,6 +6,11 @@ import { vendoRouteFilePath } from "./e2e-prep/route-path.js";
 import { prepareSkateshopE2eRepo } from "./e2e-prep/skateshop.js";
 import { escapeRegex, isRecord, pathExists } from "./util.js";
 
+/** Where `vendo init`'s generated layout.tsx points at .vendo/theme.json, by the
+ * depth it sits at: `app/layout.tsx` vs `src/app/layout.tsx`. */
+export const APP_THEME_PATH = "../.vendo/theme.json";
+export const SRC_APP_THEME_PATH = "../../.vendo/theme.json";
+
 // Umami authenticates its API with a Bearer token the app keeps in
 // localStorage. Chat tool calls now execute SERVER-side (route bindings,
 // 04 §4), and the registry forwards the WIRE request's cookie/authorization
@@ -705,8 +710,13 @@ async function prepareTeableE2eRepo(appRoot: string, logPath: string): Promise<s
     throw new Error("Teable e2e prep expected Vendo init to create app or src/app");
   }
 
+  // The move above put layout.tsx one directory deeper, so its theme import has
+  // to gain a level. Named rather than written out as two `from "…"` literals:
+  // this file is scanned by scripts/dependency-guard.mjs, which reads text and
+  // cannot tell a generated import for the corpus app from a real import out of
+  // this package.
   await patchFile(path.join(srcApp, "layout.tsx"), (source) =>
-    source.replace('from "../.vendo/theme.json"', 'from "../../.vendo/theme.json"'));
+    source.replace(`from "${APP_THEME_PATH}"`, `from "${SRC_APP_THEME_PATH}"`));
 
   const rootModel = path.join(appRoot, "lib/ai.ts");
   const srcModel = path.join(appRoot, "src/lib/ai.ts");

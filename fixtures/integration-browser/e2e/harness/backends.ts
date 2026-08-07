@@ -37,7 +37,7 @@ import { composioConnector } from "@vendoai/actions";
 import { descriptorHash, type Principal } from "@vendoai/core";
 import { createStore } from "@vendoai/store";
 import { createVendo } from "@vendoai/vendo/server";
-import { connectWithSdk, type ConnectedClient } from "../../../mcp-e2e/src/support.ts";
+import { connectWithSdk, type ConnectedClient } from "@vendoai-fixtures/test-kit/mcp-client";
 import { startComposioStub } from "./composio-stub.ts";
 import {
   MCP_APPS_FIXTURE_ID,
