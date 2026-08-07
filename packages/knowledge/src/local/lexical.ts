@@ -21,12 +21,15 @@ import { termSlug } from "../ingest/parse.js";
 
 /** A stored chunk row: the chunk plus doc fields denormalized at upsert time
     (upsert replaces every chunk of a doc, so they can never go stale) —
-    search filters visibility and boosts titles without a per-row doc join. */
+    search filters visibility and boosts titles without a per-row doc join.
+    `source` is optional on READ only: rows written before it was denormalized
+    lack it and hash-based sync never rewrites an unchanged doc, so search
+    falls back to the doc row. Upsert always writes it. */
 interface ChunkRow extends KnowledgeChunk {
   kind: KnowledgeDoc["kind"];
   visibility: KnowledgeDoc["visibility"];
   title: string;
-  source: string;
+  source?: string;
 }
 
 /** Every corpus scan pages with the keyset cursor (page cap 1000), including
@@ -90,6 +93,11 @@ export function vendoKnowledge(options: { store?: StoreAdapter } = {}): Knowledg
   const kindMatches = (kind: KnowledgeKind, kinds: KnowledgeKind[] | undefined): boolean =>
     kinds === undefined || kinds.includes(kind);
 
+  /** The cited chunk's source, reading through to the doc row for chunks
+      written before `source` was denormalized onto the row. */
+  const chunkSource = async (chunk: ChunkRow): Promise<string | undefined> =>
+    chunk.source ?? ((await docRows().get(chunk.docId))?.data as KnowledgeDoc | undefined)?.source;
+
   /** schema intent: exact term/title match over glossary+api docs. */
   async function schemaSearch(query: KnowledgeQuery, ctx: KnowledgeContext, limit: number): Promise<KnowledgeHit[]> {
     const key = termSlug(query.text);
@@ -147,15 +155,16 @@ export function vendoKnowledge(options: { store?: StoreAdapter } = {}): Knowledg
         b.score - a.score
         || (a.chunk.docId < b.chunk.docId ? -1 : a.chunk.docId > b.chunk.docId ? 1 : 0)
         || a.chunk.index - b.chunk.index);
-      // limit truncates the ranking, never changes it.
+      // limit truncates the ranking, never changes it — so the doc-row
+      // fallback for source-less legacy chunks costs at most `limit` gets.
       return {
-        hits: scored.slice(0, limit).map(({ chunk, score }) => ({
-          ref: { docId: chunk.docId, chunkId: chunk.chunkId, title: chunk.title, source: chunk.source },
+        hits: await Promise.all(scored.slice(0, limit).map(async ({ chunk, score }) => ({
+          ref: { docId: chunk.docId, chunkId: chunk.chunkId, title: chunk.title, source: await chunkSource(chunk) },
           snippet: snippetAround(chunk.text, tokens),
           kind: chunk.kind,
           visibility: chunk.visibility,
           score,
-        })),
+        }))),
       };
     },
 

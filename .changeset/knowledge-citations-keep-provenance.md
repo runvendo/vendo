@@ -14,6 +14,12 @@ only glossary lookups and the cloud engine carried it. `source` is now
 denormalized alongside `title` at upsert time and rides the hit ref, so all
 three intents return the same ref shape.
 
+Existing stores get this without a re-sync. Chunk rows written by earlier
+versions have no `source` field, and `vendo knowledge sync` skips documents
+whose content hash is unchanged, so those rows would never be rewritten —
+search reads through to the document row for them instead. Nothing to run, no
+migration, and the doc row has always carried `source`.
+
 `cloudKnowledge` and `httpKnowledge` were the same `vendo/knowledge-wire@1`
 client written out twice: identical transport, identical response parsing,
 identical `includeInternal` handling, identical route bodies. Only the base
