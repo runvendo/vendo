@@ -895,8 +895,16 @@ const walkShape = (
   return { ok: false, issue: `"${head}" reads past the ${shape.kind} at ${at}` };
 };
 
-/** The item shape behind a column (`invoices.amount_cents` is `number[]`). */
-const columnItems = (shape: ShapeType): ShapeType => (shape.kind === "array" ? shape.items : shape);
+/** The item shape behind a column (`invoices.amount_cents` is `number[]`).
+ *  EVERY array level collapses: walkShape wraps once per array hop, while the
+ *  evaluator flattens a column of columns into one column (walkValue, D2). So
+ *  `orders.lines.cents` is a column of numbers to both — unwrapping one level
+ *  here made the check reject expressions the evaluator computes. */
+const columnItems = (shape: ShapeType): ShapeType => {
+  let items = shape;
+  while (items.kind === "array") items = items.items;
+  return items;
+};
 
 interface CheckState {
   readonly context: ExprCheckContext;
@@ -952,12 +960,15 @@ const pathShape = (state: CheckState, node: ExprNode & { kind: "path" }): { shap
 const requireNumeric = (state: CheckState, node: ExprNode, call: string): void => {
   if (node.kind === "path") {
     const { shape, container } = pathShape(state, node);
-    const items = columnItems(shape);
-    if (items.kind === "json" || items.kind === "number") return;
+    // The list check runs BEFORE the numeric one: a column of numbers is
+    // numeric per item and still not a single number, so asking about the
+    // items first would wave it through.
     if (call === "arithmetic" && shape.kind === "array") {
       state.issues.push(`${node.text} is a list, not a single number — reduce it with sum(), count(), or average() first`);
       return;
     }
+    const items = columnItems(shape);
+    if (items.kind === "json" || items.kind === "number") return;
     const hint = container === undefined || numericFields(container).length === 0
       ? ""
       : ` — the numeric fields are: ${numericFields(container).join(", ")}`;
@@ -967,12 +978,12 @@ const requireNumeric = (state: CheckState, node: ExprNode, call: string): void =
     return;
   }
   const shape = shapeOfNode(state, node);
-  const items = columnItems(shape);
-  if (items.kind === "json" || items.kind === "number") return;
   if (call === "arithmetic" && shape.kind === "array") {
     state.issues.push(`${printExpr(node)} is a list, not a single number — reduce it with sum(), count(), or average() first`);
     return;
   }
+  const items = columnItems(shape);
+  if (items.kind === "json" || items.kind === "number") return;
   state.issues.push(call === "arithmetic"
     ? `${printExpr(node)} is ${items.kind}, not a number — arithmetic needs numbers`
     : `${call}() needs numeric values, but ${printExpr(node)} is ${items.kind}`);
