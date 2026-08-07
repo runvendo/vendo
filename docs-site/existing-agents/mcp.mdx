@@ -128,7 +128,9 @@ powerful as your backend already is.
 
     The door never writes a key down — it compares digests and nothing lands in
     your store. Rotate by listing both keys until the old one is out of use,
-    then drop it.
+    then drop the old one. Dropping the last key closes the exchange rather
+    than tightening it: remove `serviceAuth` itself — an empty `keys` is a
+    composition error — and the door stops serving the grant at all.
   </Step>
 
   <Step title="Exchange it for one user's token">
@@ -145,8 +147,12 @@ powerful as your backend already is.
 
     The MCP URL is the only endpoint you configure: the helper reads the door's
     own discovery documents to find the token endpoint, which is also how it
-    follows a deployment fronted by a broker. Ten minutes, no refresh token, no
-    cache — mint one per job and let it expire.
+    follows a deployment fronted by a broker. That makes the origin-root
+    `.well-known` route from [Open the door](#1-open-the-door) a prerequisite —
+    without it discovery answers `404` and the exchange is never attempted. A
+    backend that does not serve that route posts the form below instead, which
+    needs no discovery. Ten minutes, no refresh token, no cache — mint one per
+    job and let it expire.
   </Step>
 
   <Step title="Talk MCP with it">
@@ -156,6 +162,12 @@ powerful as your backend already is.
 
     Hand that header to any MCP client and the session is an ordinary one: the
     same `tools/list`, the same `vendo_make`, the same policy on every call.
+
+    The exchange never checks the user id — your product stays the authority on
+    who its users are — so a user id nothing recognizes still mints a
+    valid-looking token. It dies on the first MCP request with
+    `401 invalid_token`, which is exactly what an expired token answers: check
+    the id against your own records before you go looking at the key.
   </Step>
 </Steps>
 
@@ -172,9 +184,11 @@ curl -s https://your-app.example.com/api/vendo/mcp/token \
   -d subject_token_type=urn:vendo:params:oauth:token-type:user-id
 ```
 
-`vendoUserToken` is that request plus the discovery step. An unknown key, a
-retired one, and a wrong `client_id` all answer the same `invalid_client` —
-nothing tells a guesser which half they have right.
+`vendoUserToken` is that request plus the discovery step. While the door lists
+a key, an unknown key, a retired one, and a wrong `client_id` all answer the
+same `invalid_client` — nothing tells a guesser which half they have right. A
+door that lists none is not refusing the exchange, it is not offering one:
+every attempt, valid key included, answers `unsupported_grant_type`.
 
 <Note>
   A door pointed at an external authorization server (`mcp.remoteAs`, or the

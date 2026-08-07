@@ -58,6 +58,22 @@ describe("vendo service-key new", () => {
     expect(messages.logs).toEqual([]);
   });
 
+  it("refuses an unknown flag instead of minting a key that drops it", async () => {
+    const messages = output();
+    expect(await runServiceKey(["new", "--nmae", "backend"], { output: messages.sink })).toBe(1);
+    expect(messages.errors.join("\n")).toContain("unknown option: --nmae");
+    expect(messages.logs).toEqual([]);
+    expect([...messages.logs, ...messages.errors].join("\n").match(KEY_PATTERN)).toBeNull();
+  });
+
+  it("shows the usage for `new --help` and mints nothing", async () => {
+    const messages = output();
+    await runServiceKey(["new", "--help"], { output: messages.sink });
+    const printed = [...messages.logs, ...messages.errors].join("\n");
+    expect(printed).toContain("vendo service-key new [--name <label>] [--json]");
+    expect(printed.match(KEY_PATTERN)).toBeNull();
+  });
+
   it("prints the usage for --help", async () => {
     const messages = output();
     expect(await runServiceKey(["--help"], { output: messages.sink })).toBe(0);
