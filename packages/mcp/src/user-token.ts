@@ -47,9 +47,12 @@ export interface VendoUserToken {
 export async function vendoUserToken(input: VendoUserTokenInput): Promise<VendoUserToken> {
   const transport = input.fetch ?? fetch;
   const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  // The budget is a property of every call the helper makes, so it is bound
-  // once here rather than threaded through discovery.
-  const call: typeof fetch = (url, init) => transport(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+  // The budget and the refusal to follow redirects are properties of every call
+  // the helper makes, so they are bound once here rather than threaded through
+  // discovery. Discovery carries no credential, but it names the URL the key is
+  // posted to, so a hop nobody saw decides that too.
+  const call: typeof fetch = (url, init) =>
+    transport(url, { ...init, redirect: "manual", signal: AbortSignal.timeout(timeoutMs) });
   const { tokenEndpoint, resource } = await discoverTokenEndpoint(call, input.url);
   const response = await call(tokenEndpoint, {
     method: "POST",
@@ -63,6 +66,16 @@ export async function vendoUserToken(input: VendoUserTokenInput): Promise<VendoU
       ...(resource === undefined ? {} : { resource }),
     }),
   });
+  // 307 and 308 keep the body, so a redirect off the validated endpoint carries
+  // the key to a URL that no HTTPS check ever saw — including plain http or
+  // another origin. The hop is the answer, not a step on the way to one.
+  if (response.status >= 300 && response.status < 400) {
+    throw new Error(
+      `Service-key exchange at ${tokenEndpoint} was redirected (HTTP ${response.status} to `
+      + `${response.headers.get("location") ?? "an unnamed location"}); a service key is not `
+      + "followed onto a URL discovery never named",
+    );
+  }
   if (!response.ok) throw new Error(await exchangeFailure(response, tokenEndpoint));
   const body = await response.json().catch(() => null) as
     { access_token?: unknown; expires_in?: unknown; scope?: unknown } | null;
@@ -112,35 +125,31 @@ async function discoverTokenEndpoint(
   // deployment's resource is a refusal, not a pin — so only the door's own
   // token endpoint is asked.
   if (issuerBase === trimSlash(metadata.resource)) {
-    return { tokenEndpoint: `${issuerBase}/token`, resource: metadata.resource };
+    return { tokenEndpoint: secureEndpoint(`${issuerBase}/token`), resource: metadata.resource };
   }
   const server = await getJson<{ token_endpoint?: string }>(call, wellKnown(AS_PREFIX, issuerBase));
   if (server.token_endpoint === undefined) {
     throw new Error(`The authorization server ${issuer} publishes no token_endpoint`);
   }
-  // The only URL in this flow that a THIRD party chooses, and the key is posted
-  // to it. RFC 8414 §2 requires https; anything else puts a long-lived
-  // credential on the wire in cleartext for whoever is listening. Loopback http
-  // is the same exception the door already makes for redirect URIs
-  // (`validRedirectUri` in `oauth/server.js`).
-  if (!secureEndpoint(server.token_endpoint)) {
-    throw new Error(
-      `The authorization server ${issuer} publishes a token_endpoint that is not an HTTPS URL `
-      + `(${server.token_endpoint}); a service key is not sent in cleartext`,
-    );
-  }
-  return { tokenEndpoint: server.token_endpoint };
+  return { tokenEndpoint: secureEndpoint(server.token_endpoint) };
 }
 
-function secureEndpoint(endpoint: string): boolean {
-  let url: URL;
+/** ONE rule for the URL the key is posted to, whether a third party published
+ *  it or the deployment named itself: RFC 8414 §2 requires https, and anything
+ *  else puts a long-lived credential on the wire in cleartext for whoever is
+ *  listening. Loopback http is the same exception the door already makes for
+ *  redirect URIs (`validRedirectUri` in `oauth/server.js`). */
+function secureEndpoint(endpoint: string): string {
+  let url: URL | undefined;
   try {
     url = new URL(endpoint);
   } catch {
-    return false;
+    url = undefined;
   }
-  if (url.protocol === "https:") return true;
-  return url.protocol === "http:" && (url.hostname === "localhost" || url.hostname === "127.0.0.1");
+  const secure = url !== undefined && (url.protocol === "https:"
+    || (url.protocol === "http:" && (url.hostname === "localhost" || url.hostname === "127.0.0.1")));
+  if (secure) return endpoint;
+  throw new Error(`${endpoint} is a token_endpoint that is not an HTTPS URL; a service key is not sent in cleartext`);
 }
 
 /** RFC 8414 §3 / RFC 9728 §3.1: the well-known segment goes BETWEEN the origin

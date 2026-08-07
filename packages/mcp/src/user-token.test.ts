@@ -140,6 +140,57 @@ describe("vendoUserToken", () => {
     expect(posted).toEqual([]);
   });
 
+  it("refuses a door's OWN http token endpoint by the same rule, before the key is sent", async () => {
+    // A deployment that names ITSELF as its authorization server picks the token
+    // endpoint off its own metadata — which is no reason to post a long-lived
+    // key in cleartext. Same rule as a third party's endpoint.
+    const door = makeDoor({ serviceAuth: { keys: [SERVICE_KEY] } });
+    const seen: string[] = [];
+
+    await expect(vendoUserToken({
+      url: "http://product.example/api/vendo/mcp",
+      key: SERVICE_KEY,
+      user: "user_1",
+      fetch: doorFetch({ "http://product.example": door }, seen),
+    })).rejects.toThrow(/token_endpoint that is not an HTTPS URL/);
+    expect(seen).toEqual(["http://product.example/.well-known/oauth-protected-resource/api/vendo/mcp"]);
+  });
+
+  it("still exchanges over LOOPBACK http, the one exception the door already makes", async () => {
+    const door = makeDoor({ serviceAuth: { keys: [SERVICE_KEY] } });
+
+    const token = await vendoUserToken({
+      url: "http://localhost:3000/api/vendo/mcp",
+      key: SERVICE_KEY,
+      user: "user_1",
+      fetch: doorFetch({ "http://localhost:3000": door }),
+    });
+
+    expect(token.accessToken).toMatch(/^vmat_/);
+  });
+
+  it("does not let a redirect carry the key off the endpoint that was validated", async () => {
+    const posted: string[] = [];
+    const redirects: RequestRedirect[] = [];
+    const answer = externalAs({
+      tokenEndpoint: `${BROKER}/token`,
+      posted,
+      token: () => new Response(null, { status: 307, headers: { location: "http://evil.example/token" } }),
+    });
+    const record: typeof fetch = async (input, init) => {
+      const request = new Request(input as RequestInfo, init);
+      if (request.method === "POST") redirects.push(request.redirect);
+      return answer(request);
+    };
+
+    await expect(vendoUserToken({ url: BASE, key: SERVICE_KEY, user: "user_1", fetch: record }))
+      .rejects.toThrow(/was redirected \(HTTP 307 to http:\/\/evil\.example\/token\)/);
+    // The refusal is the transport's, not a hope: the POST is sent with
+    // redirects off, so nothing re-sends the key to the redirect target.
+    expect(redirects).toEqual(["manual"]);
+    expect(posted).toEqual([`${BROKER}/token`]);
+  });
+
   it("rejects a 200 exchange that omits a field the token contract declares", async () => {
     const fetchImpl = externalAs({
       tokenEndpoint: `${BROKER}/token`,
