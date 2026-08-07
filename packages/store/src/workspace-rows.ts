@@ -187,6 +187,16 @@ export function workspaceRows(db: Db, files: FilesAdapter): WorkspaceRows {
     if (stored.blobRef !== undefined) await files.delete(stored.blobRef);
   };
 
+  /** Drop `stored` unless `keep` is the same blob. `undo` hands its history
+   *  row's blob straight to the live file row rather than re-uploading the
+   *  bytes, so two undos that pick the same revision both hold the key the
+   *  winner has just made the live file's only copy — and the loser would
+   *  release it, leaving a row pointing at nothing and no history row naming
+   *  it. Whoever still points at a blob keeps it. */
+  const release = async (stored: StoredContent, keep: StoredContent): Promise<void> => {
+    if (stored.blobRef !== keep.blobRef) await dropBlob(stored);
+  };
+
   const currentOf = async (owner: string, path: string): Promise<Current | undefined> => {
     const result = await db.query(
       `SELECT content, blob_ref, revision, bytes, updated_at FROM vendo_workspace_files
@@ -362,7 +372,7 @@ export function workspaceRows(db: Db, files: FilesAdapter): WorkspaceRows {
         // permanent loss, the mirror of the N1/N2 hazard. A won CAS on
         // `revision = prior.revision` is the proof nobody else superseded it.
         if (prepared.prior !== undefined && !options.recordHistory) {
-          await dropBlob(prepared.prior.stored);
+          await release(prepared.prior.stored, prepared.stored);
         }
         await trim(owner, prepared.path);
         return { landed: true, revision: prepared.revision, updatedAt: now };
@@ -374,8 +384,9 @@ export function workspaceRows(db: Db, files: FilesAdapter): WorkspaceRows {
         const settled = await load(head.stored);
         if (settled !== undefined && sameBytes(settled, prepared.content)) {
           // The winner stored exactly these bytes, so there is nothing left to
-          // write — and our blob is now surplus.
-          await dropBlob(prepared.stored);
+          // write — and our blob is surplus, unless the winner is the one now
+          // pointing at it.
+          await release(prepared.stored, head.stored);
           return { landed: false, revision: head.revision, updatedAt: head.updatedAt };
         }
       }
