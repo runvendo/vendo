@@ -139,15 +139,16 @@ name URLs a client can reach.
 
 ## Broker-fronted MCP (remote authorization server)
 
-By default the door serves its own OAuth surface. To front Maple with the
-Vendo hosted broker (`{tenant}.mcp.vendo.run`), provision a tenant against the
-broker with `upstream_origin`/`upstream_mount` pointing at this app's public
-origin and `/api/vendo/mcp`, then set:
+By default the door serves its own OAuth surface. To front Maple with a hosted
+broker, declare the tenant's MCP endpoint — that one variable is the switch,
+and Maple registers nothing anywhere:
 
-- `VENDO_MCP_REMOTE_AS_ISSUER` — the tenant issuer, e.g. `https://maple.mcp.vendo.run`
-- `VENDO_MCP_REMOTE_AS_AUDIENCE` — expected token audience (defaults to `{issuer}/mcp`)
-- `VENDO_MCP_REMOTE_AS_JWKS_URI` — optional JWKS override (defaults to RFC 8414 discovery)
-- `VENDO_MCP_FEDERATION_SECRET` — the federation secret returned once at provisioning
+- `VENDO_MCP_URL` — the tenant's MCP endpoint, e.g. `https://maple.mcp.vendo.run/mcp`
+- `VENDO_MCP_FEDERATION_SECRET` — the secret the broker signs its login handshake with
+
+(Maple's own `VENDO_MCP_REMOTE_AS_ISSUER`/`_AUDIENCE`/`_JWKS_URI` still work and
+still win — they are the explicit `mcp.remoteAs` path, for a JWKS override or a
+non-broker authorization server.)
 
 With these set, Maple stops serving `/authorize`, `/token`, and `/register`
 (the broker owns them), validates broker-issued ES256 bearers, and answers the

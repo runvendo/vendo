@@ -138,8 +138,6 @@ export interface VendoComposition {
   /** Armed by the ready() latch, never at construction (Workers forbids timers
    *  in global scope). Filled by compose-sweep.ts. */
   startBackgroundSweep: () => void;
-  /** Filled by compose-mcp.ts when the broker arm is selected. */
-  warmMcpBroker?: () => Promise<void>;
   /** The boot-once latch every handler/emit touch awaits. */
   ready: () => Promise<void>;
   /** Filled by compose-apps.ts, read by `resolveRisk` inside a later check. */
@@ -241,10 +239,9 @@ export interface VendoComposition {
   // ── compose-mcp.ts ─────────────────────────────────────────────────────────
   turnCredentials: TurnCredentials;
   door: McpDoor | undefined;
-  /** The /status posture, re-read through a deps getter so a broker
-   *  ensure-failure degrade reports what actually composed. */
+  /** The /status posture: false while the door is closed, "local" when it
+   *  serves its own OAuth surface, "broker" when one fronts it. */
   mcpPosture: "local" | "broker" | false;
-  mcpSelection: "off" | "explicit" | "broker" | "local";
   doorWellKnown: ReadonlySet<string>;
 }
 

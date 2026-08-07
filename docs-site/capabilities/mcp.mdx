@@ -368,8 +368,7 @@ export const vendo = createVendo({
 ```
 
 `baseUrl`, `remoteAs`, and `federation` live under `mcp: { … }`; they are
-not top-level `createVendo` keys. The object form is also the one place to
-gate broker trust behind environment variables.
+not top-level `createVendo` keys.
 
 ## How door calls reach host tools
 
@@ -416,6 +415,21 @@ your product. Skip it if you want the door to run its own OAuth surface. The
 exact token requirements and endpoint behavior in this mode are specified in
 [remoteAs token requirements](#remoteas-token-requirements).
 
+When a hosted broker fronts the door, you do not need the object form at all:
+set `VENDO_MCP_URL` to your tenant's MCP endpoint and leave `mcp: true`.
+
+```bash
+VENDO_MCP_URL=https://acme.mcp.vendo.run/mcp
+```
+
+Broker mode is something you **declare**, not something Vendo discovers. That
+one variable is the whole switch: the URL's origin becomes the issuer, the URL
+itself becomes the expected token audience, and the door stops serving its own
+`/authorize`, `/token` and `/register`. Nothing is registered anywhere and
+nothing is fetched at boot, so no deploy can repoint another one; a URL the
+door cannot verify tokens against fails loudly rather than quietly reverting to
+a local OAuth surface. An explicit `mcp.remoteAs` still wins over it.
+
 ## Federate login from an external authorization server
 
 `federation` adds a signed handshake so an external authorization server can
@@ -438,7 +452,9 @@ export const vendo = createVendo({
 ```
 
 Set `VENDO_MCP_FEDERATION_SECRET` to a high-entropy secret shared with the
-external authorization server. That server crafts an HS256-signed request JWT
+external authorization server; the composition reads it directly, so the
+`mcp: { federation }` object above is only needed when the secret comes from
+somewhere other than that variable. That server crafts an HS256-signed request JWT
 and redirects the user's browser to
 `GET /api/vendo/mcp/federate?request=<compact JWS>`. The exact claims the
 request JWT must carry are listed in

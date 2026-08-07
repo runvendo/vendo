@@ -66,13 +66,6 @@ export const doctorBaseUrlRoutes: RouteEntry[] = [
     production" for an unset NODE_ENV and on every runtime with no `process`
     global. */
 export const doctorRoutes: RouteEntry[] = [
-  // The broker seam's selection (selectMcpBroker) — a composition fact, no
-  // secret material. /status collapses an explicit `mcp.remoteAs` and the
-  // Cloud-managed broker into one "broker" posture; doctor reads this to keep
-  // the seam's explicit-wins precedence: only a confirmed "broker" selection
-  // may POST the tenant ensure (against an explicit AS the same call could
-  // provision or repoint an unrelated Cloud tenant).
-  route("GET", "/doctor/mcp", async ({ deps }) => json({ selection: deps.mcpSelection })),
   // Machine/schedule reporting. Reporting only: which apps carry a machine, what
   // their manifests declare, and whether a schedule caller (VENDO_TICK_SECRET)
   // is configured for the /tick surface. WHEN a schedule last fired is not here:

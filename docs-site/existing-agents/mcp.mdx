@@ -175,9 +175,10 @@ powerful as your backend already is.
 </Steps>
 
 <Note>
-  A door pointed at an external authorization server (`mcp.remoteAs`, or the
-  hosted broker) does not serve its own token endpoint, so the exchange lives at
-  that server instead: post to the issuer's own `token_endpoint`.
+  A door pointed at an external authorization server (`mcp.remoteAs`, or a
+  declared `VENDO_MCP_URL`) does not serve its own token endpoint, so the
+  exchange lives at that server instead: post to the issuer's own
+  `token_endpoint`.
 </Note>
 
 ## What the agent gets

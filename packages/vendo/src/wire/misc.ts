@@ -209,7 +209,7 @@ export const statusRoutes: RouteEntry[] = [
         // Inference seam (cloud definition 2026-07-17): "custom" (host-passed
         // model) or "ladder" (the composed vendoModel env default).
         model: deps.model,
-        // 10-mcp §1 + the broker seam (selectMcpBroker): false while the door
+        // 10-mcp §1 + the broker seam: false while the door
         // is closed (it is off by default); "local" when the open door serves
         // its own OAuth surface; "broker" when an external authorization
         // server fronts it.

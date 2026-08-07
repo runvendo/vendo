@@ -16,9 +16,7 @@ import { describeDevCredential, resolveDevCredential } from "../dev-creds/resolv
 // Relative (not the #dev-creds condition): the CLI is Node-only and the edge
 // build deliberately does not export the pin map.
 import { SLOT_PIN_ENV } from "../dev-creds/model.js";
-import { DOCTOR_INFO_CODES, doctorFixRef, type DoctorErrorCode } from "./doctor-codes.js";
-import { cloudMcpTenant, type EnsureTenantResult } from "../cloud-mcp.js";
-import { publicBaseUrl } from "../mcp-broker-select.js";
+import { doctorFixRef, type DoctorErrorCode } from "./doctor-codes.js";
 import { EJECT_MANIFEST_FILE, type EjectedManifest } from "./eject.js";
 import { applyJudgment, judgmentsFileSchema, overridesFileSchema, toolsFileSchema, type ToolJudgment } from "@vendoai/actions";
 import { firstOpenApiSpec, openApiMountPath } from "@vendoai/actions/sync";
@@ -59,10 +57,6 @@ export interface DoctorOptions {
   /** The npm `latest` lookup behind the version-skew line — its own seam, not
       fetchImpl, so a scripted wire probe never doubles as a registry answer. */
   npmLatest?: () => Promise<string | null>;
-  /** The broker ensure-tenant call behind the hosted-MCP line — its own seam
-      for the same reason as npmLatest: it rides the Cloud console, not the
-      probed wire. */
-  ensureTenant?: (input: { baseUrl: string; mount: string }) => Promise<EnsureTenantResult>;
 }
 
 type CheckStatus = "ok" | "broken" | "warning";
@@ -651,6 +645,11 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
   // and the server card parses. The metadata is path-inserted (RFC 9728 §3): a
   // door mounted at /api/vendo/mcp serves /.well-known/...-resource/api/vendo/mcp.
   if (mcpPosture !== false) {
+    // Which mode is this door in? Broker mode is DECLARED, so the answer is a
+    // composition fact worth printing rather than inferring from the checks.
+    note(mcpPosture === "broker"
+      ? "MCP door mode: broker — an external authorization server fronts it (VENDO_MCP_URL, or mcp.remoteAs)"
+      : "MCP door mode: local — the door serves its own OAuth surface (set VENDO_MCP_URL to front it with a broker)");
     const origin = new URL(statusUrl).origin;
     const mountPath = `${new URL(statusUrl).pathname.replace(/\/$/, "")}/mcp`;
     const resolves = async (id: string, code: DoctorErrorCode, url: string, valid: (body: Record<string, unknown>) => boolean, label: string): Promise<Record<string, unknown> | null> => {
@@ -834,57 +833,6 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     warn("cloud/key", "E-CLOUD-001", `VENDO_API_KEY is set but not usable: ${cloud.error ?? "malformed"}`);
   } else {
     note(`Vendo Cloud (optional): no VENDO_API_KEY. A key unlocks ${cloud.unlocks.join("; ")}. Run \`vendo login\` to start.`);
-  }
-
-  // MCP broker seam (provisioning plan 2026-08-03): with a usable key and an
-  // open door, doctor explains what the broker default does — the seam skips
-  // the broker SILENTLY on a private base URL (the broker cannot forward
-  // visitors to a laptop), so doctor is where that decision gets said. With a
-  // public URL it resolves and prints the tenant the composition WOULD/did
-  // front the door with; the ensure is idempotent — the very call boot makes.
-  if (cloud.present && cloud.ok && mcpPosture !== false) {
-    const brokerBase = publicBaseUrl(env["VENDO_BASE_URL"]);
-    if (brokerBase === undefined) {
-      // Informational, not a failure: nothing is broken — deploying to a
-      // public URL is simply what arms the broker.
-      note(`I-CLOUD-002: ${DOCTOR_INFO_CODES["I-CLOUD-002"]} — VENDO_BASE_URL is unset or private, so the door serves its own local OAuth surface for now`);
-    } else {
-      // Explicit-adapter precedence (the seam's rule): /status reports both
-      // an explicit `mcp.remoteAs` and the Cloud-managed broker as "broker",
-      // but only the Cloud-managed arm ever calls ensure — against an
-      // explicitly configured AS the same POST could provision or repoint an
-      // unrelated Cloud tenant. Read the composition's own selection off the
-      // dev-only probe; anything but a confirmed "broker" skips the ensure.
-      let selection: unknown;
-      try {
-        const probed = await fetchImpl(`${statusUrl}/doctor/mcp`, { headers: { accept: "application/json" } });
-        if (probed.ok) selection = (await probed.json() as { selection?: unknown }).selection;
-      } catch {
-        // Unreachable probe — same conservative skip as an older wire below.
-      }
-      if (selection === "explicit") {
-        note("hosted MCP broker: an explicit mcp.remoteAs fronts the door — the broker default does not apply, so doctor ensures no tenant");
-      } else if (selection !== "broker") {
-        note("hosted MCP broker: the composition did not report selecting the broker (older wire, or a probe the dev-only route cannot answer) — skipping the tenant ensure");
-      } else {
-        const ensure = options.ensureTenant ?? ((input: { baseUrl: string; mount: string }) =>
-          cloudMcpTenant({
-            apiKey: env["VENDO_API_KEY"] ?? "",
-            ...(env["VENDO_CLOUD_URL"] === undefined ? {} : { baseUrl: env["VENDO_CLOUD_URL"] }),
-          }).ensure(input));
-        try {
-          const { tenant } = await ensure({
-            baseUrl: brokerBase,
-            mount: `${new URL(statusUrl).pathname.replace(/\/$/, "")}/mcp`,
-          });
-          pass("cloud/mcp-broker", `hosted MCP broker tenant: ${tenant.issuer}${tenant.status === "disabled" ? " (disabled in the console — the broker refuses traffic)" : ""} — the door composes against it when deployed at ${brokerBase}`);
-        } catch (error) {
-          // Informational like the arm above: the composition itself degrades
-          // to the local door on the same failure, loudly, at boot.
-          note(`hosted MCP broker: the tenant could not be resolved (${error instanceof Error ? error.message : String(error)}) — the door falls back to its own local OAuth surface until the console answers`);
-        }
-      }
-    }
   }
 
   if (devServerStop !== null) devServerStop();

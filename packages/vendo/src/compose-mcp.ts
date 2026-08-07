@@ -1,21 +1,20 @@
 /**
  * 10-mcp — the door, in its three postures: the full public door, the
- * broker-fronted one an ensure-tenant call wires, and the INTERNAL half a
- * machine-bound harness mounts by itself.
+ * broker-fronted one a declared `VENDO_MCP_URL` turns on, and the INTERNAL
+ * half a machine-bound harness mounts by itself.
  */
 import { VendoError } from "@vendoai/core";
 import {
+  canonicalUri,
   createMcpDoor,
   createTurnCredentials,
   type AppsPort,
   type McpDoor,
   type TurnCredentials,
 } from "@vendoai/mcp";
-import { cloudKeyOptions } from "./compose-selection.js";
 import type { VendoComposition } from "./compose-context.js";
-import { cloudMcpTenant } from "./cloud-mcp.js";
 import { basePathOf, doorWellKnownPaths, MCP_MOUNT } from "./door-paths.js";
-import { selectMcpBroker } from "./mcp-broker-select.js";
+import { environment } from "./wire/shared.js";
 
 /** The apps ride-along the door serves as a viewer + runner (10-mcp §4). */
 const appsPortFor = (composition: VendoComposition): AppsPort => {
@@ -35,26 +34,63 @@ const appsPortFor = (composition: VendoComposition): AppsPort => {
   };
 };
 
-/** 10-mcp §5 — the door, built from the parts already assembled. Taken as a
- *  factory because the broker arm re-composes it with the trust anchor the
- *  ensure-tenant call returns. */
-const doorFactory = (
+/** 10-mcp §3.1 — the DECLARED broker: `VENDO_MCP_URL` is the tenant's own MCP
+ *  endpoint, so its origin is the issuer and the endpoint itself — canonicalized
+ *  with the door's own resource canonicalization, so the two can never disagree
+ *  — is the audience. Malformed fails LOUD at composition, in the shape the door
+ *  uses for a malformed `baseUrl`: a broker URL nobody can verify tokens against
+ *  must surface as a broken deployment, never as a quiet drop to local mode. */
+const declaredRemoteAs = (value: string | undefined): { issuer: string; audience: string } | undefined => {
+  if (value === undefined) return undefined;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new TypeError(`VENDO_MCP_URL must be an absolute http(s) URL, got ${JSON.stringify(value)}`);
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new TypeError(`VENDO_MCP_URL must be an absolute http(s) URL, got ${JSON.stringify(value)}`);
+  }
+  return { issuer: url.origin, audience: canonicalUri(value) };
+};
+
+/** The `mcp:` arm: the full door, broker-fronted or local. */
+const openDoor = (
   composition: VendoComposition,
   mcpOptions: NonNullable<VendoComposition["mcpOptions"]>,
   doorBaseUrl: string | undefined,
   turnCredentials: TurnCredentials,
-): (remoteAs?: typeof mcpOptions.remoteAs, federation?: typeof mcpOptions.federation) => McpDoor => {
+): { door: McpDoor; posture: "local" | "broker" } => {
   const { boundTools, guard, store, oauthSeam, actions, membershipsSeam, theme } = composition;
-  const appsPort = appsPortFor(composition);
-    const composeDoor = (
-      remoteAs = mcpOptions.remoteAs,
-      federation = mcpOptions.federation,
-    ): McpDoor => createMcpDoor({
+  if (oauthSeam === undefined) {
+    throw new VendoError(
+      "validation",
+      "createVendo({ mcp: true }) requires a HostOAuthAdapter (10-mcp §3) — from `oauth` or an `auth` preset carrying one: the door mints door principals through it and cannot open without one.",
+    );
+  }
+  // ADAPTER RULE, mcp seam (cloned from selectConnections): an explicit
+  // `mcp.remoteAs` wins verbatim; else a declared `VENDO_MCP_URL` fronts the
+  // door with that broker; else the local door. Broker mode is DECLARED by the
+  // operator and nothing else — the app registers no address anywhere, so no
+  // boot-time call can repoint a live deployment or swap its authentication
+  // architecture behind its back.
+  const remoteAs = mcpOptions.remoteAs ?? declaredRemoteAs(environment("VENDO_MCP_URL"));
+  const secret = environment("VENDO_MCP_FEDERATION_SECRET");
+  const federation = mcpOptions.federation ?? (secret === undefined ? undefined : { secret });
+  if (mcpOptions.serviceAuth !== undefined && remoteAs !== undefined) {
+    console.warn(
+      "[vendo] mcp.serviceAuth is set, but this door trusts an external authorization server "
+      + "(mcp.remoteAs, or a declared VENDO_MCP_URL), so it does not serve its own token endpoint "
+      + "— the service-key exchange lives there. Exchange keys at that server instead.",
+    );
+  }
+  return {
+    door: createMcpDoor({
       tools: boundTools,
       guard,
       store,
       oauth: oauthSeam,
-      apps: appsPort,
+      apps: appsPortFor(composition),
       // The host's curated door menu (`surfaces.mcp`). Passed as a provider
       // because composition is sync and resolving the authored file is not; the
       // door resolves it once. The DOOR never reads `.vendo` itself — block
@@ -80,94 +116,14 @@ const doorFactory = (
       ...(federation === undefined ? {} : { federation }),
       ...(mcpOptions.serviceAuth === undefined ? {} : { serviceAuth: mcpOptions.serviceAuth }),
       ...(theme === undefined ? {} : { theme }),
-    });
-  return composeDoor;
-};
-
-interface OpenedDoor {
-  door: McpDoor;
-  posture: "local" | "broker";
-  selection: VendoComposition["mcpSelection"];
-  warmMcpBroker?: () => Promise<void>;
-}
-
-/** The `mcp:` arm: the full door, brokered or local. */
-const openDoor = (
-  composition: VendoComposition,
-  mcpOptions: NonNullable<VendoComposition["mcpOptions"]>,
-  doorBaseUrl: string | undefined,
-  turnCredentials: TurnCredentials,
-): OpenedDoor => {
-  const { oauthSeam } = composition;
-  if (oauthSeam === undefined) {
-    throw new VendoError(
-      "validation",
-      "createVendo({ mcp: true }) requires a HostOAuthAdapter (10-mcp §3) — from `oauth` or an `auth` preset carrying one: the door mints door principals through it and cannot open without one.",
-    );
-  }
-  const composeDoor = doorFactory(composition, mcpOptions, doorBaseUrl, turnCredentials);
-  // ADAPTER RULE, mcp seam (selectMcpBroker — cloned from selectConnections
-  // above): explicit `mcp.remoteAs` wins verbatim; else VENDO_API_KEY plus a
-  // PUBLIC base URL default the hosted broker (an idempotent ensure-tenant
-  // call wires remoteAs + federation from the response); else the local
-  // door, byte-identical to today. The localhost rule and the ensure wire
-  // are frozen in the provisioning plan.
-  const mcpCloud = cloudKeyOptions();
-  const selection = selectMcpBroker(mcpOptions, mcpCloud, doorBaseUrl, MCP_MOUNT);
-  if (mcpOptions.serviceAuth !== undefined && (selection.mode === "broker" || selection.mode === "explicit")) {
-    console.warn(
-      "[vendo] mcp.serviceAuth is set, but this door trusts an external authorization server "
-      + "(mcp.remoteAs, or the hosted broker VENDO_API_KEY selects), so it does not serve its own "
-      + "token endpoint — the service-key exchange lives there. Exchange keys at that server instead.",
-    );
-  }
-  if (selection.mode === "broker" && mcpCloud !== undefined) {
-    // Boot-once, awaited: the first door construction rides the ready latch
-    // (warmMcpBroker below) so the trust anchor is resolved before the first
-    // request is served — and the wrapper below awaits the same latch, so a
-    // door request can never race a half-composed door.
-    let brokerDoor: Promise<McpDoor> | undefined;
-    const composeBrokerDoor = async (): Promise<McpDoor> => {
-      try {
-        const { tenant, federationSecret } = await cloudMcpTenant(mcpCloud).ensure(selection.ensure);
-        return composeDoor(
-          { issuer: tenant.issuer, audience: tenant.audience },
-          { secret: federationSecret },
-        );
-      } catch (error) {
-        // Same degrade posture as the hosted overrides fetch above: a
-        // console blip must not kill boot. Loud, once, then the local door
-        // for this composition's lifetime; the next boot re-ensures.
-        composition.mcpPosture = "local";
-        console.warn(
-          "[vendo] hosted MCP broker ensure-tenant failed; the door serves its own local OAuth "
-          + `surface this boot: ${error instanceof Error ? error.message : String(error)}`,
-        );
-        return composeDoor();
-      }
-    };
-    const doorReady = (): Promise<McpDoor> => (brokerDoor ??= composeBrokerDoor());
-    const warmMcpBroker = async (): Promise<void> => { await doorReady(); };
-    return {
-      door: {
-        handler: async (request) => (await doorReady()).handler(request),
-        revokeClient: async (subject, clientId) => (await doorReady()).revokeClient(subject, clientId),
-      },
-      posture: "broker",
-      selection: selection.mode,
-      warmMcpBroker,
-    };
-  }
-  return {
-    door: composeDoor(),
-    posture: selection.mode === "explicit" ? "broker" : "local",
-    selection: selection.mode,
+    }),
+    posture: remoteAs === undefined ? "local" : "broker",
   };
 };
 
 /** 10-mcp §1 — the door, its posture, and the origin-root paths it owns. */
 export const composeMcp = (composition: VendoComposition): Pick<VendoComposition,
-  "turnCredentials" | "door" | "mcpPosture" | "mcpSelection" | "doorWellKnown" | "warmMcpBroker"> => {
+  "turnCredentials" | "door" | "mcpPosture" | "doorWellKnown"> => {
   const { mcpOptions, internalDoorOnly, configuredBaseUrl, boundTools, guard, store } = composition;
   /**
    * 10-mcp §3b — the process's own turn-credential registry.
@@ -188,31 +144,21 @@ export const composeMcp = (composition: VendoComposition): Pick<VendoComposition
   // The /status posture for the mcp block (connections-posture pattern):
   // false when the door is closed, "local" when it serves its own OAuth
   // surface, "broker" when an external authorization server fronts it —
-  // ensured from the Cloud broker or explicitly configured. A `let` read
-  // through a deps getter, so the ensure-failure degrade below reports what
-  // actually composed.
+  // declared by VENDO_MCP_URL or configured explicitly.
   let mcpPosture: "local" | "broker" | false = false;
-  // The seam's selection, kept beside the posture for the dev-only
-  // /doctor/mcp probe (wire/doctor.ts): the posture collapses explicit
-  // `mcp.remoteAs` and the Cloud-managed broker into "broker", and doctor
-  // needs the distinction to never ensure a tenant for an explicit AS.
-  let mcpSelection: "off" | "explicit" | "broker" | "local" = "off";
-  let warmMcpBroker: (() => Promise<void>) | undefined;
   if (mcpOptions !== undefined) {
     const opened = openDoor(composition, mcpOptions, doorBaseUrl, turnCredentials);
     door = opened.door;
     mcpPosture = opened.posture;
-    mcpSelection = opened.selection;
-    warmMcpBroker = opened.warmMcpBroker;
   } else if (internalDoorOnly) {
     // The INTERNAL half alone. It answers one live turn's credential and
     // nothing else, so it is handed only what that leg reads: the credential
     // registry and where it lives. No oauth (there is no space to sign into),
     // no apps ride-alongs, no `surfaces.mcp` menu, no theme — a turn's tools,
     // curation and rendering are all decided by the turn. The broker seam
-    // (selectMcpBroker above) never applies here: there is no outside OAuth
-    // surface for an external authorization server to front, so this half
-    // keeps `mcp: false` posture like any closed door.
+    // never applies here: there is no outside OAuth surface for an external
+    // authorization server to front, so this half keeps `mcp: false` posture
+    // like any closed door.
     door = createMcpDoor({
       internal: true,
       tools: boundTools,
@@ -226,12 +172,5 @@ export const composeMcp = (composition: VendoComposition): Pick<VendoComposition
   // Resolved AFTER the door: `createMcpDoor` is what validates the base URL, so
   // a malformed one still fails with its message rather than a bare `new URL`.
   const doorWellKnown = doorWellKnownPaths(door === undefined ? "" : basePathOf(doorBaseUrl));
-  return {
-    turnCredentials,
-    door,
-    mcpPosture,
-    mcpSelection,
-    doorWellKnown,
-    ...(warmMcpBroker === undefined ? {} : { warmMcpBroker }),
-  };
+  return { turnCredentials, door, mcpPosture, doorWellKnown };
 };

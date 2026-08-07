@@ -28,7 +28,7 @@ export const wireDepsFor = (composition: VendoComposition): WireDeps => {
   const { resolvePrincipal, membershipsSeam, resolvePersonSeam, userFactsSeam, ready } = composition;
   const { appsMounted, automationsMounted, sessionsConfig, sessionNow, sessionOps } = composition;
   const { runSweep, sweepEnabled, hostedStoreComposed, doorWellKnown, harnessDoor } = composition;
-  const { configuredBaseUrl, isDevelopmentEnv, mcpSelection } = composition;
+  const { configuredBaseUrl, isDevelopmentEnv } = composition;
   // Minted on first request via the deps getter below — Workers forbids
   // generating random values in global scope, and createVendo runs at module
   // init in the edge wiring. Still one fallback id per process.
@@ -81,7 +81,6 @@ export const wireDepsFor = (composition: VendoComposition): WireDeps => {
     model: inference.agent.venue,
     doctor,
     get mcp() { return composition.mcpPosture; },
-    mcpSelection,
     development,
     sessions: {
       ttlMs: sessionsConfig.ttlMs,

@@ -6,6 +6,9 @@
  * root.
  */
 export { createMcpDoor } from "./door.js";
+/** The door's own resource canonicalization, exported so a composition seam
+ *  declaring an external audience derives it the same way the door does. */
+export { canonicalUri } from "./oauth/server.js";
 export type { McpDoor, McpDoorConfig, McpRunContext } from "./door.js";
 export type {
   HostOAuthAdapter,

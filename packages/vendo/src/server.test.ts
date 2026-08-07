@@ -18,6 +18,7 @@ import type { ConnectionsService } from "./connections.js";
 import { VERSION as WIRE_VERSION } from "./wire/shared.js";
 import { appStore, createStore, secretStore, storeSecrets, type VendoStore } from "@vendoai/store";
 import { createHmac, randomBytes } from "node:crypto";
+import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 // authJs now ships on its own subpath (@vendoai/vendo/auth/auth-js), not
@@ -3179,6 +3180,96 @@ describe("10-mcp §5 — door claims only its four exact well-known paths (FIX H
     const assertion = new URL(federated.headers.get("location")!).searchParams.get("assertion")!;
     const payload = JSON.parse(Buffer.from(assertion.split(".")[1]!, "base64url").toString()) as Record<string, unknown>;
     expect(payload).toMatchObject({ sub: "user_door", jti: "umbrella-federation-nonce", aud: issuer });
+  });
+
+  // Broker mode is DECLARED, never discovered: `VENDO_MCP_URL` is the tenant's
+  // own MCP endpoint, so the door reads the issuer and the audience out of it
+  // by URL parsing. Nothing is registered anywhere, so no boot-time call can
+  // repoint a live deployment or swap its authentication architecture.
+  describe("VENDO_MCP_URL declares broker mode", () => {
+    const BROKER = "https://acme.mcp.vendo.run";
+    const mcpRequest = (token: string): Request => new Request("https://host.test/api/vendo/mcp", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        accept: "application/json, text/event-stream",
+        "content-type": "application/json",
+        "mcp-protocol-version": "2025-11-25",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "t", version: "0" } },
+      }),
+    });
+
+    it("verifies against the declared issuer and the canonicalized endpoint as audience", async () => {
+      // The trailing slash proves both halves are URL-PARSED, never
+      // concatenated: the issuer is the origin, the audience is the endpoint
+      // canonicalized exactly as the door canonicalizes its own resource.
+      vi.stubEnv("VENDO_MCP_URL", `${BROKER}/mcp/`);
+      const { privateKey, publicKey } = await generateKeyPair("ES256");
+      vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (url === `${BROKER}/.well-known/oauth-authorization-server`) {
+          return Response.json({ issuer: BROKER, jwks_uri: `${BROKER}/jwks` });
+        }
+        if (url === `${BROKER}/jwks`) {
+          return Response.json({ keys: [{ ...(await exportJWK(publicKey)), alg: "ES256", use: "sig", kid: "k1" }] });
+        }
+        return new Response(null, { status: 404 });
+      });
+      const vendo = await mcpVendo();
+
+      const prm = await vendo.handler(root("/.well-known/oauth-protected-resource/api/vendo/mcp"));
+      expect((await prm.json() as { authorization_servers?: string[] }).authorization_servers).toEqual([BROKER]);
+      expect((await vendo.handler(root("/.well-known/oauth-authorization-server/api/vendo/mcp"))).status).toBe(404);
+
+      const mint = (audience: string): Promise<string> => new SignJWT({})
+        .setProtectedHeader({ alg: "ES256", kid: "k1" })
+        .setIssuer(BROKER).setAudience(audience).setSubject("broker_user")
+        .setIssuedAt().setExpirationTime("5m").sign(privateKey);
+      expect((await vendo.handler(mcpRequest(await mint(`${BROKER}/mcp`)))).status).toBe(200);
+      // A token for any other resource is not this door's to accept.
+      expect((await vendo.handler(mcpRequest(await mint("https://host.test/api/vendo/mcp")))).status).toBe(401);
+    });
+
+    it("wires federation from VENDO_MCP_FEDERATION_SECRET", async () => {
+      vi.stubEnv("VENDO_MCP_URL", `${BROKER}/mcp`);
+      vi.stubEnv("VENDO_MCP_FEDERATION_SECRET", "declared-federation-secret-with-entropy");
+      const vendo = await mcpVendo();
+      const request = signHs256("declared-federation-secret-with-entropy", {
+        iss: BROKER,
+        aud: "https://host.test/api/vendo/mcp",
+        exp: Math.floor(Date.now() / 1_000) + 300,
+        jti: "declared-nonce",
+        redirect_uri: `${BROKER}/federation/callback`,
+        scopes: ["tools"],
+        client_name: "Vendo broker",
+      });
+      const federated = await vendo.handler(root(`/api/vendo/mcp/federate?request=${request}`));
+      expect(federated.status).toBe(302);
+    });
+
+    it("unset leaves the local door, and an explicit mcp.remoteAs still wins over it", async () => {
+      const local = await mcpVendo();
+      const as = await local.handler(root("/.well-known/oauth-authorization-server/api/vendo/mcp"));
+      expect(as.status).toBe(200);
+
+      vi.stubEnv("VENDO_MCP_URL", `${BROKER}/mcp`);
+      const explicit = await mcpVendo({
+        remoteAs: { issuer: "https://own-as.example.com", audience: "https://host.test/api/vendo/mcp" },
+      });
+      const prm = await explicit.handler(root("/.well-known/oauth-protected-resource/api/vendo/mcp"));
+      expect((await prm.json() as { authorization_servers?: string[] }).authorization_servers)
+        .toEqual(["https://own-as.example.com"]);
+    });
+
+    it("a malformed VENDO_MCP_URL fails LOUD at composition — never a quiet drop to local", async () => {
+      vi.stubEnv("VENDO_MCP_URL", "acme.mcp.vendo.run/mcp");
+      await expect(mcpVendo()).rejects.toThrow(/VENDO_MCP_URL must be an absolute http\(s\) URL/);
+    });
   });
 
   it("serves BOTH spellings when the deployment is mounted under a path prefix", async () => {

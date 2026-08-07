@@ -137,8 +137,8 @@ export const composeAdapters = (composition: VendoComposition): Pick<VendoCompos
   };
 };
 
-/** The boot-once readiness latch: schema, the MCP broker's ensure-tenant call,
- *  and the background sweep, started together on the first handler/emit touch. */
+/** The boot-once readiness latch: schema and the background sweep, started
+ *  together on the first handler/emit touch. */
 export const composeReady = (composition: VendoComposition): Pick<VendoComposition,
   "startBackgroundSweep" | "ready"> => {
   const { store } = composition;
@@ -149,20 +149,12 @@ export const composeReady = (composition: VendoComposition): Pick<VendoCompositi
   // background sweep together through this once-latch; on Node the first
   // request pays the same cost the old eager kick merely front-loaded.
   const startBackgroundSweep: () => void = () => undefined;
-  // `composition.warmMcpBroker` is assigned at the door composition when the
-  // broker arm of the mcp seam is selected: the ensure-tenant call rides this
-  // SAME boot-once latch as ensureSchema — an awaited compose step, resolved
-  // before the first request is served — never construction-time I/O
-  // (createVendo runs at module init in the edge wiring, where Workers forbids
-  // fetch). `composition.startBackgroundSweep` is filled by compose-sweep.ts for
-  // the same reason: both are read on the first touch, never at construction.
+  // `composition.startBackgroundSweep` is filled by compose-sweep.ts: it is
+  // read on the first touch, never at construction.
   let readyState: Promise<void> | undefined;
   const ready = (): Promise<void> => {
     if (readyState === undefined) {
-      const warmMcpBroker = composition.warmMcpBroker;
-      readyState = warmMcpBroker === undefined
-        ? store.ensureSchema()
-        : Promise.all([store.ensureSchema(), warmMcpBroker()]).then(() => undefined);
+      readyState = store.ensureSchema();
       // No unhandled rejection before a handler/emit awaits the latch.
       void readyState.catch(() => undefined);
       composition.startBackgroundSweep();
