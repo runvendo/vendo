@@ -60,6 +60,31 @@ describe("expandInlineRefs", () => {
     expect(expandInlineRefs(wire, { tools: ["host_other"] }).minted).toBe(0);
   });
 
+  it("leaves prose alone: a dotted call is only a call inside an attribute expression", () => {
+    // Ordinary copy that happens to read like a call: a quoted attribute value
+    // and a text child. Rewriting either corrupts what the user sees.
+    const wire = `<App name="Ops"><Text text="Contact ops.team (Mon-Fri) about docs.pdf(v2)"/><Text>Ask jane.doe (she knows)</Text></App>`;
+    const { wire: out, minted } = expandInlineRefs(wire);
+    expect(minted).toBe(0);
+    expect(out).toBe(wire);
+  });
+
+  it("expands an attribute expression in the same document that carries such prose", () => {
+    const wire = `<App name="Ops"><Text text="Contact ops.team (Mon-Fri)"/><Table rows={invoices.list({status:"overdue"}).data} columns={["client"]}/></App>`;
+    const { wire: out, minted } = expandInlineRefs(wire);
+    expect(minted).toBe(1);
+    expect(out).toContain(`text="Contact ops.team (Mon-Fri)"`);
+    expect(out).toContain("rows={invoicesList.data}");
+    expect(out).toContain(`<Query id="invoicesList" tool="invoices.list" input={{status:"overdue"}}/>`);
+  });
+
+  it("leaves a dotted call inside a string INSIDE an attribute expression alone", () => {
+    const wire = `<App name="Ops"><Text text={"Contact ops.team (Mon-Fri)"}/></App>`;
+    const { wire: out, minted } = expandInlineRefs(wire);
+    expect(minted).toBe(0);
+    expect(out).toBe(wire);
+  });
+
   it("compiles to the same canonical tree as the explicit <Query> arm", () => {
     const inline = `<App name="Overdue"><Table rows={invoices.list({status:"overdue"}).data} columns={[{key:"client"}]}/></App>`;
     const explicit = `<App name="Overdue"><Query id="invoicesList" tool="invoices.list" input={{status:"overdue"}}/><Table rows={invoicesList.data} columns={[{key:"client"}]}/></App>`;
