@@ -45,13 +45,29 @@ function ToolkitMark({ toolkit }: { toolkit: string }) {
   );
 }
 
-/** The disconnect half of `connectRefusalCopy`. A refused disconnect always
- *  leaves the account connected — but only SOME refusals clear on their own,
- *  and "try again in a moment" sends the rest back to the same wall forever. */
+const refusalCode = (reason: unknown): unknown => (reason as { code?: unknown } | null)?.code;
+
+/** The broker answers not-found for any id outside the caller's own scope
+ *  (`ConnectorConnections`' frozen rule), so this is the account ALREADY being
+ *  gone — the person's intent, achieved. The row on screen is the stale half. */
+const alreadyGone = (reason: unknown): boolean => refusalCode(reason) === "not-found";
+
+/** The disconnect half of `connectRefusalCopy`. A refused disconnect leaves the
+ *  account connected — but only some of these clear on their own, and "try
+ *  again in a moment" sends the rest back to the same wall forever. */
 function disconnectRefusalCopy(reason: unknown, name: string): string {
-  const code = (reason as { code?: unknown } | null)?.code;
+  const code = refusalCode(reason);
+  // The person can act, just not from here as they are.
   if (code === "blocked") return `Sign in first, then disconnect ${name}.`;
   if (code === "forbidden") return `You don’t have access to disconnect ${name} here.`;
+  // Nothing is behind the button on this deployment — no broker configured, or
+  // Cloud standing lapsed. No number of retries reaches it.
+  if (code === "not-implemented" || code === "cloud-required") {
+    return `Disconnecting ${name} isn’t set up here — there’s nothing you can do from this screen.`;
+  }
+  // Everything else: broker 5xx, timeouts, a dropped request — and `validation`,
+  // which the client also stamps on any envelope carrying no code of its own,
+  // so it is the unknown bucket rather than a verdict about the deployment.
   return `We couldn’t disconnect ${name} — it is still connected. Try again in a moment.`;
 }
 
@@ -143,9 +159,11 @@ export function ConnectedAccountsPanel({ undoMs = 10_000 }: ConnectedAccountsPan
         } catch (reason) {
           // spec §16 law 3 — the wire's sentence is the developer's; the person
           // gets ours, and it names the refusal rather than a blanket retry.
-          if (!cancelled.current) {
-            setError(disconnectRefusalCopy(reason, toolkitDisplayName(connection.toolkit)));
-          }
+          // An account that is already gone is not a failure to report: re-read
+          // the list so the stale row leaves, exactly as a real sever ends.
+          if (cancelled.current) return;
+          if (alreadyGone(reason)) await refresh();
+          else setError(disconnectRefusalCopy(reason, toolkitDisplayName(connection.toolkit)));
         } finally {
           if (!cancelled.current) {
             setBusy(current => ({ ...current, [id]: false }));
