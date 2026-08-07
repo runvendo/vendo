@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import YAML from "yaml";
-import type { ExtractedTool, HttpMethod } from "../formats.js";
+import type { ExtractedTool, HttpMethod, SchemaSource } from "../formats.js";
 import { extractedRisk, routeToolFullName } from "./common.js";
 
 type JsonObject = Record<string, unknown>;
@@ -157,7 +157,12 @@ export async function extractOpenApi(specPath: string): Promise<ExtractedTool[]>
         name,
         description: descriptionFor(operation, method, route),
         inputSchema: inputSchema(document, pathItem, operation),
-        ...(output === undefined ? {} : { outputSchema: output }),
+        // A spec that declares no parameters HAS declared the argument list:
+        // an empty one. That is what stops the AI judge touching this slot.
+        inputSchemaSource: "declared" satisfies SchemaSource,
+        ...(output === undefined
+          ? { outputSchemaSource: "unknown" satisfies SchemaSource }
+          : { outputSchema: output, outputSchemaSource: "declared" satisfies SchemaSource }),
         risk: extractedRisk(method),
         binding: {
           kind: "openapi",
