@@ -52,6 +52,11 @@ describe("createKnowledgeTools descriptor (K1 pin)", () => {
     expect(descriptor.name).toBe(VENDO_KNOWLEDGE_SEARCH_TOOL);
     expect(descriptor.name).toBe("vendo_knowledge_search");
     expect(descriptor.risk).toBe("read");
+    // Without a title, ToolListing.title falls back to the identifier and the
+    // model speaks `vendo_knowledge_search` at a person.
+    expect(descriptor.title).toBe(VENDO_TOOL_TITLES[VENDO_KNOWLEDGE_SEARCH_TOOL]);
+    expect(descriptor.title).toBeTruthy();
+    expect(descriptor.title).not.toMatch(/vendo|_/i);
     const schema = descriptor.inputSchema as {
       properties: Record<string, unknown>;
       required: string[];
@@ -440,14 +445,3 @@ describe("rate breaker (ENG-370)", () => {
   });
 });
 
-describe("§3 consumer voice — the knowledge tool carries a title", () => {
-  // Wave-1 live proof E1-5: without a title, `ToolListing.title` falls back to
-  // the identifier and the model speaks `vendo_knowledge_search` to a person.
-  it("titles the descriptor from the shared table", async () => {
-    const tools = createKnowledgeTools({ adapter: memoryKnowledgeAdapter([]) });
-    const [descriptor] = await tools.descriptors();
-    expect(descriptor?.title).toBe(VENDO_TOOL_TITLES[VENDO_KNOWLEDGE_SEARCH_TOOL]);
-    expect(descriptor?.title).toBeTruthy();
-    expect(descriptor?.title).not.toMatch(/vendo|_/i);
-  });
-});

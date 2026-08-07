@@ -6,7 +6,7 @@ describe("maybeShowNotice", () => {
   it("advertises only opt-outs this package actually honors", () => {
     const log = vi.fn();
     maybeShowNotice({ anonymousId: "x", optedOut: false, noticeShown: false }, { log, save: vi.fn() });
-    const notice = log.mock.calls[0][0] as string;
+    const notice = log.mock.calls[0]![0] as string;
 
     const named = [...notice.matchAll(/\b([A-Z][A-Z_]+)=1\b/g)].map(([, name]) => name!);
     expect(named.length).toBeGreaterThan(0);
@@ -26,7 +26,7 @@ describe("maybeShowNotice", () => {
       { log, save },
     );
     expect(log).toHaveBeenCalledOnce();
-    expect(log.mock.calls[0][0]).toContain("TELEMETRY.md");
+    expect(log.mock.calls[0]![0]).toContain("TELEMETRY.md");
     expect(save).toHaveBeenCalledOnce();
     expect(shown.noticeShown).toBe(true);
   });

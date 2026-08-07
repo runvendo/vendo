@@ -26,7 +26,7 @@ describe("createTelemetry.track", () => {
     const t = createTelemetry(deps);
     await t.track("init_started", { framework: "next" });
     expect(deps.fetchImpl).toHaveBeenCalledOnce();
-    const [url, init] = deps.fetchImpl.mock.calls[0];
+    const [url, init] = deps.fetchImpl.mock.calls[0]!;
     expect(String(url)).toContain("us.i.posthog.com");
     const body = JSON.parse((init as { body: string }).body);
     expect(body.api_key).toBe("phc_test");
@@ -54,7 +54,7 @@ describe("createTelemetry.track", () => {
     const deps = makeDeps();
     const t = createTelemetry(deps);
     await t.track("init_started", { framework: "next", sourceCode: "secret" } as never);
-    const body = JSON.parse((deps.fetchImpl.mock.calls[0][1] as { body: string }).body);
+    const body = JSON.parse((deps.fetchImpl.mock.calls[0]![1] as { body: string }).body);
     expect(body.properties.sourceCode).toBeUndefined();
     expect(body.properties.framework).toBe("next");
   });
@@ -63,7 +63,7 @@ describe("createTelemetry.track", () => {
     const deps = makeDeps();
     const t = createTelemetry(deps);
     await t.track("init_started", { framework: "a".repeat(5000) });
-    const body = JSON.parse((deps.fetchImpl.mock.calls[0][1] as { body: string }).body);
+    const body = JSON.parse((deps.fetchImpl.mock.calls[0]![1] as { body: string }).body);
     expect(body.properties.framework.length).toBeLessThanOrEqual(512);
   });
 
@@ -71,7 +71,7 @@ describe("createTelemetry.track", () => {
     const deps = makeDeps();
     const t = createTelemetry(deps);
     await t.track("init_started", { framework: { nested: "secret" } } as never);
-    const body = JSON.parse((deps.fetchImpl.mock.calls[0][1] as { body: string }).body);
+    const body = JSON.parse((deps.fetchImpl.mock.calls[0]![1] as { body: string }).body);
     expect(body.properties.framework).toBeUndefined();
   });
 
@@ -86,7 +86,7 @@ describe("createTelemetry.track", () => {
       });
       const t = createTelemetry(deps);
       await t.track("agent_run", {});
-      const body = JSON.parse((deps.fetchImpl.mock.calls[0][1] as { body: string }).body);
+      const body = JSON.parse((deps.fetchImpl.mock.calls[0]![1] as { body: string }).body);
       expect(body.properties.packageManager).toBe("pnpm");
       expect(body.properties.projectIdHash).toMatch(/^[0-9a-f]{64}$/);
     } finally {
@@ -100,7 +100,7 @@ describe("createTelemetry.track", () => {
       const deps = makeDeps({ cwd });
       const t = createTelemetry(deps);
       await t.track("agent_run", {});
-      const body = JSON.parse((deps.fetchImpl.mock.calls[0][1] as { body: string }).body);
+      const body = JSON.parse((deps.fetchImpl.mock.calls[0]![1] as { body: string }).body);
       expect("projectIdHash" in body.properties).toBe(false);
       expect("packageManager" in body.properties).toBe(false);
     } finally {
@@ -118,14 +118,14 @@ describe("createTelemetry.track", () => {
     const deps = makeDeps({ env: { VENDO_POSTHOG_HOST: "https://posthog.internal:8000" } });
     const t = createTelemetry(deps);
     await t.track("init_started", { framework: "next" });
-    expect(String(deps.fetchImpl.mock.calls[0][0])).toBe("https://posthog.internal:8000/capture/");
+    expect(String(deps.fetchImpl.mock.calls[0]![0])).toBe("https://posthog.internal:8000/capture/");
   });
 
   it("falls back to the shipped cloud when the override is unusable", async () => {
     const deps = makeDeps({ env: { VENDO_POSTHOG_HOST: "not a url" } });
     const t = createTelemetry(deps);
     await t.track("init_started", { framework: "next" });
-    expect(String(deps.fetchImpl.mock.calls[0][0])).toContain("us.i.posthog.com");
+    expect(String(deps.fetchImpl.mock.calls[0]![0])).toContain("us.i.posthog.com");
   });
 
   it("returns after the telemetry timeout when fetch never settles", async () => {
@@ -243,7 +243,7 @@ describe("default transport (no fetchImpl)", () => {
 const CLOUD_KEY = `vnd_${"0123456789abcdef".repeat(2)}01234567`; // 40 hex chars
 
 function sentProps(deps: ReturnType<typeof makeDeps>): Record<string, unknown> {
-  const body = JSON.parse((deps.fetchImpl.mock.calls[0][1] as { body: string }).body);
+  const body = JSON.parse((deps.fetchImpl.mock.calls[0]![1] as { body: string }).body);
   return body.properties as Record<string, unknown>;
 }
 
@@ -348,7 +348,7 @@ describe("cloud lane (VENDO_API_KEY)", () => {
     // errorDetail even carries the key itself — the scrubbed hash-only
     // markers are all that may reach the wire.
     await t.track("init_failed", { errorDetail: `401: key ${CLOUD_KEY} rejected` });
-    const rawBody = (deps.fetchImpl.mock.calls[0][1] as { body: string }).body;
+    const rawBody = (deps.fetchImpl.mock.calls[0]![1] as { body: string }).body;
     expect(rawBody).not.toContain(CLOUD_KEY);
   });
 
