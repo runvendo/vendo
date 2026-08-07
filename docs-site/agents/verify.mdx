@@ -111,9 +111,6 @@ visible surface. The full marker list: `<VendoOverlay`, `<VendoThread`,
 `<VendoTrigger`, `<VendoPalette`, `<VendoSlot`, the BYO embeds
 (`<VendoToolResult`, `<VendoAppEmbed`, `<VendoApprovalEmbed`), and the
 surface-driving hooks (`useVendoOverlay(`, `useVendoThread(`, `useSlotApp(`).
-`<VendoPage` is not on it: a host whose only surface is `<VendoPage />` fails
-this check even though the page renders — mount one of the markers above
-alongside it, or treat the failure as known.
 
 **Fix:** Mount `<VendoOverlay />` (the launcher pill + panel) inside the
 provider:

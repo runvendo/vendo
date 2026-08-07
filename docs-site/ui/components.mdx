@@ -1,7 +1,7 @@
 ---
 title: "UI surfaces"
 sidebarTitle: "UI surfaces"
-description: "Every chrome surface Vendo's agent renders, playable inline: overlay, palette, thread, generated views, approvals, activities, slot, and page."
+description: "Every chrome surface Vendo's agent renders, playable inline: overlay, palette, thread, generated views, approvals, activities, and slot."
 ---
 
 import { VendoEmbed, VendoLauncher } from "/snippets/vendo-embed.jsx"
@@ -243,20 +243,6 @@ host reviewer must approve: the owner keeps seeing the original until
 approval, and the approved version then renders in place natively. See
 [Host components](/connect/host-components#remix-fork-a-wrapped-component)
 for capture rules and the review flow.
-
-## Page
-
-The full workspace console: conversation history, the waiting-on-you approval
-strip, apps, automations, connected accounts, and activity in one routed
-surface. Mount it on a dedicated route like `/assistant`.
-
-<VendoEmbed
-  surface="page"
-  poster="/images/ui/hero-page.png"
-  alt="Vendo workspace console page"
-  height={640}
-  caption="VendoPage: conversations, the approval strip, and a generated view in one console"
-/>
 
 ## Embeds for your own agent's chat
 
