@@ -20,6 +20,7 @@ import {
   createStack,
   generationTurn,
   resetFixture,
+  reviewerTurn,
   screenAgentCreateTurns,
   textTurn,
   toolCallTurn,
@@ -252,6 +253,10 @@ describe("E5: the contributed judgment rule reaches the live reviewer", () => {
    * the appId the front door minted for this ask is read back off the brief the
    * loop was just handed. The reviewer's own model call sits between the validate
    * step and the closing one, which is why REVIEW_SILENT is scripted there.
+   *
+   * And the mandatory pass asks it AGAIN after the loop stops — a painted screen
+   * faces the reviewer whether or not the loop volunteered — so the script ends
+   * with that verdict too.
    */
   const saveThenValidateTurns = [
     toolCallTurn("save_app", { content: CLEAN_APP }, "screen_save"),
@@ -259,6 +264,7 @@ describe("E5: the contributed judgment rule reaches the live reviewer", () => {
       toolCallTurn("validate", { appId: appIdInPrompt(prompt) }, "screen_validate"),
     generationTurn(REVIEW_SILENT, "review_1"),
     textTurn("saved", "screen_done"),
+    reviewerTurn(),
   ];
 
   it("puts the rule on the reviewer's rubric in the composed server, not just in a list", async () => {
