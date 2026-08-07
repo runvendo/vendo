@@ -319,6 +319,189 @@ for (const backend of backends()) {
       expect(["ok", "conflict"]).toContain(undone);
     });
 
+    /** The hold above is `SELECT … FOR UPDATE`, which locks TUPLES — so it
+        holds nothing at all when the path's live row is absent, and both undo
+        legs reach exactly that state:
+
+          - a commit that CREATED the path, undone after a NON-ledger delete
+            (`rm`, `erase`, `moveApp`) took the row away — a deleting COMMIT is
+            caught by `pathsMovedOn`, these are not — where `remove` then
+            deletes whatever a racer put back;
+          - a path deleted down to a tombstone, where the restore loses its
+            `ON CONFLICT DO NOTHING` insert to a racer's create, re-aims at
+            that head and swaps it away with `recordHistory: false` — no
+            history row behind it, so the racer's content is destroyed.
+
+        Both need two transactions overlapping for real, so both are invisible
+        on PGlite: it serialises. */
+    const liveContent = async (path: string): Promise<string | undefined> => {
+      const rows = await made.sql(
+        "SELECT content FROM vendo_workspace_files WHERE path = $1 AND owner = $2",
+        [path, "dana"],
+      );
+      return rows[0] === undefined ? undefined : String(rows[0]["content"]);
+    };
+    const historyContent = async (path: string): Promise<string[]> =>
+      (await made.sql(
+        "SELECT content FROM vendo_workspace_history WHERE path = $1 AND owner = $2",
+        [path, "dana"],
+      )).map((row) => String(row["content"]));
+
+    /** Run `racer` inside the window `hold` exists to close: the instant the
+        hold statement returns, before the undo acts on what it decided. The
+        matcher takes the hold in either shape — the row lock, and the advisory
+        lock keyed on (owner, path) that can hold a path with no row. */
+    const raceTheHold = async (
+      commitId: string,
+      racer: () => Promise<unknown>,
+    ): Promise<{ landed: boolean; undone: string }> => {
+      const db = dbFor(made.store);
+      const originalTx = db.transaction.bind(db);
+      let inFlight: Promise<unknown> | undefined;
+      db.transaction = (async (run: (q: Query) => Promise<unknown>) => await originalTx(async (q) => {
+        const wrapped: Query = async (text, params) => {
+          const result = await q(text, params);
+          if (inFlight === undefined
+            && (text.includes("FOR UPDATE") || text.includes("pg_advisory_xact_lock"))) {
+            inFlight = racer();
+            // Long enough for an unblocked racer to land; a racer the undo is
+            // holding off stays blocked and this returns on the timer.
+            await Promise.race([
+              inFlight.catch(() => undefined),
+              new Promise((resolve) => setTimeout(resolve, 2_000)),
+            ]);
+          }
+          return result;
+        };
+        return await run(wrapped);
+      })) as typeof db.transaction;
+      let undone: string;
+      try {
+        undone = await createStoreOps(made.store).workspace.undo(commitId, { owner: "dana" })
+          .then(() => "ok", (error: unknown) =>
+            error instanceof VendoError ? error.code : String(error));
+      } finally {
+        db.transaction = originalTx;
+      }
+      expect(inFlight).toBeDefined();
+      return { landed: await inFlight!.then(() => true, () => false), undone };
+    };
+
+    it("deletes no re-created file when undoing a create whose row is already gone", async () => {
+      const path = "/user/absent/created.md";
+      const ops = createStoreOps(made.store);
+      await ops.workspace.commit([{ path, data: "one" }], { owner: "dana", idempotencyKey: "n1" });
+      // A NON-ledger delete: the façade's own `rm`, which writes no commit, so
+      // the ledger still says `wsc_key_n1` is the newest thing at this path
+      // while the live row it created is gone.
+      const removing = await local().open(dana);
+      await removing.rm(path);
+      expect(await removing.commit()).toEqual({ status: "ok", changed: [path] });
+      expect(await liveContent(path)).toBeUndefined();
+
+      // The racer re-creates the path through the SQL façade — the other
+      // writer family, the one a local/BYO-Postgres deployment uses.
+      const writing = await local().open(dana);
+      await writing.writeFile(path, "recreated");
+      const { landed } = await raceTheHold("wsc_key_n1", () => writing.commit());
+
+      // Undoing the create removes the row the create left — and there was
+      // none. A commit that reported success in the window must still hold the
+      // path: the undo was never asked to remove ITS write.
+      if (landed) expect(await liveContent(path)).toBe("recreated");
+    });
+
+    it("destroys no re-created file when undoing back through a tombstone", async () => {
+      const path = "/user/absent/tombstone.md";
+      const ops = createStoreOps(made.store);
+      for (const [key, data] of [["n2", "one"], ["n3", "two"]] as const) {
+        await ops.workspace.commit([{ path, data }], { owner: "dana", idempotencyKey: key });
+      }
+      const removing = await local().open(dana);
+      await removing.rm(path);
+      expect(await removing.commit()).toEqual({ status: "ok", changed: [path] });
+      expect(await liveContent(path)).toBeUndefined();
+
+      const writing = await local().open(dana);
+      await writing.writeFile(path, "recreated");
+      const { landed } = await raceTheHold("wsc_key_n3", () => writing.commit());
+
+      // The restore writes no history row behind what it replaces, so anything
+      // it swaps away is gone for good. A commit that reported success must
+      // still be reachable — live, or behind a history row.
+      if (landed) {
+        const live = await liveContent(path);
+        expect([live === "recreated", (await historyContent(path)).includes("recreated")])
+          .toContain(true);
+      }
+    });
+
+    /** The other writer family. The SQL façade — the local/BYO-Postgres
+        deployment path — runs its commit with no transaction at all, so a
+        hold it takes is released at the end of its own statement and holds
+        nothing across `remove`'s read-then-delete. An undo landing in there
+        restores a revision that the delete, working from the value it read
+        before, then removes: history is append-only (§3.3), and a revision
+        that was in it is simply gone. */
+    const raceTheFacade = async (
+      at: string,
+      commit: () => Promise<unknown>,
+      racer: () => Promise<unknown>,
+    ): Promise<void> => {
+      const db = dbFor(made.store);
+      const originalQuery = db.query.bind(db);
+      const originalTx = db.transaction.bind(db);
+      let inFlight: Promise<unknown> | undefined;
+      const fire = async (text: string): Promise<void> => {
+        if (inFlight !== undefined || !text.includes(at)) return;
+        inFlight = racer();
+        await Promise.race([
+          inFlight.catch(() => undefined),
+          new Promise((resolve) => setTimeout(resolve, 2_000)),
+        ]);
+      };
+      const watched = (query: Query): Query => async (text, params) => {
+        const result = await query(text, params);
+        await fire(text);
+        return result;
+      };
+      db.query = watched(originalQuery);
+      db.transaction = ((run: (q: Query) => Promise<unknown>, opts?: never) =>
+        originalTx(async (q) => await run(watched(q)), opts)) as typeof db.transaction;
+      try {
+        await commit();
+      } finally {
+        db.query = originalQuery;
+        db.transaction = originalTx;
+      }
+      expect(inFlight).toBeDefined();
+      await inFlight!.catch(() => undefined);
+    };
+
+    it("loses no history to an undo landing inside the façade's own delete", async () => {
+      const path = "/user/absent/facade.md";
+      const ops = createStoreOps(made.store);
+      for (const [key, data] of [["n4", "one"], ["n5", "two"]] as const) {
+        await ops.workspace.commit([{ path, data }], { owner: "dana", idempotencyKey: key });
+      }
+      const removing = await local().open(dana);
+      await removing.rm(path);
+
+      // The undo fires once the delete has read the row it is about to remove
+      // and before it removes it — the gap the façade holds nothing across.
+      await raceTheFacade(
+        "SELECT content, blob_ref, revision, bytes, updated_at",
+        () => removing.commit(),
+        () => ops.workspace.undo("wsc_key_n5", { owner: "dana" }),
+      );
+
+      // Neither of them was asked to remove `"one"`: the delete removes the
+      // live file, and history only ever grows. It is still reachable.
+      const live = await liveContent(path);
+      expect([live === '"one"', (await historyContent(path)).includes('"one"')])
+        .toContain(true);
+    });
+
     it("still refuses to move an app between mounts — that runs server-side", async () => {
       await expect(
         hosted().moveApp("app_1", { kind: "user", subject: "dana" }, { kind: "org", org: "acme" }),
