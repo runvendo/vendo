@@ -683,13 +683,13 @@ describe("hostedStoreOps — the 31-op wire client", () => {
       .toEqual(expected.map((route) => `${route.method} ${route.path}`));
     expect(calls.map((call) => call.idempotencyKey === null ? "read" : "keyed"))
       .toEqual(expected.map((route) => route.keyed === true ? "keyed" : "read"));
-    // 20 mutations, 12 reads — and the /status handshake is the one GET with
+    // 19 mutations, 12 reads — and the /status handshake is the one GET with
     // no body at all.
-    expect(expected.filter((route) => route.keyed === true)).toHaveLength(20);
+    expect(expected.filter((route) => route.keyed === true)).toHaveLength(19);
     expect(calls.at(-1)).toMatchObject({ path: P.status, method: "GET", body: undefined });
     // Distinct keys across distinct operations (one per logical mutation).
     const keys = calls.map((call) => call.idempotencyKey).filter((key) => key !== null);
-    expect(new Set(keys).size).toBe(20);
+    expect(new Set(keys).size).toBe(19);
   });
 
   it("records: seven ops on the wire door, collection on the body, records/cursor decoded", async () => {

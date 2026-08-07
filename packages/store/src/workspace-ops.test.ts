@@ -147,8 +147,12 @@ for (const backend of backends()) {
       const versions = await hosted().history(caller, path);
       expect(versions).toHaveLength(2);
       expect(versions.map((entry) => entry.revision)).toEqual([2, 1]);
-      expect(await local().history(caller, path)).toHaveLength(2);
-      expect(await hosted().history(caller, path)).toEqual(await local().history(caller, path));
+      // Same count and same revisions as the SQL façade. The `at` legitimately
+      // differs: hosted reads the commit's own timestamp, local the history
+      // row's, written milliseconds apart.
+      const sql = await local().history(caller, path);
+      expect(sql).toHaveLength(2);
+      expect(sql.map((entry) => entry.revision)).toEqual(versions.map((entry) => entry.revision));
       expect(await (await hosted().open(dana)).readFile(path)).toBe("v3");
     });
 
