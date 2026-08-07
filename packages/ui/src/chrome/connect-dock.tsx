@@ -207,6 +207,11 @@ export function ConnectTray({ onClose, anchorRef, closing = false }: {
   const [connecting, setConnecting] = useState<string>();
   const [justConnected, setJustConnected] = useState<string>();
   const [error, setError] = useState<string>();
+  // The broker's redirect URL, once initiate lands, for a connect whose sign-in
+  // window the browser refused. The tray opened the window in the click, but
+  // offered nothing when it was refused anyway — the row sat on its dots for the
+  // whole poll with nowhere to sign in.
+  const [blockedUrl, setBlockedUrl] = useState<string>();
   // 3-A′ — toolkits whose brand mark failed to load fall back to the monogram.
   const [failedLogos, setFailedLogos] = useState<ReadonlySet<string>>(new Set());
   const trayRef = useRef<HTMLDivElement>(null);
@@ -300,18 +305,28 @@ export function ConnectTray({ onClose, anchorRef, closing = false }: {
     const popup = openConnectPopup();
     setConnecting(row.toolkit);
     setError(undefined);
+    setBlockedUrl(undefined);
     try {
       await completeConnection(
         client,
         { toolkit: row.toolkit, ...(row.connector !== undefined ? { connector: row.connector } : {}) },
         () => cancelledRef.current,
         popup,
+        // Refused anyway: the connect is initiated and the poll is running, so
+        // the same URL in a tab still finishes it.
+        url => {
+          if (popup === null && !cancelledRef.current) setBlockedUrl(url);
+        },
       );
       if (cancelledRef.current) return;
+      setBlockedUrl(undefined);
       await refresh();
       setJustConnected(row.toolkit);
     } catch (reason) {
-      if (!cancelledRef.current) setError(connectRefusalCopy(reason, row.name));
+      if (!cancelledRef.current) {
+        setBlockedUrl(undefined);
+        setError(connectRefusalCopy(reason, row.name));
+      }
     } finally {
       if (!cancelledRef.current) setConnecting(undefined);
     }
@@ -385,6 +400,14 @@ export function ConnectTray({ onClose, anchorRef, closing = false }: {
           </button>
         </div>
         {error !== undefined ? <div role="alert" className="fl-att-error">{error}</div> : null}
+        {blockedUrl === undefined ? null : (
+          <div role="status" className="fl-connect-blocked">
+            <span>Your browser blocked the sign-in window. Open it yourself — we’ll pick it up from here.</span>
+            <a className="fl-btn fl-btn-primary" href={blockedUrl} target="_blank" rel="noreferrer">
+              Open sign-in in a new tab
+            </a>
+          </div>
+        )}
         {rows.connected.length > 0 ? (
           <>
             <div className="fl-picker-group">Connected</div>
