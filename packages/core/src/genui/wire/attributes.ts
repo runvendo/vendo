@@ -9,38 +9,27 @@
 
 import { FN_REFERENCE_PATTERN, findInvalidActionReference } from "../../fn-references.js";
 import type { Json } from "../../ids.js";
+import { isWellFormedUtf16 } from "../../jcs.js";
 import { TOOL_NAME_PATTERN } from "../../tools.js";
 import { defineOwn } from "../tree-node.js";
 import { parseExpression } from "./expression.js";
 import { NAME_START, readName, skipBraceBlock, skipQuotedRun, skipWhitespace } from "./scan.js";
-import {
-  DROPPED,
-  FAILED,
-  issue,
-  isWellFormedUtf16,
-  mergeIssues,
-  type CompileState,
-  type Dropped,
-  type Failed,
-} from "./state.js";
+import { DROPPED, FAILED, issue, mergeIssues, type CompileState, type Dropped, type Failed } from "./state.js";
 
-/** D5 — an attribute name in action position: `on` + uppercase letter. */
-const ACTION_ATTR_PATTERN = /^on[A-Z][A-Za-z0-9_]*$/;
+/** D5 — an attribute name in action position: `on` + uppercase letter. Shared
+ *  with the printer (print.ts), which reads it as D5's inverse. */
+export const ACTION_ATTR_PATTERN = /^on[A-Z][A-Za-z0-9_]*$/;
 
 /**
- * Which element kind the attribute region belongs to (D3/D5; patch is v2
- * spec §5):
+ * Which element kind the attribute region belongs to (D3/D5):
  * - `component` — `id` is compiler-owned (ignored with an issue) and
  *   string-form `on*` attributes compile to canonical actions.
  * - `app` — `id` is ignored like a component's, but non-name attributes are
  *   silently discarded by the caller, so no action compilation runs.
  * - `declaration` — Query/Island: `id`/`name` are the declaration's own
  *   fields, kept verbatim; no action compilation.
- * - `patch` — edit-dialect ops: `id` is the op's ANCHOR (kept verbatim), and
- *   values compile exactly like a component's (actions included), since Set
- *   merges them into node props.
  */
-export type AttributeElement = "component" | "app" | "declaration" | "patch";
+export type AttributeElement = "component" | "app" | "declaration";
 
 /** D3 — markup-layer strings are double-quoted only; `\"` and `\\` are the
  *  only escapes (other backslash sequences pass through verbatim — rich
@@ -116,7 +105,8 @@ export interface ParsedAttributes {
 
 /** Parses the attribute region of an open tag through its `>` or `/>`.
  *  Three value forms (D3): `attr="string"`, `attr={expr}`, bare `attr` →
- *  true. Duplicates: last wins + issue. Outside declarations, `id` is
+ *  true. Duplicates: the last one wins unless it was dropped, either way with
+ *  an issue naming the outcome. Outside declarations, `id` is
  *  ignored with an issue (ids are compiler-owned) and string-form `on*`
  *  attributes compile to actions on components (D5, see
  *  {@link AttributeElement}). Returns FAILED only on EOF truncation. */
@@ -157,7 +147,7 @@ export const parseAttributes = (state: CompileState, element: AttributeElement):
         const parsed = parseMarkupString(state, name);
         if (parsed === FAILED) return FAILED;
         value = parsed;
-        if (typeof value === "string" && (element === "component" || element === "patch") && ACTION_ATTR_PATTERN.test(name)) {
+        if (typeof value === "string" && element === "component" && ACTION_ATTR_PATTERN.test(name)) {
           value = compileActionValue(state, name, value);
         }
       } else if (opener === "{") {
@@ -169,7 +159,7 @@ export const parseAttributes = (state: CompileState, element: AttributeElement):
         // value smuggling { action: "fn:9bad" } anywhere would un-validate
         // the tree. Drop the attribute here instead — only component props
         // land in tree nodes, so only "component" needs the walk.
-        if ((element === "component" || element === "patch") && value !== DROPPED) {
+        if (element === "component" && value !== DROPPED) {
           const invalidAction = findInvalidActionReference(value);
           if (invalidAction !== null) {
             issue(

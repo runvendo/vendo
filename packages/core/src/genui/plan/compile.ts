@@ -36,7 +36,15 @@ import { parseAttributes, type ParsedAttributes } from "../wire/attributes.js";
 import { makeState, opensRoot, prescanDeclarations } from "../wire/compile.js";
 import { collectText, readName, scanCloseTag, skipCommentOrBraces, skipElement, skipWhitespace } from "../wire/scan.js";
 import { FAILED, type CompileState, type Failed } from "../wire/state.js";
-import type { AppPlan, PlanGroup, PlanLeaf, PlanQuery, PlanServer } from "./types.js";
+import {
+  PLAN_DISPLAYS,
+  type AppPlan,
+  type PlanDisplay,
+  type PlanGroup,
+  type PlanLeaf,
+  type PlanQuery,
+  type PlanServer,
+} from "./types.js";
 
 /** What the host actually has, for the fact checks. */
 export interface PlanFacts {
@@ -541,11 +549,11 @@ const compilePlanUnsafe = (text: string, facts: PlanFacts): PlanCompileResult =>
   }
   const appPlan: AppPlan = { name: name ?? "", queries: [], groups: [], cannot: [] };
   const display = head.props?.display;
-  if (display === "inline" || display === "stage") {
-    appPlan.display = display;
+  if (typeof display === "string" && (PLAN_DISPLAYS as readonly string[]).includes(display)) {
+    appPlan.display = display as PlanDisplay;
   } else if (display !== undefined) {
     plan.issues.push(
-      `a plan's display is "inline" or "stage", and ${describe(display)} is neither — this one arrives inline.`,
+      `a plan's display is ${PLAN_DISPLAYS.map((one) => `"${one}"`).join(" or ")}, and ${describe(display)} is neither — this one arrives inline.`,
     );
   }
   if (!head.selfClosing) compilePlanChildren(plan, appPlan);

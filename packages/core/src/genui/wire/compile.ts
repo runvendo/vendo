@@ -31,6 +31,7 @@ import { safeErrorMessage } from "../../errors.js";
 import { FN_REFERENCE_PATTERN } from "../../fn-references.js";
 import { VENDO_TREE_FORMAT } from "../../formats.js";
 import type { Json } from "../../ids.js";
+import { isWellFormedUtf16 } from "../../jcs.js";
 import { isPlainObject, type TreeNode } from "../tree-node.js";
 import { KIT_COMPONENT_NAMES, WIRE_COMPONENT_NAMES } from "../../kit/specs.js";
 import { QUERY_NAME_PATTERN, type TreeQuery, type Tree } from "../tree.js";
@@ -41,7 +42,7 @@ import { checkBindingShapes, mirrorBindingIssues, type BindingShapeError } from 
 import { expandInlineRefs } from "./inline-refs.js";
 import { admitIslandSource, claimNodeSlot, claimQuerySlot } from "./limits.js";
 import { collectText, NAME_CHAR, readName, scanCloseTag, scanTagEnd, skipCommentOrBraces, skipElement, skipWhitespace } from "./scan.js";
-import { FAILED, issue, isWellFormedUtf16, type CompileState, type Frame } from "./state.js";
+import { FAILED, issue, type CompileState, type Frame } from "./state.js";
 
 /** v2 spec §2 / plan D3 — compiler options. `hostComponents` (the host
  *  catalog names) feeds source resolution: host brand wins over the prewired

@@ -19,10 +19,10 @@
 
 import { safeErrorMessage } from "../../errors.js";
 import type { Json } from "../../ids.js";
+import { isWellFormedUtf16 } from "../../jcs.js";
 import { findInvalidReshapeSteps, type ReshapeStep } from "../../reshape.js";
 import { exprPathHeads, parseExprPrefix, type ExprBinding, type ExprNode } from "../expr.js";
 import { defineOwn, isPathBinding, isStateBinding, type PathBinding, type StateBinding } from "../tree-node.js";
-import { isWellFormedUtf16 } from "./state.js";
 
 /**
  * v2 spec §2 — the closed registry of stable issue codes across all six

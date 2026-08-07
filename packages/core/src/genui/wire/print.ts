@@ -1,10 +1,10 @@
 /**
- * Internal: the vendo-genui/v2 wire printer — the inverse of the wave-1
- * compiler and the edit dialect's model context (v2 spec §5,
- * docs/superpowers/specs/2026-07-18-vendo-v2-format-spec.md). A compile (or
- * patch) result prints back to the JSX-wire markup; with `includeIds` each
- * element is stamped with its compiler-minted id so the model can anchor a
- * patch. Only `printWire` is public (root export).
+ * Internal: the vendo-genui/v2 wire printer — the inverse of the compiler
+ * (v2 spec §5, docs/superpowers/specs/2026-07-18-vendo-v2-format-spec.md). A
+ * compile result prints back to the JSX-wire markup; with `includeIds` each
+ * element is stamped with its compiler-minted id, which is how a checked-out
+ * app's `app.vendo` carries stable ids. Only `printWire` is public (root
+ * export).
  *
  * The round-trip law (pinned in print.test.ts): for any COMPILER-PRODUCED
  * result, `compileWire(printWire(result))` reproduces tree, components,
@@ -20,6 +20,7 @@ import { FN_REFERENCE_PATTERN } from "../../fn-references.js";
 import { isExprBinding, parseExpr } from "../expr.js";
 import { isPathBinding, isPlainObject, isStateBinding, type TreeNode } from "../tree-node.js";
 import type { TreeQuery } from "../tree.js";
+import { ACTION_ATTR_PATTERN } from "./attributes.js";
 import type { WireCompileResult } from "./compile.js";
 
 /** v2 spec §5 — printer options. `includeIds` stamps node ids (the model's
@@ -28,11 +29,10 @@ export interface WirePrintOptions {
   includeIds: boolean;
 }
 
-/** The printable slice of a compile/patch result. */
+/** The printable slice of a compile result. */
 export type WirePrintInput = Pick<WireCompileResult, "tree" | "components" | "name">;
 
 const IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const ACTION_ATTR_PATTERN = /^on[A-Z][A-Za-z0-9_]*$/;
 
 /** Markup strings escape exactly the quote and the backslash (attributes.ts
  *  decodes only those two); expression strings use the same minimal pair —
@@ -188,7 +188,7 @@ const printQuery = (query: TreeQuery, queryNames: ReadonlySet<string>): string =
 };
 
 /**
- * v2 spec §5 — print a compile/patch result back to wire markup. Pure,
+ * v2 spec §5 — print a compile result back to wire markup. Pure,
  * deterministic, total. Document order matches the spec example (queries →
  * body → islands), which also keeps re-minted ids identical on recompile.
  */
