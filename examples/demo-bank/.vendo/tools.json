@@ -20,7 +20,7 @@
       "binding": {
         "kind": "route",
         "method": "POST",
-        "path": "/maple/api/auth/{nextauth}",
+        "path": "/api/auth/{nextauth}",
         "argsIn": "body"
       },
       "inputSchemaSource": "unknown",
@@ -46,7 +46,7 @@
       "binding": {
         "kind": "route",
         "method": "GET",
-        "path": "/maple/api/auth/{nextauth}",
+        "path": "/api/auth/{nextauth}",
         "argsIn": "query"
       },
       "inputSchemaSource": "unknown",
@@ -203,7 +203,7 @@
         "kind": "openapi",
         "operationId": "createOrder",
         "method": "POST",
-        "path": "/maple/api/orders"
+        "path": "/api/orders"
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
@@ -221,7 +221,7 @@
       "binding": {
         "kind": "route",
         "method": "POST",
-        "path": "/maple/api/demo/reset",
+        "path": "/api/demo/reset",
         "argsIn": "body"
       },
       "inputSchemaSource": "unknown",
@@ -307,7 +307,7 @@
         "kind": "openapi",
         "operationId": "getAccount",
         "method": "GET",
-        "path": "/maple/api/accounts/{id}"
+        "path": "/api/accounts/{id}"
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
@@ -369,7 +369,7 @@
         "kind": "openapi",
         "operationId": "getBudgets",
         "method": "GET",
-        "path": "/maple/api/insights/budgets"
+        "path": "/api/insights/budgets"
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
@@ -421,7 +421,7 @@
         "kind": "openapi",
         "operationId": "getCashflowInsights",
         "method": "GET",
-        "path": "/maple/api/insights/cashflow"
+        "path": "/api/insights/cashflow"
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
@@ -500,7 +500,7 @@
         "kind": "openapi",
         "operationId": "getProfile",
         "method": "GET",
-        "path": "/maple/api/profile"
+        "path": "/api/profile"
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
@@ -578,7 +578,7 @@
         "kind": "openapi",
         "operationId": "getRecurringInsights",
         "method": "GET",
-        "path": "/maple/api/insights/recurring"
+        "path": "/api/insights/recurring"
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
@@ -637,7 +637,7 @@
         "kind": "openapi",
         "operationId": "getSpendingInsights",
         "method": "GET",
-        "path": "/maple/api/insights/spending"
+        "path": "/api/insights/spending"
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
@@ -767,7 +767,7 @@
         "kind": "openapi",
         "operationId": "getTransaction",
         "method": "GET",
-        "path": "/maple/api/transactions/{id}"
+        "path": "/api/transactions/{id}"
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
@@ -847,7 +847,7 @@
         "kind": "openapi",
         "operationId": "listAccounts",
         "method": "GET",
-        "path": "/maple/api/accounts"
+        "path": "/api/accounts"
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
@@ -997,7 +997,7 @@
         "kind": "openapi",
         "operationId": "listAccountTransactions",
         "method": "GET",
-        "path": "/maple/api/accounts/{id}/transactions"
+        "path": "/api/accounts/{id}/transactions"
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
@@ -1081,7 +1081,7 @@
         "kind": "openapi",
         "operationId": "listCards",
         "method": "GET",
-        "path": "/maple/api/cards"
+        "path": "/api/cards"
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
@@ -1231,7 +1231,7 @@
         "kind": "openapi",
         "operationId": "listCardTransactions",
         "method": "GET",
-        "path": "/maple/api/cards/{id}/transactions"
+        "path": "/api/cards/{id}/transactions"
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
@@ -1289,7 +1289,7 @@
         "kind": "openapi",
         "operationId": "listGoals",
         "method": "GET",
-        "path": "/maple/api/goals"
+        "path": "/api/goals"
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
@@ -1357,7 +1357,7 @@
         "kind": "openapi",
         "operationId": "listNotifications",
         "method": "GET",
-        "path": "/maple/api/notifications"
+        "path": "/api/notifications"
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
@@ -1412,7 +1412,7 @@
         "kind": "openapi",
         "operationId": "listPayees",
         "method": "GET",
-        "path": "/maple/api/payees"
+        "path": "/api/payees"
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
@@ -1479,7 +1479,7 @@
         "kind": "openapi",
         "operationId": "listScheduledPayments",
         "method": "GET",
-        "path": "/maple/api/payments/scheduled"
+        "path": "/api/payments/scheduled"
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
@@ -1663,30 +1663,11 @@
         "kind": "openapi",
         "operationId": "listTransactions",
         "method": "GET",
-        "path": "/maple/api/transactions"
+        "path": "/api/transactions"
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
       "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
-    },
-    {
-      "name": "host_proof_list",
-      "description": "GET /api/proof",
-      "inputSchema": {
-        "type": "object",
-        "properties": {},
-        "additionalProperties": true
-      },
-      "risk": "ungraded",
-      "binding": {
-        "kind": "route",
-        "method": "GET",
-        "path": "/maple/api/proof",
-        "argsIn": "query"
-      },
-      "inputSchemaSource": "unknown",
-      "outputSchemaSource": "unknown",
-      "srcHash": "sha256:6685933bdad55139448519a474dd485b40e3d5aa1c4571a7343a020b9ed4ab85"
     },
     {
       "name": "host_transferMoney",
@@ -1847,7 +1828,7 @@
         "kind": "openapi",
         "operationId": "transferMoney",
         "method": "POST",
-        "path": "/maple/api/transfers"
+        "path": "/api/transfers"
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
@@ -1865,7 +1846,7 @@
       "binding": {
         "kind": "route",
         "method": "POST",
-        "path": "/maple/api/voice",
+        "path": "/api/voice",
         "argsIn": "body"
       },
       "inputSchemaSource": "unknown",
