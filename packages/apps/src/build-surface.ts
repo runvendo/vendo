@@ -436,7 +436,7 @@ export const createBuildSurface = (
         + " Bind only to fields these name, and read the annotations: :money.cents is integer CENTS,"
         + " :money.dollars whole dollars, :date.iso and :date.epoch machine dates, :enum(a|b) a closed"
         + " vocabulary, :id an opaque host identifier, :percent.ratio 0..1.";
-      if (tools.length === 0) return `${header}\n- (this product exposes no tools)`;
+      if (tools === undefined || tools.length === 0) return `${header}\n- (this product exposes no tools)`;
       const cards = tools.map(({ name }) => {
         const shape = toolShapes?.[name];
         return shape === undefined

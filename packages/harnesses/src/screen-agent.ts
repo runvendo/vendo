@@ -49,7 +49,10 @@ import {
   type TurnTools,
   type WorkspaceFs,
   type Turn,
+  inputSchemaIsBlind,
   modelToolDescription,
+  UNKNOWN_INPUT_SCHEMA_NOTE,
+  UNKNOWN_OUTPUT_SHAPE_NOTE,
 } from "@vendoai/core";
 import { buildingAppsSkill } from "@vendoai/apps";
 import type { LanguageModel } from "ai";
@@ -171,20 +174,22 @@ const nameOf = (content: string): string | undefined => {
  * `ToolListing.outputSchema` is the host's OWN declared result shape, captured by
  * extraction and threaded onto the listing precisely so "the model reads field
  * names off the listing instead of calling a query once to learn them"
- * (`turn-tools.ts:236-253`). That is the catalog half AND the shape half for
- * every tool that declares one; for the rest the skill's own rule applies — call
- * it once. No sampler is written here: the create-time probe
- * (`AppsRuntime.generationToolContext`) is the conductor's and stays there.
+ * (`turn-tools.ts:236-253`).
+ *
+ * EVERY tool gets both lines. A slot nothing could read prints its unknown
+ * sentence rather than nothing (outputs) or a bare `{}` (inputs): `{}` reads as
+ * "takes no arguments", so a blind tool would be called with none. A DECLARED
+ * empty input still prints its schema — that IS the host's contract.
  */
-function toolBrief(listings: readonly ToolListing[]): string {
+export function toolBrief(listings: readonly ToolListing[]): string {
   if (listings.length === 0) return "This product has no tools you can read data from.";
   return listings
     .map((listing) => {
       const shape = listing.outputSchema === undefined
-        ? ""
+        ? `\n  ${UNKNOWN_OUTPUT_SHAPE_NOTE}`
         : `\n  returns: ${JSON.stringify(listing.outputSchema)}`;
-      const input = listing.inputSchema === undefined
-        ? ""
+      const input = inputSchemaIsBlind(listing.inputSchema)
+        ? `\n  ${UNKNOWN_INPUT_SCHEMA_NOTE}`
         : `\n  input: ${JSON.stringify(listing.inputSchema)}`;
       return `- ${listing.name} — ${modelToolDescription(listing)}${input}${shape}`;
     })
