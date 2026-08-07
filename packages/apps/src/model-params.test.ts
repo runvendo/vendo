@@ -8,7 +8,6 @@
  */
 import type { LanguageModel } from "ai";
 import { describe, expect, it } from "vitest";
-import { askModel } from "./generation/engine.js";
 import {
   UNKNOWN_MODEL_MAX_OUTPUT_TOKENS,
   acceptsSamplingParams,

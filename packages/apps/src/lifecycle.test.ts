@@ -63,7 +63,6 @@ const setup = (withModel = true) => {
 
 describe("apps lifecycle", () => {
   it("disarms changed triggers on edit while preserving unchanged trigger edits", async () => {
-    const store = memoryStore();
     const original: AppDocument = {
       format: VENDO_APP_FORMAT,
       id: "app_trigger_arm",

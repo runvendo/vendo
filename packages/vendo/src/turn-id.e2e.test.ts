@@ -19,7 +19,6 @@ import type { AuditEvent, Principal, ToolDescriptor, ToolRegistry } from "@vendo
 import { defineHarness } from "@vendoai/harnesses";
 import { createStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
-import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { afterEach, describe, expect, it } from "vitest";
 import { createVendo } from "./server.js";
 
@@ -58,54 +57,6 @@ function hostTools(): ToolRegistry {
       return { status: "ok", output: { ok: true } };
     },
   };
-}
-
-/**
- * A store the way a HOST supplies one: the whole public `VendoStore` surface,
- * delegating to a real store so records genuinely work — but not the handle
- * `@vendoai/store` minted, so it has no SQL handle and `storeServesHarnessTurns`
- * refuses it. That deployment keeps `agent.stream`, which is the route this file
- * had no coverage for. (Same shape as `nonSqlStore` in harness-wire.test.ts.)
- */
-function nonSqlStore(backing: VendoStore): VendoStore {
-  return {
-    records: (collection) => backing.records(collection),
-    blobs: (namespace) => backing.blobs(namespace),
-    ensureSchema: () => backing.ensureSchema(),
-    close: () => backing.close(),
-    raw: () => backing.raw(),
-  };
-}
-
-const USAGE = {
-  inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
-  outputTokens: { total: 0, text: 0, reasoning: 0 },
-} as const;
-
-/** Two guarded reads, then an answer: two audit rows that must name the same turn. */
-function twoReadsThenAnswer(): LanguageModel {
-  let step = 0;
-  return new MockLanguageModelV3({
-    doStream: async () => {
-      step += 1;
-      if (step <= 2) {
-        return {
-          stream: simulateReadableStream({ chunks: [
-            { type: "tool-call" as const, toolCallId: `call_${step}`, toolName: READ_TOOL, input: "{}" },
-            { type: "finish" as const, usage: USAGE, finishReason: { unified: "tool-calls" as const, raw: undefined } },
-          ] }),
-        };
-      }
-      return {
-        stream: simulateReadableStream({ chunks: [
-          { type: "text-start" as const, id: "answer" },
-          { type: "text-delta" as const, id: "answer", delta: "Two invoices." },
-          { type: "text-end" as const, id: "answer" },
-          { type: "finish" as const, usage: USAGE, finishReason: { unified: "stop" as const, raw: undefined } },
-        ] }),
-      };
-    },
-  });
 }
 
 const auditRows = async (store: VendoStore): Promise<AuditEvent[]> => {

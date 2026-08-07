@@ -298,13 +298,11 @@ live("claudeCode() — live, in a real e2b box", () => {
       thread: "m_box_env",
       say: "Write the full output of `env | sort` to user/files/env.txt. Then say done.",
     });
-    let text = "";
     try {
-      for await (const event of claudeCode({ sandbox: sandbox(), model: MODEL, maxTurns: 12 })
-        .run(h.turn as never)) {
-        if (event.type === "text") text += event.delta;
-        if (event.type === "error") text += `\n[error] ${event.message}`;
-      }
+      // Drained to drive the turn; the proof is the env dump the agent writes,
+      // not anything the stream says.
+      for await (const _event of claudeCode({ sandbox: sandbox(), model: MODEL, maxTurns: 12 })
+        .run(h.turn as never)) { /* no-op */ }
     } finally {
       delete process.env["VENDO_LANE_E_BOX_CANARY"];
     }

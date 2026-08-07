@@ -50,8 +50,6 @@ import { createRoot } from "react-dom/client";
 import "./styles.css";
 
 const NOW = "2026-07-11T12:00:00.000Z";
-const ok = async (): Promise<ToolOutcome> => ({ status: "ok", output: { accepted: true } });
-
 const destructiveApproval: ApprovalRequest = {
   id: "apr_destructive",
   call: {

@@ -25,5 +25,9 @@ type Assert<T extends true> = T;
  *  consumer of `@vendoai/store` would then need the interpreter's types
  *  installed — reintroducing the dependency this file exists to prevent.
  *  Unexported, TypeScript checks it here and elides the import from the
- *  emitted declaration. */
-type WorkspaceFsIsUpstreamFileSystem = Assert<WorkspaceFs extends UpstreamFileSystem ? true : false>;
+ *  emitted declaration.
+ *
+ *  Named with a leading underscore because declaring it is the whole point:
+ *  it has no reader by design, and unexported-and-unread is exactly what
+ *  no-unused-vars flags. */
+type _WorkspaceFsIsUpstreamFileSystem = Assert<WorkspaceFs extends UpstreamFileSystem ? true : false>;

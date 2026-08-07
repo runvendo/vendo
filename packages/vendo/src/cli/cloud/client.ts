@@ -12,8 +12,6 @@ import {
 import { deploymentIdentityHeaders } from "../../deployment-identity.js";
 import { CLI_VERSION } from "../shared.js";
 
-const DEFAULT_CLOUD_URL = "https://console.vendo.run";
-
 export function isVendoKey(key: string): boolean {
   return /^vnd_[0-9a-f]{40}$/.test(key);
 }

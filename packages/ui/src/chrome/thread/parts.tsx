@@ -1,6 +1,6 @@
-import { riskLabelSchema, type ApprovalRequest, type Json, type RiskLabel, type UIPayload, type VendoAutomationPart, type VendoBuildFailedPart, type VendoConnectPart, type VendoGrantSetPart, type VendoTurnErrorPart, type VendoViewPart } from "@vendoai/core";
-import { isToolUIPart, type UIMessage } from "ai";
-import { useEffect, useRef, useState } from "react";
+import { riskLabelSchema, type RiskLabel, type UIPayload, type VendoAutomationPart, type VendoBuildFailedPart, type VendoConnectPart, type VendoGrantSetPart, type VendoTurnErrorPart, type VendoViewPart } from "@vendoai/core";
+import { isToolUIPart, type DynamicToolUIPart, type ToolUIPart, type UIMessage } from "ai";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useVendoProvider } from "../../context.js";
 import { useSplitView } from "../split-view.js";
 import { useApprovalSheetPresentation } from "../../hooks/use-mobile-takeover.js";
@@ -119,6 +119,71 @@ function ThreadConnect({ ask, live, sendMessage }: {
   );
 }
 
+/** The shape both of a turn's terminal failures wear (spec §15 — the ✕ stays in
+    the record): the failed tool call's own beat vocabulary, plus one line saying
+    what the failure MEANS for the reader. `detail` is optional because an
+    unprefixed turn error yields no safe sentence of ours to show. */
+function ThreadErrorBlock({ marker, headline, detail }: {
+  /** The data attribute the E2E and a host's own styling select on, so it stays
+      per-failure rather than collapsing into one shared name. */
+  marker: "data-vendo-build-failed" | "data-vendo-turn-error";
+  headline: ReactNode;
+  detail: ReactNode | undefined;
+}) {
+  return (
+    <div className="fl-buildfail" {...{ [marker]: "" }}>
+      <div className="fl-beat fl-beat-error">
+        <span className="fl-beat-ic fl-beat-x" aria-hidden="true">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+            <path d="M18 6 6 18M6 6l12 12" />
+          </svg>
+        </span>
+        <span className="fl-beat-label">{headline}</span>
+      </div>
+      {detail === undefined ? null : <div className="fl-approval-more" role="alert">{detail}</div>}
+    </div>
+  );
+}
+
+/** A native tool call at its transcript position: the connector's ConnectCard
+    when the call ended `connect-required`, otherwise its build beat.
+
+    Spec §1 — THE TRANSCRIPT SHOWS THE WORK: every tool call leaves a beat at
+    its position in the conversation (this reverses lane pick C1, which sent
+    progress to a status ribbon above the composer and kept the transcript
+    beat-free). Two exceptions:
+      · the settled turn folds its beats into one summary row (hideBeats) —
+        but a failed or declined call is content, not progress, so its ✕ beat
+        stays visible either way (spec §15: the ✕ stays in the record);
+      · D1 — an app-building call renders no beat, from the moment the build
+        starts, because its card IS that step (the summary still counts it). */
+function ToolCallPart({ part, risks, count, connectLive, hideBeats, sendMessage, siblingParts }: {
+  part: ToolUIPart | DynamicToolUIPart;
+  risks: Map<string, RiskLabel>;
+  count: number;
+  connectLive: boolean;
+  hideBeats: boolean;
+  sendMessage?: ((message: { text: string }) => unknown) | undefined;
+  siblingParts?: UIMessage["parts"] | undefined;
+}) {
+  // 04-actions §3 — a connector call that ended `connect-required` renders
+  // its ConnectCard IN PLACE (2026-07 demo feedback: the card used to hang
+  // off the bottom of the list and vanish after the continuation; now it
+  // lives at its transcript position and settles into a Connected record).
+  // The typed outcome on the native tool part is the source of truth WHEN the
+  // wire carries one; ThreadPart's data-vendo-connect branch covers the harness
+  // wire, which does not.
+  if (part.state === "output-available") {
+    const ask = nativeConnectAsk(part.output);
+    if (ask !== undefined) return <ThreadConnect ask={ask} live={connectLive} sendMessage={sendMessage} />;
+  }
+  // The narration check runs FIRST: a failed build is content (its ✕ stays in
+  // the record), but its record is the build-failed block, not a second ✕.
+  if (narratedByAppCard(part, siblingParts ?? [])) return null;
+  if (hideBeats && !toolCallIsContent(part)) return null;
+  return <BuildBeat part={part} risk={risks.get(part.toolCallId) ?? "read"} count={count} />;
+}
+
 /** One stream part in a turn: text (user verbatim / assistant markdown with the
     ENG-217 caret choreography), assistant files, tool build beats, and the
     jailed generated-view app card (06-apps §§8–9). */
@@ -169,33 +234,17 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks, co
     return <SentAttachment part={part} />;
   }
   if (isToolUIPart(part)) {
-    // 04-actions §3 — a connector call that ended `connect-required` renders
-    // its ConnectCard IN PLACE (2026-07 demo feedback: the card used to hang
-    // off the bottom of the list and vanish after the continuation; now it
-    // lives at its transcript position and settles into a Connected record).
-    // The typed outcome on the native tool part is the source of truth WHEN the
-    // wire carries one; the data-vendo-connect branch below covers the harness
-    // wire, which does not.
-    if (part.state === "output-available") {
-      const ask = nativeConnectAsk(part.output);
-      if (ask !== undefined) return <ThreadConnect ask={ask} live={connectLive} sendMessage={sendMessage} />;
-    }
-    // Spec §1 — THE TRANSCRIPT SHOWS THE WORK: every tool call leaves a beat at
-    // its position in the conversation (this reverses lane pick C1, which sent
-    // progress to a status ribbon above the composer and kept the transcript
-    // beat-free). Two exceptions:
-    //   · the settled turn folds its beats into one summary row (hideBeats) —
-    //     but a failed or declined call is content, not progress, so its ✕ beat
-    //     stays visible either way (spec §15: the ✕ stays in the record);
-    //   · D1 — an app-building call renders no beat, from the moment the build
-    //     starts, because its card IS that step (the summary still counts it).
-    const risk = risks.get(part.toolCallId) ?? "read";
-    // The narration check runs FIRST: a failed build is content (its ✕ stays in
-    // the record), but its record is the build-failed block, not a second ✕.
-    if (narratedByAppCard(part, siblingParts ?? [])) return null;
-    if (toolCallIsContent(part)) return <BuildBeat part={part} risk={risk} count={count} />;
-    if (hideBeats) return null;
-    return <BuildBeat part={part} risk={risk} count={count} />;
+    return (
+      <ToolCallPart
+        part={part}
+        risks={risks}
+        count={count}
+        connectLive={connectLive}
+        hideBeats={hideBeats}
+        sendMessage={sendMessage}
+        siblingParts={siblingParts}
+      />
+    );
   }
   if (part.type === "data-vendo-connect") {
     // The connect ask's OTHER shape, and the ONLY one a harness turn produces: the
@@ -231,17 +280,11 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks, co
     const data = partData(part) as Partial<VendoBuildFailedPart>;
     if (typeof data.reason !== "string" || data.reason.length === 0) return null;
     return (
-      <div className="fl-buildfail" data-vendo-build-failed="">
-        <div className="fl-beat fl-beat-error">
-          <span className="fl-beat-ic fl-beat-x" aria-hidden="true">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-              <path d="M18 6 6 18M6 6l12 12" />
-            </svg>
-          </span>
-          <span className="fl-beat-label">Couldn&apos;t build the app</span>
-        </div>
-        <div className="fl-approval-more" role="alert">{BUILD_FAILURE_COPY}</div>
-      </div>
+      <ThreadErrorBlock
+        marker="data-vendo-build-failed"
+        headline={<>Couldn&apos;t build the app</>}
+        detail={BUILD_FAILURE_COPY}
+      />
     );
   }
   if (part.type === "data-vendo-turn-error") {
@@ -258,17 +301,11 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks, co
     // is the record either way.
     const message = turnErrorSentence(data.message);
     return (
-      <div className="fl-buildfail" data-vendo-turn-error="">
-        <div className="fl-beat fl-beat-error">
-          <span className="fl-beat-ic fl-beat-x" aria-hidden="true">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-              <path d="M18 6 6 18M6 6l12 12" />
-            </svg>
-          </span>
-          <span className="fl-beat-label">The response didn&rsquo;t finish</span>
-        </div>
-        {message === undefined ? null : <div className="fl-approval-more" role="alert">{message}</div>}
-      </div>
+      <ThreadErrorBlock
+        marker="data-vendo-turn-error"
+        headline={<>The response didn&rsquo;t finish</>}
+        detail={message}
+      />
     );
   }
   if (part.type === "data-vendo-grant-set") {
@@ -421,6 +458,64 @@ function GrantSetConsent({ toolCallId, grantSetId, name, permissions, siblingPar
     threads) keep the full-size interactive card. */
 const PREVIEW_CANVAS_WIDTH = 720;
 const PREVIEW_MAX_HEIGHT = 300;
+
+/** The app card's body. Inside a split view it is a scaled, inert PREVIEW
+    (2026-07 demo feedback): the full app renders on a fixed-width canvas and
+    transform-scales to the card width, with the Expand pill prominent, because
+    the stage is the interactive venue. While the app is FEATURED on the stage
+    the preview blurs under a centered "Full screened" label; collapse clears
+    it. Everywhere else the body IS the full-size interactive card. */
+function AppCardBody({ compact, shellRef, canvasRef, previewHeight, previewScale, featured, activate, splitExpanded, view }: {
+  compact: boolean;
+  shellRef: React.RefObject<HTMLDivElement | null>;
+  canvasRef: React.RefObject<HTMLDivElement | null>;
+  previewHeight: number;
+  previewScale: number;
+  featured: boolean;
+  /** The card's activation, when the split view offers one. */
+  activate: (() => void) | undefined;
+  splitExpanded: boolean;
+  /** The rendered app, built once by the caller: one element for both venues,
+      so a preview and a full-size card can never show different things. */
+  view: ReactNode;
+}) {
+  if (!compact) return <div className="fl-appcard-body">{view}</div>;
+  return (
+    <div
+      ref={shellRef}
+      className="fl-appcard-body fl-appcard-preview"
+      {...(featured ? { "data-vendo-staged": "" } : {})}
+      style={{ height: Math.min(previewHeight, PREVIEW_MAX_HEIGHT) }}
+    >
+      <div
+        ref={canvasRef}
+        className="fl-appcard-canvas"
+        style={{ width: PREVIEW_CANVAS_WIDTH, transform: `scale(${previewScale})` }}
+        {...(featured ? { "aria-hidden": true } : {})}
+      >
+        {view}
+      </div>
+      {featured ? (
+        <div className="fl-appcard-veil" role="status">Full screened</div>
+      ) : (
+        <>
+          {previewHeight > PREVIEW_MAX_HEIGHT ? <div className="fl-appcard-fade" aria-hidden="true" /> : null}
+          {/* The prominent expand affordance, on compact-mode cards only:
+              expanded-rail cards keep the bar's Feature button + card click as
+              the stage-selection affordances. */}
+          {activate !== undefined && !splitExpanded ? (
+            <button type="button" className="fl-embed-expand" aria-label="Expand this view" onClick={activate}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3" />
+              </svg>
+              Expand
+            </button>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+}
 
 /** The in-thread generated-view card (06-apps §§8–9), split-view aware: it
     registers its FINAL payload with the enclosing overlay's workspace (when
@@ -622,58 +717,23 @@ function ThreadAppCard({ appId, payload, restored, buildKey }: { appId: string; 
         ) : null}
         <span className="fl-boot-hairline" aria-hidden="true" />
       </div>
-      {compact ? (
-        // Compact preview (2026-07 demo feedback): the full app renders on a
-        // fixed-width canvas, transform-scaled to the card — inert (the stage
-        // is the interactive venue) with the Expand pill prominent. While the
-        // app is FEATURED on the stage, the preview blurs under a centered
-        // "Full screened" label; collapse clears it.
-        <div
-          ref={shellRef}
-          className="fl-appcard-body fl-appcard-preview"
-          {...(featured ? { "data-vendo-staged": "" } : {})}
-          style={{ height: Math.min(previewHeight, PREVIEW_MAX_HEIGHT) }}
-        >
-          <div
-            ref={canvasRef}
-            className="fl-appcard-canvas"
-            style={{ width: PREVIEW_CANVAS_WIDTH, transform: `scale(${previewScale})` }}
-            {...(featured ? { "aria-hidden": true } : {})}
-          >
-            <PayloadView
-              payload={payload}
-              components={components}
-              onAction={({ action, payload: actionPayload }) => client.apps.call(appId, action, actionPayload ?? {})}
-            />
-          </div>
-          {featured ? (
-            <div className="fl-appcard-veil" role="status">Full screened</div>
-          ) : (
-            <>
-              {previewHeight > PREVIEW_MAX_HEIGHT ? <div className="fl-appcard-fade" aria-hidden="true" /> : null}
-              {/* The prominent expand affordance, on compact-mode cards only:
-                  expanded-rail cards keep the bar's Feature button + card
-                  click as the stage-selection affordances. */}
-              {activate !== undefined && split?.expanded !== true ? (
-                <button type="button" className="fl-embed-expand" aria-label="Expand this view" onClick={activate}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                    <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3" />
-                  </svg>
-                  Expand
-                </button>
-              ) : null}
-            </>
-          )}
-        </div>
-      ) : (
-        <div className="fl-appcard-body">
+      <AppCardBody
+        compact={compact}
+        shellRef={shellRef}
+        canvasRef={canvasRef}
+        previewHeight={previewHeight}
+        previewScale={previewScale}
+        featured={featured}
+        activate={activate}
+        splitExpanded={split?.expanded === true}
+        view={
           <PayloadView
             payload={payload}
             components={components}
             onAction={({ action, payload: actionPayload }) => client.apps.call(appId, action, actionPayload ?? {})}
           />
-        </div>
-      )}
+        }
+      />
     </div>
   );
 }

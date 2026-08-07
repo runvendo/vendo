@@ -207,11 +207,6 @@ async function sharedAutomation(
   return app;
 }
 
-const payloadOf = (surface: any): Record<string, unknown> => {
-  expect(surface.kind).toBe("tree");
-  return surface.payload as Record<string, unknown>;
-};
-
 describe("a third party's edit through the real apps path invalidates the sponsorship", () => {
   it("invalidates when an EDITOR who is not the sponsor lands a document edit", async () => {
     const booted = await boot();

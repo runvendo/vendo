@@ -165,6 +165,137 @@ export interface AutomationsPanelProps {
   pollMs?: number;
 }
 
+/** The trigger row's one-line state, in precedence order.
+
+    §9.9 — `stopped` is the SERVER's word on the automation itself and it
+    outranks any run row: the fire-time check stops a run before its first tool
+    call, so a run left looking live cannot be allowed to report "running now"
+    about something that will not run again until it is taken on. */
+function TriggerStateLine({ stopped, runningRun, runningStep, enabled, waitingOn, nextRun, celebrating, reduced }: {
+  stopped: boolean;
+  runningRun: RunRecord | undefined;
+  runningStep: string;
+  enabled: boolean;
+  waitingOn: number;
+  nextRun: string | null;
+  celebrating: boolean;
+  reduced: boolean;
+}) {
+  if (stopped) {
+    return (
+      <div className="fl-auto-sub">
+        <span className="fl-auto-live fl-auto-wait" aria-hidden="true" />
+        Stopped
+      </div>
+    );
+  }
+  if (runningRun) {
+    return (
+      <div className="fl-auto-sub">
+        <span className="fl-act-spin" aria-hidden="true" />
+        <span className="fl-auto-nextrun">running now{runningStep}</span>
+      </div>
+    );
+  }
+  return (
+    <div className="fl-auto-sub">
+      {enabled ? (
+        <span
+          className={`fl-auto-live${waitingOn > 0 ? " fl-auto-wait" : ""}`}
+          aria-hidden="true"
+          style={celebrating && !reduced
+            ? { animation: "fl-connect-pop .55s cubic-bezier(.22,1,.36,1) both" }
+            : undefined}
+        />
+      ) : null}
+      {enabled
+        ? waitingOn > 0
+          ? `Enabled · waiting on ${waitingOn} permission${waitingOn === 1 ? "" : "s"}`
+          : "Enabled"
+        : "Disabled"}
+      {nextRun ? <span className="fl-auto-nextrun">· {nextRun}</span> : null}
+    </div>
+  );
+}
+
+/** One row of the open Run history: what happened, and — when the run stopped
+    on a permission nobody had allowed — the way to allow it and run again. */
+function RunHistoryRow({ appName, run, asks, stopBusy, rerunBusy, onStop, onRerun, onDecide }: {
+  appName: string;
+  run: RunRecord;
+  /** The asks this run is waiting on someone to allow; empty for every other
+      kind of run, which is what decides whether it can be re-run from here. */
+  asks: ApprovalRequest[];
+  stopBusy: boolean | undefined;
+  rerunBusy: boolean | undefined;
+  onStop: () => void;
+  onRerun: () => void;
+  onDecide: (approve: boolean) => Promise<void>;
+}) {
+  return (
+    <article>
+      <div className="fl-act-row">
+        <span className={`fl-act-ic ${run.status === "error" ? "fl-act-x" : "fl-act-tick"}`} aria-hidden="true">
+          {run.status === "error" ? "✕" : "✓"}
+        </span>
+        <strong className="fl-act-lbl">{RUN_STATUS_LABEL[run.status]}</strong>
+        <time className="fl-act-sub" dateTime={run.startedAt}>{formatAuditTime(run.startedAt)}</time>
+        {run.status === "running" ? (
+          <button
+            className="fl-btn fl-btn-ceremony"
+            type="button"
+            disabled={stopBusy}
+            onClick={onStop}
+          >Stop</button>
+        ) : null}
+        {asks.length > 0 ? (
+          <button
+            className="fl-btn fl-btn-primary"
+            type="button"
+            disabled={rerunBusy}
+            onClick={onRerun}
+          >Grant &amp; re-run</button>
+        ) : null}
+      </div>
+      {run.summary ? <p className="fl-act-peek">{run.summary}</p> : null}
+      {/* Ruling 11 — a failed UNATTENDED run tells its owner what did not happen
+          and that nothing changed. The run's own code and reason are written for
+          whoever runs the deployment (the scheduler's refusals name billing
+          allowances and console URLs), so they ride the dev-mode rail — the same
+          seam the queue row's server preview uses. */}
+      {run.error ? (
+        <>
+          {/* A run that stopped for a missing permission needs no sentence of
+              ours: its own summary already says what it needed and what to do,
+              and the card below is the doing. The generic line would also be
+              WRONG here twice over — the steps before the miss really did run,
+              and once the permission is allowed a "hasn't been allowed" line
+              becomes a stale claim on a row that never changes. */}
+          {needsPermission(run) ? null : (
+            <p role="alert" className="fl-error">
+              {`This run didn’t finish — nothing in your account was changed.`}
+            </p>
+          )}
+          {developmentMode()
+            ? <p className="fl-act-sub">{`${run.error.code}: ${run.error.message}`}</p>
+            : null}
+        </>
+      ) : null}
+      {/* The consent card the person answers, right where the failure is: the
+          SAME card the arming ceremony uses, so one permission reads one way
+          everywhere. Allowing it re-runs the automation. */}
+      {asks.length > 0 ? (
+        <GrantSetCard
+          name={appName}
+          permissions={grantSetPermissions(asks)}
+          state="parked"
+          onDecide={onDecide}
+        />
+      ) : null}
+    </article>
+  );
+}
+
 /** 08-ui §4; 07-automations §5 — controls, grant capture, previews, history, kill switch.
     The trigger/flow labels (triggerLabel, automationFlow) moved to
     automation-card.tsx (2026-07 demo feedback), shared with the read-only
@@ -602,43 +733,16 @@ export function AutomationsPanel({ pollMs = AUTOMATIONS_POLL_MS }: AutomationsPa
                             the app name above is the group's heading and has to
                             keep primacy over its rows. */}
                         <span className="fl-auto-node-t">{label.title}</span>
-                        <div className="fl-auto-sub">
-                          {/* §9.9 — `stopped` is the SERVER's word on the automation
-                              itself and it outranks any run row: the fire-time check
-                              stops a run before its first tool call, so a run left
-                              looking live cannot be allowed to report "running now"
-                              about something that will not run again until it is
-                              taken on. */}
-                          {row.stopped !== undefined ? (
-                            <>
-                              <span className="fl-auto-live fl-auto-wait" aria-hidden="true" />
-                              Stopped
-                            </>
-                          ) : runningRun ? (
-                            <>
-                              <span className="fl-act-spin" aria-hidden="true" />
-                              <span className="fl-auto-nextrun">running now{runningStep}</span>
-                            </>
-                          ) : (
-                            <>
-                              {row.enabled ? (
-                                <span
-                                  className={`fl-auto-live${waitingOn > 0 ? " fl-auto-wait" : ""}`}
-                                  aria-hidden="true"
-                                  style={celebrating && !reduced
-                                    ? { animation: "fl-connect-pop .55s cubic-bezier(.22,1,.36,1) both" }
-                                    : undefined}
-                                />
-                              ) : null}
-                              {row.enabled
-                                ? waitingOn > 0
-                                  ? `Enabled · waiting on ${waitingOn} permission${waitingOn === 1 ? "" : "s"}`
-                                  : "Enabled"
-                                : "Disabled"}
-                              {nextRun ? <span className="fl-auto-nextrun">· {nextRun}</span> : null}
-                            </>
-                          )}
-                        </div>
+                        <TriggerStateLine
+                          stopped={row.stopped !== undefined}
+                          runningRun={runningRun}
+                          runningStep={runningStep}
+                          enabled={row.enabled}
+                          waitingOn={waitingOn}
+                          nextRun={nextRun}
+                          celebrating={celebrating}
+                          reduced={reduced}
+                        />
                         {/* §9.9 — WHY it stopped, in the server's own consumer sentence
                             (the same one the stopped run row carries, so the list and the
                             card never say two different things). The card in the app is
@@ -846,74 +950,19 @@ export function AutomationsPanel({ pollMs = AUTOMATIONS_POLL_MS }: AutomationsPa
                           // and therefore whether it can be re-run from here.
                           const runAsks = needsPermission(run) ? asksForRun(appId, run) : [];
                           return (
-                          <article key={run.id}>
-                            <div className="fl-act-row">
-                              <span className={`fl-act-ic ${run.status === "error" ? "fl-act-x" : "fl-act-tick"}`} aria-hidden="true">
-                                {run.status === "error" ? "✕" : "✓"}
-                              </span>
-                              <strong className="fl-act-lbl">{RUN_STATUS_LABEL[run.status]}</strong>
-                              <time className="fl-act-sub" dateTime={run.startedAt}>{formatAuditTime(run.startedAt)}</time>
-                              {run.status === "running" ? (
-                                <button
-                                  className="fl-btn fl-btn-ceremony"
-                                  type="button"
-                                  disabled={busy[`stop-${run.id}`]}
-                                  onClick={() => void stopRun(key, run.id)}
-                                >Stop</button>
-                              ) : null}
-                              {runAsks.length > 0 ? (
-                                <button
-                                  className="fl-btn fl-btn-primary"
-                                  type="button"
-                                  disabled={busy[`rerun-${run.id}`]}
-                                  onClick={() => void during(`rerun-${run.id}`, () =>
-                                    grantAndRerun(appId, trigger.id, key, run, runAsks, row.grantSetId, true))}
-                                >Grant &amp; re-run</button>
-                              ) : null}
-                            </div>
-                            {run.summary ? <p className="fl-act-peek">{run.summary}</p> : null}
-                            {/* Ruling 11 — a failed UNATTENDED run tells its owner what
-                                did not happen and that nothing changed. The run's own
-                                code and reason are written for whoever runs the
-                                deployment (the scheduler's refusals name billing
-                                allowances and console URLs), so they ride the dev-mode
-                                rail — the same seam the queue row's server preview
-                                uses. */}
-                            {run.error ? (
-                              <>
-                                {/* A run that stopped for a missing permission
-                                    needs no sentence of ours: its own summary
-                                    already says what it needed and what to do,
-                                    and the card below is the doing. The generic
-                                    line would also be WRONG here twice over — the
-                                    steps before the miss really did run, and once
-                                    the permission is allowed a "hasn't been
-                                    allowed" line becomes a stale claim on a row
-                                    that never changes. */}
-                                {needsPermission(run) ? null : (
-                                  <p role="alert" className="fl-error">
-                                    {`This run didn’t finish — nothing in your account was changed.`}
-                                  </p>
-                                )}
-                                {developmentMode()
-                                  ? <p className="fl-act-sub">{`${run.error.code}: ${run.error.message}`}</p>
-                                  : null}
-                              </>
-                            ) : null}
-                            {/* The consent card the person answers, right where
-                                the failure is: the SAME card the arming ceremony
-                                uses, so one permission reads one way everywhere.
-                                Allowing it re-runs the automation. */}
-                            {runAsks.length > 0 ? (
-                              <GrantSetCard
-                                name={entry.app.name}
-                                permissions={grantSetPermissions(runAsks)}
-                                state="parked"
-                                onDecide={approve =>
-                                  grantAndRerun(appId, trigger.id, key, run, runAsks, row.grantSetId, approve)}
-                              />
-                            ) : null}
-                          </article>
+                            <RunHistoryRow
+                              key={run.id}
+                              appName={entry.app.name}
+                              run={run}
+                              asks={runAsks}
+                              stopBusy={busy[`stop-${run.id}`]}
+                              rerunBusy={busy[`rerun-${run.id}`]}
+                              onStop={() => void stopRun(key, run.id)}
+                              onRerun={() => void during(`rerun-${run.id}`, () =>
+                                grantAndRerun(appId, trigger.id, key, run, runAsks, row.grantSetId, true))}
+                              onDecide={approve =>
+                                grantAndRerun(appId, trigger.id, key, run, runAsks, row.grantSetId, approve)}
+                            />
                           );
                         })}
                       </div>

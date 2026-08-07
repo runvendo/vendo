@@ -12,7 +12,7 @@ import { inertBehind } from "./inert-behind.js";
 import { LauncherFace, LauncherToast, useLauncherStatus } from "./launcher-status.js";
 import { deliverPrefill, PrefillScopeContext, registerOverlayOpener } from "./overlay-registry.js";
 import { usePinAction, usePinNudge } from "./pin-ceremony.js";
-import { IDLE_RUN_ACTIVITY, runActivity, subscribeRunActivity } from "./run-activity.js";
+import { IDLE_RUN_ACTIVITY, runActivity, subscribeRunActivity, type VendoBeat } from "./run-activity.js";
 import {
   escapeIntent,
   expandedStageRect,
@@ -21,6 +21,7 @@ import {
   SplitViewContext,
   splitViewReducer,
   type MorphRect,
+  type SplitEmbed,
   type SplitViewContextValue,
 } from "./split-view.js";
 import { appTitle } from "./thread/message-data.js";
@@ -193,6 +194,169 @@ function canReceiveFocus(element: HTMLElement | null): element is HTMLElement {
   return style.display !== "none" && style.visibility !== "hidden";
 }
 
+interface EmbedGhost {
+  id: number;
+  mode: "in" | "out";
+  from: MorphRect;
+  target(): MorphRect;
+  clipTo(): MorphRect | undefined;
+  clone: HTMLElement;
+}
+
+/** A laid-out element's rect, or `undefined` where there is no layout to read
+    (jsdom rects are 0) — which is how the flight opts itself out. */
+const rectOf = (element: Element | null | undefined): MorphRect | undefined => {
+  const rect = element?.getBoundingClientRect();
+  return rect !== undefined && rect.width > 0 && rect.height > 0
+    ? { top: rect.top, left: rect.left, width: rect.width, height: rect.height }
+    : undefined;
+};
+
+/** The flying copy: inert, and pinned to the width it starts at. */
+const makeClone = (element: HTMLElement, width: number): HTMLElement => {
+  const clone = element.cloneNode(true) as HTMLElement;
+  clone.style.width = `${width}px`;
+  clone.style.margin = "0";
+  clone.style.pointerEvents = "none";
+  return clone;
+};
+
+/** The FLIP-style shared-element flight of the featured embed between its rail
+    card and the stage: measured start, computed target (expandedStageRect — a
+    mid-transition DOM read would return the compact layout). `null` when either
+    end has no layout to fly between, so the panes just snap. */
+function embedFlight(
+  dialog: React.RefObject<HTMLDivElement | null>,
+  targetAppId: string,
+  expanding: boolean,
+): Omit<EmbedGhost, "id"> | null {
+  const escaped = typeof CSS !== "undefined" && typeof CSS.escape === "function"
+    ? CSS.escape(targetAppId)
+    : targetAppId;
+  const cardEl = dialog.current?.querySelector<HTMLElement>(`[data-vendo-app-embed="${escaped}"]`);
+  const clipTo = () => rectOf(dialog.current);
+  if (expanding) {
+    const from = rectOf(cardEl);
+    if (!cardEl || !from) return null;
+    const to = expandedStageRect({ width: window.innerWidth, height: window.innerHeight });
+    return { mode: "in", from, target: () => to, clipTo, clone: makeClone(cardEl, from.width) };
+  }
+  const stageEl = dialog.current?.querySelector<HTMLElement>(".fl-stage");
+  const from = rectOf(stageEl);
+  let last = rectOf(cardEl);
+  if (!stageEl || !cardEl || !from || !last) return null;
+  // Track the card LIVE: it shifts and rewraps while the panel contracts, and
+  // the flight must converge on wherever it settles.
+  const target = () => {
+    last = rectOf(cardEl) ?? last;
+    return last as MorphRect;
+  };
+  return { mode: "out", from, target, clipTo, clone: makeClone(stageEl, from.width) };
+}
+
+/** The workspace's left pane: the featured app rendered large, with the build's
+    own beat rail under it. Stays mounted through expanded → collapsing →
+    collapsed (`mounted`) so the featured app does not blink out before the panes
+    finish sliding. */
+function WorkspaceStage({ mounted, expanded, featured, beats, pinNudge, pin, onPinned }: {
+  mounted: boolean;
+  expanded: boolean;
+  featured: SplitEmbed | undefined;
+  beats: readonly VendoBeat[];
+  /** The stage pin's one-time invite (§10.1 — the user pins, never the agent). */
+  pinNudge: string | undefined;
+  /** The host's pin seam; absent when the host wires none. */
+  pin: ((app: { appId: string; payload: unknown }) => void) | undefined;
+  /** Run after a pin from the stage: it CLOSES the whole overlay, so the user
+      lands back in the product with the app pinned. */
+  onPinned: () => void;
+}) {
+  const { client, components } = useVendoProvider();
+  return (
+    <div className="fl-split-stage" {...(expanded ? {} : { "aria-hidden": true })}>
+      {!mounted ? null : (
+        <>
+          {featured ? (
+            <div className="fl-stage" key={featured.appId}>
+              <div className="fl-stage-bar">
+                <span className="fl-appcard-dot" aria-hidden="true" />
+                <span className="fl-stage-name">{appTitle(featured.payload) ?? "Your app"}</span>
+                {/* Pin from fullscreen (2026-07 demo feedback): the same host
+                    onPin seam the in-thread card bar uses. */}
+                {pin ? (
+                  <button
+                    type="button"
+                    className="fl-barpin fl-stage-pin"
+                    {...(pinNudge === undefined ? {} : { "data-vendo-pin": pinNudge })}
+                    onClick={() => {
+                      pin({ appId: featured.appId, payload: featured.payload });
+                      onPinned();
+                    }}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                      <path d="M12 17v5M9 3h6l-1 7 3 3H7l3-3-1-7Z" />
+                    </svg>
+                    Pin to dashboard
+                  </button>
+                ) : null}
+              </div>
+              <div className="fl-stage-body">
+                <PayloadView
+                  // Registrations come from the typed in-thread card
+                  // (ThreadAppCard receives VendoViewPart payloads).
+                  payload={featured.payload as UIPayload}
+                  components={components}
+                  onAction={({ action, payload: actionPayload }) =>
+                    client.apps.call(featured.appId, action, actionPayload ?? {})}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="fl-stage-empty" role="status">
+              <p>Views you build land here.</p>
+              <p>Ask for a view in the conversation and it renders large on this stage.</p>
+            </div>
+          )}
+          {/* The build's own progress, under whatever the stage is showing: the
+              empty stage while the first view is still being made, the view
+              itself once it lands. */}
+          <BeatRail beats={beats} />
+        </>
+      )}
+    </div>
+  );
+}
+
+/** The split-view expand/collapse affordance (2026-07). Hidden below the
+    breakpoint — the takeover is already full-bleed. A fresh app embed landing
+    while collapsed pulses it once (data-vendo-suggest). */
+function WorkspaceToggle({ hidden, expanded, suggest, onToggle }: {
+  hidden: boolean;
+  expanded: boolean;
+  suggest: boolean;
+  onToggle: () => void;
+}) {
+  if (hidden) return null;
+  const label = expanded ? "Collapse workspace" : "Expand workspace";
+  return (
+    <button
+      className="fl-overlay-close fl-overlay-expand"
+      type="button"
+      aria-label={label}
+      aria-pressed={expanded}
+      {...(suggest && !expanded ? { "data-vendo-suggest": "" } : {})}
+      onClick={onToggle}
+    >
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d={expanded
+          ? "M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"
+          : "M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"} />
+      </svg>
+      <span className="fl-sr-only">{label}</span>
+    </button>
+  );
+}
+
 /** 08-ui §4 — floating modal launcher with focus containment and restoration.
  *  Supported entry API (ENG-220): positioned launcher by default, controlled +
  *  uncontrolled programmatic open/close, panel portaled to document.body with
@@ -222,7 +386,6 @@ export function VendoOverlay({
   const [conversationEpoch, setConversationEpoch] = useState(0);
   const theme = useVendoTheme();
   const takeover = useMobileTakeover();
-  const { client, components } = useVendoProvider();
   const pin = usePinAction();
 
   // 2026-07 demo feedback — the expandable split-view workspace (split-view.tsx
@@ -311,14 +474,7 @@ export function VendoOverlay({
   // layout). Skipped under reduced motion (everything snaps), in the
   // takeover, when there is no featured embed, and in layout-less
   // environments (jsdom rects are 0).
-  const [embedGhost, setEmbedGhost] = useState<{
-    id: number;
-    mode: "in" | "out";
-    from: MorphRect;
-    target(): MorphRect;
-    clipTo(): MorphRect | undefined;
-    clone: HTMLElement;
-  } | null>(null);
+  const [embedGhost, setEmbedGhost] = useState<EmbedGhost | null>(null);
   const ghostSeq = useRef(0);
   const setWorkspace = (next: boolean, featureAppId?: string, auto = false) => {
     if (next === splitState.expanded) {
@@ -327,55 +483,11 @@ export function VendoOverlay({
     // The compact card's Expand affordance names WHICH app to stage; the
     // feature dispatch below lands in the same commit as the expand, but the
     // ghost flight must read the target NOW (state hasn't reduced yet).
-    const targetAppId = featureAppId
-      ?? (featured !== undefined ? featured.appId : undefined);
+    const targetAppId = featureAppId ?? featured?.appId;
     const reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const rectOf = (element: Element | null | undefined): MorphRect | undefined => {
-      const rect = element?.getBoundingClientRect();
-      return rect !== undefined && rect.width > 0 && rect.height > 0
-        ? { top: rect.top, left: rect.left, width: rect.width, height: rect.height }
-        : undefined;
-    };
-    const makeClone = (element: HTMLElement, width: number): HTMLElement => {
-      const clone = element.cloneNode(true) as HTMLElement;
-      clone.style.width = `${width}px`;
-      clone.style.margin = "0";
-      clone.style.pointerEvents = "none";
-      return clone;
-    };
     if (!takeover.active && !reduced && targetAppId !== undefined && typeof window !== "undefined") {
-      const escaped = typeof CSS !== "undefined" && typeof CSS.escape === "function"
-        ? CSS.escape(targetAppId)
-        : targetAppId;
-      const cardEl = dialog.current?.querySelector<HTMLElement>(`[data-vendo-app-embed="${escaped}"]`);
-      const clipTo = () => rectOf(dialog.current);
-      if (next) {
-        const from = rectOf(cardEl);
-        if (cardEl && from) {
-          const to = expandedStageRect({ width: window.innerWidth, height: window.innerHeight });
-          setEmbedGhost({
-            id: ++ghostSeq.current,
-            mode: "in",
-            from,
-            target: () => to,
-            clipTo,
-            clone: makeClone(cardEl, from.width),
-          });
-        }
-      } else {
-        const stageEl = dialog.current?.querySelector<HTMLElement>(".fl-stage");
-        const from = rectOf(stageEl);
-        let last = rectOf(cardEl);
-        if (stageEl && cardEl && from && last) {
-          // Track the card LIVE: it shifts and rewraps while the panel
-          // contracts, and the flight must converge on wherever it settles.
-          const target = () => {
-            last = rectOf(cardEl) ?? last;
-            return last as MorphRect;
-          };
-          setEmbedGhost({ id: ++ghostSeq.current, mode: "out", from, target, clipTo, clone: makeClone(stageEl, from.width) });
-        }
-      }
+      const flight = embedFlight(dialog, targetAppId, next);
+      if (flight !== null) setEmbedGhost({ id: ++ghostSeq.current, ...flight });
     }
     if (featureAppId !== undefined) dispatchSplit({ type: "feature", appId: featureAppId });
     dispatchSplit(next ? { type: "expand", ...(auto ? { auto: true } : {}) } : { type: "collapse" });
@@ -638,30 +750,12 @@ export function VendoOverlay({
         onKeyDown={onKeyDown}
       >
         <strong className="fl-sr-only">Vendo</strong>
-        {/* The split-view expand/collapse affordance (2026-07). Hidden below
-            the breakpoint — the takeover is already full-bleed. A fresh app
-            embed landing while collapsed pulses it once (data-vendo-suggest). */}
-        {!takeover.active ? (
-          <button
-            className="fl-overlay-close fl-overlay-expand"
-            type="button"
-            aria-label={expanded ? "Collapse workspace" : "Expand workspace"}
-            aria-pressed={expanded}
-            {...(suggestExpand && !expanded ? { "data-vendo-suggest": "" } : {})}
-            onClick={() => setWorkspace(!splitState.expanded)}
-          >
-            {expanded ? (
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3" />
-              </svg>
-            ) : (
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3" />
-              </svg>
-            )}
-            <span className="fl-sr-only">{expanded ? "Collapse workspace" : "Expand workspace"}</span>
-          </button>
-        ) : null}
+        <WorkspaceToggle
+          hidden={takeover.active}
+          expanded={expanded}
+          suggest={suggestExpand}
+          onToggle={() => setWorkspace(!splitState.expanded)}
+        />
         {/* ENG-221: the explicit fresh-start affordance — closing never discards
             the conversation, so THIS is how a new one begins. Shares the close
             button's quiet header treatment; .fl-overlay-new only shifts it left. */}
@@ -683,60 +777,19 @@ export function VendoOverlay({
             stage pane is width-0 and empty; the rail IS the whole panel. */}
         <SplitViewContext.Provider value={splitContextValue}>
           <div className="fl-split">
-            <div className="fl-split-stage" key="stage" {...(expanded ? {} : { "aria-hidden": true })}>
-              {stagePhase !== "collapsed" ? (
-                <>
-                {featured ? (
-                  <div className="fl-stage" key={featured.appId}>
-                    <div className="fl-stage-bar">
-                      <span className="fl-appcard-dot" aria-hidden="true" />
-                      <span className="fl-stage-name">{appTitle(featured.payload) ?? "Your app"}</span>
-                      {/* Pin from fullscreen (2026-07 demo feedback): the same
-                          host onPin seam the in-thread card bar uses. A pin
-                          from the stage CLOSES the whole overlay — the user
-                          lands back in the product with the app pinned. */}
-                      {pin ? (
-                        <button
-                          type="button"
-                          className="fl-barpin fl-stage-pin"
-                          {...(stageNudge === undefined ? {} : { "data-vendo-pin": stageNudge })}
-                          onClick={() => {
-                            pin({ appId: featured.appId, payload: featured.payload });
-                            dispatchSplit({ type: "collapse" });
-                            setOpen(false);
-                          }}
-                        >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                            <path d="M12 17v5M9 3h6l-1 7 3 3H7l3-3-1-7Z" />
-                          </svg>
-                          Pin to dashboard
-                        </button>
-                      ) : null}
-                    </div>
-                    <div className="fl-stage-body">
-                      <PayloadView
-                        // Registrations come from the typed in-thread card
-                        // (ThreadAppCard receives VendoViewPart payloads).
-                        payload={featured.payload as UIPayload}
-                        components={components}
-                        onAction={({ action, payload: actionPayload }) =>
-                          client.apps.call(featured.appId, action, actionPayload ?? {})}
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <div className="fl-stage-empty" role="status">
-                    <p>Views you build land here.</p>
-                    <p>Ask for a view in the conversation and it renders large on this stage.</p>
-                  </div>
-                )}
-                {/* The build's own progress, under whatever the stage is
-                    showing: the empty stage while the first view is still
-                    being made, the view itself once it lands. */}
-                <BeatRail beats={beats} />
-                </>
-              ) : null}
-            </div>
+            <WorkspaceStage
+              key="stage"
+              mounted={stagePhase !== "collapsed"}
+              expanded={expanded}
+              featured={featured}
+              beats={beats}
+              pinNudge={stageNudge}
+              pin={pin}
+              onPinned={() => {
+                dispatchSplit({ type: "collapse" });
+                setOpen(false);
+              }}
+            />
             <div className="fl-split-rail" key="rail">
               <PrefillScopeContext.Provider value={prefillScope.current}>
                 <Thread

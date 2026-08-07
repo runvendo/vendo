@@ -3,24 +3,11 @@
 // pinned app forever: useApp recorded the error, every surface kept rendering
 // "Loading app…", and only a full page reload got the user out. The load now
 // retries with backoff, and a load that really is dead offers a way back in.
-import type { AppDocument } from "@vendoai/core";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
 import { VendoSlot } from "../../src/chrome/index.js";
 import { createWireServer } from "../wire-server.js";
-
-const pinned: AppDocument = {
-  format: "vendo/app@1",
-  id: "app_1",
-  name: "Invoices",
-  ui: "tree",
-  tree: {
-    formatVersion: "vendo-genui/v2",
-    root: "root",
-    nodes: [{ id: "root", component: "Text", props: { text: "Invoices app surface" } }],
-  },
-};
 
 describe("useApp load retry (Keystone graduates A5)", () => {
   let wire: Awaited<ReturnType<typeof createWireServer>>;

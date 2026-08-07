@@ -39,14 +39,6 @@ const document = (overrides: Partial<AppDocument> = {}): AppDocument => ({
   ...overrides,
 });
 
-const codeEdit = JSON.stringify({
-  rung: 2,
-  files: [
-    { path: "/app/server.js", content: "export const ready = true;" },
-    { path: "/app/node_modules/cache/index.js", content: "export const cache = true;" },
-  ],
-});
-
 describe(".vendoapp interchange through createApps", () => {
   it("round-trips a copy with fresh ownership and empty data", async () => {
     const store = memoryStore();

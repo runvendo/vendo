@@ -1,10 +1,10 @@
-import { VendoError, type FilesAdapter, type Membership, type Principal, type RunContext, type WorkspaceFs } from "@vendoai/core";
+import type { FilesAdapter, Membership, Principal, RunContext, WorkspaceFs } from "@vendoai/core";
 import { storeFiles } from "./files-store.js";
 import { appAccess, orgOfPath } from "./helpers/app-access.js";
 import { backendOf } from "./helpers/backend.js";
 import type { VendoStore } from "./store.js";
 import { workspaceOpsRows } from "./workspace-ops-rows.js";
-import { HOST_MOUNT, normalizePath, pathForbidden, pathNotFound, WorkspaceStoreFs } from "./workspace-fs.js";
+import { HOST_MOUNT, normalizePath, pathNotFound, WorkspaceStoreFs } from "./workspace-fs.js";
 import { workspaceRows, type AppMount, type WorkspaceHistoryEntry } from "./workspace-rows.js";
 
 /** Build contract §9.7 — what the façade needs to know about the caller: who
@@ -100,11 +100,6 @@ export function workspaceStore(store: VendoStore, options: { files?: FilesAdapte
   const canWrite = async (caller: WorkspaceCaller, path: string): Promise<boolean> =>
     await access.can(runContextOf(caller), "editor", { path });
 
-  /** §9.4's two codes, chosen by a LIVE viewer read: see `pathNotFound` and
-      `pathForbidden`, which own the words both doors refuse in. */
-  const refusal = async (caller: WorkspaceCaller, path: string): Promise<VendoError> =>
-    await canRead(caller, path) ? pathForbidden(path) : pathNotFound(path);
-
   /** Build contract §9.7 — owner derivation is a PURE FUNCTION OF THE PATH, in
       every door and not just the façade: the org for `/orgs/<org>/**`, the
       bound subject for `/user/**`. Deriving it from the principal instead made
@@ -155,7 +150,8 @@ export function workspaceStore(store: VendoStore, options: { files?: FilesAdapte
       const normalized = normalizePath(path);
       if (!(await canRead(caller, normalized))) {
         // The failing predicate IS the viewer check, so this is never
-        // `forbidden` — see `refusal`.
+        // `forbidden`: a caller who cannot even read is not told the path is
+        // there (§9.4).
         throw pathNotFound(normalized);
       }
       return await rows.history(ownerOfPath(caller, normalized), normalized);

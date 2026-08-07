@@ -3396,22 +3396,6 @@ function mcpRequest(accessToken: string, sessionId?: string, resource = BASE) {
   });
 }
 
-/** `mcpRequest` covers initialize and tools/list; this is any other method on a
- *  live session, over raw HTTP. */
-function mcpCall(accessToken: string, sessionId: string, name: string, args: Record<string, unknown>) {
-  return new Request(BASE, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${accessToken}`,
-      accept: "application/json, text/event-stream",
-      "content-type": "application/json",
-      "mcp-session-id": sessionId,
-      "mcp-protocol-version": "2025-11-25",
-    },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 42, method: "tools/call", params: { name, arguments: args } }),
-  });
-}
-
 /** The standalone SSE stream a client opens for server-initiated notifications.
  *  `accept` is a parameter so a test can send the GET the transport REJECTS. */
 function sseRequest(accessToken: string, sessionId: string, accept = "text/event-stream") {
@@ -3423,39 +3407,6 @@ function sseRequest(accessToken: string, sessionId: string, accept = "text/event
       "mcp-protocol-version": "2025-11-25",
     },
   });
-}
-
-/** The first SSE frame already buffered on a stream. Reading does NOT cancel the
- *  body, which is what lets a test hold a stream the server still believes in. */
-async function firstFrame(response: Response): Promise<string> {
-  const reader = response.body!.getReader();
-  const { value } = await reader.read();
-  reader.releaseLock();
-  return new TextDecoder().decode(value);
-}
-
-/** The next frame on a stream that is supposed to still be REACHABLE, or `""`.
- *  The wait never costs a passing run anything: the frame is already buffered by
- *  the time the assertion reads, so only a deaf stream ever reaches the deadline. */
-async function frameOrNone(response: Response, ms = 5_000): Promise<string> {
-  const reader = response.body!.getReader();
-  let arrived = false;
-  const read = reader.read()
-    .then(({ value }) => { arrived = true; return value === undefined ? "" : new TextDecoder().decode(value); })
-    .catch(() => { arrived = true; return ""; });
-  let timer: ReturnType<typeof setTimeout>;
-  try {
-    return await Promise.race([
-      read,
-      new Promise<string>((resolve) => { timer = setTimeout(() => resolve(""), ms); }),
-    ]);
-  } finally {
-    clearTimeout(timer!);
-    // Released only when the read actually finished, so a test may read the same
-    // stream again: releasing under a PENDING read rejects it, and nothing would
-    // be left to observe that rejection.
-    if (arrived) reader.releaseLock();
-  }
 }
 
 async function pkceChallenge(verifier: string): Promise<string> {

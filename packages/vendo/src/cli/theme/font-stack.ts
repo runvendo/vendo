@@ -272,7 +272,6 @@ function appliedToJsx(mod: BoundModule, local: string, declaration: TS.Declarati
 export function layoutFontBindings(source: string): FontBinding[] {
   const mod = boundModule(source, "layout.tsx");
   if (mod === null) return scanFontBindings(source);
-  const { ts, sf } = mod;
   const bindings: FontBinding[] = [];
 
   for (const font of GEIST_FONTS) {

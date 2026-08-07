@@ -2,7 +2,6 @@ import { VendoError, type Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "./backends.test-util.js";
 import { FILES_STORE_MAX_BYTES } from "./files-store.js";
-import { dbFor } from "./store.js";
 import { workspaceStore, WORKSPACE_HISTORY_LIMIT, WORKSPACE_INLINE_MAX_BYTES } from "./workspace.js";
 
 const user: Principal = { kind: "user", subject: "user_ws" };
