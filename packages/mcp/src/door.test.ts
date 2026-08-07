@@ -1147,6 +1147,54 @@ describe("createMcpDoor remote authorization server trust", () => {
     expect(harness.principalSubjects).toEqual([]);
   });
 
+  it("accepts an RS256 access token, the default of the mainstream authorization servers", async () => {
+    const as = await remoteAsFixture("RS256");
+    vi.stubGlobal("fetch", as.fetch);
+    const harness = makeHarness({
+      remoteAs: { issuer: as.issuer, audience: BASE },
+      principal: (subject) => ({ kind: "user", subject }),
+    });
+
+    const response = await harness.door.handler(mcpRequest(await as.mint({ sub: "rs256_user" })));
+
+    expect(response.status).toBe(200);
+    expect(harness.principalSubjects).toEqual(["rs256_user"]);
+  });
+
+  it("rejects an HS256 token forged from the published RSA key — the algorithm allowlist stays asymmetric", async () => {
+    const as = await remoteAsFixture("RS256");
+    vi.stubGlobal("fetch", as.fetch);
+    const harness = makeHarness({ remoteAs: { issuer: as.issuer, audience: BASE } });
+
+    // Classic algorithm confusion: sign HS256 with the public modulus everyone
+    // can read off the JWKS. Only the allowlist stands between this and a token
+    // anyone can mint.
+    const secret = new TextEncoder().encode((await as.publicJwk()).n as string);
+    const forged = await new SignJWT({})
+      .setProtectedHeader({ alg: "HS256", kid: as.kid() })
+      .setIssuer(as.issuer)
+      .setAudience(BASE)
+      .setSubject("forged_user")
+      .setIssuedAt()
+      .setExpirationTime("5m")
+      .sign(secret);
+
+    expect((await harness.door.handler(mcpRequest(forged))).status).toBe(401);
+    expect(harness.principalSubjects).toEqual([]);
+  });
+
+  it("refuses to compose a door whose remote authorization server has a blank issuer or audience", async () => {
+    // jose skips the `aud`/`iss` VALUE check when the expected value is falsy,
+    // so a blank one silently turns the audience binding off and every token
+    // that server ever signed becomes good at this door.
+    for (const remoteAs of [
+      { issuer: "https://as.example", audience: "" },
+      { issuer: "", audience: BASE },
+    ]) {
+      expect(() => makeHarness({ remoteAs })).toThrow(/issuer and audience/);
+    }
+  });
+
   it("rejects a JWT whose signature does not match the trusted key", async () => {
     const as = await remoteAsFixture();
     vi.stubGlobal("fetch", as.fetch);
@@ -2817,6 +2865,85 @@ describe("createMcpDoor withholdTools on a turn-bearing session", () => {
   });
 });
 
+describe("createMcpDoor MCP Apps on a turn-bearing session", () => {
+  const TOKEN = "vtk_apps_turn";
+
+  /** The umbrella composes ONE door with both `apps` and `turnCredentials`, and
+   *  the turn's registry owns `vendo_apps_open` (apps.agentTools). Whatever the
+   *  OAuth leg does to make an app render, this leg has to do too — it is the
+   *  same mount and the same feature. */
+  function harnessFor(payload: Record<string, unknown>) {
+    const apps: AppsPort = {
+      async list() { return []; },
+      async open() { return { kind: "http", url: "https://app.example" }; },
+      async call() { return null; },
+    };
+    return makeHarness({
+      apps,
+      turnCredentials: {
+        async resolve(token) {
+          if (token !== TOKEN) return null;
+          return {
+            ctx: {
+              principal: { kind: "user" as const, subject: "user_1" },
+              venue: "chat" as const,
+              presence: "present" as const,
+            },
+            tools: {
+              async call() {
+                return { status: "ok" as const, output: { kind: "tree", payload } };
+              },
+              async list() {
+                return [
+                  { name: "host_lookup", description: "Look something up", risk: "read" as const, inputSchema: { type: "object", properties: {} } },
+                  { name: "vendo_apps_open", description: "Open a saved app", risk: "read" as const, inputSchema: { type: "object", properties: {} } },
+                ];
+              },
+            },
+          };
+        },
+      },
+    });
+  }
+
+  it("advertises the shim on the turn leg's apps listing", async () => {
+    const connected = await connect(harnessFor({}).door, TOKEN);
+
+    const listed = (await connected.client.listTools()).tools;
+    expect(listed.find((tool) => tool.name === "vendo_apps_open")?._meta).toEqual({
+      ui: { resourceUri: "ui://vendo/tree-shim.html" },
+      "ui/resourceUri": "ui://vendo/tree-shim.html",
+    });
+    // Only the app-viewer names get it; a host tool is untouched.
+    expect(listed.find((tool) => tool.name === "host_lookup")?._meta).toBeUndefined();
+    await connected.client.close();
+  });
+
+  it("unwraps the OpenSurface envelope and strips the already-resolved queries", async () => {
+    const payload = {
+      formatVersion: "vendo-genui/v2",
+      root: "root",
+      nodes: [],
+      data: { via: "turn" },
+      queries: [{ name: "via", tool: "host_source" }],
+    };
+    const connected = await connect(harnessFor(payload).door, TOKEN);
+
+    const result = await connected.client.callTool({ name: "vendo_apps_open", arguments: { appId: "app_1" } });
+
+    // The shim renders a bare format-tagged UIPayload, and the turn's runtime
+    // already resolved every query into `data` — forwarding the declarations
+    // would execute them a second time.
+    expect(result.structuredContent).toEqual({
+      formatVersion: "vendo-genui/v2",
+      root: "root",
+      nodes: [],
+      data: { via: "turn" },
+    });
+    await connected.client.close();
+  });
+});
+
 describe("createMcpDoor first-party service auth", () => {
   const AS_URL = "https://product.example/.well-known/oauth-authorization-server/api/vendo/mcp";
 
@@ -3345,19 +3472,19 @@ interface RemoteTokenOverrides {
   expiresAt?: number;
 }
 
-async function generateSigningKey(kid: string) {
-  const pair = await generateKeyPair("ES256");
-  return { ...pair, kid };
+async function generateSigningKey(kid: string, alg = "ES256") {
+  const pair = await generateKeyPair(alg);
+  return { ...pair, kid, alg };
 }
 
 async function mintRemoteToken(
   privateKey: KeyLike,
   kid: string,
-  options: { issuer: string; audience: string } & RemoteTokenOverrides,
+  options: { issuer: string; audience: string; alg?: string } & RemoteTokenOverrides,
 ): Promise<string> {
   const now = Math.floor(Date.now() / 1_000);
   return new SignJWT({})
-    .setProtectedHeader({ alg: "ES256", kid })
+    .setProtectedHeader({ alg: options.alg ?? "ES256", kid })
     .setIssuer(options.issuer)
     .setAudience(options.audience)
     .setSubject(options.sub ?? "external_user")
@@ -3366,11 +3493,11 @@ async function mintRemoteToken(
     .sign(privateKey);
 }
 
-async function remoteAsFixture() {
+async function remoteAsFixture(alg = "ES256") {
   const issuer = "https://as.example";
   const jwksUri = `${issuer}/jwks`;
-  let key = await generateSigningKey("initial");
-  let jwks = { keys: [{ ...(await exportJWK(key.publicKey)), alg: "ES256", use: "sig", kid: key.kid }] };
+  let key = await generateSigningKey("initial", alg);
+  let jwks = { keys: [{ ...(await exportJWK(key.publicKey)), alg, use: "sig", kid: key.kid }] };
   const fetch = vi.fn(async (input: string | URL | Request) => {
     const url = input instanceof Request ? input.url : input.toString();
     if (url === `${issuer}/.well-known/oauth-authorization-server`) {
@@ -3383,16 +3510,19 @@ async function remoteAsFixture() {
     issuer,
     jwksUri,
     fetch,
+    publicJwk: async () => await exportJWK(key.publicKey),
+    kid: () => key.kid,
     async mint(overrides: RemoteTokenOverrides = {}) {
       return mintRemoteToken(key.privateKey, key.kid, {
         issuer: overrides.issuer ?? issuer,
         audience: overrides.audience ?? BASE,
+        alg,
         ...overrides,
       });
     },
     async rotate(kid: string) {
-      key = await generateSigningKey(kid);
-      jwks = { keys: [{ ...(await exportJWK(key.publicKey)), alg: "ES256", use: "sig", kid: key.kid }] };
+      key = await generateSigningKey(kid, alg);
+      jwks = { keys: [{ ...(await exportJWK(key.publicKey)), alg, use: "sig", kid: key.kid }] };
     },
   };
 }

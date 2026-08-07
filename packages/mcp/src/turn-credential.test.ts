@@ -155,6 +155,22 @@ describe("the door's turn credential — what it refuses", () => {
     release();
   });
 
+  it("NEGATIVE — an expired credential is not resurrected by a later turn of its own thread", async () => {
+    let now = 1_000_000;
+    const credentials = createTurnCredentials({ now: () => now, idleMs: 60_000 });
+    const release = credentials.publish("thr_a", liveTurn("user_a", "a"));
+    const token = credentials.mint("thr_a")!;
+    release();
+
+    // The conversation goes quiet well past the idle budget and then takes
+    // another turn, with nothing having resolved the token in between. publish()
+    // is the only place that can notice the expiry, because nothing sweeps.
+    now += 120_000;
+    const again = credentials.publish("thr_a", liveTurn("user_a", "a2"));
+    expect(await credentials.resolve(token)).toBeNull();
+    again();
+  });
+
   it("two mints never collide, and a token is not derivable from the thread it names", () => {
     const credentials = createTurnCredentials();
     const release = credentials.publish("thr_a", liveTurn("user_a", "a"));
