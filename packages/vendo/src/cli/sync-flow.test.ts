@@ -3,7 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { describeDevCredential, resolveDevCredential } from "../dev-creds/resolve.js";
+import { claudeCliHarness } from "./extract/claude-cli-harness.js";
 import type { ExtractionHarness } from "./extract/harness.js";
+import { npxEngineHarness } from "./extract/npx-engine-harness.js";
 import type { Output } from "./shared.js";
 import { readEnvFiles, runSyncFlow, type SyncFlowOptions, type SyncFlowResult } from "./sync-flow.js";
 
@@ -72,6 +74,19 @@ const JUDGED_CATALOG = {
     },
   })}\n`,
 };
+
+/** One never-judged tool, so incremental mode has real work and the run
+ *  reaches the engine rather than the up-to-date shortcut. */
+const UNJUDGED_TOOLS = `${JSON.stringify({
+  format: "vendo/tools@3",
+  tools: [{
+    name: "host_a",
+    description: "Use this to call host_a.",
+    inputSchema: { type: "object", properties: {} },
+    risk: "read",
+    binding: { kind: "route", method: "GET", path: "/api/a", argsIn: "query" },
+  }],
+})}\n`;
 
 const offline = (async () => { throw new Error("offline"); }) as unknown as typeof fetch;
 
@@ -222,26 +237,13 @@ describe("a harness-owned credential (Claude Code OAuth / auth token / custom en
     run: async () => "```json\n" + JSON.stringify({ tools: [], narrative: "" }) + "\n```",
   };
 
-  /** One never-judged tool, so incremental mode has real work and the run
-   *  reaches the engine rather than the up-to-date shortcut. */
-  const UNJUDGED = `${JSON.stringify({
-    format: "vendo/tools@3",
-    tools: [{
-      name: "host_a",
-      description: "Use this to call host_a.",
-      inputSchema: { type: "object", properties: {} },
-      risk: "read",
-      binding: { kind: "route", method: "GET", path: "/api/a", argsIn: "query" },
-    }],
-  })}\n`;
-
   /** A host holding ONLY a harness-owned credential: no API key on any rung. */
   async function oauthHost(): Promise<string> {
     for (const name of ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "VENDO_API_KEY", "VENDO_DEV_CREDENTIAL"]) {
       vi.stubEnv(name, "");
     }
     const root = await host({ ".env": "CLAUDE_CODE_OAUTH_TOKEN=oauth-tok\n" });
-    await writeFile(join(root, ".vendo", "tools.json"), UNJUDGED, "utf8");
+    await writeFile(join(root, ".vendo", "tools.json"), UNJUDGED_TOOLS, "utf8");
     return root;
   }
 
@@ -267,6 +269,107 @@ describe("a harness-owned credential (Claude Code OAuth / auth token / custom en
     expect(env["CLAUDE_CODE_OAUTH_TOKEN"]).toBe("oauth-tok");
     expect(await resolveDevCredential({ env })).toEqual({ rung: "none" });
     expect(describeDevCredential(await resolveDevCredential({ env }))).toBe("no model credential found");
+  });
+});
+
+describe("the coding-agent endpoint is the developer's to choose, never the project's", () => {
+  const REPO_ENDPOINT = "https://repo-chose-this.example.com";
+  const SHELL_ENDPOINT = "https://anthropic.corp.example.com";
+
+  /** stdout the judgment pass accepts, so the run reaches the child spawn
+   *  whose env is what these tests are actually about. */
+  const JUDGED = "```json\n" + JSON.stringify({ tools: [], narrative: "" }) + "\n```";
+
+  /** Both Claude rungs, built for real, with only the child spawn stubbed:
+   *  the env under test is the one the REAL harness hands the REAL spawn,
+   *  produced by the REAL dotenv reader — no stub on either side of the seam. */
+  const rungs: ReadonlyArray<{
+    name: string;
+    harness: (capture: (env: NodeJS.ProcessEnv) => void) => ExtractionHarness;
+  }> = [
+    {
+      name: "the PATH `claude` rung",
+      harness: (capture) => claudeCliHarness({
+        probeBinary: async () => true,
+        probeLogin: async () => false,
+        exec: async (_args, options) => {
+          capture(options.env);
+          return { stdout: JUDGED, stderr: "", code: 0 };
+        },
+      }),
+    },
+    {
+      name: "the npx-fetched engine rung",
+      harness: (capture) => npxEngineHarness({
+        exec: async (_args, options) => {
+          capture(options.env);
+          return { stdout: JUDGED, stderr: "", code: 0 };
+        },
+      }),
+    },
+  ];
+
+  /** A host with a Cloud key and one never-judged tool, so an incremental
+   *  `--ai` run has real work and actually spawns the child. No credential of
+   *  the developer's own — the exposed case. */
+  async function keyedHost(dotenv: string): Promise<string> {
+    for (const name of [
+      "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY",
+      "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_BASE_URL",
+      "VENDO_API_KEY", "VENDO_CLOUD_URL", "VENDO_DEV_CREDENTIAL",
+    ]) {
+      vi.stubEnv(name, "");
+    }
+    const root = await host({ ".env": `VENDO_API_KEY=vnd_x\n${dotenv}` });
+    await writeFile(join(root, ".vendo", "tools.json"), UNJUDGED_TOOLS, "utf8");
+    return root;
+  }
+
+  async function spawnEnvFor(
+    rung: (capture: (env: NodeJS.ProcessEnv) => void) => ExtractionHarness,
+    root: string,
+  ): Promise<NodeJS.ProcessEnv | undefined> {
+    let captured: NodeJS.ProcessEnv | undefined;
+    const messages = captureOutput();
+    await flow({
+      root,
+      output: messages.output,
+      fetchImpl: offline,
+      ai: true,
+      judge: { harnesses: [rung((env) => { captured ??= env; })] },
+    });
+    return captured;
+  }
+
+  for (const { name, harness } of rungs) {
+    it(`${name}: a project dotenv naming a base URL never reaches the child process`, async () => {
+      const root = await keyedHost(`ANTHROPIC_BASE_URL=${REPO_ENDPOINT}\n`);
+      const env = await spawnEnvFor(harness, root);
+      // The child really ran — it just ran on Vendo Cloud's gateway (the Cloud
+      // key IS the developer's own credential here), never on the endpoint the
+      // repo tried to pick.
+      expect(env).toBeDefined();
+      expect(env?.ANTHROPIC_BASE_URL).not.toContain("repo-chose-this");
+      expect(env?.ANTHROPIC_AUTH_TOKEN).toBe("vnd_x");
+    });
+
+    it(`${name}: the developer's own SHELL base URL still reaches the child process`, async () => {
+      const root = await keyedHost("");
+      vi.stubEnv("ANTHROPIC_BASE_URL", SHELL_ENDPOINT);
+      const env = await spawnEnvFor(harness, root);
+      expect(env?.ANTHROPIC_BASE_URL).toBe(SHELL_ENDPOINT);
+      // Own credential wins: no gateway fuel overlaid onto the dev's endpoint.
+      expect(env?.ANTHROPIC_AUTH_TOKEN).toBeFalsy();
+    });
+  }
+
+  it("readEnvFiles drops a dotenv base URL and keeps the shell's — provenance, not variable name", async () => {
+    const root = await host({ ".env": `ANTHROPIC_BASE_URL=${REPO_ENDPOINT}\nVENDO_API_KEY=vnd_x\n` });
+    expect(await readEnvFiles(root, {})).toEqual({ VENDO_API_KEY: "vnd_x" });
+    // A blank shell value must NOT fall back to the file one either.
+    expect((await readEnvFiles(root, { ANTHROPIC_BASE_URL: "" }))["ANTHROPIC_BASE_URL"]).toBe("");
+    expect((await readEnvFiles(root, { ANTHROPIC_BASE_URL: SHELL_ENDPOINT }))["ANTHROPIC_BASE_URL"])
+      .toBe(SHELL_ENDPOINT);
   });
 });
 
