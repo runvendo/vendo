@@ -5,7 +5,7 @@ import { execPath } from "node:process";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import { customServerSource, expressServerSource } from "./init-scaffolds.js";
+import { customServerSource, expressServerSource, routeSource } from "./init-scaffolds.js";
 
 const run = promisify(execFile);
 
@@ -50,5 +50,20 @@ describe("JS-emitted scaffolds are valid JavaScript", () => {
     expect(expressServerSource(true)).toContain(`kind: "user" as const`);
     expect(expressServerSource(true)).toContain("as Headers & { getSetCookie?: () => string[] }");
     expect(customServerSource(true)).toContain(`kind: "user" as const`);
+  });
+});
+
+describe("the scaffolds init writes", () => {
+  it("does not import or pass a registry — the host writes its own client file", () => {
+    const source = routeSource({ serverActions: false, auth: null });
+    expect(source).not.toContain("./registry");
+    expect(source).not.toContain("catalog:");
+  });
+
+  it("leaves the server compositions registry-free too", () => {
+    for (const source of [expressServerSource(true), customServerSource(true)]) {
+      expect(source).not.toContain("catalog: registry");
+      expect(source).not.toContain(`from "./registry`);
+    }
   });
 });

@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import { registrySource, routeSource, vendoRootWrapperSource } from "./init-scaffolds.js";
+import { routeSource } from "./init-scaffolds.js";
 
 /**
  * Quickstart drift gate. `docs/quickstart.md` is the first code a host ever
@@ -115,31 +115,12 @@ function deprecatedMembers(source: string, name: string): string[] {
 const blocks = codeBlocks(await readFile(QUICKSTART, "utf8"));
 
 describe("docs/quickstart.md stays 1:1 with the surfaces it documents", () => {
-  it("shows the registry scaffold's own import, not a transitive one", () => {
-    const documented = blockFor(blocks, "vendo/registry.tsx");
-    const scaffold = registrySource("tsx");
-
-    // The specifier is the whole point (init-scaffolds.ts: @vendoai/core is
-    // transitive, so a host importing it fails to resolve with TS2307).
-    const scaffoldImport = codeLines(scaffold).find((line) => line.startsWith("import type {"))!;
-    expect(scaffoldImport).toBe(`import type { ComponentRegistry } from "@vendoai/vendo";`);
-    expect(codeLines(documented)).toContain(scaffoldImport);
-    expect(documented).toContain("satisfies ComponentRegistry");
-  });
-
   it("shows the route scaffold verbatim as the primary composition", () => {
     const documented = blockFor(blocks, "app/api/vendo/[...vendo]/route.ts");
     const scaffold = routeSource({
       serverActions: false,
       auth: { preset: "authJs", dependency: "next-auth" },
-      registrySpecifier: "@/vendo/registry",
     });
-    expect(codeLines(documented)).toEqual(codeLines(scaffold));
-  });
-
-  it("shows the client-mount scaffold verbatim", () => {
-    const documented = blockFor(blocks, "vendo/vendo-root.tsx");
-    const scaffold = vendoRootWrapperSource({ themeSpecifier: "../.vendo/theme.json" });
     expect(codeLines(documented)).toEqual(codeLines(scaffold));
   });
 
