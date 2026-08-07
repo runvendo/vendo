@@ -138,9 +138,23 @@ function scoreTools(expected: RepoExpectations, actualTools: readonly ExtractedT
   const precision = actualTools.length === 0 ? 1 : actualMatches / actualTools.length;
   const recall = expected.tools.length === 0 ? 1 : expectedMatches / expected.tools.length;
 
+  // Schema coverage, scored only over tools the curator actually asserted it
+  // for. Zero assertions = zero weight, so no repo's score moves until someone
+  // has read its contract.
+  const byIdentity = new Map(actualTools.map((tool) => [actualToolIdentity(tool), tool]));
+  const asserted = expectedInventories.flatMap((item) => [
+    ...(item.inputSchema === undefined ? [] : [{ item, slot: "inputSchemaSource" as const, want: item.inputSchema }]),
+    ...(item.outputSchema === undefined ? [] : [{ item, slot: "outputSchemaSource" as const, want: item.outputSchema }]),
+  ]);
+  const schemaMatches = asserted.filter(({ item, slot, want }) => {
+    const actual = byIdentity.get(expectedToolIdentity(item));
+    return actual !== undefined && ((actual[slot] ?? "unknown") !== "unknown") === want;
+  }).length;
+  const schemaScore = asserted.length === 0 ? 0 : schemaMatches / asserted.length;
+
   return {
-    points: precision + recall,
-    total: 2,
+    points: precision + recall + schemaScore,
+    total: asserted.length === 0 ? 2 : 3,
     checks: [
       {
         id: "tools.precision",
@@ -152,6 +166,11 @@ function scoreTools(expected: RepoExpectations, actualTools: readonly ExtractedT
         pass: recall === 1,
         detail: `${expectedMatches}/${expected.tools.length} expected tools were generated; recall ${recall.toFixed(3)}`,
       },
+      ...(asserted.length === 0 ? [] : [{
+        id: "tools.schemas",
+        pass: schemaScore === 1,
+        detail: `${schemaMatches}/${asserted.length} curated request/response schema expectations matched`,
+      }]),
     ],
   };
 }

@@ -37,6 +37,12 @@ export const expectedHttpToolInventorySchema = z
     method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
     path: z.string().regex(/^\/(?!\/)\S*$/),
     readOrWrite: z.enum(["read", "write"]),
+    /** Curated: this tool's request/response schema must be KNOWN in
+     *  .vendo/tools.json (source !== "unknown"). Absent = not asserted, so a
+     *  repo whose shapes nobody has curated yet is neither rewarded nor
+     *  punished for them. */
+    inputSchema: z.boolean().optional(),
+    outputSchema: z.boolean().optional(),
   })
   .strict();
 
@@ -48,6 +54,12 @@ export const expectedTrpcToolInventorySchema = z
     kind: z.literal("trpc"),
     procedure: z.string().min(1),
     readOrWrite: z.enum(["read", "write"]),
+    /** Curated: this tool's request/response schema must be KNOWN in
+     *  .vendo/tools.json (source !== "unknown"). Absent = not asserted, so a
+     *  repo whose shapes nobody has curated yet is neither rewarded nor
+     *  punished for them. */
+    inputSchema: z.boolean().optional(),
+    outputSchema: z.boolean().optional(),
   })
   .strict();
 
@@ -60,6 +72,12 @@ export const expectedServerActionToolInventorySchema = z
     module: z.string().min(1),
     export: z.string().min(1),
     readOrWrite: z.enum(["read", "write"]),
+    /** Curated: this tool's request/response schema must be KNOWN in
+     *  .vendo/tools.json (source !== "unknown"). Absent = not asserted, so a
+     *  repo whose shapes nobody has curated yet is neither rewarded nor
+     *  punished for them. */
+    inputSchema: z.boolean().optional(),
+    outputSchema: z.boolean().optional(),
   })
   .strict();
 
