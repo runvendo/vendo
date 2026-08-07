@@ -73,16 +73,15 @@ describe("a host mounted under a subpath", () => {
     expect(await paths([{ url: "/" }])).toEqual(["/api/clients/{id}", "/api/dashboard"]);
   });
 
-  /** The one that matters: without the prefix every tool call lands on the
-   *  unmounted origin path and 404s while the pages themselves render fine. */
-  it("carries the mount point into every binding path", async () => {
-    expect(await paths([{ url: "/cadence" }])).toEqual(["/cadence/api/clients/{id}", "/cadence/api/dashboard"]);
+  /** Spec 2026-08-06 §B1 inverts the old law: stored paths are PREFIX-FREE.
+   *  The deployment's prefix lives in VENDO_BASE_URL and core's joinUrl
+   *  attaches it exactly once at call time. Baking it in here is what made
+   *  every host tool 404 on /maple/maple/… (#914). */
+  it("keeps stored paths prefix-free whatever the spec's relative server declares", async () => {
+    expect(await paths([{ url: "/cadence" }])).toEqual(["/api/clients/{id}", "/api/dashboard"]);
   });
 
-  /** dedupKey is method+path: prefix the OpenAPI operation and not the route
-   *  handler behind it and the two stop collapsing, shipping two tools per
-   *  endpoint with one of them pointing at nothing. */
-  it("moves every extractor's paths together, so they still collapse", async () => {
+  it("collapses the OpenAPI operation and the route handler behind it, as before", async () => {
     expect(await paths([{ url: "/cadence" }])).toHaveLength((await paths([{ url: "/" }])).length);
   });
 });
