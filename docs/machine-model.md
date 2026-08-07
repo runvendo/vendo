@@ -85,7 +85,7 @@ Which provider runs the box is the standard adapter decision, made once in
 4. Nothing set: machine paths fail closed with `sandbox-unavailable`.
 
 Machine provisioning requires `VENDO_BASE_URL`: the box's callback URLs must
-be this deployment's public origin. `VENDO_BOX_TEMPLATE` sets the provider
+be this deployment's full public URL, path prefix included. `VENDO_BOX_TEMPLATE` sets the provider
 base template for BYO e2b (the image built by
 `packages/apps/box/build-template.mjs`: Node plus the in-box agent harness
 with the Claude Agent SDK npm-installed beside it at build time,

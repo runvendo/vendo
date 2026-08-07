@@ -369,7 +369,8 @@ and trusts that origin automatically from the first request — no
 configuration needed. In every other environment (including `NODE_ENV=test`),
 the learned origin stays untrusted by default: a spoofed `Host` header can
 never turn it into a credential-exfiltration target. Production deployments
-must set `VENDO_BASE_URL` to the host's public origin; without it, a
+must set `VENDO_BASE_URL` to the host's full public URL — path prefix
+included, nothing strips its path; without it, a
 present-mode host tool call that needs to forward credentials fails loud
 instead of running unauthenticated, and `vendo doctor` reports the missing
 var as a failing check.
@@ -398,7 +399,7 @@ app document, created in seconds with no sandbox anywhere. A configured
 machine-backed apps (custom server code in a box): see
 [the machine model](./machine-model.md) for the three layers, the escalation
 ladder, graduation, and the box contract. Machine provisioning also requires
-`VENDO_BASE_URL`, since the box calls back to your deployment's public origin. `auth` (or its `actAs`
+`VENDO_BASE_URL`, since the box calls back to your deployment's full public URL. `auth` (or its `actAs`
 half, hand-wired) unlocks host API calls while the user is away. Connectors
 add external tools. `VENDO_API_KEY` activates cloud-gated sharing, publishing,
 org overlays, and pinning — and fills the adapter slots you left unset with

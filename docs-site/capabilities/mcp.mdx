@@ -325,7 +325,8 @@ well-known routes before that second mount.
 
 ## Set VENDO_BASE_URL
 
-Set `VENDO_BASE_URL` to your product's public origin in every real deployment:
+Set `VENDO_BASE_URL` to your product's full public URL — path prefix included
+— in every real deployment:
 
 ```bash
 VENDO_BASE_URL=https://app.example.com
@@ -593,7 +594,8 @@ ordinary 404 rather than a 500.
 - **Discovery and audience binding.** The door derives its OAuth discovery
   documents (issuer, endpoint URLs, the protected-resource `resource`) and its
   token audience binding from `VENDO_BASE_URL` when set, so clients see your
-  public origin instead of an unreachable proxy-internal one. Forwarded
+  full public URL — path prefix included — instead of an unreachable
+  proxy-internal one. Forwarded
   headers such as `X-Forwarded-Host` are never trusted. Without it, the door
   falls back to the request URL, which is fine for local development and wrong
   behind a proxy.

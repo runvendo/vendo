@@ -35,7 +35,8 @@ Every non-2xx response uses `{ "error": { "code", "message" } }`.
 ## Common checks
 
 - A machine-backed app (layers 2 and 3) requires a configured sandbox adapter
-  and `VENDO_BASE_URL` for the box callback URLs.
+  and `VENDO_BASE_URL` — the app's full public URL, path prefix included — for
+  the box callback URLs.
 - Present-mode credential forwarding requires the wire to trust its own
   origin. In development it learns and trusts that origin automatically from
   the first request: no `VENDO_BASE_URL` needed. Every other environment
@@ -71,6 +72,18 @@ Every non-2xx response uses `{ "error": { "code", "message" } }`.
 - `/tick` requires the configured bearer secret.
 - Webhook verification uses the raw body and delivery headers.
 - Unknown instant UI formats render a contained notice instead of breaking the page.
+
+## Every page renders but the agent's data is 404s
+
+**Symptom:** the app looks perfect and every number the agent quotes fails.
+
+**Cause:** the client, the server and the OpenAPI spec disagree about the
+deployment's path prefix.
+
+**Fix:** set `VENDO_BASE_URL` to the app's full public URL, prefix included
+(`https://site.com/maple`); pass that same prefix plus `/api/vendo` as
+`<VendoProvider baseUrl="/maple/api/vendo">`; run `npx vendo doctor`, which
+reports `E-CFG-003` when the spec's server mount disagrees.
 
 ## Doctor probes
 

@@ -157,7 +157,7 @@ writes one audit event.
 ## Reverse proxies
 
 Behind a reverse proxy (Railway, Fly, any TLS terminator), set `VENDO_BASE_URL`
-to the product's public origin. Route-binding host tools execute against it as
+to the product's full public URL, path prefix included. Route-binding host tools execute against it as
 the trusted origin, the anonymous-session cookie stays `Secure`, and the MCP
 door derives its OAuth discovery metadata (issuer, endpoints, `resource`) and
 token audience binding from it instead of the proxy-internal request URL.
