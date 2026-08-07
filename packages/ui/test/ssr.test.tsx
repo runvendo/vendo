@@ -14,7 +14,6 @@ import {
   VendoPage,
   VendoPalette,
   VendoSlot,
-  VendoStage,
   VendoThread,
 } from "../src/chrome/index.js";
 import { AppFrame, PayloadView, TreeView } from "../src/tree/index.js";
@@ -29,11 +28,9 @@ import {
   useVendoStatus,
   useVendoTheme,
   useVendoThread,
-  useVoice,
 } from "../src/index.js";
 import * as rootEntry from "../src/index.js";
 import * as treeEntry from "../src/tree/index.js";
-import * as voiceEntry from "../src/voice/index.js";
 
 function EveryContractedHook() {
   const approvals = useApprovals();
@@ -44,7 +41,6 @@ function EveryContractedHook() {
   const activity = useActivity();
   const status = useVendoStatus();
   const thread = useVendoThread("thr_ssr");
-  const voice = useVoice();
   const theme = useVendoTheme();
   return (
     <span>
@@ -58,7 +54,6 @@ function EveryContractedHook() {
         activity.events.length,
         String(status.connected),
         thread.messages.length,
-        voice.state,
         theme.colors.background,
       ].join("|")}
     </span>
@@ -67,13 +62,12 @@ function EveryContractedHook() {
 
 describe("public source entries without a DOM", () => {
   it("server-renders every contracted hook from empty transport state", () => {
-    expect(rootEntry.useVoice).toBe(useVoice);
+    expect(rootEntry.useApps).toBe(useApps);
     expect(chromeEntry.VendoPage).toBeTypeOf("function");
     expect(treeEntry.TreeView).toBeTypeOf("function");
-    expect(voiceEntry.useVoice).toBe(useVoice);
 
     const html = renderToString(<VendoProvider><EveryContractedHook /></VendoProvider>);
-    expect(html).toContain("0|0|0|undefined|undefined|0|0|false|0|unavailable|");
+    expect(html).toContain("0|0|0|undefined|undefined|0|0|false|0|");
   });
 });
 
@@ -101,7 +95,6 @@ describe("every chrome surface server-renders without a DOM", () => {
     ["Remixable", <Remixable><SsrCard /></Remixable>],
     ["VendoPage", <VendoPage />],
     ["VendoPalette", <VendoPalette />],
-    ["VendoStage", <VendoStage />],
     ["ApprovalCard", <ApprovalCard approval={approval} onDecide={() => undefined} />],
     ["ActivityPanel", <ActivityPanel />],
     ["AutomationsPanel", <AutomationsPanel />],

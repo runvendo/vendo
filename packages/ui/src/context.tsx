@@ -7,7 +7,6 @@ import type { VendoDiscoverability, VendoGreeting } from "./chrome/discoverabili
 import type { ToolMetaMap } from "./chrome/humanize.js";
 import { getKitIntl, setKitIntl, type KitIntl } from "./kit/format.js";
 import { defaultVendoTheme, resolveTheme } from "./theme.js";
-import type { VoiceDriver } from "./voice/driver.js";
 
 export interface VendoContextValue {
   client: VendoClient;
@@ -15,8 +14,6 @@ export interface VendoContextValue {
   components: Record<string, ComponentType>;
   /** Resolved brand tokens (defaults ⊕ provider overrides). */
   theme: VendoTheme;
-  /** Optional host-provided voice transport (08 §3). */
-  voice?: { driver: VoiceDriver };
   /**
    * Optional chat-transport override (director/replay tooling). When absent,
    * threads use the live wire transport — this is never a default.
@@ -100,7 +97,6 @@ export function VendoProvider(props: {
   client?: VendoClient;
   components?: HostComponentsInput;
   theme?: Partial<VendoTheme>;
-  voice?: { driver: VoiceDriver };
   transport?: ChatTransport<UIMessage>;
   onPin?(app: { appId: string; payload: unknown }): void;
   /** The slot pins land in — see VendoContextValue.pinSlot. */
@@ -116,7 +112,7 @@ export function VendoProvider(props: {
   captureScreen?: boolean;
   children: ReactNode;
 }): ReactNode {
-  const { client, components, theme, voice, transport, onPin, pinSlot, tools, connectors, discoverability, greeting, intl, captureScreen, children } = props;
+  const { client, components, theme, transport, onPin, pinSlot, tools, connectors, discoverability, greeting, intl, captureScreen, children } = props;
   const currency = intl?.currency;
   const locale = intl?.locale;
   // Installed during RENDER, not in an effect: the formatters are called while
@@ -131,7 +127,6 @@ export function VendoProvider(props: {
       client: client ?? createVendoClient({}),
       components: hostComponentMap(components),
       theme: resolveTheme(defaultVendoTheme, theme),
-      voice,
       transport,
       onPin,
       pinSlot,
@@ -142,7 +137,7 @@ export function VendoProvider(props: {
       intl: resolvedIntl,
       captureScreen: captureScreen ?? true,
     }),
-    [client, components, theme, voice, transport, onPin, pinSlot, tools, connectors, discoverability, greeting, resolvedIntl, captureScreen],
+    [client, components, theme, transport, onPin, pinSlot, tools, connectors, discoverability, greeting, resolvedIntl, captureScreen],
   );
   return <VendoContext.Provider value={value}>{children}</VendoContext.Provider>;
 }

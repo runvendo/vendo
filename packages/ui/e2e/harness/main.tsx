@@ -29,7 +29,6 @@ import {
   VendoPage,
   VendoPalette,
   VendoSlot,
-  VendoStage,
   VendoThread,
   VendoToasts,
   VendoToolResult,
@@ -39,13 +38,6 @@ import {
 } from "../../src/chrome/index.js";
 import { AppFrame, PayloadView, TreeView } from "../../src/tree/index.js";
 import { browserTreeFixture } from "../fixtures/tree.js";
-import {
-  realtimeVoiceDriver,
-  type VoiceDriver,
-  type VoiceDriverEvent,
-  type VoiceDriverHandlers,
-  type VoiceSessionHandle,
-} from "../../src/voice/index.js";
 import {
   useEffect,
   useMemo,
@@ -1000,117 +992,6 @@ function PinDriftScenario() {
   );
 }
 
-class ScriptedBrowserVoiceDriver implements VoiceDriver {
-  start(handlers: VoiceDriverHandlers): VoiceSessionHandle {
-    let active = true;
-    const emit = (event: VoiceDriverEvent) => { if (active) handlers.onEvent(event); };
-    queueMicrotask(() => {
-      emit({ type: "state", state: "listening" });
-      emit({ type: "transcript", entry: { id: "voice-user", role: "user", text: "Show revenue", final: true } });
-      emit({ type: "transcript", entry: { id: "voice-assistant", role: "assistant", text: "Revenue is ready", final: true } });
-    });
-    return { stop: () => { active = false; } };
-  }
-}
-
-/** ENG-229 — a driver that replays an arbitrary event script, so every designed
- *  stage moment (amplitude, views, reconnect, error) is capturable. */
-class ReplayVoiceDriver implements VoiceDriver {
-  constructor(private readonly script: VoiceDriverEvent[], private readonly mutable = true) {}
-  start(handlers: VoiceDriverHandlers): VoiceSessionHandle {
-    let active = true;
-    queueMicrotask(() => {
-      for (const event of this.script) {
-        if (active) handlers.onEvent(event);
-      }
-    });
-    return {
-      ...(this.mutable ? { setMuted: () => undefined } : {}),
-      stop: () => { active = false; },
-    };
-  }
-}
-
-function voiceViewPayload(id: string, heading: string, body: string): UIPayload {
-  return {
-    formatVersion: "vendo-genui/v2",
-    root: "root",
-    nodes: [
-      { id: "root", component: "Surface", children: ["stack"] },
-      { id: "stack", component: "Stack", props: { gap: 8 }, children: [`${id}-h`, `${id}-b`] },
-      { id: `${id}-h`, component: "Text", props: { text: heading, variant: "heading" } },
-      { id: `${id}-b`, component: "Text", props: { text: body } },
-    ],
-  };
-}
-
-const VOICE_SHOWCASE_SCRIPT: VoiceDriverEvent[] = [
-  { type: "state", state: "listening" },
-  { type: "amplitude", level: 0.6 },
-  { type: "transcript", entry: { id: "v-user", role: "user", text: "What's outstanding this week, and draft the reminders?", final: true } },
-  { type: "transcript", entry: { id: "v-agent", role: "assistant", text: "Six invoices are outstanding — here's the view, and I queued the reminders for your approval.", final: true } },
-  { type: "view", view: { id: "view-outstanding", appId: "app_1", payload: voiceViewPayload("v1", "Outstanding this week", "$18,420 across 6 clients") } },
-  { type: "view", view: { id: "view-reminders", appId: "app_1", payload: voiceViewPayload("v2", "Reminder drafts", "3 drafts ready — sending needs your approval") } },
-];
-
-/** Voice-lane Cn-A — a connector call ends connect-required mid-session; the
- *  ConnectCard docks in the consent slot while the session stays live. */
-const VOICE_CONNECT_SCRIPT: VoiceDriverEvent[] = [
-  { type: "state", state: "listening" },
-  { type: "amplitude", level: 0.5 },
-  { type: "transcript", entry: { id: "c-user", role: "user", text: "Chase Meridian over Slack too.", final: true } },
-  { type: "transcript", entry: { id: "c-agent", role: "assistant", text: "I can do that once Slack is connected — I'll wait, keep talking.", final: true } },
-  { type: "connect", connect: { id: "connect-call-1", toolkit: "Slack", connector: "slack", message: "Sending Slack messages needs a connected Slack account." } },
-];
-
-/** A client whose approvals list is empty — for the drawer capture (the drawer
- *  auto-yields to pending consent, so the wire fixture's apr_1 would close it). */
-function noApprovalsClient(client: VendoClient): VendoClient {
-  return { ...client, approvals: { ...client.approvals, pending: async () => [] } };
-}
-
-/** Reproduces examples/demo-bank/src/app/vendo/page.tsx: VendoThread and VendoStage
- *  mount as siblings under one bounded, scrollable flex column (Maple's /vendo
- *  tab) — the composition where the docs/verification/simplify-v2-wave2
- *  browser smoke found the voice widget could crowd out the in-conversation
- *  approval card's buttons at short viewport heights (see
- *  e2e/voice-approval-overlap.spec.ts, which drives voice active here to
- *  reproduce it). */
-function ThreadVoiceStackScenario() {
-  const driver = useMemo(() => new ScriptedBrowserVoiceDriver(), []);
-  return (
-    <VendoProvider client={threadClient(baseClient, pendingThread)} components={components} theme={mapleTheme} voice={{ driver }}>
-      <div style={{ height: "calc(100vh - 96px)", minHeight: 0, display: "flex", flexDirection: "column", overflow: "auto" }}>
-        <VendoThread threadId="thr_1" />
-        <VendoStage />
-      </div>
-    </VendoProvider>
-  );
-}
-
-function VoiceShowcaseScenario({ script, approvals = true, theme }: {
-  script: VoiceDriverEvent[];
-  approvals?: boolean;
-  theme?: Partial<VendoTheme>;
-}) {
-  const driver = useMemo(() => new ReplayVoiceDriver(script), [script]);
-  return (
-    <VendoProvider
-      client={approvals ? baseClient : noApprovalsClient(baseClient)}
-      components={components}
-      theme={theme ?? mapleTheme}
-      voice={{ driver }}
-    >
-      <div style={{ height: 640, display: "flex", flexDirection: "column", overflow: "hidden",
-        border: "1px solid var(--vendo-border)", borderRadius: 12 }}>
-        <AutoOpen selector='button[aria-label="Start voice"], .fl-voice-foot button.fl-btn-primary'>
-          <VendoStage />
-        </AutoOpen>
-      </div>
-    </VendoProvider>
-  );
-}
-
 function AutoOpen({ selector, children }: { selector: string; children: ReactNode }) {
   useEffect(() => {
     queueMicrotask(() => document.querySelector<HTMLElement>(selector)?.click());
@@ -1280,49 +1161,6 @@ function TreeScenario({ jail = false }: { jail?: boolean }) {
       <TreeView tree={jail ? jailTree : tree} components={components} onAction={onAction} />
       {jail ? <output className="recorder" data-testid="action-recorder">{action ? JSON.stringify(action) : "No action recorded"}</output> : null}
     </TreeThemeBoundary>
-  );
-}
-
-function StageScenario() {
-  const driver = useMemo(() => new ScriptedBrowserVoiceDriver(), []);
-  return (
-    <VendoProvider client={baseClient} voice={{ driver }}>
-      <AutoOpen selector='button[aria-label="Start voice"], button'>
-        <VendoStage />
-      </AutoOpen>
-    </VendoProvider>
-  );
-}
-
-/** Voice-lane S-E — the idle invitation: host-provided suggestion chips. */
-function StageIdleScenario() {
-  const driver = useMemo(() => new ScriptedBrowserVoiceDriver(), []);
-  return (
-    <VendoProvider client={baseClient} voice={{ driver }}>
-      <VendoStage suggestions={[
-        "What's outstanding this week?",
-        "Draft reminders for overdue invoices",
-        "How did June close?",
-      ]} />
-    </VendoProvider>
-  );
-}
-
-/** LIVE scenario (OPENAI_API_KEY-gated spec): the REAL realtime WebRTC driver.
- *  The ephemeral client secret arrives in the URL hash — the standing API key
- *  never reaches the browser, exactly as the driver's getSession() seam intends. */
-function LiveStageScenario() {
-  const driver = useMemo(() => {
-    const clientSecret = decodeURIComponent(globalThis.location.hash.slice(1));
-    return realtimeVoiceDriver({
-      getSession: async () => ({ clientSecret }),
-      instructions: "You are a terse test agent. Say 'ready' and wait.",
-    });
-  }, []);
-  return (
-    <VendoProvider client={baseClient} voice={{ driver }}>
-      <VendoStage />
-    </VendoProvider>
   );
 }
 
@@ -2243,7 +2081,6 @@ function SlotPickerScenario() {
 function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme>; content: ReactNode; ownProvider?: boolean } {
   switch (pathname) {
     case "/thread": return { title: "Thread — dark theme", theme: darkTheme, content: <VendoThread threadId="thr_1" /> };
-    case "/thread-voice-stack": return { title: "Thread + Voice stage — stacked (Maple /vendo)", content: <ThreadVoiceStackScenario />, ownProvider: true };
     case "/composer": return { title: "Composer (Maple)", content: <ComposerScenario theme={mapleTheme} />, ownProvider: true };
     case "/composer-dark": return { title: "Composer — dark", content: <ComposerScenario theme={darkTheme} />, ownProvider: true };
     case "/thread-bounded": return { title: "Thread — bounded host pane", content: <BoundedThreadScenario />, ownProvider: true };
@@ -2271,23 +2108,6 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/activity-dark": return { title: "Activity — dark", theme: darkTheme, content: <ActivityPanel /> };
     case "/automations": return { title: "Automations", content: <AutomationsPanel /> };
     case "/notice": return { title: "Unconfigured policy", ownProvider: true, content: (<VendoProvider client={unconfiguredClient} components={components}><NoPolicyNotice /></VendoProvider>) };
-    case "/stage": return { title: "Voice stage", content: <StageScenario />, ownProvider: true };
-    case "/stage-idle": return { title: "Voice stage — idle invitation (S-E)", content: <StageIdleScenario />, ownProvider: true };
-    case "/stage-connect": return { title: "Voice stage — connect during voice (Cn-A)", content: <VoiceShowcaseScenario script={VOICE_CONNECT_SCRIPT} approvals={false} />, ownProvider: true };
-    case "/stage-live": return { title: "Voice stage (live)", content: <LiveStageScenario />, ownProvider: true };
-    case "/stage-full": return { title: "Voice stage — views + consent (Maple)", content: <VoiceShowcaseScenario script={VOICE_SHOWCASE_SCRIPT} />, ownProvider: true };
-    case "/stage-full-dark": return { title: "Voice stage — dark", content: <VoiceShowcaseScenario script={VOICE_SHOWCASE_SCRIPT} theme={darkTheme} />, ownProvider: true };
-    case "/stage-drawer": return { title: "Voice stage — transcript drawer", content: <VoiceShowcaseScenario script={VOICE_SHOWCASE_SCRIPT} approvals={false} />, ownProvider: true };
-    case "/stage-reconnecting": return {
-      title: "Voice stage — reconnecting",
-      content: <VoiceShowcaseScenario approvals={false} script={[{ type: "state", state: "listening" }, { type: "transcript", entry: { id: "v-user", role: "user", text: "Keep going with the reminders", final: true } }, { type: "state", state: "reconnecting" }]} />,
-      ownProvider: true,
-    };
-    case "/stage-error": return {
-      title: "Voice stage — error",
-      content: <VoiceShowcaseScenario approvals={false} script={[{ type: "error", error: { message: "Microphone permission was denied — allow the mic and retry." } }]} />,
-      ownProvider: true,
-    };
     case "/tree": return { title: "Tree containment", content: <TreeScenario /> };
     case "/tree-jail": return { title: "Generated component jail", content: <TreeScenario jail /> };
     case "/tree-injected": return { title: "Injected payload (captured host component)", content: <InjectedTreeScenario /> };

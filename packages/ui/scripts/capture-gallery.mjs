@@ -7,7 +7,7 @@
 //
 // Prereqs: ffmpeg on PATH. Usage:
 //   node scripts/capture-gallery.mjs            # capture all GIF beats
-//   node scripts/capture-gallery.mjs voice-consent long-thread   # a subset
+//   node scripts/capture-gallery.mjs long-thread activity   # a subset
 //   node scripts/capture-gallery.mjs cards      # one PNG per card case
 //
 // `cards` is the designed CARD reference (card audit §10): it drives the
@@ -139,23 +139,6 @@ const BEATS = {
     scenario: "page-chat-dark",
     viewport: VIEWPORT,
     async play() { await wait(2000); },
-  },
-  "voice-consent": {
-    scenario: "stage-full",
-    viewport: VIEWPORT,
-    async play(page) {
-      await page.locator(".fl-voice-consent").waitFor({ timeout: 12_000 }).catch(() => {});
-      await wait(2600); // hold on the feed + consent bar
-    },
-  },
-  "voice-drawer": {
-    scenario: "stage-drawer",
-    viewport: VIEWPORT,
-    async play(page) {
-      await wait(1200);
-      await page.getByRole("button", { name: "Transcript" }).click().catch(() => {});
-      await wait(1800);
-    },
   },
   "activity": {
     scenario: "activity",

@@ -5,7 +5,6 @@ import { VendoRoot as UmbrellaVendoRoot, type ToolMetaMap } from "@vendoai/vendo
 import { withBasePath } from "@/lib/base-path";
 import { mapleRegistry } from "@/vendo/registry";
 import { mapleTheme } from "@/vendo/theme";
-import { mapleRealtimeVoiceDriver } from "./voice-realtime";
 
 const usd = (cents: number) =>
   `$${(cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -34,7 +33,6 @@ export function VendoRoot({
       baseUrl={withBasePath("/api/vendo")}
       components={mapleRegistry}
       theme={mapleTheme}
-      voice={{ driver: mapleRealtimeVoiceDriver }}
       // "Pin to dashboard" lands here. Maple used to answer that with its own
       // /api/demo/pin route writing doc.placements by hand; placement is a
       // first-class Vendo write now, so naming the slot is the whole wiring.

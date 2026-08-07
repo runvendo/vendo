@@ -40,7 +40,6 @@ const VALUE_EXPORTS = [
   "vendoToast",
   "dismissAllVendoToasts",
   "WaitingQueue",
-  "VendoStage",
   // Shelf Task 4 — the conversation-opening registry seam (slot remix,
   // triggers, palette defaults all route through it).
   "openVendoConversation",

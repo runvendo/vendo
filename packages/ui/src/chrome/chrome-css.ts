@@ -21,7 +21,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   /* brand → shell token bridge */
   --vendo-fg: var(--vendo-color-text, #14151a);
   /* Muted is pulled ~40% toward the text color so small muted labels
-     (.fl-picker-group, .fl-voice-status, captions) clear WCAG AA 4.5:1 on the
+     (.fl-picker-group, captions) clear WCAG AA 4.5:1 on the
      glass surfaces — in BOTH schemes, since text always contrasts the bg. */
   --vendo-fg-muted: color-mix(in srgb, var(--vendo-color-muted, #8a8b92) 45%, var(--vendo-color-text, #14151a));
   --vendo-bg: var(--vendo-color-background, #f3ede2);
@@ -501,7 +501,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 
 /* The tool chip was replaced by the build beats above; only its error line
    survives (the voice consent bar's inline failure text). */
-.fl-tool-err { color: var(--vendo-danger); }
 @keyframes fl-spin { to { transform: rotate(360deg); } }
 
 /* ---------- approval / buttons ---------- */
@@ -1379,194 +1378,8 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   color: var(--vendo-fg-muted); font: 600 12px/1 var(--vendo-font); }
 .fl-toasts-dismiss:hover { color: var(--vendo-fg); }
 @keyframes fl-toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-/* ---------- realtime voice stage (ENG-185) ---------- */
-/* The stage fills the surface that launched it. The blob head is pinned; the
-   feed scrolls beneath it; the caption + footer stay anchored at the bottom.
-   overflow hidden: when the stage shares a bounded flex column with a thread
-   (Maple /vendo stacks them as siblings) a short viewport squeezes this root
-   toward zero height — without the clip its foot (the Transcript button) kept
-   painting over the thread content above and STOLE ITS CLICKS (the in-thread
-   Approve button's lower half landed on Transcript at ~729px-tall viewports).
-   A squeezed stage must clip to its own box, never overlay a sibling. */
-.fl-voice-root { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; }
-.fl-voice-root > .fl-voice-stage { flex: 1; }
-.fl-voice-stage { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0;
-  animation: fl-voice-rise .42s cubic-bezier(.22, 1, .36, 1) both; }
-@keyframes fl-voice-rise { from { opacity: 0; transform: translateY(18px) scale(.985); }
-  to { opacity: 1; transform: none; } }
-.fl-voice-stage.is-leaving { animation: fl-voice-settle .5s ease both; }
-@keyframes fl-voice-settle { from { opacity: 1; transform: none; }
-  to { opacity: 0; transform: translateY(14px) scale(.99); } }
-
-/* Presence rests centered until the first view lands, then rises to the top.
-   Grid rows [lift · head · feed]: the lift spacer animates 1fr → 0fr, carrying
-   the head from vertical center up to the top as the feed opens beneath it. */
-.fl-voice-canvas { flex: 1; min-height: 0; display: grid;
-  grid-template-rows: 1fr auto 1fr;
-  transition: grid-template-rows .55s cubic-bezier(.22, 1, .36, 1); }
-.fl-voice-canvas.has-views { grid-template-rows: 0fr auto 1fr; }
-.fl-voice-lift { min-height: 0; }
-.fl-voice-head { display: flex; flex-direction: column; align-items: center; gap: 8px;
-  padding: 18px 0 10px; flex-shrink: 0; }
-.fl-voice-blob { position: relative; display: grid; place-items: center; border-radius: 50%;
-  color: var(--vendo-accent); transition: transform .12s ease; }
-.fl-voice-blob .fl-voice-disc { width: 46%; height: 46%; border-radius: 50%;
-  background: var(--vendo-accent); transition: background .2s, opacity .2s; }
-.fl-voice-blob.is-muted .fl-voice-disc, .fl-voice-blob.is-error .fl-voice-disc { opacity: .38; }
-.fl-voice-blob.is-error .fl-voice-disc { background: var(--vendo-fg-muted); }
-.fl-voice-glyph { position: absolute; display: grid; place-items: center; color: var(--vendo-fg);
-  opacity: .85; }
-.fl-voice-status { font: 500 12px/1 var(--vendo-font); color: var(--vendo-fg-muted);
-  letter-spacing: .01em; min-height: 12px; }
-.fl-voice-stage.is-speaking .fl-voice-status { color: var(--vendo-fg); }
-
-/* The scroll edges blur out: content dissolves under the blob and above the
-   caption. A soft alpha mask on the scroller + frosted strips (backdrop blur,
-   themselves mask-faded so the blur tapers instead of ending on a hard line). */
-.fl-voice-feedwrap { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.fl-voice-feedwrap::before, .fl-voice-feedwrap::after { content: ""; position: absolute; left: 0; right: 0;
-  height: 40px; z-index: 1; pointer-events: none; }
-.fl-voice-feedwrap::before { top: 0;
-  -webkit-mask-image: linear-gradient(180deg, #000 30%, transparent);
-  mask-image: linear-gradient(180deg, #000 30%, transparent); }
-.fl-voice-feedwrap::after { bottom: 0;
-  -webkit-mask-image: linear-gradient(0deg, #000 30%, transparent);
-  mask-image: linear-gradient(0deg, #000 30%, transparent); }
-/* An ACTUAL stage: each view is a full slide; scroll pages between slides
-   (mandatory snap — one view owns the stage at rest, always). */
-.fl-voice-feed { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain;
-  scroll-snap-type: y mandatory;
-  display: flex; flex-direction: column; padding: 0 18px; scrollbar-width: none;
-  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 24px, #000 calc(100% - 22px), transparent);
-  mask-image: linear-gradient(180deg, transparent 0, #000 24px, #000 calc(100% - 22px), transparent); }
-.fl-voice-feed::-webkit-scrollbar { display: none; }
-/* Slides are slightly shorter than the stage and snap to CENTER, so the
-   neighbors peek in at the top/bottom edges — blurred, smaller, unmistakably
-   "there's more" — and grow into the frame as they take focus. A too-tall
-   view scrolls inside its card instead of hanging below the fold. */
-.fl-voice-slide { height: calc(100% - 84px); box-sizing: border-box; flex-shrink: 0;
-  scroll-snap-align: center; scroll-snap-stop: always;
-  display: flex; align-items: center; justify-content: center; padding: 4px 0;
-  /* Off-stage: blurred, dimmed, visibly smaller; the focused one is crisp
-     and whole. The transition IS the "animate into the frame" beat. */
-  filter: blur(2.5px); opacity: .45; transform: scale(.78);
-  transition: filter .45s ease, opacity .45s ease, transform .45s ease; }
-.fl-voice-slide.is-focus { filter: none; opacity: 1; transform: none; }
-/* Neighbors hug the boundary nearest the stage, so what peeks is the CARD's
-   edge, not empty slide padding. */
-.fl-voice-slide.is-before { align-items: flex-end; }
-.fl-voice-slide.is-after { align-items: flex-start; }
-/* Edge spacers give the deck's first/last slide the scroll room to reach
-   true center — without them the ends rest half-a-peek off-center. */
-.fl-voice-feed::before, .fl-voice-feed::after { content: ""; flex: 0 0 42px; }
-@media (prefers-reduced-motion: no-preference) {
-  /* \`backwards\`, never \`both\`: a forwards fill would pin the keyframe's
-     \`transform: none; opacity: 1\` over the off-stage shrink/dim forever. */
-  .fl-voice-slide { animation: fl-item-in .36s cubic-bezier(.22, 1, .36, 1) backwards; }
-}
-/* Tall views scroll inside their slide — mandatory snap never traps content.
-   No border-radius here: the card has no background of its own, so a radius
-   would only clip the flush top corners of the sandboxed view (the generated
-   title/table headers sit at the iframe's edge — margin:0 body). The rounding
-   belongs to the view's own surfaces, and to the pending card below. */
-.fl-voice-slide .fl-voice-card { width: min(720px, 100%); max-height: 100%; overflow: auto;
-  scrollbar-width: none; }
-.fl-voice-slide .fl-voice-card::-webkit-scrollbar { display: none; }
-.fl-voice-slide.is-pending .fl-voice-card { border: 1px solid var(--vendo-border); padding: 12px;
-  border-radius: var(--vendo-radius); background: var(--vendo-surface); }
-/* Slide dots — where you are among the session's views; tap to jump. */
-.fl-voice-dots { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); z-index: 2;
-  display: flex; flex-direction: column; gap: 8px; }
-.fl-voice-dots button { width: 7px; height: 7px; border-radius: 50%; border: 0; padding: 0;
-  cursor: pointer; background: color-mix(in srgb, var(--vendo-fg) 22%, transparent);
-  transition: background .2s ease, transform .2s ease; }
-.fl-voice-dots button.is-on { background: var(--vendo-accent); transform: scale(1.3); }
-
-/* Lives in the head, right under the blob + status — the words stay with the
-   presence. Fixed height (~2 lines) so the feed doesn't jump as lines stream. */
-/* Two sticky rows — your last line and the agent's — each clamped so long
-   streaming lines show their tail, not their start. Settled lines dim
-   instead of vanishing. */
-.fl-voice-caption { height: 62px; padding: 0 22px; text-align: center; max-width: 620px;
-  font-size: 13.5px; line-height: 1.45; flex-shrink: 0; overflow: hidden;
-  display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px; }
-.fl-voice-caption > span { display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }
-.fl-voice-caption .is-user { color: var(--vendo-fg-muted); font-size: 12.5px; -webkit-line-clamp: 1; }
-.fl-voice-caption .is-user::before { content: "“"; }
-.fl-voice-caption .is-user::after { content: "”"; }
-.fl-voice-caption .is-agent { color: var(--vendo-fg); -webkit-line-clamp: 2; }
-.fl-voice-caption .is-settled { opacity: .55; transition: opacity .4s ease; }
-.fl-voice-caption em { font-style: italic; color: var(--vendo-fg-muted); }
-
-/* ---- consent bar: approvals dock at the edge, the agent's UI keeps the
-   stage. Act tier breathes the listening ring (spoken yes acceptable);
-   critical goes amber with the named confirm; settled = transient receipt. */
-.fl-voice-consent { margin: 0 18px 8px; padding: 9px 12px; border-radius: 13px; flex-shrink: 0;
-  display: flex; align-items: center; gap: 10px; font-size: 12.5px;
-  border: 1px solid var(--vendo-border-strong); background: var(--vendo-surface);
-  box-shadow: var(--vendo-shadow-float); animation: fl-item-in .3s cubic-bezier(.22, 1, .36, 1) both; }
-.fl-voice-consent.is-listening { animation: fl-item-in .3s cubic-bezier(.22, 1, .36, 1) both,
-  fl-voice-ring 2.2s ease-in-out .3s infinite; }
-.fl-voice-consent-fact { font-weight: 400; color: var(--vendo-fg-muted); }
-.fl-voice-consent-warn { font-size: 11px; font-weight: 500; color: var(--vendo-warn-text); }
-.fl-voice-consent.is-critical { border-color: color-mix(in srgb, var(--vendo-warn-edge) 55%, var(--vendo-border)); }
-.fl-voice-consent.is-receipt { justify-content: center; font-weight: 600; color: var(--vendo-ok);
-  border-color: color-mix(in srgb, var(--vendo-ok) 40%, var(--vendo-border)); }
-.fl-voice-consent.is-receipt.is-declined { color: var(--vendo-fg-muted);
-  border-color: var(--vendo-border); }
-
-.fl-voice-banner { margin: 0 18px 8px; padding: 9px 13px; border-radius: 12px; flex-shrink: 0;
-  border: 1px solid var(--vendo-danger-border); background: var(--vendo-danger-bg);
-  color: var(--vendo-danger); font-size: 12.5px; display: flex; align-items: center; gap: 10px; }
-.fl-voice-stage.is-reconnecting .fl-voice-banner { border-color: var(--vendo-border-strong);
-  background: var(--vendo-surface); color: var(--vendo-fg-muted); }
-
-.fl-voice-foot { display: flex; align-items: center; justify-content: space-between;
-  padding: 6px 14px 12px; flex-shrink: 0; }
-.fl-voice-drawer-btn { border: 0; background: transparent; color: var(--vendo-fg-muted);
-  font: 500 11.5px/1 var(--vendo-font); letter-spacing: .02em; cursor: pointer; padding: 6px 4px; }
-.fl-voice-drawer-btn:hover { color: var(--vendo-fg); }
-.fl-voice-controls { display: flex; align-items: center; gap: 6px; }
-.fl-voice-controls .fl-icon-btn.is-active { color: var(--vendo-danger); }
-
-.fl-voice-drawer { position: absolute; left: 10px; right: 10px; bottom: 46px; max-height: 46%;
-  overflow: auto; z-index: 4; padding: 12px 14px; border-radius: 14px;
-  border: 1px solid var(--vendo-border-strong); background: var(--vendo-surface);
-  box-shadow: var(--vendo-shadow-float); display: flex; flex-direction: column; gap: 8px;
-  animation: fl-fade-in .16s ease; }
-.fl-voice-drawer-empty { font-size: 12px; color: var(--vendo-fg-muted); text-align: center; padding: 8px; }
-.fl-voice-line { display: grid; grid-template-columns: 44px 1fr; gap: 10px; font-size: 12.5px; line-height: 1.45; }
-.fl-voice-line-role { color: var(--vendo-fg-muted); font-weight: 600; font-size: 11px; padding-top: 1px; }
-.fl-voice-line.is-user span:last-child { color: var(--vendo-fg-muted); }
-.fl-voice-line.is-agent span:last-child { color: var(--vendo-fg); }
-.fl-voice-line em { font-style: italic; color: var(--vendo-fg-muted); }
-
-/* ---- approval card voice/tier registers (ENG-185 × ENG-193) ---- */
-/* Act-tier while a spoken yes is acceptable: a soft breathing ring. */
-.fl-approval-listening { animation: fl-voice-ring 2.2s ease-in-out infinite; }
-@keyframes fl-voice-ring {
-  0%, 100% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--vendo-accent) 34%, transparent); }
-  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--vendo-accent) 12%, transparent); } }
-/* Critical: amber always-confirm register — voice announces, the hand confirms. */
 /* Settled: the card becomes a receipt. */
 .fl-approval-approved { border-color: color-mix(in srgb, var(--vendo-ok) 45%, var(--vendo-border)); }
-
-@media (prefers-reduced-motion: reduce) {
-  .fl-voice-stage, .fl-voice-stage.is-leaving, .fl-voice-slide { animation: none; opacity: 1; }
-  .fl-voice-canvas { transition: none; }
-  .fl-voice-slide:not(.is-focus) { opacity: .45; }
-  .fl-voice-blob { transition: none; transform: none !important; }
-  .fl-approval-listening { animation: none;
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--vendo-accent) 30%, transparent); }
-  .fl-voice-consent, .fl-voice-consent.is-listening { animation: none;
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--vendo-accent) 30%, transparent); }
-  /* No animated blur for vestibular-sensitive users: unfocused slides dim only. */
-  .fl-voice-slide { transition: none; filter: none; }
-  .fl-voice-dots button { transition: none; }
-}
-
-.fl-voice-consent.is-automation { display: block; padding: 0; background: none; border: none; box-shadow: none; }
-.fl-voice-consent.is-automation .fl-approval { width: 100%; max-width: none; }
 
 /* --- a11y hardening (design port): guaranteed focus ring + AA ceremony buttons --- */
 .vendo-root :focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
@@ -1720,108 +1533,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 .fl-share-fork-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 /* ================== end ui-lane-panels lane block ================== */
-
-/* ================================================================
-   voice-lane composite (2026-07-19) — ui-lane-voice's converged Round 2:
-   PiP dock (P-C) · speaker lean (P-F) · rolling ticker (S-C) · idle
-   invitation (S-E) · attention vignette (S-F) · spoken-yes consent (C-A) ·
-   connect-during-voice slot (Cn-A) · mobile safe-area foot (M-A).
-   One marked block so every lane's chrome-css edits merge cleanly.
-   ================================================================ */
-
-/* ---- S-C rolling ticker: the caption slot holds the last 3 transcript
-   lines, newest bright, older fading and shrinking upward. */
-.fl-voice-caption { height: 84px; }
-.fl-voice-tick { animation: fl-voice-tick-up .4s cubic-bezier(.22, 1, .36, 1) both; }
-.fl-voice-tick.is-age-2 { opacity: .3; font-size: 11.5px; }
-.fl-voice-tick.is-age-1 { opacity: .55; font-size: 12.5px; }
-.fl-voice-tick.is-age-0 { opacity: 1; }
-.fl-voice-tick.is-age-0.is-settled { opacity: .8; }
-@keyframes fl-voice-tick-up { from { transform: translateY(9px); opacity: 0; } }
-
-/* ---- P-C dock: once a view lands the head becomes a corner pill (travel is
-   FLIP-animated in stage.tsx on fluidkit MorphSurface's BODY_SPRING; the ball
-   remounts at 30px — never a scaled svg). The pill and the docked ticker own
-   an aligned top band; the deck starts below it. */
-.fl-voice-stage.is-docked .fl-voice-canvas { grid-template-rows: 0fr auto 1fr; }
-.fl-voice-stage.is-docked .fl-voice-head { position: absolute; top: 12px; right: 14px; z-index: 5;
-  flex-direction: row; align-items: center; gap: 8px; min-height: 52px;
-  padding: 5px 12px 5px 6px; border-radius: 999px;
-  border: 1px solid var(--vendo-border-strong); background: var(--vendo-surface);
-  box-shadow: var(--vendo-shadow-float); }
-.fl-voice-stage.is-docked .fl-voice-status { min-height: auto; }
-.fl-voice-stage.is-docked > .fl-voice-caption { position: absolute; top: 12px; left: 14px; z-index: 5;
-  height: auto; min-height: 52px; max-width: min(46%, 360px); padding: 8px 12px;
-  text-align: left; align-items: flex-start; justify-content: center;
-  border-radius: 12px; border: 1px solid var(--vendo-border); background: var(--vendo-surface);
-  animation: fl-item-in .3s cubic-bezier(.22, 1, .36, 1) both; }
-.fl-voice-stage.is-docked > .fl-voice-caption .fl-voice-tick.is-age-2 { display: none; }
-.fl-voice-stage.is-docked .fl-voice-feedwrap { margin-top: 80px; }
-
-/* ---- P-F speaker lean: the presence settles toward the user's words and
-   lifts for its own — center-stage only; the docked pill stays still. */
-.fl-voice-stage:not(.is-docked) .fl-voice-blob { transition: transform .6s cubic-bezier(.22, 1, .36, 1), filter .6s ease; }
-.fl-voice-stage:not(.is-docked) .fl-voice-blob.is-lean-user { transform: translateY(7px) scale(.97); }
-.fl-voice-stage:not(.is-docked) .fl-voice-blob.is-lean-agent { transform: translateY(-5px) scale(1.04); filter: brightness(1.06); }
-.fl-voice-glow { width: 120px; height: 26px; margin-top: -20px; border-radius: 50%; flex-shrink: 0;
-  background: radial-gradient(ellipse, color-mix(in srgb, var(--vendo-accent) 22%, transparent), transparent 70%);
-  filter: blur(6px); pointer-events: none; animation: fl-fade-in .6s ease both; }
-
-/* ---- S-E idle invitation: host-provided suggestion chips under the presence. */
-.fl-voice-invite { display: flex; flex-direction: column; gap: 8px; align-items: center; margin-top: 6px; }
-.fl-voice-chip { border: 1px solid var(--vendo-border-strong); border-radius: 999px; cursor: pointer;
-  background: var(--vendo-surface);
-  color: var(--vendo-fg); font: 500 12.5px/1 var(--vendo-font); padding: 10px 16px;
-  animation: fl-item-in .4s cubic-bezier(.22, 1, .36, 1) backwards;
-  transition: border-color .15s, transform .15s; }
-.fl-voice-chip:hover { border-color: var(--vendo-accent); transform: translateY(-1px); }
-.fl-voice-chip:nth-child(2) { animation-delay: .08s; }
-.fl-voice-chip:nth-child(3) { animation-delay: .16s; }
-.fl-voice-invite-hint { font: 500 11.5px/1 var(--vendo-font); color: var(--vendo-fg-muted); margin-top: 2px; }
-
-/* ---- S-F attention vignette: a whisper-soft dim outside the point of
-   attention — the ball while the agent speaks, the card once docked. */
-.fl-voice-spot { position: absolute; inset: 0; pointer-events: none; z-index: 1; opacity: 0;
-  background: radial-gradient(circle var(--fl-spot-r, 260px) at var(--fl-spot-x, 50%) var(--fl-spot-y, 30%),
-    transparent 60%, color-mix(in srgb, var(--vendo-fg) 5%, transparent));
-  transition: opacity .8s ease; }
-.fl-voice-stage.is-spot-on .fl-voice-spot { opacity: 1; }
-
-/* ---- C-A spoken-yes: the act-tier bar says voice works, with a live
-   equalizer while the mic is open; a heard yes flips the hint. */
-.fl-voice-consent-hint { font-size: 11px; color: var(--vendo-fg-muted); display: flex; align-items: center; }
-.fl-voice-consent-hint.is-heard { color: var(--vendo-ok); font-weight: 600; }
-.fl-voice-eq { display: inline-flex; gap: 2px; align-items: flex-end; height: 12px; margin-left: 6px; }
-.fl-voice-eq i { width: 2.5px; height: 100%; border-radius: 2px; background: currentColor;
-  animation: fl-voice-eq 1s ease-in-out infinite; }
-.fl-voice-eq i:nth-child(1) { height: 60%; }
-.fl-voice-eq i:nth-child(2) { animation-delay: .15s; }
-.fl-voice-eq i:nth-child(3) { height: 45%; animation-delay: .3s; }
-@keyframes fl-voice-eq { 0%, 100% { transform: scaleY(.5); } 50% { transform: scaleY(1); } }
-
-/* ---- Cn-A connect-during-voice: the ConnectCard docks at the consent edge,
-   centered (the approval card's max-width would left-hug a full-width slot),
-   with the connecting hint stacked under the button as a caption. */
-.fl-voice-connect { margin: 0 18px 8px; flex-shrink: 0; display: flex; justify-content: center; }
-.fl-voice-connect .fl-approval { align-self: auto; width: 100%; margin-inline: auto;
-  animation: fl-item-in .3s cubic-bezier(.22, 1, .36, 1) both; }
-
-/* ---- M-A mobile safe-area foot: the controls clear the home indicator, and
-   touch surfaces get real 48px targets. */
-.fl-voice-foot { padding-bottom: max(12px, env(safe-area-inset-bottom, 0px) + 10px); }
-@media (pointer: coarse) {
-  .fl-voice-foot { padding: 10px 16px calc(env(safe-area-inset-bottom, 0px) + 20px); }
-  .fl-voice-controls { gap: 10px; }
-  .fl-voice-controls .fl-icon-btn { width: 48px; height: 48px; border-radius: 14px; }
-  .fl-voice-controls .fl-btn { min-height: 48px; padding: 12px 26px; border-radius: 999px; font-size: 14px; }
-  .fl-voice-drawer-btn { padding: 14px 10px; font-size: 12.5px; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .fl-voice-tick, .fl-voice-chip, .fl-voice-glow, .fl-voice-eq i { animation: none; }
-  .fl-voice-spot { transition: none; }
-  .fl-voice-stage:not(.is-docked) .fl-voice-blob { transition: none; }
-}
 
 /* ====================================================================
    ui-lane-thread block — the converged thread-surface picks (C5 bar pin,
@@ -2100,7 +1811,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
    users. (The data-vendo-motion="reduced" root rule already covers theme-level
    reduction; this covers the OS preference.) */
 @media (prefers-reduced-motion: reduce) {
-  .fl-overlay-scrim, .fl-toasts-card, .fl-voice-drawer,
+  .fl-overlay-scrim, .fl-toasts-card,
   .fl-approvals-slide, .fl-auto-runs-dot, .fl-acct-severed { animation: none; opacity: 1; }
 }
 

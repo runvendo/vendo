@@ -123,8 +123,8 @@ export function VendoThread({
     const timer = setTimeout(() => {
       const card = approvalCardRefs.current.get(fresh)?.querySelector<HTMLElement>(".fl-approval");
       // block: "end", not "center": a sibling surface sharing this pane's
-      // flex column (VendoStage docked below the thread, Maple's /vendo tab)
-      // can leave the list shorter than the card itself at a short viewport
+      // flex column can leave the list shorter than the card itself at a
+      // short viewport
       // height — centering then crops evenly off BOTH edges, hiding the
       // card's own Approve/Decline row behind whatever renders next in flow
       // with no way to reach it. Bottom-aligning always leaves the action

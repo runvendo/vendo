@@ -198,7 +198,7 @@ describe("eject templates pack-and-inspect", () => {
     // hooks call the guarded door through this package's existing wire client
     // rather than a second fetch layer (see the kit runtime PR). The eject
     // surface legitimately grew by one subpath; it did not otherwise change.
-    expect(Object.keys(packageJson.exports)).toEqual([".", "./chrome", "./tree", "./kit", "./client", "./voice"]);
+    expect(Object.keys(packageJson.exports)).toEqual([".", "./chrome", "./tree", "./kit", "./client"]);
     expect(packageJson.files).toEqual(["dist", "README.md"]);
   }, 60_000);
 });

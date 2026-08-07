@@ -1,7 +1,7 @@
 {
   "name": "@vendoai/ui",
   "version": "0.8.0",
-  "description": "Headless hooks + optional chrome for Vendo: the client, every surface, the vendo-genui/v2 tree renderer, and the voice stage.",
+  "description": "Headless hooks + optional chrome for Vendo: the client, every surface, and the vendo-genui/v2 tree renderer.",
   "keywords": [
     "ai",
     "agent",
@@ -47,10 +47,6 @@
     "./client": {
       "types": "./dist/client-impl.d.ts",
       "default": "./dist/client-impl.js"
-    },
-    "./voice": {
-      "types": "./dist/voice/index.d.ts",
-      "default": "./dist/voice/index.js"
     }
   },
   "files": [

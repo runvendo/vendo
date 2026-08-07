@@ -548,10 +548,10 @@ describe("the widened audit — no chrome surface renders a developer string", (
       readdirSync(join("src", dir), { recursive: true, encoding: "utf8" })
         .filter(name => /\.tsx?$/.test(name) && !name.endsWith(".d.ts"))
         .map(name => `${dir}/${name}`);
-    return [...collect("chrome"), ...collect("voice")];
+    return collect("chrome");
   };
 
-  it("has no NEW raw-error render anywhere under src/chrome or src/voice", () => {
+  it("has no NEW raw-error render anywhere under src/chrome", () => {
     // Two shapes: the JSX render of a failure's own sentence (`{error.message}`,
     // never a `${...}` interpolation or a consumer-authored `message` prop), and
     // the state write that feeds one (`setError(reason instanceof Error ? …)`).

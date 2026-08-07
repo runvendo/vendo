@@ -112,23 +112,6 @@ test("workspace tabs rove with arrows and open an app by keyboard", async ({ pag
   await expect(page.getByText("Invoices app surface").first()).toBeVisible();
 });
 
-test("voice stage starts and stops entirely by keyboard", async ({ page }) => {
-  test.fixme(
-    true,
-    "the readiness gate 'Revenue is ready' never appears: the stage no longer renders its transcript inline (it moved behind the Transcript drawer, see /stage-drawer). Needs a voice-lane decision on the right gate, not a keyboard fix.",
-  );
-  await openScenario(page, "stage");
-  await expect(page.getByText("Revenue is ready")).toBeVisible();
-  const toggle = page.getByRole("button", { name: "Stop voice" });
-  await toggle.focus();
-  await expectFocusIndicator(page);
-  await page.keyboard.press("Enter");
-  await expect(page.getByRole("button", { name: "Start voice" })).toBeVisible();
-  await expect(page.getByRole("status")).toContainText("Voice: idle");
-  await page.keyboard.press("Enter");
-  await expect(page.getByRole("button", { name: "Stop voice" })).toBeVisible();
-});
-
 test("activity load-more is keyboard reachable and appends a page", async ({ page }) => {
   test.fixme(
     true,

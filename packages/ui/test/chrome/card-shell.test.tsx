@@ -150,7 +150,6 @@ describe("one card shell, three laws", () => {
     const CARDS = /^(approval-card|approval-sheet|automation-card|connect-card|grant-set-card|embeds|waiting-queue|card-shell|morph-toast)\.tsx$/;
     const files = [
       ...readdirSync("src/chrome").filter(name => CARDS.test(name)).map(name => join("src/chrome", name)),
-      join("src/voice", "voice-consent.tsx"),
       // Added at integration: the slot is the most PUBLIC surface we have (it
       // sits on the host's own page) and it rendered `reason.message` verbatim.
       join("src/chrome", "vendo-slot.tsx"),

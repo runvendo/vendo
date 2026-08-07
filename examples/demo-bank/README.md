@@ -24,7 +24,7 @@ cd examples/demo-bank
 cp .env.example .env.local
 # Fill in VENDO_API_KEY (+ VENDO_DEV_CREDENTIAL=vendo-cloud, MAPLE_STORE=local
 # — the standing local posture; see "Store posture") or ANTHROPIC_API_KEY for
-# a BYO model key. OPENAI_API_KEY enables realtime voice.
+# a BYO model key.
 pnpm dev
 ```
 
@@ -69,17 +69,12 @@ the typed client and SWR hooks. The deterministic in-memory store lives under
 Vendo is composed once in `src/vendo/server.ts` with
 `createVendo({ model, principal, policy, connectors })` and mounted by the
 single catch-all route at `/api/vendo/[...vendo]`. The React surface uses the
-umbrella `VendoRoot`, UI chrome/tree/voice subpaths, Maple's registered host
+umbrella `VendoRoot`, UI chrome/tree subpaths, Maple's registered host
 components, and the frozen theme in `.vendo/theme.json`.
 
 The `.vendo/` directory is the committed host contract: tools, overrides,
 policy, product brief, and theme. `vendo sync` runs before development and
 production builds.
-
-Realtime voice mints a short-lived browser credential at `POST /api/voice`
-and then uses the UI package's WebRTC driver. The current frozen voice seam
-carries state and transcripts; legacy voice-only tool/view choreography is
-documented at its migration site.
 
 Cmd/Ctrl+K opens Vendo. Cmd/Ctrl+Shift+. restores Maple's deterministic seed.
 

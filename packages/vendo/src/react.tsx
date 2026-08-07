@@ -80,9 +80,6 @@ export {
   defaultVendoTheme,
   resolveTheme,
   themeCssVariables,
-  // voice/use-voice.ts
-  useVoice,
-  type UseVoiceResult,
   // wire-types.ts
   type OpenSurface,
   type InClientVenue,

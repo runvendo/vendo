@@ -17,5 +17,4 @@ export * from "./hooks/index.js";
 export { announcePin, onPinAnnounced } from "./pin-events.js";
 export { knownSlots, noteSlot, type SlotNote } from "./slot-notes.js";
 export { defaultVendoTheme, resolveTheme, themeCssVariables } from "./theme.js";
-export { useVoice, type UseVoiceResult } from "./voice/use-voice.js";
 export * from "./wire-types.js";

@@ -13,7 +13,6 @@ import {
   VendoPage,
   VendoPalette,
   VendoSlot,
-  VendoStage,
   VendoThread,
   WaitingQueue,
 } from "../../src/chrome/index.js";
@@ -144,13 +143,12 @@ describe("ApprovalCard and NoPolicyNotice exports", () => {
     // C1 — the banner names a file to configure, so it may never ride a surface
     // a PERSON reaches. It used to arrive automatically inside every chrome
     // boundary (ChromeRoot's default was `true`): the thread, the overlay, a
-    // pinned slot, an embed, the voice stage, the share dialog. Now it is opt-in.
+    // pinned slot, an embed, the share dialog. Now it is opt-in.
     wire.state.posture = "unconfigured";
     const surfaces: React.ReactNode[] = [
       <VendoThread threadId="thr_1" />,
       <VendoOverlay open />,
       <VendoSlot appId="app_1" />,
-      <VendoStage />,
       <ApprovalCard approval={approval} onDecide={() => undefined} />,
       <WaitingQueue pollMs={0} />,
       <ActivityPanel />,
@@ -177,13 +175,13 @@ describe("ApprovalCard and NoPolicyNotice exports", () => {
   });
 
   // ⚠️ These three used to pin the AUTOMATIC banner (C1's defect): they asserted
-  // that ActivityPanel / AutomationsPanel / VendoStage / VendoPage each grew the
+  // that ActivityPanel / AutomationsPanel / VendoPage each grew the
   // developer banner on their own, which is the same code path that put it on a
-  // customer's thread, slot, embed and voice stage. They now pin the guarantee
+  // customer's thread, slot and embed. They now pin the guarantee
   // instead — no chrome surface renders it, the host's explicit mount does.
   it("no workspace surface grows the banner on its own — the host's mount is the one source", async () => {
     wire.state.posture = "unconfigured";
-    const surfaces = [<ActivityPanel />, <AutomationsPanel />, <VendoStage />];
+    const surfaces = [<ActivityPanel />, <AutomationsPanel />];
 
     for (const surface of surfaces) {
       render(<VendoProvider client={client}><NoPolicyNotice />{surface}</VendoProvider>);
@@ -206,7 +204,6 @@ describe("ApprovalCard and NoPolicyNotice exports", () => {
         <ActivityPanel />
         <AutomationsPanel />
         <VendoPalette />
-        <VendoStage />
         <VendoPage />
       </VendoProvider>,
     );

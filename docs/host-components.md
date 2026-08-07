@@ -10,7 +10,6 @@
 | `@vendoai/ui` | client, provider, and hooks, with no styles |
 | `@vendoai/ui/chrome` | shipped, theme-driven surfaces |
 | `@vendoai/ui/tree` | the `vendo-genui/v2` renderer |
-| `@vendoai/ui/voice` | voice stage driver and surface |
 
 ## Provider
 
@@ -84,7 +83,6 @@ the next clean sync:
 | `useActivity` | self-scoped audit activity |
 | `useVendoOverlay` | programmatic open/close controller for `VendoOverlay` |
 | `useVendoStatus` | connection and guard posture |
-| `useVoice` | voice stage state, start, stop, and transcript |
 | `useVendoTheme` | resolved theme tokens |
 
 All hooks are transport-only and SSR-safe.
@@ -109,8 +107,7 @@ each a one-liner:
 `onCommand` router its conversation commands open the mounted overlay on their
 own; commands that need host routing (open app, show activity) hint in
 development until you supply `onCommand`. `ApprovalCard`, `ActivityPanel`,
-`AutomationsPanel`, and `NoPolicyNotice` cover trust and operations. Voice is
-a mode of the chat, not a separate piece.
+`AutomationsPanel`, and `NoPolicyNotice` cover trust and operations.
 
 Customization is a ladder, not a cliff — four rungs, no cliff between them:
 
