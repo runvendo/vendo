@@ -18,3 +18,10 @@ Two surfaces that answered a click by doing nothing, silently.
   the cadence off (`pollMs={0}`, a host driving its own refreshes) the strip
   was simply gone for the session. The fetch is row-keyed and lands
   idempotently, so it is no longer cancelled at all.
+- The same panel's `/runs` reads now carry a per-row generation, compared before
+  the write. Several reads of one row are in flight whenever `/runs` is slower
+  than the cadence (the sweep fires on a timer without waiting for its previous
+  tick), and the row used to believe whichever answered last rather than
+  whichever was asked last — so a slow answer overwrote a fresh one and the
+  health strip went backwards on screen: a run the person had just watched
+  succeed reverted to Failed until the next tick.
