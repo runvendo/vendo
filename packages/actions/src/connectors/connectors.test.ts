@@ -282,6 +282,44 @@ describe("mcpConnector", () => {
     expect(sessionHeaders.slice(1).every((header) => header === "session-from-server")).toBe(true);
   });
 
+  it("re-initializes after a failed handshake instead of caching the failure forever", async () => {
+    let initializes = 0;
+    const server = await startServer(async (req, res) => {
+      const body = await jsonBody(req);
+      const id = body.id;
+      res.setHeader("content-type", "application/json");
+      if (body.method === "initialize") {
+        initializes += 1;
+        if (initializes === 1) {
+          res.end(JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32603, message: "server restarting" } }));
+          return;
+        }
+        res.end(JSON.stringify({ jsonrpc: "2.0", id, result: { protocolVersion: "2025-03-26" } }));
+        return;
+      }
+      if (body.method === "notifications/initialized") {
+        res.statusCode = 202;
+        res.end();
+        return;
+      }
+      res.end(JSON.stringify({
+        jsonrpc: "2.0",
+        id,
+        result: { tools: [{ name: "lookup", description: "Lookup", inputSchema: { type: "object" } }] },
+      }));
+    });
+    closers.push(server.close);
+
+    const connector = mcpConnector({ url: server.url, name: "flaky" });
+    await expect(connector.descriptors()).rejects.toThrow("server restarting");
+
+    // One transient failure must not brick the connector for the process
+    // lifetime: the next call re-runs the handshake.
+    const descriptors = await connector.descriptors();
+    expect(initializes).toBe(2);
+    expect(descriptors.map((descriptor) => descriptor.name)).toEqual(["mcp_flaky_lookup"]);
+  });
+
   it("fails closed when a tools/list cursor repeats", async () => {
     const server = await startServer(async (req, res) => {
       const body = await jsonBody(req);

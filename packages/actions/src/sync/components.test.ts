@@ -308,6 +308,24 @@ describe("registered host component capture", () => {
     expect(stored.entry).toBeUndefined();
   });
 
+  it("skips a component whose entry file alone blows the budget, with nothing left to capture", async () => {
+    const root = await temporaryRoot();
+    await writeRoot(
+      root,
+      `export function Huge() { return <div>{"${"x".repeat(5_000)}"}</div>; }`,
+      "Huge: { component: Huge }",
+    );
+
+    const { result } = await capture(root, 2_000);
+    expect(result.captured).toEqual([]);
+    expect(result.skipped).toEqual(["Huge"]);
+
+    const stored = await record(root, "Huge");
+    expect(stored.skipped?.reason).toBe("too-large");
+    expect(stored.skipped?.largest).toBe("src/vendo/registry.tsx");
+    expect(stored.entry).toBeUndefined();
+  });
+
   it("stores one copy of a module two components share, and keeps it while either still references it", async () => {
     const root = await temporaryRoot();
     await writeRoot(
