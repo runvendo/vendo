@@ -2490,12 +2490,6 @@ export function createVendo(input: CreateVendoConfig): Vendo {
     designRules,
     ...(appsCloud === undefined ? {} : { cloud: cloudApps(appsCloud) }),
     semantics: hostSemanticsProvider,
-    // Re-gate 2026-07-26 finding 2 — the create-time shape sampler skips
-    // connector tools whose toolkit is not connected for the caller. Backed by
-    // the same connections lookup (and per-subject cache) the agent's
-    // connected-toolkit loadout seed rides; `connectedToolkitsFor` is a
-    // hoisted function declaration defined next to that seed below.
-    connectedToolkits: (toolkitCtx) => connectedToolkitsFor(toolkitCtx),
     secrets,
     // execution-v2 — the machine lifecycle's seams: the selected v2 adapter
     // (every provider speaks the canonical seam since the Wave 5 Cloud port)
@@ -3075,7 +3069,7 @@ export function createVendo(input: CreateVendoConfig): Vendo {
     }
   }
   // Hoisted (function declaration): the apps composition above references it
-  // as the AppsConfig.connectedToolkits seam; `connections` is declared below
+  // as the agent's connected-toolkit loadout seed; `connections` is declared below
   // and only read at request time (same pattern as loadoutSeedFor). Built on
   // the discovery-lane cache primitives: cached hit serves, miss fetches and
   // caches; lookup failure degrades to "no connected toolkits" this call.
