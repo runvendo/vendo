@@ -30,7 +30,7 @@ async function send(scope: Page | Locator, text: string): Promise<void> {
  * ONE ask waiting, served to whatever surface asks for it, and gone the moment
  * it is decided. Stubbed here rather than driven off the wire's own queue: every
  * spec in the run shares one wire server, so a fixture ask a neighbouring spec
- * already approved would make these two tests order-dependent.
+ * already approved would make this test order-dependent.
  */
 async function oneAskWaiting(page: Page): Promise<void> {
   let decided = false;
@@ -234,32 +234,6 @@ test("the waiting strip counts the asks and clears when they are decided", async
   await expect(strip.first()).toHaveCount(0);
 });
 
-test("the center carries its two doors and a needs-you section that clears", async ({ page }) => {
-  await oneAskWaiting(page);
-  await openScenario(page, "page-chat");
-  const rail = page.getByRole("navigation", { name: "Assistant" });
-  // ⚠️ TEST EDIT — "New chat" is a BUTTON, not a tab: it is an act, not a view.
-  await expect(rail.getByRole("button", { name: "New chat" })).toBeVisible();
-  await expect(rail.getByRole("tab", { name: "Apps" })).toBeVisible();
-  await expect(rail.getByRole("tab", { name: "Automations" })).toBeVisible();
-
-  // §4 — the attention section EXISTS only while asks are waiting, numbered.
-  const needs = page.getByRole("region", { name: /Needs you — 1 waiting/ });
-  await expect(needs).toBeVisible();
-  await expect(needs.getByRole("button")).toHaveCount(1);
-
-  // Deciding the ask in the strip above the conversation settles the rail too:
-  // the two surfaces cannot end up disagreeing about the count.
-  //
-  // This is EVENTUAL CONSISTENCY, which independent pollers would also give —
-  // it is NOT the H15 one-shared-poller gate, and this test never was. That
-  // claim needs a request COUNT and lives in approvals-poller-proof.spec.ts.
-  await page.locator(".fl-waiting-strip > summary").click();
-  await page.getByRole("button", { name: "Approve" }).first().click();
-  await expect(needs).toHaveCount(0);
-  await expect(page.getByText("Waiting on you · 1")).toHaveCount(0);
-});
-
 test("§15 — a turn whose stream died offers no Retry component", async ({ page }) => {
   await openScenario(page, "composer");
   await send(page, "[stream-kill] break it");
@@ -321,30 +295,6 @@ test("H9 — collapsing the workspace is final; the stage does not re-open it", 
   await expect(panel).not.toHaveAttribute("data-vendo-expanded", /.*/);
   await page.waitForTimeout(1_500);
   await expect(panel).not.toHaveAttribute("data-vendo-expanded", /.*/);
-});
-
-// ⚠️ TEST EDIT — same guarantee, new reason. This asserted the MECHANISM
-// (arrows move focus without activating), which the rail only needed while an
-// ACT sat inside its tablist. "New chat" is a button outside the list now, so
-// no arrow key can reach it and H18 holds by construction.
-test("H18 — an arrow walk of the rail never starts a new chat", async ({ page }) => {
-  await openScenario(page, "page-chat");
-  const composer = page.getByRole("textbox", { name: "Message" });
-  await composer.fill("a draft the arrow keys must not eat");
-  const newChat = page.getByRole("button", { name: "New chat" });
-  await expect(newChat).toHaveAttribute("aria-current", "page");
-
-  // Walk the whole tablist, both directions, past both ends.
-  await page.getByRole("tab", { name: "Apps" }).focus();
-  for (const key of ["ArrowDown", "ArrowDown", "ArrowUp", "End", "Home"]) {
-    await page.keyboard.press(key);
-  }
-  // The act was never reached and never fired.
-  await expect(newChat).not.toBeFocused();
-  // Walk back to the conversation the way a person would — its own row, not
-  // the act — and the half-typed draft is still sitting there.
-  await page.locator(".fl-rail-chat").first().click();
-  await expect(composer).toHaveValue("a draft the arrow keys must not eat");
 });
 
 test("mobile 390px — the thread renders, sends, and answers", async ({ page }) => {

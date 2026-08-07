@@ -417,7 +417,7 @@ function GrantSetConsent({ toolCallId, grantSetId, name, permissions, siblingPar
     PREVIEW — the full app renders on a fixed-width inner canvas and
     transform-scales to the card width (reads better than a scrollable crop),
     clamped to a short viewport with the Expand affordance prominent. The
-    STAGE keeps full size; surfaces without a workspace (VendoPage, embedded
+    STAGE keeps full size; surfaces without a workspace (embedded
     threads) keep the full-size interactive card. */
 const PREVIEW_CANVAS_WIDTH = 720;
 const PREVIEW_MAX_HEIGHT = 300;

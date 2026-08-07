@@ -2,7 +2,6 @@
 
 import { useEffect } from "react";
 import { withBasePath } from "@/lib/base-path";
-import { useRouter } from "next/navigation";
 import { useVendoOverlay } from "@vendoai/ui";
 import { VendoOverlay, VendoPalette, VendoThread, type VendoCommand, type VendoThreadProps } from "@vendoai/ui/chrome";
 import { MapleMark } from "@/components/ui/maple-mark";
@@ -28,18 +27,14 @@ async function resetDemo(): Promise<void> {
 export function VendoLayer() {
   // ENG-220: Cmd/Ctrl+K drives the supported programmatic overlay API and
   // stays as the power path. demo-refresh Part 4: the branded launcher pill
-  // ("Ask Maple" + the Maple mark) is the visible front door; the sidebar
-  // link keeps the full-page route reachable.
+  // ("Ask Maple" + the Maple mark) is the visible front door.
   const overlay = useVendoOverlay();
   const { toggle, open } = overlay;
-  const router = useRouter();
 
-  // ENG-230: route ⌘K palette commands. Opening the agent or a new conversation
-  // uses the overlay; showing activity jumps to the shipped workspace.
-  const onCommand = (command: VendoCommand) => {
-    if (command.kind === "show-activity") router.push("/vendo/workspace");
-    else open();
-  };
+  // Every ⌘K palette command opens the overlay. "Show activity" used to route
+  // to the full-page workspace; that surface is gone, and Maple mounts no
+  // replacement, so the command falls back to the overlay like the rest.
+  const onCommand = (_command: VendoCommand) => open();
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {

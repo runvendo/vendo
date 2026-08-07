@@ -10,7 +10,6 @@ import {
   ChromeRoot,
   NoPolicyNotice,
   VendoOverlay,
-  VendoPage,
   VendoPalette,
   VendoSlot,
   VendoThread,
@@ -174,11 +173,11 @@ describe("ApprovalCard and NoPolicyNotice exports", () => {
     expect(await screen.findByRole("region", { name: "Vendo is running without a policy" })).toBeTruthy();
   });
 
-  // ⚠️ These three used to pin the AUTOMATIC banner (C1's defect): they asserted
-  // that ActivityPanel / AutomationsPanel / VendoPage each grew the
-  // developer banner on their own, which is the same code path that put it on a
-  // customer's thread, slot and embed. They now pin the guarantee
-  // instead — no chrome surface renders it, the host's explicit mount does.
+  // ⚠️ These used to pin the AUTOMATIC banner (C1's defect): they asserted that
+  // ActivityPanel and AutomationsPanel each grew the developer banner on their
+  // own, which is the same code path that put it on a customer's thread, slot
+  // and embed. They now pin the guarantee instead — no chrome surface renders
+  // it, the host's explicit mount does.
   it("no workspace surface grows the banner on its own — the host's mount is the one source", async () => {
     wire.state.posture = "unconfigured";
     const surfaces = [<ActivityPanel />, <AutomationsPanel />];
@@ -191,12 +190,6 @@ describe("ApprovalCard and NoPolicyNotice exports", () => {
     }
   });
 
-  it("renders exactly one notice beside a page full of nested chrome roots", async () => {
-    wire.state.posture = "unconfigured";
-    render(<VendoProvider client={client}><NoPolicyNotice /><VendoPage /></VendoProvider>);
-    await waitFor(() => expect(screen.getAllByRole("region", { name: "Vendo is running without a policy" })).toHaveLength(1));
-  });
-
   it("renders no notice on any chrome surface under rules posture", async () => {
     render(
       <VendoProvider client={client}>
@@ -204,7 +197,6 @@ describe("ApprovalCard and NoPolicyNotice exports", () => {
         <ActivityPanel />
         <AutomationsPanel />
         <VendoPalette />
-        <VendoPage />
       </VendoProvider>,
     );
     await waitFor(() => expect(wire.requests.some(request => request.path === "/status")).toBe(true));

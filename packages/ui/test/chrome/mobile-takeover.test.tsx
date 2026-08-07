@@ -1,14 +1,14 @@
 // @vitest-environment jsdom
 // ENG-228 — the mobile takeover: the designed-but-dead `.fl-takeover` mode
 // comes alive. useMobileTakeover (matchMedia <768px) stamps the class on the
-// overlay panel, the page, and the palette; visualViewport drives a
+// overlay panel and the palette; visualViewport drives a
 // --fl-kb-inset var so the composer rides above the virtual keyboard; the
 // stylesheet gains the iOS-zoom (>=16px inputs) and 44px touch-target floor
 // plus a min-width floor on thread surfaces.
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
-import { VendoOverlay, VendoPage, VendoPalette, VendoToasts, dismissAllVendoToasts, vendoToast } from "../../src/chrome/index.js";
+import { VendoOverlay, VendoPalette, VendoToasts, dismissAllVendoToasts, vendoToast } from "../../src/chrome/index.js";
 import { CHROME_CSS } from "../../src/chrome/chrome-css.js";
 import { inertBehind } from "../../src/chrome/inert-behind.js";
 import { createWireServer } from "../wire-server.js";
@@ -120,62 +120,6 @@ describe("mobile takeover (ENG-228)", () => {
     expect(panel().classList.contains("fl-takeover")).toBe(false);
   });
 
-  it("stamps fl-takeover on the page surface and portals it over the host (transformed ancestors)", () => {
-    installMatchMedia(true);
-    const { container } = render(<VendoProvider client={client}><VendoPage /></VendoProvider>);
-    const page = screen.getByRole("region", { name: "Vendo workspace" });
-    expect(page.classList.contains("fl-takeover")).toBe(true);
-    // position:fixed is captured by any transformed/filtered host ancestor
-    // (page-transition animations are everywhere), so full-bleed is only real
-    // when the takeover escapes to document.body — like the overlay portal.
-    expect(container.contains(page)).toBe(false);
-    const wrapper = page.closest(".fl-overlay-portal")!;
-    expect(wrapper.parentElement).toBe(document.body);
-    expect(wrapper.className).toContain("vendo-root");
-  });
-
-  // H12 — the takeover COVERS the host page, so the host page must be inert:
-  // fixed positioning stops the mouse and nothing else. Same promise the
-  // overlay panel already keeps (see the late-portal case below).
-  it("inerts the host page behind the mobile takeover, and releases it on the way out", async () => {
-    const media = installMatchMedia(false);
-    const host = document.createElement("div");
-    const hostLink = document.createElement("a");
-    hostLink.href = "/somewhere";
-    hostLink.textContent = "Host navigation";
-    host.appendChild(hostLink);
-    document.body.appendChild(host);
-    render(<VendoProvider client={client}><VendoPage /></VendoProvider>);
-    expect(host.hasAttribute("inert")).toBe(false);
-
-    media.setMobile(true);
-    await waitFor(() => expect(host.hasAttribute("inert")).toBe(true));
-    // The takeover's own portal wrapper is never inerted by itself.
-    const page = screen.getByRole("region", { name: "Vendo workspace" });
-    expect(page.closest(".fl-overlay-portal")!.hasAttribute("inert")).toBe(false);
-
-    media.setMobile(false);
-    await waitFor(() => expect(host.hasAttribute("inert")).toBe(false));
-    host.remove();
-  });
-
-  // §12 — the center is a page INSIDE the host's app, so the host's own <main>
-  // stays the document's main landmark; ours was a second one.
-  it("brings no second <main> landmark to the host document", () => {
-    installMatchMedia(false);
-    const { container } = render(<VendoProvider client={client}><VendoPage /></VendoProvider>);
-    expect(container.querySelector("main")).toBeNull();
-    expect(document.querySelectorAll("main").length).toBe(0);
-  });
-
-  it("keeps the desktop page in-tree in the host layout", () => {
-    installMatchMedia(false);
-    const { container } = render(<VendoProvider client={client}><VendoPage /></VendoProvider>);
-    const page = screen.getByRole("region", { name: "Vendo workspace" });
-    expect(page.classList.contains("fl-takeover")).toBe(false);
-    expect(container.contains(page)).toBe(true);
-  });
-
   // One-surface ⌘K (ui-lane-entry pick P-C): the palette no longer renders a
   // dialog — the keybinding opens the conversation overlay itself.
   it("routes ⌘K to the overlay, takeover-stamped and portaled on mobile", async () => {
@@ -218,9 +162,8 @@ describe("mobile takeover (ENG-228)", () => {
     installMatchMedia(true);
     const { unmount } = render(<VendoProvider client={client}><VendoOverlay defaultOpen /></VendoProvider>);
     expect(panel()).toBeTruthy();
-    // A body child appearing AFTER the overlay opened — e.g. VendoPage's
-    // TakeoverPortal mounting on a breakpoint flip, or a host toast portal.
-    // The open-time snapshot alone would leave it interactive behind the
+    // A body child appearing AFTER the overlay opened — a host toast portal,
+    // say. The open-time snapshot alone would leave it interactive behind the
     // modal scrim.
     const late = document.createElement("div");
     document.body.appendChild(late);
@@ -265,12 +208,11 @@ describe("mobile takeover (ENG-228)", () => {
       return match![1]!;
     };
 
-    it("keeps the takeover surfaces safe-area padded and keyboard-inset aware", () => {
+    it("keeps the takeover panel safe-area padded and keyboard-inset aware", () => {
       const takeoverRules = CHROME_CSS.slice(CHROME_CSS.indexOf(".fl-overlay-panel.fl-takeover"));
       expect(takeoverRules).toContain("env(safe-area-inset-top, 0px)");
-      // Both takeover surfaces lift their bottom edge above the virtual keyboard.
-      const bottoms = CHROME_CSS.match(/padding-bottom: calc\(env\(safe-area-inset-bottom, 0px\) \+ var\(--fl-kb-inset, 0px\)\)/g) ?? [];
-      expect(bottoms.length).toBeGreaterThanOrEqual(2);
+      // The takeover panel lifts its bottom edge above the virtual keyboard.
+      expect(takeoverRules).toContain("padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--fl-kb-inset, 0px))");
     });
 
     it("raises text inputs to >=16px on mobile/coarse pointers (iOS auto-zoom floor)", () => {
@@ -291,9 +233,9 @@ describe("mobile takeover (ENG-228)", () => {
       expect(CHROME_CSS).toMatch(/\.fl-thread \{[^}]*min-width: /);
     });
 
-    it("keeps the takeover palette above takeover page/overlay surfaces", () => {
-      // page + overlay panel take over at z 2147483001; the palette is a modal
-      // over them, so its takeover scrim must sit higher.
+    it("keeps the takeover palette above the takeover overlay surface", () => {
+      // the overlay panel takes over at z 2147483001; the palette is a modal
+      // over it, so its takeover scrim must sit higher.
       expect(CHROME_CSS).toMatch(/\.fl-overlay-scrim\.fl-takeover \{[^}]*z-index: 2147483002/);
     });
   });

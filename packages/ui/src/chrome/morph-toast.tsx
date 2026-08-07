@@ -13,7 +13,7 @@ import { ToolkitLogo } from "./card-shell.js";
  *
  * Lane pick 4-C — the morph teaches the record: when an Activity anchor is
  * mounted (an element carrying `data-vendo-activity-anchor`, e.g. the
- * VendoPage Activity tab), the settled pill holds briefly and then shrinks
+ * the Activity panel), the settled pill holds briefly and then shrinks
  * and docks INTO the anchor instead of fading in place, dispatching a
  * `vendo:activity-bump` event as it lands so the anchor can pulse. Without
  * an anchor (overlay/threads outside the page) the original hold-and-fade

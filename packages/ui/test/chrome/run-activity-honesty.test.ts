@@ -116,7 +116,7 @@ describe("the toast headline is words, not markdown (M25)", () => {
 });
 
 /** Round B's dual-surface finding: a host may mount BOTH VendoOverlay and
- *  VendoPage on one conversation. Each hook publishes its own snapshot, so one
+ *  VendoThread on one conversation. Each hook publishes its own snapshot, so one
  *  finished turn used to raise two completion toasts. */
 describe("one turn, one announcement (dual-surface dedupe)", () => {
   const OTHER = Symbol("second-thread-surface");

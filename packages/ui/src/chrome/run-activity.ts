@@ -215,7 +215,7 @@ export function publishThreadRun(key: symbol, snapshot: ThreadRunSnapshot): void
   const settled = previous?.running === true && !next.running
     && next.status === "ready" && !next.waiting;
   // A host may mount TWO thread surfaces on one conversation (VendoOverlay and
-  // VendoPage): each hook publishes independently, so ONE turn settled twice and
+  // an ActivityPanel): each hook publishes independently, so ONE turn settled twice and
   // the user was told about it twice. The turn's identity is its conversation
   // plus its last message, so a second surface reporting the same settle is the
   // same news — announced once (Round B's dual-surface finding).

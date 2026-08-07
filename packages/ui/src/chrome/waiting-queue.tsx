@@ -84,7 +84,7 @@ function WaitingRow({ approval, onDecide }: {
   );
 }
 
-/** The waiting-on-you queue (08-ui §4 chrome; mounted by VendoPage's chat
+/** The waiting-on-you queue (08-ui §4 chrome; mounted by the host beside a chat
     workspace, exportable for any host placement). */
 export function WaitingQueue({ pollMs = 5_000 }: WaitingQueueProps = {}) {
   // spec §4 (N1) — the strip counts from Lane D's ONE attention source, the

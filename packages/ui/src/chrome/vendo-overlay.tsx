@@ -496,7 +496,7 @@ export function VendoOverlay({
 
   // The prefill scope: this overlay's composer registers under it, so a
   // delivered prompt reaches THIS overlay's thread — not an embedded
-  // VendoThread/VendoPage composer that happened to register later.
+  // VendoThread composer that happened to register later.
   const prefillScope = useRef(Symbol("vendo-overlay-prefill"));
 
   // Registry opener (ui-usage-dx §2): lets trigger / palette / remix-popover

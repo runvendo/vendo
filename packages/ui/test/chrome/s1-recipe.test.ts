@@ -53,12 +53,8 @@ describe("S1 recipe", () => {
     });
 
     it("uses it for every state whose only mark was a ~1:1 fill", () => {
-      // The open conversation, the selected rail row, the mobile section, and a
-      // tile's own edge. (The automations switch's OFF track is asserted in
+      // A tile's own edge. (The automations switch's OFF track is asserted in
       // panels.test.tsx, where the switch renders.)
-      expect(CHROME_CSS).toMatch(/\.fl-rail-chat\[aria-current="page"\]::before[\s\S]{0,240}var\(--vendo-indicator\)/);
-      expect(CHROME_CSS).toMatch(/\.fl-rail-row\[aria-selected="true"\]::before[\s\S]{0,240}var\(--vendo-indicator\)/);
-      expect(CHROME_CSS).toMatch(/\.fl-center-head-btn\[aria-current="page"\][^}]*inset 0 -2px 0 var\(--vendo-indicator\)/);
       expect(CHROME_CSS).toMatch(/\.fl-tile \{[^}]*border: 1px solid var\(--vendo-indicator\)/);
     });
   });
@@ -73,14 +69,11 @@ describe("S1 recipe", () => {
     expect(CHROME_CSS).toContain("--vendo-ease: cubic-bezier(0.32, 0.72, 0, 1)");
   });
 
-  it("every moving thing the center added respects prefers-reduced-motion (M29)", () => {
+  it("every moving thing the chrome added respects prefers-reduced-motion (M29)", () => {
     const reduce = [...CHROME_CSS.matchAll(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/g)]
       .map(match => match[1]!)
       .join("\n");
-    // The sheet's full-width slide and its scrim, the tile hover-lift, and the
-    // waiting strip's chevron rotation.
-    expect(reduce).toContain(".fl-center-sheet");
-    expect(reduce).toContain(".fl-center-scrim");
+    // The tile hover-lift and the waiting strip's chevron rotation.
     expect(reduce).toMatch(/\.fl-tile:hover[^}]*transform: none/);
     expect(reduce).toMatch(/\.fl-tile--ghost:hover[^}]*transform: none/);
     expect(reduce).toMatch(/\.fl-waiting-strip > summary::after \{ transition: none; \}/);

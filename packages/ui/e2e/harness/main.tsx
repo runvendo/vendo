@@ -26,7 +26,6 @@ import {
   ConnectCard,
   NoPolicyNotice,
   VendoOverlay,
-  VendoPage,
   VendoPalette,
   VendoSlot,
   VendoThread,
@@ -1305,19 +1304,6 @@ function ConcurrentScenario() {
   );
 }
 
-/** Post-check H15 — the realistic host: the center page (its waiting strip AND
- *  the rail's needs-you section) beside the floating overlay launcher, so all
- *  three attention surfaces read pending asks at once. The poller trace runs
- *  here (e2e/approvals-poller-proof.spec.ts). */
-function AttentionSurfacesScenario() {
-  return (
-    <VendoProvider client={baseClient} components={components} theme={mapleTheme}>
-      <VendoPage />
-      <VendoOverlay />
-    </VendoProvider>
-  );
-}
-
 function LandingScenario() {
   return (
     <VendoProvider client={baseClient} components={components} theme={mapleTheme}>
@@ -1396,29 +1382,6 @@ function SlotFallbackScenario() {
       <VendoSlot id="hero" appId="app_1">
         <section aria-label="Original host component"><h2>Original host hero</h2><p>Host fallback stayed on screen.</p></section>
       </VendoSlot>
-    </VendoProvider>
-  );
-}
-
-/** §10.1 — the pin round trip, end to end, on a host with NO slot: the page's
- *  Apps shelf is behind the assistant, a build settles in the conversation, its
- *  pin invites (the nudge), and taking it dismisses the panel and lands the
- *  ceremony in the shelf. The `onPin` write is the HOST's, so the recorder below
- *  is the only honest proof that it fired. */
-function PinShelfScenario() {
-  const [pinned, setPinned] = useState<string[]>([]);
-  return (
-    <VendoProvider
-      client={baseClient}
-      components={components}
-      theme={mapleTheme}
-      onPin={app => setPinned(current => [...current, app.appId])}
-    >
-      <VendoPage />
-      <VendoOverlay />
-      <p data-testid="pin-recorder" style={{ position: "fixed", left: 10, bottom: 10, margin: 0, fontSize: 11, color: "#8a8b92" }}>
-        pinned: {pinned.length === 0 ? "none" : pinned.join(",")}
-      </p>
     </VendoProvider>
   );
 }
@@ -2104,10 +2067,6 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/overlay": return { title: "Overlay", content: <AutoOpen selector='button[aria-controls="vendo-overlay-dialog"]'><VendoOverlay /></AutoOpen> };
     case "/overlay-manual": return { title: "Overlay — manual launcher", content: <VendoOverlay /> };
     case "/concurrent": return { title: "Concurrent surfaces", content: <ConcurrentScenario />, ownProvider: true };
-    case "/page": return { title: "Workspace — Apps tab", content: <AutoOpen selector="#vendo-tab-apps"><VendoPage /></AutoOpen> };
-    case "/attention-surfaces": return { title: "Attention surfaces — page + overlay", content: <AttentionSurfacesScenario />, ownProvider: true };
-    case "/page-chat": return { title: "Workspace — Chat (thread sidebar)", theme: mapleTheme, content: <VendoPage /> };
-    case "/page-chat-dark": return { title: "Workspace — Chat (dark)", theme: darkTheme, content: <VendoPage /> };
     case "/palette": return { title: "Command palette", content: <OpenPalette /> };
     case "/palette-host": return { title: "Palette — host input collision", content: <PaletteHostInputScenario /> };
     case "/approval": return { title: "Destructive approval", content: <ApprovalScenario /> };
@@ -2138,7 +2097,6 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/slot-building": return { title: "Inline slot — a build landing in place", content: <SlotBuildingScenario /> };
     case "/slot-states": return { title: "Inline slot — ready / failed", content: <SlotStatesScenario /> };
     case "/slot-picker": return { title: "Add to… — embed writes a placement", content: <SlotPickerScenario />, ownProvider: true };
-    case "/pin-shelf": return { title: "Pin — nudge, ceremony, Apps shelf", content: <PinShelfScenario />, ownProvider: true };
     case "/appframe": return { title: "App execution planes", content: <AppFrameScenario /> };
     case "/appframe-resize": return { title: "App frame resize — the host's bounds win", content: <AppFrameResizeScenario /> };
     case "/appframe-devserver": return { title: "Live dev-server preview (HMR)", content: <DevServerPreviewScenario /> };

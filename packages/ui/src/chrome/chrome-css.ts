@@ -125,9 +125,9 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
    parent and everything sizes to content exactly as before. Overlay, slot and
    palette roots mount fixed/inline children and are deliberately NOT matched;
    the voice stage is left to the voice-v1 stage-layout work (it commonly
-   mounts as a sibling of a thread — see Maple /vendo — where claiming 100%
-   would carve the pane in half). */
-.vendo-root:has(> .fl-thread), .vendo-root:has(> .fl-page) {
+   mounts as a sibling of a thread, where claiming 100% would carve the pane
+   in half). */
+.vendo-root:has(> .fl-thread) {
   display: flex; flex-direction: column; height: 100%; min-height: 0; }
 
 /* ---------- thread shell ---------- */
@@ -1110,13 +1110,8 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   border-top: 1px solid var(--vendo-border-strong);
   border-radius: var(--vendo-radius-lg) var(--vendo-radius-lg) 0 0; }
 .fl-overlay-panel.fl-takeover:has(.fl-landing) .fl-landing { padding-top: 18px; }
-.fl-page.fl-takeover { position: fixed; inset: 0; z-index: 2147483001; isolation: isolate;
-  background: var(--vendo-bg);
-  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
-    env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
-  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--fl-kb-inset, 0px)); }
 /* The palette is a modal over EVERY takeover surface: its scrim (2147483000)
-   would otherwise sit under a takeover page/overlay panel (2147483001). */
+   would otherwise sit under a takeover overlay panel (2147483001). */
 .fl-overlay-scrim.fl-takeover { z-index: 2147483002; }
 
 /* ---------- mobile input + touch ergonomics (ENG-228) ---------- */
@@ -1193,24 +1188,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   position: fixed; bottom: calc(72px + env(safe-area-inset-bottom, 0px)); z-index: 2147482999; }
 .fl-whisper[data-vendo-launcher="bottom-right"] { right: calc(20px + env(safe-area-inset-right, 0px)); }
 .fl-whisper[data-vendo-launcher="bottom-left"] { left: calc(20px + env(safe-area-inset-left, 0px)); }
-
-/* ---------- page + tabs + slot ---------- */
-/* The Page surface is ingrained: the chat IS the page (no card-in-card). Tabs are
-   a quiet underline row, the body fills the height, only the message list scrolls. */
-.fl-page { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.fl-page > [hidden] { display: none; }
-.fl-tabbar { display: flex; align-items: center; gap: 2px; padding: 0 0 0 2px;
-  border-bottom: 1px solid var(--vendo-border); flex-shrink: 0; overflow-x: auto; scrollbar-width: none; }
-.fl-tabbar::-webkit-scrollbar { display: none; }
-.fl-tab { display: flex; align-items: center; gap: 7px; padding: 10px 13px; font-size: 12.5px; font-weight: 500;
-  color: var(--vendo-fg-muted); border: 0; border-bottom: 2px solid transparent; background: transparent;
-  cursor: pointer; white-space: nowrap; margin-bottom: -1px; transition: color .12s; }
-.fl-tab:hover { color: var(--vendo-fg); }
-.fl-tab[aria-selected="true"] { color: var(--vendo-fg); border-bottom-color: var(--vendo-accent); }
-/* Body region below the tabs — the only thing that scrolls is the inner message list. */
-.fl-page-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.fl-page-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.fl-page-pane[hidden] { display: none; }
 
 /* ---------- generative dashboard slot (vendo-slot) ---------- */
 .fl-slot { position: relative; width: 100%; min-height: var(--fl-slot-min-h, 370px);
@@ -2046,106 +2023,9 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 @keyframes fl-toast-in { from { opacity: 0; transform: translateY(10px); filter: blur(5px); }
   to { opacity: 1; transform: none; filter: none; } }
 
-/* ================== LANE F — the AI center (spec §10 X1, §12, §14) ==================
-   The full-page workspace wears the ChatGPT SHAPE in the host's brand: an
-   in-page rail beside one centered column. It is a PAGE inside the host's app
-   (§12) — no brand row, no user row, no app frame of our own — so everything
-   here is layout and quiet, and the host's chrome carries the identity. */
-.fl-center { display: grid; grid-template-columns: minmax(210px, 248px) minmax(0, 1fr);
-  height: 100%; min-height: 0; background: var(--vendo-bg); }
-
-/* ---- the rail ---- */
-.fl-rail { display: flex; flex-direction: column; min-height: 0; overflow-y: auto;
-  padding: 14px 10px 20px; border-right: 1px solid var(--vendo-border); scrollbar-width: thin; }
-.fl-rail-nav { display: flex; flex-direction: column; gap: 2px; }
-/* Airy rows at 14.5px (S1): the rail is navigation, so it never competes with
-   the column for attention — the selected row is a soft fill, not a bar. */
-.fl-rail-row { position: relative; display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 10px;
-  border: 0; border-radius: var(--vendo-radius); background: transparent; color: var(--vendo-fg-muted);
-  font: 500 14.5px/1.25 var(--vendo-font); text-align: left; cursor: pointer;
-  transition: background .14s, color .14s; }
-.fl-rail-row:hover { background: color-mix(in srgb, var(--vendo-fg) 4%, transparent); color: var(--vendo-fg); }
-.fl-rail-row[aria-selected="true"], .fl-rail-row[aria-current="page"] {
-  background: color-mix(in srgb, var(--vendo-fg) 6%, transparent); color: var(--vendo-fg); }
-/* The selected state cannot BE the 6% fill: at ~1.1:1 it is invisible to a good
-   many people and fails 1.4.11 outright. The fill stays as the soft ground; the
-   mark that carries the meaning is this bar, derived at 3:1+. */
-.fl-rail-row[aria-selected="true"]::before, .fl-rail-row[aria-current="page"]::before,
-.fl-rail-chat[aria-current="page"]::before { content: ""; position: absolute; left: 2px; top: 50%;
-  width: 2.5px; height: 15px; margin-top: -7.5px; border-radius: 2px; background: var(--vendo-indicator); }
-.fl-rail-row:focus-visible, .fl-rail-chat:focus-visible, .fl-rail-more:focus-visible,
-.fl-tile-hit:focus-visible, .fl-tile--ghost:focus-visible, .fl-center-head-btn:focus-visible {
-  outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
-.fl-rail-row svg { flex: none; opacity: .7; }
-/* The quiet ··· row: Activity and Accounts are receipts and plumbing, not doors
-   — they belong one gesture away, never in the primary three. */
-.fl-rail-more { align-self: flex-start; margin: 3px 0 2px; padding: 5px 12px; border: 0;
-  border-radius: var(--vendo-radius-sm); background: transparent; color: var(--vendo-fg-muted);
-  font: 500 15px/1 var(--vendo-font); cursor: pointer; transition: background .14s, color .14s; }
-.fl-rail-more:hover { background: color-mix(in srgb, var(--vendo-fg) 4%, transparent); color: var(--vendo-fg); }
-.fl-rail-group { display: flex; flex-direction: column; gap: 1px; margin-top: 16px; }
-.fl-rail-label { display: flex; align-items: center; gap: 7px; margin: 0 0 5px; padding: 0 10px;
-  font: 600 10.5px/1 var(--vendo-font); letter-spacing: .05em; text-transform: uppercase;
-  color: var(--vendo-fg-muted); }
-/* §4 — attention is a NUMBER, and the section it sits on exists only while
-   something is actually waiting. */
-.fl-rail-badge { display: inline-grid; place-items: center; min-width: 17px; height: 17px; padding: 0 5px;
-  border-radius: 999px; background: var(--vendo-accent); color: var(--vendo-accent-fg);
-  font: 600 10.5px/1 var(--vendo-font); letter-spacing: 0; }
-/* One line, ellipsized in CSS (never truncated in JS — the full opening line
-   stays available to assistive tech and to a wider rail). */
-.fl-rail-chat { position: relative; display: block; width: 100%; padding: 8px 24px 8px 10px;
-  border: 0; border-radius: var(--vendo-radius); background: transparent; color: var(--vendo-fg);
-  font: 460 14.5px/1.35 var(--vendo-font); text-align: left; cursor: pointer;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: background .14s; }
-.fl-rail-chat:hover { background: color-mix(in srgb, var(--vendo-fg) 4%, transparent); }
-.fl-rail-chat[aria-current="page"] { background: color-mix(in srgb, var(--vendo-fg) 6%, transparent);
-  font-weight: 600; }
-.fl-rail-need { color: var(--vendo-fg-muted); }
-/* The running-turn pulse, on the row the turn belongs to — marked by the page
-   from the run-activity store (data-vendo-running). It used to require
-   aria-current="page", which meant the ONE row it could never mark was a
-   BACKGROUND one: §10's promise ("a running background turn shows a quiet pulse
-   on its row") was undeliverable as written. */
-.fl-rail-pulse { display: none; position: absolute; top: 50%; right: 9px; width: 6px; height: 6px;
-  margin-top: -3px; border-radius: 50%; background: var(--vendo-accent); }
-.fl-rail-chat[data-vendo-running] .fl-rail-pulse { display: block; }
-@media (prefers-reduced-motion: no-preference) {
-  .fl-rail-chat[data-vendo-running] .fl-rail-pulse {
-    animation: fl-rail-pulse 1.6s ease-in-out infinite; }
-}
-@keyframes fl-rail-pulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
-
-/* ---- the column ---- */
-.fl-center-main { position: relative; flex: 1; display: flex; flex-direction: column;
-  min-width: 0; min-height: 0; }
-.fl-center-main > [hidden] { display: none; }
-.fl-center-col { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.fl-center-thread { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-/* The centered column caps at ~660px (S1: generous margins, one reading
-   measure) — the thread and its composer share the same axis. */
-.fl-center-thread > .vendo-root, .fl-center-thread .fl-thread {
-  width: 100%; max-width: 660px; margin: 0 auto; }
-.fl-center-col > .vendo-root:has(> .fl-waiting) { width: 100%; max-width: 660px; margin: 0 auto; }
-
-/* Suggestions are ROWS on the home, never generic chips (§11): a noticing reads
-   as a line you could have said, with its icon, full width. Restyled in place —
-   the thread keeps rendering the host's own \`suggestions\`. */
-/* On the home the greeting and its rows GATHER above the shelf rather than
-   floating in the middle of the column: everything the eye needs sits in one
-   block over the composer. */
-.fl-center-home .fl-landing { justify-content: flex-end; padding-bottom: 18px; }
-.fl-center-home .fl-cards { display: flex; flex-direction: column; gap: 6px; max-width: none; }
-.fl-center-home .fl-card { flex-direction: row; align-items: center; gap: 10px; width: 100%;
-  padding: 12px 14px; border-radius: var(--vendo-radius-card); }
-.fl-center-home .fl-card b { font-size: 13.5px; font-weight: 500; }
-.fl-center-home .fl-card span:empty { display: none; }
-.fl-center-home .fl-chips { flex-direction: column; align-items: stretch; gap: 6px; width: 100%; }
-.fl-center-home .fl-chip { display: flex; align-items: center; gap: 10px; padding: 12px 14px;
-  border-radius: var(--vendo-radius-card); font-size: 13.5px; text-align: left; }
-.fl-center-home .fl-chip::before { content: "✦"; color: var(--vendo-fg-muted); font-size: 12px; }
-
-/* ---- the app shelf: apps as LIVE tiles (§10 pick HB) ---- */
+/* ================== the app shelf: apps as LIVE tiles (§10 pick HB, §14) ==================
+   Rendered by hosts that mount the app shelf themselves; also the landing
+   target the pin ceremony flies to when one is on the page. */
 .fl-shelf { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px;
   margin: 0 auto; padding: 0 30px 4px; width: 100%; max-width: 660px; }
 .fl-shelf--grid { max-width: none; padding: 0; gap: 18px; }
@@ -2179,16 +2059,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   border-color: var(--vendo-border-strong); }
 .fl-tile--ghost .fl-tile-skel { height: 92px; opacity: .8; }
 
-/* ---- the named doors (Apps / Automations / the ··· panels) ---- */
-.fl-center-page { flex: 1; min-height: 0; overflow-y: auto; width: 100%; max-width: 780px;
-  margin: 0 auto; padding: 28px 26px 34px; display: flex; flex-direction: column; gap: 9px; }
-.fl-center-title { margin: 0; font: 500 22px/1.2 var(--vendo-heading-font); letter-spacing: -.018em; }
-.fl-center-cap { margin: 0 0 6px; color: var(--vendo-fg-muted); font-size: 13px; }
-.fl-center-empty { margin: 10px 0 0; color: var(--vendo-fg-muted); font-size: 13.5px; }
-/* "ask below to build a new one" — the ask sits where the composer sits. */
-.fl-center-ask { display: flex; align-items: flex-end; gap: 8px; margin-top: auto; padding-top: 22px; }
-.fl-center-ask-field { flex: 1; display: flex; flex-direction: column; }
-.fl-center-ask-field .fl-picker-group { margin: 0 2px 7px; }
 /* Room to breathe (§10 "with room to breathe"): the per-app verbs are ONE quiet
    line of text under the name — four bordered pills wrapped onto two rows and
    turned every tile into a toolbar, and hiding them until hover only traded the
@@ -2205,57 +2075,13 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 .fl-tile-act:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
 .fl-tile-form { display: flex; align-items: center; gap: 6px; }
 .fl-tile-form .fl-picker-search { margin-bottom: 0; }
-/* An app open FULL in the column, with the way back stated plainly. */
-.fl-center-open { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.fl-center-open-top { display: flex; align-items: center; gap: 12px; flex: none;
-  padding: 12px 16px; border-bottom: 1px solid var(--vendo-border); }
-.fl-center-open-name { font: 550 13.5px/1 var(--vendo-heading-font); }
-
-/* ---- mobile P1 (§12): ONE self-contained page under the host's own tab ---- */
-.fl-center--mobile { position: relative; display: flex; flex-direction: column; }
-.fl-center-head { display: flex; align-items: center; gap: 6px; flex: none;
-  padding: 6px 10px; border-bottom: 1px solid var(--vendo-border); }
-.fl-center-head-title { margin-right: auto; padding-left: 4px;
-  font: 550 15px/1 var(--vendo-heading-font); letter-spacing: -.012em; }
-.fl-center-head-nav { display: flex; align-items: center; gap: 2px; overflow-x: auto; scrollbar-width: none; }
-.fl-center-head-nav::-webkit-scrollbar { display: none; }
-.fl-center-head-btn { display: inline-flex; align-items: center; min-height: 44px; padding: 0 10px;
-  border: 0; border-radius: var(--vendo-radius-sm); background: transparent; color: var(--vendo-fg-muted);
-  font: 500 13px/1 var(--vendo-font); white-space: nowrap; cursor: pointer; }
-/* Same reasoning as the rail rows: the 6% ground plus a mark that can be seen. */
-.fl-center-head-btn[aria-current="page"] { color: var(--vendo-fg);
-  background: color-mix(in srgb, var(--vendo-fg) 6%, transparent);
-  box-shadow: inset 0 -2px 0 var(--vendo-indicator); }
-.fl-center-head-new { color: var(--vendo-fg); }
-.fl-center-scrim { position: absolute; inset: 0; z-index: 3;
-  background: color-mix(in srgb, var(--vendo-fg) 22%, transparent);
-  animation: fl-takeover-fade .18s ease both; }
-.fl-center-sheet { position: absolute; top: 0; bottom: 0; left: 0; z-index: 4;
-  width: min(86%, 320px); display: flex; flex-direction: column; overflow-y: auto;
-  padding: 10px 10px 18px; background: var(--vendo-surface);
-  border-right: 1px solid var(--vendo-border); box-shadow: var(--vendo-shadow-float);
-  animation: fl-sheet-in var(--vendo-duration) var(--vendo-ease) both; }
-@keyframes fl-sheet-in { from { transform: translateX(-100%); } to { transform: none; } }
-.fl-center-sheet-top { display: flex; justify-content: flex-end; }
-.fl-center-sheet .fl-rail-nav { margin-top: 18px; padding-top: 12px;
-  border-top: 1px solid var(--vendo-border); }
-/* M2 respects the OS (spec §6): everything the center added that MOVES is off
-   under prefers-reduced-motion — the sheet's full-width slide (the largest
-   travel in the wave), its scrim fade, the tile hover-lift, and the waiting
-   strip's disclosure chevron. The hover SHADOW stays: it is depth, not motion. */
+/* M2 respects the OS (spec §6): the tile hover-lift and the waiting strip's
+   disclosure chevron are off under prefers-reduced-motion. The hover SHADOW
+   stays: it is depth, not motion. */
 @media (prefers-reduced-motion: reduce) {
-  .fl-center-sheet, .fl-center-scrim { animation: none; }
   .fl-tile { transition: box-shadow var(--vendo-duration) var(--vendo-ease); }
   .fl-tile:hover, .fl-tile--ghost:hover { transform: none; }
   .fl-waiting-strip > summary::after { transition: none; }
 }
-
-/* Stacked home: two tiles across at phone widths, shorter previews. */
-.fl-center--mobile .fl-shelf { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px;
-  max-width: none; padding: 0 14px 4px; }
-.fl-center--mobile .fl-tile-view, .fl-center--mobile .fl-tile-skel { height: 92px; }
-.fl-center--mobile .fl-tile--ghost .fl-tile-skel { height: 66px; }
-.fl-center--mobile .fl-center-page { padding: 18px 16px 26px; }
-.fl-center--mobile .fl-center-thread .fl-thread { max-width: none; }
 
 `;

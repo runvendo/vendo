@@ -1,5 +1,5 @@
 /** Thread collection transport (08-ui §3) — headless parity for the thread
- * list that VendoPage previously reached only by calling the client directly. */
+ * list that callers previously reached only by calling the client directly. */
 import type { ThreadId } from "@vendoai/core";
 import { useCallback } from "react";
 import { useVendoProvider } from "../context.js";

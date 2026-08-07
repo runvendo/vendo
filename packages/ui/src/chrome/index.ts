@@ -28,7 +28,6 @@ export { playPinCeremony, usePinAction, usePinNudge, type PinCeremonyOptions } f
 // because the in-thread card (an eject template) is built out of them.
 export { AddToPicker, useKnownSlots } from "./add-to-picker.js";
 export { VendoTrigger, type VendoTriggerProps } from "./vendo-trigger.js";
-export { VendoPage, type VendoPageProps } from "./vendo-page.js";
 export { VendoPalette, type VendoCommand } from "./vendo-palette.js";
 export { type HotkeyChord, type PaletteHotkey } from "./palette-hotkey.js";
 export { VendoSlot } from "./vendo-slot.js";

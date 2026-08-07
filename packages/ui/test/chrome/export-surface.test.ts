@@ -28,7 +28,6 @@ const VALUE_EXPORTS = [
   "encodeGrantPrincipal",
   "NoPolicyNotice",
   "VendoOverlay",
-  "VendoPage",
   "VendoPalette",
   "VendoSlot",
   // Existing-agents Lane B — the three BYO-chat embeds.

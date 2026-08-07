@@ -88,7 +88,7 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
     const previousKey = previousThreadKeyRef.current;
     previousThreadKeyRef.current = threadKey;
     // ENG-222 id mint is NOT a thread switch: a conversation started without
-    // an id gets its server-minted thr_ fed back mid-first-stream (VendoPage's
+    // an id gets its server-minted thr_ fed back mid-first-stream (a host's
     // onThreadId loop), flipping this key while the reader is mid-read. The
     // messages are the same conversation — KEEP the growth baseline: zeroing
     // it makes previousHeight === 0 read as "at bottom by definition", so the

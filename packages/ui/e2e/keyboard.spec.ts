@@ -91,27 +91,6 @@ test("a running automation is killed by keyboard from run history", async ({ pag
   await expect(history.getByText("stopped")).toBeVisible();
 });
 
-test("workspace tabs rove with arrows and open an app by keyboard", async ({ page }) => {
-  await openScenario(page, "page");
-  const apps = page.getByRole("tab", { name: "Apps" });
-  await expect(apps).toHaveAttribute("aria-selected", "true");
-  await expectKeyboardReachability(page, 'main[data-scenario="page"]');
-  await apps.focus();
-  await page.keyboard.press("ArrowRight");
-  await expect(page.getByRole("tab", { name: "Automations" })).toHaveAttribute("aria-selected", "true");
-  await page.keyboard.press("ArrowLeft");
-  await expect(apps).toHaveAttribute("aria-selected", "true");
-  // ⚠️ TEST EDIT — matched on textContent === "Open". The tile's open
-  // affordance is the WHOLE tile (`.fl-tile-hit`, home.tsx): a button with no
-  // text and `aria-label="Open <app name>"`. That is the better name, not a
-  // worse one — six tiles that all say just "Open" are six identical rows to a
-  // screen-reader user — so the assertion moves to the ACCESSIBLE name, which
-  // also proves the tile says WHICH app it opens.
-  await tabTo(page, async () => page.evaluate(() => document.activeElement?.getAttribute("aria-label") === "Open Invoices"));
-  await page.keyboard.press("Enter");
-  await expect(page.getByText("Invoices app surface").first()).toBeVisible();
-});
-
 test("activity load-more is keyboard reachable and appends a page", async ({ page }) => {
   test.fixme(
     true,

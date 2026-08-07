@@ -239,6 +239,14 @@ export function playPinCeremony({ appId, slot, dismiss = () => {} }: PinCeremony
     .find(element => element.getAttribute("data-vendo-app-embed") === appId) ?? null;
   const from = boxOf(source);
   const reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // Nothing on the page to land in — no host slot and no Apps shelf. The
+  // check below at measure time catches this too, but only AFTER the ghost has
+  // lifted, so the pin read as a flight into thin air. Skip the ceremony
+  // instead: the pin itself still happens, it just does not animate.
+  if (destinationOf(slot) === null) {
+    dismiss();
+    return;
+  }
   const lifted = source !== null && from !== null && !reduced ? liftGhost(source, from) : null;
 
   dismiss();

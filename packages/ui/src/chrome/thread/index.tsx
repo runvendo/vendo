@@ -38,7 +38,7 @@ export interface VendoThreadProps {
   onVoice?: () => void;
   /** ENG-222 — fires with the effective thread id once it is known, including
    * the fresh `thr_` the server mints for a new conversation. Lets a host
-   * surface (e.g. VendoPage's sidebar) pull the new conversation into its list. */
+   * surface (e.g. a host's own conversation list) pull the new one in. */
   onThreadId?: (threadId: string) => void;
   /** The discoverability dial (ui-usage-dx §6), overriding the provider's:
    * `"quiet"` disables the fire-once greeting-as-tutorial below. */
@@ -77,7 +77,7 @@ export function VendoThread({
   const tutorial = firstRunGreeting ?? contextGreeting ?? defaultVendoGreeting;
   const [tutorialActive, setTutorialActive] = useState(false);
   // Arming is REACTIVE, not mount-only: surfaces that don't remount their
-  // thread (VendoPage flips threadId props on one instance) become eligible
+  // thread (a host flipping threadId props on one instance) become eligible
   // later — e.g. when the page's dial gate opens on an explicit "New
   // conversation". Burned on first showing (not on interaction) — a reload
   // mid-look never replays it, per the once-per-user-ever rule.

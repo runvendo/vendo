@@ -11,7 +11,6 @@ import {
   NoPolicyNotice,
   Remixable,
   VendoOverlay,
-  VendoPage,
   VendoPalette,
   VendoSlot,
   VendoThread,
@@ -63,7 +62,7 @@ function EveryContractedHook() {
 describe("public source entries without a DOM", () => {
   it("server-renders every contracted hook from empty transport state", () => {
     expect(rootEntry.useApps).toBe(useApps);
-    expect(chromeEntry.VendoPage).toBeTypeOf("function");
+    expect(chromeEntry.VendoOverlay).toBeTypeOf("function");
     expect(treeEntry.TreeView).toBeTypeOf("function");
 
     const html = renderToString(<VendoProvider><EveryContractedHook /></VendoProvider>);
@@ -93,7 +92,6 @@ describe("every chrome surface server-renders without a DOM", () => {
     ["VendoOverlay", <VendoOverlay />],
     ["VendoSlot", <VendoSlot id="hero" appId="app_ssr"><span>original</span></VendoSlot>],
     ["Remixable", <Remixable><SsrCard /></Remixable>],
-    ["VendoPage", <VendoPage />],
     ["VendoPalette", <VendoPalette />],
     ["ApprovalCard", <ApprovalCard approval={approval} onDecide={() => undefined} />],
     ["ActivityPanel", <ActivityPanel />],

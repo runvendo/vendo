@@ -135,7 +135,7 @@ export function escapeIntent(state: SplitViewState): "collapse" | "close" {
 }
 
 /** What the overlay hands the thread subtree. Null outside a split-capable
-    surface (embedded VendoThread, VendoPage) — app cards then behave exactly
+    surface (an embedded VendoThread) — app cards then behave exactly
     as before. */
 export interface SplitViewContextValue {
   expanded: boolean;
