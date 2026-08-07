@@ -661,6 +661,73 @@ describe("graphql endpoints", () => {
     });
   });
 
+  it("emits no tool for an app route that re-exports its verbs from a local yoga module", async () => {
+    const root = await temporaryRoot();
+    await write(
+      root,
+      "app/api/graphql/graphql-server.ts",
+      [
+        "import { createSchema, createYoga } from \"graphql-yoga\";",
+        "const schema = createSchema({ typeDefs: \"type Query { me: String }\", resolvers: {} });",
+        "const yoga = createYoga({ schema, graphqlEndpoint: \"/api/graphql\" });",
+        "export const GET = yoga;",
+        "export const POST = yoga;",
+      ].join("\n"),
+    );
+    await write(root, "app/api/graphql/route.ts", "export { GET, POST } from \"./graphql-server\";\n");
+    expect(await scannedTools(root)).toEqual({
+      tools: [],
+      warnings: ["route /api/graphql is a GraphQL endpoint; GraphQL is not an extracted stack, so no tool was emitted"],
+    });
+  });
+
+  it("emits no tool for a pages route that default-re-exports a shared lib yoga module", async () => {
+    const root = await temporaryRoot();
+    await write(
+      root,
+      "lib/graphql/yoga.ts",
+      [
+        "import { createSchema, createYoga } from \"graphql-yoga\";",
+        "const schema = createSchema({ typeDefs: \"type Query { me: String }\", resolvers: {} });",
+        "export default createYoga({ schema, graphqlEndpoint: \"/api/graphql\" });",
+      ].join("\n"),
+    );
+    await write(
+      root,
+      "pages/api/graphql.ts",
+      [
+        "export { default } from \"../../lib/graphql/yoga\";",
+        "export const config = { api: { bodyParser: false } };",
+      ].join("\n"),
+    );
+    expect(await scannedTools(root)).toEqual({
+      tools: [],
+      warnings: ["route /api/graphql is a GraphQL endpoint; GraphQL is not an extracted stack, so no tool was emitted"],
+    });
+  });
+
+  it("emits no tool for an apollo handler re-exported through a barrel file", async () => {
+    const root = await temporaryRoot();
+    await write(
+      root,
+      "lib/graphql/handler.ts",
+      [
+        "import { ApolloServer } from \"@apollo/server\";",
+        "import { startServerAndCreateNextHandler } from \"@as-integrations/next\";",
+        "const server = new ApolloServer({ typeDefs: \"type Query { me: String }\", resolvers: {} });",
+        "const handler = startServerAndCreateNextHandler(server);",
+        "export const GET = handler;",
+        "export const POST = handler;",
+      ].join("\n"),
+    );
+    await write(root, "lib/graphql/index.ts", "export * from \"./handler\";\n");
+    await write(root, "app/api/graphql/route.ts", "export { GET, POST } from \"../../../lib/graphql/index\";\n");
+    expect(await scannedTools(root)).toEqual({
+      tools: [],
+      warnings: ["route /api/graphql is a GraphQL endpoint; GraphQL is not an extracted stack, so no tool was emitted"],
+    });
+  });
+
   it("keeps a REST route that merely calls an upstream GraphQL API", async () => {
     const root = await temporaryRoot();
     await write(
