@@ -320,13 +320,26 @@ export async function boxMachine(options: BoxMachineOptions): Promise<SessionMac
       const deadline = Date.now() + MESSAGE_BUDGET_MS;
       let cursor = 0;
 
+      // Interrupt the TURN, not the conversation — and do it the moment Stop is
+      // pressed. The door parks a poll for POLL_WAIT_MS when the box has nothing
+      // to say (a long tool call), so noticing the signal only between polls left
+      // Stop up to ten seconds late. Same shape as the local sibling.
+      let stopped = false;
+      const stop = () => {
+        stopped = true;
+        void request(`/session/${messageId}/interrupt`, {}).catch(() => undefined);
+      };
+
       try {
+        // A signal that is already aborted never fires the event.
+        if (message.signal?.aborted === true) {
+          await request(`/session/${messageId}/interrupt`, {}).catch(() => undefined);
+          return;
+        }
+        message.signal?.addEventListener("abort", stop, { once: true });
         for (;;) {
-          if (message.signal?.aborted === true) {
-            // Interrupt the TURN, not the conversation.
-            await request(`/session/${messageId}/interrupt`, {}).catch(() => undefined);
-            return;
-          }
+          // The listener has already interrupted; this only ends the loop.
+          if (stopped) return;
           if (Date.now() > deadline) {
             await request(`/session/${messageId}/interrupt`, {}).catch(() => undefined);
             throw new VendoError("sandbox-unavailable", "the box message outran its budget");
@@ -348,6 +361,7 @@ export async function boxMachine(options: BoxMachineOptions): Promise<SessionMac
           if (polled["done"] === true) return;
         }
       } finally {
+        message.signal?.removeEventListener("abort", stop);
         inFlight = undefined;
       }
     },
