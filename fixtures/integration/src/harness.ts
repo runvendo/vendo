@@ -113,22 +113,46 @@ export function generationTurn(dialect: unknown, id = "gen_1"): LanguageModelV3S
 }
 
 /**
- * The screen agent's two turns for one `vendo_make` ask: save the whole
- * document with its own hands, then stop. A CREATE and an EDIT are the same
- * loop — an edit is the assembler opening this app's own document and saving it
- * back — so one helper scripts either.
+ * The AI reviewer's verdict on one finished screen — a `report_findings` strict
+ * tool call over `doGenerate` (`packages/apps/src/checking/strict-tool-call.ts`),
+ * empty by default because "nothing wrong" is what a fixture app deserves.
+ *
+ * Scripted as the call it really is rather than left to run the script dry:
+ * `strictToolCall` swallows every failure into "no findings", so an unscripted
+ * reviewer passes for the wrong reason AND eats the turn the caller after it was
+ * waiting for.
+ */
+export function reviewerTurn(
+  findings: ReadonlyArray<{ severity: "block" | "warn"; where: string; message: string }> = [],
+  toolCallId = "screen_review",
+): LanguageModelV3StreamPart[] {
+  return toolCallTurn("report_findings", { findings }, toolCallId);
+}
+
+/**
+ * The screen agent's turns for one `vendo_make` ask: save the whole document
+ * with its own hands, stop, and then face the reviewer. A CREATE and an EDIT are
+ * the same loop — an edit is the assembler opening this app's own document and
+ * saving it back — so one helper scripts either.
  *
  * Every `vendo_make` ask starts in the assembly loop now — that used to be
  * behind `apps.experimentalScreenAgent` and the flag is gone — so a script that
  * only feeds the conductor's generation turns runs the assembly loop out of
  * answers and then feeds ITS turns to the conductor, one call out of step.
- * Written as one helper rather than two lines per fixture because the pair is
- * one thing: "the screen agent answered this ask".
+ * Written as one helper rather than three lines per fixture because the three
+ * are one thing: "the screen agent answered this ask".
+ *
+ * The reviewer turn is part of that one thing because the pass is MANDATORY: a
+ * screen that PAINTED faces it once at the finish line whether or not the loop
+ * called `validate` itself (`screen-agent.ts`'s mandatory reviewer pass). A save
+ * the floor blocks never paints, so that ask leaves this turn unspent — an
+ * unused turn costs a script nothing, and a missing one costs it the next call.
  */
 export function screenAgentCreateTurns(dialect: string): LanguageModelV3StreamPart[][] {
   return [
     toolCallTurn("save_app", { content: dialect }, "screen_save"),
     textTurn("saved", "screen_done"),
+    reviewerTurn(),
   ];
 }
 
