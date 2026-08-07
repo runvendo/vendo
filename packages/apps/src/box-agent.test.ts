@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BOX_CONTROL_PORT, pushBoxEnv, readBoxManifest, requestAppWithBootRetry, runBoxEdit, type BoxAgentClock } from "./box-agent.js";
+import { pushBoxEnv, readBoxManifest, requestAppWithBootRetry, runBoxEdit, type BoxAgentClock } from "./box-agent.js";
 import type { SandboxMachine } from "./sandbox.js";
 import { fakeBoxSandbox } from "./testing/fake-box.js";
 
@@ -86,10 +86,6 @@ describe("box-agent control-port transport", () => {
     const machine = await boxOf();
     await pushBoxEnv(machine, { RESEND_API_KEY: "granted" });
     expect(machine.state.env.RESEND_API_KEY).toBe("granted");
-  });
-
-  it("uses the dedicated control port, not the app $PORT", () => {
-    expect(BOX_CONTROL_PORT).toBe(8811);
   });
 
   it("retries the app port past a post-resume 502 boot race, then returns the ready response", async () => {

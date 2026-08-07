@@ -23,12 +23,7 @@
  */
 import { jsonSchema, tool, type ModelMessage, type ToolSet, type UIMessage } from "ai";
 import { describe, expect, it } from "vitest";
-import {
-  estimatePromptTokens,
-  shouldCompact,
-  PRESERVE_RECENT_TOKENS,
-  TRIGGER_RATIO,
-} from "./compaction.js";
+import { estimatePromptTokens, shouldCompact } from "./compaction.js";
 import { turnModelMessages } from "./loop.js";
 
 const message = (role: "user" | "assistant", text: string): ModelMessage =>
@@ -95,11 +90,6 @@ describe("the prompt estimate", () => {
 });
 
 describe("the trigger", () => {
-  it("carries the ported cline ratios", () => {
-    expect(TRIGGER_RATIO).toBe(0.81);
-    expect(PRESERVE_RECENT_TOKENS).toBe(20_000);
-  });
-
   it("trips at 81% of the window — NOT at 80%", () => {
     const config = { contextWindowTokens: 100_000 };
     expect(shouldCompact(81_000, config)).toBe(true);

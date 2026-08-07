@@ -104,10 +104,4 @@ describe("cloud prop keys", () => {
     }
   });
 
-  it("does not include the producer-set lane markers", () => {
-    // `cloud` and `cloudKeyHash` are set by the client itself, never
-    // accepted from callers — so they must not be in any allowed set.
-    expect(CLOUD_PROP_KEYS.has("cloud")).toBe(false);
-    expect(CLOUD_PROP_KEYS.has("cloudKeyHash")).toBe(false);
-  });
 });

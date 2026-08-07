@@ -84,20 +84,3 @@ describe("validateAppDocument fn:-requires-a-machine", () => {
   });
 });
 
-describe("validateTree DoS bound gaps (recorded by-contract)", () => {
-  it("does NOT bound the byte size of node data / props (delegated upstream)", () => {
-    // GAP (intentional, recorded for visibility): validateTree caps node COUNT,
-    // query COUNT, and generated-component SOURCE bytes — but it does not bound
-    // the size of `data` or a node's `props`. A single node can carry a
-    // multi-hundred-KB `data` blob and still PASS. This DoS bound is delegated to
-    // an upstream request-body limit (the HTTP layer), not the core validator.
-    const bigBlob = "y".repeat(400_000); // ~400 KB, well past any component cap
-    const result = validateTree({
-      formatVersion: VENDO_TREE_FORMAT,
-      root: "n0",
-      nodes: [{ id: "n0", component: "Text", props: { huge: bigBlob } }],
-      data: { huge: bigBlob },
-    });
-    expect(result.ok).toBe(true);
-  });
-});

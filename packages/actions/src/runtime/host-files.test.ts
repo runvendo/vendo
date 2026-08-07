@@ -1,8 +1,8 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp as mkdtempRaw, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 // A real workerd run reports a "not implemented" Error with NO .code at all
 // when a build's "workerd" custom condition didn't resolve to
@@ -22,6 +22,18 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 
 import { readOptionalVendoJson } from "./host-files.js";
 import { readOptionalVendoJson as readOnEdge } from "./host-files-edge.js";
+
+// Every case here needs a real temp dir; without this the file left one behind
+// per case on every run.
+const roots: string[] = [];
+const mkdtemp = async (prefix: string): Promise<string> => {
+  const root = await mkdtempRaw(prefix);
+  roots.push(root);
+  return root;
+};
+afterEach(async () => {
+  for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
+});
 
 describe("host config files, node entry", () => {
   it("reads and parses a .vendo file, resolving the dir from a host root", async () => {

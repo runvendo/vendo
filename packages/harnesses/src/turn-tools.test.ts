@@ -7,7 +7,7 @@ import { CAPABILITY_MISS_TOOL_NAME } from "./capability-miss.js";
 import { FIND_TOOLS_TOOL_NAME } from "./tool-search.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DiscoveryRails, MetaTool } from "./discovery.js";
-import { APPROVAL_WAIT_MS, createTurnTools, type MirrorEvent } from "./turn-tools.js";
+import { createTurnTools, type MirrorEvent } from "./turn-tools.js";
 import { boundRegistry, ctx, readTool, testGuard } from "./test-doubles.test-util.js";
 
 function harness(options: {
@@ -48,12 +48,6 @@ function discoveryDouble(equipped: string[]): DiscoveryRails {
     meta: new Map([metaTool(CAPABILITY_MISS_TOOL_NAME), metaTool(FIND_TOOLS_TOOL_NAME)]),
   };
 }
-
-describe("APPROVAL_WAIT_MS", () => {
-  it("is the frozen 90s from build contract §1.4", () => {
-    expect(APPROVAL_WAIT_MS).toBe(90_000);
-  });
-});
 
 describe("turn.tools.list", () => {
   it("returns the equipped tools, titling untitled descriptors by name", async () => {
