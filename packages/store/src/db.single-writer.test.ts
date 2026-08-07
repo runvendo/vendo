@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { spawn, type ChildProcess } from "node:child_process";
 import { tmpdir } from "node:os";
@@ -131,4 +131,30 @@ describe("PGlite single-writer discipline (ENG-351)", () => {
     await db.close();
     expect(existsSync(lockPathFor(dir))).toBe(false);
   });
+
+  it("recovers a stale lock whose PID belongs to an unrelated live process", async () => {
+  sleeper = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+    stdio: "ignore",
+  });
+
+  const lockPath = lockPathFor(dir);
+  writeFileSync(lockPath, `${sleeper.pid}\n`);
+
+  const old = new Date(Date.now() - 60_000);
+  utimesSync(lockPath, old, old);
+
+  pgliteCreate.mockResolvedValue(fakePglite());
+
+  const db = createDb({ dataDir: dir });
+  const query = db.query("select 1");
+
+  await expect(settledWithin(query, 800)).resolves.toBe("settled");
+  await expect(query).resolves.toEqual({ rows: [{ ok: 1 }] });
+
+  expect(pgliteCreate).toHaveBeenCalledTimes(1);
+  expect(readFileSync(lockPath, "utf8")).toContain(String(process.pid));
+
+  await db.close();
+});
+  
 });
