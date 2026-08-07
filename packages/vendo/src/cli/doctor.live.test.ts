@@ -74,6 +74,10 @@ describe("vendo doctor MCP discovery live", () => {
       },
       store,
       mcp: true,
+      // Stands in for the dev server `vendo doctor` targets: the probes are
+      // mounted only in a development composition, and vitest's NODE_ENV=test
+      // is not one.
+      development: true,
       oauth,
       // Light the execution venue deterministically (independent of local
       // E2B/Modal env keys) so doctor reports no venue warning here.

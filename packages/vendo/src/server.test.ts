@@ -1302,7 +1302,10 @@ describe("06-apps §9 in-client venue over the wire", () => {
 describe("09 §2 composition", () => {
   it("audits one structured warning when present auth cannot be forwarded", async () => {
     vi.stubEnv("VENDO_BASE_URL", "");
-    const { vendo } = await setup();
+    // `development` because the probe this drives the present-forward branch
+    // through is a development-only route now. The branch under test is the
+    // untrusted-learned-origin one, which is unrelated to the flag.
+    const { vendo } = await setup(undefined, { development: true });
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const target = input instanceof Request ? input : new Request(input, init);
       return vendo.handler(target);
@@ -1965,7 +1968,9 @@ describe("09 §2.1 — host-identity presets (auth)", () => {
   it("auth's actAs half is live — the doctor actAs probe round-trips a minted Auth.js session", async () => {
     vi.stubEnv("AUTH_SECRET", authJsSecret);
     const store = await tempStore("vendo-auth-actas-");
-    const vendo = createVendo({ model: {} as LanguageModel, store, auth: authJs() });
+    // `development` because the probe this drives is a development-only route
+    // now; the dev server `vendo doctor` targets gets it from NODE_ENV.
+    const vendo = createVendo({ model: {} as LanguageModel, store, auth: authJs(), development: true });
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const target = input instanceof Request ? input : new Request(input, init);
       return vendo.handler(target);

@@ -290,6 +290,7 @@ import {
   DOCTOR_ACT_AS_APP_ID,
   DOCTOR_ACT_AS_PRINCIPAL,
   doctorActAsTool,
+  doctorBaseUrlRoutes,
   doctorPresentTool,
   doctorRoutes,
 } from "./wire/doctor.js";
@@ -522,11 +523,14 @@ export interface CreateVendoConfig {
   guard?: VendoGuard | GuardRules;
   secrets?: SecretsProvider;
   telemetry?: boolean;
-  /** Development-only surfaces: the injection seams (/dev/inclient-approval)
-      and the `vendo sync` blast-radius probe (POST /sync/impact), which is not
-      even mounted without this. NODE_ENV=development enables them; `false`
-      disables the environment default. Unset with any other NODE_ENV — or none,
-      or a runtime with no `process` at all — leaves them closed. */
+  /** Development-only surfaces: the injection seams (/dev/inclient-approval),
+      the `vendo sync` blast-radius probe (POST /sync/impact), and the
+      `vendo doctor` probes (/doctor/mcp, /doctor/machines, /doctor/present,
+      /doctor/act-as and their echoes) — none of them even mounted without this.
+      NODE_ENV=development enables them; `false` disables the environment
+      default. Unset with any other NODE_ENV — or none, or a runtime with no
+      `process` at all — leaves them closed. /doctor/base-url is the one
+      exception and answers in every environment. */
   development?: boolean;
   /** Unified try surface — the project root the `.vendo/` profile is read
       under: the actions files (tools.json/overrides.json, read by the actions
@@ -1417,7 +1421,8 @@ function telemetryClient(enabled: boolean | undefined): Telemetry | undefined {
     handler), assembled from the per-area modules under src/wire/. Entries are
     matched IN ORDER, preserving the old if-chain's precedence exactly:
     1. the dev-only injection seams (fall through in production),
-    2. the doctor production gate + doctor probe routes,
+    2. /doctor/base-url, then the doctor probe routes — mounted only in a
+       development composition,
     3. the machine surfaces — webhooks, tick, sync impact — all raw-path
        matches ahead of any segment decoding,
     4. the user surfaces: threads → approvals → connections → grants →
@@ -1428,7 +1433,13 @@ function telemetryClient(enabled: boolean | undefined): Telemetry | undefined {
     all answers not-found. */
 const wireRoutesFor = (deps: WireDeps): readonly RouteEntry[] => [
   ...devRoutes,
-  ...doctorRoutes,
+  // Mounted everywhere on purpose — it reports a PRODUCTION misconfiguration.
+  ...doctorBaseUrlRoutes,
+  // The doctor probes take no principal, and one of them (POST /doctor/act-as)
+  // makes the composition mint host actAs material on demand, so mounting them
+  // is the whole access control. A composition that did not say it is
+  // development never gets the routes.
+  ...(deps.development ? doctorRoutes : []),
   ...(deps.mounted.automations ? webhookRoutes : []),
   ...systemRoutes,
   // The `vendo sync` blast-radius probe takes no principal and reads the whole

@@ -13,13 +13,14 @@ bearer secret, `/webhooks/*` by a signature, and `/box/*` by a per-app token.
 
 The `/doctor/*` probes are a different case again — they *do* resolve a
 principal (`/doctor/act-as/echo` calls the resolver directly; `/doctor/present`
-reaches it through ordinary context resolution). What keeps them off a
-production deployment is `NODE_ENV`, not identity: everything under `/doctor/`
-answers `404` when `NODE_ENV` is `production`, and `development: true` does
-not bring it back — that flag governs `/dev/*`, not these. The lone exception
-is `/doctor/base-url`, registered ahead of that gate, which answers
-unauthenticated in every environment by design: it reveals only whether
-`VENDO_BASE_URL` is set.
+reaches it through ordinary context resolution), but none of them *requires*
+one. What keeps them off a deployment is mounting: like `/dev/*`, they are in
+the route table only in a development composition (`createVendo({ development
+})`, which `NODE_ENV=development` enables). Every other deployment answers
+`404` because the route is not there, so nothing about the runtime or the
+environment can open it. The lone exception is `/doctor/base-url`, mounted in
+every environment by design: it reveals only whether `VENDO_BASE_URL` is set,
+and production is exactly where that answer matters.
 
 | Route | Method | Body → Response |
 | --- | --- | --- |
@@ -83,16 +84,18 @@ caller can probe another subject's pending work.
 ### Doctor probes
 
 `vendo doctor` drives a handful of synthetic routes against the running dev
-server. These are gated on `NODE_ENV`, not on the `development` flag the
-`/dev/*` routes above use: every path under `/doctor/` returns `404` when
-`NODE_ENV` is `production`. The one deliberate exception is
-`/doctor/base-url`, which reports a static composition fact (is
-`VENDO_BASE_URL` set?) and answers in every environment, because production is
-exactly where that answer matters.
+server. They are mounted by the same `development` flag the `/dev/*` routes
+above use (`createVendo({ development })`, which `NODE_ENV=development`
+enables), and on any other deployment they are not in the route table at all —
+a plain `404`. None of them takes a principal, and `/doctor/machines` reports
+across every subject, so mounting is the whole access control. The one
+deliberate exception is `/doctor/base-url`, which reports a static composition
+fact (is `VENDO_BASE_URL` set?) and answers in every environment, because
+production is exactly where that answer matters.
 
 | Route | Method | Purpose |
 | --- | --- | --- |
-| `/doctor/base-url` | GET | `{ ok: true }`, or `409` with `base-url-not-set-in-production` |
+| `/doctor/base-url` | GET | `{ ok: true }`, or `409` with `base-url-not-set-in-production`. Mounted in every environment |
 | `/doctor/machines` | GET | which apps carry a machine, whether a schedule caller is configured, and each schedule's last-fired state |
 | `/doctor/present` · `/doctor/present/echo` | POST · GET | mint and echo the present-mode credential round trip; the echo reports booleans only, never credential values |
 | `/doctor/act-as` · `/doctor/act-as/echo` | POST · GET | mint `actAs` material and check the host's own principal resolver accepts it |

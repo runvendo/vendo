@@ -101,7 +101,9 @@ reports `E-CFG-003` when the spec's server mount disagrees.
   each schedule's last-fired state.
 
 No credential values are printed or persisted by any probe, and the synthetic
-`/doctor/*` routes return 404 in production.
+`/doctor/*` routes are mounted only in a development composition
+(`createVendo({ development })`, which `NODE_ENV=development` enables) — every
+other deployment answers 404 because the route is not there.
 
 `GET /doctor/base-url` is the one exception to that 404, and doctor does not
 call it: it exists for a deployed production server to answer. It reports the

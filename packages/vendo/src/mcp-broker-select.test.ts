@@ -179,6 +179,8 @@ async function composeVendo(options: {
   respond?: () => Response;
   baseUrl?: string | null;
   mcp?: CreateVendoConfig["mcp"];
+  /** The /doctor/mcp probe is mounted only in a development composition. */
+  development?: boolean;
 }): Promise<{ vendo: Vendo; requests: Array<{ authorization: string | null; body: unknown }> }> {
   vi.stubEnv("VENDO_API_KEY", "vnd_broker_key");
   vi.stubEnv("VENDO_CLOUD_URL", "https://cloud-mcp.test");
@@ -190,6 +192,7 @@ async function composeVendo(options: {
     principal: async () => null,
     store: await tempStore(),
     mcp: options.mcp ?? true,
+    ...(options.development === undefined ? {} : { development: options.development }),
     oauth: {
       async authorize() { return { subject: "user_door" }; },
       async principal(subject) { return { kind: "user", subject }; },
@@ -299,12 +302,13 @@ describe("the dev-only /doctor/mcp probe reports the seam's selection", () => {
   };
 
   it("broker arm → \"broker\"", async () => {
-    const { vendo } = await composeVendo({});
+    const { vendo } = await composeVendo({ development: true });
     expect(await selectionOf(vendo)).toBe("broker");
   });
 
   it("explicit mcp.remoteAs → \"explicit\", though /status says \"broker\" for both", async () => {
     const { vendo } = await composeVendo({
+      development: true,
       mcp: { remoteAs: { issuer: "https://own-as.example.com", audience: "https://app.maplebank.com/api/vendo/mcp" } },
     });
     expect(await statusMcp(vendo)).toBe("broker");
@@ -312,8 +316,13 @@ describe("the dev-only /doctor/mcp probe reports the seam's selection", () => {
   });
 
   it("localhost skip → \"local\"", async () => {
-    const { vendo } = await composeVendo({ baseUrl: "http://localhost:3000" });
+    const { vendo } = await composeVendo({ development: true, baseUrl: "http://localhost:3000" });
     expect(await selectionOf(vendo)).toBe("local");
+  });
+
+  it("is not mounted at all without the development opt-in", async () => {
+    const { vendo } = await composeVendo({});
+    expect((await vendo.handler(root("/api/vendo/doctor/mcp"))).status).toBe(404);
   });
 });
 

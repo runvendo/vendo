@@ -1,6 +1,6 @@
 import type { ExtractedTool } from "@vendoai/actions";
-import { VendoError, principalSchema, type Principal, type ToolOutcome } from "@vendoai/core";
-import { BASE_PATH, environment, json, prefixRoute, route, type RouteEntry } from "./shared.js";
+import { principalSchema, type Principal, type ToolOutcome } from "@vendoai/core";
+import { BASE_PATH, environment, json, route, type RouteEntry } from "./shared.js";
 
 /** The doctor probe surface (CLI `vendo doctor` targets a running dev server):
     the synthetic credential/actAs round-trip constants and tool descriptors,
@@ -33,18 +33,13 @@ function doctorProbeOk(outcome: ToolOutcome): boolean {
   return "ok" in outcome.output && outcome.output.ok === true;
 }
 
-/** Doctor targets a running dev server. The prefix gate keeps its synthetic
-    mint/echo routes out of production entirely (and falls through in
-    development); the echo halves expose no credential material — booleans
-    only.
-
-    `/doctor/base-url` (09-vendo §2 install-dx wave 1.1) is listed BEFORE that
-    gate on purpose: unlike the synthetic credential round-trips, it reports a
-    static composition fact (is VENDO_BASE_URL set?) that reveals no secret
-    material, and it is exactly the environment — production — the gate
-    otherwise silences. Placing it first lets it win the route-table scan in
-    every environment, gate included. */
-export const doctorRoutes: RouteEntry[] = [
+/** The one doctor route mounted in EVERY environment (09-vendo §2 install-dx
+    wave 1.1): unlike the probes below it reports a static composition fact (is
+    VENDO_BASE_URL set?) revealing no secret material, and the environment it
+    exists to warn about is production — the very one the probe surface is
+    closed in. Kept as its own group so the mounting rule is visible at the
+    route table rather than buried in a gate's ordering. */
+export const doctorBaseUrlRoutes: RouteEntry[] = [
   route("GET", "/doctor/base-url", async () => {
     const missingInProduction = environment("NODE_ENV") === "production" && environment("VENDO_BASE_URL") === undefined;
     if (missingInProduction) {
@@ -58,22 +53,27 @@ export const doctorRoutes: RouteEntry[] = [
     }
     return json({ ok: true });
   }),
-  prefixRoute("*", "/doctor/", async () => {
-    if (environment("NODE_ENV") === "production") {
-      throw new VendoError("not-found", "unknown Vendo route");
-    }
-    return undefined;
-  }),
+];
+
+/** The doctor PROBE surface — `vendo doctor` targets a running dev server, so
+    a composition that did not say it is development never gets these routes at
+    all (server.ts mounts the group behind `deps.development`). Mounting is the
+    only thing standing between them and an anonymous caller: none takes a
+    principal, `/doctor/machines` reports every machine-bearing app in the
+    deployment across every subject, and POST `/doctor/act-as` makes the
+    composition mint host actAs material on demand. The gate this replaced was a
+    per-request `NODE_ENV === "production"` refusal, which answers "not
+    production" for an unset NODE_ENV and on every runtime with no `process`
+    global. */
+export const doctorRoutes: RouteEntry[] = [
   // The broker seam's selection (selectMcpBroker) — a composition fact, no
-  // secret material; dev-only like every probe route below the gate. /status
-  // collapses an explicit `mcp.remoteAs` and the Cloud-managed broker into
-  // one "broker" posture; doctor reads this to keep the seam's explicit-wins
-  // precedence: only a confirmed "broker" selection may POST the tenant
-  // ensure (against an explicit AS the same call could provision or repoint
-  // an unrelated Cloud tenant).
+  // secret material. /status collapses an explicit `mcp.remoteAs` and the
+  // Cloud-managed broker into one "broker" posture; doctor reads this to keep
+  // the seam's explicit-wins precedence: only a confirmed "broker" selection
+  // may POST the tenant ensure (against an explicit AS the same call could
+  // provision or repoint an unrelated Cloud tenant).
   route("GET", "/doctor/mcp", async ({ deps }) => json({ selection: deps.mcpSelection })),
-  // Dev-only machine/schedule reporting (sits AFTER the production gate above,
-  // like every probe route). Reporting only: which apps carry a machine, what
+  // Machine/schedule reporting. Reporting only: which apps carry a machine, what
   // their manifests declare, and whether a schedule caller (VENDO_TICK_SECRET)
   // is configured for the /tick surface. WHEN a schedule last fired is not here:
   // a vendo.json schedule is a doc trigger, so its history is the automation's

@@ -221,11 +221,12 @@ credential-forwarding traps surface before you ship:
   and each schedule's last-fired state. Reporting only — an older or
   unreachable host just skips the section rather than failing the run.
 
-The synthetic `/doctor/*` routes are development-only and return 404 in
-production. The one exception is `GET /doctor/base-url`, which answers in
-every environment: it reports whether `VENDO_BASE_URL` is set, which reveals
-no secret and matters most in exactly the environment the gate would
-otherwise silence.
+The synthetic `/doctor/*` routes are mounted only in a development composition
+(`createVendo({ development })`, which `NODE_ENV=development` enables); every
+other deployment answers 404 because the route is not in its table. The one
+exception is `GET /doctor/base-url`, which answers in every environment: it
+reports whether `VENDO_BASE_URL` is set, which reveals no secret and matters
+most in exactly the environment the probes are closed in.
 
 The live turn resolves its model through the same
 [dev-mode credential ladder](/connect/dev-mode) the runtime uses, so doctor

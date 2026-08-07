@@ -202,6 +202,11 @@ async function liveHost(options: { configureBaseUrl?: boolean; actAs?: boolean }
     model: {} as LanguageModel,
     principal,
     store,
+    // This fixture stands in for the dev server `vendo doctor` targets, and the
+    // probes it drives are mounted only in a development composition. `next dev`
+    // sets NODE_ENV=development, which sets this; vitest sets NODE_ENV=test, so
+    // the fixture says it outright.
+    development: true,
     ...(options.actAs === false ? {} : { actAs }),
   });
   cleanup.push(async () => {
