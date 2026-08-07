@@ -4,7 +4,7 @@ import { vendoSync, type SyncReportWithWarnings } from "@vendoai/actions/sync";
 import type { ToolImpact } from "../sync-impact.js";
 import { pushSyncReport } from "./cloud/services.js";
 import type { JudgmentPassOptions } from "./judge/pass.js";
-import { runSyncFlow } from "./sync-flow.js";
+import { runSyncFlow, type SyncFlowResult } from "./sync-flow.js";
 import { consoleOutput, invokedByPackageScript, withCommandRun, type Output, type TelemetryOptions } from "./shared.js";
 
 export interface SyncReportPayload {
@@ -101,6 +101,46 @@ export async function runSync(options: SyncOptions): Promise<number> {
   );
 }
 
+/** The `--report` push. Returns whether the run asked to report and could not
+ *  — a `--report` that never reported is a failed run (self-serve audit B6:
+ *  this used to complain and exit 0, so a CI reporting lane stayed green for
+ *  as long as it never reported). */
+async function pushReport(
+  flow: SyncFlowResult,
+  options: SyncOptions,
+  noteError: (message: string) => void,
+): Promise<boolean> {
+  // The same resolved key the baseline push uses — a `--report` that saw a
+  // different env from the reconcile beside it was a trap (#567's fix
+  // applies to every keyed leg of a sync, not just the judgment pass).
+  const apiKey = flow.cloudKey;
+  if (!apiKey) {
+    noteError("vendo sync: --report needs a Vendo Cloud key — run `vendo login`, set VENDO_API_KEY, or pass --key.");
+    return true;
+  }
+  // `impact` rides along only when the check actually ran: nothing
+  // changed means nothing could be impacted, and an empty array would
+  // read to the console as a checked, clean blast radius.
+  const report = flow.report;
+  const checked = report.breaking.length > 0 || report.tools.changed.length > 0;
+  const payload: SyncReportPayload = {
+    report,
+    ...(checked && flow.impact !== null ? { impact: flow.impact } : {}),
+    at: new Date().toISOString(),
+  };
+  try {
+    if (options.push !== undefined) await options.push(payload);
+    else await pushSyncReport(payload, {
+      apiKey,
+      ...(options.apiUrl === undefined ? {} : { apiUrl: options.apiUrl }),
+      ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
+    });
+  } catch (error) {
+    noteError(`warning: failed to push sync report: ${error instanceof Error ? error.message : "unknown error"}`);
+  }
+  return false;
+}
+
 /**
  * sync = the shared flow (sync-flow.ts) in "incremental" mode, plus the two
  * things that are the COMMAND's and not the flow's: the `--report` push and
@@ -145,39 +185,9 @@ async function sync(options: SyncOptions): Promise<number> {
     notes.push(...flow.notes);
     const report = flow.report;
 
-    let reportUnkeyed = false;
-    if (options.report === true) {
-      // The same resolved key the baseline push uses — a `--report` that saw a
-      // different env from the reconcile beside it was a trap (#567's fix
-      // applies to every keyed leg of a sync, not just the judgment pass).
-      const apiKey = flow.cloudKey;
-      if (!apiKey) {
-        // Self-serve audit B6: this used to complain and exit 0, so a CI
-        // reporting lane stayed green for as long as it never reported.
-        reportUnkeyed = true;
-        noteError("vendo sync: --report needs a Vendo Cloud key — run `vendo login`, set VENDO_API_KEY, or pass --key.");
-      } else {
-        // `impact` rides along only when the check actually ran: nothing
-        // changed means nothing could be impacted, and an empty array would
-        // read to the console as a checked, clean blast radius.
-        const checked = report.breaking.length > 0 || report.tools.changed.length > 0;
-        const payload: SyncReportPayload = {
-          report,
-          ...(checked && flow.impact !== null ? { impact: flow.impact } : {}),
-          at: new Date().toISOString(),
-        };
-        try {
-          if (options.push !== undefined) await options.push(payload);
-          else await pushSyncReport(payload, {
-            apiKey,
-            ...(options.apiUrl === undefined ? {} : { apiUrl: options.apiUrl }),
-            ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
-          });
-        } catch (error) {
-          noteError(`warning: failed to push sync report: ${error instanceof Error ? error.message : "unknown error"}`);
-        }
-      }
-    }
+    const reportUnkeyed = options.report !== true
+      ? false
+      : await pushReport(flow, options, noteError);
 
     let exitCode: SyncJsonResult["exitCode"] = report.remixableErrors.length > 0 ? 2 : 0;
     if (options.strict === true && report.breaking.length > 0) {
