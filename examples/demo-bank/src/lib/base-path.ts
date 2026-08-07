@@ -18,12 +18,3 @@ export const BASE_PATH = "/maple";
 export function withBasePath(path: string): string {
   return `${BASE_PATH}${path}`;
 }
-
-/** The inverse: a pathname back in the app's own vocabulary, whichever way it
- *  arrived. Next strips the prefix off its own request URLs, but a URL built
- *  from the deployment's PUBLIC base still carries it — the MCP door's
- *  `returnTo` is one — and putting it on twice is a 404. */
-export function stripBasePath(pathname: string): string {
-  if (pathname === BASE_PATH) return "/";
-  return pathname.startsWith(`${BASE_PATH}/`) ? pathname.slice(BASE_PATH.length) : pathname;
-}

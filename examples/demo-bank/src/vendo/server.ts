@@ -5,7 +5,6 @@ import { createStore } from "@vendoai/store";
 import { authJs } from "@vendoai/vendo/auth/auth-js";
 import { createVendo, guard, vendoModel } from "@vendoai/vendo/server";
 import { authSecret, primaryMapleUser, resolveMaplePerson, resolveMapleSubject } from "@/server/users";
-import { withMountedLogin } from "./auth";
 import { mapleKnowledgeDocs } from "./knowledge";
 import { mapleMcpConfig } from "./mcp-config";
 import { namedHarness } from "./proof-harness";
@@ -18,9 +17,7 @@ const composioApiKey = process.env.COMPOSIO_API_KEY;
 // OAuth adapter. `user` maps an Auth.js subject to the seeded Maple
 // identity; returning null means "not a Maple user" — the principal
 // resolves to anonymous and away/MCP minting for that subject declines.
-// `withMountedLogin`: the door's sessionless bounce is the one page a real MCP
-// client's human sees, and the preset builds it origin-rooted — see ./auth.ts.
-export const mapleAuth = withMountedLogin(authJs({
+export const mapleAuth = authJs({
   secret: authSecret,
   user: (subject) => {
     const user = resolveMapleSubject(subject);
@@ -66,7 +63,7 @@ export const mapleAuth = withMountedLogin(authJs({
     const user = resolveMaplePerson(query);
     return user ? { subject: user.subject, display: user.display } : null;
   },
-}));
+});
 
 export const vendo = createVendo({
   // Model + store slots stay UNSET (demo-refresh Part 2): the env ladder

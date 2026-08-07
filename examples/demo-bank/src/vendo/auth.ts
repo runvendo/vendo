@@ -1,4 +1,3 @@
-import type { authJs } from "@vendoai/vendo/auth/auth-js";
 import { joinUrl, withPathPrefix } from "@vendoai/core";
 import { getToken } from "next-auth/jwt";
 import { withBasePath } from "@/lib/base-path";
@@ -56,34 +55,4 @@ export function safeReturnTo(candidate: string | null | undefined, base: URL = p
 
 export function maplePublicUrl(request: Request, path: string): URL {
   return joinUrl(publicUrl(request), path);
-}
-
-/**
- * THE DOOR'S SIGN-IN BOUNCE, UNDER THE MOUNT POINT.
- *
- * A sessionless MCP client is redirected to the host's login page, and that is
- * the ONE page a real client's human ever sees. The auth preset builds it as
- * `<public origin>/login` — it has no way to know Maple is served in place
- * under BASE_PATH — so the Location it emits 404s. Same job as
- * `mountedRedirect` in src/proxy.ts: Next puts the prefix back on nothing the
- * app builds itself, and a redirect's Location is the app's own URL.
- */
-export function withMountedLogin(preset: ReturnType<typeof authJs>): ReturnType<typeof authJs> {
-  const oauth = preset.oauth;
-  if (oauth?.session === undefined) return preset;
-  const bounce = oauth.session;
-  return {
-    ...preset,
-    oauth: {
-      ...oauth,
-      session: async (request, context) => {
-        const answer = await bounce(request, context);
-        // The only Response this seam returns is that login redirect.
-        if (!(answer instanceof Response)) return answer;
-        const login = new URL(answer.headers.get("location")!);
-        login.pathname = withBasePath(login.pathname);
-        return Response.redirect(login, answer.status);
-      },
-    },
-  };
 }

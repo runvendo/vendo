@@ -4,7 +4,7 @@ import { encode } from "next-auth/jwt";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { authSecret, resolveMapleSubject } from "@/server/users";
 import { BASE_PATH } from "@/lib/base-path";
-import { resolveMapleSession, safeReturnTo, withMountedLogin } from "./auth";
+import { resolveMapleSession, safeReturnTo } from "./auth";
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -92,24 +92,6 @@ describe("authJs's actAs half (away/MCP minting) — the session resolveMapleSes
       { kind: "user", subject: "user_stranger" },
       grantFor("user_stranger"),
     )).resolves.toBeNull();
-  });
-});
-
-describe("the MCP door's sign-in bounce", () => {
-  /** The one page a real MCP client's human ever sees. The preset builds it as
-   *  `<public origin>/login`, which on the mounted demo is a 404 — measured on
-   *  maple.vendo.run, where the door bounces to /login and Maple's login page
-   *  is at /maple/login. */
-  it("lands under Maple's mount point, not the bare origin", async () => {
-    const returnTo = "http://localhost:3000/maple/api/vendo/mcp/authorize?state=ok";
-    const answer = await withMountedLogin(auth).oauth!.session!(
-      new Request("http://localhost:3000/api/vendo/mcp/authorize"),
-      { returnTo },
-    );
-    expect(answer).toBeInstanceOf(Response);
-    const location = new URL((answer as Response).headers.get("location")!);
-    expect(location.pathname).toBe(`${BASE_PATH}/login`);
-    expect(location.searchParams.get("returnTo")).toBe(returnTo);
   });
 });
 
