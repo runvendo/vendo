@@ -184,6 +184,37 @@ describe("open() on an app whose query did not resolve", () => {
   });
 });
 
+describe("where a resolved query's result lands", () => {
+  it("writes it at the query's name (v2 spec §2 — always one top-level key)", async () => {
+    const { runtime, store } = stand();
+    await seedAppRow(store, treeApp(), "u1");
+
+    const surface = await runtime.open(APP_ID, ctx());
+    if (surface.kind !== "tree") throw new Error("expected a tree surface");
+    expect((surface.payload as { data?: unknown }).data)
+      .toEqual({ spend: { total: 4210, currency: "USD" } });
+  });
+
+  it("makes a __proto__-named query own data, never the prototype", async () => {
+    // The name grammar (`/^[A-Za-z_][A-Za-z0-9_]*$/`) admits `__proto__`, so it
+    // reaches the writer and validateTree will not stop it. A plain assignment
+    // here would hand a model-written or imported `.vendoapp` document the
+    // Object prototype of every object in the process.
+    const { runtime, store } = stand({ outcome: { status: "ok", output: { polluted: true } } });
+    const app = treeApp();
+    (app.tree as unknown as { queries: { name: string; tool: string }[] })
+      .queries = [{ name: "__proto__", tool: "maple_spend_summary" }];
+    await seedAppRow(store, app, "u1");
+
+    const surface = await runtime.open(APP_ID, ctx());
+    if (surface.kind !== "tree") throw new Error("expected a tree surface");
+    const data = (surface.payload as { data: Record<string, unknown> }).data;
+    expect(Object.getPrototypeOf(data)).toBe(Object.prototype);
+    expect(Object.getOwnPropertyDescriptor(data, "__proto__")?.value).toEqual({ polluted: true });
+    expect(({} as Record<string, unknown>)["polluted"]).toBeUndefined();
+  });
+});
+
 describe("authored() — the same answer for a files-first save", () => {
   it("tells the render seam its queries failed, so the painted view says so", async () => {
     const { runtime } = stand({

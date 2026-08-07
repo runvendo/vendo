@@ -15,76 +15,22 @@ import type { InClientVenueState } from "./inclient.js";
 import { detectPinDrift, pinComponentName, type PinBaseline, type PinDrift } from "./pins.js";
 import type { OpenSurface } from "./runtime.js";
 
-const isObject = (value: unknown): value is Record<string, Json> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
-// Query paths come from the app document — model-written or imported from an untrusted
-// .vendoapp artifact — so a pointer segment that names a prototype key must never resolve.
-const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
-
-const decodePointer = (pointer: string): string[] | null => {
-  if (pointer === "") return [];
-  if (!pointer.startsWith("/")) return null;
-  const encoded = pointer.slice(1).split("/");
-  if (encoded.some((part) => /~(?![01])/u.test(part))) return null;
-  const parts = encoded.map((part) => part.replaceAll("~1", "/").replaceAll("~0", "~"));
-  if (parts.some((part) => UNSAFE_KEYS.has(part))) return null;
-  return parts;
+/**
+ * v2 spec §2 — a query's result lives at `"/" + name`: always a single
+ * top-level key, because both producers of a query name (validateTree and the
+ * wire compiler) hold it to `/^[A-Za-z_][A-Za-z0-9_]*$/`, so no separator,
+ * escape or index can occur. Own-property define so the one hostile name that
+ * grammar DOES admit — `__proto__` — becomes data, never the prototype.
+ * Mirrors ui/src/tree/mcp-shim/shim-core.ts.
+ */
+const setQueryData = (data: Record<string, Json>, query: TreeQuery, output: Json): void => {
+  Object.defineProperty(data, query.name, {
+    value: structuredClone(output),
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
 };
-
-type JsonContainer = Record<string, Json> | Json[];
-const arrayIndex = (part: string): number | null => /^(0|[1-9][0-9]*)$/.test(part) ? Number(part) : null;
-
-const child = (target: JsonContainer, part: string): Json | undefined => {
-  if (Array.isArray(target)) {
-    const index = arrayIndex(part);
-    return index === null ? undefined : target[index];
-  }
-  return target[part];
-};
-
-const assignChild = (target: JsonContainer, part: string, value: Json): boolean => {
-  if (Array.isArray(target)) {
-    const index = arrayIndex(part);
-    if (index === null || !Number.isSafeInteger(index) || index > target.length) return false;
-    target[index] = value;
-    return true;
-  }
-  target[part] = value;
-  return true;
-};
-
-const setQueryData = (data: Record<string, Json>, pointer: string, value: Json): boolean => {
-  const parts = decodePointer(pointer);
-  if (parts === null) return false;
-  if (parts.length === 0) {
-    if (!isObject(value)) return false;
-    const replacement = structuredClone(value);
-    for (const key of Object.keys(data)) delete data[key];
-    for (const [key, item] of Object.entries(replacement)) {
-      if (!UNSAFE_KEYS.has(key)) data[key] = item;
-    }
-    return true;
-  }
-  let target: JsonContainer = data;
-  for (let index = 0; index < parts.length - 1; index += 1) {
-    const part = parts[index];
-    const next = parts[index + 1];
-    if (part === undefined || next === undefined) return false;
-    let current = child(target, part);
-    if (!isObject(current) && !Array.isArray(current)) {
-      current = arrayIndex(next) === null ? {} : [];
-      if (!assignChild(target, part, current)) return false;
-    }
-    target = current as JsonContainer;
-  }
-  const final = parts.at(-1);
-  if (final === undefined) return false;
-  return assignChild(target, final, structuredClone(value));
-};
-
-/** A v2 query's result lives at `"/" + name` by definition (v2 spec §2). */
-const queryPointer = (query: TreeQuery): string => `/${query.name}`;
 
 interface QueryState {
   key: string;
@@ -158,7 +104,7 @@ export const createProgressiveQueryResolver = (
         failed = true;
         continue;
       }
-      setQueryData(data, queryPointer(state.query), state.result.output);
+      setQueryData(data, state.query, state.result.output);
     }
     resolvedData = data;
     unavailable = failed;
