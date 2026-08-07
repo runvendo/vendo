@@ -502,9 +502,16 @@ export function expressServerSource(typescript: boolean, auth: AuthMatch | null 
 }
 
 export const VENDO_ENV_EXAMPLE =
-  "# Trusted host origin for same-origin API calls. Dev trusts the request's own\n" +
-  "# origin automatically; production fails loud without this set (a credential-\n" +
-  "# forwarding call errors instead of silently running unauthenticated).\n" +
+  "# This deployment's FULL public URL — path prefix included. Nothing strips its\n" +
+  "# path: every URL Vendo builds (host tool calls, login redirects, box callbacks)\n" +
+  "# hangs off it. Dev trusts the request's own origin automatically; production\n" +
+  "# fails loud without this set (a credential-forwarding call errors instead of\n" +
+  "# silently running unauthenticated).\n" +
   "VENDO_BASE_URL=http://localhost:3000\n" +
+  "# Optional — the host API on another origin (default: the public URL above).\n" +
+  "# VENDO_HOST_API_URL=\n" +
+  "# Optional — the login page (default: {public URL}/login). May be absolute,\n" +
+  "# on another domain.\n" +
+  "# VENDO_LOGIN_URL=\n" +
   "# Model key — REQUIRED in production. In dev, `vendo init` can mint a free starter key instead.\n" +
   "# ANTHROPIC_API_KEY=\n";
