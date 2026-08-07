@@ -475,3 +475,79 @@ describe("the provider→components seam", () => {
     expect(record.name).toBe("BalanceCard");
   });
 });
+
+describe("schema source markers and coverage", () => {
+  it("counts both slots, keeps a declared empty input out of the blind list", async () => {
+    const host = await temporaryHost();
+    await writeSpec(host.root, {
+      "/api/items": { get: operation("listItems") },
+      "/api/items/{id}": {
+        get: operation("getItem", [{ name: "id", in: "path", required: true, schema: { type: "string" } }]),
+      },
+    });
+    const report = await vendoSync(host);
+
+    expect(report.toolSchemas.total).toBe(2);
+    // An OpenAPI operation that declares no parameters HAS declared its
+    // argument list; it is not blind.
+    expect(report.toolSchemas.inputs).toEqual({ known: 2, unknown: [] });
+    expect(report.toolSchemas.outputs).toEqual({ known: 0, unknown: ["host_getItem", "host_listItems"] });
+  });
+
+  it("carries an inferred schema across a re-sync and drops it when the binding moves", async () => {
+    const host = await temporaryHost();
+    await writeSpec(host.root, { "/api/items": { get: operation("listItems") } });
+    await vendoSync(host);
+
+    const toolsPath = path.join(host.out, "tools.json");
+    const file = JSON.parse(await fs.readFile(toolsPath, "utf8")) as { tools: Array<Record<string, any>> };
+    const inferred = { type: "object", properties: { data: { type: "array" } } };
+    file.tools[0]!.outputSchema = inferred;
+    file.tools[0]!.outputSchemaSource = "inferred";
+    await fs.writeFile(toolsPath, `${JSON.stringify(file, null, 2)}\n`, "utf8");
+
+    await vendoSync(host);
+    const carried = (await toolsAt(host.out)).find((tool) => tool.name === "host_listItems");
+    expect(carried?.outputSchema).toEqual(inferred);
+    expect(carried?.outputSchemaSource).toBe("inferred");
+
+    // Same name, different handler: the stale inferred schema must not follow.
+    await writeSpec(host.root, { "/api/moved": { get: operation("listItems") } });
+    await vendoSync(host);
+    const rebound = (await toolsAt(host.out)).find((tool) => tool.name === "host_listItems");
+    expect(rebound).not.toHaveProperty("outputSchema");
+    expect(rebound?.outputSchemaSource).toBe("unknown");
+  });
+
+  it("does not report a blind-to-filled input as breaking, and strict does not throw on it", async () => {
+    const previous: ExtractedTool = {
+      name: "host_orders_create",
+      description: "POST /api/orders",
+      inputSchema: { type: "object", properties: {}, additionalProperties: true },
+      inputSchemaSource: "unknown",
+      risk: "write",
+      binding: { kind: "route", method: "POST", path: "/api/orders", argsIn: "body" },
+    };
+    const filled: ExtractedTool = {
+      ...previous,
+      inputSchema: {
+        type: "object",
+        properties: { merchant: { type: "string" } },
+        required: ["merchant"],
+        additionalProperties: false,
+      },
+      inputSchemaSource: "inferred",
+    };
+    expect(inputNarrowed(previous, filled)).toBe(false);
+    // A real narrowing between two KNOWN inputs is still breaking.
+    expect(inputNarrowed({ ...filled, inputSchemaSource: "declared" }, {
+      ...filled,
+      inputSchema: {
+        type: "object",
+        properties: { merchant: { type: "string" }, hour: { type: "number" } },
+        required: ["merchant", "hour"],
+        additionalProperties: false,
+      },
+    })).toBe(true);
+  });
+});

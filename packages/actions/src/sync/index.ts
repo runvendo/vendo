@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { canonicalJson, descriptorHash, VendoError, type ToolSemantics } from "@vendoai/core";
+import { canonicalJson, descriptorHash, VendoError, type JsonSchema, type ToolSemantics } from "@vendoai/core";
 import {
   VENDO_TOOLS_FORMAT,
   overridesFileSchema,
@@ -117,6 +117,15 @@ function typeNames(value: unknown): string[] {
 }
 
 export function inputNarrowed(previous: ExtractedTool, next: ExtractedTool): boolean {
+  // The JUDGE'S FILL is not a narrowing. A tool whose input nobody could read
+  // carried a fail-closed placeholder; the run that infers it replaces that
+  // placeholder wholesale, which trips every rule below. Reporting that as
+  // breaking makes `vendoSync({ strict: true })` THROW on the judge's own
+  // work. Only inference is exempt: a blind input turning `declared` means the
+  // host added a real validator, which IS a breaking change worth reporting.
+  if ((previous.inputSchemaSource ?? "unknown") === "unknown"
+      && next.inputSchemaSource === "inferred") return false;
+
   const oldSchema = objectValue(previous.inputSchema);
   const newSchema = objectValue(next.inputSchema);
   const oldRequired = new Set(arrayValue(oldSchema.required).filter((value): value is string => typeof value === "string"));
@@ -215,6 +224,29 @@ async function loadVendoDir(out: string, warnings: string[]): Promise<VendoDirSt
   return { previousTools: previous?.tools ?? [], overrides };
 }
 
+/** What survives a wholesale regeneration of the machine layer, keyed by tool
+ *  name and gated on binding identity. */
+interface CarriedFields {
+  identity: string;
+  semantics?: ToolSemantics;
+  inputSchema?: JsonSchema;
+  outputSchema?: JsonSchema;
+}
+
+function schemaCoverage(tools: readonly ExtractedTool[]): SyncReport["toolSchemas"] {
+  const inputs: string[] = [];
+  const outputs: string[] = [];
+  for (const tool of tools) {
+    if ((tool.inputSchemaSource ?? "unknown") === "unknown") inputs.push(tool.name);
+    if ((tool.outputSchemaSource ?? "unknown") === "unknown") outputs.push(tool.name);
+  }
+  return {
+    total: tools.length,
+    inputs: { known: tools.length - inputs.length, unknown: inputs.sort() },
+    outputs: { known: tools.length - outputs.length, unknown: outputs.sort() },
+  };
+}
+
 export async function vendoSync(options: {
   root: string;
   out?: string;
@@ -230,14 +262,23 @@ export async function vendoSync(options: {
   const extraction = await runExtractors(root);
   warnings.push(...extraction.warnings);
   const extractedTools = unionExtracted(extraction.tools);
-  // Machine layer carry-over: per-tool field semantics persist across syncs.
-  // A carried entry is keyed by name AND binding identity: a same-named tool
-  // whose binding changed serves a different response, so its stale shape
-  // hints drop.
-  const semanticsByName = new Map<string, { semantics: ToolSemantics; identity: string }>();
+  // Machine layer carry-over: per-tool field semantics and JUDGE-INFERRED
+  // schemas persist across syncs. Keyed by name AND binding identity — a
+  // same-named tool whose binding changed serves a different response, so its
+  // stale hints drop. Only `inferred` schemas are carried: a declared/types
+  // schema is re-derived by its extractor every run, and carrying one would
+  // resurrect a schema the host's own spec just deleted.
+  const carriedByName = new Map<string, CarriedFields>();
   for (const tool of previousTools) {
-    const semantics = tool.semantics;
-    if (semantics !== undefined) semanticsByName.set(tool.name, { semantics, identity: bindingIdentity(tool.binding) });
+    const carried: CarriedFields = { identity: bindingIdentity(tool.binding) };
+    if (tool.semantics !== undefined) carried.semantics = tool.semantics;
+    if (tool.inputSchemaSource === "inferred") carried.inputSchema = tool.inputSchema;
+    if (tool.outputSchemaSource === "inferred" && tool.outputSchema !== undefined) {
+      carried.outputSchema = tool.outputSchema;
+    }
+    if (carried.semantics !== undefined || carried.inputSchema !== undefined || carried.outputSchema !== undefined) {
+      carriedByName.set(tool.name, carried);
+    }
   }
   const hashCache = new Map<string, string | undefined>();
   const tools: ExtractedTool[] = [];
@@ -247,14 +288,18 @@ export async function vendoSync(options: {
     // otherwise, never traced.
     const source = srcPath ?? (tool.binding.kind === "server-action" ? tool.binding.module : undefined);
     const srcHash = source === undefined ? undefined : await sourceHash(root, source, hashCache);
-    const carried = semanticsByName.get(tool.name);
-    const semantics = carried !== undefined && carried.identity === bindingIdentity(tool.binding)
-      ? carried.semantics
-      : undefined;
+    const carried = carriedByName.get(tool.name);
+    const inherited = carried !== undefined && carried.identity === bindingIdentity(tool.binding) ? carried : undefined;
+    // The extractor's own reading always wins; a carried value only fills a
+    // slot this run left blind.
+    const fillInput = inherited?.inputSchema !== undefined && (tool.inputSchemaSource ?? "unknown") === "unknown";
+    const fillOutput = inherited?.outputSchema !== undefined && tool.outputSchema === undefined;
     tools.push({
       ...tool,
       ...(srcHash === undefined ? {} : { srcHash }),
-      ...(semantics === undefined ? {} : { semantics }),
+      ...(inherited?.semantics === undefined ? {} : { semantics: inherited.semantics }),
+      ...(fillInput ? { inputSchema: inherited.inputSchema!, inputSchemaSource: "inferred" as const } : {}),
+      ...(fillOutput ? { outputSchema: inherited.outputSchema!, outputSchemaSource: "inferred" as const } : {}),
     });
   }
   const extracted = toolsFileSchema.parse({ format: VENDO_TOOLS_FORMAT, tools });
@@ -295,6 +340,7 @@ export async function vendoSync(options: {
   if (floorWarning !== null) warnings.push(floorWarning);
   const report: SyncReportWithWarnings = {
     ...comparison,
+    toolSchemas: schemaCoverage(extracted.tools),
     pins: {
       captured: pins.captured,
       drifted: pins.drifted,
