@@ -140,7 +140,10 @@ async function collectCss(layout: ContextFile | null, targetDir: string): Promis
     seen.add(absolute);
     const content = await readCapped(absolute);
     if (content === null) return;
-    files.push({ path: path.relative(targetDir, absolute), content });
+    // Imported sheets go in FIRST, this one after them: `@import` must precede
+    // every other rule, so an imported declaration behaves as if inserted at the
+    // import point. At equal specificity the importing sheet's own declaration
+    // wins, and the readers below take the LAST match in this array.
     for (const match of content.matchAll(CSS_AT_IMPORT_RE)) {
       const spec = match[1]!;
       if (spec === "tailwindcss" || spec.startsWith("http")) continue;
@@ -152,6 +155,7 @@ async function collectCss(layout: ContextFile | null, targetDir: string): Promis
         await visit(path.join(targetDir, spec.slice(2)), depth + 1);
       }
     }
+    files.push({ path: path.relative(targetDir, absolute), content });
   };
 
   if (layout !== null) {

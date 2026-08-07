@@ -26,10 +26,9 @@ import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createVendo } from "./server.js";
 
-// 04-actions §6 guard-visibility e2e: compound steps route through the REAL
-// guard binding, so approvals, grants, breakers, and audit demonstrably see
-// every individual step. The stub-seam adversarial suite lives in
-// packages/actions/src/security/compound-no-bypass.test.ts.
+// Guard-visibility e2e: compound steps route through the REAL guard binding,
+// so approvals, grants, breakers, and audit demonstrably see every individual
+// step.
 
 const principal: Principal = { kind: "user", subject: "user_compound" };
 const ctx: RunContext = {

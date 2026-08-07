@@ -41,18 +41,22 @@ const loadJose = lazyModule<JoseModule>(
 
 /** The tenant issuer per Auth0's env conventions: AUTH0_DOMAIN (the v4 SDK's
     bare domain, scheme tolerated), else AUTH0_ISSUER_BASE_URL (the v3 SDK's
-    full URL). Auth0 issuers always carry the trailing slash. */
+    full URL). Auth0 issuers always carry EXACTLY ONE trailing slash — a pasted
+    value with its own would otherwise produce `https://tenant.auth0.com//`,
+    which matches no token's `iss` and points the JWKS fetch at the wrong path,
+    so every login fails with nothing naming the extra character. */
 function tenantIssuer(): string {
-  const domain = environment("AUTH0_DOMAIN");
-  if (domain !== undefined) {
-    return domain.startsWith("http://") || domain.startsWith("https://")
-      ? `${new URL(domain).origin}/`
-      : `https://${domain}/`;
-  }
-  const base = environment("AUTH0_ISSUER_BASE_URL");
-  if (base !== undefined) {
+  for (const name of ["AUTH0_DOMAIN", "AUTH0_ISSUER_BASE_URL"] as const) {
+    const value = environment(name);
+    if (value === undefined) continue;
+    const withScheme = value.startsWith("http://") || value.startsWith("https://")
+      ? value
+      : `https://${value}`;
     try {
-      return `${new URL(base).origin}/`;
+      const { origin } = new URL(withScheme);
+      // `new URL("https://")` parses but has no host, so origin is "null".
+      if (origin === "null") throw new Error(MISSING_DOMAIN_MESSAGE);
+      return `${origin}/`;
     } catch {
       throw new Error(MISSING_DOMAIN_MESSAGE);
     }

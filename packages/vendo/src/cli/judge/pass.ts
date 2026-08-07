@@ -118,6 +118,11 @@ const PROSE_LIMITS: ReadonlyArray<readonly [string, number]> = [
   ["description", 500],
   ["title", 60],
   ["reason", ADVISORY_LIMIT],
+  // A quote that ran long is still evidence. Unclamped, the schema rejects it
+  // with an issue on the `evidence` path, and every issue on that path is
+  // counted as evidence-LESS — so the most thorough answer the model can give
+  // is reported to the operator as "no evidence" and the grade is discarded.
+  ["evidence", 500],
 ];
 
 /** Cut to `limit`, marking the cut so a reader can tell clamped text from text

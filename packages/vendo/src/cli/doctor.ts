@@ -27,7 +27,7 @@ import { importsGeneratedMap, missingRegistrations, registrationKey, requiredSer
 import { CONFIG_SURFACES, OVERRIDES_ENABLEMENT_NOTE } from "../config-surface.js";
 import { walk } from "./theme/walk.js";
 import { remoteUrls, sameUrl, validateRegistryServer } from "./mcp/registry.js";
-import { askYesNo, CLI_VERSION, consoleOutput, exists, normalizeDotEnvValue, readOptional, toolingTelemetry, type Output } from "./shared.js";
+import { askYesNo, clientRoot, CLI_VERSION, consoleOutput, exists, normalizeDotEnvValue, readOptional, toolingTelemetry, type Output } from "./shared.js";
 
 export interface DoctorOptions {
   targetDir: string;
@@ -270,29 +270,33 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     // correct scaffold mounts the generated vendo/vendo-root.tsx wrapper —
     // whose export is also named VendoRoot, so the marker holds there too.
     let rootWired = false;
-    for (const appDir of [join(root, "app"), join(root, "src", "app")]) {
-      for (const path of await walk(appDir, (rel) => /(^|[\\/])layout\.(?:tsx|jsx|js)$/.test(rel))) {
-        const source = await readFile(path, "utf8").catch(() => "");
-        if (source.includes("<VendoRoot") || source.includes("<VendoProvider")) rootWired = true;
-      }
+    const mountCandidates = [
+      ...await walk(join(root, "app"), (rel) => /(^|[\\/])layout\.(?:tsx|jsx|js)$/.test(rel)),
+      ...await walk(join(root, "src", "app"), (rel) => /(^|[\\/])layout\.(?:tsx|jsx|js)$/.test(rel)),
+      // A pages-only host has no layout to wrap: init hands it pages/_app, so
+      // that is where the mount lives. Without this the check can never pass on
+      // a router shape init explicitly supports.
+      ...["pages", join("src", "pages")].flatMap((pages) =>
+        ["_app.tsx", "_app.jsx", "_app.js"].map((file) => join(root, pages, file))),
+    ];
+    for (const path of mountCandidates) {
+      const source = await readFile(path, "utf8").catch(() => "");
+      if (source.includes("<VendoRoot") || source.includes("<VendoProvider")) rootWired = true;
     }
     if (rootWired) {
       pass("wiring/next-root", "<VendoRoot> wraps the app");
     } else {
       // The exact paste, not a description of it: init never edits user source,
       // so this is the one step a by-the-book install still owes, and doctor is
-      // where a missed paste surfaces. Name the file that exists.
-      const layoutPath = (await Promise.all(
-        [join(root, "app", "layout.tsx"), join(root, "src", "app", "layout.tsx")].map(
-          async (candidate) => (await exists(candidate)) ? candidate : null,
-        ),
-      )).find((candidate) => candidate !== null) ?? join(root, "app", "layout.tsx");
+      // where a missed paste surfaces. `clientRoot` is init's own answer to
+      // "which file", so the two can never name different files again.
+      const { file: layoutPath, children } = await clientRoot(root);
       const file = relative(root, layoutPath);
       const specifier = relative(dirname(layoutPath), join(dirname(dirname(layoutPath)), "vendo", "vendo-root"))
         .split(sep).join("/");
       fail("wiring/next-root", "E-WIRE-004",
-        `no app layout mounts <VendoRoot> — Vendo is wired but invisible. In ${file}, paste: `
-        + `import { VendoRoot } from "${specifier}";  … then wrap: <VendoRoot>{children}</VendoRoot>. `
+        `no client entry mounts <VendoRoot> — Vendo is wired but invisible. In ${file}, paste: `
+        + `import { VendoRoot } from "${specifier}";  … then wrap: <VendoRoot>${children}</VendoRoot>. `
         + "(The generated vendo/vendo-root.tsx wrapper's export is also named VendoRoot and mounts <VendoOverlay />; "
         + "any layout that covers your pages works. `vendo init` never edits your source, so this paste is always yours.)");
     }

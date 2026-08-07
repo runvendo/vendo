@@ -458,8 +458,8 @@ export interface CreateVendoConfig {
   /** Build contract §3.4 / architecture §10 — where workspace file CONTENT
       lives once it outgrows a database row. Unset, the store's own `vendo_blobs`
       backs it up to `FILES_STORE_MAX_BYTES` (5 MiB) and the first over-cap write
-      fails naming this key; `s3({ bucket, … })` is the shipped implementation
-      and covers S3/R2/Supabase/MinIO.
+      fails naming this key. Any S3-compatible bucket (S3/R2/Supabase/MinIO)
+      is reachable through a host-supplied adapter.
 
       Resolved ONCE, inside `selectStore`, and handed to every consumer from
       there — the workspace that writes blobs, and the erase/adoption/sweep
@@ -1068,8 +1068,8 @@ function isHostedStore(store: VendoStore): store is HostedStore {
          writes fail closed with instructions).
     The adapters themselves never read the environment. */
 /** ADAPTER RULE, files seam (build contract §3.4): the one place a
-    `FilesAdapter` is chosen. Explicit `files:` wins (BYO — s3/R2/Supabase/MinIO
-    via `s3()`, or the host's own); unset, the store's `vendo_blobs` backs it up
+    `FilesAdapter` is chosen. Explicit `files:` wins (BYO — any S3-compatible
+    bucket, or the host's own); unset, the store's `vendo_blobs` backs it up
     to `FILES_STORE_MAX_BYTES`, and the over-cap error names `files:` by name.
 
     Deliberately NOT defaulted at each call site. The workspace writes blobs and

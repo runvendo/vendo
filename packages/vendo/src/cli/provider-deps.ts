@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import type { DevCredential, EnvKeyProvider } from "../dev-creds/resolve.js";
-import { installedZodVersion } from "./dep-versions.js";
+import { installedVersion, installedZodVersion } from "./dep-versions.js";
 import type { Output } from "./shared.js";
 
 /**
@@ -32,14 +32,12 @@ export function providerModuleFor(credential: DevCredential): { module: string; 
 
 /** Resolvability is what the runtime ladder checks, so node_modules is the
     evidence — not package.json (a hoisting monorepo satisfies the import
-    without a local entry). */
+    without a local entry). `installedVersion` walks the node_modules chain
+    upward the way node resolves a bare specifier, so a hoisted workspace
+    install is seen where `ai` sees it; a fixed root path called it missing and
+    made init shell a package install the tree already satisfied. */
 async function isInstalled(root: string, moduleName: string): Promise<boolean> {
-  try {
-    await readFile(join(root, "node_modules", ...moduleName.split("/"), "package.json"), "utf8");
-    return true;
-  } catch {
-    return false;
-  }
+  return (await installedVersion(root, moduleName)) !== null;
 }
 
 async function fileExists(root: string, name: string): Promise<boolean> {

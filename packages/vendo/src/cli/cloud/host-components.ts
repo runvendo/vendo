@@ -193,9 +193,13 @@ export async function pushHostComponents(options: {
     const remoteModules = new Set(await blobs.list());
     for (const [ref, body] of [...local.modules].sort(([left], [right]) => left.localeCompare(right))) {
       if (remoteModules.has(ref)) continue;
-      await blobs.put(ref, new TextEncoder().encode(body), { contentType: "application/json" });
+      // The encoded array is what actually crosses the wire, and sync reports
+      // this total to the user as KB — `body.length` counts UTF-16 code units,
+      // which undercounts every non-ASCII byte in the source.
+      const encoded = new TextEncoder().encode(body);
+      await blobs.put(ref, encoded, { contentType: "application/json" });
       modules.uploaded += 1;
-      uploadedBytes += body.length;
+      uploadedBytes += encoded.length;
     }
 
     const remote = new Map<string, unknown>();

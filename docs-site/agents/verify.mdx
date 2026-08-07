@@ -67,16 +67,18 @@ Do not mount the handler anywhere else; doctor checks these two paths only.
 
 ### E-WIRE-004 {#E-WIRE-004}
 
-**Symptom:** No app layout mounts `<VendoRoot>`.
+**Symptom:** No client entry mounts `<VendoRoot>`.
 
 **Cause:** No `layout.tsx` (or `.jsx`/`.js`) under `app/` or `src/app/` — root
-or nested — contains a `<VendoRoot` (or `<VendoProvider`) element.
+or nested — and no `pages/_app.tsx` (or `.jsx`/`.js`, under `src/` too)
+contains a `<VendoRoot` (or `<VendoProvider`) element.
 
 **Fix:** Run `npx vendo init` to generate the client mount wrapper
 `vendo/vendo-root.tsx` (its export is also named `VendoRoot`), then mount it
 yourself. Init never edits your source, so this paste is always yours — it is
-the last line of init's output. Wrap `{children}` in the layout that covers
-your pages:
+the last line of init's output. Doctor names the same file init named. Wrap
+`{children}` in the layout that covers your pages (or `<Component
+{...pageProps} />` in `pages/_app.tsx` on a Pages-Router host):
 
 ```tsx
 import { VendoRoot } from "../vendo/vendo-root";

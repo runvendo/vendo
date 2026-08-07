@@ -41,7 +41,9 @@ import {
 } from "./theme/extract-theme.js";
 import { baseFrom, writeBase } from "./theme/provenance.js";
 import {
+  appDirectory,
   askYesNo,
+  clientRoot,
   cloudProjectProps,
   consoleOutput,
   envLocalValueSync,
@@ -282,21 +284,6 @@ async function defaultThemeReview(summary: ThemeSummary): Promise<Record<string,
   return overrides;
 }
 
-/** Where init scaffolds app/api/vendo/[...vendo] and (for a fresh scaffold)
-    the app-router layout wrap. Next hard-fails ("pages and app directories
-    should be under the same folder") when app/ and pages/ sit at different
-    bases, so a host whose pages router already lives under src/ must get its
-    NEW app/ segment there too, mirroring detectRouter's src/pages signal
-    below — even before any src/app exists to detect directly. This still
-    hands a pure-Pages host an App-Router route segment by design (valid in
-    Next as long as both share one base); whether pages-native hosts deserve
-    a pages/api scaffold instead is a separate, unaddressed question. */
-async function appDirectory(root: string): Promise<string> {
-  if (await exists(join(root, "src", "app"))) return join(root, "src", "app");
-  if (await exists(join(root, "src", "pages"))) return join(root, "src", "app");
-  return join(root, "app");
-}
-
 /** Telemetry `router` enum (init_completed): app | pages | none, from the
     same directory evidence appDirectory rides. Express hosts are "none". */
 async function detectRouter(root: string, framework: Exclude<HostFramework, "unknown"> | "custom"): Promise<"app" | "pages" | "none"> {
@@ -321,22 +308,6 @@ function pastePath(target: string): string {
   return /^[\w./@+-]+$/.test(path) ? path : `'${path.replace(/'/g, "'\\''")}'`;
 }
 
-/** The file whose client root the <VendoRoot> paste belongs in, and the child
-    expression it wraps there. A pages-only host has NO app/layout.tsx to wrap
-    — its client root is pages/_app.tsx, and the generated vendo-root.tsx is a
-    client component that mounts there unchanged. (Where the API route segment
-    gets scaffolded is a separate, deliberate choice — see appDirectory.)
-    Keyed on the layout FILE, not on detectRouter: the scaffold creates app/
-    mid-run, and the answer must be the same before and after it. */
-async function clientRoot(root: string): Promise<{ file: string; children: string }> {
-  const layout = join(await appDirectory(root), "layout.tsx");
-  if (!(await exists(layout))) {
-    for (const pages of [join(root, "src", "pages"), join(root, "pages")]) {
-      if (await exists(pages)) return { file: join(pages, "_app.tsx"), children: "<Component {...pageProps} />" };
-    }
-  }
-  return { file: layout, children: "{children}" };
-}
 
 /** Relative, posix-style import specifier from the layout's directory to the
     project-root `.vendo/theme.json` — printed for the user's paste, never

@@ -76,7 +76,7 @@ export async function installedZodVersion(root: string): Promise<string | null> 
  * read rather than require.resolve, deliberately: exports maps may hide
  * ./package.json, and in-process resolver patches (test runners, loaders)
  * must not change what we report about the host's tree. */
-async function installedVersion(root: string, name: string): Promise<string | null> {
+export async function installedVersion(root: string, name: string): Promise<string | null> {
   for (let dir = resolve(root); ; dir = dirname(dir)) {
     try {
       return versionOf(await readFile(join(dir, "node_modules", ...name.split("/"), "package.json"), "utf8"));

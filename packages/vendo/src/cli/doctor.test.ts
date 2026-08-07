@@ -1500,7 +1500,7 @@ describe("vendo doctor error codes + fix_refs", () => {
     await rm(join(root, "app", "layout.tsx"));
     await mkdir(join(root, "pages"), { recursive: true });
     await writeFile(join(root, "pages", "_app.tsx"),
-      "export default ({Component, pageProps}) => <VendoRoot><Component {...pageProps} /></VendoRoot>;");
+      "export default ({Component, pageProps}) => <VendoRoot><Component {...pageProps} /><VendoOverlay /></VendoRoot>;");
     expect(await doctor({
       targetDir: root,
       fetchImpl: successfulProbeFetch(),
