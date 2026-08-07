@@ -52,6 +52,29 @@ const shape: ShapeType = {
 
 const toolShapes: Record<string, ShapeType> = { [TOOL]: shape };
 
+/** The SAME response as a declared JSON Schema — what the screen type check
+ *  reads now that nothing samples. */
+const toolOutputSchemas: Record<string, JsonSchema> = {
+  [TOOL]: {
+    type: "object",
+    properties: {
+      label: { type: "string" },
+      total_cents: { type: "number" },
+      data: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: { id: { type: "string" }, amount_cents: { type: "number" } },
+          required: ["id", "amount_cents"],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ["label", "total_cents", "data"],
+    additionalProperties: false,
+  },
+};
+
 /** The JSON Schema a host component's props derive to at composition. */
 const netWorthJsonSchema: JsonSchema = {
   type: "object",
@@ -85,7 +108,7 @@ const deps = (): FloorDependencies => ({
 const typings = screenTypings({
   catalog,
   queries: [{ name: "invoices", tool: TOOL }],
-  toolShapes,
+  toolOutputSchemas,
 });
 
 const screen = (body: string): string =>

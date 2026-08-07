@@ -5,9 +5,9 @@
  * The floor already knows every type a screen file can name: the Kit's props
  * are zod (`core` `kit/specs.ts`), a host component's props are the JSON Schema
  * derived once at composition (`NormalizedCatalogEntry.propsJsonSchema`), and a
- * query's result is either the tool's declared `outputSchema` or the shape
- * sampled from a live call (`ShapeType`). This module turns all of that into
- * ambient declaration text so `tsc` — the real compiler, not a bespoke walker —
+ * query's result is the tool's declared `outputSchema`. This module turns all
+ * of that into ambient declaration text so `tsc` — the real compiler, not a
+ * bespoke walker —
  * decides whether a screen names components that exist, sets props that exist
  * with types that fit, reaches fields the data really carries, and aggregates
  * over field names the rows really have.
@@ -32,7 +32,6 @@ import {
   type JsonSchema,
   type NormalizedCatalog,
   type PropSpec,
-  type ShapeType,
 } from "@vendoai/core";
 import { z, type ZodTypeAny } from "zod";
 
@@ -51,16 +50,10 @@ export interface ScreenTypingsInput {
   readonly queries: readonly ScreenQueryDeclaration[];
   /**
    * tool name → the tool's DECLARED output JSON Schema
-   * (`ToolDescriptor.outputSchema`). Preferred over {@link toolShapes}: a
-   * declaration is the host's contract, where a sample is one observation.
+   * (`ToolDescriptor.outputSchema`). The only source: a declaration is the
+   * host's contract, and nothing samples the host anymore.
    */
   readonly toolOutputSchemas?: Readonly<Record<string, JsonSchema | undefined>>;
-  /**
-   * tool name → the shape derived from a live zero-arg call
-   * (`runtime.ts` `sampledShapes`) — what the bespoke binding checks use, and
-   * the fallback when a tool declares no output schema.
-   */
-  readonly toolShapes?: Readonly<Record<string, ShapeType | undefined>>;
 }
 
 /** The virtual path the declarations occupy in the check's program. */
@@ -183,25 +176,6 @@ const objectTypeText = (schema: Record<string, unknown>, reading: SchemaReading,
   return fields.length === 0 ? "{ [prop: string]: any }" : `{ ${fields.join("; ")} }`;
 };
 
-// ---- ShapeType → TS type text --------------------------------------------
-
-/** The closed 7-kind union (`core` `shape.ts`). `json` — the spec's unknown
- *  type — becomes `any`, so an unknown region stays silent rather than
- *  refusing every binding through it. */
-const shapeTypeText = (shape: ShapeType, depth = 0): string => {
-  if (depth > 12) return "any";
-  if (shape.kind === "json") return "any";
-  if (shape.kind === "null") return "null";
-  if (shape.kind === "array") return `Array<${shapeTypeText(shape.items, depth + 1)}>`;
-  if (shape.kind === "object") {
-    const optional = new Set(shape.optional ?? []);
-    const fields = Object.entries(shape.fields).map(([name, field]) =>
-      `${name}${optional.has(name) ? "?" : ""}: ${shapeTypeText(field, depth + 1)}`);
-    return fields.length === 0 ? "{ [field: string]: any }" : `{ ${fields.join("; ")} }`;
-  }
-  return shape.kind;
-};
-
 // ---- the declaration text -------------------------------------------------
 
 /** Every component gets these: `children` because the wire nests nodes, and
@@ -292,11 +266,9 @@ const reshapeDeclarations = (): string[] => {
 
 const queryTypeText = (query: ScreenQueryDeclaration, input: ScreenTypingsInput): string => {
   const declared = input.toolOutputSchemas?.[query.tool];
-  if (declared !== undefined) return jsonSchemaTypeText(declared, "result");
-  const sampled = input.toolShapes?.[query.tool];
-  // Neither a declaration nor a successful sample: permissive, so an
-  // unsampled tool never turns every binding through it into an error.
-  return sampled === undefined ? "any" : shapeTypeText(sampled);
+  // No declaration: permissive, so a tool whose contract nobody wrote never
+  // turns every binding through it into an error.
+  return declared === undefined ? "any" : jsonSchemaTypeText(declared, "result");
 };
 
 /**

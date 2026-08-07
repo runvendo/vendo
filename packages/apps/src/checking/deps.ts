@@ -25,10 +25,9 @@ export interface HostToolInfo {
   risk: string;
   inputSchema?: Record<string, unknown>;
   /** The tool's DECLARED result shape (`ToolDescriptor.outputSchema`). The
-   *  screen type check prefers it over a sampled shape: a declaration is the
-   *  host's contract where a sample is one observation, and sampling erases
-   *  what a declaration keeps — an enum field samples as a bare `string`, so a
-   *  prop that takes the enum could never be satisfied from a sample. */
+   *  screen type check reads it directly: it is the host's own contract, and
+   *  it keeps what a sample erased — an enum field samples as a bare `string`,
+   *  so a prop that takes the enum could never be satisfied from a sample. */
   outputSchema?: JsonSchema;
 }
 
@@ -50,7 +49,8 @@ export interface FloorDependencies {
   model?: LanguageModel;
   /** The composition-normalized catalog (01 §14): propsJsonSchema is derived. */
   catalog: NormalizedCatalog;
-  /** Shape-card outputs keyed by tool. Absent → the binding, kit-slot and
+  /** Each tool's declared response schema in structural form
+   *  (`shapeFromJsonSchema`), keyed by tool. Absent → the binding, kit-slot and
    *  expression checks have nothing to compare against and stay silent. */
   toolShapes?: Readonly<Record<string, ShapeType>>;
   /** The host tools a query may name. Absent → `tools-exist` stays silent. */

@@ -98,7 +98,8 @@ const shapeSchemaMismatch = (shape: ShapeType, schema: Record<string, unknown>):
   return null;
 };
 
-/** With tool shapes AND the catalog's prop schemas both in hand, a top-level
+/** With the tools' declared response shapes AND the catalog's prop schemas
+ *  both in hand, a top-level
  *  `$path` prop on a host node can be kind-checked end to end. Existence is
  *  the wire compiler's shape check; this catches the type mismatches that
  *  render silently broken (empty chart, blank stat). */
@@ -528,12 +529,11 @@ const screenTypeFindings = (tree: Tree, document: AppDocument, deps: FloorDepend
   const typings = screenTypings({
     catalog: [...deps.catalog, ...generated],
     queries,
-    // The host's own declared response shapes, which outrank the samples: a
-    // sample erases what a declaration keeps (an enum field samples as a bare
-    // `string`, so a prop declared over that enum could never be satisfied).
+    // The host's own declared response shapes — the only source. A declaration
+    // keeps what a sample erased (an enum field samples as a bare `string`, so
+    // a prop declared over that enum could never be satisfied).
     toolOutputSchemas: Object.fromEntries((deps.tools ?? [])
       .flatMap((tool) => (tool.outputSchema === undefined ? [] : [[tool.name, tool.outputSchema] as const]))),
-    toolShapes: deps.toolShapes,
   });
   const screen = printWire({ tree, components: {}, name: document.name }, { includeIds: false });
   return screenTscFindings({ screen, typings });

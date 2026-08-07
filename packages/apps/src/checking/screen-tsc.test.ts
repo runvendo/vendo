@@ -7,18 +7,24 @@ import { describe, expect, it } from "vitest";
 import { screenTypings } from "./screen-typings.js";
 import { screenTscFindings, __setCompilerForTests } from "./screen-tsc.js";
 
-const invoicesShape: ShapeType = {
-  kind: "object",
-  fields: {
+/** The tool's DECLARED response contract — the only source the screen type
+ *  check reads. */
+const invoicesSchema: JsonSchema = {
+  type: "object",
+  properties: {
     data: {
-      kind: "array",
+      type: "array",
       items: {
-        kind: "object",
-        fields: { id: { kind: "string" }, amount_cents: { kind: "number" }, issued_at: { kind: "string" } },
+        type: "object",
+        properties: { id: { type: "string" }, amount_cents: { type: "number" }, issued_at: { type: "string" } },
+        required: ["id", "amount_cents", "issued_at"],
+        additionalProperties: false,
       },
     },
-    total_cents: { kind: "number" },
+    total_cents: { type: "number" },
   },
+  required: ["data", "total_cents"],
+  additionalProperties: false,
 };
 
 const netWorthSchema: JsonSchema = {
@@ -39,7 +45,7 @@ const catalog: NormalizedCatalog = [
 const typings = screenTypings({
   catalog,
   queries: [{ name: "invoices", tool: "maple_invoices_list" }],
-  toolShapes: { maple_invoices_list: invoicesShape },
+  toolOutputSchemas: { maple_invoices_list: invoicesSchema },
 });
 
 const check = (screen: string) => screenTscFindings({ screen, typings });
