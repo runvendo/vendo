@@ -180,6 +180,10 @@ Revoking the key in the console refuses the next exchange.
     { "access_token": "vmat_…", "token_type": "Bearer", "expires_in": 600, "scope": "read write" }
     ```
 
+    The broker answers field for field the same on Cloud — only `access_token`
+    differs, a signed JWT there rather than an opaque string, and you hand it
+    over exactly the same way.
+
     Ten minutes and no refresh token — mint one per job and let it expire. While
     the door lists a key, an unknown key, a retired one and a wrong `client_id`
     all answer the same `invalid_client`: nothing tells a guesser which half they
