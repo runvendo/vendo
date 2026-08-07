@@ -1,4 +1,4 @@
-import { VendoError, type Principal } from "@vendoai/core";
+import { VendoError, type Json, type Principal } from "@vendoai/core";
 import type { UIMessage } from "ai";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "./backends.test-util.js";
@@ -92,6 +92,76 @@ for (const backend of backends()) {
         [id],
       );
       expect(left[0]!["n"]).toBe(0);
+    });
+
+    it("deletes the thread's message rows with the thread, leaving nothing erase cannot reach", async () => {
+      // A message row carries no subject of its own — the thread row IS the
+      // ownership record — so a message left behind by a thread delete is
+      // unreachable by `erase.bySubject`, which finds it only through
+      // `thread_id IN (SELECT id FROM vendo_threads WHERE subject = $1)`.
+      const id = "thr_deleted";
+      await ownThread(made, alice, id);
+      await threadMessageStore<UIMessage>(made.store).upsert(alice, id, message("m_1", "private"), 0);
+
+      await threadStore(made.store).delete(alice, id);
+
+      const left = await made.sql(
+        "SELECT count(*)::int AS n FROM vendo_thread_messages WHERE thread_id = $1",
+        [id],
+      );
+      expect(left[0]!["n"]).toBe(0);
+    });
+
+    it("keeps a foreign principal's failed delete from touching the thread's message rows", async () => {
+      const id = "thr_delete_guard";
+      await ownThread(made, alice, id);
+      await threadMessageStore<UIMessage>(made.store).upsert(alice, id, message("m_1", "mine"), 0);
+
+      await threadStore(made.store).delete(bob, id);
+
+      const left = await made.sql(
+        "SELECT count(*)::int AS n FROM vendo_thread_messages WHERE thread_id = $1",
+        [id],
+      );
+      expect(left[0]!["n"]).toBe(1);
+    });
+
+    it("derives every row id once, so an empty-string id cannot collide inside the statement", async () => {
+      // The duplicate guard runs on the TypeScript derivation; the INSERT used a
+      // separate SQL COALESCE that disagreed with it. `elem->>'id'` yields '' for
+      // {"id":""} rather than NULL, so two such messages passed the guard as
+      // msg_0/msg_1 and then hit ON CONFLICT twice with the same key '' — a bare
+      // Postgres 21000 cardinality violation that lost the whole write.
+      const id = "thr_blank_ids";
+      await threadStore(made.store).put(alice, {
+        id,
+        messages: [message("", "first"), message("", "second")] as unknown as Json[],
+      });
+
+      const rows = await made.sql(
+        "SELECT id, seq FROM vendo_thread_messages WHERE thread_id = $1 ORDER BY seq",
+        [id],
+      );
+      expect(rows.map((row) => row["id"])).toEqual(["msg_0", "msg_1"]);
+    });
+
+    it("derives every row id once, so a non-string id cannot collide with its own text form", async () => {
+      // `elem->>'id'` renders {"id":5} as '5', which the TypeScript rule never
+      // produces — so [{id:5},{id:"5"}] cleared the guard and collided in SQL.
+      const id = "thr_numeric_ids";
+      await threadStore(made.store).put(alice, {
+        id,
+        messages: [
+          { id: 5, role: "user", parts: [{ type: "text", text: "numeric" }] },
+          { id: "5", role: "user", parts: [{ type: "text", text: "textual" }] },
+        ] as unknown as Json[],
+      });
+
+      const rows = await made.sql(
+        "SELECT id, seq FROM vendo_thread_messages WHERE thread_id = $1 ORDER BY seq",
+        [id],
+      );
+      expect(rows.map((row) => row["id"])).toEqual(["msg_0", "5"]);
     });
 
     it("writes one row per message — O(messages), not O(messages²)", async () => {
