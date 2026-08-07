@@ -1,0 +1,5 @@
+---
+"@vendoai/store": patch
+---
+
+Two workspace-undo data-loss fixes. `undo` reuses its history row's blob for the live file row rather than re-uploading the bytes, so the key it holds can already be the live file's only copy — a second undo landing on the same revision reached "the winner stored exactly these bytes, so our blob is surplus" and deleted it, leaving the file row pointing at nothing and no history row naming it. Both of `landRow`'s post-swap blob releases now keep a blob some row still points at. Separately, `ops.workspace.undo(commitId)` delegates to a walk that pops the NEWEST superseded revision at a path, so given an older commit it restored that commit's own content and destroyed the newer commit's — permanently, since an undo writes no history row behind it — then deleted the older commit from the ledger and left the newer one. A commit is now only undoable while it is still the newest at every path it touched; otherwise the undo is refused with `conflict` naming the paths, and the later commits are undone first.
