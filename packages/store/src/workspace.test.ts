@@ -664,6 +664,60 @@ for (const backend of backends()) {
       expect(await (await workspace.open(user)).readFile(path)).toBe(big("b"));
     });
 
+    // The other half of N7, and the worse one: undo hands its history row's
+    // BLOB straight to the live row rather than re-uploading the bytes. Two
+    // undos of the same revision therefore both hold the key the winner just
+    // made the live file's only copy — and the loser's "the winner stored
+    // exactly these bytes, so our blob is surplus" branch deletes it. The row
+    // survives pointing at nothing, so the file is unreadable forever with no
+    // history row left naming it.
+    it("keeps the restored file readable when a second undo lands on the same revision", async () => {
+      const path = "/user/files/undo-twice.bin";
+      const workspace = workspaceStore(made.store);
+      const big = (marker: string): string => marker.repeat(WORKSPACE_INLINE_MAX_BYTES + 1);
+
+      // Live r2 (blob K_b), history r1 (blob K_a).
+      for (const content of [big("a"), big("b")]) {
+        const fs = await workspace.open(user);
+        await fs.writeFile(path, content);
+        await fs.commit({ message: "wrote" });
+      }
+
+      // Force the interleave: an undo's compare-and-swap is the one carrying
+      // recordHistory=false (its last SQL param). Just before the FIRST one
+      // runs, run a whole second undo to completion — so it wins the swap and
+      // K_a becomes the live row's blob, and the one already in flight then
+      // finds a head holding exactly the bytes it was about to write.
+      const db = dbFor(made.store);
+      const original = db.query.bind(db);
+      let winner = false;
+      db.query = async (text: string, params?: unknown[]) => {
+        if (!winner && text.includes("WITH swapped AS") && params?.[params.length - 1] === false) {
+          winner = true;
+          await workspace.undo(caller, path);
+        }
+        return original(text, params);
+      };
+      try {
+        await workspace.undo(caller, path);
+      } finally {
+        db.query = original;
+      }
+      expect(winner).toBe(true);
+
+      // The live row must not point at a blob that is gone.
+      const dangling = await made.sql(
+        `SELECT f.blob_ref FROM vendo_workspace_files f
+         WHERE f.blob_ref IS NOT NULL AND f.path = $1
+           AND NOT EXISTS (
+             SELECT 1 FROM vendo_blobs b WHERE b.namespace = 'workspace' AND b.key = f.blob_ref
+           )`,
+        [path],
+      );
+      expect(dangling).toEqual([]);
+      expect(await (await workspace.open(user)).readFile(path)).toBe(big("a"));
+    });
+
     it("strands no blob when overlapping commits race on one blob-backed path", async () => {
       const path = "/user/files/raced-big.bin";
       const workspace = workspaceStore(made.store);
