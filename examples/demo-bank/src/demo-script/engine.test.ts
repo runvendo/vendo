@@ -82,16 +82,26 @@ const threadState = vi.hoisted(() => ({
 
 /** The scenario ladder is host copy: cards get added, dropped and reordered.
  *  `reversed` serves the SAME cards in a different order (which must not
- *  change which script a card plays); `dropped` removes one card entirely. */
-const scenarioLadder = vi.hoisted(() => ({ reversed: false, dropped: "" }));
+ *  change which script a card plays); `dropped` removes one card entirely;
+ *  `collided` prepends a transfer card carrying the spending card's prompt
+ *  (padded with whitespace, so it trims to the same routing key) — the
+ *  duplicate that would hand the choice of script back to ladder order. */
+const scenarioLadder = vi.hoisted(() => ({ reversed: false, dropped: "", collided: false }));
 
 vi.mock("@/vendo/scenarios", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/vendo/scenarios")>();
+  const card = (beat: string): (typeof actual.mapleScenarios)[number] => {
+    const found = actual.mapleScenarios.find((candidate) => candidate.beat === beat);
+    if (found === undefined) throw new Error(`no Maple scenario card declares beat "${beat}"`);
+    return found;
+  };
   return {
     ...actual,
     get mapleScenarios() {
-      const cards = actual.mapleScenarios.filter((card) => card.beat !== scenarioLadder.dropped);
-      return scenarioLadder.reversed ? [...cards].reverse() : cards;
+      const cards = actual.mapleScenarios.filter((candidate) => candidate.beat !== scenarioLadder.dropped);
+      const ladder = scenarioLadder.reversed ? [...cards].reverse() : cards;
+      if (!scenarioLadder.collided) return ladder;
+      return [{ ...card("transfer"), prompt: `  ${card("spending").prompt}  ` }, ...ladder];
     },
   };
 });
@@ -141,6 +151,7 @@ describe("scripted beats stream wire-safe tool parts", () => {
     threadState.persisted = [];
     scenarioLadder.reversed = false;
     scenarioLadder.dropped = "";
+    scenarioLadder.collided = false;
   });
 
   it("the low-balance beat streams every tool input as an object (Anthropic replay contract)", async () => {
@@ -231,6 +242,20 @@ describe("scripted beats stream wire-safe tool parts", () => {
     scenarioLadder.dropped = "moneyhq";
     vi.resetModules();
     await expect(import("./engine.js")).rejects.toThrow(/moneyhq/);
+  });
+
+  it("two cards sharing a prompt fail at import, naming both beats", async () => {
+    scenarioLadder.collided = true;
+    vi.resetModules();
+    const error = await import("./engine.js").then(
+      () => undefined,
+      (thrown: unknown) => thrown as Error,
+    );
+    expect(error, "a duplicate prompt must not boot — first match would decide the script").toBeDefined();
+    expect(error?.message).toContain("transfer");
+    expect(error?.message).toContain("spending");
+    expect(error?.message).toContain(cardPrompt("Where did my money go?"));
+    expect(error?.message).toContain("src/vendo/scenarios.tsx");
   });
 
   it("a parked set abandoned by the next prompt resolves non-orphan — real-agent replay never 400s (criterion 23)", async () => {
