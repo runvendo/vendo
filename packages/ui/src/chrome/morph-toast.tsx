@@ -25,10 +25,6 @@ export interface MorphToastProps {
   sub?: string;
   logoUrl?: string;
   theme: VendoTheme;
-  holdMs?: number;
-  /** Override the dock target lookup (default: the `data-vendo-activity-anchor`
-      element). Return undefined to fade in place. */
-  dockTo?(): { top: number; left: number; width: number; height: number } | undefined;
   onDone(): void;
 }
 
@@ -52,14 +48,12 @@ function activityAnchorRect(): { top: number; left: number; width: number; heigh
   return rect.width > 0 ? { top: rect.top, left: rect.left, width: rect.width, height: rect.height } : undefined;
 }
 
-export function MorphToast({ startRect, title, sub, logoUrl, theme, holdMs, dockTo, onDone }: MorphToastProps) {
+export function MorphToast({ startRect, title, sub, logoUrl, theme, onDone }: MorphToastProps) {
   const [settled, setSettled] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [dock, setDock] = useState<{ x: number; y: number } | null>(null);
   const doneRef = useRef(onDone);
   doneRef.current = onDone;
-  const dockToRef = useRef(dockTo);
-  dockToRef.current = dockTo;
   const reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   useEffect(() => {
@@ -71,11 +65,11 @@ export function MorphToast({ startRect, title, sub, logoUrl, theme, holdMs, dock
     // anchor that appears mid-hold docks after the longer fade-length hold.
     const willDock = !reduced
       && typeof document !== "undefined"
-      && (dockToRef.current ? dockToRef.current() !== undefined : activityAnchorRect() !== undefined);
-    const hold = holdMs ?? (willDock ? DOCK_HOLD_MS : FADE_HOLD_MS);
+      && activityAnchorRect() !== undefined;
+    const hold = willDock ? DOCK_HOLD_MS : FADE_HOLD_MS;
     const timers: ReturnType<typeof setTimeout>[] = [];
     timers.push(setTimeout(() => {
-      const rect = reduced ? undefined : (dockToRef.current ? dockToRef.current() : activityAnchorRect());
+      const rect = reduced ? undefined : activityAnchorRect();
       if (rect) {
         setDock({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
         timers.push(setTimeout(() => {
@@ -91,7 +85,7 @@ export function MorphToast({ startRect, title, sub, logoUrl, theme, holdMs, dock
       cancelAnimationFrame(raf);
       for (const timer of timers) clearTimeout(timer);
     };
-  }, [holdMs, reduced]);
+  }, [reduced]);
 
   if (typeof window === "undefined" || typeof document === "undefined") return null;
 

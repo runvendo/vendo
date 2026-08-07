@@ -67,8 +67,7 @@ export function openVendoConversation(options?: OpenConversationOptions): boolea
 }
 
 /** One palette command — the shape hosts route in `VendoPalette.onCommand`.
- *  Lives here (not in vendo-palette) because the overlay renders these as its
- *  composer chip strip; the palette re-exports it for compatibility. */
+ *  The palette re-exports it. */
 export interface VendoCommand {
   id: string;
   label: string;
@@ -76,39 +75,28 @@ export interface VendoCommand {
   appId?: string;
 }
 
-/** The command set a (headless) VendoPalette publishes for the overlay's chip
- *  strip: the commands plus the palette's own routing (which folds in the host
- *  `onCommand` when supplied). LIFO like every registry here — the most
- *  recently mounted palette owns the strip. */
+/** The command set a (headless) VendoPalette publishes: the commands plus the
+ *  palette's own routing (which folds in the host `onCommand` when supplied).
+ *  LIFO like every registry here — the most recently mounted palette wins. */
 export interface ConversationCommandSet {
   commands: VendoCommand[];
   select(command: VendoCommand): void;
 }
 
 const commandSets: ConversationCommandSet[] = [];
-const commandListeners = new Set<() => void>();
 
 /** Publish a command set for the conversation surface; returns an unsubscribe. */
 export function registerConversationCommands(set: ConversationCommandSet): () => void {
   commandSets.push(set);
-  for (const listener of commandListeners) listener();
   return () => {
     const index = commandSets.lastIndexOf(set);
     if (index >= 0) commandSets.splice(index, 1);
-    for (const listener of commandListeners) listener();
   };
 }
 
-/** The active (most recently published) command set, or null. Stable reference
- *  between changes so it works as a useSyncExternalStore snapshot. */
+/** The active (most recently published) command set, or null. */
 export function getConversationCommands(): ConversationCommandSet | null {
   return commandSets[commandSets.length - 1] ?? null;
-}
-
-/** Subscribe to command-set changes (useSyncExternalStore-compatible). */
-export function subscribeConversationCommands(listener: () => void): () => void {
-  commandListeners.add(listener);
-  return () => commandListeners.delete(listener);
 }
 
 interface Prefill {
