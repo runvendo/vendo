@@ -85,7 +85,6 @@ describe("repo expectations format", () => {
       tools: [
         { name: "listInvoices", method: "GET", path: "/api/invoices", readOrWrite: "read" },
         { name: "pollsList", kind: "trpc", procedure: "polls.list", readOrWrite: "read" },
-        { name: "createApiKey", kind: "graphql", operation: "createApiKey", readOrWrite: "write" },
       ],
       annotations: [],
       components: [],
@@ -93,14 +92,13 @@ describe("repo expectations format", () => {
     expect(parsed.tools.map(expectedToolIdentity)).toEqual([
       "GET\t/api/invoices",
       "trpc\tpolls.list",
-      "graphql\tcreateApiKey",
     ]);
 
-    // A graphql row without its operation never parses.
+    // A trpc row without its procedure never parses.
     expect(() => parseRepoExpectations({
       version: 1,
       theme,
-      tools: [{ name: "createApiKey", kind: "graphql", readOrWrite: "write" }],
+      tools: [{ name: "pollsList", kind: "trpc", readOrWrite: "read" }],
       annotations: [],
       components: [],
     })).toThrow();

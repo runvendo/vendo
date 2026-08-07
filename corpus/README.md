@@ -187,7 +187,7 @@ the docs' copy-paste prompt alone (agent-install DX design 2026-07-19
    hand-maintained fork — so that row measures "restore an install whose
    deps and contract are gone". `invoify` is a truly pre-Vendo host and
    `express-host` is the closest local one. Of the other external corpus
-   repos, the deep-tier ones (umami, skateshop, papermark, teable, twenty)
+   repos, the deep-tier ones (umami, skateshop, papermark, teable)
    need dockerized Postgres/Redis + seeds for their dev servers and the
    remaining broad-tier ones need real third-party env (Clerk, GitHub
    OAuth, Shopify, ClickHouse) or have no dev-server recipe, so they stay

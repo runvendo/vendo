@@ -653,10 +653,10 @@ async function checkIdempotency(ctx: StructuralLayerContext): Promise<Structural
   return { id: "init.idempotent", pass: false, detail: pieces.join("; ") };
 }
 
-/** A tRPC or GraphQL mutation is write-shaped exactly like a POST; a query
- * like a GET; a server action is always POST-shaped. */
+/** A tRPC mutation is write-shaped exactly like a POST; a query like a GET;
+ * a server action is always POST-shaped. */
 function effectiveWriteMethod(tool: ExtractedTool): string {
-  if (tool.binding.kind === "trpc" || tool.binding.kind === "graphql") {
+  if (tool.binding.kind === "trpc") {
     return tool.binding.type === "query" ? "GET" : "POST";
   }
   if (tool.binding.kind === "server-action") return "POST";

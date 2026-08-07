@@ -58,7 +58,7 @@ export async function hasDependency(root: string, name: string): Promise<boolean
 }
 
 // ---------------------------------------------------------------------------
-// Next.js API route files (shared by the tRPC and GraphQL extractors)
+// Next.js API route files (used by the tRPC extractor)
 // ---------------------------------------------------------------------------
 
 const ROUTE_SOURCE_FILE_PATTERN = /\.(?:tsx?|jsx?)$/;

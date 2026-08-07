@@ -1,7 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { SourcedExtractedTool } from "./common.js";
-import { detectGraphql, extractGraphql, graphqlEndpoints } from "./graphql.js";
 import { extractOpenApi, openApiMountPath } from "./openapi.js";
 import { scanRoutes } from "./route-scan.js";
 import { detectServerActions, extractServerActions } from "./server-actions.js";
@@ -59,12 +58,6 @@ const trpcExtractor: Extractor = {
   extract: extractTrpc,
 };
 
-const graphqlExtractor: Extractor = {
-  name: "graphql",
-  detect: detectGraphql,
-  extract: extractGraphql,
-};
-
 const serverActionsExtractor: Extractor = {
   name: "server-actions",
   detect: detectServerActions,
@@ -82,17 +75,16 @@ const routeScanExtractor: Extractor = {
 export const extractorRegistrations: readonly Extractor[] = [
   openApiExtractor,
   trpcExtractor,
-  graphqlExtractor,
   serverActionsExtractor,
   routeScanExtractor,
 ];
 
-/** Route-scan sees a tRPC mount or a GraphQL endpoint as an opaque catch-all
- * HTTP route; when the trpc/graphql extractors produced real operation tools
- * for that mount, the shadowing route tools are dropped. No trpc/graphql
- * tools → no filtering (unchanged behavior for every other host). */
+/** Route-scan sees a tRPC mount as an opaque catch-all HTTP route; when the
+ * trpc extractor produced real procedure tools for that mount, the shadowing
+ * route tools are dropped. No trpc tools → no filtering (unchanged behavior
+ * for every other host). */
 function withoutShadowedRoutes(tools: SourcedExtractedTool[]): SourcedExtractedTool[] {
-  const mounts = [...trpcMounts(tools), ...graphqlEndpoints(tools)];
+  const mounts = trpcMounts(tools);
   if (mounts.length === 0) return tools;
   return tools.filter((tool) => {
     if (tool.binding.kind !== "route") return true;
@@ -120,9 +112,9 @@ function withoutShadowedRoutes(tools: SourcedExtractedTool[]): SourcedExtractedT
  * and the route handler behind it from collapsing into a single tool and ships
  * both, one of them broken.
  *
- * tRPC and GraphQL bindings address their mount/endpoint separately and are
- * left alone; a subpath-mounted host that also speaks either would need the
- * same treatment there.
+ * tRPC bindings address their mount separately and are left alone; a
+ * subpath-mounted host that also speaks tRPC would need the same treatment
+ * there.
  */
 function mounted(tools: SourcedExtractedTool[], mount: string): SourcedExtractedTool[] {
   if (mount === "") return tools;

@@ -49,7 +49,7 @@ const dockerPostgresProvisioningSchema = z
   .strict();
 
 /** Redis mirrors the Postgres provisioning shape (docker container + readiness
- * probe). Twenty is deliberately the only Redis boot in the corpus. */
+ * probe). No fixture currently boots Redis. */
 const dockerRedisProvisioningSchema = z
   .object({
     kind: z.literal("docker-redis"),

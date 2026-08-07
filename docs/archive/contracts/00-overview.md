@@ -149,3 +149,10 @@ Approved with the contracts (Yousef, 2026-07-11): the blocks are built as if fro
 - **Changed:** One coordinated amendment pair from the converged server-wiring DX brainstorm (`docs/brainstorms/server-wiring-dx.md`) — `01-core.md` §14: one optional standard-schema per component entry (derived model-facing JSON Schema; `propsJsonSchema` removed) plus the name-keyed `ComponentRegistry` form; `09-vendo.md` §2/§2.1: first-class `auth` host-identity presets over the `principal`/`actAs`/`oauth` trio (which survives as the escape hatch), identity optional overall (anonymous-only boot), and `catalog` accepting the registry form. `04-actions.md` §1 and `10-mcp.md` §1 cross-references updated in step.
 - **Why:** the install-DX v2 lane collapses the server wiring to one file, two meaningful config keys, one import path; the v2 unfreeze covers the config-bag and component-entry shape changes.
 - **Approved by:** Yousef, 2026-07-18 (server-wiring DX brainstorm, converged).
+
+### 2026-08-07 — GraphQL binding kind removed (pre-1.0 scope cut)
+
+- **Changed:** `04-actions.md` §1/§2/§4 — the `graphql` binding kind, the GraphQL extractor and its place in the registration list (now OpenAPI → tRPC → server-actions → route-scan), the GraphQL static-extraction rules, the GraphQL HTTP transport execution semantics, and the endpoint+operation half of the tool-identity note are removed. The 2026-07-16 entry above stays as history; this supersedes it.
+- **Why:** pre-1.0 scope cut — ~2.0k LOC whose only real-world corpus host emitted every operation disabled by design. The advertised extraction tier drops from five stacks to four. Removal is breaking for any host with a `graphql` binding already in `.vendo/tools.json`; pre-1.0, no shim ships.
+- **Authorized by:** the Vendo de-slopping scope cut (owner-approved, locked).
+

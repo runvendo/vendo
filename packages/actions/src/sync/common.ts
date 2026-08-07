@@ -449,7 +449,7 @@ export function allocateToolName(preferred: string, fallbackSuffix: string, used
 }
 
 function uniqueNameFallback(binding: PrimitiveToolBinding): string {
-  if (binding.kind === "trpc" || binding.kind === "graphql") return binding.type;
+  if (binding.kind === "trpc") return binding.type;
   if (binding.kind === "server-action") return "action";
   return binding.method;
 }
@@ -503,18 +503,6 @@ export function trpcRisk(type: "query" | "mutation"): ExtractedTool["risk"] {
 export function trpcToolFullName(procedure: string): string {
   const parts = words(procedure);
   return `host_${parts.length > 0 ? parts.join("_") : "procedure"}`;
-}
-
-/** GraphQL risk labeling (04 §1, fail-closed): identical semantics to tRPC —
- * a declared `mutation` is at least `write`; a `query` is not a declared read
- * and stays `ungraded`. */
-export function graphqlRisk(type: "query" | "mutation"): ExtractedTool["risk"] {
-  return trpcRisk(type);
-}
-
-export function graphqlToolFullName(operation: string): string {
-  const parts = words(operation);
-  return `host_${parts.length > 0 ? parts.join("_") : "operation"}`;
 }
 
 export function serverActionToolFullName(name: string): string {

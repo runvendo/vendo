@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { composioToolRisk } from "../connectors/composio-risk.js";
 import { walk } from "./common.js";
-import { extractedRisk, graphqlRisk, trpcRisk } from "./common.js";
+import { extractedRisk, trpcRisk } from "./common.js";
 
 /**
  * Risk-grading redesign D1/D2 — the two halves of "no name guessing":
@@ -73,11 +73,9 @@ describe("extraction grades from PROTOCOL FACTS only (D2)", () => {
     }
   });
 
-  it("grades a DECLARED tRPC/GraphQL mutation at least write, and never grades a query read", () => {
+  it("grades a DECLARED tRPC mutation at least write, and never grades a query read", () => {
     expect(trpcRisk("mutation")).toBe("write");
-    expect(graphqlRisk("mutation")).toBe("write");
     expect(trpcRisk("query")).toBe("ungraded");
-    expect(graphqlRisk("query")).toBe("ungraded");
   });
 
   it("takes Composio's own hints and nothing else from a connector tool", () => {

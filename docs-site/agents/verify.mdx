@@ -653,8 +653,8 @@ warning.
 **Symptom:** `catalog: N/M tools ungraded` (warning, not failure).
 
 **Cause:** Nobody has graded those tools. Extraction only asserts protocol
-facts — an HTTP `DELETE` is destructive, a declared GraphQL/tRPC mutation is
-at least a write — and never guesses a grade from a tool's name. Everything
+facts — an HTTP `DELETE` is destructive, a declared tRPC mutation is at
+least a write — and never guesses a grade from a tool's name. Everything
 else is `ungraded` until the AI judge or a human says otherwise, and the
 guard asks the user before every ungraded call rather than running it.
 

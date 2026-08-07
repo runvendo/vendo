@@ -24,7 +24,7 @@ async function makeExpectationsRoot(): Promise<string> {
 }
 
 describe("ai-expected.json format", () => {
-  it("parses HTTP, tRPC, GraphQL, and server-action entries with risk labels", () => {
+  it("parses HTTP, tRPC, and server-action entries with risk labels", () => {
     const parsed = parseRepoAiExpectations({
       version: 1,
       tools: [
@@ -32,12 +32,11 @@ describe("ai-expected.json format", () => {
         { name: "deleteInvoice", method: "DELETE", path: "/api/invoices/{id}", risk: "destructive", confirmEach: true },
         { name: "wipeAll", method: "POST", path: "/api/admin/wipe", risk: "destructive", wake: false },
         { name: "invoices.list", kind: "trpc", procedure: "invoices.list", risk: "read" },
-        { name: "createUser", kind: "graphql", operation: "createUser", risk: "write" },
         { name: "archive", kind: "server-action", module: "app/actions.ts", export: "archive", risk: "write" },
       ],
     });
 
-    expect(parsed.tools).toHaveLength(6);
+    expect(parsed.tools).toHaveLength(5);
     expect(parsed.tools[1]).toMatchObject({ risk: "destructive", confirmEach: true });
     expect(parsed.tools[2]).toMatchObject({ wake: false });
   });
@@ -58,8 +57,6 @@ describe("ai-expected.json format", () => {
       .toBe("GET\t/api/x");
     expect(aiExpectedToolIdentity({ name: "b", kind: "trpc", procedure: "x.y", risk: "read" }))
       .toBe("trpc\tx.y");
-    expect(aiExpectedToolIdentity({ name: "c", kind: "graphql", operation: "op", risk: "read" }))
-      .toBe("graphql\top");
     expect(aiExpectedToolIdentity({ name: "d", kind: "server-action", module: "m.ts", export: "e", risk: "read" }))
       .toBe("server-action\tm.ts#e");
   });

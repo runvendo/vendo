@@ -102,8 +102,8 @@ function scoreTheme(expected: RepoExpectations, actual: VendoTheme): WeightedRes
 }
 
 // A tool's IDENTITY for scoring is binding-kind-aware — the endpoint
-// (method + path) for HTTP-shaped bindings, the procedure dot-path for tRPC,
-// the operation name for GraphQL — and NOT its name. Tool names are a
+// (method + path) for HTTP-shaped bindings and the procedure dot-path for
+// tRPC — and NOT its name. Tool names are a
 // deterministic, contract-defined value (01-core §15: provider-safe
 // `host_<path>` slugs), while the checked-in expectations carry the pre-freeze
 // OpenAPI-operationId names (`getAdminTeams`). Keying on the identity is the
@@ -112,7 +112,6 @@ function scoreTheme(expected: RepoExpectations, actual: VendoTheme): WeightedRes
 // precision.
 export function actualToolIdentity(tool: ExtractedTool): string {
   if (tool.binding.kind === "trpc") return `trpc\t${tool.binding.procedure}`;
-  if (tool.binding.kind === "graphql") return `graphql\t${tool.binding.operation}`;
   if (tool.binding.kind === "server-action") return `server-action\t${tool.binding.module}#${tool.binding.exportName}`;
   return `${tool.binding.method}\t${tool.binding.path}`;
 }
@@ -166,16 +165,15 @@ function expectedAnnotationMatches(expected: ExpectedToolAnnotation, actual: Ext
   if (!actual) return false;
   const method = effectiveWriteMethod(actual);
   if (method === "DELETE") return actual.risk === "destructive" && expected.dangerous;
-  const declaredMutation = (actual.binding.kind === "trpc" || actual.binding.kind === "graphql")
-    && actual.binding.type === "mutation";
+  const declaredMutation = actual.binding.kind === "trpc" && actual.binding.type === "mutation";
   if (declaredMutation) return actual.risk === "write" && expected.mutating;
   return actual.risk === "ungraded";
 }
 
-/** A tRPC or GraphQL mutation is write-shaped exactly like a POST; a query
- * like a GET; a server action is always POST-shaped. */
+/** A tRPC mutation is write-shaped exactly like a POST; a query like a GET;
+ * a server action is always POST-shaped. */
 function effectiveWriteMethod(tool: ExtractedTool): string {
-  if (tool.binding.kind === "trpc" || tool.binding.kind === "graphql") {
+  if (tool.binding.kind === "trpc") {
     return tool.binding.type === "query" ? "GET" : "POST";
   }
   if (tool.binding.kind === "server-action") return "POST";

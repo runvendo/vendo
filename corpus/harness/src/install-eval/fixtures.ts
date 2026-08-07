@@ -41,7 +41,7 @@ export interface InstallEvalFixture {
 /**
  * External corpus repos evaluated for the fixture set (spec asks for the
  * corpus repos — the only truly pre-Vendo hosts): every other deep-tier
- * external repo (umami, skateshop, papermark, teable, twenty) needs
+ * external repo (umami, skateshop, papermark, teable) needs
  * dockerized Postgres/Redis plus seeds to boot its dev server, which the
  * install eval deliberately does not drag in — the subject is the install
  * loop, not the host's data stack — and the remaining broad-tier repos have

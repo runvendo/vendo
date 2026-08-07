@@ -86,7 +86,7 @@ export function noteRejectedCompiler(rejected: RejectedCompiler): void {
 export function compilerFloorWarning(): string | null {
   if (rejectedCompiler === null) return null;
   return `host typescript ${rejectedCompiler.version} is older than the >=${COMPILER_FLOOR} floor extraction requires (missing ts.${rejectedCompiler.missingApi}); `
-    + "compiler-based extraction (routes, trpc, graphql, server actions, component catalog) is disabled and resolves to nothing — "
+    + "compiler-based extraction (routes, trpc, server actions, component catalog) is disabled and resolves to nothing — "
     + `upgrade the host's typescript to >=${COMPILER_FLOOR} to restore it`;
 }
 
