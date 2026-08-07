@@ -113,17 +113,13 @@ export function joinPath(base: string, pathOrUrl: string): string {
 export function mountMismatchMessage(sides: {
   clientBaseUrl: string;
   requested: string;
-  /** The prefix the server is configured for, when a reply carried one. */
-  serverMount?: string;
   /** Browser only: the path prefix the page itself is served under. */
   pageMount?: string;
 }): string {
-  const mount = sides.serverMount ?? sides.pageMount;
-  const observed = sides.serverMount !== undefined
-    ? `this deployment is mounted at ${JSON.stringify(sides.serverMount)}`
-    : sides.pageMount !== undefined && sides.pageMount !== ""
-      ? `this page is served under ${JSON.stringify(sides.pageMount)}`
-      : "the deployment is mounted somewhere else";
+  const mount = sides.pageMount;
+  const observed = mount !== undefined && mount !== ""
+    ? `this page is served under ${JSON.stringify(mount)}`
+    : "the deployment is mounted somewhere else";
   const fix = mount === undefined || mount === ""
     ? "set VENDO_BASE_URL to the app's FULL public URL (path prefix included) and pass that same prefix as <VendoProvider baseUrl=\"…/api/vendo\">"
     : `pass baseUrl=${JSON.stringify(withPathPrefix(mount, "/api/vendo"))} to <VendoProvider>, and set VENDO_BASE_URL to the app's FULL public URL (path prefix included)`;
