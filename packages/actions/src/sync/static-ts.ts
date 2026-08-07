@@ -332,7 +332,82 @@ export async function zodFromExpression(
   return unrecognized("schema call shape is not statically interpreted");
 }
 
-async function zodBase(
+const recognized = (schema: Record<string, unknown>): ZodSchemaResult => ({ schema, optional: false, recognized: true });
+
+/** `z.object({ … })` — each property interpreted in turn; an uninterpretable one
+ *  stays permissive rather than failing the whole object closed. */
+async function zodObject(
+  extraction: StaticExtraction,
+  module: FileModule,
+  call: TS.CallExpression,
+  depth: number,
+): Promise<ZodSchemaResult> {
+  const { ts } = extraction;
+  const argument = call.arguments[0];
+  if (!argument || !ts.isObjectLiteralExpression(argument)) return unrecognized("z.object argument is not an object literal");
+  const properties: Record<string, unknown> = {};
+  const required: string[] = [];
+  const reasons: string[] = [];
+  for (const property of argument.properties) {
+    if (!ts.isPropertyAssignment(property)) continue;
+    const key = propertyKeyName(extraction, property.name);
+    if (!key) continue;
+    const value = await zodFromExpression(extraction, module, property.initializer, depth + 1);
+    properties[key] = value.recognized ? value.schema : {};
+    if (!value.recognized && value.reason) reasons.push(`${key}: ${value.reason}`);
+    if (!value.optional && value.recognized) required.push(key);
+  }
+  const schema: Record<string, unknown> = {
+    type: "object",
+    properties,
+    ...(required.length > 0 ? { required } : {}),
+    additionalProperties: false,
+  };
+  if (reasons.length > 0) {
+    // Partially recognized: emit what we know, keep unknown properties permissive.
+    return { schema, optional: false, recognized: true, reason: reasons.join("; ") };
+  }
+  return recognized(schema);
+}
+
+/** `z.enum([…])` — string literals only. */
+function zodEnum(extraction: StaticExtraction, call: TS.CallExpression): ZodSchemaResult {
+  const { ts } = extraction;
+  const argument = call.arguments[0];
+  if (!argument || !ts.isArrayLiteralExpression(argument)) return unrecognized("z.enum argument is not an array literal");
+  const values: string[] = [];
+  for (const element of argument.elements) {
+    const value = literalValue(extraction, element);
+    if (typeof value !== "string") return unrecognized("z.enum contains a non-literal value");
+    values.push(value);
+  }
+  return recognized({ type: "string", enum: values });
+}
+
+async function zodArray(
+  extraction: StaticExtraction,
+  module: FileModule,
+  call: TS.CallExpression,
+  depth: number,
+): Promise<ZodSchemaResult> {
+  const argument = call.arguments[0];
+  if (!argument) return recognized({ type: "array" });
+  const items = await zodFromExpression(extraction, module, argument, depth + 1);
+  // An unrecognized `items` degrades to a bare `{type:"array"}` (kept
+  // recognized:true with `reason` attached) rather than failing the
+  // whole array closed — but one level up, `recognized()` drops that
+  // `reason` on the floor. A nested-array depth-exhaustion case hits
+  // exactly this and never surfaces as fail-closed at the top; see the
+  // "depth exhaustion" row's comment in static-ts.oracle.test.ts for
+  // the traced example and the modifier-chain workaround it uses instead.
+  return items.recognized
+    ? recognized({ type: "array", items: items.schema })
+    : { schema: { type: "array" }, optional: false, recognized: true, reason: items.reason };
+}
+
+/** `z.union([…])` / `z.discriminatedUnion(key, […])` — every option must be
+ *  interpretable, or the whole union fails closed. */
+async function zodUnion(
   extraction: StaticExtraction,
   module: FileModule,
   method: string,
@@ -340,93 +415,50 @@ async function zodBase(
   depth: number,
 ): Promise<ZodSchemaResult> {
   const { ts } = extraction;
-  const ok = (schema: Record<string, unknown>): ZodSchemaResult => ({ schema, optional: false, recognized: true });
+  const argument = call.arguments[method === "union" ? 0 : 1];
+  if (!argument || !ts.isArrayLiteralExpression(argument)) return unrecognized(`z.${method} options are not an array literal`);
+  const options: Record<string, unknown>[] = [];
+  for (const element of argument.elements) {
+    const option = await zodFromExpression(extraction, module, element, depth + 1);
+    if (!option.recognized) return unrecognized(option.reason ?? `z.${method} option not statically interpreted`);
+    options.push(option.schema);
+  }
+  return recognized({ anyOf: options });
+}
+
+async function zodBase(
+  extraction: StaticExtraction,
+  module: FileModule,
+  method: string,
+  call: TS.CallExpression,
+  depth: number,
+): Promise<ZodSchemaResult> {
   switch (method) {
-    case "object": {
-      const argument = call.arguments[0];
-      if (!argument || !ts.isObjectLiteralExpression(argument)) return unrecognized("z.object argument is not an object literal");
-      const properties: Record<string, unknown> = {};
-      const required: string[] = [];
-      const reasons: string[] = [];
-      for (const property of argument.properties) {
-        if (!ts.isPropertyAssignment(property)) continue;
-        const key = propertyKeyName(extraction, property.name);
-        if (!key) continue;
-        const value = await zodFromExpression(extraction, module, property.initializer, depth + 1);
-        properties[key] = value.recognized ? value.schema : {};
-        if (!value.recognized && value.reason) reasons.push(`${key}: ${value.reason}`);
-        if (!value.optional && value.recognized) required.push(key);
-      }
-      const schema: Record<string, unknown> = {
-        type: "object",
-        properties,
-        ...(required.length > 0 ? { required } : {}),
-        additionalProperties: false,
-      };
-      if (reasons.length > 0) {
-        // Partially recognized: emit what we know, keep unknown properties permissive.
-        return { schema, optional: false, recognized: true, reason: reasons.join("; ") };
-      }
-      return ok(schema);
-    }
-    case "string": return ok({ type: "string" });
-    case "number": return ok({ type: "number" });
-    case "bigint": return ok({ type: "integer" });
-    case "boolean": return ok({ type: "boolean" });
-    case "date": return ok({ type: "string", format: "date-time" });
-    case "null": return ok({ type: "null" });
+    case "object": return zodObject(extraction, module, call, depth);
+    case "string": return recognized({ type: "string" });
+    case "number": return recognized({ type: "number" });
+    case "bigint": return recognized({ type: "integer" });
+    case "boolean": return recognized({ type: "boolean" });
+    case "date": return recognized({ type: "string", format: "date-time" });
+    case "null": return recognized({ type: "null" });
     case "any":
-    case "unknown": return ok({});
+    case "unknown": return recognized({});
     case "void":
     case "undefined": return { schema: {}, optional: true, recognized: true };
     case "literal": {
       const value = call.arguments[0] ? literalValue(extraction, call.arguments[0]) : undefined;
       if (value === undefined) return unrecognized("z.literal value is not a static literal");
-      return ok({ const: value });
+      return recognized({ const: value });
     }
-    case "enum": {
-      const argument = call.arguments[0];
-      if (!argument || !ts.isArrayLiteralExpression(argument)) return unrecognized("z.enum argument is not an array literal");
-      const values: string[] = [];
-      for (const element of argument.elements) {
-        const value = literalValue(extraction, element);
-        if (typeof value !== "string") return unrecognized("z.enum contains a non-literal value");
-        values.push(value);
-      }
-      return ok({ type: "string", enum: values });
-    }
-    case "array": {
-      const argument = call.arguments[0];
-      if (!argument) return ok({ type: "array" });
-      const items = await zodFromExpression(extraction, module, argument, depth + 1);
-      // An unrecognized `items` degrades to a bare `{type:"array"}` (kept
-      // recognized:true with `reason` attached) rather than failing the
-      // whole array closed — but one level up, `ok()` drops that `reason`
-      // on the floor. A nested-array depth-exhaustion case hits exactly
-      // this and never surfaces as fail-closed at the top; see the
-      // "depth exhaustion" row's comment in static-ts.oracle.test.ts for
-      // the traced example and the modifier-chain workaround it uses instead.
-      return items.recognized
-        ? ok({ type: "array", items: items.schema })
-        : { schema: { type: "array" }, optional: false, recognized: true, reason: items.reason };
-    }
+    case "enum": return zodEnum(extraction, call);
+    case "array": return zodArray(extraction, module, call, depth);
     case "union":
-    case "discriminatedUnion": {
-      const argument = call.arguments[method === "union" ? 0 : 1];
-      if (!argument || !ts.isArrayLiteralExpression(argument)) return unrecognized(`z.${method} options are not an array literal`);
-      const options: Record<string, unknown>[] = [];
-      for (const element of argument.elements) {
-        const option = await zodFromExpression(extraction, module, element, depth + 1);
-        if (!option.recognized) return unrecognized(option.reason ?? `z.${method} option not statically interpreted`);
-        options.push(option.schema);
-      }
-      return ok({ anyOf: options });
-    }
+    case "discriminatedUnion": return zodUnion(extraction, module, method, call, depth);
     case "record": {
       const valueArgument = call.arguments[call.arguments.length - 1];
-      if (!valueArgument) return ok({ type: "object", additionalProperties: true });
+      if (!valueArgument) return recognized({ type: "object", additionalProperties: true });
       const value = await zodFromExpression(extraction, module, valueArgument, depth + 1);
-      return ok({ type: "object", additionalProperties: value.recognized ? value.schema : true });
+      return recognized({ type: "object", additionalProperties: value.recognized ? value.schema : true });
     }
     default:
       return unrecognized(`z.${method} is not statically interpreted`);

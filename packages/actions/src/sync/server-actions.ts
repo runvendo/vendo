@@ -145,6 +145,105 @@ async function zodInferSchema(
   return zodFromExpression(extraction, resolved.module, resolved.expr, depth + 1);
 }
 
+/** `A | B | undefined | null` — undefined makes the whole type optional, null
+ *  wraps it, and an all-string-literal union collapses to an enum. */
+async function unionTypeSchema(
+  extraction: Extraction,
+  module: FileModule,
+  type: TS.UnionTypeNode,
+  depth: number,
+): Promise<ZodSchemaResult> {
+  const { ts } = extraction;
+  const options: Record<string, unknown>[] = [];
+  let optional = false;
+  let nullable = false;
+  for (const member of type.types) {
+    if (member.kind === ts.SyntaxKind.UndefinedKeyword) {
+      optional = true;
+      continue;
+    }
+    if (ts.isLiteralTypeNode(member) && member.literal.kind === ts.SyntaxKind.NullKeyword) {
+      nullable = true;
+      continue;
+    }
+    const option = await typeNodeSchema(extraction, module, member, depth + 1);
+    if (!option.recognized) return notInterpreted(option.reason ?? "union member is not statically interpreted");
+    options.push(option.schema);
+  }
+  if (options.length === 0) return { schema: {}, optional, recognized: true };
+  const allStringConsts = options.every((option) => typeof option.const === "string" && Object.keys(option).length === 1);
+  let schema: Record<string, unknown> = allStringConsts
+    ? { type: "string", enum: options.map((option) => option.const) }
+    : options.length === 1 ? options[0]! : { anyOf: options };
+  if (nullable) schema = { anyOf: [schema, { type: "null" }] };
+  return { schema, optional, recognized: true };
+}
+
+/** An inline `{ a: string; b?: number }` object type. */
+async function typeLiteralSchema(
+  extraction: Extraction,
+  module: FileModule,
+  type: TS.TypeLiteralNode,
+  depth: number,
+): Promise<ZodSchemaResult> {
+  const { ts } = extraction;
+  const properties: Record<string, unknown> = {};
+  const required: string[] = [];
+  const reasons: string[] = [];
+  for (const member of type.members) {
+    if (ts.isIndexSignatureDeclaration(member)) continue; // stays additive below
+    if (!ts.isPropertySignature(member) || !member.name) return notInterpreted("object type member is not a plain property");
+    const key = ts.isIdentifier(member.name) || ts.isStringLiteral(member.name) ? member.name.text : null;
+    if (key === null) return notInterpreted("object type member has a computed name");
+    const value = member.type
+      ? await typeNodeSchema(extraction, module, member.type, depth + 1)
+      : notInterpreted("object type member has no type annotation");
+    properties[key] = value.recognized ? value.schema : {};
+    if (!value.recognized && value.reason) reasons.push(`${key}: ${value.reason}`);
+    if (member.questionToken === undefined && !value.optional && value.recognized) required.push(key);
+  }
+  const hasIndexSignature = type.members.some((member) => ts.isIndexSignatureDeclaration(member));
+  const schema: Record<string, unknown> = {
+    type: "object",
+    properties,
+    ...(required.length > 0 ? { required } : {}),
+    additionalProperties: hasIndexSignature,
+  };
+  if (reasons.length > 0) return { schema, optional: false, recognized: true, reason: reasons.join("; ") };
+  return recognizedSchema(schema);
+}
+
+/** A named type: a zod `infer`, or one of the handful of built-ins whose shape
+ *  is knowable without a type checker. */
+async function typeReferenceSchema(
+  extraction: Extraction,
+  module: FileModule,
+  type: TS.TypeReferenceNode,
+  depth: number,
+): Promise<ZodSchemaResult> {
+  const { ts } = extraction;
+  const zod = await zodInferSchema(extraction, module, type, depth);
+  if (zod !== null) return zod;
+  const name = entityNameText(ts, type.typeName);
+  if (name === "Date") return recognizedSchema({ type: "string", format: "date-time" });
+  // Every server action is async, so its declared return type is a Promise;
+  // the tool's response is what the promise RESOLVES to.
+  if (name === "Promise" && type.typeArguments?.length === 1) {
+    return typeNodeSchema(extraction, module, type.typeArguments[0]!, depth + 1);
+  }
+  if (name === "Array" && type.typeArguments?.length === 1) {
+    const items = await typeNodeSchema(extraction, module, type.typeArguments[0]!, depth + 1);
+    return items.recognized
+      ? recognizedSchema({ type: "array", items: items.schema })
+      : { schema: { type: "array" }, optional: false, recognized: true, reason: items.reason };
+  }
+  if (name === "Record" && type.typeArguments?.length === 2) {
+    const value = await typeNodeSchema(extraction, module, type.typeArguments[1]!, depth + 1);
+    return recognizedSchema({ type: "object", additionalProperties: value.recognized ? value.schema : true });
+  }
+  return notInterpreted(`type "${name}" is not statically interpreted`);
+}
+
 async function typeNodeSchema(
   extraction: Extraction,
   module: FileModule,
@@ -180,79 +279,9 @@ async function typeNodeSchema(
       ? recognizedSchema({ type: "array", items: items.schema })
       : { schema: { type: "array" }, optional: false, recognized: true, reason: items.reason };
   }
-  if (ts.isUnionTypeNode(type)) {
-    const options: Record<string, unknown>[] = [];
-    let optional = false;
-    let nullable = false;
-    for (const member of type.types) {
-      if (member.kind === ts.SyntaxKind.UndefinedKeyword) {
-        optional = true;
-        continue;
-      }
-      if (ts.isLiteralTypeNode(member) && member.literal.kind === ts.SyntaxKind.NullKeyword) {
-        nullable = true;
-        continue;
-      }
-      const option = await typeNodeSchema(extraction, module, member, depth + 1);
-      if (!option.recognized) return notInterpreted(option.reason ?? "union member is not statically interpreted");
-      options.push(option.schema);
-    }
-    if (options.length === 0) return { schema: {}, optional, recognized: true };
-    const allStringConsts = options.every((option) => typeof option.const === "string" && Object.keys(option).length === 1);
-    let schema: Record<string, unknown> = allStringConsts
-      ? { type: "string", enum: options.map((option) => option.const) }
-      : options.length === 1 ? options[0]! : { anyOf: options };
-    if (nullable) schema = { anyOf: [schema, { type: "null" }] };
-    return { schema, optional, recognized: true };
-  }
-  if (ts.isTypeLiteralNode(type)) {
-    const properties: Record<string, unknown> = {};
-    const required: string[] = [];
-    const reasons: string[] = [];
-    for (const member of type.members) {
-      if (ts.isIndexSignatureDeclaration(member)) continue; // stays additive below
-      if (!ts.isPropertySignature(member) || !member.name) return notInterpreted("object type member is not a plain property");
-      const key = ts.isIdentifier(member.name) || ts.isStringLiteral(member.name) ? member.name.text : null;
-      if (key === null) return notInterpreted("object type member has a computed name");
-      const value = member.type
-        ? await typeNodeSchema(extraction, module, member.type, depth + 1)
-        : notInterpreted("object type member has no type annotation");
-      properties[key] = value.recognized ? value.schema : {};
-      if (!value.recognized && value.reason) reasons.push(`${key}: ${value.reason}`);
-      if (member.questionToken === undefined && !value.optional && value.recognized) required.push(key);
-    }
-    const hasIndexSignature = type.members.some((member) => ts.isIndexSignatureDeclaration(member));
-    const schema: Record<string, unknown> = {
-      type: "object",
-      properties,
-      ...(required.length > 0 ? { required } : {}),
-      additionalProperties: hasIndexSignature,
-    };
-    if (reasons.length > 0) return { schema, optional: false, recognized: true, reason: reasons.join("; ") };
-    return recognizedSchema(schema);
-  }
-  if (ts.isTypeReferenceNode(type)) {
-    const zod = await zodInferSchema(extraction, module, type, depth);
-    if (zod !== null) return zod;
-    const name = entityNameText(ts, type.typeName);
-    if (name === "Date") return recognizedSchema({ type: "string", format: "date-time" });
-    // Every server action is async, so its declared return type is a Promise;
-    // the tool's response is what the promise RESOLVES to.
-    if (name === "Promise" && type.typeArguments?.length === 1) {
-      return typeNodeSchema(extraction, module, type.typeArguments[0]!, depth + 1);
-    }
-    if (name === "Array" && type.typeArguments?.length === 1) {
-      const items = await typeNodeSchema(extraction, module, type.typeArguments[0]!, depth + 1);
-      return items.recognized
-        ? recognizedSchema({ type: "array", items: items.schema })
-        : { schema: { type: "array" }, optional: false, recognized: true, reason: items.reason };
-    }
-    if (name === "Record" && type.typeArguments?.length === 2) {
-      const value = await typeNodeSchema(extraction, module, type.typeArguments[1]!, depth + 1);
-      return recognizedSchema({ type: "object", additionalProperties: value.recognized ? value.schema : true });
-    }
-    return notInterpreted(`type "${name}" is not statically interpreted`);
-  }
+  if (ts.isUnionTypeNode(type)) return unionTypeSchema(extraction, module, type, depth);
+  if (ts.isTypeLiteralNode(type)) return typeLiteralSchema(extraction, module, type, depth);
+  if (ts.isTypeReferenceNode(type)) return typeReferenceSchema(extraction, module, type, depth);
   return notInterpreted("parameter type is not statically interpreted");
 }
 
@@ -330,6 +359,95 @@ function moduleStem(moduleRel: string): string {
   return path.posix.basename(moduleRel).replace(SOURCE_FILE_PATTERN, "");
 }
 
+/** One `"use server"` module's collection in progress: where actions land, and
+ *  the two dispositions a statement can give one. */
+interface ActionCollector {
+  extraction: Extraction;
+  module: FileModule;
+  moduleRel: string;
+  out: CollectedAction[];
+  pushFunction: (exportName: string, sourceName: string, fn: FunctionNode) => Promise<void>;
+  pushUnclassifiable: (exportName: string, reason: string) => void;
+}
+
+/** `export function name(…)` / `export default function name(…)`. */
+async function collectFunctionDeclaration(
+  collector: ActionCollector,
+  statement: TS.FunctionDeclaration,
+  isDefault: boolean,
+): Promise<void> {
+  const declared = statement.name?.text;
+  const exportName = isDefault ? "default" : declared;
+  if (!exportName) return;
+  await collector.pushFunction(exportName, declared ?? moduleStem(collector.moduleRel), statement);
+}
+
+/** `export const name = …` — a function, a recognized wrapper around one, or
+ *  something the extractor cannot confirm is callable. */
+async function collectVariableStatement(collector: ActionCollector, statement: TS.VariableStatement): Promise<void> {
+  const { extraction, module, moduleRel, out, pushFunction, pushUnclassifiable } = collector;
+  const { ts } = extraction;
+  for (const declaration of statement.declarationList.declarations) {
+    if (!ts.isIdentifier(declaration.name)) continue;
+    const exportName = declaration.name.text;
+    if (!declaration.initializer) continue;
+    const fn = functionNode(ts, declaration.initializer);
+    if (fn) {
+      await pushFunction(exportName, exportName, fn);
+      continue;
+    }
+    const wrapped = await wrappedAction(extraction, module, declaration.initializer);
+    if (wrapped !== null) {
+      if ("fn" in wrapped) await pushFunction(exportName, exportName, wrapped.fn);
+      else out.push({ module, moduleRel, exportName, sourceName: exportName, params: wrapped.params });
+      continue;
+    }
+    pushUnclassifiable(exportName, "the export is not a statically confirmable function");
+  }
+}
+
+/** `export default …` — an identifier resolved back to its local declaration,
+ *  or an inline function expression. */
+async function collectExportAssignment(collector: ActionCollector, statement: TS.ExportAssignment): Promise<void> {
+  const { extraction, module, moduleRel, pushFunction, pushUnclassifiable } = collector;
+  const { ts } = extraction;
+  let expr = unwrapExpression(ts, statement.expression);
+  let sourceName = moduleStem(moduleRel);
+  if (ts.isIdentifier(expr)) {
+    sourceName = expr.text;
+    const local = localFunction(extraction, module, expr.text);
+    if (local) {
+      await pushFunction("default", sourceName, local);
+      return;
+    }
+    pushUnclassifiable("default", `default export "${expr.text}" is not a statically confirmable function`);
+    return;
+  }
+  const fn = functionNode(ts, expr);
+  if (fn) await pushFunction("default", ts.isFunctionExpression(fn) && fn.name ? fn.name.text : sourceName, fn);
+  else pushUnclassifiable("default", "the default export is not a statically confirmable function");
+}
+
+/** `export { a, b as c }` — local bindings only; a re-export is not followed. */
+async function collectNamedExports(
+  collector: ActionCollector,
+  statement: TS.ExportDeclaration,
+  exportClause: TS.NamedExports,
+): Promise<void> {
+  const { extraction, module, moduleRel, pushFunction, pushUnclassifiable } = collector;
+  if (statement.moduleSpecifier !== undefined) {
+    extraction.warnings.push(`server-actions: re-exports from ${moduleRel} are not followed; declare actions in the "use server" module itself`);
+    return;
+  }
+  for (const element of exportClause.elements) {
+    const exportName = element.name.text;
+    const localName = (element.propertyName ?? element.name).text;
+    const local = localFunction(extraction, module, localName);
+    if (local) await pushFunction(exportName, localName, local);
+    else pushUnclassifiable(exportName, `exported binding "${localName}" is not a statically confirmable function`);
+  }
+}
+
 async function collectModuleActions(
   extraction: Extraction,
   module: FileModule,
@@ -352,6 +470,7 @@ async function collectModuleActions(
   const pushUnclassifiable = (exportName: string, reason: string): void => {
     out.push({ ...base, exportName, sourceName: exportName, params: [], disabled: "unclassifiable", unclassifiableReason: reason });
   };
+  const collector: ActionCollector = { extraction, module, moduleRel, out, pushFunction, pushUnclassifiable };
 
   for (const statement of module.sf.statements) {
     const modifiers = ts.canHaveModifiers(statement) ? ts.getModifiers(statement) ?? [] : [];
@@ -359,62 +478,19 @@ async function collectModuleActions(
     const isDefault = modifiers.some((modifier) => modifier.kind === ts.SyntaxKind.DefaultKeyword);
 
     if (ts.isFunctionDeclaration(statement) && isExported) {
-      const declared = statement.name?.text;
-      const exportName = isDefault ? "default" : declared;
-      if (!exportName) continue;
-      await pushFunction(exportName, declared ?? moduleStem(moduleRel), statement);
+      await collectFunctionDeclaration(collector, statement, isDefault);
       continue;
     }
     if (ts.isVariableStatement(statement) && isExported) {
-      for (const declaration of statement.declarationList.declarations) {
-        if (!ts.isIdentifier(declaration.name)) continue;
-        const exportName = declaration.name.text;
-        if (!declaration.initializer) continue;
-        const fn = functionNode(ts, declaration.initializer);
-        if (fn) {
-          await pushFunction(exportName, exportName, fn);
-          continue;
-        }
-        const wrapped = await wrappedAction(extraction, module, declaration.initializer);
-        if (wrapped !== null) {
-          if ("fn" in wrapped) await pushFunction(exportName, exportName, wrapped.fn);
-          else out.push({ ...base, exportName, sourceName: exportName, params: wrapped.params });
-          continue;
-        }
-        pushUnclassifiable(exportName, "the export is not a statically confirmable function");
-      }
+      await collectVariableStatement(collector, statement);
       continue;
     }
     if (ts.isExportAssignment(statement) && !statement.isExportEquals) {
-      let expr = unwrapExpression(ts, statement.expression);
-      let sourceName = moduleStem(moduleRel);
-      if (ts.isIdentifier(expr)) {
-        sourceName = expr.text;
-        const local = localFunction(extraction, module, expr.text);
-        if (local) {
-          await pushFunction("default", sourceName, local);
-          continue;
-        }
-        pushUnclassifiable("default", `default export "${expr.text}" is not a statically confirmable function`);
-        continue;
-      }
-      const fn = functionNode(ts, expr);
-      if (fn) await pushFunction("default", ts.isFunctionExpression(fn) && fn.name ? fn.name.text : sourceName, fn);
-      else pushUnclassifiable("default", "the default export is not a statically confirmable function");
+      await collectExportAssignment(collector, statement);
       continue;
     }
     if (ts.isExportDeclaration(statement) && statement.exportClause && ts.isNamedExports(statement.exportClause)) {
-      if (statement.moduleSpecifier !== undefined) {
-        extraction.warnings.push(`server-actions: re-exports from ${moduleRel} are not followed; declare actions in the "use server" module itself`);
-        continue;
-      }
-      for (const element of statement.exportClause.elements) {
-        const exportName = element.name.text;
-        const localName = (element.propertyName ?? element.name).text;
-        const local = localFunction(extraction, module, localName);
-        if (local) await pushFunction(exportName, localName, local);
-        else pushUnclassifiable(exportName, `exported binding "${localName}" is not a statically confirmable function`);
-      }
+      await collectNamedExports(collector, statement, statement.exportClause);
     }
   }
 }

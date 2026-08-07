@@ -108,6 +108,63 @@ function coherePairs(value: Record<string, unknown>): void {
   value[current] = Math.max(1, Math.round(low % Math.max(2, high)));
 }
 
+/** A tuple's `prefixItems` in order, else a bounded run of the element schema. */
+function generateArray(schema: JsonSchema, key: string, name: string, path: string, depth: number): Generated {
+  if (Array.isArray(schema.prefixItems)) {
+    const tuple: unknown[] = [];
+    for (const [index, item] of schema.prefixItems.entries()) {
+      const generated = generate(item as JsonSchema, key, name, `${path}/${index}`, depth + 1);
+      if (!generated.ok) return FAILED;
+      tuple.push(generated.value);
+    }
+    return { ok: true, value: tuple };
+  }
+  const items = schema.items as JsonSchema | undefined;
+  // An array whose element type is unknown can only be `[]`, and a component
+  // that guards on `.length` would render nothing — the exact failure the
+  // seed exists to prevent. Fail instead, so the caller can drop an optional
+  // prop or fall to an honest label.
+  if (items === undefined || Object.keys(items).length === 0) return FAILED;
+  const minItems = typeof schema.minItems === "number" ? schema.minItems : 0;
+  const maxItems = typeof schema.maxItems === "number" ? schema.maxItems : Number.POSITIVE_INFINITY;
+  const count = Math.max(minItems, Math.min(DEFAULT_ARRAY_ITEMS, maxItems));
+  const values: unknown[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const generated = generate(items, key, name, `${path}/${index}`, depth + 1);
+    if (!generated.ok) return FAILED;
+    values.push(generated.value);
+  }
+  return { ok: true, value: values };
+}
+
+function generateObject(schema: JsonSchema, name: string, path: string, depth: number): Generated {
+  const properties = (schema.properties ?? {}) as Record<string, JsonSchema>;
+  const required = new Set(Array.isArray(schema.required) ? schema.required as string[] : []);
+  const value: Record<string, unknown> = {};
+  for (const propertyKey of Object.keys(properties).sort()) {
+    const generated = generate(properties[propertyKey]!, propertyKey, name, `${path}/${propertyKey}`, depth + 1);
+    // A required property we cannot synthesize makes the whole object
+    // unusable; an optional one is simply left out.
+    if (!generated.ok) {
+      if (required.has(propertyKey)) return FAILED;
+      continue;
+    }
+    value[propertyKey] = generated.value;
+  }
+  // An EMPTY object where the schema expected data is the same blank-render
+  // trap as an empty array: `if (!rows?.length) return null` draws nothing and
+  // the surface spins. That happens two ways — a `z.record()` (no declared
+  // properties, an open value schema) and an all-optional object whose every
+  // property failed to synthesize. Both fall to the honest rung-3 label.
+  // A component that genuinely declares NO props is different: `{}` is the
+  // correct seed and it will draw.
+  coherePairs(value);
+  const expectedData = Object.keys(properties).length > 0
+    || (typeof schema.additionalProperties === "object" && schema.additionalProperties !== null);
+  if (expectedData && Object.keys(value).length === 0) return FAILED;
+  return { ok: true, value };
+}
+
 function generate(schema: JsonSchema, key: string, name: string, path: string, depth: number): Generated {
   if (depth > MAX_DEPTH) return FAILED;
   const seed = seedOf(name, path);
@@ -132,61 +189,9 @@ function generate(schema: JsonSchema, key: string, name: string, path: string, d
   if (type === "boolean") return { ok: true, value: seed % 2 === 0 };
   if (type === "null") return { ok: true, value: null };
 
-  if (type === "array") {
-    if (Array.isArray(schema.prefixItems)) {
-      const tuple: unknown[] = [];
-      for (const [index, item] of schema.prefixItems.entries()) {
-        const generated = generate(item as JsonSchema, key, name, `${path}/${index}`, depth + 1);
-        if (!generated.ok) return FAILED;
-        tuple.push(generated.value);
-      }
-      return { ok: true, value: tuple };
-    }
-    const items = schema.items as JsonSchema | undefined;
-    // An array whose element type is unknown can only be `[]`, and a component
-    // that guards on `.length` would render nothing — the exact failure the
-    // seed exists to prevent. Fail instead, so the caller can drop an optional
-    // prop or fall to an honest label.
-    if (items === undefined || Object.keys(items).length === 0) return FAILED;
-    const minItems = typeof schema.minItems === "number" ? schema.minItems : 0;
-    const maxItems = typeof schema.maxItems === "number" ? schema.maxItems : Number.POSITIVE_INFINITY;
-    const count = Math.max(minItems, Math.min(DEFAULT_ARRAY_ITEMS, maxItems));
-    const values: unknown[] = [];
-    for (let index = 0; index < count; index += 1) {
-      const generated = generate(items, key, name, `${path}/${index}`, depth + 1);
-      if (!generated.ok) return FAILED;
-      values.push(generated.value);
-    }
-    return { ok: true, value: values };
-  }
+  if (type === "array") return generateArray(schema, key, name, path, depth);
 
-  if (type === "object" || schema.properties !== undefined) {
-    const properties = (schema.properties ?? {}) as Record<string, JsonSchema>;
-    const required = new Set(Array.isArray(schema.required) ? schema.required as string[] : []);
-    const value: Record<string, unknown> = {};
-    for (const propertyKey of Object.keys(properties).sort()) {
-      const generated = generate(properties[propertyKey]!, propertyKey, name, `${path}/${propertyKey}`, depth + 1);
-      // A required property we cannot synthesize makes the whole object
-      // unusable; an optional one is simply left out.
-      if (!generated.ok) {
-        if (required.has(propertyKey)) return FAILED;
-        continue;
-      }
-      value[propertyKey] = generated.value;
-    }
-    // An EMPTY object where the schema expected data is the same blank-render
-    // trap as an empty array: `if (!rows?.length) return null` draws nothing and
-    // the surface spins. That happens two ways — a `z.record()` (no declared
-    // properties, an open value schema) and an all-optional object whose every
-    // property failed to synthesize. Both fall to the honest rung-3 label.
-    // A component that genuinely declares NO props is different: `{}` is the
-    // correct seed and it will draw.
-    coherePairs(value);
-    const expectedData = Object.keys(properties).length > 0
-      || (typeof schema.additionalProperties === "object" && schema.additionalProperties !== null);
-    if (expectedData && Object.keys(value).length === 0) return FAILED;
-    return { ok: true, value };
-  }
+  if (type === "object" || schema.properties !== undefined) return generateObject(schema, name, path, depth);
 
   // No type, no enum, no const, no properties: the permissive placeholder sync
   // writes when it could not interpret a schema. Nothing to synthesize.

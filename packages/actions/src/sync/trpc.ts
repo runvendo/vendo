@@ -115,6 +115,63 @@ function procedureFromChain(extraction: Extraction, expr: TS.CallExpression, mod
   };
 }
 
+/** `mergeRouters(a, b, …)` — one flat router carrying every argument's entries. */
+async function mergedRouter(
+  extraction: Extraction,
+  module: FileModule,
+  expr: TS.CallExpression,
+  depth: number,
+  contextPath: string,
+): Promise<RouterDef> {
+  const entries = new Map<string, RouterDef | ProcedureDef>();
+  for (const argument of expr.arguments) {
+    const merged = await evaluateRouterExpression(extraction, module, argument, depth + 1, contextPath);
+    if (merged?.kind === "router") {
+      for (const [key, value] of merged.entries) entries.set(key, value);
+    } else {
+      extraction.warnings.push(`trpc: could not statically resolve a mergeRouters argument at ${contextPath || "<root>"}`);
+    }
+  }
+  return { kind: "router", entries };
+}
+
+/** The object literal a router factory was called with: every property is a
+ *  nested router or a procedure, and a spread contributes another router's. */
+async function routerFromObjectLiteral(
+  extraction: Extraction,
+  module: FileModule,
+  argument: TS.ObjectLiteralExpression,
+  depth: number,
+  contextPath: string,
+): Promise<RouterDef> {
+  const { ts } = extraction;
+  const entries = new Map<string, RouterDef | ProcedureDef>();
+  for (const property of argument.properties) {
+    if (ts.isPropertyAssignment(property)) {
+      const key = propertyKeyName(extraction, property.name);
+      if (!key) continue;
+      const child = await evaluateRouterEntry(extraction, module, property.initializer, depth + 1, `${contextPath}${contextPath ? "." : ""}${key}`);
+      if (child) entries.set(key, child);
+    } else if (ts.isShorthandPropertyAssignment(property)) {
+      const key = property.name.text;
+      const resolved = await resolveIdentifier(extraction, module, key, depth + 1);
+      const child = resolved
+        ? await evaluateRouterEntry(extraction, resolved.module, resolved.expr, depth + 1, `${contextPath}${contextPath ? "." : ""}${key}`)
+        : null;
+      if (child) entries.set(key, child);
+      else extraction.warnings.push(`trpc: could not statically resolve router entry "${key}"`);
+    } else if (ts.isSpreadAssignment(property)) {
+      const spread = await evaluateRouterExpression(extraction, module, property.expression, depth + 1, contextPath);
+      if (spread?.kind === "router") {
+        for (const [key, value] of spread.entries) entries.set(key, value);
+      } else {
+        extraction.warnings.push(`trpc: could not statically resolve a spread router entry at ${contextPath || "<root>"}`);
+      }
+    }
+  }
+  return { kind: "router", entries };
+}
+
 async function evaluateRouterExpression(
   extraction: Extraction,
   module: FileModule,
@@ -138,16 +195,7 @@ async function evaluateRouterExpression(
 
   const name = calleeName(extraction, expr);
   if (name && MERGE_ROUTERS_NAMES.has(name)) {
-    const entries = new Map<string, RouterDef | ProcedureDef>();
-    for (const argument of expr.arguments) {
-      const merged = await evaluateRouterExpression(extraction, module, argument, depth + 1, contextPath);
-      if (merged?.kind === "router") {
-        for (const [key, value] of merged.entries) entries.set(key, value);
-      } else {
-        extraction.warnings.push(`trpc: could not statically resolve a mergeRouters argument at ${contextPath || "<root>"}`);
-      }
-    }
-    return { kind: "router", entries };
+    return mergedRouter(extraction, module, expr, depth, contextPath);
   }
 
   if (name && ROUTER_FACTORY_NAMES.has(name) && expr.arguments.length === 1) {
@@ -160,31 +208,7 @@ async function evaluateRouterExpression(
         ? expr.expression.expression.text
         : ts.isIdentifier(expr.expression) ? expr.expression.text : name;
       recordRouterFactorySource(extraction, module, factoryName);
-      const entries = new Map<string, RouterDef | ProcedureDef>();
-      for (const property of argument.properties) {
-        if (ts.isPropertyAssignment(property)) {
-          const key = propertyKeyName(extraction, property.name);
-          if (!key) continue;
-          const child = await evaluateRouterEntry(extraction, module, property.initializer, depth + 1, `${contextPath}${contextPath ? "." : ""}${key}`);
-          if (child) entries.set(key, child);
-        } else if (ts.isShorthandPropertyAssignment(property)) {
-          const key = property.name.text;
-          const resolved = await resolveIdentifier(extraction, module, key, depth + 1);
-          const child = resolved
-            ? await evaluateRouterEntry(extraction, resolved.module, resolved.expr, depth + 1, `${contextPath}${contextPath ? "." : ""}${key}`)
-            : null;
-          if (child) entries.set(key, child);
-          else extraction.warnings.push(`trpc: could not statically resolve router entry "${key}"`);
-        } else if (ts.isSpreadAssignment(property)) {
-          const spread = await evaluateRouterExpression(extraction, module, property.expression, depth + 1, contextPath);
-          if (spread?.kind === "router") {
-            for (const [key, value] of spread.entries) entries.set(key, value);
-          } else {
-            extraction.warnings.push(`trpc: could not statically resolve a spread router entry at ${contextPath || "<root>"}`);
-          }
-        }
-      }
-      return { kind: "router", entries };
+      return routerFromObjectLiteral(extraction, module, argument, depth, contextPath);
     }
   }
 

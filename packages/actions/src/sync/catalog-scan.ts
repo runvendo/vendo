@@ -278,6 +278,160 @@ interface RegistrationCandidate {
   modulePath: string;
 }
 
+/** The module the catalog expression actually lives in — the registration
+ * file itself, or the shared registry module it imports (01 §14: one
+ * registry file serves both `createVendo` and `<VendoRoot>`). */
+interface CatalogContext {
+  constants: Map<string, tsTypes.Expression>;
+  module: FileModule;
+  modulePath: string;
+}
+
+/** State shared by every registration file one scan visits. */
+interface RegistrationRun {
+  extraction: StaticExtraction;
+  root: string;
+  scanned: Map<string, CatalogEntry>;
+  seen: Set<string>;
+  warnings: string[];
+}
+
+function arrayEntryCandidate(context: CatalogContext, element: tsTypes.Expression): RegistrationCandidate | null {
+  const rawEntry = resolvedLocalExpression(context.constants, element);
+  if (!ts.isObjectLiteralExpression(rawEntry)) return null;
+  return {
+    name: localConstantJson(context.constants, objectField(rawEntry, "name") ?? rawEntry) as unknown,
+    description: localConstantJson(context.constants, objectField(rawEntry, "description") ?? rawEntry) as unknown,
+    examples: readExamples(context.constants, rawEntry),
+    schemaExpression: objectField(rawEntry, "propsSchema"),
+    module: context.module,
+    modulePath: context.modulePath,
+  };
+}
+
+function registryEntryCandidate(context: CatalogContext, name: string, value: tsTypes.Expression): RegistrationCandidate {
+  const rawEntry = resolvedLocalExpression(context.constants, value);
+  if (!ts.isObjectLiteralExpression(rawEntry)) {
+    return { name, description: undefined, examples: undefined, schemaExpression: undefined, module: context.module, modulePath: context.modulePath };
+  }
+  // 01 §14: the registry entry's `component` reference is IGNORED by sync
+  // (and the server) — it exists so the same object serves the client.
+  return {
+    name,
+    description: localConstantJson(context.constants, objectField(rawEntry, "description") ?? rawEntry) as unknown,
+    examples: readExamples(context.constants, rawEntry),
+    schemaExpression: objectField(rawEntry, "props"),
+    module: context.module,
+    modulePath: context.modulePath,
+  };
+}
+
+/** Every `catalog:` expression a `createVendo({…})` call in this module names. */
+function catalogExpressionsIn(local: CatalogContext): tsTypes.Expression[] {
+  const found: tsTypes.Expression[] = [];
+  const visit = (node: tsTypes.Node): void => {
+    if (!ts.isCallExpression(node)
+      || !ts.isIdentifier(node.expression)
+      || node.expression.text !== "createVendo"
+      || node.arguments[0] === undefined) {
+      ts.forEachChild(node, visit);
+      return;
+    }
+    const config = resolvedLocalExpression(local.constants, node.arguments[0]);
+    if (!ts.isObjectLiteralExpression(config)) return;
+    const catalogExpression = objectField(config, "catalog");
+    if (catalogExpression !== undefined) found.push(catalogExpression);
+  };
+  visit(local.module.sf);
+  return found;
+}
+
+/** The registrations one `catalog:` expression carries, in either the array form
+ *  or the registry-object form. */
+async function catalogCandidates(
+  run: RegistrationRun,
+  local: CatalogContext,
+  catalogExpression: tsTypes.Expression,
+): Promise<RegistrationCandidate[]> {
+  let context = local;
+  let catalog = resolvedLocalExpression(local.constants, catalogExpression);
+  if (ts.isIdentifier(catalog)) {
+    // The shared-registry main path: `catalog` is imported from the one
+    // registry module both sides consume — follow the import statically.
+    const resolved = await resolveIdentifier(run.extraction, local.module, catalog.text, 0);
+    if (resolved !== null) {
+      context = {
+        constants: localConstants(resolved.module.sf),
+        module: resolved.module,
+        modulePath: relativeModulePath(run.root, resolved.module.file),
+      };
+      catalog = resolvedLocalExpression(context.constants, unwrapExpression(resolved.expr));
+    }
+  }
+  const candidates: RegistrationCandidate[] = [];
+  if (ts.isArrayLiteralExpression(catalog)) {
+    for (const element of catalog.elements) {
+      if (ts.isSpreadElement(element)) continue;
+      const candidate = arrayEntryCandidate(context, element);
+      if (candidate !== null) candidates.push(candidate);
+    }
+  } else if (ts.isObjectLiteralExpression(catalog)) {
+    for (const property of catalog.properties) {
+      if (ts.isPropertyAssignment(property)) {
+        const name = propertyName(property.name);
+        if (name !== undefined) candidates.push(registryEntryCandidate(context, name, property.initializer));
+      }
+    }
+  } else {
+    run.warnings.push(`registered component catalog in ${local.modulePath} is not a statically resolvable array or registry object; scanned entries remain authoritative`);
+  }
+  return candidates;
+}
+
+/** One candidate's catalog entry, or null when it was rejected — always with the
+ *  reason warned. `modulePath` is the REGISTRATION file's, the identity a human
+ *  reading the warning is looking for. */
+async function registeredEntry(
+  run: RegistrationRun,
+  candidate: RegistrationCandidate,
+  modulePath: string,
+): Promise<CatalogEntry | null> {
+  const { name, description, examples } = candidate;
+  if (typeof name !== "string" || !PASCAL_CASE.test(name)
+    || typeof description !== "string"
+    || (examples !== undefined && (!Array.isArray(examples) || examples.some((example) => typeof example !== "string")))) {
+    run.warnings.push(`registered component in ${modulePath} could not be serialized deterministically and was omitted`);
+    return null;
+  }
+  if (run.seen.has(name)) {
+    run.warnings.push(`registered component ${name} appears more than once; kept the first registration`);
+    return null;
+  }
+  run.seen.add(name);
+  let propsSchema: Record<string, unknown> = {};
+  let note: string | undefined;
+  if (candidate.schemaExpression !== undefined) {
+    const interpreted = await zodFromExpression(run.extraction, candidate.module, candidate.schemaExpression, 0);
+    if (interpreted.recognized) {
+      propsSchema = interpreted.schema;
+      if (interpreted.reason !== undefined) {
+        note = `Props schema is partially permissive because parts could not be statically interpreted: ${interpreted.reason}.`;
+      }
+    } else {
+      note = `Props schema is permissive because the registration's schema could not be statically interpreted: ${interpreted.reason ?? "unrecognized schema expression"}. The runtime derives the real schema from the live registration.`;
+    }
+  }
+  return {
+    name,
+    exportPath: run.scanned.get(name)?.exportPath ?? `${modulePath}#catalog.${name}`,
+    propsSchema,
+    description,
+    ...(examples === undefined ? {} : { examples: examples as string[] }),
+    source: "registered",
+    ...(note === undefined ? {} : { note }),
+  };
+}
+
 /** 04 §1: `catalog@1`'s `propsSchema` field carries the DERIVED JSON Schema.
  * Sync derives it statically from the registration's single zod schema; the
  * hand-written `propsJsonSchema` field is gone (01 §14, 2026-07-18). A
@@ -289,8 +443,13 @@ async function registeredCatalogEntries(
   warnings: string[],
 ): Promise<CatalogEntry[]> {
   const entries: CatalogEntry[] = [];
-  const seen = new Set<string>();
-  const extraction: StaticExtraction = { ts, root, modules: new Map() };
+  const run: RegistrationRun = {
+    extraction: { ts, root, modules: new Map() },
+    root,
+    scanned,
+    seen: new Set<string>(),
+    warnings,
+  };
   for (const file of registrationFiles) {
     let source: string;
     try {
@@ -298,128 +457,19 @@ async function registeredCatalogEntries(
     } catch {
       continue;
     }
-    const module = parseModule(extraction, file, source);
-    const constants = localConstants(module.sf);
-    const modulePath = relativeModulePath(root, file);
+    const module = parseModule(run.extraction, file, source);
+    const local: CatalogContext = {
+      constants: localConstants(module.sf),
+      module,
+      modulePath: relativeModulePath(root, file),
+    };
     const candidates: RegistrationCandidate[] = [];
-    /** The module the catalog expression actually lives in — the registration
-     * file itself, or the shared registry module it imports (01 §14: one
-     * registry file serves both `createVendo` and `<VendoRoot>`). */
-    interface CatalogContext {
-      constants: Map<string, tsTypes.Expression>;
-      module: FileModule;
-      modulePath: string;
-    }
-    const collectArrayEntry = (context: CatalogContext, element: tsTypes.Expression): void => {
-      const rawEntry = resolvedLocalExpression(context.constants, element);
-      if (!ts.isObjectLiteralExpression(rawEntry)) return;
-      candidates.push({
-        name: localConstantJson(context.constants, objectField(rawEntry, "name") ?? rawEntry) as unknown,
-        description: localConstantJson(context.constants, objectField(rawEntry, "description") ?? rawEntry) as unknown,
-        examples: readExamples(context.constants, rawEntry),
-        schemaExpression: objectField(rawEntry, "propsSchema"),
-        module: context.module,
-        modulePath: context.modulePath,
-      });
-    };
-    const collectRegistryEntry = (context: CatalogContext, name: string, value: tsTypes.Expression): void => {
-      const rawEntry = resolvedLocalExpression(context.constants, value);
-      if (!ts.isObjectLiteralExpression(rawEntry)) {
-        candidates.push({ name, description: undefined, examples: undefined, schemaExpression: undefined, module: context.module, modulePath: context.modulePath });
-        return;
-      }
-      // 01 §14: the registry entry's `component` reference is IGNORED by sync
-      // (and the server) — it exists so the same object serves the client.
-      candidates.push({
-        name,
-        description: localConstantJson(context.constants, objectField(rawEntry, "description") ?? rawEntry) as unknown,
-        examples: readExamples(context.constants, rawEntry),
-        schemaExpression: objectField(rawEntry, "props"),
-        module: context.module,
-        modulePath: context.modulePath,
-      });
-    };
-    const catalogExpressions: tsTypes.Expression[] = [];
-    const visit = (node: tsTypes.Node): void => {
-      if (!ts.isCallExpression(node)
-        || !ts.isIdentifier(node.expression)
-        || node.expression.text !== "createVendo"
-        || node.arguments[0] === undefined) {
-        ts.forEachChild(node, visit);
-        return;
-      }
-      const config = resolvedLocalExpression(constants, node.arguments[0]);
-      if (!ts.isObjectLiteralExpression(config)) return;
-      const catalogExpression = objectField(config, "catalog");
-      if (catalogExpression !== undefined) catalogExpressions.push(catalogExpression);
-    };
-    visit(module.sf);
-    for (const catalogExpression of catalogExpressions) {
-      let context: CatalogContext = { constants, module, modulePath };
-      let catalog = resolvedLocalExpression(constants, catalogExpression);
-      if (ts.isIdentifier(catalog)) {
-        // The shared-registry main path: `catalog` is imported from the one
-        // registry module both sides consume — follow the import statically.
-        const resolved = await resolveIdentifier(extraction, module, catalog.text, 0);
-        if (resolved !== null) {
-          context = {
-            constants: localConstants(resolved.module.sf),
-            module: resolved.module,
-            modulePath: relativeModulePath(root, resolved.module.file),
-          };
-          catalog = resolvedLocalExpression(context.constants, unwrapExpression(resolved.expr));
-        }
-      }
-      if (ts.isArrayLiteralExpression(catalog)) {
-        for (const element of catalog.elements) {
-          if (!ts.isSpreadElement(element)) collectArrayEntry(context, element);
-        }
-      } else if (ts.isObjectLiteralExpression(catalog)) {
-        for (const property of catalog.properties) {
-          if (ts.isPropertyAssignment(property)) {
-            const name = propertyName(property.name);
-            if (name !== undefined) collectRegistryEntry(context, name, property.initializer);
-          }
-        }
-      } else {
-        warnings.push(`registered component catalog in ${modulePath} is not a statically resolvable array or registry object; scanned entries remain authoritative`);
-      }
+    for (const catalogExpression of catalogExpressionsIn(local)) {
+      candidates.push(...await catalogCandidates(run, local, catalogExpression));
     }
     for (const candidate of candidates) {
-      const { name, description, examples } = candidate;
-      if (typeof name !== "string" || !PASCAL_CASE.test(name)
-        || typeof description !== "string"
-        || (examples !== undefined && (!Array.isArray(examples) || examples.some((example) => typeof example !== "string")))) {
-        warnings.push(`registered component in ${modulePath} could not be serialized deterministically and was omitted`);
-        continue;
-      }
-      if (seen.has(name)) {
-        warnings.push(`registered component ${name} appears more than once; kept the first registration`);
-        continue;
-      }
-      seen.add(name);
-      let propsSchema: Record<string, unknown> = {};
-      let note: string | undefined;
-      if (candidate.schemaExpression !== undefined) {
-        const interpreted = await zodFromExpression(extraction, candidate.module, candidate.schemaExpression, 0);
-        if (interpreted.recognized) {
-          propsSchema = interpreted.schema;
-          if (interpreted.reason !== undefined) {
-            note = `Props schema is partially permissive because parts could not be statically interpreted: ${interpreted.reason}.`;
-          }
-        } else {
-          note = `Props schema is permissive because the registration's schema could not be statically interpreted: ${interpreted.reason ?? "unrecognized schema expression"}. The runtime derives the real schema from the live registration.`;
-        }
-      }
-      entries.push({
-        name,
-        exportPath: scanned.get(name)?.exportPath ?? `${modulePath}#catalog.${name}`,
-        propsSchema,
-        description,
-        ...(examples === undefined ? {} : { examples: examples as string[] }),
-        source: "registered",
-        ...(note === undefined ? {} : { note }),
-      });
+      const entry = await registeredEntry(run, candidate, local.modulePath);
+      if (entry !== null) entries.push(entry);
     }
   }
   return entries.sort((left, right) => compareText(left.name, right.name));
@@ -507,6 +557,76 @@ function withoutUndefined(type: tsTypes.Type): tsTypes.Type[] {
   return members.filter((member) => (member.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Void)) === 0);
 }
 
+/** The union arms that survived undefined/void stripping. A single arm collapses
+ *  to itself, all-boolean-literals is just `boolean`, and all-literals is an enum. */
+function unionSchema(
+  checker: tsTypes.TypeChecker,
+  members: tsTypes.Type[],
+  location: tsTypes.Node,
+  seen: Set<number>,
+  depth: number,
+): SchemaResult {
+  if (members.length === 1) return schemaForType(checker, members[0]!, location, seen, depth);
+  if (members.every((member) => (member.flags & ts.TypeFlags.BooleanLiteral) !== 0)) {
+    return { schema: { type: "boolean" } };
+  }
+  const values = members.map(literalValue);
+  if (values.every((value) => value !== undefined)) return { schema: { enum: values } };
+  const variants: JsonSchema[] = [];
+  for (const member of members) {
+    const converted = schemaForType(checker, member, location, new Set(seen), depth + 1);
+    if (converted.schema === undefined) return converted;
+    variants.push(converted.schema);
+  }
+  return { schema: { anyOf: variants } };
+}
+
+/** An object type's properties and index signature. Its id is already in `seen`,
+ *  so a property that loops back to it is reported rather than followed. */
+function objectSchema(
+  checker: tsTypes.TypeChecker,
+  type: tsTypes.Type,
+  location: tsTypes.Node,
+  seen: Set<number>,
+  depth: number,
+): SchemaResult {
+  const properties: Record<string, JsonSchema> = {};
+  const required: string[] = [];
+  const reasons: string[] = [];
+  for (const property of checker.getPropertiesOfType(type).sort((left, right) => compareText(left.name, right.name))) {
+    const declaration = property.valueDeclaration ?? property.declarations?.[0] ?? location;
+    const propertyType = checker.getTypeOfSymbolAtLocation(property, declaration);
+    const converted = schemaForType(checker, propertyType, declaration, new Set(seen), depth + 1);
+    // Degrade the one unrepresentable property to permissive `{}` and drop it
+    // from `required` — the same rule the sibling converter in
+    // route-schema.ts applies. Failing the whole object instead would throw
+    // away every property that converted fine, and a component with a single
+    // callback prop would reach the console as "declares no props schema".
+    properties[property.name] = converted.schema ?? {};
+    if (converted.unsupported !== undefined) {
+      reasons.push(`property ${property.name} uses ${converted.unsupported}`);
+    } else if (converted.schema === undefined) {
+      reasons.push(`property ${property.name} uses ${checker.typeToString(propertyType)}`);
+    }
+    if (converted.schema === undefined) continue;
+    if ((property.flags & ts.SymbolFlags.Optional) === 0
+      && withoutUndefined(propertyType).length === (propertyType.isUnion() ? propertyType.types.length : 1)) {
+      required.push(property.name);
+    }
+  }
+
+  const schema: JsonSchema = { type: "object", properties };
+  const stringIndex = checker.getIndexTypeOfType(type, ts.IndexKind.String);
+  if (stringIndex === undefined) schema.additionalProperties = false;
+  else {
+    const converted = schemaForType(checker, stringIndex, location, new Set(seen), depth + 1);
+    schema.additionalProperties = converted.schema ?? {};
+    if (converted.unsupported !== undefined) reasons.push(`index signature uses ${converted.unsupported}`);
+  }
+  if (required.length > 0) schema.required = required;
+  return reasons.length > 0 ? { schema, unsupported: reasons.join("; ") } : { schema };
+}
+
 function schemaForType(
   checker: tsTypes.TypeChecker,
   type: tsTypes.Type,
@@ -523,21 +643,7 @@ function schemaForType(
   // prop's `T | undefined` reduces to T; a pure union keeps every member).
   const members = withoutUndefined(type);
   if (members.length === 0) return { unsupported: `unsupported type ${checker.typeToString(type)}` };
-  if (type.isUnion()) {
-    if (members.length === 1) return schemaForType(checker, members[0]!, location, seen, depth);
-    if (members.every((member) => (member.flags & ts.TypeFlags.BooleanLiteral) !== 0)) {
-      return { schema: { type: "boolean" } };
-    }
-    const values = members.map(literalValue);
-    if (values.every((value) => value !== undefined)) return { schema: { enum: values } };
-    const variants: JsonSchema[] = [];
-    for (const member of members) {
-      const converted = schemaForType(checker, member, location, new Set(seen), depth + 1);
-      if (converted.schema === undefined) return converted;
-      variants.push(converted.schema);
-    }
-    return { schema: { anyOf: variants } };
-  }
+  if (type.isUnion()) return unionSchema(checker, members, location, seen, depth);
 
   const literal = literalValue(type);
   if (literal !== undefined) return { schema: { const: literal } };
@@ -577,41 +683,7 @@ function schemaForType(
     seen.add(id);
   }
 
-  const properties: Record<string, JsonSchema> = {};
-  const required: string[] = [];
-  const reasons: string[] = [];
-  for (const property of checker.getPropertiesOfType(type).sort((left, right) => compareText(left.name, right.name))) {
-    const declaration = property.valueDeclaration ?? property.declarations?.[0] ?? location;
-    const propertyType = checker.getTypeOfSymbolAtLocation(property, declaration);
-    const converted = schemaForType(checker, propertyType, declaration, new Set(seen), depth + 1);
-    // Degrade the one unrepresentable property to permissive `{}` and drop it
-    // from `required` — the same rule the sibling converter in
-    // route-schema.ts applies. Failing the whole object instead would throw
-    // away every property that converted fine, and a component with a single
-    // callback prop would reach the console as "declares no props schema".
-    properties[property.name] = converted.schema ?? {};
-    if (converted.unsupported !== undefined) {
-      reasons.push(`property ${property.name} uses ${converted.unsupported}`);
-    } else if (converted.schema === undefined) {
-      reasons.push(`property ${property.name} uses ${checker.typeToString(propertyType)}`);
-    }
-    if (converted.schema === undefined) continue;
-    if ((property.flags & ts.SymbolFlags.Optional) === 0
-      && withoutUndefined(propertyType).length === (propertyType.isUnion() ? propertyType.types.length : 1)) {
-      required.push(property.name);
-    }
-  }
-
-  const schema: JsonSchema = { type: "object", properties };
-  const stringIndex = checker.getIndexTypeOfType(type, ts.IndexKind.String);
-  if (stringIndex === undefined) schema.additionalProperties = false;
-  else {
-    const converted = schemaForType(checker, stringIndex, location, new Set(seen), depth + 1);
-    schema.additionalProperties = converted.schema ?? {};
-    if (converted.unsupported !== undefined) reasons.push(`index signature uses ${converted.unsupported}`);
-  }
-  if (required.length > 0) schema.required = required;
-  return reasons.length > 0 ? { schema, unsupported: reasons.join("; ") } : { schema };
+  return objectSchema(checker, type, location, seen, depth);
 }
 
 function schemaForComponent(checker: tsTypes.TypeChecker, declaration: tsTypes.FunctionLikeDeclaration): SchemaResult {

@@ -16,6 +16,7 @@ import {
   overBudgetWarning,
   portablePath,
   previewBlockingSpecifiers,
+  type CapturedClosure,
 } from "./capture.js";
 import { generateSampleProps } from "./sample-props.js";
 import type { HostComponentSite } from "./catalog-scan.js";
@@ -175,6 +176,139 @@ function captureHash(record: Omit<CapturedHostComponent, "hash" | "capturedAt">)
   return `sha256:${sha256Hex(canonicalJson(record as unknown as Record<string, unknown>))}`;
 }
 
+/** The closure state one capture run shares across every component it visits. */
+interface CaptureContext {
+  root: string;
+  realRoot: string;
+  styles: readonly CapturedPinStyle[];
+  styleRefs: () => Array<{ path: string; ref: string }>;
+  budgetBytes: number | undefined;
+  corpus: Corpus;
+  catalogByName: Map<string, CatalogEntry>;
+  result: HostComponentCaptureResult;
+}
+
+/** One discovered component's source, read off disk. */
+interface FoundComponent {
+  label: string;
+  realFile: string;
+  source: string;
+  /** The component's own module path, portable relative to the project root. */
+  module: string;
+}
+
+/** The record a component whose whole import closure captured cleanly earns. */
+function capturedRecord(
+  ctx: CaptureContext,
+  site: HostComponentSite,
+  found: FoundComponent,
+  entryExportName: string,
+  closure: CapturedClosure,
+): Omit<CapturedHostComponent, "hash" | "capturedAt"> {
+  const { sourceImports, subSources, bytes, requires, packages } = closure;
+  const modules: Record<string, string> = {};
+  for (const [id, sub] of Object.entries(subSources)) {
+    modules[id] = addModule(ctx.corpus, {
+      source: sub.source,
+      ...(Object.keys(sub.imports).length === 0 ? {} : { imports: sub.imports }),
+    });
+  }
+  const sample = sampleFrom(site.name, ctx.catalogByName.get(site.name));
+  if ("gap" in sample) ctx.result.withoutSamples.push(site.name);
+  return {
+    name: site.name,
+    module: found.module,
+    ...(entryExportName === "default" ? {} : { export: entryExportName }),
+    entry: addModule(ctx.corpus, {
+      source: found.source,
+      ...(Object.keys(sourceImports).length === 0 ? {} : { imports: sourceImports }),
+    }),
+    ...(Object.keys(modules).length === 0 ? {} : { modules }),
+    ...(ctx.styles.length === 0 ? {} : { styles: ctx.styleRefs() }),
+    bytes,
+    ...(requires.length === 0 ? {} : { requires }),
+    ...(Object.keys(packages).length === 0 ? {} : { packages }),
+    ...("gap" in sample
+      ? { noSampleProps: sample.gap }
+      : { sampleProps: sample.props, sampleOrigin: sample.origin }),
+  };
+}
+
+/** The record one discovered component earns: its capture, or the reason — always
+ *  a property of the SOURCE, never a transient failure — it has none. */
+async function recordFor(
+  ctx: CaptureContext,
+  site: HostComponentSite,
+  found: FoundComponent,
+): Promise<Omit<CapturedHostComponent, "hash" | "capturedAt">> {
+  /** Record the reason on disk so the console can say WHY, not just show a
+   *  grey block. Only reached when the reason is a property of the SOURCE,
+   *  never for a transient failure. */
+  const skip = (reason: HostComponentSkip): Omit<CapturedHostComponent, "hash" | "capturedAt"> => {
+    ctx.result.warnings.push(`${found.label} was not captured: ${reason.detail}`);
+    ctx.result.skipped.push(site.name);
+    return { name: site.name, module: found.module, skipped: reason };
+  };
+
+  if (site.binding === null) {
+    return skip({
+      reason: "no-named-declaration",
+      detail: "It has no named declaration to re-export. Name the component (or export it) so it can be rendered.",
+    });
+  }
+  if (!isInside(ctx.realRoot, found.realFile) || found.realFile.split(path.sep).includes("node_modules")) {
+    return skip({
+      reason: "in-package",
+      detail: "It is declared inside a package, not in your source, so its code is not yours to capture.",
+    });
+  }
+  const entry = entryExport(found.source, found.realFile, site.binding);
+  if ("skip" in entry) return skip(entry.skip);
+
+  const walked = await captureClosure({
+    root: ctx.root,
+    realRoot: ctx.realRoot,
+    label: found.label,
+    primaryFile: found.realFile,
+    primarySource: found.source,
+    ...(ctx.budgetBytes === undefined ? {} : { budgetBytes: ctx.budgetBytes }),
+    warnings: ctx.result.warnings,
+  });
+  if (!walked.ok) {
+    ctx.result.warnings.push(overBudgetWarning(found.label, walked.overBudget));
+    ctx.result.skipped.push(site.name);
+    return {
+      name: site.name,
+      module: found.module,
+      skipped: {
+        reason: "too-large",
+        detail: `Its import closure is ${Math.round(walked.overBudget.bytes / 1024)} KB, over the ${Math.round(walked.overBudget.budgetBytes / 1024)} KB per-component budget (largest: ${walked.overBudget.largest}).`,
+        bytes: walked.overBudget.bytes,
+        budgetBytes: walked.overBudget.budgetBytes,
+        largest: walked.overBudget.largest,
+      },
+    };
+  }
+  const blocking = previewBlockingSpecifiers(walked.closure);
+  if (blocking.length > 0) {
+    // The closure would LOAD as a crash. A named "cannot preview" tile
+    // beats a red error box mislabeled as a generated-component
+    // failure, which is what shipping this capture would produce. A
+    // package the preview CAN fetch from the pinned CDN is not blocking
+    // — one it cannot says so in its own clause.
+    const named = blocking.map((value) => {
+      const why = walked.closure.unloadablePackages[value];
+      return why === undefined ? `"${value}"` : `"${value}" (${why})`;
+    });
+    return skip({
+      reason: "unsupported-imports",
+      detail: `It imports ${named.join(", ")}, which the sandboxed preview cannot load.`,
+      specifiers: blocking,
+    });
+  }
+  return capturedRecord(ctx, site, found, entry.export, walked.closure);
+}
+
 /**
  * Capture every registered component's source into `.vendo/components/`.
  * `styles` are the app-root stylesheets the pin capture already collected —
@@ -208,6 +342,16 @@ export async function captureHostComponents(options: {
     path: style.path,
     ref: addModule(corpus, { source: style.css }),
   }));
+  const ctx: CaptureContext = {
+    root,
+    realRoot,
+    styles,
+    styleRefs,
+    budgetBytes: options.budgetBytes,
+    corpus,
+    catalogByName,
+    result,
+  };
   /** Every component the scan DISCOVERED, capture succeeded or not. Prune runs
    *  against this, never against "what we managed to write": a transient
    *  unreadable file must not delete a good record here and its row in Cloud
@@ -240,102 +384,7 @@ export async function captureHostComponents(options: {
       continue;
     }
     const module = portablePath(realRoot, realFile);
-    /** Record the reason on disk so the console can say WHY, not just show a
-     *  grey block. Only reached when the reason is a property of the SOURCE,
-     *  never for a transient failure. */
-    const skip = (reason: HostComponentSkip): Omit<CapturedHostComponent, "hash" | "capturedAt"> => {
-      result.warnings.push(`${label} was not captured: ${reason.detail}`);
-      result.skipped.push(site.name);
-      return { name: site.name, module, skipped: reason };
-    };
-
-    let record: Omit<CapturedHostComponent, "hash" | "capturedAt">;
-    if (site.binding === null) {
-      record = skip({
-        reason: "no-named-declaration",
-        detail: "It has no named declaration to re-export. Name the component (or export it) so it can be rendered.",
-      });
-    } else {
-      if (!isInside(realRoot, realFile) || realFile.split(path.sep).includes("node_modules")) {
-        record = skip({
-          reason: "in-package",
-          detail: "It is declared inside a package, not in your source, so its code is not yours to capture.",
-        });
-      } else {
-        const entry = entryExport(source, realFile, site.binding);
-        if ("skip" in entry) record = skip(entry.skip);
-        else {
-          const walked = await captureClosure({
-            root,
-            realRoot,
-            label,
-            primaryFile: realFile,
-            primarySource: source,
-            ...(options.budgetBytes === undefined ? {} : { budgetBytes: options.budgetBytes }),
-            warnings: result.warnings,
-          });
-          const blocking = walked.ok ? previewBlockingSpecifiers(walked.closure) : [];
-          if (!walked.ok) {
-            result.warnings.push(overBudgetWarning(label, walked.overBudget));
-            result.skipped.push(site.name);
-            record = {
-              name: site.name,
-              module,
-              skipped: {
-                reason: "too-large",
-                detail: `Its import closure is ${Math.round(walked.overBudget.bytes / 1024)} KB, over the ${Math.round(walked.overBudget.budgetBytes / 1024)} KB per-component budget (largest: ${walked.overBudget.largest}).`,
-                bytes: walked.overBudget.bytes,
-                budgetBytes: walked.overBudget.budgetBytes,
-                largest: walked.overBudget.largest,
-              },
-            };
-          } else if (blocking.length > 0) {
-            // The closure would LOAD as a crash. A named "cannot preview" tile
-            // beats a red error box mislabeled as a generated-component
-            // failure, which is what shipping this capture would produce. A
-            // package the preview CAN fetch from the pinned CDN is not blocking
-            // — one it cannot says so in its own clause.
-            const named = blocking.map((value) => {
-              const why = walked.closure.unloadablePackages[value];
-              return why === undefined ? `"${value}"` : `"${value}" (${why})`;
-            });
-            record = skip({
-              reason: "unsupported-imports",
-              detail: `It imports ${named.join(", ")}, which the sandboxed preview cannot load.`,
-              specifiers: blocking,
-            });
-          } else {
-            const { sourceImports, subSources, bytes, requires, packages } = walked.closure;
-            const modules: Record<string, string> = {};
-            for (const [id, sub] of Object.entries(subSources)) {
-              modules[id] = addModule(corpus, {
-                source: sub.source,
-                ...(Object.keys(sub.imports).length === 0 ? {} : { imports: sub.imports }),
-              });
-            }
-            const sample = sampleFrom(site.name, catalogByName.get(site.name));
-            if ("gap" in sample) result.withoutSamples.push(site.name);
-            record = {
-              name: site.name,
-              module,
-              ...(entry.export === "default" ? {} : { export: entry.export }),
-              entry: addModule(corpus, {
-                source,
-                ...(Object.keys(sourceImports).length === 0 ? {} : { imports: sourceImports }),
-              }),
-              ...(Object.keys(modules).length === 0 ? {} : { modules }),
-              ...(styles.length === 0 ? {} : { styles: styleRefs() }),
-              bytes,
-              ...(requires.length === 0 ? {} : { requires }),
-              ...(Object.keys(packages).length === 0 ? {} : { packages }),
-              ...("gap" in sample
-                ? { noSampleProps: sample.gap }
-                : { sampleProps: sample.props, sampleOrigin: sample.origin }),
-            };
-          }
-        }
-      }
-    }
+    const record = await recordFor(ctx, site, { label, realFile, source, module });
 
     const hash = captureHash(record);
     const existing = await readRecord(recordFile);

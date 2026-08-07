@@ -67,6 +67,45 @@ const validateForEachItems = (step: Step, value: Json): Json[] => {
   return value;
 };
 
+/**
+ * Retire the parked call and rebuild the state the walk stopped in — or, if the
+ * re-issued call parks or fails again, the result the whole walk carries out.
+ */
+async function resumedState(
+  steps: Step[],
+  invoke: (call: ToolCall) => Promise<ToolOutcome>,
+  resume: StepResumePoint,
+): Promise<{ state: WalkState } | { result: StepWalkResult }> {
+  const step = steps[resume.stepIndex];
+  if (step === undefined) {
+    return { result: validationHalt({ id: "?", tool: "?" }, "parked step is missing") };
+  }
+  // Re-issue the parked call VERBATIM (original id + args) so guard's
+  // single-use approval replay matches the approved call.
+  const outcome = await invoke(resume.pendingCall);
+  if (outcome.status === "pending-approval") {
+    return { result: { status: "parked", approvalId: outcome.approvalId, resume } };
+  }
+  if (outcome.status !== "ok") return { result: { status: "halted", outcome, step } };
+  if (resume.iterationItems === undefined) {
+    return {
+      state: {
+        stepIndex: resume.stepIndex + 1,
+        stepOutputs: { ...resume.stepOutputs, [step.id]: outcome.output },
+      },
+    };
+  }
+  return {
+    state: {
+      stepIndex: resume.stepIndex,
+      stepOutputs: { ...resume.stepOutputs },
+      iterationItems: resume.iterationItems,
+      iterationOutputs: [...(resume.iterationOutputs ?? []), outcome.output],
+      forEachIndex: (resume.forEachIndex ?? 0) + 1,
+    },
+  };
+}
+
 export async function walkSteps(options: StepWalkOptions): Promise<StepWalkResult> {
   const { steps, root, evaluate, invoke, newCallId } = options;
 
@@ -85,32 +124,9 @@ export async function walkSteps(options: StepWalkOptions): Promise<StepWalkResul
   let state: WalkState;
 
   if (options.resumeFrom !== undefined) {
-    const resume = options.resumeFrom;
-    const step = steps[resume.stepIndex];
-    if (step === undefined) {
-      return validationHalt({ id: "?", tool: "?" }, "parked step is missing");
-    }
-    // Re-issue the parked call VERBATIM (original id + args) so guard's
-    // single-use approval replay matches the approved call.
-    const outcome = await invoke(resume.pendingCall);
-    if (outcome.status === "pending-approval") {
-      return { status: "parked", approvalId: outcome.approvalId, resume };
-    }
-    if (outcome.status !== "ok") return { status: "halted", outcome, step };
-    if (resume.iterationItems === undefined) {
-      state = {
-        stepIndex: resume.stepIndex + 1,
-        stepOutputs: { ...resume.stepOutputs, [step.id]: outcome.output },
-      };
-    } else {
-      state = {
-        stepIndex: resume.stepIndex,
-        stepOutputs: { ...resume.stepOutputs },
-        iterationItems: resume.iterationItems,
-        iterationOutputs: [...(resume.iterationOutputs ?? []), outcome.output],
-        forEachIndex: (resume.forEachIndex ?? 0) + 1,
-      };
-    }
+    const resumed = await resumedState(steps, invoke, options.resumeFrom);
+    if ("result" in resumed) return resumed.result;
+    state = resumed.state;
   } else {
     state = { stepIndex: 0, stepOutputs: {} };
   }

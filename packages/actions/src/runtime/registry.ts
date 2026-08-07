@@ -511,25 +511,36 @@ async function executeServerAction(
   return projected.ok ? projected.output : error("server-action-error", `Server action ${key} returned a non-JSON value: ${projected.message}`);
 }
 
-async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: ToolCall, ctx: RunContext): Promise<ToolOutcome> {
-  if (!isArgsObject(call.args)) return error("validation", `Arguments for ${call.tool} must be an object`);
-  if (tool.binding.kind === "server-action") return executeServerAction(config, tool.binding, call, ctx);
+/** The HTTP request one host tool call becomes. */
+interface HostRequest {
+  url: URL;
+  method: HttpMethod;
+  body: string | undefined;
+}
 
+/** Bind the call's arguments onto the tool's declared shape: the tRPC envelope,
+ *  or path substitution and then query/body per the binding's `argsIn`. */
+function hostRequest(
+  config: RegistryConfig,
+  binding: RouteBinding | OpenApiBinding | TrpcBinding,
+  call: ToolCall,
+  args: Record<string, unknown>,
+): { request: HostRequest } | { error: ToolOutcome } {
   let url: URL;
   let method: HttpMethod;
   let body: string | undefined;
   try {
-    if (tool.binding.kind === "trpc") {
-      const request = trpcRequest(tool.binding, call.args, config.baseUrl);
+    if (binding.kind === "trpc") {
+      const request = trpcRequest(binding, args, config.baseUrl);
       url = request.url;
       method = request.method;
       body = request.body;
     } else {
-      method = tool.binding.method;
-      const substituted = withPathArgs(tool.binding.path, call.args);
-      url = resolveUrl({ ...tool.binding, path: substituted.path }, config.baseUrl);
-      if (tool.binding.kind === "route") {
-        if (tool.binding.argsIn === "query") {
+      method = binding.method;
+      const substituted = withPathArgs(binding.path, args);
+      url = resolveUrl({ ...binding, path: substituted.path }, config.baseUrl);
+      if (binding.kind === "route") {
+        if (binding.argsIn === "query") {
           for (const [key, value] of Object.entries(substituted.remaining)) appendQuery(url, key, value);
         } else {
           body = JSON.stringify(substituted.remaining);
@@ -544,23 +555,74 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
       }
     }
   } catch (cause) {
-    return error("validation", cause instanceof Error ? cause.message : `Invalid arguments for ${call.tool}`);
+    return { error: error("validation", cause instanceof Error ? cause.message : `Invalid arguments for ${call.tool}`) };
   }
+  return { request: { url, method, body } };
+}
 
-  let headers: Record<string, string>;
-  let actAsMinted = false;
+/** The present user's own credentials, forwarded only where the binding and the
+ *  configured origin allow it — and never silently when they do not. */
+async function presentHeaders(
+  config: RegistryConfig,
+  tool: ExtractedTool,
+  call: ToolCall,
+  ctx: RunContext,
+  url: URL,
+): Promise<{ headers: Record<string, string> } | { error: ToolOutcome }> {
+  const forwardsPresentHeaders = mayForwardPresentHeaders(
+    tool.binding,
+    url,
+    config.baseUrl,
+    config.baseUrlTrusted ?? true,
+  );
+  if (!forwardsPresentHeaders && hasInboundAuthHeaders(ctx)) {
+    const reason = config.baseUrlTrusted === false
+      ? "untrusted-host-origin" as const
+      : "cross-origin-binding" as const;
+    if (config.onPresentCredentialsNotForwarded !== undefined) {
+      try {
+        await config.onPresentCredentialsNotForwarded({ ctx, tool: descriptorOf(tool), reason });
+      } catch {
+        // A warning sink must never turn a host API call into a product failure.
+      }
+    }
+    // "untrusted-host-origin" only (09-vendo §2 install-dx wave 1.1):
+    // "cross-origin-binding" always stays warn-only, in every policy.
+    if (reason === "untrusted-host-origin" && config.untrustedOriginPolicy === "fail") {
+      return {
+        error: error(
+          "blocked",
+          `Present credentials for ${call.tool} cannot be forwarded because VENDO_BASE_URL is not set. `
+            + "Set VENDO_BASE_URL to this deployment's full public URL (path prefix included) — "
+            + "or VENDO_HOST_API_URL when the host API answers on another origin — and restart the server.",
+        ),
+      };
+    }
+  }
+  return { headers: forwardsPresentHeaders ? forwardedHeaders(ctx) : {} };
+}
+
+/** How this call authenticates to the host: the ActAs seam for away and MCP,
+ *  the present user's forwarded credentials otherwise. */
+async function hostHeaders(
+  config: RegistryConfig,
+  tool: ExtractedTool,
+  call: ToolCall,
+  ctx: RunContext,
+  url: URL,
+): Promise<{ headers: Record<string, string>; actAsMinted: boolean } | { error: ToolOutcome }> {
   if (ctx.presence === "away") {
-    if (!config.actAs) return error("not-implemented", "away execution isn't set up for this product");
+    if (!config.actAs) return { error: error("not-implemented", "away execution isn't set up for this product") };
     const grant = (ctx as ActionsRunContext).grant;
-    if (!grant) return error("validation", "away execution requires a captured grant");
+    if (!grant) return { error: error("validation", "away execution requires a captured grant") };
     const authed = await actAsAuth(config.actAs, ctx.principal, grant, {
       declined: "the host declined away execution for this action",
       failed: "away authentication failed",
     });
-    if ("error" in authed) return authed.error;
-    headers = authed.headers;
-    actAsMinted = true;
-  } else if (ctx.venue === "mcp" || (ctx as ActionsRunContext).mcpConsent !== undefined) {
+    if ("error" in authed) return { error: authed.error };
+    return { headers: authed.headers, actAsMinted: true };
+  }
+  if (ctx.venue === "mcp" || (ctx as ActionsRunContext).mcpConsent !== undefined) {
     // 04 §4 / 10-mcp §2.1 / §3: an MCP-OAuth user has no host browser session,
     // so the present path has nothing to forward — and we forward NOTHING even
     // if a forged/mis-plumbed ctx carries requestHeaders (fail-closed). Host
@@ -575,88 +637,84 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
     // (unauthenticated for MCP users) present-forward branch. A venue="app" ctx
     // WITHOUT mcpConsent (ordinary in-product app use) never enters here.
     if (!config.actAs) {
-      return error(
-        "not-implemented",
-        "MCP host execution isn't set up for this product — the host must provide actAs (createVendo({ actAs }))",
-      );
+      return {
+        error: error(
+          "not-implemented",
+          "MCP host execution isn't set up for this product — the host must provide actAs (createVendo({ actAs }))",
+        ),
+      };
     }
     const actionsCtx = ctx as ActionsRunContext;
     // A ctx with neither a real grant nor the door's consent record did not come
     // from the door — fail closed rather than authenticate an unattested call.
     const grant = actionsCtx.grant ?? mcpConsentGrant(actionsCtx, call, tool);
-    if (!grant) return error("validation", "MCP host execution requires the door's consent context");
+    if (!grant) return { error: error("validation", "MCP host execution requires the door's consent context") };
     const authed = await actAsAuth(config.actAs, ctx.principal, grant, {
       declined: "the host declined MCP execution for this action",
       failed: "MCP authentication failed",
     });
-    if ("error" in authed) return authed.error;
-    headers = authed.headers;
-    actAsMinted = true;
-  } else {
-    const forwardsPresentHeaders = mayForwardPresentHeaders(
-      tool.binding,
-      url,
-      config.baseUrl,
-      config.baseUrlTrusted ?? true,
-    );
-    if (!forwardsPresentHeaders && hasInboundAuthHeaders(ctx)) {
-      const reason = config.baseUrlTrusted === false
-        ? "untrusted-host-origin" as const
-        : "cross-origin-binding" as const;
-      if (config.onPresentCredentialsNotForwarded !== undefined) {
-        try {
-          await config.onPresentCredentialsNotForwarded({ ctx, tool: descriptorOf(tool), reason });
-        } catch {
-          // A warning sink must never turn a host API call into a product failure.
-        }
-      }
-      // "untrusted-host-origin" only (09-vendo §2 install-dx wave 1.1):
-      // "cross-origin-binding" always stays warn-only, in every policy.
-      if (reason === "untrusted-host-origin" && config.untrustedOriginPolicy === "fail") {
-        return error(
-          "blocked",
-          `Present credentials for ${call.tool} cannot be forwarded because VENDO_BASE_URL is not set. `
-            + "Set VENDO_BASE_URL to this deployment's full public URL (path prefix included) — "
-            + "or VENDO_HOST_API_URL when the host API answers on another origin — and restart the server.",
-        );
+    if ("error" in authed) return { error: authed.error };
+    return { headers: authed.headers, actAsMinted: true };
+  }
+  const present = await presentHeaders(config, tool, call, ctx, url);
+  return "error" in present ? present : { headers: present.headers, actAsMinted: false };
+}
+
+/** The host request itself. Every failure — transport, status, body — comes back
+ *  as an outcome, so the caller's audit enrichment always runs. */
+async function fetchHostTool(
+  config: RegistryConfig,
+  tool: ExtractedTool,
+  call: ToolCall,
+  { url, method, body }: HostRequest,
+  headers: Record<string, string>,
+): Promise<ToolOutcome> {
+  try {
+    const request = config.fetch ?? defaultFetch;
+    const response = await request(url, {
+      method,
+      headers,
+      ...(body !== undefined ? { body } : {}),
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      return error(
+        "http-error",
+        `${method} ${requestTarget(url)} → ${response.status}: ${text.slice(0, 200)}`,
+      );
+    }
+    if (text) {
+      try {
+        const parsed: unknown = JSON.parse(text);
+        return {
+          status: "ok",
+          output: tool.binding.kind === "trpc" ? trpcOutput(tool.binding, parsed) : parsed,
+        };
+      } catch {
+        // Successful non-JSON responses retain their HTTP status and text.
       }
     }
-    headers = forwardsPresentHeaders ? forwardedHeaders(ctx) : {};
+    return { status: "ok", output: { status: response.status, text } };
+  } catch (cause) {
+    return error("network-error", cause instanceof Error ? cause.message : `Network request failed for ${call.tool}`);
   }
+}
+
+async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: ToolCall, ctx: RunContext): Promise<ToolOutcome> {
+  if (!isArgsObject(call.args)) return error("validation", `Arguments for ${call.tool} must be an object`);
+  if (tool.binding.kind === "server-action") return executeServerAction(config, tool.binding, call, ctx);
+
+  const built = hostRequest(config, tool.binding, call, call.args);
+  if ("error" in built) return built.error;
+  const { url, body } = built.request;
+
+  const authed = await hostHeaders(config, tool, call, ctx, url);
+  if ("error" in authed) return authed.error;
+  const { headers, actAsMinted } = authed;
   setHeader(headers, "accept", "application/json");
   if (body !== undefined) setHeader(headers, "content-type", "application/json");
 
-  const outcome = await (async (): Promise<ToolOutcome> => {
-    try {
-      const request = config.fetch ?? defaultFetch;
-      const response = await request(url, {
-        method,
-        headers,
-        ...(body !== undefined ? { body } : {}),
-      });
-      const text = await response.text();
-      if (!response.ok) {
-        return error(
-          "http-error",
-          `${method} ${requestTarget(url)} → ${response.status}: ${text.slice(0, 200)}`,
-        );
-      }
-      if (text) {
-        try {
-          const parsed: unknown = JSON.parse(text);
-          return {
-            status: "ok",
-            output: tool.binding.kind === "trpc" ? trpcOutput(tool.binding, parsed) : parsed,
-          };
-        } catch {
-          // Successful non-JSON responses retain their HTTP status and text.
-        }
-      }
-      return { status: "ok", output: { status: response.status, text } };
-    } catch (cause) {
-      return error("network-error", cause instanceof Error ? cause.message : `Network request failed for ${call.tool}`);
-    }
-  })();
+  const outcome = await fetchHostTool(config, tool, call, built.request, headers);
   // Audit enrichment: every actAs-authenticated host call reports the seam's
   // disposition, even when the host request itself then fails.
   return actAsMinted ? withActAs(outcome, "minted") : outcome;
