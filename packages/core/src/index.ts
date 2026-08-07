@@ -33,6 +33,7 @@ export * from "./capability.js";
 export * from "./principal.js";
 export * from "./reshape.js";
 export * from "./product-slug.js";
+export * from "./prompt-blocks.js";
 export * from "./run-context.js";
 export * from "./screen.js";
 export * from "./semantics.js";
