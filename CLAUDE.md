@@ -11,7 +11,7 @@ generated UI in a sandboxed, brand-native surface.
   (read `00-overview.md` first); layering enforced by `scripts/dependency-guard.mjs`
   in `pnpm lint`
 - `examples/` — the demo host `demo-bank` (Maple) and the framework integration
-  examples (`ai-sdk-agent`, `mastra-agent`, `claude-code-plugin`, `mcp-agent`)
+  examples (`ai-sdk-agent`, `mastra-agent`, `claude-code-plugin`)
 - `corpus/` — init-extraction corpus harness (`pnpm corpus`)
 - `docs/` — integration docs; `docs-site/` — the public docs site
 

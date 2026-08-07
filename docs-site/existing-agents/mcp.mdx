@@ -273,8 +273,9 @@ host (Maple) with an outside MCP client. Every screenshot below is that run.
     dynamic client registration, PKCE, your login, the door's consent page:
 
     ```bash
-    export VENDO_MCP_URL=https://your-app.example.com/api/vendo/mcp
-    node examples/mcp-agent/agent.mjs "make me something to watch my spending on"
+    export ANTHROPIC_API_KEY=sk-ant-…
+    pnpm --filter demo-bank mcp:agent https://your-app.example.com \
+      "make me something to watch my spending on"
     ```
 
     The client's `tools/list` then carries your host actions and the `vendo_*`
@@ -415,8 +416,8 @@ with no Vendo code in the agent's process:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-…
-export VENDO_MCP_URL=http://localhost:3000/api/vendo/mcp
-node examples/mcp-agent/agent.mjs "make me something I can watch this month's spending on"
+pnpm --filter demo-bank mcp:agent http://localhost:3000 \
+  "make me something I can watch this month's spending on"
 ```
 
 It prints the receipt, narrates `say`, and asserts the receipt law itself: if a
