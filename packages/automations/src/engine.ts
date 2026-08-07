@@ -265,7 +265,7 @@ const stopFor = (
 ): { reason: NonNullable<Sponsorship["reason"]>; summary: string } =>
   ({ reason, summary: SPONSORSHIP_STOP[reason](automationName) });
 
-/** §9.9 + F10 — what a run says when the identity checks could not ANSWER (the
+/** §9.9 — what a run says when the identity checks could not ANSWER (the
  *  host's memberships callback or access seam threw). The raw failure is a host
  *  system's error text — a DSN, a stack, a driver message — and the run row is
  *  rendered verbatim to consumers (`automations-panel.tsx` prints `summary` and
@@ -906,8 +906,8 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
 
   /** The run's context before any seam is consulted — a pure function of the run
    *  and a subject, so it cannot fail. It is what a failed identity resolution
-   *  still audits under (F10: a fire that cannot even resolve who it runs as
-   *  must leave a record, not vanish). */
+   *  still audits under: a fire that cannot even resolve who it runs as must
+   *  leave a record, not vanish. */
   const baseRunContext = (run: InternalRunRecord, subject: string): RunContext => ({
     principal: { kind: "user", subject },
     venue: "automation",
@@ -1387,8 +1387,8 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
           ctx = await runContext(app.doc, record, app.subject);
           stop = await sponsorshipRefusal(app, trigger, ctx);
         } catch (error) {
-          // F10 — the consumer sentence and the operator's detail part ways
-          // here: `summary` is rendered verbatim in the automations panel, so
+          // The consumer sentence and the operator's detail part ways here:
+          // `summary` is rendered verbatim in the automations panel, so
           // the host's raw throw rides the audit row below instead.
           stop = { summary: IDENTITY_UNAVAILABLE(app.doc.name), detail: message(error) };
         }
@@ -1868,7 +1868,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   /**
    * Every sponsorship row for these apps' triggers, in ONE query — and the
    * pre-list rekey, because the LIST is where a person reads who an automation
-   * runs as (§13) and whether it stopped (E8-F2). A row that is invisible here
+   * runs as (§13) and whether it stopped. A row that is invisible here
    * does not merely go missing: both sentences then answer with the app's OWNER,
    * so an automation someone else took on reads as the reader's own, and a
    * STOPPED one shows no stopped line and no way back to it.
@@ -1909,7 +1909,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     const records = await allRecords(config.store.records(APPS), { refs: { subject } });
     const rows = records.map(parseAppRow).filter((row) => row.subject === subject);
     const seen = new Set(rows.map((row) => row.doc.id));
-    // E8-F1 — an ORG-held app's row subject is the org id (§9.5), so matching
+    // An ORG-held app's row subject is the org id (§9.5), so matching
     // the caller's own subject listed a promoted automation for NOBODY: not the
     // members, not the org admin, not even the person who promoted it. Promote
     // deliberately disarms the automation and tells the promoter it "stays off
@@ -1931,7 +1931,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     // sponsorship rows are ref'd by subject, so this is one indexed query, never
     // a scan of everybody's apps.
     //
-    // E8-F2 — INVALIDATED rows are included on purpose: a stopped automation
+    // INVALIDATED rows are included on purpose: a stopped automation
     // must not vanish from here, or there is no way back to it at all.
     // Deduped: sponsorship is per (app, trigger), so sponsoring two triggers of
     // one app must still fetch that app once.
@@ -1990,7 +1990,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
           const sponsorship = sponsorRows.get(key);
           const sponsor = sponsorship?.sponsor ?? row.subject;
           const display = sponsorship?.display ?? (sponsor === subject ? ctx.principal.display : undefined);
-          // E8-F2 — a stopped automation says so HERE, in the same sentence the
+          // A stopped automation says so HERE, in the same sentence the
           // stopped run row uses, so the list is a way back to it rather than a
           // place it silently disappeared from.
           const stopped = sponsorship?.status === "invalidated"

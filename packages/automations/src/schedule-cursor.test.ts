@@ -75,9 +75,9 @@ describe("pre-rekey schedule cursors", () => {
     apps: appsDouble(), tools, guard: new GuardDouble(), store, now: () => NOW,
   });
 
-  /** An armed hourly automation whose cursor sits where the code used to put it,
-   *  last fired three hours ago — so it is two windows overdue right now. */
-  async function seedPreRekey(id: string): Promise<AppDocument> {
+  /** An armed hourly automation whose cursor sits where the code used to put it.
+   *  Three hours ago by default, so it is two windows overdue right now. */
+  async function seedPreRekey(id: string, lastFiredHoursAgo = 3): Promise<AppDocument> {
     const doc = hourly(id);
     await store.records("vendo_apps").put({
       id: doc.id,
@@ -86,7 +86,7 @@ describe("pre-rekey schedule cursors", () => {
     });
     await store.records(SCHEDULE).put({
       id: doc.id,
-      data: { lastFiredAt: new Date(NOW.getTime() - 3 * HOUR).toISOString() },
+      data: { lastFiredAt: new Date(NOW.getTime() - lastFiredHoursAgo * HOUR).toISOString() },
     });
     return doc;
   }
@@ -110,6 +110,16 @@ describe("pre-rekey schedule cursors", () => {
     // …and the row it came from is gone, so it can never be read again and
     // re-migrated over a cursor that has since moved on.
     expect(await store.records(SCHEDULE).get(doc.id)).toBeNull();
+  });
+
+  it("gives the carried cursor the app ref its pre-rekey row never had", async () => {
+    // Not due, so the tick writes nothing after the move: the ref has to come
+    // from the move itself, or the app-erase cascade can never collect this row.
+    const doc = await seedPreRekey("app_cursor_refs", 0.5);
+
+    expect(await engine().tick(NOW)).toEqual([]);
+
+    expect((await store.records(SCHEDULE).get(`${doc.id}:main`))?.refs).toEqual({ app_id: doc.id });
   });
 
   it("does not resurrect a pre-rekey cursor once the pair key already has one", async () => {

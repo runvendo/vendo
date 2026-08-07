@@ -31,7 +31,7 @@ export { triggerKey } from "./sponsorship.js";
 export { UNATTENDED_IRREVERSIBILITY_RULE, unattendedIrreversibilityCheck } from "./law.js";
 
 /** Build contract §9.3's `can()`, as much of it as the engine needs — taken as
- *  config so this package never reaches sideways into the store. Lane G's
+ *  config so this package never reaches sideways into the store. The umbrella's
  *  `appAccess(store)` satisfies it as-is; absent, `can(editor)` degenerates to
  *  ownership, which is exactly the rule before app-access grants existed. */
 export interface AppAccessSeam {
@@ -41,7 +41,7 @@ export interface AppAccessSeam {
     thing: { app: AppId },
   ): Promise<boolean>;
   /** The app's grant rows. Only their COUNT is read here (the window label's
-   *  wider editor set), so the row shape stays lane G's to define. */
+   *  wider editor set), so the row shape stays the access seam's to define. */
   list?(ctx: RunContext, appId: AppId): Promise<readonly unknown[]>;
 }
 
@@ -129,9 +129,9 @@ export interface RunPlan {
 /** 07 §1 */
 export interface AutomationsEngine {
   /** Arm/disarm ONE trigger of an app. Enabling runs the grant-capture flow
-   *  (07 §3) for that trigger alone. `grantSetId` (additive — 07 §1 amendment
-   *  parked) names the ONE grant set the `missing` asks belong to, so a single
-   *  decision can settle them all; present exactly when `missing` is non-empty. */
+   *  (07 §3) for that trigger alone. `grantSetId` names the ONE grant set the
+   *  `missing` asks belong to, so a single decision can settle them all; present
+   *  exactly when `missing` is non-empty. */
   enable(
     appId: AppId,
     triggerId: string,
@@ -147,10 +147,9 @@ export interface AutomationsEngine {
     triggers: Array<{
       trigger: Trigger;
       enabled: boolean;
-      /** `pendingGrants`/`grantSetId` (additive — 07 §1 amendment parked) project
-       *  this trigger's still-undecided standing-grant asks, so surfaces can show
-       *  "waiting on N permissions" after a reload instead of trusting an
-       *  enable() result held in memory. */
+      /** `pendingGrants`/`grantSetId` project this trigger's still-undecided
+       *  standing-grant asks, so surfaces can show "waiting on N permissions"
+       *  after a reload instead of trusting an enable() result held in memory. */
       pendingGrants?: number;
       grantSetId?: string;
       /** §13 — who this trigger runs as, for its window label ("runs with
@@ -160,9 +159,9 @@ export interface AutomationsEngine {
       sponsor?: { subject: string; display?: string };
       /** Set exactly while this trigger is STOPPED. `summary` is the same
        *  consumer sentence the stopped run row carries, so the list is a route
-       *  back to a paused automation instead of the one place it vanished from
-       *  (E8-F2). It never names the sponsor: this string is read by anyone who
-       *  can edit the app. */
+       *  back to a paused automation instead of the one place it vanished from.
+       *  It never names the sponsor: this string is read by anyone who can edit
+       *  the app. */
       stopped?: { reason: "edit" | "departure" | "grants"; summary: string };
     }>;
     /** How many principals hold a grant on the app, when an access seam is
