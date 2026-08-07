@@ -429,6 +429,47 @@ describe("ConnectCard and ConnectedAccountsPanel", () => {
     );
   });
 
+  // A refusal the person cannot retry away must not be dressed as a wobble:
+  // "try again in a moment" sends them back to the same wall forever.
+  it.each([
+    ["blocked", "Sign in first, then disconnect Gmail."],
+    ["forbidden", "You don’t have access to disconnect Gmail here."],
+  ])("a %s disconnect refusal says what to do instead of promising a retry", async (code, sentence) => {
+    render(<VendoProvider client={client}><ConnectedAccountsPanel undoMs={30} /></VendoProvider>);
+    await screen.findByText("Gmail");
+    wire.state.failures.push({
+      method: "DELETE",
+      path: "/connections/ca_1",
+      code,
+      message: "the wire's own sentence, which is the developer's",
+      status: code === "blocked" ? 401 : 403,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect Gmail" }));
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe(sentence);
+    // The wire's own words never reach the person (spec §16 law 3).
+    expect(alert.textContent).not.toContain("developer");
+  });
+
+  it("a transient disconnect failure still offers the retry that can work", async () => {
+    render(<VendoProvider client={client}><ConnectedAccountsPanel undoMs={30} /></VendoProvider>);
+    await screen.findByText("Gmail");
+    wire.state.failures.push({
+      method: "DELETE",
+      path: "/connections/ca_1",
+      code: "conflict",
+      message: "broker busy",
+      status: 409,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect Gmail" }));
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe("We couldn’t disconnect Gmail — it is still connected. Try again in a moment.");
+  });
+
   it("drives connect-ahead chips from the host connector catalog and initiates through the broker", async () => {
     vi.stubGlobal("open", vi.fn());
     wire.state.connections = [];
