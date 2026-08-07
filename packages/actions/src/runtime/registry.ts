@@ -49,11 +49,7 @@ export interface ActionsRegistry extends ToolRegistry {
    */
   search(query: string, options?: ToolSearchOptions): Promise<ToolSearchMatch[]>;
   /** The per-turn initial loadout: every loaded tool, never an alphabetical
-   * slice of the catalog. It used to take the turn's connected toolkits, to
-   * decide which lazily expanded connector tools that turn could see; nothing
-   * loads lazily any more — a connector either registers its tools at boot or
-   * serves them through the permanent service-tool pair, and both are on the
-   * seed unconditionally — so there is nothing left for the set to narrow. */
+   * slice of the catalog. */
   loadoutSeed(): Promise<string[]>;
   /**
    * The tool menu one SURFACE offers, resolved from `.vendo/overrides.json`'s
@@ -970,8 +966,7 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
     },
 
     async loadoutSeed(): Promise<string[]> {
-      const { descriptors: all, dispatch } = await load();
-      return all.filter((descriptor) => dispatch.has(descriptor.name)).map((descriptor) => descriptor.name);
+      return (await load()).descriptors.map((descriptor) => descriptor.name);
     },
 
     async surfaceMenu(surface: "agent" | "mcp"): Promise<string[] | undefined> {

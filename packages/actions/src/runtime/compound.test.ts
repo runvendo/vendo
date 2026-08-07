@@ -332,25 +332,46 @@ describe("compound execution through the invokeTool seam", () => {
   it("walks steps IN ORDER through invokeTool with mapped args and returns the step outputs", async () => {
     const { records, invokeTool } = invokeStub((stepCall) =>
       stepCall.tool === "host_write" ? { status: "ok", output: { id: "inv_9" } } : { status: "ok", output: "sent" });
-    const actions = createActions({ tools: hostTools, overrides: authored([flow]), invokeTool });
-    const outcome = await actions.execute(call("host_flow", { amount: 5, email: "a@x" }), ctx);
-    expect(outcome).toEqual({ status: "ok", output: { steps: { create: { id: "inv_9" }, send: "sent" } } });
-    expect(records.map((record) => record.call.tool)).toEqual(["host_write", "host_read"]);
-    expect(records[0]!.call.args).toEqual({ amount: 5 });
-    expect(records[1]!.call.args).toEqual({ id: "inv_9", to: "a@x" });
-  });
-
-  it("without invokeTool: not-implemented and NO work performed (host fetch untouched)", async () => {
     const fetchStub = vi.fn(async () => new Response("{}", { status: 200 }));
     const actions = createActions({
       tools: hostTools,
       baseUrl: "https://host.test",
       fetch: fetchStub as unknown as typeof fetch,
       overrides: authored([flow]),
+      invokeTool,
+    });
+    const outcome = await actions.execute(call("host_flow", { amount: 5, email: "a@x" }), ctx);
+    expect(outcome).toEqual({ status: "ok", output: { steps: { create: { id: "inv_9" }, send: "sent" } } });
+    expect(records.map((record) => record.call.tool)).toEqual(["host_write", "host_read"]);
+    expect(records[0]!.call.args).toEqual({ amount: 5 });
+    expect(records[1]!.call.args).toEqual({ id: "inv_9", to: "a@x" });
+    // The walker has no execution capability of its own: even with steps
+    // succeeding, the registry's own host fetch was never touched — every real
+    // call crossed the seam.
+    expect(fetchStub).not.toHaveBeenCalled();
+  });
+
+  it("without invokeTool: not-implemented and NO work performed (host fetch and connector untouched)", async () => {
+    const fetchStub = vi.fn(async () => new Response("{}", { status: 200 }));
+    const connectorExecute = vi.fn(async (): Promise<ToolOutcome> => ({ status: "ok", output: null }));
+    const actions = createActions({
+      tools: hostTools,
+      baseUrl: "https://host.test",
+      fetch: fetchStub as unknown as typeof fetch,
+      connectors: [{
+        name: "stub",
+        descriptors: async () => [{ name: "ext_send", description: "x", inputSchema: {}, risk: "write" }],
+        execute: connectorExecute,
+      }],
+      overrides: authored([compound("host_flow", [
+        { id: "create", tool: "host_write" },
+        { id: "send", tool: "ext_send" },
+      ], { risk: "write" })]),
     });
     const outcome = await actions.execute(call("host_flow", { amount: 5 }), ctx);
     expect(outcome).toMatchObject({ status: "error", error: { code: "not-implemented" } });
     expect(fetchStub).not.toHaveBeenCalled();
+    expect(connectorExecute).not.toHaveBeenCalled();
   });
 
   it("rejects non-object args", async () => {
