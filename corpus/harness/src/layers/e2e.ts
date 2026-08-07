@@ -873,11 +873,11 @@ async function countErrorDomSignals(page: E2ePage): Promise<number> {
   const stageErrors = page.frameLocator
     ? await safeCount(page.frameLocator('iframe#vendo-stage, iframe[title="Vendo stage"]').locator(stageErrorSelector))
     : 0;
-  const toasts = page.locator(".fl-toast:visible");
-  const toastCount = await safeCount(toasts);
-  if (toastCount === 0) return hardErrors + stageErrors;
-  const text = await toasts.textContent?.();
-  return hardErrors + stageErrors + (text && errorToastText.test(text) ? toastCount : 0);
+  // Several toasts can be visible at once, so read them all: a single-element
+  // textContent() would trip Playwright's strict mode, and a concatenated read
+  // would score two benign toasts as errors the moment one of them matched.
+  const toasts = await page.locator(".fl-toast:visible").allTextContents?.().catch(() => [] as string[]) ?? [];
+  return hardErrors + stageErrors + toasts.filter((text) => errorToastText.test(text)).length;
 }
 
 function viewMatches(assertion: Extract<ConversationAssertion, { kind: "view-rendered" }>, view: E2eViewSignal): boolean {
