@@ -416,10 +416,10 @@ exact token requirements and endpoint behavior in this mode are specified in
 [remoteAs token requirements](#remoteas-token-requirements).
 
 When a hosted broker fronts the door, you do not need the object form at all:
-set `VENDO_MCP_URL` to your tenant's MCP endpoint and leave `mcp: true`.
+set `VENDO_MCP_BROKER_URL` to your tenant's MCP endpoint and leave `mcp: true`.
 
 ```bash
-VENDO_MCP_URL=https://acme.mcp.vendo.run/mcp
+VENDO_MCP_BROKER_URL=https://acme.mcp.vendo.run/mcp
 ```
 
 Broker mode is something you **declare**, not something Vendo discovers. That

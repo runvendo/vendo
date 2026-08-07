@@ -3181,11 +3181,11 @@ describe("10-mcp §5 — door claims only its four exact well-known paths (FIX H
     expect(payload).toMatchObject({ sub: "user_door", jti: "umbrella-federation-nonce", aud: issuer });
   });
 
-  // Broker mode is DECLARED, never discovered: `VENDO_MCP_URL` is the tenant's
+  // Broker mode is DECLARED, never discovered: `VENDO_MCP_BROKER_URL` is the tenant's
   // own MCP endpoint, so the door reads the issuer and the audience out of it
   // by URL parsing. Nothing is registered anywhere, so no boot-time call can
   // repoint a live deployment or swap its authentication architecture.
-  describe("VENDO_MCP_URL declares broker mode", () => {
+  describe("VENDO_MCP_BROKER_URL declares broker mode", () => {
     const BROKER = "https://acme.mcp.vendo.run";
     const mcpRequest = (token: string): Request => new Request("https://host.test/api/vendo/mcp", {
       method: "POST",
@@ -3207,7 +3207,7 @@ describe("10-mcp §5 — door claims only its four exact well-known paths (FIX H
       // The trailing slash proves both halves are URL-PARSED, never
       // concatenated: the issuer is the origin, the audience is the endpoint
       // canonicalized exactly as the door canonicalizes its own resource.
-      vi.stubEnv("VENDO_MCP_URL", `${BROKER}/mcp/`);
+      vi.stubEnv("VENDO_MCP_BROKER_URL", `${BROKER}/mcp/`);
       const { privateKey, publicKey } = await generateKeyPair("ES256");
       vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
         const url = input instanceof Request ? input.url : String(input);
@@ -3235,7 +3235,7 @@ describe("10-mcp §5 — door claims only its four exact well-known paths (FIX H
     });
 
     it("wires federation from VENDO_MCP_FEDERATION_SECRET", async () => {
-      vi.stubEnv("VENDO_MCP_URL", `${BROKER}/mcp`);
+      vi.stubEnv("VENDO_MCP_BROKER_URL", `${BROKER}/mcp`);
       vi.stubEnv("VENDO_MCP_FEDERATION_SECRET", "declared-federation-secret-with-entropy");
       const vendo = await mcpVendo();
       const request = signHs256("declared-federation-secret-with-entropy", {
@@ -3256,7 +3256,7 @@ describe("10-mcp §5 — door claims only its four exact well-known paths (FIX H
       const as = await local.handler(root("/.well-known/oauth-authorization-server/api/vendo/mcp"));
       expect(as.status).toBe(200);
 
-      vi.stubEnv("VENDO_MCP_URL", `${BROKER}/mcp`);
+      vi.stubEnv("VENDO_MCP_BROKER_URL", `${BROKER}/mcp`);
       const explicit = await mcpVendo({
         remoteAs: { issuer: "https://own-as.example.com", audience: "https://host.test/api/vendo/mcp" },
       });
@@ -3265,9 +3265,9 @@ describe("10-mcp §5 — door claims only its four exact well-known paths (FIX H
         .toEqual(["https://own-as.example.com"]);
     });
 
-    it("a malformed VENDO_MCP_URL fails LOUD at composition — never a quiet drop to local", async () => {
-      vi.stubEnv("VENDO_MCP_URL", "acme.mcp.vendo.run/mcp");
-      await expect(mcpVendo()).rejects.toThrow(/VENDO_MCP_URL must be an absolute http\(s\) URL/);
+    it("a malformed VENDO_MCP_BROKER_URL fails LOUD at composition — never a quiet drop to local", async () => {
+      vi.stubEnv("VENDO_MCP_BROKER_URL", "acme.mcp.vendo.run/mcp");
+      await expect(mcpVendo()).rejects.toThrow(/VENDO_MCP_BROKER_URL must be an absolute http\(s\) URL/);
     });
   });
 

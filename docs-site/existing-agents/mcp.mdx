@@ -81,6 +81,10 @@ Point it at your deployment:
 export VENDO_MCP_URL=https://your-app.example.com/api/vendo/mcp
 ```
 
+This one is client-side — it tells the plugin on your machine which server to
+talk to. It is not `VENDO_MCP_BROKER_URL`, which is set in your deployment's own
+environment to name the broker fronting its door.
+
 Signing in is the same OAuth dance, run by Claude Code itself. The skill is the
 only thing the plugin adds beyond the connection: when an answer wants to be
 looked at instead of read out, how to phrase the request, when to name a
@@ -176,7 +180,7 @@ powerful as your backend already is.
 
 <Note>
   A door pointed at an external authorization server (`mcp.remoteAs`, or a
-  declared `VENDO_MCP_URL`) does not serve its own token endpoint, so the
+  declared `VENDO_MCP_BROKER_URL`) does not serve its own token endpoint, so the
   exchange lives at that server instead: post to the issuer's own
   `token_endpoint`.
 </Note>

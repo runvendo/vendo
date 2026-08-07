@@ -648,8 +648,8 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     // Which mode is this door in? Broker mode is DECLARED, so the answer is a
     // composition fact worth printing rather than inferring from the checks.
     note(mcpPosture === "broker"
-      ? "MCP door mode: broker — an external authorization server fronts it (VENDO_MCP_URL, or mcp.remoteAs)"
-      : "MCP door mode: local — the door serves its own OAuth surface (set VENDO_MCP_URL to front it with a broker)");
+      ? "MCP door mode: broker — an external authorization server fronts it (VENDO_MCP_BROKER_URL, or mcp.remoteAs)"
+      : "MCP door mode: local — the door serves its own OAuth surface (set VENDO_MCP_BROKER_URL to front it with a broker)");
     const origin = new URL(statusUrl).origin;
     const mountPath = `${new URL(statusUrl).pathname.replace(/\/$/, "")}/mcp`;
     const resolves = async (id: string, code: DoctorErrorCode, url: string, valid: (body: Record<string, unknown>) => boolean, label: string): Promise<Record<string, unknown> | null> => {

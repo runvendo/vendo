@@ -1,6 +1,6 @@
 /**
  * 10-mcp — the door, in its three postures: the full public door, the
- * broker-fronted one a declared `VENDO_MCP_URL` turns on, and the INTERNAL
+ * broker-fronted one a declared `VENDO_MCP_BROKER_URL` turns on, and the INTERNAL
  * half a machine-bound harness mounts by itself.
  */
 import { VendoError } from "@vendoai/core";
@@ -34,7 +34,7 @@ const appsPortFor = (composition: VendoComposition): AppsPort => {
   };
 };
 
-/** 10-mcp §3.1 — the DECLARED broker: `VENDO_MCP_URL` is the tenant's own MCP
+/** 10-mcp §3.1 — the DECLARED broker: `VENDO_MCP_BROKER_URL` is the tenant's own MCP
  *  endpoint, so its origin is the issuer and the endpoint itself — canonicalized
  *  with the door's own resource canonicalization, so the two can never disagree
  *  — is the audience. Malformed fails LOUD at composition, in the shape the door
@@ -46,10 +46,10 @@ const declaredRemoteAs = (value: string | undefined): { issuer: string; audience
   try {
     url = new URL(value);
   } catch {
-    throw new TypeError(`VENDO_MCP_URL must be an absolute http(s) URL, got ${JSON.stringify(value)}`);
+    throw new TypeError(`VENDO_MCP_BROKER_URL must be an absolute http(s) URL, got ${JSON.stringify(value)}`);
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new TypeError(`VENDO_MCP_URL must be an absolute http(s) URL, got ${JSON.stringify(value)}`);
+    throw new TypeError(`VENDO_MCP_BROKER_URL must be an absolute http(s) URL, got ${JSON.stringify(value)}`);
   }
   return { issuer: url.origin, audience: canonicalUri(value) };
 };
@@ -69,18 +69,18 @@ const openDoor = (
     );
   }
   // ADAPTER RULE, mcp seam (cloned from selectConnections): an explicit
-  // `mcp.remoteAs` wins verbatim; else a declared `VENDO_MCP_URL` fronts the
+  // `mcp.remoteAs` wins verbatim; else a declared `VENDO_MCP_BROKER_URL` fronts the
   // door with that broker; else the local door. Broker mode is DECLARED by the
   // operator and nothing else — the app registers no address anywhere, so no
   // boot-time call can repoint a live deployment or swap its authentication
   // architecture behind its back.
-  const remoteAs = mcpOptions.remoteAs ?? declaredRemoteAs(environment("VENDO_MCP_URL"));
+  const remoteAs = mcpOptions.remoteAs ?? declaredRemoteAs(environment("VENDO_MCP_BROKER_URL"));
   const secret = environment("VENDO_MCP_FEDERATION_SECRET");
   const federation = mcpOptions.federation ?? (secret === undefined ? undefined : { secret });
   if (mcpOptions.serviceAuth !== undefined && remoteAs !== undefined) {
     console.warn(
       "[vendo] mcp.serviceAuth is set, but this door trusts an external authorization server "
-      + "(mcp.remoteAs, or a declared VENDO_MCP_URL), so it does not serve its own token endpoint "
+      + "(mcp.remoteAs, or a declared VENDO_MCP_BROKER_URL), so it does not serve its own token endpoint "
       + "— the service-key exchange lives there. Exchange keys at that server instead.",
     );
   }
@@ -144,7 +144,7 @@ export const composeMcp = (composition: VendoComposition): Pick<VendoComposition
   // The /status posture for the mcp block (connections-posture pattern):
   // false when the door is closed, "local" when it serves its own OAuth
   // surface, "broker" when an external authorization server fronts it —
-  // declared by VENDO_MCP_URL or configured explicitly.
+  // declared by VENDO_MCP_BROKER_URL or configured explicitly.
   let mcpPosture: "local" | "broker" | false = false;
   if (mcpOptions !== undefined) {
     const opened = openDoor(composition, mcpOptions, doorBaseUrl, turnCredentials);

@@ -143,7 +143,7 @@ By default the door serves its own OAuth surface. To front Maple with a hosted
 broker, declare the tenant's MCP endpoint — that one variable is the switch,
 and Maple registers nothing anywhere:
 
-- `VENDO_MCP_URL` — the tenant's MCP endpoint, e.g. `https://maple.mcp.vendo.run/mcp`
+- `VENDO_MCP_BROKER_URL` — the tenant's MCP endpoint, e.g. `https://maple.mcp.vendo.run/mcp`
 - `VENDO_MCP_FEDERATION_SECRET` — the secret the broker signs its login handshake with
 
 (Maple's own `VENDO_MCP_REMOTE_AS_ISSUER`/`_AUDIENCE`/`_JWKS_URI` still work and
