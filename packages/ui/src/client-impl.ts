@@ -88,9 +88,11 @@ function announceApprovalsDecided(detail: ApprovalsDecidedDetail): void {
   window.dispatchEvent(new CustomEvent<ApprovalsDecidedDetail>(APPROVALS_DECIDED_EVENT, { detail }));
 }
 
+const anonymousSessionGates = new Map<string, Promise<void>>();
+
 /** 08-ui §2 */
 export function createVendoClient(config: VendoClientConfig): VendoClient {
-  const baseUrl = config.baseUrl ?? "/api/vendo";
+  const baseUrl = (config.baseUrl ?? "/api/vendo").replace(/\/$/, "");
   const headers = { ...(config.headers ?? {}) };
 
   async function send(path: string, init?: RequestInit): Promise<Response> {
@@ -118,24 +120,25 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
    *  another, and guard correctly refused it: "Approval apr_… was not found".
    *
    *  The browser IS the visitor boundary, so this is the layer that can close
-   *  the race honestly: the FIRST request through a client may leave cookie-less,
-   *  and every request issued before it answers waits for it, then travels with
-   *  the pointer it established. Costs one extra round trip on a cold load and
-   *  nothing afterwards. Deliberately NOT solved by fingerprinting the requester
-   *  (IP/User-Agent would merge two real visitors behind one NAT into a single
-   *  session) nor by deriving the pointer from request attributes (that would
-   *  make a live session guessable, where today it is a 2^128 search).
+   *  the race honestly: the FIRST request through a wire base may leave
+   *  cookie-less, and every request issued before it answers waits for it, then
+   *  travels with the pointer it established. Costs one extra round trip on a
+   *  cold load and nothing afterwards. Deliberately NOT solved by fingerprinting
+   *  the requester (IP/User-Agent would merge two real visitors behind one NAT
+   *  into a single session) nor by deriving the pointer from request attributes
+   *  (that would make a live session guessable, where today it is a 2^128
+   *  search).
    *
    *  A failed first request releases the gate rather than holding it, so a cold
    *  load that starts with an error degrades to the old behaviour, never worse.
    *  See test/anon-session-race.test.ts — the assertion only fails under real
    *  concurrency, which is why a sequential probe once "eliminated" this bug. */
-  let established: Promise<void> | undefined;
-
   async function request(path: string, init?: RequestInit): Promise<Response> {
+    const established = anonymousSessionGates.get(baseUrl);
     if (established === undefined) {
       let settle!: () => void;
-      established = new Promise<void>(resolve => { settle = resolve; });
+      const first = new Promise<void>(resolve => { settle = resolve; });
+      anonymousSessionGates.set(baseUrl, first);
       try {
         return await send(path, init);
       } finally {
