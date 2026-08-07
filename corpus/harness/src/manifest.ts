@@ -48,31 +48,12 @@ const dockerPostgresProvisioningSchema = z
   })
   .strict();
 
-/** Redis mirrors the Postgres provisioning shape (docker container + readiness
- * probe). No fixture currently boots Redis. */
-const dockerRedisProvisioningSchema = z
-  .object({
-    kind: z.literal("docker-redis"),
-    containerName: z.string().min(1),
-    image: z.string().min(1),
-    hostPort: z.number().int().min(1024).max(65535),
-    readinessTimeoutMs: z.number().int().positive().optional(),
-    readinessIntervalMs: z.number().int().positive().optional(),
-  })
-  .strict();
-
-const databaseProvisioningSchema = z.discriminatedUnion("kind", [
-  dockerPostgresProvisioningSchema,
-  dockerRedisProvisioningSchema,
-]);
-
 const bootstrapRecipeSchema = z
   .object({
     installCommand: z.string().min(1),
     envTemplate: z.record(z.string(), z.string()),
     seedCommand: z.string().min(1).optional(),
     database: dockerPostgresProvisioningSchema.optional(),
-    redis: dockerRedisProvisioningSchema.optional(),
     typecheckCommand: z.string().min(1).optional(),
     buildCommand: z.string().min(1),
     devServer: devServerSchema.optional(),
@@ -156,7 +137,7 @@ export const corpusManifestSchema = z
 
 export type ManifestEntry = z.input<typeof manifestEntrySchema>;
 export type CorpusManifest = ManifestEntry[];
-export type DatabaseProvisioning = z.infer<typeof databaseProvisioningSchema>;
+export type DatabaseProvisioning = z.infer<typeof dockerPostgresProvisioningSchema>;
 
 export const defaultManifestPath = fileURLToPath(new URL("../../manifest.json", import.meta.url));
 
