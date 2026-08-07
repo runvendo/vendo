@@ -1,4 +1,5 @@
 import {
+  DEFAULT_TRIGGER_ID,
   VENDO_APP_FORMAT,
   descriptorHash,
   triggerKindRefs,
@@ -1009,6 +1010,36 @@ describe("fail-loud consent and re-run", () => {
 
     expect(await engine.runs.get("run_legacy", ctx())).toMatchObject({ status: "error" });
     expect((await engine.runs.list({ appId: doc.id }, ctx())).runs.map((run) => run.status)).toEqual(["error"]);
+  });
+
+  /** A row written before an app had a LIST of triggers names no trigger. It is
+   *  the app's only one, so it reads back as the default — a strict parse made
+   *  one such row throw for every runs.list of its app, which is the whole
+   *  history gone, not one row. */
+  it("reads a run row written before triggers were a list back under the default trigger", async () => {
+    const store = memoryStoreAdapter();
+    const doc = twoStepApp("app_legacy_untriggered");
+    await seedApp(store, doc, "user_a", true);
+    const engine = createAutomations({
+      apps: appsDouble(), tools: registry([readTool, writeTool]), guard: new GuardDouble(), store, now: () => NOW,
+    });
+    const record = {
+      id: "run_untriggered",
+      appId: doc.id,
+      trigger: { kind: "host-event", event: "go" },
+      status: "ok",
+      startedAt: NOW.toISOString(),
+      steps: [{ id: "read", tool: readTool.name, outcome: "ok", at: NOW.toISOString() }],
+    };
+    await store.records("vendo_runs").put({
+      id: record.id,
+      data: { appId: doc.id, trigger: record.trigger, status: "ok", record, startedAt: record.startedAt },
+      refs: { app_id: doc.id, status: "ok" },
+    });
+
+    expect(await engine.runs.get("run_untriggered", ctx())).toMatchObject({ triggerId: DEFAULT_TRIGGER_ID });
+    const listed = await engine.runs.list({ appId: doc.id, triggerId: DEFAULT_TRIGGER_ID }, ctx());
+    expect(listed.runs.map((run) => run.id)).toEqual(["run_untriggered"]);
   });
 });
 
