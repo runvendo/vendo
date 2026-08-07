@@ -209,7 +209,7 @@ async function sync(options: SyncOptions): Promise<number> {
       const result: SyncJsonResult = {
         ok: exitCode === 0,
         exitCode,
-        report: { tools: { added: [], removed: [], changed: [] }, breaking: [], pins: { captured: [], drifted: [] }, remixableErrors: [], catalog: { discovered: 0, registered: 0 }, components: { captured: [], drifted: [] }, warnings: [] },
+        report: { tools: { added: [], removed: [], changed: [] }, breaking: [], toolSchemas: { total: 0, inputs: { known: 0, unknown: [] }, outputs: { known: 0, unknown: [] } }, pins: { captured: [], drifted: [] }, remixableErrors: [], catalog: { discovered: 0, registered: 0 }, components: { captured: [], drifted: [] }, warnings: [] },
         impact: null,
         notes,
         theme: null,
