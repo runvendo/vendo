@@ -24,7 +24,7 @@ const POLICY_PRESET_RULES: Record<PolicyPresetName, PolicyRule[]> = {
     { match: { risk: "read" }, action: "run" },
     { match: { risk: "write" }, action: "block" },
     { match: { risk: "destructive" }, action: "block" },
-    // D3 — `ungraded` behaves like `destructive`. Leaving it to the guard's
+    // `ungraded` behaves like `destructive`. Leaving it to the guard's
     // ask-default would have INVERTED this preset: the one posture that blocks
     // a known write would have offered the user an approve button for a tool
     // nobody has graded, which could be a write.
@@ -67,7 +67,7 @@ function errorCode(error: unknown): string | undefined {
   return typeof code === "string" ? code : undefined;
 }
 
-/** Parse and validate a policy document body (from disk or, in the cse lane 3
+/** Parse and validate a policy document body (from disk or, in the cloud
  *  fallback, a cloud-published policy.json). Malformed JSON or an invalid shape
  *  fails loud as a "validation" VendoError — the same posture for both sources,
  *  so a bad cloud policy is as noisy as a bad file. */
@@ -123,7 +123,7 @@ export class PolicyResolver {
    *  `resolvePolicyConfig` at `createGuard` compose time, before this class
    *  ever sees the config.
    *
-   *  `cloudFallback` (cse lane 3) is a source for a cloud-published
+   *  `cloudFallback` is a source for a cloud-published
    *  policy.json body, consulted STRICTLY AFTER the file and only within the
    *  existing opt-in path: it fires only when policy is configured (`#config`
    *  set) and no local file resolves. A host that never configures policy
@@ -157,7 +157,7 @@ export class PolicyResolver {
     this.#filePromise ??= readPolicyFile(this.#config);
     const fromFile = await this.#filePromise;
     if (fromFile !== undefined) return fromFile;
-    // File absent (non-explicit) — cse lane 3: fall to a cloud-published
+    // File absent (non-explicit): fall to a cloud-published
     // policy.json body when the umbrella supplies one. Consulted LIVE on every
     // call and never memoized: a cold cloud snapshot yields undefined now and
     // the real policy once it warms (the snapshot is TTL-cached upstream, so

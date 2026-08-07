@@ -133,7 +133,7 @@ export interface VendoGuard extends Guard {
     revoke(id: ApprovalId, principal: Principal): Promise<void>;
   };
 
-  /** Spec 2026-07-20 (#5): TTL backstop over the general approvals collection —
+  /** TTL backstop over the general approvals collection —
    *  denies every pending approval older than `ttlMs` (across subjects, via the
    *  idempotent abandon path) so away/automation/stranded approvals self-heal.
    *  Optional: the umbrella feature-detects it. Returns the count swept. */
@@ -191,7 +191,7 @@ export interface GuardRules {
    *  sweep denies through the existing abandonment semantics and
    *  `<VendoApprovalEmbed>` reads "expired". Default 60 min; `0` disables
    *  expiry. Vendo-thread approvals are untouched — their abandonment stays
-   *  turn-driven (AGENT-6). */
+   *  turn-driven. */
   approvals?: {
     parkedCallTtlMs?: number;
   };
@@ -212,7 +212,7 @@ export interface GuardRules {
 export interface CreateGuardConfig extends GuardRules {
   store: StoreAdapter;
   resolveRisk?: RiskResolver;
-  /** cse lane 3 — a source for a cloud-published policy.json body, consulted
+  /** A source for a cloud-published policy.json body, consulted
    *  by the PolicyResolver STRICTLY AFTER the local file and only when policy
    *  is already configured (opt-in). The umbrella backs it with the hosted
    *  config snapshot; this block never reads the key. Unset = no change. */
