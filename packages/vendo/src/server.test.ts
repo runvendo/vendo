@@ -1166,7 +1166,6 @@ describe("09 §3 public wire", () => {
 
     for (const probe of [
       request("GET", "/doctor/machines"),
-      request("GET", "/doctor/mcp"),
       request("GET", "/doctor/present/echo"),
       request("GET", "/doctor/act-as/echo"),
       request("POST", "/doctor/present", {}),

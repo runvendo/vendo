@@ -214,7 +214,7 @@ export interface CreateVendoConfig {
   telemetry?: boolean;
   /** Development-only surfaces: the injection seams (/dev/inclient-approval),
       the `vendo sync` blast-radius probe (POST /sync/impact), and the
-      `vendo doctor` probes (/doctor/mcp, /doctor/machines, /doctor/present,
+      `vendo doctor` probes (/doctor/machines, /doctor/present,
       /doctor/act-as and their echoes) — none of them even mounted without this.
       NODE_ENV=development enables them; `false` disables the environment
       default. Unset with any other NODE_ENV — or none, or a runtime with no

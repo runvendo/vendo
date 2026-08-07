@@ -296,8 +296,7 @@ export async function composedHostOverDoor(
     guard: { policy: "cautious" },
     harness: harness as never,
     mcp: true,
-    // The door-parity gate reads the broker seam's selection off /doctor/mcp,
-    // and the doctor probes are mounted only in a development composition. The
+    // The doctor probes are mounted only in a development composition. The
     // flag mounts routes and nothing else — the door and its listing, which is
     // what this helper's callers measure, are untouched by it.
     development: true,
