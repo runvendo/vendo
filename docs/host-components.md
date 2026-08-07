@@ -289,11 +289,18 @@ brand-new generated apps.
 ```ts
 export function TreeView(props: {
   tree: Tree;
+  appId?: string;
   components: Record<string, ComponentType>;
   data?: Record<string, Json>;
   onAction(req: { nodeId: string; action: string; payload?: Json }): Promise<ToolOutcome>;
+  onStateChange?(state: Record<string, Json>): void;
 }): JSX.Element;
 ```
+
+`appId` names which app the tree belongs to — the identity of its `$state` and
+outcome namespace. Pass it whenever the same position can render a *different*
+app, so one app's state never bleeds into the next; omit it and the tree root
+stands in. `PayloadView` and `AppFrame` take it too.
 
 `PayloadView` renders `vendo-genui/v2` (`TreeView` is the underlying walk). `$path` resolves against app data and
 `$state` against the per-user, per-app state singleton. Host components render

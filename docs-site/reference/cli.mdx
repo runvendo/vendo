@@ -96,7 +96,10 @@ Options:
   rule and the same flag pair apply to `vendo sync`.
 - `--engine <claude|codex|npx>` pins which engine runs the AI pass instead of
   first-available (`claude` = Claude Agent SDK or the `claude` CLI, `codex` =
-  the `codex` CLI, `npx` = the npx-fetched engine on Vendo Cloud fuel). A
+  the `codex` CLI, `npx` = Anthropic's published `@anthropic-ai/claude-code`,
+  fetched on the fly with `npm exec` at a pinned version and driven headless
+  and read-only — a one-time ~250MB download, paid by `ANTHROPIC_API_KEY` or
+  by `VENDO_API_KEY` through the Vendo Cloud model gateway). A
   pinned engine that is not available skips the AI pass with one loud line —
   it never falls back to a different provider. Interactively, when more than
   one engine is available, the consent question itself becomes a pick (your

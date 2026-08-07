@@ -25,7 +25,7 @@ createVendo({
   packs:   [apps(), automations(), complianceReports], // default: apps()
   models:  { default: anthropic("claude-fable-5"), reviewer: openai("gpt-5.6") },
   store:   postgres(env.DATABASE_URL),
-  files:   s3(bucket),                                 // optional
+  files:   myFilesAdapter,                             // optional; your own FilesAdapter
   sandbox: e2b({ warmPool: 2 }),                       // optional
 });
 ```
@@ -71,7 +71,7 @@ truth about the code as it stands.
 | `theme` | **adapter family** (deployment identity) | unchanged. Not generation-only — the chrome, the client and the prompt summary all read it |
 | `instructions` | **adapter family** (deployment identity) | RENAMED from `brief`, and merged with `agent.instructions` — one prose key. Still the programmatic override for `.vendo/brief.md`, still the prompt's Product section |
 | `store` | **slot** `store` | unchanged |
-| `files` | **slot** `files` | unchanged. Unset is a documented default, not a gap: blobs live in the store to `FILES_STORE_MAX_BYTES` and the first over-cap write names this key |
+| `files` | **slot** `files` | unchanged, and BYO-only since `s3()` was deleted: pass your own `FilesAdapter` (`{ put, get, delete }`, from `@vendoai/core`). Unset is a documented default, not a gap: blobs live in the store to `FILES_STORE_MAX_BYTES` and the first over-cap write names this key |
 | `sandbox` | **slot** `sandbox` | unchanged |
 | `harness` | **slot** `harness` | unchanged. Unset now means a composed `vendo()` that actually SERVES the chat route (wave-2 flip), not a door nobody reaches |
 | `knowledge` | **adapter family** (`KnowledgeAdapter`) | unchanged. A candidate for a `knowledge()` pack once packs carry adapters; today a pack cannot contribute one |
@@ -84,7 +84,7 @@ truth about the code as it stands.
 | `telemetry` | **venue plumbing** | unchanged; a boolean switch on build/dev telemetry |
 | `development` | **venue plumbing** (dev-only source capture) | unchanged |
 | `profileDir` | **venue plumbing** (which project root `.vendo/` is read under) | unchanged. The `tools:` slot is the in-memory alternative for one piece; this stays the answer for the rest |
-| `fetch` | **venue plumbing** (the fetch host tool bindings execute through) | unchanged; `npx vendo try` injects a synthetic-fixture fetch here |
+| `fetch` | **venue plumbing** (the fetch host tool bindings execute through) | unchanged; the console's hosted try venue injects a synthetic-fixture fetch here (`createSyntheticFetch` from `@vendoai/vendo/try`). There is no `vendo try` CLI command |
 | `profile` | **venue plumbing** (the `.vendo/` pieces as in-memory compose inputs) | `profile.tools` **deprecated** → the `tools:` slot; the other pieces (`overrides`, `theme`, `brief`, `catalog`, `policy`, `designRules`) unchanged |
 | `mcp` | **adapter family** (the MCP door) | unchanged |
 | `oauth` | **adapter family** (`auth`'s per-seam escape hatch) | unchanged; see `principal` |
