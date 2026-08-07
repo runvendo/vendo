@@ -1,4 +1,4 @@
-import { VendoError, type Principal } from "@vendoai/core";
+import { safeErrorMessage, VendoError, type Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "./backends.test-util.js";
 import { FILES_STORE_MAX_BYTES } from "./files-store.js";
@@ -742,6 +742,75 @@ for (const backend of backends()) {
       );
       expect(dangling).toEqual([]);
       expect(await (await workspace.open(user)).readFile(path)).toBe(big("a"));
+    });
+
+    /** A commit holds every path it touches for the whole transaction now, so
+        the ORDER it takes those holds in is load-bearing: two commits that
+        touch the same paths in opposite orders each end up holding what the
+        other is waiting for. Postgres notices and aborts one — loud, not
+        silent, but a commit that should have queued fails instead.
+
+        Invisible on PGlite, which has one connection and cannot express two
+        transactions holding anything at once. */
+    it("does not deadlock two commits touching the same paths in opposite orders", async () => {
+      const workspace = workspaceStore(made.store);
+      const left = "/user/order/left.md";
+      const right = "/user/order/right.md";
+      const seed = await workspace.open(user);
+      await seed.writeFile(left, "seed");
+      await seed.writeFile(right, "seed");
+      await seed.commit({ message: "seeded" });
+
+      // Opposite orders across BOTH loops: one removes `left` then writes
+      // `right`, the other removes `right` then writes `left`.
+      const first = await workspace.open(user);
+      await first.rm(left);
+      await first.writeFile(right, "first");
+      const second = await workspace.open(user);
+      await second.rm(right);
+      await second.writeFile(left, "second");
+
+      // Let each transaction take its FIRST hold before either asks for its
+      // second — the state an AB/BA deadlock needs, and the state two commits
+      // reach on their own whenever they overlap.
+      const db = dbFor(made.store);
+      const originalTx = db.transaction.bind(db);
+      let arrived = 0;
+      let admit = (): void => {};
+      const bothHold = new Promise<void>((resolve) => { admit = resolve; });
+      db.transaction = ((run: (q: Query) => Promise<unknown>, opts?: never) =>
+        originalTx(async (q) => {
+          let firstHold = true;
+          return await run(async (text, params) => {
+            const result = await q(text, params);
+            if (firstHold && text.includes("pg_advisory_xact_lock")) {
+              firstHold = false;
+              arrived += 1;
+              if (arrived >= 2) admit();
+              // A commit the other one is holding off never arrives, so the
+              // timer is what releases the one that got through.
+              await Promise.race([
+                bothHold,
+                new Promise((resolve) => setTimeout(resolve, 2_000)),
+              ]);
+            }
+            return result;
+          });
+        }, opts)) as typeof db.transaction;
+
+      let settled: PromiseSettledResult<unknown>[];
+      try {
+        settled = await Promise.allSettled([
+          first.commit({ message: "first" }),
+          second.commit({ message: "second" }),
+        ]);
+      } finally {
+        db.transaction = originalTx;
+      }
+
+      // Neither commit may be aborted: overlapping commits queue.
+      expect(settled.filter((outcome) => outcome.status === "rejected").map((outcome) =>
+        safeErrorMessage((outcome as PromiseRejectedResult).reason))).toEqual([]);
     });
 
     it("strands no blob when overlapping commits race on one blob-backed path", async () => {
