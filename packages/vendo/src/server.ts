@@ -1882,10 +1882,10 @@ export function createVendo(input: CreateVendoConfig): Vendo {
   // that learned origin is UNTRUSTED (baseUrlTrusted:false), so a spoofed Host
   // can never turn it into a credential-exfiltration target (04 §4).
   const configuredBaseUrl = environment("VENDO_BASE_URL");
-  // The deployment's three URLs, resolved ONCE (spec 2026-08-06 §B1): the public
-  // URL keeps its whole path prefix, the host API may sit on another origin, and
-  // login may sit on another domain. Undefined = zero-config dev, where the wire
-  // learns its own origin from a validated request instead.
+  // The deployment's two URLs, resolved ONCE (spec 2026-08-06 §B1): the public
+  // URL keeps its whole path prefix, and the host API may sit on another origin.
+  // Undefined = zero-config dev, where the wire learns its own origin from a
+  // validated request instead.
   const urls = resolveVendoUrls(typeof process === "undefined" ? {} : process.env);
   // 09-vendo §2 (install-dx wave 1.1 — design decision 5): a literal
   // NODE_ENV check, deliberately independent of the broader `development`
@@ -1998,7 +1998,7 @@ export function createVendo(input: CreateVendoConfig): Vendo {
     ...(config.serverActions === undefined ? {} : { serverActions: config.serverActions }),
     // Try-surface seam: an explicitly passed fetch always wins (adapter rule).
     ...(config.fetch === undefined ? {} : { fetch: config.fetch }),
-    ...(configuredBaseUrl === undefined || urls === undefined
+    ...(urls === undefined
       ? {}
       : { baseUrl: urls.hostApiUrl.href, baseUrlTrusted: true }),
     onPresentCredentialsNotForwarded: warnPresentCredentialsNotForwarded,
@@ -2244,14 +2244,13 @@ export function createVendo(input: CreateVendoConfig): Vendo {
     if (typeof subject !== "string") {
       throw new VendoError("not-found", `app not found: ${app.id}`);
     }
-    if (configuredBaseUrl === undefined) {
+    if (urls === undefined) {
       throw new VendoError(
         "validation",
         "machine provisioning requires VENDO_BASE_URL — the box's callback URLs must be this deployment's public origin",
       );
     }
-    // The guard above already refused an unconfigured deployment, so `urls` is set.
-    const boxBase = joinUrl(urls!.publicUrl, `${BASE_PATH}/box`).href;
+    const boxBase = joinUrl(urls.publicUrl, `${BASE_PATH}/box`).href;
     const inferenceEndpoint = boxInference();
     const built = await buildEnv(app, {
       granted: grants?.grantedSecrets ?? new Set<string>(),
@@ -2391,7 +2390,7 @@ export function createVendo(input: CreateVendoConfig): Vendo {
     // lane by the planner and only discovered the truth at serve time, after a box
     // was built and a surface flipped. Availability now means "can actually produce
     // a path", by construction.
-    ...(configuredBaseUrl === undefined || urls === undefined ? {} : {
+    ...(urls === undefined ? {} : {
       servedProxyPath: (appId: AppId) =>
         joinUrl(urls.publicUrl, `${BASE_PATH}/apps/${encodeURIComponent(appId)}/serve/`).href,
     }),

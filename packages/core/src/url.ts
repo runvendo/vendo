@@ -17,7 +17,7 @@ const RELATIVE_BASE_ORIGIN = "http://vendo.invalid";
 
 /** Whether `path` is `prefix` itself or lives under it, on a SEGMENT boundary —
  *  `/maple/api` is under `/maple`, `/maplesyrup` is not. `""` holds everything. */
-export function underPathPrefix(prefix: string, path: string): boolean {
+function underPathPrefix(prefix: string, path: string): boolean {
   return prefix === "" || path === prefix || path.startsWith(`${prefix}/`);
 }
 

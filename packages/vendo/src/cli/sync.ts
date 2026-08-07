@@ -4,7 +4,7 @@ import { vendoSync, type SyncReportWithWarnings } from "@vendoai/actions/sync";
 import type { ToolImpact } from "../sync-impact.js";
 import { pushSyncReport } from "./cloud/services.js";
 import type { JudgmentPassOptions } from "./judge/pass.js";
-import { readEnvFiles, runSyncFlow } from "./sync-flow.js";
+import { runSyncFlow } from "./sync-flow.js";
 import { consoleOutput, invokedByPackageScript, withCommandRun, type Output, type TelemetryOptions } from "./shared.js";
 
 export interface SyncReportPayload {
@@ -150,7 +150,7 @@ async function sync(options: SyncOptions): Promise<number> {
       // The same resolved key the baseline push uses — a `--report` that saw a
       // different env from the reconcile beside it was a trap (#567's fix
       // applies to every keyed leg of a sync, not just the judgment pass).
-      const apiKey = options.apiKey ?? (await readEnvFiles(root)).VENDO_API_KEY;
+      const apiKey = flow.cloudKey;
       if (!apiKey) {
         // Self-serve audit B6: this used to complain and exit 0, so a CI
         // reporting lane stayed green for as long as it never reported.

@@ -87,9 +87,9 @@ export function envFileValueSync(root: string, name: string): string | null {
   let found: string | null = null;
   for (const file of [".env", ".env.local"]) {
     try {
-      const raw = readFileSync(join(root, file), "utf8");
-      const match = raw.match(new RegExp(`^\\s*(?:export\\s+)?${name}\\s*=\\s*(.+?)\\s*$`, "m"));
-      if (match?.[1] !== undefined) found = normalizeDotEnvValue(match[1]);
+      const value = parseDotEnv(readFileSync(join(root, file), "utf8"))[name];
+      // A bare `NAME=` never overrides a value the earlier file supplied.
+      if (value !== undefined && value !== "") found = value;
     } catch {
       // A missing file is the common case.
     }
@@ -97,9 +97,23 @@ export function envFileValueSync(root: string, name: string): string | null {
   return found;
 }
 
-/** One value grammar for both halves of the CLI's env reader (this file's
- * envFileValueSync and sync-flow.ts's readEnvFiles): matching surrounding
- * quotes are stripped; unquoted values lose their ` #…` inline comment. */
+/** THE dotenv parser, for both halves of the CLI's env reader (this file's
+ * envFileValueSync and sync-flow.ts's readEnvFiles). Minimal KEY=VALUE:
+ * `export ` prefix, `#` comment lines skipped, value grammar below. */
+export function parseDotEnv(text: string): Record<string, string> {
+  const parsed: Record<string, string> = {};
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (line === "" || line.startsWith("#")) continue;
+    const match = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
+    if (!match) continue;
+    parsed[match[1]!] = normalizeDotEnvValue(match[2]!.trim());
+  }
+  return parsed;
+}
+
+/** One value grammar for the parser above: matching surrounding quotes are
+ * stripped; unquoted values lose their ` #…` inline comment. */
 export function normalizeDotEnvValue(value: string): string {
   const quoted = value.match(/^(["'])(.*)\1$/);
   if (quoted?.[2] !== undefined) return quoted[2];

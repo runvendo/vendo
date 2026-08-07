@@ -22,7 +22,7 @@ import {
   type ThemeSummary,
 } from "./theme/extract-theme.js";
 import { baseFrom, mergeExtraction, readBase, writeBase } from "./theme/provenance.js";
-import { askYesNo, exists, normalizeDotEnvValue, readOptional, writeText, type Output } from "./shared.js";
+import { askYesNo, exists, parseDotEnv, readOptional, writeText, type Output } from "./shared.js";
 
 /**
  * THE flow both `vendo init` (mode "full" — a fresh install has judged nothing)
@@ -98,6 +98,9 @@ export interface SyncFlowResult {
   components: { pushed: string[]; pruned: string[]; modules: { uploaded: number; deleted: number } } | null;
   /** CLI-level events not carried by the report, in order. */
   notes: string[];
+  /** The Cloud key this run resolved (--key, else the merged env). One sync,
+   *  one key — a second leg re-reading the env was #567's trap. */
+  cloudKey: string | undefined;
 }
 
 /**
@@ -116,13 +119,7 @@ export async function readEnvFiles(
   for (const file of [".env", ".env.local"]) {
     const source = await readOptional(join(root, file));
     if (source === null) continue;
-    for (const rawLine of source.split(/\r?\n/)) {
-      const line = rawLine.trim();
-      if (line === "" || line.startsWith("#")) continue;
-      const match = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(line);
-      if (!match) continue;
-      fromFiles[match[1]!] = normalizeDotEnvValue(match[2]!.trim());
-    }
+    Object.assign(fromFiles, parseDotEnv(source));
   }
   const merged: Record<string, string | undefined> = { ...fromFiles, ...processEnv };
   for (const [key, value] of Object.entries(processEnv)) {
@@ -592,5 +589,6 @@ export async function runSyncFlow(options: SyncFlowOptions): Promise<SyncFlowRes
     baselines,
     components,
     notes,
+    cloudKey,
   };
 }
