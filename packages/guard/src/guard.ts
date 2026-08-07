@@ -994,8 +994,9 @@ class GuardImplementation implements VendoGuard {
    * contract, and `bind().execute()`'s internal use) from "decide, without
    * charging a run" (the PREVIEW-ONLY seam `previewCheck()` below exposes).
    * A previewed "run" is deliberately un-committed: the caller who asked to
-   * preview is never the one who gets to spend the budget — the very next
-   * real check (moments later, same call) does that once, for real. A
+   * preview is never the one who gets to spend the budget, the window slot, or
+   * a single-use approval — the very next real check (moments later, same
+   * call) does that once, for real. A
    * previewed "ask"/"block" is unaffected either way — parking and audit
    * already happen exactly once, because the SDK never calls `execute()` at
    * all for a call its own preview paused.
@@ -1026,7 +1027,7 @@ class GuardImplementation implements VendoGuard {
     const callsTripped = commitRun
       ? this.#recordCall(ctx.principal.subject)
       : this.#peekCallsTripped(ctx.principal.subject);
-    const metadata = await this.#pipeline(call, effectiveDescriptor, ctx);
+    const metadata = await this.#pipeline(call, effectiveDescriptor, ctx, commitRun);
     let draft = metadata.decision;
 
     // 05 §6: away runs hold only grants captured while present and bound to the
@@ -1294,18 +1295,19 @@ class GuardImplementation implements VendoGuard {
     call: ToolCall,
     descriptor: ToolDescriptor,
     ctx: RunContext,
+    commitRun: boolean,
   ): Promise<DecisionMetadata> {
     // An exact approved replay answers a confirmEach ask (05 §2 stays otherwise:
     // grants/rules/judge never suppress confirmEach).
-    let consumedReplay = false;
+    let replayable = false;
     if (descriptor.confirmEach === true) {
-      consumedReplay = await this.#consumeApprovedCall(call, descriptor, ctx);
-      if (!consumedReplay) {
+      replayable = await this.#approvedReplay(call, descriptor, ctx, commitRun);
+      if (!replayable) {
         return { decision: { action: "ask", decidedBy: "confirmEach" } };
       }
     }
 
-    if (consumedReplay || await this.#consumeApprovedCall(call, descriptor, ctx)) {
+    if (replayable || await this.#approvedReplay(call, descriptor, ctx, commitRun)) {
       return { decision: { action: "run", decidedBy: "grant" } };
     }
 
@@ -1678,10 +1680,16 @@ class GuardImplementation implements VendoGuard {
     });
   }
 
-  async #consumeApprovedCall(
+  /** Is there an approved, unspent replay for exactly this call — and, when
+   *  `claim` is true, spend it? `claim` is false for a preview (commitRun
+   *  false): a preview dispatches nothing, so spending the human's one yes
+   *  there would strand the real call moments later in park → approve → park,
+   *  with the tap burned. The real check that follows claims it, once. */
+  async #approvedReplay(
     call: ToolCall,
     descriptor: ToolDescriptor,
     ctx: RunContext,
+    claim: boolean,
   ): Promise<boolean> {
     const fingerprint = descriptorHash(descriptor);
     const store = this.#store.records(APPROVALS_COLLECTION);
@@ -1717,6 +1725,7 @@ class GuardImplementation implements VendoGuard {
       // next candidate — the same approved call parked twice yields two
       // approvals, each replayable once, exactly as before, and a lost claim can
       // also mean the person took the yes back between the list and here.
+      if (!claim) return true;
       if (await this.#spendConsumedTransition(record.id, ctx.principal.subject) !== "spent") continue;
       return true;
     }
