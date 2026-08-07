@@ -29,8 +29,7 @@ import type { HostOAuthAdapter } from "./oauth/adapter.js";
 import type { AppsPort } from "./apps-port.js";
 import { handleFederation } from "./oauth/federation.js";
 import { RemoteAsVerifier } from "./oauth/remote-as.js";
-import { canonicalUri, json, OAuthServer, randomHex, sameCanonicalUri } from "./oauth/server.js";
-import { TOKEN_EXCHANGE_GRANT_TYPE } from "./oauth/service-keys.js";
+import { canonicalUri, json, OAuthServer, randomHex, sameCanonicalUri, TOKEN_EXCHANGE_GRANT_TYPE } from "./oauth/server.js";
 import { SHIM_HTML } from "./shim/shim-html.gen.js";
 import {
   InMemoryMcpDoorState,
@@ -148,7 +147,7 @@ export interface McpDoorConfig {
   /** Enable the generic signed login-federation handshake at `{mount}/federate`. */
   federation?: { secret: string };
   /** First-party service auth: the host's own backend exchanges one of these
-   * `vsk_…` keys plus a user id for a short-lived user-bound access token at
+   * opaque keys plus a user id for a short-lived user-bound access token at
    * `{mount}/token`, then talks MCP with it like any other client. Rotation is
    * listing both the old and the new key until the old one is out of use.
    * Unset means the grant is neither advertised nor served. */

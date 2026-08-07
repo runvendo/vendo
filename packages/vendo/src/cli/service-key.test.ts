@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { runServiceKey } from "./service-key.js";
 
-const KEY_PATTERN = /vsk_[0-9a-f]{8}_[0-9a-f]{40}/g;
+const KEY_PATTERN = /vsk_[0-9a-f]{48}/g;
 
 function output() {
   const logs: string[] = [];
@@ -31,12 +31,11 @@ describe("vendo service-key new", () => {
     expect(first.logs.join("\n").match(KEY_PATTERN)![0]).not.toBe(second.logs.join("\n").match(KEY_PATTERN)![0]);
   });
 
-  it("prints the key, its id, and the label as JSON", async () => {
+  it("prints the key and the label as JSON", async () => {
     const messages = output();
     expect(await runServiceKey(["new", "--name", "backend", "--json"], { output: messages.sink })).toBe(0);
-    const body = JSON.parse(messages.logs.join("\n")) as { key: string; keyId: string; name: string };
+    const body = JSON.parse(messages.logs.join("\n")) as { key: string; name: string };
     expect(body.key).toMatch(new RegExp(`^${KEY_PATTERN.source}$`));
-    expect(body.key.slice(4, 12)).toBe(body.keyId);
     expect(body.name).toBe("backend");
   });
 
@@ -47,7 +46,7 @@ describe("vendo service-key new", () => {
 
     const plain = output();
     await runServiceKey(["new", "--json"], { output: plain.sink });
-    expect(Object.keys(JSON.parse(plain.logs.join("\n")) as object)).toEqual(["key", "keyId"]);
+    expect(Object.keys(JSON.parse(plain.logs.join("\n")) as object)).toEqual(["key"]);
   });
 
   it("refuses an unknown subcommand, with the usage", async () => {

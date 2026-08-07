@@ -114,9 +114,6 @@ import {
   type McpDoor,
   type TurnCredentials,
 } from "@vendoai/mcp";
-// The caller's half of `mcp.serviceAuth`: the host's own backend exchanges its
-// `vsk_` key plus one of its user ids for that user's short-lived MCP token.
-export { vendoUserToken, type VendoUserToken, type VendoUserTokenInput } from "@vendoai/mcp";
 import {
   adoptEphemeralSubject,
   appAccess,
@@ -592,9 +589,9 @@ export interface CreateVendoConfig {
       the door's local OAuth surface, and `federation` (10-mcp §3.2) answers
       that server's signed login handshake at `{mount}/federate`.
       `serviceAuth` opens first-party service auth: the host's OWN backend
-      exchanges one of these `vsk_…` keys plus a user id for a short-lived
-      user-bound token at the door's token endpoint (rotation is listing both
-      keys until the old one is out of use). */
+      exchanges one of these keys plus a user id for a short-lived user-bound
+      token at the door's token endpoint (rotation is listing both keys until
+      the old one is out of use). */
   mcp?: boolean | {
     baseUrl?: string;
     remoteAs?: { issuer: string; jwksUri?: string; audience: string };

@@ -97,7 +97,7 @@ bounce, no consent page to click, and no third party to consent to.
 A service key is the first-party way in. You mint it, your backend holds it, and
 it exchanges the key plus one of **your** user ids for a short-lived token bound
 to that user. Nothing downstream changes: same guard, same approvals, same
-audit, and the tool call is attributed to the key (`svc:<keyId>`) as well as to
+audit, and the tool call is attributed to the key (`svc:<hash8>`) as well as to
 the person. Per-user OAuth stays the story for anyone else's agent; a service
 key is for code you deploy, and it can name any user, so it is exactly as
 powerful as your backend already is.
@@ -112,7 +112,7 @@ powerful as your backend already is.
     in your backend's environment before you close the terminal:
 
     ```bash
-    VENDO_SERVICE_KEY=vsk_ab12cd34_…
+    VENDO_SERVICE_KEY=vsk_…
     ```
   </Step>
 
@@ -134,32 +134,35 @@ powerful as your backend already is.
   </Step>
 
   <Step title="Exchange it for one user's token">
-    ```ts
-    import { vendoUserToken } from "@vendoai/vendo/server";
+    One RFC 8693 form post, at your MCP URL plus `/token` — from any language:
 
-    const token = await vendoUserToken({
-      url: "https://your-app.example.com/api/vendo/mcp",
-      key: process.env.VENDO_SERVICE_KEY!,
-      user: "user_1904", // one of YOUR user ids, in your own spelling
-    });
-    // { accessToken: "vmat_…", tokenType: "Bearer", expiresIn: 600, expiresAt, scope }
+    ```bash
+    curl -s https://your-app.example.com/api/vendo/mcp/token \
+      -d grant_type=urn:ietf:params:oauth:grant-type:token-exchange \
+      -d client_id=vendo-service \
+      -d client_secret=$VENDO_SERVICE_KEY \
+      -d subject_token=user_1904 \
+      -d subject_token_type=urn:vendo:params:oauth:token-type:user-id
     ```
 
-    The MCP URL is the only endpoint you configure: the helper reads the door's
-    own discovery documents to find the token endpoint, which is also how it
-    follows a deployment fronted by a broker. That makes the `.well-known` route
-    from [Open the door](#1-open-the-door) a prerequisite — without it discovery
-    answers `404` and the exchange is never attempted. That one route is also
-    all a path-mounted deployment needs: your framework serves it under your
-    prefix, and when the origin-root URL 404s there the helper asks for the
-    prefix-local one the door advertises. A backend that does not serve that
-    route posts the form below instead, which needs no discovery. Ten minutes,
-    no refresh token, no cache — mint one per job and let it expire.
+    `subject_token` is one of **your** user ids, in your own spelling. The answer
+    is an ordinary OAuth token response:
+
+    ```json
+    { "access_token": "vmat_…", "token_type": "Bearer", "expires_in": 600, "scope": "read write" }
+    ```
+
+    Ten minutes and no refresh token — mint one per job and let it expire. While
+    the door lists a key, an unknown key, a retired one and a wrong `client_id`
+    all answer the same `invalid_client`: nothing tells a guesser which half they
+    have right. A door that lists no key is not refusing the exchange, it is not
+    offering one — every attempt, a valid key included, answers
+    `unsupported_grant_type`.
   </Step>
 
   <Step title="Talk MCP with it">
     ```ts
-    { authorization: `Bearer ${token.accessToken}` }
+    { authorization: `Bearer ${accessToken}` }
     ```
 
     Hand that header to any MCP client and the session is an ordinary one: the
@@ -173,30 +176,10 @@ powerful as your backend already is.
   </Step>
 </Steps>
 
-Not a JavaScript backend? The exchange is one RFC 8693 form post, and on a door
-that runs its own OAuth surface the token endpoint is your MCP URL plus
-`/token`:
-
-```bash
-curl -s https://your-app.example.com/api/vendo/mcp/token \
-  -d grant_type=urn:ietf:params:oauth:grant-type:token-exchange \
-  -d client_id=vendo-service \
-  -d client_secret=$VENDO_SERVICE_KEY \
-  -d subject_token=user_1904 \
-  -d subject_token_type=urn:vendo:params:oauth:token-type:user-id
-```
-
-`vendoUserToken` is that request plus the discovery step. While the door lists
-a key, an unknown key, a retired one, and a wrong `client_id` all answer the
-same `invalid_client` — nothing tells a guesser which half they have right. A
-door that lists none is not refusing the exchange, it is not offering one:
-every attempt, valid key included, answers `unsupported_grant_type`.
-
 <Note>
   A door pointed at an external authorization server (`mcp.remoteAs`, or the
   hosted broker) does not serve its own token endpoint, so the exchange lives at
-  that server instead. `vendoUserToken` follows the discovery documents there;
-  a hand-rolled post has to aim at the issuer's own `token_endpoint`.
+  that server instead: post to the issuer's own `token_endpoint`.
 </Note>
 
 ## What the agent gets

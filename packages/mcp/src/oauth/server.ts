@@ -10,13 +10,15 @@ import type {
 import { z } from "zod";
 import type { HostOAuthAdapter } from "./adapter.js";
 import { consentPage } from "./consent-page.js";
-import {
-  SERVICE_CLIENT_ID,
-  SERVICE_SUBJECT_TOKEN_TYPE,
-  TOKEN_EXCHANGE_GRANT_TYPE,
-  assertServiceKeys,
-  verifyServiceKey,
-} from "./service-keys.js";
+
+/** Reserved client_id for the service-key exchange. Not a registered client and
+ *  never resolved as one: the key, not the client record, is the credential. */
+const SERVICE_CLIENT_ID = "vendo-service";
+/** The subject_token a host presents is one of ITS user ids, in its own
+ *  spelling — no token type in the RFC's registry describes that. */
+const SERVICE_SUBJECT_TOKEN_TYPE = "urn:vendo:params:oauth:token-type:user-id";
+/** RFC 8693 §2.1. */
+export const TOKEN_EXCHANGE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:token-exchange";
 
 const CLIENTS_COLLECTION = "vendo_mcp_clients";
 const GRANTS_COLLECTION = "vendo_mcp_grants";
@@ -161,8 +163,26 @@ export class OAuthServer {
     this.#store = config.store;
     this.#guard = config.guard;
     this.#theme = config.theme;
-    if (config.serviceAuth !== undefined) assertServiceKeys(config.serviceAuth.keys);
-    this.#serviceKeys = config.serviceAuth?.keys;
+    // A key no presented key can ever equal is not a stricter door: it is one
+    // that ADVERTISES the exchange and answers every attempt `invalid_client`,
+    // which is the most expensive possible way to learn about an unset env var.
+    // The offending value never reaches the message.
+    const serviceKeys = config.serviceAuth?.keys;
+    if (serviceKeys !== undefined) {
+      if (serviceKeys.length === 0) {
+        throw new TypeError(
+          "serviceAuth.keys is empty; list a key from `vendo service-key new`, or drop `serviceAuth` to close the exchange",
+        );
+      }
+      const blank = serviceKeys.findIndex((key) => !key?.trim());
+      if (blank !== -1) {
+        throw new TypeError(
+          `serviceAuth.keys[${blank}] is blank; a service key is any non-empty string, and an unset `
+          + "environment variable is the usual cause. The value is not echoed here.",
+        );
+      }
+    }
+    this.#serviceKeys = serviceKeys;
   }
 
   get hasPrebuiltConsent(): boolean {
@@ -661,10 +681,21 @@ export class OAuthServer {
     if (/\p{Cc}/u.test(subject)) {
       return oauthJsonError("invalid_request", "subject_token must not contain control characters");
     }
-    // ONE answer for a wrong client_id, an unknown key, a malformed key and a
-    // retired one. Anything narrower tells whoever is guessing which half of
-    // the credential they already have right.
-    const clientId = form.get("client_id") === SERVICE_CLIENT_ID ? await verifyServiceKey(secret, keys) : null;
+    // A key is an OPAQUE string: the door hashes what it was given and compares
+    // digests, and never parses or shape-checks either side. ONE answer for a
+    // wrong client_id, an unknown key and a retired one — anything narrower
+    // tells whoever is guessing which half of the credential they have right.
+    const hash = await sha256Hex(secret);
+    let clientId: string | null = null;
+    if (form.get("client_id") === SERVICE_CLIENT_ID) {
+      for (const key of keys) {
+        if (equalHashes(await sha256Hex(key), hash)) {
+          // The matched key's name in audit and on the grant.
+          clientId = `svc:${hash.slice(0, 8)}`;
+          break;
+        }
+      }
+    }
     if (clientId === null) return oauthJsonError("invalid_client", "Service key is not valid for this MCP server");
     const requestedResource = form.get("resource");
     if (requestedResource !== null && !sameCanonicalUri(requestedResource, resource)) {
@@ -1078,6 +1109,17 @@ function randomBase64Url(byteLength: number): string {
 async function sha256Hex(value: string): Promise<string> {
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
   return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/** Constant time in the CONTENT of two same-length hex digests: a compare that
+ *  returns early leaks how much of a guess was right, one byte at a time. */
+function equalHashes(left: string, right: string): boolean {
+  if (left.length !== right.length) return false;
+  let difference = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+  return difference === 0;
 }
 
 async function sha256Base64Url(value: string): Promise<string> {

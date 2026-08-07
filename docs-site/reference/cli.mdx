@@ -671,14 +671,15 @@ first-party alternative to the per-user OAuth dance. See
 npx vendo service-key new --name backend
 ```
 
-Prints one `vsk_<keyId>_<secret>` key, once. Nothing is written to disk and
-nothing is sent anywhere — the key exists only in that output, so store it
-before you close the terminal; losing it means minting another.
+Prints one `vsk_…` key, once. Nothing is written to disk and nothing is sent
+anywhere — the key exists only in that output, so store it before you close the
+terminal; losing it means minting another. The door treats a key as an opaque
+string, so the prefix is a convenience for you, not a format it checks.
 
 Options:
 
 - `--name <label>`: a label for your own records. Printed back, stored nowhere.
-- `--json`: print `{ key, keyId, name? }` instead of the human output.
+- `--json`: print `{ key, name? }` instead of the human output.
 
 List the key on the door with `mcp: { serviceAuth: { keys: [...] } }`, and
 rotate by listing the old and the new key together until the old one is out of

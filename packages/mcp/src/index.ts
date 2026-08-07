@@ -13,8 +13,6 @@ export type {
   HostOAuthSessionContext,
 } from "./oauth/adapter.js";
 export type { AppsPort } from "./apps-port.js";
-export { vendoUserToken } from "./user-token.js";
-export type { VendoUserToken, VendoUserTokenInput } from "./user-token.js";
 export { createTurnCredentials } from "./turn-credential.js";
 export type {
   LiveTurn,

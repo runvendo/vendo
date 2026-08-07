@@ -22,7 +22,7 @@ export interface AuditEvent {
    *  (a webhook, a schedule fire, an org-policy load). */
   turnId?: TurnId;
   /** The MCP client this row came in on — `mcpc_*` or a CIMD URL for a
-   *  third-party agent, `svc:<keyId>` for a host's own service key. Absent on
+   *  third-party agent, `svc:<hash8>` for a host's own service key. Absent on
    *  every row that did not arrive at the door. */
   clientId?: string;
   tool?: string;

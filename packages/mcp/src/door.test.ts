@@ -41,10 +41,14 @@ const BASE = "https://product.example/api/vendo/mcp";
 const PROXIED_BASE = "http://door.internal:8787/api/vendo/mcp";
 const REDIRECT = "https://client.example/callback";
 const VERIFIER = "a-very-long-pkce-verifier-that-is-valid-for-the-test-suite-1234567890";
-/** Two service keys, spelled the way `vsk_<keyId>_<secret>` is minted. */
-const SERVICE_KEY = "vsk_0a1b2c3d_0123456789abcdef0123456789abcdef01234567";
-const SERVICE_KEY_B = "vsk_5f6e7d8c_fedcba9876543210fedcba9876543210fedcba98";
-const SERVICE_CLIENT = "svc:0a1b2c3d";
+/** Two service keys: one spelled the way `vendo service-key new` mints, one an
+ *  arbitrary string, because a key has no format the door checks. The label is
+ *  `svc:` plus the first 8 hex of the key's sha256 — pinned literally here so a
+ *  change to that derivation cannot pass. */
+const SERVICE_KEY = "vsk_0123456789abcdef0123456789abcdef0123456789abcdef";
+const SERVICE_KEY_B = "any opaque string will do - the door never parses a key";
+const SERVICE_CLIENT = "svc:5c006a4c";
+const SERVICE_CLIENT_B = "svc:67ed3026";
 const CONSENT_THEME: VendoTheme = {
   colors: {
     background: "#101820",
@@ -2869,8 +2873,8 @@ describe("createMcpDoor first-party service auth", () => {
     const harness = makeHarness({ serviceAuth: { keys: [SERVICE_KEY] } });
     const rows: Array<[string, Record<string, string | null>, string]> = [
       ["an unknown key", { client_secret: SERVICE_KEY_B }, "invalid_client"],
-      ["a malformed key", { client_secret: "vsk_not-hex_short" }, "invalid_client"],
-      ["a key with the right id and a wrong secret", { client_secret: `vsk_0a1b2c3d_${"f".repeat(40)}` }, "invalid_client"],
+      ["a string that is not a key at all", { client_secret: "not-a-service-key" }, "invalid_client"],
+      ["a near miss on a listed key", { client_secret: `${SERVICE_KEY}x` }, "invalid_client"],
       ["another client_id", { client_id: "mcpc_000000000000" }, "invalid_client"],
       ["no client_secret", { client_secret: null }, "invalid_request"],
       ["no subject_token", { subject_token: null }, "invalid_request"],
@@ -2896,8 +2900,10 @@ describe("createMcpDoor first-party service auth", () => {
 
   it("serves both keys through a rotation, and refuses one the door no longer lists", async () => {
     const rotating = makeHarness({ serviceAuth: { keys: [SERVICE_KEY, SERVICE_KEY_B] } });
-    for (const key of [SERVICE_KEY, SERVICE_KEY_B]) {
+    for (const [key, client] of [[SERVICE_KEY, SERVICE_CLIENT], [SERVICE_KEY_B, SERVICE_CLIENT_B]] as const) {
       expect((await serviceExchange(rotating.door, { client_secret: key })).status, key).toBe(200);
+      // Each key wears its OWN label — the hash of the key that matched.
+      expect(rotating.audits.at(-1), key).toMatchObject({ detail: { clientId: client, event: "exchange" } });
     }
 
     const retired = makeHarness({ serviceAuth: { keys: [SERVICE_KEY] } });
@@ -2933,31 +2939,32 @@ describe("createMcpDoor first-party service auth", () => {
   it("refuses a key list that cannot ever match, LOUDLY, at composition", () => {
     // A key the door can never match is not a security posture, it is a
     // deployment that advertises the grant and answers every exchange with
-    // `invalid_client` — the most expensive possible way to learn about a typo.
-    // The realistic spelling of the mistake is first: an unset env var.
+    // `invalid_client` — the most expensive possible way to learn about an unset
+    // env var, which is the realistic spelling of the mistake and comes first.
     expect(() => makeHarness({ serviceAuth: { keys: [undefined as unknown as string] } }))
-      .toThrow(/serviceAuth\.keys/);
-    expect(() => makeHarness({ serviceAuth: { keys: ["not-a-service-key"] } }))
-      .toThrow(/serviceAuth\.keys/);
-    expect(() => makeHarness({ serviceAuth: { keys: [SERVICE_KEY.toUpperCase()] } }))
-      .toThrow(/serviceAuth\.keys/);
+      .toThrow(/serviceAuth\.keys\[0\]/);
+    expect(() => makeHarness({ serviceAuth: { keys: ["", SERVICE_KEY] } }))
+      .toThrow(/serviceAuth\.keys\[0\]/);
     // An empty list is the same failure with nothing to point at.
-    expect(() => makeHarness({ serviceAuth: { keys: [] } })).toThrow(/serviceAuth\.keys/);
-    // A good key beside a bad one still fails: a rotation list with a broken
-    // entry is a rotation that will silently strand whoever holds that key.
-    expect(() => makeHarness({ serviceAuth: { keys: [SERVICE_KEY, "vsk_0a1b2c3d_short"] } }))
-      .toThrow(/serviceAuth\.keys/);
+    expect(() => makeHarness({ serviceAuth: { keys: [] } })).toThrow(/serviceAuth\.keys is empty/);
+    // A good key beside a blank one still fails, and the message names WHICH
+    // entry: a rotation list with a dead slot strands whoever holds that key.
+    expect(() => makeHarness({ serviceAuth: { keys: [SERVICE_KEY, "   "] } }))
+      .toThrow(/serviceAuth\.keys\[1\]/);
+    // Anything non-empty is a key. There is no shape to get wrong.
+    expect(() => makeHarness({ serviceAuth: { keys: ["not-a-service-key"] } })).not.toThrow();
   });
 
-  it("never puts the rejected key in the message", () => {
-    // A malformed key is usually a REAL key with a typo. Echoing it writes a
-    // live credential into whatever collects the crash.
-    const typo = `${SERVICE_KEY}x`;
-    expect(() => makeHarness({ serviceAuth: { keys: [typo] } })).toThrow();
+  it("never puts a key in the message", () => {
+    // The list that trips the check still holds live keys. Naming the index is
+    // enough to fix the deployment; echoing a value writes a live credential
+    // into whatever collects the crash.
+    const keys = [SERVICE_KEY, "  "];
+    expect(() => makeHarness({ serviceAuth: { keys } })).toThrow(/serviceAuth\.keys\[1\]/);
     try {
-      makeHarness({ serviceAuth: { keys: [typo] } });
+      makeHarness({ serviceAuth: { keys } });
     } catch (error) {
-      expect((error as Error).message).not.toContain(typo);
+      expect((error as Error).message).not.toContain(SERVICE_KEY);
       expect((error as Error).message).not.toContain(SERVICE_KEY.slice(13));
     }
   });

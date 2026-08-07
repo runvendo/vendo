@@ -28,9 +28,11 @@ import { createVendo, type Vendo } from "./server.js";
 
 afterEach(runCleanups);
 
-const KEY_ID = "0a1b2c3d";
-const KEY = `vsk_${KEY_ID}_0123456789abcdef0123456789abcdef01234567`;
-const SERVICE_CLIENT = `svc:${KEY_ID}`;
+/** An opaque key — the door never parses one — and the label it earns: `svc:`
+ *  plus the first 8 hex of its sha256, pinned literally so a change to that
+ *  derivation cannot pass. */
+const KEY = "vsk_0123456789abcdef0123456789abcdef0123456789abcdef";
+const SERVICE_CLIENT = "svc:5c006a4c";
 
 /** The host, composed with service auth on and nothing else changed. */
 async function composedHost(): Promise<{ vendo: Vendo; store: VendoStore }> {
