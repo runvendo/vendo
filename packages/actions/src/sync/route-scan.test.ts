@@ -390,6 +390,52 @@ describe("pages route verb evidence", () => {
     expect(await methodsFor(root, "/api/put-only")).toEqual(["PUT"]);
   });
 
+  it("does not read a lowercase case clause as verb evidence (a switch on a body discriminant)", async () => {
+    const root = await temporaryRoot();
+    // A POST-only handler that dispatches on `req.body.action`, not on
+    // `req.method`. Reading `case "delete"` as a verb hands the agent an
+    // ENABLED, destructive-graded DELETE at the route's real URL that the
+    // handler never implements — and, because any verb evidence wins over
+    // none, it replaces the POST the route actually serves.
+    await write(
+      root,
+      "pages/api/bulk.ts",
+      [
+        "export default async function handle(req: any, res: any) {",
+        "  if (req.method !== \"POST\") return res.status(405).end();",
+        "  switch (req.body.action) {",
+        "    case \"delete\":",
+        "      return res.status(200).json({ ok: true });",
+        "    case \"archive\":",
+        "      return res.status(200).json({ ok: true });",
+        "    default:",
+        "      return res.status(400).end();",
+        "  }",
+        "}",
+      ].join("\n"),
+    );
+    // The same switch with no `req.method` guard anywhere: the false verb is
+    // the route's ONLY evidence, so it does not merely add a phantom tool —
+    // any verb evidence short-circuits the `req.body` inference below it, so
+    // the phantom DELETE *replaces* the POST this handler actually serves.
+    await write(
+      root,
+      "pages/api/dispatch.ts",
+      [
+        "export default async function handle(req: any, res: any) {",
+        "  switch (req.body.action) {",
+        "    case \"delete\":",
+        "      return res.status(200).json({ ok: true });",
+        "    default:",
+        "      return res.status(400).end();",
+        "  }",
+        "}",
+      ].join("\n"),
+    );
+    expect(await methodsFor(root, "/api/bulk")).toEqual(["POST"]);
+    expect(await methodsFor(root, "/api/dispatch")).toEqual(["POST"]);
+  });
+
   it("treats a NextAuth handler as GET+POST", async () => {
     const root = await temporaryRoot();
     await write(
