@@ -196,7 +196,7 @@ describe("every component the page tells a reader to import is exported", () => 
   it("mcp and oauth are real createVendo keys", async () => {
     const page = await read(PAGE);
     expect(page).toContain("mcp: true");
-    const source = await read("packages/vendo/src/server.ts");
+    const source = await read("packages/vendo/src/types.ts");
     expect(source).toMatch(/^ {2}mcp\?:/m);
     expect(source).toMatch(/^ {2}oauth\?: HostOAuthAdapter;$/m);
   });

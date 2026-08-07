@@ -17,7 +17,7 @@ import { routeSource } from "./init-scaffolds.js";
  *      `CreateVendoConfig`/`Vendo` (nested shapes and optionality included), so
  *      the types and the imports are checked by `pnpm typecheck` rather than by
  *      a list maintained here,
- *   3. the listing's top-level key set and @deprecated marks vs `server.ts` —
+ *   3. the listing's top-level key set and @deprecated marks vs `types.ts` —
  *      a readable failure for the most common drift, and the one thing types
  *      cannot carry,
  *   4. every `@vendoai/*` import specifier in a code block resolvable from a
@@ -30,7 +30,7 @@ import { routeSource } from "./init-scaffolds.js";
  */
 
 const QUICKSTART = new URL("../../../../docs/quickstart.md", import.meta.url);
-const SERVER_SOURCE = new URL("../server.ts", import.meta.url);
+const TYPES_SOURCE = new URL("../types.ts", import.meta.url);
 const CONFIG_FIXTURE = new URL("./quickstart-config-surface.docs-check.ts", import.meta.url);
 
 /** The fixture's copy of the doc block, between its markers. */
@@ -172,7 +172,7 @@ describe("docs/quickstart.md stays 1:1 with the surfaces it documents", () => {
 
   it("lists exactly the documented interfaces' members, deprecations included", async () => {
     const listing = configListing(blocks);
-    const source = await readFile(SERVER_SOURCE, "utf8");
+    const source = await readFile(TYPES_SOURCE, "utf8");
     for (const name of ["CreateVendoConfig", "Vendo"]) {
       expect(interfaceMembers(listing, name), name).toEqual(interfaceMembers(source, name));
     }
