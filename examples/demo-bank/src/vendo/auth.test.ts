@@ -123,16 +123,13 @@ describe("safeReturnTo", () => {
     expect(safeReturnTo(null)).toBe("/");
   });
 
-  /** Every caller puts the mount point back on with `withBasePath`, so this
-   *  must hand back the app's own vocabulary whichever way the prefix arrived
-   *  — Next strips it off its own request URLs, but an absolute URL built from
-   *  the deployment's public base (the MCP door's `returnTo`) still carries
-   *  it, and prefixing that a second time is a 404 the human sees right after
-   *  typing their password. */
-  it("answers in the app's own vocabulary, mount point or no mount point", () => {
-    vi.stubEnv("VENDO_BASE_URL", "https://maple.example.com");
-    expect(safeReturnTo(`https://maple.example.com${BASE_PATH}/api/vendo/mcp/authorize?state=ok`))
-      .toBe("/api/vendo/mcp/authorize?state=ok");
-    expect(safeReturnTo(BASE_PATH)).toBe("/");
+  /** #867: VENDO_BASE_URL now carries /maple, and what comes back is the
+   *  PUBLIC spelling — the browser's own. Callers must not run it through
+   *  withBasePath() again; that produced /maple/maple/…. */
+  it("returns the public spelling when the base URL carries a path prefix", () => {
+    vi.stubEnv("VENDO_BASE_URL", "https://maple.example.com/maple");
+    expect(safeReturnTo("https://maple.example.com/maple/api/vendo/mcp/authorize?state=ok"))
+      .toBe("/maple/api/vendo/mcp/authorize?state=ok");
+    expect(safeReturnTo("https://attacker.example/maple/callback")).toBe("/");
   });
 });

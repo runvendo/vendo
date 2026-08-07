@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { withBasePath } from "@/lib/base-path";
 import { demoAutologinActive, mintAutologinSession } from "@/server/autologin";
 import { authSecret, isSecureDeployment } from "@/server/users";
-import { publicOrigin, safeReturnTo } from "@/vendo/auth";
+import { publicUrl, safeReturnTo } from "@/vendo/auth";
 
 /**
  * Maple requires a real sign-in (Next 16 proxy, né middleware): pages bounce
@@ -92,7 +92,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     // Z1: with auto-login active the login form must never render — a
     // /logout continuation lands here, so mint (if needed) and continue
     // straight into the product at the sanitized returnTo.
-    const continueTo = safeReturnTo(request.nextUrl.searchParams.get("returnTo"), publicOrigin(request));
+    const continueTo = safeReturnTo(request.nextUrl.searchParams.get("returnTo"), publicUrl(request));
     const response = mountedRedirect(request, continueTo);
     const token = await getToken({
       req: request,

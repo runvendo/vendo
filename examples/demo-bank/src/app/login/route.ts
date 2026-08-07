@@ -4,7 +4,7 @@ import { withBasePath } from "@/lib/base-path";
 import { mapleDemoEmail, mapleDemoUsers } from "@/server/users";
 import {
   maplePublicUrl,
-  publicOrigin,
+  publicUrl,
   resolveMapleSession,
   safeReturnTo,
 } from "@/vendo/auth";
@@ -24,7 +24,7 @@ function escapeHtml(value: string): string {
 
 function loginPage(request: Request, message?: string): Response {
   const url = new URL(request.url);
-  const returnTo = safeReturnTo(url.searchParams.get("returnTo"), publicOrigin(request));
+  const returnTo = safeReturnTo(url.searchParams.get("returnTo"), publicUrl(request));
   // The account switcher links here with ?email=<seeded staff member> so
   // switching people is one click plus the shared demo password — which stays
   // server-side, exactly as it does for a first sign-in.
@@ -89,15 +89,15 @@ export async function GET(request: Request): Promise<Response> {
   const user = await resolveMapleSession(request);
   if (user) {
     const url = new URL(request.url);
-    const returnTo = safeReturnTo(url.searchParams.get("returnTo"), publicOrigin(request));
+    const returnTo = safeReturnTo(url.searchParams.get("returnTo"), publicUrl(request));
     return new Response(null, {
       status: 303,
-      // Path-only: `maplePublicUrl` resolves against VENDO_BASE_URL, which is
-      // the container's own origin — behind the edge that serves this demo in
-      // place it would strand the visitor on a Railway hostname. A relative
-      // Location leaves the browser on the origin it used (RFC 9110 §10.2.2),
-      // and a route handler — unlike the proxy — may emit one.
-      headers: { location: withBasePath(returnTo), "cache-control": "no-store" },
+      // #867: returnTo is already the PUBLIC path (safeReturnTo returns the
+      // browser's own spelling, /maple included). Wrapping it in withBasePath
+      // again produced /maple/maple/…. A relative Location leaves the browser
+      // on the origin it used (RFC 9110 §10.2.2), which is what the edge in
+      // front of this demo needs.
+      headers: { location: returnTo, "cache-control": "no-store" },
     });
   }
   return loginPage(request);
@@ -108,19 +108,19 @@ export async function POST(request: Request): Promise<Response> {
     return new Response("Expected form data", { status: 415 });
   }
   const form = new URLSearchParams(await request.text());
-  const returnTo = safeReturnTo(form.get("returnTo"), publicOrigin(request));
+  const returnTo = safeReturnTo(form.get("returnTo"), publicUrl(request));
   try {
     // Real Auth.js sign-in: sets the Auth.js session JWE via next/headers
     // cookies() and throws Next's redirect to returnTo on success.
     await signIn("credentials", {
       email: form.get("email") ?? "",
       password: form.get("password") ?? "",
-      redirectTo: withBasePath(returnTo),
+      redirectTo: returnTo,
     });
   } catch (error) {
     if (error instanceof AuthError) {
       return loginPage(
-        new Request(maplePublicUrl(request, withBasePath(`/login?returnTo=${encodeURIComponent(returnTo)}`))),
+        new Request(maplePublicUrl(request, `/login?returnTo=${encodeURIComponent(returnTo)}`)),
         "Email or password is incorrect.",
       );
     }
@@ -129,6 +129,6 @@ export async function POST(request: Request): Promise<Response> {
   // signIn always redirects on success; this is a defensive fallback.
   return new Response(null, {
     status: 303,
-    headers: { location: withBasePath(returnTo), "cache-control": "no-store" },
+    headers: { location: returnTo, "cache-control": "no-store" },
   });
 }

@@ -1,4 +1,5 @@
 import type { authJs } from "@vendoai/vendo/auth/auth-js";
+import { joinUrl } from "@vendoai/core";
 import { getToken } from "next-auth/jwt";
 import { stripBasePath, withBasePath } from "@/lib/base-path";
 import {
@@ -21,16 +22,18 @@ export async function resolveMapleSession(request: Request): Promise<MapleDemoUs
   return typeof token?.sub === "string" ? resolveMapleSubject(token.sub) : null;
 }
 
-/** The operator-set public origin (VENDO_BASE_URL) or, failing that, the
- * request's own origin — mirrors how the door derives its URLs. */
-export function publicOrigin(request?: Request): URL {
+/** The operator-set FULL public URL (VENDO_BASE_URL — /maple included) or,
+ * failing that, the request's own origin — mirrors how the door and the auth
+ * presets derive their URLs. */
+export function publicUrl(request?: Request): URL {
   return new URL(process.env.VENDO_BASE_URL ?? request?.url ?? "http://localhost:3000");
 }
 
-/** Same-origin-only returnTo, in the APP's own vocabulary — the mount point
- * comes off here and every caller puts it back with `withBasePath`. Anything
- * not same-origin collapses to "/". */
-export function safeReturnTo(candidate: string | null | undefined, base: URL = publicOrigin()): string {
+/** Same-origin-only returnTo: anything else collapses to "/". The returned path
+ * is the PUBLIC spelling — prefix included, exactly as the browser will use it.
+ * #867: callers used to run it back through withBasePath() and produce
+ * /maple/maple/…. */
+export function safeReturnTo(candidate: string | null | undefined, base: URL = publicUrl()): string {
   if (!candidate) return "/";
   try {
     const target = new URL(candidate, base);
@@ -43,7 +46,7 @@ export function safeReturnTo(candidate: string | null | undefined, base: URL = p
 }
 
 export function maplePublicUrl(request: Request, path: string): URL {
-  return new URL(path, publicOrigin(request));
+  return joinUrl(publicUrl(request), path);
 }
 
 /**
