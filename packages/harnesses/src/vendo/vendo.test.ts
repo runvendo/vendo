@@ -7,6 +7,7 @@
  * These suites assert the LOOP, not a model: the thinker is scripted so what is
  * measured is the lift.
  */
+import { createTurnSkills, renderSkillMd, skillPath } from "@vendoai/core";
 import type { HarnessEvent, Json, ToolDescriptor, Turn } from "@vendoai/core";
 import { APICallError } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
@@ -265,6 +266,15 @@ describe("vendo() — bounded by construction", () => {
 });
 
 describe("vendo() — subagent hiring (build-list item 4)", () => {
+  /** The brief one scripted call actually carried: the user half of the hire's
+   *  one-message thread. Read out rather than matched inside a JSON dump, so an
+   *  assertion can quote a notice that contains quotes of its own. */
+  const briefOf = (prompt: unknown): string =>
+    (prompt as Array<{ role: string; content: Array<{ text?: string }> }>)
+      .filter((message) => message.role === "user")
+      .flatMap((message) => message.content.map((part) => part.text ?? ""))
+      .join("");
+
   const skills = testSkills([
     {
       name: "building-apps",
@@ -327,13 +337,112 @@ describe("vendo() — subagent hiring (build-list item 4)", () => {
     expect(mirrored).toContain("result");
   });
 
-  it("hiring a subagent for an unknown skill fails the tool, not the turn", async () => {
+  it("hiring for a skill that does not exist degrades the hire — the specialist still runs", async () => {
     const model = scriptedModel([
-      toolCallTurn("hire_subagent", { instructions: "go", skill: "no-such-skill" }),
-      textTurn("I couldn't find the instructions for that."),
+      // The name a model GUESSES when it has no listing to read: the incident
+      // behind this case passed `research` where only `building-apps` existed.
+      toolCallTurn("hire_subagent", { instructions: "research the market", skill: "research" }),
+      textTurn("researched what I could"),
+      textTurn("Here's what I found."),
     ]);
     const { events } = await drive({ harness: vendo(), models: seats(model), skills });
-    expect(texts(events)).toContain("couldn't find");
+    // Three model calls: the specialist was hired, not lost to a wrong string.
+    expect(model.calls).toBe(3);
+    expect(texts(events)).toBe("Here's what I found.");
+    // ...and it was told what it is missing, so it can say what it could not cover.
+    const brief = briefOf(model.prompts[1]);
+    expect(brief).toContain('The "research" skill could not be loaded');
+    expect(brief).toContain("research the market");
+  });
+
+  it("loads a real skill in full even when a sibling hire names one that does not exist", async () => {
+    /** ONE step, TWO hires — the incident's shape. `toolCallTurn` carries a finish
+     *  part of its own, so the first hire's is dropped to splice them into a
+     *  single step. Both specialists reply the same words, so which of the two
+     *  takes which scripted turn cannot matter. */
+    const twoHires = [
+      ...toolCallTurn("hire_subagent", { instructions: "research the market", skill: "research" }, "h1")
+        .slice(0, -1),
+      ...toolCallTurn("hire_subagent", { instructions: "build the app", skill: "building-apps" }, "h2"),
+    ];
+    const model = scriptedModel([
+      twoHires,
+      textTurn("specialist done"),
+      textTurn("specialist done"),
+      textTurn("Both are done."),
+    ]);
+
+    const { events } = await drive({ harness: vendo(), models: seats(model), skills });
+
+    expect(texts(events)).toBe("Both are done.");
+    // A guessed name degrades ITS OWN hire and nothing else: the mounted skill's
+    // body still reached the specialist that asked for it.
+    const briefs = [briefOf(model.prompts[1]), briefOf(model.prompts[2])];
+    expect(briefs.filter((brief) => brief.includes("Run me in a fresh subagent"))).toHaveLength(1);
+    expect(briefs.filter((brief) => brief.includes('The "research" skill could not be loaded')))
+      .toHaveLength(1);
+  });
+
+  it("hires on a readable skill even when an UNRELATED one on the mount will not read", async () => {
+    const model = scriptedModel([
+      toolCallTurn("hire_subagent", { instructions: "build it", skill: "building-apps" }),
+      textTurn("subagent done"),
+      textTurn("Done."),
+    ]);
+    // The REAL store, over a mount carrying one broken neighbour. The hire opens
+    // its OWN skill and nothing else — `list()` would have read every file on the
+    // mount, including this one, and taken a perfectly good hire down with it.
+    const files: Record<string, string> = {
+      [skillPath("building-apps")]: renderSkillMd({
+        name: "building-apps",
+        description: "how to build an app",
+        body: "# Building apps\nRun me in a fresh subagent.",
+      }),
+      [skillPath("half-written")]: "",
+    };
+    const brokenMount = createTurnSkills({
+      getAllPaths: () => Object.keys(files),
+      readFile: async (path) => {
+        if (path === skillPath("half-written")) throw new Error("EIO: unreadable SKILL.md");
+        return files[path] as string;
+      },
+    });
+
+    const { events } = await drive({ harness: vendo(), models: seats(model), skills: brokenMount });
+
+    expect(model.calls).toBe(3);
+    expect(texts(events)).toBe("Done.");
+    // The full body, not the notice: this hire's own skill read fine.
+    const brief = briefOf(model.prompts[1]);
+    expect(brief).toContain("Run me in a fresh subagent");
+    expect(brief).not.toContain("could not be loaded");
+  });
+
+  it("hires with the same honest notice when the requested skill itself will not read", async () => {
+    const model = scriptedModel([
+      toolCallTurn("hire_subagent", { instructions: "build it", skill: "building-apps" }),
+      textTurn("did what I could without it"),
+      textTurn("Done."),
+    ]);
+    // The REQUESTED skill is mounted and its own file will not read. Nothing here
+    // can tell that from a name nobody mounted — `load()` throws the same plain
+    // `Error` for both — so the hire does not pretend to know which, and the one
+    // notice covers both truthfully.
+    const files: Record<string, string> = { [skillPath("building-apps")]: "" };
+    const unreadable = createTurnSkills({
+      getAllPaths: () => Object.keys(files),
+      readFile: async () => {
+        throw new Error("EIO: unreadable SKILL.md");
+      },
+    });
+
+    const { events } = await drive({ harness: vendo(), models: seats(model), skills: unreadable });
+
+    // Soft, like every other load failure: a running specialist beats a hire
+    // nobody made (#899), and the brief says plainly what did not arrive.
+    expect(model.calls).toBe(3);
+    expect(texts(events)).toBe("Done.");
+    expect(briefOf(model.prompts[1])).toContain('The "building-apps" skill could not be loaded');
   });
 
   it("reports the specialist's tokens as the SPECIALIST's, never folded into the turn's", async () => {

@@ -44,6 +44,22 @@ const SPECIALIST_SYSTEM =
 const HIRE_SUBAGENT = "hire_subagent";
 
 /**
+ * What a specialist is handed instead of the skill it was hired with, when that
+ * skill could not be loaded. Written for the SPECIALIST, not the user: like
+ * `SPECIALIST_SYSTEM`, this text is read by another agent.
+ *
+ * A degraded hire beats no hire (#899), but only if what it is told is TRUE — the
+ * specialist acts on this and the transcript keeps it. Nothing here can tell an
+ * invented name from a file that will not read (`load()` throws the same plain
+ * `Error` for both), so the notice does not pretend to: it names both
+ * possibilities, which is the whole of what is actually known.
+ */
+const unloadableSkillNotice = (name: string): string =>
+  `The "${name}" skill could not be loaded — it may not exist, or this deployment's `
+  + `skills may themselves be unreadable — so the instructions it was to give you are not `
+  + `in this brief. Do the job below with the tools you have, and say what you could not cover.`;
+
+/**
  * The per-turn knobs — the TYPE is the whole declaration.
  *
  * There was a `Harness.optionsSchema` here too, restating these knobs as zod. It
@@ -283,6 +299,26 @@ function usageOf(usage: LanguageModelUsage, model: LanguageModel): UsageTotals {
 }
 
 /**
+ * The head of a brief for a hire that named a skill: the full SKILL.md body — the
+ * job description, and the point of hiring rather than inlining — or the notice
+ * that says it is not coming.
+ *
+ * ONE call and one fallback, because a hire has one job. Whatever went wrong, the
+ * answer is the same: load nothing, say so in the brief, run the specialist. So
+ * there is nothing to classify, and nothing else on the mount is ever opened —
+ * `createTurnSkills.list()` reads every mounted SKILL.md to describe it, so
+ * consulting it would let one unreadable file anywhere take down a hire whose own
+ * skill is perfectly fine.
+ */
+async function skillHead(turn: Turn<unknown>, skill: string): Promise<string> {
+  try {
+    return `${await turn.skills.load(skill)}\n\n---\n\n`;
+  } catch {
+    return `${unloadableSkillNotice(skill)}\n\n`;
+  }
+}
+
+/**
  * A hired subagent: a fresh, blinkered loop with the same hands and the same
  * guard, whose OWN words never leave this function. The resident keeps only the
  * receipt — its private context, not a wire artifact, so the one-assistant law
@@ -300,13 +336,10 @@ async function runSubagent(
    *  is nothing for it to remember and nothing of the thread's for it to spend. */
   compaction: TurnCompaction,
 ): Promise<SubagentReport> {
-  let brief = input.instructions;
-  if (input.skill !== undefined) {
-    // The full SKILL.md body is the job description; loading it is the point of
-    // hiring rather than inlining.
-    const body = await turn.skills.load(input.skill);
-    brief = `${body}\n\n---\n\n${input.instructions}`;
-  }
+  const { skill } = input;
+  const brief = skill === undefined
+    ? input.instructions
+    : `${await skillHead(turn, skill)}${input.instructions}`;
   // THE shipped loop, for the hire as well: every rail `startTurn` owns reaches
   // the specialist too, so it cannot drift from the resident on any of them.
   const loop = await startTurn({
