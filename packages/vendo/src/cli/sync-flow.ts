@@ -383,6 +383,246 @@ async function chooseEngine(
   return { skip: false, engine: chosen };
 }
 
+/** The two CLI-level event sinks every stage writes through — printed AND
+ *  collected, so `sync --json` carries them in its one object. */
+interface FlowNotes {
+  note: (message: string) => void;
+  noteError: (message: string) => void;
+}
+
+/** Theme, ONE path: init's install creates the file (it is the editable source
+ *  of truth from then on), and every later run reconciles it — a rebrand
+ *  reaches Vendo, a hand edit is never clobbered. */
+async function resolveTheme(input: {
+  root: string;
+  vendoDir: string;
+  mode: SyncFlowOptions["mode"];
+  options: SyncFlowOptions;
+  note: (message: string) => void;
+}): Promise<{ themeSummary: ThemeSummary | null; themeMs: number | undefined; theme: SyncFlowResult["theme"] }> {
+  const { root, vendoDir, mode, options, note } = input;
+  const themePath = join(vendoDir, "theme.json");
+  if (mode === "full" && (options.force === true || !(await exists(themePath)))) {
+    const themeStarted = Date.now();
+    const themeSummary = await extractTheme(root);
+    const themeMs = Date.now() - themeStarted;
+    await writeText(themePath, `${JSON.stringify(toVendoTheme(themeSummary.slots), null, 2)}\n`);
+    // The merge base for every later re-scan: what the DETERMINISTIC pass read,
+    // before any model fill or --theme answer — those are decisions, and the
+    // reconcile must pin them (theme/provenance.ts).
+    await writeBase(vendoDir, baseFrom(themeSummary));
+    return { themeSummary, themeMs, theme: null };
+  }
+  return {
+    themeSummary: null,
+    themeMs: undefined,
+    theme: await reconcileTheme(root, vendoDir, options.themeRefresh === true, note),
+  };
+}
+
+/** The judgment pass: grade the freshly synced catalog, with a verbatim quote
+ *  behind every proposal and an independent skeptic checking each one.
+ *  Hardenings and prose apply themselves; loosenings wait for a human —
+ *  `--review` (or an attended run) asks now, otherwise they queue as
+ *  `pending`. Keyless resolves to one structural-only line. */
+async function runGradingStages(input: {
+  root: string;
+  vendoDir: string;
+  mode: SyncFlowOptions["mode"];
+  env: Record<string, string | undefined>;
+  options: SyncFlowOptions;
+  output: SyncFlowOptions["output"];
+  themeSummary: ThemeSummary | null;
+  notes: FlowNotes;
+}): Promise<{ judged: SyncFlowResult["judged"]; themeDraft: SyncFlowResult["themeDraft"] }> {
+  const { root, vendoDir, mode, env, options, output, themeSummary } = input;
+  const { note, noteError } = input.notes;
+  const judged: SyncFlowResult["judged"] = { ran: false };
+  let themeDraft: SyncFlowResult["themeDraft"] = null;
+  const selection = await chooseEngine(options, env, note);
+  if (selection.skip) return { judged, themeDraft };
+
+  // A one-time install narrates the slowest step it is about to take; an
+  // incremental sync stays as quiet as it is today.
+  if (mode === "full" && selection.engine !== undefined) {
+    output.log(`\nReading your product (${selection.engine.credential})…`);
+  }
+  try {
+    // `--yes` means every question is already answered, so it must not reach
+    // the aggregated loosening review either: an unattended run cannot
+    // answer, and the guard law forbids lowering risk without a human, so
+    // loosenings queue instead — and no `confirm` is handed down at all, so
+    // nothing downstream can acquire a way to block.
+    const attended = options.interactive && !options.yes;
+    const loosenings = attended || options.review === true ? "review" : "queue";
+    const pass = await runJudgmentPass({
+      root,
+      out: vendoDir,
+      mode,
+      loosenings,
+      env,
+      output: { log: note, error: noteError },
+      ...(options.engine === undefined ? {} : { engine: options.engine }),
+      ...(selection.engine === undefined
+        ? (options.judge?.harness === undefined ? {} : { harness: options.judge.harness })
+        : { harness: selection.engine.harness }),
+      ...(loosenings === "review" ? { confirm: options.judge?.confirm ?? options.confirm ?? askYesNo } : {}),
+      ...(options.judge?.harnesses === undefined ? {} : { harnesses: options.judge.harnesses }),
+      ...(options.judge?.resolveCredential === undefined ? {} : { resolveCredential: options.judge.resolveCredential }),
+      ...(options.judge?.onProgress === undefined ? {} : { onProgress: options.judge.onProgress }),
+    });
+    // The pass already printed the count and `vendo sync --review`; say WHY
+    // they were held, so an unattended caller doesn't read it as a refusal.
+    if (loosenings === "queue" && pass.status === "judged" && pass.queued > 0) {
+      note("  (held, not applied: this run had no one to ask — re-run `vendo init` in a terminal to review them inline)");
+    }
+    judged.ran = true;
+    const engine = selection.engine === undefined ? undefined : ENGINE_BY_HARNESS_ID[selection.engine.harness.id];
+    if (engine !== undefined) judged.engine = engine;
+  } catch (error) {
+    note(`judgment failed soft: ${error instanceof Error ? error.message : "unknown error"}`);
+    judged.ran = false;
+  }
+
+  // The prose stages — the product brief and the theme fill — read the GRADED
+  // catalog, so they run after the pass. Full mode only: `vendo sync` in
+  // predev must not redraft a brief on every dev-server start.
+  if (mode === "full" && selection.engine !== undefined) {
+    const stages = await runProseStages({
+      root,
+      output,
+      env,
+      harness: selection.engine.harness,
+      tools: await exists(join(vendoDir, "tools.json")),
+      ...(options.force === true ? { force: true } : {}),
+      ...(themeSummary === null ? {} : { theme: themeStageInput(themeSummary) }),
+    });
+    themeDraft = stages.theme ?? null;
+  }
+  return { judged, themeDraft };
+}
+
+async function probeImpact(input: {
+  report: SyncReportWithWarnings;
+  options: SyncFlowOptions;
+  output: SyncFlowOptions["output"];
+  note: (message: string) => void;
+}): Promise<ToolImpact[] | null> {
+  const { report, options, output, note } = input;
+  const wireUrl = (options.url ?? process.env.VENDO_URL ?? "http://localhost:3000/api/vendo").replace(/\/+$/, "");
+  const tools = [...new Set([
+    ...report.breaking.map((breaking) => breaking.tool),
+    ...report.tools.changed,
+  ])];
+  if (tools.length === 0) return [];
+  try {
+    const response = await (options.fetchImpl ?? fetch)(`${wireUrl}/sync/impact`, {
+      method: "POST",
+      headers: { accept: "application/json", "content-type": "application/json" },
+      body: JSON.stringify({ tools }),
+    });
+    if (!response.ok) throw new Error(`sync impact returned ${response.status}`);
+    const impact = impactResponse(await response.json());
+    printImpact(output, impact);
+    return impact;
+  } catch {
+    note(`impact unknown — dev server not reachable at ${wireUrl}`);
+    return null;
+  }
+}
+
+async function pushBaselinesToCloud(input: {
+  vendoDir: string;
+  cloudKey: string | undefined;
+  keyed: boolean;
+  options: SyncFlowOptions;
+  notes: FlowNotes;
+}): Promise<SyncFlowResult["baselines"]> {
+  const { vendoDir, cloudKey, keyed, options } = input;
+  const { note, noteError } = input.notes;
+  // No `.vendo/remixable/` at all means this host has never had a wrapper —
+  // nothing to push, and nothing Cloud could be holding to prune.
+  if (!(await exists(join(vendoDir, "remixable")))) return null;
+  if (!keyed) {
+    // Captures exist but this environment has no key. Keyless is a supported
+    // path (BYO), so this is a statement of fact rather than a warning — but
+    // it must be SAID: a build env that lacks the key the runtime has pushes
+    // nothing, and the console then shows a fork it cannot diff.
+    note("baselines stay local — no Vendo Cloud key in this environment; Cloud's Remix reviews screen needs a keyed sync to diff forks");
+    return null;
+  }
+  // Never throws: whatever landed before a failure is still accounted for.
+  const result = await pushPinBaselines({
+    vendoDir,
+    apiKey: cloudKey!,
+    ...(options.apiUrl === undefined ? {} : { baseUrl: options.apiUrl }),
+    ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
+    ...(options.baselineBudgetMs === undefined ? {} : { budgetMs: options.baselineBudgetMs }),
+  });
+  if (result.unreadable.length > 0) {
+    // A file that exists but won't parse is a half-written capture, not a
+    // deleted slot — its Cloud row was deliberately left in place.
+    noteError(`warning: unreadable baselines left untouched in Vendo Cloud: ${result.unreadable.join(", ")} — re-run sync to recapture .vendo/remixable/<slot>.json`);
+  }
+  if (result.pushed.length > 0 || result.pruned.length > 0) {
+    note(`baselines → Vendo Cloud: ${result.pushed.length} pushed, ${result.pruned.length} pruned (component source crosses the wire so the console can review forks)`);
+  }
+  if (result.error !== undefined) {
+    noteError(`warning: pin baselines did not fully reach Vendo Cloud: ${result.error} — the rest stay in .vendo/remixable/ and the next sync retries`);
+  }
+  return { pushed: result.pushed, pruned: result.pruned };
+}
+
+/** Registered host components → Vendo Cloud. The project answers once and the
+ *  answer is committed with the rest of `.vendo/`. Keyless/BYO never asks and
+ *  never uploads. */
+async function pushComponentsToCloud(input: {
+  vendoDir: string;
+  cloudKey: string | undefined;
+  keyed: boolean;
+  options: SyncFlowOptions;
+  notes: FlowNotes;
+}): Promise<SyncFlowResult["components"]> {
+  const { vendoDir, cloudKey, keyed, options } = input;
+  const { note, noteError } = input.notes;
+  if (!(keyed && await exists(join(vendoDir, "components")))) {
+    if (await exists(join(vendoDir, "components"))) {
+      // Same statement of fact #765 makes for baselines, for the same reason: a
+      // build env without the key its runtime has pushes nothing, and the console
+      // then draws grey placeholders with no host-side signal why.
+      note("components stay local — no Vendo Cloud key in this environment; the console needs a keyed sync to render your components instead of placeholders");
+    }
+    return null;
+  }
+  let allowed = options.pushComponents ?? await readPushComponents(vendoDir);
+  if (allowed === undefined) {
+    allowed = options.interactive && await (options.confirm ?? askYesNo)(
+      "Send this project's registered host components to Vendo Cloud, so the console renders them instead of grey placeholders? Their source and your app-root CSS cross the wire; package code never does. Saved to .vendo/cloud.json — asked once.",
+      true,
+    );
+    if (options.interactive) await writePushComponents(vendoDir, allowed);
+    else note("components: not pushed — this run cannot ask (pass `--push-components` in CI, or run `vendo sync` once in a terminal to decide)");
+  }
+  if (!allowed) return null;
+  const result = await pushHostComponents({
+    vendoDir,
+    apiKey: cloudKey!,
+    ...(options.apiUrl === undefined ? {} : { baseUrl: options.apiUrl }),
+    ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
+    ...(options.baselineBudgetMs === undefined ? {} : { budgetMs: options.baselineBudgetMs }),
+  });
+  if (result.unreadable.length > 0) {
+    noteError(`warning: unreadable component captures left untouched in Vendo Cloud: ${result.unreadable.join(", ")} — re-run sync to recapture .vendo/components/<Name>.json`);
+  }
+  if (result.pushed.length > 0 || result.pruned.length > 0 || result.modules.uploaded > 0) {
+    note(`components → Vendo Cloud: ${result.pushed.length} pushed, ${result.pruned.length} pruned, ${result.modules.uploaded} new module${result.modules.uploaded === 1 ? "" : "s"} (${Math.round(result.uploadedBytes / 1024)} KB)`);
+  }
+  if (result.error !== undefined) {
+    noteError(`warning: host components did not fully reach Vendo Cloud: ${result.error} — the rest stay in .vendo/components/ and the next sync retries`);
+  }
+  return { pushed: result.pushed, pruned: result.pruned, modules: result.modules };
+}
+
 export async function runSyncFlow(options: SyncFlowOptions): Promise<SyncFlowResult> {
   const { root, output, mode } = options;
   const vendoDir = join(root, ".vendo");
@@ -406,114 +646,10 @@ export async function runSyncFlow(options: SyncFlowOptions): Promise<SyncFlowRes
   });
   printSyncReport(report, output);
 
-  // Theme, ONE path: init's install creates the file (it is the editable source
-  // of truth from then on), and every later run reconciles it — a rebrand
-  // reaches Vendo, a hand edit is never clobbered.
-  const themePath = join(vendoDir, "theme.json");
-  let themeSummary: ThemeSummary | null = null;
-  let themeMs: number | undefined;
-  let theme: SyncFlowResult["theme"] = null;
-  if (mode === "full" && (options.force === true || !(await exists(themePath)))) {
-    const themeStarted = Date.now();
-    themeSummary = await extractTheme(root);
-    themeMs = Date.now() - themeStarted;
-    await writeText(themePath, `${JSON.stringify(toVendoTheme(themeSummary.slots), null, 2)}\n`);
-    // The merge base for every later re-scan: what the DETERMINISTIC pass read,
-    // before any model fill or --theme answer — those are decisions, and the
-    // reconcile must pin them (theme/provenance.ts).
-    await writeBase(vendoDir, baseFrom(themeSummary));
-  } else {
-    theme = await reconcileTheme(root, vendoDir, options.themeRefresh === true, note);
-  }
-
-  // The judgment pass: grade the freshly synced catalog, with a verbatim quote
-  // behind every proposal and an independent skeptic checking each one.
-  // Hardenings and prose apply themselves; loosenings wait for a human —
-  // `--review` (or an attended run) asks now, otherwise they queue as
-  // `pending`. Keyless resolves to one structural-only line.
-  const judged: SyncFlowResult["judged"] = { ran: false };
-  let themeDraft: SyncFlowResult["themeDraft"] = null;
-  const selection = await chooseEngine(options, env, note);
-  if (!selection.skip) {
-    // A one-time install narrates the slowest step it is about to take; an
-    // incremental sync stays as quiet as it is today.
-    if (mode === "full" && selection.engine !== undefined) {
-      output.log(`\nReading your product (${selection.engine.credential})…`);
-    }
-    try {
-      // `--yes` means every question is already answered, so it must not reach
-      // the aggregated loosening review either: an unattended run cannot
-      // answer, and the guard law forbids lowering risk without a human, so
-      // loosenings queue instead — and no `confirm` is handed down at all, so
-      // nothing downstream can acquire a way to block.
-      const attended = options.interactive && !options.yes;
-      const loosenings = attended || options.review === true ? "review" : "queue";
-      const pass = await runJudgmentPass({
-        root,
-        out: vendoDir,
-        mode,
-        loosenings,
-        env,
-        output: { log: note, error: noteError },
-        ...(options.engine === undefined ? {} : { engine: options.engine }),
-        ...(selection.engine === undefined
-          ? (options.judge?.harness === undefined ? {} : { harness: options.judge.harness })
-          : { harness: selection.engine.harness }),
-        ...(loosenings === "review" ? { confirm: options.judge?.confirm ?? options.confirm ?? askYesNo } : {}),
-        ...(options.judge?.harnesses === undefined ? {} : { harnesses: options.judge.harnesses }),
-        ...(options.judge?.resolveCredential === undefined ? {} : { resolveCredential: options.judge.resolveCredential }),
-        ...(options.judge?.onProgress === undefined ? {} : { onProgress: options.judge.onProgress }),
-      });
-      // The pass already printed the count and `vendo sync --review`; say WHY
-      // they were held, so an unattended caller doesn't read it as a refusal.
-      if (loosenings === "queue" && pass.status === "judged" && pass.queued > 0) {
-        note("  (held, not applied: this run had no one to ask — re-run `vendo init` in a terminal to review them inline)");
-      }
-      judged.ran = true;
-      const engine = selection.engine === undefined ? undefined : ENGINE_BY_HARNESS_ID[selection.engine.harness.id];
-      if (engine !== undefined) judged.engine = engine;
-    } catch (error) {
-      note(`judgment failed soft: ${error instanceof Error ? error.message : "unknown error"}`);
-      judged.ran = false;
-    }
-
-    // The prose stages — the product brief and the theme fill — read the GRADED
-    // catalog, so they run after the pass. Full mode only: `vendo sync` in
-    // predev must not redraft a brief on every dev-server start.
-    if (mode === "full" && selection.engine !== undefined) {
-      const stages = await runProseStages({
-        root,
-        output,
-        env,
-        harness: selection.engine.harness,
-        tools: await exists(join(vendoDir, "tools.json")),
-        ...(options.force === true ? { force: true } : {}),
-        ...(themeSummary === null ? {} : { theme: themeStageInput(themeSummary) }),
-      });
-      themeDraft = stages.theme ?? null;
-    }
-  }
-
-  const wireUrl = (options.url ?? process.env.VENDO_URL ?? "http://localhost:3000/api/vendo").replace(/\/+$/, "");
-  const tools = [...new Set([
-    ...report.breaking.map((breaking) => breaking.tool),
-    ...report.tools.changed,
-  ])];
-  let impact: ToolImpact[] | null = tools.length === 0 ? [] : null;
-  if (tools.length > 0) {
-    try {
-      const response = await (options.fetchImpl ?? fetch)(`${wireUrl}/sync/impact`, {
-        method: "POST",
-        headers: { accept: "application/json", "content-type": "application/json" },
-        body: JSON.stringify({ tools }),
-      });
-      if (!response.ok) throw new Error(`sync impact returned ${response.status}`);
-      impact = impactResponse(await response.json());
-      printImpact(output, impact);
-    } catch {
-      note(`impact unknown — dev server not reachable at ${wireUrl}`);
-    }
-  }
+  const notes_ = { note, noteError };
+  const { themeSummary, themeMs, theme } = await resolveTheme({ root, vendoDir, mode, options, note });
+  const { judged, themeDraft } = await runGradingStages({ root, vendoDir, mode, env, options, output, themeSummary, notes: notes_ });
+  const impact = await probeImpact({ report, options, output, note });
 
   // Pin baselines → Vendo Cloud (decision 4). Part of a NORMAL keyed run, not
   // something `--report` gates: the console's Remix reviews screen cannot show
@@ -521,79 +657,8 @@ export async function runSyncFlow(options: SyncFlowOptions): Promise<SyncFlowRes
   // no request at all, and a Cloud hiccup is a note — never a failed build.
   const cloudKey = options.apiKey ?? env.VENDO_API_KEY;
   const keyed = cloudKey !== undefined && cloudKey.trim() !== "";
-  // No `.vendo/remixable/` at all means this host has never had a wrapper —
-  // nothing to push, and nothing Cloud could be holding to prune.
-  let baselines: SyncFlowResult["baselines"] = null;
-  if (await exists(join(vendoDir, "remixable"))) {
-    if (keyed) {
-      // Never throws: whatever landed before a failure is still accounted for.
-      const result = await pushPinBaselines({
-        vendoDir,
-        apiKey: cloudKey!,
-        ...(options.apiUrl === undefined ? {} : { baseUrl: options.apiUrl }),
-        ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
-        ...(options.baselineBudgetMs === undefined ? {} : { budgetMs: options.baselineBudgetMs }),
-      });
-      baselines = { pushed: result.pushed, pruned: result.pruned };
-      if (result.unreadable.length > 0) {
-        // A file that exists but won't parse is a half-written capture, not a
-        // deleted slot — its Cloud row was deliberately left in place.
-        noteError(`warning: unreadable baselines left untouched in Vendo Cloud: ${result.unreadable.join(", ")} — re-run sync to recapture .vendo/remixable/<slot>.json`);
-      }
-      if (result.pushed.length > 0 || result.pruned.length > 0) {
-        note(`baselines → Vendo Cloud: ${result.pushed.length} pushed, ${result.pruned.length} pruned (component source crosses the wire so the console can review forks)`);
-      }
-      if (result.error !== undefined) {
-        noteError(`warning: pin baselines did not fully reach Vendo Cloud: ${result.error} — the rest stay in .vendo/remixable/ and the next sync retries`);
-      }
-    } else {
-      // Captures exist but this environment has no key. Keyless is a supported
-      // path (BYO), so this is a statement of fact rather than a warning — but
-      // it must be SAID: a build env that lacks the key the runtime has pushes
-      // nothing, and the console then shows a fork it cannot diff.
-      note("baselines stay local — no Vendo Cloud key in this environment; Cloud's Remix reviews screen needs a keyed sync to diff forks");
-    }
-  }
-
-  // Registered host components → Vendo Cloud. The project answers once and the
-  // answer is committed with the rest of `.vendo/`. Keyless/BYO never asks and
-  // never uploads.
-  let components: SyncFlowResult["components"] = null;
-  if (keyed && await exists(join(vendoDir, "components"))) {
-    let allowed = options.pushComponents ?? await readPushComponents(vendoDir);
-    if (allowed === undefined) {
-      allowed = options.interactive && await (options.confirm ?? askYesNo)(
-        "Send this project's registered host components to Vendo Cloud, so the console renders them instead of grey placeholders? Their source and your app-root CSS cross the wire; package code never does. Saved to .vendo/cloud.json — asked once.",
-        true,
-      );
-      if (options.interactive) await writePushComponents(vendoDir, allowed);
-      else note("components: not pushed — this run cannot ask (pass `--push-components` in CI, or run `vendo sync` once in a terminal to decide)");
-    }
-    if (allowed) {
-      const result = await pushHostComponents({
-        vendoDir,
-        apiKey: cloudKey!,
-        ...(options.apiUrl === undefined ? {} : { baseUrl: options.apiUrl }),
-        ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
-        ...(options.baselineBudgetMs === undefined ? {} : { budgetMs: options.baselineBudgetMs }),
-      });
-      components = { pushed: result.pushed, pruned: result.pruned, modules: result.modules };
-      if (result.unreadable.length > 0) {
-        noteError(`warning: unreadable component captures left untouched in Vendo Cloud: ${result.unreadable.join(", ")} — re-run sync to recapture .vendo/components/<Name>.json`);
-      }
-      if (result.pushed.length > 0 || result.pruned.length > 0 || result.modules.uploaded > 0) {
-        note(`components → Vendo Cloud: ${result.pushed.length} pushed, ${result.pruned.length} pruned, ${result.modules.uploaded} new module${result.modules.uploaded === 1 ? "" : "s"} (${Math.round(result.uploadedBytes / 1024)} KB)`);
-      }
-      if (result.error !== undefined) {
-        noteError(`warning: host components did not fully reach Vendo Cloud: ${result.error} — the rest stay in .vendo/components/ and the next sync retries`);
-      }
-    }
-  } else if (await exists(join(vendoDir, "components"))) {
-    // Same statement of fact #765 makes for baselines, for the same reason: a
-    // build env without the key its runtime has pushes nothing, and the console
-    // then draws grey placeholders with no host-side signal why.
-    note("components stay local — no Vendo Cloud key in this environment; the console needs a keyed sync to render your components instead of placeholders");
-  }
+  const baselines = await pushBaselinesToCloud({ vendoDir, cloudKey, keyed, options, notes: notes_ });
+  const components = await pushComponentsToCloud({ vendoDir, cloudKey, keyed, options, notes: notes_ });
 
   return {
     report,
