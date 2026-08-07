@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type TS from "typescript";
-import type { ExtractedTool, HttpMethod } from "../formats.js";
+import type { ExtractedTool, HttpMethod, SchemaSource } from "../formats.js";
 import {
   allocateToolName,
   extractedRisk,
@@ -584,14 +584,17 @@ function mergeRouteInput(
   urlPath: string,
   argsIn: "query" | "body",
   inferred: RouteInputResult | null,
-): { inputSchema: Record<string, unknown>; note?: string } {
+): { inputSchema: Record<string, unknown>; inputSchemaSource: SchemaSource; note?: string } {
   const base = routeInputSchema(urlPath);
-  if (!inferred) return { inputSchema: base };
+  if (!inferred) return { inputSchema: base, inputSchemaSource: "unknown" };
 
   const properties: Record<string, unknown> = { ...(base.properties as Record<string, unknown>) };
   const required = new Set<string>((base.required as string[] | undefined) ?? []);
   let additionalProperties = base.additionalProperties;
   let note: string | undefined;
+  // Path params alone, a scraped query string, or a dropped non-object body
+  // are all fail-closed defaults: nothing DECLARED this tool's arguments.
+  let inputSchemaSource: SchemaSource = "unknown";
 
   const body = argsIn === "body" ? inferred.bodySchema : undefined;
   if (body) {
@@ -604,6 +607,7 @@ function mergeRouteInput(
       for (const key of (body.required as string[] | undefined) ?? []) required.add(key);
       if (typeof body.additionalProperties === "boolean") additionalProperties = body.additionalProperties;
       note = inferred.note;
+      inputSchemaSource = inferred.source ?? "unknown";
     }
   }
 
@@ -618,6 +622,7 @@ function mergeRouteInput(
       ...(required.size > 0 ? { required: [...required] } : {}),
       additionalProperties,
     },
+    inputSchemaSource,
     note,
   };
 }
@@ -676,6 +681,8 @@ export async function scanRoutes(root: string): Promise<RouteScanResult> {
         name,
         description: `Route ${route.urlPath} could not be classified`,
         inputSchema: { type: "object", properties: {} },
+        inputSchemaSource: "unknown" satisfies SchemaSource,
+        outputSchemaSource: "unknown" satisfies SchemaSource,
         // D2 — nothing spoke, so nothing is graded. `disabled` keeps it out of the
         // agent's hands; `ungraded` keeps it counted in doctor's tally and asking
         // rather than running if a human ever re-enables it.
@@ -694,11 +701,16 @@ export async function scanRoutes(root: string): Promise<RouteScanResult> {
       const name = allocateToolName(preferred, method, usedNames);
       const argsIn = method === "GET" || method === "DELETE" ? "query" : "body";
       const inferred = await inferRouteInput(route, method, scanState);
-      const { inputSchema, note } = mergeRouteInput(route.urlPath, argsIn, inferred);
+      const { inputSchema, inputSchemaSource, note } = mergeRouteInput(route.urlPath, argsIn, inferred);
       tools.push({
         name,
         description: `${method} ${route.urlPath}`,
         inputSchema,
+        inputSchemaSource,
+        // Next route handlers are deliberately NOT deterministically derived
+        // in v1 (the response is built inside the handler body); the AI judge
+        // rung covers them.
+        outputSchemaSource: "unknown" satisfies SchemaSource,
         risk: extractedRisk(method),
         ...(note ? { note } : {}),
         binding: {
