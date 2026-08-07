@@ -1139,15 +1139,18 @@ describe("vendo doctor error codes + fix_refs", () => {
       doctor probes at all (that is the fix in #989), so both auth probes come
       back 404. Doctor used to read that 404 as a credential failure and told
       the reader to set VENDO_BASE_URL or to go check createVendo({ actAs }) —
-      both false, and both send them to fix something that is not broken. The
-      404 has exactly one cause worth naming: the composition is not a
-      development composition. */
+      both false, and both send them to fix something that is not broken. What
+      makes the undeclared composition IDENTIFIABLE is /doctor/base-url still
+      answering: every composition mounts it, only a development one mounts the
+      probes beside it. */
   it("blames the unmounted probe surface, not VENDO_BASE_URL or actAs, when the composition never declared development", async () => {
     const unmountedProbes = vi.fn(async (input: string | URL | Request) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       if (url.endsWith("/status")) {
         return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
       }
+      // Mounted in every environment, development or not — so the wire IS here.
+      if (url.endsWith("/doctor/base-url")) return Response.json({ ok: true });
       // What the real wire answers for a route that is not in the table.
       return Response.json({ error: { code: "not-found", message: "unknown Vendo route" } }, { status: 404 });
     });
@@ -1162,6 +1165,33 @@ describe("vendo doctor error codes + fix_refs", () => {
     expect(actAs?.status).toBe("broken");
     expect(actAs?.message).toContain("development");
     expect(actAs?.message).not.toContain("verifier middleware");
+  });
+
+  /** The mirror image, and the reason the message above may not be asserted
+      from a bare 404: a base URL with the wrong origin or path prefix — behind
+      a proxy whose route rule matched /status but not /doctor/* — serves a
+      valid /status while every doctor path 404s. Telling that reader to pass
+      development: true is the same wrong-advice bug pointed the other way. The
+      tell is /doctor/base-url 404ing too: no composition leaves that one out,
+      so the wire is not at this URL and the development gate is not the story. */
+  it("does not blame the development gate when /doctor/base-url 404s alongside the probes", async () => {
+    const wrongBase = vi.fn(async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.endsWith("/status")) {
+        return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
+      }
+      return Response.json({ error: { code: "not-found", message: "no route" } }, { status: 404 });
+    });
+    const { report } = await jsonChecks({ targetDir: await healthy(), fetchImpl: wrongBase });
+
+    for (const id of ["auth/present", "auth/act-as"]) {
+      const check = report.checks.find((entry) => entry.id === id);
+      expect(check?.status).toBe("broken");
+      expect(check?.message).toContain("/doctor/base-url");
+      // The undeclared-composition advice is the one thing it must NOT say.
+      expect(check?.message).not.toContain("development: true");
+      expect(check?.message).not.toContain("NODE_ENV=development");
+    }
   });
 
   it("stamps warnings with codes too without flipping the exit", async () => {
