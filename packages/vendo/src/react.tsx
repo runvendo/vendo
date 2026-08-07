@@ -1,8 +1,5 @@
 "use client";
 
-import { createVendoClient, hostComponentMap, VendoProvider } from "@vendoai/ui";
-import { useMemo, type ComponentProps } from "react";
-
 // Named re-exports, not `export *`: this file is a "use client" boundary, and
 // Next's flight loader builds the client-reference manifest by statically
 // enumerating a client module's named exports — it cannot do that through
@@ -107,17 +104,3 @@ export {
 // does not resolve for them (same TS2307 story as the registry's
 // ComponentRegistry import).
 export { VendoOverlay, type VendoOverlayProps } from "@vendoai/ui/chrome";
-
-type ProviderProps = ComponentProps<typeof VendoProvider>;
-
-/** 09-vendo §1 — the UI provider prewired to the default wire base. The
- *  components a generated app may render arrive through `components`, the same
- *  registry the server is given as `createVendo({ catalog })`. */
-export function VendoRoot(props: Omit<ProviderProps, "client"> & {
-  client?: ProviderProps["client"];
-  baseUrl?: string;
-}): ReturnType<typeof VendoProvider> {
-  const { client: configuredClient, baseUrl = "/api/vendo", ...providerProps } = props;
-  const defaultClient = useMemo(() => createVendoClient({ baseUrl }), [baseUrl]);
-  return <VendoProvider {...providerProps} client={configuredClient ?? defaultClient} />;
-}

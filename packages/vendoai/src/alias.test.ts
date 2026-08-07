@@ -2,10 +2,10 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { createVendo as canonicalCreateVendo } from "@vendoai/vendo/server";
-import { VendoRoot as canonicalVendoRoot } from "@vendoai/vendo/react";
+import { VendoProvider as canonicalVendoProvider } from "@vendoai/vendo/react";
 import { jwt as canonicalJwt } from "@vendoai/vendo/auth/jwt";
 import { createVendo } from "./server.js";
-import { VendoRoot } from "./react.js";
+import { VendoProvider } from "./react.js";
 import { jwt } from "./auth-presets/jwt.js";
 
 const packageJsonPath = fileURLToPath(new URL("../package.json", import.meta.url));
@@ -16,7 +16,7 @@ const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8")) as {
 describe("vendoai alias", () => {
   it("delegates server and React entry points to @vendoai/vendo", () => {
     expect(createVendo).toBe(canonicalCreateVendo);
-    expect(VendoRoot).toBe(canonicalVendoRoot);
+    expect(VendoProvider).toBe(canonicalVendoProvider);
   });
 
   it("delegates the jwt auth preset to @vendoai/vendo/auth/jwt", () => {
