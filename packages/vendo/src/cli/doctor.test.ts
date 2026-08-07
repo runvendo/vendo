@@ -1504,12 +1504,12 @@ describe("vendo doctor error codes + fix_refs", () => {
   // hands the user `pages/_app.tsx` to paste into, because there is no app
   // layout to wrap. Doctor scanning app/ layouts only fails such a host
   // forever, and names a file init never mentioned and that does not exist.
-  it("finds the <VendoRoot> mount in a Pages-Router host's pages/_app.tsx", async () => {
+  it("finds the <VendoProvider> mount in a Pages-Router host's pages/_app.tsx", async () => {
     const root = await healthy();
     await rm(join(root, "app", "layout.tsx"));
     await mkdir(join(root, "pages"), { recursive: true });
     await writeFile(join(root, "pages", "_app.tsx"),
-      "export default ({Component, pageProps}) => <VendoRoot><Component {...pageProps} /><VendoOverlay /></VendoRoot>;");
+      "export default ({Component, pageProps}) => <VendoProvider><Component {...pageProps} /><VendoOverlay /></VendoProvider>;");
     expect(await doctor({
       targetDir: root,
       fetchImpl: successfulProbeFetch(),
