@@ -190,16 +190,20 @@ export const parseAttributes = (state: CompileState, element: AttributeElement):
       seen.add(name);
       continue;
     }
-    // Reported AFTER the drop, because the outcome is what a retry acts on: a
-    // dropped last value leaves the earlier one standing, and saying the last
-    // one won sends the model back to re-write the value that never landed.
+    // Reported AFTER the drop, because the outcome is what a retry acts on:
+    // saying the last one won when it was dropped sends the model back to
+    // re-write a value that never landed, and saying an earlier one stands
+    // when every value was dropped points it at a prop that is not there.
+    // props is the record of what actually landed; seen is only occurrence.
     if (seen.has(name)) {
       issue(
         state,
         "duplicate-attribute",
-        value === DROPPED
-          ? `duplicate attribute "${name}" (the last one was dropped, so the earlier one stands)`
-          : `duplicate attribute "${name}" (the last one wins)`,
+        value !== DROPPED
+          ? `duplicate attribute "${name}" (the last one wins)`
+          : Object.prototype.hasOwnProperty.call(props, name)
+            ? `duplicate attribute "${name}" (the last one was dropped, so the earlier one stands)`
+            : `duplicate attribute "${name}" (every value was dropped, so the attribute is missing)`,
       );
     }
     seen.add(name);

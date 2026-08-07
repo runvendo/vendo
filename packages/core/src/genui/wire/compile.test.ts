@@ -177,6 +177,16 @@ describe("compileWire attributes", () => {
     expect(result.issues.map(({ message }) => message).join("\n")).not.toContain("the last one wins");
   });
 
+  it("does not claim a survivor when every duplicate value was dropped", () => {
+    // Both values are dropped, so no onClick prop exists. Telling a retry that
+    // "the earlier one stands" points it at a value that is not there.
+    const result = compile('<App><Card onClick="not a tool" onClick="also not a tool"/></App>');
+    expect(result.tree.nodes[1]?.props).toBeUndefined();
+    expect(result.issues.map(({ message }) => message)).toContain(
+      'duplicate attribute "onClick" (every value was dropped, so the attribute is missing)',
+    );
+  });
+
   it("does not claim a winner when both duplicates are compiler-owned ids", () => {
     const result = compile('<App><Card id="one" id="two"/></App>');
     expect(result.tree.nodes[1]).toStrictEqual({ id: "card-1", component: "Card", source: "prewired" });

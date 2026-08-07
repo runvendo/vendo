@@ -45,7 +45,8 @@ export const WIRE_ISSUE_CODES = [
   /** Attribute syntax error (bad char, single-quoted string, missing value, ill-formed UTF-16); attribute dropped or char skipped. */
   "malformed-attribute",
   /** Same attribute name twice in one tag; the last one wins, unless it was
-   *  dropped — then the earlier one stands and the message says so. */
+   *  dropped — then whichever value actually landed stands, and the message
+   *  says which, up to none of them. */
   "duplicate-attribute",
   /** Wire-supplied `id` on a non-declaration element ignored (ids are compiler-owned). */
   "wire-id-ignored",
