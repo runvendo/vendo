@@ -98,6 +98,14 @@ describe("joinUrl", () => {
     expect(joinUrl("https://site.com/maple", "").href).toBe("https://site.com/maple");
     expect(joinUrl("https://site.com", "").href).toBe("https://site.com/");
   });
+
+  /** A pure joiner: a basic-auth host API base (VENDO_HOST_API_URL) is
+   *  legitimate server-side, so userinfo survives the join. The
+   *  no-credentials rule is publicBase's alone. */
+  it("carries a base's credentials through untouched", () => {
+    expect(joinUrl("https://svc:pw@api.site.com/maple", "/api/x").href)
+      .toBe("https://svc:pw@api.site.com/maple/api/x");
+  });
 });
 
 describe("joinPath", () => {

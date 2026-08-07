@@ -46,16 +46,21 @@ function normalizeMount(mount: string): string {
  * ships wrong URLs to every client. `path` is `""` when there is none, and is
  * NEVER stripped when there is one.
  */
-export function publicBase(baseUrl: string | URL): { origin: string; path: string } {
+function parseBase(baseUrl: string | URL): URL {
   let url: URL;
   try {
-    url = baseUrl instanceof URL ? baseUrl : new URL(baseUrl);
+    url = new URL(baseUrl instanceof URL ? baseUrl.href : baseUrl);
   } catch {
     throw new TypeError(`baseUrl must be an absolute http(s) URL, got ${JSON.stringify(String(baseUrl))}`);
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new TypeError(`baseUrl must be an absolute http(s) URL, got ${JSON.stringify(String(baseUrl))}`);
   }
+  return url;
+}
+
+export function publicBase(baseUrl: string | URL): { origin: string; path: string } {
+  const url = parseBase(baseUrl);
   if (url.username || url.password) {
     throw new TypeError("baseUrl cannot contain credentials");
   }
@@ -67,13 +72,22 @@ export function publicBase(baseUrl: string | URL): { origin: string; path: strin
  * a `pathOrUrl` that already carries the base's prefix is left alone. An
  * absolute `pathOrUrl` (any scheme) passes through untouched, so a login page on
  * another domain rides the same rule.
+ *
+ * A base's userinfo rides through untouched: this is a pure joiner, and a
+ * basic-auth host API base (`VENDO_HOST_API_URL`) is legitimate server-side. The
+ * no-credentials rule belongs to `publicBase`, which parses PUBLIC URLs.
  */
 export function joinUrl(base: string | URL, pathOrUrl: string): URL {
   if (ABSOLUTE_URL.test(pathOrUrl)) return new URL(pathOrUrl);
-  const { origin, path } = publicBase(base);
-  if (pathOrUrl === "") return new URL(path === "" ? "/" : path, origin);
-  const suffix = pathOrUrl.startsWith("/") ? pathOrUrl : `/${pathOrUrl}`;
-  return new URL(withPathPrefix(path, suffix), origin);
+  const url = parseBase(base);
+  const path = normalizeMount(url.pathname);
+  const suffix = pathOrUrl === ""
+    ? (path === "" ? "/" : path)
+    : withPathPrefix(path, pathOrUrl.startsWith("/") ? pathOrUrl : `/${pathOrUrl}`);
+  const joined = new URL(suffix, url.origin);
+  joined.username = url.username;
+  joined.password = url.password;
+  return joined;
 }
 
 /**
