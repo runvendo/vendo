@@ -129,6 +129,18 @@ function overSql<M extends ThreadMessageLike>(db: Db): ThreadMessageStore<M> {
       // Doing it in ONE statement closes the TOCTOU window a read-then-write
       // pre-check leaves open (the same reasoning as putThreadRow's guarded
       // upsert), and it is why the answer cannot be "insert anyway".
+      //
+      // The insert leg LOCKS that row (`FOR KEY SHARE OF t`) rather than merely
+      // reading it. One statement is not enough on its own: under READ COMMITTED
+      // a plain read still sees a row a concurrent `threadStore.delete` has
+      // removed but not yet committed, so the message landed after that
+      // cascade's sweep and outlived its own thread — unreachable forever, since
+      // a message row carries no subject and no foreign key. KEY SHARE is the
+      // weakest strength that conflicts with deleting the row (the lock a
+      // foreign key would take), so thread touches still run alongside writes.
+      // The CAS leg below needs no lock: it is a plain UPDATE of an existing
+      // message row, so a swept row makes it match nothing — it can refuse, but
+      // it can never create a row the cascade has already passed.
       const messageId = requireMessageId(message);
       const expected = opts?.expectedRevision;
       const at = new Date().toISOString();
@@ -142,6 +154,7 @@ function overSql<M extends ThreadMessageLike>(db: Db): ThreadMessageStore<M> {
           `INSERT INTO vendo_thread_messages (thread_id, id, seq, message, created_at, updated_at)
            SELECT t.id, $2, $3, $4::jsonb, $5, $5 FROM vendo_threads t
              WHERE t.id = $1 AND t.subject = $6
+           FOR KEY SHARE OF t
            ON CONFLICT (thread_id, id) DO UPDATE
              SET seq = EXCLUDED.seq, message = EXCLUDED.message,
                  updated_at = EXCLUDED.updated_at,
