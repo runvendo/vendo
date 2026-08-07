@@ -1026,7 +1026,10 @@ describe("vendo init (zero-question)", () => {
     const sink = output();
     expect(await run(root, sink)).toBe(0);
     expect(await readFile(mapPath, "utf8")).toBe(mapBefore);
-    const logs = sink.logs.join("\n");
+    // The coverage line is a REPORT, not a demand: it names every tool whose
+    // schema nothing could read, disabled or not. Everything else init prints
+    // about this action would be the nag this test forbids.
+    const logs = sink.logs.filter((line) => !line.startsWith("tool schemas:")).join("\n");
     expect(logs).not.toContain(`File: ${join(routeDir, "vendo-actions.ts")}`);
     expect(logs).not.toContain("internal");
   });

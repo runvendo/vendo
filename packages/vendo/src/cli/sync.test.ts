@@ -847,6 +847,7 @@ describe("vendo sync wrapper coherence", () => {
   const REPORT = {
     tools: { added: [], removed: [], changed: [] },
     breaking: [],
+    toolSchemas: { total: 0, inputs: { known: 0, unknown: [] }, outputs: { known: 0, unknown: [] } },
     pins: { captured: [], drifted: [] },
     remixableErrors: [],
     catalog: { discovered: 0, registered: 0 },
