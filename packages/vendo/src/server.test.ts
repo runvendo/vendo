@@ -1114,7 +1114,7 @@ describe("09 §3 public wire", () => {
     }
   });
 
-  it("serves sync impact on dev servers and blocks it in production", async () => {
+  it("serves sync impact in a development composition", async () => {
     vi.stubEnv("NODE_ENV", "development");
     const { vendo } = await setup();
 
@@ -1123,13 +1123,29 @@ describe("09 §3 public wire", () => {
     expect(await response.json()).toEqual({
       impact: [{ tool: "host_get_widgets", apps: [], automations: [], grants: 0 }],
     });
+  });
 
+  it("does not mount sync impact when NODE_ENV is unset", async () => {
+    // The gate used to be a per-request `NODE_ENV === "production"` refusal, so
+    // ABSENCE of configuration read as "not production" and served the door:
+    // every enabled app's and automation's id and title, plus the live grant
+    // count, for every subject in the deployment, to an unauthenticated caller.
+    // NODE_ENV is unset on plenty of Node deploys and `process` does not exist
+    // at all on edge runtimes, where `environment()` returns undefined for the
+    // same reason. Mounting is a composition fact now, and absent means closed.
+    vi.stubEnv("NODE_ENV", undefined);
+    const { vendo } = await setup();
+
+    const response = await vendo.handler(request("POST", "/sync/impact", { tools: ["host_get_widgets"] }));
+    expect(response.status).toBe(404);
+  });
+
+  it("does not mount sync impact in production", async () => {
     vi.stubEnv("NODE_ENV", "production");
-    const blocked = await vendo.handler(request("POST", "/sync/impact", { tools: ["host_get_widgets"] }));
-    expect(blocked.status).toBe(403);
-    expect(await blocked.json()).toEqual({
-      error: { code: "blocked", message: "sync impact is only available on a dev server" },
-    });
+    const { vendo } = await setup();
+
+    const response = await vendo.handler(request("POST", "/sync/impact", { tools: ["host_get_widgets"] }));
+    expect(response.status).toBe(404);
   });
 
   it("validates sync impact tool arrays", async () => {

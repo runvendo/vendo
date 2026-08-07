@@ -295,6 +295,10 @@ export interface StackOptions {
    * root or the `.vendo` directory itself; the external-pack journey passes both
    * forms to prove the boot gates resolve it the way the registry does. */
   profileDir?: string;
+  /** `createVendo({ development })` — the composition-time opt-in that mounts
+   * the development-only seams (`/dev/*`, `POST /sync/impact`). Absent leaves
+   * them unmounted, which is what a default stack asserts. */
+  development?: boolean;
 }
 
 /** The door mounted alongside the wire when `createStack({ mcp: true })`. */
@@ -363,6 +367,7 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     ...(options.skills === undefined ? {} : { skills: options.skills }),
     ...(options.catalog === undefined ? {} : { catalog: options.catalog }),
     ...(options.profileDir === undefined ? {} : { profileDir: options.profileDir }),
+    ...(options.development === undefined ? {} : { development: options.development }),
   });
 
   // J6 — the MCP door, composed from the umbrella's OWN parts (the hookup note's

@@ -49,7 +49,10 @@ function automation(): AppDocument {
 describe("ENG-261: sync impact through the composed wire", () => {
   it("maps a tool to its saved app, automation, and active standing grant", async () => {
     await resetFixture();
-    stack = await createStack();
+    // `vendo sync` talks to a dev server, and only a development composition
+    // mounts the route it talks to. This stack opts in the way that dev server
+    // does; the sibling test below is the same wire without the opt-in.
+    stack = await createStack({ development: true });
 
     const app = await importAutomation(stack, plainApp(), ADA);
     // Imported documents are intentionally disabled at rest and the public wire
@@ -87,5 +90,23 @@ describe("ENG-261: sync impact through the composed wire", () => {
         { tool: "host_absent", apps: [], automations: [], grants: 0 },
       ],
     });
+  });
+
+  it("is not mounted at all on a stack that did not opt into development", async () => {
+    await resetFixture();
+    stack = await createStack();
+
+    const app = await importAutomation(stack, plainApp(), ADA);
+    await stack.sql("UPDATE vendo_apps SET enabled = true WHERE id = $1", [app.id]);
+
+    // No principal header, no cookie — the anonymous caller the old
+    // NODE_ENV-only gate handed the whole deployment's app inventory to.
+    const response = await stack.wireFetch("/sync/impact", {
+      method: "POST",
+      body: JSON.stringify({ tools: [TOOL] }),
+    });
+
+    expect(response.status).toBe(404);
+    expect(JSON.stringify(await response.json())).not.toContain(app.id);
   });
 });
