@@ -9,7 +9,8 @@ import { stdin, stdout } from "node:process";
 import { scrubErrorDetail, type Telemetry } from "@vendoai/telemetry";
 import { detectDepVersions, installedAiVersion } from "./dep-versions.js";
 import { AUTH_MD_URL, runCloudStep, upsertEnvLocal, warnEnvLocalNotIgnored, type CloudStepOptions } from "./cloud-init.js";
-import { runInitJudgment, type InitJudgmentOptions } from "./init-judgment.js";
+import type { InitPolishSeam } from "./init-judgment.js";
+import { runSyncFlow } from "./sync-flow.js";
 import { BRIEF_TEMPLATE } from "./extract/stages.js";
 import { ENV_KEY_VARS, resolveDevCredential, describeDevCredential, type DevCredential } from "../dev-creds/resolve.js";
 import { detectFramework, detectVendoWiring, workspaceHostCandidates, type HostFramework } from "./framework.js";
@@ -177,7 +178,7 @@ export interface InitOptions {
   /** Test seam (ENG-339): cloud-in-init step overrides. */
   cloud?: Partial<Omit<CloudStepOptions, "root" | "output" | "yes" | "credential">>;
   /** Test seam: judgment step overrides (harnesses, consent). */
-  extract?: Partial<Omit<InitJudgmentOptions, "root" | "output" | "yes" | "env">>;
+  extract?: InitPolishSeam;
   /** Test seam: the detect+confirm auth question, asked only in interactive
       runs when exactly one auth family is detected and init is creating the
       composition. Mirrors the AI-polish consent's confirm shape. */
@@ -1014,52 +1015,11 @@ export async function runInit(options: InitOptions): Promise<number> {
       BRIEF_PLACEHOLDER,
       options.force === true,
     );
-    // Theme (Task 2/4 re-derive): the exact-only allowlist pass runs and
-    // writes theme.json right away — never overwriting an existing one (it
-    // is the editable source of truth) unless --force. Whatever brand slots
-    // the allowlist left unfilled ride the consent-gated AI-polish pass
-    // below; the merge, --theme answers, the one-glance palette print, and
-    // the uncertain-slot review all happen AFTER that pass returns, further
-    // down this function — a pre-existing theme.json is never touched.
-    const themePath = join(root, ".vendo", "theme.json");
-    const themeCreatedThisRun = options.force === true || !(await exists(themePath));
-    let wiringMs = Date.now() - wiringStarted;
-    let themeMs: number | undefined;
-    let themeSummary: ThemeSummary | null = null;
-    if (themeCreatedThisRun) {
-      pretty?.spin("Capturing your theme");
-      const themeStarted = Date.now();
-      themeSummary = await extractThemeSlots(root);
-      themeMs = Date.now() - themeStarted;
-      pretty?.stopSpin();
-      await writeText(themePath, `${JSON.stringify(toVendoTheme(themeSummary.slots), null, 2)}\n`);
-      // The merge base for every later `vendo sync` theme re-scan: what the
-      // DETERMINISTIC pass read, before any model fill or --theme answer —
-      // those are decisions, and sync must pin them (theme/provenance.ts).
-      await writeBase(join(root, ".vendo"), baseFrom(themeSummary));
-    }
     await writeIfMissing(join(root, ".vendo", "data", ".gitignore"), "*\n!.gitignore\n", options.force === true);
+    const wiringMs = Date.now() - wiringStarted;
 
-    pretty?.spin("Learning your API surface");
-    const scanStarted = Date.now();
-    const report = await vendoSync({ root, out: join(root, ".vendo") });
-    wiringMs += Date.now() - scanStarted;
-    pretty?.stopSpin();
-    for (const warning of report.warnings) output.error(`warning: ${warning}`);
-
-    let toolCount = 0;
-    let routeCount = 0;
-    try {
-      const tools = JSON.parse(await readFile(join(root, ".vendo", "tools.json"), "utf8")) as {
-        tools?: Array<{ binding?: { kind?: string } }>;
-      };
-      toolCount = tools.tools?.length ?? 0;
-      routeCount = tools.tools?.filter((tool) => tool.binding?.kind === "route").length ?? 0;
-    } catch {
-      // Sync already reported any extraction warning; telemetry gets a count only.
-    }
-
-    // Summary — what changed, what was learned.
+    // Summary — what changed. What was LEARNED is the shared flow's report,
+    // printed by the flow itself a few lines down.
     if (changes.length > 0) {
       output.log(`\nWired (${changes.length} file${changes.length === 1 ? "" : "s"}):`);
       for (const change of changes) {
@@ -1072,50 +1032,54 @@ export async function runInit(options: InitOptions): Promise<number> {
     // silent — the comment in the scaffold cites the escape hatch; none or
     // ambiguous gets exactly one calm line naming the line to add.
     if (authAdvice !== null) output.log(authAdvice);
-    output.log(`Learned: ${toolCount} tools · theme captured → .vendo/ (tools.json, theme.json, brief.md)`);
 
-    // The judgment pass, then the brief and theme stages: a coding agent grades
-    // the extracted catalog with a verbatim source quote behind every proposal,
-    // an independent skeptic checks each one, and loosenings wait for a human
-    // (reviewed inline in an interactive run). Consent-gated; skipped silently
-    // when non-interactive or credential-less. Judgments land in
-    // `.vendo/judgments.json`, so `overrides.json` keeps meaning only "what a
-    // person decided" and a re-sync can never clobber either.
+    // init ENDS in the one shared flow — the same extraction, theme path,
+    // consent, judgment, prose stages, report and Cloud pushes `vendo sync`
+    // runs, in "full" mode (a fresh install has judged nothing). Install-only
+    // work stays above this line; everything below it is the flow's, and init
+    // stays fail-LOUD: the catch at the bottom still exits 1.
+    const themePath = join(root, ".vendo", "theme.json");
     const engineStarted = Date.now();
-    const polish = await runInitJudgment({
+    // `--extract` is the test seam onto the flow's judgment step, in init's own
+    // flat spelling; where it overlaps a real flag, the seam wins.
+    const extract = options.extract ?? {};
+    const ai = extract.ai ?? options.ai;
+    const engine = extract.engine ?? options.engine;
+    const flow = await runSyncFlow({
       root,
       output,
-      env: effectiveEnv,
+      mode: "full",
+      // The AI-polish step keeps its OWN interactivity posture (a real TTY that
+      // no package script drives), distinct from `interactive` above — that one
+      // is the auth confirm's seam, and spending money on a model is not a
+      // question a programmatic caller may be assumed to have answered.
+      interactive: extract.interactive
+        ?? (!invokedByPackageScript() && Boolean(stdin.isTTY) && Boolean(stdout.isTTY)),
       yes: options.yes === true,
       // --ai IS the consent (no prompt, non-interactive runs stop skipping);
       // --no-ai is the refusal. No flag = ask, every interactive run.
-      ...(options.ai === undefined ? {} : { ai: options.ai }),
-      ...(options.force === true ? { force: true } : {}),
-      ...(options.engine === undefined ? {} : { engine: options.engine }),
+      ...(ai === undefined ? {} : { ai }),
+      ...(extract.force === true || options.force === true ? { force: true } : {}),
+      ...(engine === undefined ? {} : { engine }),
       ...(pretty === null ? {} : { confirm: pretty.confirm, choose: pretty.select }),
-      ...(themeCreatedThisRun && themeSummary !== null ? {
-        theme: {
-          needed: themeSummary.needed,
-          alreadyExact: Object.fromEntries(
-            Object.entries(themeSummary.matched)
-              .filter(([, provenance]) => provenance.startsWith("--"))
-              .map(([slot]) => [slot, String(themeSummary!.slots[slot as keyof ThemeSlotValues])]),
-          ),
-          evidencePaths: themeSummary.evidencePaths,
-        },
-      } : {}),
-      ...(options.extract ?? {}),
+      ...(extract.choose === undefined ? {} : { choose: extract.choose }),
+      judge: {
+        ...(extract.harnesses === undefined ? {} : { harnesses: extract.harnesses }),
+        ...(extract.confirm === undefined ? {} : { confirm: extract.confirm }),
+        ...(extract.resolveCredential === undefined ? {} : { resolveCredential: extract.resolveCredential }),
+      },
     });
     const engineMs = Date.now() - engineStarted;
+    const { themeSummary, counts: { tools: toolCount, routes: routeCount } } = flow;
 
     // Theme finalization (Task 4): merge whatever the AI pass filled — if
-    // consent was declined or unavailable, `polish.theme` is simply absent
+    // consent was declined or unavailable, `flow.themeDraft` is simply null
     // and the exact-only summary stands — then --theme answers (a human
     // "(you)" wins over a model value), the one-glance palette print, and
     // finally the uncertain-slot review. Skipped entirely when theme.json
-    // pre-existed this run (nothing above ran either).
-    if (themeCreatedThisRun && themeSummary !== null) {
-      const summary = polish.theme === undefined ? themeSummary : applyThemeDraft(themeSummary, polish.theme);
+    // pre-existed this run (the flow reconciles that one instead).
+    if (themeSummary !== null) {
+      const summary = flow.themeDraft === null ? themeSummary : applyThemeDraft(themeSummary, flow.themeDraft);
       // --theme answers land first; the review prompt then covers only the
       // uncertain slots the flags left unanswered (non-interactive runs keep
       // the extracted/merged values for those, exactly as before).
@@ -1163,7 +1127,7 @@ export async function runInit(options: InitOptions): Promise<number> {
 
     // Judgment state, one line: a pass that ran already narrated itself (it
     // owns the judged/queued/rejected counts); otherwise say so honestly.
-    if (!polish.ran) {
+    if (!flow.judged.ran) {
       output.log("judgment: structural-only — only protocol facts are graded, so every ungraded tool asks on each call (add a model key and run `vendo sync` to grade the catalog)");
     }
 
@@ -1177,7 +1141,7 @@ export async function runInit(options: InitOptions): Promise<number> {
       typescript: await exists(join(root, "tsconfig.json")),
       router: await detectRouter(root, plan.framework),
       // The engine that actually ran the AI polish; "none" when it didn't run.
-      engine: polish.engine ?? "none",
+      engine: flow.judged.engine ?? "none",
       // route-scan today; "zod" is reserved for a future oracle-backed detect
       // (the zod collector currently enriches route-scan output invisibly).
       apiDetectMethod: routeCount > 0 ? "route-scan" : "none",
@@ -1188,7 +1152,7 @@ export async function runInit(options: InitOptions): Promise<number> {
       // every one of them in the anonymous lane.
       detectMs,
       engineMs,
-      ...(themeMs === undefined ? {} : { themeMs }),
+      ...(flow.themeMs === undefined ? {} : { themeMs: flow.themeMs }),
       wiringMs,
       ...(await cloudProjectProps(root)),
     });

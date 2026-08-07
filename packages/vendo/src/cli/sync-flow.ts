@@ -1,4 +1,6 @@
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { z } from "zod";
 import { vendoSync, type SyncReportWithWarnings } from "@vendoai/actions/sync";
 import type { ToolImpact } from "../sync-impact.js";
 import {
@@ -7,10 +9,18 @@ import {
   writePushComponents,
 } from "./cloud/host-components.js";
 import { pushPinBaselines } from "./cloud/pin-baselines.js";
+import type { ThemeStageInput } from "./extract/stages.js";
+import { runProseStages } from "./init-judgment.js";
 import { selectJudgmentEngines, type AvailableEngine } from "./judge/engine.js";
 import { runJudgmentPass, type JudgmentPassOptions } from "./judge/pass.js";
 import { plainSelect, type SelectOption } from "./pretty.js";
-import { extractTheme, toVendoTheme, type ThemeSummary } from "./theme/extract-theme.js";
+import {
+  extractTheme,
+  toVendoTheme,
+  type modelThemeSchema,
+  type ThemeSlotValues,
+  type ThemeSummary,
+} from "./theme/extract-theme.js";
 import { baseFrom, mergeExtraction, readBase, writeBase } from "./theme/provenance.js";
 import { askYesNo, exists, normalizeDotEnvValue, readOptional, writeText, type Output } from "./shared.js";
 
@@ -76,6 +86,12 @@ export interface SyncFlowResult {
   /** The exact-only slot summary, present only when this run CREATED the
    *  theme (init's model fill and uncertain-slot review read it). */
   themeSummary: ThemeSummary | null;
+  /** What the theme stage filled into the still-open slots, when it ran. */
+  themeDraft: z.infer<typeof modelThemeSchema> | null;
+  /** How long the deterministic theme scan took, when this run made one. */
+  themeMs?: number;
+  /** The catalog on disk after this run — what telemetry counts. */
+  counts: { tools: number; routes: number };
   /** [] = nothing referenced the changed tools; null = impact unknown. */
   impact: ToolImpact[] | null;
   baselines: { pushed: string[]; pruned: string[] } | null;
@@ -191,6 +207,37 @@ async function reconcileTheme(
   return { updated: merge.updated, pinned: merge.pinned.map((entry) => entry.slot) };
 }
 
+/** The still-open brand slots the theme stage is asked to fill, plus the exact
+ *  values the deterministic pass already proved — so the model fills gaps
+ *  instead of second-guessing tokens the app states outright. */
+function themeStageInput(summary: ThemeSummary): Pick<ThemeStageInput, "needed" | "alreadyExact" | "evidencePaths"> {
+  return {
+    needed: summary.needed,
+    alreadyExact: Object.fromEntries(
+      Object.entries(summary.matched)
+        .filter(([, provenance]) => provenance.startsWith("--"))
+        .map(([slot]) => [slot, String(summary.slots[slot as keyof ThemeSlotValues])]),
+    ),
+    evidencePaths: summary.evidencePaths,
+  };
+}
+
+/** The catalog as it stands on disk, for telemetry. Unreadable degrades to
+ *  zero — sync already reported any extraction warning. */
+async function countCatalog(vendoDir: string): Promise<SyncFlowResult["counts"]> {
+  try {
+    const tools = JSON.parse(await readFile(join(vendoDir, "tools.json"), "utf8")) as {
+      tools?: Array<{ binding?: { kind?: string } }>;
+    };
+    return {
+      tools: tools.tools?.length ?? 0,
+      routes: tools.tools?.filter((tool) => tool.binding?.kind === "route").length ?? 0,
+    };
+  } catch {
+    return { tools: 0, routes: 0 };
+  }
+}
+
 function impactResponse(value: unknown): ToolImpact[] {
   if (typeof value !== "object" || value === null || !Array.isArray((value as { impact?: unknown }).impact)) {
     throw new Error("invalid sync impact response");
@@ -229,9 +276,12 @@ function printImpact(output: Output, impact: ToolImpact[]): void {
  * run ASKS — every run, because no answer is ever persisted — while a run that
  * cannot ask skips, so CI builds stay deterministic and never spend.
  *
- * The engine ladder is only walked when there is a question to ask: with `--ai`
- * the pass resolves its own engine behind its credential gate, so a keyless run
- * never probes a single harness.
+ * The engine ladder is walked when there is a question to ask, and — in `full`
+ * mode only — also under `--ai`: a one-time install must SAY what the machine
+ * is missing ("AI polish: unavailable") instead of degrading in silence.
+ * `vendo sync` runs in predev on every dev-server start, so an incremental
+ * `--ai` run never probes a single harness; the pass resolves its own engine
+ * behind its credential gate instead.
  */
 async function chooseEngine(
   options: SyncFlowOptions,
@@ -247,7 +297,12 @@ async function chooseEngine(
     note("judgment: skipped — this run cannot ask (pass `--ai` to judge non-interactively, `--no-ai` to say so explicitly)");
     return { skip: true };
   }
-  if (options.ai === true) return { skip: false };
+  // An explicitly supplied harness IS the choice — the ladder has nothing left
+  // to discover, and walking it would probe the machine for engines the caller
+  // already declined to use.
+  if (options.ai === true && (options.mode !== "full" || options.judge?.harness !== undefined)) {
+    return { skip: false };
+  }
 
   const available = await selectJudgmentEngines({
     root: options.root,
@@ -274,6 +329,9 @@ async function chooseEngine(
     }
     chosen = pinned;
   }
+
+  // `--ai` IS the answer: the ladder was walked only to report what is here.
+  if (options.ai === true) return { skip: false, engine: chosen };
 
   if (options.engine === undefined && available.length > 1) {
     // Several engines: the SAME single consent question, as a pick-with-
@@ -335,9 +393,12 @@ export async function runSyncFlow(options: SyncFlowOptions): Promise<SyncFlowRes
   // reaches Vendo, a hand edit is never clobbered.
   const themePath = join(vendoDir, "theme.json");
   let themeSummary: ThemeSummary | null = null;
+  let themeMs: number | undefined;
   let theme: SyncFlowResult["theme"] = null;
   if (mode === "full" && (options.force === true || !(await exists(themePath)))) {
+    const themeStarted = Date.now();
     themeSummary = await extractTheme(root);
+    themeMs = Date.now() - themeStarted;
     await writeText(themePath, `${JSON.stringify(toVendoTheme(themeSummary.slots), null, 2)}\n`);
     // The merge base for every later re-scan: what the DETERMINISTIC pass read,
     // before any model fill or --theme answer — those are decisions, and the
@@ -353,36 +414,65 @@ export async function runSyncFlow(options: SyncFlowOptions): Promise<SyncFlowRes
   // `--review` (or an attended run) asks now, otherwise they queue as
   // `pending`. Keyless resolves to one structural-only line.
   const judged: SyncFlowResult["judged"] = { ran: false };
+  let themeDraft: SyncFlowResult["themeDraft"] = null;
   const selection = await chooseEngine(options, env, note);
   if (!selection.skip) {
+    // A one-time install narrates the slowest step it is about to take; an
+    // incremental sync stays as quiet as it is today.
+    if (mode === "full" && selection.engine !== undefined) {
+      output.log(`\nReading your product (${selection.engine.credential})…`);
+    }
     try {
       // `--yes` means every question is already answered, so it must not reach
       // the aggregated loosening review either: an unattended run cannot
       // answer, and the guard law forbids lowering risk without a human, so
-      // loosenings queue instead.
+      // loosenings queue instead — and no `confirm` is handed down at all, so
+      // nothing downstream can acquire a way to block.
       const attended = options.interactive && !options.yes;
-      await runJudgmentPass({
+      const loosenings = attended || options.review === true ? "review" : "queue";
+      const pass = await runJudgmentPass({
         root,
         out: vendoDir,
         mode,
-        loosenings: attended || options.review === true ? "review" : "queue",
+        loosenings,
         env,
         output: { log: note, error: noteError },
         ...(options.engine === undefined ? {} : { engine: options.engine }),
         ...(selection.engine === undefined
           ? (options.judge?.harness === undefined ? {} : { harness: options.judge.harness })
           : { harness: selection.engine.harness }),
-        confirm: options.judge?.confirm ?? options.confirm ?? askYesNo,
+        ...(loosenings === "review" ? { confirm: options.judge?.confirm ?? options.confirm ?? askYesNo } : {}),
         ...(options.judge?.harnesses === undefined ? {} : { harnesses: options.judge.harnesses }),
         ...(options.judge?.resolveCredential === undefined ? {} : { resolveCredential: options.judge.resolveCredential }),
         ...(options.judge?.onProgress === undefined ? {} : { onProgress: options.judge.onProgress }),
       });
+      // The pass already printed the count and `vendo sync --review`; say WHY
+      // they were held, so an unattended caller doesn't read it as a refusal.
+      if (loosenings === "queue" && pass.status === "judged" && pass.queued > 0) {
+        note("  (held, not applied: this run had no one to ask — re-run `vendo init` in a terminal to review them inline)");
+      }
       judged.ran = true;
       const engine = selection.engine === undefined ? undefined : ENGINE_BY_HARNESS_ID[selection.engine.harness.id];
       if (engine !== undefined) judged.engine = engine;
     } catch (error) {
       note(`judgment failed soft: ${error instanceof Error ? error.message : "unknown error"}`);
       judged.ran = false;
+    }
+
+    // The prose stages — the product brief and the theme fill — read the GRADED
+    // catalog, so they run after the pass. Full mode only: `vendo sync` in
+    // predev must not redraft a brief on every dev-server start.
+    if (mode === "full" && selection.engine !== undefined) {
+      const stages = await runProseStages({
+        root,
+        output,
+        env,
+        harness: selection.engine.harness,
+        tools: await exists(join(vendoDir, "tools.json")),
+        ...(options.force === true ? { force: true } : {}),
+        ...(themeSummary === null ? {} : { theme: themeStageInput(themeSummary) }),
+      });
+      themeDraft = stages.theme ?? null;
     }
   }
 
@@ -487,5 +577,17 @@ export async function runSyncFlow(options: SyncFlowOptions): Promise<SyncFlowRes
     note("components stay local — no Vendo Cloud key in this environment; the console needs a keyed sync to render your components instead of placeholders");
   }
 
-  return { report, judged, theme, themeSummary, impact, baselines, components, notes };
+  return {
+    report,
+    judged,
+    theme,
+    themeSummary,
+    themeDraft,
+    ...(themeMs === undefined ? {} : { themeMs }),
+    counts: await countCatalog(vendoDir),
+    impact,
+    baselines,
+    components,
+    notes,
+  };
 }
