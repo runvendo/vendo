@@ -79,9 +79,14 @@ const LAYERS = {
   // the standalone agent runtime (agents-v0 spec, 2026-08-04): the open-source
   // front door Vendo's embed consumes across a real seam. It assembles what the
   // umbrella assembles — harness runtime (harnesses), guard, store, host tools
-  // and MCP connectors (actions), knowledge, and the e2b sandbox adapter (apps)
-  // — but it is NOT the umbrella: no @vendoai/vendo, ever (the spec's
-  // dependency law; the embed consumes agents, never the reverse).
+  // and MCP connectors (actions), and the e2b sandbox adapter (apps) — but it
+  // is NOT the umbrella: no @vendoai/vendo, ever (the spec's dependency law;
+  // the embed consumes agents, never the reverse).
+  //
+  // knowledge LEFT with the dead `vendoKnowledge` re-export (#982): the runtime
+  // reaches knowledge engines through core's KnowledgeAdapter, so the direct
+  // edge had no importer. An allow-list entry with no edge behind it is a hole
+  // in the gate — it permits what nobody intends — so it goes when the edge does.
   //
   // mcp joined for the TOOL DOOR (Amendment 2, 2026-08-05): a harness declaring
   // `requires.toolDoor` thinks outside this process and reaches the host's
@@ -96,7 +101,6 @@ const LAYERS = {
     "@vendoai/apps",
     "@vendoai/guard",
     "@vendoai/harnesses",
-    "@vendoai/knowledge",
     "@vendoai/mcp",
     "@vendoai/store",
   ],
@@ -127,24 +131,47 @@ const LAYERS = {
  */
 const ZOD_V4_EXPORT_FLOOR = [3, 25, 0];
 
-/** A range token whose x.y.z IS its floor: "^3.25.76", "~3.25.0",
- * ">=3.25.76", or a bare "3.25.76". Anything else (upper bounds like
- * "<=3.25.0", wildcards, comparator intersections) is not modeled. */
-const FLOOR_TOKEN = /^(?:\^|~|>=)?\s*(\d+)\.(\d+)\.(\d+)$/;
+/** One comparator: an operator (or none) over a possibly-partial version —
+ * "^3.25.0", "~3.25.0", ">=3.25.0", "3.25.76", "<5". A missing minor or patch
+ * reads as 0, which is what npm means by them in a lower bound ("^3" is
+ * >=3.0.0, "3.25" is >=3.25.0). Wildcards ("3.25.x", "*"), prereleases
+ * ("3.25.0-beta.1") and the hyphen range's bare "-" deliberately do NOT match. */
+const COMPARATOR = /^(\^|~|>=|>|<=|<|=)?\s*(\d+)(?:\.(\d+))?(?:\.(\d+))?$/;
 
-/** Extracts a [major, minor, patch] floor from a semver range: a single
- * floor-shaped token, or a `||` union of them. A union is only as safe as
- * its LOWEST satisfiable alternative, so the floor is the minimum across
- * every `||` branch; any branch that is not floor-shaped (e.g. "<=3.25.0",
- * whose x.y.z is a ceiling, not a floor) returns null so the guard fails
- * closed instead of trusting a range it cannot model. */
+/** Operators whose version is a ceiling. They cannot raise a floor, so the
+ * floor scan skips them — but they are still a shape we understand, which is
+ * the whole point: ">=3.25.0 <5" has a floor, it is just not the last token. */
+const CEILING_OPERATORS = new Set(["<", "<="]);
+
+/** Extracts a [major, minor, patch] floor from a semver range.
+ *
+ * A range is a `||` union of alternatives, and each alternative is a
+ * whitespace-separated INTERSECTION of comparators — the shape every `ai`-peer
+ * package in this repo uses for its zod peer, ">=3.25.0 <5". An alternative's
+ * floor is the highest of its lower bounds (an intersection can only narrow);
+ * the range's floor is the lowest across alternatives, because a union is only
+ * as safe as the oldest zod it admits. `>x.y.z` is read as a floor of x.y.z —
+ * an epsilon low, which can only make the guard stricter, never laxer.
+ *
+ * Returns null for any shape this cannot model — a wildcard, a prerelease, a
+ * hyphen range, or an alternative that is all ceiling ("<5", which admits
+ * zod 1.0.0). The caller turns null into a loud failure: a version gate that
+ * quietly accepts what it cannot read is worse than one that errors. */
 function parseVersionFloor(range) {
   let floor = null;
   for (const alternative of String(range).split("||")) {
-    const match = FLOOR_TOKEN.exec(alternative.trim());
-    if (!match) return null;
-    const version = [Number(match[1]), Number(match[2]), Number(match[3])];
-    if (!floor || compareVersions(version, floor) < 0) floor = version;
+    let alternativeFloor = null;
+    for (const comparator of alternative.trim().split(/\s+/)) {
+      const match = COMPARATOR.exec(comparator);
+      if (!match) return null;
+      if (CEILING_OPERATORS.has(match[1])) continue;
+      const version = [Number(match[2]), Number(match[3] ?? 0), Number(match[4] ?? 0)];
+      if (!alternativeFloor || compareVersions(version, alternativeFloor) > 0) {
+        alternativeFloor = version;
+      }
+    }
+    if (!alternativeFloor) return null;
+    if (!floor || compareVersions(alternativeFloor, floor) < 0) floor = alternativeFloor;
   }
   return floor;
 }
@@ -244,7 +271,7 @@ for (const dir of dirs) {
       const floor = parseVersionFloor(zodRange);
       if (!floor) {
         errors.push(
-          `${pkg.name}: "zod" range "${zodRange}" has no modelable floor (rule 4 accepts ^x.y.z, ~x.y.z, >=x.y.z, or bare x.y.z tokens, or a || union of them) — declare a simple floor at or above ${ZOD_V4_EXPORT_FLOOR.join(".")}.`,
+          `${pkg.name}: "zod" range "${zodRange}" has no modelable floor (rule 4 reads ^ ~ >= > <= = comparators over whole x[.y[.z]] versions, space-intersected and ||-unioned, e.g. ">=3.25.0 <5"; wildcards, prereleases and hyphen ranges are not modeled) — declare a floor at or above ${ZOD_V4_EXPORT_FLOOR.join(".")}.`,
         );
       } else if (compareVersions(floor, ZOD_V4_EXPORT_FLOOR) < 0) {
         errors.push(
