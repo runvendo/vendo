@@ -1,6 +1,6 @@
 /** J7 — UI HOOKS IN A REAL BROWSER, end to end through the composed umbrella.
  *
- * The shipped `VendoRoot` + `<VendoThread />` chrome and a `useApps` probe drive
+ * The shipped `VendoProvider` + `<VendoThread />` chrome and a `useApps` probe drive
  * the REAL `createVendo` wire (proxied same-origin) against the booted fixture
  * host app. One deterministic journey, no live keys:
  *

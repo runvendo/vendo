@@ -1,7 +1,7 @@
 "use client";
 
 import { type ReactNode } from "react";
-import { VendoRoot as UmbrellaVendoRoot, type ToolMetaMap } from "@vendoai/vendo/react";
+import { VendoProvider, type ToolMetaMap } from "@vendoai/vendo/react";
 import { withBasePath } from "@/lib/base-path";
 import { mapleRegistry } from "@/vendo/registry";
 import { mapleTheme } from "@/vendo/theme";
@@ -27,7 +27,7 @@ export function VendoRoot({
   threadId?: string;
 }) {
   return (
-    <UmbrellaVendoRoot
+    <VendoProvider
       // The Vendo door under the mount point. The provider's default is the
       // bare `/api/vendo`, which 404s once the app is served at a subpath.
       baseUrl={withBasePath("/api/vendo")}
@@ -42,6 +42,6 @@ export function VendoRoot({
       {/* VENDO-MIGRATION: thread selection moved from the provider to each
           thread surface in 08-ui §3; callers retain the prop during migration. */}
       {children}
-    </UmbrellaVendoRoot>
+    </VendoProvider>
   );
 }
