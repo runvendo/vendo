@@ -20,7 +20,7 @@
  * tells a host on the old shape where the key went.
  */
 import { VendoError } from "@vendoai/core";
-import type { CreateVendoConfig } from "./server.js";
+import type { CreateVendoConfig } from "./types.js";
 
 /**
  * Every top-level key of {@link CreateVendoConfig}, in declaration order.

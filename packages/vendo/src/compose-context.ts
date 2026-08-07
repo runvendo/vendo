@@ -1,0 +1,279 @@
+/**
+ * The closure `createVendo` used to be.
+ *
+ * 09-vendo §2 composes eleven blocks around one guard choke point, and it did
+ * that inside a single 2,000-line function whose bindings all reached each
+ * other by scope. This interface is that closure, named: every phase module
+ * below takes the composition, reads the fields it needs, and returns its own
+ * slice of it. `createComposition` wires the phases in the SAME order the one
+ * function ran them, because the order is load-bearing (a boot warning, a
+ * refusal, and three registry `add`s all have to land where they landed).
+ *
+ * A handful of fields are filled LATER than the phase that declares them —
+ * the app-tool risk resolver, the learned loopback origin, the MCP posture.
+ * They were `let` bindings read from closures that only run inside a request;
+ * they are mutable fields here, read the same way, at the same time.
+ *
+ * Internal — not exported from the package root.
+ */
+import type {
+  ActionsRegistry,
+  Connector,
+  ExtractedTool,
+  OverridesFile,
+  ServerActionHandler,
+} from "@vendoai/actions";
+import type { AgentComposition } from "@vendoai/agents";
+import type { AppsRuntime, PinBaseline, SandboxAdapter } from "@vendoai/apps";
+import type { AutomationsEngine } from "@vendoai/automations";
+import type {
+  ActAs,
+  AgentRunner,
+  FilesAdapter,
+  Harness,
+  Principal,
+  RiskLabel,
+  RunContext,
+  SecretsProvider,
+  ToolCall,
+  ToolRegistry,
+  VendoTheme,
+} from "@vendoai/core";
+import type { VendoGuard, RiskResolver } from "@vendoai/guard";
+import type { CapabilityMissConfig, ToolSearchConfig } from "@vendoai/harnesses";
+import type { McpDoor, TurnCredentials } from "@vendoai/mcp";
+import type { VendoStore } from "@vendoai/store";
+import type { createByoApprovals } from "./byo-approvals.js";
+import type { CapabilitySurfaceSnapshot } from "./capability-misses.js";
+import type { MergedCapability } from "./capability/index.js";
+import type { mergeRuntimeCatalog } from "./catalog.js";
+import type { CloudConfig } from "./cloud-config.js";
+import { composeActions } from "./compose-actions.js";
+import { composeApps } from "./compose-apps.js";
+import { composeAutomations } from "./compose-automations.js";
+import { composeAdapters, composeReady } from "./compose-adapters.js";
+import { composeConfig } from "./compose-config.js";
+import { composeConnections, composeDiscovery } from "./compose-discovery.js";
+import { composeGuard } from "./compose-guard.js";
+import { composeHarness } from "./compose-harness.js";
+import { composeMcp } from "./compose-mcp.js";
+import { composePrompt } from "./compose-prompt.js";
+import type { SessionOps } from "./compose-store.js";
+import { composeSurfaces } from "./compose-surfaces.js";
+import { composeSweep } from "./compose-sweep.js";
+import { composeTools } from "./compose-tools.js";
+import type { ConfigSurfaceName } from "./config-surface.js";
+import type { ResolvedSessions } from "./compose-config.js";
+import type { ConnectionsService } from "./connections.js";
+import type { HarnessTurns } from "./harness-turn.js";
+import type { resolveModels } from "./models-config.js";
+import type { AppsOptions, CreateVendoConfig } from "./types.js";
+import type { resolveVendoUrls } from "./urls.js";
+import type { WireDeps } from "./wire/shared.js";
+import type { createConnectGate, mergedHostSemantics } from "@vendoai/actions";
+import type { createAppTokens } from "@vendoai/apps";
+import type { selectSandbox } from "@vendoai/apps/sandbox-ladder";
+import type { appAccess } from "@vendoai/store";
+import type { HostAuthPreset } from "./auth-presets/index.js";
+
+/** The actions registry config object, named because composition MUTATES two of
+ *  its fields after `createActions` has read the rest (`invokeTool` after the
+ *  guard binding, `baseUrl` when the wire learns its own origin). */
+export interface VendoActionsConfig {
+  dir: string;
+  tools?: ExtractedTool[];
+  /** The in-memory try-surface doc (profile.overrides) OR the cloud
+   *  enablement provider (#557) ride the same registry seam — both resolve
+   *  through loadHost to the same disabled/audience enablement path. */
+  overrides?: OverridesFile | (() => Promise<OverridesFile | undefined>);
+  connectors?: Connector[];
+  actAs?: ActAs;
+  serverActions?: Record<string, ServerActionHandler>;
+  baseUrl?: string;
+  baseUrlTrusted?: boolean;
+  fetch?: typeof fetch;
+  onPresentCredentialsNotForwarded: (event: {
+    ctx: RunContext;
+    tool: import("@vendoai/core").ToolDescriptor;
+    reason: "untrusted-host-origin" | "cross-origin-binding";
+  }) => Promise<void>;
+  untrustedOriginPolicy?: "warn" | "fail";
+  invokeTool?: ToolRegistry["execute"];
+}
+
+export interface VendoComposition {
+  // ── compose-config.ts ──────────────────────────────────────────────────────
+  /** Whether app generation mounts (`apps: false` folds away to no options). */
+  appsMounted: boolean;
+  /** Whether the automations engine mounts. */
+  automationsMounted: boolean;
+  /** The host's config with `apps: false` folded away. */
+  config: Omit<CreateVendoConfig, "apps"> & { apps?: AppsOptions };
+  /** What `agent()` from @vendoai/agents composed, when the host adopted one. */
+  composed: AgentComposition | undefined;
+  resolvePrincipal: (req: Request) => Promise<Principal | null>;
+  actAsSeam: ActAs | undefined;
+  oauthSeam: HostAuthPreset["oauth"];
+  /** Build contract §9.1 — the host org query the wire, the harness, the
+   *  automations engine and the MCP door all resolve the SAME answer through. */
+  membershipsSeam: HostAuthPreset["memberships"];
+  resolvePersonSeam: HostAuthPreset["resolvePerson"];
+  userFactsSeam: HostAuthPreset["facts"];
+  sessionsConfig: ResolvedSessions;
+  sessionNow: () => number;
+
+  // ── compose-adapters.ts ────────────────────────────────────────────────────
+  store: VendoStore;
+  sessionOps: SessionOps;
+  /** THE files adapter for this deployment (build contract §3.4). */
+  files: FilesAdapter;
+  sandbox: ReturnType<typeof selectSandbox>;
+  secrets: SecretsProvider;
+  inference: ReturnType<typeof resolveModels>;
+  /** cse lane 3 — the Cloud hosted-config adapter, read ONLY from lazy sites. */
+  configCloud: CloudConfig | undefined;
+  surfaceRoot: string | undefined;
+  readSurfaceFile: (name: ConfigSurfaceName) => string | undefined;
+  memoizeOnce: <T>(resolve: () => T | undefined) => () => T | undefined;
+  /** Armed by the ready() latch, never at construction (Workers forbids timers
+   *  in global scope). Filled by compose-sweep.ts. */
+  startBackgroundSweep: () => void;
+  /** Filled by compose-mcp.ts when the broker arm is selected. */
+  warmMcpBroker?: () => Promise<void>;
+  /** The boot-once latch every handler/emit touch awaits. */
+  ready: () => Promise<void>;
+  /** Filled by compose-apps.ts, read by `resolveRisk` inside a later check. */
+  resolveAppToolRisk?: AppsRuntime["agentToolRisk"];
+
+  // ── compose-guard.ts ───────────────────────────────────────────────────────
+  guard: VendoGuard;
+  /** The app-then-broker risk chain the guard AND the automations engine take. */
+  resolveRisk: RiskResolver;
+  warnPresentCredentialsNotForwarded: VendoActionsConfig["onPresentCredentialsNotForwarded"];
+
+  // ── compose-actions.ts ─────────────────────────────────────────────────────
+  configuredBaseUrl: string | undefined;
+  urls: ReturnType<typeof resolveVendoUrls>;
+  isDevelopmentEnv: boolean;
+  connectorToolkits: string[];
+  resolvedConnectors: Connector[];
+  actionsConfig: VendoActionsConfig;
+  actions: ActionsRegistry;
+  doctor: WireDeps["doctor"];
+  connectGate: ReturnType<typeof createConnectGate>;
+  /** The ONE guard-bound registry chat, apps, automations and the door ride. */
+  boundTools: ToolRegistry;
+  byoApprovals: ReturnType<typeof createByoApprovals>;
+  parkedCallTtlMs: number;
+
+  // ── compose-surfaces.ts ────────────────────────────────────────────────────
+  theme: VendoTheme | undefined;
+  themeProvider: () => VendoTheme | undefined;
+  designRules: string | (() => string | undefined);
+  writerDesignBrief: () => string;
+  pinBaselines: PinBaseline[];
+  hostSemanticsProvider: () => ReturnType<typeof mergedHostSemantics>;
+  capability: MergedCapability;
+  catalog: ReturnType<typeof mergeRuntimeCatalog>;
+
+  // ── compose-apps.ts ────────────────────────────────────────────────────────
+  appTokens: ReturnType<typeof createAppTokens>;
+  /** Build contract §9.3 — ONE `can()` the apps runtime and the engine share. */
+  access: ReturnType<typeof appAccess>;
+  apps: AppsRuntime;
+  /** The same runtime, as the LATE slot the capability thunk resolves through:
+   *  the app tools are contributed before the runtime they act through exists. */
+  appsRuntime?: AppsRuntime;
+
+  // ── compose-tools.ts ───────────────────────────────────────────────────────
+  toolOutputCap: number;
+  catalogConnectors: Connector[];
+  serviceCatalog: boolean;
+  knowledgeIndex: ReturnType<typeof import("@vendoai/knowledge").knowledgeIndexResolver> | undefined;
+  missSurface: () => Promise<CapabilitySurfaceSnapshot>;
+  missCapture: ReturnType<typeof import("./capability-misses.js").createCapabilityMissCapture>;
+
+  // ── compose-prompt.ts ──────────────────────────────────────────────────────
+  system: Parameters<typeof import("./prompt.js").assembleSystemPrompt>[2];
+  capabilityMiss: CapabilityMissConfig;
+  toolSearch: ToolSearchConfig;
+
+  // ── compose-harness.ts ─────────────────────────────────────────────────────
+  harness: Harness;
+  mcpOptions: Exclude<CreateVendoConfig["mcp"], boolean | undefined> | undefined;
+  internalDoorOnly: boolean;
+  /** Fixed by the first loopback request the wire validates (compose-wire.ts). */
+  learnedLoopbackOrigin?: string;
+  doorBase: () => string | undefined;
+  harnessTurns: HarnessTurns;
+  /** The screen agent's workspace door, filled with the harness turns composed
+   *  after the apps runtime that reads it (assembly only happens in a request). */
+  harnessTurnsForScreens?: HarnessTurns;
+  /** THE harness door — one object, served to the host and to the wire alike. */
+  harnessDoor: HarnessTurns;
+  delegateRunner: AgentRunner;
+
+  // ── compose-discovery.ts ───────────────────────────────────────────────────
+  connectedToolkitsCache: Map<string, { at: number; toolkits: string[] }>;
+  agentMenu: () => Promise<ReadonlySet<string> | undefined>;
+  onAgentMenu: <T>(entries: T[], nameOf: (entry: T) => string) => Promise<T[]>;
+  subjectHasToolkit: (toolkit: string, ctx: RunContext) => Promise<boolean | undefined>;
+  connectedToolkitsFor: (ctx: RunContext) => Promise<string[]>;
+  loadoutSeedFor: () => Promise<string[]>;
+  serviceToolOwner: (slug: string) => Promise<{ connector: Connector; risk: RiskLabel } | undefined>;
+  serviceToolRisk: (call: ToolCall) => Promise<RiskLabel | undefined>;
+  /** What the adapter rule chose, handed back on `vendo.connections` UNTOUCHED. */
+  selectedConnections: ConnectionsService;
+  /** The same adapter, wrapped so a disconnect invalidates the toolkit cache. */
+  connections: ConnectionsService;
+
+  // ── compose-sweep.ts ───────────────────────────────────────────────────────
+  runSweep: () => Promise<void>;
+  sweepEnabled: boolean;
+
+  // ── compose-automations.ts ─────────────────────────────────────────────────
+  hostedStoreComposed: boolean;
+  automations: AutomationsEngine;
+  /** Wave 9 — the same engine, as the LATE arming seam the apps runtime holds:
+   *  automations is constructed after apps, and every call happens later. */
+  automationsForArming?: AutomationsEngine;
+
+  // ── compose-mcp.ts ─────────────────────────────────────────────────────────
+  turnCredentials: TurnCredentials;
+  door: McpDoor | undefined;
+  /** The /status posture, re-read through a deps getter so a broker
+   *  ensure-failure degrade reports what actually composed. */
+  mcpPosture: "local" | "broker" | false;
+  mcpSelection: "off" | "explicit" | "broker" | "local";
+  doorWellKnown: ReadonlySet<string>;
+}
+
+/**
+ * 09-vendo §2 — every live block, composed around the guard choke point, in the
+ * order the one function composed them.
+ *
+ * The phases share ONE object rather than a chain of arguments because the
+ * composition is genuinely cyclic: the guard's risk resolver reaches the apps
+ * runtime, the connect gate reaches the connections adapter, the harness
+ * reaches the MCP door's credential registry — and every one of those reads
+ * happens inside a request, long after this function has returned.
+ */
+export const createComposition = (input: CreateVendoConfig): VendoComposition => {
+  const composition = {} as VendoComposition;
+  Object.assign(composition, composeConfig(input));
+  Object.assign(composition, composeAdapters(composition));
+  Object.assign(composition, composeReady(composition));
+  Object.assign(composition, composeGuard(composition));
+  Object.assign(composition, composeActions(composition));
+  Object.assign(composition, composeSurfaces(composition));
+  Object.assign(composition, composeApps(composition));
+  Object.assign(composition, composeTools(composition));
+  Object.assign(composition, composePrompt(composition));
+  Object.assign(composition, composeHarness(composition));
+  Object.assign(composition, composeDiscovery(composition));
+  Object.assign(composition, composeSweep(composition));
+  Object.assign(composition, composeAutomations(composition));
+  Object.assign(composition, composeConnections(composition));
+  Object.assign(composition, composeMcp(composition));
+  return composition;
+};
