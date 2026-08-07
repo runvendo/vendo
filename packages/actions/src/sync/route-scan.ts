@@ -103,10 +103,22 @@ function isVendoRoute(urlPath: string): boolean {
  * to end. No override can fix it (nothing can build the envelope), so the
  * route yields no tool at all and says so in a warning.
  *
- * Matched on the route module's own source: every Next GraphQL handler
- * constructs its server or imports its framework adapter there. A route that
- * merely CALLS an upstream GraphQL API (`graphql-request`, `@apollo/client`)
- * is an ordinary REST route and is deliberately not matched.
+ * Matched against every module `verbsFromSource` reads for the route — the
+ * route file plus each local re-export it follows — because that walk is what
+ * decides the emitted verbs. Checking only the route file let the common
+ * `export { GET, POST } from "./graphql-server"` layout keep its enabled tool:
+ * the verbs came from the resolved module, the marker never saw it. One walk
+ * feeds both, so the two cannot drift apart again.
+ *
+ * A route that merely CALLS an upstream GraphQL API (`graphql-request`,
+ * `@apollo/client`) is an ordinary REST route and is deliberately not matched.
+ *
+ * Limit: a route that IMPORTS a GraphQL server and wraps it in its own
+ * exported handler (`import { yoga } from "./yoga"; export const POST = (r) =>
+ * yoga(r)`) is not a re-export, so this walk never reaches the server module
+ * and the route still scans generically. Plain imports are not resolved
+ * anywhere in this scanner, and adding a second traversal to reach them is the
+ * drift this design just removed.
  */
 const GRAPHQL_SERVER_MARKER =
   /graphql-yoga|@apollo\/server|apollo-server(?:-micro|-express)?|graphql-http|express-graphql|@as-integrations\/next|createYoga\s*\(|new\s+ApolloServer\s*\(/;
@@ -469,10 +481,13 @@ async function verbsFromSource(
   visited: Set<string>,
   depth: number,
   assumeDefaultExport: boolean,
+  /** Every module source this walk reads, for the GraphQL marker check. */
+  walked: string[],
 ): Promise<Set<HttpMethod>> {
   const key = `${file}\t${assumeDefaultExport ? "default" : "named"}`;
   if (visited.has(key)) return new Set();
   visited.add(key);
+  walked.push(source);
   const module = parseModuleSource(source, file);
   if (!module) return new Set();
   // A route file can mix evidence kinds (e.g. an inline GET plus a re-exported
@@ -494,6 +509,7 @@ async function verbsFromSource(
         visited,
         depth + 1,
         target.assumeDefaultExport,
+        walked,
       );
       for (const method of nested) methods.add(method);
     }
@@ -643,13 +659,14 @@ export async function scanRoutes(root: string): Promise<RouteScanResult> {
   const usedNames = new Set<string>();
   const scanState = createRouteScanState(root, routes.map((route) => route.file));
   for (const route of routes) {
-    if (GRAPHQL_SERVER_MARKER.test(route.source)) {
+    // The route module is the tool's known source file (v3 srcHash input).
+    const srcPath = path.relative(root, route.file).split(path.sep).join("/");
+    const walked: string[] = [];
+    const methods = await verbsFromSource(route.file, route.source, route, root, new Set(), 0, false, walked);
+    if (walked.some((walkedSource) => GRAPHQL_SERVER_MARKER.test(walkedSource))) {
       warnings.push(`route ${route.urlPath} is a GraphQL endpoint; GraphQL is not an extracted stack, so no tool was emitted`);
       continue;
     }
-    // The route module is the tool's known source file (v3 srcHash input).
-    const srcPath = path.relative(root, route.file).split(path.sep).join("/");
-    const methods = await verbsFromSource(route.file, route.source, route, root, new Set(), 0, false);
     if (methods.size === 0) {
       const reason = route.kind === "pages"
         ? "pages handler has no supported HTTP method evidence"

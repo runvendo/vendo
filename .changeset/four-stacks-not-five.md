@@ -22,6 +22,10 @@ GraphQL handler exports `POST` like any other route, so generic scanning would
 mint an enabled tool that posts the model's arguments as the JSON body — which
 every GraphQL server rejects, since it wants a `{ query, variables }` envelope.
 The endpoint now yields no tool and a warning naming it. Cut means gone, not
-gone-and-quietly-worse.
+gone-and-quietly-worse. Detection reads every module the verb scan already
+resolves — the route file plus the local re-exports it follows — so a handler
+kept in a separate file is skipped too. A route that merely *imports* a GraphQL
+server and wraps it in its own exported handler is still scanned generically;
+disable that tool through `overrides.json`.
 
 Behaviour for the four surviving stacks is unchanged.

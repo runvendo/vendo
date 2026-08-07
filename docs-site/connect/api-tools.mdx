@@ -213,6 +213,12 @@ extract GraphQL, and a GraphQL handler answers one POST with a
 `{ query, variables }` envelope that route dispatch cannot construct — so the
 route yields no tool rather than one that fails on every call.
 
+Detection reads the route file and any local module it re-exports its handler
+from, so `export { GET, POST } from "./graphql-server"` is skipped too. A route
+that instead *imports* a GraphQL server and wraps it in its own exported
+handler is not recognized; set `"disabled": true` on that tool in
+`overrides.json`.
+
 ## Durable overrides
 
 ```json
