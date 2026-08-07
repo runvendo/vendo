@@ -478,6 +478,42 @@ describe("ConnectCard and ConnectedAccountsPanel", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  // An account is gone the moment the WIRE says so — by the disconnect
+  // succeeding, or by it answering not-found. Neither may wait on the list read
+  // that follows to prove it: when that read fails the hook keeps its last
+  // page, so the row the person just disconnected sits there looking connected
+  // with nothing said. "The button did nothing" is the same lie as before.
+  it.each([
+    ["succeeded", undefined],
+    ["answered not-found", "not-found"],
+  ] as const)("a disconnect that %s drops the row even when the list read after it fails", async (situation, deleteCode) => {
+    render(<VendoProvider client={client}><ConnectedAccountsPanel undoMs={30} /></VendoProvider>);
+    await screen.findByText("Gmail");
+    if (deleteCode !== undefined) {
+      wire.state.failures.push({
+        method: "DELETE",
+        path: "/connections/ca_1",
+        code: deleteCode,
+        message: "connection not found: ca_1",
+        status: 404,
+      });
+    }
+    // The list read the disconnect chases with is the one that fails.
+    wire.state.failures.push({
+      method: "GET",
+      path: "/connections",
+      code: "unavailable",
+      message: `the list read failed after the disconnect ${situation}`,
+      status: 503,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect Gmail" }));
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
+
+    expect(await screen.findByText(/No connected accounts yet/)).toBeTruthy();
+    expect(screen.queryByText(/via Composio · connected/)).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   // Reserved for the faults that DO clear on their own. `validation` rides here
   // deliberately: the client stamps it on any envelope that carries no code of
   // its own, so it is the unknown bucket, not a statement about the deployment.
