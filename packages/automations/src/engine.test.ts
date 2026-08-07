@@ -157,9 +157,6 @@ const memoryStoreWithoutAtomic = (): StoreAdapter => {
   };
 };
 
-const storedRun = async (store: StoreAdapter, id: string): Promise<Record<string, unknown>> =>
-  (await store.records("vendo_runs").get(id))?.data as Record<string, unknown>;
-
 const sign = async (secret: string, deliveryId: string, timestamp: string, body: string): Promise<string> => {
   let normalized = secret.replace(/-/g, "+").replace(/_/g, "/");
   normalized += "=".repeat((4 - normalized.length % 4) % 4);
@@ -271,13 +268,15 @@ describe("automations enable and grant capture", () => {
     expect(await store.records("automations:schedule").get(`${schedule.id}:main`)).toEqual(cursor);
   });
 
-  it("mints next-firing authority for an approved agentic call with no parked continuation", async () => {
+  it("mints next-firing authority when an agentic run's approval is granted", async () => {
     const doc = app("app_agent_next", {
       on: { kind: "host-event", event: "go" },
       run: { kind: "agentic", prompt: "write later" },
     });
     await seedApp(store, doc, "user_a", true);
-    const engine = createAutomations({
+    // Constructing the engine is the whole subject here: that is what registers
+    // the guard's onApprovalDecision callback the decision below travels through.
+    createAutomations({
       apps: appsDouble(), tools: registry([writeTool]), guard, store, now: () => NOW,
     });
     const request = {
@@ -311,7 +310,6 @@ describe("automations enable and grant capture", () => {
     expect((await store.records("vendo_approvals").get(request.id))?.data).toMatchObject({
       consumedAt: NOW.toISOString(),
     });
-    void engine;
   });
 });
 

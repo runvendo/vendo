@@ -92,7 +92,7 @@ describe("pre-rekey schedule cursors", () => {
   }
 
   it("fires an overdue automation whose cursor predates the (app, trigger) rekey", async () => {
-    const doc = await seedPreRekey("app_cursor_due");
+    await seedPreRekey("app_cursor_due");
 
     const fired = await engine().tick(NOW);
 

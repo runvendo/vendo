@@ -28,6 +28,7 @@ import {
   type RecordStore,
   type StoreAdapter,
   type ToolRegistry,
+  type Trigger,
   type VendoRecord,
 } from "@vendoai/core";
 import type { AppsRuntime } from "@vendoai/apps";
@@ -116,7 +117,7 @@ const tools: ToolRegistry = {
 
 const appsDouble = (): AppsRuntime => ({ call: async () => ({ status: "ok", output: {} }) }) as AppsRuntime;
 
-const preTrainApp = (id: string, on: AppDocument["triggers"] extends undefined ? never : NonNullable<AppDocument["triggers"]>[number]["on"]): AppDocument => ({
+const preTrainApp = (id: string, on: Trigger["on"]): AppDocument => ({
   format: VENDO_APP_FORMAT,
   id,
   name: id,
