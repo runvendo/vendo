@@ -183,6 +183,9 @@ importers:
       '@types/react-dom':
         specifier: ^19.2.0
         version: 19.2.3(@types/react@19.2.17)
+      '@vendoai-fixtures/test-kit':
+        specifier: workspace:*
+        version: link:../../../fixtures/test-kit
       '@vendoai/store':
         specifier: workspace:*
         version: link:../../../packages/store
@@ -462,6 +465,9 @@ importers:
       '@types/react-dom':
         specifier: ^19.2.0
         version: 19.2.3(@types/react@19.2.17)
+      '@vendoai-fixtures/test-kit':
+        specifier: workspace:*
+        version: link:../../fixtures/test-kit
       '@vendoai/store':
         specifier: workspace:*
         version: link:../../packages/store
@@ -664,6 +670,9 @@ importers:
       '@types/react-dom':
         specifier: ^19.2.0
         version: 19.2.3(@types/react@19.2.17)
+      '@vendoai-fixtures/test-kit':
+        specifier: workspace:*
+        version: link:../test-kit
       ai:
         specifier: ^6.0.0
         version: 6.0.28(zod@3.25.76)

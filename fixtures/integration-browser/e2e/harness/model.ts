@@ -5,46 +5,24 @@
  * engine (doGenerate) off a single FIFO queue — but the queue is MUTABLE so the
  * test (running in a separate process from the model) can enqueue turns over the
  * wire server's `/__test/script` control endpoint before it drives the page.
+ * That mutability is why the model itself is built here rather than taken from
+ * `@vendoai-fixtures/test-kit/stream-turns`, whose queue is fixed at construction.
  *
  * The control endpoint speaks a small high-level TurnSpec dialect (kind:"text" |
  * "tool" | "generate") rather than raw stream parts, so tests stay legible and
  * the JSON on the wire stays tiny; this module expands each spec into the exact
- * LanguageModelV3 stream parts the composed system consumes.
+ * LanguageModelV3 stream parts the composed system consumes, using the shared
+ * turn builders.
  */
+import {
+  textTurn,
+  toolCallTurn,
+  ZERO_USAGE,
+  type LanguageModelV3Content,
+  type LanguageModelV3GenerateResult,
+  type LanguageModelV3StreamPart,
+} from "@vendoai-fixtures/test-kit/stream-turns";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
-
-type LanguageModelV3StreamPart = Awaited<
-  ReturnType<MockLanguageModelV3["doStream"]>
->["stream"] extends ReadableStream<infer Part> ? Part : never;
-type LanguageModelV3GenerateResult = Awaited<ReturnType<MockLanguageModelV3["doGenerate"]>>;
-type LanguageModelV3Content = LanguageModelV3GenerateResult["content"][number];
-
-const ZERO_USAGE = {
-  inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
-  outputTokens: { total: 0, text: 0, reasoning: 0 },
-} as const;
-
-/** A plain assistant text turn (agent doStream). */
-function textTurn(text: string, id = "text_1"): LanguageModelV3StreamPart[] {
-  return [
-    { type: "text-start", id },
-    { type: "text-delta", id, delta: text },
-    { type: "text-end", id },
-    { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
-  ];
-}
-
-/** An agent turn that calls one tool (agent doStream). */
-function toolCallTurn(
-  toolName: string,
-  input: unknown,
-  toolCallId = "call_1",
-): LanguageModelV3StreamPart[] {
-  return [
-    { type: "tool-call", toolCallId, toolName, input: JSON.stringify(input) },
-    { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "tool-calls", raw: undefined } },
-  ];
-}
 
 /**
  * The high-level control dialect the `/__test/script` endpoint accepts.

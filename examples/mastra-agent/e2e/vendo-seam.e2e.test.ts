@@ -21,6 +21,11 @@ import { noopObserve } from "@mastra/core/tools";
 import { parseVendoToolEnvelope, vendoAppRefSchema, vendoApprovalRefSchema } from "@vendoai/core";
 import { createStore } from "@vendoai/store";
 import { VENDO_PRINCIPAL_KEY, VENDO_SESSION_KEY, vendoMastraTools } from "@vendoai/vendo/mastra";
+import {
+  textTurn,
+  ZERO_USAGE,
+  type LanguageModelV3StreamPart as StreamPart,
+} from "@vendoai-fixtures/test-kit/stream-turns";
 import type { LanguageModel } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { afterAll, describe, expect, it } from "vitest";
@@ -28,22 +33,10 @@ import { DEMO_PRINCIPAL, composeVendo } from "../src/lib/vendo";
 import { sentTripReports } from "../src/lib/vendo-actions";
 import { weatherTool } from "../src/mastra/tools/weather-tool";
 
-const ZERO_USAGE = {
-  inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
-  outputTokens: { total: 0, text: 0, reasoning: 0 },
-};
-
-type StreamPart = Record<string, unknown>;
-
-const textTurn = (text: string): StreamPart[] => [
-  { type: "text-start", id: "t1" },
-  { type: "text-delta", id: "t1", delta: text },
-  { type: "text-end", id: "t1" },
-  { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
-];
-
 // Mastra's loop accumulates tool calls from the input-streaming bracket, so a
-// scripted tool call must stream tool-input-start/delta/end before tool-call.
+// scripted tool call must stream tool-input-start/delta/end before tool-call —
+// which is why this one is NOT the shared `toolCallTurn` from
+// `@vendoai-fixtures/test-kit/stream-turns`. The plain text turn is.
 const toolCallTurn = (toolName: string, input: unknown): StreamPart[] => [
   { type: "tool-input-start", id: "call_1", toolName },
   { type: "tool-input-delta", id: "call_1", delta: JSON.stringify(input) },

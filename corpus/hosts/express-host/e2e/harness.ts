@@ -4,66 +4,20 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createStore, type VendoStore } from "@vendoai/store";
-import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
+import {
+  scriptedModel,
+  textTurn,
+  toolCallTurn,
+  ZERO_USAGE,
+  type LanguageModelV3StreamPart as StreamPart,
+} from "@vendoai-fixtures/test-kit/stream-turns";
 import type { LanguageModel, UIMessage } from "ai";
 import { createRelayServer } from "../src/server/index.js";
 
-type ModelPrompt = Parameters<MockLanguageModelV3["doStream"]>[0]["prompt"];
-export type StreamPart = Awaited<ReturnType<MockLanguageModelV3["doStream"]>>["stream"] extends ReadableStream<infer Part> ? Part : never;
-type GenerateResult = Awaited<ReturnType<MockLanguageModelV3["doGenerate"]>>;
-type GenerateContent = GenerateResult["content"][number];
-
-export const ZERO_USAGE = {
-  inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
-  outputTokens: { total: 0, text: 0, reasoning: 0 },
-} as const;
-
-export function textTurn(text: string, id = "text_1"): StreamPart[] {
-  return [
-    { type: "text-start", id },
-    { type: "text-delta", id, delta: text },
-    { type: "text-end", id },
-    { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
-  ];
-}
-
-export function toolCallTurn(toolName: string, input: unknown, toolCallId = "call_1"): StreamPart[] {
-  return [
-    { type: "tool-call", toolCallId, toolName, input: JSON.stringify(input) },
-    { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "tool-calls", raw: undefined } },
-  ];
-}
-
-export function scriptedModel(turns: StreamPart[][]): LanguageModel {
-  const remaining = turns.map((turn) => [...turn]);
-  const shift = (_prompt: ModelPrompt): StreamPart[] => {
-    const chunks = remaining.shift();
-    if (chunks === undefined) throw new Error("scripted model exhausted");
-    return chunks;
-  };
-  return new MockLanguageModelV3({
-    doStream: async (request) => ({ stream: simulateReadableStream({ chunks: shift(request.prompt) }) }),
-    doGenerate: async (request): Promise<GenerateResult> => {
-      const chunks = shift(request.prompt);
-      const finish = chunks.find((part) => part.type === "finish");
-      const content: GenerateContent[] = [];
-      const generatedText = chunks
-        .filter((part): part is Extract<StreamPart, { type: "text-delta" }> => part.type === "text-delta")
-        .map((part) => part.delta)
-        .join("");
-      if (generatedText.length > 0) content.push({ type: "text", text: generatedText });
-      for (const part of chunks) {
-        if (part.type === "tool-call") content.push(structuredClone(part));
-      }
-      return {
-        content,
-        finishReason: finish?.finishReason ?? { unified: "stop", raw: undefined },
-        usage: finish?.usage ?? ZERO_USAGE,
-        warnings: [],
-      };
-    },
-  });
-}
+// The scripted model and its stream parts come from the shared kit
+// (`@vendoai-fixtures/test-kit/stream-turns`); re-exported here so this harness
+// stays the single import every e2e in this host reaches for.
+export { scriptedModel, textTurn, toolCallTurn, ZERO_USAGE, type StreamPart };
 
 export interface TestHost {
   baseUrl: string;

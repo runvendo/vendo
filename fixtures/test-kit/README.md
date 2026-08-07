@@ -31,6 +31,20 @@ Concretely, these were considered and left where they are:
   a seam that can be run for real, promoted to a package.
 - **`tempStore`** — forty copies, every one of them inside `packages/vendo`.
   That is one package's own helper written forty times, not a shared one.
+- **`packages/harnesses`' turn helpers** — same NAMES, different meaning. This
+  kit's `textTurn(text, id)` names the stream part; harnesses'
+  `textTurn(text, usage)` sets the token usage on the `finish` part and
+  hardcodes the part id. Seven of its 73 call sites pass the second argument and
+  every one passes a usage object, all of them feeding the metering asserts
+  (`vendo/ledger.test.ts`, `vendo/subagent-loop.test.ts`, `vendo/vendo.test.ts`).
+  Reading that argument as an id would zero every usage figure and leave those
+  suites asserting against `ZERO_USAGE` — green, and measuring nothing. Its
+  `scriptedModel` is a different double too: `doStream` only, recording
+  `toolNamesPerCall`/`systemPrompts`/`calls` rather than driving a generation
+  engine. Only `ZERO_USAGE` and `toolCallTurn` are truly identical, and taking
+  just those two would leave one file where `toolCallTurn` is this kit's and the
+  same-named `textTurn` deliberately is not — the very collision that makes the
+  74 call sites dangerous. Left whole, on purpose.
 
 ## No barrel
 
