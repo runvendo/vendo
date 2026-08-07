@@ -21,7 +21,7 @@ import type {
 } from "./index.js";
 import type {
   ComposedAgent, ConnectionsService, CreateVendoConfig, GuardRules, HarnessTurns,
-  HostAuthPreset, ModelsConfig, ServerActionHandler, TourEntry,
+  HostAuthPreset, ModelsConfig, ServerActionHandler,
 } from "./server.js";
 
 /** Force every imported name to be used, so an unresolved one is an error. */
@@ -32,5 +32,5 @@ export type ServerApiPageImports = [
   SecretsProvider, Skill, ToolDefinition, ToolRegistry, VendoGuard, VendoStore,
   VendoTheme,
   ComposedAgent, ConnectionsService, CreateVendoConfig, GuardRules, HarnessTurns,
-  HostAuthPreset, ModelsConfig, ServerActionHandler, TourEntry,
+  HostAuthPreset, ModelsConfig, ServerActionHandler,
 ];

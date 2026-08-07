@@ -39,7 +39,7 @@ import type {
 } from "../index.js";
 import type {
   AppsConfig, ComposedAgent, ConnectionsService, GuardRules, HarnessTurns,
-  HostAuthPreset, ModelsConfig, ServerActionHandler, TourEntry,
+  HostAuthPreset, ModelsConfig, ServerActionHandler,
 } from "../server.js";
 import type { LanguageModel } from "ai";
 
@@ -101,7 +101,6 @@ export interface CreateVendoConfig {
     designRules?: string;
   };
   automations?: false;        // false unmounts automations: no /automations, /runs or /webhooks routes
-  tours?: readonly TourEntry[];
 }
 
 export interface Vendo {

@@ -42,7 +42,6 @@ import type { HostAuthPreset } from "./auth-presets/index.js";
 import type { ConnectionsService } from "./connections.js";
 import type { HarnessTurns } from "./harness-turn.js";
 import type { ModelsConfig, ResolveModelsInput } from "./models-config.js";
-import type { TourEntry } from "./tours/index.js";
 
 export interface Vendo {
   handler: (req: Request) => Promise<Response>;
@@ -401,15 +400,6 @@ export interface CreateVendoConfig {
       Only `false` today, because the subsystem has no other host-facing knob;
       it widens to an options object the day it grows one. */
   automations?: false;
-  /** Tour mode — deterministic scripted responses in front of the real agent,
-      for demos and onboarding tours. An ordered list of `{ prompt, respond }`
-      entries: an entry fires only on a close variant of its own frozen prompt
-      (normalized similarity, not keywords) and only ONCE per thread, replaying
-      its recorded prose and app documents at a live turn's cadence. Every
-      other ask — including a follow-up about what a tour just put on screen —
-      falls through to the live agent untouched. Plain config: no key, no Cloud
-      dependency, identical behavior with and without VENDO_API_KEY. */
-  tours?: readonly TourEntry[];
 }
 
 /** The options `apps:` carries when app generation IS mounted — derived rather

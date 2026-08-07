@@ -100,7 +100,6 @@
           "capabilities/mcp",
           "capabilities/mcp-registry",
           "capabilities/compound-tools",
-          "capabilities/tours",
           "concepts/generated-ui",
           "concepts/in-client-venue"
         ]

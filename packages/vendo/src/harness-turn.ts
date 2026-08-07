@@ -42,7 +42,6 @@ import {
   upsertMessage,
   validateMessage,
   validateUpsert,
-  wireErrorMessage,
   type CapabilityMissConfig,
   type ToolDoorPort,
   type DiscoveryRails,
@@ -50,18 +49,7 @@ import {
   type ToolBridgeOptions,
   type ToolSearchConfig,
 } from "@vendoai/harnesses";
-import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
-import type { LanguageModel, UIMessage, UIMessageStreamWriter } from "ai";
-
-/** One scripted turn's body: everything it writes goes onto the same stream a
- *  live turn writes to, and is persisted by the same `onFinish`. Tour mode's
- *  play shape — it lives here because this door is the one that serves the
- *  turns a tour scripts. */
-export type ScriptedTurn = (input: {
-  writer: UIMessageStreamWriter<UIMessage>;
-  signal?: AbortSignal;
-}) => Promise<void>;
-
+import type { LanguageModel, UIMessage } from "ai";
 
 export interface HarnessTurnsConfig {
   /** The resolved harness. Composition (server.ts) resolves the default —
@@ -138,18 +126,6 @@ export interface HarnessTurnsConfig {
   /** The host's own MCP door, for a harness whose thinker runs on a MACHINE and
    *  therefore reaches `turn.tools` over the wire rather than in process. */
   toolDoor?: ToolDoorPort;
-  /** Tour mode's scripted-turn seam — the SAME hook `createAgent` takes, wired
-   *  here too because post-flip this door serves the turns. Consulted once per
-   *  turn, after the thread is resolved and this message is upserted into it,
-   *  before any harness work: a play REPLACES the turn, undefined leaves it
-   *  untouched. A deployment on the `agent.stream` fallback (a store with no
-   *  SQL handle) is served by the agent's own copy of this seam, so tour mode
-   *  behaves identically whichever door runs. */
-  scripted?: (input: {
-    message: UIMessage;
-    messages: readonly UIMessage[];
-    ctx: RunContext;
-  }) => Promise<ScriptedTurn | undefined>;
 }
 
 export interface HarnessTurns {
@@ -414,33 +390,6 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       // This one write also lands the user's message and refreshes the listing
       // title, exactly as a `createAgent` turn's persist does.
       await threads.persist(thread, [input.message]);
-
-      // Tour mode. Ahead of every other decision because a scripted turn makes
-      // none of them: no workspace is mounted, no toolset is built, no system
-      // prompt is assembled, no harness runs. Same position, same contract, and
-      // the same persistence as `createAgent`'s copy — a turn nobody scripted
-      // falls through with nothing written and no trace it was offered here.
-      const play = await config.scripted?.({
-        message: input.message,
-        messages: thread.messages,
-        ctx: input.ctx,
-      });
-      if (play !== undefined) {
-        const scripted = createUIMessageStream<UIMessage>({
-          originalMessages: thread.messages,
-          execute: async ({ writer }) => {
-            if (input.signal?.aborted) return;
-            await play({ writer, ...(input.signal === undefined ? {} : { signal: input.signal }) });
-          },
-          onFinish: async ({ messages }) => {
-            await threads.persist(thread, messages);
-          },
-          onError: (error) => wireErrorMessage(error),
-        });
-        const played = createUIMessageStreamResponse({ stream: scripted });
-        played.headers.set(THREAD_ID_HEADER, thread.id);
-        return played;
-      }
 
       // §9.7 — the turn's façade mounts every org the wire asserted for this
       // request, so an agent turn can read and write the team's files at all.

@@ -27,7 +27,7 @@ import type {
 } from "@vendoai/vendo";
 import type {
   ComposedAgent, ConnectionsService, CreateVendoConfig, GuardRules, HarnessTurns,
-  HostAuthPreset, ModelsConfig, ServerActionHandler, TourEntry,
+  HostAuthPreset, ModelsConfig, ServerActionHandler,
 } from "@vendoai/vendo/server";
 import type { LanguageModel } from "ai";                      // peerDependency (00 conventions)
 
@@ -144,7 +144,6 @@ Types only; each key's behavior is documented once, on
 | `loadout` | `readonly string[]` | explicit curated initial loadout, by tool name |
 | `apps` | `false \| { designRules?, pipeline?, checks?, review? }` | `false` unmounts app generation entirely; otherwise the apps-block options |
 | `automations` | `false` | `false` unmounts automations: `/automations`, `/runs` and `/webhooks` answer not-found and `vendo.emit` refuses |
-| `tours` | `readonly TourEntry[]` | [tour mode](/capabilities/tours): an ordered list of `{ prompt, respond }` entries replayed in front of the live agent |
 
 ## `eraseStore`
 

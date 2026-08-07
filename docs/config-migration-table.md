@@ -95,7 +95,6 @@ truth about the code as it stands.
 | `loadout` | **venue plumbing** (the discovery rail's curated loadout) | moved up from `agent.loadout`; same rail, same reason |
 | `apps` | **pack option** → `apps({ … })` | unchanged. `designRules`, `fillConcurrency`, `checks`, `pipeline` are generation options; `experimentalMachines` / `experimentalServedApps` are project-level opt-ins. Deliberately NOT given a second spelling in wave 2: `apps: {…}` works, no host asked for `apps({…})`, and two spellings for one thing is the cost, not the feature |
 | `automations` | **subsystem switch** | added by the pack removal: `false` unmounts automations (routes, `emit`, and its judgment rule). `packs` is gone with the same change — capability arrives on `tools`, `skills`, `apps.checks` and `catalog` |
-| `tours` | **venue plumbing** (tour mode's scripted-turn seam) | unchanged. Plain OSS config, arrived on main after this table was written (#713): an ordered list of `{ prompt, respond }` entries replayed in front of the live agent. It composes the agent's `scripted` hook and nothing else, so it has no slot to move into |
 
 ## Deleted keys
 

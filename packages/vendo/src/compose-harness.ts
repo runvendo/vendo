@@ -12,7 +12,6 @@ import { storeServesHarnessTurns } from "./compose-store.js";
 import { MCP_MOUNT } from "./door-paths.js";
 import { createHarnessTurns, type HarnessTurns } from "./harness-turn.js";
 import { assembleSystemPrompt } from "./prompt.js";
-import { createTourScript } from "./tours/index.js";
 import { registerTurnSteer } from "./turn-liveness.js";
 
 /** The thinker, the door it may dial, and the boot gate between them. */
@@ -104,11 +103,11 @@ const resolveHarnessDoor = (composition: VendoComposition): Pick<VendoCompositio
 };
 
 /** The per-turn seams that reach this process's own doors: the live-turn
- *  publication, where an outside thinker dials, and tour mode. */
+ *  publication and where an outside thinker dials. */
 const harnessTurnDoorSeams = (
   composition: VendoComposition,
 ): Partial<Parameters<typeof createHarnessTurns>[0]> => {
-  const { config, mcpOptions, internalDoorOnly, doorBase } = composition;
+  const { mcpOptions, internalDoorOnly, doorBase } = composition;
   return {
     // Every turn, published for the door's turn credential. Publishing is not a
     // grant: without a credential minted from inside the turn there is nothing
@@ -147,11 +146,6 @@ const harnessTurnDoorSeams = (
         revoke: (token: string) => composition.turnCredentials.revoke(token),
       },
     } : {}),
-    // Tour mode. This door is the one `POST /threads` reaches, so this is where
-    // a script gets a chance to REPLACE the turn.
-    ...(config.tours === undefined || config.tours.length === 0
-      ? {}
-      : { scripted: createTourScript({ tours: config.tours, apps: composition.apps }) }),
   };
 };
 

@@ -144,14 +144,6 @@ describe("09-vendo §1 — umbrella root type surface", () => {
     expect(failure, failure ?? "").toBeNull();
   });
 
-  it("names the tour types beside createVendo on the server entry", () => {
-    // A host writes `const tours: TourEntry[] = [...]` next to its
-    // createVendo call, so every tour type must resolve from the same entry
-    // the config does — never from a subpath.
-    const failure = typecheckImports(["TourEntry", "TourResponse", "TourPart", "TourApp"], "./src/server.js");
-    expect(failure, failure ?? "").toBeNull();
-  });
-
   it("has teeth: a missing re-export fails the tsc gate with TS2305", () => {
     // Proves the mechanism genuinely catches a dropped re-export, so the
     // assertion above cannot silently pass if the surface regresses.

@@ -134,11 +134,6 @@ export { cloudTools, type CloudToolsOptions } from "./cloud-tools.js";
 // consults it for a `.vendo` surface the host neither set nor keeps on disk.
 export { cloudConfig, type CloudConfig, type CloudConfigDoc, type CloudConfigResult, type CloudConfigOptions } from "./cloud-config.js";
 
-// Tour mode is plain OSS config — the entry types ride the server surface so a
-// host can name them (`const tours: TourEntry[] = [...]`) without reaching
-// into a subpath.
-export type { TourApp, TourEntry, TourPart, TourResponse } from "./tours/index.js";
-
 export {
   selectConfigSurface,
   isConfigSurface,
