@@ -95,6 +95,37 @@ const commitCreated = (commit: VendoRecord): string[] =>
 const commitTouches = (commit: VendoRecord, path: string): boolean =>
   commitEntries(commit).some((entry) => entry.path === path);
 
+/** Which of `commit`'s paths a LATER commit has since touched.
+ *
+ *  `workspaceRows.undo` pops the newest superseded revision at a path, so it
+ *  can only walk back the newest commit there. Undoing an older one instead
+ *  restored the older commit's own content and destroyed the newer commit's —
+ *  permanently, because an undo writes no history row behind it. The ledger
+ *  pages newest-first, so everything ahead of the commit itself is newer. */
+async function pathsMovedOn(
+  ledger: RecordStore,
+  owner: string,
+  commit: VendoRecord,
+): Promise<string[]> {
+  const mine = new Set(commitEntries(commit).map((entry) => entry.path));
+  const moved = new Set<string>();
+  let cursor: string | undefined;
+  do {
+    const page = await ledger.list({
+      refs: { subject: owner },
+      ...(cursor === undefined ? {} : { cursor }),
+    });
+    for (const record of page.records) {
+      if (record.id === commit.id) return [...moved].sort();
+      for (const entry of commitEntries(record)) {
+        if (mine.has(entry.path)) moved.add(entry.path);
+      }
+    }
+    cursor = page.cursor;
+  } while (cursor !== undefined);
+  return [...moved].sort();
+}
+
 /** The newest commit in one owner's ledger that touched `path` — the unit a
  *  per-path undo walks back. The ledger pages newest-first, so the first hit
  *  is the answer; a path nobody has touched walks the whole ledger and says
@@ -618,6 +649,19 @@ export function createStoreOps(
             // would make the door an existence oracle: it is simply not found.
             if (commit === null || commit.refs?.["subject"] !== owner) {
               throw new VendoError("not-found", `commit ${target} not found`);
+            }
+            // Only the newest commit at a path is that path's to walk back.
+            // Refusing is the honest answer: the newer write has no history row
+            // behind it, so undoing through it would destroy content nobody
+            // asked to remove and could never be recovered.
+            const movedOn = await pathsMovedOn(ledger, owner, commit);
+            if (movedOn.length > 0) {
+              throw new VendoError(
+                "conflict",
+                `${movedOn.join(", ")} changed after commit ${target}, so undoing it would walk back`
+                  + ` the later change instead; undo the later commits first`,
+                { conflicts: movedOn },
+              );
             }
             const created = new Set(commitCreated(commit));
             for (const entry of commitEntries(commit)) {
