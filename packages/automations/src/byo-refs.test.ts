@@ -115,7 +115,8 @@ const tools: ToolRegistry = {
   async execute() { return { status: "ok", output: {} }; },
 };
 
-const appsDouble = (): AppsRuntime => ({ call: async () => ({ status: "ok", output: {} }) }) as AppsRuntime;
+const appsCall: AppsRuntime["call"] = async () => ({ status: "ok", output: {} });
+const appsDouble = (): AppsRuntime => ({ call: appsCall }) as AppsRuntime;
 
 const preTrainApp = (id: string, on: Trigger["on"]): AppDocument => ({
   format: VENDO_APP_FORMAT,

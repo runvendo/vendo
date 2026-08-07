@@ -86,8 +86,9 @@ export const UNATTENDED_DESTRUCTIVE_REASON =
  *   - `{ venue: "automation", presence: "away" }` is a real unattended firing —
  *     the shape every schedule fires with, including a machine app's own
  *     `vendo.json` schedules once they are folded into its document triggers
- *     (`apps/src/manifest-triggers.ts` → `automations/src/engine.ts`), so a
- *     venue-based predicate would let every schedule out from under the law.
+ *     (`apps/src/manifest-triggers.ts` → `baseRunContext` in
+ *     `automations/src/sponsorship-gate.ts`), so a venue-based predicate would
+ *     let every schedule out from under the law.
  *   - `{ venue: "automation", presence: "present" }` is a CEREMONY, not a run:
  *     the enable/capture flow and the "allow this while you're away" approval
  *     card both run with a human right there clicking, and they must SEE the

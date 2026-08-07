@@ -101,7 +101,8 @@ class GuardDouble implements Guard {
   }
 }
 
-const appsDouble = (): AppsRuntime => ({ call: async () => ({ status: "ok", output: {} }) } as AppsRuntime);
+const appsCall: AppsRuntime["call"] = async () => ({ status: "ok", output: {} });
+const appsDouble = (): AppsRuntime => ({ call: appsCall } as AppsRuntime);
 
 const flush = async (): Promise<void> => { await new Promise<void>((resolve) => setTimeout(resolve, 0)); };
 

@@ -159,11 +159,12 @@ describe("THE LAW: unattended destructive calls are refused at the guard", () =>
   // an ORed venue would hide from them.
   //
   // The away sweep also covers the real callers the venue label would have let
-  // out: `packages/automations/src/engine.ts` fires genuine unattended work as
-  // `{ venue: "automation", presence: "away" }` — including a machine app's own
-  // `vendo.json` schedules, which `packages/apps/src/manifest-triggers.ts` folds
-  // into document triggers that same engine fires — so a venue-keyed predicate
-  // would put every scheduled firing outside the law.
+  // out: `baseRunContext` in `packages/automations/src/sponsorship-gate.ts`
+  // fires genuine unattended work as `{ venue: "automation", presence: "away" }`
+  // — including a machine app's own `vendo.json` schedules, which
+  // `packages/apps/src/manifest-triggers.ts` folds into document triggers that
+  // same engine fires — so a venue-keyed predicate would put every scheduled
+  // firing outside the law.
   it.each(VENUES)("refuses an away destructive call in venue %s", async (venue) => {
     const store = createMemoryStore();
     const send = descriptor("destructive", { name: "maple_payments_send" });

@@ -41,7 +41,8 @@ export type CommitResult =
 
 /** Build contract §3.4 — the blob seam under the workspace: files past the
     inline cap live here, keyed by the store's `blob_ref`. Unset, the store's
-    own `blobs()` backs it (capped); `s3()` is the one shipped implementation. */
+    own `blobs()` backs it (capped); past that cap the host brings its own via
+    `files:` on createVendo (any S3-compatible bucket) — nothing ships one. */
 export interface FilesAdapter {
   put(key: string, bytes: Uint8Array, meta?: { contentType?: string }): Promise<void>;
   get(key: string): Promise<{ bytes: Uint8Array; contentType?: string } | undefined>;

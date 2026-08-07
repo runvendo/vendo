@@ -54,11 +54,11 @@ jobs:
   # The big three, split file-wise inside each package. Coverage is collected
   # per shard as a BLOB report and merged in coverage-merge; the per-shard runs
   # pass --coverage.thresholds.lines=0 because vitest enforces the package's
-  # floor against whatever that shard happened to cover (measured: kit's
-  # shard 1/2 reports 48% of the 94% the whole suite reaches, and a floor of 90
-  # fails the shard). Zeroing it here moves the floor to the merge, where the
-  # number is the real one — the gate is not weakened, it is moved to the only
-  # place it can be correct.
+  # floor against whatever that shard happened to cover (measured back when a
+  # `kit` package still existed: its shard 1/2 reported 48% of the 94% the whole
+  # suite reaches, and a floor of 90 fails the shard). Zeroing it here moves the
+  # floor to the merge, where the number is the real one — the gate is not
+  # weakened, it is moved to the only place it can be correct.
   test-shards:
     runs-on: ubuntu-latest
     timeout-minutes: 25

@@ -45,10 +45,11 @@ const LEGACY_SCHEDULE_STATE_COLLECTION = "vendo_app_schedules";
 
 /**
  * The automations engine's per-trigger schedule cursor, as the CUTOVER needs to
- * write it. Two facts have to agree byte for byte with
- * `packages/automations/src/engine.ts` (`SCHEDULE`, `triggerKey`) and are
- * written down here because this package cannot import that one (the dependency
- * guard's layering: apps → core only):
+ * write it. Two facts have to agree byte for byte with automations
+ * (`SCHEDULE` in `packages/automations/src/types.ts`, `triggerKey` in
+ * `packages/automations/src/sponsorship.ts`) and are written down here because
+ * this package cannot import that one (the dependency guard's layering:
+ * apps → core only):
  *
  *   collection  "automations:schedule"
  *   row id      `<appId>:<triggerId>`

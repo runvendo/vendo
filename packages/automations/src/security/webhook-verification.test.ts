@@ -62,7 +62,8 @@ const registry = (
   execute: (call: ToolCall, runCtx: RunContext) => Promise<ToolOutcome> = async () => ({ status: "ok", output: {} }),
 ): ToolRegistry => ({ async descriptors() { return descriptors; }, execute });
 
-const appsDouble = (): AppsRuntime => ({ call: async () => ({ status: "ok", output: {} }) } as AppsRuntime);
+const appsCall: AppsRuntime["call"] = async () => ({ status: "ok", output: {} });
+const appsDouble = (): AppsRuntime => ({ call: appsCall } as AppsRuntime);
 
 /** Real HMAC-SHA256 signer over `id.timestamp.body`, key = base64url secret. */
 const sign = async (secret: string, deliveryId: string, timestamp: string, body: string): Promise<string> => {

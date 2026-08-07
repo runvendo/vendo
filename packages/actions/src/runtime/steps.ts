@@ -4,8 +4,8 @@ import { safeErrorMessage, type ApprovalId, type Json, type Step, type ToolCall,
  * Pure step-walker kernel for compound tools (04-actions §6).
  *
  * Semantics deliberately mirror the automations engine's `continueSteps`
- * (packages/automations/src/engine.ts) — same if/forEach/args ordering, same
- * forEach cap and error texts, same verbatim re-issue of a parked call on
+ * (packages/automations/src/run-execution.ts) — same if/forEach/args ordering,
+ * same forEach cap and error texts, same verbatim re-issue of a parked call on
  * resume — WITHOUT the run-record/stop persistence concerns. Automations is
  * the reference implementation; parity is enforced by a shared fixture table
  * (packages/vendo/src/compound-parity.test.ts). Single-sourcing automations

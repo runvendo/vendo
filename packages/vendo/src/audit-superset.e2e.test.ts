@@ -419,7 +419,7 @@ describe("audit ⊇ transcript (design §3, evaluation E7)", () => {
  *
  *  - Per-APP dedupe, keyed `(appId, tool)`, EXISTS — but at ENABLE time, in the
  *    automations engine's capture reuse (`pendingCaptures` → `pendingForApp` in
- *    `packages/automations/src/engine.ts`), and it is already covered by
+ *    `packages/automations/src/consent.ts`), and it is already covered by
  *    `engine.test.ts` ("re-running enable() reuses the pending ask — no duplicate
  *    ApprovalRequest per (appId, tool)"). That is the layer it lives at, so this
  *    file does not re-stage it.
@@ -546,7 +546,7 @@ describe("the unattended failure card (design §3)", () => {
   it.skip("dedupes every failed firing onto ONE card per missing grant per app", async () => {
     // MUST BE BUILT: a stable dedupe key for (appId, tool, args-shape) on the
     // FIRE path, the way `enable()` already reuses a pending capture per
-    // (appId, tool) in `packages/automations/src/engine.ts`. `#parkApproval`
+    // (appId, tool) in `packages/automations/src/consent.ts`. `#parkApproval`
     // (`packages/guard/src/guard.ts`) currently mints `apr_<uuid>` with no
     // lookup, so the fire path has no dedupe at all.
     const fixture = await awayFixture();

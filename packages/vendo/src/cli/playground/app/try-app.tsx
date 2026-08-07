@@ -4,8 +4,8 @@
  * backdrop — one of five archetypes picked from the profile's tool domains
  * (try-stage.tsx / pickStageArchetype) — and the agent overlay floats over it
  * ALREADY OPEN, greeting the visitor by product name with the use-case chips
- * inside the panel's empty state (try-panel.tsx). Depth indicator + Refine
- * stay as a quiet top-right cluster over the stage.
+ * inside the panel's empty state (try-panel.tsx). The depth indicator stays as
+ * a quiet top-right cluster over the stage.
  *
  * The slot's data source is decided per render by selectSurfaceMode: when the
  * profile reports liveChat, the surface talks to the real wire at the boot
@@ -139,10 +139,10 @@ export function TryApp({ boot }: { boot: TryBoot }) {
         logoUrl={logoUrl}
         navLabels={navLabels}
       />
-      {/* The shell's own controls, quiet in the header region per the canvas:
-          the live depth indicator and (server capability permitting) Refine.
-          Fixed above the stage; while the overlay is open they sit under its
-          scrim like the rest of the page, and come back on close. */}
+      {/* The shell's own control, quiet in the header region per the canvas:
+          the live depth indicator. Fixed above the stage; while the overlay is
+          open it sits under its scrim like the rest of the page, and comes
+          back on close. */}
       <div style={{ position: "fixed", top: 12, right: 16, zIndex: 20, display: "flex", alignItems: "center", gap: 10 }}>
         {label ? (
           <span
