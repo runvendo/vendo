@@ -1,0 +1,5 @@
+---
+"@vendoai/vendo": patch
+---
+
+`vendo doctor` now names the real cause when the doctor probes are not mounted. Since the probe surface became development-only, a composition that never declared itself development answers `404` on `POST /doctor/present` and `POST /doctor/act-as` — and doctor read that `404` as a credential failure, telling the reader to "set `VENDO_BASE_URL` to the running host origin" (`auth/present`) or to "check `createVendo({ actAs })`, its verifier middleware, and the host principal resolver" (`auth/act-as`). Both were false: the credentials and the actAs wiring were fine, the route simply was not in the table, so the advice sent the reader to fix something that was not broken. A `404` from either probe now reports that the composition did not declare itself development and gives the two ways to opt in — `createVendo({ development: true })`, or `NODE_ENV=development`, which `next dev` sets for you and a plain `node`/`tsx` server does not. Every other failure path keeps its existing message, and no route becomes reachable that was not reachable before: this is diagnosis only.

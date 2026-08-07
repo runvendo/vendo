@@ -126,6 +126,19 @@ async function probeBody(response: Response): Promise<DoctorProbeBody> {
   }
 }
 
+/** Both auth probes 404 for one reason: the composition never declared itself
+    development, so `wireRoutesFor` left the probe routes out of the table
+    entirely. Saying "set VENDO_BASE_URL" or "check createVendo({ actAs })"
+    here sends the reader to fix something that is not broken, so the 404 gets
+    its own message naming the real cause and the two ways to opt in.
+    `next dev` sets NODE_ENV for you; a bare `node`/`tsx` server does not. */
+const PROBES_NOT_MOUNTED =
+  "the doctor probes are not mounted: this composition did not declare itself development, "
+  + "so /doctor/present and /doctor/act-as are not in the route table. Pass "
+  + "createVendo({ development: true }) for this host, or run it with NODE_ENV=development "
+  + "(next dev sets that for you; a plain node/tsx server does not). "
+  + "Production deployments are meant to answer 404 here.";
+
 /** 09-vendo §5 / block-actions A — wiring checks plus live composition,
     present-credential, and actAs mint+verify round-trips. */
 export async function runDoctor(options: DoctorOptions): Promise<number> {
@@ -621,6 +634,8 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
       const body = await probeBody(response);
       if (response.ok && body.ok === true) {
         pass("auth/present", "present credentials reach the host API");
+      } else if (response.status === 404) {
+        fail("auth/present", "E-AUTH-001", PROBES_NOT_MOUNTED);
       } else {
         fail("auth/present", "E-AUTH-001", "present credentials did not reach the host API; set VENDO_BASE_URL to the running host origin and restart the dev server");
       }
@@ -639,6 +654,8 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
         pass("auth/act-as", "actAs mint + host verification live round-trip");
       } else if (body.error?.code === "act-as-not-configured") {
         warn("auth/act-as", "E-AUTH-007", "actAs is not configured; pass createVendo({ actAs }) before enabling away host actions");
+      } else if (response.status === 404) {
+        fail("auth/act-as", "E-AUTH-004", PROBES_NOT_MOUNTED);
       } else {
         fail("auth/act-as", "E-AUTH-004", "actAs mint + host verification failed; check createVendo({ actAs }), its verifier middleware, and the host principal resolver");
       }
