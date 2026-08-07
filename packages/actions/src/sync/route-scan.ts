@@ -225,7 +225,16 @@ function exportedVerbs(module: ParsedModule, kind: RouteSource["kind"]): Set<Htt
         && isStringLike(ts, node.right)) {
         addMethod(methods, node.right.text);
       }
-      if (ts.isCaseClause(node) && isStringLike(ts, node.expression)) addMethod(methods, node.expression.text);
+      // Only an UPPERCASE verb literal counts. The switch's own discriminant
+      // is not checked (that reads too many working shapes as unclassified),
+      // so the casing is the whole signal: without it a handler dispatching
+      // on `req.body.action` with `case "delete"` mints an enabled,
+      // destructive DELETE at the route's real URL — and, being the route's
+      // only evidence, it replaces the verb the handler actually serves.
+      if (ts.isCaseClause(node) && isStringLike(ts, node.expression)
+        && HTTP_METHOD_SET.has(node.expression.text)) {
+        addMethod(methods, node.expression.text);
+      }
       if (ts.isCallExpression(node)) {
         allowHeaderVerbs(ts, methods, node);
         if (calleeSimpleName(ts, node) === "NextAuth") {
