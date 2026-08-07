@@ -3124,6 +3124,41 @@ describe("10-mcp §5 — door claims only its four exact well-known paths (FIX H
     expect(payload).toMatchObject({ sub: "user_door", jti: "umbrella-federation-nonce", aud: issuer });
   });
 
+  it("serves BOTH spellings when the deployment is mounted under a path prefix", async () => {
+    // A path-mounted deployment is asked for the same document two ways. RFC
+    // 8414 §3 / RFC 9728 §3.1 derive the well-known URL from the FULL resource
+    // URI, so a client of `https://app.example.com/maple/api/vendo/mcp` asks
+    // for `…/oauth-protected-resource/maple/api/vendo/mcp` — the prefix rides
+    // in the suffix — while the door's own metadata URL is prefix-local and
+    // names `…/oauth-protected-resource/api/vendo/mcp`. Both must reach the
+    // door; the door itself strips the prefix off the suffix, so both answer
+    // with the one canonical resource.
+    vi.stubEnv("VENDO_BASE_URL", "https://app.example.com/maple");
+    const vendo = await mcpVendo();
+
+    const derived = await vendo.handler(root("/.well-known/oauth-protected-resource/maple/api/vendo/mcp"));
+    expect(derived.status).toBe(200);
+    expect(await derived.json()).toMatchObject({ resource: "https://app.example.com/maple/api/vendo/mcp" });
+
+    const derivedAs = await vendo.handler(root("/.well-known/oauth-authorization-server/maple/api/vendo/mcp"));
+    expect(derivedAs.status).toBe(200);
+    expect(await derivedAs.json()).toMatchObject({ issuer: "https://app.example.com/maple/api/vendo/mcp" });
+
+    const prefixLess = await vendo.handler(root("/.well-known/oauth-protected-resource/api/vendo/mcp"));
+    expect(prefixLess.status).toBe(200);
+    expect(await prefixLess.json()).toMatchObject({ resource: "https://app.example.com/maple/api/vendo/mcp" });
+  });
+
+  it("accepts only the prefix the deployment actually configured", async () => {
+    // The second spelling is the configured base path and nothing else: the
+    // allowlist stays exact, so a made-up prefix is still not the door's path.
+    vi.stubEnv("VENDO_BASE_URL", "https://app.example.com/maple");
+    const vendo = await mcpVendo();
+    const res = await vendo.handler(root("/.well-known/oauth-protected-resource/syrup/api/vendo/mcp"));
+    expect(res.status).toBe(404);
+    expect((await res.json() as { resource?: unknown }).resource).toBeUndefined();
+  });
+
   it("does NOT route boundary-adjacent or foreign well-known paths to the door", async () => {
     const vendo = await mcpVendo();
     // A boundary-free prefix would have matched all of these; the exact-path set
@@ -3182,6 +3217,22 @@ describe("10-mcp §5 — wellKnownVendoHandler (the Next.js app/.well-known/[...
 
     const alias = await route.GET(root("/.well-known/mcp-server-card"));
     expect(alias.status).toBe(200);
+  });
+
+  it("forwards the prefix-including spelling of a path-mounted deployment too", async () => {
+    // The Next.js route adapter matches the SAME set the wire does, so a
+    // path-mounted deployment serves discovery at the URL a spec client derives
+    // instead of 404ing it with an empty body.
+    vi.stubEnv("VENDO_BASE_URL", "https://app.example.com/maple");
+    const route = wellKnownVendoHandler(await mcpVendo());
+
+    const prm = await route.GET(root("/.well-known/oauth-protected-resource/maple/api/vendo/mcp"));
+    expect(prm.status).toBe(200);
+    expect((await prm.json() as { resource?: string }).resource).toBe("https://app.example.com/maple/api/vendo/mcp");
+
+    const as = await route.GET(root("/.well-known/oauth-authorization-server/maple/api/vendo/mcp"));
+    expect(as.status).toBe(200);
+    expect((await as.json() as { issuer?: string }).issuer).toBe("https://app.example.com/maple/api/vendo/mcp");
   });
 
   it("404s empty-body on a well-known path outside the door's four (mirrors the hand-written route it replaces)", async () => {

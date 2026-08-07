@@ -124,6 +124,12 @@ export interface WireDeps {
       posture this never degrades: it records what the seam chose. */
   mcpSelection: "off" | "explicit" | "broker" | "local";
   door?: McpDoor;
+  /** The exact well-known paths this composition hands the door — the door's
+      four documents, plus the base-path-prefixed spelling of the two metadata
+      ones when the deployment is mounted under a prefix (doorWellKnownPaths in
+      server.ts). Built at composition, because the prefix is a composition
+      fact. */
+  doorWellKnown: ReadonlySet<string>;
   /** True only in a development composition — gates the local injection seams. */
   development: boolean;
   onRequestOrigin?: (origin: string) => void;

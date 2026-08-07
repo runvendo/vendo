@@ -1327,13 +1327,43 @@ function relativePath(url: URL): string | null {
     `/.well-known/oauth-protected-resourceX`). These are NOT wire routes — the
     door mints its own principals (§3), and the OAuth /token and /register
     endpoints are form-encoded POSTs — so they bypass the wire's principal/CSRF
-    machinery. */
-const DOOR_WELL_KNOWN_PATHS: ReadonlySet<string> = new Set([
-  `/.well-known/oauth-protected-resource${MCP_MOUNT}`,
-  `/.well-known/oauth-authorization-server${MCP_MOUNT}`,
-  "/.well-known/mcp/server-card.json",
-  "/.well-known/mcp-server-card",
-]);
+    machinery.
+
+    The two METADATA documents are asked for in two spellings when the
+    deployment is mounted under a path prefix. RFC 8414 §3 / RFC 9728 §3.1 derive the
+    well-known URL from the FULL resource URI, so a spec client asks for
+    `/.well-known/oauth-protected-resource/maple/api/vendo/mcp` where the door's
+    own prefix-local metadata URL says `…/api/vendo/mcp`. Both name the SAME
+    door path, and the door already answers both — it strips the configured base
+    path off the suffix itself (`door.ts`). The prefix is the path of the base
+    URL the door was handed (`mcp.baseUrl` ?? `VENDO_BASE_URL`, the same
+    resolution as `doorBaseUrl` in createVendo — never a forwarded header, which
+    is the one channel an attacker can set). With no prefix configured the set
+    collapses to the same four exact paths. */
+function doorWellKnownPaths(basePath: string): ReadonlySet<string> {
+  return new Set([
+    `/.well-known/oauth-protected-resource${MCP_MOUNT}`,
+    `/.well-known/oauth-authorization-server${MCP_MOUNT}`,
+    `/.well-known/oauth-protected-resource${basePath}${MCP_MOUNT}`,
+    `/.well-known/oauth-authorization-server${basePath}${MCP_MOUNT}`,
+    "/.well-known/mcp/server-card.json",
+    "/.well-known/mcp-server-card",
+  ]);
+}
+
+/** The door path set of each composition, keyed by its own instance: the wire
+    matches it (`isDoorPath`) and `wellKnownVendoHandler` must match the SAME
+    one, and the base-path prefix it is built from is a composition fact rather
+    than a module constant. */
+const doorWellKnownByInstance = new WeakMap<Vendo, ReadonlySet<string>>();
+
+/** The deployment's path prefix, normalized exactly as the door normalizes its
+    own (`""` for a base URL that names only an origin). */
+function basePathOf(baseUrl: string | undefined): string {
+  if (baseUrl === undefined) return "";
+  const path = new URL(baseUrl).pathname.replace(/^\/+|\/+$/g, "");
+  return path === "" ? "" : `/${path}`;
+}
 
 /** Is this origin THIS machine, and only this machine? The one question that
  *  makes a request-derived origin safe to hand a turn credential: a loopback
@@ -1352,9 +1382,9 @@ function isLoopbackOrigin(origin: string): boolean {
   return host === "localhost" || host === "127.0.0.1" || host === "::1";
 }
 
-function isDoorPath(pathname: string): boolean {
+function isDoorPath(pathname: string, wellKnown: ReadonlySet<string>): boolean {
   if (pathname === MCP_MOUNT || pathname.startsWith(`${MCP_MOUNT}/`)) return true;
-  return DOOR_WELL_KNOWN_PATHS.has(pathname);
+  return wellKnown.has(pathname);
 }
 
 function jsonMutationRequired(request: Request, path: string): boolean {
@@ -1488,7 +1518,7 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
       // requests do NOT teach the same-origin baseUrl default: only a request
       // addressing a real Vendo WIRE route may (04 §4), and the door's paths are
       // the door's, not wire routes.
-      if (deps.door !== undefined && isDoorPath(url.pathname)) {
+      if (deps.door !== undefined && isDoorPath(url.pathname, deps.doorWellKnown)) {
         await deps.ready();
         return await deps.door.handler(request);
       }
@@ -3260,6 +3290,12 @@ export function createVendo(input: CreateVendoConfig): Vendo {
    * credential only exists once a harness mints one from inside its own turn.
    */
   const turnCredentials: TurnCredentials = createTurnCredentials();
+  // The door's canonical public base — the operator-set VENDO_BASE_URL, or the
+  // explicit `mcp.baseUrl` for a composition whose door origin differs from the
+  // route-binding one (see the pin below). Read here rather than inside the
+  // branch because the path prefix it carries also decides which well-known
+  // spellings the umbrella hands the door (`doorWellKnownPaths`).
+  const doorBaseUrl = mcpOptions?.baseUrl ?? configuredBaseUrl;
   let door: McpDoor | undefined;
   // The /status posture for the mcp block (connections-posture pattern):
   // false when the door is closed, "local" when it serves its own OAuth
@@ -3305,7 +3341,6 @@ export function createVendo(input: CreateVendoConfig): Vendo {
     // proxy-INTERNAL origin and must not shape what discovery advertises
     // (ENG-333). An explicit `mcp.baseUrl` overrides the env default for
     // compositions whose door origin differs from the route-binding origin.
-    const doorBaseUrl = mcpOptions.baseUrl ?? configuredBaseUrl;
     const composeDoor = (
       remoteAs = mcpOptions.remoteAs,
       federation = mcpOptions.federation,
@@ -3412,6 +3447,9 @@ export function createVendo(input: CreateVendoConfig): Vendo {
       ...(configuredBaseUrl === undefined ? {} : { baseUrl: configuredBaseUrl }),
     });
   }
+  // Resolved AFTER the door: `createMcpDoor` is what validates the base URL, so
+  // a malformed one still fails with its message rather than a bare `new URL`.
+  const doorWellKnown = doorWellKnownPaths(door === undefined ? "" : basePathOf(doorBaseUrl));
   // Minted on first request via the deps getter below — Workers forbids
   // generating random values in global scope, and createVendo runs at module
   // init in the edge wiring. Still one fallback id per process.
@@ -3478,6 +3516,7 @@ export function createVendo(input: CreateVendoConfig): Vendo {
     // interval timer, so the authenticated tick carries the sweep for them.
     sweepOnTick: sweepEnabled && hostedStoreComposed,
     ...(door === undefined ? {} : { door }),
+    doorWellKnown,
     onRequestOrigin: (origin) => {
       // Same-origin default for route-binding execution (04): no VENDO_BASE_URL
       // → the wire's own origin, learned from the first VALIDATED request and
@@ -3552,6 +3591,9 @@ export function createVendo(input: CreateVendoConfig): Vendo {
   // D5 — the tool pack's `vendo_delegate` motor, carried internally rather than
   // on the host surface (see delegate.ts).
   setDelegateRunner(instance, delegateRunner);
+  // Same idea: `wellKnownVendoHandler` forwards by the SAME path set the wire
+  // matches, and that set is this composition's, not a module constant.
+  doorWellKnownByInstance.set(instance, doorWellKnown);
   return instance;
 }
 
@@ -3581,23 +3623,26 @@ export function nextVendoHandler(vendo: Vendo): {
     ORIGIN-ROOT paths, outside BASE_PATH — a host's `/api/vendo` catch-all route
     never sees them, because Next.js dispatches by directory structure, not by
     the wire's own routing. This file exists so that directory gets a handler
-    too, one that shares DOOR_WELL_KNOWN_PATHS with the wire itself (the SAME
-    set `isDoorPath` matches) instead of a hand-copied allowlist that can drift
-    from it. A request whose pathname is exactly one of those four paths
+    too, one that shares this composition's own door path set with the wire
+    itself (the SAME set `isDoorPath` matches — `doorWellKnownPaths`, so a
+    path-mounted deployment answers both spellings here too) instead of a
+    hand-copied allowlist that can drift from it. A request whose pathname is
+    exactly one of those paths
     forwards to `vendo.handler` (which independently confirms it's a door path
     and, if `mcp` is configured, serves it — the check here is only about
     which requests reach the wire at all); anything else answers 404 with an
     empty body, mirroring the hand-written route this replaces. With `mcp` left
-    unconfigured, `vendo.handler` still recognizes these four paths but has no
+    unconfigured, `vendo.handler` still recognizes these paths but has no
     door to serve them, so the request falls through to the wire's ordinary
     not-found response — never a 500. */
 export function wellKnownVendoHandler(vendo: Vendo): {
   GET(request: Request): Promise<Response>;
   POST(request: Request): Promise<Response>;
 } {
+  const wellKnown = doorWellKnownByInstance.get(vendo) ?? doorWellKnownPaths("");
   const handle = (request: Request): Promise<Response> => {
     const { pathname } = new URL(request.url);
-    return DOOR_WELL_KNOWN_PATHS.has(pathname)
+    return wellKnown.has(pathname)
       ? vendo.handler(request)
       : Promise.resolve(new Response(null, { status: 404 }));
   };

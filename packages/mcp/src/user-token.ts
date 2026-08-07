@@ -19,6 +19,12 @@ import {
 
 const PRM_PREFIX = "/.well-known/oauth-protected-resource";
 const AS_PREFIX = "/.well-known/oauth-authorization-server";
+/** Where every Vendo deployment's door is mounted — the umbrella pins it at
+ *  `${BASE_PATH}/mcp` (`packages/vendo/src/wire/shared.ts`) for exactly this
+ *  kind of reason: it is the one part of the caller's url this helper can tell
+ *  apart from the deployment's path prefix. A door mounted anywhere else is
+ *  served only at the root-inserted spelling below. */
+const DOOR_MOUNT = "/api/vendo/mcp";
 const DEFAULT_TIMEOUT_MS = 10_000;
 
 export interface VendoUserTokenInput {
@@ -45,6 +51,19 @@ export interface VendoUserToken {
 }
 
 export async function vendoUserToken(input: VendoUserTokenInput): Promise<VendoUserToken> {
+  // The caller's OWN url answers to the same rule as the endpoint discovery
+  // names, and it answers first — before a single request goes out. Discovery
+  // carries no credential, but over cleartext http it is forgeable in flight:
+  // whoever is on the path rewrites `authorization_servers` to an https
+  // endpoint of their own, that endpoint passes the check below, and the
+  // service key is posted to them.
+  if (!isSecureUrl(input.url)) {
+    throw new Error(
+      `${input.url} is not an HTTPS URL; over plain http the discovery metadata that names where the `
+      + "service key is posted can be rewritten by anyone on the path, and the key itself would travel "
+      + "in the clear. Use https (loopback http is the only exception).",
+    );
+  }
   const transport = input.fetch ?? fetch;
   const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   // The budget and the refusal to follow redirects are properties of every call
@@ -108,10 +127,7 @@ async function discoverTokenEndpoint(
   call: typeof fetch,
   mcpUrl: string,
 ): Promise<{ tokenEndpoint: string; resource?: string }> {
-  const metadata = await getJson<{ resource: string; authorization_servers?: string[] }>(
-    call,
-    wellKnown(PRM_PREFIX, mcpUrl),
-  );
+  const metadata = await protectedResource<{ resource: string; authorization_servers?: string[] }>(call, mcpUrl);
   const issuer = metadata.authorization_servers?.[0];
   if (issuer === undefined) {
     throw new Error(`${mcpUrl} names no authorization server, so there is no token endpoint to exchange at`);
@@ -134,22 +150,76 @@ async function discoverTokenEndpoint(
   return { tokenEndpoint: secureEndpoint(server.token_endpoint) };
 }
 
-/** ONE rule for the URL the key is posted to, whether a third party published
- *  it or the deployment named itself: RFC 8414 §2 requires https, and anything
- *  else puts a long-lived credential on the wire in cleartext for whoever is
- *  listening. Loopback http is the same exception the door already makes for
- *  redirect URIs (`validRedirectUri` in `oauth/server.js`). */
-function secureEndpoint(endpoint: string): string {
-  let url: URL | undefined;
+/** ONE rule for every URL this exchange touches — the caller's own MCP url, and
+ *  the token endpoint the key is posted to whether a third party published it or
+ *  the deployment named itself: RFC 8414 §2 requires https, and anything else
+ *  puts a long-lived credential on the wire in cleartext for whoever is
+ *  listening — or lets them rewrite the metadata that names where it goes.
+ *  Loopback http is the same exception the door already makes for redirect URIs
+ *  (`validRedirectUri` in `oauth/server.js`). */
+function isSecureUrl(candidate: string): boolean {
+  let url: URL;
   try {
-    url = new URL(endpoint);
+    url = new URL(candidate);
   } catch {
-    url = undefined;
+    return false;
   }
-  const secure = url !== undefined && (url.protocol === "https:"
-    || (url.protocol === "http:" && (url.hostname === "localhost" || url.hostname === "127.0.0.1")));
-  if (secure) return endpoint;
+  return url.protocol === "https:"
+    || (url.protocol === "http:" && (url.hostname === "localhost" || url.hostname === "127.0.0.1"));
+}
+
+function secureEndpoint(endpoint: string): string {
+  if (isSecureUrl(endpoint)) return endpoint;
   throw new Error(`${endpoint} is a token_endpoint that is not an HTTPS URL; a service key is not sent in cleartext`);
+}
+
+/** The door publishes its protected-resource metadata at TWO URLs, and this asks
+ *  for them in that order.
+ *
+ *  ROOT-INSERTED first (`wellKnown`): it is what RFC 9728 §3.1 says a client
+ *  derives from the resource URI, and it is the spelling that answers whenever
+ *  the deployment owns its origin root — including one mounted under a path
+ *  prefix by a proxy that strips it.
+ *
+ *  A deployment mounted under a prefix by its own FRAMEWORK routes nothing
+ *  outside that prefix (Next `basePath` answers its own 404 before Vendo is ever
+ *  reached), so only there does a 404 fall through to the door's PREFIX-LOCAL
+ *  spelling — the same document, at the URL the door itself advertises in its
+ *  401 challenge and server card (`protectedResourceMetadataUrl` in `door.js`).
+ *  Never the other way round: the prefix-local URL is a fallback, not a
+ *  preference.
+ *
+ *  Both URLs are built from the caller's own url — nothing a response said — so
+ *  the fallback inherits the https rule that url already passed, and adds no
+ *  trust surface. Only a 404 falls through: any other failure is the
+ *  deployment's answer about the URL a client would really use. */
+async function protectedResource<T>(call: typeof fetch, mcpUrl: string): Promise<T> {
+  const rootInserted = wellKnown(PRM_PREFIX, mcpUrl);
+  const response = await call(rootInserted);
+  if (response.ok) return await response.json() as T;
+  const prefixLocal = prefixLocalMetadataUrl(mcpUrl);
+  if (response.status !== 404 || prefixLocal === undefined) {
+    throw new Error(`Discovery failed: GET ${rootInserted} answered ${response.status}`);
+  }
+  const local = await call(prefixLocal);
+  if (local.ok) return await local.json() as T;
+  throw new Error(
+    `Discovery failed: GET ${rootInserted} answered 404, and GET ${prefixLocal} answered ${local.status}`,
+  );
+}
+
+/** The door's own metadata URL for a deployment mounted under a path prefix:
+ *  the prefix, then the well-known segment, then the mount — `base + PRM_PREFIX
+ *  + mount`, exactly as `protectedResourceMetadataUrl` builds it. The prefix is
+ *  whatever the caller's url carries in FRONT of the door's mount. `undefined`
+ *  when there is nothing in front of it (the root-inserted URL is already the
+ *  only spelling) or when the url does not end at a door mount this helper can
+ *  recognize — then there is no second URL it could honestly name. */
+function prefixLocalMetadataUrl(mcpUrl: string): string | undefined {
+  const url = new URL(mcpUrl);
+  if (!url.pathname.endsWith(DOOR_MOUNT)) return undefined;
+  const prefix = url.pathname.slice(0, -DOOR_MOUNT.length);
+  return prefix === "" ? undefined : `${url.origin}${prefix}${PRM_PREFIX}${DOOR_MOUNT}`;
 }
 
 /** RFC 8414 §3 / RFC 9728 §3.1: the well-known segment goes BETWEEN the origin

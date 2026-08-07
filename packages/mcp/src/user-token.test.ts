@@ -140,20 +140,30 @@ describe("vendoUserToken", () => {
     expect(posted).toEqual([]);
   });
 
-  it("refuses a door's OWN http token endpoint by the same rule, before the key is sent", async () => {
-    // A deployment that names ITSELF as its authorization server picks the token
-    // endpoint off its own metadata — which is no reason to post a long-lived
-    // key in cleartext. Same rule as a third party's endpoint.
-    const door = makeDoor({ serviceAuth: { keys: [SERVICE_KEY] } });
-    const seen: string[] = [];
+  it("refuses a non-loopback http url by the same rule, before ANY request is made", async () => {
+    // The attack the rule closes: DISCOVERY over plain http carries no
+    // credential, but it names the URL the key is posted to, and on the wire it
+    // is forgeable. Anyone on the path answers with their own
+    // `authorization_servers` — an https one, so the token-endpoint check
+    // passes — and collects the key. So the caller's own url answers to the
+    // rule first, before the transport is touched at all.
+    let requested: string | undefined;
+    const never: typeof fetch = (input) => {
+      requested = String(input);
+      throw new Error("vendoUserToken must not make a request for a cleartext url");
+    };
 
-    await expect(vendoUserToken({
+    const failure = await vendoUserToken({
       url: "http://product.example/api/vendo/mcp",
       key: SERVICE_KEY,
       user: "user_1",
-      fetch: doorFetch({ "http://product.example": door }, seen),
-    })).rejects.toThrow(/token_endpoint that is not an HTTPS URL/);
-    expect(seen).toEqual(["http://product.example/.well-known/oauth-protected-resource/api/vendo/mcp"]);
+      fetch: never,
+    }).catch((error: unknown) => error as Error);
+
+    expect(failure.message).toMatch(/is not an HTTPS URL; over plain http the discovery metadata/);
+    // A refusal about a credential does not repeat the credential.
+    expect(failure.message).not.toContain(SERVICE_KEY);
+    expect(requested).toBeUndefined();
   });
 
   it("still exchanges over LOOPBACK http, the one exception the door already makes", async () => {
@@ -167,6 +177,80 @@ describe("vendoUserToken", () => {
     });
 
     expect(token.accessToken).toMatch(/^vmat_/);
+  });
+
+  it("falls back to the door's prefix-local metadata URL when the root-inserted one 404s", async () => {
+    // The Next `basePath` shape, measured on Maple at `/maple`: the deployment
+    // is mounted under a prefix by its own FRAMEWORK, which answers its own 404
+    // for everything outside it — so the RFC 9728 root-inserted URL never
+    // reaches Vendo at all. The door publishes the same document prefix-local
+    // (its 401 challenge and server card name that URL), and that is where the
+    // helper looks second.
+    const door = makeDoor({
+      serviceAuth: { keys: [SERVICE_KEY] },
+      baseUrl: "https://product.example/maple",
+      mount: "/api/vendo/mcp",
+    });
+    const seen: string[] = [];
+
+    const token = await vendoUserToken({
+      url: "https://product.example/maple/api/vendo/mcp",
+      key: SERVICE_KEY,
+      user: "user_1",
+      fetch: frameworkPrefixedFetch("/maple", door, seen),
+    });
+
+    expect(token.accessToken).toMatch(/^vmat_[A-Za-z0-9_-]{43}$/);
+    expect(token.expiresIn).toBe(600);
+    expect(seen).toEqual([
+      "https://product.example/.well-known/oauth-protected-resource/maple/api/vendo/mcp",
+      "https://product.example/maple/.well-known/oauth-protected-resource/api/vendo/mcp",
+      "https://product.example/maple/api/vendo/mcp/token",
+    ]);
+  });
+
+  it("does NOT ask for the prefix-local URL when the root-inserted one answers", async () => {
+    // Same prefixed deployment, mounted by a PROXY that strips the prefix
+    // instead: the root-inserted URL is served, and it is what a spec client
+    // derives, so it stays first and nothing probes a second spelling.
+    const door = makeDoor({
+      serviceAuth: { keys: [SERVICE_KEY] },
+      baseUrl: "https://product.example/maple",
+      mount: "/api/vendo/mcp",
+    });
+    const seen: string[] = [];
+
+    const token = await vendoUserToken({
+      url: "https://product.example/maple/api/vendo/mcp",
+      key: SERVICE_KEY,
+      user: "user_1",
+      fetch: doorFetch({ "https://product.example": door }, seen),
+    });
+
+    expect(token.accessToken).toMatch(/^vmat_/);
+    expect(seen.filter((url) => url.includes("/.well-known/"))).toEqual([
+      "https://product.example/.well-known/oauth-protected-resource/maple/api/vendo/mcp",
+    ]);
+  });
+
+  it("names BOTH URLs it tried when neither spelling answers", async () => {
+    const seen: string[] = [];
+    const missing: typeof fetch = (input) => {
+      seen.push(String(input));
+      return Promise.resolve(new Response(null, { status: 404 }));
+    };
+
+    await expect(vendoUserToken({
+      url: "https://product.example/maple/api/vendo/mcp",
+      key: SERVICE_KEY,
+      user: "user_1",
+      fetch: missing,
+    })).rejects.toThrow(
+      "Discovery failed: GET https://product.example/.well-known/oauth-protected-resource/maple/api/vendo/mcp"
+      + " answered 404, and GET https://product.example/maple/.well-known/oauth-protected-resource/api/vendo/mcp"
+      + " answered 404",
+    );
+    expect(seen).toHaveLength(2);
   });
 
   it("does not let a redirect carry the key off the endpoint that was validated", async () => {
@@ -237,6 +321,22 @@ function doorFetch(doors: Record<string, McpDoor>, seen: string[] = []): typeof 
   };
 }
 
+/** A REAL door mounted under a path prefix by its own FRAMEWORK — the Next
+ *  `basePath` shape. Everything outside the prefix is the framework's 404,
+ *  answered before Vendo is reached, which is exactly why the root-inserted
+ *  discovery URL cannot work there (measured on Maple at `/maple`). */
+function frameworkPrefixedFetch(prefix: string, door: McpDoor, seen: string[] = []): typeof fetch {
+  return async (input, init) => {
+    const request = new Request(input as RequestInfo, init);
+    seen.push(request.url);
+    const { pathname } = new URL(request.url);
+    if (pathname !== prefix && !pathname.startsWith(`${prefix}/`)) {
+      return new Response("<html>404</html>", { status: 404, headers: { "content-type": "text/html" } });
+    }
+    return door.handler(request);
+  };
+}
+
 /** A REAL deployment door that names an external authorization server, plus
  *  that server's metadata and token response — the only two documents a third
  *  party, rather than the caller or the door, gets to write. */
@@ -271,6 +371,8 @@ async function connect(door: McpDoor, accessToken: string): Promise<Client> {
 function makeDoor(options: {
   serviceAuth?: { keys: readonly string[] };
   remoteAs?: { issuer: string; audience: string };
+  baseUrl?: string;
+  mount?: string;
 }): McpDoor {
   const guard: Guard = {
     async check() { return { action: "run", decidedBy: "default" }; },
@@ -295,6 +397,8 @@ function makeDoor(options: {
     store: new MemoryStore(),
     ...(options.serviceAuth === undefined ? {} : { serviceAuth: options.serviceAuth }),
     ...(options.remoteAs === undefined ? {} : { remoteAs: options.remoteAs }),
+    ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
+    ...(options.mount === undefined ? {} : { mount: options.mount }),
     oauth: {
       async authorize() { return { subject: "user_1" }; },
       async principal(subject) { return { kind: "user", subject }; },

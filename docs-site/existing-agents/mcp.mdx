@@ -147,12 +147,14 @@ powerful as your backend already is.
 
     The MCP URL is the only endpoint you configure: the helper reads the door's
     own discovery documents to find the token endpoint, which is also how it
-    follows a deployment fronted by a broker. That makes the origin-root
-    `.well-known` route from [Open the door](#1-open-the-door) a prerequisite —
-    without it discovery answers `404` and the exchange is never attempted. A
-    backend that does not serve that route posts the form below instead, which
-    needs no discovery. Ten minutes, no refresh token, no cache — mint one per
-    job and let it expire.
+    follows a deployment fronted by a broker. That makes the `.well-known` route
+    from [Open the door](#1-open-the-door) a prerequisite — without it discovery
+    answers `404` and the exchange is never attempted. That one route is also
+    all a path-mounted deployment needs: your framework serves it under your
+    prefix, and when the origin-root URL 404s there the helper asks for the
+    prefix-local one the door advertises. A backend that does not serve that
+    route posts the form below instead, which needs no discovery. Ten minutes,
+    no refresh token, no cache — mint one per job and let it expire.
   </Step>
 
   <Step title="Talk MCP with it">
