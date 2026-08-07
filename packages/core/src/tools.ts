@@ -252,6 +252,41 @@ export const toolDescriptorSchema = z.object({
   toolkit: z.string().optional(),
 }).passthrough() satisfies z.ZodType<ToolDescriptor>;
 
+/**
+ * Is this input schema BLIND — a fail-closed placeholder — rather than the
+ * host's own statement that the tool takes no arguments?
+ *
+ * `inputSchema` is REQUIRED on every descriptor and the extraction provenance
+ * marker never crosses the wire (the registry's descriptor whitelist), so the
+ * BYTES are all a prompt surface has. An object with no named properties that
+ * still admits additional ones — or one that declares nothing at all — is what
+ * every extractor emits when it could not read the arguments; a DECLARED
+ * no-argument tool closes with `properties: {}` and nothing else.
+ *
+ * The distinction is load-bearing: printing a blind schema reads to a model as
+ * "this tool takes no arguments", which is a confident lie, and the model then
+ * calls it with none.
+ */
+export function inputSchemaIsBlind(schema: JsonSchema | undefined): boolean {
+  if (schema === undefined) return true;
+  const properties = schema.properties;
+  const named = typeof properties === "object" && properties !== null && !Array.isArray(properties)
+    ? properties as Record<string, unknown>
+    : undefined;
+  if (named !== undefined && Object.keys(named).length > 0) return false;
+  return schema.additionalProperties === true || named === undefined;
+}
+
+/** The two sentences the tool-shape guarantee prints for a slot nothing could
+ *  read. ONE wording, three prompt surfaces (the apps shape brief, the
+ *  automation planner, the screen agent's tool brief): a blind slot must never
+ *  print as `{}`, which reads as "takes no arguments" / "returns nothing". */
+export const UNKNOWN_INPUT_SCHEMA_NOTE =
+  "arguments unknown — nothing could read this tool's input schema; it is NOT a no-argument tool";
+
+export const UNKNOWN_OUTPUT_SHAPE_NOTE =
+  "result shape unknown — pass the whole output through; do not bind to guessed field names";
+
 /** 01-core §4 */
 export interface ToolCall {
   id: string;
