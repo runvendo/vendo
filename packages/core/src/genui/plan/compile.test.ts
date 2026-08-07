@@ -215,6 +215,14 @@ describe("compilePlan", () => {
     expect(truncated.issues.join(" ")).toContain("ended before </Plan>");
   });
 
+  it("caps the issue list, because the issues become the retry prompt", () => {
+    // One stray close tag mints one sentence, so a hostile (or merely broken)
+    // document otherwise hands the model an issue per byte.
+    const result = compilePlan(`<Plan name="Noise">${"</X>".repeat(2000)}</Plan>`, FACTS);
+    expect(result.issues.length).toBeLessThan(200);
+    expect(result.issues.at(-1)).toContain("were not listed");
+  });
+
   it("issues read as sentences a person could say, never error codes", () => {
     const result = compilePlan(
       `<Plan>

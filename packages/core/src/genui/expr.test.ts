@@ -371,6 +371,12 @@ describe("checkExpr", () => {
       ['sum(grids, "cells")', null],
       ["difference(matrix, 5)", null],
       ["difference(orders.lines.cents, 5)", null],
+      // days_until reads ONE date, so a column of dates is the same split in a
+      // non-numeric slot: the evaluator refuses the list, and the check may not
+      // wave it through just because the column's items are strings.
+      ["days_until(orders.0.placed)", -11],
+      ["days_until(orders.placed)", null],
+      ["days_until(orders.lines.at)", null],
     ];
     for (const [source, value] of table) {
       const issues = checkExpr(source, context);
