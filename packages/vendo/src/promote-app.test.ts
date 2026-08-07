@@ -7,7 +7,7 @@ import { createPromoteApp, type PromoteHalves } from "./promote-app.js";
  * Build contract §9.5 — the rollback rule, over fakes, because the interleavings
  * that matter (a lost race, a rollback that itself collides) are not reachable
  * on demand through the wire. The end-to-end proof that they DO happen is
- * orgs-e8.test.ts's two-simultaneous-promotes case.
+ * orgs-multi-party.test.ts's two-simultaneous-promotes case.
  */
 
 const APP = "app_seam" as AppId;

@@ -2,8 +2,8 @@ import { VendoError, type ToolDescriptor, type ToolOutcome, type ToolRegistry } 
 import { describe, expect, it } from "vitest";
 import { withUniqueToolTitles } from "./duplicate-titles.js";
 
-/** Finding 6 — the gate threw on enumeration but let EXECUTE straight through, so
- *  a colliding deployment still performed a real mutating call. */
+/** The gate once threw on enumeration but let EXECUTE straight through, so a
+ *  colliding deployment still performed a real mutating call. */
 const tool = (name: string, title?: string): ToolDescriptor => ({
   name,
   description: `${name} tool`,
@@ -31,7 +31,7 @@ function stack(descriptors: ToolDescriptor[]): { registry: ToolRegistry; execute
   return { registry: withUniqueToolTitles(registry), executed };
 }
 
-describe("a colliding deployment cannot EXECUTE either (finding 6)", () => {
+describe("a colliding deployment cannot EXECUTE either", () => {
   it("refuses the call instead of performing a mutating host request", async () => {
     const { registry, executed } = stack([
       tool("maple_payments_send", "Send money"),
