@@ -7,7 +7,6 @@ import {
   type AgentRunner,
   type Json,
   type ToolDescriptor,
-  type ToolRegistry,
   type VendoViewStreamingToolCall,
 } from "@vendoai/core";
 import { describe, expect, it } from "vitest";

@@ -359,7 +359,7 @@ const appsTailSeams = (composition: VendoComposition, seams: AppsSeams): Partial
  *  tool registry the moment it exists. */
 export const composeApps = (composition: VendoComposition): Pick<VendoComposition,
   "appTokens" | "access" | "apps" | "appsRuntime" | "resolveAppToolRisk"> => {
-  const { store, config, actions, catalog, files, capability, configuredBaseUrl } = composition;
+  const { store, actions, catalog, files, capability } = composition;
   // execution-v2 Lane C — the per-app box bearer store (hash rows are the
   // authority) shared by the machine-env assembler below (mint at provision)
   // and the wire's /box verification.

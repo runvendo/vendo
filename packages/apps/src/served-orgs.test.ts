@@ -138,7 +138,7 @@ describe("§9.8 — open() routes ORG-owned served apps through the proxy", () =
       box. Every served app is answered with this deployment's proxy now, which
       re-checks `can(viewer)` against live rows on every request. */
   it("routes a PERSONAL served app through the proxy too — an owner's own app is not a bearer URL", async () => {
-    const { runtime, store, seed } = await setup();
+    const { runtime, seed } = await setup();
     await seed("app_own_served", "dana");
 
     const opened = await runtime.open("app_own_served", ctx("dana"));

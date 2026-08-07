@@ -4,7 +4,6 @@ import type {
   KnowledgeAdapter,
   KnowledgeContext,
   KnowledgeDoc,
-  KnowledgeHit,
   KnowledgeQuery,
   RunContext,
   ToolRegistry,

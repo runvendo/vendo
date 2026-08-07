@@ -14,7 +14,7 @@ import {
   type ToolOverride,
   type ToolsFile,
 } from "../formats.js";
-import { bindingIdentity, clearAliasCache, withUniqueNames, writeIfChanged, type SourcedExtractedTool } from "./common.js";
+import { bindingIdentity, clearAliasCache, withUniqueNames, writeIfChanged } from "./common.js";
 import { compilerFloorWarning } from "./compiler-gate.js";
 import { scanComponentCatalog } from "./catalog-scan.js";
 import { writeCatalog } from "./catalog.js";

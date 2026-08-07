@@ -40,7 +40,7 @@ import { e2bSandbox } from "@vendoai/apps/e2b";
 import { claudeCode } from "@vendoai/harnesses/claude-code";
 import { appAccess, createStore, type VendoStore } from "@vendoai/store";
 import { afterEach, describe, expect, it } from "vitest";
-import { createVendo, type Vendo } from "./server.js";
+import { createVendo } from "./server.js";
 
 // A named secret can EXIST and be empty (`infisical secrets get` exits 0 either
 // way), and an empty template id fails the provider with

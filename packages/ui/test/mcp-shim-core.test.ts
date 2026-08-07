@@ -1,9 +1,8 @@
-import type { Json, ToolOutcome, Tree, UIPayload } from "@vendoai/core";
+import type { Json, ToolOutcome, UIPayload } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
 import {
   callApp,
   createShimRuntime,
-  resolveQueries,
   setQueryData,
   type BridgeCallResult,
   type OpenInProductPayload,

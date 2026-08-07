@@ -24,7 +24,7 @@ import type {
   ServerActionHandler,
 } from "@vendoai/actions";
 import type { AgentComposition } from "@vendoai/agents";
-import type { AppsRuntime, PinBaseline, SandboxAdapter } from "@vendoai/apps";
+import type { AppsRuntime, PinBaseline } from "@vendoai/apps";
 import type { AutomationsEngine } from "@vendoai/automations";
 import type {
   ActAs,

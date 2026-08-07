@@ -17,7 +17,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Principal, VendoTheme } from "@vendoai/core";
-import { createStore, type VendoStore } from "@vendoai/store";
+import { createStore } from "@vendoai/store";
 import { defineHarness } from "@vendoai/harnesses";
 import type { LanguageModel, UIMessage } from "ai";
 import { afterEach, describe, expect, it } from "vitest";

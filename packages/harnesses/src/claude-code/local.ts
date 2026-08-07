@@ -48,7 +48,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { VendoError } from "@vendoai/core";
 import type { ClaudeTurnEvent } from "@vendoai/apps/claude-turn";
-import type { CheckoutFile, SyncFile, TreeState } from "../materialize.js";
+import type { SyncFile, TreeState } from "../materialize.js";
 import { emptyTree, inWritableMount } from "../materialize.js";
 import type { SessionMachine, SessionMessage } from "./machine.js";
 

@@ -2,7 +2,7 @@
  * Build contract §1.1 (the three-status surface a harness sees) and §1.4
  * (approvals wait or fail — they never suspend a run).
  */
-import type { ApprovalId, Harness, ToolCall, ToolOutcome, ToolRegistry } from "@vendoai/core";
+import type { Harness, ToolOutcome, ToolRegistry } from "@vendoai/core";
 import { CAPABILITY_MISS_TOOL_NAME } from "./capability-miss.js";
 import { FIND_TOOLS_TOOL_NAME } from "./tool-search.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -318,7 +318,7 @@ describe("turn.tools.call — §1.4 approvals", () => {
   });
 
   it("interactive=true: raises the card, awaits the tap, then the call proceeds", async () => {
-    const { tools, mirrored } = harness({ registry, guard });
+    const { tools } = harness({ registry, guard });
     const promise = tools.call("pay", { amount: 10 });
     // The guard has been PREVIEWED (so the card is up) before the wait begins.
     await vi.waitFor(() => expect(guard.pending()).toHaveLength(1));

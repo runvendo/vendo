@@ -19,7 +19,6 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 import {
   descriptorHash,
   toolOutcomeSchema,
-  type ActAs,
   type PermissionGrant,
   type Principal,
   type RunContext,

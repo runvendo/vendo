@@ -10,7 +10,6 @@
  */
 import {
   type AppDocument,
-  type PlanDisplay,
   type ToolSemantics,
   type Tree,
   type TreeNode,
@@ -25,18 +24,6 @@ import { hasDefaultExport, pinComponentName, pinForkSource, type PinBaseline } f
  *  this pipeline; re-exported here because every generation module already
  *  imports it from this file. */
 export type { HostToolInfo } from "../checking/deps.js";
-
-/** A tree on its way to the screen: the skeleton the moment a plan lands, then
- *  the same tree again with each group's contents spliced in. */
-export interface GeneratedPartial {
-  name?: string;
-  tree: Tree;
-  components?: Record<string, string>;
-  /** The plan's arrival posture (redesign spec §5), forwarded so the in-process
-   *  emitter puts it on the same payload field the harness render seam does.
-   *  Absent means inline. */
-  display?: PlanDisplay;
-}
 
 /**
  * Everything a generation needs — the floor's four fields plus the pipeline's

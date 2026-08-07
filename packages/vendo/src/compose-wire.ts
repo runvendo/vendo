@@ -23,7 +23,7 @@ const telemetryClient = (enabled: boolean | undefined): Telemetry | undefined =>
 
 /** Everything the wire handler reads off this composition. */
 export const wireDepsFor = (composition: VendoComposition): WireDeps => {
-  const { config, store, guard, apps, actions, actionsConfig, appTokens, automations } = composition;
+  const { config, store, guard, apps, actionsConfig, appTokens, automations } = composition;
   const { boundTools, byoApprovals, connections, sandbox, inference, doctor, door } = composition;
   const { resolvePrincipal, membershipsSeam, resolvePersonSeam, userFactsSeam, ready } = composition;
   const { appsMounted, automationsMounted, sessionsConfig, sessionNow, sessionOps } = composition;

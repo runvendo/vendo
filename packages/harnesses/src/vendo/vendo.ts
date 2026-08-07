@@ -16,7 +16,7 @@
  *   business — that is the dividing line, and orchestration is thinking.
  */
 import { z } from "zod";
-import { modelToolDescription, type Harness, type HarnessEvent, type Json, type ToolDescriptor, type Turn } from "@vendoai/core";
+import { modelToolDescription, type Harness, type Json, type Turn } from "@vendoai/core";
 import { readCompactionState, writeCompactionState } from "./compaction.js";
 import { startTurn, type TurnCompaction, type TurnContext } from "./loop.js";
 import { contextWindowTokens, rememberResolvedModelId } from "./model-windows.js";

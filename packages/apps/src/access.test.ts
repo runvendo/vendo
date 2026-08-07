@@ -4,7 +4,6 @@ import {
   type AccessLevel,
   type AppAccess,
   type AppDocument,
-  type AppGrantRecord,
   type AppId,
   type RunContext,
   type ToolRegistry,

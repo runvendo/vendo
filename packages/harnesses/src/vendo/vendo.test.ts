@@ -28,7 +28,6 @@ import {
   textTurn,
   toolCallTurn,
   userMessage,
-  ZERO_USAGE,
   type TestGuard,
 } from "../test-doubles.test-util.js";
 

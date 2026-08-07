@@ -3,7 +3,7 @@
  * The model passes tool output straight in; no `asOptions` reshape needed.
  * `multiple` folds in MultiSelect.
  */
-import { control, t } from "../tokens.js";
+import { control } from "../tokens.js";
 import { FieldShell, useFieldIds } from "./field.js";
 
 export type SelectOption = string | number | Record<string, unknown>;

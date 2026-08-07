@@ -1,6 +1,5 @@
 import { z } from "zod";
 import type { Json } from "../ids.js";
-import { TREE_MAX_NODES, TREE_MAX_QUERIES } from "./tree-limits.js";
 
 export {
   TREE_MAX_NODES,

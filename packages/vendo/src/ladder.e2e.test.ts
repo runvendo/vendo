@@ -343,7 +343,7 @@ async function harness(): Promise<{
 
 describe.sequential("Wave 9 rung (a) e2e — the 8am digest rides the automations engine, no machine anywhere", () => {
   it("edit authors+arms the away-safe half of the ask, and the tick fires it onto the board", async () => {
-    const { store, guard, apps, automations, emails } = await harness();
+    const { guard, apps, automations, emails } = await harness();
 
     // 1. The server-shaped instruction becomes a STEPS automation, in seconds.
     //    The ask names a send, so the planner's first answer does too, and §12

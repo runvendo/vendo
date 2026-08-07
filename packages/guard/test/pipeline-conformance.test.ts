@@ -1,9 +1,9 @@
 import { canonicalJson, sha256Hex } from "@vendoai/core";
-import type { GuardDecision, RiskLabel, RunContext, ToolDescriptor } from "@vendoai/core";
+import type { GuardDecision, RiskLabel, RunContext } from "@vendoai/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createGuard } from "../src/index.js";
 import { createMemoryStore } from "./fixtures/memory-store.js";
-import { FixtureTools, alice, call, context, descriptor, seedGrant } from "./fixtures/tools.js";
+import { FixtureTools, call, context, descriptor, seedGrant } from "./fixtures/tools.js";
 
 afterEach(() => {
   vi.useRealTimers();

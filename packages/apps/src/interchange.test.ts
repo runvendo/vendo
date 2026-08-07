@@ -2,14 +2,12 @@ import type { AppDocument, RunContext, ToolRegistry } from "@vendoai/core";
 import { VENDO_APP_FORMAT, validateAppDocument } from "@vendoai/core";
 import { unzipSync, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
-import { createApps, type SandboxAdapter } from "./index.js";
+import { createApps } from "./index.js";
 import { pinComponentName } from "./pins.js";
 import {
-  fakeSandbox,
   guardFixture,
   memoryStore,
   seedAppRow,
-  scriptedLanguageModel,
 } from "./testing/index.js";
 
 const encoder = new TextEncoder();

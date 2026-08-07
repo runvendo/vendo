@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { expectFocusIndicator, expectKeyboardReachability, openScenario, tabTo } from "./helpers.js";
+import { expectKeyboardReachability, openScenario, tabTo } from "./helpers.js";
 
 // Quarantine notes (2026-08-03, lane G triage): every `test.fixme` below fails
 // IDENTICALLY on rebuild/cutover — verified by running the whole suite on a

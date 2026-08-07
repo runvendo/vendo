@@ -198,7 +198,7 @@ describe("the reviewer can never be the reason a validate fails", () => {
 
   it("still reports the deterministic findings when the reviewer is silent", async () => {
     const runtime = setup();
-    const appId = await storedApp(runtime);
+    await storedApp(runtime);
     reviewerRefuses = true;
 
     // A document whose name is gone: a fact, decided by lookup, with no model in

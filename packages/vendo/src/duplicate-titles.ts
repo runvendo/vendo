@@ -1,4 +1,4 @@
-import { duplicateToolTitles, VendoError, type ToolDescriptor, type ToolRegistry } from "@vendoai/core";
+import { duplicateToolTitles, VendoError, type ToolRegistry } from "@vendoai/core";
 import { FIND_TOOLS_TOOL_NAME } from "@vendoai/harnesses";
 
 /**

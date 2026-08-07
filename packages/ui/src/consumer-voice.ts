@@ -52,8 +52,3 @@ export function consumerVoiceViolation(text: string): string | undefined {
   }
   return undefined;
 }
-
-/** Whether a sentence may be shown to a person as-is. */
-export function isConsumerSafe(text: string): boolean {
-  return consumerVoiceViolation(text) === undefined;
-}

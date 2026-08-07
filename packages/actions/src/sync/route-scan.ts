@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type TS from "typescript";
-import type { ExtractedTool, HttpMethod, SchemaSource } from "../formats.js";
+import type { HttpMethod, SchemaSource } from "../formats.js";
 import {
   allocateToolName,
   extractedRisk,
