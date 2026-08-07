@@ -37,8 +37,10 @@ export const SURFACE_MARKERS: readonly string[] = [
   "useSlotApp(",
 ];
 
-/** `import { …, VendoRoot, … } from "@vendoai/…"` — the removed export taken
-    from the package, which is the only spelling that can no longer resolve. */
+/** A `VendoRoot` named in an import from a Vendo package — the removed export
+    taken from the package, the one spelling that can no longer resolve. (The
+    specifier is not spelled out in prose here: the dependency guard reads a
+    literal one as a real cross-package import.) */
 const LEGACY_ROOT_IMPORT = /import\s*\{[^}]*\bVendoRoot\b[^}]*\}\s*from\s*["']@vendoai\//;
 
 const SOURCE_FILE = /\.(?:[cm]?[jt]sx?)$/;
