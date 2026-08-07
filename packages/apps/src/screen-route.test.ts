@@ -113,6 +113,25 @@ const runtimeWith = (screen?: ScreenAssembler, options: {
   };
 };
 
+/** A store whose `vendo_apps` writes are refused while `refusing()` says so, with
+ *  reads left healthy — the write-only refusal an edit actually meets. */
+const storeRefusingAppWritesWhile = (refusing: () => boolean): ReturnType<typeof memoryStore> => {
+  const store = memoryStore();
+  const records = store.records.bind(store);
+  return Object.assign(store, {
+    records(collection: string) {
+      const inner = records(collection);
+      if (collection !== "vendo_apps") return inner;
+      return Object.assign(Object.create(Object.getPrototypeOf(inner) ?? {}), inner, {
+        async put(...args: Parameters<typeof inner.put>) {
+          if (refusing()) throw Object.assign(new Error("Store request failed."), { code: "unavailable" });
+          return await inner.put(...args);
+        },
+      });
+    },
+  }) as ReturnType<typeof memoryStore>;
+};
+
 /** An assembler that records what it was handed and answers however the test says. */
 function recordingAssembler(answer: Awaited<ReturnType<ScreenAssembler["assemble"]>>) {
   const seen: ScreenRequest[] = [];
@@ -329,6 +348,37 @@ describe("the public create/edit API runs the one engine", () => {
     // which is what keeps a remix's replayable trail replayable.
     expect((await runtime.history(app.id, ctx).list()).map(({ intent }) => intent))
       .toContain("say last month instead");
+  });
+
+  it("`edit` whose save was REFUSED fails — it never reports the pre-edit app as the edit", async () => {
+    // A whole-store outage self-reports (the read fails and the door throws), so
+    // what an edit really meets is a refused WRITE: the `assertCurrent` conflict
+    // when a skill's timer-save lands inside the save's window, or a write the
+    // store rejects on its own. Both arrive in the same place — `authored`
+    // catches them, logs, and returns as if it had saved. Assembly then says
+    // "assembled", the row still holds the PRE-edit document, and reading it back
+    // as this edit's result is a success receipt for a change that never
+    // happened: the agent moves on and the person's ask is silently lost.
+    let runtime: AppsRuntime;
+    let refusing = false;
+    runtime = createApps({
+      store: storeRefusingAppWritesWhile(() => refusing),
+      guard: guardFixture(),
+      tools,
+      catalog: [],
+      model: basicLanguageModel(),
+      screen: scriptedAssembler(() => runtime, (_request, current) => current === null ? WIRE : EDITED),
+    });
+    const app = await runtime.create({ prompt: "Show my spending" }, ctx);
+
+    refusing = true;
+    const edited = await runtime.edit(app.id, "say last month instead", ctx);
+
+    expect(edited.failure?.code).toBe("edit-rejected");
+    expect(edited.issues?.join(" ")).toContain("Store request failed.");
+    // And the app the caller is handed is the one that is really stored.
+    expect(JSON.stringify(edited.app)).toContain("This month");
+    expect(JSON.stringify(await runtime.get(app.id, ctx))).toContain("This month");
   });
 
   it("`edit` with no assembler composed refuses, and the stored app is untouched", async () => {
