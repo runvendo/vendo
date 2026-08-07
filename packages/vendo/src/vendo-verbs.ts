@@ -1,4 +1,4 @@
-import { VENDO_TOOL_TITLES, type Json, type RunContext, type ToolDescriptor, type ToolRegistry } from "@vendoai/core";
+import { VENDO_TOOL_TITLES, VendoError, type Json, type RunContext, type ToolDescriptor, type ToolRegistry } from "@vendoai/core";
 
 /**
  * Design §4's vendo-verb family, projected as ordinary tools on the one
@@ -151,7 +151,11 @@ export function vendoVerbsRegistry(ports: VendoVerbPorts): ToolRegistry {
             return fail("not-found", `${call.tool} is not a Vendo verb`);
         }
       } catch (error) {
-        // A port failure is OURS, not the model's, and raw JS text ("Cannot read
+        // A VendoError was authored FOR the model ("app X has no schedule to
+        // change. Ask for the automation itself first…"). Masking it tells the
+        // model to retry a call that can never succeed, so forward it verbatim.
+        if (error instanceof VendoError) return fail(error.code, error.message);
+        // Anything else is OURS, not the model's, and raw JS text ("Cannot read
         // properties of undefined") teaches it nothing it can act on while
         // leaking our internals into the transcript. Log the detail for us; hand
         // the model a sentence about what to do.

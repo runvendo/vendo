@@ -66,6 +66,15 @@ function referencedTools(doc: AppDocument): Set<string> {
     }
     for (const node of tree.nodes ?? []) collectActions(node.props, tools);
   }
+  // The compiler-stamped manifest of what each island's SOURCE calls through
+  // the ambient `tools` API. Those calls are in generated code, so they never
+  // appear in tree.queries or node props — without this, an app full of islands
+  // reports zero references for every tool it actually runs.
+  for (const names of Object.values(doc.componentTools ?? {})) {
+    for (const name of names) {
+      if (!name.startsWith("fn:")) tools.add(name);
+    }
+  }
   for (const trigger of doc.triggers ?? []) {
     if (trigger.run.kind !== "steps") continue;
     for (const step of trigger.run.steps) {

@@ -81,7 +81,7 @@ function relayAnswer(answer: BoxResponse): Response {
     the skin has one shape, not two. */
 export const servedProxyRoutes: RouteEntry[] = [
   route("*", "/apps/:appId/serve/*", async (wire) => {
-    const { request, params, deps, segments } = wire;
+    const { request, params, deps } = wire;
     const appId = string(params["appId"], "app id");
     const ctx = await wire.context("app");
     // Everything after `/apps/<id>/serve` is the path INSIDE the box, QUERY
@@ -89,7 +89,12 @@ export const servedProxyRoutes: RouteEntry[] = [
     // every served app that reads one (?tab=, ?vendoTheme=, pagination) breaks
     // the moment the app is shared. Still payload only — the search string is
     // part of what the caller asked for, not host authority.
-    const inner = `/${segments.slice(3).join("/")}${wire.url.search}`;
+    //
+    // Split `wire.path` (raw), NOT `wire.segments` (percent-DECODED): this path
+    // is concatenated into the box's fetch URL, so a decoded `%2F` would become
+    // a real separator and a decoded `%3F` would start a query nobody sent.
+    const raw = wire.path.split("/").filter(Boolean);
+    const inner = `/${raw.slice(3).join("/")}${wire.url.search}`;
     // `serve` re-checks can(viewer) against live rows BEFORE any machine work,
     // so a revoked viewer's next request is refused even though what their
     // session already rendered stands.

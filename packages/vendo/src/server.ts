@@ -1175,13 +1175,19 @@ function isJsonRequest(request: Request): boolean {
 /** 09 §4 — the .vendo/ files feeding the generation seat, read fail-soft (the
     composition works without them; on non-Node runtimes they just stay unset).
     Reads `node:fs` through the runtime built-in accessor so this module carries
-    NO static Node import and still loads/bundles for edge/Worker targets. */
+    NO static Node import and still loads/bundles for edge/Worker targets.
+
+    `root` is a `profileDir`, so it goes through `vendoDirOf` — it may be the
+    host root or the `.vendo` directory itself, exactly like the actions
+    registry's reader. Appending unconditionally reads `.vendo/.vendo/…`, which
+    fail-soft turns into silence: theme, brief, catalog and knowledge all
+    vanish with no error. */
 function dotVendoFile(name: string, root?: string): string | undefined {
   try {
     const proc = (globalThis as { process?: { getBuiltinModule?: (id: string) => unknown } }).process;
     const fs = proc?.getBuiltinModule?.("node:fs") as typeof import("node:fs") | undefined;
     if (fs === undefined) return undefined;
-    return fs.readFileSync(`${root === undefined ? "." : root}/.vendo/${name}`, "utf8");
+    return fs.readFileSync(`${vendoDirOf(root ?? ".")}/${name}`, "utf8");
   } catch {
     return undefined;
   }
@@ -1279,7 +1285,7 @@ function dotVendoPinBaselines(root?: string): PinBaseline[] {
   const proc = (globalThis as { process?: { getBuiltinModule?: (id: string) => unknown } }).process;
   const fs = proc?.getBuiltinModule?.("node:fs") as typeof import("node:fs") | undefined;
   if (fs === undefined) return [];
-  const directory = `${root === undefined ? "." : root}/.vendo/remixable`;
+  const directory = `${vendoDirOf(root ?? ".")}/remixable`;
   let names: string[];
   try {
     names = fs.readdirSync(directory).filter((name) => name.endsWith(".json")).sort();

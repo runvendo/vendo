@@ -122,13 +122,18 @@ export function cloudTools(options: CloudToolsOptions): Connector {
       // The auto-composed cloud default must never brick the host: a thrown
       // descriptors() fails the ENTIRE registry load, host tools included.
       // The fetch below degrades to "no connector tools" with one warn.
-      const items = await fetchToolkitTools(options.apps.join(","));
+      const items = await fetchToolkitTools([...new Set(options.apps)].join(","));
       const nextNormalizedToRaw = new Map<string, { raw: string; toolkit: string }>();
       const descriptors: ToolDescriptor[] = [];
       for (const item of items) {
         if (typeof item.slug !== "string" || typeof item.toolkit !== "string") continue;
         const name = normalizeToolName(item.toolkit, item.slug);
-        if (nextNormalizedToRaw.has(name)) throw new Error(`Cloud tools name collision: ${name}`);
+        // Degrade, do not throw: the console repeating a slug must not delete
+        // the host's own tools. First one wins so the list stays stable.
+        if (nextNormalizedToRaw.has(name)) {
+          console.warn(`[vendo] Cloud tools: skipping duplicate tool name ${name}`);
+          continue;
+        }
         nextNormalizedToRaw.set(name, { raw: item.slug, toolkit: item.toolkit });
         const tags = Array.isArray(item.tags)
           ? (item.tags as unknown[]).filter((tag): tag is string => typeof tag === "string")
