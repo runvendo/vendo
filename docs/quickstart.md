@@ -132,7 +132,7 @@ import { registry } from "@/vendo/registry";
 const vendo = createVendo({
   // Detected next-auth — authJs() fills the identity seams
   // (request→user, actAs, door OAuth); options and the per-seam escape
-  // hatch: docs/act-as-presets.md.
+  // hatch: https://docs.vendo.run/connect/act-as-presets.
   auth: authJs(),
   catalog: registry,
   guard: guard({ policy: {} }), // .vendo/policy.json: destructive asks, reads run

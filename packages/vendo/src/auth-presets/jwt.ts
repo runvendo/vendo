@@ -19,7 +19,7 @@ const EMPTY_SECRET_MESSAGE =
 
 /**
  * 09-vendo §2.1 — the host-generic JWT host-identity preset, pairing the
- * docs' generic recipe (docs/act-as-presets.md) with a matching session
+ * docs' generic recipe (https://docs.vendo.run/connect/act-as-presets) with a matching session
  * resolver: the host API's own HS256 bearer JWT, verified with the same
  * shared secret the actAs half (`genericJwtPreset`, 04 §2.1) signs with.
  *

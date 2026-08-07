@@ -303,7 +303,7 @@ describe("vendo init (zero-question)", () => {
     expect(route).toContain(`auth: ${preset}(),`);
     // The detected line carries its escape hatch, and the preset owns the
     // principal seam — no hand-wired anonymous resolver remains.
-    expect(route).toContain("docs/act-as-presets.md");
+    expect(route).toContain("https://docs.vendo.run/connect/act-as-presets");
     expect(route).not.toContain("principal");
     // Detection is silent: no question, no advisory.
     expect(sink.logs.join("\n")).not.toContain("Auth:");
@@ -410,7 +410,7 @@ describe("vendo init (zero-question)", () => {
     expect(route).toContain("auth: clerk(),");
     expect(route).toContain("// Selected Clerk — clerk() fills the identity seams");
     expect(route).not.toContain("Detected");
-    expect(route).toContain("docs/act-as-presets.md");
+    expect(route).toContain("https://docs.vendo.run/connect/act-as-presets");
     expect(route).not.toContain("principal");
     // …plus one install hint, since @clerk/backend is not in package.json.
     const advisories = sink.logs.filter((line) => line.includes("Auth:"));
@@ -437,7 +437,7 @@ describe("vendo init (zero-question)", () => {
     const advisories = sink.logs.filter((line) => line.includes("Auth:"));
     expect(advisories).toHaveLength(1);
     expect(advisories[0]).toContain("auth: jwt({ secret:");
-    expect(advisories[0]).toContain("docs/act-as-presets.md");
+    expect(advisories[0]).toContain("https://docs.vendo.run/connect/act-as-presets");
   });
 
   it("ambiguous detection offers the picker with detected families first (after none)", async () => {

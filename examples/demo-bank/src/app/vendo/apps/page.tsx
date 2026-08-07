@@ -19,7 +19,8 @@ const client = createVendoClient({ baseUrl: withBasePath("/api/vendo") });
  * version natively and where a version change drops it back to the sandbox.
  * The ship review panel surfaces `GET /apps/:id/ship-diff`, the exact delta an
  * approval would pin (approvals themselves are minted by the Cloud review
- * console; locally via the documented dev route in docs/in-client-approvals.md).
+ * console; locally via the dev route documented at
+ * https://docs.vendo.run/concepts/in-client-venue).
  */
 
 function ShipReview({ appId }: { appId: AppId }) {
