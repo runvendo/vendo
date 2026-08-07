@@ -1,9 +1,10 @@
-import { spawn } from "node:child_process";
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { ensureRepoCheckout } from "../clone.js";
 import { loadManifest } from "../manifest.js";
 import { createRunContext } from "../run-context.js";
+import { runCommand, type CommandResult } from "../process.js";
+import { isRecord } from "../util.js";
 
 /**
  * Install-eval fixtures: real host apps copied to a clean directory with the
@@ -122,10 +123,6 @@ const EXCLUDED_ROOT_FILES = new Set([
   "bun.lockb",
 ]);
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function isVendoPackageName(name: string): boolean {
   return name === "vendoai" || name.startsWith("@vendoai/");
 }
@@ -160,24 +157,8 @@ export function stripVendoFromPackageJson(source: string): string {
   return `${JSON.stringify(pkg, null, 2)}\n`;
 }
 
-interface CommandResult {
-  code: number | null;
-  stdout: string;
-  stderr: string;
-}
-
 function runGit(args: readonly string[], cwd: string): Promise<CommandResult> {
-  return new Promise((resolve, reject) => {
-    const child = spawn("git", args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.on("error", reject);
-    child.on("close", (code) => resolve({ code, stdout, stderr }));
-  });
+  return runCommand("git", { args, cwd });
 }
 
 async function checkedGit(args: readonly string[], cwd: string): Promise<void> {

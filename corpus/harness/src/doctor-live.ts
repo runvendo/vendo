@@ -1,7 +1,7 @@
-import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ScorecardCheck } from "./scorecard.js";
+import { runCommand } from "./process.js";
 
 export interface LiveDoctorCommandResult {
   code: number | null;
@@ -35,21 +35,7 @@ function defaultSpawnDoctor(
   args: readonly string[],
   options: { cwd: string; env: NodeJS.ProcessEnv },
 ): Promise<LiveDoctorCommandResult> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      cwd: options.cwd,
-      env: options.env,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.on("error", reject);
-    child.on("close", (code, signal) => resolve({ code, signal, stdout, stderr }));
-  });
+  return runCommand(command, { args, cwd: options.cwd, env: options.env });
 }
 
 function commandStatus(result: LiveDoctorCommandResult): string {

@@ -1,5 +1,4 @@
-import { spawn } from "node:child_process";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -47,7 +46,6 @@ import {
   type ScoredLayerRunResult,
 } from "./layers/scored.js";
 import {
-  corpusHostCommandEnv,
   runStructuralLayer as defaultRunStructuralLayer,
   type StructuralCheckResult,
   type StructuralCommandResult,
@@ -104,6 +102,8 @@ import {
   type KnowledgeEvalDeps,
   type KnowledgeEvalOptions,
 } from "./knowledge-eval/run.js";
+import { runHostCommand } from "./process.js";
+import { errorMessage, isRecord, pathExists, readOptional } from "./util.js";
 
 const usage = `Usage:
   pnpm corpus --help
@@ -259,7 +259,7 @@ function resolveDeps(deps: CorpusCliDependencies = {}): ResolvedDeps {
     discoverConfiguredGalleryRepoNames: deps.discoverConfiguredGalleryRepoNames ?? defaultDiscoverConfiguredGalleryRepoNames,
     captureGalleryRepo: deps.captureGalleryRepo ?? defaultCaptureGalleryRepo,
     writeGalleryHtml: deps.writeGalleryHtml ?? defaultWriteGalleryHtml,
-    commandRunner: deps.commandRunner ?? runShellCommand,
+    commandRunner: deps.commandRunner ?? runHostCommand,
     discoverAiConfiguredRepoNames: deps.discoverAiConfiguredRepoNames ?? defaultDiscoverAiConfiguredRepoNames,
     ensureAgentSdk: deps.ensureAgentSdk ?? defaultEnsureAgentSdk,
     createExtractionHarness: deps.createExtractionHarness ?? corpusExtractionHarness,
@@ -487,19 +487,6 @@ function selectedRepos(manifest: CorpusManifest, names: readonly string[]): Mani
   });
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-async function readOptional(file: string | undefined): Promise<string | undefined> {
-  if (!file) return undefined;
-  try {
-    return await readFile(file, "utf8");
-  } catch {
-    return undefined;
-  }
-}
-
 function artifactPaths(artifacts: InitStepArtifacts): string[] {
   return [artifacts.log, artifacts.diff, artifacts.tokenCost].filter((value): value is string => Boolean(value));
 }
@@ -550,14 +537,6 @@ function printBaselineUpdate(
   write(update.source.trimEnd());
 }
 
-async function pathExists(file: string): Promise<boolean> {
-  return access(file).then(() => true, () => false);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 async function detectPackageRunner(repoDir: string, packageManager: unknown): Promise<string> {
   if (typeof packageManager === "string") {
     if (packageManager.startsWith("pnpm@")) return "pnpm";
@@ -583,24 +562,7 @@ async function detectTypecheckCommand(repoDir: string): Promise<string | undefin
   return `${runner} typecheck`;
 }
 
-function runShellCommand(command: string, options: { cwd: string; env?: NodeJS.ProcessEnv }): Promise<StructuralCommandResult> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, {
-      cwd: options.cwd,
-      env: corpusHostCommandEnv(options.env),
-      shell: true,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.on("error", reject);
-    child.on("close", (code, signal) => resolve({ code, signal, stdout, stderr }));
-  });
-}
+
 
 function commandLogLabel(command: string, index: number): string {
   const orderedLabels = ["typecheck", "build"];

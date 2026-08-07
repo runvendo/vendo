@@ -6,6 +6,8 @@ import type { Readable } from "node:stream";
 import { resolveAppRoot } from "./app-root.js";
 import type { DatabaseProvisioning, ManifestEntry } from "./manifest.js";
 import { createRunContext, type CorpusRunContext } from "./run-context.js";
+import { runCommand } from "./process.js";
+import { sleep } from "./util.js";
 
 export interface BootCommandResult {
   code: number | null;
@@ -76,69 +78,23 @@ export interface BootRepoOptions {
   lastLogLines?: number;
 }
 
-interface BinaryResult {
-  code: number | null;
-  signal: NodeJS.Signals | null;
-  stdout: string;
-  stderr: string;
-}
-
 const defaultReadinessTimeoutMs = 60_000;
 const defaultReadinessIntervalMs = 500;
 const defaultLastLogLines = 40;
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
-
-function commandResultOutput(result: BinaryResult | BootCommandResult): string {
+function commandResultOutput(result: BootCommandResult): string {
   return [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
 }
 
-function runCommand(command: string, options: { cwd: string; env: NodeJS.ProcessEnv }): Promise<BootCommandResult> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, {
-      cwd: options.cwd,
-      env: options.env,
-      shell: true,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.on("error", reject);
-    child.on("close", (code, signal) => resolve({ code, signal, stdout, stderr }));
-  });
-}
-
-function runBinary(command: string, args: readonly string[], options: { cwd: string; env: NodeJS.ProcessEnv }): Promise<BinaryResult> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      cwd: options.cwd,
-      env: options.env,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.on("error", reject);
-    child.on("close", (code, signal) => resolve({ code, signal, stdout, stderr }));
-  });
+function runBinary(command: string, args: readonly string[], options: { cwd: string; env: NodeJS.ProcessEnv }): Promise<BootCommandResult> {
+  return runCommand(command, { args, cwd: options.cwd, env: options.env });
 }
 
 async function checkedBinary(
   command: string,
   args: readonly string[],
   options: { cwd: string; env: NodeJS.ProcessEnv },
-): Promise<BinaryResult> {
+): Promise<BootCommandResult> {
   const result = await runBinary(command, args, options);
   if (result.code !== 0) {
     const output = commandResultOutput(result);
@@ -147,7 +103,7 @@ async function checkedBinary(
   return result;
 }
 
-async function appendDatabaseLog(logPath: string, command: string, result: BinaryResult | string): Promise<void> {
+async function appendDatabaseLog(logPath: string, command: string, result: BootCommandResult | string): Promise<void> {
   if (typeof result === "string") {
     await appendFile(logPath, `$ ${command}\n${result}${result.endsWith("\n") ? "" : "\n"}`);
     return;
@@ -196,7 +152,7 @@ async function defaultProvisionDatabase(
     const timeoutMs = database.readinessTimeoutMs ?? 30_000;
     const intervalMs = database.readinessIntervalMs ?? defaultReadinessIntervalMs;
     const attempts = Math.max(1, Math.ceil(timeoutMs / intervalMs));
-    let lastResult: BinaryResult | undefined;
+    let lastResult: BootCommandResult | undefined;
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       lastResult = await runBinary("docker", readinessArgs, dockerOptions);
       await appendDatabaseLog(context.logPath, "docker exec ... pg_isready", lastResult);

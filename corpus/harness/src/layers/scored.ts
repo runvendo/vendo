@@ -19,6 +19,7 @@ import {
   type ThemeRubricDimension,
 } from "../expectations.js";
 import type { ScorecardCheck, ScorecardLayerInput, ScorecardScore } from "../scorecard.js";
+import { errorMessage } from "../util.js";
 
 export interface ScoredLayerContext {
   repoName: string;
@@ -51,10 +52,6 @@ interface WeightedResult {
 
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const EPSILON = 0.000001;
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 function round(value: number): number {
   return Number(value.toFixed(6));

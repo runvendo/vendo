@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import type { ScorecardCheck, ScorecardLayerInput, ScorecardScore } from "../scorecard.js";
+import { errorMessage, escapeRegex, isRecord, sleep } from "../util.js";
 
 // A narrow structural port of the slice of Playwright this layer drives. Every
 // member is required: a real Locator/Page always has all of them, so an
@@ -1000,20 +1001,3 @@ function round(value: number): number {
   return Number(value.toFixed(6));
 }
 
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}

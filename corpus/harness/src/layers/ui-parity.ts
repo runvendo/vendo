@@ -2,6 +2,7 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import type { ScorecardCheck, ScorecardLayerInput, ScorecardScore } from "../scorecard.js";
+import { isRecord } from "../util.js";
 
 /**
  * UI-parity audit layer (spec §6, ENG-257). An agent enumerates what the host
@@ -198,10 +199,6 @@ async function readOptionalJson(file: string): Promise<unknown> {
   } catch {
     return undefined;
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**

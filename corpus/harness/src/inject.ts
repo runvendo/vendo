@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { access, copyFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -12,15 +11,11 @@ import { normalizePostInjectionInstallCommand } from "./install-command.js";
 import { pnpmDeclaresBuiltDependencies } from "./pnpm-build-policy.js";
 import type { ManifestEntry } from "./manifest.js";
 import { createRunContext, type CorpusRunContext } from "./run-context.js";
+import { runCommand } from "./process.js";
+import { escapeRegex, isRecord, pathExists, readOptional } from "./util.js";
 
 export type InjectRepo = Pick<ManifestEntry, "name" | "appDir"> & Partial<Pick<ManifestEntry, "bootstrap">>;
 export type PackWorkspacePackage = LocalPackRunner;
-
-export interface InjectCommandResult {
-  code: number | null;
-  stdout: string;
-  stderr: string;
-}
 
 export interface LocalVendoInjectResult extends LocalVendoInstallSummary {
   repoDir: string;
@@ -40,36 +35,8 @@ export interface CreateLocalVendoInjectorOptions {
   log?: (message: string) => void;
 }
 
-function runCommand(command: string, args: readonly string[], cwd: string): Promise<InjectCommandResult> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.on("error", reject);
-    child.on("close", (code) => resolve({ code, stdout, stderr }));
-  });
-}
-
-function runShellCommand(command: string, cwd: string): Promise<InjectCommandResult> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, { cwd, shell: true, stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.on("error", reject);
-    child.on("close", (code) => resolve({ code, stdout, stderr }));
-  });
-}
-
 async function checkedShellCommand(command: string, cwd: string): Promise<void> {
-  const result = await runShellCommand(command, cwd);
+  const result = await runCommand(command, { cwd });
   if (result.code !== 0) {
     const output = [result.stderr, result.stdout].filter(Boolean).join("\n");
     throw new Error(`${command} failed in ${cwd} with exit code ${result.code ?? "unknown"}:\n${output}`);
@@ -77,7 +44,7 @@ async function checkedShellCommand(command: string, cwd: string): Promise<void> 
 }
 
 async function defaultBuildWorkspace(workspaceRoot: string): Promise<void> {
-  const result = await runCommand("pnpm", ["build"], workspaceRoot);
+  const result = await runCommand("pnpm", { args: ["build"], cwd: workspaceRoot });
   if (result.code !== 0) {
     throw new Error(`pnpm build failed in ${workspaceRoot}:\n${result.stderr || result.stdout}`);
   }
@@ -88,7 +55,7 @@ async function defaultPackWorkspacePackage(
   opts: { repoDir: string; vendorDir: string; fileName: string },
 ): Promise<void> {
   await mkdir(opts.vendorDir, { recursive: true });
-  const result = await runCommand("pnpm", ["-C", pkg.dir, "pack", "--pack-destination", opts.vendorDir], opts.repoDir);
+  const result = await runCommand("pnpm", { args: ["-C", pkg.dir, "pack", "--pack-destination", opts.vendorDir], cwd: opts.repoDir });
   if (result.code !== 0) {
     throw new Error(`pnpm pack failed for ${pkg.name}:\n${result.stderr || result.stdout}`);
   }
@@ -105,10 +72,6 @@ function assertPathHasNoSpaces(label: string, value: string): void {
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function stringRecord(value: unknown): Record<string, string> {
   if (!isRecord(value)) return {};
   return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
@@ -122,10 +85,6 @@ function packageTarballPrefix(name: string): string {
   return name.startsWith("@") ? name.slice(1).replace("/", "-") : name;
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function isVendoPackageName(name: string): boolean {
   return name === "vendoai" || name.startsWith("@vendoai/");
 }
@@ -134,18 +93,6 @@ function lockfileMentionsVendoPackage(lockfile: string): boolean {
   return lockfile.includes("@vendoai/")
     || /(^|\n)\s*['"]?vendoai['"]?:/m.test(lockfile)
     || /\/vendoai\/[^/\s]+/i.test(lockfile);
-}
-
-async function readOptional(file: string): Promise<string | null> {
-  try {
-    return await readFile(file, "utf8");
-  } catch {
-    return null;
-  }
-}
-
-async function pathExists(file: string): Promise<boolean> {
-  return access(file).then(() => true, () => false);
 }
 
 async function findPnpmWorkspaceRoot(checkoutDir: string, targetDir: string): Promise<string | undefined> {
@@ -194,7 +141,7 @@ function installCommandSource(repo: InjectRepo, summary: LocalVendoInstallSummar
 async function tarballFileForPackage(vendorDir: string, name: string): Promise<string> {
   const entries = await readdir(vendorDir);
   const prefix = packageTarballPrefix(name);
-  const tarballPattern = new RegExp(`^${escapeRegExp(prefix)}-\\d.*\\.tgz$`);
+  const tarballPattern = new RegExp(`^${escapeRegex(prefix)}-\\d.*\\.tgz$`);
   const matches = entries.filter((entry) => tarballPattern.test(entry)).sort();
   if (matches.length !== 1) {
     throw new Error(`expected exactly one local tarball for ${name} in ${vendorDir}, found ${matches.length}`);

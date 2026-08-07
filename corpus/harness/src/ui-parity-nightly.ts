@@ -1,4 +1,3 @@
-import { access } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveAppRoot } from "./app-root.js";
@@ -10,6 +9,7 @@ import {
   type GenerateTextLike,
   type UiParityLayerRunResult,
 } from "./layers/ui-parity.js";
+import { pathExists } from "./util.js";
 
 /**
  * Nightly driver for the UI-parity audit layer (ENG-257). It runs AFTER the
@@ -59,10 +59,6 @@ export async function resolveModel(env: NodeJS.ProcessEnv): Promise<ResolvedMode
   const generateText = ai.generateText as GenerateTextLike;
   const model = createAnthropic({ apiKey })(env.UI_PARITY_MODEL?.trim() || DEFAULT_MODEL);
   return { model, generateText };
-}
-
-async function exists(file: string): Promise<boolean> {
-  return access(file).then(() => true, () => false);
 }
 
 function line(label: string, value: string): string {
@@ -124,7 +120,7 @@ export async function runUiParityNightly(
   let audited = 0;
   for (const repo of repos) {
     const appRoot = resolveAppRoot(repo, context.repoDir(repo.name));
-    if (!await exists(path.join(appRoot, ".vendo", "tools.json"))) {
+    if (!await pathExists(path.join(appRoot, ".vendo", "tools.json"))) {
       log(`skip ${repo.name}: no generated .vendo/tools.json checkout (run the sweep first)`);
       continue;
     }

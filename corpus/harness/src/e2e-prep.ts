@@ -1,9 +1,10 @@
-import { access, copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ManifestEntry } from "./manifest.js";
 import { mountCorpusOverlay } from "./e2e-prep/overlay-mount.js";
 import { vendoRouteFilePath } from "./e2e-prep/route-path.js";
 import { prepareSkateshopE2eRepo } from "./e2e-prep/skateshop.js";
+import { escapeRegex, isRecord, pathExists } from "./util.js";
 
 // Umami authenticates its API with a Bearer token the app keeps in
 // localStorage. Chat tool calls now execute SERVER-side (route bindings,
@@ -930,7 +931,7 @@ async function ensureEnvValue(envPath: string, key: string, value: string): Prom
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
-  if (new RegExp(`^${escapeRegExp(key)}=`, "m").test(source)) return;
+  if (new RegExp(`^${escapeRegex(key)}=`, "m").test(source)) return;
   const separator = source === "" || source.endsWith("\n") ? "" : "\n";
   await writeFile(envPath, `${source}${separator}${key}=${value}\n`);
 }
@@ -953,14 +954,3 @@ async function ensureFile(filePath: string, source: string): Promise<void> {
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function pathExists(filePath: string): Promise<boolean> {
-  return access(filePath).then(() => true, () => false);
-}

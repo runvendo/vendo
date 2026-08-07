@@ -1,5 +1,4 @@
-import { spawn } from "node:child_process";
-import { access, readdir, readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import type TS from "typescript";
@@ -12,6 +11,8 @@ import {
   type ToolsFile,
 } from "@vendoai/actions";
 import type { ZodError } from "zod";
+import { runHostCommand } from "../process.js";
+import { errorMessage, pathExists } from "../util.js";
 
 export type StructuralCheckId =
   | "init.exit"
@@ -169,48 +170,15 @@ function importBindingOf(mod: BoundModule, use: TS.Identifier): { specifier: str
   }
   return null;
 }
-export function corpusHostCommandEnv(env?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  return {
-    ...process.env,
-    ...env,
-    PNPM_CONFIG_MINIMUM_RELEASE_AGE: "0",
-    PNPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS: "true",
-    YARN_ENABLE_IMMUTABLE_INSTALLS: "false",
-  };
-}
-
-async function exists(file: string): Promise<boolean> {
-  return access(file).then(() => true, () => false);
-}
-
-function runShellCommand(command: string, options: StructuralCommandOptions): Promise<StructuralCommandResult> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, {
-      cwd: options.cwd,
-      env: corpusHostCommandEnv(options.env),
-      shell: true,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.on("error", reject);
-    child.on("close", (code, signal) => resolve({ code, signal, stdout, stderr }));
-  });
-}
-
 export async function findAppRouter(repoDir: string): Promise<AppRouterInfo | null> {
   for (const appDirRel of ["app", "src/app"] as const) {
     for (const name of ["layout.tsx", "layout.jsx", "layout.js"] as const) {
       const layoutRel = path.posix.join(appDirRel, name);
-      if (await exists(path.join(repoDir, layoutRel))) {
+      if (await pathExists(path.join(repoDir, layoutRel))) {
         return {
           appDirRel,
           layoutRel,
-          ts: name.endsWith(".tsx") || await exists(path.join(repoDir, "tsconfig.json")),
+          ts: name.endsWith(".tsx") || await pathExists(path.join(repoDir, "tsconfig.json")),
         };
       }
     }
@@ -251,11 +219,11 @@ async function readText(repoDir: string, rel: string): Promise<string | null> {
  * a real Express/Nest API host (vendo/server.ts|mjs; the client lives in a
  * separate frontend, so no VendoProvider requirement). */
 async function expressShape(repoDir: string): Promise<"pre-wired" | "generated"> {
-  return await exists(path.join(repoDir, "src/server/vendo.ts")) ? "pre-wired" : "generated";
+  return await pathExists(path.join(repoDir, "src/server/vendo.ts")) ? "pre-wired" : "generated";
 }
 
 async function generatedExpressServerRel(repoDir: string): Promise<string> {
-  return await exists(path.join(repoDir, "vendo/server.mjs")) && !await exists(path.join(repoDir, "vendo/server.ts"))
+  return await pathExists(path.join(repoDir, "vendo/server.mjs")) && !await pathExists(path.join(repoDir, "vendo/server.ts"))
     ? "vendo/server.mjs"
     : "vendo/server.ts";
 }
@@ -468,7 +436,7 @@ async function checkExpectedFiles(ctx: StructuralLayerContext): Promise<Structur
   const missing: string[] = [];
 
   for (const rel of required) {
-    if (!await exists(path.join(ctx.repoDir, rel))) missing.push(rel);
+    if (!await pathExists(path.join(ctx.repoDir, rel))) missing.push(rel);
   }
 
   const wiringProblems: string[] = [];
@@ -593,7 +561,7 @@ async function checkCommand(
     return { id, pass: false, detail: `no ${label} command was provided` };
   }
   const baseline = id === "host.typecheck" ? ctx.baseline?.typecheck : ctx.baseline?.build;
-  const runner = ctx.commandRunner ?? runShellCommand;
+  const runner = ctx.commandRunner ?? runHostCommand;
   try {
     const result = await runner(command, { cwd: ctx.repoDir, env: ctx.env });
     if (baseline && !commandPassed(baseline)) {
@@ -697,10 +665,6 @@ function trimOutput(output: string, max = 500): string {
   const trimmed = output.trim();
   if (trimmed.length <= max) return trimmed;
   return `${trimmed.slice(0, max)}...`;
-}
-
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 async function safeCheck(

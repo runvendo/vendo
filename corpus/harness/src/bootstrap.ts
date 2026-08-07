@@ -1,5 +1,4 @@
-import { spawn } from "node:child_process";
-import { access, mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { resolveAppRoot } from "./app-root.js";
@@ -7,6 +6,8 @@ import { normalizeBootstrapInstallCommand } from "./install-command.js";
 import { pnpmDeclaresBuiltDependencies } from "./pnpm-build-policy.js";
 import type { ManifestEntry } from "./manifest.js";
 import { createRunContext, type CorpusRunContext } from "./run-context.js";
+import { runCommand } from "./process.js";
+import { pathExists } from "./util.js";
 
 export type BootstrapRepo = Pick<ManifestEntry, "name" | "appDir" | "localPath" | "bootstrap">;
 
@@ -27,13 +28,6 @@ export interface BootstrapResult {
   repoDir: string;
   envPath: string;
   logs: BootstrapLogPaths;
-}
-
-interface CommandResult {
-  code: number | null;
-  signal: NodeJS.Signals | null;
-  stdout: string;
-  stderr: string;
 }
 
 const placeholderPattern = /\$\{(CORPUS_[A-Z0-9_]+)\}/g;
@@ -76,10 +70,6 @@ function logPaths(logsDir: string): BootstrapLogPaths {
   };
 }
 
-async function pathExists(file: string): Promise<boolean> {
-  return access(file).then(() => true, () => false);
-}
-
 const DEFAULT_RETRY_DELAY_MS = 5_000;
 
 // Small, deliberately narrow transient-failure class (nextcrm flake:
@@ -97,25 +87,6 @@ const TRANSIENT_BOOTSTRAP_FAILURE_PATTERNS: readonly RegExp[] = [
 
 function isTransientBootstrapFailure(output: string): boolean {
   return TRANSIENT_BOOTSTRAP_FAILURE_PATTERNS.some((pattern) => pattern.test(output));
-}
-
-function runInstallCommand(command: string, cwd: string, env: NodeJS.ProcessEnv): Promise<CommandResult> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, {
-      cwd,
-      env,
-      shell: true,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.on("error", reject);
-    child.on("close", (code, signal) => resolve({ code, signal, stdout, stderr }));
-  });
 }
 
 export async function bootstrapRepo(repo: BootstrapRepo, options: BootstrapOptions = {}): Promise<BootstrapResult> {
@@ -154,7 +125,7 @@ export async function bootstrapRepo(repo: BootstrapRepo, options: BootstrapOptio
     dropIgnoreWorkspace: hasPnpmWorkspace,
     pnpmConfig: repoCuratesBuilds ? ["--config.minimumReleaseAge=0"] : undefined,
   });
-  let result = await runInstallCommand(installCommand.command, repoDir, env);
+  let result = await runCommand(installCommand.command, { cwd: repoDir, env });
   const normalizationNote = installCommand.changed
     ? `Corpus harness normalized bootstrap install command from "${repo.bootstrap.installCommand}" to "${installCommand.command}" so lockfile updates are allowed.\n`
     : "";
@@ -168,7 +139,7 @@ export async function bootstrapRepo(repo: BootstrapRepo, options: BootstrapOptio
     const retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
     retryNote = `Bootstrap install for ${repo.name} failed with a transient-looking registry/resolver error on attempt 1; retrying once after ${retryDelayMs}ms...\n`;
     if (retryDelayMs > 0) await delay(retryDelayMs);
-    const retryResult = await runInstallCommand(installCommand.command, repoDir, env);
+    const retryResult = await runCommand(installCommand.command, { cwd: repoDir, env });
     retryNote += retryResult.code === 0
       ? `Bootstrap retry succeeded for ${repo.name} — transient registry/resolver failure recovered on attempt 2.\n`
       : `Bootstrap retry did not recover for ${repo.name} — attempt 2 failed too.\n`;

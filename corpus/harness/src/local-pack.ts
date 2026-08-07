@@ -1,6 +1,7 @@
-import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { runCommand } from "./process.js";
+import { isRecord, pathExists, readOptional } from "./util.js";
 
 // Direct dependencies every injected fixture gets. @vendoai/ui rides along
 // because the corpus e2e prep mounts the shipped chat chrome
@@ -58,10 +59,6 @@ export interface WorkspacePackage {
 
 export interface LocalPackRunner {
   (pkg: WorkspacePackage, opts: { repoDir: string; vendorDir: string; fileName: string }): Promise<void>;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function stringRecord(value: unknown): Record<string, string> {
@@ -143,19 +140,9 @@ async function defaultPackRunner(
   opts: { repoDir: string; vendorDir: string; fileName: string },
 ): Promise<void> {
   await fs.mkdir(opts.vendorDir, { recursive: true });
-  const output = await new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
-    const child = spawn("pnpm", ["-C", pkg.dir, "pack", "--pack-destination", opts.vendorDir], {
-      cwd: opts.repoDir,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.on("error", reject);
-    child.on("close", (code) => resolve({ code, stdout, stderr }));
+  const output = await runCommand("pnpm", {
+    args: ["-C", pkg.dir, "pack", "--pack-destination", opts.vendorDir],
+    cwd: opts.repoDir,
   });
   if (output.code !== 0) {
     throw new Error(`pnpm pack failed for ${pkg.name}:\n${output.stderr || output.stdout}`);
@@ -181,18 +168,6 @@ export function pnpmMajorFromField(value: unknown): number | null {
   if (typeof value !== "string" || !value.startsWith("pnpm@")) return null;
   const major = Number.parseInt(value.slice("pnpm@".length).split(".")[0] ?? "", 10);
   return Number.isFinite(major) ? major : null;
-}
-
-async function readOptional(file: string): Promise<string | null> {
-  try {
-    return await fs.readFile(file, "utf8");
-  } catch {
-    return null;
-  }
-}
-
-async function pathExists(file: string): Promise<boolean> {
-  return fs.access(file).then(() => true, () => false);
 }
 
 async function readOptionalPackageJson(dir: string): Promise<PackageJson | null> {

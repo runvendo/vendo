@@ -11,6 +11,7 @@ import {
   type E2eNavigationOptions,
   type E2ePage,
 } from "./layers/e2e.js";
+import { errorMessage } from "./util.js";
 
 const safeIdPattern = /^[a-z0-9][a-z0-9-]*$/;
 const nativeScreenSchema = z.object({
@@ -648,10 +649,6 @@ function escapeHtml(value: string): string {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 const galleryCss = `

@@ -1,7 +1,8 @@
-import { spawn } from "node:child_process";
-import { access, mkdir, readFile, readdir } from "node:fs/promises";
+import { mkdir, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { LOCAL_VENDO_PACKAGE_NAMES } from "../local-pack.js";
+import { runCommand, type CommandResult } from "../process.js";
+import { pathExists } from "../util.js";
 
 /**
  * Pack the whole publishable Vendo set (the same closure the corpus injector
@@ -16,30 +17,10 @@ function tarballFileName(name: string, version: string): string {
   return `${base}-${version}.tgz`;
 }
 
-interface CommandResult {
-  code: number | null;
-  stdout: string;
-  stderr: string;
-}
-
 export type PackCommandRunner = (command: string, args: readonly string[], cwd: string) => Promise<CommandResult>;
 
 function defaultRunCommand(command: string, args: readonly string[], cwd: string): Promise<CommandResult> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.on("error", reject);
-    child.on("close", (code) => resolve({ code, stdout, stderr }));
-  });
-}
-
-async function pathExists(file: string): Promise<boolean> {
-  return access(file).then(() => true, () => false);
+  return runCommand(command, { args, cwd });
 }
 
 export interface PackWorkspaceVendoTarballsOptions {
