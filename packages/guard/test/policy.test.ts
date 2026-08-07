@@ -410,7 +410,7 @@ describe("policy files, rules, directions, and code", () => {
   });
 });
 
-describe("cloud policy fallback (cse lane 3)", () => {
+describe("cloud policy fallback", () => {
   const cloudBody = JSON.stringify({
     format: VENDO_POLICY_FORMAT,
     directions: ["Cloud: escalate wires."],

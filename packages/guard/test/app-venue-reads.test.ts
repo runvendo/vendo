@@ -5,7 +5,7 @@ import { asLanguageModel, scriptedJudgeModel, throwingJudgeModel } from "./fixtu
 import { call, context, descriptor, FixtureTools } from "./fixtures/tools.js";
 
 /**
- * Re-gate 2026-07-26 finding 2: reads invoked from the APP venue render UI —
+ * Reads invoked from the APP venue render UI —
  * query resolution and island tools consume the outcome at render time, and a
  * parked read query is never resumed (apps call.ts resumes only mutating
  * actions). An "ask" ruling on a present app-venue read is therefore a

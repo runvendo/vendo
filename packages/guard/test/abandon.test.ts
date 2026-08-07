@@ -22,7 +22,7 @@ function askGuard(sqlStore: PGliteStore) {
   });
 }
 
-/** AGENT-6: approvals the conversation walked away from are resolved
+/** Approvals the conversation walked away from are resolved
  *  guard-side — denied, no grant — instead of sitting pending forever. */
 describe("abandoned approvals resolve guard-side", () => {
   it("denies a pending approval and audits the denial", async () => {

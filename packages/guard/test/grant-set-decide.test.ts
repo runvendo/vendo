@@ -1,4 +1,4 @@
-// Grant-set atomicity (demo-live-readiness, criterion 19): a multi-id
+// Grant-set atomicity: a multi-id
 // approvals.decide is ONE set decision and must land all-or-none over the
 // REAL store transaction (atomic transition receipts), never a partially
 // granted set. Semantics under contention:

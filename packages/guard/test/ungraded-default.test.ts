@@ -113,7 +113,7 @@ describe("ungraded asks by default (D3)", () => {
 });
 
 /**
- * Checker round 2, finding A — a no has to STAY no. A caller that re-issues a
+ * A no has to STAY no. A caller that re-issues a
  * stable call id (the apps runtime derives a query's id from app+tool+args, so
  * its refetch is byte-identical) would otherwise mint a fresh approval on every
  * retry: deny, reopen, new card, forever.
@@ -225,7 +225,7 @@ describe("a denial answers the identical re-issue instead of re-parking", () => 
 });
 
 /**
- * Checker round 3, finding 2 — parking never dedupes, so ONE stable call id can
+ * Parking never dedupes, so ONE stable call id can
  * hold an approved row and a denied row at once. The person's latest word has
  * to win, whichever order they arrive in.
  */
@@ -278,7 +278,7 @@ describe("the newest human decision on a call wins", () => {
 });
 
 /**
- * Checker round 2, finding C — a DELIBERATE choice, pinned so it never becomes
+ * A DELIBERATE choice, pinned so it never becomes
  * an accident: an approved replay is scoped to the SUBJECT, not the session.
  * One person approving on their phone and seeing the result render on their
  * laptop is the same person answering the same question.
@@ -377,7 +377,7 @@ describe("payInvoice, before and after the judge (AC3)", () => {
 });
 
 /**
- * Checker round 4, finding 1 — voiding and replaying a yes are the SAME
+ * Voiding and replaying a yes are the SAME
  * one-time transition. Both claim `consumed:<id>`, so exactly one of them can
  * happen: a take-back can never be erased by a replay that read the row before
  * it, and a replay can never spend a yes the person has taken back. Both
@@ -568,7 +568,7 @@ describe("a void and a replay can never both win", () => {
   });
 
   /**
-   * Checker round 5, finding 1 — the row can also be GONE. Subject erasure
+   * The row can also be GONE. Subject erasure
    * (02-store §5) and anonymous-subject adoption DELETE approval rows, so a
    * replay that treated a missing row as "unchanged" would re-create an erased
    * subject's approval and run the tool as them.
@@ -599,7 +599,7 @@ describe("a void and a replay can never both win", () => {
   });
 
   /**
-   * Checker round 5, finding 3 — the receipt is durable BEFORE the row write, so
+   * The receipt is durable BEFORE the row write, so
    * a take-back whose put failed leaves the receipt claimed and the row still
    * standing. The retry has to finish the job, not report it as already done.
    */
@@ -627,7 +627,7 @@ describe("a void and a replay can never both win", () => {
   });
 
   /**
-   * Checker round 5, finding 4 — a batch's compensation restores each applied
+   * A batch's compensation restores each applied
    * member to its pre-decision state, which is right unless a concurrent actor
    * has since SPENT or voided that member: those transitions are single-use, so
    * re-opening the ask would advertise a decision nobody can make again.
@@ -670,7 +670,7 @@ describe("a void and a replay can never both win", () => {
   });
 
   /**
-   * Checker round 5, finding 2 (the guard half) — the automations engine spends a
+   * The automations engine spends a
    * yes by arming the standing grant it asked for instead of replaying a call, so
    * that spend contends on the same transition as `approvals.revoke`.
    */

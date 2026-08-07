@@ -117,7 +117,7 @@ describe("effect ledger (build contract §7)", () => {
     expect(ledgered.records).toHaveLength(0);
   });
 
-  it("lets a legitimately repeated mutation happen twice in one run (finding 7, contract ordinal)", async () => {
+  it("lets a legitimately repeated mutation happen twice in one run (contract ordinal)", async () => {
     // "Pay $10 twice" is a real intent. Keying on (run, tool, input) alone
     // collapsed it to one payment and reported success for both. The key now
     // carries an ordinal counting prior identical calls in the same run.
@@ -203,7 +203,7 @@ describe("effect ledger (build contract §7)", () => {
     expect(events.some((event) => event.tool === write.name && event.outcome === "ok")).toBe(true);
   });
 
-  it("does not let two concurrent identical calls BOTH execute (finding 14, TOCTOU)", async () => {
+  it("does not let two concurrent identical calls BOTH execute (TOCTOU)", async () => {
     const store = createMemoryStore();
     const write = descriptor("write");
     await seedGrant(store, { descriptor: write });

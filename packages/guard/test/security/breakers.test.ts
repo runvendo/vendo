@@ -31,7 +31,7 @@ describe("deterministic breakers (05 §2)", () => {
     ).resolves.toMatchObject({ action: "ask", decidedBy: "breaker" });
   });
 
-  it("criterion 15 (discovery-discipline): a tripped write breaker never flips READS to ask", async () => {
+  it("a tripped write breaker never flips READS to ask", async () => {
     const store = createMemoryStore();
     const guard = createGuard({
       store,
@@ -105,13 +105,13 @@ describe("deterministic breakers (05 §2)", () => {
   });
 });
 
-// genqa defect 1 — the agent bridge's needsApproval→execute pairing calls the
+// The agent bridge's needsApproval→execute pairing calls the
 // guard twice for one logical call (packages/agent/src/tools.ts): a preview
 // through `previewCheck`, then the real, dispatching check through
 // `check()`/`bind().execute()` moments later. A `previewCheck` "run" must
 // never itself spend the write budget or call-rate window — only the REAL
 // check that follows it does — or a run's budget silently halves.
-describe("previewCheck does not double-spend the breakers (genqa defect 1)", () => {
+describe("previewCheck does not double-spend the breakers", () => {
   it("previewing every write before the real check still allows the full maxWritesPerRun budget", async () => {
     const store = createMemoryStore();
     const guard = createGuard({
