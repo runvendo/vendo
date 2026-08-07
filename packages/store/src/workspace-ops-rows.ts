@@ -269,6 +269,10 @@ export function workspaceOpsRows(ops: StoreOps): WorkspaceRows {
     async transact(work) {
       return await work(rows);
     },
+
+    async hold() {
+      // Nothing local to hold, for the same reason.
+    },
   };
   return rows;
 }

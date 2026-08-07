@@ -587,9 +587,19 @@ export class WorkspaceStoreFs implements WorkspaceFs {
     // Nothing in here touches this instance's index: a rollback would take the
     // rows back and leave the in-memory turn claiming writes that no longer
     // exist. The results are applied after the transaction commits.
+    const removing = [...this.removed].filter((candidate) => this.persists(candidate));
     const outcome = await this.rows.transact(async (rows) => {
+      // Every path this transaction will hold, taken up front in one agreed
+      // order. Taking them as the loops reach them means removals go in the
+      // order they were dropped and writes in the order they were staged, so
+      // two commits over the same pair from opposite ends each hold what the
+      // other waits for and Postgres aborts one.
+      await rows.hold(
+        [...removing, ...landing.map((prepared) => prepared.path)]
+          .map((path) => ({ owner: this.ownerOf(path)!, path })),
+      );
       const removed: string[] = [];
-      for (const path of [...this.removed].filter((candidate) => this.persists(candidate))) {
+      for (const path of removing) {
         if (await rows.remove(this.ownerOf(path)!, path, opts?.message)) removed.push(path);
       }
       const written: { prepared: PreparedWrite; owner: string; result: LandResult }[] = [];

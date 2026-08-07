@@ -23,7 +23,7 @@ import {
 } from "./sessions.js";
 import { dbFor, type VendoStore } from "./store.js";
 import { invalid, parseThreadData, requireJson } from "./validate.js";
-import { holdWorkspacePath, workspaceRows, type PreparedWrite } from "./workspace-rows.js";
+import { workspaceRows, type PreparedWrite } from "./workspace-rows.js";
 
 /** The commit ledger's collection in the generic records table: one row per
  *  workspace.commit, which is what gives the verb its history entries, its
@@ -640,11 +640,11 @@ export function createStoreOps(
            *  It holds the PATH, not the row: both acts below run at a path
            *  whose live row is absent (a create undone after a non-ledger
            *  delete, a path deleted down to a tombstone), and `FOR UPDATE`
-           *  locked nothing there. Ordered by path, so two undos queue instead
-           *  of deadlocking, and it is the same key every writer takes in
-           *  `workspaceRows` — see {@link holdWorkspacePath}. */
+           *  locked nothing there. `WorkspaceRows.hold` owns the key and the
+           *  order every holder sorts by, so two of them queue rather than
+           *  deadlock on the same pair from opposite ends. */
           const hold = async (paths: string[]): Promise<void> => {
-            for (const path of [...paths].sort()) await holdWorkspacePath(q, owner, path);
+            await txRows.hold(paths.map((path) => ({ owner, path })));
           };
           /** The commit created this path, so undoing it removes the file
               (recorded to history, §3.3's append-only law, so it stays

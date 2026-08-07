@@ -37,11 +37,17 @@ const WORKSPACE_TABLES = ["vendo_workspace_files", "vendo_workspace_history"] as
  * IS a mechanism is a soft-delete tombstone row, which `FOR UPDATE` could lock
  * like any other; that needs a schema migration and is not what this takes.
  */
-export async function holdWorkspacePath(query: Query, owner: string, path: string): Promise<void> {
-  // U+001F, the unit separator: not a character any owner or normalized path
-  // carries, so `(a, b/c)` and `(a/b, c)` are different keys.
-  await query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`${owner}\u001f${path}`]);
+async function holdWorkspacePath(query: Query, owner: string, path: string): Promise<void> {
+  await query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [lockKey(owner, path)]);
 }
+
+/** The lock's identity, and the TOTAL ORDER every holder sorts by.
+ *
+ *  A transaction that takes several of these must take them in one agreed
+ *  order or two of them deadlock on the same pair from opposite ends. U+001F,
+ *  the unit separator, is not a character any owner or normalized path
+ *  carries, so `(a, b/c)` and `(a/b, c)` are different keys and sort apart. */
+const lockKey = (owner: string, path: string): string => `${owner}\u001f${path}`;
 
 /** One file's metadata. Content is fetched separately (it may live in a blob). */
 export interface WorkspaceFileMeta {
@@ -199,6 +205,20 @@ export interface WorkspaceRows {
    *  outside one releases the hold at the end of each statement and holds
    *  nothing across the pair, which is what the SQL façade did. */
   transact<T>(work: (rows: WorkspaceRows) => Promise<T>): Promise<T>;
+  /** Take every hold this transaction will need, up front and in {@link lockKey}
+   *  order, before doing any of the work.
+   *
+   *  `land` and `remove` each take their own path's hold, so a transaction that
+   *  touches several paths acquires them one at a time as it goes — in whatever
+   *  order the caller staged them. Two such transactions over the same pair from
+   *  opposite ends each hold what the other waits for, and Postgres aborts one.
+   *  Sorting the whole set once removes the cycle: a total order cannot contain
+   *  one. Cheap, and idempotent — the holds `land` and `remove` then take are
+   *  already held by the same transaction.
+   *
+   *  Only meaningful inside {@link transact}; outside one each hold is released
+   *  at the end of its own statement. The hosted backend has no rows to hold. */
+  hold(paths: { owner: string; path: string }[]): Promise<void>;
 }
 
 /**
@@ -645,6 +665,14 @@ export function workspaceRows(db: Db, filesFor: (db: Db) => FilesAdapter): Works
 
     async transact(work) {
       return await db.transaction(async (query) => await work(workspaceRows({ ...db, query }, filesFor)));
+    },
+
+    async hold(paths) {
+      const keyed = new Map(paths.map((each) => [lockKey(each.owner, each.path), each]));
+      for (const key of [...keyed.keys()].sort()) {
+        const { owner, path } = keyed.get(key)!;
+        await hold(owner, path);
+      }
     },
   };
 }
