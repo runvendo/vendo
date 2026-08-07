@@ -56,14 +56,6 @@ export interface PayloadRendererProps {
   onStateChange?(state: Record<string, Json>): void;
 }
 
-type PayloadRenderer = ComponentType<PayloadRendererProps>;
-const rendererRegistry = new Map<string, PayloadRenderer>();
-
-/** 01-core §8; 08-ui §5 — additive format registration for stored future payloads. */
-export function registerTreeRenderer(formatVersion: string, component: PayloadRenderer): void {
-  rendererRegistry.set(formatVersion, component);
-}
-
 /**
  * v2 spec §6 — the walk's input: the SHARED render mechanics' tree shape
  * (nodes, path-keyed resolved queries, grafted components, payload extras).
@@ -143,11 +135,8 @@ const validateWalkTree = (input: WalkTree): WalkValidation => {
   return { ok: true, tree: input };
 };
 
-/** v2 spec §1 — a validated v2 payload converts to the v1 tree shape and
- *  walks the SAME TreeView (convert-payload.tsx documents the mapping). The
- *  registration lives here, in PayloadView's own module: the package is
- *  `sideEffects: false`, so a registration-only import would be tree-shaken
- *  out of host bundles. */
+/** A validated payload converts to the walk tree and renders through the same
+ *  TreeView (convert-payload.ts documents the mapping). */
 function VendoTreeRenderer({ payload, ...props }: PayloadRendererProps) {
   const converted = useMemo(() => convertPayload(payload), [payload]);
   if (!converted.ok) {
@@ -166,19 +155,16 @@ function VendoTreeRenderer({ payload, ...props }: PayloadRendererProps) {
   return <TreeView tree={converted.tree} {...props} />;
 }
 
-registerTreeRenderer(VENDO_TREE_FORMAT, VendoTreeRenderer);
-
-/** 01-core §8 — renderer dispatch is exclusively by the payload tag. */
+/** Dispatch is exclusively by the payload tag. */
 export function PayloadView(props: PayloadRendererProps) {
-  const Renderer = rendererRegistry.get(props.payload.formatVersion);
-  if (!Renderer) {
+  if (props.payload.formatVersion !== VENDO_TREE_FORMAT) {
     return (
       <ContainedNotice label="Unsupported UI format">
         {`No renderer is registered for "${props.payload.formatVersion}".`}
       </ContainedNotice>
     );
   }
-  return <Renderer {...props} />;
+  return <VendoTreeRenderer {...props} />;
 }
 
 interface ActionBinding {
@@ -308,26 +294,6 @@ function outcomeNotice(outcome: ToolOutcome | undefined): ReactNode {
   }
   return null;
 }
-
-/**
- * 06-apps §9 — the additive in-client venue verdict a tree payload may carry.
- * SERVER-AUTHORITATIVE: the apps runtime strips any document-carried value and
- * attaches this only from its own hash-pin verification, so `granted: true`
- * here is exactly "a stored approval matches the CURRENT version's content
- * hash". A missing field is the universal default: jailed. One declaration —
- * the wire type — re-exported here so tree consumers see the same shape the
- * client and the parity test cover.
- */
-export type { InClientVenue } from "../wire-types.js";
-
-/**
- * 06-apps §8 — the additive pin-drift report a tree payload may carry
- * (`payload.pinDrift`). SERVER-AUTHORITATIVE: the apps runtime strips any
- * document-carried value and attaches this only from its own baseline
- * comparison. Re-exported from the wire type so tree consumers see the same
- * shape the client and the parity test cover.
- */
-export type { PinDrift } from "../wire-types.js";
 
 interface NodeRendererProps {
   nodeId: string;

@@ -81,16 +81,16 @@ describe("MCP Apps shim query data", () => {
   it("writes the result at the query's name without mutating prior data (v2 spec §2)", () => {
     const prior = { keep: { nested: true } } satisfies Record<string, Json>;
     const updated = setQueryData(prior, query("answer"), { n: 42 });
-    expect(updated).toEqual({ data: { keep: { nested: true }, answer: { n: 42 } } });
-    expect(updated.data).not.toBe(prior);
+    expect(updated).toEqual({ keep: { nested: true }, answer: { n: 42 } });
+    expect(updated).not.toBe(prior);
     expect(prior).toEqual({ keep: { nested: true } });
   });
 
   it("a hostile grammar-legal name becomes own data, never the prototype", () => {
     const updated = setQueryData({}, query("__proto__"), { polluted: true });
-    expect(Object.getPrototypeOf(updated.data)).toBe(Object.prototype);
+    expect(Object.getPrototypeOf(updated)).toBe(Object.prototype);
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
-    expect(Object.getOwnPropertyDescriptor(updated.data, "__proto__")?.value).toEqual({ polluted: true });
+    expect(Object.getOwnPropertyDescriptor(updated, "__proto__")?.value).toEqual({ polluted: true });
   });
 });
 

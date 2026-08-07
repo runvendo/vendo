@@ -3,7 +3,7 @@ import type { ComponentType } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { VENDO_TREE_FORMAT, type Json, type ToolOutcome } from "@vendoai/core";
-import { PayloadView, TreeView, registerTreeRenderer, type WalkTree } from "../../src/tree/index.js";
+import { PayloadView, TreeView, type WalkTree } from "../../src/tree/index.js";
 
 afterEach(() => {
   cleanup();
@@ -306,20 +306,6 @@ describe("TreeView public surface", () => {
     );
 
     expect(screen.getByRole("note", { name: /unsupported ui format/i }).textContent).toContain("vendo-genui/v99");
-  });
-
-  it("dispatches additively registered future formats by tag", () => {
-    registerTreeRenderer("vendo-genui/test-profile", ({ payload }) => (
-      <p>Custom renderer: {String(payload.title)}</p>
-    ));
-    render(
-      <PayloadView
-        payload={{ formatVersion: "vendo-genui/test-profile", title: "compact" }}
-        components={{}}
-        onAction={ok}
-      />,
-    );
-    expect(screen.getByText("Custom renderer: compact")).toBeTruthy();
   });
 
   it("contains core validation failures before rendering", () => {

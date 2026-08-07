@@ -130,7 +130,7 @@ export function setQueryData(
   data: Record<string, Json>,
   query: TreeQuery,
   output: Json,
-): { data: Record<string, Json>; error?: string } {
+): Record<string, Json> {
   // v2 spec §2 — a query's result lives at "/" + name: always a single
   // top-level key (names are identifier-checked by validateTree). Own-
   // property define so a hostile name like __proto__ becomes data, never the
@@ -142,7 +142,7 @@ export function setQueryData(
     writable: true,
     configurable: true,
   });
-  return { data: next };
+  return next;
 }
 
 interface ResolveQueriesOptions {
@@ -180,9 +180,7 @@ export async function resolveQueries(
       errors.push(`Query "${query.tool}" failed: ${detail}`);
       continue;
     }
-    const updated = setQueryData(data, query, outcome.output);
-    data = updated.data;
-    if (updated.error) errors.push(updated.error);
+    data = setQueryData(data, query, outcome.output);
   }
   options.renderPayload(id, payload, data, errors);
 }
