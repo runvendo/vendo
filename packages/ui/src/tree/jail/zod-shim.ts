@@ -35,10 +35,16 @@
  *  one thing a shim must never fake. */
 const PARSERS = new Set(["parse", "safeParse", "parseAsync", "safeParseAsync"]);
 
-/** A chainable answer here would make every shim value a thenable whose
- *  `then` never calls back, so one `await` hangs the island forever. Absent
- *  is the only safe answer, and `has` says the same. */
-const PROMISE_KEYS = new Set(["then", "catch", "finally"]);
+/** A chainable answer here would make every shim value a thenable whose `then`
+ *  never calls back, so one `await` hangs the island forever. Absent is the only
+ *  safe answer, and `has` says the same.
+ *
+ *  ONLY `then`. It is the entire thenable protocol — `catch`/`finally` live on
+ *  real promises and are never read to decide whether a value is one — while
+ *  `.catch(fallback)` is a real zod method on every schema (zod 3 and 4) and a
+ *  namespace helper in zod 4. Blanking it broke components that declare a
+ *  fallback, which is worse than the hang it was meant to prevent. */
+const THENABLE_KEY = "then";
 
 /**
  * The shim's own refusal, with its OWN type. Deliberately not a `ZodError`: if
@@ -73,7 +79,7 @@ const node = (): unknown => new Proxy(function chain() {} as object, {
   get(_target, property) {
     if (typeof property === "symbol") return undefined;
     const key = String(property);
-    if (PROMISE_KEYS.has(key)) return undefined;
+    if (key === THENABLE_KEY) return undefined;
     if (PARSERS.has(key)) return () => refuse(key);
     // `_def`/`shape`/`options`/`element` are read by tooling, never by render
     // paths; a chainable answer keeps property access from throwing.
@@ -82,7 +88,7 @@ const node = (): unknown => new Proxy(function chain() {} as object, {
   // `z.object({...})`, `.min(1)`, `.describe("…")` — all calls chain.
   apply: () => node(),
   // Some code probes with `in`; answer consistently with `get`.
-  has: (_target, property) => !PROMISE_KEYS.has(String(property)),
+  has: (_target, property) => property !== THENABLE_KEY,
 });
 
 /**
@@ -104,12 +110,12 @@ export const zodShim: Record<string, unknown> = new Proxy({}, {
     if (typeof property === "symbol") return undefined;
     const key = String(property);
     if (key === "__esModule") return true;
-    if (PROMISE_KEYS.has(key)) return undefined;
+    if (key === THENABLE_KEY) return undefined;
     // The namespace and the default export are the module itself.
     if (key === "z" || key === "default") return zodShim;
     if (key === "ZodError") return ZodError;
     if (PARSERS.has(key)) return () => refuse(key);
     return node();
   },
-  has: (_target, property) => !PROMISE_KEYS.has(String(property)),
+  has: (_target, property) => property !== THENABLE_KEY,
 }) as Record<string, unknown>;

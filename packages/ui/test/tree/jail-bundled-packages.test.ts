@@ -71,6 +71,23 @@ describe("the jail's bundled packages, through every import style", () => {
     expect(typeof exports.default).toBe("function");
   });
 
+  it("zod: a schema declaring a `.catch()` fallback still loads", () => {
+    // `catch` is a real zod method AND a promise-protocol name. Blanking it to
+    // keep the shim off the thenable path made this component throw
+    // `.catch is not a function` at module evaluation — a working component
+    // broken to fix an unused await path.
+    const exports = evaluate(`
+      import { z } from "zod";
+      export const props = z.object({
+        retries: z.number().catch(3),
+        variant: z.enum(["ok", "warn"]).catch("ok"),
+      });
+      export default function Card() { return null; }
+    `);
+    expect(exports.props).toBeDefined();
+    expect(typeof exports.default).toBe("function");
+  });
+
   it("every bundled specifier is actually answerable — permit implies provide", () => {
     for (const specifier of JAIL_BUNDLED_PACKAGES) {
       expect(() => evaluate(`import * as m from "${specifier}"; export const r = typeof m;`), specifier).not.toThrow();

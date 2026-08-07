@@ -44,11 +44,30 @@ describe("the jail's zod shim", () => {
     const schema = z.object({ a: z.string() });
     expect(await Promise.resolve(schema)).toBe(schema);
     expect(await Promise.resolve(zodShim)).toBe(zodShim);
-    for (const key of ["then", "catch", "finally"]) {
-      expect((schema as Record<string, unknown>)[key], key).toBeUndefined();
-      expect(key in (schema as object), key).toBe(false);
-      expect(key in zodShim, key).toBe(false);
-    }
+    expect((schema as Record<string, unknown>).then).toBeUndefined();
+    expect("then" in (schema as object)).toBe(false);
+    expect("then" in zodShim).toBe(false);
+  });
+
+  it("keeps `catch` — the one promise-shaped name zod actually owns", () => {
+    // `then` is the WHOLE thenable protocol, so blanking any further name buys
+    // nothing and costs a real method: `.catch(fallback)` is zod's fallback
+    // declaration on every schema (zod 3 and 4) and a namespace helper in zod 4.
+    // `finally` is neither, so nothing else in this family needs blanking.
+    expect(typeof (z.number() as unknown as Record<string, unknown>).catch).toBe("function");
+    expect(() => z.number().catch(3)).not.toThrow();
+    expect(() => z.object({ n: z.number().catch(3).optional() })).not.toThrow();
+    expect(typeof (zodShim as Record<string, unknown>).catch).toBe("function");
+    expect("catch" in zodShim).toBe(true);
+    expect("finally" in zodShim).toBe(true);
+  });
+
+  it("a caught schema still REFUSES to validate — a fallback is not a validator", () => {
+    // `.catch(3)` declares what zod would return for bad input; the shim cannot
+    // tell good input from bad, so guessing the fallback would be exactly the
+    // silent mis-validation this shim exists to never do.
+    const schema = z.number().catch(3) as unknown as Record<string, () => unknown>;
+    expect(() => schema.parse!()).toThrow(/not available in the Vendo preview sandbox/);
   });
 
   it("is registered as a bundled package, so producers and the runtime agree", () => {

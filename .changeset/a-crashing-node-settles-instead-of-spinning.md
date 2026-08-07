@@ -12,7 +12,8 @@ Two real defects in the tree renderer, and one dead extension point removed.
 - The jail's zod shim answered `then` with another chainable node, which made
   every schema (and the module object itself) a thenable whose callback never
   fires: one `await` inside a generated component hung the island forever.
-  `then`/`catch`/`finally` are absent now, and `in` agrees.
+  `then` is absent now, and `in` agrees. Only `then` — it is the whole thenable
+  protocol, and `.catch(fallback)` is a real zod method the shim still answers.
 - `registerTreeRenderer` is removed from `@vendoai/ui/tree`. The payload
   renderer registry served exactly one format and had no caller anywhere;
   `PayloadView` checks the format tag directly. `InClientVenue` and `PinDrift`
