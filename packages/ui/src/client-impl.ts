@@ -1,5 +1,5 @@
 /** Fetch/SSE bindings for the public wire route table (08-ui §2, 09-vendo §3). */
-import { VendoError, type RunId, type VendoErrorCode } from "@vendoai/core";
+import { VendoError, joinPath, mountMismatchMessage, type RunId, type VendoErrorCode } from "@vendoai/core";
 import type { VendoClient, VendoClientConfig } from "./client.js";
 import type { ConnectableToolkit, ConnectionAccount } from "./wire-types.js";
 
@@ -16,10 +16,6 @@ const KNOWN_ERROR_CODES = new Set<VendoErrorCode>([
   // with "…but I can make you your own" instead of a bare refusal.
   "forbidden",
 ]);
-
-function route(baseUrl: string, path: string): string {
-  return `${baseUrl.replace(/\/$/, "")}${path}`;
-}
 
 function idPath(id: string): string {
   return encodeURIComponent(id);
@@ -88,21 +84,53 @@ function announceApprovalsDecided(detail: ApprovalsDecidedDetail): void {
   window.dispatchEvent(new CustomEvent<ApprovalsDecidedDetail>(APPROVALS_DECIDED_EVENT, { detail }));
 }
 
+/** A Vendo wire reply always speaks JSON — the host's own 404 page does not. */
+function isWireEnvelope(response: Response): boolean {
+  return (response.headers.get("content-type") ?? "").includes("application/json");
+}
+
+/** The path prefix the PAGE is served under, when the browser can say — the
+ *  other half of the mount-mismatch message. SSR has no location. */
+function pageMount(): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  const segments = window.location.pathname.split("/").filter(Boolean);
+  return segments.length === 0 ? "" : `/${segments[0]}`;
+}
+
 /** 08-ui §2 */
 export function createVendoClient(config: VendoClientConfig): VendoClient {
   const baseUrl = config.baseUrl ?? "/api/vendo";
   const headers = { ...(config.headers ?? {}) };
 
+  /** First contact only: a wire route that answers with something that is not a
+   *  Vendo envelope means the client and the server disagree about where the
+   *  wire is mounted — the #914 shape, seen from the browser. One loud error
+   *  naming BOTH sides and the fix beats a mysterious 404 on a page that
+   *  otherwise renders perfectly. Checked once; after a real envelope arrives
+   *  the mount is proven and the check costs nothing. */
+  let mountProven = false;
+
   async function send(path: string, init?: RequestInit): Promise<Response> {
-    return ensureOk(
-      await fetch(route(baseUrl, path), {
-        ...init,
-        headers: {
-          ...headers,
-          ...(init?.headers as Record<string, string> | undefined),
-        },
-      }),
-    );
+    const target = joinPath(baseUrl, path);
+    const response = await fetch(target, {
+      ...init,
+      headers: {
+        ...headers,
+        ...(init?.headers as Record<string, string> | undefined),
+      },
+    });
+    if (!mountProven) {
+      if (response.status === 404 && !isWireEnvelope(response)) {
+        const mount = pageMount();
+        throw new Error(mountMismatchMessage({
+          clientBaseUrl: baseUrl,
+          requested: target,
+          ...(mount === undefined ? {} : { pageMount: mount }),
+        }));
+      }
+      mountProven = true;
+    }
+    return ensureOk(response);
   }
 
   /** ONE VISITOR, ONE ANONYMOUS IDENTITY.

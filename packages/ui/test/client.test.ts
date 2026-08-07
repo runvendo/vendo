@@ -159,4 +159,38 @@ describe("createVendoClient", () => {
     wire.state.statusErrorCode = "future-code";
     await expect(client.status()).rejects.toMatchObject({ name: "Error", code: "future-code", message: "Status failed" });
   });
+
+  it("joins the base URL's path prefix onto every route exactly once", async () => {
+    const seen: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      seen.push(typeof input === "string" ? input : input.toString());
+      return new Response(JSON.stringify([]), { headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+    try {
+      await createVendoClient({ baseUrl: "/maple/api/vendo" }).threads.list();
+      expect(seen[0]).toBe("/maple/api/vendo/threads");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  /** An unprefixed baseUrl on a prefixed page is the #914 shape from the
+   *  browser: one loud error naming both sides and the fix, not a bare 404. */
+  it("throws ONE named mount-mismatch error on first contact", async () => {
+    const originalFetch = globalThis.fetch;
+    window.history.replaceState({}, "", "/maple/dashboard");
+    globalThis.fetch = (async () => new Response("<!doctype html>not found", {
+      status: 404,
+      headers: { "content-type": "text/html" },
+    })) as typeof fetch;
+    try {
+      await expect(createVendoClient({ baseUrl: "/api/vendo" }).threads.list())
+        .rejects.toThrow(/wire mount mismatch/);
+      await expect(createVendoClient({ baseUrl: "/api/vendo" }).threads.list())
+        .rejects.toThrow(/\/maple/);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });
