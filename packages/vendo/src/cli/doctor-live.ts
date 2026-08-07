@@ -219,16 +219,28 @@ function defaultSpawnDev(packageManager: string, root: string): ChildProcess {
   return spawn(packageManager, ["run", "dev"], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
 }
 
-async function waitForStatus(statusUrl: string, fetchImpl: typeof fetch, timeoutMs: number): Promise<boolean> {
+/** `abandon` settles when the caller no longer wants an answer (the spawn
+    failed). Without it the loop outlives the race it lost and its ref'd poll
+    timer keeps node alive for the whole timeout — the CLI prints its verdict
+    and then sits there, because bin/vendo.mjs only sets `process.exitCode`. */
+async function waitForStatus(
+  statusUrl: string,
+  fetchImpl: typeof fetch,
+  timeoutMs: number,
+  abandon: Promise<unknown>,
+): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
+  let abandoned = false;
+  void abandon.then(() => { abandoned = true; });
+  while (!abandoned && Date.now() < deadline) {
     try {
       const response = await fetchImpl(`${statusUrl}/status`);
       if (response.ok) return true;
     } catch {
       // not up yet
     }
-    await new Promise((resolve) => setTimeout(resolve, 750));
+    if (abandoned) break;
+    await Promise.race([new Promise((resolve) => setTimeout(resolve, 750)), abandon]);
   }
   return false;
 }
@@ -267,7 +279,7 @@ export async function startDevServerForProbe(options: StartDevServerOptions): Pr
     child.unref?.(); // injected test doubles may not implement it
   };
   const up = await Promise.race([
-    waitForStatus(options.statusUrl, fetchImpl, options.timeoutMs ?? 120_000),
+    waitForStatus(options.statusUrl, fetchImpl, options.timeoutMs ?? 120_000, spawnFailed),
     spawnFailed,
   ]);
   if (!up) stop();
