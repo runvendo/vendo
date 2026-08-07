@@ -508,6 +508,43 @@ describe("host HTTP execution", () => {
     }
   });
 
+  /** #914: a deployment served under a path prefix configures
+   *  VENDO_BASE_URL = the FULL public URL. Stored binding paths are
+   *  prefix-FREE, and the runtime attaches the prefix exactly once — a bare
+   *  concat produced `/maple/maple/api/probe` and 404'd every host tool while
+   *  every page rendered perfectly. */
+  it("attaches a configured base URL's path prefix exactly once", async () => {
+    const requested: string[] = [];
+    const actions = createActions({
+      tools: [routeTool("host_probe")],
+      baseUrl: "https://site.test/maple",
+      fetch: async (input) => {
+        requested.push(new URL(String(input)).pathname);
+        return Response.json({ ok: true });
+      },
+    });
+    await expect(actions.execute({ id: "1", tool: "host_probe", args: {} }, ctx))
+      .resolves.toMatchObject({ status: "ok" });
+    expect(requested.at(-1)).toBe("/maple/probe");
+  });
+
+  /** Prove-it-can-fail pin: an ALREADY-prefixed stored path (a stale
+   *  tools.json written before mounted() was deleted) must still resolve to
+   *  ONE prefix, never two. */
+  it("does not double a prefix a stale stored path already carries", async () => {
+    const requested: string[] = [];
+    const actions = createActions({
+      tools: [routeTool("host_probe", { binding: { kind: "route", method: "GET", path: "/maple/probe", argsIn: "query" } })],
+      baseUrl: "https://site.test/maple",
+      fetch: async (input) => {
+        requested.push(new URL(String(input)).pathname);
+        return Response.json({ ok: true });
+      },
+    });
+    await actions.execute({ id: "1", tool: "host_probe", args: {} }, ctx);
+    expect(requested.at(-1)).toBe("/maple/probe");
+  });
+
   // A wrong wire origin 404s every tool call while every path is correct, so an
   // http failure that carries only the path reads exactly like a wrong path.
   it("names the origin in an http failure without leaking the URL's credentials", async () => {

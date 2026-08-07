@@ -2,6 +2,7 @@ import { readOptionalVendoJson } from "#actions/host-files";
 import {
   VendoError,
   descriptorHash,
+  joinUrl,
   toolDescriptorSchema,
   type ActAs,
   type PermissionGrant,
@@ -242,10 +243,6 @@ function withPathArgs(path: string, args: Record<string, unknown>): { path: stri
   };
 }
 
-function joinedUrl(baseUrl: string, path: string): URL {
-  return new URL(`${baseUrl.replace(/\/$/, "")}${path}`);
-}
-
 /**
  * How a failed host call names what it called: origin **and** path. A wire
  * origin pointing at the wrong host 404s every tool while every path is
@@ -280,7 +277,7 @@ function resolveUrl(binding: RouteBinding | OpenApiBinding, configuredBaseUrl?: 
     );
   }
   try {
-    return joinedUrl(baseUrl, binding.path);
+    return joinUrl(baseUrl, binding.path);
   } catch {
     throw new VendoError("validation", `Invalid baseUrl for ${binding.path}; set createActions({ baseUrl }) to a valid origin`);
   }
@@ -434,7 +431,7 @@ function trpcRequest(binding: TrpcBinding, args: Record<string, unknown>, config
   }
   let url: URL;
   try {
-    url = joinedUrl(configuredBaseUrl, `${binding.mount.replace(/\/$/, "")}/${binding.procedure}`);
+    url = joinUrl(configuredBaseUrl, `${binding.mount.replace(/\/$/, "")}/${binding.procedure}`);
   } catch {
     throw new VendoError("validation", `Invalid baseUrl for trpc procedure ${binding.procedure}; set createActions({ baseUrl }) to a valid origin`);
   }
@@ -619,7 +616,8 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
         return error(
           "blocked",
           `Present credentials for ${call.tool} cannot be forwarded because VENDO_BASE_URL is not set. `
-            + "Set VENDO_BASE_URL to this deployment's public origin and restart the server.",
+            + "Set VENDO_BASE_URL to this deployment's full public URL (path prefix included) — "
+            + "or VENDO_HOST_API_URL when the host API answers on another origin — and restart the server.",
         );
       }
     }
