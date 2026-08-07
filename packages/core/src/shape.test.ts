@@ -104,6 +104,42 @@ describe("shapeFromJsonSchema", () => {
     expect(shapeFromJsonSchema({ const: 7 })).toEqual({ kind: "number", enum: [7] });
   });
 
+  it("intersects allOf branches, keeping their enums and required fields", () => {
+    expect(shapeFromJsonSchema({
+      allOf: [
+        {
+          type: "object",
+          properties: { id: { type: "string" }, status: { type: "string", enum: ["posted", "pending"] }, notes: { type: "string" } },
+          required: ["id", "status"],
+        },
+        { type: "object", properties: { actor: { type: "object", properties: { name: { type: "string" } }, required: ["name"] } } },
+      ],
+    })).toEqual({
+      kind: "object",
+      fields: {
+        id: { kind: "string" },
+        status: { kind: "string", enum: ["posted", "pending"] },
+        notes: { kind: "string" },
+        actor: { kind: "object", fields: { name: { kind: "string" } } },
+      },
+      optional: ["notes", "actor"],
+    });
+  });
+
+  it("intersects sibling properties with the allOf branches", () => {
+    expect(shapeFromJsonSchema({
+      type: "object",
+      properties: { total: { type: "number" } },
+      required: ["total"],
+      allOf: [{ type: "object", properties: { id: { type: "string" } }, required: ["id"] }],
+    })).toEqual({ kind: "object", fields: { id: { kind: "string" }, total: { kind: "number" } } });
+  });
+
+  it("degrades an allOf with a non-object member whole", () => {
+    expect(shapeFromJsonSchema({ allOf: [{ type: "object", properties: { id: { type: "string" } } }, { type: "string" }] }))
+      .toEqual({ kind: "json" });
+  });
+
   it("degrades unmodelled constructs to json instead of throwing", () => {
     expect(shapeFromJsonSchema({})).toEqual({ kind: "json" });
     expect(shapeFromJsonSchema({ anyOf: [{ type: "string" }, { type: "number" }] })).toEqual({ kind: "json" });

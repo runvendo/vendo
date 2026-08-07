@@ -150,6 +150,28 @@ describe("screenTypings", () => {
     expect(dts).toContain("declare const invoices: { data: Array<{ id: string; amount_cents: number }>; total: number }");
   });
 
+  it("types a composed (allOf) declared outputSchema as the intersection, not any", () => {
+    const dts = screenTypings({
+      catalog: [],
+      queries: [{ name: "transfer", tool: "maple_transfer" }],
+      toolOutputSchemas: {
+        maple_transfer: {
+          type: "object",
+          properties: {
+            data: {
+              allOf: [
+                { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+                { type: "object", properties: { actor: { type: "string" } } },
+              ],
+            },
+          },
+          required: ["data"],
+        },
+      },
+    });
+    expect(dts).toContain("declare const transfer: { data: { id: string } & { actor?: string } }");
+  });
+
   it("types a query permissively when no schema is declared", () => {
     const dts = screenTypings({ catalog: [], queries: [{ name: "mystery", tool: "undeclared" }] });
     expect(dts).toContain("declare const mystery: any;");

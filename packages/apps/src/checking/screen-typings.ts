@@ -155,6 +155,13 @@ const jsonSchemaTypeText = (schema: unknown, reading: SchemaReading, depth = 0):
       return branches.map((branch) => jsonSchemaTypeText(branch, reading, depth + 1)).join(" | ");
     }
   }
+  // `allOf` is an intersection — the value carries every branch's fields at
+  // once — and TS spells that `A & B`. Left to fall through to `any`, a
+  // composed response (demo-bank's transfer result) types every binding
+  // through it as valid, including fields no branch declares.
+  if (Array.isArray(schema.allOf) && schema.allOf.length > 0) {
+    return schema.allOf.map((branch) => jsonSchemaTypeText(branch, reading, depth + 1)).join(" & ");
+  }
   const type = Array.isArray(schema.type) ? schema.type[0] : schema.type;
   if (type === "string") return "string";
   if (type === "number" || type === "integer") return "number";

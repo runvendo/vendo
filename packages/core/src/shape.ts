@@ -145,6 +145,12 @@ const shapeFromJsonSchemaAt = (schema: unknown, depth: number): ShapeType => {
   const kind = typeof declared === "string" ? SCALAR_KINDS[declared] : undefined;
   if (kind !== undefined) return values === undefined ? { kind } : { kind, enum: values };
   if (declared === "array") return { kind: "array", items: shapeFromJsonSchemaAt(schema.items, depth + 1) };
+  if (Array.isArray(schema.allOf) && schema.allOf.length > 0) {
+    // Sibling `properties` are one more member of the intersection; the emptied
+    // `allOf` stops the branch re-entering itself.
+    const own = isSchemaObject(schema.properties) ? [{ ...schema, allOf: [] }] : [];
+    return intersectSchemas([...schema.allOf, ...own], depth);
+  }
   if (declared === "object" || isSchemaObject(schema.properties)) {
     const properties = isSchemaObject(schema.properties) ? schema.properties : {};
     const required = new Set((Array.isArray(schema.required) ? schema.required : [])
@@ -165,10 +171,32 @@ const shapeFromJsonSchemaAt = (schema: unknown, depth: number): ShapeType => {
   return JSON_SHAPE;
 };
 
+/** `allOf` is an INTERSECTION: the value carries EVERY branch's fields at once,
+ *  and a field is required as soon as one branch requires it. Erasing it to
+ *  `json` erases the whole declaration — demo-bank's own transfer result is an
+ *  `allOf`, enums included — from the binding check and the screen type check.
+ *  A non-object member is unmodelled, so the intersection degrades whole. */
+const intersectSchemas = (branches: readonly unknown[], depth: number): ShapeType => {
+  const fields: Record<string, ShapeType> = {};
+  const required = new Set<string>();
+  for (const branch of branches) {
+    const shape = shapeFromJsonSchemaAt(branch, depth + 1);
+    if (shape.kind !== "object") return JSON_SHAPE;
+    const branchOptional = new Set(shape.optional ?? []);
+    for (const [name, field] of Object.entries(shape.fields)) {
+      defineOwn(fields, name, field);
+      if (!branchOptional.has(name)) required.add(name);
+    }
+  }
+  const optional = Object.keys(fields).filter((name) => !required.has(name));
+  return optional.length > 0 ? { kind: "object", fields, optional } : { kind: "object", fields };
+};
+
 /**
  * A DECLARED JSON Schema in the checks' structural form — the producer of
- * `toolShapes` now that nothing samples. Total: unmodelled constructs (anyOf,
- * $ref, custom keywords) degrade to `{ kind: "json" }`, never a throw.
+ * `toolShapes` now that nothing samples. `allOf` intersects; other unmodelled
+ * constructs (anyOf, $ref, custom keywords) degrade to `{ kind: "json" }`,
+ * never a throw.
  * `enum`/`const` SURVIVE onto the scalar branch: an enum erased to a bare
  * `string` is what refused a correct screen at the checks floor (live 2026-08,
  * demo-bank's spending donut).
