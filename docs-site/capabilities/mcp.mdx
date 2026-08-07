@@ -604,9 +604,12 @@ ordinary 404 rather than a 500.
 
 ### remoteAs token requirements
 
-- Tokens must be ES256-signed JWTs with `iss`, `sub`, `aud`, `iat`, and `exp`
-  claims. `iss` must equal the configured `issuer`, `aud` must equal the
-  configured `audience`, and `exp` must be in the future.
+- Tokens must be JWTs with `iss`, `sub`, `aud`, `iat`, and `exp` claims,
+  signed with one of `RS256`, `RS384`, `RS512`, `PS256`, `PS384`, `PS512`,
+  `ES256`, `ES384`, or `ES512`. Symmetric algorithms and `none` are rejected.
+  `iss` must equal the configured `issuer`, `aud` must equal the configured
+  `audience`, and `exp` must be in the future. Neither `issuer` nor `audience`
+  may be blank — the door refuses to start if either is.
 - The door caches the JWKS in memory and refetches it when a bearer arrives
   with an unfamiliar `kid`, which covers ordinary key rotation. `jwksUri` is
   optional; the door discovers it from the issuer's RFC 8414 metadata when
