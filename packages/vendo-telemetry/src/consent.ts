@@ -11,7 +11,8 @@ export interface ConsentResult {
   reason: string;
 }
 
-function truthy(v: string | undefined): boolean {
+/** The one spelling of an env flag being on, shared by every reader. */
+export function truthy(v: string | undefined): boolean {
   return v === "1" || v === "true";
 }
 
