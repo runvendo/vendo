@@ -78,7 +78,9 @@ class FakeBoxMachine implements SandboxMachine {
     readonly allowedDomains: readonly string[] | undefined,
     private readonly agent: FakeBoxAgent,
   ) {
-    this.files = inMemoryBoxFiles(state.files);
+    this.files = inMemoryBoxFiles(state.files, (operation) => {
+      if (this.destroyed || this.stopped) throw new Error(`box ${this.id} is not running; cannot ${operation}`);
+    });
   }
 
   private appPort(): number {

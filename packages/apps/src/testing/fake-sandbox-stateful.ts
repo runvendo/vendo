@@ -54,7 +54,10 @@ export class FakeStatefulMachine implements SandboxMachine {
     this.env = Object.freeze({ ...env });
     this.state = new Map(state);
     this.fileContents = new Map([...files].map(([path, bytes]) => [path, bytes.slice()]));
-    this.files = inMemoryBoxFiles(this.fileContents);
+    this.files = inMemoryBoxFiles(this.fileContents, (operation) => {
+      if (this.reaped) throw new VendoError("not-found", `fake stateful machine ${this.id} was reaped by the provider`);
+      if (this.stopped) throw new Error(`fake stateful machine ${this.id} is stopped; cannot ${operation}`);
+    });
   }
 
   async request(req: {
