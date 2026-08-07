@@ -139,4 +139,24 @@ describe("safeReturnTo", () => {
     // still lands somewhere that exists instead of 404ing after sign-in.
     expect(safeReturnTo("/insights")).toBe("/maple/insights");
   });
+
+  /** returnTo is the one attacker-reachable input on the sign-in path and its
+   *  output is emitted verbatim as a Location, so the open-redirect property is
+   *  absolute: whatever comes back is a path under this deployment's mount and
+   *  NEVER carries an authority. Every spelling that smuggles a host past a
+   *  string check is listed — protocol-relative, backslash-relative, a
+   *  whitespace-split scheme, an encoded double slash — because the prefixing
+   *  step concatenates and a leading `//` would turn a path into an origin. */
+  it.each([
+    "//evil.example/phish",
+    "/\\evil.example/phish",
+    "\\\\evil.example/phish",
+    "https:/\\evil.example/phish",
+    "java\tscript:alert(1)",
+    "/%2f%2fevil.example/phish",
+  ])("never turns %j into an authority", (candidate) => {
+    vi.stubEnv("VENDO_BASE_URL", "https://maple.example.com/maple");
+    const target = safeReturnTo(candidate);
+    expect(target === "/maple" || target.startsWith("/maple/")).toBe(true);
+  });
 });
