@@ -56,7 +56,18 @@ describe("starterPackageJson", () => {
       name: "@vendoai-examples/ai-sdk-agent",
       scripts: { dev: "next dev", test: "vitest run" },
       dependencies: { "@vendoai/vendo": "workspace:*", ai: "6.0.28", vendoai: "workspace:*" },
-      devDependencies: { "@vendoai/core": "workspace:*", vitest: "^3", typescript: "^5" },
+      devDependencies: {
+        "@vendoai/core": "workspace:*",
+        // The scope the check missed in #1001, when it matched `@vendoai/` only.
+        "@vendoai-fixtures/test-kit": "workspace:*",
+        // …and the case scope-matching still cannot see: a real workspace
+        // package with no `@vendoai` prefix. `demo-bank` in an example's
+        // devDependencies survives every name rule and lands an unresolvable
+        // `workspace:` spec in a starter that the journey `npm install`s.
+        "demo-bank": "workspace:*",
+        vitest: "^3",
+        typescript: "^5",
+      },
     }))) as { name: string; scripts: Record<string, string>; dependencies: Record<string, string>; devDependencies: Record<string, string> };
     expect(stripped.name).toBe("journey-starter-ai-sdk-agent");
     expect(stripped.scripts).toEqual({ dev: "next dev" });
@@ -79,8 +90,18 @@ describe.each(EXAMPLES)("examples/%s marked diff", (example) => {
     expect(derivation.vendoOwned).toContain(".vendo/tools.json");
     expect(derivation.vendoOwned.some((rel) => rel.endsWith("lib/vendo.ts"))).toBe(true);
     expect(derivation.vendoOwned.some((rel) => rel.includes("api/vendo/"))).toBe(true);
-    const starterPackage = await readFile(path.join(starter, "package.json"), "utf8");
-    expect(starterPackage).not.toContain("@vendoai");
+    // What the starter's manifest must satisfy, asserted on the dependency
+    // entries rather than as a substring of the file: `not.toContain("@vendoai")`
+    // read the description prose too, and named a scope prefix instead of the
+    // property that matters — that the journey's `npm install`, run in a temp dir
+    // outside this monorepo, can resolve every line.
+    const manifest = JSON.parse(await readFile(path.join(starter, "package.json"), "utf8")) as Record<string, unknown>;
+    const deps = Object.entries(Object.assign(
+      {},
+      ...["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"].map((field) => manifest[field] ?? {}),
+    ) as Record<string, string>);
+    expect(deps.filter(([name]) => name === "vendoai" || /^@vendoai[/-]/.test(name)), "Vendo package survived into the starter").toEqual([]);
+    expect(deps.filter(([, version]) => version.startsWith("workspace:")), "workspace: dependency survived; npm cannot resolve it outside the monorepo").toEqual([]);
 
     // …and the marked diff alone brings the example back exactly.
     const applied = await applyMarkedDiff(exampleDir, starter);
