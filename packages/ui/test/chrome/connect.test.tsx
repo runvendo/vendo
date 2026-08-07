@@ -622,6 +622,87 @@ describe("ConnectCard and ConnectedAccountsPanel", () => {
     await screen.findByText("Connected");
   });
 
+  /**
+   * The panel's OWN two connects — Reconnect on a broken row, and a
+   * connect-ahead chip in the empty state — run the same initiate → sign-in
+   * window → poll flow the ConnectCard does, and owe the same popup mechanics.
+   *
+   * Both used to call `completeConnection` with no window at all, which left it
+   * opening one AFTER the initiate await (connect-dock.tsx) — the exact
+   * post-await shape Safari and Firefox refuse by call-stack provenance. Neither
+   * passed `onRedirect` either, so a refused window had no fallback link: the
+   * click did nothing and the panel said nothing for the full two-minute poll.
+   * The two tests above this pair could not see it — they stubbed `window.open`
+   * with a bare `vi.fn()` and only ever asked THAT it was called, never when.
+   */
+  it("Reconnect opens the sign-in window INSIDE the click, before initiate", async () => {
+    const { popup, open } = allowPopups();
+    wire.state.connections = [
+      { id: "ca_1", connector: "composio", toolkit: "gmail", status: "expired", createdAt: "2026-05-14T00:00:00.000Z" },
+    ];
+    render(<VendoProvider client={client}><ConnectedAccountsPanel /></VendoProvider>);
+    await screen.findByText("Gmail");
+    fireEvent.click(screen.getByRole("button", { name: "Reconnect Gmail" }));
+
+    // Blank and synchronous: the window exists before the broker has been asked.
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(open.mock.calls[0]![0]).toBe("about:blank");
+    expect(wire.requests.some(request => request.path === "/connections/initiate")).toBe(false);
+    // …then navigated to the broker's URL, and closed from the opener once the
+    // account is live — never a background tab we cannot reach.
+    await waitFor(() => expect(popup.location.replace).toHaveBeenCalledWith("https://connect.test/oauth/1"));
+    await waitFor(() => expect(popup.close).toHaveBeenCalled());
+  });
+
+  it("a connect-ahead chip opens the sign-in window INSIDE the click, before initiate", async () => {
+    const { popup, open } = allowPopups();
+    wire.state.connections = [];
+    render(
+      <VendoProvider client={client} connectors={[{ toolkit: "slack", connector: "composio" }]}>
+        <ConnectedAccountsPanel />
+      </VendoProvider>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Connect Slack" }));
+
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(open.mock.calls[0]![0]).toBe("about:blank");
+    expect(wire.requests.some(request => request.path === "/connections/initiate")).toBe(false);
+    await waitFor(() => expect(popup.location.replace).toHaveBeenCalledWith("https://connect.test/oauth/1"));
+  });
+
+  // Every browser blocks SOMETIMES (a blocker extension, a hardened profile).
+  // A refused window must not be a dead end here either: the connect is already
+  // initiated and the poll is running, so the same URL in a tab finishes it.
+  it.each(["Reconnect Gmail", "Connect Slack"] as const)(
+    "a blocked sign-in window leaves a real link instead of silence (%s)",
+    async button => {
+      vi.stubGlobal("open", vi.fn(() => null));
+      // The fixture's initiate mints `ca_new` ALREADY active, which would settle
+      // the flow before the first paint. `completeConnection` swallows a failed
+      // status read and sleeps 1.5s before the next, so a run of them holds the
+      // connect in flight long enough to assert what the panel offers meanwhile.
+      for (let index = 0; index < 8; index += 1) {
+        wire.state.failures.push({
+          method: "GET", path: "/connections/ca_new", code: "unavailable", message: "broker busy", status: 503,
+        });
+      }
+      const name = button === "Reconnect Gmail" ? "Gmail" : "Slack";
+      wire.state.connections = button === "Reconnect Gmail"
+        ? [{ id: "ca_1", connector: "composio", toolkit: "gmail", status: "expired", createdAt: "2026-05-14T00:00:00.000Z" }]
+        : [];
+      render(
+        <VendoProvider client={client} connectors={[{ toolkit: "slack", connector: "composio" }]}>
+          <ConnectedAccountsPanel />
+        </VendoProvider>,
+      );
+      fireEvent.click(await screen.findByRole("button", { name: button }));
+
+      const link = await screen.findByRole("link", { name: "Open sign-in in a new tab" });
+      expect(link.getAttribute("href")).toBe("https://connect.test/oauth/1");
+      expect(link.closest("[role=status]")!.textContent).toContain(`blocked the ${name} sign-in window`);
+    },
+  );
+
   it("active rows keep Disconnect as the only control — no Reconnect", async () => {
     render(<VendoProvider client={client}><ConnectedAccountsPanel /></VendoProvider>);
     await screen.findByText("Gmail");

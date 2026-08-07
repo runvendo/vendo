@@ -439,4 +439,28 @@ describe("connect dock + tray (ENG-225)", () => {
     // No spinner left behind: the flow ENDED rather than being abandoned.
     expect(within(tray).queryByRole("status", { name: "Connecting Slack" })).toBeNull();
   });
+
+  // The tray opened its window in the click correctly, but passed no
+  // `onRedirect` — so a browser that refused the window anyway left the row
+  // showing the "Connecting…" dots for the full two-minute poll with no way to
+  // reach the sign-in page. The same fallback the ConnectCard offers.
+  it("offers the sign-in URL as a link when the browser blocks the window", async () => {
+    vi.stubGlobal("open", vi.fn(() => null));
+    // Hold the poll open: the fixture's initiate mints `ca_new` already active.
+    for (let index = 0; index < 8; index += 1) {
+      wire.state.failures.push({
+        method: "GET", path: "/connections/ca_new", code: "unavailable", message: "broker busy", status: 503,
+      });
+    }
+    render(
+      <VendoProvider client={client} connectors={CONNECTORS}><VendoThread threadId="thr_1" /></VendoProvider>,
+    );
+    await screen.findByText("Existing thread");
+    fireEvent.click(await screen.findByRole("button", { name: "Connect tools" }));
+    const tray = await screen.findByRole("dialog", { name: "Connect tools" });
+
+    fireEvent.click(await within(tray).findByRole("button", { name: "Connect Slack" }));
+    const link = await within(tray).findByRole("link", { name: "Open sign-in in a new tab" });
+    expect(link.getAttribute("href")).toBe("https://connect.test/oauth/1");
+  });
 });

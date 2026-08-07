@@ -2,6 +2,23 @@ import { expect, type FrameLocator, type Page } from "@playwright/test";
 
 export const screenshotPath = (name: string) => new URL(`./screenshots/${name}.png`, import.meta.url).pathname;
 
+/**
+ * Hold one real wire request open, and hand back its release. Nothing about the
+ * response is faked — parking is how an in-flight moment (a window opened before
+ * the broker has answered; a poll still running) is asserted on at all.
+ */
+export async function parkRequest(page: Page, pattern: string): Promise<() => void> {
+  let release = () => {};
+  const parked = new Promise<void>(resolve => {
+    release = resolve;
+  });
+  await page.route(pattern, async route => {
+    await parked;
+    await route.continue();
+  });
+  return release;
+}
+
 export async function openScenario(page: Page, name: string): Promise<void> {
   await page.goto(`/${name}`);
   await expect(page.locator(`main[data-scenario="${name}"]`)).toBeVisible();

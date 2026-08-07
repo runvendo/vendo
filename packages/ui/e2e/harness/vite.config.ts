@@ -50,6 +50,13 @@ export default defineConfig(async ({ command }) => {
       prompt: "a board showing where my money goes each month",
     });
     wire.state.placements.push({ slot: "slot-failed", appId: "app_slot_failed" });
+    // (/accounts) — a broken account for the connected-accounts panel's Reconnect
+    // path. Additive and on a toolkit nothing else in the harness touches, so it
+    // never becomes active: `initiate` mints its own `ca_new` row, leaving this
+    // one expired for every attempt of every spec that shares this wire.
+    wire.state.connections.push({
+      id: "ca_expired", connector: "composio", toolkit: "notion", status: "expired", createdAt: "2026-05-14T00:00:00.000Z",
+    });
   }
 
   // Ephemeral by default so parallel lanes never collide; playwright.config

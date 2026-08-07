@@ -24,6 +24,7 @@ import {
   ApprovalCard,
   AutomationsPanel,
   ConnectCard,
+  ConnectedAccountsPanel,
   NoPolicyNotice,
   VendoOverlay,
   VendoPalette,
@@ -2073,6 +2074,7 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/approval-descriptor": return { title: "Approval — model-instruction descriptor", content: <DescriptorHoleScenario />, ownProvider: true };
     case "/approval-two-money": return { title: "Approval — a fee beside the amount (C5)", content: <TwoMoneyScenario />, ownProvider: true };
     case "/unconfigured-posture": return { title: "Unconfigured posture — every consumer surface (C1)", content: <UnconfiguredPostureScenario />, ownProvider: true };
+    case "/accounts": return { title: "Connected accounts", theme: mapleTheme, content: <ConnectedAccountsPanel /> };
     case "/activity": return { title: "Activity", content: <ActivityPanel /> };
     case "/activity-dark": return { title: "Activity — dark", theme: darkTheme, content: <ActivityPanel /> };
     case "/automations": return { title: "Automations", content: <AutomationsPanel /> };
