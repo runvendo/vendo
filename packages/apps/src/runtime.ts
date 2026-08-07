@@ -12,60 +12,41 @@ import {
   effectiveBuildWatchdogMs,
   encodeGrantPrincipal,
   safeErrorMessage,
-  validateAppDocument,
   type AccessLevel,
   type AppAccess,
   type AppDocument,
-  type AppFloor,
-  type AppGrantRecord,
   type AppId,
   type AppPlan,
-  type FilesAdapter,
-  type Guard,
   type Principal,
-  type IsoDateTime,
   type Json,
-  type NormalizedCatalog,
   type PlanDisplay,
   type RunContext,
   type ScreenAssembler,
   type ApprovalId,
-  type ApprovalRequest,
-  type RiskLabel,
-  type SecretsProvider,
   type ShapeType,
   type StoreAdapter,
   type ToolCall,
   type ToolDescriptor,
-  type ToolOutcome,
-  type ToolSemantics,
   type Tree,
-  type ToolRegistry,
-  type Trigger,
   type UIPayload,
-  type VendoViewPart,
-  type VendoTheme,
   type VendoRecord,
   type WireCompileResult,
-  type WorkspaceFs,
 } from "@vendoai/core";
 import type { LanguageModel } from "ai";
+import { createAccessSurface } from "./access-surface.js";
 import { createAgentTools } from "./agent-tools.js";
 import { createAppData } from "./app-data.js";
+import { createInClientSurface } from "./inclient-surface.js";
+import { createPinsSurface } from "./pins-surface.js";
+import { createReviewSurface } from "./review-surface.js";
+import type { AppsRuntimeContext } from "./runtime-context.js";
 import { commitApp } from "./app-source.js";
 import { appLifecycleEvent } from "./audit.js";
 import { createAppCaller } from "./call.js";
 import { createParkedActions } from "./parked-action.js";
 import { placementStore, type PlacementRow } from "./placements.js";
-import type { Check } from "./checking/types.js";
 import { createAppFloor, floorChecks } from "./checking/floor.js";
-import type {
-  CloudAppsClient,
-  PublishRecord,
-  ShareSnapshot,
-} from "./cloud.js";
 import {
-  applyPinFork,
   asPayload,
   asTree,
   prewarmModels,
@@ -89,13 +70,9 @@ import { reviewerCheck } from "./checking/reviewer.js";
 import { UNSTORED_APP_ID, validateCompiledCreate } from "./generation/validation/validate.js";
 import { wireCompileOptionsFor } from "./wire-options.js";
 import { createAppHistory, type PinIntentKind } from "./history.js";
-import { createInClientApprovals, type InClientVerdict } from "./inclient.js";
+import { createInClientApprovals } from "./inclient.js";
 import { createAppInterchange } from "./interchange.js";
-import {
-  createMachineLifecycle,
-  type BuildMachineEnv,
-  type LifecycleClock,
-} from "./machine-lifecycle.js";
+import { createMachineLifecycle } from "./machine-lifecycle.js";
 import { createFnCaller } from "./fn.js";
 import {
   pushBoxEnv,
@@ -108,8 +85,8 @@ import { appMemoryBrief, rememberedMemory } from "./app-memory.js";
 import { parseVendoManifest } from "./manifest.js";
 import { createAppOpener, createProgressiveQueryResolver, stripServerAuthoritativeFields } from "./open.js";
 import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, listAllRecords, nextEnvStaleAt, rowFromRecord, updateAppRow, withoutSession, type AppRecordWrite } from "./persistence.js";
-import { classifyLegacyPlacements, detectPinDrift, hasDefaultExport, pinComponentName, pinForkSource, type InClientApproval, type PinBaseline, type PinDrift } from "./pins.js";
-import { createReviewLifecycle, type RemixRejection, type ReviewQueueEntry } from "./review.js";
+import { classifyLegacyPlacements, detectPinDrift, pinComponentName } from "./pins.js";
+import { createReviewLifecycle } from "./review.js";
 import { collectSecretValues, redactSecretJson, redactSecretText } from "./redaction.js";
 import {
   boxAllowlist,
@@ -117,293 +94,39 @@ import {
   normalizeEgressDomain,
   unapprovedEgress,
 } from "./egress-approval.js";
-import {
-  createManifestTriggers,
-  type AppMachineStatus,
-  type ManifestTriggerSync,
-} from "./manifest-triggers.js";
+import { createManifestTriggers } from "./manifest-triggers.js";
 import { createSecretExposure, type SecretExposureGrant } from "./secret-exposure.js";
-import { computeShipDiff, type ShipDiff } from "./ship-diff.js";
-import { appVersionHash } from "./version-hash.js";
-import type { SandboxAdapter, SandboxMachine } from "./sandbox.js";
 
-/** 06-apps §1 plus block-plan decisions 3–4. */
-export interface AppsConfig {
-  store: StoreAdapter;
-  guard: Guard;
-  tools: ToolRegistry;
-  /**
-   * execution-v2 — machine lifecycle seams. `sandbox` is the sandbox adapter
-   * (Lane A's shrunk seam); `buildEnv` is Lane C's env assembly, injected so
-   * the lanes do not collide. No adapter → layer-2 lifecycle operations fail
-   * with the existing sandbox-unavailable VendoError; layer-1 apps are
-   * unaffected.
-   */
-  machine?: {
-    sandbox?: SandboxAdapter;
-    buildEnv?: BuildMachineEnv;
-    /**
-     * Lane E — the implicit skin domains merged into every machine's egress
-     * allowlist (the box must always reach its own boundary: store surface,
-     * host-callback surface, inference endpoint). The host assembles them
-     * from the same origins it injects as VENDO_STORE_URL / VENDO_HOST_URL /
-     * VENDO_INFERENCE_URL. They are never subject to declaration or approval.
-     */
-    implicitDomains?: string[];
-    template?: string;
-    idleMs?: number;
-    clock?: LifecycleClock;
-    /**
-     * execution-v2 Wave 3 — the in-box agent edit is a minutes-long loop the
-     * host long-polls. These tune that poll; defaults suit a live box (8-min
-     * budget). Tests shrink them to run without real time.
-     */
-    boxEditPollMs?: number;
-    boxEditTimeoutMs?: number;
-  };
-  /**
-   * Build contract §9.2–§9.6 — the multi-party half. `appAccess` is `can()`
-   * over whatever store the host wired (the umbrella composes it at the
-   * composition seam); `multiParty` is the Cloud gate, filled from
-   * `cloudKeyOptions() !== undefined` — sharing is multi-party coordination,
-   * so grant/revoke/promote refuse with `cloud-required` without it.
-   * `can()` itself is OSS and NEVER key-conditional: with no key no grant row
-   * can exist, so it degenerates to ownership.
-   *
-   * `appAccess` unset ⇒ ownership only, exactly today's behavior.
-   */
-  appAccess?: AppAccess;
-  multiParty?: boolean;
-  /**
-   * Build contract §9.5 — promote's ROW half. A promote crosses subjects, which
-   * 02-store §2 otherwise forbids, and it moves the app's workspace documents
-   * with it; both are raw-row work the store owns, so the umbrella fills this
-   * seam (`appStore().promote` + `workspaceStore().promoteApp`). Unset, promote
-   * refuses rather than half-moving an app.
-   */
-  promoteApp?: (appId: AppId, fromSubject: string, orgId: string) => Promise<void>;
-  /**
-   * Build contract §9.8 — where this deployment serves the authenticated proxy
-   * for an ORG-owned served app (`<wire base>/apps/<id>/serve/`). The wire owns
-   * its base path, so the umbrella fills this; unset, an org served app has no
-   * proxy to point at and `open()` refuses rather than handing out the
-   * provider's URL, which would bypass the per-request `can(viewer)`.
-   */
-  servedProxyPath?: (appId: AppId) => string;
-  /**
-   * Build contract §9.9 (lane H's other half) — called after a successful
-   * document persist, with the previous document, the next one, and the
-   * editing subject. The automations side implements it (a sponsorship is
-   * invalidated when `editor !== sponsor`); the runtime just rings the bell.
-   * A throw here must never fail the edit that already landed.
-   */
-  onDocumentEdit?: (previous: AppDocument, next: AppDocument, editor: string) => Promise<void>;
-  /**
-   * Build contract §9.9 (lane H's other half) — an ADDITIVE, ctx-aware venue
-   * state merged into the open payload beside the in-client verdict. Lane H's
-   * adoption card rides it, which is why it takes the RunContext: the card is
-   * served only to callers with `can(editor)`, so the decision is per-caller,
-   * not per-document. Returned keys spread onto the payload; `inClient`,
-   * `data` and `pinDrift` are reserved and never overwritten.
-   */
-  venueState?: (app: AppDocument, ctx: RunContext) => Promise<Record<string, unknown> | undefined>;
-  /**
-   * execution-v2 Wave 9 — the arming seam for ladder-authored automations
-   * (the same seam pattern as AutomationsConfig.runner: this block never
-   * imports the automations engine). When set, a freshly authored trigger is
-   * armed through it — the umbrella wires `automations.enable`, which runs
-   * the 07 §3 grant-capture flow and surfaces the missing standing-grant
-   * approvals (they ride EditResult.automation.pendingGrants). Unset, the
-   * runtime arms the stored row directly and grant capture stays lazy: the
-   * first away run's ungranted step parks the normal approval card.
-   */
-  armAutomation?: (appId: AppId, triggerId: string, ctx: RunContext) => Promise<{ enabled: boolean; missing: ApprovalRequest[] }>;
-  /**
-   * Contract §3.2 — the workspace's OWN blob seam, for source past
-   * {@link WORKSPACE_INLINE_MAX_BYTES}. The SAME `FilesAdapter` the workspace rows
-   * spill to (the umbrella's `selectFiles`), never a second spill mechanism: a
-   * source file and a workspace file are the same bytes in two projections.
-   *
-   * Unset, `commitSource` is inline-only and an oversized file is refused LOUDLY
-   * rather than dropped — a silently missing source file is a lost app.
-   */
-  files?: FilesAdapter;
-  model?: LanguageModel;
-  /** The island smoke-render gate (on unless explicitly `false`): every
-   *  generated island renders once headless before it can reach a screen. */
-  pipeline?: GenerationDependencies["pipeline"];
-  /** The host's own checks over a generated app (checking/types.ts). APPENDED
-   *  to the built-in fact checks and the reviewer — a host can add findings,
-   *  never remove or replace a built-in one. */
-  checks?: readonly Check[];
-  /** The composition-normalized catalog (01 §14): derived schemas included.
-   *  The provider (function) form of theme/semantics below mirrors
-   *  designRules: it is resolved lazily per create/edit (in
-   *  generationDependencies), never eagerly, so the umbrella can back it with a
-   *  first-request cloud read without doing I/O at compose time. */
-  catalog: NormalizedCatalog;
-  theme?: VendoTheme | (() => VendoTheme | undefined);
-  secrets?: SecretsProvider;
-  /** Host design rules for generation prompts; the function form is re-read
-   *  per create/edit (engine.ts GenerationDependencies). */
-  designRules?: string | (() => string | undefined);
-  pinBaselines?: PinBaseline[];
-  /** Remix review (round-2 hardening 2026-08-02) — the host's reviewer
-   *  assertion for the review-kind lifecycle. Reviewing crosses owner
-   *  boundaries, so it is never inferred from a principal alone: `reviewer`
-   *  answers whether THIS caller may read the full queue, reject, and approve
-   *  review-kind remixes. Unset, the queue serves only the caller's own
-   *  submissions and reject/approve-as-reviewer refuse, naming this hook. */
-  review?: {
-    reviewer?(ctx: RunContext): boolean | Promise<boolean>;
-  };
-  /** ADAPTER RULE — the share/publish seam (see cloud.ts): the umbrella wires
-   * the Cloud console client when VENDO_API_KEY fills the unset slot; this
-   * block never reads the environment. Unset → share/publish fail with
-   * VendoError("cloud-required"). */
-  cloud?: CloudAppsClient;
-  /** W3 — per-tool field semantics from `.vendo/semantics.json`, passed to
-   *  the generation engine (annotated shape cards, law checks, Kit format
-   *  defaults). Provider form resolved per generation (see catalog note). */
-  semantics?: Readonly<Record<string, ToolSemantics>> | (() => Readonly<Record<string, ToolSemantics>> | undefined);
-  /** Re-gate 2026-07-26 finding 2 — the caller's CONNECTED toolkits, resolved
-   *  per create/edit. The create-time shape sampler probes every no-arg read
-   *  tool once; a connector tool (descriptor.toolkit set, 01-core §4) whose
-   *  toolkit is not in this set is never probed — on the gate hosts, ~159
-   *  unconnected Slack/Gmail probes piled up at the approval gate and the
-   *  burst tripped the call-rate breaker under real creates. The umbrella
-   *  backs this with the connections seam (connections.list, active accounts).
-   *  Unset or failing = treat every toolkit as unconnected: connector probes
-   *  skip, host tools are unaffected, and the tools stay LISTED for
-   *  generation (execution still answers `connect-required` on its own). */
-  connectedToolkits?: (ctx: RunContext) => Promise<string[]>;
-  /**
-   * UI-generation blueprint §1 point 2 — the screen agent. "The seam routes, not
-   * the caller": every `vendo_make` request starts in the cheap assembly loop,
-   * and this block never decides which engine a request deserves.
-   *
-   * An ADAPTER SLOT, for the reason every other one here is: the screen agent is a
-   * lean loop in `@vendoai/harnesses` and this block depends on `core` alone, so
-   * the two sides meet on core's `ScreenAssembler` and composition is the only
-   * place that fills it. Explicitly passed always wins.
-   *
-   * REQUIRED for `vendo_make`, as of the conductor's retirement. There is no
-   * second engine behind this seam: an `unavailable`, an assembler that could not
-   * run, a throw, an `assembled` that left no app ROW behind, and an unfilled slot
-   * all answer with a FAILED receipt that says what happened. A quiet fall-through
-   * is how a composition bug ships — the deployment reads all-green while every
-   * ask is served by an engine nobody chose. An `escalate` is the one answer that
-   * is neither: it is a request for the build, and the build is what it gets (see
-   * `vendo_make` in agent-tools.ts).
-   */
-  screen?: ScreenAssembler;
-  /**
-   * §4.5's other half — the plan an escalating screen agent left behind, read
-   * back so the build ANCHORS on it instead of re-planning from the ask alone.
-   *
-   * The plan is a FILE (`/user/apps/<appId>/plan.vendo`, written through the same
-   * `commit()` that painted its skeleton), and this block holds no workspace
-   * (§3.5 — a sandboxed harness holds a workspace and never a store). So the seam
-   * is the same shape as `screen` above and composition, which already built the
-   * workspace the assembler wrote through, is the one place that reads it back.
-   *
-   * Best-effort by design: `undefined` — unfilled slot, no plan file, an
-   * unreadable workspace — means the build plans from the ask, which is exactly
-   * what it did before this seam existed. A build is never lost to a missing brief.
-   */
-  escalatedPlan?: (appId: AppId, ctx: RunContext) => Promise<string | undefined>;
-}
-
-/** 06-apps §1 */
-export interface EditResult {
-  app: AppDocument;
-  version: VersionEntry;
-  issues?: string[];
-  /** Additive failure detail: when present, no edit was persisted. */
-  failure?: EditFailure;
-  /** Additive 06 §8 drift report: pins whose host baseline changed under the
-   * fork. Present on every edit result over a drifted app so drift is loud at
-   * edit time, not only in sync output or the ship-diff. */
-  driftedPins?: PinDrift[];
-  /**
-   * execution-v2 Wave 3 — set when this edit graduated the app 1→2 (or edited
-   * an already-graduated app's server): the machine was provisioned, the box
-   * agent wrote/updated the server code, and the tree gained its fn: bindings.
-   */
-  graduated?: boolean;
-  /** The in-box agent's structured report for a graduating/server edit (DATA:
-   * it carries no host authority — approvals still gate every mutation). */
-  box?: { ok: boolean; summary: string; fns?: string[]; filesChanged?: string[] };
-  /**
-   * execution-v2 Wave 3 — a graduating edit whose server code declares egress
-   * the owner has not approved surfaces the parked approval HERE (not a silent
-   * failure). The code is written and snapshotted; the fn does real egress only
-   * once the owner approves this card.
-   */
-  pendingEgress?: { approvalId?: ApprovalId; domains: string[] };
-  /**
-   * execution-v2 Wave 9 — set when this edit rode the escalation ladder to an
-   * automation instead of a box: the authored trigger was written onto the
-   * document and ARMED on the existing automations engine (the enabled row the
-   * tick/emit machinery fires). Grant capture stays lazy — an away run's first
-   * ungranted mutating step parks the normal approval card. No machine is
-   * involved. `resultsCollection` names the app records collection the
-   * automation writes displayable results into (the rows the tree queries).
-   * `pendingGrants` carries the standing-grant approvals the arming seam's
-   * capture flow parked — approving them lets away runs complete unattended.
-   */
-  automation?: {
-    mode: "steps" | "agentic";
-    trigger: Trigger;
-    /** What the arming actually produced — false when the seam left the
-     * trigger disarmed or arming threw (the issues entry says why). The
-     * thread's automation card needs the true state, not an inference. */
-    enabled: boolean;
-    resultsCollection?: string;
-    pendingGrants?: ApprovalRequest[];
-  };
-}
-
-export interface EditFailure {
-  code: "edit-rejected";
-  retryable: boolean;
-  message: string;
-}
-
-/** execution-v2 Wave 3 — the outcome of a machine.editApp() box edit. */
-export interface MachineEditResult {
-  ok: boolean;
-  /** The in-box agent's summary (data-only; carries no host authority). */
-  summary: string;
-  fns?: string[];
-  filesChanged?: string[];
-  /** The synced document after a successful edit (schedules + egress declaration). */
-  app?: AppDocument;
-  /** A parked egress-approval card for the domains the server code declared. */
-  pendingEgress?: { approvalId?: ApprovalId; domains: string[] };
-}
-
-/** 06-apps §1 */
-export interface VersionEntry {
-  at: IsoDateTime;
-  intent: string;
-  rung: 1 | 2 | 3 | 4;
-}
-
-/** 06-apps §1 */
-export type OpenSurface =
-  | { kind: "tree"; payload: UIPayload; components?: Record<string, string> }
-  | { kind: "http"; url: string }
-  | { kind: "resuming"; cover?: string }
-  /**
-   * The build turn terminally FAILED (model error, quota, timeout): the app
-   * will never become servable. Surfaced so the embed resolves promptly with
-   * the reason instead of polling to its client deadline — the same prompt
-   * resolution the approval embed gets from denied/expired. `prompt` (when
-   * the record carries it) lets the embed's retry affordance re-issue the
-   * exact create.
-   */
-  | { kind: "failed"; reason: string; retryable?: boolean; prompt?: string };
+// 06-apps §1 — the block's type surface moved to types.ts (the contract and its
+// implementation used to sit ~2,000 lines apart in this file). Re-exported here
+// because `./runtime.js` is where the package's existing importers name them.
+export type {
+  AppsConfig,
+  AppsRuntime,
+  AuthoredAppResult,
+  BoxRequest,
+  BoxResponse,
+  EditFailure,
+  EditResult,
+  MachineEditResult,
+  OpenSurface,
+  PinForkInput,
+  PinForkResult,
+  PinRebaseResult,
+  PlacementEntry,
+  SecretExposureState,
+  SetExposureResult,
+  VersionEntry,
+} from "./types.js";
+import type {
+  AppsConfig,
+  AppsRuntime,
+  BoxRequest,
+  BoxResponse,
+  EditResult,
+  PlacementEntry,
+  VersionEntry,
+} from "./types.js";
 
 /** The non-empty name a failed build record ships under (open() ignores it —
  *  the embed's title rides the app-ref — but validateAppDocument requires one).
@@ -540,561 +263,6 @@ export const buildFailureReason = (
   if (TIMEOUT_SIGNAL.test(text)) return { reason: "timed out", retryable: true };
   return { reason: "generation failed", retryable: true };
 };
-
-/** execution-v2 Lane C — one HTTP request across the skin of the box (the
- * shape SandboxMachine.request speaks, named at the runtime surface). */
-export interface BoxRequest {
-  method: string;
-  path: string;
-  headers?: Record<string, string>;
-  body?: Uint8Array | string;
-}
-
-/** execution-v2 Lane C — the box's answer, relayed verbatim by the caller. */
-export interface BoxResponse {
-  status: number;
-  headers: Record<string, string>;
-  body: Uint8Array;
-}
-
-/**
- * ENG-345 — the in-sandbox status of one declared secret for one app.
- * `handle` is the Option B default; `exposed` means an active owner-approved
- * grant places its real value in the sandbox env; `pending` means a flip-on is
- * parked awaiting the high-risk guard approval.
- */
-export interface SecretExposureState {
-  secretName: string;
-  status: "handle" | "pending" | "exposed";
-  approvalId?: ApprovalId;
-}
-
-/** ENG-345 — the outcome of a setExposure() call. */
-export type SetExposureResult =
-  | { status: "handles" }
-  | { status: "exposed" }
-  | { status: "pending-approval"; approvalId: ApprovalId };
-
-/**
- * 06-apps §8 — the outcome of one pin rebase. `failed` persists NOTHING: the
- * pre-rebase version stays live, and the report says which recorded intents
- * replayed cleanly, which one failed, and which were never attempted.
- * Fail-closed by construction — a rebase is all-or-nothing, never a silent
- * half-rebase.
- */
-export type PinRebaseResult =
-  | {
-    status: "rebased";
-    app: AppDocument;
-    version: VersionEntry;
-    slot: string;
-    /** The NEW baseline hash the pin now records as its `base`. */
-    baseHash: string;
-    /** The pin intents replayed onto the new baseline, in recorded order. */
-    replayed: string[];
-  }
-  | {
-    status: "failed";
-    slot: string;
-    baseHash: string;
-    replayed: string[];
-    failed: { intent: string; issues: string[] };
-    remaining: string[];
-  };
-
-/**
- * 06-apps §8 — gesture-owned forking (2026-07-21): the input of pins.fork().
- * The fork itself is DETERMINISTIC (engine copies the captured baseline and
- * records the pin — no model call); the model never decides to fork. With no
- * `appId` the gesture mints a minimal app around the fork (the empty-slot
- * Remix affordance). An `instruction` then rides the ORDINARY edit path,
- * already scoped to the forked component.
- */
-export interface PinForkInput {
-  appId?: AppId;
-  slot: string;
-  /** The wrapper's serializable live props at fork time (2026-08-02 final
-   *  shape). Stored as the pinned node's props — the fork's dashboard seed
-   *  when it is placed away from the host page; in place the wrapper streams
-   *  live props over the frame boundary on every render instead. */
-  props?: Record<string, Json>;
-  instruction?: string;
-}
-
-/** 06-apps §8 — the outcome of one gesture fork. `version` describes the
- *  deterministic fork itself; `edit` (present only when the gesture carried an
- *  instruction) is the scoped follow-up edit — its failure never rolls the
- *  fork back, so `app` is always at least the faithful fork. */
-export interface PinForkResult {
-  app: AppDocument;
-  version: VersionEntry;
-  slot: string;
-  /** The generated-component name the fork ships under (`pinComponentName`). */
-  componentName: string;
-  edit?: EditResult;
-}
-
-/**
- * What a files-first save answers with: the resolved query data for the tree it
- * stored, and — when a query FAILED to resolve — the honest marker that says so.
- * Without the second half the seam could only tell the truth about a whole app
- * half that THREW, and a query that answered "error", "blocked" or
- * "connect-required" would render "—" everywhere and read as "you have no data"
- * (see `ProgressiveQueryResolver.dataUnavailable`).
- */
-export interface AuthoredAppResult {
-  data: Record<string, Json>;
-  dataUnavailable?: true;
-}
-
-/** One slot's answer: what is in it, and where that app's build stands.
- *  `status` is derived from the app record every read — never stored, so a
- *  build that lands (or fails) needs no second write to correct the slot. */
-export interface PlacementEntry {
-  slot: string;
-  app: AppId;
-  /** The app's name, or "" while the build has not landed (there is no
-   *  document yet to take a title from). */
-  title: string;
-  status: "ready" | "building" | "failed";
-}
-
-/** 06-apps §1 */
-export interface AppsRuntime {
-  create(input: {
-    prompt: string;
-    /**
-     * The id this build must use, when the caller already minted one.
-     *
-     * The front door mints before it routes to the screen agent (§4.5): an
-     * escalation's `plan.vendo` is already written at `/user/apps/<appId>/` and
-     * its skeleton is already on `vendoViewStreamId(appId)`, so a conductor that
-     * minted its own id would paint the finished app onto a SECOND stream and
-     * leave the plan's skeleton stranded beside it as a permanently-building
-     * card. Absent — every caller but the front door — one is minted here.
-     */
-    appId?: AppId;
-    /**
-     * §4.5 — the plan the escalating screen agent already wrote, verbatim.
-     *
-     * The build ANCHORS on it: the person is already looking at its skeleton, so
-     * re-planning from the ask alone is how the outline they are watching turns
-     * into a different app. It is a brief for the brain, never a substitute for
-     * one — the ask still travels verbatim, and the brain is free to say the plan
-     * is wrong. Absent — every caller but an escalation — the brain plans from
-     * the ask exactly as it always has.
-     */
-    plan?: string;
-    /**
-     * The host slot this build is FOR. The placement row is written the moment
-     * the id is minted — before a single token is generated — so the slot shows
-     * the build forming instead of staying empty until it lands, and shows the
-     * failure if it never does.
-     */
-    slot?: string;
-    /** Additive per-call stream hook used by the agent bridge. */
-    onView?: (part: VendoViewPart) => void;
-    /** Called when the app was generated and STREAMED to the surface but the
-     *  store refused to persist it: the view is on screen, the app is not in
-     *  the user's list and cannot be reopened. The create still resolves with
-     *  the document — losing a working view to a storage fault is the worse
-     *  failure — so this is the only signal that the app is view-only, and
-     *  the agent bridge turns it into an honest sentence instead of an
-     *  apology for something the user can see. */
-    onUnsaved?: (reason: string) => void;
-  }, ctx: RunContext): Promise<AppDocument>;
-  /**
-   * Build contract §1.6 / redesign D4 — the files-first counterpart of
-   * {@link AppsRuntime.create}: the app a HARNESS wrote with its own hands, as
-   * `app.vendo` in the workspace.
-   *
-   * Nothing else makes such an app an APP: with no row it never lists and never
-   * opens (`vendo_apps_open` masks it as `not-found`), and with no document its
-   * queries resolve to nothing, so every value renders "—" while the real host
-   * data sits one call away. This closes both halves — it upserts the row through
-   * the writer generation persists with, and resolves the tree's queries through
-   * the guard-bound caller `open()` uses (one guard decision per query, the
-   * person's own authority, the app venue).
-   *
-   * Deliberately NOT generation: no model, no conductor, no checking floor. The
-   * `validate` verb is this loop's review floor (D7's skill law), and a mid-turn
-   * save is partial by design — refusing to store what the person can already see
-   * would be the worse failure.
-   *
-   * The render seam (`@vendoai/harnesses`) is the only caller; it hands over the
-   * compile it already did, so the stored tree is byte-identical to the painted one.
-   */
-  authored(
-    input: { appId: AppId; compiled: WireCompileResult },
-    ctx: RunContext,
-  ): Promise<AuthoredAppResult>;
-  /**
-   * Contract §3.2/§2.2 — the app's own SOURCE, landed in its row.
-   *
-   * The sibling of {@link AppsRuntime.authored}, on the same interception point and
-   * with the same one caller: the render seam's `commit()` proxy. `changed` is
-   * `CommitResult.changed` verbatim, and this is the store half of it —
-   * `commitApp` diffs the paths inside THIS app's directory back into
-   * `doc.source`, leaving everything else in the document (`trigger` above all)
-   * untouched. A commit is not a generation.
-   *
-   * This exists because `machine.snapshotRef` was an app's only home: the box's
-   * writes reach the store through the workspace façade and nowhere else, so this
-   * is where the row becomes the truth. Without it, losing a snapshot loses the
-   * customer's app.
-   *
-   * `workspace` is passed in rather than held: this block never owns a workspace
-   * (§3.5 — a sandboxed harness holds a workspace and never a store), and the
-   * caller is the one with the façade whose commit just landed.
-   */
-  commitSource(
-    input: { appId: AppId; changed: readonly string[]; workspace: WorkspaceFs },
-    ctx: RunContext,
-  ): Promise<void>;
-
-  /**
-   * The checks floor bound to this caller's host surface (§7.1) — the production
-   * compile dialect, and the deterministic fact checks over what it compiled.
-   *
-   * The render seam is the caller, for the same reason it is `authored`'s: it is
-   * the one place that sees every write to `app.vendo`, whoever made it. Handing it
-   * the floor is what makes the checks run for EVERY author instead of only for
-   * apps our own conductor built — the seam used to compile with no options at
-   * all, so a lying binding was invisible and an inline tool reference lost its
-   * binding silently.
-   *
-   * Its `deps` are resolved lazily and once per returned floor: building them
-   * probes the host's read tools for shape cards, and a floor is built per turn but
-   * called per commit.
-   */
-  floor(ctx: RunContext): AppFloor;
-  /**
-   * What every tool a binding may name really RETURNS, annotated with this
-   * host's own field semantics — the `:money.cents`, `:date.iso`, `:enum(a|b)`
-   * marks that decide whether a number is dollars or cents on screen.
-   *
-   * A documented host seam (`.vendo/semantics.json` plus the cloud-owned
-   * overrides) that used to reach the model through the fill worker's query
-   * brief and nowhere else. The fill worker is gone, so this is how the
-   * annotations reach the one thing that writes bindings now. Composition reads
-   * it off the runtime and fills the assembler's `system` slot, the same shape as
-   * every other seam here — this block depends on `core` alone and cannot reach
-   * a harness.
-   *
-   * The host's DESIGN configuration is a different key with a different owner:
-   * `apps.designRules` and the theme ride `hostDesignBrief` into the assembler's
-   * `design` slot and the `claudeCode()` builder's prompt, so both writers read
-   * one rendering of them. Nothing about design belongs here.
-   *
-   * Resolved PER CALL, never memoized: the semantics provider is re-resolved so a
-   * local `tools.json` edit and the cloud-owned overrides both keep merging live.
-   *
-   * `undefined` when no tool declares a shape — an empty section is noise.
-   */
-  toolShapeBrief(ctx: RunContext): Promise<string | undefined>;
-  /** Speed lane — best-effort page-open warm-up of the generation model(s)
-   *  (full + paint), so the first create reuses a live connection. Safe to
-   *  call on surface mount; never throws. */
-  prewarm(): Promise<void>;
-  get(appId: AppId, ctx: RunContext): Promise<AppDocument | null>;
-  list(ctx: RunContext): Promise<AppDocument[]>;
-  delete(appId: AppId, ctx: RunContext): Promise<void>;
-  fork(appId: AppId, ctx: RunContext): Promise<AppDocument>;
-  /**
-   * Placement (2026-08-05) — "show this app in that slot", as a ROW keyed by
-   * (subject, slot) rather than a string on the document.
-   *
-   * Viewer-scoped: placing an app in YOUR OWN slot is part of seeing it. One
-   * app per slot — the write replaces whatever held it, and the displaced app
-   * comes back as `evicted` so the surface can say so.
-   */
-  place(input: { app: AppId; slot: string }, ctx: RunContext): Promise<{ evicted?: string }>;
-  /** Clear the slot — but only when it is still THIS app that holds it, so a
-   *  stale client can never evict the app that replaced it. Idempotent. */
-  unplace(input: { app: AppId; slot: string }, ctx: RunContext): Promise<void>;
-  /** What is in the caller's slots. `slots` narrows the answer to the slots a
-   *  surface actually has mounted; omitted, every placement the caller holds. */
-  placements(input: { slots?: readonly string[] }, ctx: RunContext): Promise<PlacementEntry[]>;
-  /**
-   * Build contract §9.5 — the second of sharing's two verbs. Moves the
-   * canonical app into an org the caller is asserted a member of: the row
-   * subject becomes the org id verbatim, the app's workspace documents move to
-   * `/orgs/<orgId>/apps/<id>/**`, and the promoter keeps an `owner` grant.
-   * Requires ownership + an asserted membership + the Cloud key (§9.6);
-   * `promote` and `fork` are the only two ways an app crosses a workspace.
-   */
-  promote(appId: AppId, orgId: string, ctx: RunContext): Promise<AppDocument>;
-  /**
-   * Build contract §9.2–§9.3 — the Share dialog's door. `list` is viewer-gated
-   * and OSS; `grant`/`revoke` are owner-gated AND Cloud-gated (sharing is
-   * multi-party coordination). `can()` behind them is never key-conditional.
-   */
-  access: {
-    list(appId: AppId, ctx: RunContext): Promise<AppGrantRecord[]>;
-    grant(appId: AppId, principal: string, level: AccessLevel, ctx: RunContext): Promise<void>;
-    revoke(appId: AppId, principal: string, ctx: RunContext): Promise<void>;
-    /** The caller's own level, or null when they cannot see the app at all —
-     *  what the surface reads to decide between "Edit" and the fork offer. */
-    levelFor(appId: AppId, ctx: RunContext): Promise<AccessLevel | null>;
-    /** Who HOLDS the app: a person's subject, or an org id for a promoted one
-     *  (§9.5 — the row subject is the org verbatim). Null when the caller
-     *  cannot see the app. The Share dialog reads it to know whether sharing
-     *  has to promote first, and into which org. */
-    holder(appId: AppId, ctx: RunContext): Promise<string | null>;
-  };
-  edit(appId: AppId, instruction: string, ctx: RunContext): Promise<EditResult>;
-  /**
-   * The app's memory, and the ONE door that writes it.
-   *
-   * A screen or build run is stateless; the ARTIFACT is what carries its context
-   * forward, and this is where that context lands. `ask` is appended verbatim —
-   * the front door passes the person's own `request`, never the `<context>`-fenced
-   * composite it briefs an engine with. `decisions` REPLACES whatever was there:
-   * it describes the app as it stands, so a superseded one kept beside the new
-   * one reads as a current constraint. Both are capped here (`app-memory.ts`)
-   * rather than in the schema, so a stored row survives a cap that changes.
-   *
-   * There is deliberately no second row-write door for this. Every caller —
-   * `vendo_make`'s create arms, its edit arm, the screen assembler's decisions —
-   * comes through here, which is also the one place the `editor` level is
-   * checked. A caller treats a rejection as a non-event: memory is never worth
-   * failing a make over.
-   */
-  remember(input: { appId: AppId; ask?: string; decisions?: string }, ctx: RunContext): Promise<void>;
-  /**
-   * The capped version log, and the one-step rollback over it.
-   *
-   * Build contract §9.3 — this takes the ctx (06 §1's `history(appId)` widened
-   * by the wave-3 ruling): `list` needs `viewer`, `undo` needs `EDITOR`,
-   * because rolling back the team's app is an edit. Without the ctx here the
-   * only boundary would be the wire route — and one door is not a boundary.
-   */
-  history(appId: AppId, ctx: RunContext): { list(): Promise<VersionEntry[]>; undo(): Promise<AppDocument> };
-  open(appId: AppId, ctx: RunContext): Promise<OpenSurface>;
-  call(appId: AppId, ref: string, args: Json, ctx: RunContext): Promise<ToolOutcome>;
-  exportApp(appId: AppId, ctx: RunContext): Promise<Uint8Array>;
-  importApp(source: Uint8Array | AppDocument, ctx: RunContext): Promise<AppDocument>;
-  share(appId: AppId, ctx: RunContext): Promise<ShareSnapshot>;
-  publish(appId: AppId, ctx: RunContext): Promise<PublishRecord>;
-  agentTools(): ToolRegistry;
-  /** Contextual policy projection for Vendo-owned agent tools. Undefined means
-   * the static descriptor remains authoritative. */
-  agentToolRisk(call: ToolCall, ctx: RunContext): Promise<RiskLabel | undefined>;
-  /**
-   * Design §4's `validate` verb, as a door rather than a generation internal.
-   *
-   * The checking floor already exists and already runs inside create/edit; the
-   * verb is the same floor, callable. That matters because the building-apps
-   * skill teaches the model to `validate` after every edit — "it is faster and
-   * surer than re-reading your own work" — so the loop is validate → fix, and
-   * without this door the tool had nothing behind it.
-   *
-   * Findings, never a throw: an error reads to a model as "the tool is broken"
-   * and findings read as "your document is wrong". Only the second one gets
-   * fixed. Give `appId` to check what is stored, or `document` to check wire
-   * text before committing it.
-   */
-  validate(
-    input: { appId?: AppId; document?: string },
-    ctx: RunContext,
-  ): Promise<{ ok: boolean; findings: Finding[] }>;
-  /**
-   * Design §4's `schedule` verb: set or change WHEN an app's automation runs.
-   *
-   * Only a cron change, and only on an app that already declares a schedule
-   * trigger — authoring a trigger from nothing is `edit`'s job, because it needs
-   * a run model. Re-arms through the composed automations engine afterwards, so
-   * the 07 §3 grant-capture flow runs and any missing standing grants come back
-   * on `missing` rather than failing silently at the first firing.
-   *
-   * `write`, not `read`: arming future unattended behaviour is a write (build
-   * contract §8's lane-D ratification).
-   */
-  schedule(
-    appId: AppId,
-    cron: string,
-    ctx: RunContext,
-  ): Promise<{ appId: AppId; cron: string; enabled: boolean; missing: number }>;
-  /**
-   * Build contract §9.8 — the served-app door. One request forwarded into the
-   * app's machine after `can(viewer)` is re-checked against LIVE rows, so a
-   * mid-session revoke bites the next request even though what the session
-   * already rendered stands. Viewer-level by design: `viewer` is see + use.
-   *
-   * Separate from {@link AppsRuntime.box}.request, which is the editor-level fn
-   * door — the two have different callers and deliberately different levels.
-   */
-  serve(appId: AppId, request: BoxRequest, ctx: RunContext): Promise<BoxResponse>;
-  box: {
-    /**
-     * execution-v2 skin contract (Lane C) — the box door the wire's fn proxy
-     * route rides: wake the app's machine on demand and proxy ONE HTTP request
-     * to its $PORT (the box serves `POST /fn/<name>` per the contract; the
-     * caller shapes the path). Editor-scoped: writing through someone else's
-     * app is an edit. Additive like `proxy`/`inClient` — not part of the frozen
-     * §1 method table. Lane B's machine lifecycle owns the wake internals
-     * behind this door.
-     */
-    request(appId: AppId, request: BoxRequest, ctx: RunContext): Promise<BoxResponse>;
-    /**
-     * Lane E — scrub the app's known secret values out of a JSON-ish value
-     * (defensive redaction guard). The /box wire surface runs every callback
-     * outcome and row payload through this before it can land in a response,
-     * a store row, or a log line. Not an authority operation: it only ever
-     * REMOVES information.
-     */
-    redact(appId: AppId, value: Json): Promise<Json>;
-  };
-  /**
-   * 06-apps §9 — additive trust-axis surface (like `proxy`/`agentToolRisk`,
-   * not part of the frozen §1 method table). OSS carries the enforcement
-   * machinery: the ship-diff a reviewer reads, the stored approval records,
-   * and the hash-pin verdict `open()` rides to the client. Cloud's review
-   * console MINTS approvals in production; `approve` is the documented local
-   * injection seam (demos, dev, host-built review flows).
-   */
-  inClient: {
-    shipDiff(appId: AppId, ctx: RunContext): Promise<ShipDiff>;
-    approvals(appId: AppId, ctx: RunContext): Promise<InClientApproval[]>;
-    verdict(appId: AppId, ctx: RunContext): Promise<InClientVerdict>;
-    approve(input: { appId: AppId; approvedBy: string }, ctx: RunContext): Promise<InClientApproval>;
-  };
-  /**
-   * Remix final shape (2026-08-02) — additive review-kind lifecycle surface
-   * (same additive precedent as `inClient`/`pins`). A review-kind remix (an
-   * app forked from a baseline captured with `review: true`) is invisible to
-   * its own user until a host reviewer approves; the approved version then
-   * mounts natively in place, riding the §9 hash-pin machinery. These two
-   * methods are the reviewer's side and cross owner boundaries BY DESIGN
-   * (the reviewer is not the remixing user), so both are gated on the host's
-   * reviewer assertion ({@link AppsConfig.review} `reviewer`): this is the
-   * production path — a self-hoster mounts their own admin-authenticated
-   * route over it (Cloud's console is the hosted equivalent). Without the
-   * hook, `queue` serves only the caller's own submissions and `reject`
-   * refuses, naming the hook.
-   */
-  review: {
-    /** Every review-kind version awaiting review, oldest submission first —
-     *  the full queue for an asserted reviewer, the caller's own items
-     *  otherwise. */
-    queue(ctx: RunContext): Promise<ReviewQueueEntry[]>;
-    /** Reject the app's CURRENT version with a note the user's panel surfaces.
-     *  The work is not deleted; a new version supersedes the rejection. */
-    reject(input: { appId: AppId; note: string }, ctx: RunContext): Promise<RemixRejection>;
-  };
-  /**
-   * 06-apps §8 — additive drift→rebase surface (same additive precedent as
-   * `inClient`, not part of the frozen §1 method table). `drift` reports the
-   * pins whose captured host baseline changed under a fork; `rebase` re-forks
-   * ONE drifted pin from the NEW baseline and replays its recorded pin-intent
-   * trail (history.pinIntents) through the real model edit path, producing a
-   * new version whose pin `base` is the new baseline hash. A rebase is a
-   * content change, so it is NEVER invoked automatically: the agent tool
-   * `vendo_apps_rebase_pin` and the wire route are the invocation surfaces,
-   * and the new version drops in-client approval by construction (§9).
-   */
-  pins: {
-    drift(appId: AppId, ctx: RunContext): Promise<PinDrift[]>;
-    rebase(input: { appId: AppId; slot: string }, ctx: RunContext): Promise<PinRebaseResult>;
-    /**
-     * Gesture-owned forking (2026-07-21) — the deterministic fork the user's
-     * Remix gesture invokes: the engine copies the captured baseline into the
-     * pinned generated component and records the pin, with NO model call. The
-     * model lost the fork decision entirely (<ForkPin> is retired from the
-     * edit dialect; the op still compiles for stored apps). An optional
-     * instruction runs afterwards as an ordinary edit, already scoped to the
-     * forked component; its failure leaves the faithful fork in place.
-     */
-    fork(input: PinForkInput, ctx: RunContext): Promise<PinForkResult>;
-  };
-  /**
-   * execution-v2 — additive machine lifecycle surface (same additive precedent
-   * as `inClient`/`pins`/`secrets`). An app with no `machine` on its document
-   * is a layer-1 tree app; presence of `machine` means layer 2+ — the layer is
-   * always derived from presence, never stored. Wake single-flight and idle
-   * auto-sleep live in-process; a multi-instance host can wake one app twice
-   * (known v2 limit — the last sleep's CAS wins).
-   */
-  machine: {
-    /**
-     * Can this deployment run a machine at all — i.e. is a `sandbox` adapter
-     * configured?
-     *
-     * The ONE gate on machine-backed execution, and deliberately not a
-     * capability boolean: a host configures a sandbox or it does not, and the
-     * presence of the adapter IS the deliberate opt-in (CLAUDE.md — "gating is
-     * valid key + meter, nothing else: no capability booleans"). Exposed because
-     * the front door has to answer an escalation honestly BEFORE it starts a
-     * build it cannot finish (agent-tools.ts); everything downstream of that
-     * decision still fails loudly on its own (`sandbox-unavailable`).
-     */
-    available(): boolean;
-    /** Create the machine from the base template, snapshot it, store the ref. Idempotent. */
-    provision(appId: AppId, ctx: RunContext): Promise<AppDocument>;
-    /** Resume the stored snapshot; concurrent wakes coalesce to one machine. */
-    wake(appId: AppId, ctx: RunContext): Promise<SandboxMachine>;
-    /** Snapshot the live machine, store the new ref, stop it. No-op when not awake. */
-    sleep(appId: AppId, ctx: RunContext): Promise<AppDocument>;
-    /**
-     * execution-v2 Wave 3 — send one edit instruction to the IN-BOX agent of
-     * an already-graduated app: wake the box, re-inject the current env, run
-     * the agent, and on success sync schedules + the egress declaration and
-     * snapshot. On failure the box is discarded and the app rolls back to its
-     * pre-edit snapshot. This edits the SERVER only; graduation (runtime.edit)
-     * is what also lands the tree's fn: bindings.
-     */
-    editApp(appId: AppId, instruction: string, ctx: RunContext): Promise<MachineEditResult>;
-    /** Destroy the sandbox and clear the document's machine field (de-graduation). */
-    destroy(appId: AppId, ctx: RunContext): Promise<AppDocument>;
-    /**
-     * Wave 7 H2 — the embed surface's keepalive: one cheap HEAD through the
-     * idle-tracked machine wrapper, so user activity on an embedded served
-     * app counts as machine activity (re-arms the idle timer and rides any
-     * provider TTL extension). A sleeping machine wakes and reports "woke" —
-     * the embed's signal that its URL is stale and it should re-open once
-     * awake. Viewer-scoped, like `serve`: a keepalive for an embed someone was
-     * shared is theirs to send, and it grants no more than seeing the app does.
-     */
-    ping(appId: AppId, ctx: RunContext): Promise<{ state: "awake" | "woke" }>;
-    /**
-     * Re-read the box's `vendo.json` and fold its `schedules` into the app's
-     * doc triggers (manifest-triggers.ts): each declaration becomes a schedule
-     * trigger running `fn:<name>`, armed through the arming seam and fired by
-     * the automations tick — the ONE scheduler. Editor-scoped, like every other
-     * edit: re-reading a shared app's manifest is part of editing it. Called
-     * automatically after a box server-edit; exposed because a manifest edited
-     * inside the box (an agent session, a layer-3 app) has no other way in.
-     */
-    syncManifest(appId: AppId, ctx: RunContext): Promise<ManifestTriggerSync>;
-    /** Dev-only reporting for the doctor: which apps carry a machine, whether
-     *  they are awake, and what their manifests schedule. */
-    report(): Promise<AppMachineStatus[]>;
-  };
-  /**
-   * ENG-345 — additive guarded per-secret in-sandbox exposure surface (same
-   * additive precedent as `inClient`/`pins`, not part of the frozen §1 method
-   * table). Option B (handles + egress substitution) stays the default; this is
-   * the exception path, off by default, per-secret × per-app, OWNER-ONLY, and
-   * gated by the guard's existing high-risk approval flow. The grant NEVER
-   * travels with a copy: it lives in its own store collection keyed by the app
-   * id, so exportApp/importApp/fork/share/publish (all of which mint or copy a
-   * fresh app id) can never carry it. Requires a docs/contracts/06-apps.md §4.3
-   * amendment (parked, Yousef-gated).
-   */
-  secrets: {
-    /** Current in-sandbox status of every declared secret for one app (owner-only). */
-    exposure(appId: AppId, ctx: RunContext): Promise<SecretExposureState[]>;
-    /**
-     * Flip one secret's in-sandbox exposure. Turning ON routes through the
-     * guard's high-risk approval flow and returns `pending-approval` until the
-     * owner decides it; turning OFF reverts to handles immediately.
-     */
-    setExposure(
-      input: { appId: AppId; secretName: string; expose: boolean },
-      ctx: RunContext,
-    ): Promise<SetExposureResult>;
-  };
-}
 
 const allRecords = (store: StoreAdapter, refs: Record<string, string>): Promise<VendoRecord[]> =>
   listAllRecords(store.records("vendo_apps"), { refs });
@@ -2652,6 +1820,31 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     }
   };
 
+  /** What the namespace surfaces below are built from — the closure, named
+   *  once. `runtime` is a thunk because `pins.fork` re-enters the public doors
+   *  while this object literal is still forming. */
+  const surfaceContext: AppsRuntimeContext = {
+    config,
+    apps,
+    placementRows,
+    history,
+    inClientApprovals,
+    review,
+    holds,
+    requireOwned,
+    requireMultiParty,
+    requireAccess,
+    reviewerAsserted,
+    rungFor,
+    persistEdit,
+    failedEdit,
+    assembleEdit,
+    reportGuard,
+    reportShare,
+    reportLifecycle,
+    runtime: () => runtime,
+  };
+
   const runtime: AppsRuntime = {
     async prewarm() {
       if (config.model !== undefined) await prewarmModels([config.model]);
@@ -3271,48 +2464,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       return withoutSession(structuredClone(app));
     },
 
-    access: {
-      async list(appId, ctx) {
-        if (config.appAccess === undefined) {
-          // No seam wired ⇒ no grant row can exist (§9.6), so the empty list is
-          // the honest answer — the same absence `levelFor` reports without
-          // throwing. A 402 from a READ told the Share dialog to go buy
-          // something on every keyless (default OSS) deployment. Still
-          // viewer-gated: a caller who cannot see the app is told nothing.
-          const record = await apps.get(appId);
-          if (record === null || !(await holds(appId, ctx, "viewer", record))) {
-            throw new VendoError("not-found", `app not found: ${appId}`);
-          }
-          return [];
-        }
-        return await config.appAccess.list(ctx, appId);
-      },
-      async grant(appId, principal, level, ctx) {
-        requireMultiParty("sharing");
-        await requireAccess().grant(ctx, appId, principal, level);
-        await reportShare(appId, ctx, { operation: "grant", principal, level });
-      },
-      async revoke(appId, principal, ctx) {
-        requireMultiParty("sharing");
-        await requireAccess().revoke(ctx, appId, principal);
-        await reportShare(appId, ctx, { operation: "revoke", principal });
-      },
-      async levelFor(appId, ctx) {
-        if (config.appAccess === undefined) {
-          // No seam ⇒ no grant row can exist, so ownership is the only level —
-          // which is exactly what `holds` degenerates to, at one store read.
-          return await holds(appId, ctx, "owner") ? "owner" : null;
-        }
-        return await config.appAccess.levelFor(ctx, appId);
-      },
-      async holder(appId, ctx) {
-        // Viewer-gated like the grant list: a caller who cannot see the app is
-        // told nothing about who holds it.
-        const record = await apps.get(appId);
-        if (record === null || !(await holds(appId, ctx, "viewer", record))) return null;
-        return record.refs?.subject ?? null;
-      },
-    },
+    access: createAccessSurface(surfaceContext),
 
     /**
      * No contextual projection for app self-mutation.
@@ -3666,413 +2818,11 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       });
     },
 
-    inClient: {
-      async shipDiff(appId, ctx) {
-        const app = await requireOwned(appId, ctx, "viewer");
-        return computeShipDiff(app, config.pinBaselines ?? []);
-      },
-      async approvals(appId, ctx) {
-        await requireOwned(appId, ctx, "viewer");
-        return inClientApprovals.list(appId);
-      },
-      async verdict(appId, ctx) {
-        const app = await requireOwned(appId, ctx, "viewer");
-        return inClientApprovals.verdictFor(app);
-      },
-      async approve(input, ctx) {
-        // Round-2 hardening (2026-08-02) — a review-kind approval IS the
-        // review, so it never comes from the remixing user themselves: the
-        // requester is refused unless the host's reviewer assertion
-        // (apps.review.reviewer) covers them, and an asserted reviewer may
-        // approve across the owner boundary (that is the reviewer's job).
-        // Instant-kind keeps the plain access scoping unchanged.
-        const record = await apps.get(input.appId);
-        if (record === null) throw new VendoError("not-found", `app not found: ${input.appId}`);
-        const row = rowFromRecord(record);
-        const app = classifyLegacyPlacements(row.doc, config.pinBaselines);
-        // `holds` rather than a bare subject compare: the row is read WITHOUT
-        // owner scoping here (a reviewer crosses that boundary), so the access
-        // question is asked through the ONE permission check — which keeps the
-        // org/sharing editor reaching their own team's app. Neither branch ever
-        // approves; only which refusal the caller is told apart.
-        const permitted = await holds(input.appId, ctx, "editor", record);
-        if (review.isReviewKind(app)) {
-          if (!await reviewerAsserted(ctx)) {
-            if (permitted) {
-              throw new VendoError("blocked", "a review-kind remix cannot be approved by its own user — set apps.review.reviewer(ctx) in your composition to assert who reviews");
-            }
-            // Masked like every unreachable app read.
-            throw new VendoError("not-found", `app not found: ${input.appId}`);
-          }
-        } else if (!permitted) {
-          throw new VendoError("not-found", `app not found: ${input.appId}`);
-        }
-        const approval = await inClientApprovals.record({
-          appId: app.id,
-          versionHash: appVersionHash(app),
-          approvedBy: input.approvedBy,
-          at: new Date().toISOString(),
-        });
-        await reportLifecycle("in-client-approve", app.id, ctx, {
-          versionHash: approval.versionHash,
-          approvedBy: approval.approvedBy,
-        });
-        return approval;
-      },
-    },
+    inClient: createInClientSurface(surfaceContext),
 
-    review: {
-      async queue(ctx) {
-        const entries = await review.queue();
-        if (await reviewerAsserted(ctx)) return entries;
-        // No reviewer assertion → a caller sees only their own submissions;
-        // nobody reads another user's pending fork source through this door.
-        return entries.filter((entry) => entry.requester === ctx.principal.subject);
-      },
-      async reject(input, ctx) {
-        // Rejecting is reviewer-only, and reviewing is a HOST trust decision:
-        // it requires the composition's explicit assertion, in every venue.
-        if (config.review?.reviewer === undefined) {
-          throw new VendoError("blocked", "rejecting a remix review requires the host's reviewer assertion — set apps.review.reviewer(ctx) in your composition");
-        }
-        if (!await reviewerAsserted(ctx)) {
-          // Masked like every unowned app read: a non-reviewer learns nothing.
-          throw new VendoError("not-found", `app not found: ${input.appId}`);
-        }
-        // Reviewer-side, cross-subject by design: the app is looked up
-        // WITHOUT owner scoping (the reviewer assertion above stands in front).
-        const record = await apps.get(input.appId);
-        if (record === null) throw new VendoError("not-found", `app not found: ${input.appId}`);
-        const row = rowFromRecord(record);
-        const doc = classifyLegacyPlacements(row.doc, config.pinBaselines);
-        const rejection = await review.reject({ doc, note: input.note, by: ctx.principal.subject });
-        // The audit event lands under the OWNER's subject so the rejection is
-        // loud in the remixing user's activity, not the reviewer's.
-        await reportGuard(row.subject, doc.id, ctx, {
-          operation: "review-reject",
-          versionHash: rejection.versionHash,
-          by: rejection.by,
-          note: rejection.note,
-        });
-        return rejection;
-      },
-    },
+    review: createReviewSurface(surfaceContext),
 
-    pins: {
-      async drift(appId, ctx) {
-        const app = await requireOwned(appId, ctx, "viewer");
-        return detectPinDrift(app, config.pinBaselines ?? []);
-      },
-
-      // Gesture-owned forking (2026-07-21) — deterministic: the captured
-      // baseline is copied by the engine and the pin recorded WITHOUT a model
-      // call. The recorded fork version is intents[0] of the pin's replay
-      // trail, so rebase() replays exactly the user's later modifications.
-      async fork(input, ctx) {
-        const baseline = (config.pinBaselines ?? []).find(({ slot }) => slot === input.slot);
-        if (baseline === undefined) {
-          throw new VendoError("not-found", `remixable slot "${input.slot}" has no captured baseline; wrap the component in <Remixable> and run vendo sync`);
-        }
-        const forkOnto = (base: AppDocument): AppDocument => {
-          const forked = structuredClone(base);
-          // applyPinFork prefixes its issues for the compiler that calls it; a
-          // user gesture never saw that op, so the prefix is stripped from the
-          // surfaced error. `props` are the wrapper's live props at fork time
-          // (2026-08-02 final shape) — they become the pinned node's props.
-          const issues = applyPinFork(
-            forked,
-            { slot: input.slot, ...(input.props === undefined ? {} : { props: input.props }) },
-            config.pinBaselines,
-          )
-            .map((issue) => issue.replace(/^pin fork failed: /, ""));
-          if (issues.length > 0) throw new VendoError("conflict", issues.join("; "));
-          const validation = validateAppDocument(forked);
-          if (!validation.ok) throw new VendoError("validation", validation.error.message);
-          return forked;
-        };
-        const carriesSlotPin = (app: AppDocument): boolean =>
-          app.pins?.some((pin) => pin.slot === input.slot) === true;
-        // The deterministic fork a dedupe hit describes was recorded when the
-        // winning app was minted — intents[0] of the pin's replay trail.
-        const dedupedResult = async (existing: AppDocument): Promise<PinForkResult> => {
-          const recorded = (await history.pinIntents(existing.id, input.slot))[0];
-          return {
-            app: existing,
-            version: {
-              at: recorded?.at ?? new Date().toISOString(),
-              intent: recorded?.intent ?? `Remix the host component "${input.slot}"`,
-              rung: rungFor(existing),
-            },
-            slot: input.slot,
-            componentName: pinComponentName(input.slot),
-          };
-        };
-        let previous: AppDocument;
-        if (input.appId !== undefined) {
-          previous = await requireOwned(input.appId, ctx);
-          if (previous.tree?.formatVersion !== VENDO_TREE_FORMAT) {
-            throw new VendoError("conflict", "a pin fork requires a vendo-genui/v2 tree app");
-          }
-        } else {
-          // Idempotent per (subject, slot) — the appId-less gesture dedupes
-          // server-side: when this subject already has an app whose pins name
-          // the slot, that app IS the fork, and it is returned instead of
-          // minting a duplicate (a double-tap can never mint two; the UI
-          // latch is cosmetic). A riding instruction is dropped — the tap
-          // that created the fork already carries it, and replaying it here
-          // would apply the same edit twice.
-          // The OLDEST matching row, so every dedupe path (this pre-check and
-          // the post-persist re-check below) converges on the same winner.
-          const existing = (await runtime.list(ctx)).filter(carriesSlotPin).at(-1);
-          if (existing !== undefined) return dedupedResult(existing);
-          // The empty-slot Remix gesture: mint the minimal base document the
-          // fork lands in, so the fork itself is an ordinary recorded edit
-          // (undo returns to the empty base; rebase finds a full trail).
-          const minted: AppDocument = {
-            format: "vendo/app@1",
-            id: `app_${globalThis.crypto.randomUUID()}`,
-            name: `${baseline.slot} remix`,
-            ui: "tree",
-            tree: {
-              formatVersion: VENDO_TREE_FORMAT,
-              root: "root",
-              nodes: [{ id: "root", component: "Stack", source: "prewired" }],
-            },
-          };
-          // Dry-run the fork BEFORE persisting the base, so a bad baseline
-          // never strands an empty app.
-          forkOnto(minted);
-          await apps.put(appRecordInput(minted, ctx.principal.subject));
-          // The empty-slot gesture means "show the remix in THIS slot": the
-          // placement is a ROW now (the pin on the document stays what it
-          // always was — provenance, never location).
-          await placementRows.put(ctx.principal.subject, {
-            slot: input.slot,
-            appId: minted.id,
-            placedBy: ctx.principal.subject,
-            placedAt: new Date().toISOString(),
-          });
-          await reportLifecycle("create", minted.id, ctx);
-          // Re-read the stored row: persistEdit's concurrency check compares
-          // against the store's own JSON round-trip of the document (a jsonb
-          // store may normalize key order), never the in-memory original.
-          previous = await requireOwned(minted.id, ctx);
-        }
-        const working = forkOnto(previous);
-        const version: VersionEntry = {
-          at: new Date().toISOString(),
-          intent: `Remix the host component "${input.slot}"`,
-          rung: rungFor(working),
-        };
-        const persisted = await persistEdit(previous, working, version, ctx.principal.subject, [input.slot], { pinIntentKind: "fork" });
-        await reportLifecycle("pin-fork", persisted.id, ctx, {
-          slot: input.slot,
-          baseHash: baseline.hash,
-        });
-        if (input.appId === undefined) {
-          // The pre-mint dedupe is list-then-put: two concurrent gestures can
-          // both find nothing and mint two apps. Close the race after the
-          // persist — list again, and when an OLDER app also carries the
-          // slot's pin, delete the just-minted row and return the older one.
-          // Both racers pick the same winner: list order is deterministic
-          // (createdAt, then id), so only the loser deletes itself.
-          const oldest = (await runtime.list(ctx)).filter(carriesSlotPin).at(-1);
-          if (oldest !== undefined && oldest.id !== persisted.id) {
-            await runtime.delete(persisted.id, ctx);
-            return dedupedResult(oldest);
-          }
-        }
-        const componentName = pinComponentName(input.slot);
-        const result: PinForkResult = {
-          app: persisted,
-          version: { ...version },
-          slot: input.slot,
-          componentName,
-        };
-        const instruction = input.instruction?.trim();
-        if (instruction === undefined || instruction.length === 0) return result;
-        // The instruction reaches the model ALREADY SCOPED: the fork exists,
-        // so this is an ordinary island edit on the pinned component. A failed
-        // edit never rolls the fork back — the user keeps the faithful copy
-        // and the failure is loud on the result. That holds for THROWN edits
-        // too (no model configured, a gated escalation, a provider error):
-        // the fork is already persisted, so the gesture returns it with a
-        // failure-shaped edit instead of surfacing as an error.
-        try {
-          const edit = await runtime.edit(
-            persisted.id,
-            `The remixable host slot "${input.slot}" is already forked into the generated component "${componentName}" (its island source is in CURRENT_APP). Apply this change to that component: ${instruction}`,
-            ctx,
-          );
-          return { ...result, app: edit.app, edit };
-        } catch (error) {
-          return {
-            ...result,
-            edit: failedEdit(persisted, instruction, [error instanceof Error ? error.message : String(error)]),
-          };
-        }
-      },
-
-      async rebase(input, ctx) {
-        if (config.model === undefined) {
-          throw new VendoError("not-implemented", "generation requires a model");
-        }
-        const app = await requireOwned(input.appId, ctx);
-        const pin = (app.pins ?? []).find(({ slot }) => slot === input.slot);
-        if (pin === undefined) {
-          throw new VendoError("not-found", `pin not found: ${input.slot}`);
-        }
-        const baseline = (config.pinBaselines ?? []).find(({ slot }) => slot === input.slot);
-        if (baseline === undefined) {
-          throw new VendoError("conflict", `pin ${input.slot} has no captured baseline to rebase onto; re-run vendo sync`);
-        }
-        if (baseline.hash === pin.base) {
-          throw new VendoError("conflict", `pin ${input.slot} is not drifted`);
-        }
-        // Replay rides the tree edit dialect; a graduated http app routes every
-        // instruction to the code path, so its trail can no longer replay.
-        if (app.ui === "http") {
-          throw new VendoError("conflict", `pin ${input.slot} cannot rebase on a served (http) app`);
-        }
-        const intents = await history.pinIntents(app.id, input.slot);
-        // A rebase is a re-fork of the NEW baseline with the trail replayed on top,
-        // so it is only ever as honest as the trail. Two things must hold, and each
-        // one is a way a user's remix gets silently destroyed:
-        //
-        // 1. The trail STARTS with the recorded fork — the only row whose content
-        //    the re-fork reproduces, since the fork copied the captured baseline
-        //    verbatim. An empty trail, or one beginning with anything else, cannot
-        //    vouch for what the pinned component holds.
-        // 2. Every row AFTER it is a replayable "edit". A "touch" changed the pinned
-        //    component while recording only that it did, so the change exists nowhere
-        //    but the document this rebase is about to overwrite: skipping past it
-        //    resets that work to the pristine host component and reports "rebased".
-        //
-        // `kind` is absent on rows written before the discriminator existed; those
-        // vouch for nothing and replay as nothing, so they fail closed on whichever
-        // check they land in. Refusing costs one manual remix; accepting costs the
-        // remix itself.
-        const unreplayable = intents.slice(1).filter(({ kind }) => kind !== "edit");
-        if (intents[0]?.kind !== "fork" || unreplayable.length > 0) {
-          throw new VendoError(
-            "conflict",
-            `pin ${input.slot} has no recorded edit trail to replay; remix the updated component manually`,
-            {
-              slot: input.slot,
-              // Which half refused, because the two are different situations to
-              // be in: nothing to replay from, versus a change that was made
-              // outside the replayable trail.
-              reason: intents[0]?.kind === "fork" ? "unreplayable-trail" : "no-fork-recorded",
-              ...(unreplayable.length === 0 ? {} : { unreplayable: unreplayable.map(({ intent }) => intent) }),
-            },
-          );
-        }
-        const replayIntents = intents.slice(1).map(({ intent }) => intent);
-        const componentName = pinComponentName(input.slot);
-        // ENG-348 — same bar as fork-pin: a baseline the jail could never
-        // render must not persist as a "successful" rebase.
-        const forkSource = pinForkSource(baseline.source);
-        if (!hasDefaultExport(forkSource)) {
-          throw new VendoError("conflict", `pin ${input.slot} baseline has no default export and no detectable named component export; export the component from its module and re-run vendo sync`);
-        }
-        const rebased: AppDocument = structuredClone(app);
-        rebased.components = { ...(rebased.components ?? {}), [componentName]: forkSource };
-        rebased.pins = (rebased.pins ?? []).map((candidate) => candidate.slot === input.slot
-          ? { ...candidate, base: baseline.hash }
-          : candidate);
-        const replayed: string[] = [];
-        const failedRebase = async (intent: string, issues: string[], remaining: string[]): Promise<PinRebaseResult> => {
-          // Every replay step is a real write through the one builder, so an
-          // abandoned rebase has to put the app back exactly as it was — a
-          // half-replayed trail on a new baseline is neither the old remix nor
-          // the new one.
-          await apps.put(appRecordInput(app, ctx.principal.subject, (await apps.get(app.id).then(
-            (record) => record === null ? false : rowFromRecord(record).enabled,
-          ).catch(() => false)))).catch(() => undefined);
-          return {
-            status: "failed",
-            slot: input.slot,
-            baseHash: baseline.hash,
-            replayed: [...replayed],
-            failed: { intent, issues },
-            remaining,
-          };
-        };
-        // Replay rides the ordinary edit path: the recorded intents are the
-        // user's own words, and re-saying them to the builder is what replaying
-        // them MEANS. The re-forked baseline is written FIRST so each replayed
-        // instruction lands on the app as the previous one left it — the builder
-        // reads the app's own document, which is the whole point of there being
-        // one writer.
-        //
-        // KNOWN, and accepted for now: a replay is a real edit, so it records its
-        // own pin intent and the trail grows by one row per replayed instruction.
-        // A second rebase therefore replays each instruction twice. Harmless for
-        // an idempotent edit ("make it green" twice is green), and the alternative
-        // — recording the replays as `touch` — would make the NEXT rebase read the
-        // trail as unreplayable and reset the remix to the pristine component,
-        // which is the worse failure this discriminator exists to prevent.
-        let working = await persistEdit(app, rebased, {
-          at: new Date().toISOString(),
-          intent: `Re-fork ${input.slot} onto the updated host component`,
-          rung: rungFor(rebased),
-        }, ctx.principal.subject, [], { pinIntentKind: "fork" });
-        for (const [index, intent] of replayIntents.entries()) {
-          const replayedEdit = await assembleEdit(app.id, intent, ctx);
-          const remaining = replayIntents.slice(index + 1);
-          if (replayedEdit.kind !== "assembled") {
-            return failedRebase(
-              intent,
-              replayedEdit.kind === "escalate"
-                ? ["the replayed intent asked for a build, which a rebase cannot run"]
-                : replayedEdit.issues,
-              remaining,
-            );
-          }
-          const next = replayedEdit.app;
-          const survived = (next.pins ?? []).some((candidate) =>
-            candidate.slot === input.slot && candidate.base === baseline.hash)
-            && next.components?.[componentName] !== undefined;
-          if (!survived) {
-            return failedRebase(intent, ["replayed intent removed the rebased pin or its component source"], remaining);
-          }
-          working = next;
-          replayed.push(intent);
-        }
-        const validation = validateAppDocument(working);
-        if (!validation.ok) {
-          throw new VendoError("validation", validation.error.message);
-        }
-        const version: VersionEntry = {
-          at: new Date().toISOString(),
-          intent: `Rebase remixed ${input.slot} onto the updated host component`,
-          rung: rungFor(working),
-        };
-        // The rebase version appends NO pin intent of its own: its content is
-        // exactly the replayed trail on the new baseline, and replaying a
-        // "rebase" instruction through the model on a future rebase would be
-        // meaningless. Undo of this version therefore removes no intents.
-        // Re-read: every replayed step already landed, so the row as it stands
-        // IS this rebase's baseline — persisting against the pre-rebase document
-        // would read as a concurrent change.
-        const current = await requireOwned(app.id, ctx);
-        const persisted = await persistEdit(current, working, version, ctx.principal.subject, [], {});
-        await reportLifecycle("pin-rebase", app.id, ctx, {
-          slot: input.slot,
-          fromBaseHash: pin.base,
-          toBaseHash: baseline.hash,
-          replayedIntents: replayed.length,
-        });
-        return {
-          status: "rebased",
-          app: persisted,
-          version: { ...version },
-          slot: input.slot,
-          baseHash: baseline.hash,
-          replayed,
-        };
-      },
-    },
+    pins: createPinsSurface(surfaceContext),
 
     machine: {
       available: () => lifecycle.available(),
