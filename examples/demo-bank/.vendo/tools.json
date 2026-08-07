@@ -20,7 +20,7 @@
       "binding": {
         "kind": "route",
         "method": "POST",
-        "path": "/maple/api/auth/{nextauth}",
+        "path": "/api/auth/{nextauth}",
         "argsIn": "body"
       },
       "srcHash": "sha256:48d5e41965cfc171bcd9bbae81d91a8994f7f1aa6ebab60dfba3bfa5bd7a86ec"
@@ -44,7 +44,7 @@
       "binding": {
         "kind": "route",
         "method": "GET",
-        "path": "/maple/api/auth/{nextauth}",
+        "path": "/api/auth/{nextauth}",
         "argsIn": "query"
       },
       "srcHash": "sha256:48d5e41965cfc171bcd9bbae81d91a8994f7f1aa6ebab60dfba3bfa5bd7a86ec"
@@ -94,7 +94,7 @@
         "kind": "openapi",
         "operationId": "createOrder",
         "method": "POST",
-        "path": "/maple/api/orders"
+        "path": "/api/orders"
       },
       "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
     },
@@ -110,7 +110,7 @@
       "binding": {
         "kind": "route",
         "method": "POST",
-        "path": "/maple/api/demo/reset",
+        "path": "/api/demo/reset",
         "argsIn": "body"
       },
       "srcHash": "sha256:ab3ae3e6b09905fa7c73eb198dbfb1d227d46621e883c333933eedd3ae060613"
@@ -135,7 +135,7 @@
         "kind": "openapi",
         "operationId": "getAccount",
         "method": "GET",
-        "path": "/maple/api/accounts/{id}"
+        "path": "/api/accounts/{id}"
       },
       "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
     },
@@ -151,7 +151,7 @@
         "kind": "openapi",
         "operationId": "getBudgets",
         "method": "GET",
-        "path": "/maple/api/insights/budgets"
+        "path": "/api/insights/budgets"
       },
       "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
     },
@@ -201,7 +201,7 @@
         "kind": "openapi",
         "operationId": "getCashflowInsights",
         "method": "GET",
-        "path": "/maple/api/insights/cashflow"
+        "path": "/api/insights/cashflow"
       },
       "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
     },
@@ -217,7 +217,7 @@
         "kind": "openapi",
         "operationId": "getProfile",
         "method": "GET",
-        "path": "/maple/api/profile"
+        "path": "/api/profile"
       },
       "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
     },
@@ -233,7 +233,7 @@
         "kind": "openapi",
         "operationId": "getRecurringInsights",
         "method": "GET",
-        "path": "/maple/api/insights/recurring"
+        "path": "/api/insights/recurring"
       },
       "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
     },
@@ -290,7 +290,7 @@
         "kind": "openapi",
         "operationId": "getSpendingInsights",
         "method": "GET",
-        "path": "/maple/api/insights/spending"
+        "path": "/api/insights/spending"
       },
       "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
     },
@@ -313,7 +313,7 @@
         "kind": "openapi",
         "operationId": "getTransaction",
         "method": "GET",
-        "path": "/maple/api/transactions/{id}"
+        "path": "/api/transactions/{id}"
       },
       "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
     },
@@ -329,7 +329,7 @@
         "kind": "openapi",
         "operationId": "listAccounts",
         "method": "GET",
-        "path": "/maple/api/accounts"
+        "path": "/api/accounts"
       },
       "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
     },
@@ -353,7 +353,7 @@
         "kind": "openapi",
         "operationId": "listAccountTransactions",
         "method": "GET",
-        "path": "/maple/api/accounts/{id}/transactions"
+        "path": "/api/accounts/{id}/transactions"
       },
       "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
     },
@@ -369,7 +369,7 @@
         "kind": "openapi",
         "operationId": "listCards",
         "method": "GET",
-        "path": "/maple/api/cards"
+        "path": "/api/cards"
       },
       "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
     },
@@ -393,7 +393,7 @@
         "kind": "openapi",
         "operationId": "listCardTransactions",
         "method": "GET",
-        "path": "/maple/api/cards/{id}/transactions"
+        "path": "/api/cards/{id}/transactions"
       },
       "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
     },
@@ -409,7 +409,7 @@
         "kind": "openapi",
         "operationId": "listGoals",
         "method": "GET",
-        "path": "/maple/api/goals"
+        "path": "/api/goals"
       },
       "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
     },
@@ -425,7 +425,7 @@
         "kind": "openapi",
         "operationId": "listNotifications",
         "method": "GET",
-        "path": "/maple/api/notifications"
+        "path": "/api/notifications"
       },
       "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
     },
@@ -441,7 +441,7 @@
         "kind": "openapi",
         "operationId": "listPayees",
         "method": "GET",
-        "path": "/maple/api/payees"
+        "path": "/api/payees"
       },
       "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
     },
@@ -457,7 +457,7 @@
         "kind": "openapi",
         "operationId": "listScheduledPayments",
         "method": "GET",
-        "path": "/maple/api/payments/scheduled"
+        "path": "/api/payments/scheduled"
       },
       "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
     },
@@ -515,7 +515,7 @@
         "kind": "openapi",
         "operationId": "listTransactions",
         "method": "GET",
-        "path": "/maple/api/transactions"
+        "path": "/api/transactions"
       },
       "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
     },
@@ -549,7 +549,7 @@
         "kind": "openapi",
         "operationId": "transferMoney",
         "method": "POST",
-        "path": "/maple/api/transfers"
+        "path": "/api/transfers"
       },
       "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
     },
@@ -565,7 +565,7 @@
       "binding": {
         "kind": "route",
         "method": "POST",
-        "path": "/maple/api/voice",
+        "path": "/api/voice",
         "argsIn": "body"
       },
       "srcHash": "sha256:3aaabc0c7dcfc4f4b4c835307f88a4c6660a2ce5ff3665dd457b1d701b55dfeb"
