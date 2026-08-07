@@ -54,7 +54,14 @@ export function MorphToast({ startRect, title, sub, logoUrl, theme, onDone }: Mo
   const [dock, setDock] = useState<{ x: number; y: number } | null>(null);
   const doneRef = useRef(onDone);
   doneRef.current = onDone;
-  const reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // The host's `theme.motion` counts as much as the OS setting — it is a promise
+  // made on the person's behalf. Reading only the media query made this
+  // component contradict itself: it wrote `data-vendo-motion="reduced"` from the
+  // theme (which the chrome stylesheet turns into `transition: none`) while
+  // keeping the full travel budget and taking the dock path, so the pill
+  // teleported and then vanished into an anchor it never crossed.
+  const reduced = theme.motion === "reduced"
+    || (typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches);
 
   useEffect(() => {
     const raf = requestAnimationFrame(() => requestAnimationFrame(() => setSettled(true)));
