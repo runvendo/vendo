@@ -15,6 +15,7 @@
     "@vendoai/actions": "workspace:*",
     "@vendoai/core": "workspace:*",
     "@vendoai/knowledge": "workspace:*",
+    "@vendoai/ui": "workspace:*",
     "@vendoai/vendo": "workspace:*",
     "zod": "^3.24.0"
   },

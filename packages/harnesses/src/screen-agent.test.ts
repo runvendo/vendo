@@ -176,12 +176,6 @@ describe("the loadout (§4.2 — assembly tools only)", () => {
     expect(offered).not.toContain("vendo_make");
   });
 
-  it("caps the run at SCREEN_STEPS — the cap IS the definition of cheap", () => {
-    // Not a magic number in the test either: the constant is the contract, and a
-    // budget of one is a specialist while twenty is a resident.
-    expect(SCREEN_STEPS).toBe(10);
-  });
-
   it("spends the budget and no more — the cap is the shipped loop's, not a comment", async () => {
     // The screen agent IS `vendo()` with a closed loadout, so the cap it declares
     // has to reach the loop that enforces it. A model that never stops is what

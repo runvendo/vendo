@@ -15,6 +15,7 @@
  * store having a bad minute read as a deletion.
  */
 import {
+  VENDO_APP_FORMAT,
   VendoError,
   WORKSPACE_INLINE_MAX_BYTES,
   sha256Hex,
@@ -48,6 +49,7 @@ const ctxFor = (subject: string, memberships: Membership[] = []): RunContext => 
 }) as RunContext;
 
 const docWith = (source?: Record<string, AppSourceFile>): AppDocument => ({
+  format: VENDO_APP_FORMAT,
   id: APP,
   name: "Retention",
   tree: {
@@ -58,7 +60,7 @@ const docWith = (source?: Record<string, AppSourceFile>): AppDocument => ({
     queries: [],
   },
   ...(source === undefined ? {} : { source }),
-}) as AppDocument;
+});
 
 /**
  * A staging workspace: writes are held, reads come back, `exists` answers from
@@ -376,7 +378,7 @@ describe("commitApp — the changed paths diffed back into the row", () => {
   });
 
   it("leaves every other field of the document untouched — `trigger` above all", async () => {
-    const doc = { ...docWith({ "a.ts": inline("a\n") }), triggers: [{ id: "t1", kind: "schedule" }] } as AppDocument;
+    const doc = { ...docWith({ "a.ts": inline("a\n") }), triggers: [{ id: "t1", kind: "schedule" }] } as unknown as AppDocument;
 
     const after = await roundTrip(doc, (workspace, dir) => {
       workspace.files.set(`${dir}/a.ts`, "changed\n");

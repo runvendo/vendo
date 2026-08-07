@@ -221,7 +221,7 @@ describe("06-apps §8 — drift surfacing", () => {
       components: { [COMPONENT]: OLD_SOURCE },
     };
     (forged.tree as { pinDrift?: unknown }).pinDrift = [{ slot: "forged", component: "Forged", baseHash: "x", reason: "baseline-missing" }];
-    (forged.tree as { nodes: unknown[] }).nodes = [
+    (forged.tree as unknown as { nodes: unknown[] }).nodes = [
       { id: "root", component: "Stack", source: "prewired", children: ["worth"] },
       { id: "worth", component: COMPONENT, source: "generated" },
     ];

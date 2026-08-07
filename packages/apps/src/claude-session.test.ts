@@ -17,8 +17,6 @@ import {
   VENDO_MCP_SERVER,
   type ClaudeSession,
   type ClaudeTurnEvent,
-  type ClaudeTurnTool,
-  type GuardedCall,
 } from "./claude-turn.js";
 
 interface ScriptedTurn {
@@ -100,17 +98,6 @@ function fakeSessionSdk(
   };
 }
 
-const listing: ClaudeTurnTool[] = [
-  {
-    name: "maple_invoices_list",
-    title: "List invoices",
-    description: "List the signed-in user's invoices",
-    inputSchema: { type: "object", properties: { limit: { type: "number" } } },
-  },
-];
-
-const ok: GuardedCall = async () => ({ status: "ok", output: { invoices: [] } });
-
 function openSession(
   script: (prompt: string, index: number) => ScriptedTurn[],
   extra: Record<string, unknown> = {},
@@ -118,11 +105,9 @@ function openSession(
   const events: ClaudeTurnEvent[] = [];
   const record: SessionRecord = { queries: 0, prompts: [], options: {}, used: [] };
   const session = createClaudeSession({
-    tools: listing,
     cwd: "/workspace",
     env: {},
-    callTool: ok,
-    emit: (event) => events.push(event),
+    emit: (event: ClaudeTurnEvent) => events.push(event),
     sdk: fakeSessionSdk(script, record) as never,
     ...extra,
   } as never);
@@ -312,11 +297,9 @@ describe("the four channels the live session opens", () => {
     // dropped.
     const events: ClaudeTurnEvent[] = [];
     const session = createClaudeSession({
-      tools: listing,
       cwd: "/workspace",
       env: {},
-      callTool: ok,
-      emit: (event) => events.push(event),
+      emit: (event: ClaudeTurnEvent) => events.push(event),
       sdk: {
         tool: () => ({}),
         createSdkMcpServer: () => ({}),
@@ -370,7 +353,7 @@ describe("steering the turn in flight", () => {
     session = createClaudeSession({
       cwd: "/workspace",
       env: {},
-      emit: (event) => {
+      emit: (event: ClaudeTurnEvent) => {
         events.push(event);
         // The user types mid-build. `emit` is called from INSIDE the SDK's drain
         // of message 1, so this push lands while message 1's turn is running —
@@ -409,7 +392,7 @@ describe("steering the turn in flight", () => {
     session = createClaudeSession({
       cwd: "/workspace",
       env: {},
-      emit: (event) => {
+      emit: (event: ClaudeTurnEvent) => {
         if (event.type === "text" && event.delta === "building it") session!.steer("group by client instead");
       },
       sdk: fakeSessionSdk(
@@ -444,7 +427,7 @@ describe("steering the turn in flight", () => {
     session = createClaudeSession({
       cwd: "/workspace",
       env: {},
-      emit: (event) => {
+      emit: (event: ClaudeTurnEvent) => {
         if (event.type !== "text") return;
         if (event.delta === "one") session!.steer("second thought");
         if (event.delta === "two") session!.steer("third thought");
@@ -474,7 +457,7 @@ describe("steering the turn in flight", () => {
     session = createClaudeSession({
       cwd: "/workspace",
       env: {},
-      emit: (event) => {
+      emit: (event: ClaudeTurnEvent) => {
         if (event.type === "text" && event.delta === "building it") {
           session!.steer("group by client instead");
           // Stop, before the SDK ever reaches the steered message.
@@ -517,7 +500,7 @@ describe("steering the turn in flight", () => {
     session = createClaudeSession({
       cwd: "/workspace",
       env: {},
-      emit: (event) => {
+      emit: (event: ClaudeTurnEvent) => {
         events.push(event);
         if (event.type === "text" && event.delta === "building it") {
           session!.steer("group by client instead");

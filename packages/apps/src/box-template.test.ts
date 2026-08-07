@@ -1,6 +1,6 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -37,8 +37,8 @@ const freePort = async (): Promise<number> => {
 /** What `cp -a /opt/vendo-box/template/. /app/` does in the box: every template
  *  file, `run` landed at `.vendo/run`, and node_modules as the SYMLINK the bake
  *  leaves behind (deps are installed once into the image, never per build). */
-const provision = (): string => {
-  const appDir = path.join(mkdtempSync(path.join(tmpdir(), "vendo-template-")), "app");
+const provision = (root: string): string => {
+  const appDir = path.join(root, "app");
   const skipped = new Set(["node_modules", "dist"]);
   cpSync(templateDir, appDir, {
     recursive: true,
@@ -57,9 +57,13 @@ describe("box app template (the served-app warm start)", () => {
   let child: ChildProcess;
   let base: string;
   let appDir: string;
+  // Created on the first line of beforeAll, before anything that can throw, so
+  // afterAll (which vitest runs even when beforeAll fails) always has it.
+  let appRoot: string | undefined;
 
   beforeAll(async () => {
-    appDir = provision();
+    appRoot = mkdtempSync(path.join(tmpdir(), "vendo-template-"));
+    appDir = provision(appRoot);
     // The agent's own edit: extend the fn table. Proves the seam takes an edit.
     writeFileSync(
       path.join(appDir, "fns.js"),
@@ -186,9 +190,11 @@ describe("box app template (the served-app warm start)", () => {
 describe("box app template (a cold provision, no snapshot)", () => {
   let child: ChildProcess;
   let base: string;
+  let appRoot: string | undefined;
 
   beforeAll(async () => {
-    const appDir = provision();
+    appRoot = mkdtempSync(path.join(tmpdir(), "vendo-template-"));
+    const appDir = provision(appRoot);
     // What a checkout writes: the app's OWN source, and nothing built.
     writeFileSync(
       path.join(appDir, "fns.js"),
@@ -218,6 +224,7 @@ describe("box app template (a cold provision, no snapshot)", () => {
 
   afterAll(() => {
     child?.kill("SIGKILL");
+    if (appRoot !== undefined) rmSync(appRoot, { recursive: true, force: true });
   });
 
   it("builds itself from source alone and serves the app", async () => {
@@ -255,6 +262,7 @@ describe("box app template (a cold provision, no snapshot)", () => {
  */
 describe("the dev port is declared by the host, and the template binds it", () => {
   let dev: ChildProcess | undefined;
+  let appRoot: string | undefined;
 
   afterAll(() => {
     // `npm run dev` is a WRAPPER: killing it leaves the vite child holding the
@@ -268,10 +276,13 @@ describe("the dev port is declared by the host, and the template binds it", () =
         dev.kill("SIGKILL");
       }
     }
+    // After the kill, never before: vite holds the app dir open until then.
+    if (appRoot !== undefined) rmSync(appRoot, { recursive: true, force: true });
   });
 
   it("binds the port the host declared, not a compiled-in default", async () => {
-    const appDir = provision();
+    appRoot = mkdtempSync(path.join(tmpdir(), "vendo-template-"));
+    const appDir = provision(appRoot);
     // Deliberately NOT the default: a template that ignores the declared value
     // and binds its own literal fails here.
     const declared = await freePort();

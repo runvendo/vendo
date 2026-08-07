@@ -1,7 +1,7 @@
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 /**
  * `--yes` promises every prompt is already answered. It kept that promise for
@@ -29,6 +29,9 @@ const { runSyncFlow } = await import("./sync-flow.js");
 
 async function projectWithTools(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "vendo-loosening-"));
+  // Registered here, not at the end of the test body: these cases assert on
+  // rejected judgments, and a throwing assertion skips anything trailing.
+  onTestFinished(() => rm(root, { recursive: true, force: true }));
   await mkdir(join(root, ".vendo"), { recursive: true });
   await writeFile(
     join(root, ".vendo", "tools.json"),

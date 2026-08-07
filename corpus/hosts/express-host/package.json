@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.12",
+    "@vendoai/store": "workspace:*",
     "@vendoai/ui": "workspace:*",
     "@vendoai/vendo": "workspace:*",
     "ai": "^6.0.28",
@@ -28,7 +29,6 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vendoai-fixtures/test-kit": "workspace:*",
-    "@vendoai/store": "workspace:*",
     "@vitejs/plugin-react": "^4.3.4",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
