@@ -77,11 +77,9 @@ export const vendo = createVendo({
   // fast model on BYO — so the demo runs the fast two-lane path with no
   // hardcoded model names (speed-core lane; BYO rule).
   auth: mapleAuth,
-  // Wave-2 live-proof seam (docs/verification/wave2-lane-f/), same shape as the
-  // wave-1 MAPLE_HARNESS switch. Unset — the shipped demo — leaves the slot
-  // empty, which since the wave-2 flip means the composed `vendo()` serves the
-  // chat route. `MAPLE_HARNESS` names a specialist instead, which is the only
-  // way to measure a harness column against the default's.
+  // Unset — the shipped demo — leaves the harness slot empty, so the composed
+  // `vendo()` serves the chat route. `MAPLE_HARNESS` names a specialist
+  // instead; fixtures/context-e2e is the only caller (see ./proof-harness.ts).
   ...namedHarness(),
   // The remix review seam (/apps/review-queue, /apps/:id/reject-review, and
   // the /dev/inclient-approval door) rides the development composition only.

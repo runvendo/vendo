@@ -13,12 +13,3 @@ export function pacificHour(iso: string): number {
   const m = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
   return Number((h + m / 60).toFixed(2));
 }
-
-export function pacificTimeLabel(iso: string): string {
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Los_Angeles",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  }).format(new Date(iso));
-}

@@ -520,23 +520,6 @@
       "srcHash": "sha256:c14456332b72acfeaff76b13e07c4bbccbf087e767fe8e744dc576b5e263cf5a"
     },
     {
-      "name": "host_proof_list",
-      "description": "GET /api/proof",
-      "inputSchema": {
-        "type": "object",
-        "properties": {},
-        "additionalProperties": true
-      },
-      "risk": "ungraded",
-      "binding": {
-        "kind": "route",
-        "method": "GET",
-        "path": "/maple/api/proof",
-        "argsIn": "query"
-      },
-      "srcHash": "sha256:6685933bdad55139448519a474dd485b40e3d5aa1c4571a7343a020b9ed4ab85"
-    },
-    {
       "name": "host_transferMoney",
       "description": "Send money to a person from the user's checking account. This IRREVERSIBLY MOVES MONEY: it debits checking and appends a transfer. There is no undo.",
       "inputSchema": {
