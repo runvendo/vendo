@@ -98,6 +98,70 @@ const compileActionValue = (state: CompileState, name: string, value: string): J
   return DROPPED;
 };
 
+/** The `=`-value forms of D3, with the cursor sitting on the `=`. Bare
+ *  attributes never reach here — the caller keeps that form. */
+const parseAttributeValue = (
+  state: CompileState,
+  element: AttributeElement,
+  name: string,
+): Json | Dropped | Failed => {
+  state.index += 1;
+  skipWhitespace(state);
+  const opener = state.source[state.index];
+  if (opener === '"') {
+    const parsed = parseMarkupString(state, name);
+    if (parsed === FAILED) return FAILED;
+    if (typeof parsed === "string" && element === "component" && ACTION_ATTR_PATTERN.test(name)) {
+      return compileActionValue(state, name, parsed);
+    }
+    return parsed;
+  }
+  if (opener === "{") {
+    const parsed = parseExpressionAttribute(state);
+    if (parsed === FAILED) return FAILED;
+    // D6 always-validates: validateTree walks node props for the fn:
+    // action grammar (same walk, ../fn-references.js), so an expression
+    // value smuggling { action: "fn:9bad" } anywhere would un-validate
+    // the tree. Drop the attribute here instead — only component props
+    // land in tree nodes, so only "component" needs the walk.
+    if (element === "component" && parsed !== DROPPED) {
+      const invalidAction = findInvalidActionReference(parsed);
+      if (invalidAction !== null) {
+        issue(
+          state,
+          "invalid-action",
+          `attribute "${name}" contains action "${invalidAction}", not a valid fn: reference; the attribute was dropped`,
+        );
+        return DROPPED;
+      }
+    }
+    return parsed;
+  }
+  if (opener === "'") {
+    issue(
+      state,
+      "malformed-attribute",
+      `attribute "${name}" uses a single-quoted string (markup strings are double-quoted); the attribute was dropped`,
+    );
+    if (skipQuotedRun(state, "'") === FAILED) return FAILED;
+    return DROPPED;
+  }
+  issue(state, "malformed-attribute", `attribute "${name}" has no value after "="; the attribute was dropped`);
+  return DROPPED;
+};
+
+/** Reported AFTER the drop, because the outcome is what a retry acts on:
+ *  saying the last one won when it was dropped sends the model back to
+ *  re-write a value that never landed, and saying an earlier one stands
+ *  when every value was dropped points it at a prop that is not there.
+ *  props is the record of what actually landed; seen is only occurrence. */
+const duplicateMessage = (name: string, value: Json | Dropped, props: Record<string, Json>): string => {
+  if (value !== DROPPED) return `duplicate attribute "${name}" (the last one wins)`;
+  return Object.prototype.hasOwnProperty.call(props, name)
+    ? `duplicate attribute "${name}" (the last one was dropped, so the earlier one stands)`
+    : `duplicate attribute "${name}" (every value was dropped, so the attribute is missing)`;
+};
+
 export interface ParsedAttributes {
   props?: Record<string, Json>;
   selfClosing: boolean;
@@ -140,48 +204,9 @@ export const parseAttributes = (state: CompileState, element: AttributeElement):
     skipWhitespace(state);
     let value: Json | Dropped = true; // bare attribute form
     if (state.source[state.index] === "=") {
-      state.index += 1;
-      skipWhitespace(state);
-      const opener = state.source[state.index];
-      if (opener === '"') {
-        const parsed = parseMarkupString(state, name);
-        if (parsed === FAILED) return FAILED;
-        value = parsed;
-        if (typeof value === "string" && element === "component" && ACTION_ATTR_PATTERN.test(name)) {
-          value = compileActionValue(state, name, value);
-        }
-      } else if (opener === "{") {
-        const parsed = parseExpressionAttribute(state);
-        if (parsed === FAILED) return FAILED;
-        value = parsed;
-        // D6 always-validates: validateTree walks node props for the fn:
-        // action grammar (same walk, ../fn-references.js), so an expression
-        // value smuggling { action: "fn:9bad" } anywhere would un-validate
-        // the tree. Drop the attribute here instead — only component props
-        // land in tree nodes, so only "component" needs the walk.
-        if (element === "component" && value !== DROPPED) {
-          const invalidAction = findInvalidActionReference(value);
-          if (invalidAction !== null) {
-            issue(
-              state,
-              "invalid-action",
-              `attribute "${name}" contains action "${invalidAction}", not a valid fn: reference; the attribute was dropped`,
-            );
-            value = DROPPED;
-          }
-        }
-      } else if (opener === "'") {
-        issue(
-          state,
-          "malformed-attribute",
-          `attribute "${name}" uses a single-quoted string (markup strings are double-quoted); the attribute was dropped`,
-        );
-        if (skipQuotedRun(state, "'") === FAILED) return FAILED;
-        value = DROPPED;
-      } else {
-        issue(state, "malformed-attribute", `attribute "${name}" has no value after "="; the attribute was dropped`);
-        value = DROPPED;
-      }
+      const parsed = parseAttributeValue(state, element, name);
+      if (parsed === FAILED) return FAILED;
+      value = parsed;
     } else {
       state.index = beforeValue;
     }
@@ -190,21 +215,8 @@ export const parseAttributes = (state: CompileState, element: AttributeElement):
       seen.add(name);
       continue;
     }
-    // Reported AFTER the drop, because the outcome is what a retry acts on:
-    // saying the last one won when it was dropped sends the model back to
-    // re-write a value that never landed, and saying an earlier one stands
-    // when every value was dropped points it at a prop that is not there.
-    // props is the record of what actually landed; seen is only occurrence.
     if (seen.has(name)) {
-      issue(
-        state,
-        "duplicate-attribute",
-        value !== DROPPED
-          ? `duplicate attribute "${name}" (the last one wins)`
-          : Object.prototype.hasOwnProperty.call(props, name)
-            ? `duplicate attribute "${name}" (the last one was dropped, so the earlier one stands)`
-            : `duplicate attribute "${name}" (every value was dropped, so the attribute is missing)`,
-      );
+      issue(state, "duplicate-attribute", duplicateMessage(name, value, props));
     }
     seen.add(name);
     if (value === DROPPED) continue;

@@ -320,24 +320,9 @@ const collectTreeFnReferences = (
   }
 };
 
-const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
-  if (typeof input !== "object" || input === null || Array.isArray(input)) {
-    return fail("validation", "app document must be a non-null object");
-  }
-  if ((input as Record<string, unknown>).format !== VENDO_APP_FORMAT) {
-    return fail("version", `format must be "${VENDO_APP_FORMAT}"`);
-  }
-
-  const parsed = appDocumentSchema.safeParse(input);
-  if (!parsed.success) {
-    return fail("validation", parsed.error.issues[0]?.message ?? "invalid app document");
-  }
-  const app = parsed.data;
-  if (app.name.length === 0) {
-    return fail("validation", "name must be non-empty");
-  }
-
-  const fnReferences: string[] = [];
+/** The tree/components pair, and the fn: references the tree names. Null when
+ *  the pair checks out. */
+const treeAndComponentsError = (app: AppDocument, fnReferences: string[]): AppDocumentValidation | null => {
   if (app.tree?.formatVersion === VENDO_TREE_FORMAT) {
     // No grafting: trees never carry components (validateTree rejects a
     // tree-level `components` member itself), so the tree validates AS-IS and
@@ -370,10 +355,13 @@ const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
       return fail("validation", componentError);
     }
   }
+  return null;
+};
 
-  // W4b — a stamped island tool manifest must name a real island and real
-  // (grammar-valid) registry tool names; the runtime trusts this map as the
-  // island's entire tool surface.
+/** W4b — a stamped island tool manifest must name a real island and real
+ *  (grammar-valid) registry tool names; the runtime trusts this map as the
+ *  island's entire tool surface. */
+const componentToolsError = (app: AppDocument): AppDocumentValidation | null => {
   for (const [componentName, manifest] of Object.entries(app.componentTools ?? {})) {
     if (!Object.prototype.hasOwnProperty.call(app.components ?? {}, componentName)) {
       return fail("validation", `componentTools names "${componentName}" which has no components entry`);
@@ -384,10 +372,14 @@ const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
       }
     }
   }
+  return null;
+};
 
-  // A trigger id is what everything per-trigger is keyed by (grants, sponsorship,
-  // schedule cursors, runs), so two triggers sharing one would silently share all
-  // of it. The grammar is the schema's; uniqueness is cross-field and lives here.
+/** A trigger id is what everything per-trigger is keyed by (grants, sponsorship,
+ *  schedule cursors, runs), so two triggers sharing one would silently share all
+ *  of it. The grammar is the schema's; uniqueness is cross-field and lives here.
+ *  Also collects the fn: references the triggers' steps name. */
+const triggersError = (app: AppDocument, fnReferences: string[]): AppDocumentValidation | null => {
   const triggerIds = new Set<string>();
   for (const trigger of app.triggers ?? []) {
     if (triggerIds.has(trigger.id)) {
@@ -404,6 +396,10 @@ const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
       }
     }
   }
+  return null;
+};
+
+const fnReferencesError = (app: AppDocument, fnReferences: readonly string[]): AppDocumentValidation | null => {
   for (const reference of fnReferences) {
     if (!FN_REFERENCE_PATTERN.test(reference)) {
       return fail("validation", `invalid fn: reference "${reference}"`);
@@ -415,11 +411,14 @@ const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
   if (fnReferences.length > 0 && app.server === undefined && app.machine === undefined) {
     return fail("validation", "fn: references require a machine (or legacy app server)");
   }
+  return null;
+};
 
-  // Contract §3.2 — a source key is a POSIX-relative path inside the app
-  // directory. Checked HERE because a checkout writes each key to disk: `../` or
-  // a leading slash would put one app's checkout in another app's files, and the
-  // document validator is the gate every stored document passes.
+/** Contract §3.2 — a source key is a POSIX-relative path inside the app
+ *  directory. Checked HERE because a checkout writes each key to disk: `../` or
+ *  a leading slash would put one app's checkout in another app's files, and the
+ *  document validator is the gate every stored document passes. */
+const sourceError = (app: AppDocument): AppDocumentValidation | null => {
   for (const [path, file] of Object.entries(app.source ?? {})) {
     if (path.length === 0 || path.startsWith("/")) {
       return fail("validation", `source path "${path}" must be relative to the app directory`);
@@ -431,7 +430,10 @@ const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
       return fail("validation", `source file "${path}" must carry exactly one of text or blobRef`);
     }
   }
+  return null;
+};
 
+const storageError = (app: AppDocument): AppDocumentValidation | null => {
   for (const [name, declaration] of Object.entries(app.storage ?? {})) {
     if (name === "state") {
       return fail("validation", 'storage collection "state" is reserved');
@@ -445,7 +447,12 @@ const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
       }
     }
   }
+  return null;
+};
 
+/** The reference-shaped fields: the box the app runs on, its fork provenance,
+ *  and its slot placements. */
+const referenceFieldsError = (app: AppDocument): AppDocumentValidation | null => {
   if (app.server !== undefined && !SERVER_REFERENCE_PATTERN.test(app.server)) {
     return fail("validation", `invalid server reference "${app.server}"`);
   }
@@ -465,6 +472,38 @@ const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
       return fail("validation", "placement slot must be non-empty");
     }
   }
+  return null;
+};
+
+const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    return fail("validation", "app document must be a non-null object");
+  }
+  if ((input as Record<string, unknown>).format !== VENDO_APP_FORMAT) {
+    return fail("version", `format must be "${VENDO_APP_FORMAT}"`);
+  }
+
+  const parsed = appDocumentSchema.safeParse(input);
+  if (!parsed.success) {
+    return fail("validation", parsed.error.issues[0]?.message ?? "invalid app document");
+  }
+  const app = parsed.data;
+  if (app.name.length === 0) {
+    return fail("validation", "name must be non-empty");
+  }
+
+  // The cross-field rules, in the order their messages are pinned to: each
+  // returns the failure it found, or null. `fnReferences` accumulates across
+  // the tree and trigger rules and is checked once both have filled it.
+  const fnReferences: string[] = [];
+  const violation = treeAndComponentsError(app, fnReferences)
+    ?? componentToolsError(app)
+    ?? triggersError(app, fnReferences)
+    ?? fnReferencesError(app, fnReferences)
+    ?? sourceError(app)
+    ?? storageError(app)
+    ?? referenceFieldsError(app);
+  if (violation !== null) return violation;
 
   return { ok: true, app };
 };

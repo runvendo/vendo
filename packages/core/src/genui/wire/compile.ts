@@ -426,6 +426,33 @@ const opensApp = (state: CompileState): boolean => opensRoot(state, "App");
  * issue happen in the main pass, in source order (this pass runs on a
  * throwaway state whose issues are discarded).
  */
+/** Pre-scan `<Query>`: records a grammar-valid id and steps the cursor past
+ *  the element. False stops the scan (the tag was truncated). */
+const prescanQuery = (state: CompileState, queryNames: Set<string>): boolean => {
+  const attrs = parseAttributes(state, "declaration");
+  if (attrs === FAILED) return false;
+  const id = attrs.props?.id;
+  if (typeof id === "string" && QUERY_NAME_PATTERN.test(id) && id !== "state") queryNames.add(id);
+  if (!attrs.selfClosing) skipElement(state, "Query");
+  return true;
+};
+
+/** Pre-scan `<Island>`: records a grammar-valid, non-reserved name and steps
+ *  the cursor past the raw content. False stops the scan. */
+const prescanIsland = (state: CompileState, islandNames: Set<string>): boolean => {
+  const attrs = parseAttributes(state, "declaration");
+  if (attrs === FAILED) return false;
+  if (attrs.selfClosing) return true; // no content — the main pass skips it
+  const close = state.source.indexOf(ISLAND_CLOSE, state.index);
+  if (close === -1) return false; // unterminated — the main pass drops it
+  state.index = close + ISLAND_CLOSE.length;
+  const islandName = attrs.props?.name;
+  if (typeof islandName === "string" && PASCAL_TAG_PATTERN.test(islandName) && !KIT_NAMES.has(islandName)) {
+    islandNames.add(islandName);
+  }
+  return true;
+};
+
 export const prescanDeclarations = (wire: string, rootTag = "App"): { queryNames: Set<string>; islandNames: Set<string> } => {
   const queryNames = new Set<string>();
   const islandNames = new Set<string>();
@@ -455,24 +482,11 @@ export const prescanDeclarations = (wire: string, rootTag = "App"): { queryNames
     state.index += 1;
     const name = readName(state);
     if (name === "Query") {
-      const attrs = parseAttributes(state, "declaration");
-      if (attrs === FAILED) break;
-      const id = attrs.props?.id;
-      if (typeof id === "string" && QUERY_NAME_PATTERN.test(id) && id !== "state") queryNames.add(id);
-      if (!attrs.selfClosing) skipElement(state, "Query");
+      if (!prescanQuery(state, queryNames)) break;
       continue;
     }
     if (name === "Island") {
-      const attrs = parseAttributes(state, "declaration");
-      if (attrs === FAILED) break;
-      if (attrs.selfClosing) continue; // no content — the main pass skips it
-      const close = state.source.indexOf(ISLAND_CLOSE, state.index);
-      if (close === -1) break; // unterminated — the main pass drops it
-      state.index = close + ISLAND_CLOSE.length;
-      const islandName = attrs.props?.name;
-      if (typeof islandName === "string" && PASCAL_TAG_PATTERN.test(islandName) && !KIT_NAMES.has(islandName)) {
-        islandNames.add(islandName);
-      }
+      if (!prescanIsland(state, islandNames)) break;
       continue;
     }
     if (name === "App" || !PASCAL_TAG_PATTERN.test(name)) {

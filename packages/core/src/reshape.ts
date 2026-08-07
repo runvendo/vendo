@@ -288,143 +288,141 @@ const applyAggregate = (op: ReshapeOp, rows: readonly Record<string, unknown>[],
   return { ok: true, value: reduceNumeric(op as NumericReduction, values) };
 };
 
-const applyStep = (value: Json, step: ReshapeStep): ReshapeResult => {
-  const { op, args } = step;
-  if (op === "count") {
-    if (!Array.isArray(value)) return mismatch("count needs an array");
-    return { ok: true, value: value.length };
+const applyAsPoints = (value: Json, args: readonly string[]): ReshapeResult => {
+  const [labelField, valueField] = args as [string, string];
+  if (!isRowArray(value)) return mismatch("asPoints needs an array of rows");
+  // Strict per-row: a chart silently missing rows IS the broken-chart
+  // class, so any row lacking either axis field is a mismatch (an absent
+  // key signals mis-binding; sparse data carries explicit nulls, which
+  // still plot). pick/rename stay lenient — they are projections, not axes.
+  const missing = [labelField, valueField]
+    .filter((field) => value.some((row) => !Object.prototype.hasOwnProperty.call(row, field)));
+  if (missing.length > 0) {
+    return mismatch(`asPoints fields ${missing.map((field) => `"${field}"`).join(", ")} are absent from one or more rows`);
   }
-  if (AGGREGATE_OPS.has(op)) {
-    if (!isRowArray(value)) return mismatch(`aggregate "${op}" needs an array of rows`);
-    return applyAggregate(op, value, args[0] as string);
+  return { ok: true, value: value.map((row) => ({ label: row[labelField], value: row[valueField] })) };
+};
+
+const applyAsOptions = (value: Json, args: readonly string[]): ReshapeResult => {
+  const [valueField, labelField] = args as [string, string];
+  if (!isRowArray(value)) return mismatch("asOptions needs an array of rows");
+  // Strict per-row (mirrors asPoints): a Select silently missing an option's
+  // value or label IS the blank-option class, so any row lacking either
+  // field is a mismatch — an absent key signals mis-binding.
+  const missing = [valueField, labelField]
+    .filter((field) => value.some((row) => !Object.prototype.hasOwnProperty.call(row, field)));
+  if (missing.length > 0) {
+    return mismatch(`asOptions fields ${missing.map((field) => `"${field}"`).join(", ")} are absent from one or more rows`);
   }
-  if (op === "asPoints") {
-    const [labelField, valueField] = args as [string, string];
-    if (!isRowArray(value)) return mismatch("asPoints needs an array of rows");
-    // Strict per-row: a chart silently missing rows IS the broken-chart
-    // class, so any row lacking either axis field is a mismatch (an absent
-    // key signals mis-binding; sparse data carries explicit nulls, which
-    // still plot). pick/rename stay lenient — they are projections, not axes.
-    const missing = [labelField, valueField]
-      .filter((field) => value.some((row) => !Object.prototype.hasOwnProperty.call(row, field)));
-    if (missing.length > 0) {
-      return mismatch(`asPoints fields ${missing.map((field) => `"${field}"`).join(", ")} are absent from one or more rows`);
-    }
-    return { ok: true, value: value.map((row) => ({ label: row[labelField], value: row[valueField] })) };
+  return { ok: true, value: value.map((row) => ({ value: row[valueField], label: row[labelField] })) };
+};
+
+const resolveTemplatePath = (row: Record<string, unknown>, path: readonly string[]): unknown => {
+  let current: unknown = row;
+  for (const segment of path) {
+    if (!isPlainObject(current)) return undefined;
+    current = (current as Record<string, unknown>)[segment];
   }
-  if (op === "asOptions") {
-    const [valueField, labelField] = args as [string, string];
-    if (!isRowArray(value)) return mismatch("asOptions needs an array of rows");
-    // Strict per-row (mirrors asPoints): a Select silently missing an option's
-    // value or label IS the blank-option class, so any row lacking either
-    // field is a mismatch — an absent key signals mis-binding.
-    const missing = [valueField, labelField]
-      .filter((field) => value.some((row) => !Object.prototype.hasOwnProperty.call(row, field)));
-    if (missing.length > 0) {
-      return mismatch(`asOptions fields ${missing.map((field) => `"${field}"`).join(", ")} are absent from one or more rows`);
+  return current;
+};
+
+/** Interpolate one row/object; a placeholder resolving to an object or
+ *  array is the raw-braces class the op exists to prevent — a mismatch,
+ *  never a stringified object. */
+const renderTemplate = (pattern: string, row: Record<string, unknown>): { text: string } | { bad: string } => {
+  let bad: string | null = null;
+  const text = pattern.replace(TEMPLATE_PLACEHOLDER, (whole, raw: string) => {
+    const resolved = resolveTemplatePath(row, raw.split("."));
+    if (resolved === null || resolved === undefined) return "";
+    if (typeof resolved === "object") {
+      bad ??= whole;
+      return "";
     }
-    return { ok: true, value: value.map((row) => ({ value: row[valueField], label: row[labelField] })) };
+    return String(resolved);
+  });
+  return bad === null ? { text } : { bad };
+};
+
+const nonScalarTemplate = (bad: string): ReshapeResult =>
+  mismatch(`template placeholder ${bad} does not resolve to a scalar — reference a nested field (e.g. ${bad.slice(0, -1)}.name})`);
+
+const applyTemplate = (value: Json, args: readonly string[]): ReshapeResult => {
+  const pattern = args[args.length - 1] as string;
+  const paths = templatePaths(pattern) ?? [];
+  const roots = [...new Set(paths.map((path) => path[0] as string))];
+  const absentFrom = (record: Record<string, unknown>): string[] =>
+    roots.filter((root) => !Object.prototype.hasOwnProperty.call(record, root));
+  if (args.length === 1) {
+    if (!isPlainObject(value)) {
+      return mismatch("template(pattern) needs a bare object; over rows use template(field, pattern)");
+    }
+    const record = value as Record<string, unknown>;
+    const absent = absentFrom(record);
+    if (absent.length > 0) {
+      return mismatch(`template placeholders reference ${absent.map((root) => `"${root}"`).join(", ")}, absent`);
+    }
+    const rendered = renderTemplate(pattern, record);
+    return "bad" in rendered ? nonScalarTemplate(rendered.bad) : { ok: true, value: rendered.text };
   }
-  if (op === "template") {
-    const pattern = args[args.length - 1] as string;
-    const paths = templatePaths(pattern) ?? [];
-    const resolvePath = (row: Record<string, unknown>, path: readonly string[]): unknown => {
-      let current: unknown = row;
-      for (const segment of path) {
-        if (!isPlainObject(current)) return undefined;
-        current = (current as Record<string, unknown>)[segment];
-      }
-      return current;
-    };
-    /** Interpolate one row/object; a placeholder resolving to an object or
-     *  array is the raw-braces class the op exists to prevent — a mismatch,
-     *  never a stringified object. */
-    const render = (row: Record<string, unknown>): { text: string } | { bad: string } => {
-      let bad: string | null = null;
-      const text = pattern.replace(TEMPLATE_PLACEHOLDER, (whole, raw: string) => {
-        const resolved = resolvePath(row, raw.split("."));
-        if (resolved === null || resolved === undefined) return "";
-        if (typeof resolved === "object") {
-          bad ??= whole;
-          return "";
-        }
-        return String(resolved);
-      });
-      return bad === null ? { text } : { bad };
-    };
-    const nonScalar = (bad: string): ReshapeResult =>
-      mismatch(`template placeholder ${bad} does not resolve to a scalar — reference a nested field (e.g. ${bad.slice(0, -1)}.name})`);
-    const roots = [...new Set(paths.map((path) => path[0] as string))];
-    const absentFrom = (record: Record<string, unknown>): string[] =>
-      roots.filter((root) => !Object.prototype.hasOwnProperty.call(record, root));
-    if (args.length === 1) {
-      if (!isPlainObject(value)) {
-        return mismatch("template(pattern) needs a bare object; over rows use template(field, pattern)");
-      }
-      const record = value as Record<string, unknown>;
-      const absent = absentFrom(record);
-      if (absent.length > 0) {
-        return mismatch(`template placeholders reference ${absent.map((root) => `"${root}"`).join(", ")}, absent`);
-      }
-      const rendered = render(record);
-      return "bad" in rendered ? nonScalar(rendered.bad) : { ok: true, value: rendered.text };
+  const field = args[0] as string;
+  const templateRow = (row: Record<string, unknown>): ReshapeResult => {
+    const rendered = renderTemplate(pattern, row);
+    if ("bad" in rendered) return nonScalarTemplate(rendered.bad);
+    const next = { ...row };
+    defineOwn(next, field, rendered.text);
+    return { ok: true, value: next as Json };
+  };
+  if (isRowArray(value)) {
+    const absent = roots.filter((root) => !fieldPresent(value, root));
+    if (absent.length > 0) {
+      return mismatch(`template placeholders reference ${absent.map((root) => `"${root}"`).join(", ")}, absent from the rows`);
     }
-    const field = args[0] as string;
-    const templateRow = (row: Record<string, unknown>): ReshapeResult => {
-      const rendered = render(row);
-      if ("bad" in rendered) return nonScalar(rendered.bad);
-      const next = { ...row };
-      defineOwn(next, field, rendered.text);
-      return { ok: true, value: next as Json };
-    };
-    if (isRowArray(value)) {
-      const absent = roots.filter((root) => !fieldPresent(value, root));
-      if (absent.length > 0) {
-        return mismatch(`template placeholders reference ${absent.map((root) => `"${root}"`).join(", ")}, absent from the rows`);
-      }
-      const out: Json[] = [];
-      for (const row of value) {
-        const result = templateRow(row);
-        if (!result.ok) return result;
-        out.push(result.value as Json);
-      }
-      return { ok: true, value: out };
-    }
-    if (isPlainObject(value)) {
-      const record = value as Record<string, unknown>;
-      const absent = absentFrom(record);
-      if (absent.length > 0) {
-        return mismatch(`template placeholders reference ${absent.map((root) => `"${root}"`).join(", ")}, absent`);
-      }
-      return templateRow(record);
-    }
-    return mismatch("template needs an object or an array of rows");
-  }
-  if (op === "format") {
-    if (args.length === 1) {
-      const formatted = formatScalar(value, args[0] as FormatKind);
-      return formatted === null
-        ? mismatch(`format "${args[0]}" cannot format this value`)
-        : { ok: true, value: formatted };
-    }
-    const [field, kind] = args as [string, FormatKind];
-    if (!isRowArray(value)) return mismatch("per-field format needs an array of rows");
-    if (!fieldPresent(value, field)) return mismatch(`field "${field}" is absent from the rows`);
-    const rows: Json[] = [];
+    const out: Json[] = [];
     for (const row of value) {
-      if (!Object.prototype.hasOwnProperty.call(row, field)) {
-        rows.push(row);
-        continue;
-      }
-      const formatted = formatScalar(row[field], kind);
-      if (formatted === null) return mismatch(`format "${kind}" cannot format "${field}" values`);
-      const next = { ...row };
-      defineOwn(next, field, formatted);
-      rows.push(next);
+      const result = templateRow(row);
+      if (!result.ok) return result;
+      out.push(result.value as Json);
     }
-    return { ok: true, value: rows };
+    return { ok: true, value: out };
   }
-  // pick / rename — per-row on arrays, direct on objects.
+  if (isPlainObject(value)) {
+    const record = value as Record<string, unknown>;
+    const absent = absentFrom(record);
+    if (absent.length > 0) {
+      return mismatch(`template placeholders reference ${absent.map((root) => `"${root}"`).join(", ")}, absent`);
+    }
+    return templateRow(record);
+  }
+  return mismatch("template needs an object or an array of rows");
+};
+
+const applyFormat = (value: Json, args: readonly string[]): ReshapeResult => {
+  if (args.length === 1) {
+    const formatted = formatScalar(value, args[0] as FormatKind);
+    return formatted === null
+      ? mismatch(`format "${args[0]}" cannot format this value`)
+      : { ok: true, value: formatted };
+  }
+  const [field, kind] = args as [string, FormatKind];
+  if (!isRowArray(value)) return mismatch("per-field format needs an array of rows");
+  if (!fieldPresent(value, field)) return mismatch(`field "${field}" is absent from the rows`);
+  const rows: Json[] = [];
+  for (const row of value) {
+    if (!Object.prototype.hasOwnProperty.call(row, field)) {
+      rows.push(row);
+      continue;
+    }
+    const formatted = formatScalar(row[field], kind);
+    if (formatted === null) return mismatch(`format "${kind}" cannot format "${field}" values`);
+    const next = { ...row };
+    defineOwn(next, field, formatted);
+    rows.push(next);
+  }
+  return { ok: true, value: rows };
+};
+
+// pick / rename — per-row on arrays, direct on objects.
+const applyPickRename = (op: ReshapeOp, value: Json, args: readonly string[]): ReshapeResult => {
   const perRow = op === "pick"
     ? (row: Record<string, unknown>) => pickFields(row, args)
     : (row: Record<string, unknown>) => renameFields(row, args);
@@ -445,6 +443,23 @@ const applyStep = (value: Json, step: ReshapeStep): ReshapeResult => {
     return { ok: true, value: perRow(record) };
   }
   return mismatch(`${op} needs an object or an array of rows`);
+};
+
+const applyStep = (value: Json, step: ReshapeStep): ReshapeResult => {
+  const { op, args } = step;
+  if (op === "count") {
+    if (!Array.isArray(value)) return mismatch("count needs an array");
+    return { ok: true, value: value.length };
+  }
+  if (AGGREGATE_OPS.has(op)) {
+    if (!isRowArray(value)) return mismatch(`aggregate "${op}" needs an array of rows`);
+    return applyAggregate(op, value, args[0] as string);
+  }
+  if (op === "asPoints") return applyAsPoints(value, args);
+  if (op === "asOptions") return applyAsOptions(value, args);
+  if (op === "template") return applyTemplate(value, args);
+  if (op === "format") return applyFormat(value, args);
+  return applyPickRename(op, value, args);
 };
 
 /**
@@ -559,144 +574,121 @@ const checkedFields = (
 const objectShape = (fields: Record<string, ShapeType>, optional: readonly string[]): ShapeType =>
   optional.length > 0 ? { kind: "object", fields, optional: [...optional] } : { kind: "object", fields };
 
-/**
- * v2 spec §3 — flow a response shape through one reshape step (the wire
- * compiler's binding type-check). `json` regions stay defensive (no error);
- * a known-shape violation returns the typed error with missing/available
- * fields for the per-binding repair prompt.
- */
-export function reshapeShape(shape: ShapeType, step: ReshapeStep): ReshapeShapeResult {
-  const structural = invalidStep(step);
-  if (structural !== null) return shapeError(structural);
-  const { op, args } = step;
-
-  if (op === "count") {
-    if (shape.kind !== "json" && shape.kind !== "array") return shapeError("count needs an array");
-    return { ok: true, shape: NUMBER_SHAPE };
-  }
-
-  if (op === "format" && args.length === 1) {
-    const kind = args[0] as FormatKind;
-    const formattable = shape.kind === "json"
-      || (kind === "date" ? shape.kind === "string" || shape.kind === "number" : shape.kind === "number");
-    if (!formattable) return shapeError(`format "${kind}" cannot format a ${shape.kind} value`);
-    return { ok: true, shape: STRING_SHAPE };
-  }
-
-  if (op === "template") {
-    const paths = templatePaths(args[args.length - 1] as string) ?? [];
-    /** Walks each placeholder path through the row/object shape: an absent
-     *  root is the repair-carrying miss; an object/array leaf is the
-     *  raw-braces class caught at compile. `json` regions stay defensive. */
-    const placeholderMiss = (owner: ShapeType): ReshapeShapeResult | null => {
-      for (const path of paths) {
-        const at = shapeAtPointer(owner, `/${path.join("/")}`);
-        if (at === undefined) {
-          return shapeError(
-            `template placeholder "{${path.join(".")}}" is absent from the response shape`,
-            [path[0] as string],
-            owner.kind === "object" ? Object.keys(owner.fields) : undefined,
-          );
-        }
-        if (at.kind === "object" || at.kind === "array") {
-          return shapeError(`template placeholder "{${path.join(".")}}" is an ${at.kind}, not a scalar — reference a nested field (e.g. {${path.join(".")}.name})`);
-        }
-      }
-      return null;
-    };
-    if (args.length === 1) {
-      if (shape.kind === "json") return { ok: true, shape: STRING_SHAPE };
-      if (shape.kind !== "object") {
-        return shapeError(`template(pattern) needs a bare object; over rows use template(field, pattern); the response shape is ${shape.kind}`);
-      }
-      return placeholderMiss(shape) ?? { ok: true, shape: STRING_SHAPE };
-    }
-    const view = viewRows(shape, op);
-    if (view === null) return shapeError(`template needs an object or an array of rows; the response shape is ${shape.kind}`);
-    if (view.fields === null) return { ok: true, shape: view.rebuild(JSON_SHAPE) };
-    const violation = placeholderMiss(objectShape(view.fields, [...view.optional]));
-    if (violation !== null) return violation;
-    const target = args[0] as string;
-    const fields: Record<string, ShapeType> = {};
-    for (const [key, value] of Object.entries(view.fields)) {
-      defineOwn(fields, key, key === target ? STRING_SHAPE : value);
-    }
-    if (!Object.prototype.hasOwnProperty.call(fields, target)) {
-      defineOwn(fields, target, STRING_SHAPE);
-    }
-    // The target field is always written, so it leaves the optional set.
-    return { ok: true, shape: view.rebuild(objectShape(fields, [...view.optional].filter((key) => key !== target))) };
-  }
-
-  const view = viewRows(shape, op);
-  if (view === null) {
-    return shapeError(`${op} needs ${AGGREGATE_OPS.has(op) || op === "asPoints" || op === "asOptions" ? "an array of rows" : "an object or an array of rows"}; the response shape is ${shape.kind}`);
-  }
-
-  if (AGGREGATE_OPS.has(op)) {
-    const field = args[0] as string;
-    const violation = checkedFields(view, [field], op);
-    if (violation !== null) return violation;
-    if (view.fields !== null) {
-      const fieldShape = view.fields[field] as ShapeType;
-      if (fieldShape.kind !== "number" && fieldShape.kind !== "json") {
-        return shapeError(
-          `aggregate "${op}" needs numeric "${field}" values; the response shape has ${fieldShape.kind}`,
-          undefined,
-          Object.keys(view.fields),
-        );
-      }
-    }
-    return { ok: true, shape: NUMBER_SHAPE };
-  }
-
-  if (op === "asPoints") {
-    const [labelField, valueField] = args as [string, string];
-    const violation = checkedFields(view, [labelField, valueField], op);
-    if (violation !== null) return violation;
-    const labelShape = view.fields === null ? JSON_SHAPE : view.fields[labelField] as ShapeType;
-    const valueShape = view.fields === null ? JSON_SHAPE : view.fields[valueField] as ShapeType;
-    return {
-      ok: true,
-      shape: { kind: "array", items: { kind: "object", fields: { label: labelShape, value: valueShape } } },
-    };
-  }
-
-  if (op === "asOptions") {
-    const [valueField, labelField] = args as [string, string];
-    const violation = checkedFields(view, [valueField, labelField], op);
-    if (violation !== null) return violation;
-    const valueShape = view.fields === null ? JSON_SHAPE : view.fields[valueField] as ShapeType;
-    const labelShape = view.fields === null ? JSON_SHAPE : view.fields[labelField] as ShapeType;
-    return {
-      ok: true,
-      shape: { kind: "array", items: { kind: "object", fields: { value: valueShape, label: labelShape } } },
-    };
-  }
-
-  if (op === "format") {
-    const [field, kind] = args as [string, FormatKind];
-    const violation = checkedFields(view, [field], op);
-    if (violation !== null) return violation;
-    if (view.fields === null) return { ok: true, shape: view.rebuild(JSON_SHAPE) };
-    const fieldShape = view.fields[field] as ShapeType;
-    const formattable = fieldShape.kind === "json"
-      || (kind === "date" ? fieldShape.kind === "string" || fieldShape.kind === "number" : fieldShape.kind === "number");
-    if (!formattable) {
+/** Walks each placeholder path through the row/object shape: an absent
+ *  root is the repair-carrying miss; an object/array leaf is the
+ *  raw-braces class caught at compile. `json` regions stay defensive. */
+const placeholderMiss = (owner: ShapeType, paths: readonly string[][]): ReshapeShapeResult | null => {
+  for (const path of paths) {
+    const at = shapeAtPointer(owner, `/${path.join("/")}`);
+    if (at === undefined) {
       return shapeError(
-        `format "${kind}" cannot format "${field}" (${fieldShape.kind}) values`,
+        `template placeholder "{${path.join(".")}}" is absent from the response shape`,
+        [path[0] as string],
+        owner.kind === "object" ? Object.keys(owner.fields) : undefined,
+      );
+    }
+    if (at.kind === "object" || at.kind === "array") {
+      return shapeError(`template placeholder "{${path.join(".")}}" is an ${at.kind}, not a scalar — reference a nested field (e.g. {${path.join(".")}.name})`);
+    }
+  }
+  return null;
+};
+
+const templateShape = (shape: ShapeType, args: readonly string[]): ReshapeShapeResult => {
+  const paths = templatePaths(args[args.length - 1] as string) ?? [];
+  if (args.length === 1) {
+    if (shape.kind === "json") return { ok: true, shape: STRING_SHAPE };
+    if (shape.kind !== "object") {
+      return shapeError(`template(pattern) needs a bare object; over rows use template(field, pattern); the response shape is ${shape.kind}`);
+    }
+    return placeholderMiss(shape, paths) ?? { ok: true, shape: STRING_SHAPE };
+  }
+  const view = viewRows(shape, "template");
+  if (view === null) return shapeError(`template needs an object or an array of rows; the response shape is ${shape.kind}`);
+  if (view.fields === null) return { ok: true, shape: view.rebuild(JSON_SHAPE) };
+  const violation = placeholderMiss(objectShape(view.fields, [...view.optional]), paths);
+  if (violation !== null) return violation;
+  const target = args[0] as string;
+  const fields: Record<string, ShapeType> = {};
+  for (const [key, value] of Object.entries(view.fields)) {
+    defineOwn(fields, key, key === target ? STRING_SHAPE : value);
+  }
+  if (!Object.prototype.hasOwnProperty.call(fields, target)) {
+    defineOwn(fields, target, STRING_SHAPE);
+  }
+  // The target field is always written, so it leaves the optional set.
+  return { ok: true, shape: view.rebuild(objectShape(fields, [...view.optional].filter((key) => key !== target))) };
+};
+
+const aggregateShape = (view: RowsView, op: ReshapeOp, args: readonly string[]): ReshapeShapeResult => {
+  const field = args[0] as string;
+  const violation = checkedFields(view, [field], op);
+  if (violation !== null) return violation;
+  if (view.fields !== null) {
+    const fieldShape = view.fields[field] as ShapeType;
+    if (fieldShape.kind !== "number" && fieldShape.kind !== "json") {
+      return shapeError(
+        `aggregate "${op}" needs numeric "${field}" values; the response shape has ${fieldShape.kind}`,
         undefined,
         Object.keys(view.fields),
       );
     }
-    const fields: Record<string, ShapeType> = {};
-    for (const [key, value] of Object.entries(view.fields)) {
-      defineOwn(fields, key, key === field ? STRING_SHAPE : value);
-    }
-    return { ok: true, shape: view.rebuild(objectShape(fields, [...view.optional])) };
   }
+  return { ok: true, shape: NUMBER_SHAPE };
+};
 
-  // pick / rename
+const asPointsShape = (view: RowsView, args: readonly string[]): ReshapeShapeResult => {
+  const [labelField, valueField] = args as [string, string];
+  const violation = checkedFields(view, [labelField, valueField], "asPoints");
+  if (violation !== null) return violation;
+  const labelShape = view.fields === null ? JSON_SHAPE : view.fields[labelField] as ShapeType;
+  const valueShape = view.fields === null ? JSON_SHAPE : view.fields[valueField] as ShapeType;
+  return {
+    ok: true,
+    shape: { kind: "array", items: { kind: "object", fields: { label: labelShape, value: valueShape } } },
+  };
+};
+
+const asOptionsShape = (view: RowsView, args: readonly string[]): ReshapeShapeResult => {
+  const [valueField, labelField] = args as [string, string];
+  const violation = checkedFields(view, [valueField, labelField], "asOptions");
+  if (violation !== null) return violation;
+  const valueShape = view.fields === null ? JSON_SHAPE : view.fields[valueField] as ShapeType;
+  const labelShape = view.fields === null ? JSON_SHAPE : view.fields[labelField] as ShapeType;
+  return {
+    ok: true,
+    shape: { kind: "array", items: { kind: "object", fields: { value: valueShape, label: labelShape } } },
+  };
+};
+
+const formatFieldShape = (view: RowsView, args: readonly string[]): ReshapeShapeResult => {
+  const [field, kind] = args as [string, FormatKind];
+  const violation = checkedFields(view, [field], "format");
+  if (violation !== null) return violation;
+  if (view.fields === null) return { ok: true, shape: view.rebuild(JSON_SHAPE) };
+  const fieldShape = view.fields[field] as ShapeType;
+  const formattable = fieldShape.kind === "json"
+    || (kind === "date" ? fieldShape.kind === "string" || fieldShape.kind === "number" : fieldShape.kind === "number");
+  if (!formattable) {
+    return shapeError(
+      `format "${kind}" cannot format "${field}" (${fieldShape.kind}) values`,
+      undefined,
+      Object.keys(view.fields),
+    );
+  }
+  const fields: Record<string, ShapeType> = {};
+  for (const [key, value] of Object.entries(view.fields)) {
+    defineOwn(fields, key, key === field ? STRING_SHAPE : value);
+  }
+  return { ok: true, shape: view.rebuild(objectShape(fields, [...view.optional])) };
+};
+
+const pickRenameShape = (
+  view: RowsView,
+  shape: ShapeType,
+  op: ReshapeOp,
+  args: readonly string[],
+): ReshapeShapeResult => {
   const referenced = op === "pick" ? args : args.filter((_, index) => index % 2 === 0);
   const violation = checkedFields(view, referenced, op);
   if (violation !== null) return violation;
@@ -721,4 +713,43 @@ export function reshapeShape(shape: ShapeType, step: ReshapeStep): ReshapeShapeR
     if (view.optional.has(key)) optional.push(nextKey);
   }
   return { ok: true, shape: view.rebuild(objectShape(fields, optional)) };
+};
+
+/**
+ * v2 spec §3 — flow a response shape through one reshape step (the wire
+ * compiler's binding type-check). `json` regions stay defensive (no error);
+ * a known-shape violation returns the typed error with missing/available
+ * fields for the per-binding repair prompt.
+ */
+export function reshapeShape(shape: ShapeType, step: ReshapeStep): ReshapeShapeResult {
+  const structural = invalidStep(step);
+  if (structural !== null) return shapeError(structural);
+  const { op, args } = step;
+
+  if (op === "count") {
+    if (shape.kind !== "json" && shape.kind !== "array") return shapeError("count needs an array");
+    return { ok: true, shape: NUMBER_SHAPE };
+  }
+
+  if (op === "format" && args.length === 1) {
+    const kind = args[0] as FormatKind;
+    const formattable = shape.kind === "json"
+      || (kind === "date" ? shape.kind === "string" || shape.kind === "number" : shape.kind === "number");
+    if (!formattable) return shapeError(`format "${kind}" cannot format a ${shape.kind} value`);
+    return { ok: true, shape: STRING_SHAPE };
+  }
+
+  if (op === "template") return templateShape(shape, args);
+
+  const view = viewRows(shape, op);
+  if (view === null) {
+    return shapeError(`${op} needs ${AGGREGATE_OPS.has(op) || op === "asPoints" || op === "asOptions" ? "an array of rows" : "an object or an array of rows"}; the response shape is ${shape.kind}`);
+  }
+
+  if (AGGREGATE_OPS.has(op)) return aggregateShape(view, op, args);
+  if (op === "asPoints") return asPointsShape(view, args);
+  if (op === "asOptions") return asOptionsShape(view, args);
+  if (op === "format") return formatFieldShape(view, args);
+  // pick / rename
+  return pickRenameShape(view, shape, op, args);
 }
