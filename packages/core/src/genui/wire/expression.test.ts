@@ -212,6 +212,9 @@ describe("parseExpression bindings", () => {
     const numeric = parseExpression("revenue.0", { queryNames: new Set(["revenue"]) });
     expect(numeric.issues).toEqual([]);
     expect(numeric.value).toEqual({ $path: "/revenue/0" });
+    const midPath = parseExpression("accounts.data.0.sparkline", { queryNames: new Set(["accounts"]) });
+    expect(midPath.issues).toEqual([]);
+    expect(midPath.value).toEqual({ $path: "/accounts/data/0/sparkline" });
     expectDropped("revenue.", "malformed-expression");
   });
 });
@@ -365,14 +368,6 @@ describe("parseExpression reshape calls", () => {
     expect(result.dropped).toBe(true);
     expect(result.issues[0]?.code).toBe("malformed-expression");
     expect(result.issues[0]?.message).toContain("reshape pipes are gone");
-  });
-});
-
-describe("numeric path segments", () => {
-  it("accepts dot-numeric segments for array elements in query bindings", () => {
-    const result = parseExpression("accounts.data.0.sparkline", { queryNames: new Set(["accounts"]) });
-    expect(result.issues).toEqual([]);
-    expect(result.value).toEqual({ $path: "/accounts/data/0/sparkline" });
   });
 });
 

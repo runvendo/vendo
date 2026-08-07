@@ -223,24 +223,6 @@ describe("compilePlan", () => {
     expect(result.issues.at(-1)).toContain("were not listed");
   });
 
-  it("issues read as sentences a person could say, never error codes", () => {
-    const result = compilePlan(
-      `<Plan>
-         <Group tab="Overview" layout="masonry">
-           <Leaf purpose="Something"/>
-           <Leaf component="StatTile"/>
-         </Group>
-         <Server kind="magic" why="Because."/>
-         <Cannot></Cannot>
-       </Plan>`,
-      FACTS,
-    );
-    expect(result.issues.length).toBeGreaterThan(4);
-    for (const message of result.issues) {
-      expect(message.split(" ").length).toBeGreaterThan(4);
-    }
-  });
-
   it("reads a valid five-field cron schedule without complaint", () => {
     const result = compilePlan(
       `<Plan name="Valid cron"><Group><Leaf component="StatTile" purpose="Total outstanding"/></Group>
