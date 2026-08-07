@@ -42,6 +42,26 @@ const RUN_WATCH_INTERVAL_MS = 2_000;
 const LOG_TAIL_BYTES = 4_096;
 
 /**
+ * The MACHINE's own env vars — the only ones the app and the in-box agent
+ * inherit from this process once a boundary env has been injected. Everything
+ * else in the box's process env arrived from the host at provision (a provider
+ * applies create-time env box-wide, this supervisor included), and an injected
+ * boundary env REPLACES that whole surface — see boundaryEnv().
+ *
+ * Two of them are Vendo's, and deliberately: they are how the machine is
+ * configured, not what the host grants (createHarness reads both from
+ * process.env). A granted secret can never legitimately be named any of these:
+ * shadowing the machine's own PATH or HOME breaks the box long before a
+ * revocation matters.
+ */
+const MACHINE_ENV_KEYS = new Set([
+  "PATH", "HOME", "HOSTNAME", "USER", "LOGNAME", "SHELL", "PWD",
+  "LANG", "LC_ALL", "TZ", "TERM", "TMPDIR",
+  "NODE_VERSION", "YARN_VERSION",
+  "VENDO_APP_DIR", "VENDO_CONTROL_PORT",
+]);
+
+/**
  * @param {object} [options]
  * @param {string} [options.appDir]        the app directory (default /app)
  * @param {number} [options.controlPort]   control-port listen port (default 8811)
@@ -59,16 +79,37 @@ export const createHarness = (options = {}) => {
   const envFile = path.join(vendoDir, "env.json");
   mkdirSync(vendoDir, { recursive: true });
 
-  /** Boundary env: base (provision-time) env plus re-injected env.json (which
-   *  wins — grant flips land there). */
+  /**
+   * The boundary env the app and the in-box agent run with.
+   *
+   * Before the first injection the base env IS the boundary env: provision
+   * delivers it as the machine's create-time env. Once env.json exists it is the
+   * WHOLE boundary — the host rebuilds it from scratch (box-env.ts assembles
+   * PORT, the callback URLs, the app token, the inference door, and every
+   * granted secret) on every grant flip and every pre-edit re-injection — so it
+   * REPLACES the provision-time surface rather than layering over it. Only the
+   * machine's own vars survive from the base env.
+   *
+   * Merging env.json OVER the base env, as this did until 2026-08, made a
+   * DELETION unrepresentable: a secret revoked after provision kept its
+   * provision-time value in this process's env, the freshly built injection
+   * simply omitted the key, and every restart handed the agent a credential its
+   * owner had taken away. Absence in the injected set is now the instruction it
+   * always meant.
+   */
   const boundaryEnv = () => {
-    let injected = {};
+    let injected = null;
     try {
-      injected = JSON.parse(readFileSync(envFile, "utf8"));
+      const parsed = JSON.parse(readFileSync(envFile, "utf8"));
+      if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) injected = parsed;
     } catch {
       // No env.json yet (fresh template) or unreadable — base env stands.
     }
-    const merged = { ...baseEnv };
+    if (injected === null) return { ...baseEnv };
+    const merged = {};
+    for (const key of Object.keys(baseEnv)) {
+      if (MACHINE_ENV_KEYS.has(key) && typeof baseEnv[key] === "string") merged[key] = baseEnv[key];
+    }
     for (const [key, value] of Object.entries(injected)) {
       if (typeof value === "string") merged[key] = value;
     }

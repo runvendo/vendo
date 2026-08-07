@@ -123,9 +123,18 @@ class FakeBoxMachine implements SandboxMachine {
     if (route === "GET /agent/health") return json(200, { ok: true, harness: "fake-box/1", app: { running: true } });
     if (route === "POST /agent/env") {
       const env = (JSON.parse(bodyText) as { env: Record<string, string> }).env;
-      // Model the real harness (box/harness.mjs): the boundary env file is
-      // REPLACED and the app restarts with exactly the injected set — a
-      // revoked secret is gone, never merged over.
+      // What the real harness (box/harness.mjs) does: it persists the set to
+      // .vendo/env.json and restarts the app with it, plus the MACHINE's own
+      // vars (PATH, HOME, …) and nothing else from the box's process env — so a
+      // key the injection omits is GONE, which is how a revoked secret leaves.
+      // This box's env holds only the boundary surface (create-time env, no
+      // container vars), so replacing it whole is that same behaviour.
+      //
+      // Do not take that on trust: this comment claimed it for four waves while
+      // the harness actually merged the injected set OVER the process env, where
+      // a provision-time secret value sits, and a revoked secret survived every
+      // restart. box-secret-revocation.test.ts is the seam — it drives a real
+      // revocation into a real harness and reads the real app's process env.
       this.state.env = { ...env };
       return json(200, { ok: true });
     }
