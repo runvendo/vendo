@@ -36,7 +36,7 @@ import {
   type UIMessageStreamWriter,
 } from "ai";
 import { resolveMapleSession } from "@/vendo/auth";
-import { mapleScenarios } from "@/vendo/scenarios";
+import { mapleScenarioBeats, mapleScenarios, type MapleScenarioBeat } from "@/vendo/scenarios";
 import { vendo } from "@/vendo/server";
 import { demoAppId } from "./seed";
 import {
@@ -52,7 +52,19 @@ const THREAD_ID_HEADER = "x-vendo-thread-id";
 const SCRIPT_CALL_PREFIX = "mds_";
 const PARKED_OUTCOME_COLLECTION = "vendo_parked_call_outcome";
 
-type Beat = "spending" | "transfer" | "weekly" | "moneyhq" | "lowbalance" | "gmailConnected";
+/** The card beats, plus the one beat no card sends (the post-OAuth line). */
+type Beat = MapleScenarioBeat | "gmailConnected";
+
+// A beat whose card was renamed away would otherwise go quietly unreachable
+// and the demo would just stop answering that prompt — fail at boot instead.
+const unbound = mapleScenarioBeats.filter(
+  (candidate) => !mapleScenarios.some((card) => card.beat === candidate),
+);
+if (unbound.length > 0) {
+  throw new Error(
+    `demo-script: no Maple scenario card declares beat ${unbound.join(", ")} — see src/vendo/scenarios.tsx`,
+  );
+}
 
 /** The automations the scripted beats arm; keys match demoAppId's. */
 type AutomationKey = "weekly" | "lowbalance";
@@ -79,12 +91,9 @@ function userText(message: UIMessage): string {
 }
 
 function matchBeat(text: string): Beat | undefined {
-  const prompts = mapleScenarios.map((card) => (card.prompt ?? card.title).trim());
-  if (text === prompts[0]) return "spending";
-  if (text === prompts[1]) return "transfer";
-  if (text === prompts[2]) return "weekly";
-  if (text === prompts[3]) return "moneyhq";
-  if (text === prompts[4]) return "lowbalance";
+  // Each card names its own beat, so reordering the ladder is a no-op here.
+  const card = mapleScenarios.find((candidate) => (candidate.prompt ?? candidate.title).trim() === text);
+  if (card !== undefined) return card.beat;
   // The ConnectCard's deterministic continuation line after a live Gmail
   // OAuth ("Connected Gmail." — parts.tsx onConnected, kept natural on
   // purpose; the parked connect-required call above it carries the context).
@@ -231,7 +240,7 @@ function spendingSlices(outcome: ToolOutcome): Array<{ category: string; amount:
     : [];
 }
 
-/** Card (a) — "Where did my money go?" */
+/** The spending beat — the "Where did my money go?" card. */
 async function spendingBeat({ writer, ctx, signal }: BeatContext): Promise<void> {
   await beat(500, 800); // a breath before the first activity row
   const insights = await toolBeat(writer, ctx, "host_getSpendingInsights", {}, 1200);
@@ -255,7 +264,8 @@ async function spendingBeat({ writer, ctx, signal }: BeatContext): Promise<void>
   );
 }
 
-/** Card (b), turn 1 — "Move money to savings": the REAL parked approval. The
+/** The transfer beat, turn 1 — the "Move money to savings" card: the REAL
+ *  parked approval. The
  *  guarded transfer call parks under the guard's pending approval; Approve in
  *  the thread decides the guard record over the wire, the BYO parked-call
  *  subscriber re-dispatches the EXACT call, and Maple's transfer API debits
@@ -325,7 +335,7 @@ async function confirmTransfer(
 }
 
 /* ------------------------------------------------------------------ */
-/* automation machinery shared by cards (c) and (e)                    */
+/* automation machinery shared by the weekly and low-balance beats     */
 /* ------------------------------------------------------------------ */
 
 /** Grant-ask tool-call ids carry the automation key so the approval-resume
@@ -495,7 +505,7 @@ async function automationArmedConfirmation(context: BeatContext, key: Automation
   );
 }
 
-/** The approval-resume leg for a grant-SET decision (cards c/e). The deciding
+/** The approval-resume leg for a grant-SET decision (weekly/low-balance). The deciding
  *  surface (the in-thread set card or the workspace panel) already settled
  *  the WHOLE set over the wire with ONE decision — the automations engine's
  *  subscriber minted (or discarded) every grant; nothing is bulk-approved
@@ -536,7 +546,7 @@ async function automationGrantResume(
   await automationArmedConfirmation(context, key);
 }
 
-/** Card (c) — "Email me a weekly summary": REAL automation (enabled through
+/** The weekly beat — the "Email me a weekly summary" card: REAL automation (enabled through
  *  the automations engine), the automation card in-thread, its standing-grant
  *  approval (approve resumes the scripted confirmation), then the Gmail
  *  connect moment. */
@@ -564,7 +574,7 @@ async function weeklyBeat(context: BeatContext): Promise<void> {
   await automationArmedConfirmation(context, "weekly");
 }
 
-/** Card (e) — "Alert me before I overdraft": narration → a real balance read
+/** The low-balance beat — the "Alert me before I overdraft" card: narration → a real balance read
  *  → the automation card → the standing-grant approve moment → (on approve,
  *  via the resume) "Armed — …" + the Gmail delivery moment. */
 async function lowBalanceBeat(context: BeatContext): Promise<void> {
@@ -609,7 +619,7 @@ async function gmailConnectedBeat({ writer, signal }: BeatContext): Promise<void
   );
 }
 
-/** Card (d) — "Build my money HQ": building beats, then the saved Money HQ
+/** The money-HQ beat — the "Build my money HQ" card: building beats, then the saved Money HQ
  *  document embeds with the pin affordance on its bar. */
 async function moneyHqBeat({ writer, ctx, signal }: BeatContext): Promise<void> {
   await beat(500, 800); // a breath before the first activity row
@@ -788,7 +798,7 @@ export async function scriptedThreadsResponse(request: Request): Promise<Respons
       write(writer, { type: "start", messageId: message.id });
       write(writer, { type: "start-step" });
       if (grantKey !== undefined) {
-        // An automation's standing-grant decision (cards c/e). The card
+        // An automation's standing-grant decision (weekly/low-balance). The card
         // already decided the REAL guard approval over the wire — the
         // automations engine minted (or skipped) the grant; this leg settles
         // the parked tool part and streams the scripted continuation.
