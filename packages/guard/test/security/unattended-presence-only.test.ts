@@ -5,22 +5,13 @@ import { createMemoryStore } from "../fixtures/memory-store.js";
 import { FixtureTools, call, context, descriptor, seedGrant } from "../fixtures/tools.js";
 
 /**
- * ADVERSARIAL sibling of `unattended-destructive.test.ts` (risk round,
- * 2026-08-06).
+ * THE LAW's presence-only half has both layers §12 asks for: `projectableForRun`
+ * hides `PRESENCE_ONLY_TOOLS` from an unattended run, and the choke point
+ * refuses whatever reached `execute()` anyway. This file proves the second one.
  *
- * `PRESENCE_ONLY_TOOLS` (core/tools.ts) says the placement pair is withheld
- * from an unattended run "exactly as [§12] withholds a destructive one".
- * §12's own doctrine is two-layered — `projectableForRun` is "the primary
- * mechanism", and "call-time enforcement still exists as defence in depth"
- * (grant-sets.ts) — and this whole file is that second layer for the
- * destructive half.
- *
- * The presence-only half only got the first layer. `guard.ts`'s choke point
- * keys on `withheldFromUnattended(descriptor)`, i.e. on the RISK, and these
- * tools are honestly graded `write` on purpose. So the projection is the
- * WHOLE law for them: anything that reaches `execute()` by name — a standing
- * automation grant, a resumed step, a model that learned the name on an
- * attended turn, a harness that calls without listing — runs.
+ * The choke point keys these tools on the CALL NAME (`presenceOnlyCall`,
+ * guard.ts:683) rather than on the risk, because they are honestly graded
+ * `write` — `withheldFromUnattended` alone would let them through.
  */
 const awayCtx = () =>
   context({
@@ -69,8 +60,6 @@ describe("THE LAW, presence-only half: refused at the guard, not only hidden", (
     );
 
     expect(outcome).toEqual({ status: "blocked", reason: UNATTENDED_DESTRUCTIVE_REASON });
-    // The row was written while nobody was there, and it evicted whatever held
-    // that slot — the exact harm PRESENCE_ONLY_TOOLS' own doc names.
     expect(tools.executions).toHaveLength(0);
   });
 

@@ -61,7 +61,9 @@ describe("destructive asks by default", () => {
       call(d.name, { id: "acc_1" }, "call_delete_away"),
       context({ presence: "away", trigger: { runId: "run_1", kind: "schedule" } }),
     );
-    expect(outcome.status).not.toBe("ok");
+    // Named, not `not.toBe("ok")` — that passes for a crash as readily as for
+    // the park this test is about.
+    expect(outcome).toMatchObject({ status: "pending-approval" });
     expect(tools.executions).toHaveLength(0);
   });
 
