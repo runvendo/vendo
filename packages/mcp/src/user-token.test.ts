@@ -130,6 +130,26 @@ describe("vendoUserToken", () => {
     })).rejects.toThrow(/invalid_client: Service key is not valid for this MCP server/);
   });
 
+  it("refuses a discovered token endpoint that is not HTTPS, before the key is sent", async () => {
+    const posted: string[] = [];
+    const fetchImpl = externalAs({ tokenEndpoint: "http://broker.example/token", posted });
+
+    await expect(vendoUserToken({ url: BASE, key: SERVICE_KEY, user: "user_1", fetch: fetchImpl }))
+      .rejects.toThrow(/token_endpoint that is not an HTTPS URL/);
+    // The point of the refusal: the key never reached the cleartext endpoint.
+    expect(posted).toEqual([]);
+  });
+
+  it("rejects a 200 exchange that omits a field the token contract declares", async () => {
+    const fetchImpl = externalAs({
+      tokenEndpoint: `${BROKER}/token`,
+      token: () => Response.json({ access_token: "vmat_whatever", scope: "read write" }),
+    });
+
+    await expect(vendoUserToken({ url: BASE, key: SERVICE_KEY, user: "user_1", fetch: fetchImpl }))
+      .rejects.toThrow(/answered 200 without a usable token/);
+  });
+
   it("gives up at timeoutMs", async () => {
     const hang: typeof fetch = (_input, init) => new Promise((_resolve, reject) => {
       init?.signal?.addEventListener("abort", () => { reject(init.signal!.reason as Error); });
@@ -163,6 +183,24 @@ function doorFetch(doors: Record<string, McpDoor>, seen: string[] = []): typeof 
     const door = doors[url.origin];
     if (door === undefined) throw new Error(`No door at ${url.origin}`);
     return door.handler(request);
+  };
+}
+
+/** A REAL deployment door that names an external authorization server, plus
+ *  that server's metadata and token response — the only two documents a third
+ *  party, rather than the caller or the door, gets to write. */
+function externalAs(options: { tokenEndpoint: string; token?: () => Response; posted?: string[] }): typeof fetch {
+  const deployment = makeDoor({ remoteAs: { issuer: BROKER, audience: BASE } });
+  return async (input, init) => {
+    const request = new Request(input as RequestInfo, init);
+    if (request.url === `${BROKER}/.well-known/oauth-authorization-server`) {
+      return Response.json({ issuer: BROKER, token_endpoint: options.tokenEndpoint });
+    }
+    if (request.method === "POST") {
+      options.posted?.push(request.url);
+      return options.token?.() ?? Response.json({});
+    }
+    return deployment.handler(request);
   };
 }
 

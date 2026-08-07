@@ -64,7 +64,19 @@ export async function vendoUserToken(input: VendoUserTokenInput): Promise<VendoU
     }),
   });
   if (!response.ok) throw new Error(await exchangeFailure(response, tokenEndpoint));
-  const body = await response.json() as { access_token: string; expires_in: number; scope: string };
+  const body = await response.json().catch(() => null) as
+    { access_token?: unknown; expires_in?: unknown; scope?: unknown } | null;
+  // A 200 is not a token. Every field of `VendoUserToken` is declared present,
+  // and a response missing one turns into `expiresAt: Invalid Date` or an
+  // `undefined` scope that only fails somewhere else, much later. The body is
+  // never echoed: a partial one still carries an access token.
+  if (typeof body?.access_token !== "string" || typeof body.scope !== "string"
+    || typeof body.expires_in !== "number" || !Number.isFinite(body.expires_in) || body.expires_in <= 0) {
+    throw new Error(
+      `Service-key exchange at ${tokenEndpoint} answered 200 without a usable token`
+      + " — access_token, expires_in, and scope are all required. The response is not echoed here.",
+    );
+  }
   return {
     accessToken: body.access_token,
     tokenType: "Bearer",
@@ -106,7 +118,29 @@ async function discoverTokenEndpoint(
   if (server.token_endpoint === undefined) {
     throw new Error(`The authorization server ${issuer} publishes no token_endpoint`);
   }
+  // The only URL in this flow that a THIRD party chooses, and the key is posted
+  // to it. RFC 8414 §2 requires https; anything else puts a long-lived
+  // credential on the wire in cleartext for whoever is listening. Loopback http
+  // is the same exception the door already makes for redirect URIs
+  // (`validRedirectUri` in `oauth/server.js`).
+  if (!secureEndpoint(server.token_endpoint)) {
+    throw new Error(
+      `The authorization server ${issuer} publishes a token_endpoint that is not an HTTPS URL `
+      + `(${server.token_endpoint}); a service key is not sent in cleartext`,
+    );
+  }
   return { tokenEndpoint: server.token_endpoint };
+}
+
+function secureEndpoint(endpoint: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(endpoint);
+  } catch {
+    return false;
+  }
+  if (url.protocol === "https:") return true;
+  return url.protocol === "http:" && (url.hostname === "localhost" || url.hostname === "127.0.0.1");
 }
 
 /** RFC 8414 §3 / RFC 9728 §3.1: the well-known segment goes BETWEEN the origin
