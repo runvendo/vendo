@@ -23,7 +23,7 @@ import { isInside } from "./common.js";
 
 /**
  * Source capture for the host's OWN registered components — everything mapped
- * in `<VendoRoot components={…}>`. Vendo used to store only their NAMES, so the
+ * in `<VendoProvider components={…}>`. Vendo used to store only their NAMES, so the
  * console's Apps gallery drew a grey labeled block where a real chart belongs.
  * Now the component's module (and its whole import closure) travels with the
  * name, and the console renders it in the same jail a generated component uses.

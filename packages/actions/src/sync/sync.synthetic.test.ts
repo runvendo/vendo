@@ -12,6 +12,7 @@ import { inputNarrowed, mergeOverrides, vendoSync } from "./index.js";
  *  import-shaped strings even inside fixtures, and actions may not import
  *  @vendoai/ui. */
 const UI_CHROME = ["@vendoai", "ui", "chrome"].join("/");
+const VENDO_REACT = ["@vendoai", "vendo", "react"].join("/");
 
 const temporaryDirectories: string[] = [];
 
@@ -432,5 +433,45 @@ describe("declared response bodies", () => {
     await vendoSync(host);
 
     expect((await toolsAt(host.out)).find((entry) => entry.name === "host_listItems")).not.toHaveProperty("outputSchema");
+  });
+});
+
+describe("the provider→components seam", () => {
+  /** No mock on either side: real source in, real vendoSync, real .vendo/
+   *  artifacts read back off disk. The host-component previews shipped four
+   *  times green-and-dead because the producer and the consumer each mocked
+   *  the other. */
+  it("captures the components a <VendoProvider> registers", { timeout: 120_000 }, async () => {
+    const { root, out } = await temporaryHost();
+    await writeSpec(root, {});
+    await writeFile(root, "tsconfig.json", `${JSON.stringify({
+      compilerOptions: { target: "ES2022", module: "ESNext", moduleResolution: "Bundler", jsx: "react-jsx", strict: true },
+      include: ["src"],
+    })}\n`);
+    await writeFile(root, "src/vendo-root.tsx", `
+      import { VendoProvider } from "${VENDO_REACT}";
+      type ComponentType = (props: unknown) => unknown;
+      export function BalanceCard({ label, cents }: { label: string; cents: number }) {
+        return <article>{label}{cents}</article>;
+      }
+      export const registry: Record<string, ComponentType> = { BalanceCard: BalanceCard as ComponentType };
+      export function Root({ children }: { children: unknown }) {
+        return <VendoProvider components={registry}>{children}</VendoProvider>;
+      }
+    `);
+
+    const report = await vendoSync({ root, out });
+    expect(report.catalog.discovered).toBeGreaterThan(0);
+
+    const catalog = JSON.parse(await fs.readFile(path.join(out, "catalog.json"), "utf8")) as {
+      entries: Array<{ name: string }>;
+    };
+    expect(catalog.entries.map((entry) => entry.name)).toContain("BalanceCard");
+
+    // The consumer's half of the seam: the captured record vendo-web reads.
+    const record = JSON.parse(await fs.readFile(path.join(out, "components", "BalanceCard.json"), "utf8")) as {
+      name: string;
+    };
+    expect(record.name).toBe("BalanceCard");
   });
 });
