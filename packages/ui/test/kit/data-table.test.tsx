@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DataTable } from "../../src/kit/data/data-table.js";
 
 const rows = [
@@ -51,5 +51,39 @@ describe("DataTable", () => {
   it("renders an unrenderable numeric cell as a placeholder, never $NaN", () => {
     render(<DataTable rows={[{ id: 9, client: { name: "X" }, amountCents: Number.NaN }]} columns={columns} />);
     expect(screen.queryByText(/NaN/)).toBeNull();
+  });
+
+  // Generation names a column that was never declared often enough to matter:
+  // an unresolvable id reaches TanStack's getColumn, which console.errors on
+  // every render and applies nothing.
+  it("ignores a sortBy naming an undeclared column, without console noise", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      render(<DataTable rows={rows} columns={columns} sortBy="timestamp desc" />);
+      const bodyRows = screen.getAllByRole("row").slice(1);
+      const firstCells = bodyRows.map((r) => within(r).getAllByRole("cell")[0]?.textContent);
+      expect(firstCells).toEqual(["Hartwell", "Acme", "Borealis"]); // untouched row order
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("still applies a sortBy naming a dot-path column", () => {
+    render(<DataTable rows={rows} columns={columns} sortBy="client.name asc" />);
+    const bodyRows = screen.getAllByRole("row").slice(1);
+    expect(within(bodyRows[0]!).getAllByRole("cell")[0]?.textContent).toBe("Acme");
+  });
+
+  it("drops a filterableBy key naming an undeclared column rather than ship a dead control", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      render(<DataTable rows={rows} columns={columns} filterableBy={["status", "dueDate"]} />);
+      expect(screen.queryByLabelText("Filter by Status")).toBeNull();
+      expect(screen.getByLabelText("Filter by Due")).toBeTruthy();
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

@@ -93,12 +93,22 @@ export function DataTable(props: DataTableProps) {
     [rows, limit],
   );
 
+  // W3 again, for the sort seam: `sortBy` names a column by id, and generation
+  // sometimes names one that was never declared (e.g. sortBy="timestamp desc"
+  // over columns merchant/category/amount). TanStack resolves the id through
+  // `getColumn`, which returns undefined and console.errors once per render —
+  // so an unknown id bought a phantom sort plus a stream of dev-only noise the
+  // host cannot silence. Drop the sort we cannot honour and render honestly.
+  // Only when we actually know the column set: with no explicit `columns` the
+  // keys are derived from row 0, which is empty until the query resolves, and
+  // dropping there would discard a legitimate sort on the first render.
   const initialSorting = useMemo<SortingState>(() => {
     if (!sortBy) return [];
     const [id, dir] = sortBy.trim().split(/\s+/);
     if (!id) return [];
+    if (columns.length > 0 && !columns.some((col) => col.key === id)) return [];
     return [{ id, desc: (dir ?? "asc").toLowerCase() === "desc" }];
-  }, [sortBy]);
+  }, [sortBy, columns]);
 
   const tanstackColumns = useMemo<Array<ColumnDef<Record<string, unknown>>>>(
     () =>
@@ -137,9 +147,18 @@ export function DataTable(props: DataTableProps) {
       : {}),
   });
 
+  // Same seam as `sortBy` above: a `filterableBy` key that names no declared
+  // column reaches TanStack as a column filter id it cannot resolve, so the
+  // dropdown renders but filtering silently does nothing. Drop those keys
+  // rather than ship a dead control.
+  const filterKeys = useMemo(
+    () => (filterableBy ?? []).filter((key) => columns.length === 0 || columns.some((col) => col.key === key)),
+    [filterableBy, columns],
+  );
+
   const distinctValues = useMemo(() => {
     const map = new Map<string, string[]>();
-    for (const key of filterableBy ?? []) {
+    for (const key of filterKeys) {
       const set = new Set<string>();
       for (const row of data) {
         const v = resolvePath(row, key);
@@ -148,7 +167,7 @@ export function DataTable(props: DataTableProps) {
       map.set(key, [...set].sort());
     }
     return map;
-  }, [filterableBy, data]);
+  }, [filterKeys, data]);
 
   const columnLabel = (key: string) =>
     columns.find((c) => c.key === key)?.label ?? humanizeEnum(key.split(".").pop() ?? key);
@@ -157,7 +176,7 @@ export function DataTable(props: DataTableProps) {
 
   return (
     <div data-kit="DataTable" style={{ ...font, display: "flex", flexDirection: "column", gap: "var(--vendo-density-content-gap, 10px)" }}>
-      {(searchable || (filterableBy && filterableBy.length > 0)) && (
+      {(searchable || filterKeys.length > 0) && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--vendo-density-inline-gap, 7px)", alignItems: "center" }}>
           {searchable && (
             <input
@@ -178,7 +197,7 @@ export function DataTable(props: DataTableProps) {
               }}
             />
           )}
-          {(filterableBy ?? []).map((key) => (
+          {filterKeys.map((key) => (
             <select
               key={key}
               aria-label={`Filter by ${columnLabel(key)}`}
