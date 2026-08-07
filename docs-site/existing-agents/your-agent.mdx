@@ -26,21 +26,21 @@ Init detects your framework and auth from `package.json` and writes:
 | the composition | `app/api/vendo/[...vendo]/route.ts` on Next.js (`vendo/server.ts` on Express or `--framework custom`), holding `createVendo()` |
 | `.vendo/tools.json` | your API surface read into tool definitions from your routes and OpenAPI spec, each with a schema, a risk grade, and its dispatch binding. `overrides.json` beside it is yours, for renaming and curating |
 | `.vendo/theme.json` | your brand, scanned out of your app |
-| `vendo/vendo-root.tsx` | a `"use client"` wrapper establishing the provider every Vendo surface reads through |
+| `<VendoProvider>` | the paste init prints — the provider every Vendo surface reads through |
 | `.env.example`, `predev`/`prebuild` | `VENDO_BASE_URL`, and `vendo sync` so `tools.json` tracks your API |
 
 Init never edits a file you authored, so one paste is yours:
 
 ```tsx
 // app/layout.tsx
-import { VendoRoot } from "../vendo/vendo-root";
+import { VendoProvider } from "@vendoai/vendo/react";
 
-<VendoRoot>{children}</VendoRoot>
+<VendoProvider baseUrl="/api/vendo">{children}</VendoProvider>
 ```
 
-The generated wrapper also mounts `<VendoOverlay />`, Vendo's own launcher pill.
-Delete that line if your agent is the only conversation in your product — but
-keep the provider, or the slots and embeds below have no wire to read.
+Add `<VendoOverlay />` inside the provider for Vendo's own launcher pill. Skip
+it if your agent is the only conversation in your product — but keep the
+provider, or the slots and embeds below have no wire to read.
 
 Full inventory: [vendo init](/connect/vendo-init). Caller identity comes from
 your auth, through `principal` or an [auth preset](/connect/act-as-presets).

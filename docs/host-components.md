@@ -249,7 +249,7 @@ consuming the one-time showing. Contextual affordances (slot ghosts, remix
 hover, Trigger buttons) are host-placed and unaffected by the dial.
 
 Greeting content is host-supplied via the `greeting` prop on
-`VendoProvider`/`VendoRoot` or `VendoOverlay`; without it a generic capable
+`VendoProvider` or `VendoOverlay`; without it a generic capable
 intro (with one molding prompt) is used. The conventional home for the
 content is `.vendo/greeting.json`, imported and passed through:
 
@@ -268,7 +268,7 @@ content is `.vendo/greeting.json`, imported and passed through:
 ```tsx
 import greeting from "../.vendo/greeting.json";
 
-<VendoRoot greeting={greeting}>…</VendoRoot>
+<VendoProvider greeting={greeting}>…</VendoProvider>
 ```
 
 ### Slot placement

@@ -1,6 +1,6 @@
 ---
 name: vendo-setup
-description: Install and configure Vendo (the embedded product agent) in a host repo. Use when asked to add Vendo to an app, run vendo init/doctor/sync, wire the Vendo handler or VendoRoot, or debug a Vendo install until doctor exits 0.
+description: Install and configure Vendo (the embedded product agent) in a host repo. Use when asked to add Vendo to an app, run vendo init/doctor/sync, wire the Vendo handler or VendoProvider, or debug a Vendo install until doctor exits 0.
 ---
 
 # Vendo setup
@@ -51,14 +51,13 @@ fetch it when you need more detail than this skill carries.
      gitignored `.vendo/data/` for the PGlite store. Commit `.vendo/`,
      never `.vendo/data/`.
    - Next.js: writes `app/api/vendo/[...vendo]/route.ts` (or under
-     `src/app`), an empty `vendo/registry.tsx`, and the `vendo/vendo-root.tsx`
-     client mount that renders `<VendoOverlay />`. It does NOT touch your
-     layout: mounting `<VendoRoot>` around `{children}` is your paste (see
-     the `mount` step above).
+     `src/app`). It writes no client file: mounting
+     `<VendoProvider baseUrl="/api/vendo">` around `{children}` is your paste
+     (see the `mount` step above).
    - Express: proposes `vendo/server.ts` (`.mjs` without a tsconfig) plus a
      starter `vendo/ai.ts`; you must still mount
      `app.use("/api/vendo", mountVendo())` and wrap the client in
-     `<VendoRoot>` yourself.
+     `<VendoProvider>` yourself.
    - Adds `predev`/`prebuild` sync hooks to `package.json` (consent-gated).
 
 4. Model credential: the starter model module uses

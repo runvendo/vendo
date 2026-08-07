@@ -23,20 +23,19 @@ pass instead of guessing a layout.
     ```
 
     Init writes the catch-all route `app/api/vendo/[...vendo]/route.ts` holding
-    the whole `createVendo` composition, an empty component registry, and the
-    client mount `vendo/vendo-root.tsx`. It never edits a file you authored, so
-    the last step is yours — init prints this paste:
+    the whole `createVendo` composition. It never writes a client file, so the
+    last step is yours — init prints this paste:
 
     ```tsx
     // app/layout.tsx
-    import { VendoRoot } from "../vendo/vendo-root";
+    import { VendoProvider } from "@vendoai/vendo/react";
 
     // then wrap the app:
-    <VendoRoot>{children}</VendoRoot>
+    <VendoProvider baseUrl="/api/vendo">{children}</VendoProvider>
     ```
 
-    That paste is what makes the agent visible, and `vendo doctor` fails until
-    it lands. See [vendo init](/connect/vendo-init) for the rest of what the
+    That paste is what connects your pages to the wire, and `vendo doctor`
+    fails until it lands. See [vendo init](/connect/vendo-init) for the rest of what the
     command writes.
   </Step>
 

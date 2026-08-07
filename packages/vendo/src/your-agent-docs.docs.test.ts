@@ -173,7 +173,6 @@ describe("every component the page tells a reader to import is exported", () => 
     ["VendoSlot", "@vendoai/ui/chrome", "packages/ui/src/chrome/index.ts"],
     ["VendoToolResult", "@vendoai/vendo/react", "packages/vendo/src/react.tsx"],
     ["VendoProvider", "@vendoai/vendo/react", "packages/vendo/src/react.tsx"],
-    ["VendoRoot", "@vendoai/vendo/react", "packages/vendo/src/react.tsx"],
   ])("%s is exported from %s", async (component, specifier, entry) => {
     const page = await read(PAGE);
     expect(page, `${PAGE} must name ${component}`).toContain(component);

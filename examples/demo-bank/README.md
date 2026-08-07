@@ -69,7 +69,7 @@ the typed client and SWR hooks. The deterministic in-memory store lives under
 Vendo is composed once in `src/vendo/server.ts` with
 `createVendo({ model, principal, policy, connectors })` and mounted by the
 single catch-all route at `/api/vendo/[...vendo]`. The React surface uses the
-umbrella `VendoRoot`, UI chrome/tree subpaths, Maple's registered host
+umbrella `VendoProvider`, UI chrome/tree subpaths, Maple's registered host
 components, and the frozen theme in `.vendo/theme.json`.
 
 The `.vendo/` directory is the committed host contract: tools, overrides,

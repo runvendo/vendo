@@ -3,7 +3,7 @@
 Relay is the permanent non-Next corpus host for Vendo. It proves that the
 `@vendoai/vendo` server is a framework-agnostic fetch handler by mounting it on
 Express, while a plain Vite React SPA consumes the same wire through
-`<VendoRoot>` and the stock `VendoOverlay` chrome.
+`<VendoProvider>` and the stock `VendoOverlay` chrome.
 
 The host includes a deterministically seeded in-memory task API, committed
 OpenAPI-derived tools, a deep-teal extracted theme, and real-HTTP e2e coverage

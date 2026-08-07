@@ -15,7 +15,7 @@ end.
 ## Register your components
 
 The shared registry is the current form: one object, keyed by component
-name, that both `createVendo` (as `catalog`) and `<VendoRoot>` (as
+name, that both `createVendo` (as `catalog`) and `<VendoProvider>` (as
 `components`) read. See the
 [quickstart](/quickstart#install-and-init). This page covers the
 underlying entry shape and the array form the registry normalizes into,
@@ -76,7 +76,7 @@ const vendo = createVendo({ model, catalog: registry });
 
 ### Auto-extract with sync
 
-`vendo sync` scans exported JSX components referenced by your `<VendoRoot>`
+`vendo sync` scans exported JSX components referenced by your `<VendoProvider>`
 `components` map and writes a strict `.vendo/catalog.json` with each entry's
 export path, JSON Schema props, description, and example props. Rescans are
 deterministic and byte-stable, so the file is safe to commit. Both `vendo

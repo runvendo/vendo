@@ -35,14 +35,10 @@ visible:
 - the catch-all route `app/api/vendo/[...vendo]/route.ts` holding the entire
   `createVendo` composition (on Express or any other Web-standard runtime,
   `vendo/server.ts` instead)
-- an empty component registry, `vendo/registry.tsx`
-- the client mount `vendo/vendo-root.tsx` — a `"use client"` wrapper that
-  applies the registry and the extracted theme and mounts `<VendoOverlay />`,
-  the launcher pill + panel users actually see
-- a printed paste for you: the import plus wrapping `{children}` in that
-  wrapper in `app/layout.tsx`. Init never edits a file you authored, so this
-  one step is yours — and it is the step that makes the install visible, so
-  `vendo doctor` fails until it lands
+- a printed paste for you: the `<VendoProvider>` import plus wrapping
+  `{children}` in it in `app/layout.tsx`. Init never writes a client file —
+  that paste is yours — and it is the step that connects the page to the wire,
+  so `vendo doctor` fails until it lands
 - `vendo-actions.ts`, the server-action registration map, when `"use server"`
   actions are detected
 - two `package.json` script hooks (`predev: vendo sync --no-ai`,
@@ -51,9 +47,9 @@ visible:
   `overrides.json`, `policy.json`, `brief.md`, `theme.json`,
   `theme.extracted.json`) plus `.env.example`
 
-The mount paste is idempotent (init prints nothing when a Vendo surface is
+The mount paste is idempotent (init prints nothing when a Vendo provider is
 already mounted) and bounded: one import line plus the `{children}` wrap. See
-[the client mount](#vendovendo-roottsx--the-client-mount).
+[the one file you write](#the-one-file-you-write--and-only-if-you-have-components).
 
 Then land the paste, start your dev server, and run `npx vendo doctor` to
 verify everything with one real model turn.
@@ -74,67 +70,24 @@ prompting.
 
 ## The files you own
 
-A host's entire server wiring is two files: `vendo/registry.tsx`, which
-declares the components generated views can use, and the composition — one
-`createVendo` call with an auth preset and that registry. On Next.js the
-composition lives inline in the catch-all route
-`app/api/vendo/[...vendo]/route.ts`. A third file, `vendo/vendo-root.tsx`,
-carries the client mount. All three are scaffolded by `vendo init` and yours
-to change from there.
-
-### `vendo/registry.tsx` — the component registry
-
-One object, keyed by component name. Each entry holds the real component
-reference, a description the model reads, and an optional zod props schema.
-The same object serves both sides: `createVendo` reads the registry as
-`catalog` and uses only the data fields; `<VendoRoot>` reads it as `components`
-and uses only the component references. There is no second map to keep in
-sync.
-
-```tsx
-// vendo/registry.tsx — generated empty by `vendo init`, then yours
-import type { ComponentRegistry } from "@vendoai/vendo";
-import { z } from "zod";
-import { SpendingDonut } from "@/components/charts/spending-donut";
-
-export const registry = {
-  SpendingDonut: {
-    component: SpendingDonut,
-    description: "Spending by category. Use for where-did-my-money-go requests.",
-    props: z.object({
-      slices: z.array(z.object({ category: z.string(), amount: z.number() })),
-    }),
-    examples: ['{"slices":[{"category":"dining","amount":342.18}]}'],
-  },
-} satisfies ComponentRegistry;
-```
-
-`ComponentRegistry` comes from `@vendoai/vendo`, not `@vendoai/core`: a host
-only installs `@vendoai/vendo` (and `@vendoai/ui`), so under pnpm's strict
-linking a transitive package doesn't resolve for host code. The umbrella's
-root entry re-exports the full `@vendoai/core` type surface, so every contract
-type is one specifier away.
-
-The props schema is optional — a schema-less entry is legal and renders as a
-description-only prompt entry the model infers props for. When a schema is
-present, the model-facing JSON Schema is derived from it internally; you never
-hand-write one.
+A host's entire server wiring is one file: the composition — one `createVendo`
+call with an auth preset. On Next.js it lives inline in the catch-all route
+`app/api/vendo/[...vendo]/route.ts`, which `vendo init` scaffolds and you own
+from there. The one client file is yours to write, and only if you have host
+components.
 
 ### The catch-all route — the composition
 
 ```ts
-// app/api/vendo/[...vendo]/route.ts — equivalent to what `vendo init` scaffolds
-// (init writes a relative registry import; the `@/*` alias reads better here)
+// app/api/vendo/[...vendo]/route.ts — what `vendo init` scaffolds
 import { authJs } from "@vendoai/vendo/auth/auth-js";
 import { createVendo, guard, nextVendoHandler } from "@vendoai/vendo/server";
-import { registry } from "@/vendo/registry";
 
 const vendo = createVendo({
   // Detected next-auth — authJs() fills the identity seams
   // (request→user, actAs, door OAuth); options and the per-seam escape
   // hatch: https://docs.vendo.run/connect/act-as-presets.
   auth: authJs(),
-  catalog: registry,
   guard: guard({ policy: {} }), // .vendo/policy.json: destructive asks, reads run
 });
 
@@ -151,7 +104,6 @@ nothing extra needs installing on the Anthropic and Vendo Cloud rungs:
 const vendo = createVendo({
   models: { agent: "claude-sonnet-4-6" },
   auth: authJs(),
-  catalog: registry,
   guard: guard({ policy: {} }),
 });
 ```
@@ -204,55 +156,60 @@ export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);
 Mount the route at `/api/vendo/[...]`. The fetch handler itself is
 framework-agnostic.
 
-### `vendo/vendo-root.tsx` — the client mount
+### The one file you write — and only if you have components
 
-Init generates this wrapper; you mount it in your layout (init prints the
-exact two lines). It is a `"use client"` boundary because the registry carries
-component references, which cannot cross a Server Component boundary as props
-(RSC serialization fails, and every page 500s).
+Skip this entirely if you have no host components: put `<VendoProvider>`
+straight in your layout.
 
 ```tsx
-// vendo/vendo-root.tsx — generated by `vendo init`, then yours
+// src/vendo/vendo-root.tsx — yours, not generated
 "use client";
-
-import { VendoOverlay, VendoRoot as VendoClientRoot } from "@vendoai/vendo/react";
+import { VendoProvider } from "@vendoai/vendo/react";
 import type { ReactNode } from "react";
-import { registry } from "./registry";
-import theme from "../.vendo/theme.json";
-import type { VendoTheme } from "@vendoai/vendo";
+import { SpendingDonut } from "@/components/SpendingDonut";
+
+const registry = {
+  SpendingDonut: {
+    component: SpendingDonut,
+    description: "Spending by category. Use for where-did-my-money-go requests.",
+  },
+};
 
 export function VendoRoot({ children }: { children: ReactNode }) {
   return (
-    <VendoClientRoot components={registry} theme={theme as VendoTheme}>
+    <VendoProvider baseUrl="/api/vendo" components={registry}>
       {children}
-      <VendoOverlay />
-    </VendoClientRoot>
+    </VendoProvider>
   );
 }
 ```
 
-`components` accepts the same registry object the composition passes as
-`catalog` — it reads only the component references and ignores the data
-fields. The `theme` prop applies the brand init captured; the cast narrows
-TypeScript's widened JSON-module string literals.
+A registry carries component *references*, which cannot cross a Server
+Component boundary as props — that is why this `"use client"` file exists. Pass
+the same object to `createVendo({ catalog: registry })` on the server when you
+want the agent to know the components' descriptions and prop schemas. An entry
+may also carry a zod `props` schema and `examples`; the model-facing JSON
+Schema is derived from the schema internally, and a schema-less entry is legal.
 
-`<VendoClientRoot>` is a context provider and renders nothing by itself,
-which is why the generated wrapper mounts `<VendoOverlay />` inside it. Swap
-that for `<VendoThread />`, `<VendoPage />`, `<VendoPalette />`, or the
-headless hooks — they all speak to the same wire. The hooks and the BYO embeds
-are re-exported from `@vendoai/vendo/react`, so they cost you nothing extra.
-The other chrome surfaces live in `@vendoai/ui/chrome` and need `@vendoai/ui`
-as a direct dependency; of the standalone surfaces, only `<VendoOverlay />` is
-re-exported.
+Want the launcher pill and panel? Add `<VendoOverlay />` inside the provider —
+optional, and never added for you. Swap it for `<VendoThread />`,
+`<VendoPage />`, `<VendoPalette />`, or the headless hooks; they all speak to
+the same wire. The hooks and the BYO embeds are re-exported from
+`@vendoai/vendo/react`. The other chrome surfaces live in `@vendoai/ui/chrome`
+and need `@vendoai/ui` as a direct dependency.
 
-The paste init prints:
+`baseUrl` is where the wire is mounted, path prefix included — a deployment
+served under `/maple` passes `baseUrl="/maple/api/vendo"`, matching the full
+public URL in `VENDO_BASE_URL`.
+
+The paste init prints, for a host with no components:
 
 ```tsx
 // app/layout.tsx
-import { VendoRoot } from "../vendo/vendo-root";
+import { VendoProvider } from "@vendoai/vendo/react";
 
 // then wrap the app:
-<VendoRoot>{children}</VendoRoot>
+<VendoProvider baseUrl="/api/vendo">{children}</VendoProvider>
 ```
 
 ## Model keys

@@ -143,23 +143,20 @@ directory scans. Start acting after step 1, not after reading everything.
 5. **Hand-wire the gaps the agent tail names.** A non-interactive init ends
    with an `Agent tail:` block listing the exact files this run left for you;
    typically: wrap the root layout (or client entry) in the printed
-   `<VendoRoot>` lines, mount a visible surface, register real host
-   components in `vendo/registry.tsx` ([tools and catalog](/agents/tools)),
+   `<VendoProvider>` lines, mount a visible surface, pass real host
+   components to the provider ([tools and catalog](/agents/tools)),
    replace the `.vendo/brief.md` placeholder, and add the auth line if none
    was wired ([host auth](/agents/host-auth)). Follow the tail, not memory;
    it is derived from what init actually wrote in this repo.
 
-   The surface matters: `VendoRoot` is provider-only and renders NOTHING by
-   itself. Doctor gates on both halves — E-WIRE-004 until a layout mounts
-   `<VendoRoot>`, E-WIRE-006 until something visible renders inside it. Init's
-   generated client wrapper already mounts `<VendoOverlay />` (the launcher
-   pill + panel) inside the wrap — use the printed lines as-is and your human
-   has something to SEE. If your wrap predates that wrapper or you rolled your
-   own, mount the overlay yourself:
+   The surface matters: `VendoProvider` is provider-only and renders NOTHING
+   by itself. Doctor gates on both halves — E-WIRE-004 until a layout mounts
+   `<VendoProvider>`, E-WIRE-006 until something visible renders inside it.
+   Mount the overlay yourself:
 
    ```tsx
    import { VendoOverlay } from "@vendoai/vendo/react";
-   // inside the VendoRoot wrap:
+   // inside the VendoProvider wrap:
    <VendoOverlay />
    ```
 

@@ -31,7 +31,7 @@ export default {
 app.all("/api/vendo/*", (c) => handleVendoRequest(c.req.raw));
 ```
 
-The client side is unchanged: mount `<VendoRoot components={registry}
+The client side is unchanged: mount `<VendoProvider baseUrl="/api/vendo"
 theme={theme}>` with `<VendoOverlay />` in your SPA entry.
 
 ## The three rules

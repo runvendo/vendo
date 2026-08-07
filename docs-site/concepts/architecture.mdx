@@ -28,18 +28,16 @@ of the umbrella.
 
 ## The two files you own
 
-A host's entire server wiring is two files:
+A host's entire server wiring is one file: the composition — one
+`createVendo` call with a model and an auth preset. On Next.js it lives
+inline in the catch-all route `app/api/vendo/[...vendo]/route.ts`; on Express
+it lives in `vendo/server.ts`.
 
-- `vendo/registry.tsx`: one object, keyed by component name. Each entry
-  holds the real component reference, a description the model reads, and an
-  optional props schema.
-- The composition: one `createVendo` call with a model, an auth preset, and
-  that registry. On Next.js it lives inline in the catch-all route
-  `app/api/vendo/[...vendo]/route.ts`; on Express it lives in
-  `vendo/server.ts`.
-
-The same registry object serves both sides. `createVendo` reads it as
-`catalog` and uses only the data fields; `<VendoRoot>` reads it as
+A host with its own components declares a registry — one object, keyed by
+component name, each entry holding the real component reference, a
+description the model reads, and an optional props schema — in its own
+`"use client"` file. The same object serves both sides: `createVendo` reads
+it as `catalog` and uses only the data fields; `<VendoProvider>` reads it as
 `components` and uses only the component references. There is no second map
 to keep in sync.
 

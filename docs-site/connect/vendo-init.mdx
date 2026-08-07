@@ -34,23 +34,20 @@ printed as an exact paste.
 
 ## What init writes
 
-- **The server surface.** An empty component registry (`vendo/registry.tsx`,
-  or `vendo/registry.mjs` on plain JS) plus the composition wired to it: for
-  Next.js a catch-all `app/api/vendo/[...vendo]/route.ts`, for Express a
-  `vendo/server.ts` (`.mjs` without a `tsconfig.json`) holding `createVendo()`
-  and a Node HTTP-to-fetch adapter. Both are generated only while absent and
-  never overwritten.
-- **The visible surface (Next.js).** A `"use client"` mount wrapper,
-  `vendo/vendo-root.tsx`, that wraps the provider around your app and mounts
-  `<VendoOverlay />` (the launcher pill + panel) — the wrapper owns the
-  registry and theme imports, because passing the registry across a Server
-  Component boundary crashes RSC serialization. Mounting that wrapper in your
+- **The server surface.** The composition: for Next.js a catch-all
+  `app/api/vendo/[...vendo]/route.ts`, for Express a `vendo/server.ts` (`.mjs`
+  without a `tsconfig.json`) holding `createVendo()` and a Node
+  HTTP-to-fetch adapter. Generated only while absent and never overwritten.
+- **No client file.** Init never writes one. Mounting the provider in your
   `app/layout.tsx` — one import line plus wrapping `{children}` in
-  `<VendoRoot>` — is **your** paste: init prints it in a framed "ONE STEP LEFT"
-  block naming the file and the exact lines, carries it in the `--agent` plan
-  as `mount`, and `vendo doctor` fails with
+  `<VendoProvider baseUrl="/api/vendo">` — is **your** paste: init prints it in
+  a framed "ONE STEP LEFT" block naming the file and the exact lines, carries
+  it in the `--agent` plan as `mount`, and `vendo doctor` fails with
   [E-WIRE-004](/agents/verify#E-WIRE-004) (printing the same paste) until it
-  lands. Nothing is printed when you already mount a Vendo surface.
+  lands. Nothing is printed when you already mount a Vendo provider. A host
+  with its own components writes one `"use client"` file holding the registry
+  and the provider, and mounts that instead — the registry carries component
+  references, which cannot cross a Server Component boundary.
 - **The `.vendo/` contract.** `tools.json` (extracted from your OpenAPI spec
   and routes), `overrides.json`, `policy.json`, `brief.md`, `theme.json`,
   `theme.extracted.json` (what the extractor read, kept beside the theme you
@@ -75,9 +72,8 @@ you apply them. See
 [Tools from your API](/connect/api-tools#next-js-server-actions) for the
 runtime rules.
 
-On Express and custom-runtime hosts the `<VendoRoot>` wrap is yours the same
-way: init prints the exact import and wrap lines to paste, including the
-`<VendoOverlay />` mount that makes the agent visible.
+On Express and custom-runtime hosts the `<VendoProvider>` wrap is yours the
+same way: init prints the exact import and wrap lines to paste.
 
 ## How detection decides
 
@@ -90,10 +86,10 @@ Init detects two frameworks by dependency and scaffolds only what applies:
 
 - **Next.js** (a `next` dependency): the catch-all route under `src/app` when
   that directory exists, else `app`.
-- **Express** (an `express` dependency): `vendo/server.ts` plus a starter
-  registry. Two manual steps remain, which init prints: mount the adapter with
+- **Express** (an `express` dependency): `vendo/server.ts`. Two manual steps
+  remain, which init prints: mount the adapter with
   `app.use("/api/vendo", mountVendo())` and wrap the client entry in
-  `<VendoRoot>`. `vendo doctor` reports broken until both are done.
+  `<VendoProvider>`. `vendo doctor` reports broken until both are done.
 - **Everything else** (`--framework custom`, and the automatic landing for a
   host with neither dependency): a runtime-neutral `vendo/server.ts` — one
   exported `handleVendoRequest(request, env)` taking a web `Request` and

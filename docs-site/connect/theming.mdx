@@ -14,8 +14,8 @@ end.
 
 ## Set the theme
 
-`vendo init` extracts `.vendo/theme.json` and wires it into the scaffolded
-`<VendoRoot theme={...}>` at build time. `vendo sync` regenerates the file on
+`vendo init` extracts `.vendo/theme.json` and names it in the
+`<VendoProvider theme={...}>` paste it prints. `vendo sync` regenerates the file on
 each build, so a fresh install renders on brand without passing `theme` by
 hand.
 
@@ -32,7 +32,7 @@ value wins over the file).
 
 ## See it flow through
 
-`VendoRoot` emits stable CSS custom properties derived from `density` and
+`VendoProvider` emits stable CSS custom properties derived from `density` and
 `motion`. Chrome and the prewired primitives read them directly, and you can
 consume the same variables from your own styles. It also derives
 `--vendo-color-scheme` from your background color and stamps a
@@ -97,7 +97,7 @@ its comfortable counterpart.
 
 ### Color scheme
 
-`VendoRoot` derives `color-scheme` from the WCAG relative luminance of
+`VendoProvider` derives `color-scheme` from the WCAG relative luminance of
 `colors.background` and exposes it as `--vendo-color-scheme`. Backgrounds
 below the flip point (L < 0.179) resolve to `dark`; everything else,
 including unparseable values, resolves to `light`.
