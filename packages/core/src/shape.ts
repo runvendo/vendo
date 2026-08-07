@@ -171,23 +171,46 @@ const shapeFromJsonSchemaAt = (schema: unknown, depth: number): ShapeType => {
   return JSON_SHAPE;
 };
 
+/** The keywords by which a branch DESCRIBES a value rather than merely
+ *  constraining one. A branch carrying none of them — `{ required: [...] }`,
+ *  `{ additionalProperties: false }`, a bare `description` — is the standard
+ *  OpenAPI idiom for tightening a sibling, and it must not erase the branches
+ *  that do the describing. */
+const VALUE_KEYWORDS = ["type", "properties", "items", "enum", "const", "allOf", "anyOf", "oneOf", "not", "$ref"] as const;
+
 /** `allOf` is an INTERSECTION: the value carries EVERY branch's fields at once,
  *  and a field is required as soon as one branch requires it. Erasing it to
  *  `json` erases the whole declaration — demo-bank's own transfer result is an
  *  `allOf`, enums included — from the binding check and the screen type check.
- *  A non-object member is unmodelled, so the intersection degrades whole. */
+ *  A branch that describes a NON-object (a scalar, an array) or that nothing
+ *  could model (`anyOf`, `$ref`) still degrades the intersection whole: better
+ *  unconstrained than confidently narrow. */
 const intersectSchemas = (branches: readonly unknown[], depth: number): ShapeType => {
   const fields: Record<string, ShapeType> = {};
   const required = new Set<string>();
+  let described = false;
   for (const branch of branches) {
+    if (!isSchemaObject(branch)) return JSON_SHAPE;
+    // Folded in for EVERY branch, so a constraint-only member still gets to
+    // make a sibling's optional field required.
+    for (const name of Array.isArray(branch.required) ? branch.required : []) {
+      if (typeof name === "string") required.add(name);
+    }
     const shape = shapeFromJsonSchemaAt(branch, depth + 1);
-    if (shape.kind !== "object") return JSON_SHAPE;
+    if (shape.kind !== "object") {
+      if (VALUE_KEYWORDS.some((keyword) => keyword in branch)) return JSON_SHAPE;
+      continue;
+    }
+    described = true;
     const branchOptional = new Set(shape.optional ?? []);
     for (const [name, field] of Object.entries(shape.fields)) {
       defineOwn(fields, name, field);
       if (!branchOptional.has(name)) required.add(name);
     }
   }
+  // Constraints alone describe no fields; closing an empty object here would
+  // refuse every binding through it.
+  if (!described) return JSON_SHAPE;
   const optional = Object.keys(fields).filter((name) => !required.has(name));
   return optional.length > 0 ? { kind: "object", fields, optional } : { kind: "object", fields };
 };

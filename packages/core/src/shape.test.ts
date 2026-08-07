@@ -138,6 +138,32 @@ describe("shapeFromJsonSchema", () => {
   it("degrades an allOf with a non-object member whole", () => {
     expect(shapeFromJsonSchema({ allOf: [{ type: "object", properties: { id: { type: "string" } } }, { type: "string" }] }))
       .toEqual({ kind: "json" });
+    // An unmodelled member is not a constraint either: better unconstrained
+    // than confidently narrow.
+    expect(shapeFromJsonSchema({
+      allOf: [{ type: "object", properties: { id: { type: "string" } } }, { anyOf: [{ type: "string" }, { type: "number" }] }],
+    })).toEqual({ kind: "json" });
+  });
+
+  it("treats a constraint-only allOf branch as a constraint, not an erasure", () => {
+    // The standard OpenAPI idiom: one branch describes, the next only tightens.
+    expect(shapeFromJsonSchema({
+      allOf: [
+        { type: "object", properties: { id: { type: "string" }, note: { type: "string" } } },
+        { required: ["id"] },
+      ],
+    })).toEqual({
+      kind: "object",
+      fields: { id: { kind: "string" }, note: { kind: "string" } },
+      optional: ["note"],
+    });
+    expect(shapeFromJsonSchema({
+      allOf: [{ type: "object", properties: { id: { type: "string" } }, required: ["id"] }, { additionalProperties: false }],
+    })).toEqual({ kind: "object", fields: { id: { kind: "string" } } });
+  });
+
+  it("degrades an allOf of constraints alone rather than closing an empty object", () => {
+    expect(shapeFromJsonSchema({ allOf: [{ required: ["id"] }] })).toEqual({ kind: "json" });
   });
 
   it("degrades unmodelled constructs to json instead of throwing", () => {

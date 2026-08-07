@@ -128,6 +128,13 @@ const zodTypeText = (schema: ZodTypeAny, depth = 0): string => {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+/** Does this schema DESCRIBE a value, or does it only constrain one? Mirrors
+ *  core `shape.ts`'s `VALUE_KEYWORDS` — the two floors walk schemas separately
+ *  by design, but they must agree on which branches of an `allOf` carry shape. */
+const describesAValue = (schema: unknown): boolean =>
+  isRecord(schema)
+  && ["type", "properties", "items", "enum", "const", "allOf", "anyOf", "oneOf", "not", "$ref"].some((key) => key in schema);
+
 /**
  * Two readings of the same JSON Schema, because the two consumers differ:
  *
@@ -160,7 +167,12 @@ const jsonSchemaTypeText = (schema: unknown, reading: SchemaReading, depth = 0):
   // composed response (demo-bank's transfer result) types every binding
   // through it as valid, including fields no branch declares.
   if (Array.isArray(schema.allOf) && schema.allOf.length > 0) {
-    return schema.allOf.map((branch) => jsonSchemaTypeText(branch, reading, depth + 1)).join(" & ");
+    // A branch that only TIGHTENS a sibling (`{ required: [...] }`) types as
+    // `any`, and `T & any` is `any` — it would erase the very intersection it
+    // was constraining, so it is dropped rather than joined. An unmodelled
+    // branch still types as `any` and still collapses it: the safe direction.
+    const parts = schema.allOf.filter(describesAValue).map((branch) => jsonSchemaTypeText(branch, reading, depth + 1));
+    if (parts.length > 0) return parts.join(" & ");
   }
   const type = Array.isArray(schema.type) ? schema.type[0] : schema.type;
   if (type === "string") return "string";
