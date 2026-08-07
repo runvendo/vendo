@@ -7,9 +7,9 @@ generated UI in a sandboxed, brand-native surface.
 ## Layout
 
 - `packages/` — the ten `@vendoai/*` blocks + the `@vendoai/vendo` umbrella and
-  `vendoai` alias, built against the archived contracts in `docs/archive/contracts/`
-  (read `00-overview.md` first); layering enforced by `scripts/dependency-guard.mjs`
-  in `pnpm lint`
+  `vendoai` alias. The behavior contract is the exported types/zod schemas and
+  the test suites — there are no prose contract docs; layering enforced by
+  `scripts/dependency-guard.mjs` in `pnpm lint`
 - `examples/` — the demo host `demo-bank` (Maple) and the framework integration
   examples (`ai-sdk-agent`, `mastra-agent`, `claude-code-plugin`)
 - `corpus/` — init-extraction corpus harness (`pnpm corpus`)
@@ -43,6 +43,8 @@ generated UI in a sandboxed, brand-native surface.
 
 ## Rules
 
+- Answer code-behavior questions from source only — read the definition and
+  its callers, cite `file:line`. Docs and comments are leads, never answers.
 - Use Yousef's Vendo Cloud account for any and all testing.
 - Vendo-facing API/SDK/CLI design additionally routes through the
   **vendo-dx** skill (on top of api-design-dx).

@@ -11,9 +11,9 @@ pnpm test
 ```
 
 Node 22+, pnpm 11. The repo is a turbo monorepo: `packages/` are the published
-`@vendoai/*` libraries, built against the frozen contracts in
-`docs/archive/contracts/` (read `00-overview.md` first; layering is enforced in
-`pnpm lint`). The demo host apps live under `examples/`.
+`@vendoai/*` libraries. The behavior contract is each package's exported
+types/zod schemas and its test suites (layering is enforced in `pnpm lint`).
+The demo host apps live under `examples/`.
 
 ## Making changes
 

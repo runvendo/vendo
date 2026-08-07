@@ -1,4 +1,4 @@
-/** @vendoai/ui — provider, hooks, client (headless, no styles). docs/archive/contracts/08-ui.md */
+/** @vendoai/ui — provider, hooks, client (headless, no styles). */
 export {
   APPROVALS_DECIDED_EVENT,
   createVendoClient,

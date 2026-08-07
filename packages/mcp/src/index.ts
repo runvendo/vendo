@@ -1,8 +1,9 @@
-/** @vendoai/mcp — the door (docs/archive/contracts/10-mcp.md).
+/** @vendoai/mcp — the door.
  *
  * Landed (wave-6 DOOR lane, 2026-07-13): door + OAuth adapter + MCP Apps shim
- * and tests are implemented. The public surface below is the contract's §1
- * verbatim; nothing else is exported from the root.
+ * and tests are implemented. The public surface below is the retired v1
+ * contract's §1 verbatim (in git history); nothing else is exported from the
+ * root.
  */
 export { createMcpDoor } from "./door.js";
 export type { McpDoor, McpDoorConfig, McpRunContext } from "./door.js";

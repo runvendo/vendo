@@ -22,7 +22,7 @@ import { CREATE_VENDO_CONFIG_KEYS, docsTableDiff, tableKeys } from "./config-key
 
 const OPTIONS_PAGE = new URL("../../../docs-site/reference/handler-options.mdx", import.meta.url);
 const MIGRATION_TABLE = new URL(
-  "../../../docs/archive/config-migration-table.md",
+  "../../../docs/config-migration-table.md",
   import.meta.url,
 );
 

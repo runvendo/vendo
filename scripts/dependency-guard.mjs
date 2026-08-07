@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Dependency guard — the wave-3 CI gate (docs/archive/contracts/00-overview.md).
+ * Dependency guard — the wave-3 CI gate.
  *
  * Enforces, for every package in the active workspace (packages/*):
  *
@@ -294,7 +294,7 @@ if (errors.length > 0) {
   console.error("dependency-guard: FAILED\n");
   for (const e of errors) console.error("  ✗ " + e);
   console.error(
-    "\nThe layering contract lives in docs/archive/contracts/00-overview.md (\"The dependency rule\").",
+    "\nThe layering contract is enumerated at the top of scripts/dependency-guard.mjs.",
   );
   process.exit(1);
 }

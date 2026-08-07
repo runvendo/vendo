@@ -7,8 +7,8 @@
  * this seam; a provider adapter may keep it adapter-private for bootstrap and
  * diagnostics. `files` came BACK: a built app's source has to leave the box,
  * and every adapter had grown its own private copy of the same three
- * operations. The v1 seam this replaces is archived in
- * docs/archive/contracts/06-apps.md §3-4.
+ * operations. The v1 seam this replaces is in git history
+ * (docs/archive/contracts/06-apps.md §3-4).
  */
 export interface SandboxAdapter {
   /** Create a machine, optionally from a provider template, with its boundary env. */
