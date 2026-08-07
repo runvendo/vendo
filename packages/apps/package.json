@@ -43,6 +43,10 @@
       "types": "./dist/adapter-conformance.d.ts",
       "default": "./dist/adapter-conformance.js"
     },
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "default": "./dist/testing/index.js"
+    },
     "./internal": {
       "types": "./dist/internal.d.ts",
       "default": "./dist/internal.js"

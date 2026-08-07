@@ -22,60 +22,18 @@
  * never offered, and an ask that needs one comes back as a sentence.
  */
 import { planAutomation, type AutomationPlanInput, type HostToolInfo } from "@vendoai/apps";
+import { scriptedLanguageModel, type ScriptedModelCall } from "@vendoai/apps/testing";
 import { UNATTENDED_DESTRUCTIVE_REASON } from "@vendoai/core";
-import type { LanguageModel } from "ai";
 import { describe, expect, it } from "vitest";
 
 const SEND_TOOL = "host_invoices_send";
 
-interface ModelCall {
-  prompt: Array<{ role: string; content: string | Array<{ type?: string; text?: string }> }>;
-}
-
-const promptText = (call: ModelCall): string => call.prompt
+/** The prompt the planner was asked with, flattened. */
+const promptText = (call: ScriptedModelCall): string => call.prompt
   .map((message) => typeof message.content === "string"
     ? message.content
     : message.content.map((part) => part.text ?? "").join(""))
   .join("\n");
-
-/** Minimal deterministic LanguageModelV2 double — one scripted answer, and the
- *  prompt it was asked with. Local copy for the same reason `ladder.e2e.test.ts`
- *  keeps one: the apps package's own test double is internal to that package. */
-const scriptedModel = (respond: (prompt: string) => string): LanguageModel => {
-  const model = {
-    specificationVersion: "v2" as const,
-    provider: "vendo-scripted",
-    modelId: "vendo-scripted-refusal",
-    supportedUrls: {},
-    async doGenerate(call: ModelCall) {
-      return {
-        content: [{ type: "text" as const, text: respond(promptText(call)) }],
-        finishReason: "stop" as const,
-        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-      };
-    },
-    async doStream(call: ModelCall) {
-      const text = respond(promptText(call));
-      return {
-        stream: new ReadableStream({
-          start(controller) {
-            controller.enqueue({ type: "stream-start", warnings: [] });
-            controller.enqueue({ type: "text-start", id: "text_1" });
-            controller.enqueue({ type: "text-delta", id: "text_1", delta: text });
-            controller.enqueue({ type: "text-end", id: "text_1" });
-            controller.enqueue({
-              type: "finish",
-              finishReason: "stop",
-              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-            });
-            controller.close();
-          },
-        }),
-      };
-    },
-  };
-  return model as unknown as LanguageModel;
-};
 
 const tools: HostToolInfo[] = [
   { name: "host_invoices_list", description: "List invoices", risk: "read" },
@@ -132,7 +90,7 @@ const issuesOf = (result: Awaited<ReturnType<typeof planAutomation>>): string[] 
 
 describe("automation authoring refuses irreversible work", () => {
   it("refuses a steps body that names a destructive send tool, in the person's words", async () => {
-    const result = await planAutomation(stepsInput, scriptedModel(() => readAndSend));
+    const result = await planAutomation(stepsInput, scriptedLanguageModel(readAndSend));
 
     const refusal = issuesOf(result).find((issue) => issue.includes(SEND_TOOL));
     expect(refusal).toBeDefined();
@@ -144,7 +102,8 @@ describe("automation authoring refuses irreversible work", () => {
 
   it("never offers the destructive tool to the model in the first place", async () => {
     const offered: string[] = [];
-    const model = scriptedModel((prompt) => {
+    const model = scriptedLanguageModel((call) => {
+      const prompt = promptText(call);
       offered.push(prompt);
       return readAndPublish;
     });
@@ -172,7 +131,7 @@ describe("automation authoring refuses irreversible work", () => {
 
     const result = await planAutomation(
       { ...stepsInput, mode: "agentic" },
-      scriptedModel(() => agentic),
+      scriptedLanguageModel(agentic),
     );
 
     const refusal = issuesOf(result).find((issue) => issue.includes(SEND_TOOL));
@@ -181,7 +140,7 @@ describe("automation authoring refuses irreversible work", () => {
   });
 
   it("still accepts the away-safe version of the same ask — read, then publish", async () => {
-    const result = await planAutomation(stepsInput, scriptedModel(() => readAndPublish));
+    const result = await planAutomation(stepsInput, scriptedLanguageModel(readAndPublish));
 
     expect(result.kind).toBe("plan");
     if (result.kind !== "plan") return;

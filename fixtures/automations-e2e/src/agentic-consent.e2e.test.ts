@@ -15,8 +15,8 @@
  *     can never happen is a false choice, not consent.
  */
 import { planAutomation, type HostToolInfo } from "@vendoai/apps";
+import { scriptedLanguageModel } from "@vendoai/apps/testing";
 import { withheldFromUnattended, type ToolDescriptor } from "@vendoai/core";
-import type { LanguageModel } from "ai";
 import { beforeEach, describe, expect, it } from "vitest";
 import { automationDoc, createStack, hostTools, ownerCtx, resetFixture } from "./harness.js";
 import { ADA } from "./support.js";
@@ -39,32 +39,6 @@ const descriptorFor = (name: string): ToolDescriptor => {
     risk: tool.risk as ToolDescriptor["risk"],
   };
 };
-
-/** One scripted turn, streamed the way `askModel` consumes it. */
-const scriptedModel = (answer: string): LanguageModel => ({
-  specificationVersion: "v2",
-  provider: "vendo-fixture",
-  modelId: "vendo-fixture-v1",
-  supportedUrls: {},
-  async doStream() {
-    return {
-      stream: new ReadableStream({
-        start(controller) {
-          controller.enqueue({ type: "stream-start", warnings: [] });
-          controller.enqueue({ type: "text-start", id: "text_1" });
-          controller.enqueue({ type: "text-delta", id: "text_1", delta: answer });
-          controller.enqueue({ type: "text-end", id: "text_1" });
-          controller.enqueue({
-            type: "finish",
-            finishReason: "stop",
-            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-          });
-          controller.close();
-        },
-      }),
-    };
-  },
-} as unknown as LanguageModel);
 
 /** What the planner is asked for, in the words the finding used: a judgment run
  *  that READS and WRITES A NOTE. It reaches two tools; the app is bound to six. */
@@ -97,7 +71,7 @@ describe("agentic consent surface", () => {
       instruction: REVIEW_INSTRUCTION,
       mode: "agentic",
       tools: plannerTools,
-    }, scriptedModel(REVIEW_PLAN));
+    }, scriptedLanguageModel(REVIEW_PLAN));
 
     if (planned.kind !== "plan") throw new Error(`planning failed: ${planned.issues.join(" | ")}`);
     const { run } = planned.plan.trigger;

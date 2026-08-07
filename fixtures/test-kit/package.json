@@ -1,0 +1,29 @@
+{
+  "name": "@vendoai-fixtures/test-kit",
+  "version": "0.0.0",
+  "description": "Test helpers shared by more than one suite. Private: never published, never a runtime dependency.",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./node-bridge": {
+      "types": "./dist/node-bridge.d.ts",
+      "default": "./dist/node-bridge.js"
+    },
+    "./stream-turns": {
+      "types": "./dist/stream-turns.d.ts",
+      "default": "./dist/stream-turns.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "peerDependencies": {
+    "ai": ">=6.0.0 <7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "ai": "6.0.28",
+    "typescript": "^5.6.0"
+  }
+}

@@ -7,9 +7,10 @@
  * packages/vendo/src/knowledge-governance.test.ts.
  */
 import { mkdtemp, rm } from "node:fs/promises";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { nodeBridge } from "@vendoai-fixtures/test-kit/node-bridge";
 import { memoryKnowledgeAdapter } from "@vendoai/core/conformance";
 import type { Principal } from "@vendoai/core";
 import type { HostOAuthAdapter } from "@vendoai/mcp";
@@ -85,7 +86,7 @@ async function createKnowledgeUmbrella(): Promise<Umbrella> {
     }),
   };
   let handler: Vendo["handler"] | undefined;
-  const httpServer = createServer((req, res) => void bridge(req, res, (request) => handler!(request)));
+  const httpServer = createServer((req, res) => void nodeBridge(req, res, (request) => handler!(request)));
   await new Promise<void>((resolve, reject) => {
     httpServer.once("error", reject);
     httpServer.listen(0, "127.0.0.1", () => {
@@ -137,34 +138,3 @@ describe("visibility governance — MCP leg (k8 T5)", () => {
     }
   });
 });
-
-async function bridge(
-  req: IncomingMessage,
-  res: ServerResponse,
-  handler: (request: Request) => Promise<Response>,
-): Promise<void> {
-  try {
-    const chunks: Buffer[] = [];
-    for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-    const host = req.headers.host ?? "127.0.0.1";
-    const headers = new Headers();
-    for (const [name, value] of Object.entries(req.headers)) {
-      if (value === undefined) continue;
-      headers.set(name, Array.isArray(value) ? value.join(", ") : value);
-    }
-    const body = chunks.length === 0 ? undefined : Buffer.concat(chunks);
-    const request = new Request(`http://${host}${req.url ?? "/"}`, {
-      method: req.method,
-      headers,
-      ...(body === undefined ? {} : { body }),
-    });
-    const response = await handler(request);
-    res.statusCode = response.status;
-    response.headers.forEach((value, name) => res.setHeader(name, value));
-    res.end(Buffer.from(await response.arrayBuffer()));
-  } catch (error) {
-    res.statusCode = 500;
-    res.setHeader("content-type", "text/plain");
-    res.end(error instanceof Error ? error.message : "knowledge umbrella bridge failed");
-  }
-}

@@ -606,6 +606,9 @@ importers:
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.0
+      '@vendoai-fixtures/test-kit':
+        specifier: workspace:*
+        version: link:../test-kit
       ai:
         specifier: ^6.0.0
         version: 6.0.28(zod@3.25.76)
@@ -704,6 +707,9 @@ importers:
       '@types/pg':
         specifier: ^8.11.10
         version: 8.20.0
+      '@vendoai-fixtures/test-kit':
+        specifier: workspace:*
+        version: link:../test-kit
       pg:
         specifier: ^8.22.0
         version: 8.22.0
@@ -764,6 +770,18 @@ importers:
       vitest:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.20.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(lightningcss@1.32.0)(terser@5.48.0)
+
+  fixtures/test-kit:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.0
+      ai:
+        specifier: 6.0.28
+        version: 6.0.28(zod@4.4.3)
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
 
   packages/actions:
     dependencies:
@@ -8321,6 +8339,13 @@ snapshots:
       '@vercel/oidc': 3.1.0
       zod: 3.25.76
 
+  '@ai-sdk/gateway@3.0.11(zod@4.4.3)':
+    dependencies:
+      '@ai-sdk/provider': 3.0.2
+      '@ai-sdk/provider-utils': 4.0.4(zod@4.4.3)
+      '@vercel/oidc': 3.1.0
+      zod: 4.4.3
+
   '@ai-sdk/gateway@3.0.151(zod@3.25.76)':
     dependencies:
       '@ai-sdk/provider': 3.0.14
@@ -8381,6 +8406,13 @@ snapshots:
       '@standard-schema/spec': 1.1.0
       eventsource-parser: 3.1.0
       zod: 3.25.76
+
+  '@ai-sdk/provider-utils@4.0.4(zod@4.4.3)':
+    dependencies:
+      '@ai-sdk/provider': 3.0.2
+      '@standard-schema/spec': 1.1.0
+      eventsource-parser: 3.1.0
+      zod: 4.4.3
 
   '@ai-sdk/provider-utils@4.0.40(zod@3.25.76)':
     dependencies:
@@ -11171,6 +11203,14 @@ snapshots:
       '@ai-sdk/provider-utils': 4.0.4(zod@3.25.76)
       '@opentelemetry/api': 1.9.0
       zod: 3.25.76
+
+  ai@6.0.28(zod@4.4.3):
+    dependencies:
+      '@ai-sdk/gateway': 3.0.11(zod@4.4.3)
+      '@ai-sdk/provider': 3.0.2
+      '@ai-sdk/provider-utils': 4.0.4(zod@4.4.3)
+      '@opentelemetry/api': 1.9.0
+      zod: 4.4.3
 
   ajv-formats@3.0.1(ajv@8.20.0):
     optionalDependencies:
