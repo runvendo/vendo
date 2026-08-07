@@ -27,10 +27,18 @@ describe("resolveDevCredential (real keys only)", () => {
       .toEqual({ rung: "none" });
   });
 
-  it("VENDO_DEV_CREDENTIAL pins a rung; a pinned env-key without its key degrades to none", async () => {
+  it("VENDO_DEV_CREDENTIAL pins a rung; a pin whose key is missing degrades to none", async () => {
+    expect(await resolveDevCredential({
+      env: { VENDO_DEV_CREDENTIAL: "vendo-cloud", VENDO_API_KEY: "vnd_x", ANTHROPIC_API_KEY: "sk-1" },
+    })).toEqual({ rung: "vendo-cloud" });
+
+    // Without VENDO_API_KEY the cloud rung cannot resolve. It must degrade like
+    // the env-key pin below, not hand the Cloud gateway an undefined apiKey —
+    // @ai-sdk/anthropic then falls back to process.env.ANTHROPIC_API_KEY and
+    // sends the host's own provider key to a third-party origin.
     expect(await resolveDevCredential({
       env: { VENDO_DEV_CREDENTIAL: "vendo-cloud", ANTHROPIC_API_KEY: "sk-1" },
-    })).toEqual({ rung: "vendo-cloud" });
+    })).toEqual({ rung: "none" });
 
     expect(await resolveDevCredential({
       env: { VENDO_DEV_CREDENTIAL: "env-key:openai", OPENAI_API_KEY: "sk-2", ANTHROPIC_API_KEY: "sk-1" },

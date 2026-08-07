@@ -1,4 +1,4 @@
-import { VENDO_TOOL_TITLES, type RunContext } from "@vendoai/core";
+import { VENDO_TOOL_TITLES, VendoError, type RunContext } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { VENDO_VERB_TOOLS, vendoVerbsRegistry } from "./vendo-verbs.js";
 
@@ -103,6 +103,24 @@ describe("the vendo verbs are projected as ordinary tools (design §4)", () => {
     expect(outcome.status).toBe("error");
     expect(JSON.stringify(outcome)).not.toContain("Cannot read properties");
     expect(JSON.stringify(outcome)).not.toContain("TypeError");
+  });
+
+  it("forwards a VendoError's own code and message — those are written for the model", async () => {
+    // The ports raise authored, actionable refusals ("app X has no schedule to
+    // change. Ask for the automation itself first…"). Flattening those into
+    // "could not complete. Try again" tells the model to retry a call that can
+    // never succeed. Masking is for the errors nobody wrote for a reader.
+    const registry = vendoVerbsRegistry(ports({
+      schedule: async () => {
+        throw new VendoError("validation", "app app_1 has no schedule to change. Ask for the automation itself first.");
+      },
+    }));
+
+    const outcome = await registry.execute(call("schedule", { appId: "app_1", cron: "0 8 * * *" }), ctx());
+
+    expect(outcome.status).toBe("error");
+    expect(JSON.stringify(outcome)).toContain("Ask for the automation itself first");
+    expect(JSON.stringify(outcome)).toContain("validation");
   });
 
   it("refuses an unknown verb instead of silently succeeding", async () => {

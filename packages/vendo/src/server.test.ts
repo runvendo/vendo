@@ -3750,6 +3750,31 @@ describe("unified try surface (Task 15a) — in-memory profile", () => {
     expect(content).toContain("Product\nDisk brief for the profile seam.");
   });
 
+  it("a profileDir pointing AT the .vendo directory resolves every surface, not just tools.json", async () => {
+    // `vendoDirOf` exists because a gate that always appends `/.vendo/` reads
+    // nothing at all when profileDir already names it. The actions registry
+    // honours that rule; the surface reader must too, or theme, brief, catalog
+    // and knowledge all silently resolve to `.vendo/.vendo/…` and disappear.
+    const root = await diskProfile();
+    const store = await tempStore("vendo-profile-dotdir-store-");
+    const { model, prompts } = await promptCapture();
+
+    const vendo = createVendo({
+      model,
+      principal: async () => principal,
+      store,
+      profileDir: join(root, ".vendo"),
+    });
+
+    const names = (await vendo.actions.descriptors()).map((descriptor) => descriptor.name);
+    expect(names).toContain("host_from_disk");
+
+    await runTurn(vendo, "thr_profile_dotdir");
+    const content = systemContent(prompts);
+    expect(content).toContain("Disk Grotesk");
+    expect(content).toContain("Product\nDisk brief for the profile seam.");
+  });
+
   it("workerd portability regression: profile.tools skips the tools.json disk read entirely (a malformed file there is never opened)", async () => {
     // Reproduces the real-workerd failure class's PRIMARY fix: a supplied
     // in-memory profile piece must make the disk leg never run at all.

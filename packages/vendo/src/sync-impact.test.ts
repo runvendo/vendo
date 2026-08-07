@@ -101,6 +101,36 @@ describe("computeImpact", () => {
     ]);
   });
 
+  it("counts the tools an island's generated SOURCE calls, not just the tree's queries", async () => {
+    const store = await setup();
+    // `componentTools` is the compiler-stamped manifest of what each generated
+    // island's code calls through the ambient `tools` API — calls that by
+    // construction never appear in tree.queries or node props. Missing it makes
+    // `vendo sync` answer "no saved references" for a tool live apps call.
+    await appStore(store).put(principal, {
+      format: VENDO_APP_FORMAT,
+      id: "app_island",
+      name: "Island dashboard",
+      ui: "tree",
+      tree: {
+        formatVersion: VENDO_TREE_FORMAT,
+        root: "root",
+        nodes: [{ id: "root", component: "OrdersPanel", props: {} }],
+        queries: [],
+      },
+      componentTools: { OrdersPanel: ["host_get_orders"] },
+    });
+
+    await expect(computeImpact(store, ["host_get_orders"])).resolves.toEqual([
+      {
+        tool: "host_get_orders",
+        apps: [{ id: "app_island", title: "Island dashboard" }],
+        automations: [],
+        grants: 0,
+      },
+    ]);
+  });
+
   it("counts a pre-list automation, whose document still carries the single `trigger`", async () => {
     const store = await setup();
     // Raw SQL on purpose: the record door normalizes a document on the way IN, so

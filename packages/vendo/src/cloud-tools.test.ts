@@ -53,6 +53,28 @@ describe("cloudTools", () => {
     expect(stub.requests[0]!.url).toBe("https://cloud.test/api/v1/tools?toolkits=gmail%2Cslack");
   });
 
+  it("skips a duplicate tool name instead of failing the whole registry load", async () => {
+    // A thrown descriptors() takes the ENTIRE registry down, host tools
+    // included, and this connector is auto-composed from a bare VENDO_API_KEY.
+    // One repeated slug from the console must not delete the host's own tools.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const stub = consoleStub(() => ({ body: { tools: [GMAIL_TOOL, GMAIL_TOOL] } }));
+      const connector = cloudTools({ apiKey: "vnd_key", baseUrl: "https://cloud.test", apps: ["gmail"], fetch: stub.fetchImpl });
+      const descriptors = await connector.descriptors();
+      expect(descriptors.map((descriptor) => descriptor.name)).toEqual(["gmail_GMAIL_SEND_EMAIL"]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("dedupes repeated toolkits so the broker is not asked for the same list twice", async () => {
+    const stub = consoleStub(() => ({ body: { tools: [] } }));
+    const connector = cloudTools({ apiKey: "vnd_key", baseUrl: "https://cloud.test", apps: ["gmail", "gmail"], fetch: stub.fetchImpl });
+    await connector.descriptors();
+    expect(stub.requests[0]!.url).toBe("https://cloud.test/api/v1/tools?toolkits=gmail");
+  });
+
   it("degrades to zero tools (never throws) when the broker is missing or unconfigured", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {

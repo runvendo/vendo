@@ -68,6 +68,17 @@ describe("§9.8 — the served proxy forwards the whole request line", () => {
     expect(seen[0]?.path).toBe("/");
   });
 
+  it("keeps percent-encoding intact instead of decoding it into separators", async () => {
+    // The forwarded path is concatenated straight into the box's fetch URL, so
+    // a decoded segment rewrites the request: %2F becomes a path separator and
+    // %3F starts a query the caller never sent.
+    const { wire, seen } = wireFor(
+      "https://maple.test/api/vendo/apps/app_1/serve/files/a%2Fb%3Fc",
+    );
+    await dispatchRoutes(servedProxyRoutes, wire);
+    expect(seen[0]?.path).toBe("/files/a%2Fb%3Fc");
+  });
+
   it("still forwards the PAYLOAD only — no cookie, authorization or host header", async () => {
     const { wire, seen } = wireFor("https://maple.test/api/vendo/apps/app_1/serve/save?id=7", "POST");
     await dispatchRoutes(servedProxyRoutes, wire);
