@@ -11,7 +11,10 @@ export interface VendoWiring {
       provider that renders nothing (0.4.1 E2E cert B3: by-the-book installs
       ended doctor-green with nothing on screen). */
   surface: boolean;
-  /** The host still names the removed <VendoRoot> — doctor prints the swap. */
+  /** The host still uses the removed <VendoRoot> — doctor prints the swap. The
+      NAME alone is not evidence: a host's own wrapper component may be called
+      VendoRoot (Maple's is), so this is the import from @vendoai, or the tag
+      with no <VendoProvider> anywhere in the source. */
   legacyRoot: boolean;
 }
 
@@ -33,6 +36,10 @@ export const SURFACE_MARKERS: readonly string[] = [
   "useVendoThread(",
   "useSlotApp(",
 ];
+
+/** `import { …, VendoRoot, … } from "@vendoai/…"` — the removed export taken
+    from the package, which is the only spelling that can no longer resolve. */
+const LEGACY_ROOT_IMPORT = /import\s*\{[^}]*\bVendoRoot\b[^}]*\}\s*from\s*["']@vendoai\//;
 
 const SOURCE_FILE = /\.(?:[cm]?[jt]sx?)$/;
 const SOURCE_SCAN_MAX_FILES = 2_000;
@@ -74,18 +81,25 @@ export async function workspaceHostCandidates(root: string): Promise<string[]> {
     agree. */
 export async function detectVendoWiring(root: string): Promise<VendoWiring> {
   let server = false;
-  let client = false;
+  let provider = false;
+  let legacyTag = false;
+  let legacyImport = false;
   let surface = false;
-  let legacyRoot = false;
   const files = await walk(root, (relativePath) => SOURCE_FILE.test(relativePath), SOURCE_SCAN_MAX_FILES);
   for (const file of files) {
     const source = await readFile(file, "utf8").catch(() => "");
     const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
     if (code.includes("@vendoai/vendo/server") && /\bcreateVendo\s*\(/.test(code)) server = true;
-    if (code.includes("<VendoProvider")) client = true;
-    if (code.includes("<VendoRoot")) { client = true; legacyRoot = true; }
+    if (code.includes("<VendoProvider")) provider = true;
+    if (code.includes("<VendoRoot")) legacyTag = true;
+    if (LEGACY_ROOT_IMPORT.test(code)) legacyImport = true;
     if (SURFACE_MARKERS.some((marker) => code.includes(marker))) surface = true;
-    if (server && client && surface) break;
+    if (server && provider && surface) break;
   }
-  return { server, client, surface, legacyRoot };
+  return {
+    server,
+    client: provider || legacyTag,
+    surface,
+    legacyRoot: legacyImport || (legacyTag && !provider),
+  };
 }

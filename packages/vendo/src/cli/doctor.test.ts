@@ -1510,6 +1510,24 @@ describe("vendo doctor error codes + fix_refs", () => {
     });
   });
 
+  /** …and a host whose OWN component happens to be named VendoRoot is not
+      carrying anything legacy: Maple's src/components/vendo/VendoRoot.tsx is a
+      local wrapper around <VendoProvider>, and a healthy install was told to
+      swap a component Vendo never shipped it. The name alone proves nothing —
+      the import source and the missing provider do. */
+  it("stays silent on a local component merely NAMED VendoRoot that wraps <VendoProvider>", async () => {
+    const root = await healthy();
+    await mkdir(join(root, "components"), { recursive: true });
+    await writeFile(join(root, "components", "VendoRoot.tsx"),
+      "\"use client\";\nimport { VendoProvider } from \"@vendoai/vendo/react\";\n"
+      + "export function VendoRoot({children}) { return <VendoProvider baseUrl=\"/api/vendo\">{children}</VendoProvider>; }");
+    await writeFile(join(root, "app", "layout.tsx"),
+      "import { VendoRoot } from \"@/components/VendoRoot\";\n"
+      + "export default ({children}) => <VendoRoot>{children}<VendoOverlay /></VendoRoot>;");
+    const { report } = await jsonChecks({ targetDir: root, fetchImpl: successfulProbeFetch() });
+    expect(report.checks.find((check) => check.id === "wiring/vendo-root")).toBeUndefined();
+  });
+
   it("accepts a BYO embed (<VendoToolResult>) as the visible surface", async () => {
     const root = await healthy();
     await writeFile(join(root, "app", "layout.tsx"),
