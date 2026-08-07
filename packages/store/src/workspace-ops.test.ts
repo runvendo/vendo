@@ -228,6 +228,29 @@ for (const backend of backends()) {
       expect(await (await hosted().open(dana)).readFile(path)).toBe("dana v1");
     });
 
+    /** `workspaceRows.undo` pops the NEWEST superseded revision at a path, and
+        nothing checked that the revision belonged to the commit being undone.
+        So undoing an older commit walked back the NEWER commit's write — and
+        that write has no history row behind it (undo has no redo), so its
+        content was gone for good, while the ledger kept the newer commit and
+        dropped the older one it never actually undid. */
+    it("refuses to undo a commit a later one has already built on", async () => {
+      const path = "/user/stacked/notes.md";
+      const ops = createStoreOps(made.store);
+      for (const [key, data] of [["s0", "zero"], ["s1", "one"], ["s2", "two"]] as const) {
+        await ops.workspace.commit([{ path, data }], { owner: "dana", idempotencyKey: key });
+      }
+
+      await expect(ops.workspace.undo("wsc_key_s1", { owner: "dana" }))
+        .rejects.toBeInstanceOf(VendoError);
+      // The newest commit's content is what it was, and still the live version.
+      expect(await (await hosted().open(dana)).readFile(path)).toBe("two");
+      // And the commit it refused is still on the ledger, undoable in order.
+      const ledger = await ops.workspace.history({ owner: "dana", path });
+      expect((ledger.entries as { commitId: string }[]).map((entry) => entry.commitId))
+        .toContain("wsc_key_s1");
+    });
+
     it("still refuses to move an app between mounts — that runs server-side", async () => {
       await expect(
         hosted().moveApp("app_1", { kind: "user", subject: "dana" }, { kind: "org", org: "acme" }),
