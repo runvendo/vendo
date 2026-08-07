@@ -7,37 +7,24 @@ export function partData(part: UIMessage["parts"][number]): unknown {
   return "data" in part ? part.data : part;
 }
 
-/** ENG-214 — the marker the agent's `wireErrorMessage` puts on its OWN safe
- * error text (VendoError code + operator-crafted message). Only prefixed
- * strings may be shown in detail to an end user; raw transport/provider
- * strings never carry it. Read by both error surfaces (the banner and the
- * in-thread turn-error part). */
+/** The marker the agent's `wireErrorMessage` puts on its OWN safe error text
+ * (VendoError code + operator-crafted message). Only prefixed strings may be
+ * shown in detail to an end user; raw transport/provider strings never carry
+ * it. Read by both error surfaces (the banner and the turn-error part). */
 export const VENDO_ERROR_PREFIX = "Vendo: ";
 
 /**
- * CR-3 — what a PERSON is told about a broken turn, BY CODE.
+ * What a PERSON is told about a broken turn, BY CODE.
  *
- * The `"Vendo: "` marker says a sentence is safe to put on the WIRE (it is
- * ours, not the provider's). It has never said the sentence was written for a
- * reader, and mostly it was not: `packages/vendo/src/sandbox.ts` raises
- * `Vendo Cloud sandbox sbx_… is gone (destroyed by the provider): <raw provider
- * message>` — an id AND a nested exception, inside a conversation — and
- * demo/dev refusals name shell commands ("Run `vendo login` for a free dev
- * key"). Prefix-only was therefore a hole exactly as wide as the set of
- * sentences our own code raises.
+ * The `"Vendo: "` marker only says a sentence is safe to put on the WIRE — not
+ * that it was written for a reader. Our own code raises sandbox ids, nested
+ * provider exceptions and shell commands behind that marker, so the reader gets
+ * copy chosen by the VendoError CODE instead and the operator's sentence is
+ * never printed (it keeps the server log and the console line
+ * `wireErrorMessage` writes).
  *
- * So the reader gets copy chosen by the VendoError CODE, exactly the
- * `refusalCopy` pattern the consent cards use, and the operator's sentence is
- * never printed. Ruling 14 rules out re-using `consumerVoiceViolation` as a
- * runtime gate: a regex set cannot decide what a person may read.
- *
- * One exception, named and narrow: 01-core's `formatMeterExhausted` composes a
- * sentence that IS consumer copy (Pricing v3 §5 — the meter, the figures, the
- * reset date and the two exits, all from structured fields). It survives
- * verbatim, recognized by the head that function always writes.
- *
- * The code and the operator's own sentence keep the home they already have:
- * the server log and the browser console line `wireErrorMessage` writes.
+ * One exception: core's `formatMeterExhausted` composes a sentence that IS
+ * consumer copy, recognized by the head that function always writes.
  */
 const TURN_ERROR_COPY: Record<VendoErrorCode, string> = {
   validation: "I couldn’t make that request work — nothing was changed. Ask again and I’ll try a different approach.",
@@ -76,39 +63,26 @@ export function turnErrorSentence(message: string | undefined): string | undefin
 }
 
 /**
- * Spec §15 + §16 law 3 — what a PERSON is told when an app build fails.
+ * What a PERSON is told when an app build fails.
  *
- * The wire's `reason` is the runtime's classified, provider-safe line, and
- * provider-safe is not the same as the reader's language: it is written for
- * whoever can FIX the build. The wave E2E photographed all of it in a real
- * user's thread — the honesty gate's teaching sentence names components and
- * expressions (`amount / sum(spending.data.amount)`), the no-model-key lines
- * name environment variables and npm packages, the watchdog line says to check
- * the host server log. Same class as the slot's `loadFailureCopy`, so the same
- * answer: the developer sentence keeps the home it already has (the server logs
- * it in full with every blocking finding — `[vendo] app build failed (app_…)`,
- * apps/runtime.ts), and the person gets §15's standing copy law — what happened
- * · nothing was changed · what happens next.
+ * The wire's `reason` is written for whoever can FIX the build — it names
+ * components, expressions, environment variables and npm packages — so it stays
+ * in the server log and the person gets this instead.
  *
- * ONE sentence for every class, deliberately. Splitting the copy by the
- * runtime's classification was tried and reverted on live evidence: the
- * classifier is a substring scan over the concatenated findings
- * (`buildFailureReason`), and `host_listScheduledPayments` in a finding's tool
- * inventory contains "payment", so an ordinary validation failure is persisted
- * as "quota exhausted" (observed 2026-08-03, fix-defects proof). Copy that
- * branches on an unreliable label just tells a different lie — "try again
- * later" for a build that will fail identically. Asking again is true and
- * harmless for every class, so that is what it says.
+ * ONE sentence for every failure class, deliberately: the runtime's
+ * classification is a substring scan over the concatenated findings, so
+ * `host_listScheduledPayments` in a tool inventory makes an ordinary validation
+ * failure read as "quota exhausted". Copy that branches on an unreliable label
+ * just tells a different lie. Asking again is true for every class.
  */
 export const BUILD_FAILURE_COPY =
   "I couldn't finish building that view — nothing was changed."
   + " Ask again and I'll try a different approach.";
 
-// ENG-216 — a stable placeholder for the in-thread synthesized ApprovalRequest's
-// required `createdAt`. The wire approval part carries no timestamp; this value
-// is never displayed (the card hides the context byline in-thread) and a fixed
-// constant replaces the former per-render `new Date()` that churned on every
-// re-render and broke deterministic tests.
+// A stable placeholder for the in-thread synthesized ApprovalRequest's required
+// `createdAt`: the wire approval part carries no timestamp, and the value is
+// never displayed (the card hides the context byline in-thread). Fixed, not
+// `new Date()`, so it does not churn on every re-render.
 export const SYNTHESIZED_CREATED_AT = "1970-01-01T00:00:00.000Z";
 
 export function riskByCall(messages: UIMessage[]): Map<string, RiskLabel> {
@@ -128,10 +102,10 @@ export function riskByCall(messages: UIMessage[]): Map<string, RiskLabel> {
 /** Guard approval metadata by tool call — carried in the data-vendo-approval
     part beside the native ai-SDK approval (whose own id is transport-local).
 
-    spec §16 law 2 — `descriptor` rides here too when the server has one: the
-    §16 parts are `.passthrough()`, so a newer server can send the declared
+    `descriptor` rides here too when the server has one: the wire parts are
+    `.passthrough()`, so a newer server can send the declared
     schema/title/description with the ask and an older one simply omits it
-    (buildApprovalRequest degrades to host ToolMeta). */
+    (buildApprovalRequest then degrades to host ToolMeta). */
 export function approvalByCall(messages: UIMessage[]): Map<string, ApprovalWireMeta> {
   const approvals = new Map<string, ApprovalWireMeta>();
   for (const message of messages) {
@@ -197,19 +171,17 @@ export function grantSetByCall(messages: UIMessage[]): Map<string, {
   return sets;
 }
 
-/** Knowledge K1 — what a turn's `data-vendo-citations` parts add up to.
-    Chips render only ANSWERED citations (a refusal's weak hits stay off the
-    chip row — mockup state 2 shows the searched-line alone); the flags carry
-    the refusal/outage states. */
+/** What a turn's `data-vendo-citations` parts add up to. Chips render only
+    ANSWERED citations (a refusal's weak hits stay off the chip row); the flags
+    carry the refusal/outage states. */
 export interface TurnKnowledgeSources {
   citations: VendoKnowledgeCitation[];
   refused: boolean;
   unavailable: boolean;
 }
 
-/** Knowledge K1 (pattern: approvalByCall) — fold a turn's citations parts
-    into the one summary TurnCitations renders, deduped by doc+chunk across
-    multiple knowledge calls in the same turn. */
+/** Fold a turn's citations parts into the one summary TurnCitations renders,
+    deduped by doc+chunk across multiple knowledge calls in the same turn. */
 export function sourcesFor(message: UIMessage): TurnKnowledgeSources {
   const citations: VendoKnowledgeCitation[] = [];
   const seen = new Set<string>();
@@ -264,7 +236,7 @@ function toolSignature(part: Extract<UIMessage["parts"][number], { toolCallId: s
   return `${toolName(part)}::${serialized}`;
 }
 
-/** ENG-216 — collapse runs of consecutive identical tool chips (e.g. eight
+/** Collapse runs of consecutive identical tool chips (e.g. eight
     `host_listClientDocuments` calls) into one entry carrying a count. The
     latest part in the run is kept so the chip icon reflects the final state. */
 export function collapseToolRuns(
@@ -298,40 +270,35 @@ export function toolCallPending(part: UIMessage["parts"][number]): boolean {
     && part.state !== "output-denied";
 }
 
-/** Spec §15 — a failed or declined call is CONTENT, not progress: its beat
-    stays visible after the turn folds, and it never counts as a thing the agent
-    did. Everything else is progress, and progress folds into the summary. */
+/** A failed or declined call is CONTENT, not progress: its beat stays visible
+    after the turn folds, and it never counts as a thing the agent did.
+    Everything else is progress, and progress folds into the summary. */
 export function toolCallIsContent(part: UIMessage["parts"][number]): boolean {
   return isToolUIPart(part)
     && (part.state === "output-error" || part.state === "output-denied");
 }
 
-/** Spec §8 D1 — the app-building call this turn's app card is narrating. The
-    card bar narrates that step ("Building your view…" → the app's name), so a
-    beat beside it would narrate the same work twice; the settled summary still
-    counts it. Recognized exactly the way the server decides to emit the view
-    part (06-apps §1: the apps tool namespace + a tree surface), never by
-    duck-typing an arbitrary tool's output.
+/** The app-building call this turn's app card is narrating. The card bar
+    narrates that step ("Building your view…" → the app's name), so a beat
+    beside it would narrate the same work twice; the settled summary still
+    counts it. Recognized the way the server decides to emit the view part (the
+    apps tool namespace + a tree surface), never by duck-typing an output.
 
-    Wave E2E defect D1 — the card goes up at build START (`vendo_make` is the one
-    tool that streams partial views through the VENDO_VIEW_STREAM bridge), so
-    checking only the RESULT left the whole build window narrating twice: a
-    "Build an app…" beat above a bar already saying "Building your view…". The
-    running build is therefore recognized by tool IDENTITY, before its output
-    exists. No other apps tool streams a partial view, so for the rest the beat
-    is the only narration until their tree lands — and a build that is parked on
-    an approval or has FAILED is narrated by no card at all, so its beat is the
-    whole record (§15). */
+    A running `vendo_make` is recognized by tool IDENTITY, before its output
+    exists: it is the one tool that streams partial views, so the card is
+    already up during the build window. No other apps tool streams a partial
+    view, so for the rest the beat is the only narration until their tree lands
+    — and a build parked on an approval or FAILED has no card, so its beat is
+    the whole record. */
 export function narratedByAppCard(
   part: UIMessage["parts"][number],
   siblingParts: UIMessage["parts"],
 ): boolean {
   if (!isToolUIPart(part)) return false;
-  // M20 — a build that FAILED terminally narrates through its own block (the
-  // `data-vendo-build-failed` part: a ✕ beat reading "Couldn't build the app"
-  // plus what it means for the reader). The failed call's own ✕ beat sat right
-  // above it, so one failure printed two ✕ lines. The part names the call it
-  // is about, so the suppression is exact rather than a guess by tool identity.
+  // A build that FAILED terminally narrates through its own
+  // `data-vendo-build-failed` block, so the failed call's own ✕ beat would
+  // print a second ✕ line. The part names the call it is about, so the
+  // suppression is exact rather than a guess by tool identity.
   const failed = siblingParts.some(sibling => sibling.type === "data-vendo-build-failed"
     && (partData(sibling) as { toolCallId?: unknown; reason?: unknown }).toolCallId === part.toolCallId
     && typeof (partData(sibling) as { reason?: unknown }).reason === "string");
@@ -342,12 +309,9 @@ export function narratedByAppCard(
   if (name === VENDO_MAKE_TOOL) {
     if (building) return true;
     if (part.state !== "output-available") return false;
-    // A SETTLED build used to be recognized by its output carrying a tree.
-    // `vendo_make` answers with a `MakeReceipt` — four fields of words — so that
-    // test can never match again, and leaving it would have printed a "Make you
-    // a screen" ✓ beat beside the very card it describes. The card's own part on
-    // the wire is the test now, which is exact rather than a guess: if the view
-    // is there, the card is what the reader is looking at.
+    // `vendo_make` answers with a `MakeReceipt` — words, no tree — so a settled
+    // build cannot be recognized by its output. The card's own part on the wire
+    // is the test: if the view is there, that is what the reader is looking at.
     return siblingParts.some(sibling => sibling.type === "data-vendo-view");
   }
   if (part.state !== "output-available") return false;
@@ -357,13 +321,12 @@ export function narratedByAppCard(
 }
 
 /**
- * LEAK 4's grounding carrier (spec §16 law 3): a text part the MODEL reads and
- * the person never sees. An affordance that opens the conversation about a
- * specific thing (the ✦ remix popover) has to tell the agent WHICH thing, and
- * the identifier for it is an app id — our plumbing, not something a person
- * types or reads. So it rides the sent message as its own text part, marked
- * here; the transcript skips it and `userText` (which seeds "edit last
- * message") leaves it out, so it stays out of every surface a person touches.
+ * The grounding carrier: a text part the MODEL reads and the person never sees.
+ * An affordance that opens the conversation about a specific thing (the ✦ remix
+ * popover) has to tell the agent WHICH thing, and the identifier is an app id —
+ * plumbing, not something a person types or reads. So it rides the sent message
+ * as its own marked text part; the transcript skips it and `userText` (which
+ * seeds "edit last message") leaves it out.
  *
  * A text part is the carrier because it is the ONLY channel that reaches the
  * model: `convertToModelMessages` keeps text and drops metadata and data parts.
@@ -371,20 +334,14 @@ export function narratedByAppCard(
 export const AGENT_CONTEXT_METADATA = { vendo: { agentContext: true } } as const;
 
 /**
- * The SAME mark, in the text itself — 01-core's, re-exported so the chrome's
- * consumers keep the name they import today.
+ * The SAME mark, in the text itself — core's, re-exported for the chrome's
+ * consumers.
  *
- * THE HOLE the post-check found: `providerMetadata` is the only thing saying
- * "never show this", and a store that persists a text part as `{ type, text }`
- * — which the wire contract permits and several stores do — drops it. The
- * marked part then comes back as an ORDINARY text part, so a reloaded
- * transcript prints the app id, and "edit last message" seeds the composer
- * with it. That is the exact leak the carrier was invented to avoid, one
- * reload later.
- *
- * It lives in core (not here) because the SERVER needs it too: the thread title
- * is minted in @vendoai/agent, which had no concept of the mark and persisted
- * "[vendo:context] Declined to connect Gmail." into the thread rail.
+ * `providerMetadata` alone is not enough: a store that persists a text part as
+ * `{ type, text }` — which the wire contract permits — drops it, and the marked
+ * part comes back as an ORDINARY text part, so a reloaded transcript prints the
+ * app id. The mark lives in core because the SERVER needs it too: thread titles
+ * are minted in @vendoai/agent.
  */
 export { AGENT_CONTEXT_MARK };
 
@@ -404,7 +361,7 @@ export function isAgentContext(part: UIMessage["parts"][number]): boolean {
 }
 
 /** The plain text a user turn carried, joined across its text parts — the seed
-    for "edit last message" (ENG-215). */
+    for "edit last message". */
 export function userText(message: UIMessage): string {
   return message.parts
     .filter((part): part is Extract<UIMessage["parts"][number], { type: "text" }> =>
@@ -422,12 +379,10 @@ export function assistantText(message: UIMessage): string {
     .join("\n\n");
 }
 
-/** ENG-216 — the in-thread approval preview is built client-side (the wire part
-    carries no descriptor), so format args as readable `Label: value` lines
-    instead of the raw JSON with literal \n escapes end users were reading. */
+/** The in-thread approval preview, built client-side: readable `Label: value`
+    lines instead of raw JSON with literal \n escapes. */
 export function preview(input: unknown): string {
-  // ENG-216 — readable `Label: value` lines instead of raw JSON. ENG-218 — then
-  // bound the result before it reaches the DOM: a huge argument blob (dumped
+  // Bound the result before it reaches the DOM: a huge argument blob (dumped
   // rows, base64) otherwise renders unbounded inside the approval card's <pre>,
   // blowing up layout and the node count.
   const formatted = previewArgs(input);

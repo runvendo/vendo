@@ -3,10 +3,9 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 /**
- * Docs-rot gate for the BYO-over-MCP story (PR5). Same shape as
- * remix-graduation.docs.test.ts: the docs live in this repo, so this is a plain
- * test against the sources. It reads files and nothing else — no package import,
- * so it runs without a build.
+ * Docs-rot gate for the BYO-over-MCP story: the docs live in this repo, so this
+ * is a plain test against the sources. It reads files and nothing else — no
+ * package import, so it runs without a build.
  *
  * What it holds:
  *  1. the page exists, is in the nav, and every nav entry still resolves;

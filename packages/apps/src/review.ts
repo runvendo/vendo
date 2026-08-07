@@ -124,8 +124,8 @@ export const createReviewLifecycle = (deps: ReviewLifecycleDeps): ReviewLifecycl
       .sort((left, right) => left.at.localeCompare(right.at));
   };
 
-  const standingFor = async (appId: AppId, versionHash: string): Promise<ReviewStanding> => {
-    const rejection = (await rejectionsFor(appId))
+  const standingIn = (rows: readonly RemixRejection[], versionHash: string): ReviewStanding => {
+    const rejection = rows
       .filter((candidate) => candidate.versionHash === versionHash)
       .at(-1);
     if (rejection === undefined) return { status: "pending", versionHash };
@@ -137,6 +137,9 @@ export const createReviewLifecycle = (deps: ReviewLifecycleDeps): ReviewLifecycl
       at: rejection.at,
     };
   };
+
+  const standingFor = async (appId: AppId, versionHash: string): Promise<ReviewStanding> =>
+    standingIn(await rejectionsFor(appId), versionHash);
 
   const serveDocFor = async (current: AppDocument): Promise<AppDocument> => {
     if (!isReviewKind(current)) return current;
@@ -201,7 +204,10 @@ export const createReviewLifecycle = (deps: ReviewLifecycleDeps): ReviewLifecycl
         if (slot === undefined) continue;
         if ((await deps.approvals.verdictFor(doc)).granted) continue;
         const versionHash = appVersionHash(doc);
-        const standing = await standingFor(doc.id, versionHash);
+        // ONE paged scan of this app's rejection rows answers both the standing
+        // and the resubmission count below.
+        const rejectionRows = await rejectionsFor(doc.id);
+        const standing = standingIn(rejectionRows, versionHash);
         // A rejected version left the queue; it re-enters when a new version
         // supersedes the rejection.
         if (standing.status === "rejected") continue;
@@ -213,7 +219,7 @@ export const createReviewLifecycle = (deps: ReviewLifecycleDeps): ReviewLifecycl
           submittedAt: record.updatedAt,
           // Distinct rejected VERSIONS, not rejection rows: one resubmission
           // per superseded rejection even if legacy rows doubled up.
-          resubmissions: new Set((await rejectionsFor(doc.id)).map((rejection) => rejection.versionHash)).size,
+          resubmissions: new Set(rejectionRows.map((rejection) => rejection.versionHash)).size,
           shipDiff: computeShipDiff(doc, baselines()),
         });
       }

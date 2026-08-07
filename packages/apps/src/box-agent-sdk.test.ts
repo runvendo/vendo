@@ -38,7 +38,11 @@ const run = (engine: (input: EngineInput) => Promise<void>, extraEnv: Record<str
 
 describe("in-box SDK agent contract", () => {
   it("returns {ok:false} when the box has no inference endpoint", async () => {
-    const result = await runAgentTask({ prompt: "x", env: {}, appDir: "/tmp", log: () => undefined });
+    // `context` and `engine` spelled out as absent: box/agent-sdk.mjs destructures
+    // its six arguments with no defaults, so the inferred JS type wants all six.
+    const result = await runAgentTask({
+      prompt: "x", context: undefined, env: {}, appDir: "/tmp", log: () => undefined, engine: undefined,
+    });
     expect(result.ok).toBe(false);
     expect(result.summary).toMatch(/inference endpoint/);
   });

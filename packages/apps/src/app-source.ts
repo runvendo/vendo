@@ -1,19 +1,9 @@
 /**
  * Checkout and commit — contract §3.2.
  *
- * The workspace stops being a SECOND owner of an app's files and becomes a
- * working copy, exactly like a git checkout. Today the row's `tree` and the
- * workspace's `app.vendo` both claim to be the app, and a served app's real code
- * is only inside the sandbox snapshot — so losing the snapshot loses the app. The
- * row (id + doc) is the truth; a checkout projects it onto a filesystem and a
- * commit diffs the projection back.
- *
- * ```
- * checkoutApp(appId, workspace, ctx, seam)   → doc.tree → app.vendo, and every
- *                                              doc.source file to its path
- * edit in the workspace                     → staged in memory (the façade)
- * commitApp(appId, changed, workspace, ...)  → the changed paths land in doc.source
- * ```
+ * The workspace is a working COPY, not a second owner: the row (id + doc) is the
+ * truth, a checkout projects it onto a filesystem, and a commit diffs the
+ * projection back.
  *
  * Three things this deliberately does NOT do:
  *
@@ -88,7 +78,13 @@ export const appMountFor = (owner: string, ctx: RunContext): AppMount =>
     ? { kind: "org", org: owner }
     : { kind: "user", subject: owner };
 
-/** The app's blob namespace: keyed by app so erasing an app erases its source. */
+/**
+ * The app's blob namespace. Keyed by app and by PATH, so every version of a path
+ * shares one key: a re-commit overwrites in place, and nothing deletes these
+ * blobs — not the `removed` loop below and not app deletion. Minting a fresh key
+ * per write is what would make a delete safe (see `workspace-rows.ts`), and it is
+ * the prerequisite for reaping them.
+ */
 const blobKey = (appId: AppId, path: string): string => `apps/${appId}/${sha256Hex(path)}`;
 
 const encoder = new TextEncoder();
@@ -113,16 +109,11 @@ export const invalidSourcePath = (path: string): string | null => {
 /**
  * The app's directory: derived from OWNERSHIP, then permission-checked.
  *
- * It used to take the first writable candidate, personal mount first. That is
- * wrong for the case where both answers are yes — an org-owned app whose editor
- * can also write their own `/user` mount. The projection landed in the personal
- * mount, `commitApp` derived that same prefix, and every edit made under
- * `/orgs/<org>/apps/<appId>` was filtered out and silently dropped. Permission
- * cannot choose an address; only the owner can.
- *
- * `canCommit` still rules, but as the GATE it is rather than as the chooser it
- * was: the address is a fact about the app, and whether this caller may write
- * there is a separate question with an honest refusal for an answer.
+ * Permission cannot choose an address; only the owner can. Picking the first
+ * WRITABLE mount instead sends an org-owned app whose editor can also write their
+ * own `/user` mount to the personal mount, and every edit under
+ * `/orgs/<org>/apps/<appId>` is then filtered out and silently dropped.
+ * `canCommit` is the gate, never the chooser.
  */
 const appDirectory = async (
   appId: AppId,
@@ -131,18 +122,12 @@ const appDirectory = async (
   seam: AppSourceSeam,
 ): Promise<string> => {
   const mount = appMountFor(await seam.ownerOf(appId, ctx), ctx);
-  // The frozen §3.1 layout has no way to spell ANOTHER person's personal mount:
-  // `/user` is always the caller's own, and `appRootPath` drops the subject
-  // because there is no `/user/<subject>/` to put it in. So a foreign personal
-  // app resolved to a path pointing at the CALLER's rows while `commitApp` wrote
-  // back to someone else's row — a caller could stage files in their own
-  // workspace and land them on another person's app. `canCommit` cannot catch it,
-  // because the answer it gives is about the caller's own mount.
-  //
-  // Refused outright rather than given invented subject-qualified user-mount
-  // semantics: an app that is not yours is not yours to check out, and cross-user
-  // personal sharing is not something this builds. Team apps go through the org
-  // mount, where the org IS in the path and org authorization decides.
+  // The frozen §3.1 layout cannot spell ANOTHER person's personal mount: `/user`
+  // is always the caller's own and `appRootPath` drops the subject, so without
+  // this refusal a foreign personal app resolves to the CALLER's rows while
+  // commitApp writes back to someone else's — and `canCommit` cannot catch it,
+  // because it only ever answers about the caller's own mount. Team apps go
+  // through the org mount, where the org IS in the path.
   if (mount.kind === "user" && mount.subject !== ctx.principal.subject) {
     throw new VendoError("forbidden", `${appId} lives in another person's workspace`);
   }
@@ -263,19 +248,15 @@ export async function commitApp(
     try {
       text = await workspace.readFile(`${prefix}${path}`);
     } catch (error) {
-      // "Would not read" is not "was deleted" (coordinator ruling 2026-08-05, once
-      // this seam had a real caller). For a spilled file the read-back is a LIVE
-      // FETCH from the files adapter, so a blob store having a bad minute used to
-      // look exactly like a deletion and the entry was dropped — a lost source file,
-      // which is the one outcome "the row is the truth" cannot survive.
+      // "Would not read" is not "was deleted". A spilled file's read-back is a LIVE
+      // fetch from the files adapter, so a blob store having a bad minute looks
+      // exactly like a deletion — and dropping the entry loses a source file, the
+      // one outcome "the row is the truth" cannot survive.
       //
-      // `exists()` is the discriminator, and the thrown error deliberately is not:
-      // the façade raises the same POSIX-shaped `ENOENT` for a deleted row as for a
-      // row whose bytes have gone missing, and carries no code to switch on.
-      // `exists()` answers from the row index and never touches the blob.
-      //
-      // Per PATH, not per commit: the other files in this commit still land, because
-      // getting source into the store is the whole point.
+      // `exists()` is the discriminator and the thrown error deliberately is not:
+      // the façade raises the same POSIX-shaped ENOENT either way and carries no
+      // code to switch on, while `exists()` answers from the row index without
+      // touching the blob. Per PATH, not per commit — the other files still land.
       if (await workspace.exists(`${prefix}${path}`)) {
         console.error(
           `[vendo] source file "${path}" of ${appId} is still there but would not read back;`

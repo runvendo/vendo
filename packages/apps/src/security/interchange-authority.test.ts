@@ -57,7 +57,7 @@ const newRuntime = () => createApps({
   store: memoryStore(),
   guard: guardFixture(),
   tools: { async descriptors() { return []; }, async execute() { return { status: "error", error: { code: "not-found", message: "x" } }; } },
-  sandbox: fakeSandbox(),
+  machine: { sandbox: fakeSandbox() },
   catalog: [],
   model: scriptedLanguageModel("{}"),
 });
@@ -69,7 +69,7 @@ describe("interchange authority forgery", () => {
       store,
       guard: guardFixture(),
       tools: { async descriptors() { return []; }, async execute() { return { status: "error", error: { code: "not-found", message: "x" } }; } },
-      sandbox: fakeSandbox(),
+      machine: { sandbox: fakeSandbox() },
       catalog: [],
       model: scriptedLanguageModel("{}"),
     });

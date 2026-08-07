@@ -230,13 +230,8 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, discover = true
     subtitle?: string;
     /** Up to 3 prompt chips. Default: generic view-authoring prompts. */
     suggestions?: string[];
-    /** Primary button label (layout "button"). Default "Design a view". */
+    /** Primary button label. Default "Design a view". */
     ctaLabel?: string;
-    /** "button" (chips + primary CTA, default) or "chips-first" (chips are
-     *  the actions; a quiet "or describe your own…" link opens the composer). */
-    layout?: "button" | "chips-first";
-    /** Optional mark above the title. Default "none" (Yousef's pick). */
-    mark?: "none" | "sparkle" | "tile";
   };
   children?: ReactNode;
 }) {
@@ -317,17 +312,14 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, discover = true
         </ChromeRoot>
       );
     }
-    // The invitation (pick S-A×S-D): accent-washed surface, real copy, up to
-    // three concrete suggestion chips, and (layout "button") a primary CTA.
-    // The skeleton stays behind at low opacity so it still reads as "a view
-    // goes here". No icon by default.
+    // The invitation: accent-washed surface, real copy, up to three concrete
+    // suggestion chips, and a primary CTA. The skeleton stays behind at low
+    // opacity so it still reads as "a view goes here".
     const invite = {
       title: emptyState?.title ?? "This space builds itself",
       subtitle: emptyState?.subtitle ?? "describe a view — it renders here, live on your data",
       suggestions: (emptyState?.suggestions ?? defaultSlotSuggestions).slice(0, 3),
       ctaLabel: emptyState?.ctaLabel ?? "Design a view",
-      layout: emptyState?.layout ?? "button",
-      mark: emptyState?.mark ?? "none",
     };
     return (
       <ChromeRoot>
@@ -335,14 +327,6 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, discover = true
           <div className="fl-slot-ghost fl-slot-invite">
             <GhostSkeleton />
             <div className="fl-slot-cta" role="group" aria-label={invite.title}>
-              {invite.mark !== "none" ? (
-                <span className={`fl-invite-mark${invite.mark === "tile" ? " fl-invite-mark-tile" : ""}`} aria-hidden="true">
-                  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="m12 3 1.4 4.1L17.5 8.5l-4.1 1.4L12 14l-1.4-4.1-4.1-1.4 4.1-1.4L12 3Z" />
-                    <path d="m18 14 .8 2.2L21 17l-2.2.8L18 20l-.8-2.2L15 17l2.2-.8L18 14Z" />
-                  </svg>
-                </span>
-              ) : null}
               <span className="fl-invite-title">{invite.title}</span>
               <small className="fl-invite-sub">{invite.subtitle}</small>
               {invite.suggestions.length > 0 ? (
@@ -357,11 +341,7 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, discover = true
                   </div>
                 </>
               ) : null}
-              {invite.layout === "button" ? (
-                <button type="button" className="fl-invite-btn" onClick={author}>{invite.ctaLabel}</button>
-              ) : (
-                <button type="button" className="fl-invite-own" onClick={author}>or describe your own…</button>
-              )}
+              <button type="button" className="fl-invite-btn" onClick={author}>{invite.ctaLabel}</button>
             </div>
           </div>
         </div>

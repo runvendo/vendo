@@ -13,7 +13,7 @@ type OutgoingMessage =
   | { text: string; files?: Awaited<ReturnType<typeof fileToPart>>[] }
   | { parts: UIMessage["parts"] };
 
-/** Lane pick 2F — one attachment's eager-read lifecycle (drives the chip ring). */
+/** One attachment's eager-read lifecycle (drives the chip ring). */
 type AttachmentRead = {
   status: "reading" | "ready" | "error";
   /** 0..1 read progress; meaningful while `reading`. */
@@ -21,9 +21,9 @@ type AttachmentRead = {
   part?: Awaited<ReturnType<typeof fileToPart>>;
 };
 
-/** ENG-225 — drag-drop attach: only reacts to drags that actually carry files
+/** Drag-drop attach: only reacts to drags that actually carry files
     (text selections dragged across the composer must not flash the drop zone).
-    Exported for the thread-level drop surface (lane pick 2E). */
+    Exported for the thread-level drop surface. */
 export const dragHasFiles = (event: React.DragEvent) =>
   Array.from(event.dataTransfer?.types ?? []).includes("Files");
 
@@ -33,7 +33,7 @@ export const dragHasFiles = (event: React.DragEvent) =>
 export function useComposer({ busy, sendMessage, steer }: {
   busy: boolean;
   sendMessage: (message: OutgoingMessage) => unknown;
-  /** §10.2 — offer words to the turn in flight; answers whether they landed.
+  /** Offer words to the turn in flight; answers whether they landed.
       Absent for surfaces whose transport cannot steer (a scripted replay). */
   steer?: (text: string) => Promise<boolean>;
 }) {
@@ -41,13 +41,13 @@ export function useComposer({ busy, sendMessage, steer }: {
   const fileRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [files, setFiles] = useState<File[]>([]);
-  // ENG-225 — drag-drop attach. A depth counter, not a boolean: dragging over
+  // Drag-drop attach. A depth counter, not a boolean: dragging over
   // the composer's children fires enter/leave pairs for every element crossed.
   const [dragDepth, setDragDepth] = useState(0);
-  // ENG-225 — object-URL thumbnails for image attachments in the chip strip.
+  // Object-URL thumbnails for image attachments in the chip strip.
   // Keyed by File identity; a URL is minted once per file and revoked only when
   // that file leaves the set — never recreated for files still shown (which
-  // would briefly point a mounted <img> at a revoked URL, Devin review). The
+  // would briefly point a mounted <img> at a revoked URL). The
   // ref mirrors the state so the unmount cleanup revokes the final set.
   const [attachmentPreviews, setAttachmentPreviews] = useState<Map<File, string>>(new Map());
   const previewsRef = useRef(attachmentPreviews);
@@ -71,7 +71,7 @@ export function useComposer({ busy, sendMessage, steer }: {
   useEffect(() => () => {
     for (const url of previewsRef.current.values()) URL.revokeObjectURL(url);
   }, []);
-  // Lane pick 2F — attachments read EAGERLY at attach time. Each file's read
+  // Attachments read EAGERLY at attach time. Each file's read
   // progress (FileReader onprogress) drives the chip ring; a failed read marks
   // that chip (inline retry) instead of surfacing only as a text line at send.
   // The finished part is cached so send doesn't re-read. Keyed by File identity,
@@ -123,14 +123,14 @@ export function useComposer({ busy, sendMessage, steer }: {
     // startRead closes over stable setters only; files is the real trigger.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [files]);
-  // ENG-225 — the connect dock's liquid tray, anchored over the composer.
+  // The connect dock's liquid tray, anchored over the composer.
   const [dockOpen, setDockOpen] = useState(false);
   const dockButtonRef = useRef<HTMLButtonElement>(null);
-  // ENG-215 — a message the user sent DURING a turn: it parks here (visible as a
+  // A message the user sent DURING a turn: it parks here (visible as a
   // pill) and auto-sends the instant the turn finishes. A single slot — a second
   // send while one is parked replaces it — because there is only ever one "next"
   // turn. Stop stays the explicit interrupt; queueing never cancels the stream.
-  // `landed` (§10.2): the running turn TOOK this message, so it is already in the
+  // `landed`: the running turn TOOK this message, so it is already in the
   // transcript as the user's own turn and the busy-edge flush below must not send
   // it a second time. The slot stays visible as a receipt, not a queue.
   const [queued, setQueued] = useState<{ text: string; files: File[]; context?: string; landed?: true } | null>(null);
@@ -141,7 +141,7 @@ export function useComposer({ busy, sendMessage, steer }: {
   // own history carries it, so a follow-up needs no second copy.
   const contextRef = useRef<string | undefined>(undefined);
 
-  // ENG-215 — commit a turn to the transport (attachment parts come from the
+  // Commit a turn to the transport (attachment parts come from the
   // eager-read cache when ready, else a fresh read). Used both by an immediate
   // send and by the deferred flush of a queued message.
   const dispatch = (text: string, pending: File[], context?: string) => {
@@ -155,9 +155,9 @@ export function useComposer({ busy, sendMessage, steer }: {
       } catch {
         // A file read failed. The message is restored so it never vanishes
         // silently — and the person is told what happened in their own terms
-        // (spec §15: what happened · nothing changed · what happens next).
+        // (what happened · nothing changed · what happens next).
         // The browser's own sentence ("NotReadableError: …") is a developer
-        // string and is dropped here rather than rendered (§16 law 3). It gets
+        // string and is dropped here rather than rendered. It gets
         // no dev-mode rail because this file is an EJECT TEMPLATE: it may only
         // import from the public chrome surface, and `developmentMode` is not
         // on it (scripts/eject-templates-lib.mjs enforces that).
@@ -201,7 +201,7 @@ export function useComposer({ busy, sendMessage, steer }: {
     if (fileRef.current) fileRef.current.value = "";
     if (busy) {
       setQueued({ text, files: pending, ...(context === undefined ? {} : { context }) });
-      // §10.2 — then OFFER it to the turn that is running. Words only: an
+      // Then OFFER it to the turn that is running. Words only: an
       // attachment or a grounding marker cannot ride a steer, so those keep the
       // turn-end flush. A `false` (or no steer at all) changes nothing.
       if (steer !== undefined && text !== "" && pending.length === 0 && context === undefined) {
@@ -226,7 +226,7 @@ export function useComposer({ busy, sendMessage, steer }: {
   // Prefill bridge: a host affordance (a trigger button, the legacy
   // `vendo:prefill` event, the ✦ remix popover) opens this surface and hands
   // it the request to type + send, so the whole build happens here — the one
-  // conversational place (08-ui §4). The registry consumer also drains a
+  // conversational place. The registry consumer also drains a
   // prompt parked while this composer was still mounting (overlay first open /
   // fresh conversation).
   useEffect(() => {
@@ -270,7 +270,7 @@ export function useComposer({ busy, sendMessage, steer }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [busy, queued]);
 
-  // ENG-215 — autogrow: the textarea tracks its content height (CSS caps it at
+  // Autogrow: the textarea tracks its content height (CSS caps it at
   // max-height and scrolls past that). Runs on every draft change, including the
   // programmatic reset on send and the refill on edit.
   useEffect(() => {
@@ -304,7 +304,7 @@ export interface ComposerProps {
   jumpBar?: import("react").ReactNode;
 }
 
-/** The message composer (08-ui §4): attachments, drag-drop, queueing, dock. */
+/** The message composer: attachments, drag-drop, queueing, dock. */
 export function Composer({ composer, busy, status, errorMessage, onStop, onVoice, jumpBar }: ComposerProps) {
   const {
     draft, setDraft, files, setFiles,
@@ -345,7 +345,7 @@ export function Composer({ composer, busy, status, errorMessage, onStop, onVoice
         DOM order: both are positioned with auto z-index, so its entrance rises
         from BEHIND the composer instead of sliding over its face. */}
     {jumpBar}
-    {/* Lane pick 2E — drag-drop moved UP to the whole thread surface (see
+    {/* Drag-drop lives on the whole thread surface (see
         VendoThread): the bar itself no longer owns enter/leave/drop. */}
     <form
       className="fl-composer"
@@ -354,7 +354,7 @@ export function Composer({ composer, busy, status, errorMessage, onStop, onVoice
     >
       {attachError ? <div className="fl-att-error" role="alert">{attachError}</div> : null}
       {queued ? (
-        // §10.2 — one element, two fates. The copy says what happened to the
+        // One element, two fates. The copy says what happened to the
         // MESSAGE and never anything about the result: a steer is words
         // delivered, and the build's own reply is the only thing entitled to
         // describe the build.
@@ -364,7 +364,7 @@ export function Composer({ composer, busy, status, errorMessage, onStop, onVoice
           <span className="fl-queued-hint">
             {queued.landed ? "added to the reply in progress" : "sends when the reply finishes"}
           </span>
-          {/* Lane pick 2B — Send now: stop the stream; the ENG-215 busy-edge
+          {/* Send now: stop the stream; the busy-edge
               flush then dispatches this queued slot immediately. One code
               path for both the polite wait and the deliberate interrupt.
               A message already delivered has nothing left to send. */}
@@ -388,12 +388,11 @@ export function Composer({ composer, busy, status, errorMessage, onStop, onVoice
               <button type="button" className={`fl-att-rm${asFileChip ? " fl-att-rm-file" : ""}`} aria-label={`Remove ${file.name}`}
                 onClick={() => setFiles(current => current.filter((_, j) => j !== i))}>×</button>
             );
-            // ENG-225 — images preview as the designed thumbnail chip; other
+            // Images preview as the designed thumbnail chip; other
             // files carry an extension badge plus name and size. An image whose
             // READ failed falls through to the error file-chip below (retry in
             // place) instead of silently posing as attachable — the object-URL
             // thumbnail says nothing about whether FileReader could read it
-            // (AI-review catch).
             if (preview !== undefined && read?.status !== "error") {
               return (
                 <span className="fl-att-img" key={`${file.name}-${i}`}>
@@ -402,7 +401,7 @@ export function Composer({ composer, busy, status, errorMessage, onStop, onVoice
                 </span>
               );
             }
-            // Lane pick 2F — the chip narrates its read: progress ring while
+            // The chip narrates its read: progress ring while
             // reading, error + inline retry on failure, quiet size when ready.
             const failed = read?.status === "error";
             const reading = read?.status === "reading";
@@ -453,7 +452,7 @@ export function Composer({ composer, busy, status, errorMessage, onStop, onVoice
             placeholder="Ask anything"
             rows={1}
             value={draft}
-            // ENG-215 — never disabled: typing (and queueing) stays live through
+            // Never disabled: typing (and queueing) stays live through
             // the whole turn, and the composer never dumps focus to <body>.
             onChange={event => setDraft(event.currentTarget.value)}
             onKeyDown={(event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
@@ -468,7 +467,7 @@ export function Composer({ composer, busy, status, errorMessage, onStop, onVoice
             </svg>
           </button>
         ) : null}
-        {/* ENG-215 — Stop is the explicit interrupt (only mid-turn); Send is
+        {/* Stop is the explicit interrupt (only mid-turn); Send is
             always available and, during a turn, queues the message instead. */}
         {busy ? (
           <button className="fl-icon-btn fl-stop" type="button" aria-label="Stop" onClick={onStop}>

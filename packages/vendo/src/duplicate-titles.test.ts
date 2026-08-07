@@ -91,7 +91,7 @@ describe("duplicate tool titles fail the deployment (design §12)", () => {
     expect(seen).toEqual({ venue: "automation", presence: "away" });
   });
 
-  it("leaves execute alone", async () => {
+  it("passes execute through on a clean deployment", async () => {
     const checked = withUniqueToolTitles(registry([tool("a", "Alpha")]));
     await expect(
       checked.execute({ id: "c1", tool: "a", args: {} }, {

@@ -22,6 +22,7 @@ import {
   type ToolRegistry,
 } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
+import { inMemoryBoxFiles } from "./testing/box-files.js";
 import { createAppHistory } from "./history.js";
 import { createApps, pinComponentName, type AppsRuntime, type PinBaseline } from "./index.js";
 import type { SandboxAdapter, SandboxMachine } from "./sandbox.js";
@@ -110,6 +111,8 @@ const fnBox = (seen: Stand["seen"]) => {
         body: new TextEncoder().encode(JSON.stringify({ result: { secret: "theirs" } })),
       };
     },
+    async url() { return "https://8080-fake_authored_box.test"; },
+    files: inMemoryBoxFiles(new Map()),
     async snapshot() { return "fake:theirs"; },
     async stop() { /* sleep */ },
     async destroy() { /* gone */ },

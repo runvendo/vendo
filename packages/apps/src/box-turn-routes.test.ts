@@ -442,4 +442,32 @@ describe("the host's MCP door, forwarded as DATA", () => {
     release?.();
     await door.messagePromise(first.body.messageId);
   });
+
+  test("a message whose session never OPENS releases the door instead of wedging it at 409", async () => {
+    // The in-flight slot is claimed before the session opens, and only the send
+    // promise's `finally` ever releases it. So a throwing open — a box image
+    // whose SDK import fails — left the slot pointed at a message that will
+    // never run, and every later message answered 409 rather than the 500 the
+    // failure deserves.
+    const root = newRoot();
+    const session = scripted(async () => undefined);
+    let opens = 0;
+    const door = createSessionRoutes({
+      root,
+      token: TOKEN,
+      env: {},
+      openSession: (input: Any) => {
+        opens += 1;
+        if (opens === 1) throw new Error("Cannot find module @anthropic-ai/claude-agent-sdk");
+        return session.factory(input);
+      },
+    }) as Routes;
+
+    await expect(door.handle("POST", "/session/message", auth, { prompt: "one" }))
+      .rejects.toThrow("Cannot find module @anthropic-ai/claude-agent-sdk");
+
+    const second = await door.handle("POST", "/session/message", auth, { prompt: "two" });
+    expect(second.status).toBe(202);
+    await door.messagePromise(second.body.messageId);
+  });
 });

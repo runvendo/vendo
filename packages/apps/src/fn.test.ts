@@ -1,5 +1,6 @@
 import { VENDO_APP_FORMAT, VendoError, type AppDocument, type RunContext, type ToolOutcome } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
+import { inMemoryBoxFiles } from "./testing/box-files.js";
 import type { AppCaller } from "./call.js";
 import { createFnCaller } from "./fn.js";
 import type { SandboxMachine } from "./sandbox.js";
@@ -59,6 +60,8 @@ const boxWake = (handler: (request: {
         body: encoder.encode(answer.body ?? ""),
       };
     },
+    async url() { return "https://8080-fake_fn_box.test"; },
+    files: inMemoryBoxFiles(new Map()),
     async snapshot() { return "fake-v2:snap_next"; },
     async stop() { /* sleep */ },
     async destroy() { /* gone */ },
@@ -115,6 +118,21 @@ describe("createFnCaller (execution-v2 fn resolution over the box door)", () => 
     const outcome = await createFnCaller({ wake }).callFn(machineApp(), "9bad name", {}, ctx);
     expect(outcome).toMatchObject({ status: "error", error: { code: "validation" } });
     expect(wake).not.toHaveBeenCalled();
+  });
+
+  it("rejects an over-long fn name, like the manifest gate and the HTTP wire do", async () => {
+    // The documented name grammar is bounded at 64 characters (docs/machine-model.md),
+    // and both the manifest parser and the wire's POST /apps/:id/fn/:name refuse a
+    // longer one. This gate accepting it meant the same app worked in-process and
+    // 400'd over HTTP.
+    const { wake } = boxWake(() => ({ status: 200 }));
+    const outcome = await createFnCaller({ wake }).callFn(machineApp(), "f".repeat(65), {}, ctx);
+    expect(outcome).toMatchObject({ status: "error", error: { code: "validation" } });
+    expect(wake).not.toHaveBeenCalled();
+    // The 64-character name itself still dispatches.
+    const { wake: okWake } = boxWake(() => ({ status: 200, body: JSON.stringify({ result: 1 }) }));
+    expect(await createFnCaller({ wake: okWake }).callFn(machineApp(), "f".repeat(64), {}, ctx))
+      .toMatchObject({ status: "ok" });
   });
 
   it("contains a machine-less app as a validation error without waking", async () => {

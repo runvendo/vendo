@@ -281,11 +281,57 @@ export function layoutFontBindings(source: string): FontBinding[] {
     }
   }
 
-  // next/font/google: `import { Some_Font } from "next/font/google"` +
-  // `const someFont = Some_Font({ ..., variable: "--font-x" })` — the export
-  // name is the family (underscores become spaces). The factory callee is
-  // symbol-verified against the import; the font local must be a file-scope
-  // declaration (the universal layout shape) or nothing derives.
+  bindings.push(...googleFontBindings(mod));
+  return bindings;
+}
+
+/** The `variable:` a next/font/google factory call declares, if the options
+ *  object literal spells one. */
+function factoryVariable(mod: BoundModule, call: TS.CallExpression): string | null {
+  const { ts } = mod;
+  const options = call.arguments[0];
+  if (options === undefined || !ts.isObjectLiteralExpression(options)) return null;
+  let variable: string | null = null;
+  for (const property of options.properties) {
+    if (!ts.isPropertyAssignment(property)) continue;
+    const name = ts.isIdentifier(property.name) || ts.isStringLiteral(property.name) ? property.name.text : null;
+    if (name === "variable" && ts.isStringLiteralLike(property.initializer)) {
+      variable = property.initializer.text;
+    }
+  }
+  return variable;
+}
+
+/** The file-scope `const someFont = Some_Font({ … })` for one imported font
+ *  export. The factory callee is symbol-verified against the import, and the
+ *  font local must be a file-scope declaration (the universal layout shape) or
+ *  nothing derives. */
+function fontFactoryCall(
+  mod: BoundModule,
+  element: TS.ImportSpecifier,
+): { variable: string | null; local: string; declaration: TS.Declaration } | null {
+  const { ts, sf } = mod;
+  for (const statement of sf.statements) {
+    if (!ts.isVariableStatement(statement)) continue;
+    for (const node of statement.declarationList.declarations) {
+      if (!ts.isIdentifier(node.name)) continue;
+      const init = node.initializer;
+      if (init === undefined || !ts.isCallExpression(init)) continue;
+      if (!ts.isIdentifier(init.expression)) continue;
+      // Symbol-verified: the callee must BE this import binding.
+      if (declarationOf(mod, init.expression) !== element) continue;
+      return { variable: factoryVariable(mod, init), local: node.name.text, declaration: node };
+    }
+  }
+  return null;
+}
+
+/** next/font/google: `import { Some_Font } from "next/font/google"` +
+ *  `const someFont = Some_Font({ ..., variable: "--font-x" })` — the export
+ *  name is the family (underscores become spaces). */
+function googleFontBindings(mod: BoundModule): FontBinding[] {
+  const { ts, sf } = mod;
+  const bindings: FontBinding[] = [];
   for (const statement of sf.statements) {
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
     if (statement.moduleSpecifier.text !== "next/font/google") continue;
@@ -293,38 +339,11 @@ export function layoutFontBindings(source: string): FontBinding[] {
     if (named === undefined || !ts.isNamedImports(named)) continue;
     for (const element of named.elements) {
       const family = (element.propertyName ?? element.name).text.replace(/_/g, " ");
-      let variable: string | null = null;
-      let fontLocal: string | null = null;
-      let fontDeclaration: TS.Declaration | null = null;
-      for (const declStatement of sf.statements) {
-        if (fontLocal !== null) break;
-        if (!ts.isVariableStatement(declStatement)) continue;
-        for (const node of declStatement.declarationList.declarations) {
-          if (!ts.isIdentifier(node.name)) continue;
-          const init = node.initializer;
-          if (init === undefined || !ts.isCallExpression(init)) continue;
-          if (!ts.isIdentifier(init.expression)) continue;
-          // Symbol-verified: the callee must BE this import binding.
-          if (declarationOf(mod, init.expression) !== element) continue;
-          fontLocal = node.name.text;
-          fontDeclaration = node;
-          const options = init.arguments[0];
-          if (options !== undefined && ts.isObjectLiteralExpression(options)) {
-            for (const property of options.properties) {
-              if (!ts.isPropertyAssignment(property)) continue;
-              const name = ts.isIdentifier(property.name) || ts.isStringLiteral(property.name) ? property.name.text : null;
-              if (name === "variable" && ts.isStringLiteralLike(property.initializer)) {
-                variable = property.initializer.text;
-              }
-            }
-          }
-          break;
-        }
-      }
+      const factory = fontFactoryCall(mod, element);
       bindings.push({
-        variable,
+        variable: factory?.variable ?? null,
         family,
-        applied: fontLocal !== null && fontDeclaration !== null && appliedToJsx(mod, fontLocal, fontDeclaration),
+        applied: factory !== null && appliedToJsx(mod, factory.local, factory.declaration),
       });
     }
   }

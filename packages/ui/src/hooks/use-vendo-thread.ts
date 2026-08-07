@@ -20,46 +20,6 @@ const THREAD_ID_HEADER = "x-vendo-thread-id";
 const THREAD_ID_PATTERN = /^thr_.+$/;
 
 /**
- * Director-mode recorder: when `globalThis.__vendoDirectorRecord` is truthy,
- * tee every live stream's SSE `data:` payloads (with elapsed timestamps) into
- * `globalThis.__vendoDirectorRecording`. Each entry converts 1:1 into a
- * ScriptedTransport cue, so a real build replays verbatim. Inert otherwise.
- */
-function recordStream(response: Response): void {
-  const globals = globalThis as {
-    __vendoDirectorRecord?: boolean;
-    __vendoDirectorRecording?: Array<{ at: number; chunk: unknown }>;
-  };
-  if (!globals.__vendoDirectorRecord || !response.body) return;
-  const recording = (globals.__vendoDirectorRecording ??= []);
-  const startedAt = Date.now();
-  const reader = response.clone().body!.getReader();
-  const decoder = new TextDecoder();
-  let buffered = "";
-  const pump = (): Promise<void> =>
-    reader.read().then(({ done, value }) => {
-      if (done) return;
-      buffered += decoder.decode(value, { stream: true });
-      const frames = buffered.split("\n\n");
-      buffered = frames.pop() ?? "";
-      for (const frame of frames) {
-        for (const line of frame.split("\n")) {
-          if (!line.startsWith("data: ")) continue;
-          const data = line.slice(6);
-          if (data === "[DONE]") continue;
-          try {
-            recording.push({ at: Date.now() - startedAt, chunk: JSON.parse(data) });
-          } catch {
-            // Malformed frame: skip — the recording is tooling, never load-bearing.
-          }
-        }
-      }
-      return pump();
-    });
-  void pump().catch(() => undefined);
-}
-
-/**
  * §3.4's status channel, RECEIVED.
  *
  * The part name is written out rather than imported: `VENDO_STATUS_PART` lives
@@ -171,7 +131,6 @@ export function useVendoThread(threadId?: string) {
             activeThreadIdRef.current = returnedThreadId;
             setEffectiveThreadId(returnedThreadId);
           }
-          recordStream(response);
           // ENG-353: beat /threads/:id/heartbeat while this turn streams so
           // the server can idle-abort the turn if this tab closes on a
           // runtime that never surfaces the disconnect (`next dev`).

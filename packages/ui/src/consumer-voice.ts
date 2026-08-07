@@ -1,21 +1,15 @@
 /**
- * spec §16 law 3 — the ONE definition of what a DEVELOPER string looks like.
+ * The ONE definition of what a DEVELOPER string looks like.
  *
- * A TEST ORACLE, and nothing else (ruling 14). It has exactly one reader: the
- * law's sweep over every chrome surface (test/chrome/consumer-voice-law.test.tsx
- * and its e2e twin). Every pattern here was seen LIVE on a consumer surface
- * during the redesign wave.
+ * A TEST ORACLE, and nothing else: its readers are the law's sweep over every
+ * chrome surface (test/chrome/consumer-voice-law.test.tsx and its e2e twin).
+ * Every pattern here was seen live on a consumer surface.
  *
- * It was briefly a RUNTIME gate too — `admissibleDescription` asked it whether a
- * descriptor's sentence could occupy a consent card's plain-words line. Ruling
- * 14 reversed that, and the reason generalizes: a regex set cannot be the
- * authority for what a person may read. It admitted raw JSON, raw exceptions and
- * model instructions (false negatives) while silently deleting good host copy
- * like "Funds do not leave your account until you approve." (false positives,
- * with no production trace). As an oracle its false negatives are just gaps in a
- * test; as a gate they were lies on a bank customer's screen. The runtime
- * answer is a fixed precedence ladder instead — `consentWords` in
- * chrome/build-beat.tsx.
+ * It is deliberately NOT a runtime gate: a regex set cannot be the authority
+ * for what a person may read — it admits raw JSON and model instructions while
+ * deleting good host copy like "Funds do not leave your account until you
+ * approve.". The runtime answer is a fixed precedence ladder instead
+ * (`consentWords` in chrome/build-beat.tsx).
  *
  * It lives OUTSIDE src/chrome deliberately: the law's source sweep scans that
  * tree for developer configuration phrases, and this file has to spell those

@@ -56,10 +56,11 @@ describe("VendoActivities", () => {
     const approve = screen.getByRole("button", { name: "Approve" });
     expect(approve.tagName).toBe("BUTTON");
     fireEvent.click(approve);
+    // `decide` is not optimistic — it awaits the wire call and refetches — so the
+    // card leaving IS the decision landing. (A `POST /approvals/decide` assertion
+    // stood here and only restated the client's own route table; the client/door
+    // route seam lives in `packages/vendo/src/client-door.seam.test.ts` now.)
     await waitFor(() => expect(screen.queryByLabelText("Approval for Email send")).toBeNull());
-    expect(wire.requests).toContainEqual(
-      expect.objectContaining({ method: "POST", path: "/approvals/decide" }),
-    );
     // The approvals section disappears entirely once the queue drains.
     expect(screen.queryByRole("heading", { name: "Needs your approval" })).toBeNull();
   });

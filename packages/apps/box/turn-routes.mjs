@@ -211,13 +211,23 @@ export const createSessionRoutes = (options = {}) => {
     // Neither used to fire on a CHANGED TOOL LISTING, because an in-process MCP
     // server's tool set is fixed when the session opens. The door lists live, so
     // a tool `find_tools` equips mid-conversation costs nothing.
-    if (session !== undefined && (payload.reopen === true || payload.systemPrompt !== brief)) {
-      const closing = session;
-      session = undefined;
-      if (payload.reopen === true) sessionId = undefined;
-      await closing.end().catch(() => undefined);
+    try {
+      if (session !== undefined && (payload.reopen === true || payload.systemPrompt !== brief)) {
+        const closing = session;
+        session = undefined;
+        if (payload.reopen === true) sessionId = undefined;
+        await closing.end().catch(() => undefined);
+      }
+      if (session === undefined) await openSession(payload);
+    } catch (error) {
+      // The slot is claimed ABOVE, because `emit` attributes events to whatever
+      // is in flight and the session's own id arrives during open. So an open
+      // that throws — a box image whose SDK import fails — has to hand the slot
+      // back here, or every later message answers 409 instead of this failure.
+      messages.delete(messageId);
+      if (current === state) current = undefined;
+      throw error;
     }
-    if (session === undefined) await openSession(payload);
 
     state.promise = (async () => {
       try {

@@ -14,13 +14,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createVendo, type Vendo } from "./server.js";
 
 /**
- * E8 — the wave-3 proof bar, over the REAL composition: `createVendo` fills
- * `appAccess`, `multiParty`, `promoteApp` and the memberships seam itself, and
- * every assertion below goes through the actual wire routes a browser calls.
+ * Multi-party orgs over the REAL composition: `createVendo` fills `appAccess`,
+ * `multiParty`, `promoteApp` and the memberships seam itself, and every
+ * assertion below goes through the actual wire routes a browser calls.
  *
  * Two real people in one org: Dana (org admin) and Kim (ordinary member).
  * Seeded apps only — new-app GENERATION against a host catalog is a known
- * engine failure (#631) and E8 deliberately does not depend on it.
+ * engine failure (#631), which these tests deliberately do not depend on.
  */
 
 const ORG = "maple";
@@ -56,7 +56,7 @@ afterEach(async () => {
 });
 
 async function tempStore(): Promise<VendoStore> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-orgs-e8-"));
+  const dataDir = await mkdtemp(join(tmpdir(), "vendo-orgs-multi-party-"));
   const store = createStore({ dataDir });
   cleanups.push(async () => {
     await store.close().catch(() => undefined);
@@ -75,7 +75,7 @@ async function boot(
   // §9.6 — multiParty is filled from the SAME cloud-key read every other Cloud
   // default uses, so this env stub is the whole difference between keyed and
   // keyless. Nothing else in the composition changes.
-  if (opts.key !== false) vi.stubEnv("VENDO_API_KEY", "vnd_e8_key");
+  if (opts.key !== false) vi.stubEnv("VENDO_API_KEY", "vnd_orgs_key");
   const vendo = createVendo({
     store,
     auth: {
@@ -124,7 +124,7 @@ const seedApp = async (store: VendoStore, app: AppDocument, subject: string): Pr
   });
 };
 
-describe("E8 — two principals, one org, over the real composition", () => {
+describe("two principals, one org, over the real composition", () => {
   let store: VendoStore;
   let vendo: Vendo;
 
@@ -422,7 +422,7 @@ describe("E8 — two principals, one org, over the real composition", () => {
   });
 });
 
-describe("E8 — §9.8: the served-app proxy is a wire door", () => {
+describe("§9.8: the served-app proxy is a wire door", () => {
   let store: VendoStore;
   let vendo: Vendo;
 
@@ -479,14 +479,14 @@ describe("E8 — §9.8: the served-app proxy is a wire door", () => {
   });
 });
 
-describe("E8 — §9.8: open() hands a served app a RESOLVABLE url", () => {
+describe("§9.8: open() hands a served app a RESOLVABLE url", () => {
   it("is absolute, so a caller off this origin can follow it", async () => {
     // An MCP client (or anything that is not a browser sitting on the host
     // origin) cannot resolve a relative path. The provider URL this replaced was
     // absolute, so the proxy URL that answers for every served app must be too.
     const store = await tempStore();
     vi.stubEnv("VENDO_BASE_URL", "https://maple.test");
-    vi.stubEnv("VENDO_API_KEY", "vnd_e8_key");
+    vi.stubEnv("VENDO_API_KEY", "vnd_orgs_key");
     const vendo = createVendo({
       store,
       auth: {
@@ -520,7 +520,7 @@ describe("E8 — §9.8: open() hands a served app a RESOLVABLE url", () => {
  * the subject, so a share with "Mia" wrote `user:Mia` — a row that matched
  * nobody, after the app had already been moved into the team to make room for it.
  */
-describe("E8 — §9.1 companion: only the host can name a person", () => {
+describe("§9.1 companion: only the host can name a person", () => {
   const roster: Record<string, ResolvedPerson> = {
     "kim": { subject: "kim", display: "Kim Alvarez" },
     "kim@maple.test": { subject: "kim", display: "Kim Alvarez" },
@@ -640,7 +640,7 @@ describe("E8 — §9.1 companion: only the host can name a person", () => {
   });
 });
 
-describe("E8 — §9.6: the key gates the WRITES, never the enforcement", () => {
+describe("§9.6: the key gates the WRITES, never the enforcement", () => {
   it("refuses grant and promote with no key, while can() answers identically", async () => {
     const store = await tempStore();
     const vendo = await boot(store, { key: false });
