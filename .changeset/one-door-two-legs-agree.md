@@ -11,8 +11,9 @@ it had already lapsed, and expiry was only ever evaluated lazily inside `resolve
 A token whose conversation went quiet past the idle budget was therefore dead only
 if someone happened to resolve it; if the conversation took another turn first, the
 expiry was pushed forward and the token worked again. Lapsed entries are now dropped
-in that same loop, which also bounds the in-memory registry in a long-running host
-process — a token minted and never resolved previously had nothing to remove it.
+in that same loop, across the whole registry rather than only the thread being
+published, which also bounds it in a long-running host process — a token minted for
+a conversation that never takes another turn previously had nothing to remove it.
 
 **`remoteAs` accepts the algorithms real authorization servers use.** Verification
 was pinned to ES256 alone, so a door pointed at Auth0, Okta, Entra ID or Cognito —

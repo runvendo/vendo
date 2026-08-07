@@ -151,10 +151,16 @@ export function createTurnCredentials(options: TurnCredentialsOptions = {}): Tur
       // for two days would be pushed two days forward by the next turn and work
       // again. This is also the only thing that bounds `minted`: a token minted
       // and never resolved has nothing else to remove it.
+      //
+      // The DROP spans the whole registry while the refresh stays scoped to this
+      // thread, because the entries nothing else will ever remove are exactly
+      // the ones whose thread went silent: a per-thread sweep can only collect a
+      // conversation that came back. Like the door's own `sweepExpiredSessions`,
+      // this rides the next request rather than a timer.
+      const at = now();
       for (const [token, entry] of minted) {
-        if (entry.threadId !== threadId) continue;
-        if (entry.expiresAt <= now()) minted.delete(token);
-        else entry.expiresAt = now() + idleMs;
+        if (entry.expiresAt <= at) minted.delete(token);
+        else if (entry.threadId === threadId) entry.expiresAt = at + idleMs;
       }
       return () => {
         // Only ever retract OUR publication. A disposer that ran after the next
