@@ -18,7 +18,6 @@ import { VendoProvider, createVendoClient, type VendoClient } from "../../src/in
 import {
   ActivityLedger,
   ActivityPanel,
-  AdoptionCard,
   ApprovalCard,
   AutomationCard,
   AutomationsPanel,
@@ -128,33 +127,6 @@ describe("LEAK 1 — the standing-access card rendered model instructions", () =
     const card = screen.getByRole("article", { name: /Standing access/ });
     expect(card.textContent).toContain("Reads your spending totals.");
     expect(card.textContent).not.toContain("integer cents");
-  });
-
-  it("holds on the paused-automation card too — the same rows, the same wire description", () => {
-    render(
-      <VendoProvider client={client}>
-        <AdoptionCard
-          card={{
-            appId: "app_1",
-            triggerId: "main",
-            automation: "Spending watcher",
-            reason: "departure",
-            sponsor: "Dana",
-            needs: [{
-              tool: "host_getSpendingInsights",
-              title: "host_getSpendingInsights",
-              description: MODEL_INSTRUCTION,
-              risk: "read",
-            }],
-          }}
-        />
-      </VendoProvider>,
-    );
-    const card = screen.getByRole("article", { name: /Take on/ });
-    expect(card.textContent).not.toContain("integer cents");
-    expect(card.textContent).not.toContain("e.g.");
-    // And the row still says what the automation does, in our words.
-    expect(document.querySelector(".fl-grant")?.textContent).toContain("Reads: Get spending insights");
   });
 });
 
@@ -503,17 +475,6 @@ describe("the widened audit — no chrome surface renders a developer string", (
     ["standing access, settled", <GrantSetCard name="Invoice watcher" permissions={wirePermissions(MODEL_INSTRUCTION)} state="approved" />],
     ["connect", <ConnectCard connector="composio" toolkit="googlecalendar" message="Connect Google Calendar to check your day." onConnected={() => undefined} />],
     ["automation", <AutomationCard name="Low balance alert" enabled description="Emails you when checking dips." />],
-    ["paused adoption", <AdoptionCard card={{
-      appId: "app_7f3a2b41",
-      triggerId: "main",
-      automation: "Weekly sweep",
-      reason: "grants",
-      sponsor: "Dana",
-      needs: [
-        { tool: "host_getSpendingInsights", title: "host_getSpendingInsights", description: MODEL_INSTRUCTION, risk: "read" },
-        { tool: "gmail_GMAIL_SEND_EMAIL", title: "Send email", risk: "write" },
-      ],
-    }} />],
     // Ruling 17a — the sweep never mounted the APPROVAL CARD, the surface the
     // whole §16 law was written for. With a money ask (a formatted value, a
     // graded chip) it exercises the tooltip and chip paths the widened
