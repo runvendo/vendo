@@ -2,6 +2,7 @@ import { VendoError, type Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "./backends.test-util.js";
 import { FILES_STORE_MAX_BYTES } from "./files-store.js";
+import type { Query } from "./db.js";
 import { dbFor } from "./store.js";
 import { workspaceStore, WORKSPACE_HISTORY_LIMIT, WORKSPACE_INLINE_MAX_BYTES } from "./workspace.js";
 
@@ -602,6 +603,49 @@ for (const backend of backends()) {
       expect(await (await workspace.open(user)).readFile(path)).toBe("chart: base");
     });
 
+    /** Fire `racer` just before an undo's compare-and-swap — the statement
+        carrying `recordHistory=false` as its last param — and let the undo
+        finish.
+
+        The undo now holds its path for the whole transaction it runs in, so a
+        racer touching the same path BLOCKS here instead of landing mid-swap;
+        the timer is what releases this hook, and the racer settles once the
+        undo commits. That transaction is also why the hook watches the
+        transaction's query and not only the base handle's — the swap no longer
+        goes through `db.query`. */
+    const raceTheSwap = async (
+      undo: () => Promise<unknown>,
+      racer: () => Promise<unknown>,
+    ): Promise<void> => {
+      const db = dbFor(made.store);
+      const originalQuery = db.query.bind(db);
+      const originalTx = db.transaction.bind(db);
+      let inFlight: Promise<unknown> | undefined;
+      const watched = (query: Query): Query => async (text, params) => {
+        if (inFlight === undefined
+          && text.includes("WITH swapped AS")
+          && params?.[params.length - 1] === false) {
+          inFlight = racer();
+          await Promise.race([
+            inFlight.catch(() => undefined),
+            new Promise((resolve) => setTimeout(resolve, 2_000)),
+          ]);
+        }
+        return await query(text, params);
+      };
+      db.query = watched(originalQuery);
+      db.transaction = ((run: (q: Query) => Promise<unknown>, opts?: never) =>
+        originalTx(async (q) => await run(watched(q)), opts)) as typeof db.transaction;
+      try {
+        await undo();
+      } finally {
+        db.query = originalQuery;
+        db.transaction = originalTx;
+      }
+      expect(inFlight).toBeDefined();
+      await inFlight!.catch(() => undefined);
+    };
+
     // N7 (verifier): the mirror of N1/N2, through undo. undo released the
     // superseded blob BEFORE its compare-and-swap, so a lost undo race deleted
     // content that a concurrent writer's history row now pointed at —
@@ -623,31 +667,18 @@ for (const backend of backends()) {
       const writer = await workspace.open(user);
       await writer.writeFile(path, big("c"));
 
-      // Force the interleave: undo's compare-and-swap is the one carrying
-      // recordHistory=false (its last SQL param). Just before it runs, land the
-      // writer — so it supersedes r2, writing a history row that points at K_b,
-      // in the window where undo had already released K_b under the old order.
-      const db = dbFor(made.store);
-      const original = db.query.bind(db);
-      let landedWriter = false;
-      db.query = async (text: string, params?: unknown[]) => {
-        if (!landedWriter && text.includes("WITH swapped AS") && params?.[params.length - 1] === false) {
-          landedWriter = true;
-          await writer.commit({ message: "the racing writer" });
-        }
-        return original(text, params);
-      };
-      try {
-        // undo restores r1 (K_a) but loses its first CAS to the writer, re-aims,
-        // and wins — dropping only the content it actually superseded.
-        expect(await workspace.undo(caller, path)).toMatchObject({ status: "ok" });
-      } finally {
-        db.query = original;
-      }
-      expect(landedWriter).toBe(true);
+      // Aim the writer at the swap and let the undo run. The two used to
+      // interleave inside it, which is where undo released K_b while the
+      // writer's history row was about to point at it; they now queue on the
+      // path, and this asserts the same invariant against whatever order that
+      // produces.
+      await raceTheSwap(
+        async () => expect(await workspace.undo(caller, path)).toMatchObject({ status: "ok" }),
+        () => writer.commit({ message: "the racing writer" }),
+      );
 
-      // No history row may reference a blob that is gone: the writer's r2 → K_b
-      // row must still be readable, or the content is lost forever.
+      // No history row may reference a blob that is gone, or that revision's
+      // content is lost forever.
       const dangling = await made.sql(
         `SELECT h.blob_ref FROM vendo_workspace_history h
          WHERE h.blob_ref IS NOT NULL AND h.path = $1
@@ -658,10 +689,12 @@ for (const backend of backends()) {
       );
       expect(dangling).toEqual([]);
 
-      // And the writer's revision is genuinely recoverable, not content-missing.
-      const recovered = await workspace.undo(caller, path);
-      expect(recovered).toMatchObject({ status: "ok" });
-      expect(await (await workspace.open(user)).readFile(path)).toBe(big("b"));
+      // The writer went second, so its commit is what the file holds — and the
+      // revision behind it comes back, rather than `content-missing`. (`b` is
+      // the one the undo deliberately walked off, and undo has no redo.)
+      expect(await (await workspace.open(user)).readFile(path)).toBe(big("c"));
+      expect(await workspace.undo(caller, path)).toMatchObject({ status: "ok" });
+      expect(await (await workspace.open(user)).readFile(path)).toBe(big("a"));
     });
 
     // The other half of N7, and the worse one: undo hands its history row's
@@ -670,8 +703,10 @@ for (const backend of backends()) {
     // made the live file's only copy — and the loser's "the winner stored
     // exactly these bytes, so our blob is surplus" branch deletes it. The row
     // survives pointing at nothing, so the file is unreadable forever with no
-    // history row left naming it.
-    it("keeps the restored file readable when a second undo lands on the same revision", async () => {
+    // history row left naming it. The path hold makes the collision itself
+    // unreachable now — two undos queue — and that is what this pins, on top of
+    // the blob invariant that has to hold whichever way they go.
+    it("keeps the restored file readable when two undos race on the same revision", async () => {
       const path = "/user/files/undo-twice.bin";
       const workspace = workspaceStore(made.store);
       const big = (marker: string): string => marker.repeat(WORKSPACE_INLINE_MAX_BYTES + 1);
@@ -683,27 +718,18 @@ for (const backend of backends()) {
         await fs.commit({ message: "wrote" });
       }
 
-      // Force the interleave: an undo's compare-and-swap is the one carrying
-      // recordHistory=false (its last SQL param). Just before the FIRST one
-      // runs, run a whole second undo to completion — so it wins the swap and
-      // K_a becomes the live row's blob, and the one already in flight then
-      // finds a head holding exactly the bytes it was about to write.
-      const db = dbFor(made.store);
-      const original = db.query.bind(db);
-      let winner = false;
-      db.query = async (text: string, params?: unknown[]) => {
-        if (!winner && text.includes("WITH swapped AS") && params?.[params.length - 1] === false) {
-          winner = true;
-          await workspace.undo(caller, path);
-        }
-        return original(text, params);
-      };
-      try {
-        await workspace.undo(caller, path);
-      } finally {
-        db.query = original;
-      }
-      expect(winner).toBe(true);
+      // Aim a second undo at the first one's compare-and-swap. The two used to
+      // land on the same revision there, both holding K_a; they now queue on
+      // the path, so the second walks one step further back (into an empty
+      // history) instead of restoring the same revision twice.
+      const outcomes: unknown[] = [];
+      await raceTheSwap(
+        async () => outcomes.push(await workspace.undo(caller, path)),
+        async () => outcomes.push(await workspace.undo(caller, path)),
+      );
+      expect(outcomes).toHaveLength(2);
+      expect(outcomes.map((outcome) => (outcome as { status: string }).status).sort())
+        .toEqual(["empty", "ok"]);
 
       // The live row must not point at a blob that is gone.
       const dangling = await made.sql(
