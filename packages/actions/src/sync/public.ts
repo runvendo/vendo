@@ -32,3 +32,11 @@ export {
   type StaticExtraction,
   type ZodSchemaResult,
 } from "./static-ts.js";
+// The judge rung's one targeted writer: it fills a BLIND schema slot in
+// tools.json and refuses an occupied one, in code.
+export {
+  patchToolSchemas,
+  type ToolSchemaPatch,
+  type ToolSchemaPatchResult,
+  type ToolSchemaSlot,
+} from "./schema-patch.js";
