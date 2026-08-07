@@ -22,6 +22,7 @@ interface ChunkRow extends KnowledgeChunk {
   kind: KnowledgeDoc["kind"];
   visibility: KnowledgeDoc["visibility"];
   title: string;
+  source: string;
 }
 
 /** LIST PAGINATION ruling: every corpus scan pages with the keyset cursor
@@ -151,7 +152,7 @@ export function vendoKnowledge(options: { store?: StoreAdapter } = {}): Knowledg
       // limit truncates the ranking, never changes it (R3).
       return {
         hits: scored.slice(0, limit).map(({ chunk, score }) => ({
-          ref: { docId: chunk.docId, chunkId: chunk.chunkId, title: chunk.title },
+          ref: { docId: chunk.docId, chunkId: chunk.chunkId, title: chunk.title, source: chunk.source },
           snippet: snippetAround(chunk.text, tokens),
           kind: chunk.kind,
           visibility: chunk.visibility,
@@ -196,10 +197,16 @@ export function vendoKnowledge(options: { store?: StoreAdapter } = {}): Knowledg
           if (!keep.has(stale.id)) await chunkRows().delete(stale.id);
         }
         for (const chunk of chunks) {
-          const data: ChunkRow = { ...chunk, kind: doc.kind, visibility: doc.visibility, title: doc.title };
-          // REFS ruling: chunks ref their doc; knowledge is host-level, so
-          // rows deliberately carry no subject_id (subject-erase skips them).
-          await chunkRows().put({ id: chunk.chunkId, data: { ...data }, refs: { doc_id: doc.id } });
+          const data: ChunkRow = {
+            ...chunk,
+            kind: doc.kind,
+            visibility: doc.visibility,
+            title: doc.title,
+            source: doc.source,
+          };
+          // Chunks ref their doc; knowledge is host-level, so rows deliberately
+          // carry no subject_id (subject-erase skips them).
+          await chunkRows().put({ id: chunk.chunkId, data, refs: { doc_id: doc.id } });
         }
         await docRows().put({ id: doc.id, data: { ...doc }, refs: { source: doc.source } });
       }
