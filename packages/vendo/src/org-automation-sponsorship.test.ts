@@ -16,13 +16,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createVendo, type Vendo } from "./server.js";
 
 /**
- * F7 (wave-3 independent check) — the INTEGRATION WIRINGS had zero regression
- * coverage, and both integration defects the wave found lived exactly there.
- * Each test below pins one composition line in `server.ts` and fails if that
- * line is removed:
+ * The INTEGRATION WIRINGS between orgs, apps and automations. Each test below
+ * pins one composition line in `server.ts` and fails if that line is removed:
  *
- *  (b) `onDocumentEdit:`  — a third party's edit invalidates the sponsorship
- *  (c) `appAccess:` (automations) — the fire-time can(editor) is the real one
+ *  - `onDocumentEdit:` — a third party's edit invalidates the sponsorship
+ *  - `appAccess:` (automations) — the fire-time can(editor) is the real one
  *
  * Everything runs over the REAL composition — `createVendo` fills every seam
  * itself, exactly as a host's deployment does.
@@ -109,7 +107,7 @@ interface Booted {
 }
 
 async function boot(): Promise<Booted> {
-  const root = await mkdtemp(join(tmpdir(), "vendo-wave3-"));
+  const root = await mkdtemp(join(tmpdir(), "vendo-org-automation-"));
   await mkdir(join(root, ".vendo", "remixable"), { recursive: true });
   await writeFile(join(root, ".vendo", "remixable", `${SLOT}.json`), JSON.stringify(BASELINE));
   const store = createStore({ dataDir: join(root, "data") });
@@ -117,7 +115,7 @@ async function boot(): Promise<Booted> {
     await store.close().catch(() => undefined);
     await rm(root, { recursive: true, force: true });
   });
-  vi.stubEnv("VENDO_API_KEY", "vnd_wave3_key");
+  vi.stubEnv("VENDO_API_KEY", "vnd_org_automation_key");
   const vendo = createVendo({
     store,
     profileDir: root,
@@ -214,7 +212,7 @@ const payloadOf = (surface: any): Record<string, unknown> => {
   return surface.payload as Record<string, unknown>;
 };
 
-describe("F7(b) — a third party's edit through the real apps path invalidates the sponsorship", () => {
+describe("a third party's edit through the real apps path invalidates the sponsorship", () => {
   it("invalidates when an EDITOR who is not the sponsor lands a document edit", async () => {
     const booted = await boot();
     const app = await sharedAutomation(booted, "app_hook");
@@ -233,7 +231,7 @@ describe("F7(b) — a third party's edit through the real apps path invalidates 
   });
 });
 
-describe("F7(c) — the automations engine's can(editor) is the real one", () => {
+describe("the automations engine's can(editor) is the real one", () => {
   it("lets an ORG app's sponsor keep firing on a grant, and stops them once it is revoked", async () => {
     const booted = await boot();
     // Kim sponsors an app she does NOT own (the row belongs to the org), so the
@@ -259,12 +257,11 @@ describe("F7(c) — the automations engine's can(editor) is the real one", () =>
   });
 });
 
-/** F8(b) — the erase axes this wave created, over the REAL store. "The sponsor
- *  is not the row owner" is possible when an editor arms an app they do not
- *  own, and §9.7's rule is
+/** The erase axes, over the REAL store. "The sponsor is not the row owner" is
+ *  possible when an editor arms an app they do not own, and §9.7's rule is
  *  that the org outlives the person: erasing a member must take everything that
  *  was THEIRS and nothing that is the org's. */
-describe("F8(b) — a member's erase against an org-owned automation", () => {
+describe("a member's erase against an org-owned automation", () => {
   it("takes her grant, her sponsorship and her own app — and spares the org's app and its runs", async () => {
     const booted = await boot();
     const app = await sharedAutomation(booted, "app_org_erase", kim);
@@ -308,7 +305,7 @@ describe("F8(b) — a member's erase against an org-owned automation", () => {
  *  composition this ALSO pins `server.ts`'s automations `memberships:` seam,
  *  which nothing else covered: without it the engine asserts no orgs for the
  *  emitter and the org's row stays unreachable. */
-describe("ruling — vendo.emit fires an ORG-owned automation for a member", () => {
+describe("vendo.emit fires an ORG-owned automation for a member", () => {
   it("fires for a member as the sponsor, and fires nothing for a non-member", async () => {
     const booted = await boot();
     const app = eventAutomationApp("app_org_event");

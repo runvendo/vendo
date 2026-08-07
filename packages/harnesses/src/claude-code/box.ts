@@ -38,7 +38,7 @@
 import { VENDO_DEV_PORT, VENDO_DEV_PORT_ENV, VendoError } from "@vendoai/core";
 import type { CheckoutFile, SyncFile, TreeState } from "../materialize.js";
 import { emptyTree } from "../materialize.js";
-import type { SessionMachine, SessionMessage } from "./machine.js";
+import { MESSAGE_BUDGET_MS, type SessionMachine, type SessionMessage } from "./machine.js";
 
 /** The subset of `SandboxAdapter` (`@vendoai/apps`) a session box needs.
  *  Structural so this subpath never widens the package's type surface.
@@ -73,8 +73,6 @@ const CONTROL_PORT = 8811;
 export const BOX_IDLE_TTL_MS = 5 * 60_000;
 /** The box holds each poll open this long before answering empty. */
 const POLL_WAIT_MS = 10_000;
-/** One message's bound. Longer than the approval wait, by design. */
-const MESSAGE_BUDGET_MS = 15 * 60_000;
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();

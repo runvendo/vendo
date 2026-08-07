@@ -50,7 +50,7 @@ const documentFrom = (wire: string): AppDocument => {
     id: "app_floor_test",
     name: compiled.name ?? "Untitled",
     ui: "tree",
-    tree: compiled.tree as AppDocument["tree"],
+    tree: compiled.tree as unknown as AppDocument["tree"],
   } as AppDocument;
 };
 
@@ -62,7 +62,9 @@ const BAD = '<App name="Invoices"><Query id="invoices" tool="host_wireMoney"/><S
 const inputFor = (wire: string, request = "show me my invoices"): CheckInput =>
   ({ document: documentFrom(wire), request });
 
-const factCheck = (name: string, findings: () => Awaited<ReturnType<Extract<Check, { kind: "fact" }>["run"]>>): Check =>
+// `kind` is OPTIONAL on the fact variant, so `Extract<Check, { kind: "fact" }>`
+// is `never` — the fact half is named by the member only IT has (layer.ts).
+const factCheck = (name: string, findings: () => Awaited<ReturnType<Extract<Check, { run: unknown }>["run"]>>): Check =>
   ({ name, kind: "fact", run: async () => findings() });
 
 describe("CheckInput speaks the core document shape (build contract §5)", () => {

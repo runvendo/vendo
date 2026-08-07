@@ -329,8 +329,8 @@ describe("rejection", () => {
     expect(guard.audit.some((event) =>
       event.kind === "app-lifecycle"
       && event.principal.subject === owner.principal.subject
-      && event.detail?.operation === "review-reject"
-      && event.detail?.note === "Keep the original balance label.")).toBe(true);
+      && (event.detail as { operation?: string } | undefined)?.operation === "review-reject"
+      && (event.detail as { note?: string } | undefined)?.note === "Keep the original balance label.")).toBe(true);
   });
 
   it("a new version supersedes the rejection and increments the resubmission count", async () => {

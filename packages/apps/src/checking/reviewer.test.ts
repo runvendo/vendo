@@ -15,7 +15,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { createCheckingLayer, judgmentRules } from "./layer.js";
 import { reviewerCheck } from "./reviewer.js";
-import type { CheckInput } from "./types.js";
+import type { Check, CheckInput } from "./types.js";
 import type { FloorDependencies, HostToolInfo } from "./deps.js";
 import { scriptedLanguageModel, type ScriptedModelCall } from "../testing/scripted-model.js";
 
@@ -57,8 +57,20 @@ const documentFrom = (wire: string): AppDocument => {
     id: "app_reviewer_test",
     name: compiled.name ?? "Untitled",
     ui: "tree",
-    tree: compiled.tree as AppDocument["tree"],
+    tree: compiled.tree as unknown as AppDocument["tree"],
   } as AppDocument;
+};
+
+/**
+ * `reviewerCheck` is declared as the `Check` UNION, and only the fact half has
+ * `run` (the judgment half is a rule string). The reviewer is always the fact
+ * half; narrow once here so no case below needs a cast — and so this stops
+ * compiling the day that stops being true.
+ */
+const factReviewerCheck = (...args: Parameters<typeof reviewerCheck>): Extract<Check, { run: unknown }> => {
+  const check = reviewerCheck(...args);
+  if (!("run" in check)) throw new Error("reviewerCheck is no longer a fact check");
+  return check;
 };
 
 const inputFor = (wire: string, request = "show me my invoices"): CheckInput =>
@@ -92,7 +104,7 @@ describe("host and pack judgment rules reach the reviewer (F2)", () => {
     const calls: ScriptedModelCall[] = [];
     const model = scriptedLanguageModel((call) => { calls.push(call); return reported([]); });
 
-    await reviewerCheck(deps(model), samples, [CITE_TOTALS, NO_UNATTENDED]).run(inputFor(invoicesApp));
+    await factReviewerCheck(deps(model), samples, [CITE_TOTALS, NO_UNATTENDED]).run(inputFor(invoicesApp));
 
     const system = String(calls[0]?.prompt?.[0]?.content ?? JSON.stringify(calls[0]?.prompt));
     expect(system).toContain(CITE_TOTALS);
@@ -105,7 +117,7 @@ describe("host and pack judgment rules reach the reviewer (F2)", () => {
     const calls: ScriptedModelCall[] = [];
     const model = scriptedLanguageModel((call) => { calls.push(call); return reported([]); });
 
-    await reviewerCheck(deps(model), samples, []).run(inputFor(invoicesApp));
+    await factReviewerCheck(deps(model), samples, []).run(inputFor(invoicesApp));
 
     const system = String(calls[0]?.prompt?.[0]?.content ?? "");
     expect(system).not.toMatch(/ALSO REJECT/);
@@ -122,9 +134,9 @@ describe("host and pack judgment rules reach the reviewer (F2)", () => {
         : reported([]);
     });
 
-    const withRule = await reviewerCheck(deps(readerApplying(CITE_TOTALS)), samples, [CITE_TOTALS])
+    const withRule = await factReviewerCheck(deps(readerApplying(CITE_TOTALS)), samples, [CITE_TOTALS])
       .run(inputFor(invoicesApp));
-    const withoutRule = await reviewerCheck(deps(readerApplying(CITE_TOTALS)), samples, [])
+    const withoutRule = await factReviewerCheck(deps(readerApplying(CITE_TOTALS)), samples, [])
       .run(inputFor(invoicesApp));
 
     expect(withRule).toEqual([{
@@ -173,7 +185,7 @@ describe("the AI reviewer", () => {
       },
     ]));
 
-    const findings = await reviewerCheck(deps(model), samples).run(inputFor(invoicesApp));
+    const findings = await factReviewerCheck(deps(model), samples).run(inputFor(invoicesApp));
 
     expect(findings).toEqual([
       {
@@ -196,7 +208,7 @@ describe("the AI reviewer", () => {
       return reported([]);
     });
 
-    await reviewerCheck(deps(model), samples).run(inputFor(invoicesApp, "list my overdue invoices"));
+    await factReviewerCheck(deps(model), samples).run(inputFor(invoicesApp, "list my overdue invoices"));
 
     expect(calls).toHaveLength(1);
     const call = calls[0] as ScriptedModelCall;
@@ -233,7 +245,7 @@ describe("the AI reviewer", () => {
   it("returns no findings when the model says nothing and calls no tool", async () => {
     const model = scriptedLanguageModel("I have no comment on this app.");
 
-    const findings = await reviewerCheck(deps(model)).run(inputFor(invoicesApp));
+    const findings = await factReviewerCheck(deps(model)).run(inputFor(invoicesApp));
 
     expect(findings).toEqual([]);
   });
@@ -241,7 +253,7 @@ describe("the AI reviewer", () => {
   it("returns no findings when the model call throws, so a broken reviewer never crashes generation", async () => {
     const model = scriptedLanguageModel(() => { throw new Error("529 overloaded"); });
 
-    const findings = await reviewerCheck(deps(model), samples).run(inputFor(invoicesApp));
+    const findings = await factReviewerCheck(deps(model), samples).run(inputFor(invoicesApp));
 
     expect(findings).toEqual([]);
   });
@@ -280,7 +292,7 @@ describe("the AI reviewer", () => {
     const calls: ScriptedModelCall[] = [];
     const model = scriptedLanguageModel((call) => { calls.push(call); return reported([]); });
 
-    const findings = await reviewerCheck(deps(model), samples).run({
+    const findings = await factReviewerCheck(deps(model), samples).run({
       ...inputFor(invoicesApp, "show my invoices and remind me every Friday"),
       plan: scheduledPlan(),
     });
@@ -298,7 +310,7 @@ describe("the AI reviewer", () => {
     const calls: ScriptedModelCall[] = [];
     const model = scriptedLanguageModel((call) => { calls.push(call); return reported([]); });
 
-    await reviewerCheck(deps(model), samples).run(inputFor(invoicesApp));
+    await factReviewerCheck(deps(model), samples).run(inputFor(invoicesApp));
 
     expect(JSON.stringify(calls[0]?.prompt ?? "")).not.toContain("ALREADY PLANNED");
   });

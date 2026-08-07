@@ -50,7 +50,7 @@ import { VendoError } from "@vendoai/core";
 import type { ClaudeTurnEvent } from "@vendoai/apps/claude-turn";
 import type { SyncFile, TreeState } from "../materialize.js";
 import { emptyTree, inWritableMount } from "../materialize.js";
-import type { SessionMachine, SessionMessage } from "./machine.js";
+import { MESSAGE_BUDGET_MS, type SessionMachine, type SessionMessage } from "./machine.js";
 
 /** The session runner is shared with the box — one implementation, two homes. Its
  *  OWN subpath, so importing it never drags the render seam's `./internal` in,
@@ -187,6 +187,33 @@ export interface LocalMachineOptions {
   env: Record<string, string>;
   /** Test seam — the real factory is loaded from {@link RUNNER}, with the SDK. */
   openSession?: (input: Record<string, unknown>) => LocalSession["session"];
+  /** Test seam; production uses {@link MESSAGE_BUDGET_MS}. */
+  messageBudgetMs?: number;
+}
+
+/** The sentinel the budget resolves with — a value `send()` can never produce,
+ *  so "finished" and "ran out of time" stay distinguishable. */
+const OUTRAN = Symbol("outran");
+
+/**
+ * `work`, or the budget — whichever lands first. `true` means the work finished.
+ *
+ * A rejection from `work` propagates as itself: a turn that FAILED is a fact the
+ * caller already knows how to carry, and dressing it up as a timeout would lose
+ * the session's own sentence. The timer is `unref`ed so an ordinary fast turn
+ * never holds the process open waiting for a budget nobody needs.
+ */
+async function withinBudget(work: Promise<void>, budgetMs: number): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const budget = new Promise<typeof OUTRAN>((resolve) => {
+    timer = setTimeout(() => resolve(OUTRAN), budgetMs);
+    timer.unref?.();
+  });
+  try {
+    return await Promise.race([work, budget]) !== OUTRAN;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
 export async function localMachine(options: LocalMachineOptions): Promise<SessionMachine> {
@@ -328,8 +355,31 @@ export async function localMachine(options: LocalMachineOptions): Promise<Sessio
         ? undefined
         : () => void held.session?.interrupt().catch(() => undefined);
       if (stop !== undefined) message.signal!.addEventListener("abort", stop, { once: true });
+      const running = held.session!;
       try {
-        await held.session!.send(message.prompt);
+        const sending = running.send(message.prompt);
+        if (!await withinBudget(sending, options.messageBudgetMs ?? MESSAGE_BUDGET_MS)) {
+          // A turn that outran its budget is one nobody can reason about any
+          // more — and it is not just this turn at stake. `ClaudeSession` answers
+          // pushed messages in order, so a `send()` left pending holds every
+          // later turn on this thread behind it: the user's next message would
+          // wait on a turn that already lost, silently, for the life of the
+          // process. So the SESSION goes, not just the turn. The disk stays warm
+          // (files and the SDK's own session file are still there), which makes
+          // the next message a fresh session that resumes rather than a cold
+          // start — the same recovery the box path takes when its box is gone.
+          void sending.catch(() => undefined);
+          await running.interrupt().catch(() => undefined);
+          if (held.session === running) held.session = undefined;
+          // Fire and forget on purpose: `end()` waits on the SDK's own loop, and
+          // waiting on the loop we just declared stuck is how one hang becomes
+          // two.
+          void running.end().catch(() => undefined);
+          throw new VendoError(
+            "sandbox-unavailable",
+            "the local session's message outran its budget",
+          );
+        }
       } finally {
         if (stop !== undefined) message.signal!.removeEventListener("abort", stop);
         // The turn is over; nothing may be attributed to it from here on.

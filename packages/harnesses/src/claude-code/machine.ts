@@ -16,6 +16,22 @@
 import type { ClaudeTurnEvent } from "@vendoai/apps/claude-turn";
 import type { CheckoutFile, SyncFile, TreeState } from "../materialize.js";
 
+/**
+ * How long ONE message may run before the machine gives up on it. Longer than
+ * the approval wait, by design.
+ *
+ * It lives HERE, next to the port, because both rungs owe the caller the same
+ * answer and a second literal is how the two drift. It is the only thing
+ * standing between `send()` and a wait with no end: the session's own turn
+ * boundary is a `result` message, and a `result` that never arrives — an
+ * interrupted session, a steer the model absorbed into the turn already
+ * running — is indistinguishable from a turn that is merely slow. The box rung
+ * has always had this bound. The local rung ran without one until it was found
+ * to wedge a whole thread, because `ClaudeSession`'s send queue is strictly
+ * ordered: one turn that never settles is every later turn on that thread.
+ */
+export const MESSAGE_BUDGET_MS = 15 * 60_000;
+
 /** What opening a session needs. Fixed for the life of the session.
  *
  *  `tools` is deliberately absent: the session reaches the host's tools through
