@@ -139,10 +139,9 @@ describe(".vendoapp interchange through createApps", () => {
   it("fails export for forbidden or missing pin baselines and preserves allowed pins", async () => {
     const ctx = context("user_ada");
     const pin = { slot: "invoice-card", base: "sha256:x" };
-    // The mismatched-hash case carries its forked component: that is what
-    // keeps the row a pin under the pins/placements split (a bare row whose
-    // base matches no baseline hash is a placement now — checker round-1
-    // ruling 2026-08-02), so the export gate still sees the mismatch.
+    // The mismatched-hash case carries its forked component, as every real
+    // fork does, so the export gate is refusing a genuine pin whose baseline
+    // moved rather than a hand-built document.
     const forkedComponent = { [pinComponentName("invoice-card")]: "source" };
     const cases: Array<{
       baselines: Parameters<typeof createApps>[0]["pinBaselines"];

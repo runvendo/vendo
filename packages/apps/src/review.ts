@@ -12,7 +12,7 @@ import {
 import { z } from "zod";
 import type { AppHistoryAccess } from "./history.js";
 import type { InClientApprovalAccess, InClientVenueState, ReviewStanding } from "./inclient.js";
-import { classifyLegacyPlacements, type PinBaseline } from "./pins.js";
+import type { PinBaseline } from "./pins.js";
 import { documentFromRecord, listAllRecords, rowFromRecord } from "./persistence.js";
 import { computeShipDiff, type ShipDiff } from "./ship-diff.js";
 import { appVersionHash } from "./version-hash.js";
@@ -143,14 +143,12 @@ export const createReviewLifecycle = (deps: ReviewLifecycleDeps): ReviewLifecycl
     if ((await deps.approvals.verdictFor(current)).granted) return current;
     const approved = new Set((await deps.approvals.list(current.id)).map(({ versionHash }) => versionHash));
     if (approved.size === 0) return current;
-    // Newest approved version wins: history is oldest-first, snapshots are
-    // classified like every runtime read so their hashes line up with the
-    // approvals minted over classified documents. An approved version that
-    // fell off the capped history fails closed to the pending state below.
+    // Newest approved version wins: history is oldest-first. An approved
+    // version that fell off the capped history fails closed to the pending
+    // state below.
     const snapshots = await deps.history.documents(current.id);
     for (const snapshot of snapshots.reverse()) {
-      const classified = classifyLegacyPlacements(snapshot, deps.baselines);
-      if (approved.has(appVersionHash(classified))) return classified;
+      if (approved.has(appVersionHash(snapshot))) return snapshot;
     }
     return current;
   };
@@ -164,7 +162,7 @@ export const createReviewLifecycle = (deps: ReviewLifecycleDeps): ReviewLifecycl
     // one case where the snapshot's kind can differ, so it re-reads too.
     if (!isReviewKind(doc) && base?.granted !== true) return base;
     const record = await deps.store.records("vendo_apps").get(doc.id);
-    const current = record === null ? doc : classifyLegacyPlacements(documentFromRecord(record), deps.baselines);
+    const current = record === null ? doc : documentFromRecord(record);
     if (!isReviewKind(current)) return base;
     const currentHash = appVersionHash(current);
     if (base?.granted === true) {
@@ -196,7 +194,7 @@ export const createReviewLifecycle = (deps: ReviewLifecycleDeps): ReviewLifecycl
         } catch {
           continue; // an invalid row cannot be reviewed
         }
-        const doc = classifyLegacyPlacements(row.doc, deps.baselines);
+        const doc = row.doc;
         // The review-kind slot doubles as the kind test: none → instant-kind.
         const slot = (doc.pins ?? []).find((pin) =>
           baselines().some((baseline) => baseline.slot === pin.slot && baseline.review === true))?.slot;

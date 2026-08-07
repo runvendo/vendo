@@ -292,41 +292,6 @@ export const detectPinDrift = (
 });
 
 /**
- * Remix final shape (2026-08-02) — pins/placements split. Before the split one
- * array stored two unrelated facts, so slot-landing paths fabricated `Pin.base`
- * hashes and raised false drift warnings. There is no migration script: the
- * runtime classifies stored rows on read (and the classified document
- * normalizes the row on its next write). A `pins` entry whose `base` matches
- * no captured baseline hash is a placement — whether or not the slot is still
- * captured (checker round-1 ruling 2026-08-02: the contract's test is the
- * HASH; a real fork, drifted or not, is recognized by its forked component
- * riding the document, not by its slot name). The one fail-closed carve-out
- * that stays a pin: an entry whose forked component source is still on the
- * document (provenance — reclassifying it would launder captured host source
- * past assertPinsExportable). With no baselines captured at all there is no
- * signal to classify against, so the document passes through untouched.
- */
-export const classifyLegacyPlacements = (
-  doc: AppDocument,
-  baselines: readonly PinBaseline[] | undefined,
-): AppDocument => {
-  if (baselines === undefined || baselines.length === 0 || doc.pins === undefined || doc.pins.length === 0) return doc;
-  const hashes = new Set(baselines.map(({ hash }) => hash));
-  const isPlacement = (pin: Pin): boolean => !hashes.has(pin.base)
-    && doc.components?.[pinComponentName(pin.slot)] === undefined;
-  const legacy = doc.pins.filter(isPlacement);
-  if (legacy.length === 0) return doc;
-  const pins = doc.pins.filter((pin) => !isPlacement(pin));
-  const classified: AppDocument = {
-    ...doc,
-    placements: [...new Set([...(doc.placements ?? []), ...legacy.map(({ slot }) => slot)])],
-  };
-  if (pins.length === 0) delete classified.pins;
-  else classified.pins = pins;
-  return classified;
-};
-
-/**
  * 06-apps §7–§8 — require explicit host permission for every exported pin.
  * Missing baselines fail closed because an artifact export must never strip pins.
  */

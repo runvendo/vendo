@@ -85,7 +85,7 @@ import { appMemoryBrief, rememberedMemory } from "./app-memory.js";
 import { parseVendoManifest } from "./manifest.js";
 import { createAppOpener, createProgressiveQueryResolver, stripServerAuthoritativeFields } from "./open.js";
 import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, listAllRecords, nextEnvStaleAt, rowFromRecord, updateAppRow, withoutSession, type AppRecordWrite } from "./persistence.js";
-import { classifyLegacyPlacements, detectPinDrift, pinComponentName } from "./pins.js";
+import { detectPinDrift, pinComponentName } from "./pins.js";
 import { createReviewLifecycle } from "./review.js";
 import { collectSecretValues, redactSecretJson, redactSecretText } from "./redaction.js";
 import {
@@ -507,10 +507,6 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     return await config.appAccess.can(ctx, level, { app: appId });
   };
 
-  // Pins/placements split (2026-08-02) — every runtime read classifies legacy
-  // rows (classifyLegacyPlacements), so drift, ship-diff, export, and the wire
-  // all see fork provenance in `pins` and slot placement in `placements`; the
-  // next persistEdit writes the classified document, normalizing the row.
   const owned = async (
     appId: AppId,
     ctx: RunContext,
@@ -518,7 +514,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   ): Promise<AppDocument | null> => {
     const record = await apps.get(appId);
     if (record === null || !(await holds(appId, ctx, level, record))) return null;
-    return classifyLegacyPlacements(documentFromRecord(record), config.pinBaselines);
+    return documentFromRecord(record);
   };
 
   /** Build contract §9.6 — the ONE Cloud gate on this block. Sharing is
@@ -1055,12 +1051,9 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     const assertCurrent = async (): Promise<boolean> => {
       const current = await apps.get(previous.id);
       const row = current === null ? null : rowFromRecord(current);
-      // `previous` came through a classifying read (owned), so the stored row
-      // classifies the same way before comparing — otherwise every edit of a
-      // not-yet-normalized legacy row would read as a concurrent change.
       if (row === null
         || row.subject !== rowSubject
-        || JSON.stringify(classifyLegacyPlacements(row.doc, config.pinBaselines)) !== JSON.stringify(previous)) {
+        || JSON.stringify(row.doc) !== JSON.stringify(previous)) {
         throw new VendoError("conflict", `app changed during edit: ${previous.id}`);
       }
       return row.enabled;
@@ -1254,9 +1247,9 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     // and this door would report it as the edit.
     const refused = takeEditRefusal(appId, instruction);
     if (refused !== undefined) return { kind: "failed", issues: [refused] };
-    // Through `requireOwned`, so what comes back is the same classified,
-    // access-checked document every other door hands out — the row is the answer
-    // and it must read identically wherever it is read.
+    // Through `requireOwned`, so what comes back is the same access-checked
+    // document every other door hands out — the row is the answer and it must
+    // read identically wherever it is read.
     const stored = await requireOwned(appId, ctx).catch(() => undefined);
     if (stored === undefined) return { kind: "failed", issues: [NOTHING_RENDERABLE] };
     return { kind: "assembled", app: stored };
@@ -2108,7 +2101,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // caller may not write is painted from the compile alone.
       const previous = row === null || !mayWrite
         ? undefined
-        : classifyLegacyPlacements(row.doc, config.pinBaselines);
+        : row.doc;
       const document = authoredDocument(input.appId, input.compiled, previous);
       if (mayWrite) {
         /** The version this save appended, while its write has not landed yet. */
@@ -2136,7 +2129,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
                 // in the window moved the row to an org, and re-writing the stale
                 // owner would lose the app out of it.
                 || stored.subject !== row?.subject
-                || JSON.stringify(classifyLegacyPlacements(stored.doc, config.pinBaselines)) !== JSON.stringify(previous)) {
+                || JSON.stringify(stored.doc) !== JSON.stringify(previous)) {
                 throw new VendoError("conflict", `app changed under this save: ${input.appId}`);
               }
               return stored.enabled;
@@ -2271,7 +2264,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       for (const record of records
         .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id))) {
         try {
-          const document = classifyLegacyPlacements(documentFromRecord(record), config.pinBaselines);
+          const document = documentFromRecord(record);
           // A terminally failed build is a tombstone open() reads to resolve
           // the embed — not a real app; it never joins the listable surface.
           if (document.buildFailed !== undefined) continue;

@@ -7,7 +7,6 @@
  */
 import { VendoError } from "@vendoai/core";
 import { rowFromRecord } from "./persistence.js";
-import { classifyLegacyPlacements } from "./pins.js";
 import type { AppsRuntimeContext } from "./runtime-context.js";
 import { computeShipDiff } from "./ship-diff.js";
 import type { AppsRuntime } from "./types.js";
@@ -59,7 +58,7 @@ export const createInClientSurface = (deps: InClientSurfaceDeps): AppsRuntime["i
     const record = await apps.get(input.appId);
     if (record === null) throw new VendoError("not-found", `app not found: ${input.appId}`);
     const row = rowFromRecord(record);
-    const app = classifyLegacyPlacements(row.doc, config.pinBaselines);
+    const app = row.doc;
     // `holds` rather than a bare subject compare: the row is read WITHOUT
     // owner scoping here (a reviewer crosses that boundary), so the access
     // question is asked through the ONE permission check — which keeps the

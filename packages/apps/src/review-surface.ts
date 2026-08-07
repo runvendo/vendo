@@ -8,7 +8,6 @@
  */
 import { VendoError } from "@vendoai/core";
 import { rowFromRecord } from "./persistence.js";
-import { classifyLegacyPlacements } from "./pins.js";
 import type { AppsRuntimeContext } from "./runtime-context.js";
 import type { AppsRuntime } from "./types.js";
 
@@ -42,7 +41,7 @@ export const createReviewSurface = (deps: ReviewSurfaceDeps): AppsRuntime["revie
     const record = await apps.get(input.appId);
     if (record === null) throw new VendoError("not-found", `app not found: ${input.appId}`);
     const row = rowFromRecord(record);
-    const doc = classifyLegacyPlacements(row.doc, config.pinBaselines);
+    const doc = row.doc;
     const rejection = await review.reject({ doc, note: input.note, by: ctx.principal.subject });
     // The audit event lands under the OWNER's subject so the rejection is
     // loud in the remixing user's activity, not the reviewer's.
