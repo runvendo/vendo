@@ -431,6 +431,9 @@ describe("vendoModel (the vendo model family entry)", () => {
   });
 
   it("VENDO_MODEL pins the agent slot above a configured name string", async () => {
+    expect((vendoModel(undefined, {
+      env: { ANTHROPIC_API_KEY: "sk-a", VENDO_MODEL: "claude-sonnet-5" },
+    }) as unknown as { modelId: string }).modelId).toBe("claude-sonnet-5");
     expect(await resolvedId(vendoModel("claude-opus-4-8", {
       env: { ANTHROPIC_API_KEY: "sk-a", VENDO_MODEL: "claude-sonnet-4-6" },
       importModule: scriptedProvider("createAnthropic"),
@@ -447,6 +450,21 @@ describe("vendoModel (the vendo model family entry)", () => {
   });
 
   it("keeps the deprecated VENDO_DEV_*_MODEL / VENDO_CLOUD_MODEL pins working on the agent slot only", async () => {
+    expect((vendoModel(undefined, {
+      env: { ANTHROPIC_API_KEY: "sk-a", VENDO_DEV_ANTHROPIC_MODEL: "claude-sonnet-5" },
+    }) as unknown as { modelId: string }).modelId).toBe("claude-sonnet-5");
+    expect((vendoModel(undefined, {
+      env: {
+        ANTHROPIC_API_KEY: "sk-a",
+        OPENAI_API_KEY: "sk-o",
+        VENDO_DEV_CREDENTIAL: "env-key:openai",
+        VENDO_DEV_ANTHROPIC_MODEL: "claude-sonnet-5",
+        VENDO_DEV_OPENAI_MODEL: "gpt-5",
+      },
+    }) as unknown as { modelId: string }).modelId).toBe("gpt-5");
+    expect((vendoModel(undefined, {
+      env: { VENDO_API_KEY: "vnd_x", VENDO_CLOUD_MODEL: "vendo-strong" },
+    }) as unknown as { modelId: string }).modelId).toBe("vendo-strong");
     expect(await resolvedId(vendoModel(undefined, {
       env: { ANTHROPIC_API_KEY: "sk-a", VENDO_DEV_ANTHROPIC_MODEL: "claude-opus-4-8" },
       importModule: scriptedProvider("createAnthropic"),
@@ -544,6 +562,7 @@ describe("vendoModel (the vendo model family entry)", () => {
       importModule: scriptedProvider("createAnthropic"),
     });
     bindVendoModelSlots(bound, { judge: explicit });
+    expect((bound as unknown as { modelId: string }).modelId).toBe("host-judge");
     expect(await resolvedId(bound)).toBe("host-judge");
   });
 
